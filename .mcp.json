@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "browser": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/launch.mjs"]
+    },
+    "runs": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"]
+    }
+  }
+}

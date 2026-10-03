@@ -1,0 +1,12 @@
+{
+  "name": "pairbrowse",
+  "version": "0.13.1",
+  "private": true,
+  "type": "module",
+  "description": "Pair-browse with Claude Code in a visible Chrome window.",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

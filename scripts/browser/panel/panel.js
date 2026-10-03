@@ -1,0 +1,83 @@
+// The PairBrowse side panel. Connects to the live view server (status, activity, profile) at the
+// address the daemon handed to background.js; it never asks for the page stream itself.
+import { $, el, rich, clock, whose, activityHead, sparkIcon, joinBanners, profilePanel } from "./common.js";
+
+const DRIVING_MS = 8000; // "is driving" for this long after Claude's last action
+const ACTIVITY_SHOWN = 12;
+let base = null;
+let es = null;
+let lastActivity = 0;
+let lastWho = "";
+let driveTimer = 0;
+
+$("driver").prepend(sparkIcon("spark"));
+const drawJoins = joinBanners($("joins"), () => base);
+const profile = profilePanel(() => base);
+
+function setDriver() {
+  const turn = document.body.dataset.turn === "true";
+  const s = document.body.dataset.s;
+  const driving = !turn && s === "live" && Date.now() - lastActivity < DRIVING_MS;
+  document.body.dataset.driving = String(driving);
+  $("driver-text").textContent = s === "closed" ? "The browser is closed. It reopens on Claude's next action."
+    : s === "connecting" ? "Waiting for PairBrowse"
+    : turn ? "Waiting for you"
+    : `${whose(lastWho)} ${driving ? "is driving" : "is idle"}`;
+}
+
+function connect(url) {
+  if (!url || url === base) return;
+  base = url;
+  es?.close();
+  es = new EventSource(base + "events?panel=1");
+  const on = (event, fn) => es.addEventListener(event, (e) => fn(JSON.parse(e.data)));
+  es.onopen = () => { document.body.dataset.s = "live"; setDriver(); profile.load(); };
+  es.onerror = () => { document.body.dataset.s = es.readyState === EventSource.CLOSED ? "closed" : "connecting"; setDriver(); };
+  on("status", (s) => {
+    document.body.dataset.turn = String(s.kind === "you" && !!s.text);
+    $("turn-text").textContent = s.text || "Your turn";
+    setDriver();
+  });
+  on("session", (s) => {
+    if (!s.name) return;
+    const w = $("where");
+    w.hidden = false;
+    w.dataset.clean = String(!!s.temporary);
+    w.replaceChildren(document.createTextNode(`${s.where} · `), el("b", { textContent: s.name }));
+  });
+  on("collaboration", (c) => {
+    const count = c.participants?.length || 0;
+    const person = c.active?.label || c.owner?.label;
+    $("collaboration").textContent = `${count} connected${person ? ` · ${person} has control` : ""}`;
+  });
+  on("activity", (list) => {
+    const items = list.slice(-ACTIVITY_SHOWN).reverse();
+    if (!items.length) return;
+    lastActivity = Math.max(lastActivity, items[0].t);
+    lastWho = items[0].who || "";
+    $("activity").replaceChildren(...items.map((a) => el("li", {}, el("time", { textContent: clock(a.t) }), el("span", {}, ...(activityHead(a) ? [el("strong", { textContent: `${activityHead(a)}: ` })] : []), rich(a.text)))));
+    setDriver();
+    clearTimeout(driveTimer);
+    driveTimer = setTimeout(setDriver, DRIVING_MS + 500);
+  });
+  // A shared session: everyone in it, both browsers, and what they said to each other (shown
+  // only; a message is information, never something the panel acts on).
+  on("board", (b) => {
+    const people = Array.isArray(b?.people) ? b.people : [];
+    const messages = Array.isArray(b?.messages) ? b.messages : [];
+    $("session").hidden = people.length < 2 && !messages.length && !people.some((p) => p.where);
+    const STATES = { working: "working", you: "waiting for their person", done: "done", idle: "idle" };
+    $("people").replaceChildren(...people.map((p) => {
+      const dot = el("i");
+      if (/^#[0-9a-f]{6}$/i.test(p.color || "")) dot.style.background = p.color;
+      const where = [p.where ? `${p.where}'s browser` : "this browser", p.tab].filter(Boolean).join(" · ");
+      return el("li", {}, dot, el("strong", { textContent: p.who }), el("small", {}, el("span", { className: "state", textContent: STATES[p.status] || "idle" }), document.createTextNode(` · ${where}`)),
+        ...(p.task || p.last ? [el("small", { textContent: p.task || p.last })] : []));
+    }));
+    $("messages").replaceChildren(...messages.slice(-6).reverse().map((m) => el("li", {}, el("time", { textContent: `${clock(m.t)} ` }), el("strong", { textContent: `${m.from}${m.to && m.to !== "all" ? ` to ${m.to}` : ""}: ` }), document.createTextNode(m.text))));
+  });
+  on("profile", profile.draw);
+  on("join", drawJoins);
+}
+chrome.storage.session.get("view").then(({ view }) => connect(view));
+chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); });

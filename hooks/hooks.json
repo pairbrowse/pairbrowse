@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs\"" }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__plugin_pairbrowse_.*|mcp__pairbrowse_browser__.*|mcp__pairbrowse_runs__.*",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__plugin_pairbrowse_browser__.*|mcp__pairbrowse_browser__.*",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/log.mjs\"" }]
+      }
+    ]
+  }
+}

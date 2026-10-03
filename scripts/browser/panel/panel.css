@@ -1,0 +1,86 @@
+/* The PairBrowse side panel: same palette as the PairBrowse theme and live view. */
+:root {
+  --bg: rgb(27 30 60); --card: rgb(40 44 82); --field: rgb(24 27 54);
+  --ink: oklch(0.985 0.004 265); --ink-2: oklch(0.90 0.02 265); --muted: oklch(0.76 0.03 265);
+  --edge: oklch(1 0 0 / 0.12); --hover: oklch(1 0 0 / 0.08);
+  --cyan: oklch(0.84 0.12 215); --cyan-soft: oklch(0.84 0.12 215 / 0.2);
+  --spark: oklch(0.72 0.15 45); --paper: oklch(0.985 0.004 250); --paper-ink: oklch(0.25 0.06 265);
+  --live: oklch(0.82 0.16 155);
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --t: 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; padding: 0 14px 20px; }
+.top { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 9px; padding: 14px 0 12px; background: var(--bg); border-bottom: 1px solid var(--edge); }
+.top img { border-radius: 6px; }
+.top h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; flex: 1; }
+.where { font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.where b { color: var(--ink); font-weight: 600; }
+.where[data-clean="true"] b { color: var(--cyan); }
+h2 { margin: 20px 0 6px; font-size: 12px; font-weight: 650; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+section.status { margin-top: 14px; }
+.driver { display: flex; align-items: center; gap: 9px; padding: 11px 12px; border-radius: 10px; background: var(--card); color: var(--ink-2); font-weight: 600; }
+.driver .spark { width: 15px; height: 15px; color: var(--spark); flex: none; }
+body[data-s="closed"] .driver .spark, body[data-s="connecting"] .driver .spark { color: var(--muted); }
+body[data-driving="true"] .driver .spark { animation: turn 2.4s linear infinite; }
+@keyframes turn { to { transform: rotate(360deg); } }
+.turn { display: none; align-items: center; gap: 11px; margin-bottom: 8px; padding: 12px; border-radius: 10px; background: var(--paper); color: var(--paper-ink); }
+body[data-turn="true"] .turn { display: flex; animation: drop 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.turn i { width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-soft); animation: pulse 1.4s ease-in-out infinite; flex: none; }
+.turn strong { display: block; font-size: 13.5px; }
+.turn small { font-size: 12px; opacity: 0.75; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 7px oklch(0.84 0.12 215 / 0); } }
+@keyframes drop { from { opacity: 0; transform: translateY(-4px); } }
+.activity { list-style: none; margin: 0; padding: 0; }
+.activity li { display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--edge); color: var(--ink-2); font-size: 12.5px; animation: enter 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.activity li:first-child { color: var(--ink); }
+.activity time { font-family: var(--mono); font-size: 11px; color: var(--muted); padding-top: 1px; }
+.activity strong { font-weight: 600; color: var(--ink); }
+.activity code { font-family: var(--mono); font-size: 11.5px; padding: 0 5px; border-radius: 5px; background: var(--hover); }
+.activity .empty { display: block; color: var(--muted); }
+@keyframes enter { from { opacity: 0; transform: translateY(-3px); } }
+.note { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.row { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr) auto; gap: 6px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--edge); }
+.row .label { font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .label small { display: block; font-size: 11px; color: var(--muted); }
+.row.secret { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; }
+.row .sites { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty-row { font-size: 12.5px; color: var(--muted); margin: 4px 0; }
+.field { width: 100%; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--edge); border-radius: 7px; background: var(--field); color: var(--ink); font: 12.5px var(--sans); transition: border-color var(--t); }
+.field:focus { outline: none; border-color: var(--cyan); }
+.field::placeholder { color: var(--muted); opacity: 1; }
+.add { display: grid; gap: 6px; margin-top: 10px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+button { font: inherit; }
+.mini { height: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 600; }
+.mini:hover { background: var(--hover); color: var(--ink); }
+.primary { justify-self: start; height: 30px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--cyan); color: oklch(0.2 0.05 260); font-weight: 650; cursor: pointer; }
+.primary:hover { filter: brightness(1.06); }
+.msg { min-height: 16px; margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.msg[data-kind="error"] { color: oklch(0.80 0.12 25); }
+.msg[data-kind="ok"] { color: var(--live); }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; } }
+
+/* People asking to join: the host decides with a click. */
+.joins:empty { display: none; }
+.join { display: grid; gap: 8px; margin-bottom: 8px; padding: 10px 12px; border-radius: 10px; background: var(--paper); color: var(--paper-ink); box-shadow: inset 3px 0 0 var(--cyan); animation: drop 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.join strong { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.join span { display: flex; gap: 6px; }
+.join .mini { color: var(--paper-ink); }
+.join button:disabled { opacity: 0.5; cursor: default; }
+
+/* Session: who is in a shared session (people and agents, both browsers) and their messages. */
+.people { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.people li { display: grid; grid-template-columns: 10px 1fr; gap: 2px 9px; align-items: baseline; padding: 8px 10px; border-radius: 10px; background: var(--card); }
+.people i { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
+.people strong { font-weight: 600; color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people small { grid-column: 2; color: var(--ink-2); font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
+.people .state { color: var(--muted); font-weight: 500; }
+.people .state[data-s="you"] { color: var(--cyan); }
+.people .state[data-s="working"] { color: var(--live); }
+.messages { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.messages:empty { display: none; }
+.messages li { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.messages strong { color: var(--ink); font-weight: 600; }

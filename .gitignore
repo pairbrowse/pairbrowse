@@ -1,0 +1,13 @@
+node_modules/
+__pycache__/
+.playwright-mcp/
+*.env
+!templates/*.env.example
+.DS_Store
+
+# Local Claude Code settings
+.claude/
+# Never commit PairBrowse user data (profile, secrets, facts, runs, logs)
+.pairbrowse/
+*.log
+graphify-out/

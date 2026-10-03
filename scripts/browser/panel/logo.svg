@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 100 824 824" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#2A2F6E"/>
+      <stop offset="1" stop-color="#0D1030"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.12" r="0.75">
+      <stop offset="0" stop-color="#4FD1E8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#4FD1E8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.95" cy="0.9" r="0.6">
+      <stop offset="0" stop-color="#8B5CF6" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="spark" gradientUnits="userSpaceOnUse" x1="540" y1="370" x2="750" y2="590">
+      <stop offset="0" stop-color="#FFB27A"/>
+      <stop offset="1" stop-color="#E9663A"/>
+    </linearGradient>
+    <linearGradient id="pane" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.05"/>
+    </linearGradient>
+    <filter id="shadow" filterUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#05061A" flood-opacity="0.55"/>
+    </filter>
+    <clipPath id="squircle"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#glow)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#glow2)"/>
+  </g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="185" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="3"/>
+  <!-- the shared browser window -->
+  <g filter="url(#shadow)">
+    <rect x="222" y="262" width="580" height="500" rx="56" fill="url(#pane)" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="7"/>
+    <path d="M226 352 H798" stroke="#FFFFFF" stroke-opacity="0.24" stroke-width="6"/>
+    <circle cx="282" cy="307" r="15" fill="#FFFFFF" fill-opacity="0.55"/>
+    <circle cx="330" cy="307" r="15" fill="#FFFFFF" fill-opacity="0.35"/>
+    <circle cx="378" cy="307" r="15" fill="#FFFFFF" fill-opacity="0.2"/>
+  </g>
+  <!-- Claude: the spark -->
+  <g filter="url(#shadow)">
+    <path d="M645.6 452.3 L658.4 361.1 M662.8 462.4 L715.5 422.6 M667.7 481.6 L758.9 494.4 M657.6 498.8 L697.4 551.5 M638.4 503.7 L625.6 594.9 M621.2 493.6 L568.5 533.4 M616.3 474.4 L525.1 461.6 M626.4 457.2 L586.6 404.5" stroke="url(#spark)" stroke-width="40" stroke-linecap="round" fill="none"/>
+    <circle cx="642" cy="478" r="34" fill="url(#spark)"/>
+  </g>
+  <!-- You: the pointer -->
+  <g filter="url(#shadow)"><g transform="translate(318 420) scale(3.3)">
+    <path d="M0 0 L0 74 L19 56 L32 86 L46 80 L33 51 L58 51 Z" fill="#FFFFFF" stroke="#0D1030" stroke-width="4.5" stroke-linejoin="round"/>
+  </g></g>
+</svg>

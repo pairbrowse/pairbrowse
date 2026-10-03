@@ -1,0 +1,13 @@
+{
+  "name": "pairbrowse",
+  "owner": { "name": "pairbrowse contributors" },
+  "description": "Pair-browse with Claude Code in a visible Chrome window.",
+  "plugins": [
+    {
+      "name": "pairbrowse",
+      "source": "./",
+      "description": "Claude fills web forms in a visible Chrome window; you handle CAPTCHAs, 2FA and final submits.",
+      "version": "0.13.1"
+    }
+  ]
+}

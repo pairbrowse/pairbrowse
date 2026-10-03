@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 100 824 824">
+  <!-- PairBrowse's app icon, flat (no gradients or shadows): where the browser draws its own small logo. -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="#1B1F4E"/>
+  <rect x="222" y="262" width="580" height="500" rx="56" fill="#3F436A" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="7"/>
+  <circle cx="282" cy="307" r="15" fill="#FFFFFF" fill-opacity="0.55"/>
+  <circle cx="330" cy="307" r="15" fill="#FFFFFF" fill-opacity="0.35"/>
+  <circle cx="378" cy="307" r="15" fill="#FFFFFF" fill-opacity="0.2"/>
+  <path d="M645.6 452.3L658.4 361.1M662.8 462.4L715.5 422.6M667.7 481.6L758.9 494.4M657.6 498.8L697.4 551.5M638.4 503.7L625.6 594.9M621.2 493.6L568.5 533.4M616.3 474.4L525.1 461.6M626.4 457.2L586.6 404.5" stroke="#F48C5A" stroke-width="40" stroke-linecap="round" fill="none"/>
+  <circle cx="642" cy="478" r="34" fill="#F48C5A"/>
+  <path d="M318 420L318 664.2L380.7 604.8L423.6 703.8L469.8 684L426.9 588.3L509.4 588.3Z" fill="#FFFFFF" stroke="#0D1030" stroke-width="14.85" stroke-linejoin="round"/>
+</svg>

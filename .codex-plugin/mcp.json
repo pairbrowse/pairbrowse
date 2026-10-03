@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "pairbrowse_browser": { "command": "node", "args": ["./scripts/launch.mjs"], "cwd": ".", "startup_timeout_sec": 300, "tool_timeout_sec": 3600, "default_tools_approval_mode": "approve" },
+    "pairbrowse_runs": { "command": "node", "args": ["./scripts/runs.mjs"], "cwd": ".", "default_tools_approval_mode": "approve" }
+  }
+}

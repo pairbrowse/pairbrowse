@@ -1,0 +1,38 @@
+{
+  "name": "pairbrowse",
+  "version": "0.13.1",
+  "description": "Pair-browse with Codex: it fills sign-ups, listings and settings pages in a visible PairBrowse browser window at full speed, keeps your logins, and hands you only the CAPTCHAs, 2FA and final submits.",
+  "author": {
+    "name": "pairbrowse contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "browser",
+    "playwright",
+    "forms",
+    "automation",
+    "onboarding"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.codex-plugin/mcp.json",
+  "interface": {
+    "displayName": "PairBrowse",
+    "shortDescription": "Fill web forms in a browser you watch and step into",
+    "longDescription": "PairBrowse runs its own visible browser. Codex fills sign-ups, registrations, app listings and store settings at full speed; you solve CAPTCHAs, sign in with 2FA and confirm every pay, publish, delete or submit. Passwords stay in PairBrowse and are typed only on the sites you allow.",
+    "developerName": "pairbrowse contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Sign me up on this site in PairBrowse",
+      "Fill in this form in the PairBrowse browser"
+    ],
+    "brandColor": "#4E6498",
+    "composerIcon": "./scripts/browser/panel/logo.svg",
+    "logo": "./scripts/browser/panel/logo.svg",
+    "logoDark": "./scripts/browser/panel/logo.svg"
+  }
+}

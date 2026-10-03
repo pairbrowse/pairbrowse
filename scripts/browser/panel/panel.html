@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>PairBrowse</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body data-turn="false" data-s="connecting">
+  <header class="top">
+    <img src="logo.svg" alt="" width="22" height="22">
+    <h1>PairBrowse</h1>
+    <span class="where" id="where" hidden></span>
+  </header>
+
+  <section class="status" aria-live="polite">
+    <div class="turn" id="turn"><i aria-hidden="true"></i><div><strong id="turn-text">Your turn</strong><small>Claude continues when the page moves on</small></div></div>
+    <div class="joins" id="joins" role="region" aria-label="Join requests" aria-live="assertive"></div>
+    <div class="driver" id="driver"><span id="driver-text">Waiting for pairbrowse</span></div>
+  </section>
+
+  <section id="session" hidden>
+    <h2>Session</h2>
+    <ul class="people" id="people"></ul>
+    <ol class="messages" id="messages"></ol>
+  </section>
+
+  <section>
+    <h2>Activity</h2>
+    <p class="note" id="collaboration" role="status" aria-live="polite"></p>
+    <ol class="activity" id="activity"><li class="empty">Claude's actions show up here.</li></ol>
+  </section>
+
+  <section>
+    <h2>Remembered details</h2>
+    <p class="note">Used to fill forms. Claude adds what you tell it, and what gets filled in forms is kept here too. Passwords never are.</p>
+    <div id="details"></div>
+    <form class="add" id="add-detail" autocomplete="off">
+      <div class="pair"><input class="field" name="label" placeholder="Label, e.g. VAT number" maxlength="80"><input class="field" name="value" placeholder="Value" maxlength="2000"></div>
+      <button class="primary" type="submit">Add detail</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Passwords</h2>
+    <p class="note">Saved on this computer, readable only by you. Claude sees the name, never the password, and it's only filled in on the sites you list.</p>
+    <div id="secrets"></div>
+    <form class="add" id="add-secret" autocomplete="off">
+      <div class="pair"><input class="field" name="label" placeholder="Name, e.g. Shopify" maxlength="60"><input class="field" name="value" type="password" placeholder="Password" autocomplete="new-password" maxlength="4096"></div>
+      <input class="field" name="domains" placeholder="Sites, e.g. accounts.shopify.com" maxlength="400">
+      <button class="primary" type="submit">Save password</button>
+    </form>
+    <p class="msg" id="profile-msg" role="status" aria-live="polite"></p>
+  </section>
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

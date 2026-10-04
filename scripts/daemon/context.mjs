@@ -189,7 +189,7 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
     await chooseEngine();
     // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
     // colors; see prepareProfile in browser.mjs), written before each launch.
-    prepareProfile(profile());
+    const firstRun = prepareProfile(profile());
     forgetTemporaryDownloads();
     if (!screen && needsVirtualDisplay(config)) screen = await startVirtualDisplay(log);
     createSession(session);
@@ -201,7 +201,7 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
       viewport: null,
       // Its own side panel is the only extension it loads.
       ignoreDefaultArgs: ["--disable-extensions"],
-      args: launchArgs(config),
+      args: launchArgs(config, { firstRun }),
     }, log);
     await ctx.addInitScript({ content: hud.source });
     for (const p of ctx.pages()) { adopt(p, ctx); hud.ensure(p); }

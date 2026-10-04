@@ -65,9 +65,14 @@ export const UNGOOGLED = {
 // Chromium flags for the PairBrowse browser: load its side panel, and nothing else. On
 // macOS (ungoogled-chromium) also hide the profile button. The side panel opens from its pinned
 // toolbar button or with Cmd+Shift+Y.
-export const browserArgs = () => [
+// firstRun (a new profile, on macOS): the browser starts with no window and the side panel opens
+// the first one (background.js). Chromium acknowledges new tab page extensions at the first tab
+// shown in a profile, and a startup tab comes before the panel is loaded, so new users would get
+// "Did you mean to change this page?". Only for new profiles: there the panel's worker always
+// starts (its install); in an existing one it may not, and the launch would wait for a window.
+export const browserArgs = ({ firstRun = false } = {}) => [
   `--disable-extensions-except=${PANEL_DIR}`, `--load-extension=${PANEL_DIR}`,
-  ...(process.platform === "darwin" ? ["--show-avatar-button=never"] : []),
+  ...(process.platform === "darwin" ? ["--show-avatar-button=never", ...(firstRun ? ["--no-startup-window"] : [])] : []),
 ];
 
 // The PairBrowse colors: Chromium's built-in color theme (Settings > Appearance), navy from the
@@ -172,11 +177,13 @@ export function localStatePreferences(state) {
 }
 
 // Writes the settings above into a profile folder (before a launch, and when installing).
+// Returns true for a new profile (Chromium hasn't run in it yet): launchArgs' firstRun.
 export function prepareProfile(profile, panelId = panelExtensionId()) {
   const dir = join(profile, "Default");
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "Preferences");
   const secureFile = join(dir, "Secure Preferences");
+  const firstRun = !existsSync(secureFile);
   const prefs = readJson(file, {});
   const secure = readJson(secureFile, null);
   const oldPanels = oldPanelIds(secure, panelId);
@@ -185,6 +192,7 @@ export function prepareProfile(profile, panelId = panelExtensionId()) {
   const localStateFile = join(profile, "Local State");
   const localState = readJson(localStateFile, null);
   if (localState && localStatePreferences(localState)) writeFileSync(localStateFile, JSON.stringify(localState));
+  return firstRun;
 }
 
 // Agents work in tabs nobody is looking at. macOS still runs a hidden tab's renderer (and the
@@ -195,7 +203,7 @@ const FEATURES = ["ForceForegroundPriorityForAllTabs", ...(process.env.PLAYWRIGH
 const ENABLE = "--enable-features=";
 
 // Every flag the daemon launches the PairBrowse browser with (the install self-check uses the same).
-export function launchArgs(config = {}) {
+export function launchArgs(config = {}, { firstRun = false } = {}) {
   const extra = config.chromeArgs || [];
   const features = [...FEATURES, ...extra.filter((a) => a.startsWith(ENABLE)).flatMap((a) => a.slice(ENABLE.length).split(","))];
   return [
@@ -206,7 +214,7 @@ export function launchArgs(config = {}) {
     // Keep rendering when the window is behind other windows, so the live view stays live.
     "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling",
     ENABLE + [...new Set(features.filter(Boolean))].join(","),
-    ...browserArgs(),
+    ...browserArgs({ firstRun }),
     // Only test runs are headless, and nobody is there to see a notification: without this the
     // first one starts the test browser's notification helper and macOS asks to allow it.
     ...(extra.some((a) => a.startsWith("--headless")) ? ["--disable-notifications"] : []),

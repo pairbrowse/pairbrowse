@@ -217,3 +217,22 @@ test("hidden tabs keep foreground priority, in one --enable-features that keeps 
   const bundle = readFileSync(join(runtime, "node_modules", "playwright-core", "lib", "coreBundle.js"), "utf8");
   for (const [, list] of bundle.matchAll(/"--enable-features=([A-Za-z0-9,]+)"/g)) for (const f of list.split(",")) assert.ok(features.includes(f), `Playwright's ${f}`);
 });
+
+test("a new profile starts without a window on macOS, so the side panel opens the first one", async () => {
+  const { launchArgs, prepareProfile } = await import("../scripts/browser.mjs");
+  const { mkdtempSync, writeFileSync, readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const profile = mkdtempSync(join(tmpdir(), "pb-first-"));
+  assert.equal(prepareProfile(profile), true, "no Secure Preferences yet: a new profile");
+  writeFileSync(join(profile, "Default", "Secure Preferences"), "{}");
+  assert.equal(prepareProfile(profile), false, "Chromium has run in it");
+  const mac = process.platform === "darwin";
+  assert.equal(launchArgs({}, { firstRun: true }).includes("--no-startup-window"), mac);
+  // An existing profile keeps its startup tab: the panel's worker may not start there to open one.
+  assert.ok(!launchArgs({}).includes("--no-startup-window"));
+  assert.ok(!launchArgs({}, { firstRun: false }).includes("--no-startup-window"));
+  // The window the panel opens instead, only when there is none.
+  const background = readFileSync(new URL("../scripts/browser/panel/background.js", import.meta.url), "utf8");
+  assert.match(background, /windows\.getAll\(\)\)\.length\) await chrome\.windows\.create\(\{ url: "about:blank" \}\)/);
+});

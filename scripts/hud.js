@@ -68,9 +68,10 @@
     else if (SCROLL_KEYS.has(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey) record("scroll", "");
     else if (e.key.length > 1) record("key", e.key); // Enter, Escape, Tab: never the letters
   }, opts);
-  // A wheel is always a person (Claude never sends one). Plain scroll events aren't counted: pages
-  // scroll themselves (menus, smooth scrolling) and Claude's clicks bring buttons into view.
-  addEventListener("wheel", (e) => { const n = now(); personAt = n; if (e.isTrusted && n - lastWheel > 800) { lastWheel = n; record("wheel", ""); } }, opts);
+  // A wheel is a person's, unless an agent's scroll step just put its cursor here (agentAt): it
+  // wheels in small steps right after. Plain scroll events aren't counted: pages scroll themselves
+  // (menus, smooth scrolling) and Claude's clicks bring buttons into view.
+  addEventListener("wheel", (e) => { const n = now(); if (n - agentAt < 1500) return; personAt = n; if (e.isTrusted && n - lastWheel > 800) { lastWheel = n; record("wheel", ""); } }, opts);
   // Where the person is reading (the top of their viewport and its height, in document pixels):
   // a shared tab marks it on the other side's scrollbar. Taken from scrolling that follows their
   // own input (wheel, keys, a press on the scrollbar, touch), never the page's or an agent's.

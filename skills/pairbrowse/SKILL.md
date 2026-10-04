@@ -38,7 +38,7 @@ Make a task list with one item per page or section, and set a badge:
 ## Fast or step by step: decide per page
 
 `pairbrowse_run` steps, one key each: `go`, `fill` {Label: value}, `check`, `uncheck`, `select`
-{Label: Option}, `click`, `press`, `upload` {Label: path}, `waitFor`, `expect`, and
+{Label: Option}, `click`, `press`, `scroll` ("down", "up" or pixels: smooth, with the cursor; use it, not PageDown, to scroll), `upload` {Label: path}, `waitFor`, `expect`, and
 `handoff` {say, until} (or `untilGone`). Labels match the label, placeholder or name. Values may use
 `{{var}}` from `vars`. It stops at the first problem, says why, and returns an outline of the page.
 `saveAs` saves a flow that fully worked; `playbook` + `vars` replays it; `list: true` lists saved ones.

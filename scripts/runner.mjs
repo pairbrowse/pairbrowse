@@ -25,7 +25,7 @@ export const RUN_TOOL = {
   description:
     "Run several browser steps in one call, fast, on the current tab. Use it for each page (or a whole saved flow) instead of one tool call per field. " +
     'Steps, one key each: {"go":url} {"fill":{"Label":"value",...}} {"check":"Label"} {"uncheck":"Label"} {"select":{"Label":"Option"}} ' +
-    '{"click":"Button or link text"} {"press":"Enter"} {"upload":{"Label":"/abs/path"}} {"waitFor":"text"} {"expect":"text"} ' +
+    '{"click":"Button or link text"} {"press":"Enter"} {"scroll":"down"|"up"|pixels} {"upload":{"Label":"/abs/path"}} {"waitFor":"text"} {"expect":"text"} ' +
     '{"handoff":{"say":"what the user must do","until":"text that appears after"}} (or "untilGone"). ' +
     "Labels match the field's label, placeholder or name. Values may use {{var}} from vars. Stops at the first problem and says why. " +
     "Returns where it ended and an outline of the page (fields, buttons, errors). Save a working flow with saveAs, replay it with playbook + vars; list saved ones with list:true. " +
@@ -170,8 +170,10 @@ export function preflight(steps, uploadsDir) {
         const problem = uploadProblem(p, uploadsDir); // the same checks as pairbrowse_upload
         if (problem) return `${at}: ${problem}`;
       }
+    } else if (kind === "scroll") {
+      if (!(arg === "down" || arg === "up" || (Number.isFinite(Number(arg)) && Number(arg) !== 0 && Math.abs(Number(arg)) <= 20000))) return `${at}: scroll takes "down", "up" or a number of pixels (negative: up).`;
     } else if (!["fill", "check", "uncheck", "select", "press", "waitFor", "expect", "handoff"].includes(kind)) {
-      return `${at}: unknown step. Use one of go, fill, check, uncheck, select, click, press, upload, waitFor, expect, handoff.`;
+      return `${at}: unknown step. Use one of go, fill, check, uncheck, select, click, press, scroll, upload, waitFor, expect, handoff.`;
     }
   }
   return null;
@@ -409,6 +411,24 @@ export async function runSteps(page, steps, hooks) {
           }
         }
         await page.keyboard.press(String(arg));
+      } else if (kind === "scroll") {
+        // Like a person: the cursor onto the page, then the wheel in small, eased steps (a screen
+        // for "down" / "up"), so the page glides and everyone watching sees who scrolls.
+        const [w, h] = await page.evaluate(() => [innerWidth, innerHeight]);
+        const total = arg === "down" ? Math.round(h * 0.8) : arg === "up" ? -Math.round(h * 0.8) : Math.round(Number(arg));
+        const x = Math.round(w / 2), y = Math.round(h / 2);
+        await hooks.cursor?.({ boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, "");
+        await page.mouse.move(x, y);
+        const n = Math.min(40, Math.max(6, Math.ceil(Math.abs(total) / 60)));
+        let sent = 0;
+        for (let k = 1; k <= n; k++) {
+          const eased = Math.round(total * (1 - Math.cos((Math.PI * k) / n)) / 2); // slow, fast, slow
+          await page.mouse.wheel(0, eased - sent);
+          sent = eased;
+          if (k % 10 === 0) await hooks.cursor?.({ boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, ""); // still the agent's
+          await new Promise((r) => setTimeout(r, 16));
+        }
+        hooks.activity(`Scrolled ${total > 0 ? "down" : "up"}`);
       } else if (kind === "upload") {
         // Like pairbrowse_upload: files from anywhere (checked, copied into the uploads folder),
         // into a field, an upload button or a drop zone.

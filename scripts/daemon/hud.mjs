@@ -114,9 +114,9 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   function pointAt(page, box, act) {
     if (box) return quietly(page, JSON.stringify({ x: box.x + Math.min(box.width / 2, 24), y: box.y + box.height / 2, act }), "cursor");
   }
-  // Moves the cursor to an element (fast mode); doesn't wait for anything.
+  // Moves the cursor to an element (fast mode). Returns a promise: most steps go on without it.
   function cursorTo(page, el, act) {
-    within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)).then((box) => pointAt(page, box, act));
+    return within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)).then((box) => pointAt(page, box, act)).catch(() => {});
   }
   // Before a browser tool acts on an element: a snapshot ref, or a selector (the same one the tool
   // uses). pageFor(): the tab it acts in (null: none).

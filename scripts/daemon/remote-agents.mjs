@@ -24,21 +24,29 @@ export function createRemoteAgents({ serve, dir, log = () => {} }) {
   return {
     // One MCP message from a joiner's agent (agent: its id on their side). send(line): its
     // answers, back to that joiner. who: { name, app, key }.
-    line(who, agent, line, send) {
+    // startTab: the tab (its place among this browser's tabs) the joiner is looking at: a new
+    // participant starts there, as a person's agent would.
+    line(who, agent, line, send, startTab = -1) {
       if (typeof line !== "string" || line.length > LINE_MAX || !/^[\w-]{1,40}$/.test(String(agent))) return false;
       const id = `${who.key}|${agent}`;
       let d = conns.get(id);
       if (!d) {
         d = new Duplex({
           read() {},
-          write(chunk, _enc, cb) { for (const l of chunk.toString().split("\n")) if (l) { try { send(l); } catch {} } cb(); },
+          write(chunk, _enc, cb) { for (const l of chunk.toString().split("\n")) if (l && !l.includes('"id":"pb-start"')) { try { send(l); } catch {} } cb(); },
         });
         d.on("error", () => {});
         conns.set(id, d);
         d.once("close", () => conns.delete(id));
         serve(d, { remote: { name: who.name, key: who.key, files: folder(who.key) } }).catch?.((e) => log("remote agent", e?.message || e));
+        d.pendingStart = startTab;
       }
       d.push(line + "\n");
+      // After its initialize: to the tab its person is on (the answer stays here).
+      if (d.pendingStart >= 0 && line.includes('"notifications/initialized"')) {
+        d.push(JSON.stringify({ jsonrpc: "2.0", id: "pb-start", method: "tools/call", params: { name: "browser_tabs", arguments: { action: "select", index: d.pendingStart } } }) + "\n");
+        d.pendingStart = -1;
+      }
       return true;
     },
     // A file sent over in parts by a joiner's agent, for an upload in a shared tab: { token,

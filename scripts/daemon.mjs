@@ -367,6 +367,7 @@ const serve = createServe({
       if (!page) return { text: "no picture page", error: true };
       if (Array.isArray(choose)) { page.once("filechooser", (fc) => fc.setFiles(choose.map(String)).catch(() => {})); return { text: "will choose" }; }
       if (args.shot) { await page.screenshot({ path: String(args.shot) }); return { text: "saved" }; }
+      if (args.list) { const ctx = await context.getContext(); return { text: JSON.stringify(await Promise.all(follow.pages().filter((p) => !p.isClosed()).map(async (p) => ({ index: ctx.pages().indexOf(p), title: await p.title().catch(() => "") })))) }; }
       if (type) { await page.keyboard.type(String(type), { delay: 20 }); return { text: "typed" }; }
       const index = (await context.getContext()).pages().indexOf(page);
       return { text: JSON.stringify({ index, value: expr ? await page.evaluate(String(expr)) : null }) };

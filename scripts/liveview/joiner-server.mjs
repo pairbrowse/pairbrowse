@@ -130,7 +130,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       if (j.agentCalls.length >= SCREEN_PER_SECOND) return { code: 429, body: { error: "Too many requests. Slow down." } };
       j.agentCalls.push(t);
       if (size > BODY_MAX.input) return { code: 413, body: { error: "Too large." } };
-      const r = route === "agent" ? live.agent(parsed, j) : live.file(parsed, j);
+      const r = route === "agent" ? await live.agent(parsed, j) : live.file(parsed, j);
       return r?.problem ? { code: 400, body: { error: r.problem } } : { code: 200, body: r };
     }
     return { code: 404, body: { error: "Unknown request." } };

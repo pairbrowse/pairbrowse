@@ -16,8 +16,12 @@ let state = "none";
 function setStatus(text) {
   if (text) { statusText.textContent = text; statusBox.classList.remove("hidden"); } else statusBox.classList.add("hidden");
 }
+let tagTimer = null;
 function showLive(on) {
+  // Says whose tab it is, then gets out of the way (it comes back when the pointer goes near it).
   tag.classList.toggle("on", on);
+  clearTimeout(tagTimer);
+  if (on) tagTimer = setTimeout(() => tag.classList.remove("on"), 4000);
   setStatus(on ? "" : statusText.textContent);
 }
 
@@ -48,6 +52,7 @@ function send(ev) {
 let moveQueued = null;
 const BUTTON = ["left", "middle", "right"];
 addEventListener("pointermove", (e) => {
+  if (e.clientX < 220 && e.clientY < 60 && (state === "connected" || view === "frames") && !tag.classList.contains("on")) showLive(true);
   const at = norm(e);
   if (!at) return;
   const first = !moveQueued;

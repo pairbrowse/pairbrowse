@@ -279,11 +279,12 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   }
   // A joiner's own agent at work in this browser (daemon/remote-agents.mjs): its MCP messages,
   // its answers back on the channel; files it sends over for an upload.
-  function remoteAgent(body, j) {
+  async function remoteAgent(body, j) {
     if (!remoteAgents) return { problem: "Shared browser mode isn't available here." };
     if (j.invite.role !== "drive") return { problem: "This code is for watching only: your agent can't act in the host's browser." };
     const key = joinerKey(j);
-    const ok = remoteAgents.line({ name: j.name, app: j.app, key }, String(body?.a || ""), body?.line, (line) => push.broadcast("agent", { a: String(body.a), line }, { to: key }));
+    const start = typeof body?.tab === "string" ? (await getContext()).pages().findIndex((p) => idOf(p) === body.tab) : -1;
+    const ok = remoteAgents.line({ name: j.name, app: j.app, key }, String(body?.a || ""), body?.line, (line) => push.broadcast("agent", { a: String(body.a), line }, { to: key }), start);
     return ok ? { ok: true } : { problem: "Bad message." };
   }
   function remoteFile(body, j) {

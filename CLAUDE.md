@@ -27,7 +27,7 @@ through the live view, docked or in the Browser pane).
 ```bash
 npm test                      # live tests: PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime
                               # native launch tests: PAIRBROWSE_TEST_ENGINE=~/.pairbrowse/engine
-                              # shared browser mode, opt-in: PAIRBROWSE_TEST_REAL_TUNNEL=1, PAIRBROWSE_TEST_YOUTUBE=1,
+                              # shared browser mode, opt-in: PAIRBROWSE_TEST_REAL_TUNNEL=1, PAIRBROWSE_TEST_YOUTUBE=1, PAIRBROWSE_TEST_EXCALIDRAW=1,
                               # PAIRBROWSE_TEST_EXECUTABLE=<PairBrowse browser>, PAIRBROWSE_TEST_DOCKER=1 (two machines)
 claude plugin validate .
 # Codex: install into a throwaway CODEX_HOME (codex plugin marketplace add . && codex plugin add pairbrowse@pairbrowse)

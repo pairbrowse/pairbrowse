@@ -177,9 +177,9 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     },
     // Shared browser mode: one MCP message from an agent here (agent: its id) for its participant
     // in the host's browser; answers come on the channel (on.agent). Drive codes only.
-    async agent(agentId, line) {
+    async agent(agentId, line, tab = "") {
       if (phase !== "in" || code.mode !== "shared" || code.role !== "drive") return { error: "not driving a shared browser" };
-      const r = await ask("agent", { a: agentId, line });
+      const r = await ask("agent", { a: agentId, line, ...(tab ? { tab } : {}) });
       return r?.code === 200 ? r.body : { error: r?.body?.error || "no answer" };
     },
     // A part of a file an agent here uploads in the host's browser.

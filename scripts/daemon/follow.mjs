@@ -608,8 +608,10 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const done = pendingCalls.get(k);
     if (done) { pendingCalls.delete(k); done(m); }
   }
+  // The host's tab the person here is looking at (its picture page is in sight), or "".
+  const tabInSight = (cur) => { for (const [id, page] of cur.pages) { const sc = cur.screens.get(page); if (sc && !sc.hiddenSince) return id; } return ""; };
   function sendLine(cur, agent, msg, wait = true) {
-    if (!wait) return cur.join.agent(agent, JSON.stringify(msg)).then(() => null);
+    if (!wait) return cur.join.agent(agent, JSON.stringify(msg), tabInSight(cur)).then(() => null);
     return new Promise((resolve) => {
       const k = `${agent}|${msg.id}`;
       const timer = setTimeout(() => { pendingCalls.delete(k); resolve({ error: { code: -32000, message: "The host's browser didn't answer in time." } }); }, AGENT_CALL_MS);

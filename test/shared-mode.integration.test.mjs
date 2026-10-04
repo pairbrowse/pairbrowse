@@ -61,7 +61,7 @@ function home(prefix) {
   return dir;
 }
 
-async function run({ noDirect = false, realTunnel = false, youtube = false, joinerApp = "claude-code" } = {}) {
+async function run({ noDirect = false, realTunnel = false, youtube = false, excalidraw = false, joinerApp = "claude-code" } = {}) {
   const require = createRequire(join(runtime, "package.json"));
   // PAIRBROWSE_TEST_EXECUTABLE: another Chromium build to run both sides on (the PairBrowse browser, say).
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("playwright").chromium.executablePath();
@@ -160,6 +160,29 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, join
     assert.equal(stats.muted, false, "the sound plays, without a click first");
     assert.equal(stats.paused, false);
     if (realTunnel) assert.ok(stats.route, "a route was found");
+    if (excalidraw) {
+      // Excalidraw in the host's tab: the joiner picks the rectangle tool with R and drags; a shape
+      // appears in the host's drawing (Excalidraw keeps it in the host's browser storage).
+      stage = "the joiner draws a rectangle in the host's Excalidraw";
+      assert.ok(!(await tool(host.call, "browser_navigate", { url: "https://excalidraw.com/" })).result.isError);
+      await sleep(5000);
+      await tool(host.call, "pairbrowse_collaboration", { action: "release" });
+      const count = async () => Number(await evaluate(host.call, "() => { try { return JSON.parse(localStorage.getItem('excalidraw') || '[]').filter((e) => !e.isDeleted).length; } catch { return -1; } }"));
+      const before = await count();
+      await onScreen({ type: "r" });
+      await sleep(500);
+      const a = toJoiner(0.35, 0.4), b = toJoiner(0.6, 0.65);
+      const moves = [];
+      for (let i = 1; i <= 15; i++) moves.push({ type: "mouse", action: "mouseMoved", x: Math.round(a.x + (b.x - a.x) * i / 15), y: Math.round(a.y + (b.y - a.y) * i / 15), button: "left", buttons: 1 });
+      await input([{ type: "mouse", action: "mouseMoved", ...a }, { type: "mouse", action: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 }]);
+      for (const m of moves) { await input([m]); await sleep(30); }
+      await input([{ type: "mouse", action: "mouseReleased", ...b, button: "left", buttons: 0, clickCount: 1 }]);
+      const after = await until("a shape in the host's drawing", async () => { const n = await count(); return n > before && n; }, 15_000).catch(() => count());
+      console.log(`excalidraw shapes: before ${before}, after ${after}`);
+      if (process.env.SHOT_JOINER) { await sleep(800); await onScreen({ shot: process.env.SHOT_JOINER }); }
+      assert.ok(after > before, `a rectangle was drawn (before ${before}, after ${after})`);
+      return;
+    }
     if (youtube) {
       // A real video on YouTube, in the host's tab: the joiner gets it moving, with sound.
       stage = "a YouTube video plays smoothly in the joiner's picture";
@@ -244,6 +267,8 @@ test("shared browser: the joiner sees the host's tab live (direct connection) an
 test("shared browser: the joiner's Codex works in the host's browser too", { skip: !runtime, timeout: 240_000 }, () => run({ joinerApp: "codex-mcp-client" }));
 test("shared browser without a direct connection: pictures and input through the join channel", { skip: !runtime, timeout: 240_000 }, () => run({ noDirect: true }));
 // Through a real Cloudflare Quick Tunnel, as between two computers (needs the network and cloudflared).
+// Excalidraw on the real site through the picture (needs the network).
+test("shared browser: the joiner draws in the host's Excalidraw", { skip: !runtime || process.env.PAIRBROWSE_TEST_EXCALIDRAW !== "1", timeout: 300_000 }, () => run({ excalidraw: true }));
 // A real YouTube video through the picture (needs the network).
 test("shared browser: a YouTube video plays smoothly with sound", { skip: !runtime || process.env.PAIRBROWSE_TEST_YOUTUBE !== "1", timeout: 300_000 }, () => run({ youtube: true }));
 test("shared browser through a real Quick Tunnel", { skip: !runtime || process.env.PAIRBROWSE_TEST_REAL_TUNNEL !== "1", timeout: 300_000 }, () => run({ realTunnel: true }));

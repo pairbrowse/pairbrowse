@@ -22,9 +22,9 @@ const INSTALLER = join(dirname(fileURLToPath(import.meta.url)), "native-install.
 // name appended). A platform whose sha256 is null has no build yet.
 export const NATIVE = {
   version: "150.0.7871.114",
-  arm64: { file: "pairbrowse-150.0.7871.114-macos-arm64.zip", sha256: "097f1231f13f1bba3a2580bf3f83d682571e329496fbe5261fc22a4cc9e5a743" },
-  x64: { file: "pairbrowse-150.0.7871.114-macos-x86_64.zip", sha256: "148496489ffabe2a649a3283e83dcdc2f42a5e2fa5df5294c24b11f2e8d373e8" },
-  linux: { file: "pairbrowse-150.0.7871.114-linux-x64.tar.xz", sha256: "677c9f5c19a8a48e39b890206ef9aee1c0f1647f41d73ee7d5f7d9331fcb75e0" },
+  arm64: { file: "pairbrowse-150.0.7871.114-macos-arm64.zip", sha256: "9b874b9cc28e50822df9e34a799e81401344814616d62f3d827184c691368eec" },
+  x64: { file: "pairbrowse-150.0.7871.114-macos-x86_64.zip", sha256: "4084043a79d283cb7e06d3c53d42cdd4dcf1ba9ebf0fd13b362d20b1a618566c" },
+  linux: { file: "pairbrowse-150.0.7871.114-linux-x64.tar.xz", sha256: "5398af78e2a8163a8f08bb1620ae822d774ff821c695f78c73e1d447c534adac" },
   windows: { file: "pairbrowse-150.0.7871.114-windows-x64.zip", sha256: null },
   engine: {
     file: "pairbrowse-engine-150.0.7871.114.tgz",

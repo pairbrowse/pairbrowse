@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,6 +25,21 @@ test("platforms without a cloudflared build say so", async () => {
 
 test("bad ports are refused before anything starts", async () => {
   await assert.rejects(startQuickTunnel(0, { exe: "/nonexistent" }), /bad live view port/);
+});
+
+test("the address is handed out only once cloudflared has a connection and the name resolves", async () => {
+  // A stand-in for cloudflared: the address first, the connection a moment later.
+  const exe = join(home, "fake-cloudflared");
+  writeFileSync(exe, `#!${process.execPath}\nconsole.error("INF |  https://quiet-river-test.trycloudflare.com  |");\nsetTimeout(() => console.error("INF Registered tunnel connection connIndex=0"), 300);\nsetInterval(() => {}, 1000);\n`);
+  chmodSync(exe, 0o755);
+  const t0 = Date.now();
+  let asked = 0;
+  const t = await startQuickTunnel(4321, { exe, resolves: async (host) => { assert.equal(host, "quiet-river-test.trycloudflare.com"); return ++asked >= 3; } });
+  try {
+    assert.equal(t.url, "https://quiet-river-test.trycloudflare.com");
+    assert.equal(asked, 3, "waited until the name resolved");
+    assert.ok(Date.now() - t0 >= 1200, "and for the connection");
+  } finally { t.stop(); }
 });
 
 test.after(() => rmSync(home, { recursive: true, force: true }));

@@ -101,12 +101,15 @@ test("watch links: page and events, no input, tabs or profile", async () => {
 test("drive links: input and tabs, still no profile", async () => {
   const invites = createInvites();
   const humans = [];
-  const { view, port } = await live({ invites, onHumanInput: () => humans.push(1) });
+  const { view, port } = await live({ invites, onHumanInput: (page, who, changes = true) => humans.push(changes) });
   try {
     const d = invites.create({ role: "drive", label: "Dan" });
     assert.equal((await request(port, "POST", `/${d.key}/input`, { body: { type: "text", text: "x" } })).status, 204);
     assert.equal((await request(port, "POST", `/${d.key}/tab`, { body: { i: 0 } })).status, 204);
     assert.equal(humans.length, 2, "a guest's input counts as a human's, so Claude waits");
+    // Only moving the pointer or scrolling: still a person there, but nothing an agent's refs point at changed.
+    assert.equal((await request(port, "POST", `/${d.key}/input`, { body: [{ type: "mouse", action: "mouseMoved", x: 5, y: 5 }, { type: "wheel", x: 5, y: 5, dy: 10 }] })).status, 204);
+    assert.deepEqual(humans, [true, true, false]);
     assert.equal((await request(port, "GET", `/${d.key}/profile.json`)).status, 403);
     assert.equal((await request(port, "POST", `/${d.key}/profile`, { body: { op: "setDetail", label: "a", value: "b" } })).status, 403);
     assert.equal((await request(port, "POST", `/${d.key}/input`, { origin: "https://evil.example", body: { type: "text", text: "x" } })).status, 403, "cross-site");

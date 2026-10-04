@@ -224,11 +224,13 @@ const sharing = createSharing({
   config, log, host: HOST, notify: panel.notify, hostNote,
   view: {
     secretDomains,
-    onJoinerPerson: (page, who, did, acting) => { presence.elsewhere(page, who, did, acting); bumpRevision(); },
+    // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
+    // their pointer alone, or just being in the tab, leaves the page as it was.
+    onJoinerPerson: (page, who, did, acting, changed = false) => { presence.elsewhere(page, who, did, acting); if (changed) bumpRevision(); },
     onPause: (paused, who) => pressPause(paused, who || HOST), pauseState,
     onJoinerActivity: (page, text, who, from) => hud.addActivity(text, who, page, from),
     extraOrigins: panel.origins, getContext: () => context.getContext(), currentUrl: () => context.currentUrl(), profile: facts.profile, tabMeta,
-    onHumanInput: (page, who) => { presence.humanIn(page, who || HOST); bumpRevision(); },
+    onHumanInput: (page, who, changes = true) => { presence.humanIn(page, who || HOST); if (changes) bumpRevision(); },
     shared: {
       host: HOST, readForm: forms.read, arrange: (pages) => tabOrder.arrange(pages), order: (pages) => tabOrder.strip(pages), showPointers: hud.showPointers,
       // The host's person typing in that tab wins: the joiner gets the host's value instead.
@@ -319,6 +321,9 @@ async function shutdown(code) {
   shuttingDown = true;
   socketServer?.close();
   sharing.stopTunnel();
+  // Joiners' channels end before the browser closes: its tabs closing isn't the host closing them,
+  // and joiners keep their copies.
+  sharing.closeLiveView();
   follow.stop().catch(() => {});
   cobrowse.stop();
   setTimeout(() => process.exit(code), SHUTDOWN_GRACE_MS).unref();

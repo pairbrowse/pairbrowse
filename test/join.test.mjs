@@ -166,7 +166,7 @@ async function setup(extra = {}) {
   const view = await startLiveView({
     getContext: async () => ctx, currentUrl: async () => pages[0].url(), invites, tunnelHost: () => "quiet-river.trycloudflare.com",
     onJoinRequest: (e) => requests.push(e), secretDomains: () => ["bank.example"],
-    onJoinerPerson: (page, name, did) => people.push({ url: page.url(), name, did }),
+    onJoinerPerson: (page, name, did, acting, changed) => people.push({ url: page.url(), name, did, ...(changed ? { changed } : {}) }),
     ...extra,
   });
   return { view, invites, requests, people, pages, gport: view.guestPort, port: view.port, ownerKey: view.url.split("/").at(-2) };
@@ -229,6 +229,8 @@ test("join code keys: nothing before approval, owner approves, bound per joiner,
     assert.equal(s.pages.at(-1).url(), "https://docs.example/a");
     assert.match(ok.json.opened.n1, /^[0-9a-f]{8}$/);
     assert.deepEqual(s.people.at(-1), { url: "https://shop.example.com/cart", name: "Dee", did: ['typed in "Email"'] }, "a person there counts as a person here");
+    // Their tab changes make refs here stale; only being in the tab doesn't (elsewhere() decides from what they did).
+    assert.deepEqual(s.people.slice(-3).map((p) => !!p.changed), [true, true, false]);
     assert.equal((await request(s.gport, "POST", `/${d.key}/tabs`, { headers: who(dee, "Dee"), body: "not json" })).status, 400);
     // Revoked: gone at once.
     s.invites.revoke(w.id);
@@ -257,6 +259,19 @@ test("the joiner's connection: asks, waits for approval, then gets the shared ta
     assert.equal(j.phase, "left");
     assert.equal(s.view.approvals.list().length, 0, "leaving ends the approval");
   } finally { s.view.close(); }
+});
+
+test("the joiner's status when the tunnel answers for a host that's gone: plain words, still retrying", async () => {
+  const { createServer } = await import("node:http");
+  const tunnel = createServer((req, res) => { res.writeHead(530, { "content-type": "text/html" }); res.end("<html>error code: 1033</html>"); });
+  await new Promise((r) => tunnel.listen(0, "127.0.0.1", r));
+  const j = startJoin({ join: { url: `http://127.0.0.1:${tunnel.address().port}`, key: "k".repeat(43), role: "drive", label: "Bob" }, name: "Dee" });
+  try {
+    for (let i = 0; i < 40 && j.phase !== "offline"; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(j.phase, "offline");
+    assert.match(j.message, /Can't reach the host's session/);
+    assert.doesNotMatch(j.message, /530/);
+  } finally { await j.leave().catch(() => {}); tunnel.close(); }
 });
 
 test("letting a joiner in through Claude always asks; turning one away doesn't", async () => {

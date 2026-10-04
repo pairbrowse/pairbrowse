@@ -199,11 +199,12 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("fh-");
   const joinHome = home("fj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob", browserDriver: "playwright" }));
+  // No participantName on the host: its name comes from PAIRBROWSE_PARTICIPANT (env below).
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, browserDriver: "playwright" }));
   writeFileSync(join(hostHome, "secrets.env"), "SHOP_PASSWORD=hunter2hunter2\nSHOP_PASSWORD_DOMAINS=shop.pbtest.example\n");
   chmodSync(join(hostHome, "secrets.env"), 0o600);
   writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice", browserDriver: "playwright" }));
-  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
+  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_PARTICIPANT: h === hostHome ? "Bob" : "" });
   const daemons = [];
   const connect = async (h) => {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
@@ -245,7 +246,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     stage = "Alice joins to drive; Carol (a plain client) to watch";
     const codeOf = (made) => made.match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     const code = codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" })));
-    assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code })), /Asked Bob/);
+    assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code, name: "Alice" })), /Asked Bob to let Alice in/);
     const aliceReq = await until("Alice's request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Alice/)?.[1]);
     await tool(host.call, "pairbrowse_invite", { action: "approve", id: aliceReq });
     const { parseJoinCode } = await import("../scripts/join.mjs");
@@ -349,6 +350,18 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     await tool(host.call, "browser_press_key", { key: "Shift" });
     assert.ok(Date.now() - t1 < 1500, "a watcher's pointer doesn't pause the host's agent");
     assert.equal((await carol("pointer", { me: { id: wire.id, x: 1, y: 1 }, junk: "x".repeat(5000) })).status, 413, "bounded");
+
+    stage = "the host's own pointer crosses under the host's name; the host's browser names Alice";
+    const hostView = text(await tool(host.call, "pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)[0];
+    assert.ok((await fetch(`${hostView}tab`, { method: "POST", body: JSON.stringify({ i: hostForm.index }) })).ok);
+    const hostPointer = await until("Bob's pointer reaches Carol", async () => {
+      await fetch(`${hostView}input`, { method: "POST", body: JSON.stringify([{ type: "mouse", action: "mouseMoved", x: 70 + Math.floor(Math.random() * 40), y: 300 }]) });
+      return seen.pointers.find((p) => p.k === "host");
+    }, 15_000);
+    assert.equal(hostPointer.who, "Bob");
+    const hostState = JSON.stringify(await state(hostView));
+    assert.match(hostState, /Alice/);
+    assert.doesNotMatch(hostState, /"(Host|Guest|The host)"/, "names, not stand-ins");
 
     stage = "agents see what the other side's agents do, and message each other across the session";
     const daveCode = parseJoinCode(codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Dave", share: "code" }))), { allowLocal: true });

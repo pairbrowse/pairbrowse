@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { EventEmitter } from "node:events";
-import { encodeJoinCode, parseJoinCode, createApprovals, stripUrl, stripText, newJoinerId, personLabel, appName } from "../scripts/join.mjs";
+import { encodeJoinCode, parseJoinCode, createApprovals, stripUrl, stripText, newJoinerId, personLabel, appName, displayName } from "../scripts/join.mjs";
+import { readAccount } from "../scripts/util.mjs";
 import { startJoin } from "../scripts/relay.mjs";
 import { startLiveView, createInvites } from "../scripts/liveview.mjs";
 import { TabClaims } from "../scripts/collaboration.mjs";
@@ -80,6 +81,27 @@ test("joiners see addresses without query strings or fragments", () => {
   assert.equal(stripText("Opened https://a.example/p?q=secret#f and http://b.example/?x=1"), "Opened https://a.example/p and http://b.example/");
   assert.equal(personLabel("Alice", appName("codex-mcp-client")), "Alice · Codex");
   assert.equal(personLabel("Alice"), "Alice (by hand)");
+});
+
+test("a person's default name: participantName, PAIRBROWSE_PARTICIPANT, the account's full name, the login; never a stand-in", () => {
+  const account = { fullName: "Ada Lovelace", username: "ada" };
+  assert.equal(displayName({ configured: "Bob", env: "Carol", ...account }), "Bob");
+  assert.equal(displayName({ configured: null, env: "Carol", ...account }), "Carol");
+  assert.equal(displayName({ configured: "", env: "You", ...account }), "Ada Lovelace", "an agent's \"You\" names nobody");
+  assert.equal(displayName({ configured: "Host", env: undefined, fullName: "", username: "ada" }), "ada");
+  assert.equal(displayName({ configured: "PairBrowse", fullName: "Guest" }), "PairBrowse", "only stand-ins: still something");
+  assert.equal(displayName({ configured: `<b>${"x".repeat(60)}`, ...account }), "b" + "x".repeat(39), "cleanName's limits");
+  assert.equal(displayName({}), "");
+
+  const passwd = () => "root:x:0:0:root:/root:/bin/sh\nada:x:1000:1000:Ada Lovelace,,,:/home/ada:/bin/bash\nbob:x:1001:1001:& Smith:/home/bob:/bin/sh\n";
+  const none = () => { throw new Error("not here"); };
+  assert.deepEqual(readAccount({ platform: "darwin", user: () => ({ username: "ada" }), run: (cmd, args) => (cmd === "id" && args[0] === "-F" ? "Ada Lovelace\n" : "") }), { fullName: "Ada Lovelace", username: "ada" });
+  assert.deepEqual(readAccount({ platform: "darwin", user: () => ({ username: "ada" }), run: none }), { fullName: "", username: "ada" });
+  assert.deepEqual(readAccount({ platform: "linux", user: () => ({ username: "ada" }), passwd, run: none }), { fullName: "Ada Lovelace", username: "ada" });
+  assert.deepEqual(readAccount({ platform: "linux", user: () => ({ username: "bob" }), passwd, run: none }), { fullName: "Bob Smith", username: "bob" });
+  assert.deepEqual(readAccount({ platform: "linux", user: () => ({ username: "eve" }), passwd, run: (cmd, args) => (cmd === "getent" && args[1] === "eve" ? "eve:*:2000:2000:Eve Adams:/home/eve:/bin/sh" : "") }), { fullName: "Eve Adams", username: "eve" }, "directory accounts");
+  assert.deepEqual(readAccount({ platform: "win32", user: () => ({ username: "ada" }), run: none, passwd: none }), { fullName: "", username: "ada" });
+  assert.deepEqual(readAccount({ platform: "linux", user: none, run: none, passwd: none }), { fullName: "", username: "" });
 });
 
 test("tab turns: one agent per tab, expiry, release, one tab per agent", () => {

@@ -836,7 +836,9 @@ with a filter by participant.
 On the same computer, open two Claude Code sessions with the Pairbrowse plugin. Both use the
 same `PAIRBROWSE_HOME` (normally `~/.pairbrowse`). Set `participantName` in configuration or
 `PAIRBROWSE_PARTICIPANT` in each Claude process's environment to label the connections. You
-can also identify yourself through the `pairbrowse_collaboration` tool.
+can also identify yourself through the `pairbrowse_collaboration` tool. In a session joined
+with a code, people show by name: the name given at join, else `participantName`, else
+`PAIRBROWSE_PARTICIPANT`, else the computer account's full name (or login).
 
 For two computers, pick a host and follow the existing server setup instructions. Each remote
 participant needs authorized SSH key access to the same host user and Pairbrowse directory.

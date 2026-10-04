@@ -5,12 +5,11 @@
 // (tabsync.mjs), never cookies or pictures; everyone stays signed in as themselves. What happens in the host's
 // session shows here like local activity: in the bar at the bottom of each page, the side panel
 // and the tab overview.
-import { userInfo } from "node:os";
-import { parseJoinCode, cleanName } from "../join.mjs";
+import { parseJoinCode, cleanName, displayName } from "../join.mjs";
 import { startJoin } from "../relay.mjs";
 import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, formUrl, onSecretDomain, shareableUrl, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
-import { sleep } from "../util.mjs";
+import { sleep, currentAccount } from "../util.mjs";
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
 function serially() {
@@ -324,7 +323,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       return { text: `Not joining: ${e.message}`, error: true };
     }
     await stop();
-    const who = cleanName(name || config.participantName || process.env.PAIRBROWSE_PARTICIPANT || userInfo().username);
+    // The name given at join wins; then the same default the host's side uses.
+    const who = cleanName(name, "") || displayName({ configured: config.participantName, env: process.env.PAIRBROWSE_PARTICIPANT, ...currentAccount() }) || cleanName(name);
     const cur = { mirror: createMirror(), pages: new Map(), owner, window: false, lastT: 0, candidates: new Map(), seen: new WeakSet(), heard: new Map(), told: new WeakMap(), agents: new Map(), outbox: [],
       forms: createFormSync(), order: createOrderSync(), quiet: new Set(), agentSent: new Map(), personSent: new Map(), dirty: new Set(), formsAllAt: 0,
       formT: new Map(), pointed: new WeakMap(), pointerTimer: null, pointerSig: "", drawn: new Set(), formTimer: null };

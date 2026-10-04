@@ -29,6 +29,14 @@ export function appName(clientName) {
   if (c === "codex-mcp-client" || /^codex/i.test(c)) return "Codex";
   return c ? cleanName(c, "Agent").slice(0, 24) : "Agent";
 }
+// What this computer's person is called in a shared session: the first real name of
+// participantName, PAIRBROWSE_PARTICIPANT, their account's full name and their login. Stand-ins
+// like "Host" or "You" are skipped: the other side would see them instead of a name.
+const STAND_INS = new Set(["host", "the host", "guest", "pairbrowse", "you", "me", "someone"]);
+export function displayName({ configured, env, fullName, username } = {}) {
+  const names = [configured, env, fullName, username].map((n) => cleanName(n, ""));
+  return names.find((n) => n && !STAND_INS.has(n.toLowerCase())) || names.find(Boolean) || "";
+}
 export const personLabel = (name, app) => (app ? `${cleanName(name)} · ${app}` : `${cleanName(name)} (by hand)`);
 
 export const newJoinerId = () => randomBytes(16).toString("hex");

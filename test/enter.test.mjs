@@ -82,12 +82,15 @@ test("keys that press a button are named for what they'd press", async () => {
   assert.equal(activatingKey("a"), "");
 });
 
-test("Shift+Enter in a field and Space on a focused Pay button are refused", { skip: !runtime, timeout: 60_000 }, async () => {
-  await withPage(`<form onsubmit="window.sent=true;return false"><label>Name <input id="n"></label><button id="pay">Pay $49</button></form><button id="ok">Next</button>`, async (page) => {
+test("Shift+Enter in a payment form and Space on its focused button are refused; an ordinary form's Enter goes", { skip: !runtime, timeout: 60_000 }, async () => {
+  await withPage(`<form onsubmit="window.sent=true;return false"><label>Name <input id="n"></label><input autocomplete="cc-number"><button id="pay">Pay $49</button></form><button id="ok">Next</button>
+    <form onsubmit="window.saved=true;return false"><label>Nickname <input id="nick"></label><button>Save</button></form>`, async (page) => {
     const hooks = hooksFor();
     const shift = await runSteps(page, [{ fill: { Name: "Ada" } }, { press: "Shift+Enter" }], hooks);
     assert.equal(shift.ok, false);
-    assert.match(shift.why, /Pay \$49.*final action \(submit\)/);
+    assert.match(shift.why, /Pay \$49.*final action \(pay\)/);
+    assert.equal((await runSteps(page, [{ fill: { Nickname: "ada" } }, { press: "Enter" }], hooks)).ok, true, "an ordinary submit goes");
+    assert.equal(await page.evaluate(() => !!window.saved), true);
     await page.focus("#pay");
     const space = await runSteps(page, [{ press: "Space" }], hooks);
     assert.equal(space.ok, false);

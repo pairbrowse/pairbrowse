@@ -62,8 +62,15 @@ test("tab order follows in a shared session: a move on the host reaches the join
     const socketPath = join(h, "run", "browser.sock");
     // A busy machine (the whole suite at once) can take a while to start the helper.
     for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
-    const sock = net.createConnection(socketPath);
-    await new Promise((ok, no) => { sock.once("connect", ok); sock.once("error", no); });
+    // The socket file can show a moment before the helper listens on it (a busy machine): retry.
+    let sock;
+    for (let i = 0; ; i++) {
+      sock = net.createConnection(socketPath);
+      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
+      if (ok) break;
+      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
+      await sleep(200);
+    }
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");

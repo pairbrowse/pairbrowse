@@ -3,15 +3,14 @@
 // its own notes, masking and screenshot added to every result.
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
-import { paths, loadConfig } from "../paths.mjs";
+import { paths } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
 import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, SENSITIVE } from "../policy.mjs";
 import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { describe } from "../log.mjs";
-import { decide, clickClass, neverConfirmOrigin } from "../guard.mjs";
-import { clickRule, dialogRule, describeContext, JUDGE_ASK } from "../clickrule.mjs";
-import { listRuns } from "../runs.mjs";
+import { decide, clickClass } from "../guard.mjs";
+import { clickRule, dialogRule, strongSignal } from "../clickrule.mjs";
 import { keepFocus } from "../focus.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 import { SESSION_TOOL } from "../sessions.mjs";
@@ -65,10 +64,10 @@ const STALLED_MS = 30_000; // a disconnected participant's action may run this l
 const image = (data) => ({ type: "image", data, mimeType: "image/jpeg" });
 
 // browser_handle_dialog gets an element, like a click: what OK confirms, named with its class
-// ("Delete: OK") or "Safe:". The helper reads it and drops it before the browser server.
+// ("Delete: OK") when it's a final action. The helper reads it and drops it before the browser server.
 function withDialogLabel(t) {
   if (t.name !== "browser_handle_dialog" || !t.inputSchema?.properties) return t;
-  const element = { type: "string", description: 'What OK confirms, starting with its class: "Pay:", "Delete:", "Publish:", "Send:", "Submit:" (the user confirms), or "Safe:" when it commits nothing.' };
+  const element = { type: "string", description: 'What OK confirms. Start with its class when it pays, deletes, publishes, sends or submits for review ("Delete: OK"): the user confirms.' };
   return { ...t, inputSchema: { ...t.inputSchema, properties: { ...t.inputSchema.properties, element } } };
 }
 
@@ -134,17 +133,6 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // What this participant's last click in a tab committed ("delete", "pay"), for a minute: the
     // confirmation it opens counts as the same action (daemon/page.mjs clickRisk prev).
     const risks = new WeakMap(); // tab -> { kind, t } | null
-    const shown = new Map(); // contexts of unclear clicks this agent was shown to judge, by key -> time
-    let statusText = ""; // this participant's latest pairbrowse_status text: its task, shown with a click to judge
-    // What the agent is doing: its status line, and the goal of the run saved last (in two hours).
-    const taskNow = () => {
-      let goal = "";
-      try { const r = listRuns()[0]; if (r && r.status !== "finished" && Date.now() - Date.parse(r.updatedAt) < 2 * 3600_000) goal = String(r.goal || ""); } catch {}
-      return [statusText && `Status: ${statusText}`, goal && `Goal: ${goal}`].filter(Boolean).join(". ").slice(0, 400);
-    };
-    // Whether the agent was shown this context to judge in the last 10 minutes.
-    const wasShown = (key) => Date.now() - (shown.get(key) || 0) < 600_000;
-    const markShown = (key) => { shown.delete(key); shown.set(key, Date.now()); if (shown.size > 300) shown.delete(shown.keys().next().value); };
     const recentRisk = (page) => { const r = page && risks.get(page); return r && Date.now() - r.t < 60_000 ? r.kind : ""; };
     const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
     // The tab this participant works in, as a page: other agents' new and closed tabs shift the
@@ -405,54 +393,36 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const page = await context.pageAt(context.currentUrl());
         const target = name === "browser_type" ? args.target : null;
         const risk = page ? await riskAt(page, target, key, recentRisk(page)) : null;
-        if (risk && risk.level !== "safe" && !(risk.word === "submit" && neverConfirmOrigin(page.url(), loadConfig()))) {
+        // Only strong signals stop a key: an ordinary submit goes, as a click on it would.
+        if (risk && strongSignal(risk)) {
           const label = await keyWouldPress(target, key);
           return `Refused: ${key === "space" ? "Space" : "Enter"} here would ${label ? `press "${label.slice(0, 60)}" and ` : ""}commit something (${riskReason(risk)}). ` +
             `Type without submit (and without line breaks), then use browser_click on its button, with "${cap(risk.word)}:" at the start of element, so the user confirms.`;
         }
       }
-      // OK on a page's confirm or prompt dialog: the click before it decides whether it's a final
-      // action the user confirms; otherwise the agent judges it from its context.
+      // OK on a page's confirm or prompt dialog: right after a delete or payment click it's that same
+      // final action, refused until named; any other OK follows the agent's label (a class asks).
+      // The agent opening an address starts afresh: a delete before it confirms nothing there.
+      if (name === "browser_navigate") { const page = await serverPage(); if (page) risks.set(page, null); }
       if (name === "browser_handle_dialog") {
         const page = await serverPage();
         const prev = recentRisk(page);
-        const box = page ? popups.waitingDialog(page) : null;
-        const key = JSON.stringify(["dialog", page?.url(), box?.message, prev]);
-        const rule = dialogRule(!!args.accept, prev, args.element, { seen: wasShown(key) });
-        if (rule === "go") popups.dialogAnswered(page);
-        if (rule === "name") return `Refused: OK here confirms the ${prev} click before it, a final action. Retry with element "${cap(prev)}: OK" so the user confirms it. "Safe:" can't change that.`;
-        if (rule === "judge") {
-          markShown(key);
-          let origin = "";
-          try { origin = new URL(page?.url() || "").origin; } catch {}
-          const ctx = { task: taskNow(), page: page ? { title: await page.title().catch(() => ""), origin } : null, type: box?.type, message: box?.message || "", prev };
-          return `Refused once for you to judge what OK on this dialog confirms. Its context: ${describeContext(ctx)}. Pass element with the class (for example "Delete: OK"); ${JUDGE_ASK}`;
-        }
+        if (dialogRule(!!args.accept, prev, args.element) === "name") return `Refused: OK here confirms the ${prev} click before it, a final action. Retry with element "${cap(prev)}: OK" so the user confirms it.`;
+        popups.dialogAnswered(page);
       }
       // A click, judged by what it does (the page's structure, never its words; daemon/page.mjs
       // clickRisk) and then by scripts/clickrule.mjs: a final action by strong signals is refused
-      // until element names its class (the hook then asks the user); an unclear one is refused once
-      // with its context for the agent to judge ("Safe:" or a class).
+      // until element names its class; everything else goes, and the hook asks about any class
+      // the agent named from its task.
       if (name === "browser_click") {
         const page = await serverPage();
         const text = await realLabel(page, args.target);
         if (text === null) return `Ref ${args.target} isn't on the page any more. Take a browser_snapshot and use its fresh refs.`;
-        const ctx = page ? await contextAt(page, args.target, "click", recentRisk(page)) : { risk: { level: "safe", word: "", why: [] } };
-        const risk = ctx.risk;
-        const lifted = risk.word === "submit" && risk.level !== "strong" && neverConfirmOrigin(page?.url(), loadConfig());
-        const key = JSON.stringify(["click", ctx.page?.origin, ctx.control?.label, ctx.form, ctx.dialog?.text, ctx.prev]);
-        const rule = clickRule(risk, args.element, { seen: wasShown(key), lifted });
-        if (rule === "name") {
+        const risk = page ? (await contextAt(page, args.target, "click", recentRisk(page))).risk : { level: "safe", word: "", why: [] };
+        if (clickRule(risk, args.element) === "name") {
           log(`refused click (${risk.word}: ${risk.why.join(", ")}) described as "${String(args.element || "").slice(0, 80)}"`);
           return `Refused: this click is a final action, whatever its label ("${String(text).slice(0, 60)}"): ${riskReason(risk)}. ` +
-            `Retry with "${cap(risk.word)}:" at the start of element (e.g. "${cap(risk.word)}: ${String(text || "button").slice(0, 40)}"), so the user confirms it. "Safe:" can't change that.`;
-        }
-        if (rule === "judge") {
-          markShown(key);
-          ctx.task = taskNow();
-          log(`asked the agent to judge a click on "${String(text).slice(0, 60)}"`);
-          return `Refused once for you to judge: the page's structure can't tell whether this click ("${String(text).slice(0, 60)}") commits something` +
-            `${risk.level === "commit" ? ` (${riskReason(risk)})` : ""}. Its context: ${describeContext(ctx)}. ${JUDGE_ASK}`;
+            `Retry with "${cap(risk.word)}:" at the start of element (e.g. "${cap(risk.word)}: ${String(text || "button").slice(0, 40)}"), so the user confirms it.`;
         }
         // Remembered a minute: the "OK" in the popup a delete click opens is still a delete.
         const cls = clickClass(args.element);
@@ -534,7 +504,6 @@ export function createServe({ config, log, host, createConnection, clients, coll
       pairbrowse_run: runCommand,
       async pairbrowse_status(args) {
         await context.getContext();
-        if (args.text) statusText = String(args.text).slice(0, 140);
       await hud.setBadge(args.text, args.kind);
         session.setStatus(participant, args.text, args.kind); // the side panels in a shared session show it
         return { text: "ok" };

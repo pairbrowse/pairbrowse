@@ -10,7 +10,7 @@ import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { describe } from "../log.mjs";
 import { decide, clickClass, neverConfirmOrigin } from "../guard.mjs";
-import { judgeSettings, judgeClick, escalate } from "../clickjudge.mjs";
+import { clickRule, dialogRule, describeContext, JUDGE_ASK } from "../clickrule.mjs";
 import { listRuns } from "../runs.mjs";
 import { keepFocus } from "../focus.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
@@ -63,6 +63,14 @@ const TAB_WAIT_MS = 5000; // a tab another agent's turn frees within this is wai
 const TURN_ROUNDS = 40;
 const STALLED_MS = 30_000; // a disconnected participant's action may run this long
 const image = (data) => ({ type: "image", data, mimeType: "image/jpeg" });
+
+// browser_handle_dialog gets an element, like a click: what OK confirms, named with its class
+// ("Delete: OK") or "Safe:". The helper reads it and drops it before the browser server.
+function withDialogLabel(t) {
+  if (t.name !== "browser_handle_dialog" || !t.inputSchema?.properties) return t;
+  const element = { type: "string", description: 'What OK confirms, starting with its class: "Pay:", "Delete:", "Publish:", "Send:", "Submit:" (the user confirms), or "Safe:" when it commits nothing.' };
+  return { ...t, inputSchema: { ...t.inputSchema, properties: { ...t.inputSchema.properties, element } } };
+}
 
 // Playwright MCP calls it target (ref in older versions); only snapshot refs go stale, not selectors.
 function containsRef(value) {
@@ -126,19 +134,19 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // What this participant's last click in a tab committed ("delete", "pay"), for a minute: the
     // confirmation it opens counts as the same action (daemon/page.mjs clickRisk prev).
     const risks = new WeakMap(); // tab -> { kind, t } | null
-    const judged = new Map(); // the click judge's answers, by the click's context
-    let statusText = ""; // this participant's latest pairbrowse_status text: its task, for the click judge
+    const shown = new Map(); // contexts of unclear clicks this agent was shown to judge, by key -> time
+    let statusText = ""; // this participant's latest pairbrowse_status text: its task, shown with a click to judge
     // What the agent is doing: its status line, and the goal of the run saved last (in two hours).
     const taskNow = () => {
       let goal = "";
       try { const r = listRuns()[0]; if (r && r.status !== "finished" && Date.now() - Date.parse(r.updatedAt) < 2 * 3600_000) goal = String(r.goal || ""); } catch {}
       return [statusText && `Status: ${statusText}`, goal && `Goal: ${goal}`].filter(Boolean).join(". ").slice(0, 400);
     };
+    // Whether the agent was shown this context to judge in the last 10 minutes.
+    const wasShown = (key) => Date.now() - (shown.get(key) || 0) < 600_000;
+    const markShown = (key) => { shown.delete(key); shown.set(key, Date.now()); if (shown.size > 300) shown.delete(shown.keys().next().value); };
     const recentRisk = (page) => { const r = page && risks.get(page); return r && Date.now() - r.t < 60_000 ? r.kind : ""; };
     const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
-    // A click's class, as the helper requires it in element: "pay" and "delete" need their own
-    // name; any class names a plain submit (every class asks).
-    const namedAs = (element, word) => { const c = clickClass(element); return word === "submit" ? !!c : c === word; };
     // The tab this participant works in, as a page: other agents' new and closed tabs shift the
     // numbers, and two tabs can show the same URL. Its browser server's current tab follows it.
     let mine = null;
@@ -260,7 +268,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           pending.delete(msg.id);
           return;
         }
-        if (msg.result?.tools) msg.result.tools = [...msg.result.tools.filter((t) => !BLOCKED_TOOLS.has(t.name) && !HIDDEN_TOOLS.has(t.name)), ...PAIRBROWSE_TOOLS];
+        if (msg.result?.tools) msg.result.tools = [...msg.result.tools.filter((t) => !BLOCKED_TOOLS.has(t.name) && !HIDDEN_TOOLS.has(t.name)).map(withDialogLabel), ...PAIRBROWSE_TOOLS];
         const tool = calls.get(msg.id);
         calls.delete(msg.id);
         await finishResult(msg, tool);
@@ -403,37 +411,48 @@ export function createServe({ config, log, host, createConnection, clients, coll
             `Type without submit (and without line breaks), then use browser_click on its button, with "${cap(risk.word)}:" at the start of element, so the user confirms.`;
         }
       }
-      // A click that commits something, judged by what it does (the page's structure, never its
-      // words: a form submit, card fields, a danger button, a confirmation dialog), is refused
-      // until element names its class ("Pay: Submit order"), which makes the guard ask the user.
+      // OK on a page's confirm or prompt dialog: the click before it decides whether it's a final
+      // action the user confirms; otherwise the agent judges it from its context.
+      if (name === "browser_handle_dialog") {
+        const page = await serverPage();
+        const prev = recentRisk(page);
+        const box = page ? popups.waitingDialog(page) : null;
+        const key = JSON.stringify(["dialog", page?.url(), box?.message, prev]);
+        const rule = dialogRule(!!args.accept, prev, args.element, { seen: wasShown(key) });
+        if (rule === "go") popups.dialogAnswered(page);
+        if (rule === "name") return `Refused: OK here confirms the ${prev} click before it, a final action. Retry with element "${cap(prev)}: OK" so the user confirms it. "Safe:" can't change that.`;
+        if (rule === "judge") {
+          markShown(key);
+          let origin = "";
+          try { origin = new URL(page?.url() || "").origin; } catch {}
+          const ctx = { task: taskNow(), page: page ? { title: await page.title().catch(() => ""), origin } : null, type: box?.type, message: box?.message || "", prev };
+          return `Refused once for you to judge what OK on this dialog confirms. Its context: ${describeContext(ctx)}. Pass element with the class (for example "Delete: OK"); ${JUDGE_ASK}`;
+        }
+      }
+      // A click, judged by what it does (the page's structure, never its words; daemon/page.mjs
+      // clickRisk) and then by scripts/clickrule.mjs: a final action by strong signals is refused
+      // until element names its class (the hook then asks the user); an unclear one is refused once
+      // with its context for the agent to judge ("Safe:" or a class).
       if (name === "browser_click") {
         const page = await serverPage();
         const text = await realLabel(page, args.target);
         if (text === null) return `Ref ${args.target} isn't on the page any more. Take a browser_snapshot and use its fresh refs.`;
         const ctx = page ? await contextAt(page, args.target, "click", recentRisk(page)) : { risk: { level: "safe", word: "", why: [] } };
-        let risk = ctx.risk;
-        // Safe by structure but run by the page's scripts (or a marked step): the optional click
-        // judge sees the click's whole context and may make it ask (never the other way); no
-        // answer in time keeps this decision.
-        const config = loadConfig();
-        const judge = page && risk.level === "safe" && risk.unclear && !clickClass(args.element) ? judgeSettings(config) : null;
-        if (judge) {
-          ctx.task = taskNow();
-          const key = JSON.stringify([ctx.page?.origin, ctx.control?.label, ctx.form, ctx.dialog?.text, ctx.prev, ctx.task]);
-          let verdict = judged.get(key);
-          if (verdict === undefined) {
-            verdict = await judgeClick(ctx, judge);
-            judged.set(key, verdict);
-            if (judged.size > 300) judged.delete(judged.keys().next().value);
-            if (verdict) log(`click judge: ${verdict} for "${String(ctx.control?.label || "").slice(0, 60)}"`);
-          }
-          risk = escalate(risk, verdict || "");
-        }
-        const lifted = risk.word === "submit" && risk.level !== "strong" && neverConfirmOrigin(page?.url(), config);
-        if (risk.level !== "safe" && !lifted && !namedAs(args.element, risk.word)) {
+        const risk = ctx.risk;
+        const lifted = risk.word === "submit" && risk.level !== "strong" && neverConfirmOrigin(page?.url(), loadConfig());
+        const key = JSON.stringify(["click", ctx.page?.origin, ctx.control?.label, ctx.form, ctx.dialog?.text, ctx.prev]);
+        const rule = clickRule(risk, args.element, { seen: wasShown(key), lifted });
+        if (rule === "name") {
           log(`refused click (${risk.word}: ${risk.why.join(", ")}) described as "${String(args.element || "").slice(0, 80)}"`);
-          return `Refused: this click commits something, whatever its label ("${String(text).slice(0, 60)}"): ${riskReason(risk)}. ` +
-            `Retry with "${cap(risk.word)}:" at the start of element (e.g. "${cap(risk.word)}: ${String(text || "button").slice(0, 40)}"), so the user confirms it.`;
+          return `Refused: this click is a final action, whatever its label ("${String(text).slice(0, 60)}"): ${riskReason(risk)}. ` +
+            `Retry with "${cap(risk.word)}:" at the start of element (e.g. "${cap(risk.word)}: ${String(text || "button").slice(0, 40)}"), so the user confirms it. "Safe:" can't change that.`;
+        }
+        if (rule === "judge") {
+          markShown(key);
+          ctx.task = taskNow();
+          log(`asked the agent to judge a click on "${String(text).slice(0, 60)}"`);
+          return `Refused once for you to judge: the page's structure can't tell whether this click ("${String(text).slice(0, 60)}") commits something` +
+            `${risk.level === "commit" ? ` (${riskReason(risk)})` : ""}. Its context: ${describeContext(ctx)}. ${JUDGE_ASK}`;
         }
         // Remembered a minute: the "OK" in the popup a delete click opens is still a delete.
         const cls = clickClass(args.element);
@@ -570,6 +589,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
 
       const problem = await browserToolProblem(name, args);
       if (problem) return reply(msg.id, problem, true);
+      if (name === "browser_handle_dialog" && Object.hasOwn(args, "element")) {
+        msg = structuredClone(msg);
+        delete msg.params.arguments.element;
+        args = msg.params.arguments;
+      }
       // A field a person is filling (here or in the other browser) is theirs: left unchanged.
       if (FIELD_TOOLS.has(name)) {
         const page = actingIn || await serverPage();

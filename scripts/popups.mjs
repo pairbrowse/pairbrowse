@@ -1,7 +1,7 @@
 // Popups the browser handles by itself, so Claude (and Codex) don't get stuck on them:
 // - Page dialogs: alerts and "leave this page?" are answered right away and reported. A confirm
 //   (a page asks one before something it treats as consequential) and a prompt are left for Claude
-//   (browser_handle_dialog), whose OK asks the user.
+//   (browser_handle_dialog), whose OK the agent judges or the user confirms (scripts/clickrule.mjs).
 // - New tabs a page opens (sign-in and consent popups, target=_blank links): Claude is told which
 //   tab opened, and when it closes again. Tabs brought back at startup aren't announced.
 // - Overlays inside the page that interrupt (cookie banners, newsletter, discount and app
@@ -26,6 +26,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
   const described = new Set(); // overlays already described to Claude, by page and text
   const note = (text) => { notes.push(text); if (notes.length > 20) notes.shift(); };
   let challengeOn = null; // the page currently showing a CAPTCHA
+  const waiting = new WeakMap(); // page -> the confirm or prompt it waits on: { type, message }
 
   function watchPage(page, ctx) {
     page.on("dialog", async (dialog) => {
@@ -36,6 +37,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
           await dialog.accept();
           note(type === "alert" ? `The page showed an alert and PairBrowse closed it: "${message}"` : "The page asked to confirm leaving; PairBrowse confirmed.");
         } else {
+          waiting.set(page, { type, message });
           note(`The page is waiting on a ${type} dialog: "${message}". Decide with the user, then answer it with browser_handle_dialog.`);
         }
       } catch (e) {
@@ -200,5 +202,8 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     return text;
   }
 
-  return { watchPage, checkChallenge, dismissOverlay, drain };
+  // The confirm or prompt a page waits on (its OK is judged in daemon/serve.mjs), until answered.
+  const waitingDialog = (page) => waiting.get(page) || null;
+  const dialogAnswered = (page) => { if (page) waiting.delete(page); };
+  return { watchPage, checkChallenge, dismissOverlay, drain, waitingDialog, dialogAnswered };
 }

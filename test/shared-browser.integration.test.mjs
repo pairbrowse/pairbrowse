@@ -91,6 +91,8 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
     const pay = await other.call("tools/call", { name: "browser_click", arguments: { element: "Pay: Pay now", target: "#pay" } });
     assert.equal(pay.result.isError, true);
     assert.match(pay.result.content[0].text, /final action \(pay\)\. This needs the user's OK/);
+    const send = await other.call("tools/call", { name: "browser_click", arguments: { element: "Send: Go", target: "#go" } });
+    assert.match(send.result.content[0].text, /final action \(send\)\. This needs the user's OK/, "another app's final actions are handed to the user");
     stage = "invite links";
     // Another app can't make a drive link (that needs the user's OK); a watch link works, and
     // a drive link's key never reaches the Profile panel.
@@ -136,6 +138,15 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
     const aliceText = aliceSnapshot.result.content?.map((part) => part.text || "").join("\n") || "";
     const buttonRef = aliceText.match(/button[^\n]*\[ref=([^\]]+)\]/)?.[1];
     assert.ok(buttonRef, `button ref missing in snapshot: ${aliceText}`);
+    stage = "Alice judging an unclear click";
+    // A plain button the page's scripts run: refused once with its context, then "Safe:" goes.
+    const unclear = await alice.call("tools/call", { name: "browser_click", arguments: { element: "Go", target: buttonRef } });
+    assert.equal(unclear.result.isError, true);
+    assert.match(unclear.result.content[0].text, /Refused once for you to judge.*Pairbrowse fixture.*"Safe:"/s);
+    const judged = await alice.call("tools/call", { name: "browser_click", arguments: { element: "Safe: Go", target: buttonRef } });
+    assert.ok(!judged.result.isError, judged.result.content[0].text);
+    const dialogTool = tools.result.tools.find((t) => t.name === "browser_handle_dialog");
+    assert.ok(dialogTool.inputSchema.properties.element, "a dialog's OK is named like a click");
     stage = "Alice releasing";
     const release = await alice.call("tools/call", { name: "pairbrowse_collaboration", arguments: { action: "release" } });
     assert.equal(release.result.isError, undefined);

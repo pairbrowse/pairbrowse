@@ -390,7 +390,10 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   // Shows a tab: its own CDP session and screencast. One switch at a time, so two callers (the
   // follow tick and a tab click) never leave a session behind.
   const wired = new WeakSet(); // tabs whose closing is watched
-  const show = (page) => showQueue(() => showNow(page));
+  // Switches in progress: while one runs no tab is shown for a moment, which isn't "nothing shown"
+  // (follow() would otherwise pull the viewer back to Claude's tab mid-switch).
+  let switching = 0;
+  const show = (page) => { switching++; return showQueue(() => showNow(page)).finally(() => { switching--; }); };
   async function showNow(page) {
     if (closed || shown?.page === page) return;
     if (shown) {
@@ -431,7 +434,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     try {
       const ctx = await getContext();
       const url = await currentUrl();
-      if (shown && url === followed) return;
+      if ((shown || switching) && url === followed) return;
       followed = url;
       const page = ctx.pages().find((p) => p.url() === url) || shown?.page || ctx.pages().at(-1);
       if (url) followedPage = page;

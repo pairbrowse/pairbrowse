@@ -5,6 +5,7 @@
 // cloudflared itself is downloaded once from Cloudflare's GitHub releases, pinned by SHA-256.
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { Resolver } from "node:dns/promises";
 import { existsSync, rmSync, renameSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
@@ -54,8 +55,18 @@ export async function ensureCloudflared(log = () => {}, platform = process.platf
 // The public address cloudflared prints once the Quick Tunnel is up.
 export const tunnelUrl = (text) => String(text).match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com\b/)?.[0] || null;
 
-// Starts a Quick Tunnel to http://127.0.0.1:<port>. Resolves { url, stop } once it's reachable.
-export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe } = {}) {
+// Whether a new tunnel's name resolves yet, asked of Cloudflare's own resolver (the joiner's
+// resolver must never ask too early: trycloudflare.com's "no such name" is cached for a minute).
+async function resolvesAtCloudflare(host) {
+  const r = new Resolver({ timeout: 2000, tries: 1 });
+  r.setServers(["1.1.1.1", "1.0.0.1"]);
+  try { return (await r.resolve4(host)).length > 0; } catch { return false; }
+}
+
+// Starts a Quick Tunnel to http://127.0.0.1:<port>. Resolves { url, stop } once it's reachable:
+// cloudflared has registered a connection and the name resolves (or DNS_WAIT_MS went by).
+const DNS_WAIT_MS = 15_000;
+export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe, resolves = resolvesAtCloudflare } = {}) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("bad live view port");
   const program = exe || await ensureCloudflared(log);
   const child = spawn(program, ["tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${port}`], { stdio: ["ignore", "pipe", "pipe"] });
@@ -64,10 +75,11 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
     const url = await new Promise((ok, no) => {
       let seen = "";
       const timer = setTimeout(() => no(new Error("the sharing tunnel didn't start in time")), timeoutMs);
+      let found = null;
       const read = (chunk) => {
         seen = (seen + chunk).slice(-8000);
-        const found = tunnelUrl(seen);
-        if (found) { clearTimeout(timer); ok(found); }
+        found ||= tunnelUrl(seen);
+        if (found && /Registered tunnel connection/.test(seen)) { clearTimeout(timer); ok(found); }
       };
       child.stdout.on("data", read);
       child.stderr.on("data", read);
@@ -76,6 +88,7 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
     });
     child.stdout.resume();
     child.stderr.resume();
+    for (const end = Date.now() + DNS_WAIT_MS; !(await resolves(new URL(url).host)) && Date.now() < end;) await new Promise((r) => setTimeout(r, 500));
     log(`sharing tunnel up: ${new URL(url).host}`);
     return { url, host: new URL(url).host, stop, child };
   } catch (e) {

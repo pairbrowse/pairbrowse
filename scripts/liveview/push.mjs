@@ -8,6 +8,9 @@ import { cleanName } from "../join.mjs";
 
 const STATE_DEBOUNCE_MS = 20; // changes that come together go as one
 const STATE_AGAIN_MS = 1000; // titles and the like, which no event announces
+// While a person uses a shared tab here, the tabs go out again this often even when unchanged:
+// the joiner's agents wait while that person is fresh there (2 s after the last word of them).
+const PERSON_AGAIN_MS = 900;
 const POINTER_MS = 33; // pointers go out at most 30 times a second
 const POINTER_FRESH_MS = 3000; // a pointer still for this long fades out
 const HEARTBEAT_MS = 15_000; // keeps the tunnel from closing an idle stream
@@ -48,7 +51,8 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       const state = await tabsFor(st.j).catch(() => null);
       if (!state) continue;
       const sig = JSON.stringify(state);
-      if (sig !== st.stateSig) { st.stateSig = sig; send(st, "tabs", state); }
+      const person = Array.isArray(state.tabs) && state.tabs.some((t) => t?.person);
+      if (sig !== st.stateSig || (person && Date.now() - st.stateAt >= PERSON_AGAIN_MS)) { st.stateSig = sig; st.stateAt = Date.now(); send(st, "tabs", state); }
       const session = sessionFor(st.j);
       const ssig = JSON.stringify(session);
       if (session && ssig !== st.sessionSig) { st.sessionSig = ssig; send(st, "session", session); }
@@ -140,7 +144,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       const key = joinerKey(j);
       const mine = [...streams.values()].filter((x) => x.key === key);
       if (mine.length >= STREAMS_PER_JOINER) { mine[0].conn.close(); streams.delete(mine[0].conn); }
-      const st = { j, key, conn, stateSig: "", sessionSig: "", pointersSig: "", formSigs: new Map() };
+      const st = { j, key, conn, stateSig: "", stateAt: 0, sessionSig: "", pointersSig: "", formSigs: new Map() };
       streams.set(conn, st);
       // While it's open the joiner counts as there; a heartbeat keeps the tunnel from closing it.
       const seen = setInterval(() => { j.seen = Date.now(); }, 2000);

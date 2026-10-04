@@ -422,6 +422,13 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     const aliceAgent = await until("Alice's agent in her copy", async () => (await state(live)).tabs.find((t) => /two\.pbtest/.test(t.url))?.agent);
     await until("the host sees Alice's agent", async () => { const a = (await state(hostLive)).tabs.find((t) => /two\.pbtest/.test(t.url))?.agent; return a?.joined && a.label === aliceAgent.label && a.color === aliceAgent.color; }, 15_000)
       .catch(async (e) => { throw new Error(`${e.message}: ${JSON.stringify((await state(hostLive)).tabs.map((t) => [t.url, t.agent]))} / ${JSON.stringify((await state(live)).tabs.map((t) => [t.url, t.agent]))}`); });
+
+    stage = "the host's helper stops: Alice keeps her copies and hears it can't be reached";
+    daemons[0].kill("SIGTERM");
+    await new Promise((r) => daemons[0].once("exit", r));
+    await sleep(4000);
+    assert.ok((await tabs(joiner.call)).some((t) => /one\.pbtest\.example\/form/.test(t.url)), "the copies stay");
+    await until("Alice hears it", async () => /Can't reach the host's session/.test(text(await tool(joiner.call, "pairbrowse_join", { action: "status" }))), 60_000);
   } catch (e) {
     const log = (h) => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2000); } catch { return ""; } };
     throw new Error(`${stage}: ${e.message}\nhost:\n${log(hostHome)}\njoiner:\n${log(joinHome)}`);

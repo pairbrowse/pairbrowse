@@ -75,10 +75,12 @@ async function release(cdp) {
 // tunnel forwards to: guestPort (0: any). tunnelHost(): the tunnel's public host name, or null.
 // approvals: who the host let in (createApprovals). onJoinRequest(entry): a new joiner asks.
 // tabMeta(page): who is in a tab ({ agent: { label, color }, person, last }).
-// onHumanInput(page, who): someone used a tab by hand (a drive joiner's tab changes count too).
+// onHumanInput(page, who, changes): someone used a tab by hand (a drive joiner's tab changes count
+// too); changes: false when they only moved the pointer or scrolled.
 // secretDomains(): sites with saved passwords, whose tabs reach joiners as origin + path only.
-// onJoinerPerson(page, who, did): a drive joiner uses their copy of a tab by hand (agents here
-// wait, as for a person here). onJoinerActivity(page, text, who, from): their agent acted there.
+// onJoinerPerson(page, who, did, acting, changed): a drive joiner uses their copy of a tab by
+// hand (agents here wait, as for a person here; changed: they navigated, opened or closed it).
+// onJoinerActivity(page, text, who, from): their agent acted there.
 // shared: the rest of what shared tabs carry (see sharedDefaults): form values, their agents'
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
@@ -218,7 +220,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
           push.dirty(page); // on to the other joiners
           continue;
         }
-        onJoinerPerson(page, j.name, [], true);
+        onJoinerPerson(page, j.name, [], true, true);
         if (o.op === "close") {
           // The last tab is emptied instead of closed, so the browser window stays open.
           if (ctx.pages().length > 1) await page.close().catch(() => {}); else await page.goto("about:blank").catch(() => {});
@@ -344,7 +346,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     if (route === "input") {
       const batch = (Array.isArray(ev) ? ev : [ev]).slice(0, INPUT_BATCH_MAX).filter((one) => role === "owner" || one?.type !== "viewport");
       return humanQueue(async () => {
-        if (batch.some((one) => one?.type !== "viewport")) await onHumanInput(shown?.page || null, who);
+        // Only moving the pointer (or the wheel) changes nothing an agent's refs point at.
+        if (batch.some((one) => one?.type !== "viewport")) await onHumanInput(shown?.page || null, who, batch.some((one) => !["viewport", "wheel"].includes(one?.type) && !(one?.type === "mouse" && one.action === "mouseMoved")));
         for (const one of batch) await replayer.replay(shown, one, role).catch((e) => log("liveview input", e?.message || e));
       });
     }

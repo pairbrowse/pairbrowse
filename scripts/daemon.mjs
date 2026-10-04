@@ -347,7 +347,7 @@ const cobrowse = createCobrowse({
   },
   onPointer: (page, value) => {
     // An agent's clicks move the real mouse too: that's the agent's pointer, not the person's.
-    const v = value.me && presence.byAgent(Number(value.me.t)) ? { ...value, me: null } : value;
+    const v = value.me && (presence.byAgent(Number(value.me.t)) || presence.byRemote(Number(value.me.t))) ? { ...value, me: null } : value; // an agent's or a joiner's moves (shared browser) are not the host's pointer
     liveView()?.pointed(page, v);
     follow.pointed(page, v);
   },
@@ -362,10 +362,11 @@ const serve = createServe({
     ...(process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
     // Tests only (PAIRBROWSE_TEST_SCREEN=1): the shared browser picture page here, as a person
     // would use it (its state, its place among the tabs, keys typed on it).
-    ...(process.env.PAIRBROWSE_TEST_SCREEN === "1" ? { pairbrowse_test_screen: async ({ expr, type, choose } = {}) => {
+    ...(process.env.PAIRBROWSE_TEST_SCREEN === "1" ? { pairbrowse_test_screen: async (args = {}) => { const { expr, type, choose } = args;
       const page = follow.pages().find((p) => !p.isClosed() && p.url().includes("/screen.html"));
       if (!page) return { text: "no picture page", error: true };
       if (Array.isArray(choose)) { page.once("filechooser", (fc) => fc.setFiles(choose.map(String)).catch(() => {})); return { text: "will choose" }; }
+      if (args.shot) { await page.screenshot({ path: String(args.shot) }); return { text: "saved" }; }
       if (type) { await page.keyboard.type(String(type), { delay: 20 }); return { text: "typed" }; }
       const index = (await context.getContext()).pages().indexOf(page);
       return { text: JSON.stringify({ index, value: expr ? await page.evaluate(String(expr)) : null }) };

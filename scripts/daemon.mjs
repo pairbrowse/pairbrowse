@@ -304,7 +304,8 @@ sharing.approvals.onChange(() => {
 async function pickFromBrowser(op) {
   if (op?.action !== "join") return context.pickSession({ action: op?.action, name: op?.name });
   if (!context.picking()) return { text: "A session is already chosen.", error: true };
-  const r = await follow.command({ action: "join", code: String(op.code || "").trim().slice(0, 4000) }, { owner: "picker", app: "PairBrowse" });
+  const r = await follow.command({ action: "join", code: String(op.code || "").trim().slice(0, 4000), name: String(op.joinName || "").slice(0, 40) }, { owner: "picker", app: "PairBrowse" });
+  if (r.needsName) return { text: "Type your name too: the host sees it before letting you in. It's remembered for next time.", error: true };
   if (r.error) return r;
   const asked = `${r.text.split(". Then")[0]}.`; // "Asked Bob to let Alice in (drive). They have to approve first."
   context.pickedJoin(`The person joined a shared session from the browser's session picker: ${asked} Check with pairbrowse_join status.`);

@@ -258,4 +258,12 @@ on). An agent can only ask: "Codex wants to share localhost:3000" shows in the s
   computer: use relative URLs, or share that port too. At most 3 dev servers at once.
 - **Stop** in the side panel (or "stop sharing my dev server", `unshare_port`) ends it; so do the
   last join code ending, `revoke_all`, and stopping PairBrowse.
+- **Limits.** A shared dev server runs over a free Cloudflare Quick Tunnel, which takes at most
+  200 requests in flight at once (per shared port, for all joiners together); more get an error
+  (`429`) until the earlier ones finish. Normal browsing stays far below that, but a large app
+  that loads hundreds of files at once (a Vite or Nuxt dev build) can hit it, especially when
+  several joiners load at the same moment: reloading the page fixes it. Quick Tunnels also don't
+  carry Server-Sent Events (hot reload over WebSockets works; streamed responses over SSE don't)
+  and have no uptime guarantee. Websites themselves never go through the tunnel: each joiner's
+  browser loads them directly. **PairBrowse Pro** will lift these limits with dedicated tunnels.
 

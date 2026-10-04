@@ -108,7 +108,7 @@ $("join-form").addEventListener("submit", (ev) => {
   if (!ev.isTrusted) return;
   const code = $("code").value.trim();
   if (!/^pb-join:\S+$/.test(code)) { say("A join code starts with pb-join:", "error"); return; }
-  send({ action: "join", code }, "Asking to join...");
+  send({ action: "join", code, joinName: $("join-name").value.trim().slice(0, 40) }, "Asking to join...");
 });
 $("join").addEventListener("toggle", () => { if ($("join").open) $("code").focus(); });
 function setMoreLabel() {

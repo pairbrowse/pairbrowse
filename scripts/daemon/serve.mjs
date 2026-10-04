@@ -16,18 +16,18 @@ import { CHALLENGE_TURN } from "../popups.mjs";
 import { SESSION_TOOL } from "../sessions.mjs";
 import { UPLOAD_TOOL, uploadFiles } from "../upload.mjs";
 import { FACTS_TOOL } from "../facts.mjs";
-import { RUN_TOOL, enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
+import { RUN_TOOL, SCROLL_TOOL, enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
 import { sleep, within } from "../util.mjs";
 import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel } from "./page.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 
-const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, RUN_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
+const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
 // A small picture of the page goes with each result that changes what's on screen, taken once
 // the page has loaded and settled for a second: the layout, overlays and images the text
 // snapshot can't show. config.screenshots = false turns it off.
-const SCREENSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_click", "browser_press_key", "browser_tabs", "browser_wait_for", "browser_snapshot", "browser_handle_dialog", "pairbrowse_run", "pairbrowse_upload"]);
+const SCREENSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_click", "browser_press_key", "browser_tabs", "browser_wait_for", "browser_snapshot", "browser_handle_dialog", "pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload"]);
 // Results after which the page may load new popups (checked again a few seconds later); after
 // Claude's clicks, overlays already on screen count as Claude's own and stay.
 const LOADING_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_tabs"]);
@@ -36,7 +36,7 @@ const CLICKING_TOOLS = new Set(["browser_click", "browser_press_key", "browser_h
 // person using that tab.
 const TAB_TOOLS = new Set(["browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_hover",
   "browser_navigate", "browser_navigate_back", "browser_drag", "browser_drop", "browser_file_upload", "browser_handle_dialog",
-  "pairbrowse_click_at", "pairbrowse_run", "pairbrowse_upload"]);
+  "pairbrowse_click_at", "pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload"]);
 // Tools that fill a field: a field a person is filling is left to them (daemon/fields.mjs).
 const FIELD_TOOLS = new Set(["browser_type", "browser_select_option", "browser_fill_form"]);
 // Tools that read the current tab without taking its turn (anyone may watch any tab).
@@ -513,6 +513,16 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (!page) return { text: "No page open to upload into.", error: true };
         const result = await uploadFiles(page, args, { uploadsDir: paths.uploads, activity: (text) => hud.addActivity(text, myLabel(), page) });
         return { text: result.text, error: !result.ok, url: page.url() };
+      },
+      async pairbrowse_scroll(args) {
+        const step = { scroll: args.pixels ?? args.direction ?? "down" };
+        const problem = preflight([step], paths.uploads);
+        if (problem) return { text: problem.replace(/^Step 1 \(scroll\): /, ""), error: true };
+        const page = await serverPage();
+        if (!page) return { text: "No page open to scroll.", error: true };
+        const r = await runSteps(page, [step], { smooth: true, signal: disconnected.signal,
+          cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()), activity: (text) => hud.addActivity(text, myLabel(), page) });
+        return r.ok === false ? { text: r.why, error: true } : { text: `Scrolled. ${await page.evaluate(() => `Now ${Math.round(scrollY)} of ${Math.max(0, document.documentElement.scrollHeight - innerHeight)} px down.`).catch(() => "")}`, url: page.url() };
       },
       async pairbrowse_click_at(args) {
         const r = await screenshots.clickAt(args, participant);

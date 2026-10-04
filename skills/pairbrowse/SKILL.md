@@ -38,7 +38,7 @@ Make a task list with one item per page or section, and set a badge:
 ## Fast or step by step: decide per page
 
 `pairbrowse_run` steps, one key each: `go`, `fill` {Label: value}, `check`, `uncheck`, `select`
-{Label: Option}, `click`, `press`, `scroll` ("down", "up" or pixels: smooth, with the cursor; use it, not PageDown, to scroll), `upload` {Label: path}, `waitFor`, `expect`, and
+{Label: Option}, `click`, `press`, `scroll` ("down", "up" or pixels, at once), `upload` {Label: path}, `waitFor`, `expect`, and
 `handoff` {say, until} (or `untilGone`). Labels match the label, placeholder or name. Values may use
 `{{var}}` from `vars`. It stops at the first problem, says why, and returns an outline of the page.
 `saveAs` saves a flow that fully worked; `playbook` + `vars` replays it; `list: true` lists saved ones.
@@ -52,7 +52,8 @@ payment, legal or tax steps, and when the user wants to watch closely. Mix freel
 ## Speed rules
 
 - One call per page. Without fast mode, put every field into one `browser_fill_form`.
-- On long pages use `browser_find` instead of a fresh full snapshot.
+- On long pages use `browser_find` instead of a fresh full snapshot. To scroll, use
+  `pairbrowse_scroll` (people watching see it glide), never PageDown or End.
 - Results that change the page carry a small screenshot. Act on snapshot refs; for what the
   snapshot doesn't name (an icon-only ×, a map, a canvas) use `pairbrowse_click_at` with x, y in
   that screenshot and `element`. It can't click pay, publish, submit or delete buttons, or inside frames.

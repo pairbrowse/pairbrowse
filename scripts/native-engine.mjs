@@ -133,7 +133,7 @@ export async function macHostProfile(chromium, executablePath, pack, directory, 
 // The three layers of settings, lowest first: the persona saved in the profile, a saved profile
 // chosen by name, and config.json. Every layer is checked for options this engine can't honour.
 function readSettings(config, pack, personaPath) {
-  const { profile: selection, profileSelect = {}, humanize = false, showCursor = false, geoip = false, ...overrides } = config.pairbrowse ?? {};
+  const { profile: selection, profileSelect = {}, humanize = true, showCursor = false, geoip = false, ...overrides } = config.pairbrowse ?? {};
   const saved = selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {};
   const persisted = existsSync(personaPath) ? pack.Profile.load(personaPath).options : {};
   for (const key of UNSUPPORTED) {

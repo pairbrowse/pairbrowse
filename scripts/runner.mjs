@@ -42,6 +42,20 @@ export const RUN_TOOL = {
   },
 };
 
+// A single scroll that glides like a person's, with the agent's cursor on the page. Fast mode's
+// scroll step goes at once instead.
+export const SCROLL_TOOL = {
+  name: "pairbrowse_scroll",
+  description: 'Scroll the current tab the way a person does: the cursor moves onto the page and the wheel turns smoothly, so people watching see it. direction "down" or "up" (a screen), or pixels (negative: up). Use it instead of PageDown or End.',
+  inputSchema: {
+    type: "object",
+    properties: {
+      direction: { type: "string", enum: ["down", "up"] },
+      pixels: { type: "integer", minimum: -20000, maximum: 20000 },
+    },
+  },
+};
+
 const PLAYBOOKS = join(paths.home, "playbooks");
 const playbookFile = (name) => join(PLAYBOOKS, `${slug(name, "playbook")}.json`);
 
@@ -292,7 +306,16 @@ async function waitOrDisconnect(promise, signal) {
 // status(text, kind), activity(text), cursor(el, act), remember(label, value, site), owner(el) }.
 // beforeStep gets "enter" for an Enter press, and a click's element. owner(el): the person
 // filling that field ({ who }) or null: such a field is skipped (in skipped) and the run goes on.
+// Fast mode is just fast: the engine's human-like mouse and typing (on by default for single
+// actions) are off for the run, and a scroll step goes at once. hooks.smooth: a single action
+// (pairbrowse_scroll) that glides like a person.
 export async function runSteps(page, steps, hooks) {
+  const human = !hooks.smooth && page._pairbrowseHumanized === true;
+  if (human) page._pairbrowseHumanized = false;
+  try { return await stepsIn(page, steps, hooks); } finally { if (human) page._pairbrowseHumanized = true; }
+}
+
+async function stepsIn(page, steps, hooks) {
   const started = Date.now();
   const done = [];
   const skipped = []; // [{ label, who }]
@@ -412,22 +435,23 @@ export async function runSteps(page, steps, hooks) {
         }
         await page.keyboard.press(String(arg));
       } else if (kind === "scroll") {
-        // Like a person: the cursor onto the page, then the wheel in small, eased steps (a screen
-        // for "down" / "up"), so the page glides and everyone watching sees who scrolls.
+        // The cursor onto the page, then the wheel: in small eased steps that glide like a person
+        // (pairbrowse_scroll), or in two quick ones (fast mode). A screen for "down" / "up".
         const [w, h] = await page.evaluate(() => [innerWidth, innerHeight]);
         const total = arg === "down" ? Math.round(h * 0.8) : arg === "up" ? -Math.round(h * 0.8) : Math.round(Number(arg));
         const x = Math.round(w / 2), y = Math.round(h / 2);
         await hooks.cursor?.({ boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, "");
         await page.mouse.move(x, y);
-        const n = Math.min(40, Math.max(6, Math.ceil(Math.abs(total) / 60)));
+        const n = hooks.smooth ? Math.min(40, Math.max(6, Math.ceil(Math.abs(total) / 60))) : 2;
         let sent = 0;
         for (let k = 1; k <= n; k++) {
           const eased = Math.round(total * (1 - Math.cos((Math.PI * k) / n)) / 2); // slow, fast, slow
           await page.mouse.wheel(0, eased - sent);
           sent = eased;
           if (k % 10 === 0) await hooks.cursor?.({ boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, ""); // still the agent's
-          await new Promise((r) => setTimeout(r, 16));
+          if (hooks.smooth) await new Promise((r) => setTimeout(r, 16));
         }
+        await new Promise((r) => setTimeout(r, 150)); // the page catches up with the last turn of the wheel
         hooks.activity(`Scrolled ${total > 0 ? "down" : "up"}`);
       } else if (kind === "upload") {
         // Like pairbrowse_upload: files from anywhere (checked, copied into the uploads folder),

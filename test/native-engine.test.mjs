@@ -34,7 +34,7 @@ function fakeChromium(captured = { webgl: { vendor: "Apple", renderer: "Apple te
         return { pages() { return [{ async evaluate() { return captured; } }]; }, async close() {} };
       }
       calls.push({ profile, options });
-      return { closed: false, on() {}, pages() { return []; }, async close() { this.closed = true; } };
+      return { closed: false, on() {}, pages() { return []; }, browser() { return null; }, async close() { this.closed = true; } };
     },
     launch: async () => ({ close() {} }),
   };

@@ -11,7 +11,8 @@ const READ_MS = 1500;
 // info: what the page script knows about one field ({ times, focused, rw, rt, name }: real
 // input times here, and who in the other browser edited it, when). byAgent(t): whether time t
 // fell in an agent's action (agents' typing is real input too). Returns { who, local, name } or null.
-export function fieldOwner(info, { host, byAgent = () => false, now = Date.now() } = {}) {
+// byRemote(t): the joiner whose input (shared browser mode) time t was, or null.
+export function fieldOwner(info, { host, byAgent = () => false, byRemote = () => null, now = Date.now() } = {}) {
   if (!info || typeof info !== "object") return null;
   const times = (Array.isArray(info.times) ? info.times : []).map(Number).filter((t) => t > 0 && t <= now && !byAgent(t));
   const t = times.length ? Math.max(...times) : 0;
@@ -20,6 +21,8 @@ export function fieldOwner(info, { host, byAgent = () => false, now = Date.now()
   const remote = info.rw && rt <= now && now - rt < OWN_MS ? rt : 0;
   if (!local && !remote) return null;
   const name = String(info.name || "").slice(0, 60);
+  const joiner = local && byRemote(local);
+  if (local >= remote && joiner) return { who: cleanName(joiner), local: false, name };
   return local >= remote ? { who: host, local: true, name } : { who: cleanName(info.rw), local: false, name };
 }
 

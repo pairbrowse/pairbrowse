@@ -55,6 +55,27 @@ people who have one anyway.
 Under the names in `liveViewHosts` only invite links work; your own live view link keeps
 working on this computer and through an SSH tunnel.
 
+## Shared browser: one browser for everyone
+
+A join code is a **shared browser** code unless you ask for "follow": the people you let in work
+in your browser itself. Each of your tabs opens in their PairBrowse as a live picture of it, with
+sound, and with a drive code what they click, type, scroll, draw or upload there happens in your
+tab, logged in as you are. Canvases (Excalidraw), typing tests, games and the page a form leads to
+are the same for everyone, because there is only one browser.
+
+- **Smooth:** the picture goes straight from your browser to theirs (WebRTC, the technology video
+  calls use), up to 60 frames a second. The free tunnel only sets the connection up. On networks
+  that block direct connections it switches by itself to pictures through the tunnel (slower).
+- **Cursors:** everyone's pointer and every agent's cursor shows with a name tag.
+- **Files:** a file field they click asks them for the file on their own computer; it's sent over.
+- **Their Claude or Codex** works in your browser too, as a participant you see by name, taking
+  turns per tab. Final actions (pay, delete, publish, send) still need you; it never uses your saved
+  passwords or remembered details.
+- **Your logins never leave your computer.** Revoke the code and it ends at once.
+
+Ask Claude "make a join code for Sam" (shared browser), or "a follow code for Sam" for the older
+mode below, where each person has their own browser that follows your tabs.
+
 ## Join someone's session with a code
 
 The simplest way to let someone in from another computer: a join code. Nothing to set up on

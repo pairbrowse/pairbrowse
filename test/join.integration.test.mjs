@@ -118,7 +118,7 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     }
 
     stage = "joiner asks";
-    const made = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" }));
+    const made = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code", mode: "follow" }));
     const code = made.match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     assert.ok(code, made);
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code: "pb-join:bad" })), /Not joining/);
@@ -184,7 +184,7 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
 
     stage = "watch: one way";
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "leave" })), /Left Bob's session/);
-    const watchCode = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "watch", label: "Alice", share: "code" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
+    const watchCode = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "watch", label: "Alice", share: "code", mode: "follow" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code: watchCode })), /\(watch\)/);
     const wid = await until("the watch request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Alice \(Claude Code\), waiting/)?.[1]);
     await tool(host.call, "pairbrowse_invite", { action: "approve", id: wid });
@@ -277,12 +277,12 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
 
     stage = "Alice joins to drive; Carol (a plain client) to watch";
     const codeOf = (made) => made.match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
-    const code = codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" })));
+    const code = codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code", mode: "follow" })));
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code, name: "Alice" })), /Asked Bob to let Alice in/);
     const aliceReq = await until("Alice's request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Alice/)?.[1]);
     await tool(host.call, "pairbrowse_invite", { action: "approve", id: aliceReq });
     const { parseJoinCode } = await import("../scripts/join.mjs");
-    const carolCode = parseJoinCode(codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "watch", label: "Carol", share: "code" }))), { allowLocal: true });
+    const carolCode = parseJoinCode(codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "watch", label: "Carol", share: "code", mode: "follow" }))), { allowLocal: true });
     const carolHeaders = { "x-pairbrowse-joiner": "c".repeat(32), "x-pairbrowse-name": "Carol", "x-pairbrowse-app": "" };
     const carol = (path, body) => fetch(`${carolCode.url}/${carolCode.key}/${path}`, { method: body ? "POST" : "GET", body: body && JSON.stringify(body), headers: carolHeaders });
     await carol("tabs");
@@ -354,7 +354,9 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     assert.equal(alicePointer.id, wire.id);
     assert.ok(alicePointer.x >= 90 && alicePointer.x <= 150 && Math.abs(alicePointer.y - 330) <= 5, `page position ${alicePointer.x},${alicePointer.y}`);
     assert.deepEqual(Object.keys(alicePointer).sort(), ["color", "id", "k", "t", "who", "x", "y"], "a position, a name, a color and a time only");
-    await sleep(1500);
+    // Her typing pauses agents for 2 s after her last key (and its news takes a moment to cross);
+    // after that only her pointer moves, which must hold nobody up.
+    await sleep(3000);
     const t0 = Date.now();
     // Told with the first result in that tab (here the select, or the key press).
     const waited = text(await tool(host.call, "browser_tabs", { action: "select", index: hostForm.index })) + text(await tool(host.call, "browser_press_key", { key: "Shift" }));
@@ -401,14 +403,22 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
 
     stage = "Alice's field is hers: the host's agent leaves it, fast mode skips it and goes on";
     // Hers for a few seconds after her last keystroke: she types once more first.
-    assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: copy.index }) })).ok);
-    await input([{ type: "mouse", action: "mousePressed", x: 250, y: 320, button: "left", buttons: 1, clickCount: 1 }, { type: "mouse", action: "mouseReleased", x: 250, y: 320, button: "left", buttons: 0, clickCount: 1 }]);
+    const copyNow = (await tabs(joiner.call)).find((t) => /one\.pbtest\.example\/form/.test(t.url)); // tabs may have moved since
+    assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: copyNow.index }) })).ok);
+    await sleep(300);
+    await input([{ type: "mouse", action: "mouseMoved", x: 250, y: 320 }, { type: "mouse", action: "mousePressed", x: 250, y: 320, button: "left", buttons: 1, clickCount: 1 }, { type: "mouse", action: "mouseReleased", x: 250, y: 320, button: "left", buttons: 0, clickCount: 1 }]);
     await input([{ type: "key", action: "keyDown", key: "End", code: "End" }, { type: "key", action: "keyUp", key: "End", code: "End" }, { type: "text", text: "!" }]);
     await until("Alice's text on the host", async () => /Hello from Alice!/.test(await snap(host.call)));
-    s = await snap(host.call);
-    const refusedType = await tool(host.call, "browser_type", { target: ref(s, "textbox", "Comments"), element: "Comments", text: "Bob's note" });
-    assert.ok(refusedType.result.isError);
-    assert.match(text(refusedType), /Alice is filling Comments; left it as they wrote it/);
+    // While she keeps typing, the host's agent leaves her field (and fast mode skips it).
+    const keepTyping = async () => { await input([{ type: "text", text: "!" }]); await sleep(600); };
+    const refused = await until("the host's agent leaves her field", async () => {
+      await keepTyping();
+      s = await snap(host.call);
+      const r = await tool(host.call, "browser_type", { target: ref(s, "textbox", "Comments"), element: "Comments", text: "Bob's note" });
+      return r.result?.isError && /Alice is filling Comments; left it as they wrote it/.test(text(r)) && r;
+    }, 20_000);
+    assert.ok(refused);
+    await keepTyping();
     const ran = text(await tool(host.call, "pairbrowse_run", { steps: [{ fill: { Comments: "overwritten", Name: "Bob Builder" } }] }));
     assert.match(ran, /Done: 1 steps[^\n]*Left to the people filling them: Comments \(Alice\)/, ran);
     s = await snap(host.call);
@@ -434,7 +444,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     assert.match(aw.r, /paused by Alice, then resumed by Bob/);
 
     stage = "agents see what the other side's agents do, and message each other across the session";
-    const daveCode = parseJoinCode(codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Dave", share: "code" }))), { allowLocal: true });
+    const daveCode = parseJoinCode(codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Dave", share: "code", mode: "follow" }))), { allowLocal: true });
     await fetch(`${daveCode.url}/${daveCode.key}/tabs`, { headers: { "x-pairbrowse-joiner": "d".repeat(32), "x-pairbrowse-name": "Dave", "x-pairbrowse-app": "" } });
     assert.match(text(await tool(host.call, "pairbrowse_invite", { action: "list" })), /Dave[^\n]*waiting/);
     await tool(host.call, "pairbrowse_status", { text: "Filling the order form", kind: "claude" });

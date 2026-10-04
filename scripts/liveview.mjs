@@ -11,6 +11,7 @@
 // This file coordinates; the parts live in scripts/liveview/: http (checks, headers, the page),
 // invites, input (replaying a viewer's input), joiner-server (the port the sharing tunnel
 // reaches: shared tabs for joiners, never frames) and tabs.
+import { resolve, sep } from "node:path";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { keepFocus } from "./focus.mjs";
@@ -86,7 +87,7 @@ async function release(cdp) {
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null, picker = null, devShare = null, devPanel = null, relays = () => [] }) {
+  onPause = () => ({}), pauseState = () => null, picker = null, devShare = null, devPanel = null, relays = () => [], screens = null, remoteAgents = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -196,7 +197,102 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   // A tab on a shared dev server, as its shared address (null: not one).
   const devUrl = (url) => devShare?.toPublic(url) || null;
   devShare?.members((key) => joiners.has(key));
-  const push = createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared, tabMeta, isIn: (key) => joiners.has(key), sessionFor: (j) => shared.sessionFor(j), mapUrl: devUrl, log });
+  const push = createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared: { ...shared, toView: (page, x, y) => screens?.viewCached(page, x, y) || null }, tabMeta, isIn: (key) => joiners.has(key), sessionFor: (j) => shared.sessionFor(j), mapUrl: devUrl, log });
+
+  // Shared browser mode (invites with mode "shared", daemon/screenshare.mjs): a joiner sees the
+  // tabs live and works in them. Here: setting up the direct connection for one tab (its offer
+  // and the joiner's answer go over the join channel), and the slower route when there can be no
+  // direct one (pictures and input through the channel).
+  const pageById = async (id) => (await getContext()).pages().find((p) => !p.isClosed() && idOf(p) === id) || null;
+  const lastInput = new Map(); // `${key}|${id}` -> when that joiner last acted there (presence, at most twice a second)
+  function onScreenInput(page, j, id) {
+    const key = joinerKey(j);
+    return (ev, line, view) => {
+      // Their pointer, drawn here (and so in everyone's picture) with their name.
+      if (ev.type === "mouse" && view) push.fromJoiner({ me: { id, x: Math.round(ev.x + view.sx), y: Math.round(ev.y + view.sy) }, t: Date.now() }, j).catch(() => {});
+      if (!line) return;
+      const k = `${key}|${id}`;
+      if (Date.now() - (lastInput.get(k) || 0) < 500 && line !== "clicked on the page") return;
+      lastInput.set(k, Date.now());
+      onJoinerPerson(page, j.name, [line], line !== "scrolled");
+      onHumanInput(page, j.name, line !== "scrolled");
+    };
+  }
+  // A file dialog the joiner's click opened: they pick the files on their computer; they arrive
+  // in their folder here (remoteFile) and go into the field. token -> { page, chooser, key, at }.
+  const picks = new Map();
+  function onScreenPick(page, j, id) {
+    const key = joinerKey(j);
+    return ({ chooser, multiple }) => {
+      for (const [t, p] of picks) if (Date.now() - p.at > 10 * 60_000) picks.delete(t);
+      const token = randomBytes(8).toString("hex");
+      picks.set(token, { page, chooser, key, at: Date.now() });
+      push.broadcast("screen", { op: "pick", id, token, multiple: !!multiple }, { to: key });
+    };
+  }
+  async function screen(body, j) {
+    if (!screens) return { problem: "Shared browser mode isn't available here." };
+    const key = joinerKey(j);
+    const op = String(body?.op || "");
+    const peerOk = (peer) => typeof peer === "string" && peer.startsWith(`${key}|`) && peer.length < 200;
+    if (op === "want") {
+      const page = await pageById(String(body?.id || ""));
+      if (!page || !crossesWhole(page)) return { problem: "That tab isn't shared." };
+      const id = idOf(page);
+      const peer = `${key}|${id}|${randomBytes(4).toString("hex")}`;
+      const r = await screens.offer(page, peer, {
+        role: j.invite.role, who: j.name, onInput: onScreenInput(page, j, id), onPick: onScreenPick(page, j, id),
+        onState: (state) => push.broadcast("screen", { op: "state", id, peer, state }, { to: key }),
+      });
+      return { peer, id, sdp: r.sdp };
+    }
+    if (op === "answer") return peerOk(body.peer) && await screens.answer(body.peer, body.sdp) ? { ok: true } : { problem: "No such connection." };
+    if (op === "stop") { if (peerOk(body.peer)) await screens.stop(body.peer); return { ok: true }; }
+    // The slower route: pictures of the tab through the channel, and input back.
+    if (op === "frames") {
+      const page = await pageById(String(body?.id || ""));
+      if (!page || !crossesWhole(page)) return { problem: "That tab isn't shared." };
+      const id = idOf(page);
+      if (body.on) await screens.frames(page, key, (img) => push.broadcast("screen", { op: "frame", id, img }, { to: key }));
+      else await screens.frames(page, key, null);
+      return { ok: true };
+    }
+    if (op === "input") {
+      const page = await pageById(String(body?.id || ""));
+      if (!page || !crossesWhole(page)) return { problem: "That tab isn't shared." };
+      if (j.invite.role !== "drive") return { problem: "This code is for watching only." };
+      await screens.input(page, (Array.isArray(body.events) ? body.events : []).slice(0, 200), onScreenInput(page, j, idOf(page)), j.name, onScreenPick(page, j, idOf(page)));
+      return { ok: true };
+    }
+    // The files they picked for that dialog: only from their own folder here (sent over just before).
+    if (op === "picked") {
+      const p = picks.get(String(body?.token || ""));
+      if (!p || p.key !== key || p.page.isClosed()) return { problem: "That file request is over." };
+      picks.delete(body.token);
+      const mine = remoteAgents?.folder(key);
+      const files = (Array.isArray(body.files) ? body.files : []).slice(0, 20).map(String);
+      if (!mine || files.some((f) => !resolve(f).startsWith(resolve(mine) + sep))) return { problem: "Those files didn't come from you." };
+      await screens.setFiles(p.chooser, files);
+      return { ok: true };
+    }
+    return { problem: "Unknown request." };
+  }
+  // A joiner's own agent at work in this browser (daemon/remote-agents.mjs): its MCP messages,
+  // its answers back on the channel; files it sends over for an upload.
+  function remoteAgent(body, j) {
+    if (!remoteAgents) return { problem: "Shared browser mode isn't available here." };
+    if (j.invite.role !== "drive") return { problem: "This code is for watching only: your agent can't act in the host's browser." };
+    const key = joinerKey(j);
+    const ok = remoteAgents.line({ name: j.name, app: j.app, key }, String(body?.a || ""), body?.line, (line) => push.broadcast("agent", { a: String(body.a), line }, { to: key }));
+    return ok ? { ok: true } : { problem: "Bad message." };
+  }
+  function remoteFile(body, j) {
+    if (!remoteAgents) return { problem: "Shared browser mode isn't available here." };
+    if (j.invite.role !== "drive") return { problem: "This code is for watching only." };
+    return remoteAgents.file({ key: joinerKey(j) }, body);
+  }
+  // A tab whose picture may go to joiners: any web page, never the browser's own pages.
+  const crossesWhole = (page) => /^(https?:|about:blank)/.test(page.url());
   // Tabs opening, closing and going elsewhere reach joiners at once, not on the next round
   // (watched from the first joiner's stream on).
   let pagesWatched = false;
@@ -534,7 +630,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
 
   const joinerServer = createJoinerServer({
     key, invites, approvals, joiners, tunnelHost, onJoinRequest, log,
-    live: { tabsFor, applyTabs, openStream: (j, conn) => { watchPages(); return push.open(j, conn).catch((e) => log("push", e?.message || e)); }, pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
+    live: { tabsFor, applyTabs, screen, agent: remoteAgent, file: remoteFile,
+      stopScreens: async (j) => { remoteAgents?.stop(joinerKey(j)); await screens?.stopAll(`${joinerKey(j)}|`); }, openStream: (j, conn) => { watchPages(); return push.open(j, conn).catch((e) => log("push", e?.message || e)); }, pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
   });
 
   try {

@@ -1,7 +1,8 @@
 // The joiner port: what the sharing tunnel reaches. Join code keys only, from PairBrowse (no
 // browser pages: any Origin is refused), and nothing but the approval request until the host
-// lets that joiner in. Then only the shared tabs (tabsync.mjs): never the owner's key, the
-// viewer page, a picture of the page, or anything an agent could act through.
+// lets that joiner in. Then only the shared tabs (tabsync.mjs), and with a shared browser code
+// (mode "shared") the setup of a direct connection that shows them a tab live and takes their
+// input there (daemon/screenshare.mjs). Never the owner's key or the viewer page.
 import http from "node:http";
 import { JOINER_ID, cleanName, appName, cleanComputer } from "../join.mjs";
 import { LOOPBACK, keyOk, readBody, BODY_MAX, listen } from "./http.mjs";
@@ -15,6 +16,8 @@ const POINTERS_PER_SECOND = 40; // a pointer is sent up to 25 times a second whi
 const POINTER_BODY_MAX = 4000;
 const SAYS_PER_SECOND = 4;
 const SAY_BODY_MAX = 20_000;
+const SCREEN_PER_SECOND = 40; // shared browser mode: connection setup, and input on the slower route
+const SCREEN_BODY_MAX = 120_000;
 const HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff", "content-type": "application/json" };
 
 // Whether a joiner is still there: a recent poll.
@@ -29,8 +32,8 @@ const joinerOf = (req) => ({
 });
 
 // key: the owner's key (it never works here). joiners: the live view's joiner map, filled here.
-// live: the coordinator's { tabsFor(j), openStream(j, conn), applyTabs(body, j), pointersFor(body, j), say(body, j), changed } (changed: the participant
-// list changed).
+// live: the coordinator's { tabsFor(j), openStream(j, conn), applyTabs(body, j), pointersFor(body, j), say(body, j), screen(body, j),
+// stopScreens(j), changed } (changed: the participant list changed; screen: shared browser mode, invites with mode "shared" only).
 export function createJoinerServer({ key, invites, approvals, joiners, tunnelHost, live, onJoinRequest, log }) {
   // Answers to the tunnels' public names (tunnelHost(): one or a list), or to loopback
   // (cloudflared may pass either).
@@ -73,7 +76,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
     const j = joiners.get(k);
     joiners.delete(k);
     approvals.leave(invite.id, joinerId);
-    if (j) live.changed();
+    if (j) { live.stopScreens?.(j)?.catch?.(() => {}); live.changed(); }
   }
 
   // One change from an admitted joiner, from a request or the push channel: (drive) their tab
@@ -107,6 +110,28 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       if (size > SAY_BODY_MAX) return { code: 413, body: { error: "Too large." } };
       const r = live.say(parsed, j);
       return r?.problem ? { code: 429, body: { error: r.problem } } : { code: 200, body: { ok: true } };
+    }
+    // Shared browser mode: the tab's picture straight to them (setup only through here), or on the
+    // slower route pictures and input through here.
+    if (route === "screen") {
+      if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself." } };
+      j.screens = (j.screens || []).filter((x) => x > t - 1000);
+      if (j.screens.length >= SCREEN_PER_SECOND) return { code: 429, body: { error: "Too many requests. Slow down." } };
+      j.screens.push(t);
+      if (size > SCREEN_BODY_MAX) return { code: 413, body: { error: "Too large." } };
+      const r = await live.screen(parsed, j);
+      return r?.problem ? { code: 400, body: { error: r.problem } } : { code: 200, body: r };
+    }
+    // Shared browser mode: their own agent's messages for its participant here, and the files it
+    // sends over for an upload (in parts).
+    if (route === "agent" || route === "file") {
+      if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself." } };
+      j.agentCalls = (j.agentCalls || []).filter((x) => x > t - 1000);
+      if (j.agentCalls.length >= SCREEN_PER_SECOND) return { code: 429, body: { error: "Too many requests. Slow down." } };
+      j.agentCalls.push(t);
+      if (size > BODY_MAX.input) return { code: 413, body: { error: "Too large." } };
+      const r = route === "agent" ? live.agent(parsed, j) : live.file(parsed, j);
+      return r?.problem ? { code: 400, body: { error: r.problem } } : { code: 200, body: r };
     }
     return { code: 404, body: { error: "Unknown request." } };
   }
@@ -169,8 +194,9 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       const j = a.j;
       const conn = acceptUpgrade(req, socket, head, { maxMessage: BODY_MAX.input + 1000 });
       if (!conn) return;
-      // Changes apply in the order they came; pointers don't wait behind them.
-      let chain = Promise.resolve();
+      // Changes apply in the order they came; pointers don't wait behind them, and neither does
+      // shared browser mode (setting up a connection takes a second or two), which keeps its own order.
+      let chain = Promise.resolve(), screenChain = Promise.resolve();
       conn.onMessage((raw) => {
         let m;
         try { m = JSON.parse(raw); } catch { return; }
@@ -180,6 +206,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
           if (m?.n !== undefined) conn.send(JSON.stringify({ event: "reply", data: { n: m.n, code: r.code, body: r.body } }));
         };
         if (m?.route === "pointer") run();
+        else if (m?.route === "screen") { if (m?.body?.op === "want") run(); else screenChain = screenChain.then(run); }
         else chain = chain.then(run);
       });
       live.openStream(j, conn);

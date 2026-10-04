@@ -10,8 +10,13 @@ import { startJoin } from "../relay.mjs";
 import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
 import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../devshare.mjs";
-import { savedName, saveParticipantName } from "../paths.mjs";
-import { sleep, currentAccount } from "../util.mjs";
+import { savedName, saveParticipantName, paths } from "../paths.mjs";
+import { sleep, currentAccount, within } from "../util.mjs";
+import { panelExtensionId } from "../browser.mjs";
+import { pathsIn, withPaths } from "./serve.mjs";
+import { uploadProblem } from "../upload.mjs";
+import { readFileSync, statSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
 function serially() {
@@ -31,6 +36,19 @@ const FORMS_ALL_MS = 2000; // every field is read again this often, in case a ch
 const ORDER_MS = 1000; // the tab order here is checked this often
 const OUTBOUND_MS = 250; // this side's tab changes are looked for this often
 const FORM_COALESCE_MS = 30; // keystrokes that come together go as one
+// Shared browser mode (codes with mode "shared"): each of the host's tabs is a page of the
+// extension here (screen.js) showing it live; the tab you look at is connected directly.
+const SCREEN_KEEP_MS = 60_000; // a tab out of sight stays connected this long (switching back is instant)
+const SCREEN_CONNECT_MS = process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" ? 3000 : 12_000; // no direct connection by then: try again, then the slower route
+const SCREEN_INPUT_MS = 30; // on the slower route, input goes to the host this often
+const screenBase = () => `chrome-extension://${panelExtensionId()}/screen.html`;
+const screenUrl = (id) => `${screenBase()}?id=${encodeURIComponent(id)}`;
+const isScreen = (page) => page.url().startsWith(screenBase());
+// The tools an agent here uses in the host's browser while in a shared browser session (the rest,
+// such as its status, remembered details and sessions, stay here).
+const FORWARDED = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_click_at"]);
+const AGENT_CALL_MS = 15 * 60_000; // a call there (a hand-off waits for a person) answers within this
+const FILE_PART = 120_000; // bytes of a file per message to the host
 // Logs how long pointers and field values took from the other side's page (for the live check).
 const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 
@@ -129,11 +147,12 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     // Values typed here (sensitive ones only as filled), read at most every few hundred ms per
     // tab; and the agents here (drive). A watcher's stay here; reading them still keeps values
     // from there from landing on top of what the person here is typing.
+    if (cur.shared) await screensRound(cur);
     let formBytes = 0;
-    const all = Date.now() - cur.formsAllAt > FORMS_ALL_MS; // in case a change went unannounced
+    const all = !cur.shared && Date.now() - cur.formsAllAt > FORMS_ALL_MS; // in case a change went unannounced
     if (all) cur.formsAllAt = Date.now();
     for (const [id, page] of cur.pages) {
-      if (page.isClosed() || cur.quiet.has(id) || formBytes > FORM_BYTES || !(all || cur.dirty.has(page))) continue;
+      if (cur.shared || page.isClosed() || cur.quiet.has(id) || formBytes > FORM_BYTES || !(all || cur.dirty.has(page))) continue;
       cur.dirty.delete(page);
       const read = await forms.read(page).catch(() => null);
       if (!read) continue;
@@ -185,7 +204,13 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         const r = await cur.join.send(ops.slice(i, i + OPS_MAX));
         if (r) answer = { ...r, opened: { ...answer?.opened, ...r.opened } };
       }
-      for (const { op, page } of adopting) if (answer?.opened?.[op.ref] && cur.mirror.opened(answer.opened[op.ref], op.url)) cur.pages.set(answer.opened[op.ref], page);
+      for (const { op, page } of adopting) {
+        const id = answer?.opened?.[op.ref];
+        if (!id || !cur.mirror.opened(id, op.url)) continue;
+        cur.pages.set(id, page);
+        // Shared browser: the tab opened there; here it becomes its picture.
+        if (cur.shared) await page.goto(screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {});
+      }
     }
   }
 
@@ -227,12 +252,13 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     for (const id of plan.close) { const page = cur.pages.get(id); cur.pages.delete(id); if (page) await closeTab(page); }
     for (const { id, url } of plan.navigate) {
       const page = cur.pages.get(id);
-      await page?.goto(url, { waitUntil: "commit", timeout: OPEN_MS }).catch((e) => log("shared tab", e?.message || e));
+      // Shared browser: the picture shows the host's tab wherever it goes.
+      if (!cur.shared) await page?.goto(url, { waitUntil: "commit", timeout: OPEN_MS }).catch((e) => log("shared tab", e?.message || e));
       cur.mirror.applied(id);
     }
     for (const { id, url } of plan.open) {
       if (s !== cur) return;
-      const page = await openTab(url);
+      const page = await openTab(cur.shared ? screenUrl(id) : url);
       cur.pages.set(id, page);
       cur.seen.add(page);
       cur.mirror.applied(id);
@@ -245,8 +271,22 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const hostOrder = (Array.isArray(state.tabs) ? state.tabs : []).map((t) => t?.id);
     if (JSON.stringify(hostOrder) !== cur.hostOrderSig) { cur.hostOrderSig = JSON.stringify(hostOrder); cur.order.fromHost(hostOrder); await checkOrder(cur); }
 
-    // Values from there that waited for their page to load here.
-    await applyForms(cur);
+    // Values from there that waited for their page to load here (a shared browser has one copy of each field: theirs).
+    if (!cur.shared) await applyForms(cur);
+    // Shared browser: each picture's tab title and address, for its page here (and on leaving).
+    if (cur.shared) {
+      for (const t of Array.isArray(state.tabs) ? state.tabs : []) {
+        if (!t?.id) continue;
+        const info = { title: String(t.title || "").slice(0, 200), url: String(t.url || "").slice(0, 2048) };
+        cur.urls.set(t.id, info.url);
+        const page = cur.pages.get(t.id);
+        const sig = `${info.title}\u0001${info.url}`;
+        if (page && !page.isClosed() && isScreen(page) && cur.titles.get(t.id) !== sig) {
+          cur.titles.set(t.id, sig);
+          page.evaluate((i) => window.pbScreen?.info(i), { ...info, who: cur.join.host }).catch(() => cur.titles.delete(t.id));
+        }
+      }
+    }
 
     // Who is in each tab there: a person using it by hand counts as one here (agents here wait,
     // then hear what they did: names of fields and buttons, never values); the agent holding it
@@ -281,12 +321,139 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     liveView()?.setRemote((Array.isArray(state.people) ? state.people : []).map((label) => ({ label: `${label} (${cur.join.host}'s session)`, role: cur.join.role })));
   }
 
+  // Shared browser mode, each round: a picture page that was sent somewhere else (an address typed
+  // in its address bar: that already went to the host as the tab's new address) shows the picture
+  // again; the tab in sight gets its direct connection (offer from the host, answer from the
+  // page); one that can't connect directly moves to the slower route (pictures and input through
+  // the join channel); one out of sight for a while lets its connection go.
+  async function screensRound(cur) {
+    const now = Date.now();
+    for (const [id, page] of cur.pages) {
+      if (page.isClosed()) continue;
+      if (!isScreen(page)) {
+        if (/^https?:/.test(page.url())) { cur.screens.delete(page); cur.titles.delete(id); await page.goto(screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {}); }
+        continue;
+      }
+      const st = await within(800, page.evaluate(() => window.pbScreen?.state() || null).catch(() => null));
+      if (!st) continue;
+      let sc = cur.screens.get(page);
+      if (!sc) { sc = { peer: null, conn: "none", since: now, tries: 0, fallback: false, framesOn: false, hiddenSince: 0, busy: false }; cur.screens.set(page, sc); }
+      if (st.conn !== sc.conn) { sc.conn = st.conn; sc.since = now; }
+      sc.hiddenSince = st.visible ? 0 : sc.hiddenSince || now;
+      const outOfSight = sc.hiddenSince && now - sc.hiddenSince > SCREEN_KEEP_MS;
+      if (sc.fallback) {
+        if (outOfSight && sc.framesOn) { sc.framesOn = false; cur.join.screen({ op: "frames", id, on: false }).catch(() => {}); }
+        else if (st.visible && !sc.framesOn) { sc.framesOn = true; const r = await cur.join.screen({ op: "frames", id, on: true }); if (r?.error) sc.framesOn = false; }
+        continue;
+      }
+      if (sc.busy) continue;
+      if (st.conn === "connected") {
+        if (outOfSight) { const peer = sc.peer; sc.peer = null; await page.evaluate(() => window.pbScreen?.close()).catch(() => {}); if (peer) cur.join.screen({ op: "stop", peer }).catch(() => {}); }
+        continue;
+      }
+      const stuck = st.conn === "failed" || (st.conn === "connecting" && now - sc.since > SCREEN_CONNECT_MS) || (st.conn === "disconnected" && now - sc.since > 6000);
+      if (stuck) {
+        sc.tries++;
+        if (sc.peer) cur.join.screen({ op: "stop", peer: sc.peer }).catch(() => {});
+        sc.peer = null;
+        await page.evaluate(() => window.pbScreen?.close()).catch(() => {});
+        if (sc.tries >= 2) { sc.fallback = true; log("shared browser: no direct connection; using the slower route"); startScreenInput(cur); continue; }
+      }
+      if (st.visible && (st.conn === "none" || stuck)) {
+        sc.busy = true;
+        sc.since = now;
+        (async () => {
+          try {
+            const r = await cur.join.screen({ op: "want", id });
+            if (!r?.sdp) { log("shared browser", r?.error || "no offer"); return; }
+            sc.peer = r.peer;
+            // Tests only (PAIRBROWSE_TEST_NO_DIRECT=1): a network where no direct connection can be made.
+            const answer = await page.evaluate((o) => window.pbScreen.offer(o), { sdp: r.sdp, peer: r.peer, noDirect: process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" });
+            const a = await cur.join.screen({ op: "answer", peer: r.peer, sdp: answer });
+            if (a?.error) log("shared browser", a.error);
+          } catch (e) {
+            log("shared browser", e?.message || e);
+          } finally {
+            sc.busy = false;
+          }
+        })();
+      }
+    }
+  }
+  // The slower route's input: what the person does on a picture page goes to the host every few
+  // tens of milliseconds (the direct connection carries it when there is one).
+  function startScreenInput(cur) {
+    if (cur.inputTimer) return;
+    let busy = false;
+    cur.inputTimer = setInterval(async () => {
+      if (s !== cur) { clearInterval(cur.inputTimer); cur.inputTimer = null; return; }
+      if (busy) return;
+      busy = true;
+      try {
+        for (const [id, page] of cur.pages) {
+          if (page.isClosed() || !cur.screens.get(page)?.fallback) continue;
+          const events = await within(500, page.evaluate(() => window.pbScreen?.takeInput() || []).catch(() => []));
+          if (Array.isArray(events) && events.length && cur.join.role === "drive") await cur.join.screen({ op: "input", id, events });
+        }
+      } finally {
+        busy = false;
+      }
+    }, SCREEN_INPUT_MS);
+  }
+  // From the host on the join channel: a picture of a tab (the slower route), a connection's state,
+  // or a file dialog your click opened there: you pick the files here, they're sent over and go
+  // into that field.
+  function onScreen(data, cur) {
+    if (s !== cur || !data) return;
+    if (data.op === "pick" && typeof data.token === "string") {
+      const page = cur.pages.get(data.id);
+      if (!page || page.isClosed() || cur.join.role !== "drive") return;
+      (async () => {
+        const picked = await page.evaluate((o) => window.pbScreen?.pick(o), { multiple: !!data.multiple }).catch(() => null);
+        log(`shared browser: ${Array.isArray(picked) ? picked.length : 0} file(s) picked for the host's page`);
+        if (!Array.isArray(picked) || !picked.length) return;
+        const files = [];
+        for (const f of picked.slice(0, 20)) {
+          const bytes = Buffer.from(String(f.b64 || ""), "base64");
+          const token = randomBytes(8).toString("hex");
+          const parts = Math.max(1, Math.ceil(bytes.length / FILE_PART));
+          for (let part = 0; part < parts; part++) {
+            const r = await cur.join.file({ token, name: String(f.name || "file"), part, data: bytes.subarray(part * FILE_PART, (part + 1) * FILE_PART).toString("base64"), last: part === parts - 1 });
+            if (r?.error || r?.problem) { log("shared browser file", r.error || r.problem); return; }
+            if (part === parts - 1) files.push(r.path);
+          }
+        }
+        const r = await cur.join.screen({ op: "picked", token: data.token, files });
+        log(r?.error ? `shared browser file: ${r.error}` : `shared browser: ${files.length} file(s) put into the host's page`);
+      })().catch((e) => log("shared browser file", e?.message || e));
+      return;
+    }
+    if (data.op === "frame" && typeof data.img === "string") {
+      const page = cur.pages.get(data.id);
+      if (!page || page.isClosed()) return;
+      const sc = cur.screens.get(page);
+      if (!sc) return;
+      // Only the newest picture counts: one waiting replaces the one before.
+      sc.nextFrame = data.img;
+      if (sc.drawing) return;
+      sc.drawing = true;
+      (async () => {
+        while (sc.nextFrame && s === cur) {
+          const img = sc.nextFrame;
+          sc.nextFrame = null;
+          await page.evaluate((b) => window.pbScreen?.frame(b), img).catch(() => {});
+        }
+        sc.drawing = false;
+      })();
+    }
+  }
+
   // Pointers: this side's (the person's, the agents') go there as they move, up to 25 times a
   // second, with where the person reads (a mark on the other side's scrollbar); theirs come on
   // the stream and are drawn in the copies here. Positions only, never
   // what's under them, and nothing for tabs on secret domains (either side's).
   function sendPointers(cur) {
-    if (s !== cur || cur.pointerTimer) return;
+    if (s !== cur || cur.pointerTimer || cur.shared) return; // shared browser: pointers go with the input
     cur.pointerTimer = setTimeout(async () => {
       cur.pointerTimer = null;
       const fresh = (p) => p && Date.now() - Number(p.t) < POINTER_FRESH_MS;
@@ -310,6 +477,19 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   }
   function drawPointers(list, cur) {
     if (s !== cur) return;
+    // Shared browser: pointers come as places in the tab's view, drawn over its picture.
+    if (cur.shared) {
+      const byPage = new Map();
+      for (const raw of (Array.isArray(list) ? list : []).slice(0, 24)) {
+        const page = cur.pages.get(raw?.id);
+        if (!page || page.isClosed() || raw.v || typeof raw.nx !== "number" || typeof raw.ny !== "number") continue;
+        byPage.set(page, [...(byPage.get(page) || []), { k: String(raw.k || "").slice(0, 100), who: String(raw.who || "").slice(0, 40), color: raw.color, nx: raw.nx, ny: raw.ny }]);
+      }
+      for (const page of cur.drawn) if (!byPage.has(page) && !page.isClosed()) page.evaluate(() => window.pbScreen?.pointers([])).catch(() => {});
+      cur.drawn = new Set(byPage.keys());
+      for (const [page, l] of byPage) page.evaluate((x) => window.pbScreen?.pointers(x), l).catch(() => {});
+      return;
+    }
     const ids = new Set([...cur.pages.keys()].filter((id) => !cur.quiet.has(id)));
     const byPage = new Map();
     for (const raw of (Array.isArray(list) ? list : []).slice(0, 24)) {
@@ -347,7 +527,10 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     liveView()?.setRemote([]);
     if (cur) onLeft?.();
     if (cur) for (const page of cur.pages.values()) if (!page.isClosed()) hud.setSharedSpark(page, "");
+    if (cur) { clearInterval(cur.inputTimer); cur.inputTimer = null; }
     if (cur) await cur.join.leave();
+    // Shared browser: each picture becomes the tab it showed, as your own (signed in as you).
+    if (cur?.shared) for (const [id, page] of cur.pages) if (!page.isClosed() && isScreen(page) && /^https?:/.test(cur.urls.get(id) || "")) page.goto(cur.urls.get(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {});
     if (cur && why) log(why);
     return cur;
   }
@@ -376,7 +559,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const who = cleanName(name, "") || displayName({ configured: config.participantName, env: process.env.PAIRBROWSE_PARTICIPANT, ...currentAccount() }) || cleanName(name);
     const cur = { mirror: createMirror(), pages: new Map(), owner, window: false, windowId: null, lastT: 0, candidates: new Map(), seen: new WeakSet(), heard: new Map(), told: new WeakMap(), agents: new Map(), outbox: [],
       forms: createFormSync(), order: createOrderSync(), quiet: new Set(), agentSent: new Map(), personSent: new Map(), dirty: new Set(), formsAllAt: 0,
-      formT: new Map(), pointed: new WeakMap(), pointerTimer: null, pointerSig: "", drawn: new Set(), formTimer: null };
+      formT: new Map(), pointed: new WeakMap(), pointerTimer: null, pointerSig: "", drawn: new Set(), formTimer: null,
+      shared: parsed.mode === "shared", screens: new Map(), titles: new Map(), urls: new Map(), inputTimer: null };
     const queue = serially(); // the host's changes and this side's, one at a time
     cur.queue = queue;
     s = cur;
@@ -386,6 +570,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       on: {
         form: (data) => queue(() => onForm(data, cur)),
         pointers: (list) => drawPointers(list, cur),
+        screen: (data) => onScreen(data, cur),
+        agent: (data) => onAgent(data, cur),
         session: (data) => onSession?.(data, cur.join),
         message: (data) => onMessage?.(data, cur.join),
       },
@@ -395,6 +581,11 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       },
     });
     (async () => { while (s === cur) { await sleep(OUTBOUND_MS); if (s === cur) await queue(() => outbound(cur)).catch((e) => log("shared tabs", e?.message || e)); } })();
+    if (cur.shared) return {
+      text: `Asked ${parsed.label} to let ${who} in (${parsed.role}, shared browser). They have to approve first. Then ${parsed.label}'s tabs open here in a window of their own, each showing their tab live (picture and sound, straight from their browser)` +
+        (parsed.role === "drive" ? ", and what you click, type and scroll there happens in their browser itself, logged in as they are." : "; you watch, without clicking or typing there.") +
+        " Their logins stay on their computer. Check with pairbrowse_join status; stop with leave (each tab then opens here as your own).",
+    };
     return {
       text: `Asked ${parsed.label} to let ${who} in (${parsed.role}). They have to approve first. Then this browser opens ${parsed.label}'s tabs in a window of their own and keeps following them` +
         (parsed.role === "drive" ? "; what you or your agent change in those tabs (another address, a new tab in their window or from one of them, closing one) happens in their browser too." : " (watch: changes here stay here).") +
@@ -402,8 +593,73 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     };
   }
 
+  // Shared browser mode: an agent here works in the host's browser as a participant there. Its
+  // calls go over the join channel; files it uploads are sent over first (checked as uploads are
+  // here), and the call names them by where they landed there.
+  const agentState = new Map(); // participant -> { ready: Promise }
+  const pendingCalls = new Map(); // `${agent}|${id}` -> resolve
+  let callSeq = 0;
+  function onAgent(data, cur) {
+    if (s !== cur || typeof data?.line !== "string") return;
+    let m;
+    try { m = JSON.parse(data.line); } catch { return; }
+    if (m?.id === undefined || m.method) return; // their side's notifications: nothing for us
+    const k = `${data.a}|${m.id}`;
+    const done = pendingCalls.get(k);
+    if (done) { pendingCalls.delete(k); done(m); }
+  }
+  function sendLine(cur, agent, msg, wait = true) {
+    if (!wait) return cur.join.agent(agent, JSON.stringify(msg)).then(() => null);
+    return new Promise((resolve) => {
+      const k = `${agent}|${msg.id}`;
+      const timer = setTimeout(() => { pendingCalls.delete(k); resolve({ error: { code: -32000, message: "The host's browser didn't answer in time." } }); }, AGENT_CALL_MS);
+      pendingCalls.set(k, (m) => { clearTimeout(timer); resolve(m); });
+      cur.join.agent(agent, JSON.stringify(msg)).then((r) => { if (r?.error) { clearTimeout(timer); pendingCalls.delete(k); resolve({ error: { code: -32000, message: `The host's browser refused: ${r.error}` } }); } });
+    });
+  }
+  async function sendFile(cur, path) {
+    const problem = uploadProblem(path, paths.uploads);
+    if (problem) throw new Error(problem);
+    if (statSync(path).size > 50 * 1024 * 1024) throw new Error(`${path} is too large to send (50 MB at most).`);
+    const data = readFileSync(path);
+    const token = randomBytes(8).toString("hex");
+    const parts = Math.max(1, Math.ceil(data.length / FILE_PART));
+    for (let part = 0; part < parts; part++) {
+      const r = await cur.join.file({ token, name: path.split(/[\\/]/).pop(), part, data: data.subarray(part * FILE_PART, (part + 1) * FILE_PART).toString("base64"), last: part === parts - 1 });
+      if (r?.error || r?.problem) throw new Error(r.error || r.problem);
+      if (part === parts - 1) return r.path;
+    }
+  }
+  async function remoteCall(participant, msg, { app, label }) {
+    const cur = s;
+    if (!cur?.shared) return { error: { code: -32000, message: "Not in a shared browser session." } };
+    const agent = participant.slice(0, 16);
+    let st = agentState.get(participant);
+    if (!st || st.cur !== cur) {
+      st = { cur, ready: sendLine(cur, agent, { jsonrpc: "2.0", id: `init-${++callSeq}`, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: app || "agent", version: "1" } } })
+        .then(() => sendLine(cur, agent, { jsonrpc: "2.0", method: "notifications/initialized" }, false)) };
+      agentState.set(participant, st);
+    }
+    await st.ready;
+    const name = msg.params?.name;
+    let args = msg.params?.arguments || {};
+    const paths = pathsIn(name, args);
+    if (paths.length) {
+      const map = new Map();
+      try { for (const p of paths) map.set(p, await sendFile(cur, p)); } catch (e) { return { result: { content: [{ type: "text", text: String(e?.message || e) }], isError: true } }; }
+      args = withPaths(name, args, map);
+    }
+    const out = await sendLine(cur, agent, { jsonrpc: "2.0", id: `c-${++callSeq}`, method: "tools/call", params: { ...msg.params, arguments: args } });
+    const { id: _id, ...rest } = out || {};
+    return rest.result || rest.error ? rest : { error: { code: -32000, message: "No answer from the host's browser." } };
+  }
+
   return {
     command,
+    // Shared browser mode: whether a tool call from an agent here goes to the host's browser, and
+    // making that call (see remoteCall).
+    forwards: (name) => !!s?.shared && s.join.phase === "in" && s.join.role === "drive" && (String(name).startsWith("browser_") || FORWARDED.has(name)),
+    remoteCall,
     // The connection that joined went away: so does the join.
     ownerGone(owner) { if (s?.owner === owner) stop("left the shared session: its connection closed").catch(() => {}); },
     stop,

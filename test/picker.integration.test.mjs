@@ -225,7 +225,7 @@ test("joining from the picker takes the same code checks and the host's approval
   try {
     const host = await connect(hostHome);
     assert.ok(!(await host.tool("browser_navigate", { url: "http://one.pbtest.example/shared" })).result.isError);
-    const code = text(await host.tool("pairbrowse_invite", { action: "create", role: "watch", label: "Alice", share: "code" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
+    const code = text(await host.tool("pairbrowse_invite", { action: "create", role: "watch", label: "Alice", share: "code", mode: "follow" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     assert.ok(code);
 
     stage = "the joiner's agent waits on the picker";

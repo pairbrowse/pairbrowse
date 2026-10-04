@@ -50,8 +50,10 @@ export const newJoinerId = () => randomBytes(16).toString("hex");
 // ("PairBrowse": what older codes carried instead).
 const hostLabel = (name) => { const n = cleanName(name, ""); return !n || n === "PairBrowse" ? "the host" : n; };
 
-export function encodeJoinCode({ url, key, role, label }) {
-  const body = JSON.stringify({ v: 1, u: new URL(url).origin, k: key, r: role, l: cleanName(label, "") });
+// mode "shared": the joiner works in the host's own browser, seeing it live (shared browser mode);
+// "follow" (and codes from before modes): their browser opens the host's tabs and follows them.
+export function encodeJoinCode({ url, key, role, label, mode = "follow" }) {
+  const body = JSON.stringify({ v: 1, u: new URL(url).origin, k: key, r: role, l: cleanName(label, ""), ...(mode === "shared" ? { m: "s" } : {}) });
   return JOIN_PREFIX + Buffer.from(body).toString("base64url");
 }
 
@@ -77,7 +79,7 @@ export function parseJoinCode(code, { hosts = [], allowLocal = false } = {}) {
   }
   if (typeof v.k !== "string" || !KEY.test(v.k)) throw new Error("That join code's key is damaged. Ask for it again.");
   if (v.r !== "watch" && v.r !== "drive") throw new Error('A join code\'s role is "watch" or "drive".');
-  return { url: u.origin, host: u.host, key: v.k, role: v.r, label: hostLabel(v.l) };
+  return { url: u.origin, host: u.host, key: v.k, role: v.r, label: hostLabel(v.l), mode: v.m === "s" ? "shared" : "follow" };
 }
 
 // ---- host approval ------------------------------------------------------------------------

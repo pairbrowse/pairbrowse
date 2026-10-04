@@ -74,6 +74,16 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     return () => { span[1] = Date.now() + (tag === "popup" ? 100 : 700); };
   }
   const byAgent = (t, after = 0) => busy.some(([start, end]) => t >= start && t <= end + after);
+  // Shared browser mode: a joiner's input replayed here (screenshare.mjs) is real input in the
+  // page, but it's theirs: marked while it runs, so it's never taken for the host's.
+  const remote = []; // [start, end, who]
+  function remoteStart(who) {
+    const span = [Date.now() - 50, Infinity, String(who || "")];
+    remote.push(span);
+    if (remote.length > 100) remote.shift();
+    return () => { span[1] = Date.now() + 300; };
+  }
+  const byRemote = (t) => remote.find(([start, end]) => t >= start && t <= end)?.[2] || null;
   const agentActing = () => busy.some(([, end]) => end === Infinity);
 
   // Entries come from the page, so each one is checked: a known kind, a short label, and a time
@@ -97,7 +107,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
         what: String(e.what ?? "").replace(/[\u0000-\u001f\u007f"`<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 60),
       };
     });
-    const yours = clean.filter((e) => e.kind === "wheel" || !byAgent(e.happened));
+    const yours = clean.filter((e) => (e.kind === "wheel" || !byAgent(e.happened)) && !byRemote(e.happened)); // a joiner's is told where it's replayed
     if (!yours.length) return;
     humanIn(page, host, Math.min(at, Math.max(...yours.map((e) => e.t))));
     // Reading along (moving, scrolling) holds nobody up; clicks, typing and keys do.
@@ -221,6 +231,8 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     byAgent: (t) => byAgent(t),
     // Whether time t fell in an agent's own tool call (typing in fields happens only there).
     typedByAgent: (t) => busy.some((s) => s.tag !== "popup" && t >= s[0] && t <= s[1]),
+    // Shared browser mode: marks a joiner's replayed input (returns done()); whose input time t was.
+    remoteStart, byRemote,
     personIn, actingIn, recentPerson, humanIn, elsewhere, sharedPerson, feedAfter, busyStart, agentActing, userDid, watchUser, waitForUser, userNote, didIn,
     waiting: (page) => waitingIn.get(page), loadedAt: (page) => loadedAt.get(page) || 0,
   };

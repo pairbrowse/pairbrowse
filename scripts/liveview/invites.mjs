@@ -48,11 +48,13 @@ export function createInvites({ now = () => Date.now() } = {}) {
     for (const id of gone) all.delete(id);
     ended(gone);
   };
-  const publicView = ({ id, role, label, share, createdAt, expiresAt }) => ({ id, role, label, share, createdAt, expiresAt });
+  const publicView = ({ id, role, label, share, mode, createdAt, expiresAt }) => ({ id, role, label, share, mode, createdAt, expiresAt });
   return {
     // share: "link" (a live view link, reached through an SSH tunnel or liveViewHosts) or "code"
     // (a join code: reached only through the sharing tunnel, and only after the host approves).
-    create({ role = "drive", label, hours, share = "link" } = {}) {
+    // mode (join codes): "shared" (the default: they work in this browser, seeing it live) or
+    // "follow" (their own browser opens these tabs and follows them).
+    create({ role = "drive", label, hours, share = "link", mode = "shared" } = {}) {
       if (role !== "watch" && role !== "drive") throw new Error('role must be "watch" or "drive".');
       const h = hours === undefined || hours === null || hours === "" ? DEFAULT_HOURS : Number(hours);
       if (!Number.isFinite(h) || h <= 0) throw new Error("hours must be a number above 0.");
@@ -60,7 +62,8 @@ export function createInvites({ now = () => Date.now() } = {}) {
       let id;
       do id = randomBytes(4).toString("hex"); while (all.has(id));
       if (share !== "link" && share !== "code") throw new Error('share must be "link" or "code".');
-      const invite = { id, role, share, label: inviteLabel(label), key: randomBytes(32).toString("hex"), createdAt, expiresAt: createdAt + Math.min(h, INVITE_MAX_HOURS) * HOUR_MS };
+      if (mode !== "shared" && mode !== "follow") throw new Error('mode must be "shared" or "follow".');
+      const invite = { id, role, share, mode, label: inviteLabel(label), key: randomBytes(32).toString("hex"), createdAt, expiresAt: createdAt + Math.min(h, INVITE_MAX_HOURS) * HOUR_MS };
       all.set(id, invite);
       return { ...invite };
     },

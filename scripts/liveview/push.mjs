@@ -114,6 +114,11 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
     }
     for (const [key, e] of joinerPointers) if (key !== st.key && Date.now() - e.t < POINTER_FRESH_MS) out.push(...e.list);
     for (const [key, v] of joinerViews) if (key !== st.key && pages.has(v.id) && Date.now() - v.t < VIEW_FRESH_MS) out.push(v);
+    // Shared browser mode: their page shows the picture of the tab, so pointers go as places in
+    // the tab's view (fractions), drawn over it.
+    if (st.j?.invite?.mode === "shared" && shared.toView) {
+      for (const p of out) { if (p.v) continue; const at = shared.toView(pages.get(p.id), p.x, p.y); if (at) Object.assign(p, at); }
+    }
     return out;
   }
   async function pushPointers() {

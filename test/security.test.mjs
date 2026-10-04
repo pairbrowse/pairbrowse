@@ -105,3 +105,20 @@ test("only snapshot refs count as refs, not numbers or short words", async () =>
   for (const ref of ["e42", "f1e7"]) assert.ok(isRef(ref), ref);
   for (const other of ["2024", "x9", "E42", "#e42", "button", "", undefined]) assert.ok(!isRef(other), String(other));
 });
+
+test("the launch self-check's virtual screen has its own X cookie, so a running browser's screen keeps working", { skip: process.platform !== "linux" || !(await import("../scripts/display.mjs")).hasCommand("Xvfb") }, async () => {
+  const { startVirtualDisplay } = await import("../scripts/display.mjs");
+  const { paths } = await import("../scripts/paths.mjs");
+  const { existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const main = await startVirtualDisplay();
+  const check = await startVirtualDisplay(() => {}, { name: "Xauthority-check" });
+  try {
+    assert.notEqual(main.env.DISPLAY, check.env.DISPLAY);
+    assert.equal(check.env.XAUTHORITY, join(paths.home, "run", "Xauthority-check"));
+    assert.ok(existsSync(main.env.XAUTHORITY) && existsSync(check.env.XAUTHORITY), "both cookies stay");
+  } finally {
+    main.stop();
+    check.stop();
+  }
+});

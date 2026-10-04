@@ -2,7 +2,7 @@
 // Xvfb runs without TCP and behind an X cookie stored in ~/.pairbrowse, so other users on the
 // machine can't watch the screen or send it input.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
@@ -16,11 +16,14 @@ export function needsVirtualDisplay(config, env = process.env, platform = proces
   return !env.DISPLAY && !env.WAYLAND_DISPLAY;
 }
 
-export async function startVirtualDisplay(log = () => {}) {
+// name: the X cookie file in ~/.pairbrowse/run (the launch self-check uses its own, so a
+// running browser's screen keeps working).
+export async function startVirtualDisplay(log = () => {}, { name = "Xauthority" } = {}) {
   if (!hasCommand("Xvfb") || !hasCommand("xauth")) {
     throw new Error("pairbrowse needs Xvfb and xauth for a virtual screen. Install them (Debian/Ubuntu: sudo apt-get install -y xvfb xauth).");
   }
-  const auth = join(paths.home, "run", "Xauthority");
+  const auth = join(paths.home, "run", name);
+  mkdirSync(join(paths.home, "run"), { recursive: true, mode: 0o700 });
   for (let n = 99; n < 140; n++) {
     if (existsSync(`/tmp/.X11-unix/X${n}`) || existsSync(`/tmp/.X${n}-lock`)) continue;
     rmSync(auth, { force: true });

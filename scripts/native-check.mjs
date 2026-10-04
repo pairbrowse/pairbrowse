@@ -10,6 +10,7 @@ import { launchArgs, prepareProfile, panelExtensionId, THEME_COLOR, hudScript } 
 import { launchEngine } from "./engine.mjs";
 import { nativeManifest } from "./native-engine.mjs";
 import { ensureRuntime } from "./runtime.mjs";
+import { needsVirtualDisplay, startVirtualDisplay } from "./display.mjs";
 import { loadBrowserDriver } from "./driver.mjs";
 import { readJson, sleep, withTimeout } from "./util.mjs";
 
@@ -75,8 +76,9 @@ function checkProfile(profile) {
   if (loaded.some((id) => id !== panelExtensionId())) throw new Error(`unexpected extensions installed: ${loaded.join(", ")}`);
 }
 
-// Returns what passed; throws on the first failure.
-export async function selfCheck(exec, { config = loadConfig(), log = () => {}, timeoutMs = CHECK_TIMEOUT_MS } = {}) {
+// Returns what passed; throws on the first failure. On a Linux server without a screen the check
+// runs on a private virtual screen of its own, like the browser itself (display.mjs).
+export async function selfCheck(exec, { config = loadConfig(), log = () => {}, timeoutMs = CHECK_TIMEOUT_MS, env = process.env } = {}) {
   ensureRuntime(log);
   const { chromium } = loadBrowserDriver(createRequire(join(paths.runtime, "package.json")), config);
   const browserDir = join(paths.home, "browser");
@@ -86,10 +88,12 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
   prepareProfile(profile);
   const site = await checkServer();
   const passed = [];
+  let screen = null;
   let ctx = null;
   const work = (async () => {
+    if (needsVirtualDisplay(config, env)) screen = await startVirtualDisplay(log, { name: "Xauthority-check" });
     ctx = await launchEngine(chromium, { ...config, browserEngine: "pairbrowse", executablePath: exec }, profile,
-      { headless: false, executablePath: exec, viewport: null, ignoreDefaultArgs: ["--disable-extensions"], args: launchArgs(config) }, log);
+      { headless: false, env: { ...env, ...(screen?.env || {}) }, executablePath: exec, viewport: null, ignoreDefaultArgs: ["--disable-extensions"], args: launchArgs(config) }, log);
     const version = ctx.browser()?.version() || "";
     if (!version.includes(nativeManifest(exec).version)) throw new Error(`the browser reports version ${version || "(none)"}`);
     passed.push(`launches (${version})`);
@@ -121,6 +125,7 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
   } finally {
     await ctx?.close().catch(() => {});
     await work.catch(() => {});
+    screen?.stop();
     site.close();
     rmSync(scratch, { recursive: true, force: true });
   }

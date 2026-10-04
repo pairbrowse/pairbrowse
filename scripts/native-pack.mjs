@@ -24,7 +24,7 @@ export const NATIVE = {
   version: "150.0.7871.114",
   arm64: { file: "pairbrowse-150.0.7871.114-macos-arm64.zip", sha256: "097f1231f13f1bba3a2580bf3f83d682571e329496fbe5261fc22a4cc9e5a743" },
   x64: { file: "pairbrowse-150.0.7871.114-macos-x86_64.zip", sha256: "148496489ffabe2a649a3283e83dcdc2f42a5e2fa5df5294c24b11f2e8d373e8" },
-  linux: { file: "pairbrowse-150.0.7871.114-linux-x64.tar.xz", sha256: null },
+  linux: { file: "pairbrowse-150.0.7871.114-linux-x64.tar.xz", sha256: "677c9f5c19a8a48e39b890206ef9aee1c0f1647f41d73ee7d5f7d9331fcb75e0" },
   windows: { file: "pairbrowse-150.0.7871.114-windows-x64.zip", sha256: null },
   engine: {
     file: "pairbrowse-engine-150.0.7871.114.tgz",

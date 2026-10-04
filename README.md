@@ -610,11 +610,10 @@ npx skills add pairbrowse/pairbrowse --skill pairbrowse-signup  # one
 
 ### The native PairBrowse browser
 
-On a Mac (Apple Silicon or Intel), `"browserEngine": "auto"` (the default) uses the native
-PairBrowse browser: a hardened Chromium build made for PairBrowse, measured clean against common
-bot checks (see [How it compares](#how-it-compares)). Builds for Linux x64 and Windows x64 follow;
-until one is published for your computer, PairBrowse uses the standard browser (ungoogled-chromium
-on macOS, Playwright's Chromium elsewhere).
+On a Mac (Apple Silicon or Intel) and on Linux x64, `"browserEngine": "auto"` (the default) uses
+the native PairBrowse browser: a hardened Chromium build made for PairBrowse, measured clean
+against common bot checks (see [How it compares](#how-it-compares)). A Windows x64 build follows;
+until then PairBrowse uses Playwright's Chromium on Windows (and on Linux on other chips).
 
 PairBrowse picks the build for your platform and chip, downloads it once from its
 [GitHub release](https://github.com/pairbrowse/pairbrowse/releases), checks it (the SHA-256 pinned in
@@ -625,11 +624,14 @@ with (fingerprint switches and humanized input), checked the same way. It instal
 Windows. To install a file by hand:
 
 ```bash
-node scripts/native-install.mjs /path/to/pairbrowse-<version>-macos-arm64.zip   # or -macos-x86_64.zip, pairbrowse-engine-<version>.tgz
+node scripts/native-install.mjs /path/to/pairbrowse-<version>-macos-arm64.zip   # or -macos-x86_64.zip, -linux-x64.tar.xz, pairbrowse-engine-<version>.tgz
 ```
 
 On Linux the build brings its own metric-compatible font clones (for fonts such as Arial and
-Segoe UI), so pages render the same on a bare server.
+Segoe UI), so pages render the same on a bare server. On a server without a screen, the launch
+test runs on a private virtual screen (Xvfb, as the browser itself does; see server mode), so
+install `xvfb` and `xauth` first. On Linux the browser runs with a fingerprint seed kept per
+profile (the capture from your own computer is macOS only).
 
 The native browser keeps its logins in its own profile, so after switching to it you sign in to
 your sites once more.
@@ -646,7 +648,7 @@ and the rights they give.
 **Browser compatibility hardening.** Automated browsers often differ from everyday ones in ways
 sites notice. The native browser keeps those differences out: it launches without the automation
 flag and with Chromium's AutomationControlled feature off, through the Patchright driver (the
-default `browserDriver`); its fingerprint is captured from your own Mac, so it stays coherent with
+default `browserDriver`); on a Mac its fingerprint is captured from your own Mac, so it stays coherent with
 the real machine and is saved per profile; time zone and language follow your system; and WebRTC
 doesn't reveal your local addresses by default. The goal is that sites see a normal browser, not
 to get around a site's security (see [Intended use](#intended-use)).

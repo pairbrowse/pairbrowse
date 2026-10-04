@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { readOps, stateForJoiner, readPointers, readView, turnLeft, TURN_MAX_MS, createFormSync } from "../scripts/tabsync.mjs";
 import { createPresence } from "../scripts/daemon/presence.mjs";
 import { clickRisk, clickContext, buttonLabel } from "../scripts/daemon/page.mjs";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { applyFields, readFields } from "../scripts/daemon/forms.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
@@ -133,7 +133,7 @@ test("final actions by what they do, by structure only: commits are asked for in
     await is("#apply", "safe", "");
     // Multi-step forms by their markup: a step in the middle goes, the last step and unmarked forms ask.
     await is("#next", "safe", "");
-    assert.equal((await at("#next")).unclear, true, "a step is one the click judge may look at");
+    assert.equal((await at("#next")).unclear, undefined, "a marked step is clear: it goes");
     await is("#finish", "commit", "submit");
     await is("#weiter", "safe", "");
     await is("#tsugi", "safe", "");
@@ -193,50 +193,54 @@ test("no word lists: the click guard's code holds no wording to match in any lan
   }
 });
 
-test("the click judge only escalates, and its timeout keeps the structural decision", async () => {
-  const { judgeSettings, judgeClick, escalate, parseVerdict, judgePrompt } = await import("../scripts/clickjudge.mjs");
-  assert.equal(judgeSettings({}), null, "off by default");
-  assert.equal(judgeSettings({ clickJudge: { provider: "anthropic" } }, {}), null, "no key, no judge");
-  const s = judgeSettings({ clickJudge: { provider: "anthropic", apiKeyEnv: "K", timeoutMs: 600 } }, { K: "sk-test" });
-  assert.deepEqual(s, { model: "claude-sonnet-5", key: "sk-test", timeoutMs: 600 });
-  assert.equal(judgeSettings({ clickJudge: { provider: "other" } }, { ANTHROPIC_API_KEY: "x" }), null);
-  const ctx = {
-    task: "Status: Tidying the team page. Goal: remove inactive members",
-    page: { title: "Team", origin: "https://app.example", headings: ["Members"] },
-    control: { label: "Remove", does: "runs the page's scripts" },
-    form: { method: "post", step: "", fields: [{ name: "Email", type: "email", autocomplete: "email" }] },
-    dialog: null, prev: "", risk: { level: "safe" }, value: "secret-value",
-  };
-  // What leaves the computer: the click's context (task, page, control, form fields' names and
-  // kinds), never values.
-  let sent = null;
-  const post = async (url, headers, body) => { sent = { url, headers, body }; return { content: [{ type: "text", text: '{"commit": "delete"}' }] }; };
-  assert.equal(await judgeClick(ctx, s, { post }), "delete");
-  assert.equal(sent.url, "https://api.anthropic.com/v1/messages");
-  assert.equal(sent.body.model, "claude-sonnet-5");
-  const prompt = sent.body.messages[0].content;
-  assert.match(prompt, /remove inactive members/);
-  assert.match(prompt, /"label":"Remove".*"does":"runs the page's scripts"/);
-  assert.match(prompt, /"fields":\[\{"name":"Email","type":"email","autocomplete":"email"\}\]/);
-  assert.equal(judgePrompt(ctx).includes("secret-value"), false);
-  const facts = ctx;
-  // Escalates a safe click; never lowers one, never allows.
-  const safe = { level: "safe", word: "", why: [], unclear: true };
-  assert.deepEqual([escalate(safe, "delete").level, escalate(safe, "delete").word], ["commit", "delete"]);
-  const strong = { level: "strong", word: "pay", why: ["x"] };
-  assert.equal(escalate(strong, ""), strong);
-  assert.equal(escalate(strong, "submit"), strong);
-  assert.equal(escalate(safe, ""), safe);
-  assert.equal(parseVerdict('{"commit":"none"}'), "");
-  assert.equal(parseVerdict('{"commit":"allow"}'), "", "only a class counts");
-  assert.equal(parseVerdict("garbage"), "");
-  // A judge that doesn't answer in time, or fails, leaves the structural decision.
-  const slow = () => new Promise((r) => setTimeout(() => r({ content: [{ type: "text", text: '{"commit":"pay"}' }] }), 5000));
-  const t0 = Date.now();
-  assert.equal(await judgeClick(facts, s, { post: slow }), "");
-  assert.ok(Date.now() - t0 < 2000, "bounded by timeoutMs");
-  assert.equal(await judgeClick(facts, s, { post: async () => { throw new Error("HTTP 500"); } }), "");
-  assert.equal(escalate(safe, await judgeClick(facts, s, { post: slow })), safe);
+test("the agent judges unclear clicks; strong signals stay the user's, whatever the agent says", async () => {
+  const { clickRule, dialogRule, describeContext, strongSignal } = await import("../scripts/clickrule.mjs");
+  const { UNREADABLE } = await import("../scripts/runner.mjs");
+  const pay = { level: "strong", word: "pay", why: ["card fields"] };
+  const del = { level: "commit", word: "delete", why: ["a DELETE request"] };
+  const submit = { level: "commit", word: "submit", why: ["it submits a form"] };
+  const script = { level: "safe", word: "", why: [], unclear: true };
+  // A strong signal plus "Safe:" (or the wrong class) is still refused until named; named, the hook asks.
+  for (const label of ["Safe: Continue", "Continue", "Submit: Continue", "Send: Continue"]) assert.equal(clickRule(pay, label, { seen: true }), "name", label);
+  assert.equal(clickRule(pay, "Pay: Continue"), "go");
+  assert.equal(clickRule(del, "Safe: Remove", { seen: true }), "name", "a DELETE method or danger styling can't be called safe");
+  assert.equal(clickRule(UNREADABLE, "Safe: x", { seen: true }), "name", "unreadable counts as a final action");
+  assert.equal(strongSignal({ level: "strong", word: "submit" }), true);
+  // Unclear: refused once with its context, then "Safe:" goes; a class goes on to the hook.
+  assert.equal(clickRule(script, "Remove"), "judge");
+  assert.equal(clickRule(script, "Remove", { seen: true }), "go", "shown once");
+  assert.equal(clickRule(script, "Safe: Load more"), "go", "structure and agent agree");
+  assert.equal(clickRule(script, "Pay: Buy"), "go");
+  assert.equal(clickRule(submit, "Save"), "judge");
+  assert.equal(clickRule(submit, "Safe: Save"), "judge", "a form submit is judged from its context first");
+  assert.equal(clickRule(submit, "Safe: Save", { seen: true }), "go");
+  assert.equal(clickRule(submit, "Save", { seen: true }), "judge", "a commit by structure still needs a name");
+  assert.equal(clickRule(submit, "Submit: Save"), "go");
+  assert.equal(clickRule(submit, "Save", { lifted: true }), "go", "neverConfirm origins");
+  assert.equal(clickRule({ level: "safe", word: "", why: [] }, "Next"), "go", "plain safe clicks never stop");
+  // Page dialogs: after a delete or payment, OK is that final action; otherwise the agent judges it.
+  assert.equal(dialogRule(true, "delete", "Safe: OK", { seen: true }), "name");
+  assert.equal(dialogRule(true, "delete", "Delete: OK"), "go");
+  assert.equal(dialogRule(true, "pay", "Submit: OK"), "name");
+  assert.equal(dialogRule(true, "", "OK"), "judge");
+  assert.equal(dialogRule(true, "", "Safe: OK"), "judge", "shown its text first");
+  assert.equal(dialogRule(true, "", "Safe: OK", { seen: true }), "go");
+  assert.equal(dialogRule(true, "", "Send: OK"), "go");
+  assert.equal(dialogRule(false, "delete", ""), "go", "dismissing is always fine");
+  // The context the agent reads: names and kinds, never values.
+  const text = describeContext({ task: "Status: tidy the team", page: { title: "Team", origin: "https://app.example", headings: ["Members"] },
+    control: { label: "Remove", does: "runs the page's scripts" }, form: { method: "post", step: "", fields: [{ name: "Email", type: "email", autocomplete: "email" }] }, prev: "", value: "secret-value" });
+  assert.match(text, /tidy the team.*"Team" at https:\/\/app\.example.*"Remove" runs the page's scripts.*method post, fields Email \(email, email\)/);
+  assert.equal(text.includes("secret-value"), false);
+});
+
+test("nothing about a click leaves the computer: no model, API key or network in the judging", () => {
+  const root = new URL("..", import.meta.url).pathname;
+  for (const f of ["scripts/clickrule.mjs", "scripts/guard.mjs", "scripts/daemon/serve.mjs", "scripts/daemon/page.mjs", "scripts/runner.mjs", "scripts/paths.mjs"]) {
+    const code = readFileSync(join(root, f), "utf8");
+    assert.doesNotMatch(code, /from "node:(https?|net|tls|http2|dgram)"|\bfetch\(|api\.anthropic|clickjudge|clickJudge|API_KEY/, f);
+  }
+  assert.equal(existsSync(join(root, "scripts/clickjudge.mjs")), false);
 });
 
 test("form values in the page: a card replacing a plain value clears it here; a card typed here is never overwritten", { skip: !runtime, timeout: 60_000 }, async () => {

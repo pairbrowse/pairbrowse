@@ -4,7 +4,8 @@
 // - Clicks named with a class ("Pay: Submit order"; the helper demands it by what the click does,
 //   see clickClass) ask you first. "Publish:" clicks are blocked until a passing pre-submit review
 //   was recorded in the last REVIEW_MAX_AGE_MIN (30) minutes, then still ask. This can't be switched off.
-// - OK on a page's confirm or prompt dialog asks you.
+// - OK on a page's confirm or prompt dialog named with a class asks you; the helper makes the agent
+//   name it (scripts/clickrule.mjs).
 // - Uploads run only for ordinary media and documents in ~/.pairbrowse/files/uploads;
 //   anything else asks you.
 // - Only web pages can be opened; local-network addresses ask you first.
@@ -16,13 +17,14 @@ import { latestReview, REVIEW_MAX_AGE_MIN } from "./runs.mjs";
 import { secretInside, MEDIA } from "./upload.mjs";
 
 // A click Claude knows commits something is named with its class first: "Pay: Submit order",
-// "Delete: OK", "Submit: Create account", "Publish: Submit for review". The helper works out the
-// class from what the click does (daemon/page.mjs clickRisk, by the page's structure, never by its
-// words) and refuses the click until it's named; this hook then asks you. Publish is the class
+// "Delete: OK", "Submit: Create account", "Send: Reply", "Publish: Submit for review". The helper
+// works out from the page's structure what the click does (daemon/page.mjs clickRisk, never its
+// words), refuses a final action until it's named and has the agent judge unclear ones
+// (scripts/clickrule.mjs); this hook then asks you about every named click. Publish is the class
 // Claude gives a submit-for-review or go-live click (the listing skill), and it's blocked until a
 // passing pre-submit review.
-export const CLICK_CLASSES = ["publish", "pay", "delete", "submit"];
-const CLASS_TEXT = { publish: "publishes or submits for review", pay: "pays", delete: "deletes or ends something", submit: "sends or submits something" };
+export const CLICK_CLASSES = ["publish", "pay", "delete", "send", "submit"];
+const CLASS_TEXT = { publish: "publishes or submits for review", pay: "pays", delete: "deletes or ends something", send: "sends something to other people", submit: "sends or submits something" };
 
 // The class an element description starts with ("Pay: Submit order" -> "pay"), or "".
 export function clickClass(element) {
@@ -110,8 +112,12 @@ export function decide(input, config = loadConfig(), review = latestReview(), no
     if (isLocalNetwork(ti.url)) return ask(`${ti.url} is on your local network or this computer.`);
   }
 
-  // A page's own confirm or prompt dialog (PairBrowse answers alerts itself): OK is yours.
-  if (tool === "browser_handle_dialog" && ti.accept) return ask("Answers OK to the page's dialog (a confirm or prompt it showed). Check what it confirms.");
+  // A page's own confirm or prompt dialog (PairBrowse answers alerts itself): an OK the agent named
+  // as a final action is yours. The helper has it named (scripts/clickrule.mjs dialogRule).
+  if (tool === "browser_handle_dialog" && ti.accept && clickClass(ti.element)) {
+    const cls = clickClass(ti.element);
+    return ask(`OK on the page's dialog ("${String(ti.element).slice(0, 80)}") ${CLASS_TEXT[cls]}: a final action (${cls}). Check what it confirms.`);
+  }
 
   if (tool === "browser_click" || tool === "browser_drag" || tool === "browser_drop") {
     const raw = String(ti.element || ti.startElement || ti.endElement || "");

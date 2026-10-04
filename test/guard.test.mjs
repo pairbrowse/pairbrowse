@@ -23,7 +23,9 @@ test("a click named with its class asks first", () => {
   for (const label of ["Pay: Submit order", "Delete: OK", "Submit: Create account", 'submit: "Send"', '"Pay: 49 EUR"', "DELETE : Yes"]) {
     assert.equal(click(label), "ask", label);
   }
-  assert.deepEqual(["Pay: x", "Delete: x", "Submit: x", "Publish: x", "Send: x", "Pay now"].map(clickClass), ["pay", "delete", "submit", "publish", "", ""]);
+  assert.deepEqual(["Pay: x", "Delete: x", "Submit: x", "Publish: x", "Send: x", "Safe: x", "Pay now"].map(clickClass), ["pay", "delete", "submit", "publish", "send", "", ""]);
+  assert.equal(click("Send: Reply"), "ask");
+  assert.equal(click("Safe: Load more"), "allow", "the helper decides whether Safe: may go");
 });
 
 test("publish clicks are blocked without a fresh passing review", () => {
@@ -42,9 +44,12 @@ test("the review gate can't be configured away; neverConfirm is origins only", (
   assert.equal(neverConfirmOrigin("https://shop.example/", config), false, "words do nothing");
 });
 
-test("OK on a page's confirm or prompt dialog asks; dismissing doesn't", () => {
-  assert.equal(run("browser_handle_dialog", { accept: true }), "ask");
-  assert.equal(run("browser_handle_dialog", { accept: true, promptText: "x" }), "ask");
+test("OK on a page's dialog named as a final action asks; the helper has the rest judged", () => {
+  assert.equal(run("browser_handle_dialog", { accept: true, element: "Delete: OK" }), "ask");
+  assert.equal(run("browser_handle_dialog", { accept: true, promptText: "x", element: "Submit: OK" }), "ask");
+  // Unnamed or "Safe:": the helper refuses it once with the dialog's context (scripts/clickrule.mjs).
+  assert.equal(run("browser_handle_dialog", { accept: true }), "allow");
+  assert.equal(run("browser_handle_dialog", { accept: true, element: "Safe: OK" }), "allow");
   assert.equal(run("browser_handle_dialog", { accept: false }), "allow");
 });
 

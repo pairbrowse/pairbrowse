@@ -111,10 +111,10 @@ async function cardFrame(page) {
 }
 
 // When the page can't be read, a click counts as one the user confirms.
-export const UNREADABLE = { level: "commit", word: "submit", why: ["PairBrowse couldn't read what it does"] };
+export const UNREADABLE = { level: "commit", word: "submit", unreadable: true, why: ["PairBrowse couldn't read what it does"] };
 
 // A click's context (daemon/page.mjs clickContext): the one reading every check shares (the
-// helper's browser_click, Enter and Space, fast mode, uploads, the click judge). target: a ref or
+// helper's browser_click, Enter and Space, fast mode, uploads, the agent's judging of unclear clicks). target: a ref or
 // selector, a Playwright element handle or locator, or none (the focused element). prev: what the
 // click just before in this tab committed. Unreadable counts as a commit (fail safe).
 const inPage = withHelpers((el, [k, p, h]) => clickContext(el, k, p, h), clickContext, clickRisk, buttonLabel);

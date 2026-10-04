@@ -49,8 +49,8 @@ export function nearbyText(el) {
 // another committing action: the user confirms it) or "strong" (signals stack up: card fields
 // with a submit, a danger button in a confirmation dialog); word: the class the click must be
 // named with so the guard asks ("pay", "delete", "submit"); why: the signals, for the refusal;
-// unclear: safe by structure but what it does runs in the page's scripts (the optional click
-// judge may look at it). prev: what the click just before in this tab committed ("delete": its
+// unclear: safe by structure but what it does runs in the page's scripts (the agent judges it,
+// scripts/clickrule.mjs). prev: what the click just before in this tab committed ("delete": its
 // confirmation is still a delete). hints.payFrame: a frame on the page has card fields (the helper
 // reads frames this code can't). Self-contained: runs in the page.
 export function clickRisk(n, kind = "click", prev = "", hints = {}) {
@@ -149,7 +149,7 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
     return "";
   };
 
-  // What the control does, and where a multi-step form stands: context for the click judge.
+  // What the control does, and where a multi-step form stands: context for the agent judging an unclear click.
   const realHref = control.matches("a[href]") && !/^\s*(#|javascript:)/i.test(control.getAttribute("href") || "");
   const does = form ? "submits a form" : kind !== "click" ? "nothing" : verbOf(control) ? `sends a ${verbOf(control).toUpperCase()} request` : realHref ? "navigates"
     : control.matches('[role=tab], summary, [aria-expanded], [aria-haspopup], [aria-controls], [aria-pressed], [role=switch], [role=checkbox], [role=radio], [role=option]') ? "changes the page in place" : "runs the page's scripts";
@@ -170,7 +170,7 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
     const pw = fields.filter((f) => f.type === "password");
     if (pw.length === 1 && !/new-password/i.test(pw[0].getAttribute("autocomplete") || "") && fields.length <= 3) return safe();
     // A step through a multi-step form, marked as one; the last step, or no marks, asks.
-    if (stepOf(form) === "middle") return safe(true);
+    if (stepOf(form) === "middle") return safe();
     return { level: "commit", word: "submit", why: [...why, "it submits a form"] };
   }
   if (kind === "enter" || (kind === "space" && !b)) return safe();
@@ -194,8 +194,8 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
 }
 
 // A click's context, the one shared reading behind every check (browser_click, Enter and Space,
-// pairbrowse_click_at, fast mode, uploads) and the optional click judge: the structural decision
-// (clickRisk) plus what the page is (title, origin, headings), the form (method, step, its fields'
+// pairbrowse_click_at, fast mode, uploads) and what the agent is shown to judge an unclear one:
+// the structural decision (clickRisk) plus what the page is (title, origin, headings), the form (method, step, its fields'
 // names, types and autocomplete, never values), the dialog it's in, and what the control does.
 // Needs clickRisk and buttonLabel alongside it (withHelpers). Self-contained: runs in the page.
 export function clickContext(n, kind = "click", prev = "", hints = {}) {

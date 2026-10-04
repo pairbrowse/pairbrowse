@@ -215,7 +215,7 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     s = await snap(host.call);
     const create = await tool(host.call, "browser_click", { target: ref(s, "button", "Create account"), element: "Create account" });
     assert.ok(create.result.isError);
-    assert.match(text(create), /it submits a form: a final action \(submit\)[^\n]*Retry with "Submit:"/);
+    assert.match(text(create), /Refused once for you to judge[^\n]*it submits a form[^\n]*fields[^\n]*"Submit:"[^\n]*"Safe:"/);
     channel.close();
   } catch (e) {
     const log = (h) => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2500); } catch { return ""; } };

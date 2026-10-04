@@ -143,6 +143,7 @@ export function createDevProxy({ hostname, port, access, publicHost, log = () =>
 export function createDevShare({ log = () => {}, startTunnel = (port) => startQuickTunnel(port, { log }), direct = process.env.PAIRBROWSE_TEST_TUNNEL === "direct", onStopped = () => {} } = {}) {
   const shares = new Map(); // port -> { port, hostname, proxy, tunnel, origin, host }
   const tokens = new Map(); // token -> { key, role, port }
+  const starting = new Set(); // shares whose tunnel is still starting (unshare and stopAll end them too)
   let isIn = () => false;
 
   const access = (port) => (token) => {
@@ -159,11 +160,19 @@ export function createDevShare({ log = () => {}, startTunnel = (port) => startQu
     const entry = { port, hostname, origin: null, host: null };
     entry.proxy = createDevProxy({ hostname, port, access: access(port), publicHost: () => entry.host, log });
     const proxyPort = await entry.proxy.listen();
+    starting.add(entry);
     try {
       entry.tunnel = direct ? { url: `http://127.0.0.1:${proxyPort}`, stop() {} } : await startTunnel(proxyPort);
+      // Unshared while the tunnel was starting: stop it, never keep it.
+      if (entry.stopped) {
+        try { entry.tunnel.stop(); } catch {}
+        throw new Error(`localhost:${port} is no longer shared`);
+      }
     } catch (e) {
       entry.proxy.close();
       throw e;
+    } finally {
+      starting.delete(entry);
     }
     entry.origin = new URL(entry.tunnel.url).origin;
     entry.host = new URL(entry.tunnel.url).host;
@@ -186,8 +195,15 @@ export function createDevShare({ log = () => {}, startTunnel = (port) => startQu
 
   return {
     share,
-    unshare: stopOne,
-    stopAll() { for (const port of [...shares.keys()]) stopOne(port); },
+    unshare(port) {
+      let pending = false;
+      for (const entry of starting) if (entry.port === port) { entry.stopped = true; pending = true; }
+      return stopOne(port) || pending;
+    },
+    stopAll() {
+      for (const entry of starting) entry.stopped = true;
+      for (const port of [...shares.keys()]) stopOne(port);
+    },
     list: () => [...shares.values()].map((e) => ({ port: e.port, hostname: e.hostname, url: e.origin })),
     members(fn) { isIn = fn; },
     // What one joiner's PairBrowse needs to open the shared dev servers: [{ origin, token }].

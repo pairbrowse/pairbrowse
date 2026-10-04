@@ -180,3 +180,19 @@ test("a localhost tab crosses only as its shared address", () => {
   const out = stateForJoiner({ tabs }, { mapUrl, drive: true }).tabs;
   assert.deepEqual(out.map((t) => t.url), ["https://abc.trycloudflare.com/dash?tab=2"]);
 });
+
+test("a tunnel that finishes starting after the share ended is stopped, never kept", async () => {
+  let release;
+  const stopped = [];
+  const slow = createDevShare({ startTunnel: () => new Promise((r) => { release = r; }) });
+  const server = http.createServer((_, res) => res.end("ok")).listen(0, "127.0.0.1");
+  await new Promise((r) => server.once("listening", r));
+  const sharing = slow.share("localhost", server.address().port);
+  await new Promise((r) => setTimeout(r, 50));
+  slow.stopAll();
+  release({ url: "https://late-river-test.trycloudflare.com", stop() { stopped.push(this.url); } });
+  await assert.rejects(sharing, /no longer shared/);
+  assert.deepEqual(stopped, ["https://late-river-test.trycloudflare.com"]);
+  assert.deepEqual(slow.list(), []);
+  server.close();
+});

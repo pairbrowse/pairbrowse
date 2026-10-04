@@ -32,8 +32,10 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
   let tunnel = null; // { url, host, port, stop, child }
   let tunnelStarting = null;
   let guestPortWanted = 0;
+  let generation = 0; // bumped by stopTunnel: a tunnel still starting then is stopped once it's up
 
   function stopTunnel() {
+    generation++;
     const t = tunnel;
     tunnel = null;
     try { t?.stop(); } catch {}
@@ -42,12 +44,17 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
 
   async function ensureTunnel(live) {
     if (tunnel && tunnel.port === live.guestPort && (tunnel.child?.exitCode ?? null) === null) return tunnel;
-    stopTunnel();
+    if (tunnel) stopTunnel(); // a dead or stale one; never cancels a start already under way
     tunnelStarting ??= (async () => {
+      const started = generation;
       // Tests only: the guest port itself stands in for the tunnel (no network).
       const t = process.env.PAIRBROWSE_TEST_TUNNEL === "direct"
         ? { url: `http://127.0.0.1:${live.guestPort}`, host: `127.0.0.1:${live.guestPort}`, stop() {} }
         : await startQuickTunnel(live.guestPort, { log });
+      if (started !== generation) {
+        try { t.stop(); } catch {}
+        throw new Error("Sharing stopped while the tunnel was starting.");
+      }
       t.port = live.guestPort;
       t.child?.once("exit", () => {
         if (tunnel !== t) return;

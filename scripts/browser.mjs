@@ -27,14 +27,32 @@ const OLD_THEME_DIR = join(here, "browser", "theme");
 const isOldThemePath = (p) => typeof p === "string" && /[\/\\]scripts[\/\\]browser[\/\\]theme([\/\\](Cached Theme\.pak)?)?$/.test(p);
 export const PANEL_DIR = join(here, "browser", "panel");
 
-// The side panel's extension ID: Chromium derives an unpacked extension's ID from its folder path
-// (SHA-256, first 32 hex digits written as the letters a-p). Used to pin its toolbar button.
 // The origin a page of the extension sends (URL.origin is "null" for chrome-extension: URLs).
 export const extensionOrigin = (url) => `chrome-extension://${new URL(url).host}`;
 
+// Chromium's extension ID scheme: SHA-256 of the input, first 32 hex digits written as a-p.
+const idFrom = (data) => [...createHash("sha256").update(data).digest("hex").slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
+
+// The side panel's extension ID. Its manifest carries a public "key", so Chromium derives the ID
+// from that key (SHA-256 of the DER public key) rather than from the folder path. Plugin installs
+// live in versioned folders, and a path-derived ID changed with every update, which brought back
+// the "Did you mean to change this page?" dialog (its acknowledgement is per ID).
+const panelIds = new Map();
 export function panelExtensionId(dir = PANEL_DIR) {
-  return [...createHash("sha256").update(dir).digest("hex").slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
+  if (!panelIds.has(dir)) {
+    const key = readJson(join(dir, "manifest.json"), {}).key;
+    panelIds.set(dir, key ? idFrom(Buffer.from(key, "base64")) : idFrom(dir));
+  }
+  return panelIds.get(dir);
 }
+
+// Earlier versions' side panel had no key, so its ID came from its folder path.
+const pathPanelId = (dir = PANEL_DIR) => idFrom(dir);
+// (Any copy of PairBrowse: Chromium records an unpacked extension's folder as its path.)
+const isPanelPath = (p) => typeof p === "string" && /[\/\\]scripts[\/\\]browser[\/\\]panel[\/\\]?$/.test(p);
+// The IDs of earlier side panel copies recorded in a profile's Secure Preferences (parsed).
+export const oldPanelIds = (secure, panelId = panelExtensionId()) => Object.entries(secure?.extensions?.settings || {})
+  .filter(([id, entry]) => id !== panelId && (id === pathPanelId() || isPanelPath(entry?.path))).map(([id]) => id);
 
 // The ungoogled-chromium build PairBrowse uses on macOS. Pinned: a new version is a deliberate
 // change here, with the SHA-256 from its GitHub release. Builds are notarized by the project.
@@ -60,12 +78,14 @@ const USER_COLOR_THEME_ID = "user_color_theme_id";
 
 // The profile settings PairBrowse needs, applied to a profile's Default/Preferences (parsed).
 // Run before every launch and by the install step; keeps everything else the user set.
-export function profilePreferences(prefs = {}, panelId = panelExtensionId()) {
+export function profilePreferences(prefs = {}, panelId = panelExtensionId(), oldPanels = []) {
   // Chrome starts on a blank tab (its own restore would reload every tab during startup);
   // PairBrowse then brings the tabs back itself, one by one (see tabs.mjs).
   prefs.session = { ...(prefs.session || {}), restore_on_startup: 5 };
   // The PairBrowse side panel's button stays pinned in the toolbar.
+  // Earlier copies' buttons go (their path-derived IDs).
   const pinned = new Set(prefs.extensions?.pinned_extensions || []);
+  for (const id of [pathPanelId(), ...oldPanels]) if (id !== panelId) pinned.delete(id);
   pinned.add(panelId);
   // Keyboard shortcuts: drop the side panel's old one (it went through the hidden toolbar button)
   // so its own "open-panel" command can take the same keys.
@@ -114,10 +134,12 @@ export function profileSecurePreferences(secure, panelId = panelExtensionId()) {
   const settings = secure?.extensions?.settings;
   if (!settings) return false;
   const macs = secure.protection?.macs?.extensions?.settings || {};
+  const old = oldPanelIds(secure, panelId);
   let changed = false;
   for (const [id, entry] of Object.entries(settings)) {
     const disabled = entry?.state === 0 || (Array.isArray(entry?.disable_reasons) && entry.disable_reasons.length > 0);
-    if ((id === panelId && disabled) || id === panelExtensionId(OLD_THEME_DIR) || isOldThemePath(entry?.path)) {
+    // Old path-derived side panel records would linger as duplicate, disabled extensions.
+    if ((id === panelId && disabled) || old.includes(id) || id === panelExtensionId(OLD_THEME_DIR) || isOldThemePath(entry?.path)) {
       delete settings[id];
       delete macs[id];
       changed = true;
@@ -157,8 +179,9 @@ export function prepareProfile(profile, panelId = panelExtensionId()) {
   const secureFile = join(dir, "Secure Preferences");
   const prefs = readJson(file, {});
   const secure = readJson(secureFile, null);
+  const oldPanels = oldPanelIds(secure, panelId);
   if (secure && profileSecurePreferences(secure, panelId)) writeFileSync(secureFile, JSON.stringify(secure));
-  writeFileSync(file, JSON.stringify(acknowledgeNewTabPage(profilePreferences(prefs, panelId), secure, panelId)));
+  writeFileSync(file, JSON.stringify(acknowledgeNewTabPage(profilePreferences(prefs, panelId, oldPanels), secure, panelId)));
   const localStateFile = join(profile, "Local State");
   const localState = readJson(localStateFile, null);
   if (localState && localStatePreferences(localState)) writeFileSync(localStateFile, JSON.stringify(localState));

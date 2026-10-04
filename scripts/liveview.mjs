@@ -82,7 +82,8 @@ async function release(cdp) {
 // shared: the rest of what shared tabs carry (see sharedDefaults): form values, their agents'
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
-  guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {} }) {
+  guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
+  onPause = () => ({}), pauseState = () => null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -168,7 +169,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       try { meta = tabMeta(p) || {}; } catch {}
       // A joiner's own agent isn't sent back to them as the host's.
       const agent = meta.agent && !meta.agent.joined ? meta.agent : null;
-      return { id: idOf(p), url: p.url(), title: await p.title().catch(() => ""), agent: agent?.label || "", color: agent?.color || "", person: meta.sharedPerson?.who || "", did: meta.did || [] };
+      return { id: idOf(p), url: p.url(), title: await p.title().catch(() => ""), agent: agent?.label || "", color: agent?.color || "", person: meta.sharedPerson?.who || "", acting: !!meta.sharedPerson?.acting, did: meta.did || [] };
     }));
     const people = [...collaboration.participants.map((x) => x?.label || ""), ...guests().map((g) => g.label)].filter((x) => x && x !== personLabel(j.name, j.app));
     return stateForJoiner({ tabs, activity, people }, { drive: j.invite.role === "drive", secretDomains: secretDomains(), name: j.name, from: joinerKey(j) });
@@ -207,7 +208,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
         if (o.op === "order") { await shared.arrange(o.ids.map((id) => known.get(id)).filter((p) => p && !p.isClosed())); continue; }
         const page = o.op === "open" ? await keepFocus(() => ctx.newPage()) : known.get(o.id);
         if (!page || page.isClosed()) continue;
-        if (o.op === "person") { onJoinerPerson(page, j.name, o.did); continue; }
+        if (o.op === "person") { onJoinerPerson(page, j.name, o.did, o.acting); continue; }
         if (o.op === "activity") { onJoinerActivity(page, o.text, o.who || who, joinerKey(j)); continue; }
         if (o.op === "agent") { shared.onJoinerAgent(page, o.who, o.color); continue; }
         if (o.op === "form") {
@@ -217,7 +218,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
           push.dirty(page); // on to the other joiners
           continue;
         }
-        onJoinerPerson(page, j.name, []);
+        onJoinerPerson(page, j.name, [], true);
         if (o.op === "close") {
           // The last tab is emptied instead of closed, so the browser window stays open.
           if (ctx.pages().length > 1) await page.close().catch(() => {}); else await page.goto("about:blank").catch(() => {});
@@ -392,6 +393,14 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     { method: "POST", path: "profile", right: "profile", handler: changeProfile },
     { method: "POST", path: "input", right: "input", handler: human },
     { method: "POST", path: "tab", right: "tab", handler: human },
+    // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
+    // who may drive. who: the guest's name (null: the owner).
+    { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite }) => {
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const r = onPause(JSON.parse(body)?.paused === true, invite ? invite.label : null) || {};
+      json(res, r.problem ? 409 : 200, r);
+    } },
   ];
 
   async function events({ req, res, invite }) {
@@ -419,6 +428,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     res.write(sse("activity", invite ? guestActivity(activity) : activity));
     if (!invite) res.write(sse("join", approvals.pending()));
     if (!invite && board) res.write(sse("board", board));
+    const paused = pauseState();
+    if (paused) res.write(sse("pause", paused));
     if (viewer && lastFrame) res.write(sse("frame", lastFrame));
   }
 
@@ -548,6 +559,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     sharing: () => push.active(),
     // Something for the joiners' streams: who is doing what, a message.
     pushToJoiners: (event, data, opts) => push.broadcast(event, data, opts),
+    // Agents paused or resumed by a person (daemon/pause.mjs), with whether the owner may press it.
+    setPause: () => broadcast("pause", pauseState()),
     // Who is doing what across the session, and its messages: the side panel's Session section.
     setBoard: (next) => { board = next; broadcast("board", board); },
     close: () => {

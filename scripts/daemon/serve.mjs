@@ -20,6 +20,7 @@ import { sleep, within } from "../util.mjs";
 import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel } from "./page.mjs";
 import { stopRequestMirroring } from "./context.mjs";
+import { ownerOf, leftAlone } from "./fields.mjs";
 
 const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, RUN_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
 // A small picture of the page goes with each result that changes what's on screen, taken once
@@ -35,6 +36,19 @@ const CLICKING_TOOLS = new Set(["browser_click", "browser_press_key", "browser_h
 const TAB_TOOLS = new Set(["browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_hover",
   "browser_navigate", "browser_navigate_back", "browser_drag", "browser_drop", "browser_file_upload", "browser_handle_dialog",
   "pairbrowse_click_at", "pairbrowse_run", "pairbrowse_upload"]);
+// Actions that change the page under a person (another address, a link, a submit, Enter): only
+// these wait while a person is at it in that tab. Clicks are judged by what they click.
+const PAGE_CHANGING = new Set(["browser_navigate", "browser_navigate_back", "pairbrowse_click_at"]);
+// Tools that fill a field: a field a person is filling is left to them (daemon/fields.mjs).
+const FIELD_TOOLS = new Set(["browser_type", "browser_select_option", "browser_fill_form"]);
+// Whether an element is (in) a link to another page or a button that submits a form.
+function navigatesOrSubmits(el) {
+  const a = el.closest("a[href]");
+  if (a) return !/^\s*(#|javascript:)/i.test(a.getAttribute("href") || "");
+  const b = el.closest("button, input[type=submit], input[type=image]");
+  if (!b || !b.form) return false;
+  return b.tagName !== "BUTTON" || (b.getAttribute("type") || "submit").toLowerCase() === "submit";
+}
 // Tools that read the current tab without taking its turn (anyone may watch any tab).
 const PAGE_READ_TOOLS = new Set(["browser_snapshot", "browser_find", "browser_wait_for"]);
 // PairBrowse's own tools that answer before (or without) the browser being ready.
@@ -93,7 +107,7 @@ async function sensitiveTarget(page, target) {
 // deps: the helper's parts (see daemon.mjs). Returns serve(sock): runs one participant on a
 // socket until it closes.
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, drainHostNotes, revision, bumpRevision, session, shareMessage = () => {}, testTools = {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, revision, bumpRevision, session, shareMessage = () => {}, testTools = {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
 
   return async function serve(sock) {
@@ -121,6 +135,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
     let lostTab = false; // it closed its tab and every other tab was another agent's
     const used = []; // tabs it worked in before, latest last: where it goes back to
     const myLabel = () => collaboration.participants.get(participant)?.label;
+    let pauseSeen = pause.seq(); // pauses before it connected aren't news
+    const fieldNotes = []; // fields left to the people filling them, for the next result
 
     const mcpServer = await createConnection({
       browser: { isolated: false },
@@ -162,7 +178,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       for (const ms of LATE_POPUP_CHECKS_MS) {
         setTimeout(() => {
           if (page.isClosed() || page.url() !== seenUrl || presence.agentActing()) return; // never click alongside an agent
-          const done = presence.busyStart();
+          const done = presence.busyStart("popup");
           popups.dismissOverlay(page, { closeOffers: true }).catch(() => {}).finally(done);
         }, ms).unref();
       }
@@ -174,7 +190,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const handled = popups.drain();
       // Messages from other participants, and one line on what the other side's agents are
       // doing when it changed: coordination information only, marked as from someone else.
-      const lines = [...drainHostNotes().map((n) => `- ${n}`), presence.userNote(actingIn || hud.sparkPage(participant)), session.messagesNote(participant), session.note(participant)].filter(Boolean).join("\n");
+      const paused = pause.noteAfter(pauseSeen);
+      pauseSeen = paused.n;
+      const lines = [...drainHostNotes().map((n) => `- ${n}`), paused.text, ...fieldNotes.splice(0).map((n) => `- ${n}`), presence.userNote(actingIn || hud.sparkPage(participant)), session.messagesNote(participant), session.note(participant)].filter(Boolean).join("\n");
       return handled && lines ? `${handled}\n${lines}` : handled || (lines && `\n### PairBrowse\n${lines}`);
     }
 
@@ -413,14 +431,20 @@ export function createServe({ config, log, host, createConnection, clients, coll
         uploadsDir: paths.uploads,
         secrets: secrets.get(),
         signal: disconnected.signal,
-        beforeStep: () => {
+        beforeStep: async (kind, el) => {
           if (sock.destroyed) throw new Error("Participant disconnected. Refresh the browser before continuing.");
-          const who = presence.personIn(page);
+          // Paused by a person: stop here (never waiting inside the shared queue).
+          const held = pause.view();
+          if (held.paused) throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`);
+          // Only a step that changes the page waits for a person at it in this tab.
+          const changing = kind === "go" || kind === "enter" || (kind === "click" && await within(1500, el.evaluate(navigatesOrSubmits).catch(() => false)));
+          const who = changing && presence.actingIn(page);
           if (!who) return;
-          // Someone is using this tab: wait, then stop so Claude looks at the page again before
-          // the remaining steps (their click may have changed it).
-          return presence.waitForUser(page).then(() => { throw new Error(`${who === host ? "The user" : who} used this tab (${presence.didIn(page) || "scrolled or moved"}). Take a snapshot, then run the remaining steps.`); });
+          // Then stop so Claude looks at the page again before the remaining steps (their click may have changed it).
+          await presence.waitForUser(page);
+          throw new Error(`${who === host ? "The user" : who} used this tab (${presence.didIn(page) || "scrolled"}). Take a snapshot, then run the remaining steps.`);
         },
+        owner: (el) => ownerOf(el, hud.key, { host, byAgent: presence.typedByAgent }),
         status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); },
         activity: (text) => hud.addActivity(text, myLabel(), page),
         cursor: (el, act) => hud.cursorTo(page, el, act),
@@ -428,9 +452,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
       });
       const saving = result.ok && args.saveAs && !args.playbook;
       if (saving) savePlaybook(args.saveAs, steps);
+      const left = result.skipped?.length ? ` Left to the people filling them: ${result.skipped.map((x) => `${x.label} (${x.who})`).join(", ")}.` : "";
       const head = result.ok
-        ? `Done: ${result.done.length} steps in ${(result.ms / 1000).toFixed(1)}s.${saving ? ` Saved as playbook "${args.saveAs}".` : ""}`
-        : `Stopped at step ${result.stoppedAt} of ${resolved.length}: ${result.why}`;
+        ? `Done: ${result.done.length} steps in ${(result.ms / 1000).toFixed(1)}s.${left}${saving ? ` Saved as playbook "${args.saveAs}".` : ""}`
+        : `Stopped at step ${result.stoppedAt} of ${resolved.length}: ${result.why}${left}`;
       const out = await outline(page).catch(() => `Page: ${page.url()}`);
       return { text: `${head}\n${out}`, error: !result.ok, url: page.url() };
     }
@@ -482,7 +507,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
 
     async function handle(msg) {
       if (msg.method !== "tools/call") return transport.onmessage?.(msg);
-      const { name, arguments: args = {} } = msg.params || {};
+      const { name } = msg.params || {};
+      let args = msg.params?.arguments || {};
       const denied = refusal(name, args);
       if (denied) return reply(msg.id, denied, true);
       if (!NO_WAIT.has(name)) await whenReady();
@@ -498,6 +524,25 @@ export function createServe({ config, log, host, createConnection, clients, coll
 
       const problem = await browserToolProblem(name, args);
       if (problem) return reply(msg.id, problem, true);
+      // A field a person is filling (here or in the other browser) is theirs: left unchanged.
+      if (FIELD_TOOLS.has(name)) {
+        const page = actingIn || await serverPage();
+        const ownerAt = (target) => (page && isRef(target) ? ownerOf(page.locator(`aria-ref=${target}`).first(), hud.key, { host, byAgent: presence.typedByAgent }) : null);
+        if (name === "browser_fill_form" && Array.isArray(args.fields)) {
+          const owners = await Promise.all(args.fields.map((f) => ownerAt(f?.target)));
+          const left = owners.map((o, i) => o && leftAlone(o, args.fields[i]?.name)).filter(Boolean);
+          if (left.length === args.fields.length && left.length) return reply(msg.id, left.join("\n"), true);
+          if (left.length) {
+            fieldNotes.push(...left); // the rest are filled
+            msg = structuredClone(msg);
+            msg.params.arguments.fields = args.fields.filter((_, i) => !owners[i]);
+            args = msg.params.arguments;
+          }
+        } else {
+          const o = await ownerAt(args.target);
+          if (o) return reply(msg.id, leftAlone(o, args.element), true);
+        }
+      }
       // Swap password names for the real values on the way to the browser; Claude's copy keeps names.
       if (secretNamesIn(name, args, secretNames()).length) {
         const { values } = secrets.get();
@@ -543,17 +588,32 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (serverAt) setMine(serverAt);
       return mine;
     }
-    // Per-tab turns. A person using the tab goes first: wait (outside the shared queue, so agents
-    // in other tabs carry on). Another agent holding the tab: refuse, or wait a moment if its turn
+    // Whether this call would change the page under a person in its tab (see PAGE_CHANGING).
+    async function changesPageNow(tool, args, page) {
+      if (PAGE_CHANGING.has(tool)) return true;
+      if (tool === "browser_press_key") return activatingKey(args.key) === "enter";
+      if (tool === "browser_type") return !!(args.submit || /[\r\n]/.test(String(args.text || "")));
+      if (tool !== "browser_click" || !page || !args.target) return false;
+      try {
+        const el = page.locator(isRef(args.target) ? `aria-ref=${args.target}` : String(args.target)).first();
+        return !!(await within(1500, el.evaluate(navigatesOrSubmits, undefined, { timeout: 1000 }).catch(() => false)));
+      } catch {
+        return false;
+      }
+    }
+    // Per-tab turns. A person at it in the tab goes first when this call would change the page
+    // (else people and agents work side by side): wait outside the shared queue, so agents in
+    // other tabs carry on. Another agent holding the tab: refuse, or wait a moment if its turn
     // is about to end.
-    async function takeTurn(dispatch, id) {
+    async function takeTurn(dispatch, id, tool, args = {}) {
       for (let round = 0; ; round++) {
         const page = await myTab();
         if (!page && lostTab) { reply(id, "You have no tab of your own: you closed yours and the others are in use by other agents. Open one with browser_tabs new.", true); return; }
-        await presence.waitForUser(page);
+        const changing = await changesPageNow(tool, args, page);
+        if (changing) await presence.waitForUser(page);
         const r = await collaboration.run(participant, async () => {
           if (page && page.isClosed()) return { again: true };
-          if (presence.personIn(page)) return { again: true };
+          if (changing && presence.actingIn(page)) return { again: true };
           const c = tabClaims.claim(page, participant, myLabel());
           if (!c.ok) {
             const left = c.holder.until - Date.now();
@@ -626,14 +686,23 @@ export function createServe({ config, log, host, createConnection, clients, coll
           throw e;
         }
       };
+      // Only calls that act in a page count as the agent's input time: a person typing while an
+      // agent reads (a snapshot, a tab list) is still the person.
+      const acting = msg.method === "tools/call" && (TAB_TOOLS.has(tool) || (tool === "browser_tabs" && msg.params?.arguments?.action !== "list"));
       const dispatch = async () => {
-        const done = presence.busyStart();
+        const done = acting ? presence.busyStart() : () => {};
         // Showing another tab (or fast mode bringing its tab up) mustn't pull the browser over the
         // app you're in, like the Claude desktop app with its pane.
         const changesTab = tool === "browser_tabs" && ["select", "new"].includes(msg.params?.arguments?.action);
         try { return await (changesTab ? keepFocus(dispatchNow) : dispatchNow()); } finally { done(); }
       };
-      if (msg.method === "tools/call" && TAB_TOOLS.has(tool)) return takeTurn(dispatch, msg.id);
+      // Paused by a person: wait before the shared queue (it never holds other work up), and
+      // after a while say so, so the agent isn't stuck. Only people resume (no tool does).
+      if (acting) {
+        const held = await pause.wait(disconnected.signal);
+        if (held) return reply(msg.id, `Paused by ${held.by}. Waiting until someone resumes; nothing was done.`, true);
+      }
+      if (msg.method === "tools/call" && TAB_TOOLS.has(tool)) return takeTurn(dispatch, msg.id, tool, msg.params?.arguments || {});
       // An agent without a tab of its own reads nothing: it would be reading another agent's tab.
       if (msg.method === "tools/call" && PAGE_READ_TOOLS.has(tool) && !(await myTab()) && lostTab) {
         return reply(msg.id, "You have no tab of your own: you closed yours and the others are in use by other agents. Open one with browser_tabs new.", true);

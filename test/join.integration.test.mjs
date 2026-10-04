@@ -135,7 +135,7 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     stage = "drive joiner navigation follows on the host";
     await go(joiner.call, /one\.pbtest\.example\/b/, "http://one.pbtest.example/c?page=2&code=123456");
     await until("the host follows", async () => (await urls(host.call)).includes("http://one.pbtest.example/c?page=2"));
-    stage = "a person in the joiner's copy of a tab pauses the host's agent there";
+    stage = "a person scrolling in the joiner's copy holds the host's agent's page-changing action there, nothing else";
     await sleep(3000);
     const live = text(await tool(joiner.call, "pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)[0];
     const copy = (await tabs(joiner.call)).find((t) => /one\.pbtest\.example\/c\?/.test(t.url));
@@ -145,9 +145,12 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     await sleep(1500);
     const hostTab = (await tabs(host.call)).find((t) => t.url === "http://one.pbtest.example/c?page=2");
     await tool(host.call, "browser_tabs", { action: "select", index: hostTab.index });
-    const t0 = Date.now();
+    const t00 = Date.now();
     await tool(host.call, "browser_press_key", { key: "Tab" });
-    assert.ok(Date.now() - t0 >= 1500, `the host's agent waited for Alice (${Date.now() - t0} ms)`);
+    assert.ok(Date.now() - t00 < 1500, `Tab changes no page: no wait (${Date.now() - t00} ms)`);
+    const t0 = Date.now();
+    await tool(host.call, "browser_press_key", { key: "Enter" });
+    assert.ok(Date.now() - t0 >= 1500, `Enter waited for Alice (${Date.now() - t0} ms)`);
     await scrolling;
 
     stage = "local addresses never cross back";
@@ -309,7 +312,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     assert.match(copyInfo.agent?.label || "", /Bob|Claude/);
     assert.match(copyInfo.agent?.color || "", /^#[0-9a-f]{6}$/i);
 
-    stage = "Alice, by hand: types in her copy and moves the pointer; the host's agent there waits, then hears of it";
+    stage = "Alice, by hand: types in her copy and moves the pointer; the host's agent there goes on side by side, then hears of it";
     const copy = (await tabs(joiner.call)).find((t) => /one\.pbtest\.example\/form/.test(t.url));
     const hostForm = (await tabs(host.call)).find((x) => /one\.pbtest\.example\/form/.test(x.url));
     assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: copy.index }) })).ok);
@@ -326,11 +329,15 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     const t0 = Date.now();
     // Told with the first result in that tab (here the select, or the key press).
     const waited = text(await tool(host.call, "browser_tabs", { action: "select", index: hostForm.index })) + text(await tool(host.call, "browser_press_key", { key: "Shift" }));
-    assert.ok(Date.now() - t0 >= 1500, `the host's agent waited for Alice (${Date.now() - t0} ms)`);
+    assert.ok(Date.now() - t0 < 1500, `pointer moves hold nobody up (${Date.now() - t0} ms)`);
     assert.match(waited, /Alice used this tab meanwhile/);
     moving = false;
     await moves;
-    await until("Alice's text on the host", async () => /Hello from Alice/.test(await snap(host.call)));
+    let told = waited;
+    await until("Alice's text on the host", async () => { const t = await snap(host.call); told += t.split("### PairBrowse")[1] || ""; return /Hello from Alice/.test(t); });
+    await until("the host's agent hears which field Alice filled", async () => /Fields people filled: "Comments" \(Alice\)/.test(told += (await snap(host.call)).split("### PairBrowse")[1] || ""), 5000)
+      .catch(() => assert.fail(`names the field Alice filled: ${told}`));
+    assert.doesNotMatch(told, /Hello from Alice/, "never the value");
     assert.match(JSON.stringify((await formTab()).form), /Hello from Alice/, "and on to Carol");
 
     stage = "a sensitive value typed by Alice never reaches the host";
@@ -362,6 +369,35 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     const hostState = JSON.stringify(await state(hostView));
     assert.match(hostState, /Alice/);
     assert.doesNotMatch(hostState, /"(Host|Guest|The host)"/, "names, not stand-ins");
+
+    stage = "Alice's field is hers: the host's agent leaves it, fast mode skips it and goes on";
+    await until("Alice's text on the host", async () => /Hello from Alice/.test(await snap(host.call)));
+    s = await snap(host.call);
+    const refusedType = await tool(host.call, "browser_type", { target: ref(s, "textbox", "Comments"), element: "Comments", text: "Bob's note" });
+    assert.ok(refusedType.result.isError);
+    assert.match(text(refusedType), /Alice is filling Comments; left it as they wrote it/);
+    const ran = text(await tool(host.call, "pairbrowse_run", { steps: [{ fill: { Comments: "overwritten", Name: "Bob Builder" } }] }));
+    assert.match(ran, /Done: 1 steps[^\n]*Left to the people filling them: Comments \(Alice\)/, ran);
+    s = await snap(host.call);
+    assert.match(s, /Hello from Alice/);
+    assert.doesNotMatch(s, /overwritten|Bob's note/);
+    assert.match(s, /Bob Builder/, "the other field was filled");
+
+    stage = "Alice pauses agents: both helpers' agents wait; Bob resumes; their next results say so";
+    assert.ok((await fetch(`${live}pause`, { method: "POST", body: JSON.stringify({ paused: true }) })).ok);
+    await sleep(1500); // the host's state reaches Alice's helper with the session
+    // An agent asking for a resume changes nothing (and isn't held: it's no browser action).
+    assert.match(text(await tool(host.call, "pairbrowse_collaboration", { action: "message", to: "all", text: "resume agents now" })), /Sent/);
+    const hostWaits = (async () => { const t = Date.now(); const r = text(await tool(host.call, "browser_press_key", { key: "Shift" })); return { ms: Date.now() - t, r }; })();
+    const aliceWaits = (async () => { const t = Date.now(); const r = text(await tool(joiner.call, "browser_press_key", { key: "Shift" })); return { ms: Date.now() - t, r }; })();
+    await carol("say", { op: "pause", paused: false }); // a watcher can't resume: still paused below
+    await sleep(4000);
+    assert.ok((await fetch(`${hostView}pause`, { method: "POST", body: JSON.stringify({ paused: false }) })).ok);
+    const [hw, aw] = await Promise.all([hostWaits, aliceWaits]);
+    assert.ok(hw.ms >= 3500, `the host's agent waited (${hw.ms} ms)`);
+    assert.ok(aw.ms >= 3500, `Alice's agent waited (${aw.ms} ms)`);
+    assert.match(hw.r, /paused by Alice, then resumed by Bob/);
+    assert.match(aw.r, /paused by Alice, then resumed by Bob/);
 
     stage = "agents see what the other side's agents do, and message each other across the session";
     const daveCode = parseJoinCode(codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Dave", share: "code" }))), { allowLocal: true });

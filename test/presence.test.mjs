@@ -21,3 +21,37 @@ test("an agent's own input read late is still the agent's, a person's is a perso
     mock.timers.reset();
   }
 });
+
+test("pointer moves hold nobody up; clicks and typing do, the pause button is never page input, and filled fields are named", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 2_000_000 });
+  try {
+    const pressed = [];
+    const presence = createPresence({ host: "Bob", readEvents: async () => [], pages: () => [], paused: () => true,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {}, onPauseButton: (k) => pressed.push(k) });
+    const page = {};
+    presence.userDid([{ kind: "move", t: Date.now() }], page);
+    assert.equal(presence.actingIn(page), null, "moving the pointer pauses nothing");
+    assert.equal(presence.personIn(page), "Bob", "but they are shown in the tab");
+    presence.userDid([{ kind: "pause", t: Date.now() }], page);
+    assert.deepEqual(pressed, ["pause"]);
+    assert.equal(presence.actingIn(page), null, "the button isn't input in the page");
+    const done = presence.busyStart();
+    presence.userDid([{ kind: "resume", t: Date.now() }], page);
+    done();
+    assert.deepEqual(pressed, ["pause"], "an agent can't press it");
+    mock.timers.tick(3000);
+    presence.userDid([{ kind: "type", t: Date.now(), what: "Delivery instructions" }], page);
+    assert.equal(presence.actingIn(page), "Bob");
+    presence.elsewhere(page, "Alice", ['typed in "Gift note"']);
+    const note = presence.userNote(page);
+    assert.match(note, /Fields people filled: "Delivery instructions" \(the user\), "Gift note" \(Alice\)/);
+    assert.equal(presence.userNote(page), "", "once");
+    const other = {};
+    presence.elsewhere(other, "Alice", []);
+    assert.equal(presence.actingIn(other), null, "only there: nothing waits");
+    presence.elsewhere(other, "Alice", [], true);
+    assert.equal(presence.actingIn(other), "Alice", "scrolling there: page changes wait");
+  } finally {
+    mock.timers.reset();
+  }
+});

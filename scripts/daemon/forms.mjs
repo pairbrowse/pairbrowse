@@ -15,8 +15,10 @@ const MARK = `__pb${randomBytes(6).toString("hex")}`;
 
 // Runs in the page: mode "read" lists the fields; mode "apply" sets the given ones. Fields are
 // keyed the same way both times: a unique id, else name (plus value for checkboxes and radios),
-// else label, else position; a repeated key gets "#n".
-function inPage([mode, max, mark, list, who]) {
+// else label, else position; a repeated key gets "#n". hud: the page script's name and key: a
+// field's edits are read through it ("own"), and a value a person there typed is claimed for them.
+function inPage([mode, max, mark, list, who, hud]) {
+  const page = (v, kind) => { try { return hud ? window[hud[0]]?.(hud[1], v, kind) : null; } catch { return null; } };
   const out = [];
   const keys = new Map();
   const byKey = new Map();
@@ -47,7 +49,8 @@ function inPage([mode, max, mark, list, who]) {
     if (mode !== "read") continue;
     const v = type === "checkbox" || type === "radio" ? el.checked : type === "select" ? [...el.selectedOptions].map((o) => o.value) : String(el.value);
     const hints = [label, name, el.id, el.getAttribute("autocomplete") || "", el.getAttribute("placeholder") || "", el.getAttribute("inputmode") === "numeric" && /code/i.test(label) ? "code" : ""].join(" ").slice(0, 300);
-    out.push({ k: key, t: type, v, hints });
+    const own = page(el, "owned");
+    out.push({ k: key, t: type, v, hints, ...(own ? { own: { times: own.times, focused: own.focused, rw: own.rw, rt: own.rt } } : {}) });
   }
   if (mode === "read") return out;
   const sensitive = (el, type) => type === "password" || /cc-|one-time-code|password/i.test(el.getAttribute("autocomplete") || "");
@@ -60,6 +63,7 @@ function inPage([mode, max, mark, list, who]) {
     const hit = byKey.get(x.k);
     if (!hit || hit.type !== x.t) continue;
     const { el, type } = hit;
+    if (x.o) page([el, x.o], "claim"); // a person there filled it: theirs here too
     if (x.m || sensitive(el, type)) {
       // Filled there: say so here, without a value (only on an empty field).
       if (!(mark in el)) Object.defineProperty(el, mark, { value: el.getAttribute("placeholder"), writable: true, enumerable: false });
@@ -105,24 +109,24 @@ function framesOf(page, secretDomains) {
 
 // The page's fields, as read here (tabsync's shareFields decides what crosses), or null when the
 // page itself can't share any (not a web page, or a secret domain).
-export async function readFields(page, secretDomains = []) {
+export async function readFields(page, secretDomains = [], hud = null) {
   const url = formUrl(page.url());
   if (!url || onSecretDomain(page.url(), secretDomains)) return null;
   const fields = [];
   for (const { frame, key } of framesOf(page, secretDomains)) {
-    const list = await within(READ_MS, frame.evaluate(inPage, ["read", FIELDS_MAX, MARK, [], ""]).catch(() => null));
+    const list = await within(READ_MS, frame.evaluate(inPage, ["read", FIELDS_MAX, MARK, [], "", hud]).catch(() => null));
     for (const x of Array.isArray(list) ? list : []) if (fields.length < FIELDS_MAX) fields.push({ ...x, f: key });
   }
   return { url, fields };
 }
 
 // Sets fields (already checked) in the page; returns the ones now showing those values.
-export async function applyFields(page, fields, who, secretDomains = []) {
+export async function applyFields(page, fields, who, secretDomains = [], hud = null) {
   const done = [];
   for (const { frame, key } of framesOf(page, secretDomains)) {
     const mine = fields.filter((x) => x.f === key);
     if (!mine.length) continue;
-    const keys = await within(READ_MS, frame.evaluate(inPage, ["apply", FIELDS_MAX, MARK, mine, String(who).slice(0, 60)]).catch(() => null));
+    const keys = await within(READ_MS, frame.evaluate(inPage, ["apply", FIELDS_MAX, MARK, mine, String(who).slice(0, 60), hud]).catch(() => null));
     if (Array.isArray(keys)) done.push(...mine.filter((x) => keys.includes(x.k)));
   }
   return done;

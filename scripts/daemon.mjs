@@ -13,6 +13,8 @@
 //   context.mjs   the browser, its tabs, downloads and sessions
 //   hud.mjs       the badge, bar, spark and cursor inside the pages
 //   presence.mjs  you, using the browser by hand
+//   pause.mjs     "Pause agents": people stop every agent in the session until someone resumes
+//   fields.mjs    fields people fill are theirs: agents leave them alone
 //   panel.mjs     the side panel and notifications
 //   sharing.mjs   the live view, invites and joiners
 //   output.mjs    password masking and long snapshots in results
@@ -34,6 +36,8 @@ import { loadBrowserDriver } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
 import { createHud } from "./daemon/hud.mjs";
 import { createPresence } from "./daemon/presence.mjs";
+import { createPause } from "./daemon/pause.mjs";
+import { fieldOwner } from "./daemon/fields.mjs";
 import { createPanel } from "./daemon/panel.mjs";
 import { createSharing } from "./daemon/sharing.mjs";
 import { createOutput } from "./daemon/output.mjs";
@@ -77,13 +81,37 @@ const collaboration = new BrowserCoordinator({ onChange: (state) => liveView()?.
 const tabClaims = new TabClaims({ onChange: refreshTabs });
 
 const panel = createPanel({ context: () => context.current(), liveViewUrl: async () => (await sharing.ensureLiveView()).url, log });
+// "Pause agents", session-wide: held here, or mirrored from the host of a session joined from
+// here (only a drive participant may press it there; a watcher sees it but can't).
+const canPause = () => !follow.joined() || follow.role() === "drive";
+const pause = createPause({
+  onChange: () => {
+    hud.refreshBars();
+    liveView()?.setPause();
+    refreshTabs(); // on to the joiners, with the session
+  },
+});
+const pauseState = () => ({ ...pause.view(), can: canPause() });
+// A person pressed "Pause agents" or "Resume" here (the bar in a page, the side panel, a drive
+// guest's viewer). In a session joined from here the host decides, and its state comes back.
+function pressPause(paused, who = HOST) {
+  if (follow.joined()) {
+    if (!canPause()) return { problem: "You joined to watch: only drive participants can pause agents." };
+    follow.say({ op: "pause", paused });
+    return { ok: true };
+  }
+  if (paused) pause.pause(who); else pause.resume(who);
+  return { ok: true };
+}
 const hud = createHud({
   pages: () => context.openPages(), participants: () => [...collaboration.participants.keys()],
   waiting: (page) => presence.waiting(page), liveView, notify: panel.notify,
+  pause: () => ({ by: pause.view().by, can: canPause() }),
 });
 const presence = createPresence({
   host: HOST, readEvents: (frame) => hud.call(frame, "", "user"), pages: () => context.openPages(), paused: () => context.isSwitching(),
   onUsed: (page) => context.touch(page), onStale: bumpRevision, applyBar: hud.applyBar, refreshTabs,
+  onPauseButton: (kind) => pressPause(kind === "pause"),
 });
 const popups = createPopups({
   log,
@@ -177,12 +205,18 @@ function shareMessage(msg) {
 const secretDomains = () => Object.values(secrets.get().domains || {}).flat();
 // Form values in shared tabs: read here as they may cross (sensitive ones, saved passwords
 // included, only as filled), and filled in from the other side.
+// A field a person filled carries their name (o) across, so agents on both sides leave it be.
 const forms = {
   read: async (page) => {
-    const r = await readFields(page, secretDomains());
-    return r && { url: r.url, fields: shareFields(r.fields, { secretValues: Object.values(secrets.get().values || {}) }) };
+    const r = await readFields(page, secretDomains(), hud.key);
+    if (!r) return null;
+    const owned = r.fields.map(({ own, ...x }) => {
+      const o = fieldOwner(own, { host: HOST, byAgent: presence.typedByAgent });
+      return o ? { ...x, o: o.who } : x;
+    });
+    return { url: r.url, fields: shareFields(owned, { secretValues: Object.values(secrets.get().values || {}) }) };
   },
-  apply: (page, fields, who) => applyFields(page, fields, who, secretDomains()),
+  apply: (page, fields, who) => applyFields(page, fields, who, secretDomains(), hud.key),
 };
 const tabOrder = createTabOrder({ call: (fn, arg, ms) => panel.call(fn, arg, ms), getContext: () => context.getContext(), log });
 
@@ -190,7 +224,8 @@ const sharing = createSharing({
   config, log, host: HOST, notify: panel.notify, hostNote,
   view: {
     secretDomains,
-    onJoinerPerson: (page, who, did) => { presence.elsewhere(page, who, did); bumpRevision(); },
+    onJoinerPerson: (page, who, did, acting) => { presence.elsewhere(page, who, did, acting); bumpRevision(); },
+    onPause: (paused, who) => pressPause(paused, who || HOST), pauseState,
     onJoinerActivity: (page, text, who, from) => hud.addActivity(text, who, page, from),
     extraOrigins: panel.origins, getContext: () => context.getContext(), currentUrl: () => context.currentUrl(), profile: facts.profile, tabMeta,
     onHumanInput: (page, who) => { presence.humanIn(page, who || HOST); bumpRevision(); },
@@ -198,11 +233,16 @@ const sharing = createSharing({
       host: HOST, readForm: forms.read, arrange: (pages) => tabOrder.arrange(pages), order: (pages) => tabOrder.strip(pages), showPointers: hud.showPointers,
       // The host's person typing in that tab wins: the joiner gets the host's value instead.
       applyForm: async (page, fields, who) => { if (!presence.sharedPerson(page)?.local) await forms.apply(page, fields, who); },
-      sessionFor: (j) => ({ where: HOST, entries: session.entries(`${j.invite.id}:${j.joinerId}`) }),
+      sessionFor: (j) => ({ where: HOST, entries: session.entries(`${j.invite.id}:${j.joinerId}`), pause: pause.view() }),
       // From a joiner's side (text only, any role): who does what there, or a message for the
       // agents here and the other joiners. Shown and handed on, nothing more.
       onJoinerSay: (body, j, key) => {
         if (body?.op === "session") session.setRemote(key, readEntries(body.entries), cleanName(j.name));
+        else if (body?.op === "pause") {
+          // A person there pressed "Pause agents" or "Resume": drive joiners only.
+          if (j.invite.role !== "drive") return { problem: "Only drive participants can pause agents." };
+          if (body.paused === true) pause.pause(cleanName(j.name)); else pause.resume(cleanName(j.name));
+        }
         else if (body?.op === "message") {
           const msg = readMessage(body);
           if (!msg) return { problem: "Not a message." };
@@ -227,7 +267,12 @@ const sharing = createSharing({
 // Sessions joined from here: their tabs, followed in this browser.
 const follow = createFollow({
   config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent,
-  onSession: (data, join) => session.setRemote("host", readEntries(data?.entries), String(data?.where || join.host)),
+  onSession: (data, join) => {
+    session.setRemote("host", readEntries(data?.entries), String(data?.where || join.host));
+    if (data?.pause && typeof data.pause === "object") pause.mirror({ paused: data.pause.paused === true, by: String(data.pause.by || ""), resumedBy: String(data.pause.resumedBy || "") });
+  },
+  // Out of the session: a pause from there no longer holds the agents here.
+  onLeft: () => pause.mirror({ paused: false, resumedBy: HOST }),
   onMessage: (data) => session.receive(readMessage(data)),
 });
 // This side's agents, for the host of a session joined from here (when it changes, and every 10 s).
@@ -260,7 +305,7 @@ const cobrowse = createCobrowse({
 });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
+  secrets, facts, sharing, follow, pause, drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {},

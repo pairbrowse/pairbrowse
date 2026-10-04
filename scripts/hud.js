@@ -38,9 +38,12 @@
   // The element really under the pointer or holding focus, also inside shadow DOM.
   const control = (e) => { for (const el of e.composedPath()) if (el.matches?.(CONTROL)) return el; return null; };
   const focused = () => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return el; };
-  addEventListener("pointerdown", (e) => { if (e.isTrusted) record("click", named(control(e))); }, opts);
+  // PairBrowse's own bar (its "Pause agents" button) is never input in the page.
+  let barHost;
+  const ours = (e) => !!barHost && e.composedPath().includes(barHost);
+  addEventListener("pointerdown", (e) => { if (e.isTrusted && !ours(e)) record("click", named(control(e))); }, opts);
   addEventListener("keydown", (e) => {
-    if (!e.isTrusted) return;
+    if (!e.isTrusted || ours(e)) return;
     const el = focused();
     if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) record("type", named(el));
     else if (e.key.length > 1) record("key", e.key); // Enter, Escape, Tab, arrows: never the letters
@@ -64,6 +67,40 @@
   const changed = () => { dirtyAt = now(); };
   addEventListener("input", changed, opts);
   addEventListener("change", changed, opts);
+
+  // Which fields people edit: the times of real (trusted) input in each one. Agents' typing is
+  // trusted too, so the helper drops times that fall in an agent's action. A field a person edits
+  // stays theirs for a while: agents leave it alone. "claim": a person in the other browser of a
+  // shared tab edited it (their value was just set here).
+  const edits = new WeakMap(); // field -> { times: [], rw, rt }
+  const editOf = (el) => { let x = edits.get(el); if (!x) edits.set(el, (x = { times: [], rw: "", rt: 0 })); return x; };
+  const edited = (e) => {
+    if (!e.isTrusted) return;
+    const el = e.composedPath()[0];
+    if (!el || el.nodeType !== 1) return;
+    const x = editOf(el);
+    // Typing without key presses (pasting, dictation, the live view) is typing all the same.
+    if (now() - (x.times.at(-1) || 0) > 1000) record("type", named(el));
+    x.times.push(now());
+    if (x.times.length > 8) x.times.shift();
+  };
+  addEventListener("input", edited, opts);
+  addEventListener("change", edited, opts);
+  function fields(el, kind) {
+    if (!el || el.nodeType !== 1) return null;
+    if (kind === "claim") return false;
+    const x = edits.get(el);
+    return { times: x ? x.times.slice() : [], rw: x?.rw || "", rt: x?.rt || 0, focused: focused() === el, name: named(el) };
+  }
+  function claim(v) {
+    if (!Array.isArray(v) || !v[0] || v[0].nodeType !== 1) return false;
+    const x = editOf(v[0]);
+    x.rw = String(v[1] || "").slice(0, 60);
+    x.rt = now();
+    // For the agent's next result: which field they filled (its name, never the value).
+    if (userEvents.length < 60) userEvents[userEvents.length] = { t: now(), kind: "filled", what: named(v[0]), who: x.rw };
+    return true;
+  }
   function tickFrame() {
     const d = dirtyAt;
     dirtyAt = 0;
@@ -72,7 +109,8 @@
 
   if (window.top !== window) {
     // Frames only report input; the badge, bar and cursor live in the top page.
-    Object.defineProperty(window, NAME, { value: (token, text, kind) => token !== TOKEN ? false : kind === "user" ? drainUser() : kind === "tick" ? { dirty: tickFrame() } : false, enumerable: false, writable: false, configurable: false });
+    Object.defineProperty(window, NAME, { value: (token, text, kind) => token !== TOKEN ? false : kind === "user" ? drainUser() : kind === "tick" ? { dirty: tickFrame() } :
+      kind === "owned" ? fields(text, kind) : kind === "claim" ? claim(text) : false, enumerable: false, writable: false, configurable: false });
     return;
   }
   let host, box, hostPlace;
@@ -155,8 +193,11 @@
   }
 
   // The bottom bar: who's driving and Claude's last actions, like the PairBrowse live view's.
-  // It never takes clicks, and fades out while the pointer is near the bottom of the page.
-  let barHost, bar, barItems = [], barTimer = 0, barWatched = false;
+  // It takes no clicks but its "Pause agents" button's, and fades out while the pointer is near
+  // the bottom of the page (not near the button).
+  let bar, barItems = [], barTimer = 0, barWatched = false;
+  let barPause = null; // { by } while agents are paused
+  let barCanPause = false; // this person may pause and resume (not a watch joiner)
   let barWaiting = false; // Claude waits while you use the browser
   let barPerson = ""; // who is using this tab (empty: you)
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -189,21 +230,42 @@
       time{font:500 11px system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums;color:#8a90b8}
       li b{font-weight:600;color:#f5f6ff}
       code{font:500 11px system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums;padding:0 4px;border-radius:4px;background:rgba(255,255,255,.12)}
+      .pz{flex:none;pointer-events:auto;cursor:pointer;border:0;border-radius:6px;padding:4px 10px;font:600 11.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;
+        color:#1b1e3c;background:#f4f6ff}
+      .pz:hover{background:#fff}
+      .pz[hidden]{display:none}
+      .bar.paused{background:rgba(120,52,24,.95)}
+      .bar.paused .pz{background:#ef7d45;color:#fff}
       @media (prefers-reduced-motion:reduce){.bar,.bar *{animation:none!important;transition:none!important}}
-    </style><div class="bar" aria-hidden="true"><span class="who"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span></span><ol></ol></div>`;
+    </style><div class="bar" aria-hidden="true"><span class="who"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span></span><ol></ol><button class="pz" tabindex="-1" hidden></button></div>`;
     bar = shadow.querySelector(".bar");
+    // Pressed by a person only (trusted); it never takes focus from the page's fields.
+    const pz = shadow.querySelector(".pz");
+    pz.addEventListener("mousedown", (e) => e.preventDefault());
+    pz.addEventListener("click", (e) => { if (e.isTrusted && barCanPause) record(barPause ? "resume" : "pause", ""); });
     document.documentElement.appendChild(barHost);
     // Once per page: a page that removes the bar gets a new one, not another listener.
     if (!barWatched) {
       barWatched = true;
-      document.addEventListener("mousemove", (e) => bar?.classList.toggle("away", e.clientY > innerHeight - 56), { passive: true });
+      const nearButton = (e) => {
+        const b = bar?.querySelector(".pz");
+        if (!b || b.hidden) return false;
+        const r = b.getBoundingClientRect();
+        return e.clientX >= r.left - 40 && e.clientX <= r.right + 40;
+      };
+      document.addEventListener("mousemove", (e) => bar?.classList.toggle("away", e.clientY > innerHeight - 56 && !nearButton(e)), { passive: true });
     }
   }
   function drawBar() {
     const driving = barItems.length && Date.now() - barItems.at(-1).t < 8000;
     bar.classList.toggle("driving", !!driving);
     const who = barItems.length ? whose(barItems.at(-1).who) : "Claude";
-    bar.querySelector(".who span").innerHTML = barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`;
+    bar.classList.toggle("paused", !!barPause);
+    const pz = bar.querySelector(".pz");
+    pz.hidden = !barCanPause;
+    pz.textContent = barPause ? "Resume" : "Pause agents";
+    if (barPause) bar.querySelector(".who span").innerHTML = `Paused by <b>${esc(barPause.by)}</b>${barCanPause ? " \u00b7" : ""}`;
+    else bar.querySelector(".who span").innerHTML = barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`;
     const recent = barItems.slice(-3).reverse();
     const several = new Set(recent.map((a) => a.who || "")).size > 1; // name each line when people mix
     bar.querySelector("ol").innerHTML = recent.length
@@ -219,6 +281,8 @@
       barWaiting = !Array.isArray(v) && !!v.waiting;
       barPerson = !Array.isArray(v) && typeof v.person === "string" && v.person !== "The host" ? v.person.slice(0, 60) : "";
       barItems = (Array.isArray(v) ? v : v.items || []).filter((a) => a && a.t && a.text);
+      barPause = !Array.isArray(v) && v.pause && typeof v.pause.by === "string" ? { by: v.pause.by.slice(0, 60) } : null;
+      barCanPause = !Array.isArray(v) && !!v.canPause;
     } catch { return; }
     ensureBar(); // always there, "idle" until the first action
     drawBar();
@@ -323,6 +387,8 @@
     if (token !== TOKEN) return false;
     if (kind === "user") return drainUser();
     if (kind === "pointer") return { me: ptr, agent: agentPtr };
+    if (kind === "owned") return fields(text, kind);
+    if (kind === "claim") return claim(text);
     if (kind === "tick") return { me: ptr, agent: agentPtr, dirty: tickFrame() };
     if (kind === "cursors") { if (document.documentElement) setPeers(String(text || "[]")); return true; }
     // Agents' screenshots never show other people's pointers: hidden while one is taken.

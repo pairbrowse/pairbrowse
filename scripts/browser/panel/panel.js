@@ -9,6 +9,10 @@ let es = null;
 let lastActivity = 0;
 let lastWho = "";
 let driveTimer = 0;
+let paused = false;
+$("pause-btn").addEventListener("click", () => {
+  if (base) fetch(base + "pause", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ paused: !paused }) }).catch(() => {});
+});
 
 $("driver").prepend(sparkIcon("spark"));
 const drawJoins = joinBanners($("joins"), () => base);
@@ -75,6 +79,15 @@ function connect(url) {
         ...(p.task || p.last ? [el("small", { textContent: p.task || p.last })] : []));
     }));
     $("messages").replaceChildren(...messages.slice(-6).reverse().map((m) => el("li", {}, el("time", { textContent: `${clock(m.t)} ` }), el("strong", { textContent: `${m.from}${m.to && m.to !== "all" ? ` to ${m.to}` : ""}: ` }), document.createTextNode(m.text))));
+  });
+  // Agents paused by a person, session-wide. Pressed by people only; agents have no way to.
+  on("pause", (p) => {
+    paused = !!p?.paused;
+    document.body.dataset.paused = String(paused);
+    $("pause").hidden = false;
+    $("pause-btn").hidden = !p?.can;
+    $("pause-btn").textContent = paused ? "Resume" : "Pause agents";
+    $("pause-text").replaceChildren(...(paused ? [document.createTextNode("Paused by "), el("b", { textContent: p.by || "someone" })] : [document.createTextNode("Agents can act in the browser")]));
   });
   on("profile", profile.draw);
   on("join", drawJoins);

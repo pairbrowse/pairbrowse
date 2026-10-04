@@ -15,8 +15,9 @@ const SHARED_SPARK_MS = 30_000;
 
 // pages(): the open tabs (none while the browser is closed). participants(): ids in the order
 // they joined. waiting(page): the person an agent waits for there. liveView(): the live view, if
-// up. notify(text): tells the user it's their turn.
-export function createHud({ pages, participants, waiting, liveView, notify }) {
+// up. notify(text): tells the user it's their turn. pause(): { by, can }: who paused agents (by
+// empty: nobody) and whether the person here may pause and resume (daemon/pause.mjs).
+export function createHud({ pages, participants, waiting, liveView, notify, pause = () => ({ by: "", can: true }) }) {
   // The page script, with names and a key that are new each time the helper starts.
   const { source, name: HUD_NAME, token: HUD_TOKEN } = hudScript();
   let badge = { text: "", kind: "clear" };
@@ -61,7 +62,8 @@ export function createHud({ pages, participants, waiting, liveView, notify }) {
   const showPointers = (page, list) => quietly(page, JSON.stringify(list), "cursors");
   function applyBar(page) {
     const person = waiting(page);
-    return quietly(page, JSON.stringify({ items: recent, waiting: !!person, person: person || "" }), "bar");
+    const p = pause();
+    return quietly(page, JSON.stringify({ items: recent, waiting: !!person, person: person || "", pause: p.by ? { by: p.by } : null, canPause: !!p.can }), "bar");
   }
   const sparkOn = (page) => [...sparks.values()].find((s) => s.page === page);
 
@@ -134,6 +136,9 @@ export function createHud({ pages, participants, waiting, liveView, notify }) {
   }
 
   return {
+    // The page script's name and key: forms.mjs reads and claims fields through it.
+    key: [HUD_NAME, HUD_TOKEN],
+    refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
     source, call, ensure, onPageLoad, applyBar, setBadge, badge: () => badge,
     moveSpark, sparkPage, sparkOwner, sparkColor, clearSparks: () => sparks.clear(), setSharedSpark, sharedSpark, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor,

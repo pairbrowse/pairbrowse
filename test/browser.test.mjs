@@ -37,9 +37,42 @@ test("other pak formats are left alone", () => {
   assert.equal(rebrandPak(b), null);
 });
 
-test("the side panel's id is derived from its folder like Chromium does", () => {
-  assert.match(panelExtensionId("/tmp/x"), /^[a-p]{32}$/);
-  assert.notEqual(panelExtensionId("/tmp/x"), panelExtensionId("/tmp/y"));
+test("the side panel's id comes from its manifest key like Chromium does, wherever the folder is", async () => {
+  const { readFileSync, mkdtempSync, cpSync } = await import("node:fs");
+  const { createHash } = await import("node:crypto");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { PANEL_DIR } = await import("../scripts/browser.mjs");
+  const key = JSON.parse(readFileSync(join(PANEL_DIR, "manifest.json"), "utf8")).key;
+  const hex = createHash("sha256").update(Buffer.from(key, "base64")).digest("hex").slice(0, 32);
+  const id = [...hex].map((c) => "abcdefghijklmnop"[parseInt(c, 16)]).join("");
+  assert.match(id, /^[a-p]{32}$/);
+  assert.equal(panelExtensionId(), id);
+  const copy = join(mkdtempSync(join(tmpdir(), "pb-panel-")), "0.99.0", "scripts", "browser", "panel");
+  cpSync(PANEL_DIR, copy, { recursive: true });
+  assert.equal(panelExtensionId(copy), id, "another copy (a plugin update) keeps the id");
+  assert.notEqual(panelExtensionId("/tmp/x"), panelExtensionId("/tmp/y"), "a folder without a key falls back to its path");
+});
+
+test("earlier copies' path-derived side panel records and buttons are removed", async () => {
+  const { prepareProfile } = await import("../scripts/browser.mjs");
+  const { mkdtempSync, writeFileSync, readFileSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const profile = mkdtempSync(join(tmpdir(), "pb-old-"));
+  mkdirSync(join(profile, "Default"));
+  const id = panelExtensionId();
+  const old = "abcdabcdabcdabcdabcdabcdabcdabcd";
+  const path = "/Users/x/.claude/plugins/cache/pairbrowse/pairbrowse/0.14.1/scripts/browser/panel";
+  writeFileSync(join(profile, "Default", "Secure Preferences"), JSON.stringify({ extensions: { settings: { [old]: { path, state: 0 }, [id]: { path: "/new/scripts/browser/panel", ack_ntp_bubble: true }, keep: { path: "/elsewhere" } } },
+    protection: { macs: { extensions: { settings: { [old]: "M", [id]: "N", keep: "K" } } } } }));
+  writeFileSync(join(profile, "Default", "Preferences"), JSON.stringify({ extensions: { pinned_extensions: [old, "keep"] } }));
+  prepareProfile(profile);
+  const secure = JSON.parse(readFileSync(join(profile, "Default", "Secure Preferences"), "utf8"));
+  assert.deepEqual(Object.keys(secure.extensions.settings).sort(), [id, "keep"].sort());
+  assert.deepEqual(Object.keys(secure.protection.macs.extensions.settings).sort(), [id, "keep"].sort());
+  const prefs = JSON.parse(readFileSync(join(profile, "Default", "Preferences"), "utf8"));
+  assert.deepEqual(prefs.extensions.pinned_extensions.sort(), [id, "keep"].sort());
 });
 
 test("profiles get Chromium's own navy color theme instead of the old theme extension", async () => {
@@ -131,14 +164,15 @@ test("a profile's default name says PairBrowse; a chosen name stays", async () =
   assert.equal(localStatePreferences(state), false, "nothing left to change");
 });
 
-test("Chromium acknowledges the side panel's new tab page itself until it has", async () => {
-  const { prepareProfile, panelExtensionId } = await import("../scripts/browser.mjs");
+test("Chromium acknowledges the side panel's fixed-id new tab page itself until it has", async () => {
+  const { prepareProfile, panelExtensionId, PANEL_DIR } = await import("../scripts/browser.mjs");
   const { mkdtempSync, readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const profile = mkdtempSync(join(tmpdir(), "pb-ntp-"));
   mkdirSync(join(profile, "Default"));
   const id = panelExtensionId();
+  assert.equal(id, panelExtensionId(PANEL_DIR + "/"), "keyed, not path-derived");
   writeFileSync(join(profile, "Default", "Secure Preferences"), JSON.stringify({ extensions: { settings: { [id]: { state: 1 } } } }));
   writeFileSync(join(profile, "Default", "Preferences"), JSON.stringify({ ack_existing_ntp_extensions: true }));
   prepareProfile(profile);

@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "PairBrowse",
   "version": "1.5",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApWMtQf4h6PS/CphQR1Z5kCmWIyPddeS7jtwL1UqtV6Z5Ucl+dzT2k7VSd8tqHWEFRVlMOgXrtKfsIOoxSt5HQFqE2m7UugrjeJd5cY/2j2hjZa1fancCFVwUFtTZeNRuVyOtNJhpX1ys9MrLrbrNHOMpINHvA2u11eIYsty+z6DGNml8MpBjPGLVGvgovsIuHPEtWGDrfNrcm64g03bZ60Tcs4pHoSJj5acAieF3o3E12dF9Ft5qIlP7mRovb50PIL2OoSrcu6UklsWvhMO52QA3U9EgKqwEyftfzKhXnLoVf01mz+ooCQ5rJK9HF/ni/eJid6XBrjdJGJ4m8kzFzwIDAQAB",
   "description": "The PairBrowse side panel and new tab page: what Claude is doing, your turn, activity, and your remembered details and passwords.",
   "icons": {
     "16": "icon16.png",

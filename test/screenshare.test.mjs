@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { frameFor, readInput } from "../scripts/daemon/screenshare.mjs";
 import { pathsIn, withPaths } from "../scripts/daemon/serve.mjs";
 import { fieldOwner } from "../scripts/daemon/fields.mjs";
+import { preflight } from "../scripts/runner.mjs";
 
 test("the picture keeps the tab's shape, at most 1920 a side, in even pixels", () => {
   assert.deepEqual(frameFor(1366, 900, 2), { w: 1920, h: 1266 });
@@ -40,4 +41,11 @@ test("a field a joiner typed in (shared browser) is theirs, not the host's", () 
   const byRemote = (t) => (t > now - 2000 ? "Alice" : null);
   assert.deepEqual(fieldOwner({ times: [now - 1000], name: "Note" }, { host: "Bob", byRemote, now }), { who: "Alice", local: false, name: "Note" });
   assert.deepEqual(fieldOwner({ times: [now - 3000], name: "Note" }, { host: "Bob", byRemote, now }), { who: "Bob", local: true, name: "Note" });
+});
+
+test("fast mode's drag: 2 to 200 points inside the page, and it has to move", () => {
+  assert.equal(preflight([{ press: "r" }, { drag: [[0.4, 0.48], [0.6, 0.8]] }]), null);
+  assert.match(preflight([{ drag: [[0.4, 0.4]] }]), /2 to 200 points/);
+  assert.match(preflight([{ drag: [[0.4, 0.4], [1.2, 0.5]] }]), /fractions 0-1/);
+  assert.match(preflight([{ drag: [[0.4, 0.4], [0.401, 0.4]] }]), /has to move/);
 });

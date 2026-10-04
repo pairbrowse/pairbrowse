@@ -11,7 +11,7 @@ const PERSON_SHOWN_MS = USER_IDLE_MS + 3000; // the tab overview keeps showing t
 const USER_WAIT_MS = 10 * 60_000; // an agent gives up waiting for a person after this
 const POLL_MS = 500;
 const READ_LATE_MS = 3000; // input read later than this counts as this long ago
-const USER_KINDS = new Set(["click", "type", "key", "wheel", "move", "went"]);
+const USER_KINDS = new Set(["click", "type", "key", "wheel", "scroll", "move", "went"]); // scroll: scrolling keys, a press on a scrollbar
 
 // host: the host's name. readEvents(frame): the page script's recorded input in that frame.
 // pages(): the open tabs. paused(): true while no tab should be read (a session switch).
@@ -101,7 +101,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     if (!yours.length) return;
     humanIn(page, host, Math.min(at, Math.max(...yours.map((e) => e.t))));
     // Reading along (moving, scrolling) holds nobody up; clicks, typing and keys do.
-    const acts = yours.filter((e) => e.kind !== "move" && e.kind !== "wheel");
+    const acts = yours.filter((e) => !["move", "wheel", "scroll"].includes(e.kind));
     if (acts.length) actedIn(page, host, Math.min(at, Math.max(...acts.map((e) => e.t))));
     if (!page) return;
     const userLog = userLogs.get(page) || [];
@@ -114,7 +114,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       if (userLog.at(-1) !== line) { userLog.push(line); toFeed(page, host, line, true); }
     }
     if (userLog.length > 20) userLog.splice(0, userLog.length - 20);
-    if (yours.some((e) => !["move", "wheel"].includes(e.kind))) onStale();
+    if (yours.some((e) => !["move", "wheel", "scroll"].includes(e.kind))) onStale();
   }
 
   // Reads every tab, and its first frames (card and code fields often live in one).

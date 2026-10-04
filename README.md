@@ -6,7 +6,7 @@ and a teammate can watch or take the wheel from their own computer.
 
 [pairbrowse.com](https://pairbrowse.com)
 
-<!-- Demo GIF goes here: Claude fills a form, "Your turn" for 2FA, Claude continues. -->
+![PairBrowse: your AI agent fills the form, a teammate joins with their own cursor, you approve the final step](docs/media/pairbrowse-demo.gif)
 
 - **One browser, several people and agents.** Send a watch or drive code. Your teammate's own
   Claude or Codex can work in another tab of the same session, and you can pause every agent at

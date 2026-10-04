@@ -25,6 +25,9 @@ const REF = /^[a-z0-9]{1,16}$/;
 const CREDENTIAL = /auth|key|sig|session|sid$|state|nonce|ticket|jwt|saml|assertion|credential|login|magic|invite|reset|verif|confirm|email|mail|phone/i;
 // Values that look like a secret: an email address, a JWT, or a long run of letters and digits.
 const secretish = (v) => /@|%40/.test(v) || /^eyJ/.test(v) || [...String(v).matchAll(/[A-Za-z0-9_~+/=-]{24,}/g)].some(([m]) => /\d/.test(m) && /[A-Za-z]/.test(m));
+// An agent's turn in a tab, as it crosses: whole ms, at most TURN_MAX_MS (0: no turn held).
+export const TURN_MAX_MS = 600_000;
+export const turnLeft = (ms) => Math.max(0, Math.min(TURN_MAX_MS, Math.round(Number(ms) || 0)));
 const clean = (s, max = TEXT_MAX) => stripText(String(s ?? "")).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").slice(0, max);
 
 // Text about what someone did (activity lines, an agent's last action) as it may cross: saved
@@ -64,8 +67,8 @@ export const onSecretDomain = (raw, secretDomains = []) => {
   try { const host = new URL(String(raw)).hostname.toLowerCase(); return secretDomains.some((d) => d && (host === d || host.endsWith(`.${d}`))); } catch { return false; }
 };
 
-// The host's side: what one joiner gets. tabs: [{ id, url, title, agent, person, did }] in order
-// (agent: the agent's label holding it; person: who uses it by hand right now; did: [{ n, who,
+// The host's side: what one joiner gets. tabs: [{ id, url, title, agent, left, person, did }] in
+// order (agent: the agent's label holding it; left: ms its turn there still holds; person: who uses it by hand right now; did: [{ n, who,
 // line }], what people did there: field and button names, never values). activity: [{ t, text,
 // who, tabId, from }]; people: who is in the session (labels). Nothing about a tab that doesn't
 // cross; on secretDomains, nothing but the address; and nothing that came from this joiner.
@@ -77,7 +80,7 @@ export function stateForJoiner({ tabs = [], activity = [], people = [] }, { driv
     if (!url || out.length >= TABS_MAX) continue;
     if (onSecretDomain(t.url, secretDomains)) { quiet.add(t.id); out.push({ id: t.id, url }); continue; }
     const did = (Array.isArray(t.did) ? t.did : []).filter((e) => e.who !== name).slice(-10).map((e) => ({ n: Number(e.n) || 0, who: clean(e.who, 60), line: clean(e.line, 80) }));
-    out.push({ id: t.id, url, title: clean(t.title), ...(t.agent ? { agent: clean(t.agent, 60), ...(COLOR.test(t.color || "") ? { color: t.color } : {}) } : {}), ...(t.person && t.person !== name ? { person: clean(t.person, 60), ...(t.acting ? { acting: true } : {}) } : {}), ...(did.length ? { did } : {}) });
+    out.push({ id: t.id, url, title: clean(t.title), ...(t.agent ? { agent: clean(t.agent, 60), ...(COLOR.test(t.color || "") ? { color: t.color } : {}), ...(turnLeft(t.left) ? { left: turnLeft(t.left) } : {}) } : {}), ...(t.person && t.person !== name ? { person: clean(t.person, 60), ...(t.acting ? { acting: true } : {}) } : {}), ...(did.length ? { did } : {}) });
   }
   const shared = new Set(out.map((t) => t.id).filter((id) => !quiet.has(id)));
   return {
@@ -99,11 +102,12 @@ export function readOps(body, ids) {
     const op = o?.op;
     if (op === "close" && ids.has(o.id)) { ops.push({ op, id: o.id }); continue; }
     // A person used their copy of the tab (field and button names only), or their agent did something there.
-    // acting: they click, type or scroll there now (only moving the pointer holds nobody up).
+    // acting: they click or type there now (moving the pointer or scrolling holds nobody up).
     if (op === "person" && ids.has(o.id)) { ops.push({ op, id: o.id, did: (Array.isArray(o.did) ? o.did : []).slice(0, 10).map((x) => clean(x, 80)).filter(Boolean), acting: o.acting === true }); continue; }
     if (op === "activity" && ids.has(o.id) && o.text) { ops.push({ op, id: o.id, text: clean(crossingText(o.text)), who: clean(o.who, 60) }); continue; }
-    // Their agent in a tab (its spark color), or none any more.
-    if (op === "agent" && ids.has(o.id)) { ops.push({ op, id: o.id, who: clean(o.who, 60), color: COLOR.test(o.color || "") ? o.color : "" }); continue; }
+    // Their agent in a tab (its spark color), or none any more. left: how long its turn there
+    // still holds (agents here wait for it), 0 when it only shows there.
+    if (op === "agent" && ids.has(o.id)) { ops.push({ op, id: o.id, who: clean(o.who, 60), color: COLOR.test(o.color || "") ? o.color : "", left: turnLeft(o.left) }); continue; }
     // Their tab order: the known ids, as they now stand.
     if (op === "order" && Array.isArray(o.ids)) { ops.push({ op, ids: [...new Set(o.ids.filter((id) => ids.has(id)))].slice(0, TABS_MAX) }); continue; }
     // Values typed there (checked again here: sensitive ones never carry a value).
@@ -265,6 +269,8 @@ export function readForm(o) {
 }
 
 const sig = (x) => JSON.stringify(x.m ? ["m", x.filled] : ["v", x.v]);
+const FILLED_THERE = JSON.stringify(["m", true]);
+const empty = (x) => (x.m ? !x.filled : x.v === "" || (Array.isArray(x.v) && !x.v.length));
 const fkey = (x) => `${x.f}\u0001${x.k}`;
 
 // The bookkeeping per shared tab that keeps an applied value from going back. known: each
@@ -272,11 +278,11 @@ const fkey = (x) => `${x.f}\u0001${x.k}`;
 // with another value than known changed here: it's sent. A value from there applies unless the
 // field changed here just now (the person typing here wins; their value goes there instead).
 export function createFormSync({ now = () => Date.now(), localWinsMs = 1500, sendGapMs = 300 } = {}) {
-  const tabs = new Map(); // id -> { url, known: Map, touched: Map, sentAt }
+  const tabs = new Map(); // id -> { url, known: Map, touched: Map, there: Set (filled there, sensitive), sentAt }
   const pending = new Map(); // id -> { url, fields: Map }: the other side's values, until they apply here
   const tab = (id, url) => {
     let s = tabs.get(id);
-    if (!s || s.url !== url) { s = { url, known: new Map(), touched: new Map(), sentAt: s?.sentAt || 0 }; tabs.set(id, s); }
+    if (!s || s.url !== url) { s = { url, known: new Map(), touched: new Map(), there: new Set(), sentAt: s?.sentAt || 0 }; tabs.set(id, s); }
     return s;
   };
   return {
@@ -292,6 +298,10 @@ export function createFormSync({ now = () => Date.now(), localWinsMs = 1500, sen
         if (was === sig(x)) continue;
         s.known.set(k, sig(x));
         if (was === undefined) continue; // a field as the page loaded (defaults, autofill): not a change made here
+        // Filled there with a sensitive value, empty here (its value never crosses, and an older
+        // plain value was cleared for it): not a change made here, so nothing goes back.
+        if (was === FILLED_THERE && s.there.has(k) && empty(x)) continue;
+        s.there.delete(k);
         s.touched.set(k, now());
         out.push(x);
       }
@@ -315,7 +325,11 @@ export function createFormSync({ now = () => Date.now(), localWinsMs = 1500, sen
       for (const [k, x] of p.fields) {
         if (s.known.get(k) === sig(x)) { p.fields.delete(k); continue; }
         if (now() - (s.touched.get(k) || 0) < localWinsMs) { p.fields.delete(k); continue; }
-        out.push(x);
+        // A sensitive value there replacing one both sides had: was names it, so it's cleared
+        // here (never crosses: this side's own bookkeeping).
+        const known = s.known.get(k);
+        const had = x.m && x.filled && known ? JSON.parse(known) : null;
+        out.push(had?.[0] === "v" && typeof had[1] === "string" && had[1] ? { ...x, was: had[1] } : x);
       }
       return out;
     },
@@ -323,7 +337,11 @@ export function createFormSync({ now = () => Date.now(), localWinsMs = 1500, sen
     applied(id, fields) {
       const s = tabs.get(id);
       const p = pending.get(id);
-      for (const x of fields) { s?.known.set(fkey(x), sig(x)); p?.fields.delete(fkey(x)); }
+      for (const x of fields) {
+        s?.known.set(fkey(x), sig(x));
+        if (sig(x) === FILLED_THERE) s?.there.add(fkey(x)); else s?.there.delete(fkey(x));
+        p?.fields.delete(fkey(x));
+      }
     },
     drop(id) { tabs.delete(id); pending.delete(id); },
   };
@@ -369,10 +387,18 @@ export function readPointer(p, ids) {
   if (!p || !ids.has(p.id) || !Number.isFinite(Number(p.x)) || !Number.isFinite(Number(p.y))) return null;
   return { id: p.id, x: coord(p.x), y: coord(p.y), ...(p.who ? { who: clean(p.who, 60) } : {}), ...(COLOR.test(p.color || "") ? { color: p.color } : {}) };
 }
-// A joiner's pointers: theirs (me) and their agents' (agents), checked.
+// Where a person is reading in a shared tab (a mark on the other side's scrollbar): the top of
+// their viewport and its height, in document pixels. Marked v: 1 among the pointers.
+export const VIEW_FRESH_MS = 60_000; // a view not moved for this long stops showing
+export function readView(p, ids) {
+  if (!p || !ids.has(p.id) || !Number.isFinite(Number(p.y)) || !Number.isFinite(Number(p.h))) return null;
+  return { id: p.id, x: 0, y: coord(p.y), h: coord(p.h), v: 1, ...(p.who ? { who: clean(p.who, 60) } : {}), ...(COLOR.test(p.color || "") ? { color: p.color } : {}) };
+}
+// A joiner's pointers: theirs (me), their agents' (agents) and where they read (view), checked.
 export function readPointers(body, ids) {
   return {
     me: readPointer(body?.me, ids),
+    view: readView(body?.view, ids),
     agents: (Array.isArray(body?.agents) ? body.agents : []).slice(0, 8).map((p) => readPointer(p, ids)).filter((p) => p && p.who),
   };
 }

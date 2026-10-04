@@ -94,8 +94,8 @@ It reports these in a "### PairBrowse" block in the next result. Read it.
 - At most 10 tabs stay open; opening another closes the one used longest ago. List tabs before
   selecting by number. New tabs a page opens are reported by number; switch with `browser_tabs`.
 - Downloads go to the Downloads folder; the result says where.
-- While the user scrolls, clicks or types, your next action waits, then the result says what they
-  did. Take a fresh snapshot and carry on from where the page is now.
+- While the user clicks or types in the tab, your next action there waits, then the result says
+  what they did (scrolling and moving the mouse don't hold you up). Take a fresh snapshot and carry on from where the page is now.
 - Site notification and location requests never pop up; leave them alone.
 
 ## Uploads
@@ -119,6 +119,8 @@ Open only the verification message: select the inbox tab, `browser_find` with a 
   justified permissions, naming and branding. One check per rule with `ok` and a short `note`;
   `waived` only if the user said to submit anyway. Show the result, then click.
 - Pay, delete and message clicks prompt the user in Claude Code: describe what happens, then click.
+  A form with card or billing/shipping fields pays whatever its button says ("Submit order"):
+  put "Pay" in `element` ("Pay: Submit order") so the user confirms it.
   `browser_evaluate` always asks the user; avoid it. Final actions are never run in fast mode.
 - In Codex those clicks are refused with a note: badge "you", name the button and what it does,
   wait, and carry on from the result. Record the passing review first for submit or publish.
@@ -149,7 +151,8 @@ filled, drafted, left for the user, and remembered. Every action is also logged 
 
 - Per-tab turns: the agent acting in a tab holds it (two idle minutes, or until release, disconnect
   or the tab closes). Another agent's action there is refused with who holds it: open or select
-  another tab. A person's input pauses agents in that tab only.
+  another tab. In a shared session this holds across computers ("in use by ... (in Bob's
+  browser)"). A person's clicks and typing pause agents in that tab only.
 - `pairbrowse_collaboration`: `status` (participants, controller), `identify` with `label`,
   `acquire` the whole-browser lease for work that must keep the browser to itself (two minutes,
   renew with `acquire`), `release` when done or before a hand-off. Take a fresh snapshot after acquiring.

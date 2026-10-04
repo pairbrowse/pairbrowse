@@ -111,6 +111,10 @@ What crosses, and what doesn't:
   pointers at the same place in the page, with their name and color, fading after 3 seconds of
   stillness. Only positions cross, never what is under them. They are drawn in a closed shadow
   root, hidden from screen readers, and never take a click.
+- **Where the others read:** a small mark in each person's color on the right edge of your copy
+  shows the part of the page they have on screen, like a scrollbar thumb, named while they
+  scroll. It follows their own scrolling only (never an agent's), at most 25 times a second, and
+  stays a minute after they stop.
 - **Who is doing what:** the side panel's **Session** section lists everyone in both browsers
   (agent, spark color, tab, status and task from `pairbrowse_status`, last action, all with
   secrets masked), and the bar at the bottom shows "Now: ..." when the other side's agent takes
@@ -119,9 +123,14 @@ What crosses, and what doesn't:
   Code: Typed ... into Email", sensitive values masked as always) shows in the bar at the bottom
   of each page, the side panel and the tab overview, which also shows the agent in each tab and
   who is in the session.
-- **People and agents side by side, across browsers (drive):** a person's activity in their copy
-  of a shared tab holds only agents' page changes in that tab in the other browser (navigating,
-  links, submits, Enter); moving the pointer holds nobody up. A field a person fills is theirs on
+- **People and agents side by side, across browsers (drive):** a person clicking or typing in
+  their copy of a shared tab pauses the agents in that tab in both browsers until they've stopped
+  for two seconds; then the agents go on and hear what happened (field and button names, never
+  values). Moving the pointer and scrolling hold nobody up.
+- **Agents take turns across browsers:** an agent holding a tab holds it on both computers. The
+  other computer's agents wait a moment if its turn is about to end, else hear "tab 1 is in use by
+  Bob · Claude Code (in Bob's browser)" and use another tab; they never type into their copy
+  meanwhile. When both start at once, the host's agent goes first. A field a person fills is theirs on
   both sides for two minutes: agents' typing, filling, choosing or ticking there is refused
   unchanged ("Alice is filling Delivery instructions; left it as they wrote it"), fast mode skips
   it and goes on, and the agent's next result names the fields people filled (never values).
@@ -152,8 +161,8 @@ run one at a time, and agents take turns **per tab**: the agent that acts in a t
 (renewed with each action, released after two idle minutes, on release, disconnect or when the
 tab closes). Another agent's action in that tab is refused with who holds it ("tab 1 is in use
 by Alice · Codex"), so it opens or selects another tab; agents in different tabs carry on. People
-always win: when you (or a drive joiner, in their copy of a shared tab) click, type or scroll in a tab, the agents in that tab
-wait until you've stopped for two seconds and are told what you did, and its bottom bar says
+always win: when you (or a drive joiner, in their copy of a shared tab) click or type in a tab, the agents in that tab
+wait until you've stopped for two seconds and are told what you did (scrolling and moving the pointer pause nobody), and its bottom bar says
 "waiting… you're using this tab". Agents in other tabs aren't paused. The whole-browser lease
 (`pairbrowse_collaboration` acquire) still works for work that must keep the browser to itself.
 The live view's tab overview shows who is in each tab, with their spark color, and the activity
@@ -211,8 +220,8 @@ A disconnect releases that participant's lease without normally closing the brow
 Passive fast-mode waits are cancelled. If an in-flight action remains stuck for 30 seconds after
 disconnection, the helper resets the browser and clients reconnect before continuing.
 Profile switching/deletion and browser closure are refused while multiple participants are
-connected. Your clicks, typing, scrolling or mouse movement, in the PairBrowse window or the live
-view, make new agent actions wait until you've stopped for two seconds; fast-mode flows wait,
+connected. Your clicks and typing, in the PairBrowse window or the live view, make new agent
+actions in that tab wait until you've stopped for two seconds (scrolling and mouse movement don't); fast-mode flows wait,
 then stop at their next step so Claude looks at the page again. Already-started actions may finish.
 
 Sharing a whole Claude connection uses trusted local/SSH connections; for someone who should

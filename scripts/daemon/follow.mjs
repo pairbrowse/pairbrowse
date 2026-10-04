@@ -7,7 +7,7 @@
 // and the tab overview.
 import { parseJoinCode, cleanName, displayName } from "../join.mjs";
 import { startJoin } from "../relay.mjs";
-import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, formUrl, onSecretDomain, shareableUrl, crossingText, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
+import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
 import { sleep, currentAccount } from "../util.mjs";
 
@@ -132,11 +132,12 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       for (const [id, page] of cur.pages) {
         if (page.isClosed() || cur.quiet.has(id)) continue;
         const a = localAgent(page);
-        const sig = a ? `${a.label}\u0001${a.color}` : "";
+        // Taking or ending a turn here goes at once: the host's agents wait for it.
+        const sig = a ? `${a.label}\u0001${a.color}\u0001${a.until ? 1 : 0}` : "";
         const was = cur.agentSent.get(id);
         if ((was?.sig ?? "") === sig && !(sig && Date.now() - was.at > AGENT_AGAIN_MS)) continue;
         cur.agentSent.set(id, { sig, at: Date.now() });
-        ops.push({ op: "agent", id, who: a?.label || "", color: a?.color || "" });
+        ops.push({ op: "agent", id, who: a?.label || "", color: a?.color || "", left: a?.until ? Math.max(0, a.until - Date.now()) : 0 });
       }
     }
     if (Date.now() - (cur.orderAt || 0) > ORDER_MS) await checkOrder(cur);
@@ -223,7 +224,12 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       if (!page || page.isClosed()) continue;
       // An agent there holds this tab: in use, so the tab cap here keeps the copy (closing it would
       // close their tab too).
-      if (t.agent) { cur.agents.set(page, { label: String(t.agent).slice(0, 60), color: /^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "" }); context.touch?.(page); }
+      // held: it holds the tab's turn there (left ms more, renewed as it acts); agents here wait.
+      if (t.agent) {
+        const left = turnLeft(t.left);
+        cur.agents.set(page, { label: String(t.agent).slice(0, 60), color: /^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "", held: left > 0, until: Date.now() + left });
+        context.touch?.(page);
+      }
       // Their agent's spark, in its color, on the copy here too.
       hud.setSharedSpark(page, t.agent ? (/^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "#e9763f") : "");
       const first = !cur.heard.has(t.id);
@@ -243,26 +249,29 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   }
 
   // Pointers: this side's (the person's, the agents') go there as they move, up to 25 times a
-  // second; theirs come on the stream and are drawn in the copies here. Positions only, never
+  // second, with where the person reads (a mark on the other side's scrollbar); theirs come on
+  // the stream and are drawn in the copies here. Positions only, never
   // what's under them, and nothing for tabs on secret domains (either side's).
   function sendPointers(cur) {
     if (s !== cur || cur.pointerTimer) return;
     cur.pointerTimer = setTimeout(async () => {
       cur.pointerTimer = null;
       const fresh = (p) => p && Date.now() - Number(p.t) < POINTER_FRESH_MS;
-      let me = null;
+      let me = null, view = null;
       const agents = [];
       for (const [id, page] of cur.pages) {
         const r = cur.pointed.get(page);
         if (!r || page.isClosed() || cur.quiet.has(id) || onSecretDomain(page.url(), secretDomains()) || !shareableUrl(page.url())) continue;
         if (fresh(r.me) && (!me || r.me.t > me.t)) me = { id, x: r.me.x, y: r.me.y, t: r.me.t };
+        // Where the person reads: the tab they scrolled in last.
+        if (r.view && Date.now() - Number(r.view.t) < VIEW_FRESH_MS && (!view || r.view.t > view.t)) view = { id, y: r.view.y, h: r.view.h, t: r.view.t };
         const a = localAgent(page);
         if (a && fresh(r.agent)) agents.push({ id, x: r.agent.x, y: r.agent.y, who: a.label, color: a.color });
       }
-      const sig = JSON.stringify([me && [me.id, me.x, me.y], agents]);
+      const sig = JSON.stringify([me && [me.id, me.x, me.y], agents, view && [view.id, view.y, view.h]]);
       if (sig === cur.pointerSig) return;
       cur.pointerSig = sig;
-      await cur.join.pointer({ me: me && { id: me.id, x: me.x, y: me.y }, agents, t: me?.t || Date.now() });
+      await cur.join.pointer({ me: me && { id: me.id, x: me.x, y: me.y }, agents, view: view && { id: view.id, y: view.y, h: view.h }, t: me?.t || Date.now() });
     }, Math.max(0, POINTER_MS - (Date.now() - (cur.pointerAt || 0))));
     cur.pointerAt = Date.now();
   }
@@ -271,11 +280,11 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const ids = new Set([...cur.pages.keys()].filter((id) => !cur.quiet.has(id)));
     const byPage = new Map();
     for (const raw of (Array.isArray(list) ? list : []).slice(0, 24)) {
-      const p = readPointer(raw, ids);
+      const p = raw?.v ? readView(raw, ids) : readPointer(raw, ids);
       const page = p && cur.pages.get(p.id);
       if (!page || page.isClosed() || !p.who || typeof raw.k !== "string") continue;
-      if (latencyLog && Number(raw.t)) log(`latency pointer ${Date.now() - Number(raw.t)} ms`);
-      byPage.set(page, [...(byPage.get(page) || []), { k: raw.k.slice(0, 100), who: p.who, color: p.color || "#e9763f", x: p.x, y: p.y }]);
+      if (latencyLog && Number(raw.t) && !p.v) log(`latency pointer ${Date.now() - Number(raw.t)} ms`);
+      byPage.set(page, [...(byPage.get(page) || []), { k: raw.k.slice(0, 100), who: p.who, color: p.color || "#e9763f", x: p.x, y: p.y, ...(p.v ? { v: 1, h: p.h } : {}) }]);
     }
     for (const page of cur.drawn) if (!byPage.has(page) && !page.isClosed()) hud.showPointers(page, []);
     cur.drawn = new Set(byPage.keys());
@@ -362,7 +371,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     // The connection that joined went away: so does the join.
     ownerGone(owner) { if (s?.owner === owner) stop("left the shared session: its connection closed").catch(() => {}); },
     stop,
-    // The agent holding this shared tab in the other browser, for the tab overview.
+    // The agent holding this shared tab in the other browser ({ label, color, held, until }), for
+    // the tab overview and turns (an agent here waits while it's held).
     agentIn: (page) => s?.agents.get(page) || null,
     // The shared copies here (the page script is read in them, daemon/cobrowse.mjs).
     pages: () => (s ? [...s.pages.values()] : []),
@@ -378,6 +388,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     // A message or session update for the host (both roles: it's only text).
     say: (op) => s?.join.say?.(op),
     joined: () => s?.join.phase === "in",
+    // The name of the host whose session was joined from here, or "".
+    host: () => s?.join.host || "",
     // "drive" or "watch" while in a session joined from here, else null.
     role: () => (s?.join.phase === "in" ? s.join.role : null),
   };

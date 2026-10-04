@@ -50,7 +50,19 @@
   }, opts);
   // A wheel is always a person (Claude never sends one). Plain scroll events aren't counted: pages
   // scroll themselves (menus, smooth scrolling) and Claude's clicks bring buttons into view.
-  addEventListener("wheel", (e) => { const n = now(); if (e.isTrusted && n - lastWheel > 800) { lastWheel = n; record("wheel", ""); } }, opts);
+  addEventListener("wheel", (e) => { const n = now(); personAt = n; if (e.isTrusted && n - lastWheel > 800) { lastWheel = n; record("wheel", ""); } }, opts);
+  // Where the person is reading (the top of their viewport and its height, in document pixels):
+  // a shared tab marks it on the other side's scrollbar. Taken from scrolling that follows their
+  // own input (wheel, keys, a press on the scrollbar, touch), never the page's or an agent's.
+  let view = null, personAt = 0, agentAt = 0;
+  const looked = () => {
+    const n = now();
+    if (n - agentAt < 1500) return;
+    const y = Math.round(scrollY / 4) * 4, h = Math.round(innerHeight);
+    if (!view || view.y !== y || view.h !== h) view = { y, h, t: n };
+  };
+  for (const kind of ["keydown", "pointerdown", "touchstart"]) addEventListener(kind, (e) => { if (e.isTrusted) personAt = now(); }, opts);
+  addEventListener("scroll", () => { if (now() - personAt < 1500) looked(); }, opts);
   // Where the person's pointer is, in document coordinates (a shared tab shows it in the other
   // browser's copy at the same place in the page, whatever its window size). Never what's under it.
   let ptr = null;
@@ -58,6 +70,7 @@
     if (!e.isTrusted) return;
     const n = now();
     ptr = { x: Math.round(e.pageX), y: Math.round(e.pageY), t: n };
+    if (!view || n - view.t > 1000) looked();
     if (n - lastMove > 500) { lastMove = n; record("move", ""); }
   }, opts);
 
@@ -322,6 +335,18 @@
   // without moving.
   let peersHost, peersBox, peersFrame = 0;
   const peers = new Map(); // key -> { el, x, y, tx, ty, t }
+  // Where each other person is reading (entries with v): a small mark in their color on the right
+  // edge, like a scrollbar thumb for their viewport, named; the name fades, the mark stays.
+  const views = new Map(); // key -> { el, y, h, t }
+  function placeViews() {
+    const total = Math.max(document.documentElement.scrollHeight, innerHeight, 1);
+    for (const v of views.values()) {
+      const top = (v.y / total) * innerHeight, height = Math.max(14, (v.h / total) * innerHeight);
+      v.el.style.transform = `translate3d(0, ${Math.min(top, innerHeight - height).toFixed(1)}px, 0)`;
+      v.el.firstChild.style.height = `${height.toFixed(1)}px`;
+      v.el.classList.toggle("fresh", now() - v.t < 4000);
+    }
+  }
   function drawPeers() {
     peersFrame = 0;
     let moving = false;
@@ -334,6 +359,7 @@
       const on = now() - p.t < 3000;
       if (on !== p.on) { p.on = on; p.el.classList.toggle("on", on); }
     }
+    placeViews();
     if (moving) peersFrame = requestAnimationFrame(drawPeers);
   }
   const kickPeers = () => { if (!peersFrame) peersFrame = requestAnimationFrame(drawPeers); };
@@ -351,17 +377,41 @@
         svg{display:block;width:18px;height:18px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
         span{position:absolute;left:14px;top:16px;padding:2px 8px;border-radius:999px;font:600 11px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
           color:#fff;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);-webkit-font-smoothing:antialiased}
-        @media (prefers-reduced-motion:reduce){.p{transition:none}}
+        .v{position:fixed;right:0;top:0;display:flex;align-items:flex-start;gap:4px;opacity:.8;pointer-events:none}
+        .v i{display:block;width:4px;border-radius:2px 0 0 2px;box-shadow:0 0 0 1px rgba(255,255,255,.7)}
+        .v b{order:-1;padding:1px 6px;border-radius:999px;font:600 10px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;white-space:nowrap;opacity:0;transition:opacity .35s ease}
+        .v.fresh b{opacity:1}
+        @media (prefers-reduced-motion:reduce){.p,.v b{transition:none}}
       </style><div aria-hidden="true"></div>`;
       peersBox = shadow.querySelector("div");
       document.documentElement.appendChild(peersHost);
       addEventListener("scroll", kickPeers, { passive: true });
+      addEventListener("resize", kickPeers, { passive: true });
       peers.clear();
+      views.clear();
     }
     const keep = new Set();
-    for (const c of list.slice(0, 12)) {
+    for (const c of list.slice(0, 16)) {
       if (!c || typeof c.k !== "string") continue;
       const color = /^#[0-9a-f]{6}$/i.test(c.color || "") ? c.color : "#e9763f";
+      if (c.v) {
+        keep.add(c.k);
+        let v = views.get(c.k);
+        if (!v) {
+          const el = document.createElement("div");
+          el.className = "v";
+          el.innerHTML = "<i></i><b></b>";
+          peersBox.appendChild(el);
+          v = { el, y: -1, h: -1, t: 0, who: null, color: "" };
+          views.set(c.k, v);
+        }
+        if (v.color !== color) { v.color = color; v.el.querySelector("i").style.background = color; v.el.querySelector("b").style.background = color; }
+        const who = String(c.who || "").slice(0, 40);
+        if (v.who !== who) { v.who = who; v.el.querySelector("b").textContent = who; }
+        const y = Math.max(0, Number(c.y) || 0), h = Math.max(0, Number(c.h) || 0);
+        if (y !== v.y || h !== v.h) { v.y = y; v.h = h; v.t = now(); }
+        continue;
+      }
       keep.add(c.k);
       const x = Number(c.x) || 0, y = Number(c.y) || 0;
       let p = peers.get(c.k);
@@ -379,17 +429,19 @@
       if (x !== p.tx || y !== p.ty) { p.tx = x; p.ty = y; p.t = now(); }
     }
     for (const [k, p] of peers) if (!keep.has(k)) { p.el.remove(); peers.delete(k); }
+    for (const [k, v] of views) if (!keep.has(k)) { v.el.remove(); views.delete(k); }
     kickPeers();
     setTimeout(kickPeers, 3050); // the fade, once they stop
+    setTimeout(kickPeers, 4050); // a mark's name, once they stop scrolling
   }
 
   function status(token, text, kind) {
     if (token !== TOKEN) return false;
     if (kind === "user") return drainUser();
-    if (kind === "pointer") return { me: ptr, agent: agentPtr };
+    if (kind === "pointer") return { me: ptr, agent: agentPtr, view };
     if (kind === "owned") return fields(text, kind);
     if (kind === "claim") return claim(text);
-    if (kind === "tick") return { me: ptr, agent: agentPtr, dirty: tickFrame() };
+    if (kind === "tick") return { me: ptr, agent: agentPtr, view, dirty: tickFrame() };
     if (kind === "cursors") { if (document.documentElement) setPeers(String(text || "[]")); return true; }
     // Agents' screenshots never show other people's pointers: hidden while one is taken.
     if (kind === "peers-hidden") { if (peersBox) peersBox.style.display = text ? "none" : ""; return true; }
@@ -399,6 +451,8 @@
         const c = JSON.parse(text);
         pointer(Number(c.x) || 0, Number(c.y) || 0, String(c.act || ""));
         agentPtr = { x: Math.round((Number(c.x) || 0) + scrollX), y: Math.round((Number(c.y) || 0) + scrollY), t: now() };
+        agentAt = now(); // the scrolling an agent's action causes isn't the person's
+
       } catch {}
       return true;
     }

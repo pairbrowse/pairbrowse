@@ -38,7 +38,8 @@ const INPUT_BATCH_MAX = 500;
 const OWNER_ONLY = new Set(["profile", "join", "board"]); // events only the owner's streams get
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
 // readForm(page): { url, fields } as they may cross, or null. applyForm(page, fields, who).
-// onJoinerAgent(page, who, color): a drive joiner's agent works in their copy of the tab.
+// onJoinerAgent(page, who, color, left, from, where): a drive joiner's agent works in their copy
+// of the tab (left: ms its turn there still holds; from: that joiner; where: their name).
 // arrange(pages): puts tabs in this order. order(pages): the pages as the tab strip shows them,
 // or null. showPointers(page, list): draws the others' pointers
 // there. sessionFor(j): who is doing what, for joiner j. onJoinerSay(body, j, key): who is doing
@@ -171,9 +172,12 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     const tabs = await Promise.all(inStrip.map(async (p) => {
       let meta = {};
       try { meta = tabMeta(p) || {}; } catch {}
-      // A joiner's own agent isn't sent back to them as the host's.
-      const agent = meta.agent && !meta.agent.joined ? meta.agent : null;
-      return { id: idOf(p), url: p.url(), title: await p.title().catch(() => ""), agent: agent?.label || "", color: agent?.color || "", person: meta.sharedPerson?.who || "", acting: !!meta.sharedPerson?.acting, did: meta.did || [] };
+      // A joiner's own agent isn't sent back to them; another joiner's is (their agents wait for it).
+      const agent = meta.agent && (!meta.agent.joined || (meta.agent.from && meta.agent.from !== joinerKey(j))) ? meta.agent : null;
+      // left: how long its turn there still holds (the joiner's agents wait or hear "in use"), in
+      // whole seconds so the state isn't news every round.
+      const left = agent?.until > Date.now() ? Math.ceil((agent.until - Date.now()) / 1000) * 1000 : 0;
+      return { id: idOf(p), url: p.url(), title: await p.title().catch(() => ""), agent: agent?.label || "", color: agent?.color || "", left, person: meta.sharedPerson?.who || "", acting: !!meta.sharedPerson?.acting, did: meta.did || [] };
     }));
     const people = [...collaboration.participants.map((x) => x?.label || ""), ...guests().map((g) => g.label)].filter((x) => x && x !== personLabel(j.name, j.app));
     return stateForJoiner({ tabs, activity, people }, { drive: j.invite.role === "drive", secretDomains: secretDomains(), name: j.name, from: joinerKey(j) });
@@ -214,11 +218,13 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
         if (!page || page.isClosed()) continue;
         if (o.op === "person") { onJoinerPerson(page, j.name, o.did, o.acting); continue; }
         if (o.op === "activity") { onJoinerActivity(page, o.text, o.who || who, joinerKey(j)); continue; }
-        if (o.op === "agent") { shared.onJoinerAgent(page, o.who, o.color); continue; }
+        if (o.op === "agent") { shared.onJoinerAgent(page, o.who, o.color, o.left, joinerKey(j), cleanName(j.name)); continue; }
         if (o.op === "form") {
           // Only on the same page; the host's own form reading then carries it to other joiners.
           const here = shareableUrl(page.url());
-          if (here === o.url && !onSecretDomain(page.url(), secretDomains())) await shared.applyForm(page, o.fields, cleanName(j.name));
+          // was: the value both sides last had, so a card typed over it there clears it here.
+          const fields = o.fields.map((x) => (x.m && x.filled ? { ...x, was: push.sharedValue(page, x.f, x.k) } : x));
+          if (here === o.url && !onSecretDomain(page.url(), secretDomains())) await shared.applyForm(page, fields, cleanName(j.name));
           push.dirty(page); // on to the other joiners
           continue;
         }
@@ -565,6 +571,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     guestPort: joinerServer.server.address().port,
     approvals,
     joinersNow,
+    // Whether this joiner (joinerKey) is still in the session: a joiner gone holds no tab.
+    joinerHere: (key) => { const j = joiners.get(key); return !!j && recentlySeen(j); },
     // Who is in the session the user joined (labels and roles), for the participant list.
     setRemote(list) { remote = Array.isArray(list) ? list.slice(0, 20) : []; collaborationChanged(); },
     // Tabs changed hands (claims, a person pausing an agent): show it now.

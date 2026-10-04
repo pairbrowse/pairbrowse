@@ -133,9 +133,13 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     assert.ok(!(await urls(host.call)).some((u) => /\/a\?/.test(u)), "the applied update didn't bounce back");
 
     stage = "drive joiner navigation follows on the host";
+    // The host's agent lets the tab go first: while it holds it, the joiner's agent waits its turn.
+    await tool(host.call, "pairbrowse_collaboration", { action: "release" });
+    await sleep(1000);
     await go(joiner.call, /one\.pbtest\.example\/b/, "http://one.pbtest.example/c?page=2&code=123456");
     await until("the host follows", async () => (await urls(host.call)).includes("http://one.pbtest.example/c?page=2"));
-    stage = "a person scrolling in the joiner's copy holds the host's agent's page-changing action there, nothing else";
+    await tool(joiner.call, "pairbrowse_collaboration", { action: "release" }); // and back
+    stage = "a person scrolling in the joiner's copy holds nobody up; a click there pauses the host's agent in that tab";
     await sleep(3000);
     const live = text(await tool(joiner.call, "pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)[0];
     const copy = (await tabs(joiner.call)).find((t) => /one\.pbtest\.example\/c\?/.test(t.url));
@@ -145,15 +149,20 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     await sleep(1500);
     const hostTab = (await tabs(host.call)).find((t) => t.url === "http://one.pbtest.example/c?page=2");
     await tool(host.call, "browser_tabs", { action: "select", index: hostTab.index });
-    const t00 = Date.now();
-    await tool(host.call, "browser_press_key", { key: "Tab" });
-    assert.ok(Date.now() - t00 < 1500, `Tab changes no page: no wait (${Date.now() - t00} ms)`);
     const t0 = Date.now();
     await tool(host.call, "browser_press_key", { key: "Enter" });
-    assert.ok(Date.now() - t0 >= 1500, `Enter waited for Alice (${Date.now() - t0} ms)`);
+    assert.ok(Date.now() - t0 < 1500, `scrolling holds nobody up (${Date.now() - t0} ms)`);
     await scrolling;
+    await fetch(`${live}input`, { method: "POST", body: JSON.stringify([{ type: "mouse", action: "mouseMoved", x: 40, y: 40 }, { type: "mouse", action: "mousePressed", x: 40, y: 40, button: "left", buttons: 1, clickCount: 1 }, { type: "mouse", action: "mouseReleased", x: 40, y: 40, button: "left", buttons: 0, clickCount: 1 }]) });
+    // Read there twice a second, sent on within a quarter: on the host about a second later.
+    await sleep(1300);
+    const t1 = Date.now();
+    const heard = text(await tool(host.call, "browser_press_key", { key: "Tab" }));
+    assert.ok(Date.now() - t1 >= 700, `a click there pauses even a Tab press (${Date.now() - t1} ms)`);
+    assert.match(heard, /Alice used this tab meanwhile: [^\n]*clicked/, "and the agent hears of it");
 
     stage = "local addresses never cross back";
+    await tool(host.call, "pairbrowse_collaboration", { action: "release" });
     await sleep(3000);
     await go(joiner.call, /one\.pbtest\.example\/c/, `http://127.0.0.1:${port}/joiner-local`);
     await sleep(4000);
@@ -384,6 +393,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     assert.match(s, /Bob Builder/, "the other field was filled");
 
     stage = "Alice pauses agents: both helpers' agents wait; Bob resumes; their next results say so";
+    await select(joiner.call, /two\.pbtest\.example/); // her agent's own tab: Bob's agent holds the form
     assert.ok((await fetch(`${live}pause`, { method: "POST", body: JSON.stringify({ paused: true }) })).ok);
     await sleep(1500); // the host's state reaches Alice's helper with the session
     // An agent asking for a resume changes nothing (and isn't held: it's no browser action).

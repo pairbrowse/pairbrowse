@@ -41,3 +41,32 @@ export function nearbyText(el) {
   }
   return "";
 }
+
+// Whether pressing n (a submit button, or Enter in a field) sends a payment form, judged by the
+// form's structure rather than the button's words ("Submit order", "Continue"): it holds card
+// fields (an autocomplete cc-* token, or a value that is a card number) or billing or shipping
+// address fields (the autocomplete sections checkout forms use). Self-contained: runs in the page.
+// kind "space": Space presses only a button (in a field it types a space).
+export function submitsPayment(n, kind = "") {
+  if (!n || n.nodeType !== 1) return false;
+  const b = n.closest("button, input[type=submit], input[type=image]");
+  let form = null;
+  if (b) {
+    if (b.tagName === "BUTTON" && (b.getAttribute("type") || "submit").toLowerCase() !== "submit") return false;
+    form = b.form;
+  } else if (n.tagName === "INPUT" && kind !== "space") form = n.form; // Enter in a field submits its form
+  if (!form) return false;
+  const card = (v) => {
+    const d = String(v || "").replace(/[\s-]/g, "");
+    if (!/^\d{13,19}$/.test(d)) return false;
+    let sum = 0;
+    for (let i = 0; i < d.length; i++) { let x = Number(d[d.length - 1 - i]); if (i % 2) { x *= 2; if (x > 9) x -= 9; } sum += x; }
+    return sum % 10 === 0;
+  };
+  for (const f of [...form.elements].slice(0, 300)) {
+    const tokens = String(f.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
+    if (tokens.some((t) => t.startsWith("cc-")) || tokens.includes("billing") || tokens.includes("shipping")) return true;
+    if (f.tagName === "INPUT" && card(f.value)) return true;
+  }
+  return false;
+}

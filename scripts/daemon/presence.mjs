@@ -1,8 +1,8 @@
 // You, in the browser: your own clicks, typing and scrolling in the PairBrowse window (or the live
-// view). People and agents work side by side: only an agent's next action that would change the
-// page (going elsewhere, a link, a submit, Enter) waits while a person is at it in that tab; the
-// fields a person fills are theirs (daemon/fields.mjs). Moving the pointer pauses nothing. An
-// agent is told afterwards what people did: which button or field, never what they typed.
+// view). A person typing or clicking in a tab pauses the agents in that tab (every action) until
+// they have been idle for USER_IDLE_MS; moving the pointer or scrolling pauses nothing. The fields
+// a person fills are theirs (daemon/fields.mjs). An agent is told afterwards what people did:
+// which button or field, never what they typed.
 import { sleep, within } from "../util.mjs";
 import { cleanName } from "../join.mjs";
 
@@ -39,7 +39,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   };
 
   const personIn = (page) => { const h = page && humanAt.get(page); return h && Date.now() - h.t < USER_IDLE_MS ? h.who : null; };
-  // Someone clicking, typing or scrolling in this tab just now (pointer moves don't count).
+  // Someone clicking or typing in this tab just now (pointer moves and scrolling don't count).
   const actingIn = (page) => { const h = page && actedAt.get(page); return h && Date.now() - h.t < USER_IDLE_MS ? h.who : null; };
   function actedIn(page, who, t = Date.now()) {
     if (!page) return;
@@ -70,7 +70,8 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     span.tag = tag;
     busy.push(span);
     if (busy.length > 50) busy.shift();
-    return () => { span[1] = Date.now() + 700; };
+    // A popup check that found nothing takes a moment: a person's click right after it is theirs.
+    return () => { span[1] = Date.now() + (tag === "popup" ? 100 : 700); };
   }
   const byAgent = (t, after = 0) => busy.some(([start, end]) => t >= start && t <= end + after);
   const agentActing = () => busy.some(([, end]) => end === Infinity);
@@ -99,7 +100,8 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     const yours = clean.filter((e) => e.kind === "wheel" || !byAgent(e.happened));
     if (!yours.length) return;
     humanIn(page, host, Math.min(at, Math.max(...yours.map((e) => e.t))));
-    const acts = yours.filter((e) => e.kind !== "move");
+    // Reading along (moving, scrolling) holds nobody up; clicks, typing and keys do.
+    const acts = yours.filter((e) => e.kind !== "move" && e.kind !== "wheel");
     if (acts.length) actedIn(page, host, Math.min(at, Math.max(...acts.map((e) => e.t))));
     if (!page) return;
     const userLog = userLogs.get(page) || [];
@@ -147,8 +149,8 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     });
   }
 
-  // Waits until nobody has clicked, typed or scrolled in this tab for USER_IDLE_MS (at most
-  // USER_WAIT_MS). Only for an agent's action that would change the page under them.
+  // Waits until nobody has clicked or typed in this tab for USER_IDLE_MS (at most USER_WAIT_MS),
+  // before any agent action there.
   async function waitForUser(page) {
     if (!actingIn(page)) return;
     waitingIn.set(page, actingIn(page));
@@ -170,15 +172,15 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   // A person in the other browser of a joined session used their copy of this tab: the same as
   // someone here (agents in this tab wait, then hear what they did). lines: field and button
   // names only, never values (the other side's presence made them).
-  // acting: they clicked, typed or scrolled there just now (not only moved the pointer).
+  // acting: they clicked or typed there just now (not only moved the pointer or scrolled).
   function elsewhere(page, who, lines = [], acting = false) {
     if (!page) return;
-    // Only there (moving the pointer, say): nothing waits, but agents are told someone was.
-    const acted = lines.length > 0;
+    // Only there (moving the pointer, scrolling): nothing waits, but agents are told someone was.
+    const acted = lines.some((l) => l !== "scrolled" && l !== "was in this tab");
     if (!acted && personIn(page) !== who) lines = ["was in this tab"];
     humanIn(page, who);
     if (acted || acting) actedIn(page, who);
-    if (acted) onUsed(page); // in use on the other side too: the tab cap keeps it
+    if (lines.length) onUsed(page); // in use on the other side too: the tab cap keeps it
     const h = humanAt.get(page);
     if (h.who === who) h.remote = true; // never sent back to where it came from
     const userLog = userLogs.get(page) || [];

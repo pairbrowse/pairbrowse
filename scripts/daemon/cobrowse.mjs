@@ -11,8 +11,8 @@ const READ_MS = 500;
 const FRAMES_MAX = 6;
 
 // call(target, value, kind): the page script (hud.mjs). pages(): the shared tabs now.
-// onPointer(page, { me, agent }): where the person and the agent here last pointed (document
-// coordinates, with times). onDirty(page, t): a field changed there at time t.
+// onPointer(page, { me, agent, view }): where the person and the agent here last pointed, and
+// where the person is reading (document coordinates, with times). onDirty(page, t): a field changed there at time t.
 export function createCobrowse({ call, pages, onPointer, onDirty, log = () => {} }) {
   const hotUntil = new WeakMap();
   const lastSeen = new WeakMap(); // tab -> "x,y,t|x,y,t"
@@ -26,11 +26,11 @@ export function createCobrowse({ call, pages, onPointer, onDirty, log = () => {}
     // Fields inside frames (card forms often sit in one) are checked on the slower round.
     if (cold) for (const f of page.frames().slice(1, FRAMES_MAX)) { const x = await within(READ_MS, call(f, "", "tick").catch(() => null)); dirty = Math.max(dirty, Number(x?.dirty) || 0); }
     if (!r && !dirty) return;
-    const sig = `${r?.me?.x},${r?.me?.y},${r?.me?.t}|${r?.agent?.x},${r?.agent?.y},${r?.agent?.t}`;
+    const sig = `${r?.me?.x},${r?.me?.y},${r?.me?.t}|${r?.agent?.x},${r?.agent?.y},${r?.agent?.t}|${r?.view?.y},${r?.view?.h}`;
     if (r && sig !== lastSeen.get(page)) {
       lastSeen.set(page, sig);
       hotUntil.set(page, Date.now() + HOT_FOR_MS);
-      try { onPointer(page, { me: r.me || null, agent: r.agent || null }); } catch {}
+      try { onPointer(page, { me: r.me || null, agent: r.agent || null, view: r.view || null }); } catch {}
     }
     if (dirty) {
       hotUntil.set(page, Date.now() + HOT_FOR_MS);

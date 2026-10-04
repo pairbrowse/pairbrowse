@@ -3,7 +3,7 @@
 // form values, pointers, who is doing what, and messages between participants. Nothing is polled
 // over the tunnel and nothing is a picture: helper to helper, and page to helper through the page
 // script. What may cross is decided in tabsync.mjs, per joiner.
-import { shareableUrl, onSecretDomain, readPointers, personColor, formForJoiner, TABS_MAX } from "../tabsync.mjs";
+import { shareableUrl, onSecretDomain, readPointers, personColor, formForJoiner, VIEW_FRESH_MS, TABS_MAX } from "../tabsync.mjs";
 import { cleanName } from "../join.mjs";
 
 const STATE_DEBOUNCE_MS = 20; // changes that come together go as one
@@ -26,8 +26,10 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
   const forms = new WeakMap(); // tab -> { sig, form, t }
   const hostPointers = new WeakMap(); // tab -> { me, agent }
   const joinerPointers = new Map(); // joinerKey -> { t, list: [{ id, x, y, who, color, k, t }] }
+  const joinerViews = new Map(); // joinerKey -> { id, x, y, h, v, who, color, k, t }: where they read
   const drawn = new Set(); // tabs showing joiners' pointers here
   let stateTimer = null, pointerTimer = null, lastPointers = 0;
+  let hostView = null; // { page, t }: the tab the host scrolled in last
 
   const send = (st, event, data) => { try { st.conn.send(JSON.stringify({ event, data })); } catch {} };
   const active = () => streams.size > 0;
@@ -103,11 +105,13 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
     for (const [id, page] of pages) {
       const r = hostPointers.get(page);
       if (fresh(r?.me)) out.push({ id, x: r.me.x, y: r.me.y, t: r.me.t, who: shared.host || "Host", color: personColor(shared.host || "Host"), k: "host" });
+      if (r?.view && Date.now() - Number(r.view.t) < VIEW_FRESH_MS && !(hostView && hostView.page !== page && hostView.t > r.view.t)) out.push({ id, x: 0, y: r.view.y, h: r.view.h, v: 1, t: r.view.t, who: shared.host || "Host", color: personColor(shared.host || "Host"), k: "host-view" });
       let meta = {};
       try { meta = tabMeta(page) || {}; } catch {}
       if (fresh(r?.agent) && meta.agent && !meta.agent.joined) out.push({ id, x: r.agent.x, y: r.agent.y, t: r.agent.t, who: meta.agent.label, color: meta.agent.color || "#e9763f", k: `host-agent:${id}` });
     }
     for (const [key, e] of joinerPointers) if (key !== st.key && Date.now() - e.t < POINTER_FRESH_MS) out.push(...e.list);
+    for (const [key, v] of joinerViews) if (key !== st.key && pages.has(v.id) && Date.now() - v.t < VIEW_FRESH_MS) out.push(v);
     return out;
   }
   async function pushPointers() {
@@ -127,9 +131,14 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       if (Date.now() - e.t > POINTER_FRESH_MS * 3) { joinerPointers.delete(key); continue; }
       for (const p of e.list) { const page = pages.get(p.id); if (page) byPage.set(page, [...(byPage.get(page) || []), p]); }
     }
+    for (const [key, v] of joinerViews) {
+      if (Date.now() - v.t > VIEW_FRESH_MS || !isIn(key)) { joinerViews.delete(key); continue; }
+      const page = pages.get(v.id);
+      if (page) byPage.set(page, [...(byPage.get(page) || []), v]);
+    }
     for (const page of drawn) if (!byPage.has(page) && !page.isClosed()) shared.showPointers(page, []);
     drawn.clear();
-    for (const [page, list] of byPage) { drawn.add(page); shared.showPointers(page, list.map(({ k, who, color, x, y }) => ({ k, who, color, x, y }))); }
+    for (const [page, list] of byPage) { drawn.add(page); shared.showPointers(page, list.map(({ k, who, color, x, y, v, h }) => ({ k, who, color, x, y, ...(v ? { v: 1, h } : {}) }))); }
   }
   const pointersChanged = () => {
     if (pointerTimer) return;
@@ -158,17 +167,27 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
     end(key) { for (const [conn, st] of streams) if (st.key === key) { conn.close(); streams.delete(conn); } },
     // From the page script (daemon/cobrowse.mjs): a field changed; the person or agent pointed.
     dirty(page) { if (active()) readForm(page).catch(() => {}); },
-    pointed(page, value) { hostPointers.set(page, value); if (active()) pointersChanged(); },
+    // A field's plain value as last shared from this tab (frame and key), or undefined.
+    sharedValue(page, f, k) { const x = forms.get(page)?.form?.fields?.find((y) => y.f === f && y.k === k); return x && !x.m && typeof x.v === "string" ? x.v : undefined; },
+    pointed(page, value) {
+      hostPointers.set(page, value);
+      // The host reads in one tab at a time: the one they scrolled in last.
+      if (value?.view && (!hostView || value.view.t > hostView.t)) hostView = { page, t: value.view.t };
+      if (active()) pointersChanged();
+    },
     // A joiner's pointers ({ me, agents }); they move or pause nothing.
     async fromJoiner(body, j) {
       const pages = await crossing();
-      const { me, agents } = readPointers(body, new Set(pages.keys()));
+      const { me, agents, view } = readPointers(body, new Set(pages.keys()));
       const key = joinerKey(j);
       const t = Number(body?.t) > 0 ? Math.min(Date.now(), Number(body.t)) : Date.now();
       const list = [];
       if (me) list.push({ ...me, t, who: cleanName(j.name), color: personColor(j.name), k: `${key}:me` });
       agents.forEach((a, i) => list.push({ ...a, t, color: a.color || "#e9763f", k: `${key}:a${i}` }));
       joinerPointers.set(key, { t: Date.now(), list });
+      // Where they read stays shown while they stay put (a pointer fades after a few seconds).
+      if (view) { const was = joinerViews.get(key); joinerViews.set(key, { ...view, who: cleanName(j.name), color: personColor(j.name), k: `${key}:view`, t: was && was.id === view.id && was.y === view.y && was.h === view.h ? was.t : Date.now() }); }
+      else if (body && "view" in body) joinerViews.delete(key);
       if (latencyLog && me) log(`latency pointer-in ${Date.now() - t} ms`);
       pointersChanged();
       return { ok: true };

@@ -15,7 +15,7 @@ import { CHALLENGE_TURN } from "../popups.mjs";
 import { SESSION_TOOL } from "../sessions.mjs";
 import { UPLOAD_TOOL, uploadFiles } from "../upload.mjs";
 import { FACTS_TOOL } from "../facts.mjs";
-import { RUN_TOOL, enterButtonLabel, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
+import { RUN_TOOL, enterButtonLabel, submitsPaymentAt, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
 import { sleep, within } from "../util.mjs";
 import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel } from "./page.mjs";
@@ -36,19 +36,8 @@ const CLICKING_TOOLS = new Set(["browser_click", "browser_press_key", "browser_h
 const TAB_TOOLS = new Set(["browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_hover",
   "browser_navigate", "browser_navigate_back", "browser_drag", "browser_drop", "browser_file_upload", "browser_handle_dialog",
   "pairbrowse_click_at", "pairbrowse_run", "pairbrowse_upload"]);
-// Actions that change the page under a person (another address, a link, a submit, Enter): only
-// these wait while a person is at it in that tab. Clicks are judged by what they click.
-const PAGE_CHANGING = new Set(["browser_navigate", "browser_navigate_back", "pairbrowse_click_at"]);
 // Tools that fill a field: a field a person is filling is left to them (daemon/fields.mjs).
 const FIELD_TOOLS = new Set(["browser_type", "browser_select_option", "browser_fill_form"]);
-// Whether an element is (in) a link to another page or a button that submits a form.
-function navigatesOrSubmits(el) {
-  const a = el.closest("a[href]");
-  if (a) return !/^\s*(#|javascript:)/i.test(a.getAttribute("href") || "");
-  const b = el.closest("button, input[type=submit], input[type=image]");
-  if (!b || !b.form) return false;
-  return b.tagName !== "BUTTON" || (b.getAttribute("type") || "submit").toLowerCase() === "submit";
-}
 // Tools that read the current tab without taking its turn (anyone may watch any tab).
 const PAGE_READ_TOOLS = new Set(["browser_snapshot", "browser_find", "browser_wait_for"]);
 // PairBrowse's own tools that answer before (or without) the browser being ready.
@@ -111,7 +100,7 @@ async function sensitiveTarget(page, target) {
 // deps: the helper's parts (see daemon.mjs). Returns serve(sock): runs one participant on a
 // socket until it closes.
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, revision, bumpRevision, session, shareMessage = () => {}, testTools = {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, revision, bumpRevision, session, shareMessage = () => {}, testTools = {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
 
   return async function serve(sock) {
@@ -389,6 +378,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const pressed = finalAction(await keyWouldPress(name === "browser_type" ? args.target : null, key));
         if (pressed) return `Refused: ${key === "space" ? "Space" : "Enter"} here would press the "${pressed.word}" button. ` +
           "Type without submit (and without line breaks), then use browser_click on that button so the user confirms.";
+        // Whatever its button says: a form with card or billing/shipping fields is a payment.
+        const page = await context.pageAt(context.currentUrl());
+        if (page && await submitsPaymentAt(page, name === "browser_type" ? args.target : null, key)) {
+          return `Refused: ${key === "space" ? "Space" : "Enter"} here would send a payment form (it has card or billing/shipping fields). ` +
+            "Type without submit (and without line breaks), then use browser_click on its button, with \"Pay\" in element, so the user confirms.";
+        }
       }
       // A publish, pay or delete button described as something milder ("Continue") would slip past
       // the click guard, which reads Claude's description. Refuse until it's called what it is.
@@ -400,7 +395,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (real && !mentions(args.element || "", real.word)) {
           log(`refused click on "${real.word}" described as "${String(args.element || "").slice(0, 80)}"`);
           return `Refused: this element is a "${real.word}" button, but the click describes it as "${args.element || "(nothing)"}". ` +
-            "Retry with its real label in element, so the user sees what they are approving.";
+          "Retry with its real label in element, so the user sees what they are approving.";
+        }
+        // A submit button of a payment form (card or billing/shipping fields) pays, whatever it
+        // says ("Submit order", "Continue"): it's called a payment so the user confirms it.
+        if (!real && !mentions(args.element || "", "pay") && await submitsPaymentAt(await serverPage(), args.target)) {
+          log(`refused click on a payment form's submit described as "${String(args.element || "").slice(0, 80)}"`);
+          return `Refused: this button sends a payment form (it has card or billing/shipping fields), whatever its label ("${String(text).slice(0, 60)}"). ` +
+            `Retry with "Pay" in element (e.g. "Pay: ${String(text || "submit").slice(0, 40)}"), so the user confirms it.`;
         }
       }
       return null;
@@ -441,13 +443,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
           // Paused by a person: stop here (never waiting inside the shared queue).
           const held = pause.view();
           if (held.paused) throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`);
-          // Only a step that changes the page waits for a person at it in this tab.
-          const changing = kind === "go" || kind === "enter" || (kind === "click" && await within(1500, el.evaluate(navigatesOrSubmits).catch(() => false)));
-          const who = changing && presence.actingIn(page);
+          // A person clicking or typing in this tab: every step waits until they're idle, then
+          // stops so Claude looks at the page again before the remaining steps.
+          const who = presence.actingIn(page);
           if (!who) return;
-          // Then stop so Claude looks at the page again before the remaining steps (their click may have changed it).
           await presence.waitForUser(page);
-          throw new Error(`${who === host ? "The user" : who} used this tab (${presence.didIn(page) || "scrolled"}). Take a snapshot, then run the remaining steps.`);
+          throw new Error(`${who === host ? "The user" : who} used this tab (${presence.didIn(page) || "clicked"}). Take a snapshot, then run the remaining steps.`);
         },
         owner: (el) => ownerOf(el, hud.key, { host, byAgent: presence.typedByAgent }),
         status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); },
@@ -597,38 +598,34 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (serverAt) setMine(serverAt);
       return mine;
     }
-    // Whether this call would change the page under a person in its tab (see PAGE_CHANGING).
-    async function changesPageNow(tool, args, page) {
-      if (PAGE_CHANGING.has(tool)) return true;
-      if (tool === "browser_press_key") return activatingKey(args.key) === "enter";
-      if (tool === "browser_type") return !!(args.submit || /[\r\n]/.test(String(args.text || "")));
-      if (tool !== "browser_click" || !page || !args.target) return false;
-      try {
-        const el = page.locator(isRef(args.target) ? `aria-ref=${args.target}` : String(args.target)).first();
-        return !!(await within(1500, el.evaluate(navigatesOrSubmits, undefined, { timeout: 1000 }).catch(() => false)));
-      } catch {
-        return false;
-      }
-    }
-    // Per-tab turns. A person at it in the tab goes first when this call would change the page
-    // (else people and agents work side by side): wait outside the shared queue, so agents in
-    // other tabs carry on. Another agent holding the tab: refuse, or wait a moment if its turn
-    // is about to end.
+    // Per-tab turns. A person clicking or typing in the tab goes first (moving the pointer or
+    // scrolling holds nobody up): wait outside the shared queue, so agents in other tabs carry
+    // on. Another agent holding the tab, here or on another computer of a shared session: wait a
+    // moment if its turn is about to end, else refuse; never act in this copy meanwhile.
     async function takeTurn(dispatch, id, tool, args = {}) {
       for (let round = 0; ; round++) {
         const page = await myTab();
         if (!page && lostTab) { reply(id, "You have no tab of your own: you closed yours and the others are in use by other agents. Open one with browser_tabs new.", true); return; }
-        const changing = await changesPageNow(tool, args, page);
-        if (changing) await presence.waitForUser(page);
+        await presence.waitForUser(page);
         const r = await collaboration.run(participant, async () => {
           if (page && page.isClosed()) return { again: true };
-          if (changing && presence.actingIn(page)) return { again: true };
+          if (presence.actingIn(page)) return { again: true };
+          // Numbered as browser_tabs select takes it.
+          const busy = (label) => reply(id, `Tab ${page.context().pages().indexOf(page)} is in use by ${label}. Open or select another tab (browser_tabs), or wait and retry.`, true);
+          // A joiner's agent yields to the host's agent that already holds the tab here (a tie
+          // when both started at once); else the other computer's agent goes first.
+          const remote = page && remoteHolder(page);
+          if (remote && !(remote.yields && tabClaims.holder(page)?.id === participant)) {
+            const left = remote.until - Date.now();
+            if (left < TAB_WAIT_MS && round < 3) return { waitMs: Math.max(250, left + 100) };
+            busy(remote.label);
+            return { done: true };
+          }
           const c = tabClaims.claim(page, participant, myLabel());
           if (!c.ok) {
             const left = c.holder.until - Date.now();
             if (left < TAB_WAIT_MS && round < 3) return { waitMs: left + 100 };
-            // Numbered as browser_tabs select takes it.
-            reply(id, `Tab ${page.context().pages().indexOf(page)} is in use by ${c.holder.label}. Open or select another tab (browser_tabs), or wait and retry.`, true);
+            busy(c.holder.label);
             return { done: true };
           }
           actingIn = page;

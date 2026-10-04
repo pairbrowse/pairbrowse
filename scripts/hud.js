@@ -41,12 +41,25 @@
   // PairBrowse's own bar (its "Pause agents" button) is never input in the page.
   let barHost;
   const ours = (e) => !!barHost && e.composedPath().includes(barHost);
-  addEventListener("pointerdown", (e) => { if (e.isTrusted && !ours(e)) record("click", named(control(e))); }, opts);
+  // A press on a scrollbar (the page's, or a scrolling box's) is reading, like the wheel: it holds
+  // nobody up. Same for scrolling keys outside a field.
+  const onScrollbar = (e) => {
+    const root = document.documentElement;
+    if (e.clientX >= root.clientWidth || e.clientY >= root.clientHeight) return true;
+    const el = e.composedPath()[0];
+    if (!el || el.nodeType !== 1 || el === root || el === document.body) return false;
+    const r = el.getBoundingClientRect();
+    return (el.scrollHeight > el.clientHeight && e.clientX - r.left >= el.clientLeft + el.clientWidth) ||
+      (el.scrollWidth > el.clientWidth && e.clientY - r.top >= el.clientTop + el.clientHeight);
+  };
+  const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"]);
+  addEventListener("pointerdown", (e) => { if (e.isTrusted && !ours(e)) { if (onScrollbar(e)) record("scroll", ""); else record("click", named(control(e))); } }, opts);
   addEventListener("keydown", (e) => {
     if (!e.isTrusted || ours(e)) return;
     const el = focused();
     if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) record("type", named(el));
-    else if (e.key.length > 1) record("key", e.key); // Enter, Escape, Tab, arrows: never the letters
+    else if (SCROLL_KEYS.has(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey) record("scroll", "");
+    else if (e.key.length > 1) record("key", e.key); // Enter, Escape, Tab: never the letters
   }, opts);
   // A wheel is always a person (Claude never sends one). Plain scroll events aren't counted: pages
   // scroll themselves (menus, smooth scrolling) and Claude's clicks bring buttons into view.

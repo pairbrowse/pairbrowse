@@ -37,8 +37,8 @@ test("presence: typing and clicking pause agents in that tab, moving and scrolli
     const presence = createPresence({ host: "Bob", readEvents: async () => [], pages: () => [], paused: () => true,
       onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
     const page = {};
-    presence.userDid([{ kind: "wheel", t: Date.now() }, { kind: "move", t: Date.now() }], page);
-    assert.equal(presence.actingIn(page), null, "scrolling holds nobody up");
+    presence.userDid([{ kind: "wheel", t: Date.now() }, { kind: "move", t: Date.now() }, { kind: "scroll", t: Date.now() }], page);
+    assert.equal(presence.actingIn(page), null, "scrolling (wheel, scrollbar, arrow keys) holds nobody up");
     assert.equal(presence.personIn(page), "Bob", "but they show in the tab");
     presence.userDid([{ kind: "click", t: Date.now(), what: "Gift wrap" }], page);
     assert.equal(presence.actingIn(page), "Bob", "a click pauses agents there");

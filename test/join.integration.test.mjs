@@ -79,8 +79,15 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
     const socketPath = join(h, "run", "browser.sock");
     for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
-    const sock = net.createConnection(socketPath);
-    await new Promise((ok, no) => { sock.once("connect", ok); sock.once("error", no); });
+    // The socket file can show a moment before the helper listens on it (a busy machine): retry.
+    let sock;
+    for (let i = 0; ; i++) {
+      sock = net.createConnection(socketPath);
+      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
+      if (ok) break;
+      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
+      await sleep(200);
+    }
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
@@ -223,8 +230,15 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
     const socketPath = join(h, "run", "browser.sock");
     for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
-    const sock = net.createConnection(socketPath);
-    await new Promise((ok, no) => { sock.once("connect", ok); sock.once("error", no); });
+    // The socket file can show a moment before the helper listens on it (a busy machine): retry.
+    let sock;
+    for (let i = 0; ; i++) {
+      sock = net.createConnection(socketPath);
+      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
+      if (ok) break;
+      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
+      await sleep(200);
+    }
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");

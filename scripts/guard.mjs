@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // PreToolUse hook for every PairBrowse tool.
 // - Routine browser actions run without permission prompts.
-// - Clicks named with a class ("Pay: Submit order"; the helper demands it by what the click does,
-//   see clickClass) ask you first. "Publish:" clicks are blocked until a passing pre-submit review
+// - Clicks named with a class ("Pay: Submit order": the agent names what it knows commits, and the
+//   helper demands it for payment, danger and DELETE signals, see clickClass) ask you first. "Publish:" clicks are blocked until a passing pre-submit review
 //   was recorded in the last REVIEW_MAX_AGE_MIN (30) minutes, then still ask. This can't be switched off.
 // - OK on a page's confirm or prompt dialog named with a class asks you; the helper makes the agent
-//   name it (scripts/clickrule.mjs).
+//   name it right after a delete or payment click (scripts/clickrule.mjs).
 // - Uploads run only for ordinary media and documents in ~/.pairbrowse/files/uploads;
 //   anything else asks you.
 // - Only web pages can be opened; local-network addresses ask you first.
@@ -19,8 +19,8 @@ import { secretInside, MEDIA } from "./upload.mjs";
 // A click Claude knows commits something is named with its class first: "Pay: Submit order",
 // "Delete: OK", "Submit: Create account", "Send: Reply", "Publish: Submit for review". The helper
 // works out from the page's structure what the click does (daemon/page.mjs clickRisk, never its
-// words), refuses a final action until it's named and has the agent judge unclear ones
-// (scripts/clickrule.mjs); this hook then asks you about every named click. Publish is the class
+// words) and refuses one with strong signals until it's named (scripts/clickrule.mjs); ordinary
+// submits go unless Claude names them. This hook asks you about every named click. Publish is the class
 // Claude gives a submit-for-review or go-live click (the listing skill), and it's blocked until a
 // passing pre-submit review.
 export const CLICK_CLASSES = ["publish", "pay", "delete", "send", "submit"];
@@ -30,17 +30,6 @@ const CLASS_TEXT = { publish: "publishes or submits for review", pay: "pays", de
 export function clickClass(element) {
   const c = String(element || "").match(/^[\s"'“‘([]*([A-Za-z]+)\s*:/)?.[1]?.toLowerCase();
   return CLICK_CLASSES.includes(c) ? c : "";
-}
-
-// Whether a structural "submit" on this page needs no naming: the origins you listed in config
-// neverConfirm. Payments, deletions and the review gate still ask everywhere.
-export function neverConfirmOrigin(url, config = loadConfig()) {
-  let origin;
-  try { origin = new URL(String(url)).origin; } catch { return false; }
-  if (!/^https?:/.test(origin)) return false;
-  return (Array.isArray(config.neverConfirm) ? config.neverConfirm : []).some((e) => {
-    try { const o = new URL(String(e)).origin; return /^https?:/.test(o) && o === origin; } catch { return false; }
-  });
 }
 
 export function uploadAllowed(p, uploadsDir = paths.uploads) {

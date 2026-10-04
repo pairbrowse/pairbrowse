@@ -2,6 +2,7 @@
 // and pairbrowse_click_at, which clicks a spot in the latest one.
 import { redact } from "../secrets.mjs";
 import { sleep, within } from "../util.mjs";
+import { strongSignal } from "../clickrule.mjs";
 import { withHelpers, buttonLabel, clickRisk, clickContext } from "./page.mjs";
 
 const LOAD_WAIT_MS = 4000;
@@ -125,8 +126,8 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
     const hit = await page.evaluate(hitAt, [cx, cy]).catch(() => null);
     if (!hit) return { text: "Nothing at that spot.", error: true };
     if (hit.frame) return { text: "That spot is inside a frame. Use browser_click with the element's ref from browser_snapshot.", error: true };
-    // By what it does (a form submit, a danger button, a confirmation): only browser_click asks the user.
-    if (hit.risk && hit.risk.level !== "safe") return { text: `Refused: that spot commits something (${(hit.risk.why || []).join(", ") || hit.risk.word}). Use browser_click with its ref so the user confirms.`, error: true };
+    // Strong signals (payment, danger, DELETE, a confirmation after one): only browser_click asks the user.
+    if (hit.risk && strongSignal(hit.risk)) return { text: `Refused: that spot commits something (${(hit.risk.why || []).join(", ") || hit.risk.word}). Use browser_click with its ref so the user confirms.`, error: true };
     await page.mouse.click(cx, cy);
     return { text: `Clicked "${hit.label.slice(0, 80) || "the spot"}" at ${Math.round(cx)},${Math.round(cy)} on the page.`, page };
   }

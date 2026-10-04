@@ -49,8 +49,8 @@ export function nearbyText(el) {
 // another committing action: the user confirms it) or "strong" (signals stack up: card fields
 // with a submit, a danger button in a confirmation dialog); word: the class the click must be
 // named with so the guard asks ("pay", "delete", "submit"); why: the signals, for the refusal;
-// unclear: safe by structure but what it does runs in the page's scripts (the agent judges it,
-// scripts/clickrule.mjs). prev: what the click just before in this tab committed ("delete": its
+// unclear: safe by structure but what it does runs in the page's scripts (it goes; the agent names
+// it if its task says it commits, scripts/clickrule.mjs). prev: what the click just before in this tab committed ("delete": its
 // confirmation is still a delete). hints.payFrame: a frame on the page has card fields (the helper
 // reads frames this code can't). Self-contained: runs in the page.
 export function clickRisk(n, kind = "click", prev = "", hints = {}) {
@@ -149,7 +149,7 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
     return "";
   };
 
-  // What the control does, and where a multi-step form stands: context for the agent judging an unclear click.
+  // What the control does, and where a multi-step form stands: part of the click's context.
   const realHref = control.matches("a[href]") && !/^\s*(#|javascript:)/i.test(control.getAttribute("href") || "");
   const does = form ? "submits a form" : kind !== "click" ? "nothing" : verbOf(control) ? `sends a ${verbOf(control).toUpperCase()} request` : realHref ? "navigates"
     : control.matches('[role=tab], summary, [aria-expanded], [aria-haspopup], [aria-controls], [aria-pressed], [role=switch], [role=checkbox], [role=radio], [role=option]') ? "changes the page in place" : "runs the page's scripts";
@@ -194,8 +194,7 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
 }
 
 // A click's context, the one shared reading behind every check (browser_click, Enter and Space,
-// pairbrowse_click_at, fast mode, uploads) and what the agent is shown to judge an unclear one:
-// the structural decision (clickRisk) plus what the page is (title, origin, headings), the form (method, step, its fields'
+// pairbrowse_click_at, fast mode, uploads): the structural decision (clickRisk) plus what the page is (title, origin, headings), the form (method, step, its fields'
 // names, types and autocomplete, never values), the dialog it's in, and what the control does.
 // Needs clickRisk and buttonLabel alongside it (withHelpers). Self-contained: runs in the page.
 export function clickContext(n, kind = "click", prev = "", hints = {}) {

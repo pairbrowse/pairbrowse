@@ -193,45 +193,31 @@ test("no word lists: the click guard's code holds no wording to match in any lan
   }
 });
 
-test("the agent judges unclear clicks; strong signals stay the user's, whatever the agent says", async () => {
-  const { clickRule, dialogRule, describeContext, strongSignal } = await import("../scripts/clickrule.mjs");
+test("only strong signals stop a click; ordinary submits and script buttons go", async () => {
+  const { clickRule, dialogRule, strongSignal } = await import("../scripts/clickrule.mjs");
   const { UNREADABLE } = await import("../scripts/runner.mjs");
   const pay = { level: "strong", word: "pay", why: ["card fields"] };
   const del = { level: "commit", word: "delete", why: ["a DELETE request"] };
   const submit = { level: "commit", word: "submit", why: ["it submits a form"] };
   const script = { level: "safe", word: "", why: [], unclear: true };
-  // A strong signal plus "Safe:" (or the wrong class) is still refused until named; named, the hook asks.
-  for (const label of ["Safe: Continue", "Continue", "Submit: Continue", "Send: Continue"]) assert.equal(clickRule(pay, label, { seen: true }), "name", label);
+  // A strong signal is refused until named with its own class; named, the hook asks.
+  for (const label of ["Safe: Continue", "Continue", "Submit: Continue", "Send: Continue"]) assert.equal(clickRule(pay, label), "name", label);
   assert.equal(clickRule(pay, "Pay: Continue"), "go");
-  assert.equal(clickRule(del, "Safe: Remove", { seen: true }), "name", "a DELETE method or danger styling can't be called safe");
-  assert.equal(clickRule(UNREADABLE, "Safe: x", { seen: true }), "name", "unreadable counts as a final action");
+  assert.equal(clickRule(del, "Remove"), "name", "a DELETE method or danger styling");
+  assert.equal(clickRule(UNREADABLE, "x"), "name", "unreadable counts as a final action");
+  assert.equal(clickRule(UNREADABLE, "Submit: x"), "go");
   assert.equal(strongSignal({ level: "strong", word: "submit" }), true);
-  // Unclear: refused once with its context, then "Safe:" goes; a class goes on to the hook.
-  assert.equal(clickRule(script, "Remove"), "judge");
-  assert.equal(clickRule(script, "Remove", { seen: true }), "go", "shown once");
-  assert.equal(clickRule(script, "Safe: Load more"), "go", "structure and agent agree");
-  assert.equal(clickRule(script, "Pay: Buy"), "go");
-  assert.equal(clickRule(submit, "Save"), "judge");
-  assert.equal(clickRule(submit, "Safe: Save"), "judge", "a form submit is judged from its context first");
-  assert.equal(clickRule(submit, "Safe: Save", { seen: true }), "go");
-  assert.equal(clickRule(submit, "Save", { seen: true }), "judge", "a commit by structure still needs a name");
-  assert.equal(clickRule(submit, "Submit: Save"), "go");
-  assert.equal(clickRule(submit, "Save", { lifted: true }), "go", "neverConfirm origins");
-  assert.equal(clickRule({ level: "safe", word: "", why: [] }, "Next"), "go", "plain safe clicks never stop");
-  // Page dialogs: after a delete or payment, OK is that final action; otherwise the agent judges it.
-  assert.equal(dialogRule(true, "delete", "Safe: OK", { seen: true }), "name");
+  // Everything else goes; a class the agent gives goes on to the hook, which asks.
+  for (const [risk, label] of [[script, "Remove"], [script, "Load more"], [submit, "Save"], [submit, "Continue"], [submit, "Send: Reply"], [{ level: "safe", word: "", why: [] }, "Next"]]) {
+    assert.equal(clickRule(risk, label), "go", label);
+  }
+  // Page dialogs: after a delete or payment, OK is that final action; any other OK follows the label.
+  assert.equal(dialogRule(true, "delete", "OK"), "name");
   assert.equal(dialogRule(true, "delete", "Delete: OK"), "go");
   assert.equal(dialogRule(true, "pay", "Submit: OK"), "name");
-  assert.equal(dialogRule(true, "", "OK"), "judge");
-  assert.equal(dialogRule(true, "", "Safe: OK"), "judge", "shown its text first");
-  assert.equal(dialogRule(true, "", "Safe: OK", { seen: true }), "go");
+  assert.equal(dialogRule(true, "", "OK"), "go");
   assert.equal(dialogRule(true, "", "Send: OK"), "go");
   assert.equal(dialogRule(false, "delete", ""), "go", "dismissing is always fine");
-  // The context the agent reads: names and kinds, never values.
-  const text = describeContext({ task: "Status: tidy the team", page: { title: "Team", origin: "https://app.example", headings: ["Members"] },
-    control: { label: "Remove", does: "runs the page's scripts" }, form: { method: "post", step: "", fields: [{ name: "Email", type: "email", autocomplete: "email" }] }, prev: "", value: "secret-value" });
-  assert.match(text, /tidy the team.*"Team" at https:\/\/app\.example.*"Remove" runs the page's scripts.*method post, fields Email \(email, email\)/);
-  assert.equal(text.includes("secret-value"), false);
 });
 
 test("nothing about a click leaves the computer: no model, API key or network in the judging", () => {

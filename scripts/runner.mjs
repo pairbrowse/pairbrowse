@@ -10,7 +10,8 @@ import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { navigationProblem, isRef, SENSITIVE } from "./policy.mjs";
 import { hostAllowed } from "./secrets.mjs";
-import { isLocalNetwork } from "./guard.mjs";
+import { isLocalNetwork, clickClass } from "./guard.mjs";
+import { strongSignal } from "./clickrule.mjs";
 import { uploadProblem, uploadFiles } from "./upload.mjs";
 import { slug } from "./runs.mjs";
 import { readJson, sleep, within } from "./util.mjs";
@@ -28,7 +29,7 @@ export const RUN_TOOL = {
     '{"handoff":{"say":"what the user must do","until":"text that appears after"}} (or "untilGone"). ' +
     "Labels match the field's label, placeholder or name. Values may use {{var}} from vars. Stops at the first problem and says why. " +
     "Returns where it ended and an outline of the page (fields, buttons, errors). Save a working flow with saveAs, replay it with playbook + vars; list saved ones with list:true. " +
-    "Final actions (form submits, payments, deletions, publishing; judged by what a click does) are refused here: use browser_click so the user confirms.",
+    "Ordinary buttons and form submits run here. Payments, deletions (judged by what a click does) and a click step you name as a final action (\"Send: Reply\") stop the run: use browser_click so the user confirms.",
   inputSchema: {
     type: "object",
     properties: {
@@ -114,7 +115,7 @@ async function cardFrame(page) {
 export const UNREADABLE = { level: "commit", word: "submit", unreadable: true, why: ["PairBrowse couldn't read what it does"] };
 
 // A click's context (daemon/page.mjs clickContext): the one reading every check shares (the
-// helper's browser_click, Enter and Space, fast mode, uploads, the agent's judging of unclear clicks). target: a ref or
+// helper's browser_click, Enter and Space, fast mode, uploads, pairbrowse_click_at). target: a ref or
 // selector, a Playwright element handle or locator, or none (the focused element). prev: what the
 // click just before in this tab committed. Unreadable counts as a commit (fail safe).
 const inPage = withHelpers((el, [k, p, h]) => clickContext(el, k, p, h), clickContext, clickRisk, buttonLabel);
@@ -123,9 +124,14 @@ export async function contextAt(page, target, kind = "click", prev = "") {
   try {
     const args = [kind, prev, { payFrame: await cardFrame(page) }];
     const el = !target ? null : typeof target === "string" ? page.locator(isRef(target) ? `aria-ref=${target}` : target).first() : target;
-    const run = el ? el.evaluate(inPage, args, { timeout: 1000 }) : page.evaluate(focused, args);
-    const ctx = await within(1500, run.catch(() => null));
-    return ctx?.risk ? ctx : { risk: UNREADABLE };
+    // A busy computer or a page still loading can miss the first second; a second, longer try
+    // keeps that from reading as unreadable (which asks the user).
+    for (const ms of [1000, 4000]) {
+      const run = el ? el.evaluate(inPage, args, { timeout: ms }) : page.evaluate(focused, args);
+      const ctx = await within(ms + 500, run.catch(() => null));
+      if (ctx?.risk) return ctx;
+    }
+    return { risk: UNREADABLE };
   } catch {
     return { risk: UNREADABLE };
   }
@@ -379,14 +385,16 @@ export async function runSteps(page, steps, hooks) {
         }
         hooks.activity(`Chose ${Object.entries(arg).map(([k, v]) => `**${k}** = \`${v}\``).join(", ")}`);
       } else if (kind === "click") {
+        // A step the agent named as a final action ("Send: Reply") goes through browser_click, which asks the user.
+        if (clickClass(arg)) return fail(`"${arg}" is named as a final action. Run the steps before it, then use browser_click on it so the user confirms.`);
         const el = await clickable(page, String(arg));
         if (!el) return fail(`Nothing to click named "${arg}".`);
         await hooks.beforeStep?.("click", el);
-        // What the matched element does, by the page's structure, whatever it says: a form submit
-        // or another committing action is the user's to confirm (unreadable counts as one).
+        // What the matched element does, by the page's structure, whatever it says: strong signals
+        // (payment, danger, DELETE, unreadable) make it the user's to confirm; ordinary submits go.
         const real = String(await el.evaluate(buttonLabel, undefined, { timeout: 2000 }).catch(() => ""));
         const { risk } = await contextAt(page, el, "click");
-        if (risk.level !== "safe") return fail(`"${arg}" is the "${real.slice(0, 60)}" button: ${riskReason(risk)}. Run the steps before it, then use browser_click on it so the user confirms.`);
+        if (strongSignal(risk)) return fail(`"${arg}" is the "${real.slice(0, 60)}" button: ${riskReason(risk)}. Run the steps before it, then use browser_click on it so the user confirms.`);
         hooks.cursor?.(el, "click");
         await el.click({ timeout: 5000 });
         await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
@@ -395,7 +403,7 @@ export async function runSteps(page, steps, hooks) {
         const key = activatingKey(arg);
         if (key) {
           const risk = await riskAt(page, null, key);
-          if (risk.level !== "safe") {
+          if (strongSignal(risk)) {
             const label = await enterButtonLabel(page, null, key);
             return fail(`${String(arg)} here would ${label ? `press "${label.slice(0, 60)}" and ` : ""}commit something (${riskReason(risk)}). Use browser_click on its button so the user confirms.`);
           }

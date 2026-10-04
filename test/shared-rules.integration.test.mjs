@@ -82,8 +82,15 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
     const socketPath = join(h, "run", "browser.sock");
     for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
-    const sock = net.createConnection(socketPath);
-    await new Promise((ok, no) => { sock.once("connect", ok); sock.once("error", no); });
+    // The socket file can show a moment before the helper listens on it (a busy machine): retry.
+    let sock;
+    for (let i = 0; ; i++) {
+      sock = net.createConnection(socketPath);
+      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
+      if (ok) break;
+      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
+      await sleep(200);
+    }
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
@@ -204,7 +211,7 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     await tool(host.call, "browser_press_key", { key: "Shift" });
     assert.ok(Date.now() - t0 < 1500, `scrolling pauses no agent (${Date.now() - t0} ms)`);
 
-    stage = "a step through a form goes without asking; the commit that ends it is asked for";
+    stage = "a step through a form goes without asking, and so does the ordinary submit that ends it";
     assert.ok(!(await tool(host.call, "browser_navigate", { url: "http://shop.pbtest.example/wizard" })).result.isError);
     s = await snap(host.call);
     assert.ok(ref(s, "button", "Next"), s.slice(0, 1500));
@@ -214,8 +221,7 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     assert.ok(!(await tool(host.call, "browser_navigate", { url: "http://shop.pbtest.example/wizard" })).result.isError);
     s = await snap(host.call);
     const create = await tool(host.call, "browser_click", { target: ref(s, "button", "Create account"), element: "Create account" });
-    assert.ok(create.result.isError);
-    assert.match(text(create), /Refused once for you to judge[^\n]*it submits a form[^\n]*fields[^\n]*"Submit:"[^\n]*"Safe:"/);
+    assert.ok(!create.result.isError, text(create));
     channel.close();
   } catch (e) {
     const log = (h) => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2500); } catch { return ""; } };

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.PAIRBROWSE_HOME = "/home/me/.pairbrowse";
-const { decide, clickClass, neverConfirmOrigin } = await import("../scripts/guard.mjs");
+const { decide, clickClass } = await import("../scripts/guard.mjs");
 
 const cfg = { neverConfirm: [] };
 const NOW = Date.parse("2026-10-01T12:00:00Z");
@@ -12,8 +12,8 @@ const run = (tool, tool_input, { config = cfg, rev = null } = {}) =>
 const click = (element, opts) => run("browser_click", { element, target: "e1" }, opts);
 
 test("clicks without a class run without asking: the hook reads no words", () => {
-  // The helper judges what a click does by the page's structure and refuses a committing one until
-  // it's named with its class; the hook only reads that class.
+  // The helper judges what a click does by the page's structure and refuses one with strong signals
+  // until it's named with its class; the hook only reads that class.
   for (const label of ["Next", "Pay now", "Delete store", "Submit order", "Löschen", "購入", "Note: pay later", "Payment: settings"]) {
     assert.equal(click(label), "allow", label);
   }
@@ -25,7 +25,7 @@ test("a click named with its class asks first", () => {
   }
   assert.deepEqual(["Pay: x", "Delete: x", "Submit: x", "Publish: x", "Send: x", "Safe: x", "Pay now"].map(clickClass), ["pay", "delete", "submit", "publish", "send", "", ""]);
   assert.equal(click("Send: Reply"), "ask");
-  assert.equal(click("Safe: Load more"), "allow", "the helper decides whether Safe: may go");
+  assert.equal(click("Safe: Load more"), "allow", "not a class");
 });
 
 test("publish clicks are blocked without a fresh passing review", () => {
@@ -35,19 +35,14 @@ test("publish clicks are blocked without a fresh passing review", () => {
   assert.equal(click("Publish: Submit for review", { rev: review(5) }), "ask", "passed review still asks");
 });
 
-test("the review gate can't be configured away; neverConfirm is origins only", () => {
+test("the review gate can't be configured away", () => {
   assert.equal(click("Publish: Publish app", { config: { neverConfirm: ["https://partners.shopify.com", "publish"] } }), "deny");
-  const config = { neverConfirm: ["https://intranet.example.com", "submit", "pay", "not a url", "file:///etc"] };
-  assert.equal(neverConfirmOrigin("https://intranet.example.com/forms/1", config), true);
-  assert.equal(neverConfirmOrigin("https://intranet.example.com.evil.io/", config), false);
-  assert.equal(neverConfirmOrigin("http://intranet.example.com/", config), false, "another scheme is another origin");
-  assert.equal(neverConfirmOrigin("https://shop.example/", config), false, "words do nothing");
 });
 
-test("OK on a page's dialog named as a final action asks; the helper has the rest judged", () => {
+test("OK on a page's dialog named as a final action asks; other OKs go", () => {
   assert.equal(run("browser_handle_dialog", { accept: true, element: "Delete: OK" }), "ask");
   assert.equal(run("browser_handle_dialog", { accept: true, promptText: "x", element: "Submit: OK" }), "ask");
-  // Unnamed or "Safe:": the helper refuses it once with the dialog's context (scripts/clickrule.mjs).
+  // Unnamed: it goes, unless it follows a delete or payment click (the helper refuses it, scripts/clickrule.mjs).
   assert.equal(run("browser_handle_dialog", { accept: true }), "allow");
   assert.equal(run("browser_handle_dialog", { accept: true, element: "Safe: OK" }), "allow");
   assert.equal(run("browser_handle_dialog", { accept: false }), "allow");

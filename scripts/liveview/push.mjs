@@ -21,7 +21,8 @@ const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 // idOf(page): the tab's id for joiners. tabsFor(j): the shared tabs for joiner j (no form values).
 // joinerKey(j). shared: the helper's hooks (see liveview.mjs). tabMeta(page). sessionFor(j): who
 // is doing what, as joiner j may see it.
-export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared, tabMeta, isIn = () => true, sessionFor = () => null, log = () => {} }) {
+// mapUrl(url): a tab's shared dev server address for its localhost one (devshare.mjs), else null.
+export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared, tabMeta, isIn = () => true, sessionFor = () => null, mapUrl = () => null, log = () => {} }) {
   const streams = new Map(); // conn -> { j, key, conn, stateSig, pointersSig, formSigs: Map id -> sig }
   const forms = new WeakMap(); // tab -> { sig, form, t }
   const hostPointers = new WeakMap(); // tab -> { me, agent }
@@ -40,7 +41,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
     const out = new Map();
     for (const p of ctx.pages()) {
       if (out.size >= TABS_MAX) break;
-      if (!p.isClosed() && shareableUrl(p.url()) && !onSecretDomain(p.url(), secretDomains())) out.set(idOf(p), p);
+      if (!p.isClosed() && shareableUrl(mapUrl(p.url()) || p.url()) && !onSecretDomain(p.url(), secretDomains())) out.set(idOf(p), p);
     }
     return out;
   }
@@ -89,7 +90,8 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
     if (!f?.form || page.isClosed()) return;
     const id = idOf(page);
     for (const st of only ? [only] : streams.values()) {
-      const form = formForJoiner(page.url(), f.form, { secretDomains: secretDomains() });
+      const shown = mapUrl(f.form.url);
+      const form = formForJoiner(mapUrl(page.url()) || page.url(), shown ? { ...f.form, url: shown } : f.form, { secretDomains: secretDomains() });
       if (!form) continue;
       const sig = JSON.stringify(form);
       if (st.formSigs.get(id) === sig) continue;

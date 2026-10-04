@@ -3,6 +3,8 @@
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
 import { createApprovals, encodeJoinCode } from "../join.mjs";
 import { startQuickTunnel } from "../tunnel.mjs";
+import { randomBytes } from "node:crypto";
+import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../devshare.mjs";
 import { where } from "./context.mjs";
 
 const formatTime = (t) => new Date(t).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
@@ -11,7 +13,8 @@ const formatTime = (t) => new Date(t).toLocaleString("en-GB", { dateStyle: "medi
 // profile, tabMeta, onHumanInput, extraOrigins, status(), session(), collaboration(),
 // secretDomains() }). notify(text), hostNote(text): tell the user, and the host's agent in its
 // next result.
-export function createSharing({ config, log, host, view, notify, hostNote }) {
+// startLive: starts the live view (tests pass a stand-in).
+export function createSharing({ config, log, host, view, notify, hostNote, startLive = startLiveView }) {
   let liveView = null;
   // Invite links last as long as the helper (the live view itself restarts with the browser).
   const invites = createInvites();
@@ -56,7 +59,11 @@ export function createSharing({ config, log, host, view, notify, hostNote }) {
     return tunnelStarting;
   }
 
-  invites.onEnd(() => { if (!invites.list().some((i) => i.share === "code")) stopTunnel(); });
+  // Dev servers shared with joiners (devshare.mjs): each with its own tunnel, ended with the
+  // last join code, revoke_all, or the helper.
+  const devShare = createDevShare({ log, onStopped: (port) => hostNote(`The tunnel for the shared dev server localhost:${port} stopped; joiners can't open it any more. Share it again with pairbrowse_invite share_port.`) });
+
+  invites.onEnd(() => { if (!invites.list().some((i) => i.share === "code")) { stopTunnel(); devShare.stopAll(); } });
 
   // Someone asks to join: the host hears about it (a notification, the live view's Allow / Deny,
   // and a note in the next result here). Nothing is served to them until then.
@@ -68,13 +75,13 @@ export function createSharing({ config, log, host, view, notify, hostNote }) {
   }
 
   async function ensureLiveView() {
-    liveView ??= await startLiveView({
+    liveView ??= await startLive({
       extraOrigins: view.extraOrigins, getContext: view.getContext, currentUrl: view.currentUrl, log, port: config.liveViewPort || 0, profile: view.profile,
       hosts: liveViewHosts, inviteOrigin: inviteBase, invites, guestPort: guestPortWanted, approvals, tabMeta: view.tabMeta,
       onHumanInput: view.onHumanInput,
       tunnelHost: () => (tunnel ? new URL(tunnel.url).hostname : null),
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
-      onPause: view.onPause, pauseState: view.pauseState, picker: view.picker,
+      onPause: view.onPause, pauseState: view.pauseState, picker: view.picker, devShare, devPanel,
     });
     // Keep the sharing tunnel's port when the live view restarts with the browser.
     guestPortWanted = liveView.guestPort;
@@ -85,6 +92,8 @@ export function createSharing({ config, log, host, view, notify, hostNote }) {
     liveView.setStatus(view.status());
     liveView.setSession(view.session());
     liveView.setCollaboration(view.collaboration());
+    lastDev = "";
+    refreshDev();
     return liveView;
   }
 
@@ -107,14 +116,15 @@ export function createSharing({ config, log, host, view, notify, hostNote }) {
 
   // pairbrowse_invite: links or join codes for someone else to watch or co-drive (the guard asks
   // before a drive invite and before letting a joiner in). Returns { text, error }.
-  async function inviteCommand(args) {
+  async function inviteCommand(args, { who } = {}) {
     const action = args.action;
     const fail = (text) => ({ text, error: true });
     if (action === "list") {
       const asking = approvals.list();
       const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${i.role === "drive" ? "can drive" : "watch only"}, ${i.share === "code" ? "join code" : "link"}, until ${formatTime(i.expiresAt)}` +
         asking.filter((r) => r.inviteId === i.id).map((r) => `\n  - request ${r.id}: ${r.name}${r.app ? ` (${r.app})` : ""}, ${r.state === "pending" ? "waiting for the user's OK" : r.state === "approved" ? "let in" : "turned away"}`).join(""));
-      return { text: lines.length ? lines.join("\n") : "No invites." };
+      const dev = devShare.list().map((d) => `- dev server localhost:${d.port}, shared with joiners at ${d.url}`);
+      return { text: [...lines, ...dev].join("\n") || "No invites." };
     }
     if (action === "approve" || action === "deny") {
       const done = action === "approve" ? approvals.approve(args.id) : approvals.deny(args.id);
@@ -124,8 +134,15 @@ export function createSharing({ config, log, host, view, notify, hostNote }) {
     if (action === "revoke") {
       return invites.revoke(args.id) ? { text: `Revoked ${args.id}. Anyone using it lost the session at once.` } : fail(`No invite ${args.id}. Use list to see them.`);
     }
-    if (action === "revoke_all") { const n = invites.revokeAll(); stopTunnel(); return { text: `Revoked ${n} invite(s). The sharing tunnel is closed.` }; }
-    if (action !== "create") return fail("Use create, list, approve, deny, revoke or revoke_all.");
+    if (action === "revoke_all") { const n = invites.revokeAll(); stopTunnel(); devShare.stopAll(); return { text: `Revoked ${n} invite(s). The sharing tunnel is closed and no dev server is shared.` }; }
+    if (action === "share_port") return sharePort(args, who);
+    if (action === "unshare_port") {
+      if (args.port === undefined) { const n = devShare.list().length; devShare.stopAll(); refreshDev().catch(() => {}); return { text: n ? `Stopped sharing ${n} dev server(s).` : "No dev server is shared." }; }
+      const stopped = devShare.unshare(Number(args.port));
+      refreshDev().catch(() => {});
+      return stopped ? { text: `Stopped sharing localhost:${args.port}. Joiners' tabs on it stop loading.` } : fail(`localhost:${args.port} isn't shared. Use list to see what is.`);
+    }
+    if (action !== "create") return fail("Use create, list, approve, deny, revoke, revoke_all, share_port or unshare_port.");
     const share = args.share || (inviteBase ? "link" : "code");
     let invite;
     try { invite = invites.create({ role: args.role, label: args.label, hours: args.hours, share }); } catch (e) { return fail(e.message); }
@@ -163,5 +180,98 @@ export function createSharing({ config, log, host, view, notify, hostNote }) {
     return { text: lines.join("\n") };
   }
 
-  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, inviteCommand, stopTunnel };
+  // Dev servers in the owner's side panel: agents' questions (Yes / No), what's shared, and the
+  // localhost dev servers open in tabs (Share / Stop). Only the owner's clicks there share one.
+  const devAsks = new Map(); // id -> { id, port, hostname, who, settle }
+  const ASK_WAIT_MS = 90_000;
+  let lastDev = "";
+  async function devPanelState() {
+    const shared = devShare.list();
+    const open = new Map();
+    try {
+      for (const p of (await view.getContext()).pages()) {
+        const d = devAddress(p.url());
+        if (d && !shared.some((x) => x.port === d.port) && !open.has(d.port)) open.set(d.port, { port: d.port, title: (await p.title().catch(() => "")).slice(0, 80) });
+      }
+    } catch {}
+    return {
+      asks: [...devAsks.values()].map(({ id, port, who }) => ({ id, port, who })),
+      shared: shared.map(({ port }) => ({ port })),
+      open: [...open.values()].slice(0, 10),
+      joiners: invites.list().some((i) => i.share === "code"),
+    };
+  }
+  async function refreshDev() {
+    if (!liveView) return;
+    const state = await devPanelState();
+    const sig = JSON.stringify(state);
+    if (sig !== lastDev) { lastDev = sig; liveView?.setDev(state); }
+  }
+  const devTimer = setInterval(() => refreshDev().catch(() => {}), 3000); // tabs come and go
+  devTimer.unref();
+
+  async function doShare(hostname, port) {
+    const d = await devShare.share(hostname, port);
+    refreshDev().catch(() => {});
+    return [`Shared the dev server localhost:${port} with the people in this session (at most ${DEV_PORTS_MAX} at once).`,
+      `Your tabs on localhost:${port} now show up in joiners' browsers, at ${d.origin} (a free Cloudflare Quick Tunnel). It opens only in their PairBrowse, with a key of their own; anyone else gets nothing.`,
+      "Watch joiners can look and get hot reloads; drive joiners can also click, submit and sign in there. Their requests reach your dev server as they are, each signed in as themselves.",
+      "Addresses the app has built in (an API at http://localhost:...) point at their own computer: relative URLs work.",
+      `Stop it with pairbrowse_invite unshare_port (port ${port}), or Stop in the side panel; it also ends with the last join code.`,
+      ...(invites.list().some((i) => i.share === "code") ? [] : ["No join code is out yet: make one with pairbrowse_invite create (share \"code\")."])].join("\n");
+  }
+
+  // The owner's answer to an agent's question (from the side panel): shared or not, and the agent
+  // hears it (in its waiting call, or its next result).
+  async function answerAsk(id, allow) {
+    const a = devAsks.get(String(id));
+    if (!a) return { error: "That question was already answered." };
+    devAsks.delete(a.id);
+    let result;
+    if (allow) {
+      try { result = { text: await doShare(a.hostname, a.port) }; } catch (e) { result = { text: `Couldn't share localhost:${a.port}: ${e?.message || e}. Nothing was shared.`, error: true }; }
+    } else result = { text: `The user said no: localhost:${a.port} stays private. Don't ask again unless they bring it up.`, error: true };
+    if (!a.settle(result)) hostNote(allow ? `The user shared localhost:${a.port}. ${result.text}` : `The user said no to sharing localhost:${a.port}.`);
+    refreshDev().catch(() => {});
+    return { ok: true };
+  }
+
+  // The side panel's buttons: answer a question, Share an open dev server, Stop a shared one.
+  const devPanel = {
+    async act(op) {
+      if (op.op === "answer") return answerAsk(op.id, op.allow === true);
+      const port = Number(op.port);
+      if (!validPort(port)) return { error: "No such port." };
+      if (op.op === "unshare") { devShare.unshare(port); refreshDev().catch(() => {}); return { ok: true }; }
+      if (op.op !== "share") return { error: "Unknown request." };
+      try { await doShare("localhost", port); return { ok: true }; } catch (e) { return { error: e?.message || String(e) }; }
+    },
+  };
+
+  // pairbrowse_invite share_port (from an agent): a question in the owner's side panel; shared
+  // only when they say yes there. Waits for the answer a while. who: the asking app.
+  async function sharePort(args, who = "An agent") {
+    const fail = (text) => ({ text, error: true });
+    const current = devAddress(view.currentUrl?.() || "");
+    const port = args.port === undefined ? current?.port : Number(args.port);
+    if (!validPort(port)) return fail("Which port? Give the dev server's port (for example 3000), or open it in the current tab first.");
+    if (devShare.list().some((d) => d.port === port)) return { text: `localhost:${port} is already shared.` };
+    if ([...devAsks.values()].some((a) => a.port === port)) return { text: `The user was already asked to share localhost:${port}; they answer in the PairBrowse side panel.` };
+    const hostname = current && current.port === port ? current.hostname : "localhost";
+    await ensureLiveView();
+    const id = randomBytes(4).toString("hex");
+    let settled = false;
+    const answer = new Promise((resolve) => devAsks.set(id, { id, port, hostname, who, settle: (r) => { if (settled) return false; settled = true; resolve(r); return true; } }));
+    notify(`${who} wants to share localhost:${port} with the people in your session. Answer Yes or No in the PairBrowse side panel.`);
+    refreshDev().catch(() => {});
+    const timer = new Promise((resolve) => setTimeout(() => resolve(null), ASK_WAIT_MS).unref());
+    const r = await Promise.race([answer, timer]);
+    if (r) return r;
+    settled = true; // later answers come as a note in a later result
+    return { text: `Asked the user to share localhost:${port} (Yes / No in the PairBrowse side panel). Not shared yet; you'll hear their answer in a later result.` };
+  }
+
+  // On shutdown: the join tunnel and every shared dev server.
+  const stopAll = () => { stopTunnel(); devShare.stopAll(); clearInterval(devTimer); };
+  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, inviteCommand, stopTunnel: stopAll, devPanel };
 }

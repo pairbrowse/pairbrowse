@@ -89,6 +89,12 @@ test("deleting a browser session asks first", () => {
   assert.equal(run("pairbrowse_session", { action: "use", name: "replybay" }), "allow");
 });
 
+test("sharing a dev server: the question goes to the side panel, not a prompt here", () => {
+  // share_port only asks the user (Yes / No in the side panel); their click there shares it.
+  assert.equal(run("pairbrowse_invite", { action: "share_port", port: 3000 }), "allow");
+  assert.equal(run("pairbrowse_invite", { action: "unshare_port", port: 3000 }), "allow");
+});
+
 test("drive invite links ask; watch links, list and revoke don't", () => {
   assert.equal(run("pairbrowse_invite", { action: "create", role: "drive", label: "Bob" }), "ask");
   assert.equal(run("pairbrowse_invite", { action: "create", label: "Bob" }), "ask", "no role: asks rather than guesses");

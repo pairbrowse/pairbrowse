@@ -81,6 +81,44 @@ export function joinBanners(container, base) {
   };
 }
 
+// Dev servers (the helper's devshare): an agent's question to share one (Yes / No) in asks, and
+// in list the localhost dev servers open in tabs (Share) and those shared (Stop), for the people
+// in the session. Only real clicks answer. section: shown when there is something to show.
+export function devPanel(asks, list, section, base) {
+  const send = (body, buttons) => {
+    if (!base()) return;
+    for (const b of buttons) b.disabled = true;
+    postJson(base() + "dev", body).catch(() => {}).finally(() => { for (const b of buttons) b.disabled = false; });
+  };
+  const real = (fn) => (ev) => { if (ev.isTrusted && ev.detail > 0) fn(); };
+  return function draw(state) {
+    const s = state && typeof state === "object" ? state : {};
+    asks.replaceChildren(...(Array.isArray(s.asks) ? s.asks : []).map((a) => {
+      const yes = el("button", { className: "primary", type: "button", textContent: "Yes" });
+      const no = el("button", { className: "mini", type: "button", textContent: "No" });
+      const text = `${a.who || "An agent"} wants to share localhost:${Number(a.port)} with the people in your session`;
+      yes.addEventListener("click", real(() => send({ op: "answer", id: a.id, allow: true }, [yes, no])));
+      no.addEventListener("click", (ev) => { if (ev.isTrusted) send({ op: "answer", id: a.id, allow: false }, [yes, no]); });
+      return el("div", { className: "join" }, el("strong", { textContent: text, title: text }), el("span", {}, yes, no));
+    }));
+    const rows = [
+      ...(Array.isArray(s.shared) ? s.shared : []).map((d) => {
+        const stop = el("button", { className: "mini", type: "button", textContent: "Stop" });
+        stop.addEventListener("click", real(() => send({ op: "unshare", port: d.port }, [stop])));
+        return el("li", { className: "dev" }, el("span", { textContent: `localhost:${Number(d.port)} · shared` }), stop);
+      }),
+      ...(Array.isArray(s.open) ? s.open : []).map((d) => {
+        const share = el("button", { className: "mini", type: "button", textContent: "Share" });
+        share.addEventListener("click", real(() => send({ op: "share", port: d.port }, [share])));
+        const name = `localhost:${Number(d.port)}${d.title ? ` · ${d.title}` : ""}`;
+        return el("li", { className: "dev" }, el("span", { textContent: name, title: name }), share);
+      }),
+    ];
+    list.replaceChildren(...rows);
+    section.hidden = !rows.length || (!s.joiners && !(s.shared || []).length);
+  };
+}
+
 // The Profile panel: remembered details and passwords, in the page's #details, #secrets,
 // #add-detail, #add-secret and #profile-msg. base(): the live view address (null: not yet).
 export function profilePanel(base) {

@@ -35,7 +35,7 @@ const JOINER_NAV_MS = 15_000; // a joiner's change: until the host's tab starts 
 const ACTIVITY_MAX = 30;
 const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
-const OWNER_ONLY = new Set(["profile", "join", "board"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev"]); // events only the owner's streams get
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
 // readForm(page): { url, fields } as they may cross, or null. applyForm(page, fields, who).
 // onJoinerAgent(page, who, color, left, from, where): a drive joiner's agent works in their copy
@@ -86,7 +86,7 @@ async function release(cdp) {
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null, picker = null }) {
+  onPause = () => ({}), pauseState = () => null, picker = null, devShare = null, devPanel = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -96,6 +96,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   const joiners = new Map(); // `${inviteId}:${joinerId}` -> { invite, joinerId, name, app, seen, inflight, ops }
   let shown = null; // the tab on screen: { page, cdp }
   let lastFrame = null;
+  let devState = null; // dev servers, for the owner's side panel
   let status = { text: "", kind: "clear" };
   let sessionInfo = { name: "", where: "" };
   let followed; // URL of the tab Claude is working in
@@ -180,14 +181,20 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       return { id: idOf(p), url: p.url(), title: await p.title().catch(() => ""), agent: agent?.label || "", color: agent?.color || "", left, person: meta.sharedPerson?.who || "", acting: !!meta.sharedPerson?.acting, did: meta.did || [] };
     }));
     const people = [...collaboration.participants.map((x) => x?.label || ""), ...guests().map((g) => g.label)].filter((x) => x && x !== personLabel(j.name, j.app));
-    return stateForJoiner({ tabs, activity, people }, { drive: j.invite.role === "drive", secretDomains: secretDomains(), name: j.name, from: joinerKey(j) });
+    const state = stateForJoiner({ tabs, activity, people }, { drive: j.invite.role === "drive", secretDomains: secretDomains(), name: j.name, from: joinerKey(j), mapUrl: devUrl });
+    // Shared dev servers (devshare.mjs): their addresses and this joiner's own token for them.
+    const dev = devShare?.forJoiner(joinerKey(j), j.invite.role) || [];
+    return dev.length ? { ...state, dev } : state;
   }
 
   // A drive joiner's changes in the shared tabs: opened, moved to another address, closed, as if
   // by hand (presence pauses agents in that tab). Only addresses that may cross (never the host's
   // local network); ids the joiner can know.
   const joinerKey = (j) => `${j.invite.id}:${j.joinerId}`;
-  const push = createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared, tabMeta, isIn: (key) => joiners.has(key), sessionFor: (j) => shared.sessionFor(j), log });
+  // A tab on a shared dev server, as its shared address (null: not one).
+  const devUrl = (url) => devShare?.toPublic(url) || null;
+  devShare?.members((key) => joiners.has(key));
+  const push = createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared, tabMeta, isIn: (key) => joiners.has(key), sessionFor: (j) => shared.sessionFor(j), mapUrl: devUrl, log });
   // Tabs opening, closing and going elsewhere reach joiners at once, not on the next round
   // (watched from the first joiner's stream on).
   let pagesWatched = false;
@@ -221,7 +228,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
         if (o.op === "agent") { shared.onJoinerAgent(page, o.who, o.color, o.left, joinerKey(j), cleanName(j.name)); continue; }
         if (o.op === "form") {
           // Only on the same page; the host's own form reading then carries it to other joiners.
-          const here = shareableUrl(page.url());
+          const here = shareableUrl(devUrl(page.url()) || page.url());
           // was: the value both sides last had, so a card typed over it there clears it here.
           const fields = o.fields.map((x) => (x.m && x.filled ? { ...x, was: push.sharedValue(page, x.f, x.k) } : x));
           if (here === o.url && !onSecretDomain(page.url(), secretDomains())) await shared.applyForm(page, fields, cleanName(j.name));
@@ -235,7 +242,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
           continue;
         }
         if (o.op === "open") opened[o.ref] = idOf(page);
-        await page.goto(o.url, { waitUntil: "commit", timeout: JOINER_NAV_MS }).catch((e) => log("joiner tab", e?.message || e));
+        // A shared dev server's address goes back to the dev server's own here.
+        await page.goto(devShare?.toLocal(o.url) || o.url, { waitUntil: "commit", timeout: JOINER_NAV_MS }).catch((e) => log("joiner tab", e?.message || e));
       }
     });
     return { ok: true, opened };
@@ -399,6 +407,15 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       const done = op.allow === true ? approvals.approve(op.id) : approvals.deny(op.id);
       json(res, done ? 200 : 404, { ok: !!done, request: done });
     } },
+    // Dev servers (devshare.mjs), for the owner only: what's open on localhost and shared, an
+    // agent's question to share one; and the owner's answer, Share or Stop (a real click).
+    { method: "POST", path: "dev", right: "approve", handler: async ({ req, res }) => {
+      if (!devPanel) return plain(res, 404);
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const r = await devPanel.act(JSON.parse(body) || {});
+      json(res, r.error ? 409 : 200, r);
+    } },
     // The Profile panel: remembered details in full, passwords by name and sites only.
     { method: "GET", path: "profile.json", right: "profile", handler: ({ res }) => profile ? json(res, 200, profile.get()) : plain(res, 404) },
     { method: "POST", path: "profile", right: "profile", handler: changeProfile },
@@ -448,6 +465,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     res.write(sse("collaboration", collaborationNow()));
     res.write(sse("activity", invite ? guestActivity(activity) : activity));
     if (!invite) res.write(sse("join", approvals.pending()));
+    if (!invite && devState) res.write(sse("dev", devState));
     if (!invite && board) res.write(sse("board", board));
     const paused = pauseState();
     if (paused) res.write(sse("pause", paused));
@@ -539,6 +557,11 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     setStatus(next) {
       status = { text: String(next.text || "").slice(0, 140), kind: next.kind || "clear" };
       broadcast("status", status);
+    },
+    // Dev servers for the owner's side panel (devshare.mjs): { asks, shared, open }.
+    setDev(state) {
+      devState = state;
+      broadcast("dev", state);
     },
     // Which browser session is shown, and where it runs (Local or Server).
     setSession(info) {

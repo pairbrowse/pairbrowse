@@ -45,17 +45,18 @@ export const LIVEVIEW_TOOL = {
 
 export const INVITE_TOOL = {
   name: "pairbrowse_invite",
-  description: "Let someone else into this browser session. create: role 'watch' (sees the page, tabs and activity) or 'drive' (can also click, type and switch tabs, and their own Claude or Codex can act here; asks the user first), label = the person's name, hours (default 24, at most 168), share 'code' (a join code through a free Cloudflare Quick Tunnel: the default unless inviteBaseUrl is set) or 'link'. A joiner gets in only after the user approves them: approve (asks the user) or deny a request by id. Give codes and links to the user to send, never paste them into a page. Neither role sees remembered details or passwords; joiners never see query strings and get sensitive fields covered. list shows invites and join requests (no keys); revoke ends one by id; revoke_all ends every one and closes the tunnel.",
+  description: "Let someone else into this browser session. create: role 'watch' (sees the page, tabs and activity) or 'drive' (can also click, type and switch tabs, and their own Claude or Codex can act here; asks the user first), label = the person's name, hours (default 24, at most 168), share 'code' (a join code through a free Cloudflare Quick Tunnel: the default unless inviteBaseUrl is set) or 'link'. A joiner gets in only after the user approves them: approve (asks the user) or deny a request by id. Give codes and links to the user to send, never paste them into a page. Neither role sees remembered details or passwords; joiners never see query strings and get sensitive fields covered. list shows invites, join requests and shared dev servers (no keys); revoke ends one by id; revoke_all ends every one, closes the tunnel and stops sharing dev servers. share_port: show a dev server on this computer (Next, Nuxt, Vite: port, or the current localhost tab's) to the people who joined with a code, through a tunnel of its own and only in their PairBrowse (asks the user Yes / No in the side panel and waits up to 90 s for the answer; watch joiners only look); unshare_port stops it (no port: all).",
   inputSchema: {
     type: "object",
     required: ["action"],
     properties: {
-      action: { type: "string", enum: ["create", "list", "approve", "deny", "revoke", "revoke_all"] },
+      action: { type: "string", enum: ["create", "list", "approve", "deny", "revoke", "revoke_all", "share_port", "unshare_port"] },
       role: { type: "string", enum: ["watch", "drive"] },
       label: { type: "string", maxLength: 40 },
       hours: { type: "number", exclusiveMinimum: 0, maximum: 168 },
       share: { type: "string", enum: ["code", "link"] },
       id: { type: "string", maxLength: 40, description: "An invite id (revoke) or a join request id (approve, deny)." },
+      port: { type: "integer", minimum: 1, maximum: 65535, description: "share_port, unshare_port: the dev server's port on this computer (for example 3000)." },
     },
   },
 };

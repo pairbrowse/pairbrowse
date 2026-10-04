@@ -104,7 +104,8 @@ What crosses, and what doesn't:
   tab, 1,000 characters per value and 6 frames.
 - Sites where the sender keeps saved passwords cross as origin and path only, with no title,
   activity, field values or pointers. `file:`, `chrome:`, `data:`, `javascript:`, `user:pass@`,
-  localhost and local-network addresses never cross, in either direction.
+  localhost and local-network addresses never cross, in either direction (a dev server you share
+  crosses under its own address: see [Share your dev server](#share-your-dev-server)).
 - **Agents show as sparks:** the other side's agents carry their spark, in their color, on the
   tab they work in (a drive joiner's agents too, on the host).
 - **Live pointers:** in your copy of a shared tab you see the other people's and agents' mouse
@@ -229,3 +230,32 @@ only watch or co-drive in the live view, use an [invite link](#invite-someone-to
 Collaborators share browser credentials and details; SSH access is broader than browser-only
 access. Claude permissions and pre-submit reviews still apply in each client's
 plugin. Never share Claude account credentials or publish the live-view key.
+
+## Share your dev server
+
+Working on a Next, Nuxt or Vite app at `localhost:3000`? Join codes never carry `localhost`
+addresses (your joiner's browser would open their own computer's), so share the dev server
+itself: click **Share** next to it under **Dev servers** in the side panel (it lists the
+localhost dev servers open in your tabs while a join code is out), or ask Claude or Codex "share my
+dev server with Sam" (`pairbrowse_invite` `share_port`, with the port or the localhost tab you're
+on). An agent can only ask: "Codex wants to share localhost:3000" shows in the side panel with
+**Yes** and **No**, with a notification, and only your Yes shares it.
+
+- It gets an address of its own (a Cloudflare Quick Tunnel to a small proxy on your computer,
+  never straight to the dev server), and your `localhost:3000` tabs show up in joiners' browsers
+  there, following you like any shared tab. A drive joiner's clicks there come back to your
+  `localhost` tab.
+- Only joiners you let in get through, each with a key of their own that their PairBrowse sets
+  in its browser (an HttpOnly cookie, never in an address); anyone else with the address gets
+  nothing. Someone who leaves or whose invite ends loses it at once.
+- Watch joiners can look around and get hot reloads; they can't send forms or change anything
+  (only GET, HEAD and OPTIONS requests, and WebSockets for hot reload). Drive joiners can use it
+  fully: what they do reaches your dev server, each of them signed in as themselves.
+- Your dev server sees visits from `localhost` (the Host, Origin and Referer it expects), so its
+  host checks (Vite's and Nuxt's `allowedHosts`, Next's `allowedDevOrigins`) pass without changing
+  your config. Redirects and cookies it sends come back for the shared address.
+- Addresses built into your app (an API at `http://localhost:4000`) point at the joiner's own
+  computer: use relative URLs, or share that port too. At most 3 dev servers at once.
+- **Stop** in the side panel (or "stop sharing my dev server", `unshare_port`) ends it; so do the
+  last join code ending, `revoke_all`, and stopping PairBrowse.
+

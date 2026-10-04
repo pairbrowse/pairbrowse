@@ -67,16 +67,17 @@ export const onSecretDomain = (raw, secretDomains = []) => {
   try { const host = new URL(String(raw)).hostname.toLowerCase(); return secretDomains.some((d) => d && (host === d || host.endsWith(`.${d}`))); } catch { return false; }
 };
 
-// The host's side: what one joiner gets. tabs: [{ id, url, title, agent, left, person, did }] in
+// The host's side: what one joiner gets. mapUrl(url): a tab's shared dev server address
+// (devshare.mjs) for its localhost one, else null. tabs: [{ id, url, title, agent, left, person, did }] in
 // order (agent: the agent's label holding it; left: ms its turn there still holds; person: who uses it by hand right now; did: [{ n, who,
 // line }], what people did there: field and button names, never values). activity: [{ t, text,
 // who, tabId, from }]; people: who is in the session (labels). Nothing about a tab that doesn't
 // cross; on secretDomains, nothing but the address; and nothing that came from this joiner.
-export function stateForJoiner({ tabs = [], activity = [], people = [] }, { drive = false, secretDomains = [], name = "", from = "" } = {}) {
+export function stateForJoiner({ tabs = [], activity = [], people = [] }, { drive = false, secretDomains = [], name = "", from = "", mapUrl = () => null } = {}) {
   const out = [];
   const quiet = new Set(); // tabs that cross as addresses only
   for (const t of tabs) {
-    const url = shareableUrl(t.url, { full: drive, secretDomains });
+    const url = shareableUrl(mapUrl(t.url) || t.url, { full: drive, secretDomains });
     if (!url || out.length >= TABS_MAX) continue;
     if (onSecretDomain(t.url, secretDomains)) { quiet.add(t.id); out.push({ id: t.id, url }); continue; }
     const did = (Array.isArray(t.did) ? t.did : []).filter((e) => e.who !== name).slice(-10).map((e) => ({ n: Number(e.n) || 0, who: clean(e.who, 60), line: clean(e.line, 80) }));

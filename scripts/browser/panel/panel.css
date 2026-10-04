@@ -93,3 +93,8 @@ button { font: inherit; }
 .pause button[hidden] { display: none; }
 body[data-paused="true"] .pause { background: oklch(0.42 0.11 45); color: var(--ink); }
 body[data-paused="true"] .pause button { background: var(--spark); color: #fff; }
+
+.devs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.dev { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.dev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev button:disabled { opacity: 0.5; cursor: default; }

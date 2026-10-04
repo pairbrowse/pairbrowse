@@ -93,3 +93,13 @@ Chromium elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse
 
 Early development. Expect breaking changes while the helper, collaboration model and agent
 integrations evolve, and treat the security model as still maturing.
+
+## Star History
+
+<a href="https://www.star-history.com/#pairbrowse/pairbrowse&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=pairbrowse/pairbrowse&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=pairbrowse/pairbrowse&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=pairbrowse/pairbrowse&type=Date" />
+  </picture>
+</a>

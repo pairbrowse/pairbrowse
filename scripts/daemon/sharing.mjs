@@ -1,7 +1,8 @@
 // The live view and letting other people in: invite links, join codes through the sharing tunnel
 // (joiners get the shared tabs, tabsync.mjs), and the host's approvals.
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
-import { createApprovals, encodeJoinCode } from "../join.mjs";
+import { createApprovals, encodeJoinCode, cleanName } from "../join.mjs";
+import { savedName, saveParticipantName } from "../paths.mjs";
 import { startQuickTunnel } from "../tunnel.mjs";
 import { randomBytes } from "node:crypto";
 import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../devshare.mjs";
@@ -143,6 +144,10 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
       return stopped ? { text: `Stopped sharing localhost:${args.port}. Joiners' tabs on it stop loading.` } : fail(`localhost:${args.port} isn't shared. Use list to see what is.`);
     }
     if (action !== "create") return fail("Use create, list, approve, deny, revoke, revoke_all, share_port or unshare_port.");
+    // Your name, as joiners see it (in the join code): asked once, then remembered.
+    if (!cleanName(args.name, "") && !savedName(config)) return fail("Not yet: ask the user what name the people they invite should see (their first name, say), then call create again with name. It's remembered for next time.");
+    if (cleanName(args.name, "") && !savedName(config)) { try { saveParticipantName(config, cleanName(args.name)); } catch {} }
+    const hostName = cleanName(args.name, "") || savedName(config) || host;
     const share = args.share || (inviteBase ? "link" : "code");
     let invite;
     try { invite = invites.create({ role: args.role, label: args.label, hours: args.hours, share }); } catch (e) { return fail(e.message); }
@@ -162,7 +167,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
         invites.revoke(invite.id);
         return fail(`Couldn't open the sharing tunnel: ${e?.message || e}. Nothing was shared. Retry, or use share "link" with an SSH tunnel.`);
       }
-      lines.push(`Join code: ${encodeJoinCode({ url: t.url, key: invite.key, role: invite.role, label: host === "The host" ? "" : host })}`);
+      lines.push(`Join code: ${encodeJoinCode({ url: t.url, key: invite.key, role: invite.role, label: hostName === "The host" ? "" : hostName })}`);
       lines.push(`The person pastes it into their own PairBrowse ("join this session: <code>"). You approve them when they ask: "${invite.label} wants to join" shows in the live view (Allow / Deny), and here.` +
         " It uses a free Cloudflare Quick Tunnel (no account, no uptime guarantee); the code stops working if the browser restarts.");
     } else if (inviteBase) {

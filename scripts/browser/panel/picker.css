@@ -100,3 +100,6 @@ body[data-s="connecting"] .msg:empty { display: block; }
 body[data-s="connecting"] .msg:empty::before { content: "Connecting to PairBrowse..."; }
 body[data-s="picking"] .choices { opacity: 0.55; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+#join-form { flex-wrap: wrap; }
+#join-form #code { flex: 2 1 220px; }
+#join-form #join-name { flex: 1 1 160px; }

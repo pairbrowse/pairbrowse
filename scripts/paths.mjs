@@ -1,7 +1,7 @@
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { readFileSync, mkdirSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 
 // Everything PairBrowse writes is private to your user account.
 process.umask(0o077);
@@ -73,6 +73,17 @@ export function loadConfig() {
   } catch {
     return { ...DEFAULT_CONFIG };
   }
+}
+
+// The name people in a shared session see for this person: set in config (participantName) or
+// PAIRBROWSE_PARTICIPANT, else none yet (then it's asked once, and saved with saveParticipantName).
+export const savedName = (config) => String(config?.participantName || process.env.PAIRBROWSE_PARTICIPANT || "").trim();
+export function saveParticipantName(config, name) {
+  config.participantName = name;
+  let file = {};
+  try { file = JSON.parse(readFileSync(paths.config, "utf8")); } catch {}
+  mkdirSync(paths.home, { recursive: true });
+  writeFileSync(paths.config, JSON.stringify({ ...file, participantName: name }, null, 2) + "\n");
 }
 
 export function ensureDirs() {

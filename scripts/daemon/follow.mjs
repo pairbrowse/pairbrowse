@@ -10,6 +10,7 @@ import { startJoin } from "../relay.mjs";
 import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
 import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../devshare.mjs";
+import { savedName, saveParticipantName } from "../paths.mjs";
 import { sleep, currentAccount } from "../util.mjs";
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
@@ -350,6 +351,9 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     } catch (e) {
       return { text: `Not joining: ${e.message}`, error: true };
     }
+    // Your name, as the host sees it: asked once (the agent asks the user), then remembered.
+    if (!cleanName(name, "") && !savedName(config)) return { text: "Not joining yet: ask the user what name the host should see (their first name, say), then call join again with name. It's remembered for next time.", error: true, needsName: true };
+    if (cleanName(name, "") && !savedName(config)) { try { saveParticipantName(config, cleanName(name)); } catch {} }
     await stop();
     // The name given at join wins; then the same default the host's side uses.
     const who = cleanName(name, "") || displayName({ configured: config.participantName, env: process.env.PAIRBROWSE_PARTICIPANT, ...currentAccount() }) || cleanName(name);

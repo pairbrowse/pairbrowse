@@ -55,6 +55,7 @@ export const INVITE_TOOL = {
       label: { type: "string", maxLength: 40 },
       hours: { type: "number", exclusiveMinimum: 0, maximum: 168 },
       share: { type: "string", enum: ["code", "link"] },
+      name: { type: "string", maxLength: 40, description: "create: the user's own name as joiners see it (asked once when none is saved, then remembered)." },
       id: { type: "string", maxLength: 40, description: "An invite id (revoke) or a join request id (approve, deny)." },
       port: { type: "integer", minimum: 1, maximum: 65535, description: "share_port, unshare_port: the dev server's port on this computer (for example 3000)." },
     },
@@ -70,7 +71,7 @@ export const JOIN_TOOL = {
     properties: {
       action: { type: "string", enum: ["join", "status", "leave"] },
       code: { type: "string", maxLength: 2000 },
-      name: { type: "string", maxLength: 40, description: "The user's name as the host sees it." },
+      name: { type: "string", maxLength: 40, description: "The user's name as the host sees it (asked once when none is saved, then remembered)." },
     },
   },
 };

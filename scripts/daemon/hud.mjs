@@ -111,16 +111,17 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     pages().then((all) => all.forEach(applyBar)).catch(() => {});
   }
 
-  function pointAt(page, box, act) {
-    if (box) return quietly(page, JSON.stringify({ x: box.x + Math.min(box.width / 2, 24), y: box.y + box.height / 2, act }), "cursor");
+  // who: the agent's name, shown on its cursor in its spark color (like people's pointers).
+  function pointAt(page, box, act, who = "") {
+    if (box) return quietly(page, JSON.stringify({ x: box.x + Math.min(box.width / 2, 24), y: box.y + box.height / 2, act, who: who || "Claude", color: sparkOwner(page)?.color || "" }), "cursor");
   }
   // Moves the cursor to an element (fast mode). Returns a promise: most steps go on without it.
-  function cursorTo(page, el, act) {
-    return within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)).then((box) => pointAt(page, box, act)).catch(() => {});
+  function cursorTo(page, el, act, who = "") {
+    return within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)).then((box) => pointAt(page, box, act, who)).catch(() => {});
   }
   // Before a browser tool acts on an element: a snapshot ref, or a selector (the same one the tool
   // uses). pageFor(): the tab it acts in (null: none).
-  async function showCursor(tool, args, pageFor) {
+  async function showCursor(tool, args, pageFor, who = "") {
     const act = CURSOR_TOOLS[tool];
     const target = args?.target || args?.fields?.[0]?.target;
     if (!act || typeof target !== "string" || !target) return;
@@ -128,7 +129,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (!page) return;
     let el;
     try { el = page.locator(isRef(target) ? `aria-ref=${target}` : target).first(); } catch { return; }
-    await pointAt(page, await within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)), act);
+    await pointAt(page, await within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)), act, who);
   }
 
   // Each page as it loads: the script, then the badge, spark and bar.

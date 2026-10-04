@@ -329,7 +329,8 @@
   // Claude's cursor: glides to where Claude clicks or types, rings on a click, fades when idle.
   let curHost, cur, curTimer;
   let agentPtr = null; // where it last pointed, in document coordinates
-  function pointer(x, y, act) {
+  // who, color: the agent's name on a tag in its color (people see whose cursor it is).
+  function pointer(x, y, act, who = "Claude", color = "") {
     if (!curHost || !curHost.isConnected) {
       curHost = document.createElement(TAG_CURSOR);
       const shadow = curHost.attachShadow({ mode: "closed" });
@@ -341,11 +342,16 @@
         .r{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(27,30,60,.5);opacity:0}
         .c.click .r{animation:p .45s ease-out}
         @keyframes p{from{opacity:.9;transform:scale(.4)}to{opacity:0;transform:scale(1.4)}}
-      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="0 0 24 24"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#1b1e3c" stroke-width="1.6" stroke-linejoin="round"/></svg></div>`);
+        span{position:absolute;left:16px;top:18px;padding:2px 8px;border-radius:999px;font:600 11px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+          color:#fff;background:#e9763f;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);-webkit-font-smoothing:antialiased}
+      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="0 0 24 24"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#1b1e3c" stroke-width="1.6" stroke-linejoin="round"/></svg><span></span></div>`);
       cur = shadow.querySelector(".c");
       document.documentElement.appendChild(curHost);
     }
     cur.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    const tag = cur.querySelector("span");
+    tag.textContent = String(who || "Claude").slice(0, 40);
+    tag.style.background = /^#[0-9a-f]{6}$/i.test(color) ? color : "#e9763f";
     cur.classList.add("on");
     cur.classList.remove("click");
     if (act === "click") { void cur.offsetWidth; cur.classList.add("click"); }
@@ -473,7 +479,7 @@
     if (kind === "cursor") {
       try {
         const c = JSON.parse(text);
-        pointer(Number(c.x) || 0, Number(c.y) || 0, String(c.act || ""));
+        pointer(Number(c.x) || 0, Number(c.y) || 0, String(c.act || ""), String(c.who || "Claude"), String(c.color || ""));
         agentPtr = { x: Math.round((Number(c.x) || 0) + scrollX), y: Math.round((Number(c.y) || 0) + scrollY), t: now() };
         agentAt = now(); // the scrolling an agent's action causes isn't the person's
 

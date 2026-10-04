@@ -477,7 +477,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         owner: (el) => ownerOf(el, hud.key, { host, byAgent: presence.typedByAgent }),
         status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); },
         activity: (text) => hud.addActivity(text, myLabel(), page),
-        cursor: (el, act) => hud.cursorTo(page, el, act),
+        cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
         remember: facts.seenInForm,
       });
       const saving = result.ok && args.saveAs && !args.playbook;
@@ -604,7 +604,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         shown = { ...args, fields: await Promise.all(args.fields.map(async (f) => (await sensitiveTarget(page, f.target) ? { ...f, value: "••••" } : f))) };
       }
       hud.addActivity(describe(name, shown), myLabel(), actingIn);
-      await hud.showCursor(name, args, () => context.pageAt(context.currentUrl())).catch(() => {});
+      await hud.showCursor(name, args, () => context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
       calls.set(msg.id, name);
       if (name === "browser_tabs") tabActions.set(msg.id, args.action);
       transport.onmessage?.(msg);

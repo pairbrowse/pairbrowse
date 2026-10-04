@@ -164,7 +164,11 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
     if (action === "approve" || action === "deny") {
       const done = action === "approve" ? approvals.approve(args.id) : approvals.deny(args.id);
       if (!done) return fail(`No join request ${args.id}${action === "approve" ? " waiting (or it was turned away)" : ""}. Use list to see them.`);
-      return { text: action === "approve" ? `Let ${done.name} in (${done.role}). Their own PairBrowse browser opens your tabs now${done.role === "drive" ? " (and their changes in them come back here)" : ""}; revoke the invite to end it.` : `Turned ${done.name} away. They can't use that code again.` };
+      const shared = invites.list().find((i) => i.id === done.inviteId)?.mode === "shared";
+      const opens = shared
+        ? `They now see your tabs live in their PairBrowse${done.role === "drive" ? " and can click, type and scroll in them, here in this browser" : ""}`
+        : `Their own PairBrowse browser opens your tabs now${done.role === "drive" ? " (and their changes in them come back here)" : ""}`;
+      return { text: action === "approve" ? `Let ${done.name} in (${done.role}${shared ? ", shared browser" : ""}). ${opens}; revoke the invite to end it.` : `Turned ${done.name} away. They can't use that code again.` };
     }
     if (action === "revoke") {
       return invites.revoke(args.id) ? { text: `Revoked ${args.id}. Anyone using it lost the session at once.` } : fail(`No invite ${args.id}. Use list to see them.`);

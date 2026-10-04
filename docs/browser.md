@@ -119,13 +119,14 @@ version or hardware changes); time zone and language follow your system; and Web
 doesn't reveal your local addresses by default. The goal is that sites see a normal browser, not
 to get around a site's security (see [Intended use](../README.md#intended-use)).
 
-**Human-like input (optional, native browser).** Off by default, so actions stay deterministic
-for testing. Turn it on and moving, clicking, dragging, scrolling and typing follow one human
-input style: eased, slightly curved mouse paths and key-by-key typing with human timing, all as
-native trusted input:
+**Human-like input (native browser).** On by default: an agent's single clicks, drags and typing
+follow one human input style (eased, slightly curved mouse paths and key-by-key typing with human
+timing, all as native trusted input), and `pairbrowse_scroll` glides the page with the cursor on
+it. Fast mode (`pairbrowse_run`) is just fast: it skips both. To turn it off (deterministic
+actions, for testing):
 
 ```json
-{ "pairbrowse": { "humanize": true } }
+{ "pairbrowse": { "humanize": false } }
 ```
 
 For a fully open-source setup, set `"browserEngine": "chromium"` in `~/.pairbrowse/config.json`:

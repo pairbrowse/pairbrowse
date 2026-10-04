@@ -32,7 +32,19 @@ test("scroll step: smooth, with the agent's cursor, never taken for a person", {
     const after = await page.evaluate(() => scrollY);
     assert.ok(after > 400 && after < 700, `about a screen down (${after})`);
     assert.deepEqual(said, ["Scrolled down"]);
+    said.length = 0;
     assert.ok(await page.evaluate((tag) => document.querySelectorAll(tag).length, tags.cursor) >= 1, "the cursor shows");
+    // The pairbrowse_scroll way: smooth, and the engine's human-like input stays as it was.
+    page._pairbrowseHumanized = true;
+    let during = null;
+    const smooth = await runSteps(page, [{ scroll: -200 }], { ...hooks, smooth: true, cursor: async (el, act) => { during = page._pairbrowseHumanized; await hooks.cursor(el, act); } });
+    assert.ok(smooth.ok !== false, JSON.stringify(smooth));
+    assert.equal(during, true, "a single scroll keeps human-like input");
+    assert.ok(Math.abs(await page.evaluate(() => scrollY) - (after - 200)) <= 2, "200 px back up");
+    // Fast mode: human-like input off for the run, back on after.
+    await runSteps(page, [{ scroll: 100 }], { ...hooks, cursor: async (el, act) => { during = page._pairbrowseHumanized; await hooks.cursor(el, act); } });
+    assert.equal(during, false, "fast mode skips it");
+    assert.equal(page._pairbrowseHumanized, true, "and puts it back");
     const user = await page.evaluate(([n, t]) => window[n](t, "", "user"), [name, token]);
     assert.ok(!user.some((e) => e.kind === "wheel"), `the agent's wheel isn't a person's: ${JSON.stringify(user)}`);
   } finally {

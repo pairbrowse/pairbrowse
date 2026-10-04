@@ -12,7 +12,7 @@ const MAX_LINES = 130;
 // Tools the PairBrowse plugin offers Claude: its own tools and the pinned @playwright/mcp tools it
 // passes through (policy.mjs hides and blocks the rest).
 const PAIRBROWSE_TOOLS = [
-  "pairbrowse_run", "pairbrowse_upload", "pairbrowse_click_at", "pairbrowse_status", "pairbrowse_facts",
+  "pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_click_at", "pairbrowse_status", "pairbrowse_facts",
   "pairbrowse_session", "pairbrowse_liveview", "pairbrowse_dock", "pairbrowse_collaboration",
   "pairbrowse_invite", "pairbrowse_join",
 ];

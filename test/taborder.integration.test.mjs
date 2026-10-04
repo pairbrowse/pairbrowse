@@ -60,7 +60,8 @@ test("tab order follows in a shared session: a move on the host reaches the join
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
     const socketPath = join(h, "run", "browser.sock");
-    for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
+    // A busy machine (the whole suite at once) can take a while to start the helper.
+    for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
     const sock = net.createConnection(socketPath);
     await new Promise((ok, no) => { sock.once("connect", ok); sock.once("error", no); });
     const call = rpc((l) => sock.write(l), sock);

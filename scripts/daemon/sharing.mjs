@@ -74,7 +74,7 @@ export function createSharing({ config, log, host, view, notify, hostNote }) {
       onHumanInput: view.onHumanInput,
       tunnelHost: () => (tunnel ? new URL(tunnel.url).hostname : null),
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
-      onPause: view.onPause, pauseState: view.pauseState,
+      onPause: view.onPause, pauseState: view.pauseState, picker: view.picker,
     });
     // Keep the sharing tunnel's port when the live view restarts with the browser.
     guestPortWanted = liveView.guestPort;
@@ -163,5 +163,5 @@ export function createSharing({ config, log, host, view, notify, hostNote }) {
     return { text: lines.join("\n") };
   }
 
-  return { liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, inviteCommand, stopTunnel };
+  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, inviteCommand, stopTunnel };
 }

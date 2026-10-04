@@ -21,8 +21,8 @@ PairBrowse plugin (MCP servers `browser` and `runs`). Use only PairBrowse's tool
 
 ## 1. Before the first page
 
-1. `pairbrowse_session` with `action: "list"`; ask which session (or a clean one) unless the
-   user already said, then `use` it or `new` with `clean: true`.
+1. Session: if the user said one, `use` it or `new` with `clean: true`. Otherwise the browser's
+   session picker asks them and your first action waits (picker off: `list`, then ask).
 2. `run_list`: if an unfinished run matches, `run_get` it and continue from `left`. Otherwise
    `run_save` with a short `name` (for example `stripe-signup`) and the `goal`.
 3. `pairbrowse_facts` with `action: "get"`: the remembered details and the names of saved

@@ -4,12 +4,16 @@
 import { listRuns, summarize } from "./runs.mjs";
 import { readFileSync } from "node:fs";
 import { detectSurface, detectHost, surfaceGuidance, coreText } from "./surface.mjs";
+import { loadConfig } from "./paths.mjs";
 
 try {
   let input = {};
   try { input = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch {}
   const host = detectHost(input);
-  const parts = [coreText(host), surfaceGuidance(host === "codex" ? "terminal" : detectSurface(), host)];
+  const surface = host === "codex" ? "terminal" : detectSurface();
+  // The browser asks the person which session (its session picker) unless that's turned off.
+  const picker = loadConfig().sessionPicker !== false && surface !== "cloud";
+  const parts = [coreText(host, { picker }), surfaceGuidance(surface, host)];
   const open = listRuns().filter((r) => r.status !== "finished").slice(0, 5);
   if (open.length) {
     parts.push(

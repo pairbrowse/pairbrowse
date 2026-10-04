@@ -1,18 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
 const core = readFileSync(join(root, "scripts", "core.md"), "utf8");
 
-function sessionStart(transcript_path) {
+function sessionStart(transcript_path, { config = null, remote = "" } = {}) {
   const home = mkdtempSync(join(tmpdir(), "pb-core-"));
+  if (config) writeFileSync(join(home, "config.json"), JSON.stringify(config));
   const out = spawnSync(process.execPath, [join(root, "scripts", "session-start.mjs")], {
     input: JSON.stringify({ transcript_path }),
-    env: { ...process.env, PAIRBROWSE_HOME: home, CLAUDE_CODE_REMOTE: "", CLAUDE_CODE_ENTRYPOINT: "cli" },
+    env: { ...process.env, PAIRBROWSE_HOME: home, CLAUDE_CODE_REMOTE: remote, CLAUDE_CODE_ENTRYPOINT: "cli" },
     encoding: "utf8",
   });
   return JSON.parse(out.stdout).hookSpecificOutput.additionalContext;
@@ -32,6 +33,17 @@ test("session start adds the core for Claude Code and for Codex", () => {
   assert.doesNotMatch(claude, /In Codex those clicks/);
   assert.match(codex, /In Codex those clicks are refused/);
   assert.match(codex, /pairbrowse: Codex\./);
+});
+
+test("the browser asks which session unless the picker is off (or nobody sees it)", () => {
+  const picker = sessionStart("");
+  assert.match(picker, /the browser's first tab asks them/);
+  assert.match(picker, /pairbrowse_join/);
+  assert.doesNotMatch(picker, /pairbrowse_session list, then use/);
+  for (const text of [sessionStart("", { config: { sessionPicker: false } }), sessionStart("", { remote: "true" })]) {
+    assert.match(text, /Before the first browser action: pairbrowse_session list, then use the user's choice/);
+    assert.doesNotMatch(text, /first tab asks/);
+  }
 });
 
 test("the core stays compact", () => {

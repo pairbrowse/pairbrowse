@@ -123,6 +123,7 @@ const popups = createPopups({
 });
 const context = createContext({
   config, log, chromium, hud, presence, popups, hostNote,
+  liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
   onTabClosed: (page) => tabClaims.drop(page), // a closed tab's turn ends with it
   status: (badge) => liveView()?.setStatus(badge),
   shuttingDown: () => shuttingDown,
@@ -269,6 +270,7 @@ const sharing = createSharing({
       },
     },
     status: () => hud.badge(), session: () => context.sessionInfo(), collaboration: () => collaboration.state(),
+    picker: { state: () => context.pickerState(), pick: (op) => pickFromBrowser(op) },
   },
 });
 // Sessions joined from here: their tabs, followed in this browser.
@@ -282,6 +284,21 @@ const follow = createFollow({
   onLeft: () => pause.mirror({ paused: false, resumedBy: HOST }),
   onMessage: (data) => session.receive(readMessage(data)),
 });
+// Who used each session, for the session picker: joiners the host let in.
+sharing.approvals.onChange(() => {
+  for (const e of sharing.approvals.list()) if (e.state === "approved") context.recordPerson({ who: e.name, app: e.app, computer: e.computer, kind: "guest" });
+});
+// The person's pick in the session picker (the browser's first tab, see context.mjs). Joining
+// takes the same code checks as pairbrowse_join, and the host still has to let them in.
+async function pickFromBrowser(op) {
+  if (op?.action !== "join") return context.pickSession({ action: op?.action, name: op?.name });
+  if (!context.picking()) return { text: "A session is already chosen.", error: true };
+  const r = await follow.command({ action: "join", code: String(op.code || "").trim().slice(0, 4000) }, { owner: "picker", app: "PairBrowse" });
+  if (r.error) return r;
+  const asked = `${r.text.split(". Then")[0]}.`; // "Asked Bob to let Alice in (drive). They have to approve first."
+  context.pickedJoin(`The person joined a shared session from the browser's session picker: ${asked} Check with pairbrowse_join status.`);
+  return { text: asked };
+}
 // This side's agents, for the host of a session joined from here (when it changes, and every 10 s).
 let sentSession = { sig: "", at: 0 };
 setInterval(() => {

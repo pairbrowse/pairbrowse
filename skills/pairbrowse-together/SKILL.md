@@ -24,7 +24,7 @@ PairBrowse plugin (MCP servers `browser` and `runs`). Use only PairBrowse's tool
 
 A session is a separate browser with its own logins and tabs.
 
-1. `pairbrowse_session` with `action: "list"`, then ask which one unless the user said.
+1. Unless the user said which, the browser's session picker asks (picker off: `pairbrowse_session` `list`, ask).
 2. `use` with `name` switches (it closes the window and opens that session's tabs).
 3. `new` with `clean: true` and no name: a throwaway browser, deleted when you switch away.
    `new` with a `name`: kept, for example one per client.

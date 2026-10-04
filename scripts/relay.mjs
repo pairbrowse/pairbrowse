@@ -5,7 +5,7 @@
 // Reconnects by itself; on each connect the host sends everything as it stands, so nothing is
 // missed. No page of the host's
 // browser, no picture of it, nothing an agent could act through.
-import { newJoinerId } from "./join.mjs";
+import { newJoinerId, computerName } from "./join.mjs";
 import { sleep } from "./util.mjs";
 import { connect } from "./ws.mjs";
 
@@ -22,7 +22,7 @@ const REPLY_MS = 30_000;
 // order except pointers (the latest wins).
 export function startJoin({ join: code, name, app = "", joinerId = newJoinerId(), log = () => {}, onTabs = async () => {}, on = {}, onChange = () => {} }) {
   const base = `${code.url}/${code.key}`;
-  const headers = { "x-pairbrowse-joiner": joinerId, "x-pairbrowse-name": encodeURIComponent(name), "x-pairbrowse-app": app };
+  const headers = { "x-pairbrowse-joiner": joinerId, "x-pairbrowse-name": encodeURIComponent(name), "x-pairbrowse-app": app, "x-pairbrowse-computer": computerName() };
   const Host = code.label.charAt(0).toUpperCase() + code.label.slice(1); // at a sentence's start
   let phase = "asking"; // asking, waiting, in, denied, ended, offline, left
   let message = `Asking ${code.label} to let you in.`;

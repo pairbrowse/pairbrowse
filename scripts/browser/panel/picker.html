@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Choose a session</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="picker.css">
+</head>
+<body data-s="connecting">
+  <main>
+    <header>
+      <img class="logo" src="logo.svg" alt="" width="56" height="56">
+      <div>
+        <h1>Which session?</h1>
+        <p class="sub" id="sub">Your agent waits until you pick one.</p>
+      </div>
+    </header>
+
+    <section class="choices" id="choices" aria-label="Sessions">
+      <h2>Continue where you left off</h2>
+      <ul class="sessions" id="sessions"></ul>
+      <div class="more" id="more" data-open="false" hidden>
+        <button class="more-row" id="more-btn" type="button" aria-expanded="false" aria-controls="more-body"><span id="more-label">More sessions</span><span class="chev" aria-hidden="true"></span></button>
+        <div class="more-body" id="more-body">
+          <input id="filter" class="filter" type="search" placeholder="Find a session" aria-label="Find a session" autocomplete="off" spellcheck="false">
+          <ul class="sessions more-list" id="more-list"></ul>
+          <p class="none" id="none" hidden>No session by that name.</p>
+        </div>
+      </div>
+
+      <h2 class="or">Or</h2>
+      <button class="choice" id="fresh" type="button">
+        <span class="icon" aria-hidden="true">+</span>
+        <span class="text"><strong>Start a fresh session</strong><small>A clean browser with no logins. It's deleted when you switch away.</small></span>
+      </button>
+      <details class="choice join" id="join">
+        <summary>
+          <span class="icon" aria-hidden="true">&#8644;</span>
+          <span class="text"><strong>Join a shared session</strong><small>Paste the pb-join code someone sent you. They let you in first.</small></span>
+        </summary>
+        <form id="join-form" autocomplete="off">
+          <input id="code" type="text" placeholder="pb-join:..." aria-label="Join code" spellcheck="false" autocomplete="off">
+          <button class="primary" type="submit">Join</button>
+        </form>
+      </details>
+    </section>
+
+    <p class="msg" id="msg" role="status" aria-live="polite"></p>
+  </main>
+  <script type="module" src="picker.js"></script>
+</body>
+</html>

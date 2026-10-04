@@ -1,0 +1,102 @@
+/* The session picker: the new tab page's background, the side panel's palette. */
+:root {
+  --ink: oklch(0.985 0.004 265); --ink-2: oklch(0.90 0.02 265); --muted: oklch(0.80 0.03 265);
+  --glass: rgb(255 255 255 / 0.09); --edge: rgb(255 255 255 / 0.16); --hover: rgb(255 255 255 / 0.14);
+  --cyan: oklch(0.84 0.12 215); --ok: oklch(0.82 0.16 155); --bad: oklch(0.78 0.15 25);
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --t: 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  display: grid; place-items: center; min-height: 100vh; padding: 32px 16px;
+  background: #141838 url("ntp.png") center / cover no-repeat fixed;
+  color: var(--ink); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased;
+}
+/* The card never grows past the window: only the "More sessions" list scrolls, so starting
+   fresh and joining always stay in view. */
+main {
+  display: flex; flex-direction: column; max-height: calc(100vh - 64px);
+  width: min(520px, 100%); padding: 28px 28px 20px; border-radius: 18px;
+  background: var(--glass); border: 1px solid var(--edge);
+  -webkit-backdrop-filter: blur(22px) saturate(150%); backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), 0 24px 60px rgb(5 6 26 / 0.35);
+}
+header { flex: none; display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.logo { flex: none; filter: drop-shadow(0 8px 18px rgb(5 6 26 / 0.45)); }
+h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.sub { margin: 2px 0 0; color: var(--muted); }
+h2 { margin: 18px 0 8px; font-size: 11.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.choices { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.sessions[hidden] { display: none; }
+.choices > * { flex: none; }
+.sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+
+.choice {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 12px; border-radius: 12px;
+  border: 1px solid transparent; background: rgb(255 255 255 / 0.06); color: inherit; font: inherit; text-align: left;
+  cursor: pointer; transition: background var(--t), border-color var(--t);
+}
+.choice:hover, details.choice[open] { background: var(--hover); border-color: var(--edge); }
+.choice:focus-visible, summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.choice + .choice { margin-top: 6px; }
+.icon {
+  flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
+  background: rgb(255 255 255 / 0.10); color: var(--ink-2); font-size: 18px; font-weight: 600;
+}
+.icon.session { background: oklch(0.84 0.12 215 / 0.18); color: var(--cyan); font-size: 15px; }
+.text { display: grid; min-width: 0; }
+.text strong { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.text em { font-style: normal; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: oklch(0.82 0.16 155 / 0.18); color: var(--ok); }
+.text small { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.text .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.text em.live { background: oklch(0.84 0.12 215 / 0.18); color: var(--cyan); display: inline-flex; align-items: center; gap: 5px; }
+.text em.live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px oklch(0.84 0.12 215 / 0.25); }
+
+/* Who used a session: compact chips, at most three and "+N". */
+.chips { display: flex; flex-wrap: nowrap; gap: 5px; margin-top: 6px; min-width: 0; overflow: hidden; }
+.chip { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 150px; height: 22px; padding: 0 8px 0 3px; border-radius: 999px;
+  background: rgb(255 255 255 / 0.08); color: var(--ink-2); font-size: 11.5px; white-space: nowrap; }
+.chip > span { overflow: hidden; text-overflow: ellipsis; }
+.chip i { display: grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 50%; font: 700 9.5px var(--sans); font-style: normal;
+  background: oklch(0.80 0.12 var(--h, 215) / 0.28); color: oklch(0.92 0.08 var(--h, 215)); }
+.chip.live { box-shadow: inset 0 0 0 1px oklch(0.84 0.12 215 / 0.55); color: var(--ink); }
+.chip.more-chip { padding: 0 8px; color: var(--muted); }
+
+/* "More sessions": a scrolling list with a filter, so the card stays within the window. */
+.choices > .more { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; margin-top: 6px; }
+.more[hidden] { display: none; }
+.more-row { flex: none; display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 9px 12px; border: 0; border-radius: 12px; background: none; color: var(--ink-2); font: 600 13px var(--sans); cursor: pointer; }
+.more-row:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.more-body { display: none; flex-direction: column; min-height: 0; flex: 0 1 auto; }
+.more[data-open="true"] .more-body { display: flex; }
+.more-row:hover { background: rgb(255 255 255 / 0.06); }
+.chev { width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform var(--t); margin-right: 4px; }
+.more[data-open="true"] .chev { transform: rotate(-135deg); }
+.filter { flex: none; display: block; width: 100%; height: 34px; margin: 4px 0 6px; padding: 0 12px; font-family: var(--sans); }
+.more-list { flex: 0 1 auto; min-height: 96px; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.25) transparent; }
+.none { margin: 4px 12px; color: var(--muted); font-size: 12.5px; }
+
+details.choice { display: block; cursor: default; }
+summary { display: flex; align-items: center; gap: 12px; list-style: none; cursor: pointer; border-radius: 8px; }
+summary::-webkit-details-marker { display: none; }
+form { display: flex; gap: 8px; margin: 12px 0 2px 46px; }
+input {
+  flex: 1; min-width: 0; height: 38px; padding: 0 12px; border-radius: 10px;
+  border: 1px solid var(--edge); background: rgb(10 12 36 / 0.35); color: inherit; font-family: Menlo, "SF Mono", ui-monospace, monospace; font-size: 13px;
+  outline: none; transition: border-color var(--t);
+}
+input::placeholder { color: var(--muted); opacity: 0.8; }
+input:focus { border-color: var(--cyan); }
+.primary { height: 38px; padding: 0 18px; border: 0; border-radius: 10px; background: var(--cyan); color: oklch(0.2 0.05 260); font: 650 13.5px var(--sans); cursor: pointer; }
+.primary:hover { filter: brightness(1.06); }
+
+.msg { margin: 14px 0 0; font-size: 13px; color: var(--muted); }
+.msg:empty { display: none; }
+.msg[data-kind="error"] { color: var(--bad); }
+.msg[data-kind="ok"] { color: var(--ok); }
+body[data-s="connecting"] .choices, body[data-s="done"] .choices { display: none; }
+body[data-s="connecting"] .msg:empty { display: block; }
+body[data-s="connecting"] .msg:empty::before { content: "Connecting to PairBrowse..."; }
+body[data-s="picking"] .choices { opacity: 0.55; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

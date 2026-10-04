@@ -29,6 +29,11 @@ export function appName(clientName) {
   if (c === "codex-mcp-client" || /^codex/i.test(c)) return "Codex";
   return c ? cleanName(c, "Agent").slice(0, 24) : "Agent";
 }
+// Which kind of computer someone is on, as the session picker shows it ("Alice · Linux"): the
+// operating system only, never the machine's own name.
+const COMPUTERS = { darwin: "Mac", linux: "Linux", win32: "Windows" };
+export const computerName = (platform = process.platform) => COMPUTERS[platform] || "";
+export const cleanComputer = (value) => (Object.values(COMPUTERS).includes(value) ? value : "");
 // What this computer's person is called in a shared session: the first real name of
 // participantName, PAIRBROWSE_PARTICIPANT, their account's full name and their login. Stand-ins
 // like "Host" or "You" are skipped: the other side would see them instead of a name.
@@ -85,7 +90,7 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
   const recent = []; // times new requests came in
   const listeners = new Set();
   const changed = () => { for (const fn of listeners) try { fn(); } catch {} };
-  const publicView = ({ id, inviteId, name, app, role, state, at }) => ({ id, inviteId, name, app, role, state, at });
+  const publicView = ({ id, inviteId, name, app, computer, role, state, at }) => ({ id, inviteId, name, app, computer, role, state, at });
   const sweep = () => {
     let gone = false;
     for (const [k, e] of all) if (e.state === "pending" && e.at + pendingMs <= now()) { all.delete(k); gone = true; }
@@ -105,7 +110,7 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
   };
   return {
     // Where this joiner stands. A new joiner becomes a request (unless too many wait already).
-    check(invite, joinerId, name, app = "") {
+    check(invite, joinerId, name, app = "", computer = "") {
       sweep();
       if (!JOINER_ID.test(String(joinerId || ""))) return { state: "bad" };
       const k = `${invite.id}:${joinerId}`;
@@ -118,7 +123,7 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
       recent.push(t);
       let id;
       do id = `r${randomBytes(3).toString("hex")}`; while (find(id));
-      const entry = { id, inviteId: invite.id, joinerId, name: cleanName(name), app: app ? appName(app) : "", role: invite.role, state: "pending", at: t };
+      const entry = { id, inviteId: invite.id, joinerId, name: cleanName(name), app: app ? appName(app) : "", computer: cleanComputer(computer), role: invite.role, state: "pending", at: t };
       all.set(k, entry);
       changed();
       return { state: "pending", entry: publicView(entry), isNew: true };

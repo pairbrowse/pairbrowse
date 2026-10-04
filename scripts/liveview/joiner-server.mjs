@@ -3,7 +3,7 @@
 // lets that joiner in. Then only the shared tabs (tabsync.mjs): never the owner's key, the
 // viewer page, a picture of the page, or anything an agent could act through.
 import http from "node:http";
-import { JOINER_ID, cleanName, appName } from "../join.mjs";
+import { JOINER_ID, cleanName, appName, cleanComputer } from "../join.mjs";
 import { LOOPBACK, keyOk, readBody, BODY_MAX, listen } from "./http.mjs";
 import { acceptUpgrade, refuseUpgrade } from "../ws.mjs";
 
@@ -25,6 +25,7 @@ const joinerOf = (req) => ({
   joinerId: String(req.headers["x-pairbrowse-joiner"] || ""),
   name: cleanName((() => { try { return decodeURIComponent(req.headers["x-pairbrowse-name"] || ""); } catch { return ""; } })()),
   app: String(req.headers["x-pairbrowse-app"] || "").slice(0, 40),
+  computer: cleanComputer(String(req.headers["x-pairbrowse-computer"] || "")), // "Mac", "Linux" or "Windows" only
 });
 
 // key: the owner's key (it never works here). joiners: the live view's joiner map, filled here.
@@ -46,7 +47,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
   // Nothing of the session before the host said yes.
   function admit(invite, who) {
     if (!JOINER_ID.test(who.joinerId)) return { code: 400, body: { error: "This request doesn't say who is joining." } };
-    const r = approvals.check(invite, who.joinerId, who.name, who.app);
+    const r = approvals.check(invite, who.joinerId, who.name, who.app, who.computer);
     if (r.isNew) {
       try { onJoinRequest(r.entry); } catch {}
     }
@@ -54,7 +55,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       const k = `${invite.id}:${who.joinerId}`;
       let j = joiners.get(k);
       if (!j) {
-        j = { invite, joinerId: who.joinerId, name: r.entry.name, app: who.app ? appName(who.app) : r.entry.app, seen: 0, inflight: 0, ops: [] };
+        j = { invite, joinerId: who.joinerId, name: r.entry.name, app: who.app ? appName(who.app) : r.entry.app, computer: r.entry.computer || "", seen: 0, inflight: 0, ops: [] };
         joiners.set(k, j);
       }
       const fresh = !recentlySeen(j);

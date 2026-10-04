@@ -45,9 +45,16 @@ const SAME = {
   codex: "",
 };
 
+// Choosing the browser session. picker: the browser asks the person itself (config
+// sessionPicker, on by default; never in the cloud, where nobody sees the window).
+const SESSIONS = {
+  picker: "Sessions: if the user said which (a saved one, a fresh one, or a pb-join code), do that first: pairbrowse_session use, new with clean true, or pairbrowse_join. Otherwise don't ask: the browser's first tab asks them, and your first browser action waits for their pick and says which.",
+  ask: "Before the first browser action: pairbrowse_session list, then use the user's choice (or new with clean true).",
+};
+
 // The always-on core, worded for the app running the session.
-export function coreText(host = "claude") {
+export function coreText(host = "claude", { picker = false } = {}) {
   let text = "";
   try { text = readFileSync(new URL("./core.md", import.meta.url), "utf8").trim(); } catch { return ""; }
-  return text.replace("{{FINAL}}", FINAL[host] || FINAL.claude).replace("{{SAME}}", SAME[host] ?? SAME.claude);
+  return text.replace("{{FINAL}}", FINAL[host] || FINAL.claude).replace("{{SAME}}", SAME[host] ?? SAME.claude).replace("{{SESSIONS}}", picker ? SESSIONS.picker : SESSIONS.ask);
 }

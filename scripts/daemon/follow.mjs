@@ -7,7 +7,7 @@
 // and the tab overview.
 import { parseJoinCode, cleanName, displayName } from "../join.mjs";
 import { startJoin } from "../relay.mjs";
-import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, formUrl, onSecretDomain, shareableUrl, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
+import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, formUrl, onSecretDomain, shareableUrl, crossingText, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
 import { sleep, currentAccount } from "../util.mjs";
 
@@ -50,7 +50,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const cur = s;
     if (!cur || from || !page || cur.join.role !== "drive") return;
     const id = idOf(cur, page);
-    if (id && cur.outbox.length < OPS_MAX) cur.outbox.push({ op: "activity", id, text, who });
+    if (id && cur.outbox.length < OPS_MAX) cur.outbox.push({ op: "activity", id, text: crossingText(text), who });
   });
 
   const pageId = async (ctx, page) => {
@@ -221,7 +221,9 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     for (const t of Array.isArray(state.tabs) ? state.tabs : []) {
       const page = cur.pages.get(t.id);
       if (!page || page.isClosed()) continue;
-      if (t.agent) cur.agents.set(page, { label: String(t.agent).slice(0, 60), color: /^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "" });
+      // An agent there holds this tab: in use, so the tab cap here keeps the copy (closing it would
+      // close their tab too).
+      if (t.agent) { cur.agents.set(page, { label: String(t.agent).slice(0, 60), color: /^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "" }); context.touch?.(page); }
       // Their agent's spark, in its color, on the copy here too.
       hud.setSharedSpark(page, t.agent ? (/^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "#e9763f") : "");
       const first = !cur.heard.has(t.id);

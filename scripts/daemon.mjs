@@ -46,7 +46,7 @@ import { createServe } from "./daemon/serve.mjs";
 import { readFields, applyFields } from "./daemon/forms.mjs";
 import { createTabOrder } from "./daemon/taborder.mjs";
 import { createCobrowse } from "./daemon/cobrowse.mjs";
-import { shareFields, shareableUrl } from "./tabsync.mjs";
+import { shareFields, shareableUrl, crossingText, onSecretDomain } from "./tabsync.mjs";
 import { createSession, readEntries, readMessage } from "./daemon/session.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
@@ -167,6 +167,9 @@ function tabMeta(page) {
 // their spark color, tab, status and task (pairbrowse_status) and last action.
 const lastActions = new Map(); // label -> text
 const STATUS_OF = { you: "you", done: "done", clear: "idle" };
+// The other side's participants, checked, and their last actions and tasks as they may cross on
+// (to other joiners): an older helper there may send them unredacted.
+const crossingEntries = (list) => readEntries(list).map((e) => ({ ...e, task: crossingText(e.task), last: crossingText(e.last) }));
 function localEntries() {
   const out = [];
   for (const [id, p] of collaboration.participants) {
@@ -228,7 +231,9 @@ const sharing = createSharing({
     // their pointer alone, or just being in the tab, leaves the page as it was.
     onJoinerPerson: (page, who, did, acting, changed = false) => { presence.elsewhere(page, who, did, acting); if (changed) bumpRevision(); },
     onPause: (paused, who) => pressPause(paused, who || HOST), pauseState,
-    onJoinerActivity: (page, text, who, from) => hud.addActivity(text, who, page, from),
+    // A joiner's agent at work in their copy of a tab: in use, so the tab cap here keeps it (closing
+    // it would close their copy too).
+    onJoinerActivity: (page, text, who, from) => { context.touch(page); hud.addActivity(text, who, page, from); },
     extraOrigins: panel.origins, getContext: () => context.getContext(), currentUrl: () => context.currentUrl(), profile: facts.profile, tabMeta,
     onHumanInput: (page, who, changes = true) => { presence.humanIn(page, who || HOST); if (changes) bumpRevision(); },
     shared: {
@@ -239,7 +244,7 @@ const sharing = createSharing({
       // From a joiner's side (text only, any role): who does what there, or a message for the
       // agents here and the other joiners. Shown and handed on, nothing more.
       onJoinerSay: (body, j, key) => {
-        if (body?.op === "session") session.setRemote(key, readEntries(body.entries), cleanName(j.name));
+        if (body?.op === "session") session.setRemote(key, crossingEntries(body.entries), cleanName(j.name));
         else if (body?.op === "pause") {
           // A person there pressed "Pause agents" or "Resume": drive joiners only.
           if (j.invite.role !== "drive") return { problem: "Only drive participants can pause agents." };
@@ -258,7 +263,7 @@ const sharing = createSharing({
         return {};
       },
       onJoinerAgent: (page, who, color) => {
-        if (who) joinedAgents.set(page, { label: who, color, until: Date.now() + JOINED_AGENT_MS }); else joinedAgents.delete(page);
+        if (who) { joinedAgents.set(page, { label: who, color, until: Date.now() + JOINED_AGENT_MS }); context.touch(page); } else joinedAgents.delete(page);
         hud.setSharedSpark(page, who ? color || "#e9763f" : "");
         refreshTabs();
       },
@@ -270,7 +275,7 @@ const sharing = createSharing({
 const follow = createFollow({
   config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent,
   onSession: (data, join) => {
-    session.setRemote("host", readEntries(data?.entries), String(data?.where || join.host));
+    session.setRemote("host", crossingEntries(data?.entries), String(data?.where || join.host));
     if (data?.pause && typeof data.pause === "object") pause.mirror({ paused: data.pause.paused === true, by: String(data.pause.by || ""), resumedBy: String(data.pause.resumedBy || "") });
   },
   // Out of the session: a pause from there no longer holds the agents here.
@@ -287,7 +292,14 @@ setInterval(() => {
   sentSession = { sig, at: Date.now() };
   follow.say({ op: "session", entries });
 }, 500).unref();
-hud.onActivity((text, who, page, from) => { if (!from && who && text) { lastActions.set(who, String(text).slice(0, 140)); sessionChanged(); } });
+// An agent's last action, as it shows to the other participants (and crosses to a joined session):
+// nothing from a tab that doesn't cross, or crosses as its address only (a site with saved passwords).
+hud.onActivity((text, who, page, from) => {
+  if (from || !who || !text) return;
+  const quiet = page && !page.isClosed() && (!shareableUrl(page.url()) || onSecretDomain(page.url(), secretDomains()));
+  lastActions.set(who, quiet ? "" : crossingText(text, secrets.get().values || {}).slice(0, 140));
+  sessionChanged();
+});
 // Shared tabs, live: pointers and field changes from the page script, handed on as they happen
 // (only tabs that are shared: with joiners here, or copies of a session joined from here).
 const cobrowse = createCobrowse({

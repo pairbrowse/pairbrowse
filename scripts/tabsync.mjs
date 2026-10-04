@@ -11,6 +11,7 @@
 import { SENSITIVE, looksLikeCard } from "./policy.mjs";
 import { isLocalNetwork } from "./guard.mjs";
 import { stripText } from "./join.mjs";
+import { redact } from "./daemon/session.mjs";
 
 export const TABS_MAX = 40; // tabs that cross, in order
 export const URL_MAX = 2048;
@@ -25,6 +26,14 @@ const CREDENTIAL = /auth|key|sig|session|sid$|state|nonce|ticket|jwt|saml|assert
 // Values that look like a secret: an email address, a JWT, or a long run of letters and digits.
 const secretish = (v) => /@|%40/.test(v) || /^eyJ/.test(v) || [...String(v).matchAll(/[A-Za-z0-9_~+/=-]{24,}/g)].some(([m]) => /\d/.test(m) && /[A-Za-z]/.test(m));
 const clean = (s, max = TEXT_MAX) => stripText(String(s ?? "")).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").slice(0, max);
+
+// Text about what someone did (activity lines, an agent's last action) as it may cross: saved
+// passwords as their names, card numbers, IBANs, SSNs and JWTs masked, addresses cut to origin and
+// path, and addresses on the sender's own computer or network not named at all.
+export function crossingText(text, secrets = {}) {
+  return stripText(redact(text, secrets).replace(/\beyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]*){0,2}/g, "••••"))
+    .replace(/https?:\/\/[^\s"'`<>()[\]]+/gi, (m) => { try { return localAddress(new URL(m)) ? "a local page" : m; } catch { return m; } });
+}
 
 // Addresses on someone's own computer or network: the local-network rule, plus single-label
 // names ("router") and IPv6 literals.
@@ -75,7 +84,7 @@ export function stateForJoiner({ tabs = [], activity = [], people = [] }, { driv
     tabs: out,
     // Activity in tabs that don't cross stays home, and so does the tab it happened in.
     activity: activity.filter((a) => (!a.tabId || shared.has(a.tabId)) && (!from || a.from !== from)).slice(-ACTIVITY_MAX)
-      .map((a) => ({ t: Number(a.t) || 0, text: clean(a.text), who: clean(a.who, 60), ...(a.tabId ? { tabId: a.tabId } : {}) })),
+      .map((a) => ({ t: Number(a.t) || 0, text: clean(crossingText(a.text)), who: clean(a.who, 60), ...(a.tabId ? { tabId: a.tabId } : {}) })),
     people: people.filter((p) => p && p !== name).slice(0, 20).map((p) => clean(p, 60)),
   };
 }
@@ -92,7 +101,7 @@ export function readOps(body, ids) {
     // A person used their copy of the tab (field and button names only), or their agent did something there.
     // acting: they click, type or scroll there now (only moving the pointer holds nobody up).
     if (op === "person" && ids.has(o.id)) { ops.push({ op, id: o.id, did: (Array.isArray(o.did) ? o.did : []).slice(0, 10).map((x) => clean(x, 80)).filter(Boolean), acting: o.acting === true }); continue; }
-    if (op === "activity" && ids.has(o.id) && o.text) { ops.push({ op, id: o.id, text: clean(o.text), who: clean(o.who, 60) }); continue; }
+    if (op === "activity" && ids.has(o.id) && o.text) { ops.push({ op, id: o.id, text: clean(crossingText(o.text)), who: clean(o.who, 60) }); continue; }
     // Their agent in a tab (its spark color), or none any more.
     if (op === "agent" && ids.has(o.id)) { ops.push({ op, id: o.id, who: clean(o.who, 60), color: COLOR.test(o.color || "") ? o.color : "" }); continue; }
     // Their tab order: the known ids, as they now stand.

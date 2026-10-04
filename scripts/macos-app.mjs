@@ -4,7 +4,7 @@
 // (native-install.mjs).
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -29,8 +29,47 @@ export async function verifySignature(app) {
     .catch((e) => { throw new Error(`the app's signature doesn't verify: ${(e.stderr || e.message).trim()}`); });
 }
 
-// A fresh ad-hoc signature that keeps the part's identifier, entitlements and flags.
-const resign = (target) => run("codesign", ["--force", "--sign", "-", "--preserve-metadata=identifier,entitlements,flags", target], { timeout: 300_000 });
+// A fresh ad-hoc signature that keeps the part's entitlements and flags, and its identifier unless
+// a new one is given (a renamed bundle ID must be signed under that ID).
+const resign = (target, identifier) => run("codesign", ["--force", "--sign", "-",
+  ...(identifier ? ["--identifier", identifier, "--preserve-metadata=entitlements,flags"] : ["--preserve-metadata=identifier,entitlements,flags"]), target], { timeout: 300_000 });
+
+const readPlist = async (file) => JSON.parse((await run("plutil", ["-convert", "json", "-o", "-", file])).stdout);
+const setString = (file, key, value) => run("plutil", ["-replace", key, "-string", value, file]);
+
+// The name macOS shows in the notification permission prompt and in Notifications settings comes
+// from the notification helper, and from its localized InfoPlist.strings before its Info.plist:
+// Chromium ships base.lproj with "Chromium", and with no English one macOS falls back to it. So
+// both, in every language folder, say PairBrowse, and Chromium's lookup ID (the app's ID plus
+// ".framework.AlertNotificationService") stays matched. Returns the new bundle ID when it changed,
+// true for other changes, false when the helper was already branded.
+async function brandNotificationHelper(helper, appId) {
+  const plist = join(helper, "Contents", "Info.plist");
+  const info = await readPlist(plist);
+  let changed = false;
+  for (const key of ["CFBundleName", "CFBundleDisplayName"]) {
+    if (info[key] !== "PairBrowse") { await setString(plist, key, "PairBrowse"); changed = true; }
+  }
+  if (info.CFBundleIconName !== undefined) { await run("plutil", ["-remove", "CFBundleIconName", plist]); changed = true; }
+  const id = `${appId}.framework.AlertNotificationService`;
+  const idChanged = info.CFBundleIdentifier !== id;
+  if (idChanged) await setString(plist, "CFBundleIdentifier", id);
+  const resources = join(helper, "Contents", "Resources");
+  mkdirSync(join(resources, "en.lproj"), { recursive: true });
+  const english = join(resources, "en.lproj", "InfoPlist.strings");
+  if (!existsSync(english)) { writeFileSync(english, '"CFBundleDisplayName" = "PairBrowse";\n"CFBundleName" = "PairBrowse";\n'); changed = true; }
+  for (const folder of readdirSync(resources).filter((name) => name.endsWith(".lproj"))) {
+    const strings = join(resources, folder, "InfoPlist.strings");
+    if (!existsSync(strings)) continue;
+    const names = await readPlist(strings).catch(() => ({}));
+    if (names.CFBundleDisplayName === "PairBrowse" && names.CFBundleName === "PairBrowse") continue;
+    // Written whole: plutil can't edit the text (OpenStep) form these files may come in.
+    writeFileSync(strings, JSON.stringify({ ...names, CFBundleDisplayName: "PairBrowse", CFBundleName: "PairBrowse" }));
+    await run("plutil", ["-convert", "binary1", strings]);
+    changed = true;
+  }
+  return idChanged ? id : changed;
+}
 
 // Chromium's resource packs (.pak, format version 5): a header, a table of resource ids and
 // offsets, aliases, then the resources. Writes the pack again with each resource that
@@ -182,10 +221,11 @@ export async function rebrandLogos(app) {
 
 // Bumped when brandNativeApp() learns something new: an installed build branded by an older
 // version gets it again on the next start (when the browser isn't open).
-export const BRANDING = 4;
+export const BRANDING = 5;
 
 // The PairBrowse name and icon in a native build (package.py sets its bundle names already): the
-// icon in the app and its notification helpers, PairBrowse instead of Chromium in the interface
+// icon in the app and its notification helpers, the helpers' names (the notification prompt
+// shows them), PairBrowse instead of Chromium in the interface
 // text, in every language, and PairBrowse's logo instead of Chromium's in the browser's own pages.
 // What changed gets fresh signatures, inside out. Returns whether anything changed.
 export async function brandNativeApp(app, log = () => {}) {
@@ -194,29 +234,38 @@ export async function brandNativeApp(app, log = () => {}) {
     const { stdout } = await run("plutil", ["-extract", key, "raw", plist]).catch(() => ({ stdout: "" }));
     if (stdout.trim() !== want) throw new Error(`the app's ${key} isn't ${want}: not a PairBrowse build`);
   }
+  const appId = (await readPlist(plist)).CFBundleIdentifier;
   const icon = readFileSync(ICON);
   const versions = join(frameworkOf(app), "Versions");
   const icons = [join(app, "Contents", "Resources", "app.icns")];
+  const helpers = [];
   for (const version of existsSync(versions) ? readdirSync(versions).filter((v) => v !== "Current") : []) {
     for (const helper of NOTIFICATION_HELPERS) {
-      const resources = join(versions, version, "Helpers", helper, "Contents", "Resources");
-      if (existsSync(resources)) icons.push(join(resources, "app.icns"));
+      const bundle = join(versions, version, "Helpers", helper);
+      if (!existsSync(join(bundle, "Contents", "Info.plist"))) continue;
+      helpers.push(bundle);
+      icons.push(join(bundle, "Contents", "Resources", "app.icns"));
     }
   }
-  const helpersChanged = [];
+  // Each changed helper, with its new bundle ID when that changed (signed under it).
+  const helpersChanged = new Map();
+  for (const helper of helpers) {
+    const result = await brandNotificationHelper(helper, appId);
+    if (result) helpersChanged.set(helper, typeof result === "string" ? result : undefined);
+  }
   let appIconChanged = false;
   for (const file of icons) {
     if (existsSync(file) && readFileSync(file).equals(icon)) continue;
     copyFileSync(ICON, file);
     const bundle = dirname(dirname(dirname(file)));
-    if (bundle === app) appIconChanged = true; else helpersChanged.push(bundle);
+    if (bundle === app) appIconChanged = true; else if (!helpersChanged.has(bundle)) helpersChanged.set(bundle, undefined);
   }
   const textChanged = await rebrandInterfaceText(app);
   const logosChanged = await rebrandLogos(app);
-  if (!appIconChanged && !helpersChanged.length && !textChanged && !logosChanged) return false;
+  if (!appIconChanged && !helpersChanged.size && !textChanged && !logosChanged) return false;
   log("adding the PairBrowse name and icon");
-  for (const helper of helpersChanged) await resign(helper);
-  if (helpersChanged.length || textChanged || logosChanged) await resign(frameworkOf(app));
+  for (const [helper, identifier] of helpersChanged) await resign(helper, identifier);
+  if (helpersChanged.size || textChanged || logosChanged) await resign(frameworkOf(app));
   await resign(app);
   return true;
 }

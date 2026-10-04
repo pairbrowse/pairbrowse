@@ -207,6 +207,9 @@ export function launchArgs(config = {}) {
     "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling",
     ENABLE + [...new Set(features.filter(Boolean))].join(","),
     ...browserArgs(),
+    // Only test runs are headless, and nobody is there to see a notification: without this the
+    // first one starts the test browser's notification helper and macOS asks to allow it.
+    ...(extra.some((a) => a.startsWith("--headless")) ? ["--disable-notifications"] : []),
     ...extra.filter((a) => !a.startsWith(ENABLE)),
   ];
 }

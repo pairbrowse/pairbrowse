@@ -663,7 +663,9 @@ and the rights they give.
 sites notice. The native browser keeps those differences out: it launches without the automation
 flag and with Chromium's AutomationControlled feature off, through the Patchright driver (the
 default `browserDriver`); on a Mac its fingerprint is captured from your own Mac, so it stays coherent with
-the real machine and is saved per profile; time zone and language follow your system; and WebRTC
+the real machine and is saved per profile (the capture runs once per Mac in a hidden browser on
+the real GPU, and is kept in a private `~/.pairbrowse/mac-host-profile.json` until the browser
+version or hardware changes); time zone and language follow your system; and WebRTC
 doesn't reveal your local addresses by default. The goal is that sites see a normal browser, not
 to get around a site's security (see [Intended use](#intended-use)).
 

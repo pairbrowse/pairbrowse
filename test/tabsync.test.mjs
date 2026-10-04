@@ -271,3 +271,16 @@ test("who filled a field crosses with it (a name, never more), and whether a per
   const st = stateForJoiner({ tabs: [{ id: "t1", url: "https://a.example/", title: "A", person: "Bob", acting: true }] }, { name: "Alice" });
   assert.equal(st.tabs[0].acting, true);
 });
+
+test("what someone did, as it crosses: no query strings, local addresses, card numbers, JWTs or saved passwords", async () => {
+  const { crossingText, stateForJoiner } = await import("../scripts/tabsync.mjs");
+  assert.equal(crossingText("Opened https://shop.example.com/login?next=%2Fa&session=abc123"), "Opened https://shop.example.com/login");
+  assert.equal(crossingText("Opened http://127.0.0.1:8080/admin"), "Opened a local page");
+  assert.equal(crossingText("Opened http://router/setup and http://192.168.1.1/"), "Opened a local page and a local page");
+  assert.equal(crossingText("Typed `card 4111 1111 1111 1111 exp 12/29` into **Notes**"), "Typed `card ••••11 exp 12/29` into **Notes**");
+  assert.equal(crossingText("Typed `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig_123` into **Token**"), "Typed `••••` into **Token**");
+  assert.equal(crossingText("Typed `Hunter2-Secret-77` into **Notes**", { SHOP_PASSWORD: "Hunter2-Secret-77" }), "Typed `[SHOP_PASSWORD]` into **Notes**");
+  assert.equal(crossingText("Typed `Ada Lovelace` into **Name**"), "Typed `Ada Lovelace` into **Name**");
+  const st = stateForJoiner({ tabs: [{ id: "0000000a", url: "https://a.example/form" }], activity: [{ t: 1, text: "Typed `4242 4242 4242 4242` into **Notes**", who: "Bob", tabId: "0000000a" }] }, { drive: false });
+  assert.doesNotMatch(JSON.stringify(st), /4242 4242/);
+});

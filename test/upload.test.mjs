@@ -95,3 +95,11 @@ test("uploads reach a file field, an upload button and a drop zone", { skip: !ru
     await browser.close();
   }
 });
+
+test("an upload call without files uploads nothing and says so", async () => {
+  for (const files of [[], undefined, [""]]) {
+    const r = await uploadFiles({}, files === undefined ? {} : { files });
+    assert.equal(r.ok, false);
+    assert.match(r.text, /Nothing uploaded/);
+  }
+});

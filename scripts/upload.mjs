@@ -204,7 +204,8 @@ async function dropOn(page, el, files) {
 
 // Runs a pairbrowse_upload call. Returns { ok, text }.
 export async function uploadFiles(page, { files = [], target } = {}, { uploadsDir, activity = () => {} } = {}) {
-  const list = (Array.isArray(files) ? files : [files]).map(String);
+  const list = (Array.isArray(files) ? files : [files]).filter((f) => f != null && f !== "").map(String);
+  if (!list.length) return { ok: false, text: "Nothing uploaded: give files, one or more absolute paths." };
   const problems = list.map((f) => uploadProblem(f, uploadsDir)).filter(Boolean);
   if (problems.length) return { ok: false, text: problems.join("\n") };
   try {

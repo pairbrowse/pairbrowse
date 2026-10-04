@@ -1,6 +1,14 @@
 // The PairBrowse side panel opens from its pinned toolbar button, or with Cmd+Shift+Y
 // (Ctrl+Shift+Y elsewhere), which opens the panel itself rather than going through the button.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+// In a new profile on macOS the browser starts without a window (--no-startup-window, see
+// browserArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
+// the user closed every window brings none back.
+(async () => {
+  if ((await chrome.storage.session.get("started")).started) return;
+  await chrome.storage.session.set({ started: true });
+  if (!(await chrome.windows.getAll()).length) await chrome.windows.create({ url: "about:blank" });
+})().catch(() => {});
 chrome.commands.onCommand.addListener((command, tab) => {
   // Called straight from the key press: sidePanel.open needs that user gesture.
   if (command === "open-panel" && tab?.windowId !== undefined) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});

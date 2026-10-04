@@ -104,7 +104,7 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
   const call = async (name, args = {}) => {
     const c = (counts[flow] ||= { calls: 0, prompts: 0, refusals: 0 });
     c.calls++;
-    const verdict = decide({ tool_name: `mcp__plugin_pairbrowse_browser__${name}`, tool_input: args }, { neverConfirm: [] }, null).hookSpecificOutput.permissionDecision;
+    const verdict = decide({ tool_name: `mcp__plugin_pairbrowse_browser__${name}`, tool_input: args }, {}, null).hookSpecificOutput.permissionDecision;
     if (verdict === "ask") c.prompts++;
     assert.notEqual(verdict, "deny", `${name} denied`);
     const r = await claude.call("tools/call", { name, arguments: args });
@@ -167,7 +167,7 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
     assert.match(text(fast), /\(pay\)[^\n]*browser_click/, "fast mode stops at it");
     counts.checkout.refusals++;
     const named = { target: ref(await snap(), "button", "Place order"), element: "Pay: Place order" };
-    assert.equal(decide({ tool_name: "mcp__plugin_pairbrowse_browser__browser_click", tool_input: named }, { neverConfirm: [] }, null).hookSpecificOutput.permissionDecision, "ask");
+    assert.equal(decide({ tool_name: "mcp__plugin_pairbrowse_browser__browser_click", tool_input: named }, {}, null).hookSpecificOutput.permissionDecision, "ask");
     counts.checkout.prompts++; // the user would confirm here; the test doesn't press it
     assert.ok(!posted.includes("/paid"), "nothing paid");
 

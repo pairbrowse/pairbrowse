@@ -12,8 +12,6 @@
 - `executablePath`: use Brave, Arc, Vivaldi or another Chromium build instead of the PairBrowse browser.
 - `browserEngine`: `"auto"` (default: the native PairBrowse browser where a build is pinned for your computer (macOS, Linux x64, Windows x64), else `"chromium"`), `"pairbrowse"` or `"chromium"`.
 - `browserDriver`: `"patchright"` (default, needs Node.js 20+) or `"playwright"`.
-- `neverConfirm`: no longer used. Plain form submits go without asking everywhere; payments,
-  deletions and the clicks Claude names as final actions still ask.
 - `chromeArgs`: extra Chromium flags.
 - `maxTabs`: most tabs open at once (default 20). When another opens, the tab used longest ago
   closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more

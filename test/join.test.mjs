@@ -276,12 +276,12 @@ test("the joiner's status when the tunnel answers for a host that's gone: plain 
 
 test("letting a joiner in through Claude always asks; turning one away doesn't", async () => {
   const { decide, forHost } = await import("../scripts/guard.mjs");
-  const verdict = (tool, input) => decide({ tool_name: `mcp__plugin_pairbrowse_browser__${tool}`, tool_input: input }, { confirm: [], neverConfirm: [] }, null).hookSpecificOutput.permissionDecision;
+  const verdict = (tool, input) => decide({ tool_name: `mcp__plugin_pairbrowse_browser__${tool}`, tool_input: input }, { confirm: [] }, null).hookSpecificOutput.permissionDecision;
   assert.equal(verdict("pairbrowse_invite", { action: "approve", id: "r123456" }), "ask");
   assert.equal(verdict("pairbrowse_invite", { action: "deny", id: "r123456" }), "allow");
   assert.equal(verdict("pairbrowse_invite", { action: "create", role: "drive", share: "code" }), "ask");
   assert.equal(verdict("pairbrowse_join", { action: "join", code: "pb-join:x" }), "allow");
   // Codex can't ask: an approval is refused there and handed to the user (the live view's Allow).
-  const codex = JSON.parse(forHost({ tool_name: "mcp__pairbrowse_browser__pairbrowse_invite" }, decide({ tool_name: "mcp__pairbrowse_browser__pairbrowse_invite", tool_input: { action: "approve", id: "r1" } }, { confirm: [], neverConfirm: [] }, null)));
+  const codex = JSON.parse(forHost({ tool_name: "mcp__pairbrowse_browser__pairbrowse_invite" }, decide({ tool_name: "mcp__pairbrowse_browser__pairbrowse_invite", tool_input: { action: "approve", id: "r1" } }, { confirm: [] }, null)));
   assert.equal(codex.hookSpecificOutput.permissionDecision, "deny");
 });

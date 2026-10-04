@@ -42,7 +42,6 @@ export const DEFAULT_CONFIG = {
   participantName: null,
   // Origins ("https://intranet.example.com") where a plain form submit goes without asking (your
   // call, your browser). Payments, deletions and publishing still ask there.
-  neverConfirm: [],
   // Most tabs open at once; the one used longest ago closes when another opens.
   maxTabs: 20,
   // A small screenshot of the page with each result that changes it (false: text only).

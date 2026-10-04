@@ -50,7 +50,7 @@ Each filled field is checked after focus leaves it, the way you'd tab out: date 
 masked fields that throw a pasted value away get it typed key by key, and a field that still
 won't keep it stops the run with what it shows, instead of a silent "done".
 Final actions (pay, publish, submit for review, delete, and any form submit that commits
-something) never run in fast mode: Claude uses a
+something, judged by the page's structure, not its words) never run in fast mode: Claude uses a
 normal click for them, so you confirm.
 
 ## Popups and notifications
@@ -60,7 +60,7 @@ and new tabs reported to Claude. Cookie banners and popups are found by their sh
 the page, in any language. Plain ones close by themselves (a standard "Accept",
 `"cookieChoice": "reject"` in `~/.pairbrowse/config.json` picks "Reject" instead; an offer's ×
 in its corner, also when it shows up seconds later); for the rest, Claude gets the popup's text
-and buttons with the screenshot, and closes it. It never takes an offer to make one go away. Confirms that pay, delete or submit stay for Claude and you. Site notification and
+and buttons with the screenshot, and closes it. It never takes an offer to make one go away. A page's own confirm dialogs stay for Claude and you: PairBrowse never answers OK to one, and Claude's OK asks you. Site notification and
 location requests never pop up: they show only as a small icon in the address bar (Chromium's
 quiet prompts), and sites see the ordinary "ask" state, like in an everyday Chrome. Files a site hands over (invoices, exports) are saved to your
 Downloads folder (`"downloadsDir"` to change it).

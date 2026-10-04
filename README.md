@@ -51,8 +51,9 @@ once; they stay signed in.
 ## Safety
 
 - No debugging port: the browser is driven over a private pipe, reachable only by your user.
-- Pay, publish, delete, send and submit-for-review clicks ask you first; "Submit for review" and
-  "Publish" also need a passing check against the platform's current rules.
+- Pay, publish, delete, send and submit-for-review clicks ask you first, judged by what a click
+  does from the page's structure (form submits, card fields, danger buttons, confirmation dialogs),
+  not by its words; publishing also needs a passing check against the platform's current rules.
 - Passwords work only on the domains you list for them and are masked in everything the model reads.
 - Join codes share tabs and form values, never your cookies, logins or passwords, and only after you click Allow.
 - PairBrowse never solves CAPTCHAs or bot checks.

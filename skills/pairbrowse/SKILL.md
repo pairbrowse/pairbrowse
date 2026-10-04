@@ -113,16 +113,22 @@ Open only the verification message: select the inbox tab, `browser_find` with a 
 
 ## Pre-submit review and final actions
 
-- The guard blocks submit-for-review, publish and go-live clicks until a passing `review_save` from
-  the last 30 minutes. Read the platform's current official requirements in a new tab, not from
-  memory: screenshots, URLs (open privacy, support and demo links), reviewer test credentials,
-  justified permissions, naming and branding. One check per rule with `ok` and a short `note`;
-  `waived` only if the user said to submit anyway. Show the result, then click.
-- Pay, delete and message clicks prompt the user in Claude Code: describe what happens, then click.
-  Clicks are also judged by what they do: a form submit (not a "Next" step, search or sign-in),
-  card fields, a danger button or a confirmation dialog. A refusal names the word to use in
-  `element` ("Submit: Create account", "Pay: Submit order", "Delete: OK"); retry with it.
-  `browser_evaluate` always asks the user; avoid it. Final actions are never run in fast mode.
+- Name a click that commits something with its class at the start of `element`: `Pay:` (pays,
+  buys, subscribes), `Delete:` (deletes, cancels, ends), `Submit:` (sends, posts, creates, submits),
+  `Publish:` (submit for review, publish, go live). The class is what makes the guard ask the user;
+  PairBrowse reads no button words.
+- `Publish:` clicks are blocked until a passing `review_save` from the last 30 minutes. Read the
+  platform's current official requirements in a new tab, not from memory: screenshots, URLs (open
+  privacy, support and demo links), reviewer test credentials, justified permissions, naming and
+  branding. One check per rule with `ok` and a short `note`; `waived` only if the user said to
+  submit anyway. Show the result, then click.
+- The helper judges every click by the page's structure, never its words: a form submit (not a
+  step marked in a multi-step form, a search or a sign-in), card, IBAN or billing/shipping fields,
+  a payment frame, a danger-styled button, a confirmation dialog, an HTTP method on a link or
+  button. Such a click is refused until it carries the class the refusal names ("Pay: Submit
+  order"); retry with it. Accepting a page's confirm dialog (`browser_handle_dialog` with accept)
+  asks the user too. `browser_evaluate` always asks the user; avoid it. Final actions are never
+  run in fast mode.
 - In Codex those clicks are refused with a note: badge "you", name the button and what it does,
   wait, and carry on from the result. Record the passing review first for submit or publish.
 

@@ -87,10 +87,12 @@ test("uploads reach a file field, an upload button and a drop zone", { skip: !ru
     assert.match(dropped[0], /demo\.mp4:15$/);
     assert.equal(await page.locator("[data-pairbrowse-upload]").count(), 0, "temporary field removed");
 
-    await page.setContent(`<button>Publish</button>`);
+    // A form submit (by structure, whatever it says) is never clicked to look for a chooser.
+    await page.setContent(`<form method="post" onsubmit="window.sent=true;return false"><input name="title"><button>Publish</button></form>`);
     r = await uploadFiles(page, { files: [png], target: "Publish" }, opts);
     assert.equal(r.ok, false);
     assert.match(r.text, /final action/);
+    assert.equal(await page.evaluate(() => !!window.sent), false);
   } finally {
     await browser.close();
   }

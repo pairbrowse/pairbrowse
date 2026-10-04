@@ -2,42 +2,50 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.PAIRBROWSE_HOME = "/home/me/.pairbrowse";
-const { decide, finalAction } = await import("../scripts/guard.mjs");
+const { decide, clickClass, neverConfirmOrigin } = await import("../scripts/guard.mjs");
 
-const cfg = { confirm: [], neverConfirm: [] };
+const cfg = { neverConfirm: [] };
 const NOW = Date.parse("2026-10-01T12:00:00Z");
 const review = (minsAgo, passed = true) => ({ passed, at: new Date(NOW - minsAgo * 60_000).toISOString(), guidelinesUrl: "https://example.com/rules", checks: [{ rule: "r", ok: passed }] });
 const run = (tool, tool_input, { config = cfg, rev = null } = {}) =>
   decide({ tool_name: `mcp__plugin_pairbrowse_browser__${tool}`, tool_input }, config, rev, NOW).hookSpecificOutput.permissionDecision;
 const click = (element, opts) => run("browser_click", { element, target: "e1" }, opts);
 
-test("routine clicks run without asking", () => {
-  for (const label of ["Next", "Continue", "Save draft", "I agree", "Accept all cookies", "Send code", "Resend code", "PayPal", "Payments settings", "Order history", "Reset filters"]) {
+test("clicks without a class run without asking: the hook reads no words", () => {
+  // The helper judges what a click does by the page's structure and refuses a committing one until
+  // it's named with its class; the hook only reads that class.
+  for (const label of ["Next", "Pay now", "Delete store", "Submit order", "Löschen", "購入", "Note: pay later", "Payment: settings"]) {
     assert.equal(click(label), "allow", label);
   }
 });
 
-test("money, destructive and messaging clicks ask first", () => {
-  // Committing in general asks too (the helper also demands it by what a click does).
-  for (const label of ["Pay now", "Delete store", "Place order", "Start trial", "Send message", "Submit", "Submit order", "Erase all data", "Confirm", "Löschen", "購入"]) {
+test("a click named with its class asks first", () => {
+  for (const label of ["Pay: Submit order", "Delete: OK", "Submit: Create account", 'submit: "Send"', '"Pay: 49 EUR"', "DELETE : Yes"]) {
     assert.equal(click(label), "ask", label);
   }
+  assert.deepEqual(["Pay: x", "Delete: x", "Submit: x", "Publish: x", "Send: x", "Pay now"].map(clickClass), ["pay", "delete", "submit", "publish", "", ""]);
 });
 
-test("submit for review is blocked without a fresh passing review", () => {
-  assert.equal(click("Submit for review"), "deny");
-  assert.equal(click("Publish app", { rev: review(45) }), "deny", "stale review");
-  assert.equal(click("Publish app", { rev: review(5, false) }), "deny", "failed review");
-  assert.equal(click("Submit for review", { rev: review(5) }), "ask", "passed review still asks");
+test("publish clicks are blocked without a fresh passing review", () => {
+  assert.equal(click("Publish: Submit for review"), "deny");
+  assert.equal(click("Publish: Publish app", { rev: review(45) }), "deny", "stale review");
+  assert.equal(click("Publish: Publish app", { rev: review(5, false) }), "deny", "failed review");
+  assert.equal(click("Publish: Submit for review", { rev: review(5) }), "ask", "passed review still asks");
 });
 
-test("the review gate can't be configured away", () => {
-  assert.equal(click("Publish app", { config: { confirm: [], neverConfirm: ["publish", "submit for review"] } }), "deny");
+test("the review gate can't be configured away; neverConfirm is origins only", () => {
+  assert.equal(click("Publish: Publish app", { config: { neverConfirm: ["https://partners.shopify.com", "publish"] } }), "deny");
+  const config = { neverConfirm: ["https://intranet.example.com", "submit", "pay", "not a url", "file:///etc"] };
+  assert.equal(neverConfirmOrigin("https://intranet.example.com/forms/1", config), true);
+  assert.equal(neverConfirmOrigin("https://intranet.example.com.evil.io/", config), false);
+  assert.equal(neverConfirmOrigin("http://intranet.example.com/", config), false, "another scheme is another origin");
+  assert.equal(neverConfirmOrigin("https://shop.example/", config), false, "words do nothing");
 });
 
-test("config adds and removes confirm words", () => {
-  assert.equal(click("Create account", { config: { confirm: ["create account"], neverConfirm: [] } }), "ask");
-  assert.equal(click("Pay now", { config: { confirm: [], neverConfirm: ["pay"] } }), "allow");
+test("OK on a page's confirm or prompt dialog asks; dismissing doesn't", () => {
+  assert.equal(run("browser_handle_dialog", { accept: true }), "ask");
+  assert.equal(run("browser_handle_dialog", { accept: true, promptText: "x" }), "ask");
+  assert.equal(run("browser_handle_dialog", { accept: false }), "allow");
 });
 
 test("uploads run only for media and documents in the uploads folder", () => {
@@ -61,7 +69,7 @@ test("only web pages open; local network asks", () => {
 });
 
 test("the guard fails closed", () => {
-  assert.equal(decide({ tool_name: "mcp__plugin_pairbrowse_browser__browser_click", tool_input: { element: "Publish" } }, cfg, { at: "garbage", passed: true, checks: [] }, NOW).hookSpecificOutput.permissionDecision, "deny");
+  assert.equal(decide({ tool_name: "mcp__plugin_pairbrowse_browser__browser_click", tool_input: { element: "Publish: app" } }, cfg, { at: "garbage", passed: true, checks: [] }, NOW).hookSpecificOutput.permissionDecision, "deny");
 });
 
 test("fills, navigation and run tools are allowed", () => {
@@ -93,18 +101,10 @@ test("drive invite links ask; watch links, list and revoke don't", () => {
   assert.equal(decide({ tool_name: "mcp__pairbrowse_browser__pairbrowse_invite", tool_input: { action: "create", role: "drive" } }, cfg, null, NOW).hookSpecificOutput.permissionDecision, "ask");
 });
 
-test("finalAction names the strongest final word in a real button label", () => {
-  const config = { confirm: [], neverConfirm: [] };
-  assert.deepEqual(finalAction('button "Publish"', config), { word: "publish", review: true });
-  assert.deepEqual(finalAction('button "Pay $49 now"', config), { word: "pay", review: false });
-  assert.equal(finalAction('button "Send code"', config), null);
-  assert.equal(finalAction('button "Continue"', config), null);
-});
-
 test("Codex tool names get the same decisions", () => {
   const codex = (tool, tool_input) => decide({ tool_name: `mcp__pairbrowse_browser__${tool}`, tool_input }, cfg, null, NOW).hookSpecificOutput.permissionDecision;
   assert.equal(codex("browser_click", { element: "Next", target: "e1" }), "allow");
-  assert.equal(codex("browser_click", { element: "Pay now", target: "e1" }), "ask");
+  assert.equal(codex("browser_click", { element: "Pay: Pay now", target: "e1" }), "ask");
   assert.equal(codex("browser_navigate", { url: "file:///etc/passwd" }), "deny");
   assert.equal(decide({ tool_name: "mcp__pairbrowse_runs__run_save", tool_input: {} }, cfg, null, NOW).hookSpecificOutput.permissionDecision, "allow");
 });

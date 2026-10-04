@@ -88,7 +88,7 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
     assert.match(handed.result.content[0].text, /local network.*ask the user to do this step themselves/s);
     // A pay click is handed off too, and a second initialize can't relabel the app as Claude Code.
     await other.call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
-    const pay = await other.call("tools/call", { name: "browser_click", arguments: { element: "Pay now", target: "#pay" } });
+    const pay = await other.call("tools/call", { name: "browser_click", arguments: { element: "Pay: Pay now", target: "#pay" } });
     assert.equal(pay.result.isError, true);
     assert.match(pay.result.content[0].text, /final action \(pay\)\. This needs the user's OK/);
     stage = "invite links";
@@ -114,7 +114,7 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
     // A connection that never says which app it is gets the same rules.
     const anon = net.createConnection(socketPath);
     await new Promise((resolve, reject) => { anon.once("connect", resolve); anon.once("error", reject); });
-    anon.write(JSON.stringify({ jsonrpc: "2.0", id: "x1", method: "tools/call", params: { name: "browser_click", arguments: { element: "Delete account", target: "#delete" } } }) + "\n");
+    anon.write(JSON.stringify({ jsonrpc: "2.0", id: "x1", method: "tools/call", params: { name: "browser_click", arguments: { element: "Delete: Delete account", target: "#delete" } } }) + "\n");
     const anonReply = await waitForLine(anon, (m) => m.id === "x1");
     assert.equal(anonReply.result.isError, true);
     assert.match(anonReply.result.content[0].text, /final action \(delete\)/);

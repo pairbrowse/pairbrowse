@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // PreToolUse hook for every PairBrowse tool.
 // - Routine browser actions run without permission prompts.
-// - Submit-for-review / publish clicks are blocked until a passing pre-submit review
-//   was recorded in the last REVIEW_MAX_AGE_MIN (30) minutes, and then still ask you to confirm. This can't be switched off.
-// - Paying, deleting and messaging people ask you first.
+// - Clicks named with a class ("Pay: Submit order"; the helper demands it by what the click does,
+//   see clickClass) ask you first. "Publish:" clicks are blocked until a passing pre-submit review
+//   was recorded in the last REVIEW_MAX_AGE_MIN (30) minutes, then still ask. This can't be switched off.
+// - OK on a page's confirm or prompt dialog asks you.
 // - Uploads run only for ordinary media and documents in ~/.pairbrowse/files/uploads;
 //   anything else asks you.
 // - Only web pages can be opened; local-network addresses ask you first.
@@ -14,58 +15,31 @@ import { navigationProblem, BLOCKED_TOOLS, BROWSER_PREFIX } from "./policy.mjs";
 import { latestReview, REVIEW_MAX_AGE_MIN } from "./runs.mjs";
 import { secretInside, MEDIA } from "./upload.mjs";
 
-// The word list is the fast path: it catches the obvious cases cheaply and names them in the
-// prompt. The helper also judges a click by what it does (daemon/page.mjs clickRisk): a form
-// submit or a commit-style action is asked for whatever it says, in any language.
-export const REVIEW_WORDS = [
-  "submit for review", "submit app", "submit listing", "submit for approval", "submit application",
-  "send for review", "request review", "publish", "go live",
-  "veröffentlichen", "publier", "publicar", "pubblica", "publiceren", "公開する", "发布",
-];
+// A click Claude knows commits something is named with its class first: "Pay: Submit order",
+// "Delete: OK", "Submit: Create account", "Publish: Submit for review". The helper works out the
+// class from what the click does (daemon/page.mjs clickRisk, by the page's structure, never by its
+// words) and refuses the click until it's named; this hook then asks you. Publish is the class
+// Claude gives a submit-for-review or go-live click (the listing skill), and it's blocked until a
+// passing pre-submit review.
+export const CLICK_CLASSES = ["publish", "pay", "delete", "submit"];
+const CLASS_TEXT = { publish: "publishes or submits for review", pay: "pays", delete: "deletes or ends something", submit: "sends or submits something" };
 
-// Money, then destructive, then talking to people, then committing in general; English first,
-// then German, French, Spanish, Portuguese, Italian, Dutch, Japanese and Chinese.
-const PAY_WORDS = [
-  "pay", "purchase", "buy", "checkout", "check out", "place order", "subscribe", "upgrade",
-  "add card", "add payment", "confirm payment", "start trial", "start plan", "charge",
-  "bezahlen", "zahlen", "kaufen", "jetzt kaufen", "bestellen", "zahlungspflichtig bestellen", "abonnieren",
-  "payer", "acheter", "commander", "s'abonner",
-  "pagar", "comprar", "realizar pedido", "suscribirse", "finalizar compra", "assinar",
-  "paga", "acquista", "ordina", "abbonati",
-  "betalen", "kopen", "afrekenen",
-  "支払う", "購入", "注文する", "付款", "支付", "购买", "下单",
-];
-const DELETE_WORDS = [
-  "delete", "deactivate", "uninstall", "close account", "close store", "cancel subscription",
-  "revoke", "disconnect", "transfer ownership", "remove", "erase", "reset",
-  "löschen", "entfernen", "zurücksetzen", "kündigen",
-  "supprimer", "effacer", "retirer", "réinitialiser", "résilier",
-  "eliminar", "borrar", "quitar", "restablecer", "excluir", "remover", "apagar",
-  "elimina", "cancella", "rimuovi", "ripristina",
-  "verwijderen", "wissen", "opzeggen",
-  "削除", "消去", "リセット", "删除", "移除", "重置",
-];
-const SEND_WORDS = [
-  "send message", "send invite", "send email", "reply to customer", "send", "post",
-  "senden", "absenden", "envoyer", "enviar", "invia", "verzenden", "versturen", "送信", "发送",
-];
-const COMMIT_WORDS = [
-  "submit", "confirm", "order",
-  "bestätigen", "confirmer", "valider", "soumettre", "confirmar", "conferma", "bevestigen", "確認", "确认", "提交",
-];
-export const CONFIRM_WORDS = [...PAY_WORDS, ...DELETE_WORDS, ...SEND_WORDS, ...COMMIT_WORDS];
-
-// What a final-action word commits: "pay", "delete" or "" (for the confirmation that follows it).
-export function finalKind(word) {
-  const w = String(word || "").toLowerCase();
-  if (w === "pay" || PAY_WORDS.includes(w)) return "pay";
-  if (w === "delete" || DELETE_WORDS.includes(w)) return "delete";
-  return "";
+// The class an element description starts with ("Pay: Submit order" -> "pay"), or "".
+export function clickClass(element) {
+  const c = String(element || "").match(/^[\s"'“‘([]*([A-Za-z]+)\s*:/)?.[1]?.toLowerCase();
+  return CLICK_CLASSES.includes(c) ? c : "";
 }
 
-// Phrases that contain a confirm word but are routine.
-const SAFE_PHRASES = ["send code", "send verification", "resend code", "send link", "post code", "postcode", "postal code",
-  "order history", "order status", "sort order", "reset filters", "reset filter", "remove filter", "remove filters", "confirm email", "confirm password"];
+// Whether a structural "submit" on this page needs no naming: the origins you listed in config
+// neverConfirm. Payments, deletions and the review gate still ask everywhere.
+export function neverConfirmOrigin(url, config = loadConfig()) {
+  let origin;
+  try { origin = new URL(String(url)).origin; } catch { return false; }
+  if (!/^https?:/.test(origin)) return false;
+  return (Array.isArray(config.neverConfirm) ? config.neverConfirm : []).some((e) => {
+    try { const o = new URL(String(e)).origin; return /^https?:/.test(o) && o === origin; } catch { return false; }
+  });
+}
 
 export function uploadAllowed(p, uploadsDir = paths.uploads) {
   const full = resolve(String(p));
@@ -91,30 +65,6 @@ const deny = (reason) => out("deny", reason);
 function out(permissionDecision, reason) {
   return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision, ...(reason ? { permissionDecisionReason: `pairbrowse: ${reason}` } : {}) } };
 }
-
-export const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-// A whole word or phrase in a lower-case label ("pay" in "pay now", not in "payment").
-const matches = (label, word) => new RegExp(`(^|[^a-z])${escapeRegExp(word)}([^a-z]|$)`).test(label);
-const routine = (raw) => SAFE_PHRASES.reduce((s, p) => s.replaceAll(p, " "), String(raw).toLowerCase());
-
-// Whether a label names this final-action word (a pay button must be called pay, not delete).
-export const mentions = (raw, word) => matches(routine(raw), word);
-
-// The final-action word in a button label, if any: { word, review } or null.
-export function finalAction(raw, config = loadConfig()) {
-  const label = routine(raw);
-  const review = REVIEW_WORDS.find((w) => matches(label, w));
-  if (review) return { word: review, review: true };
-  const neverConfirm = config.neverConfirm.map((w) => w.toLowerCase());
-  const words = [...CONFIRM_WORDS, ...config.confirm.map((w) => w.toLowerCase())].filter((w) => !neverConfirm.includes(w));
-  const hit = words.find((w) => matches(label, w));
-  return hit ? { word: hit, review: false } : null;
-}
-
-// For steps nobody confirms one by one (fast mode, an upload button clicked to find its file
-// chooser): the built-in words count even where neverConfirm lifts them for browser_click.
-const BUILT_IN = { confirm: [], neverConfirm: [] };
-export const finalActionStrict = (raw, config = loadConfig()) => finalAction(raw, config) || finalAction(raw, BUILT_IN);
 
 // The runs server's tools, by Claude Code's and Codex's names (BROWSER_PREFIX: the browser's).
 const RUNS_PREFIX = /^mcp__(plugin_pairbrowse_runs|pairbrowse_runs)__/;
@@ -160,11 +110,14 @@ export function decide(input, config = loadConfig(), review = latestReview(), no
     if (isLocalNetwork(ti.url)) return ask(`${ti.url} is on your local network or this computer.`);
   }
 
+  // A page's own confirm or prompt dialog (PairBrowse answers alerts itself): OK is yours.
+  if (tool === "browser_handle_dialog" && ti.accept) return ask("Answers OK to the page's dialog (a confirm or prompt it showed). Check what it confirms.");
+
   if (tool === "browser_click" || tool === "browser_drag" || tool === "browser_drop") {
     const raw = String(ti.element || ti.startElement || ti.endElement || "");
-    const action = finalAction(raw, config);
+    const cls = clickClass(raw);
 
-    if (action?.review) {
+    if (cls === "publish") {
       const fresh = review && now - Date.parse(review.at) < REVIEW_MAX_AGE_MIN * 60_000;
       if (!fresh || !review.passed) {
         return deny(
@@ -178,7 +131,7 @@ export function decide(input, config = loadConfig(), review = latestReview(), no
         (waived.length ? `, waived by you: ${waived.join("; ")}` : "") + `. Confirm "${raw}".`);
     }
 
-    if (action) return ask(`"${raw}" looks like a final action (${action.word})`);
+    if (cls) return ask(`"${raw}" ${CLASS_TEXT[cls]}: a final action (${cls})`);
   }
 
   return allow();

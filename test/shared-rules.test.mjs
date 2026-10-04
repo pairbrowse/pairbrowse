@@ -8,8 +8,8 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { readOps, stateForJoiner, readPointers, readView, turnLeft, TURN_MAX_MS, createFormSync } from "../scripts/tabsync.mjs";
 import { createPresence } from "../scripts/daemon/presence.mjs";
-import { clickRisk } from "../scripts/daemon/page.mjs";
-import { finalAction, finalKind } from "../scripts/guard.mjs";
+import { clickRisk, clickContext, buttonLabel } from "../scripts/daemon/page.mjs";
+import { readFileSync } from "node:fs";
 import { applyFields, readFields } from "../scripts/daemon/forms.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
@@ -87,7 +87,7 @@ test("form sync: a card number replacing a plain value there leaves no stale val
   assert.deepEqual(sync.local("a", url, [{ ...plain, v: "typed here" }]).map((x) => x.v), ["typed here"], "a value typed here afterwards goes");
 });
 
-test("final actions by what they do: commits are asked for in any wording or language, steps and links aren't", { skip: !runtime, timeout: 60_000 }, async () => {
+test("final actions by what they do, by structure only: commits are asked for in any wording or language, steps and links aren't", { skip: !runtime, timeout: 60_000 }, async () => {
   const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
   const browser = await chromium.launch();
   try {
@@ -98,65 +98,145 @@ test("final actions by what they do: commits are asked for in any wording or lan
       <form id="checkout" method="post"><input autocomplete="cc-number" id="cc"><input id="note"><button id="order">Submit order</button><button type="button" id="apply">Apply coupon</button></form>
       <form id="ship" method="post"><input autocomplete="shipping street-address"><input type="submit" id="go" value="Continue"></form>
       <form id="luhn" method="post"><input value="4242 4242 4242 4242"><button id="done">Done</button></form>
-      <form id="stripe" method="post"><iframe src="https://js.stripe.com/v3/elements"></iframe><button id="ok">OK</button></form>
-      <form id="wizard" method="post"><input id="first"><input id="last"><button id="next">Next →</button></form>
-      <form id="wizard-de" method="post"><input><input><button id="weiter">Weiter</button></form>
-      <form id="wizard-ja" method="post"><input><input><button id="tsugi">次へ</button></form>
+      <form id="sepa" method="post"><input value="DE89 3704 0044 0532 0130 00"><button id="sepa-ok">OK</button></form>
+      <form id="stripe" method="post"><iframe allow="payment *" srcdoc="<p>card</p>"></iframe><button id="ok">OK</button></form>
+      <form id="wizard" method="post"><ol><li aria-current="step">1</li><li>2</li><li>3</li></ol><input id="first"><input id="last"><button id="next">→</button></form>
+      <form id="wizard-last" method="post"><ol><li>1</li><li>2</li><li aria-current="step">3</li></ol><input><input><button id="finish">→</button></form>
+      <form id="wizard-bar" method="post"><progress value="1" max="4"></progress><input><input><button id="weiter">Weiter</button></form>
+      <form id="wizard-sets" method="post"><fieldset><input></fieldset><fieldset hidden><input></fieldset><button id="tsugi">次へ</button></form>
+      <form id="plain" method="post"><input><input><button id="nextish">Next</button></form>
       <form id="signup" method="post"><input id="email"><input id="name"><input type="password" autocomplete="new-password"><button id="join">Create account</button></form>
       <form id="scripted"><input id="title"><input id="body"><button id="save">Save</button></form>
       <form id="signin" method="post"><input id="user"><input type="password" id="pw"><button id="in">Sign in</button></form>
       <form id="find" method="get" action="/search"><input id="q"><button id="s">Search</button></form>
       <form id="find2" method="post"><input type="search" id="q2"><button id="s2">Go</button></form>
-      <form id="del" method="post" action="/account/delete"><button id="bye">Goodbye</button></form>
+      <form id="del" method="post" action="/x"><input type="hidden" name="_method" value="delete"><button id="bye">Goodbye</button></form>
       <a id="link" href="/products">Products</a> <a id="dellink" href="/posts/7/delete">Trash</a> <a id="pay" href="https://www.paypal.com/checkoutnow">PayPal</a>
+      <a id="rails" href="/posts/7" data-method="delete">Trash</a> <button id="hx" hx-post="/like">♥</button>
       <button id="tab" role="tab">Details</button> <button id="more" aria-expanded="false">More</button> <button id="cart">Add to cart</button>
       <button id="erase" style="background:#d92d20;color:#fff">🗑</button>
-      <div role="alertdialog" id="dlg"><p>This can't be undone.</p><button id="yes" style="background:#d92d20;color:#fff">Yes</button><button id="no">Cancel</button><button id="sure">OK</button></div>
-      <div role="dialog" id="pop"><p>Choose</p><button id="pick">Confirm</button></div>`);
-    const at = async (sel, kind = "click", prev = "") => page.locator(sel).evaluate((el, [k, p, src]) => new Function(`return (${src})`)()(el, k, p), [kind, prev, clickRisk.toString()]);
-    const is = async (sel, level, word, kind, prev) => { const r = await at(sel, kind, prev); assert.deepEqual([r.level, r.word], [level, word], `${sel} ${kind || ""}: ${JSON.stringify(r)}`); };
+      <div role="alertdialog" id="dlg"><p>?</p><button id="yes" style="background:#d92d20;color:#fff">Yes</button><button id="no">Cancel</button><button id="sure">OK</button></div>
+      <div role="alertdialog" id="dlg2"><p>?</p><button id="a1">A</button><button id="a2">B</button></div>
+      <div role="dialog" id="pop"><p>Choose</p><button id="pick">Confirm</button></div>
+      <div role="dialog" id="cookies"><p>Cookies</p><button id="c1" style="background:#1a73e8;color:#fff">Accept all</button><button id="c2">Reject</button></div>`);
+    const at = async (sel, kind = "click", prev = "", hints = {}) => page.locator(sel).evaluate((el, [k, p, h, src]) => new Function(`return (${src})`)()(el, k, p, h), [kind, prev, hints, clickRisk.toString()]);
+    const is = async (sel, level, word, kind, prev, hints) => { const r = await at(sel, kind, prev, hints); assert.deepEqual([r.level, r.word], [level, word], `${sel} ${kind || ""}: ${JSON.stringify(r)}`); };
+    // A card form submit asks as a payment, whatever its button says.
     await is("#order", "strong", "pay");
     await is("#go", "strong", "pay");
     await is("#done", "strong", "pay");
+    await is("#sepa-ok", "strong", "pay");
     await is("#ok", "strong", "pay");
     await is("#note", "strong", "pay", "enter");
+    await is("#join", "strong", "pay", "click", "", { payFrame: true });
     await is("#note", "safe", "", "space");
     await is("#apply", "safe", "");
+    // Multi-step forms by their markup: a step in the middle goes, the last step and unmarked forms ask.
     await is("#next", "safe", "");
+    assert.equal((await at("#next")).unclear, true, "a step is one the click judge may look at");
+    await is("#finish", "commit", "submit");
     await is("#weiter", "safe", "");
     await is("#tsugi", "safe", "");
+    await is("#nextish", "commit", "submit");
     await is("#first", "safe", "", "enter");
     await is("#join", "commit", "submit");
     await is("#save", "commit", "submit");
     await is("#title", "commit", "submit", "enter");
+    // A search form and a sign-in commit nothing.
     await is("#in", "safe", "");
     await is("#s", "safe", "");
     await is("#s2", "safe", "");
     await is("#bye", "strong", "delete");
+    // Links only go somewhere, whatever their address says; an HTTP method on one is a commit.
     await is("#link", "safe", "");
-    await is("#dellink", "commit", "delete");
-    await is("#pay", "commit", "pay");
+    await is("#dellink", "safe", "");
+    await is("#pay", "safe", "");
+    await is("#rails", "commit", "delete");
+    await is("#hx", "commit", "submit");
     await is("#tab", "safe", "");
     await is("#more", "safe", "");
     await is("#cart", "safe", "");
+    assert.equal((await at("#cart")).unclear, true);
+    // A danger button and a confirmation dialog: the plain button beside a filled one dismisses it.
     await is("#erase", "commit", "delete");
     await is("#yes", "strong", "delete");
     await is("#no", "safe", "");
-    await is("#sure", "commit", "delete");
+    await is("#sure", "safe", "");
+    await is("#a1", "commit", "submit");
     await is("#pick", "safe", "");
     await is("#pick", "strong", "delete", "click", "delete");
+    // The shared context: page, form (names and kinds, never values), what the control does.
+    await page.fill("#first", "Ada");
+    const ctx = await page.locator("#next").evaluate((el, src) => new Function("el", `${src.join("\n")}\nreturn clickContext(el)`)(el), [clickContext.toString(), clickRisk.toString(), buttonLabel.toString()]);
+    assert.equal(ctx.form.step, "middle");
+    assert.equal(ctx.control.does, "submits a form");
+    assert.equal(ctx.form.fields.length, 2);
+    assert.equal(JSON.stringify(ctx).includes("Ada"), false, "no field values");
+    // A dialog that isn't a confirmation (a cookie banner) asks nothing.
+    await is("#c1", "safe", "");
+    await is("#c2", "safe", "");
   } finally {
     await browser.close();
   }
 });
 
-test("the word list: the fast path, with the gaps filled and other languages, routine phrases left alone", () => {
-  for (const label of ["Submit order", "Erase all data", "Remove member", "Reset store", "Send", "Post", "Confirm", "Jetzt kaufen", "Löschen", "Supprimer", "Eliminar", "Acquista", "Verwijderen", "削除", "删除", "提交"]) assert.ok(finalAction(label, { confirm: [], neverConfirm: [] }), label);
-  for (const label of ["Next", "Continue", "Order history", "Reset filters", "Post code", "Send code", "Confirm email", "Weiter", "Products"]) assert.equal(finalAction(label, { confirm: [], neverConfirm: [] }), null, label);
-  assert.equal(finalAction("Submit form", { confirm: [], neverConfirm: ["submit"] }), null, "neverConfirm turns one down");
-  assert.equal(finalKind("löschen"), "delete");
-  assert.equal(finalKind("kaufen"), "pay");
-  assert.equal(finalKind("submit"), "");
+test("no word lists: the click guard's code holds no wording to match in any language", () => {
+  // Structure decides (fields, roles, styles, markup); a list of button or dialog words, in any
+  // language, must not come back. Class names ("pay", "delete", "submit", "publish") and HTTP
+  // methods are PairBrowse's own protocol, not page wording.
+  const files = ["scripts/guard.mjs", "scripts/policy.mjs", "scripts/daemon/serve.mjs", "scripts/runner.mjs", "scripts/daemon/page.mjs", "scripts/daemon/screenshot.mjs", "scripts/upload.mjs"];
+  const words = ["checkout", "purchase", "kaufen", "bestellen", "löschen", "supprimer", "eliminar", "verwijderen", "削除", "删除", "提交", "确认", "weiter", "suivant", "siguiente", "次へ", "are you sure", "can't be undone", "cancel subscription", "place order", "send message", "submit for review", "go live", "veröffentlichen", "close account", "confirm payment"];
+  const root = new URL("..", import.meta.url).pathname;
+  for (const f of files) {
+    const code = readFileSync(join(root, f), "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n").toLowerCase();
+    for (const w of words) assert.ok(!code.includes(w), `${f} matches page wording: "${w}"`);
+  }
+});
+
+test("the click judge only escalates, and its timeout keeps the structural decision", async () => {
+  const { judgeSettings, judgeClick, escalate, parseVerdict, judgePrompt } = await import("../scripts/clickjudge.mjs");
+  assert.equal(judgeSettings({}), null, "off by default");
+  assert.equal(judgeSettings({ clickJudge: { provider: "anthropic" } }, {}), null, "no key, no judge");
+  const s = judgeSettings({ clickJudge: { provider: "anthropic", apiKeyEnv: "K", timeoutMs: 600 } }, { K: "sk-test" });
+  assert.deepEqual(s, { model: "claude-sonnet-5", key: "sk-test", timeoutMs: 600 });
+  assert.equal(judgeSettings({ clickJudge: { provider: "other" } }, { ANTHROPIC_API_KEY: "x" }), null);
+  const ctx = {
+    task: "Status: Tidying the team page. Goal: remove inactive members",
+    page: { title: "Team", origin: "https://app.example", headings: ["Members"] },
+    control: { label: "Remove", does: "runs the page's scripts" },
+    form: { method: "post", step: "", fields: [{ name: "Email", type: "email", autocomplete: "email" }] },
+    dialog: null, prev: "", risk: { level: "safe" }, value: "secret-value",
+  };
+  // What leaves the computer: the click's context (task, page, control, form fields' names and
+  // kinds), never values.
+  let sent = null;
+  const post = async (url, headers, body) => { sent = { url, headers, body }; return { content: [{ type: "text", text: '{"commit": "delete"}' }] }; };
+  assert.equal(await judgeClick(ctx, s, { post }), "delete");
+  assert.equal(sent.url, "https://api.anthropic.com/v1/messages");
+  assert.equal(sent.body.model, "claude-sonnet-5");
+  const prompt = sent.body.messages[0].content;
+  assert.match(prompt, /remove inactive members/);
+  assert.match(prompt, /"label":"Remove".*"does":"runs the page's scripts"/);
+  assert.match(prompt, /"fields":\[\{"name":"Email","type":"email","autocomplete":"email"\}\]/);
+  assert.equal(judgePrompt(ctx).includes("secret-value"), false);
+  const facts = ctx;
+  // Escalates a safe click; never lowers one, never allows.
+  const safe = { level: "safe", word: "", why: [], unclear: true };
+  assert.deepEqual([escalate(safe, "delete").level, escalate(safe, "delete").word], ["commit", "delete"]);
+  const strong = { level: "strong", word: "pay", why: ["x"] };
+  assert.equal(escalate(strong, ""), strong);
+  assert.equal(escalate(strong, "submit"), strong);
+  assert.equal(escalate(safe, ""), safe);
+  assert.equal(parseVerdict('{"commit":"none"}'), "");
+  assert.equal(parseVerdict('{"commit":"allow"}'), "", "only a class counts");
+  assert.equal(parseVerdict("garbage"), "");
+  // A judge that doesn't answer in time, or fails, leaves the structural decision.
+  const slow = () => new Promise((r) => setTimeout(() => r({ content: [{ type: "text", text: '{"commit":"pay"}' }] }), 5000));
+  const t0 = Date.now();
+  assert.equal(await judgeClick(facts, s, { post: slow }), "");
+  assert.ok(Date.now() - t0 < 2000, "bounded by timeoutMs");
+  assert.equal(await judgeClick(facts, s, { post: async () => { throw new Error("HTTP 500"); } }), "");
+  assert.equal(escalate(safe, await judgeClick(facts, s, { post: slow })), safe);
 });
 
 test("form values in the page: a card replacing a plain value clears it here; a card typed here is never overwritten", { skip: !runtime, timeout: 60_000 }, async () => {

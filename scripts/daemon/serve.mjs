@@ -3,19 +3,21 @@
 // its own notes, masking and screenshot added to every result.
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
-import { paths } from "../paths.mjs";
+import { paths, loadConfig } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
 import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, SENSITIVE } from "../policy.mjs";
 import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { describe } from "../log.mjs";
-import { finalAction, mentions, decide, finalKind } from "../guard.mjs";
+import { decide, clickClass, neverConfirmOrigin } from "../guard.mjs";
+import { judgeSettings, judgeClick, escalate } from "../clickjudge.mjs";
+import { listRuns } from "../runs.mjs";
 import { keepFocus } from "../focus.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 import { SESSION_TOOL } from "../sessions.mjs";
 import { UPLOAD_TOOL, uploadFiles } from "../upload.mjs";
 import { FACTS_TOOL } from "../facts.mjs";
-import { RUN_TOOL, enterButtonLabel, riskAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
+import { RUN_TOOL, enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
 import { sleep, within } from "../util.mjs";
 import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel } from "./page.mjs";
@@ -124,8 +126,19 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // What this participant's last click in a tab committed ("delete", "pay"), for a minute: the
     // confirmation it opens counts as the same action (daemon/page.mjs clickRisk prev).
     const risks = new WeakMap(); // tab -> { kind, t } | null
+    const judged = new Map(); // the click judge's answers, by the click's context
+    let statusText = ""; // this participant's latest pairbrowse_status text: its task, for the click judge
+    // What the agent is doing: its status line, and the goal of the run saved last (in two hours).
+    const taskNow = () => {
+      let goal = "";
+      try { const r = listRuns()[0]; if (r && r.status !== "finished" && Date.now() - Date.parse(r.updatedAt) < 2 * 3600_000) goal = String(r.goal || ""); } catch {}
+      return [statusText && `Status: ${statusText}`, goal && `Goal: ${goal}`].filter(Boolean).join(". ").slice(0, 400);
+    };
     const recentRisk = (page) => { const r = page && risks.get(page); return r && Date.now() - r.t < 60_000 ? r.kind : ""; };
     const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+    // A click's class, as the helper requires it in element: "pay" and "delete" need their own
+    // name; any class names a plain submit (every class asks).
+    const namedAs = (element, word) => { const c = clickClass(element); return word === "submit" ? !!c : c === word; };
     // The tab this participant works in, as a page: other agents' new and closed tabs shift the
     // numbers, and two tabs can show the same URL. Its browser server's current tab follows it.
     let mine = null;
@@ -376,50 +389,56 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       if (problem && looksLikeSecretName(name, args)) return problem;
       // Keys press buttons too: Enter in a field submits its form, Enter or Space on a focused
-      // button or link presses it, and typed text with a line break presses Enter.
+      // button or link presses it, and typed text with a line break presses Enter. Judged by what
+      // pressing it does (daemon/page.mjs clickRisk), never by what its button says.
       const key = name === "browser_press_key" ? activatingKey(args.key)
         : name === "browser_type" && (args.submit || /[\r\n]/.test(String(args.text || ""))) ? "enter" : "";
       if (key) {
-        const pressed = finalAction(await keyWouldPress(name === "browser_type" ? args.target : null, key));
-        if (pressed) return `Refused: ${key === "space" ? "Space" : "Enter"} here would press the "${pressed.word}" button. ` +
-          "Type without submit (and without line breaks), then use browser_click on that button so the user confirms.";
-        // Whatever its button says: judged by what pressing it does (daemon/page.mjs clickRisk).
         const page = await context.pageAt(context.currentUrl());
-        const risk = page ? await riskAt(page, name === "browser_type" ? args.target : null, key, recentRisk(page)) : null;
-        if (risk && risk.level !== "safe") {
-          return `Refused: ${key === "space" ? "Space" : "Enter"} here would commit something (${riskReason(risk)}). ` +
-            `Type without submit (and without line breaks), then use browser_click on its button, with "${cap(risk.word)}" in element, so the user confirms.`;
+        const target = name === "browser_type" ? args.target : null;
+        const risk = page ? await riskAt(page, target, key, recentRisk(page)) : null;
+        if (risk && risk.level !== "safe" && !(risk.word === "submit" && neverConfirmOrigin(page.url(), loadConfig()))) {
+          const label = await keyWouldPress(target, key);
+          return `Refused: ${key === "space" ? "Space" : "Enter"} here would ${label ? `press "${label.slice(0, 60)}" and ` : ""}commit something (${riskReason(risk)}). ` +
+            `Type without submit (and without line breaks), then use browser_click on its button, with "${cap(risk.word)}:" at the start of element, so the user confirms.`;
         }
       }
-      // A publish, pay or delete button described as something milder ("Continue") would slip past
-      // the click guard, which reads Claude's description. Refuse until it's called what it is.
+      // A click that commits something, judged by what it does (the page's structure, never its
+      // words: a form submit, card fields, a danger button, a confirmation dialog), is refused
+      // until element names its class ("Pay: Submit order"), which makes the guard ask the user.
       if (name === "browser_click") {
-        const text = await realLabel(await serverPage(), args.target);
-        if (text === null) return `Ref ${args.target} isn't on the page any more. Take a browser_snapshot and use its fresh refs.`;
-        // A selector can name the button too: getByRole('button', { name: 'Pay' }).
-        const real = finalAction(`${text} ${isRef(args.target) ? "" : args.target}`);
-        if (real && !mentions(args.element || "", real.word)) {
-          log(`refused click on "${real.word}" described as "${String(args.element || "").slice(0, 80)}"`);
-          return `Refused: this element is a "${real.word}" button, but the click describes it as "${args.element || "(nothing)"}". ` +
-          "Retry with its real label in element, so the user sees what they are approving.";
-        }
-        // By what the click does, whatever it says ("Submit order", "OK", an icon): a form submit
-        // or a commit-style action is asked for, unless it clearly commits nothing (a link, a
-        // step through a form, a search, a sign-in). It's called what it is so the user confirms.
         const page = await serverPage();
-        const risk = page ? await riskAt(page, args.target, "click", recentRisk(page)) : { level: "safe" };
-        const lifted = risk.level === "commit" && !finalAction(risk.word); // the user's neverConfirm
-        // Strong signals (card fields with a submit, a danger button in a confirmation) want their
-        // own word even when the label has another ("Submit order" pays: called "Pay").
-        const named = risk.level === "strong" ? mentions(args.element || "", risk.word) : real || mentions(args.element || "", risk.word) || finalAction(args.element || "");
-        if (risk.level !== "safe" && !lifted && !named) {
+        const text = await realLabel(page, args.target);
+        if (text === null) return `Ref ${args.target} isn't on the page any more. Take a browser_snapshot and use its fresh refs.`;
+        const ctx = page ? await contextAt(page, args.target, "click", recentRisk(page)) : { risk: { level: "safe", word: "", why: [] } };
+        let risk = ctx.risk;
+        // Safe by structure but run by the page's scripts (or a marked step): the optional click
+        // judge sees the click's whole context and may make it ask (never the other way); no
+        // answer in time keeps this decision.
+        const config = loadConfig();
+        const judge = page && risk.level === "safe" && risk.unclear && !clickClass(args.element) ? judgeSettings(config) : null;
+        if (judge) {
+          ctx.task = taskNow();
+          const key = JSON.stringify([ctx.page?.origin, ctx.control?.label, ctx.form, ctx.dialog?.text, ctx.prev, ctx.task]);
+          let verdict = judged.get(key);
+          if (verdict === undefined) {
+            verdict = await judgeClick(ctx, judge);
+            judged.set(key, verdict);
+            if (judged.size > 300) judged.delete(judged.keys().next().value);
+            if (verdict) log(`click judge: ${verdict} for "${String(ctx.control?.label || "").slice(0, 60)}"`);
+          }
+          risk = escalate(risk, verdict || "");
+        }
+        const lifted = risk.word === "submit" && risk.level !== "strong" && neverConfirmOrigin(page?.url(), config);
+        if (risk.level !== "safe" && !lifted && !namedAs(args.element, risk.word)) {
           log(`refused click (${risk.word}: ${risk.why.join(", ")}) described as "${String(args.element || "").slice(0, 80)}"`);
           return `Refused: this click commits something, whatever its label ("${String(text).slice(0, 60)}"): ${riskReason(risk)}. ` +
-            `Retry with "${cap(risk.word)}" in element (e.g. "${cap(risk.word)}: ${String(text || "button").slice(0, 40)}"), so the user confirms it.`;
+            `Retry with "${cap(risk.word)}:" at the start of element (e.g. "${cap(risk.word)}: ${String(text || "button").slice(0, 40)}"), so the user confirms it.`;
         }
-        // Remembered a minute: the "Confirm" in the popup a delete click opens is still a delete.
-        const kind = finalKind(real?.word) || (risk.level !== "safe" ? finalKind(risk.word) : "");
-        risks.set(page, kind ? { kind, t: Date.now() } : null);
+        // Remembered a minute: the "OK" in the popup a delete click opens is still a delete.
+        const cls = clickClass(args.element);
+        const kind = ["pay", "delete"].includes(cls) ? cls : ["pay", "delete"].includes(risk.word) ? risk.word : "";
+        if (page) risks.set(page, kind ? { kind, t: Date.now() } : null);
       }
       return null;
     }
@@ -496,7 +515,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
       pairbrowse_run: runCommand,
       async pairbrowse_status(args) {
         await context.getContext();
-        await hud.setBadge(args.text, args.kind);
+        if (args.text) statusText = String(args.text).slice(0, 140);
+      await hud.setBadge(args.text, args.kind);
         session.setStatus(participant, args.text, args.kind); // the side panels in a shared session show it
         return { text: "ok" };
       },

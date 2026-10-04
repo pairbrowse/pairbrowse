@@ -1,9 +1,8 @@
 // The small picture of the page that goes with results (never while a saved password shows),
 // and pairbrowse_click_at, which clicks a spot in the latest one.
-import { finalAction } from "../guard.mjs";
 import { redact } from "../secrets.mjs";
 import { sleep, within } from "../util.mjs";
-import { withHelpers, buttonLabel, clickRisk } from "./page.mjs";
+import { withHelpers, buttonLabel, clickRisk, clickContext } from "./page.mjs";
 
 const LOAD_WAIT_MS = 4000;
 // One frame of a screencast: the compositor scales it, so the page is never re-laid out for the
@@ -65,8 +64,8 @@ const hitAt = withHelpers(([px, py]) => {
   if (["IFRAME", "FRAME", "EMBED", "OBJECT"].includes(el.tagName)) return { frame: true };
   const target = el.closest('button, a, [role="button"], input, select, label, summary, [onclick], [tabindex]');
   if (!target) return { label: (el.innerText || "").length <= 80 ? (el.innerText || "").trim() : "" }; // plain page area
-  return { label: buttonLabel(target), risk: clickRisk(target) };
-}, buttonLabel, clickRisk);
+  return { label: buttonLabel(target), risk: clickContext(target).risk };
+}, buttonLabel, clickRisk, clickContext);
 
 // secrets(): the saved passwords ({ values }). log(text).
 // hidePeers(page, hidden): other participants' pointers off (true) or back on, around a picture.
@@ -126,9 +125,7 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
     const hit = await page.evaluate(hitAt, [cx, cy]).catch(() => null);
     if (!hit) return { text: "Nothing at that spot.", error: true };
     if (hit.frame) return { text: "That spot is inside a frame. Use browser_click with the element's ref from browser_snapshot.", error: true };
-    const final = finalAction(hit.label);
-    if (final) return { text: `Refused: that spot is a "${final.word}" button ("${hit.label.slice(0, 60)}"). Use browser_click with its ref so the user confirms.`, error: true };
-    // By what it does too (a form submit, a danger button): only browser_click asks the user.
+    // By what it does (a form submit, a danger button, a confirmation): only browser_click asks the user.
     if (hit.risk && hit.risk.level !== "safe") return { text: `Refused: that spot commits something (${(hit.risk.why || []).join(", ") || hit.risk.word}). Use browser_click with its ref so the user confirms.`, error: true };
     await page.mouse.click(cx, cy);
     return { text: `Clicked "${hit.label.slice(0, 80) || "the spot"}" at ${Math.round(cx)},${Math.round(cy)} on the page.`, page };

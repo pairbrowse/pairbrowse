@@ -40,10 +40,12 @@ export const DEFAULT_CONFIG = {
   executablePath: null,
   // Label this Claude connection in a shared browser (or set PAIRBROWSE_PARTICIPANT).
   participantName: null,
-  // Extra words that make a click stop and ask you first.
-  confirm: [],
-  // Words removed from the built-in confirm list (your call, your browser).
+  // Origins ("https://intranet.example.com") where a plain form submit goes without asking (your
+  // call, your browser). Payments, deletions and publishing still ask there.
   neverConfirm: [],
+  // The optional click judge, off by default: { "provider": "anthropic", "model": ...,
+  // "apiKeyEnv": "ANTHROPIC_API_KEY", "timeoutMs": 4000 }. See scripts/clickjudge.mjs.
+  clickJudge: null,
   // Most tabs open at once; the one used longest ago closes when another opens.
   maxTabs: 20,
   // A small screenshot of the page with each result that changes it (false: text only).

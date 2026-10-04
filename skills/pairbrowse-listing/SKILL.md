@@ -52,8 +52,9 @@ PairBrowse plugin. Use only PairBrowse's tools.
 
 ## 4. Pre-submit review (required)
 
-PairBrowse blocks "Submit for review", "Publish", "Go live" and similar clicks until a
-passing `review_save` was recorded in the last 30 minutes.
+Name the "Submit for review", "Publish" or "Go live" click with the `Publish:` class at the
+start of `element` ("Publish: Submit for review"). PairBrowse blocks `Publish:` clicks until a
+passing `review_save` was recorded in the last 30 minutes, then asks the user.
 
 1. Open the platform's CURRENT official requirements in a new tab (`browser_tabs` with
    `action: "new"` and the `url`, or a link from the console): listing requirements, review

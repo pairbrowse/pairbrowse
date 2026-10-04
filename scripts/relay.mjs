@@ -126,6 +126,8 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
           }
           if (stopped) return;
           if (event === "pointers") { try { on.pointers?.(data); } catch {} return; }
+          if (event === "screen") { try { on.screen?.(data); } catch {} return; } // shared browser mode: pictures, connection states
+          if (event === "agent") { try { on.agent?.(data); } catch {} return; } // shared browser mode: answers for this side's agents
           if (event === "tabs") takeRelays(data?.relays);
           chain = chain.then(async () => {
             if (event === "tabs") await onTabs(data);
@@ -166,6 +168,26 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     },
     // This side's pointers ({ me, agents, t }), both roles (everyone else's come on the channel).
     pointer(body) { return ask("pointer", body, false); },
+    // Shared browser mode (codes with mode "shared"): setting up a tab's direct connection, or the
+    // slower route's pictures and input. Resolves to the host's answer, or { error }.
+    async screen(body) {
+      if (phase !== "in" || code.mode !== "shared") return { error: "not in a shared browser session" };
+      const r = await ask("screen", body);
+      return r?.code === 200 ? r.body : { error: r?.body?.error || "no answer" };
+    },
+    // Shared browser mode: one MCP message from an agent here (agent: its id) for its participant
+    // in the host's browser; answers come on the channel (on.agent). Drive codes only.
+    async agent(agentId, line) {
+      if (phase !== "in" || code.mode !== "shared" || code.role !== "drive") return { error: "not driving a shared browser" };
+      const r = await ask("agent", { a: agentId, line });
+      return r?.code === 200 ? r.body : { error: r?.body?.error || "no answer" };
+    },
+    // A part of a file an agent here uploads in the host's browser.
+    async file(part) {
+      if (phase !== "in" || code.mode !== "shared" || code.role !== "drive") return { error: "not driving a shared browser" };
+      const r = await ask("file", part);
+      return r?.code === 200 ? r.body : { error: r?.body?.error || "no answer" };
+    },
     // Who is doing what here, or a message: text only, both roles.
     async say(op) {
       const r = await ask("say", op);

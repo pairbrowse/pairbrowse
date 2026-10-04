@@ -116,7 +116,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
       tunnelHost: () => pool.map((t) => new URL(t.url).hostname),
       relays: () => pool.map((t) => t.url),
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
-      onPause: view.onPause, pauseState: view.pauseState, picker: view.picker, devShare, devPanel,
+      onPause: view.onPause, pauseState: view.pauseState, picker: view.picker, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel,
     });
     // Keep the sharing tunnel's port when the live view restarts with the browser.
     guestPortWanted = liveView.guestPort;
@@ -156,7 +156,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
     const fail = (text) => ({ text, error: true });
     if (action === "list") {
       const asking = approvals.list();
-      const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${i.role === "drive" ? "can drive" : "watch only"}, ${i.share === "code" ? "join code" : "link"}, until ${formatTime(i.expiresAt)}` +
+      const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${i.role === "drive" ? "can drive" : "watch only"}, ${i.share === "code" ? (i.mode === "shared" ? "join code (shared browser)" : "join code (follow)") : "link"}, until ${formatTime(i.expiresAt)}` +
         asking.filter((r) => r.inviteId === i.id).map((r) => `\n  - request ${r.id}: ${r.name}${r.app ? ` (${r.app})` : ""}, ${r.state === "pending" ? "waiting for the user's OK" : r.state === "approved" ? "let in" : "turned away"}`).join(""));
       const dev = devShare.list().map((d) => `- dev server localhost:${d.port}, shared with joiners at ${d.url}`);
       return { text: [...lines, ...dev].join("\n") || "No invites." };
@@ -184,10 +184,14 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
     const hostName = cleanName(args.name, "") || savedName(config) || host;
     const share = args.share || (inviteBase ? "link" : "code");
     let invite;
-    try { invite = invites.create({ role: args.role, label: args.label, hours: args.hours, share }); } catch (e) { return fail(e.message); }
+    try { invite = invites.create({ role: args.role, label: args.label, hours: args.hours, share, mode: args.mode || "shared" }); } catch (e) { return fail(e.message); }
     const live = await ensureLiveView();
     const port = live.port;
-    const rights = share === "code"
+    const rights = share === "code" && invite.mode === "shared"
+      ? (invite.role === "drive"
+        ? "Shared browser: they work in this browser itself, seeing your tabs live (picture and sound, sent straight to their PairBrowse), and can click, type and scroll in them, logged in as you are. Your logins, cookies and passwords never leave this computer; revoking ends it at once."
+        : "Shared browser: they see your tabs live (picture and sound, sent straight to their PairBrowse), without clicking or typing. Your logins, cookies and passwords never leave this computer.")
+      : share === "code"
       ? (invite.role === "drive"
         ? "Their own PairBrowse browser opens your tabs and follows them; what they change in those tabs (another address, a new tab, closing one) happens here too, and you see each other's pointers and what's typed in shared tabs (sensitive fields only as filled). Never your logins, cookies, passwords or a picture of the page."
         : "Their own PairBrowse browser opens your tabs and follows them, one way, with what's typed in them (sensitive fields only as filled) and your pointers. Never your logins, cookies, passwords or a picture of the page.")
@@ -201,7 +205,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
         invites.revoke(invite.id);
         return fail(`Couldn't open the sharing tunnel: ${e?.message || e}. Nothing was shared. Retry, or use share "link" with an SSH tunnel.`);
       }
-      lines.push(`Join code: ${encodeJoinCode({ url: t.url, key: invite.key, role: invite.role, label: hostName === "The host" ? "" : hostName })}`);
+      lines.push(`Join code: ${encodeJoinCode({ url: t.url, key: invite.key, role: invite.role, mode: invite.mode, label: hostName === "The host" ? "" : hostName })}`);
       lines.push(`The person pastes it into their own PairBrowse ("join this session: <code>"). You approve them when they ask: "${invite.label} wants to join" shows in the live view (Allow / Deny), and here.` +
         " It uses a free Cloudflare Quick Tunnel (no account, no uptime guarantee); the code stops working if the browser restarts.");
     } else if (inviteBase) {

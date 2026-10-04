@@ -1,0 +1,24 @@
+:root { --bg: #14162b; --ink: #f3f4fb; --muted: #a9adc9; --accent: #e9763f; --pill: rgba(20, 22, 43, .82); }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+body { font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+#v, #still { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; outline: none; cursor: default; background: var(--bg); }
+#still { object-fit: contain; }
+#pointers { position: fixed; inset: 0; pointer-events: none; }
+.p { position: absolute; left: 0; top: 0; will-change: transform; transition: opacity .3s; }
+.p svg { display: block; width: 18px; height: 18px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
+.p span { position: absolute; left: 14px; top: 16px; padding: 2px 8px; border-radius: 999px; font: 600 11px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: #fff; white-space: nowrap; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
+#status { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px; background: var(--pill); color: var(--muted); box-shadow: 0 6px 24px rgba(0, 0, 0, .3); transition: opacity .35s; }
+#status.hidden { opacity: 0; pointer-events: none; }
+#status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+#tag { position: fixed; left: 12px; top: 12px; display: flex; align-items: center; gap: 7px; padding: 4px 10px 4px 8px; border-radius: 999px; background: var(--pill); color: var(--ink); font-size: 12px; opacity: 0; transition: opacity .4s; pointer-events: none; }
+#tag.on { opacity: 1; }
+#tag .live { width: 7px; height: 7px; border-radius: 50%; background: #3ccf7a; box-shadow: 0 0 0 3px rgba(60, 207, 122, .25); }
+#sound { position: fixed; right: 14px; bottom: 14px; padding: 8px 14px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font: 600 13px/1 system-ui, -apple-system, "Segoe UI", sans-serif; cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, .3); }
+#pick { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); padding: 18px; border-radius: 14px; background: var(--pill); box-shadow: 0 10px 40px rgba(0, 0, 0, .4); }
+#pick p { margin: 0 0 14px; color: var(--ink); }
+#pick .row { display: flex; gap: 8px; justify-content: flex-end; }
+#pick button { padding: 8px 14px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font: 600 13px/1 system-ui, -apple-system, "Segoe UI", sans-serif; cursor: pointer; }
+#pick button.ghost { background: transparent; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { #status .dot { animation: none; } .p, #tag, #status { transition: none; } }

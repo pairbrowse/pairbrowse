@@ -15,7 +15,10 @@ const pack = (obj) => `pb-join:${Buffer.from(JSON.stringify(obj)).toString("base
 test("join codes: one string that round-trips", () => {
   const code = encodeJoinCode({ url: `${TUNNEL}/`, key: KEY, role: "drive", label: "Bob <b>" });
   assert.match(code, /^pb-join:[A-Za-z0-9_-]+$/);
-  assert.deepEqual(parseJoinCode(`  ${code}\n`), { url: TUNNEL, host: new URL(TUNNEL).host, key: KEY, role: "drive", label: "Bob b" });
+  assert.deepEqual(parseJoinCode(`  ${code}\n`), { url: TUNNEL, host: new URL(TUNNEL).host, key: KEY, role: "drive", label: "Bob b", mode: "follow" });
+  // A shared browser code says so; codes from before modes follow.
+  assert.equal(parseJoinCode(encodeJoinCode({ url: TUNNEL, key: KEY, role: "drive", label: "Bob", mode: "shared" })).mode, "shared");
+  assert.equal(parseJoinCode(pack({ v: 1, u: TUNNEL, k: KEY, r: "drive", l: "Bob" })).mode, "follow");
   // A host without a participantName is "the host" (older codes said "PairBrowse").
   assert.equal(parseJoinCode(encodeJoinCode({ url: TUNNEL, key: KEY, role: "watch", label: "" })).label, "the host");
   assert.equal(parseJoinCode(pack({ v: 1, u: TUNNEL, k: KEY, r: "watch", l: "PairBrowse" })).label, "the host");

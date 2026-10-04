@@ -213,6 +213,9 @@ export function launchArgs(config = {}, { firstRun = false } = {}) {
     "--test-type",
     // Keep rendering when the window is behind other windows, so the live view stays live.
     "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling",
+    // Shared browser mode: PairBrowse's own extension (and no other, nor any page) may capture a
+    // tab for the people the user let in, without the user clicking the extension first.
+    `--allowlisted-extension-id=${panelExtensionId()}`,
     ENABLE + [...new Set(features.filter(Boolean))].join(","),
     ...browserArgs({ firstRun }),
     // Only test runs are headless, and nobody is there to see a notification: without this the

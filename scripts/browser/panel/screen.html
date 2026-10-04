@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shared tab</title>
+<link rel="stylesheet" href="screen.css">
+<body>
+  <video id="v" playsinline autoplay></video>
+  <canvas id="still" hidden></canvas>
+  <div id="pointers" aria-hidden="true"></div>
+  <div id="status" role="status"><span class="dot"></span><span id="status-text">Connecting to the shared tab…</span></div>
+  <div id="tag" aria-hidden="true"><span class="live"></span><span id="tag-text"></span></div>
+  <button id="sound" hidden>Turn on sound</button>
+  <div id="pick" hidden><p id="pick-text">The page asks for a file.</p><div class="row"><button id="pick-go">Choose files</button><button id="pick-no" class="ghost">Cancel</button></div><input type="file" id="pick-input" hidden></div>
+  <script src="screen.js"></script>
+</body>
+</html>

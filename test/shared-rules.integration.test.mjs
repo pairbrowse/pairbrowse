@@ -118,12 +118,12 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
 
     stage = "Alice joins to drive; a watcher's channel shows what crosses";
     const codeOf = (made) => made.match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
-    const code = codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" })));
+    const code = codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code", mode: "follow" })));
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code, name: "Alice" })), /Asked Bob to let Alice in/);
     const aliceReq = await until("Alice's request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Alice/)?.[1]);
     await tool(host.call, "pairbrowse_invite", { action: "approve", id: aliceReq });
     const { parseJoinCode } = await import("../scripts/join.mjs");
-    const carolCode = parseJoinCode(codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "watch", label: "Carol", share: "code" }))), { allowLocal: true });
+    const carolCode = parseJoinCode(codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "watch", label: "Carol", share: "code", mode: "follow" }))), { allowLocal: true });
     const carolHeaders = { "x-pairbrowse-joiner": "c".repeat(32), "x-pairbrowse-name": "Carol", "x-pairbrowse-app": "" };
     await fetch(`${carolCode.url}/${carolCode.key}/tabs`, { headers: carolHeaders });
     const carolReq = await until("Carol's request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Carol/)?.[1]);

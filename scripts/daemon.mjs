@@ -16,6 +16,7 @@
 //   pause.mjs     "Pause agents": people stop every agent in the session until someone resumes
 //   fields.mjs    fields people fill are theirs: agents leave them alone
 //   panel.mjs     the side panel and notifications
+//   screenshare.mjs  shared browser mode: joiners see the tabs live and work in them
 //   sharing.mjs   the live view, invites and joiners
 //   output.mjs    password masking and long snapshots in results
 //   screenshot.mjs  the screenshots in results, and clicking on them
@@ -39,6 +40,8 @@ import { createPresence } from "./daemon/presence.mjs";
 import { createPause } from "./daemon/pause.mjs";
 import { fieldOwner } from "./daemon/fields.mjs";
 import { createPanel } from "./daemon/panel.mjs";
+import { createScreenShare } from "./daemon/screenshare.mjs";
+import { createRemoteAgents } from "./daemon/remote-agents.mjs";
 import { createSharing } from "./daemon/sharing.mjs";
 import { createOutput } from "./daemon/output.mjs";
 import { createScreenshots } from "./daemon/screenshot.mjs";
@@ -226,7 +229,7 @@ const forms = {
     const r = await readFields(page, secretDomains(), hud.key);
     if (!r) return null;
     const owned = r.fields.map(({ own, ...x }) => {
-      const o = fieldOwner(own, { host: HOST, byAgent: presence.typedByAgent });
+      const o = fieldOwner(own, { host: HOST, byAgent: presence.typedByAgent, byRemote: presence.byRemote });
       return o ? { ...x, o: o.who } : x;
     });
     return { url: r.url, fields: shareFields(owned, { secretValues: Object.values(secrets.get().values || {}) }) };
@@ -235,10 +238,14 @@ const forms = {
 };
 const tabOrder = createTabOrder({ call: (fn, arg, ms) => panel.call(fn, arg, ms), getContext: () => context.getContext(), log });
 
+// Shared browser mode: joiners see this browser's tabs live and work in them (daemon/screenshare.mjs).
+const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), getContext: () => context.getContext(), log, during: (who) => presence.remoteStart(who) });
+// ...and a joiner's own agent works here as a participant (serve, below), files only from its side.
+const remoteAgents = createRemoteAgents({ serve: (sock, opts) => serve(sock, opts), dir: join(paths.uploads, "remote"), log });
 const sharing = createSharing({
   config, log, host: HOST, notify: panel.notify, hostNote,
   view: {
-    secretDomains,
+    secretDomains, screens, remoteAgents,
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
     // their pointer alone, or just being in the tab, leaves the page as it was.
     onJoinerPerson: (page, who, did, acting, changed = false) => { presence.elsewhere(page, who, did, acting); if (changed) bumpRevision(); },
@@ -351,7 +358,19 @@ const serve = createServe({
   secrets, facts, sharing, follow, pause, remoteHolder, drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
-  testTools: process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {},
+  testTools: {
+    ...(process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
+    // Tests only (PAIRBROWSE_TEST_SCREEN=1): the shared browser picture page here, as a person
+    // would use it (its state, its place among the tabs, keys typed on it).
+    ...(process.env.PAIRBROWSE_TEST_SCREEN === "1" ? { pairbrowse_test_screen: async ({ expr, type, choose } = {}) => {
+      const page = follow.pages().find((p) => !p.isClosed() && p.url().includes("/screen.html"));
+      if (!page) return { text: "no picture page", error: true };
+      if (Array.isArray(choose)) { page.once("filechooser", (fc) => fc.setFiles(choose.map(String)).catch(() => {})); return { text: "will choose" }; }
+      if (type) { await page.keyboard.type(String(type), { delay: 20 }); return { text: "typed" }; }
+      const index = (await context.getContext()).pages().indexOf(page);
+      return { text: JSON.stringify({ index, value: expr ? await page.evaluate(String(expr)) : null }) };
+    } } : {}),
+  },
 });
 output.start();
 

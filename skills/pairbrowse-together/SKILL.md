@@ -36,7 +36,7 @@ sessions, and closing the browser, are refused until they disconnect.
 ## 2. Invite someone (you're the host)
 
 1. `pairbrowse_invite` with `action: "create"`, `role` "drive" (default; asks the user
-   first) or "watch" (view-only, if asked), `label` the person's name, `hours` (default 24, max 168).
+   first) or "watch" (view-only, if asked), `mode` "shared" (default: they work in this browser, live) or "follow" (if asked), `label` the person's name, `hours` (default 24, max 168).
    - `share: "code"` (the default without an `inviteBaseUrl`): a `pb-join:...` code through a free
      Cloudflare Quick Tunnel. Nothing to set up on either side.
    - `share: "link"`: only when the user wants a Tailscale or SSH link.
@@ -86,9 +86,9 @@ sessions, and closing the browser, are refused until they disconnect.
    `code`, and `name` (the user's name as the host sees it) if they said it.
 2. It says "Waiting for the host to approve" until the host lets them in. Then this browser opens
    the host's tabs in a window of their own and keeps following them.
-3. Your browser tools stay in this browser. Work in the shared tabs as usual: with a drive code,
-   what you change there reaches the host's browser, and what the host's side does shows in the
-   activity and results here. People there count like people here, pauses included. `status` shows where the join stands.
+3. Shared browser code (the join result says so): your browser tools work in the host's browser
+   itself (drive), with their turns and rules; uploads go from this computer. Follow code: your tools
+   stay here, changes in the shared tabs reach the host. People there count like people here; `status` shows the join.
 4. `leave` when the user says so; the shared tabs stay open but stop following.
 
 ## 6. Taking turns

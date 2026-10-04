@@ -102,7 +102,7 @@ test("tab order follows in a shared session: a move on the host reaches the join
     await until("the host's strip", stripIs(host.call, "one,two,three"));
 
     stage = "a drive joiner joins";
-    const code = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
+    const code = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code", mode: "follow" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     assert.ok(code);
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code })), /Asked Bob/);
     const id = await until("the request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Alice/)?.[1]);

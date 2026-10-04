@@ -44,3 +44,20 @@ globalThis.pbArrange = async (ids) => {
   }
   return true;
 };
+// Shared browser mode (share.js, the offscreen document that captures a tab and sends it peer to
+// peer). Asked only by the helper. A tab's DevTools target id is how the helper names it; here
+// it becomes the tab id the capture needs (listing targets attaches to nothing).
+globalThis.pbTabId = async (targetId) => (await chrome.debugger.getTargets()).find((t) => t.id === targetId)?.tabId ?? null;
+async function shareDocument() {
+  if (await chrome.offscreen.hasDocument()) return;
+  await chrome.offscreen.createDocument({ url: "share.html", reasons: ["USER_MEDIA"], justification: "Show a shared tab live to the people the user let in." }).catch((e) => {
+    if (!/single offscreen/i.test(String(e?.message))) throw e; // made at the same moment by another call
+  });
+}
+globalThis.pbShare = async (msg) => {
+  await shareDocument();
+  if (msg?.op === "offer" && !(await chrome.runtime.sendMessage({ to: "share", op: "has", tabId: msg.tabId }))) {
+    msg = { ...msg, streamId: await chrome.tabCapture.getMediaStreamId({ targetTabId: msg.tabId }) };
+  }
+  return chrome.runtime.sendMessage({ ...msg, to: "share" });
+};

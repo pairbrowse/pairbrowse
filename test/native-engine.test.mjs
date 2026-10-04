@@ -38,6 +38,10 @@ function fakeChromium(captured = { webgl: { vendor: "Apple", renderer: "Apple te
 // An unpacked engine pack (the folder with engine.mjs), e.g. ~/.pairbrowse/engine.
 const engineDir = process.env.PAIRBROWSE_TEST_ENGINE;
 const packTest = engineDir ? test : test.skip;
+// The host capture reads this Mac's own fingerprint: macOS only (elsewhere the browser runs seeded).
+const macPackTest = engineDir && process.platform === "darwin" ? test : test.skip;
+const offMacPackTest = engineDir && process.platform !== "darwin" ? test : test.skip;
+const PLATFORM = { darwin: "macos", linux: "linux", win32: "windows" }[process.platform];
 const loadPack = () => loadEngine(engineDir);
 
 test("native app metadata requires a PairBrowse Chromium 150 bundle", () => {
@@ -74,7 +78,7 @@ packTest("browser options are read from the pairbrowse key", async () => {
   assert.equal(chromium.calls[0].options.args.find(a => a.startsWith("--fingerprint=")), "--fingerprint=named-seed");
 });
 
-packTest("engine pack emits macOS fingerprint, proxy, locale, and stable seed flags", async () => {
+packTest("engine pack emits this platform's fingerprint, proxy, locale, and stable seed flags", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-flags-"));
@@ -83,13 +87,13 @@ packTest("engine pack emits macOS fingerprint, proxy, locale, and stable seed fl
     { executablePath: app.executablePath, headless: false, proxy: { server: "http://proxy.test:8080" } }, pack);
   const { options } = chromium.calls[0];
   assert.match(options.args.join("\n"), /--fingerprint=mac-seed/);
-  assert.match(options.args.join("\n"), /--fingerprint-platform=macos/);
+  assert.match(options.args.join("\n"), new RegExp(`--fingerprint-platform=${PLATFORM}\\b`));
   assert.match(options.args.join("\n"), /--timezone=Europe\/Berlin/);
   assert.match(options.args.join("\n"), /--accept-lang=de-DE,de/);
   assert.deepEqual(options.proxy, { server: "http://proxy.test:8080" });
 });
 
-packTest("macOS host capture keeps its seed across persisted restarts", async () => {
+macPackTest("macOS host capture keeps its seed across persisted restarts", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-host-capture-"));
@@ -110,7 +114,22 @@ packTest("macOS host capture keeps its seed across persisted restarts", async ()
   assert.ok(second.calls[0].options.args.includes(`--fingerprint=${saved.fingerprint}`));
 });
 
-packTest("nested collector WebGPU info is flattened for native profile import", async () => {
+offMacPackTest("off macOS there's no host capture: the browser runs seeded, and the seed persists", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-seeded-"));
+  const chromium = fakeChromium({});
+  await launchNative(chromium, { pairbrowse: {} }, directory, { executablePath: app.executablePath, headless: false }, pack);
+  assert.equal(chromium.calls.length, 1, "only the browser itself is launched");
+  const saved = pack.Profile.load(join(directory, "pairbrowse-persona.json")).options;
+  assert.equal(saved.fingerprint.length, 64);
+  assert.equal(saved.fingerprintProfile, undefined);
+  const second = fakeChromium({});
+  await launchNative(second, { pairbrowse: {} }, directory, { executablePath: app.executablePath, headless: false }, pack);
+  assert.ok(second.calls[0].options.args.includes(`--fingerprint=${saved.fingerprint}`));
+});
+
+macPackTest("nested collector WebGPU info is flattened for native profile import", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-webgpu-normalize-"));

@@ -35,6 +35,13 @@
     return out;
   }
   const opts = { capture: true, passive: true };
+  // Pages that require Trusted Types (YouTube, Google's apps) refuse plain strings as HTML, which
+  // left them without the bar, cursor and pointers. PairBrowse's own fixed templates (values in
+  // them escaped) go through a policy of its own, kept in here; where a page allows no new policy,
+  // plain strings as before.
+  let ttPolicy = null;
+  try { ttPolicy = globalThis.trustedTypes?.createPolicy?.(`pairbrowse-${Math.random().toString(36).slice(2)}`, { createHTML: (x) => x }) || null; } catch {}
+  const html = (x) => (ttPolicy ? ttPolicy.createHTML(x) : x);
   // The element really under the pointer or holding focus, also inside shadow DOM.
   const control = (e) => { for (const el of e.composedPath()) if (el.matches?.(CONTROL)) return el; return null; };
   const focused = () => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return el; };
@@ -149,7 +156,7 @@
     host = document.createElement(TAG_HUD);
     const shadow = host.attachShadow({ mode: "closed" });
     // The app icon's look: deep navy glass, a light rim, the orange spark.
-    shadow.innerHTML = `<style>
+    shadow.innerHTML = html(`<style>
       :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;right:12px !important;bottom:12px !important}
       .b{display:flex;align-items:center;gap:9px;font:600 12.5px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;color:#f4f6ff;
          padding:9px 14px 9px 11px;border-radius:14px;max-width:min(440px,62vw);cursor:default;
@@ -166,7 +173,7 @@
       @keyframes g{50%{box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),inset 0 1px 0 rgba(255,255,255,.18),0 8px 24px rgba(10,12,40,.35),0 0 0 4px rgba(239,125,69,.28)}}
       @keyframes s{50%{transform:rotate(45deg) scale(1.12)}}
       @media (prefers-reduced-motion:reduce){.you,.you svg{animation:none}}
-    </style><div class="b" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span><b class="x" title="Hide">×</b></div>`;
+    </style><div class="b" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span><b class="x" title="Hide">×</b></div>`);
     box = shadow.querySelector(".b");
     hostPlace = document.createElement("style"); // where the badge sits: above the bar when there is one
     hostPlace.textContent = barHost?.isConnected ? ":host{bottom:42px !important}" : "";
@@ -238,7 +245,7 @@
     if (barHost && barHost.isConnected) return;
     barHost = document.createElement(TAG_BAR);
     const shadow = barHost.attachShadow({ mode: "closed" });
-    shadow.innerHTML = `<style>
+    shadow.innerHTML = html(`<style>
       :host{all:initial !important;position:fixed !important;z-index:2147483646 !important;left:0 !important;right:0 !important;bottom:0 !important;pointer-events:none !important}
       .bar{display:flex;align-items:center;gap:14px;height:30px;padding:0 14px;box-sizing:border-box;
         background:rgba(27,30,60,.93);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
@@ -266,7 +273,7 @@
       .bar.paused{background:rgba(120,52,24,.95)}
       .bar.paused .pz{background:#ef7d45;color:#fff}
       @media (prefers-reduced-motion:reduce){.bar,.bar *{animation:none!important;transition:none!important}}
-    </style><div class="bar" aria-hidden="true"><span class="who"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span></span><ol></ol><button class="pz" tabindex="-1" hidden></button></div>`;
+    </style><div class="bar" aria-hidden="true"><span class="who"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span></span><ol></ol><button class="pz" tabindex="-1" hidden></button></div>`);
     bar = shadow.querySelector(".bar");
     // Pressed by a person only (trusted); it never takes focus from the page's fields.
     const pz = shadow.querySelector(".pz");
@@ -293,13 +300,13 @@
     const pz = bar.querySelector(".pz");
     pz.hidden = !barCanPause;
     pz.textContent = barPause ? "Resume" : "Pause agents";
-    if (barPause) bar.querySelector(".who span").innerHTML = `Paused by <b>${esc(barPause.by)}</b>${barCanPause ? " \u00b7" : ""}`;
-    else bar.querySelector(".who span").innerHTML = barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`;
+    if (barPause) bar.querySelector(".who span").innerHTML = html(`Paused by <b>${esc(barPause.by)}</b>${barCanPause ? " \u00b7" : ""}`);
+    else bar.querySelector(".who span").innerHTML = html(barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`);
     const recent = barItems.slice(-3).reverse();
     const several = new Set(recent.map((a) => a.who || "")).size > 1; // name each line when people mix
-    bar.querySelector("ol").innerHTML = recent.length
+    bar.querySelector("ol").innerHTML = html(recent.length
       ? recent.map((a) => `<li><time>${clock(a.t)}</time><span>${several && a.who ? `<b>${esc(a.who)}</b> ` : ""}${rich(a.text)}</span></li>`).join("")
-      : "<li><span>Claude's actions show up here</span></li>";
+      : "<li><span>Claude's actions show up here</span></li>");
     clearTimeout(barTimer);
     if (driving) barTimer = setTimeout(drawBar, 8100 - (Date.now() - barItems.at(-1).t));
   }
@@ -325,7 +332,7 @@
     if (!curHost || !curHost.isConnected) {
       curHost = document.createElement(TAG_CURSOR);
       const shadow = curHost.attachShadow({ mode: "closed" });
-      shadow.innerHTML = `<style>
+      shadow.innerHTML = html(`<style>
         :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;left:0 !important;top:0 !important;pointer-events:none !important}
         .c{position:fixed;left:0;top:0;transition:transform .22s cubic-bezier(.22,1,.36,1),opacity .3s;opacity:0;will-change:transform}
         .c.on{opacity:1}
@@ -333,7 +340,7 @@
         .r{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(27,30,60,.5);opacity:0}
         .c.click .r{animation:p .45s ease-out}
         @keyframes p{from{opacity:.9;transform:scale(.4)}to{opacity:0;transform:scale(1.4)}}
-      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="0 0 24 24"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#1b1e3c" stroke-width="1.6" stroke-linejoin="round"/></svg></div>`;
+      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="0 0 24 24"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#1b1e3c" stroke-width="1.6" stroke-linejoin="round"/></svg></div>`);
       cur = shadow.querySelector(".c");
       document.documentElement.appendChild(curHost);
     }
@@ -386,7 +393,7 @@
     if (!peersHost || !peersHost.isConnected) {
       peersHost = document.createElement(TAG_CURSOR);
       const shadow = peersHost.attachShadow({ mode: "closed" });
-      shadow.innerHTML = `<style>
+      shadow.innerHTML = html(`<style>
         :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;left:0 !important;top:0 !important;width:0 !important;height:0 !important;pointer-events:none !important}
         .p{position:fixed;left:0;top:0;opacity:0;transition:opacity .35s ease;will-change:transform;pointer-events:none}
         .p.on{opacity:1}
@@ -398,7 +405,7 @@
         .v b{order:-1;padding:1px 6px;border-radius:999px;font:600 10px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;white-space:nowrap;opacity:0;transition:opacity .35s ease}
         .v.fresh b{opacity:1}
         @media (prefers-reduced-motion:reduce){.p,.v b{transition:none}}
-      </style><div aria-hidden="true"></div>`;
+      </style><div aria-hidden="true"></div>`);
       peersBox = shadow.querySelector("div");
       document.documentElement.appendChild(peersHost);
       addEventListener("scroll", kickPeers, { passive: true });
@@ -416,7 +423,7 @@
         if (!v) {
           const el = document.createElement("div");
           el.className = "v";
-          el.innerHTML = "<i></i><b></b>";
+          el.innerHTML = html("<i></i><b></b>");
           peersBox.appendChild(el);
           v = { el, y: -1, h: -1, t: 0, who: null, color: "" };
           views.set(c.k, v);
@@ -434,7 +441,7 @@
       if (!p) {
         const el = document.createElement("div");
         el.className = "p";
-        el.innerHTML = `<svg viewBox="0 0 24 24"><path d="M4 2.5l6.8 18.2 2.5-7.4 7.4-2.5z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><span></span>`;
+        el.innerHTML = html(`<svg viewBox="0 0 24 24"><path d="M4 2.5l6.8 18.2 2.5-7.4 7.4-2.5z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><span></span>`);
         peersBox.appendChild(el);
         p = { el, x, y, tx: x, ty: y, t: now(), on: false, color: "", who: null };
         peers.set(c.k, p);

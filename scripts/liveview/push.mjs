@@ -13,7 +13,7 @@ const STATE_AGAIN_MS = 1000; // titles and the like, which no event announces
 const PERSON_AGAIN_MS = 900;
 const POINTER_MS = 33; // pointers go out at most 30 times a second
 const POINTER_FRESH_MS = 3000; // a pointer still for this long fades out
-const HEARTBEAT_MS = 2000; // keeps the tunnel from closing an idle stream, and lets a joiner see a stalled one in seconds
+const HEARTBEAT_MS = 1000; // keeps the tunnel from closing an idle stream, and lets a joiner see a stalled one in seconds
 const STREAMS_PER_JOINER = 2;
 // Logs how long a joiner's pointer took from their page (for the live check).
 const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";

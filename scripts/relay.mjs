@@ -14,7 +14,7 @@ const REQUEST_TIMEOUT_MS = { send: 30_000, leave: 5000, pointer: 5000, connect: 
 const WAIT_MS = { idle: 3000, offline: 2000, again: 300 };
 const SILENT_MS = 40_000; // silence this long means the channel is gone (a host sending heartbeats 15 s apart: before 0.14.15)
 const SILENT_BEATS = 3; // or this many of the host's heartbeats missed in a row, once their spacing is known
-const SILENT_MIN_MS = 6000;
+const SILENT_MIN_MS = 3000;
 const REPLY_MS = 30_000;
 
 // join: a parsed join code ({ url, key, role, label }). name, app: who is joining, as the host
@@ -100,6 +100,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     });
   }
   (async function loop() {
+    let dropped = false;
     while (!stopped) {
       try {
         const c = await connect(`${base()}/events`, { headers });
@@ -107,9 +108,9 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
         offlineSince = 0;
         if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`);
         // A stream that stalls without closing (a free tunnel can) is dropped once the host's
-        // heartbeats stop, and the next address is tried: seconds, not the old 40.
+        // heartbeats stop (3 s), and the next address is tried at once.
         let heard = Date.now(), lastPing = 0, silent = SILENT_MS;
-        const watchdog = setInterval(() => { if (Date.now() - heard > silent) c.close(); }, 1000);
+        const watchdog = setInterval(() => { if (Date.now() - heard > silent) c.close(); }, 250);
         // Pushed events apply in order; pointers right away (only the latest one matters).
         let chain = Promise.resolve();
         c.onMessage((raw) => {
@@ -136,7 +137,8 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
         conn = null;
         for (const [, resolve] of replies) resolve(null);
         replies.clear();
-        if (!stopped) { nextRelay(); set("offline", "The connection to the host's session dropped. Reconnecting."); }
+        // Dropped while in: straight on to the next address (a standby tunnel), no pause first.
+        if (!stopped) { nextRelay(); set("offline", "The connection to the host's session dropped. Reconnecting."); dropped = true; }
       } catch (e) {
         if (stopped) break;
         if (e.status) {
@@ -144,7 +146,8 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
           await understand({ ok: false, status: e.status, json: async () => e.body || {} });
         } else { offline(); nextRelay(); }
       }
-      if (!stopped) await sleep(phase === "offline" ? WAIT_MS.offline : phase === "in" ? WAIT_MS.again : WAIT_MS.idle);
+      if (!stopped && !dropped) await sleep(phase === "offline" ? WAIT_MS.offline : phase === "in" ? WAIT_MS.again : WAIT_MS.idle);
+      dropped = false;
     }
   })();
 

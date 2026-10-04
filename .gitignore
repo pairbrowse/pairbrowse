@@ -11,3 +11,9 @@ __pycache__/
 .pairbrowse/
 *.log
 graphify-out/
+
+# Local drafts and rendered promo media (only the README demo is published)
+/PRODUCT.md
+/PROGRESS.md
+docs/media/*
+!docs/media/pairbrowse-demo.gif

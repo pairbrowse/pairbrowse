@@ -1,6 +1,8 @@
 // Small helpers shared by the helper, the hooks and the install steps (Node's standard library only).
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { userInfo } from "node:os";
 import { basename, dirname } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -47,3 +49,26 @@ export function withTimeout(promise, ms, message = `timed out after ${ms} ms`) {
   return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })])
     .finally(() => clearTimeout(timer));
 }
+
+// This computer's account: its full name (macOS: id -F; Linux: the passwd GECOS field, from
+// /etc/passwd or getent for directory accounts) and login. Tests pass their own lookups.
+export function readAccount({ platform = process.platform, user = () => userInfo(), run = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] }), passwd = () => readFileSync("/etc/passwd", "utf8") } = {}) {
+  let username = "";
+  try { username = String(user().username || ""); } catch {}
+  const attempt = (fn) => { try { return String(fn() || "").trim(); } catch { return ""; } };
+  // GECOS: "Full Name,room,phone,..."; "&" stands for the login, capitalized.
+  const gecos = (line) => {
+    const f = String(line || "").split("\n")[0].split(":");
+    return f.length >= 5 ? f[4].split(",")[0].replace(/&/g, username.charAt(0).toUpperCase() + username.slice(1)).trim() : "";
+  };
+  let fullName = "";
+  if (platform === "darwin") fullName = attempt(() => run("id", ["-F"]));
+  else if (platform !== "win32" && username) {
+    fullName = gecos(attempt(passwd).split("\n").find((l) => l.startsWith(`${username}:`)))
+      || gecos(attempt(() => run("getent", ["passwd", username])));
+  }
+  return { fullName, username };
+}
+// Read once: an account's name doesn't change while the helper runs, and id/getent cost a process.
+let account = null;
+export const currentAccount = () => (account ??= readAccount());

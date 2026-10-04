@@ -27,7 +27,8 @@ import { secretStore } from "./secrets.mjs";
 import { createFollow } from "./daemon/follow.mjs";
 import { createFacts } from "./facts.mjs";
 import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
-import { cleanName } from "./join.mjs";
+import { cleanName, displayName } from "./join.mjs";
+import { currentAccount } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { loadBrowserDriver } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
@@ -54,7 +55,8 @@ const config = loadConfig();
 const { chromium } = loadBrowserDriver((name) => name === "playwright" ? { chromium: playwrightChromium } : require(name), config);
 ensureDirs();
 
-const HOST = config.participantName ? cleanName(config.participantName) : "The host";
+// The host's name as joiners see it (pointers, presence, the join code): a person's, never "Host".
+const HOST = displayName({ configured: config.participantName, env: process.env.PAIRBROWSE_PARTICIPANT, ...currentAccount() }) || "The host";
 let shuttingDown = false;
 let socketServer = null; // closed first on shutdown
 let revision = 0; // goes up whenever a page may have changed under an agent's refs

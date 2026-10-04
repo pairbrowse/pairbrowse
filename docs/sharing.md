@@ -6,8 +6,10 @@ An invite lets one person in without your own link. Without an `inviteBaseUrl` i
 their own PairBrowse browser gets your tabs (see [Join someone's session with a code](#join-someones-session-with-a-code)).
 Ask for a "link" for the Tailscale or SSH routes below, which show your browser in the live view:
 
-- **Watch**: they see the page, the tabs and the activity line. They can't click, type or switch tabs.
-- **Drive**: they can also click, type, scroll and switch, open or close tabs. Claude asks you first.
+- **Drive** (the default): they see the page, the tabs and the activity line, and can click, type,
+  scroll and switch, open or close tabs. Claude asks you first.
+- **Watch** (only when you ask for view-only): they see the page, the tabs and the activity line.
+  They can't click, type or switch tabs.
 - Neither sees your remembered details or saved passwords (the Profile panel is yours only).
 - Each link has its own key, ends after 24 hours (you can pick up to 7 days), and you can revoke
   it at any time; whoever has it open loses the view at once. All links end when PairBrowse stops.
@@ -15,7 +17,7 @@ Ask for a "link" for the Tailscale or SSH routes below, which show your browser 
 Anyone with a drive link can click and type in your logged-in browser: send one only to people
 you trust, and revoke it when they're done.
 
-Ask Claude, for example: "Make a watch link for Sam for 2 hours", "Let Alex co-drive", "List
+Ask Claude, for example: "Make a link for Sam for 2 hours", "Let Alex only watch", "List
 the invite links", "Revoke Sam's link". Claude uses `pairbrowse_invite` and gives you the link
 and the steps to send on.
 
@@ -60,9 +62,10 @@ either side beyond PairBrowse itself.
 
 **If you're the host:**
 
-1. Ask Claude: "Make a join code for Sam to watch" (or "to co-drive"; Claude asks you first).
+1. Ask Claude: "Make a join code for Sam" (co-drive; Claude asks you first), or "for Sam to only
+   watch" for view-only.
 2. Send Sam the `pb-join:...` code it gives you (chat, email, whatever you use).
-3. When Sam joins, "Sam (Claude Code) wants to join (watch)" shows in the live view and side
+3. When Sam joins, "Sam (Claude Code) wants to join (can drive)" shows in the live view and side
    panel with **Allow** and **Deny**, and you get a notification. Nothing of your session is
    sent before you click Allow. Someone else with the same code has to ask again.
 4. "Revoke Sam's invite" (or "revoke all") ends it; the tunnel closes with the last code.
@@ -90,7 +93,8 @@ What crosses, and what doesn't:
 - **Drive:** the query string too, minus parameters that look like sign-in links, tokens,
   one-time codes, sessions or personal details (and long secret-looking values); fragments only
   as `#/routes`. Your changes in the shared tabs go back to the host's browser: another address,
-  a new tab opened from a shared one, closing one, moving one, and what you type in a field.
+  a new tab opened from a shared one or in the shared tabs' window (your other windows stay
+  yours), closing one, moving one, and what you type in a field.
 - **Form fields, live:** a value shows in the same field on the other side as it's typed. A field
   is matched by its frame and a stable key (id, name, label or position), and only on the same
   page (origin and path). The value is set and only an "input" event fires: no key presses, no
@@ -132,7 +136,7 @@ What crosses, and what doesn't:
   other computer's agents wait a moment if its turn is about to end, else hear "tab 1 is in use by
   Bob · Claude Code (in Bob's browser)" and use another tab; they never type into their copy
   meanwhile. When both start at once, the host's agent goes first. A field a person fills is theirs on
-  both sides for two minutes: agents' typing, filling, choosing or ticking there is refused
+  both sides for 5 seconds after their last keystroke (10 while they stay in it): agents' typing, filling, choosing or ticking there is refused
   unchanged ("Alice is filling Delivery instructions; left it as they wrote it"), fast mode skips
   it and goes on, and the agent's next result names the fields people filled (never values).
   People never wait for each other: in the same field, the latest input wins on both sides. A
@@ -177,22 +181,8 @@ can also identify yourself through the `pairbrowse_collaboration` tool. In a ses
 with a code, people show by name: the name given at join, else `participantName`, else
 `PAIRBROWSE_PARTICIPANT`, else the computer account's full name (or login).
 
-For two computers, pick a host and follow the existing server setup instructions. Each remote
-participant needs authorized SSH key access to the same host user and Pairbrowse directory.
-On each participant's computer, merge this into `~/.pairbrowse/config.json`:
-
-```json
-{
-  "remote": "browseruser@host",
-  "start": "server",
-  "participantName": "Alice"
-}
-```
-
-Use a different name on the other computer. If the host uses a custom home, set `remoteHome`
-to its absolute path; if the plugin is elsewhere, set `remotePluginPath` to that installation.
-The host live view needs a fixed port matching `remoteLiveViewPort` (default 47290), as set by
-`setup-server.mjs`. Each computer gets its own SSH tunnel and can open the live view locally.
+For two computers, [join the session with a code](#join-someones-session-with-a-code): each
+computer keeps its own browser and Claude, and the shared tabs follow each other.
 
 Tell Claude: “Identify as Alice, acquire browser control, take a fresh snapshot, do this task,
 then release control.” `pairbrowse_collaboration` supports `status`, `identify`, `acquire` and
@@ -225,10 +215,9 @@ connected. Your clicks and typing, in the PairBrowse window or the live view, ma
 actions in that tab wait until you've stopped for two seconds (scrolling and mouse movement don't); fast-mode flows wait,
 then stop at their next step so Claude looks at the page again. Already-started actions may finish.
 
-Sharing a whole Claude connection uses trusted local/SSH connections; for someone who should
+Sharing a whole Claude connection is for sessions on the same computer; for someone who should
 only watch or co-drive in the live view, use an [invite link](#invite-someone-to-watch-or-co-drive).
-Collaborators share browser credentials and details; SSH access is broader than browser-only
-access. Claude permissions and pre-submit reviews still apply in each client's
+Collaborators share browser credentials and details. Claude permissions and pre-submit reviews still apply in each client's
 plugin. Never share Claude account credentials or publish the live-view key.
 
 ## Share your dev server

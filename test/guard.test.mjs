@@ -97,7 +97,7 @@ test("sharing a dev server: the question goes to the side panel, not a prompt he
 
 test("drive invite links ask; watch links, list and revoke don't", () => {
   assert.equal(run("pairbrowse_invite", { action: "create", role: "drive", label: "Bob" }), "ask");
-  assert.equal(run("pairbrowse_invite", { action: "create", label: "Bob" }), "ask", "no role: asks rather than guesses");
+  assert.equal(run("pairbrowse_invite", { action: "create", label: "Bob" }), "ask", "no role: drive (the default), so it asks");
   assert.equal(run("pairbrowse_invite", { action: "create", role: "admin" }), "ask");
   assert.equal(run("pairbrowse_invite", { action: "create", role: "watch", label: "Ann", hours: 2 }), "allow");
   for (const action of ["list", "revoke", "revoke_all"]) assert.equal(run("pairbrowse_invite", { action, id: "abcd1234" }), "allow", action);

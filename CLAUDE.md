@@ -17,7 +17,7 @@ through the live view, docked or in the Browser pane).
 - `scripts/core.md`: the always-on PairBrowse core that `session-start.mjs` adds to every session (worded for Claude Code or Codex by `scripts/surface.mjs`). Keep it compact (size and tool names are tested).
 - `scripts/runs.mjs`: dependency-free MCP server for saved runs and pre-submit reviews.
 - `scripts/runner.mjs`: fast mode (`pairbrowse_run`) and playbooks. `scripts/sessions.mjs`: browser sessions. `scripts/tabs.mjs`: tab memory and the "Opening tabs" restore.
-- `scripts/remote.mjs`, `scripts/setup-server.mjs`, `scripts/display.mjs`: server mode (SSH remote, setup, private virtual screen).
+- `scripts/display.mjs`: private virtual screen (Xvfb) for a Linux machine without a screen.
 - `scripts/util.mjs`: shared helpers (JSON files, SHA-256, pinned downloads, timeouts); use them rather than local copies.
 - `runtime/`: pinned `@playwright/mcp` with lockfile, installed with `npm ci --ignore-scripts`.
 - `skills/pairbrowse/SKILL.md`: the reference behind the core (tool details, edge cases). The step-by-step task skills (`pairbrowse-signup`, `-listing`, `-test-site`, `-together`) sit next to it in `skills/`; `scripts/validate-skills.mjs` (run by `test/skills.test.mjs`) checks every skill names only real tools.

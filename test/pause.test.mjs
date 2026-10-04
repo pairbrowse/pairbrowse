@@ -41,9 +41,10 @@ test("a field a person edited is theirs for a while; an agent's own typing never
   const byAgent = (t) => t >= now - 1000 && t <= now - 500;
   assert.equal(fieldOwner(null, { host: "Bob", now }), null);
   assert.equal(fieldOwner({ times: [now - 800], name: "Notes" }, { host: "Bob", byAgent, now }), null, "the agent typed it");
-  assert.deepEqual(fieldOwner({ times: [now - 5000], name: "Notes" }, { host: "Bob", byAgent, now }), { who: "Bob", local: true, name: "Notes" });
+  assert.deepEqual(fieldOwner({ times: [now - 3000], name: "Notes" }, { host: "Bob", byAgent, now }), { who: "Bob", local: true, name: "Notes" });
   assert.equal(fieldOwner({ times: [now - OWN_MS - 1] }, { host: "Bob", now }), null, "long ago");
   assert.ok(fieldOwner({ times: [now - OWN_MS - 1], focused: true }, { host: "Bob", now }), "still at it (focused)");
+  assert.equal(fieldOwner({ times: [now - 10_001], focused: true }, { host: "Bob", now }), null, "focused, but 10 s without typing");
   assert.equal(fieldOwner({ times: [now + 60_000] }, { host: "Bob", now }), null, "a time in the future counts for nothing");
   const remote = fieldOwner({ times: [now - 9000], rw: "Alice", rt: now - 1000, name: "Delivery instructions" }, { host: "Bob", now });
   assert.deepEqual(remote, { who: "Alice", local: false, name: "Delivery instructions" }, "latest edit wins");

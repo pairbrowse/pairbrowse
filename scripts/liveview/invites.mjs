@@ -1,5 +1,5 @@
-// Invite links: a link for someone else. "watch" sees the page, tabs and activity; "drive" can
-// also click, type and switch tabs. Neither ever reaches the Profile panel (remembered details,
+// Invite links: a link for someone else. "drive" (the default) sees the page, tabs and activity
+// and can click, type and switch tabs; "watch" (view-only, when asked for) only looks. Neither ever reaches the Profile panel (remembered details,
 // password names). Each has its own key, expires, and can be revoked; links live in memory only.
 import { randomBytes } from "node:crypto";
 import { cleanName } from "../join.mjs";
@@ -52,7 +52,7 @@ export function createInvites({ now = () => Date.now() } = {}) {
   return {
     // share: "link" (a live view link, reached through an SSH tunnel or liveViewHosts) or "code"
     // (a join code: reached only through the sharing tunnel, and only after the host approves).
-    create({ role, label, hours, share = "link" } = {}) {
+    create({ role = "drive", label, hours, share = "link" } = {}) {
       if (role !== "watch" && role !== "drive") throw new Error('role must be "watch" or "drive".');
       const h = hours === undefined || hours === null || hours === "" ? DEFAULT_HOURS : Number(hours);
       if (!Number.isFinite(h) || h <= 0) throw new Error("hours must be a number above 0.");

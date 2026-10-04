@@ -30,8 +30,9 @@ const PICK_WAIT_MS = Number(process.env.PAIRBROWSE_TEST_PICK_WAIT_MS) || 3 * 60_
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
 const pickerUrl = () => `chrome-extension://${panelExtensionId()}/picker.html`;
 
-// Started over SSH (remote mode or a desktop-app SSH session) means it's the server browser.
-export const where = () => (process.env.PAIRBROWSE_ON_SERVER || process.env.SSH_CONNECTION ? "Server" : "Local");
+// Started in an SSH session (say, the desktop app's SSH sessions) means the browser runs on that
+// machine, not the user's: its live view needs an SSH tunnel.
+export const where = () => (process.env.SSH_CONNECTION ? "Server" : "Local");
 
 export function stopRequestMirroring(page) {
   setTimeout(() => {
@@ -48,7 +49,7 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
   let contextPromise = null;
   let session = currentSession(); // which browser session (Chrome profile) is in use
   let switching = false;
-  let screen = null; // virtual display on servers
+  let screen = null; // virtual display on a Linux machine without a screen
   let tabTracker = null;
   let restoring = null; // promise while saved tabs are being reopened
   let restoredActiveUrl = null;

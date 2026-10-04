@@ -91,6 +91,9 @@
     if (!e.isTrusted) return;
     const el = e.composedPath()[0];
     if (!el || el.nodeType !== 1) return;
+    // A text field's "change" comes on leaving it, also after a value set from the other browser
+    // of a shared tab: typing there fires "input" anyway, so only that counts.
+    if (e.type === "change" && (el.tagName === "TEXTAREA" || el.isContentEditable || (el.tagName === "INPUT" && !/^(checkbox|radio|file|range|color)$/.test(el.type)))) return;
     const x = editOf(el);
     // Typing without key presses (pasting, dictation, the live view) is typing all the same.
     if (now() - (x.times.at(-1) || 0) > 1000) record("type", named(el));

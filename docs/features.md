@@ -12,8 +12,6 @@
   plus throwaway clean sessions that are deleted when you switch away. When the browser starts,
   its first tab asks which one you want: go back to a saved session, start a fresh one, or join a
   shared one with a code.
-- **Local or server, your choice.** With a server set up, Claude asks before it starts: the
-  local browser in your workspace, or the server browser.
 - **Secure by default.** No debugging port, a key-protected live view, passwords locked to their domains, a hostile page
   can't make Claude upload your files or type your secrets elsewhere. See [Security](security.md).
 - **Resume tomorrow.** Each job is saved as a run (done, left, your turn, open tabs). A new
@@ -100,5 +98,4 @@ It's useful for:
 - **Fast.** Browser actions should feel local; latency matters.
 - **Persistent when useful.** Agents work in a real, logged-in browser that survives restarts.
 - **Observable by default.** You can always see what an agent is doing and what it did.
-- **Self-hostable.** Run the browser on your own computer or your own server; no cloud account
-  needed.
+- **Self-hostable.** The browser runs on your own machine; no cloud account needed.

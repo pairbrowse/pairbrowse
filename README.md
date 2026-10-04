@@ -86,7 +86,6 @@ Chromium elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse
 - [The browser](docs/browser.md): where you see it, the desktop app pane, the native build
 - [Using PairBrowse](docs/using.md): remembered details, passwords, sessions, fast mode, popups, uploads
 - [Working together](docs/sharing.md): invites, join codes, several agents on one browser
-- [Servers and cloud sessions](docs/server.md)
 - [Skills](docs/skills.md)
 - [Configuration](docs/configuration.md)
 - [Security](docs/security.md)

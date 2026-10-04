@@ -285,3 +285,14 @@ test("letting a joiner in through Claude always asks; turning one away doesn't",
   const codex = JSON.parse(forHost({ tool_name: "mcp__pairbrowse_browser__pairbrowse_invite" }, decide({ tool_name: "mcp__pairbrowse_browser__pairbrowse_invite", tool_input: { action: "approve", id: "r1" } }, { confirm: [] }, null)));
   assert.equal(codex.hookSpecificOutput.permissionDecision, "deny");
 });
+
+test("the host's other tunnel addresses: Quick Tunnels or the code's own only", async () => {
+  const { relayUrl } = await import("../scripts/relay.mjs");
+  const code = "https://one-two.trycloudflare.com";
+  assert.equal(relayUrl("https://three-four.trycloudflare.com", code), "https://three-four.trycloudflare.com");
+  assert.equal(relayUrl(code, code), code);
+  assert.equal(relayUrl("https://evil.example.com", code), null);
+  assert.equal(relayUrl("https://x.trycloudflare.com/path", code), null);
+  assert.equal(relayUrl("http://127.0.0.1:9", code), null, "loopback only in tests");
+  assert.equal(relayUrl("https://u:p@x.trycloudflare.com", code), null);
+});

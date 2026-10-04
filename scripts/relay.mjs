@@ -20,8 +20,34 @@ const REPLY_MS = 30_000;
 // next request). onChange(phase). The host is asked right away.
 // on: handlers for the host's events (tabs, form, pointers, session, message), each awaited in
 // order except pointers (the latest wins).
+// One of the host's other tunnel addresses, checked (never trust the other side): a Quick Tunnel
+// origin, the code's own, or (tests only) loopback. Returns the origin, or null.
+export function relayUrl(raw, codeUrl) {
+  let u;
+  try { u = new URL(String(raw)); } catch { return null; }
+  if (u.origin !== String(raw).replace(/\/$/, "") || u.username || u.password) return null;
+  if (u.origin === new URL(codeUrl).origin) return u.origin;
+  if (u.protocol === "https:" && /^[a-z0-9-]+\.trycloudflare\.com$/.test(u.hostname)) return u.origin;
+  if (process.env.PAIRBROWSE_TEST_JOIN_LOCAL === "1" && u.protocol === "http:" && u.hostname === "127.0.0.1") return u.origin;
+  return null;
+}
+
 export function startJoin({ join: code, name, app = "", joinerId = newJoinerId(), log = () => {}, onTabs = async () => {}, on = {}, onChange = () => {} }) {
-  const base = `${code.url}/${code.key}`;
+  // The addresses to the host's session: the code's, then the others the host names once we're in
+  // (its standby tunnels). A dropped connection tries the next one, so a tunnel going down moves
+  // this joiner to another without a new code.
+  let urls = [code.url];
+  let at = 0;
+  const base = () => `${urls[at]}/${code.key}`;
+  const nextRelay = () => { if (urls.length > 1) at = (at + 1) % urls.length; };
+  const takeRelays = (list) => {
+    if (!Array.isArray(list)) return;
+    const ok = list.slice(0, 4).map((u) => relayUrl(u, code.url)).filter(Boolean);
+    if (!ok.length) return;
+    const current = urls[at];
+    urls = [...new Set([current, ...ok])];
+    at = 0;
+  };
   const headers = { "x-pairbrowse-joiner": joinerId, "x-pairbrowse-name": encodeURIComponent(name), "x-pairbrowse-app": app, "x-pairbrowse-computer": computerName() };
   const Host = code.label.charAt(0).toUpperCase() + code.label.slice(1); // at a sentence's start
   let phase = "asking"; // asking, waiting, in, denied, ended, offline, left
@@ -50,7 +76,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     else set("offline", body.error || `The host's session answered ${res.status}. Retrying.`);
     return null;
   }
-  const request = (path, init = {}, ms) => fetch(`${base}/${path}`, { ...init, headers: { ...headers, ...(init.body ? { "content-type": "application/json" } : {}) }, signal: AbortSignal.timeout(ms) });
+  const request = (path, init = {}, ms) => fetch(`${base()}/${path}`, { ...init, headers: { ...headers, ...(init.body ? { "content-type": "application/json" } : {}) }, signal: AbortSignal.timeout(ms) });
   const offline = () => {
     offlineSince ||= Date.now();
     const long = Date.now() - offlineSince > OFFLINE_LONG_MS;
@@ -74,7 +100,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
   (async function loop() {
     while (!stopped) {
       try {
-        const c = await connect(`${base}/events`, { headers });
+        const c = await connect(`${base()}/events`, { headers });
         conn = c;
         offlineSince = 0;
         if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`);
@@ -90,6 +116,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
           if (event === "reply") { replies.get(data?.n)?.(data); replies.delete(data?.n); return; }
           if (event === "ping" || stopped) return;
           if (event === "pointers") { try { on.pointers?.(data); } catch {} return; }
+          if (event === "tabs") takeRelays(data?.relays);
           chain = chain.then(async () => {
             if (event === "tabs") await onTabs(data);
             else if (typeof on[event] === "function") await on[event](data);
@@ -100,13 +127,13 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
         conn = null;
         for (const [, resolve] of replies) resolve(null);
         replies.clear();
-        if (!stopped) set("offline", "The connection to the host's session dropped. Reconnecting.");
+        if (!stopped) { nextRelay(); set("offline", "The connection to the host's session dropped. Reconnecting."); }
       } catch (e) {
         if (stopped) break;
         if (e.status) {
           // Answered, but not let in (yet): what that means for the joiner.
           await understand({ ok: false, status: e.status, json: async () => e.body || {} });
-        } else offline();
+        } else { offline(); nextRelay(); }
       }
       if (!stopped) await sleep(phase === "offline" ? WAIT_MS.offline : phase === "in" ? WAIT_MS.again : WAIT_MS.idle);
     }

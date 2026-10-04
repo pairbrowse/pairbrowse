@@ -26,6 +26,10 @@ export const paths = {
   socket: process.platform === "win32"
     ? `\\\\.\\pipe\\pairbrowse-${createHash("sha256").update(`${userInfo().username}:${HOME}`).digest("hex").slice(0, 16)}`
     : join(HOME, "run", "browser.sock"),
+  // Where the PairBrowse hook asks the helper what a click would do, before it asks you.
+  judge: process.platform === "win32"
+    ? `\\\\.\\pipe\\pairbrowse-judge-${createHash("sha256").update(`${userInfo().username}:${HOME}`).digest("hex").slice(0, 16)}`
+    : join(HOME, "run", "judge.sock"),
 };
 
 export const DEFAULT_CONFIG = {
@@ -50,7 +54,7 @@ export const DEFAULT_CONFIG = {
   downloadsDir: null,
   // Extra Chrome flags, e.g. ["--lang=en-US"].
   chromeArgs: [],
-  // On a Linux server without a screen, PairBrowse runs the browser headed on a private virtual
+  // On a Linux machine without a screen, PairBrowse runs the browser headed on a private virtual
   // screen (Xvfb) and you watch through the live view. "auto": use one when there's no screen;
   // "xvfb": always; "none": never.
   display: "auto",

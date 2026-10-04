@@ -20,7 +20,7 @@ The plugin is small:
 | `scripts/session-start.mjs` | SessionStart hook: tells Claude about unfinished runs |
 | `scripts/log.mjs` | PostToolUse hook: plain-English activity log per session in `~/.pairbrowse/log/` |
 | `scripts/hud.js` | In-page status badge, driven only with a per-start random key |
-| `scripts/liveview.mjs`, `scripts/liveview/` | Live view server for the Claude workspace (dock and Browser pane), the side panel's data, and server mode: request checks, invites, input replay, shared tabs for joiners and their server |
+| `scripts/liveview.mjs`, `scripts/liveview/` | Live view server for the Claude workspace (dock and Browser pane), the side panel's data: request checks, invites, input replay, shared tabs for joiners and their server |
 | `scripts/liveview.html`, `.css`, `.js`, `scripts/browser/panel/common.js` | The live view page, and the code it shares with the side panel |
 | `scripts/join.mjs`, `scripts/relay.mjs`, `scripts/tabsync.mjs`, `scripts/daemon/follow.mjs` | Join codes and host approvals; the joiner's connection to the host (one WebSocket both ways); which addresses, field values, pointers and tab orders cross and the loop-safe bookkeeping; the joiner's browser following the shared tabs |
 | `scripts/liveview/push.mjs`, `scripts/liveview/joiner-server.mjs`, `scripts/ws.mjs` | The host's push channel (one WebSocket per approved joiner: tabs, form values, pointers, session, messages), the guest port with its limits, and the small standard-library WebSocket both sides use |

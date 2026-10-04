@@ -4,8 +4,8 @@
 import { cleanName } from "../join.mjs";
 import { within } from "../util.mjs";
 
-export const OWN_MS = 120_000; // a field a person edited stays theirs this long
-const FOCUS_OWN_MS = 600_000; // while they keep it focused, a little longer
+export const OWN_MS = 5_000; // a field a person edited stays theirs this long
+const FOCUS_OWN_MS = 10_000; // while they keep it focused, a little longer
 const READ_MS = 1500;
 
 // info: what the page script knows about one field ({ times, focused, rw, rt, name }: real

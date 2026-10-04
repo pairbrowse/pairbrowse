@@ -14,8 +14,6 @@ The browser keeps running between sessions, so tabs, logins and half-filled page
 ## Before the first browser action
 
 Ask in one message (your question tool if you have one), skipping what the user already said and what the browser asks itself:
-- **Where:** only if the `pairbrowse_where` tool exists: "Local browser or the server browser?"
-  Then call `pairbrowse_where` with `where` "local" or "server". Sessions and logins are separate on each.
 - **Which session:** when the browser starts, its first tab is a session picker: the person
   continues a saved session (with its tab count), starts a fresh one, or pastes a `pb-join:` code.
   Your first browser action waits for that pick (up to about 3 minutes) and its result says which.
@@ -173,7 +171,7 @@ filled, drafted, left for the user, and remembered. Every action is also logged 
 
 ## Invites and join codes
 
-- `pairbrowse_invite` `create`: `role` "watch" or "drive" (asks the user), `label`, `hours` (default
+- `pairbrowse_invite` `create`: `role` "drive" (the default; asks the user) or "watch" (only when the user asks for view-only), `label`, `hours` (default
   24, at most 168), `share` "code" (pb-join code over a Cloudflare Quick Tunnel; the default without
   `inviteBaseUrl`) or "link" (Tailscale or SSH). Pass on the code and the steps from the result.
 - `list` (invites, join requests and shared dev servers, no keys), `approve` / `deny` with the request
@@ -182,7 +180,9 @@ filled, drafted, left for the user, and remembered. Every action is also logged 
 - `share_port` with `port` (or none: the current localhost tab's): the user's dev server (Next,
   Nuxt, Vite) for joiners, under its own address; their localhost tabs then cross there. It only
   asks the user (Yes / No in the side panel, waits up to 90 s; a later answer comes as a note);
-  watch joiners only look. The user can also Share or Stop in the side panel.
+  watch joiners only look. The user can also Share or Stop in the side panel. `unshare_port` (port, or none: all). Use it when the user wants
+  joiners to see their local app; tell them built-in `http://localhost` URLs in the app won't
+  work for joiners.
 - With a code, the joiner's own browser opens the host's tabs and follows them: addresses
   (filtered: no tokens, nothing local; origin and path for watch and sites with saved passwords),
   titles, activity, typed values (sensitive ones only as filled), pointers and who is at work

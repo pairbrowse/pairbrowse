@@ -74,10 +74,13 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
     }
   }, TRIM_EVERY_MS).unref();
 
-  // At most config.maxTabs tabs (10): when one more opens, the one used longest ago closes.
-  // "Used" means Claude acted in it or you clicked, typed or scrolled in it. Never the tab Claude
-  // is in, nor one that just opened; Claude is told which tab went.
-  const MAX_TABS = Math.max(2, Number(config.maxTabs) || 10);
+  // At most config.maxTabs tabs (20): when one more opens, the one used longest ago closes.
+  // "Used" means an agent acted in it or a person clicked, typed or scrolled in it. Never the tab
+  // Claude is in, one that just opened, or one anyone used in the last minutes (in a shared
+  // session that could be another agent's or person's tab): then more tabs stay open. Claude is
+  // told which tab went.
+  const MAX_TABS = Math.max(2, Number(config.maxTabs) || 20);
+  const IN_USE_MS = 10 * 60_000;
   const lastUsed = new WeakMap();
   const touch = (page) => page && lastUsed.set(page, Date.now());
   async function capTabs(ctx, keep = null) {
@@ -85,7 +88,8 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
     const pages = ctx.pages().filter((p) => !p.isClosed() && /^(https?:|about:blank)/.test(p.url()));
     if (pages.length <= MAX_TABS) return;
     const current = findPage(ctx, lastCurrentUrl);
-    const candidates = pages.filter((p) => p !== keep && p !== current).sort((a, b) => (lastUsed.get(a) || 0) - (lastUsed.get(b) || 0));
+    const idleSince = Date.now() - IN_USE_MS;
+    const candidates = pages.filter((p) => p !== keep && p !== current && (lastUsed.get(p) || 0) < idleSince).sort((a, b) => (lastUsed.get(a) || 0) - (lastUsed.get(b) || 0));
     for (const p of candidates.slice(0, pages.length - MAX_TABS)) {
       const url = p.url();
       await p.close({ runBeforeUnload: false }).catch(() => {});

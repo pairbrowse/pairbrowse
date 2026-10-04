@@ -45,7 +45,7 @@ export const DEFAULT_CONFIG = {
   // Words removed from the built-in confirm list (your call, your browser).
   neverConfirm: [],
   // Most tabs open at once; the one used longest ago closes when another opens.
-  maxTabs: 10,
+  maxTabs: 20,
   // A small screenshot of the page with each result that changes it (false: text only).
   screenshots: true,
   // Where files a site hands over are saved (default: your Downloads folder).

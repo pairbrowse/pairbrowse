@@ -143,6 +143,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     const acted = lines.length > 0;
     if (!acted && personIn(page) !== who) lines = ["was in this tab"];
     humanIn(page, who);
+    if (acted) onUsed(page); // in use on the other side too: the tab cap keeps it
     const h = humanAt.get(page);
     if (h.who === who) h.remote = true; // never sent back to where it came from
     const userLog = userLogs.get(page) || [];

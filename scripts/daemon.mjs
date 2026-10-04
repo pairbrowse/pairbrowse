@@ -145,21 +145,32 @@ const facts = createFacts({ secrets, log, onChange: () => liveView()?.setProfile
 
 // Who is in a tab, for the live view's tab overview: the agent holding it (with its spark color),
 // a person using it by hand, and the last thing done there.
-// The agent here holding a tab ({ label, color }), or null.
+// The agent here holding a tab ({ label, color, until }: until, when its turn there ends, only
+// while it holds the turn), or null.
 function localAgent(page) {
   const claim = tabClaims.holder(page);
   const agentId = claim?.id || hud.sparkOwner(page)?.id;
-  return agentId ? { label: claim?.label || collaboration.participants.get(agentId)?.label || "Agent", color: hud.sparkColor(agentId) } : null;
+  return agentId ? { label: claim?.label || collaboration.participants.get(agentId)?.label || "Agent", color: hud.sparkColor(agentId), until: claim?.until || 0 } : null;
 }
 // Agents in the other browser of a shared tab: a drive joiner's in their copy (until it's no
 // longer said), or the host's in a session joined from here. joined: not this browser's own.
-const joinedAgents = new WeakMap(); // tab -> { label, color, until }
+const joinedAgents = new WeakMap(); // tab -> { label, color, until, turnUntil, from }
 const JOINED_AGENT_MS = 30_000;
+// An agent on another computer of a shared session holding this tab's turn there ({ label,
+// until, yields }), or null: the agents here wait for it (serve.mjs takeTurn) instead of acting
+// in this copy. yields: a drive joiner's agent, which gives way to an agent here that already
+// holds the tab (both started at once).
+function remoteHolder(page) {
+  const there = follow.agentIn(page); // the host's agent, in a session joined from here
+  if (there?.held) return { label: `${there.label} (in ${follow.host() || "the host"}'s browser)`, until: there.until, yields: false };
+  const theirs = joinedAgents.get(page);
+  return theirs?.turnUntil && Date.now() < theirs.until && liveView()?.joinerHere(theirs.from) ? { label: `${theirs.label} (in ${theirs.where || "a guest"}'s browser)`, until: theirs.turnUntil, yields: true } : null;
+}
 function tabMeta(page) {
   const remote = follow.agentIn(page); // an agent in the other browser of a joined session
   const theirs = joinedAgents.get(page);
   const agent = localAgent(page) || (remote ? { label: remote.label, color: remote.color || hud.sparkColor(`joined:${remote.label}`), joined: true } :
-    theirs && Date.now() < theirs.until ? { label: theirs.label, color: theirs.color || "#e9763f", joined: true } : null);
+    theirs && Date.now() < theirs.until ? { label: theirs.label, color: theirs.color || "#e9763f", joined: true, from: theirs.from, until: theirs.turnUntil } : null);
   return { agent, person: presence.recentPerson(page), waiting: !!presence.waiting(page), last: hud.lastIn(page),
     sharedPerson: presence.sharedPerson(page), did: presence.feedAfter(page) };
 }
@@ -263,8 +274,8 @@ const sharing = createSharing({
         }
         return {};
       },
-      onJoinerAgent: (page, who, color) => {
-        if (who) { joinedAgents.set(page, { label: who, color, until: Date.now() + JOINED_AGENT_MS }); context.touch(page); } else joinedAgents.delete(page);
+      onJoinerAgent: (page, who, color, left = 0, from = "", where = "") => {
+        if (who) { joinedAgents.set(page, { label: who, color, until: Date.now() + JOINED_AGENT_MS, turnUntil: left > 0 ? Date.now() + left : 0, from, where }); context.touch(page); } else joinedAgents.delete(page);
         hud.setSharedSpark(page, who ? color || "#e9763f" : "");
         refreshTabs();
       },
@@ -336,7 +347,7 @@ const cobrowse = createCobrowse({
 });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
+  secrets, facts, sharing, follow, pause, remoteHolder, drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {},

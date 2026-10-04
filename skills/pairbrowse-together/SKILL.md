@@ -95,9 +95,9 @@ sessions, and closing the browser, are refused until they disconnect.
 
 - **Per tab.** The agent that acts in a tab holds it, renewed with each action, until two idle
   minutes, release, disconnect or the tab closes. Another agent's action there is refused with
-  who holds it ("tab 1 is in use by Alice · Codex"): open or select another tab and carry on.
-- **Side by side.** Only a page change (navigate, a link, submit, Enter) waits while a person
-  clicks, types or scrolls in that tab. Fields a person filled in the last two minutes are
+  who holds it ("tab 1 is in use by Alice · Codex"), across computers too: use another tab.
+- **Side by side.** Every action waits while a person clicks or types in that tab (scrolling and
+  moving the pointer don't), then you hear what they did. Fields a person filled in the last two minutes are
   theirs: typing there is refused, fast mode skips them. Don't redo or undo what people did.
 - **Pause agents** (bottom bar or side panel, any drive person): every agent waits; a paused call
   answers "nothing was done" after a minute. Only people resume; your next result says who.

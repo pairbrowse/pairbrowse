@@ -64,10 +64,9 @@ location requests never pop up: they show only as a small icon in the address ba
 quiet prompts), and sites see the ordinary "ask" state, like in an everyday Chrome. Files a site hands over (invoices, exports) are saved to your
 Downloads folder (`"downloadsDir"` to change it).
 
-You and Claude can work in the same tab. When you scroll, click or type in the PairBrowse window,
-only Claude's next action that would change the page under you (navigating, a link, a submit
-button, Enter) waits (the bottom bar says "waiting… you're using the browser") and continues when
-you stop; moving the mouse holds nothing up. Fields you fill are yours for two minutes: Claude
+You and Claude can work in the same tab. When you click or type in the PairBrowse window, Claude's
+next action in that tab waits (the bottom bar says "waiting… you're using the browser") and
+continues when you've stopped for two seconds; moving the mouse or scrolling holds nothing up. Fields you fill are yours for two minutes: Claude
 leaves them as you wrote them. Claude is then told what you did, which button or field, never what
 you typed. "Pause agents" in the bottom bar or side panel stops all agents until you press Resume. A visible CAPTCHA or bot check, or Claude handing over for a
 sign-in, 2FA or approval, shows "Your turn" and sends you a PairBrowse notification.

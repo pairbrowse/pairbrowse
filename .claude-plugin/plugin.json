@@ -1,6 +1,6 @@
 {
   "name": "pairbrowse",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "description": "Pair-browse with Claude Code or Codex: fills sign-ups, listings and settings pages in a visible PairBrowse browser window at full speed, keeps your logins, and hands you only the CAPTCHAs, 2FA and final submits.",
   "license": "MIT",
   "keywords": [

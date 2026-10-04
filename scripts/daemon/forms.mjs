@@ -58,6 +58,16 @@ function inPage([mode, max, mark, list, who, hud]) {
     const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : el.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(proto, prop)?.set?.call(el, value);
   };
+  // A card number (by its checksum), wherever it was typed: never replaced from there.
+  const card = (v) => {
+    const d = String(v || "").replace(/[\s-]/g, "");
+    if (!/^\d{13,19}$/.test(d)) return false;
+    let sum = 0;
+    for (let i = 0; i < d.length; i++) { let x = Number(d[d.length - 1 - i]); if (i % 2) { x *= 2; if (x > 9) x -= 9; } sum += x; }
+    return sum % 10 === 0;
+  };
+  // The value last set here from there, per field: a sensitive value replacing it there clears it.
+  const setFrom = `${mark}v`;
   const done = [];
   for (const x of list) {
     const hit = byKey.get(x.k);
@@ -65,6 +75,10 @@ function inPage([mode, max, mark, list, who, hud]) {
     const { el, type } = hit;
     if (x.o) page([el, x.o], "claim"); // a person there filled it: theirs here too
     if (x.m || sensitive(el, type)) {
+      // A plain value both sides had (set here from there, or was: the last one shared) was
+      // replaced there by a sensitive one (a card number typed over it): the old value would
+      // stay here, wrong, and go back. Cleared instead.
+      if (x.m && x.filled && el.value && (el[setFrom] === el.value || (typeof x.was === "string" && x.was === el.value))) { set(el, "value", ""); el[setFrom] = ""; el.dispatchEvent(new Event("input", { bubbles: true })); }
       // Filled there: say so here, without a value (only on an empty field).
       if (!(mark in el)) Object.defineProperty(el, mark, { value: el.getAttribute("placeholder"), writable: true, enumerable: false });
       if (x.m && x.filled && !el.value) el.setAttribute("placeholder", `•••••• (filled by ${who})`);
@@ -76,6 +90,10 @@ function inPage([mode, max, mark, list, who, hud]) {
     else if (type === "select") { for (const o of el.options) o.selected = x.v.includes(o.value); }
     else {
       if (el.value === x.v) { done.push(x.k); continue; }
+      // A card number typed here stays: it never crossed, so a value from there is older news.
+      if (card(el.value)) { done.push(x.k); continue; }
+      if (!(setFrom in el)) Object.defineProperty(el, setFrom, { value: "", writable: true, enumerable: false });
+      el[setFrom] = x.v;
       // Someone here has this field focused: their caret stays where it was.
       let sel = null;
       if (el === document.activeElement) try { sel = [el.selectionStart, el.selectionEnd]; } catch {}

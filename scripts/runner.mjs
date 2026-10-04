@@ -14,7 +14,7 @@ import { isLocalNetwork, finalAction, finalActionStrict } from "./guard.mjs";
 import { uploadProblem, uploadFiles } from "./upload.mjs";
 import { slug } from "./runs.mjs";
 import { readJson, sleep, within } from "./util.mjs";
-import { withHelpers, buttonLabel, isVisible, nearbyText } from "./daemon/page.mjs";
+import { withHelpers, buttonLabel, isVisible, nearbyText, submitsPayment } from "./daemon/page.mjs";
 
 // How long a handoff waits for the user (a sign-in, a CAPTCHA).
 const HANDOFF_MS = 10 * 60_000;
@@ -97,6 +97,19 @@ const pressedButton = withHelpers((a, b) => {
   const button = (el.form || el.closest?.("form"))?.querySelector('button:not([type]), button[type="submit"], input[type="submit"]');
   return button ? buttonLabel(button) : "";
 }, buttonLabel);
+
+// Whether clicking target (or Enter in it, or in the focused field when there's no target) sends a
+// payment form, by the form's structure (daemon/page.mjs submitsPayment).
+export async function submitsPaymentAt(page, target, kind = "") {
+  try {
+    const run = target
+      ? page.locator(isRef(target) ? `aria-ref=${target}` : String(target)).first().evaluate(submitsPayment, kind, { timeout: 1000 })
+      : page.evaluate(withHelpers((k) => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return submitsPayment(el, k); }, submitsPayment), kind);
+    return !!(await within(1500, run.catch(() => false)));
+  } catch {
+    return false;
+  }
+}
 
 export async function enterButtonLabel(page, target, kind = "enter") {
   try {
@@ -351,6 +364,9 @@ export async function runSteps(page, steps, hooks) {
         const real = String(await el.evaluate(buttonLabel, undefined, { timeout: 2000 }).catch(() => ""));
         const finalWord = finalAction(real)?.word;
         if (finalWord) return fail(`"${arg}" is the "${real.slice(0, 60)}" button, a final action (${finalWord}). Use browser_click on it so the user confirms.`);
+        if (await within(2000, el.evaluate(submitsPayment, undefined, { timeout: 1500 }).catch(() => false))) {
+          return fail(`"${arg}" sends a payment form (it has card or billing/shipping fields), a final action (pay). Use browser_click on it so the user confirms.`);
+        }
         hooks.cursor?.(el, "click");
         await el.click({ timeout: 5000 });
         await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
@@ -361,6 +377,7 @@ export async function runSteps(page, steps, hooks) {
           const label = await enterButtonLabel(page, null, key);
           const word = finalAction(label)?.word;
           if (word) return fail(`${String(arg)} here would press "${label.slice(0, 60)}" (${word}). Use browser_click on it so the user confirms.`);
+          if (await submitsPaymentAt(page, null, key)) return fail(`${String(arg)} here would send a payment form (pay). Use browser_click on its button so the user confirms.`);
         }
         await page.keyboard.press(String(arg));
       } else if (kind === "upload") {

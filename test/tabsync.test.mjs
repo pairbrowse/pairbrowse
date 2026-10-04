@@ -227,7 +227,7 @@ test("tab order: the host's applies here; a move made here goes there once", () 
   assert.deepEqual(o.fromLocal(["0000000c", "0000000a", "0000000b"]), {}, "the host took it up: no echo");
   assert.ok(sameOrder(["a", "x", "b"], ["a", "b", "y"]));
   assert.deepEqual(readOps({ ops: [{ op: "order", ids: ["0000000a", "ffffffff", "0000000a"] }] }, new Set(["0000000a"])).ops, [{ op: "order", ids: ["0000000a"] }], "only known tabs");
-  assert.deepEqual(readOps({ ops: [{ op: "agent", id: "0000000a", who: "Alice · Codex", color: "red;x" }] }, new Set(["0000000a"])).ops, [{ op: "agent", id: "0000000a", who: "Alice · Codex", color: "" }]);
+  assert.deepEqual(readOps({ ops: [{ op: "agent", id: "0000000a", who: "Alice · Codex", color: "red;x" }] }, new Set(["0000000a"])).ops, [{ op: "agent", id: "0000000a", who: "Alice · Codex", color: "", left: 0 }]);
 });
 
 test("pointers: a known tab, a clamped position, a name and a color; nothing else", () => {

@@ -29,6 +29,11 @@ const CHECKOUT = `<title>Checkout</title><main><h1>Checkout</h1><form action="/s
 <label>Notes <input id="notes" name="notes"></label>
 <button>Submit order</button></form><div style="height:5000px"></div></main>`;
 
+// A multi-step form's "Next" and a sign-up's last step: only the commit is asked for.
+const WIZARD = `<title>Sign up</title><main><form method="post" action="/wizard/2"><label>First name <input name="first"></label>
+<label>Last name <input name="last"></label><button>Next</button></form>
+<form method="post" action="/wizard/done"><label>Email <input name="email"></label><label>Company <input name="company"></label><button>Create account</button></form></main>`;
+
 function rpc(write, input) {
   const waiting = new Map();
   createInterface({ input }).on("line", (line) => {
@@ -60,7 +65,7 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
   const fixture = createServer((req, res) => {
     if (req.url.startsWith("/submitted")) submitted++;
     res.writeHead(200, { "content-type": "text/html" });
-    res.end(req.url.startsWith("/checkout") ? CHECKOUT : `<title>${req.headers.host}${req.url}</title><main>fixture</main>`);
+    res.end(req.url.startsWith("/checkout") ? CHECKOUT : req.url.startsWith("/wizard") ? WIZARD : `<title>${req.headers.host}${req.url}</title><main>fixture</main>`);
   });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   const port = fixture.address().port;
@@ -96,7 +101,7 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     return t;
   };
   const snap = async (call) => text(await tool(call, "browser_snapshot"));
-  const ref = (snapshot, role, name) => snapshot.match(new RegExp(`${role} "${name}"[^\\n]*\\[ref=(e\\d+)\\]`))?.[1];
+  const ref = (snapshot, role, name) => snapshot.match(new RegExp(`${role} "${name}"[^\\n]*\\[ref=(f?\\d*e\\d+)\\]`))?.[1];
   let host, joiner, stage = "start";
   try {
     host = await connect(hostHome);
@@ -167,14 +172,14 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     const payField = (await until("the form on Carol's channel", async () => [...seen.forms.values()].find((f) => f.fields.some((x) => x.k === "#pay")))).fields.find((x) => x.k === "#pay");
     assert.deepEqual([payField.m, payField.filled], [1, true], "the host's card stands: no empty value came back from Alice");
 
-    stage = "Submit order sends a payment form: refused under a milder name, by click or Enter";
+    stage = "Submit order sends a payment form: refused unless called a payment, by click or Enter";
     s = await snap(host.call);
     const click = await tool(host.call, "browser_click", { target: ref(s, "button", "Submit order"), element: "Submit order" });
     assert.ok(click.result.isError);
-    assert.match(text(click), /payment form/);
+    assert.match(text(click), /card or billing\/shipping fields: a final action \(pay\)[^\n]*Retry with "Pay"/);
     const enter = await tool(host.call, "browser_type", { target: ref(s, "textbox", "Notes"), text: "x", submit: true });
     assert.ok(enter.result.isError);
-    assert.match(text(enter), /payment form/);
+    assert.match(text(enter), /^Refused: Enter here would/);
     await sleep(1000);
     assert.equal(submitted, 0, "nothing submitted");
 
@@ -197,6 +202,19 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     const t0 = Date.now();
     await tool(host.call, "browser_press_key", { key: "Shift" });
     assert.ok(Date.now() - t0 < 1500, `scrolling pauses no agent (${Date.now() - t0} ms)`);
+
+    stage = "a step through a form goes without asking; the commit that ends it is asked for";
+    assert.ok(!(await tool(host.call, "browser_navigate", { url: "http://shop.pbtest.example/wizard" })).result.isError);
+    s = await snap(host.call);
+    assert.ok(ref(s, "button", "Next"), s.slice(0, 1500));
+    const next = await tool(host.call, "browser_click", { target: ref(s, "button", "Next"), element: "Next" });
+    assert.ok(!next.result.isError, text(next));
+    await until("the next step", async () => /wizard\/2/.test(text(await tool(host.call, "browser_tabs", { action: "list" }))));
+    assert.ok(!(await tool(host.call, "browser_navigate", { url: "http://shop.pbtest.example/wizard" })).result.isError);
+    s = await snap(host.call);
+    const create = await tool(host.call, "browser_click", { target: ref(s, "button", "Create account"), element: "Create account" });
+    assert.ok(create.result.isError);
+    assert.match(text(create), /it submits a form: a final action \(submit\)[^\n]*Retry with "Submit"/);
     channel.close();
   } catch (e) {
     const log = (h) => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2500); } catch { return ""; } };

@@ -14,24 +14,58 @@ import { navigationProblem, BLOCKED_TOOLS, BROWSER_PREFIX } from "./policy.mjs";
 import { latestReview, REVIEW_MAX_AGE_MIN } from "./runs.mjs";
 import { secretInside, MEDIA } from "./upload.mjs";
 
+// The word list is the fast path: it catches the obvious cases cheaply and names them in the
+// prompt. The helper also judges a click by what it does (daemon/page.mjs clickRisk): a form
+// submit or a commit-style action is asked for whatever it says, in any language.
 export const REVIEW_WORDS = [
   "submit for review", "submit app", "submit listing", "submit for approval", "submit application",
   "send for review", "request review", "publish", "go live",
+  "veröffentlichen", "publier", "publicar", "pubblica", "publiceren", "公開する", "发布",
 ];
 
-export const CONFIRM_WORDS = [
-  // money
+// Money, then destructive, then talking to people, then committing in general; English first,
+// then German, French, Spanish, Portuguese, Italian, Dutch, Japanese and Chinese.
+const PAY_WORDS = [
   "pay", "purchase", "buy", "checkout", "check out", "place order", "subscribe", "upgrade",
   "add card", "add payment", "confirm payment", "start trial", "start plan", "charge",
-  // destructive
-  "delete", "deactivate", "uninstall", "close account", "close store", "cancel subscription",
-  "revoke", "disconnect", "transfer ownership",
-  // talking to other people
-  "send message", "send invite", "send email", "reply to customer",
+  "bezahlen", "zahlen", "kaufen", "jetzt kaufen", "bestellen", "zahlungspflichtig bestellen", "abonnieren",
+  "payer", "acheter", "commander", "s'abonner",
+  "pagar", "comprar", "realizar pedido", "suscribirse", "finalizar compra", "assinar",
+  "paga", "acquista", "ordina", "abbonati",
+  "betalen", "kopen", "afrekenen",
+  "支払う", "購入", "注文する", "付款", "支付", "购买", "下单",
 ];
+const DELETE_WORDS = [
+  "delete", "deactivate", "uninstall", "close account", "close store", "cancel subscription",
+  "revoke", "disconnect", "transfer ownership", "remove", "erase", "reset",
+  "löschen", "entfernen", "zurücksetzen", "kündigen",
+  "supprimer", "effacer", "retirer", "réinitialiser", "résilier",
+  "eliminar", "borrar", "quitar", "restablecer", "excluir", "remover", "apagar",
+  "elimina", "cancella", "rimuovi", "ripristina",
+  "verwijderen", "wissen", "opzeggen",
+  "削除", "消去", "リセット", "删除", "移除", "重置",
+];
+const SEND_WORDS = [
+  "send message", "send invite", "send email", "reply to customer", "send", "post",
+  "senden", "absenden", "envoyer", "enviar", "invia", "verzenden", "versturen", "送信", "发送",
+];
+const COMMIT_WORDS = [
+  "submit", "confirm", "order",
+  "bestätigen", "confirmer", "valider", "soumettre", "confirmar", "conferma", "bevestigen", "確認", "确认", "提交",
+];
+export const CONFIRM_WORDS = [...PAY_WORDS, ...DELETE_WORDS, ...SEND_WORDS, ...COMMIT_WORDS];
+
+// What a final-action word commits: "pay", "delete" or "" (for the confirmation that follows it).
+export function finalKind(word) {
+  const w = String(word || "").toLowerCase();
+  if (w === "pay" || PAY_WORDS.includes(w)) return "pay";
+  if (w === "delete" || DELETE_WORDS.includes(w)) return "delete";
+  return "";
+}
 
 // Phrases that contain a confirm word but are routine.
-const SAFE_PHRASES = ["send code", "send verification", "resend code", "send link"];
+const SAFE_PHRASES = ["send code", "send verification", "resend code", "send link", "post code", "postcode", "postal code",
+  "order history", "order status", "sort order", "reset filters", "reset filter", "remove filter", "remove filters", "confirm email", "confirm password"];
 
 export function uploadAllowed(p, uploadsDir = paths.uploads) {
   const full = resolve(String(p));

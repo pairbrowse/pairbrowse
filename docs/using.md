@@ -49,7 +49,8 @@ A flow that worked can be saved as a playbook and replayed with new values in on
 Each filled field is checked after focus leaves it, the way you'd tab out: date pickers and
 masked fields that throw a pasted value away get it typed key by key, and a field that still
 won't keep it stops the run with what it shows, instead of a silent "done".
-Final actions (pay, publish, submit for review, delete) never run in fast mode: Claude uses a
+Final actions (pay, publish, submit for review, delete, and any form submit that commits
+something) never run in fast mode: Claude uses a
 normal click for them, so you confirm.
 
 ## Popups and notifications

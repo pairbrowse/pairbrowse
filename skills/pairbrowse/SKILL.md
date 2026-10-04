@@ -119,8 +119,9 @@ Open only the verification message: select the inbox tab, `browser_find` with a 
   justified permissions, naming and branding. One check per rule with `ok` and a short `note`;
   `waived` only if the user said to submit anyway. Show the result, then click.
 - Pay, delete and message clicks prompt the user in Claude Code: describe what happens, then click.
-  A form with card or billing/shipping fields pays whatever its button says ("Submit order"):
-  put "Pay" in `element` ("Pay: Submit order") so the user confirms it.
+  Clicks are also judged by what they do: a form submit (not a "Next" step, search or sign-in),
+  card fields, a danger button or a confirmation dialog. A refusal names the word to use in
+  `element` ("Submit: Create account", "Pay: Submit order", "Delete: OK"); retry with it.
   `browser_evaluate` always asks the user; avoid it. Final actions are never run in fast mode.
 - In Codex those clicks are refused with a note: badge "you", name the button and what it does,
   wait, and carry on from the result. Record the passing review first for submit or publish.

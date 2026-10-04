@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 process.env.PAIRBROWSE_HOME = "/home/me/.pairbrowse";
 const { decide, clickClass } = await import("../scripts/guard.mjs");
 
-const cfg = { neverConfirm: [] };
+const cfg = {};
 const NOW = Date.parse("2026-10-01T12:00:00Z");
 const review = (minsAgo, passed = true) => ({ passed, at: new Date(NOW - minsAgo * 60_000).toISOString(), guidelinesUrl: "https://example.com/rules", checks: [{ rule: "r", ok: passed }] });
 const run = (tool, tool_input, { config = cfg, rev = null } = {}) =>

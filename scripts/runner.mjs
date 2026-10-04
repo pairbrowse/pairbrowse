@@ -25,7 +25,7 @@ export const RUN_TOOL = {
   description:
     "Run several browser steps in one call, fast, on the current tab. Use it for each page (or a whole saved flow) instead of one tool call per field. " +
     'Steps, one key each: {"go":url} {"fill":{"Label":"value",...}} {"check":"Label"} {"uncheck":"Label"} {"select":{"Label":"Option"}} ' +
-    '{"click":"Button or link text"} {"press":"Enter"} {"scroll":"down"|"up"|pixels} {"upload":{"Label":"/abs/path"}} {"waitFor":"text"} {"expect":"text"} ' +
+    '{"click":"Button or link text"} {"press":"Enter"} {"scroll":"down"|"up"|pixels} {"drag":[[x,y],...]} (press at the first point, move through the rest, let go: drawing on canvases; x, y are fractions 0-1 of the visible page) {"upload":{"Label":"/abs/path"}} {"waitFor":"text"} {"expect":"text"} ' +
     '{"handoff":{"say":"what the user must do","until":"text that appears after"}} (or "untilGone"). ' +
     "Labels match the field's label, placeholder or name. Values may use {{var}} from vars. Stops at the first problem and says why. " +
     "Returns where it ended and an outline of the page (fields, buttons, errors). Save a working flow with saveAs, replay it with playbook + vars; list saved ones with list:true. " +
@@ -184,6 +184,11 @@ export function preflight(steps, uploadsDir) {
         const problem = uploadProblem(p, uploadsDir); // the same checks as pairbrowse_upload
         if (problem) return `${at}: ${problem}`;
       }
+    } else if (kind === "drag") {
+      const ok = Array.isArray(arg) && arg.length >= 2 && arg.length <= 200 && arg.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && n >= 0 && n <= 1));
+      if (!ok) return `${at}: drag takes 2 to 200 points [x, y], fractions 0-1 of the visible page.`;
+      const far = Math.max(...arg.map(([x, y]) => Math.hypot(x - arg[0][0], y - arg[0][1])));
+      if (far < 0.01) return `${at}: a drag has to move (for a click use click).`;
     } else if (kind === "scroll") {
       if (!(arg === "down" || arg === "up" || (Number.isFinite(Number(arg)) && Number(arg) !== 0 && Math.abs(Number(arg)) <= 20000))) return `${at}: scroll takes "down", "up" or a number of pixels (negative: up).`;
     } else if (!["fill", "check", "uncheck", "select", "press", "waitFor", "expect", "handoff"].includes(kind)) {
@@ -434,6 +439,18 @@ async function stepsIn(page, steps, hooks) {
           }
         }
         await page.keyboard.press(String(arg));
+      } else if (kind === "drag") {
+        // Drawing, as a person does: the mouse goes down at the first point and follows the rest
+        // (in the PairBrowse browser its moves take human paths and timing), then lets go.
+        const [w, h] = await page.evaluate(() => [innerWidth, innerHeight]);
+        const pts = arg.map(([x, y]) => ({ x: Math.round(x * w), y: Math.round(y * h) }));
+        const mark = (p) => hooks.cursor?.({ boundingBox: async () => ({ x: p.x, y: p.y, width: 0, height: 0 }) }, "");
+        await mark(pts[0]);
+        await page.mouse.move(pts[0].x, pts[0].y);
+        await page.mouse.down();
+        for (const p of pts.slice(1)) { await page.mouse.move(p.x, p.y, { steps: 8 }); await mark(p); }
+        await page.mouse.up();
+        hooks.activity(`Drew a stroke (${pts.length} points)`);
       } else if (kind === "scroll") {
         // The cursor onto the page, then the wheel: in small eased steps that glide like a person
         // (pairbrowse_scroll), or in two quick ones (fast mode). A screen for "down" / "up".

@@ -27,6 +27,7 @@ const APP = `<title>App</title><body style="margin:0">
 <input id="i" aria-label="Note" style="display:block;width:100vw;height:20vh;font-size:30px">
 <canvas id="c" width="800" height="300" style="display:block;width:100vw;height:40vh;background:#fff"></canvas>
 <input type="file" id="f" aria-label="Photo" style="display:block;width:100vw;height:9vh">
+<div style="height:150vh">more below</div>
 <script>
 const c = document.getElementById("c"), g = c.getContext("2d"); let down = false;
 const at = (e) => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
@@ -60,7 +61,7 @@ function home(prefix) {
   return dir;
 }
 
-async function run({ noDirect = false, realTunnel = false, youtube = false } = {}) {
+async function run({ noDirect = false, realTunnel = false, youtube = false, joinerApp = "claude-code" } = {}) {
   const require = createRequire(join(runtime, "package.json"));
   // PAIRBROWSE_TEST_EXECUTABLE: another Chromium build to run both sides on (the PairBrowse browser, say).
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("playwright").chromium.executablePath();
@@ -73,7 +74,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false } = {
   writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice", browserDriver: "playwright" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", ...(realTunnel ? {} : { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" }), ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}) });
   const daemons = [];
-  const connect = async (h) => {
+  const connect = async (h, app = "claude-code") => {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
     const socketPath = join(h, "run", "browser.sock");
@@ -87,7 +88,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false } = {
       await sleep(200);
     }
     const call = rpc((l) => sock.write(l), sock);
-    await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
+    await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: app, version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
     return { sock, call };
   };
@@ -107,7 +108,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false } = {
   let host, joiner, stage = "start";
   try {
     host = await connect(hostHome);
-    joiner = await connect(joinHome);
+    joiner = await connect(joinHome, joinerApp);
     stage = "host opens the app";
     assert.ok(!(await tool(host.call, "browser_navigate", { url: "http://one.pbtest.example/app" })).result.isError);
 
@@ -117,7 +118,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false } = {
     const code = made.match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     assert.ok(code, made);
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code })), /shared browser/);
-    const id = await until("the request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Alice \(Claude Code\), waiting/)?.[1]);
+    const id = await until("the request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Alice \((?:Claude Code|Codex)\), waiting/)?.[1]);
     assert.match(text(await tool(host.call, "pairbrowse_invite", { action: "approve", id })), /Let Alice in/);
 
     stage = "the joiner's tab shows the host's tab, connected directly";
@@ -190,6 +191,12 @@ async function run({ noDirect = false, realTunnel = false, youtube = false } = {
     await input([{ type: "mouse", action: "mouseMoved", ...a }, { type: "mouse", action: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 }, ...moves, { type: "mouse", action: "mouseReleased", ...b, button: "left", buttons: 0, clickCount: 1 }]);
     await until("drawn on the host's canvas", async () => Number(await evaluate(host.call, "() => window.drawn || 0")) >= 5, 15_000);
 
+    stage = "the wheel on the picture scrolls the host's page";
+    await input([{ type: "wheel", ...toJoiner(0.5, 0.5), dx: 0, dy: 400 }]);
+    await until("the host's page scrolled", async () => Number(await evaluate(host.call, "() => scrollY")) > 100, 15_000);
+    await input([{ type: "wheel", ...toJoiner(0.5, 0.5), dx: 0, dy: -4000 }]);
+    await until("and back up", async () => Number(await evaluate(host.call, "() => scrollY")) === 0, 15_000);
+
     stage = "a file field clicked on the picture asks the joiner for the file, on their computer";
     const doc = join(joinHome, "doc.png");
     writeFileSync(doc, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
@@ -213,7 +220,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false } = {
     assert.ok(!up.result?.isError, text(up));
     await until("the file in the host's page", async () => (await evaluate(host.call, "() => document.getElementById('f').files[0] && document.getElementById('f').files[0].name")) === "pic.png", 15_000);
     assert.match(text(await tool(joiner.call, "pairbrowse_upload", { files: ["/etc/hosts"], target: "Photo" })), /only images, video and documents|never uploaded/, "the joiner's own upload rules");
-    assert.match(text(await tool(host.call, "pairbrowse_collaboration", { action: "status" })), /Alice · Claude Code/, "the host sees whose agent it is");
+    assert.match(text(await tool(host.call, "pairbrowse_collaboration", { action: "status" })), joinerApp === "claude-code" ? /Alice · Claude Code/ : /Alice · Codex/, "the host sees whose agent it is");
 
     stage = "the host sees who did it; leaving turns the picture into the tab itself";
     notes.push(text(await tool(host.call, "browser_snapshot")));
@@ -234,6 +241,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false } = {
 }
 
 test("shared browser: the joiner sees the host's tab live (direct connection) and clicks, types, draws and uploads in it; their agent works there too", { skip: !runtime, timeout: 240_000 }, () => run());
+test("shared browser: the joiner's Codex works in the host's browser too", { skip: !runtime, timeout: 240_000 }, () => run({ joinerApp: "codex-mcp-client" }));
 test("shared browser without a direct connection: pictures and input through the join channel", { skip: !runtime, timeout: 240_000 }, () => run({ noDirect: true }));
 // Through a real Cloudflare Quick Tunnel, as between two computers (needs the network and cloudflared).
 // A real YouTube video through the picture (needs the network).

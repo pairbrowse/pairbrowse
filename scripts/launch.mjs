@@ -9,7 +9,6 @@ import { existsSync, copyFileSync, chmodSync, openSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, ensureDirs, loadConfig } from "./paths.mjs";
-import { ancestors } from "./ancestry.mjs";
 import { ensureRuntime } from "./runtime.mjs";
 import { DOCK_TOOL, dockSupported, startPane } from "./dock.mjs";
 import { JOIN_TOOL } from "./policy.mjs";
@@ -130,9 +129,6 @@ function send(msg) {
   if (msg.method === "initialize") {
     const label = config.participantName || process.env.PAIRBROWSE_PARTICIPANT;
     if (label) msg = { ...msg, params: { ...msg.params, clientInfo: { ...msg.params?.clientInfo, pairbrowseParticipant: String(label).replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, 60) } } };
-    // The processes this bridge runs under: the hook of the same session shares one, so the
-    // helper knows whose click a hook asks about (scripts/ancestry.mjs).
-    msg = { ...msg, params: { ...msg.params, clientInfo: { ...msg.params?.clientInfo, pairbrowseAncestors: ancestors() } } };
   }
   if (msg.method === "initialize") initMsg = msg;
   if (up) up.write(JSON.stringify(msg) + "\n");

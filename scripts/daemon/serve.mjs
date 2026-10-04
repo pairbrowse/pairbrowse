@@ -9,13 +9,13 @@ import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, s
 import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { describe } from "../log.mjs";
-import { finalAction, mentions, decide } from "../guard.mjs";
+import { finalAction, mentions, decide, finalKind } from "../guard.mjs";
 import { keepFocus } from "../focus.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 import { SESSION_TOOL } from "../sessions.mjs";
 import { UPLOAD_TOOL, uploadFiles } from "../upload.mjs";
 import { FACTS_TOOL } from "../facts.mjs";
-import { RUN_TOOL, enterButtonLabel, submitsPaymentAt, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
+import { RUN_TOOL, enterButtonLabel, riskAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
 import { sleep, within } from "../util.mjs";
 import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel } from "./page.mjs";
@@ -121,6 +121,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
     });
     collaboration.register(participant, `Claude ${participant.slice(0, 4)}`);
     let actingIn = null; // the tab this participant's current call acts in
+    // What this participant's last click in a tab committed ("delete", "pay"), for a minute: the
+    // confirmation it opens counts as the same action (daemon/page.mjs clickRisk prev).
+    const risks = new WeakMap(); // tab -> { kind, t } | null
+    const recentRisk = (page) => { const r = page && risks.get(page); return r && Date.now() - r.t < 60_000 ? r.kind : ""; };
+    const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
     // The tab this participant works in, as a page: other agents' new and closed tabs shift the
     // numbers, and two tabs can show the same URL. Its browser server's current tab follows it.
     let mine = null;
@@ -378,11 +383,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const pressed = finalAction(await keyWouldPress(name === "browser_type" ? args.target : null, key));
         if (pressed) return `Refused: ${key === "space" ? "Space" : "Enter"} here would press the "${pressed.word}" button. ` +
           "Type without submit (and without line breaks), then use browser_click on that button so the user confirms.";
-        // Whatever its button says: a form with card or billing/shipping fields is a payment.
+        // Whatever its button says: judged by what pressing it does (daemon/page.mjs clickRisk).
         const page = await context.pageAt(context.currentUrl());
-        if (page && await submitsPaymentAt(page, name === "browser_type" ? args.target : null, key)) {
-          return `Refused: ${key === "space" ? "Space" : "Enter"} here would send a payment form (it has card or billing/shipping fields). ` +
-            "Type without submit (and without line breaks), then use browser_click on its button, with \"Pay\" in element, so the user confirms.";
+        const risk = page ? await riskAt(page, name === "browser_type" ? args.target : null, key, recentRisk(page)) : null;
+        if (risk && risk.level !== "safe") {
+          return `Refused: ${key === "space" ? "Space" : "Enter"} here would commit something (${riskReason(risk)}). ` +
+            `Type without submit (and without line breaks), then use browser_click on its button, with "${cap(risk.word)}" in element, so the user confirms.`;
         }
       }
       // A publish, pay or delete button described as something milder ("Continue") would slip past
@@ -397,13 +403,23 @@ export function createServe({ config, log, host, createConnection, clients, coll
           return `Refused: this element is a "${real.word}" button, but the click describes it as "${args.element || "(nothing)"}". ` +
           "Retry with its real label in element, so the user sees what they are approving.";
         }
-        // A submit button of a payment form (card or billing/shipping fields) pays, whatever it
-        // says ("Submit order", "Continue"): it's called a payment so the user confirms it.
-        if (!real && !mentions(args.element || "", "pay") && await submitsPaymentAt(await serverPage(), args.target)) {
-          log(`refused click on a payment form's submit described as "${String(args.element || "").slice(0, 80)}"`);
-          return `Refused: this button sends a payment form (it has card or billing/shipping fields), whatever its label ("${String(text).slice(0, 60)}"). ` +
-            `Retry with "Pay" in element (e.g. "Pay: ${String(text || "submit").slice(0, 40)}"), so the user confirms it.`;
+        // By what the click does, whatever it says ("Submit order", "OK", an icon): a form submit
+        // or a commit-style action is asked for, unless it clearly commits nothing (a link, a
+        // step through a form, a search, a sign-in). It's called what it is so the user confirms.
+        const page = await serverPage();
+        const risk = page ? await riskAt(page, args.target, "click", recentRisk(page)) : { level: "safe" };
+        const lifted = risk.level === "commit" && !finalAction(risk.word); // the user's neverConfirm
+        // Strong signals (card fields with a submit, a danger button in a confirmation) want their
+        // own word even when the label has another ("Submit order" pays: called "Pay").
+        const named = risk.level === "strong" ? mentions(args.element || "", risk.word) : real || mentions(args.element || "", risk.word) || finalAction(args.element || "");
+        if (risk.level !== "safe" && !lifted && !named) {
+          log(`refused click (${risk.word}: ${risk.why.join(", ")}) described as "${String(args.element || "").slice(0, 80)}"`);
+          return `Refused: this click commits something, whatever its label ("${String(text).slice(0, 60)}"): ${riskReason(risk)}. ` +
+            `Retry with "${cap(risk.word)}" in element (e.g. "${cap(risk.word)}: ${String(text || "button").slice(0, 40)}"), so the user confirms it.`;
         }
+        // Remembered a minute: the "Confirm" in the popup a delete click opens is still a delete.
+        const kind = finalKind(real?.word) || (risk.level !== "safe" ? finalKind(risk.word) : "");
+        risks.set(page, kind ? { kind, t: Date.now() } : null);
       }
       return null;
     }

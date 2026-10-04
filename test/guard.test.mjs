@@ -12,13 +12,14 @@ const run = (tool, tool_input, { config = cfg, rev = null } = {}) =>
 const click = (element, opts) => run("browser_click", { element, target: "e1" }, opts);
 
 test("routine clicks run without asking", () => {
-  for (const label of ["Next", "Continue", "Save draft", "I agree", "Accept all cookies", "Send code", "Resend code", "PayPal", "Payments settings", "Submit"]) {
+  for (const label of ["Next", "Continue", "Save draft", "I agree", "Accept all cookies", "Send code", "Resend code", "PayPal", "Payments settings", "Order history", "Reset filters"]) {
     assert.equal(click(label), "allow", label);
   }
 });
 
 test("money, destructive and messaging clicks ask first", () => {
-  for (const label of ["Pay now", "Delete store", "Place order", "Start trial", "Send message"]) {
+  // Committing in general asks too (the helper also demands it by what a click does).
+  for (const label of ["Pay now", "Delete store", "Place order", "Start trial", "Send message", "Submit", "Submit order", "Erase all data", "Confirm", "Löschen", "購入"]) {
     assert.equal(click(label), "ask", label);
   }
 });

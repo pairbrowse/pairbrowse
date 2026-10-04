@@ -8,7 +8,8 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { readOps, stateForJoiner, readPointers, readView, turnLeft, TURN_MAX_MS, createFormSync } from "../scripts/tabsync.mjs";
 import { createPresence } from "../scripts/daemon/presence.mjs";
-import { submitsPayment } from "../scripts/daemon/page.mjs";
+import { clickRisk } from "../scripts/daemon/page.mjs";
+import { finalAction, finalKind } from "../scripts/guard.mjs";
 import { applyFields, readFields } from "../scripts/daemon/forms.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
@@ -86,29 +87,76 @@ test("form sync: a card number replacing a plain value there leaves no stale val
   assert.deepEqual(sync.local("a", url, [{ ...plain, v: "typed here" }]).map((x) => x.v), ["typed here"], "a value typed here afterwards goes");
 });
 
-test("final actions by structure: a payment form's submit, whatever its words; not signups or plain buttons", { skip: !runtime, timeout: 60_000 }, async () => {
+test("final actions by what they do: commits are asked for in any wording or language, steps and links aren't", { skip: !runtime, timeout: 60_000 }, async () => {
   const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
+    await page.route("http://pairbrowse.test/", (r) => r.fulfill({ contentType: "text/html", body: "<title>t</title>" }));
+    await page.goto("http://pairbrowse.test/"); // relative addresses resolve against a web page
     await page.setContent(`
-      <form id="checkout"><input autocomplete="cc-number" id="cc"><input id="note"><button id="order">Submit order</button><button type="button" id="apply">Apply coupon</button></form>
-      <form id="ship"><input autocomplete="shipping street-address" id="street"><input type="submit" id="go" value="Continue"></form>
-      <form id="luhn"><input id="num" value="4242 4242 4242 4242"><button id="done">Done</button></form>
-      <form id="signup"><input autocomplete="email" id="email"><input autocomplete="street-address" id="addr"><iframe srcdoc="captcha"></iframe><button id="join">Create account</button></form>
-      <button id="loose">Submit order</button>`);
-    const at = (sel, kind) => page.locator(sel).evaluate(submitsPayment, kind);
-    assert.equal(await at("#order"), true, "card fields: \"Submit order\" pays");
-    assert.equal(await at("#go"), true, "a shipping address form");
-    assert.equal(await at("#done"), true, "a card number typed in a plain field");
-    assert.equal(await at("#note"), true, "Enter in a field of a payment form");
-    assert.equal(await at("#note", "space"), false, "Space in a field types a space");
-    assert.equal(await at("#apply"), false, "a type=button button submits nothing");
-    assert.equal(await at("#join"), false, "a signup with an address and a frame isn't a payment");
-    assert.equal(await at("#loose"), false, "no form, nothing submitted");
+      <form id="checkout" method="post"><input autocomplete="cc-number" id="cc"><input id="note"><button id="order">Submit order</button><button type="button" id="apply">Apply coupon</button></form>
+      <form id="ship" method="post"><input autocomplete="shipping street-address"><input type="submit" id="go" value="Continue"></form>
+      <form id="luhn" method="post"><input value="4242 4242 4242 4242"><button id="done">Done</button></form>
+      <form id="stripe" method="post"><iframe src="https://js.stripe.com/v3/elements"></iframe><button id="ok">OK</button></form>
+      <form id="wizard" method="post"><input id="first"><input id="last"><button id="next">Next →</button></form>
+      <form id="wizard-de" method="post"><input><input><button id="weiter">Weiter</button></form>
+      <form id="wizard-ja" method="post"><input><input><button id="tsugi">次へ</button></form>
+      <form id="signup" method="post"><input id="email"><input id="name"><input type="password" autocomplete="new-password"><button id="join">Create account</button></form>
+      <form id="scripted"><input id="title"><input id="body"><button id="save">Save</button></form>
+      <form id="signin" method="post"><input id="user"><input type="password" id="pw"><button id="in">Sign in</button></form>
+      <form id="find" method="get" action="/search"><input id="q"><button id="s">Search</button></form>
+      <form id="find2" method="post"><input type="search" id="q2"><button id="s2">Go</button></form>
+      <form id="del" method="post" action="/account/delete"><button id="bye">Goodbye</button></form>
+      <a id="link" href="/products">Products</a> <a id="dellink" href="/posts/7/delete">Trash</a> <a id="pay" href="https://www.paypal.com/checkoutnow">PayPal</a>
+      <button id="tab" role="tab">Details</button> <button id="more" aria-expanded="false">More</button> <button id="cart">Add to cart</button>
+      <button id="erase" style="background:#d92d20;color:#fff">🗑</button>
+      <div role="alertdialog" id="dlg"><p>This can't be undone.</p><button id="yes" style="background:#d92d20;color:#fff">Yes</button><button id="no">Cancel</button><button id="sure">OK</button></div>
+      <div role="dialog" id="pop"><p>Choose</p><button id="pick">Confirm</button></div>`);
+    const at = async (sel, kind = "click", prev = "") => page.locator(sel).evaluate((el, [k, p, src]) => new Function(`return (${src})`)()(el, k, p), [kind, prev, clickRisk.toString()]);
+    const is = async (sel, level, word, kind, prev) => { const r = await at(sel, kind, prev); assert.deepEqual([r.level, r.word], [level, word], `${sel} ${kind || ""}: ${JSON.stringify(r)}`); };
+    await is("#order", "strong", "pay");
+    await is("#go", "strong", "pay");
+    await is("#done", "strong", "pay");
+    await is("#ok", "strong", "pay");
+    await is("#note", "strong", "pay", "enter");
+    await is("#note", "safe", "", "space");
+    await is("#apply", "safe", "");
+    await is("#next", "safe", "");
+    await is("#weiter", "safe", "");
+    await is("#tsugi", "safe", "");
+    await is("#first", "safe", "", "enter");
+    await is("#join", "commit", "submit");
+    await is("#save", "commit", "submit");
+    await is("#title", "commit", "submit", "enter");
+    await is("#in", "safe", "");
+    await is("#s", "safe", "");
+    await is("#s2", "safe", "");
+    await is("#bye", "strong", "delete");
+    await is("#link", "safe", "");
+    await is("#dellink", "commit", "delete");
+    await is("#pay", "commit", "pay");
+    await is("#tab", "safe", "");
+    await is("#more", "safe", "");
+    await is("#cart", "safe", "");
+    await is("#erase", "commit", "delete");
+    await is("#yes", "strong", "delete");
+    await is("#no", "safe", "");
+    await is("#sure", "commit", "delete");
+    await is("#pick", "safe", "");
+    await is("#pick", "strong", "delete", "click", "delete");
   } finally {
     await browser.close();
   }
+});
+
+test("the word list: the fast path, with the gaps filled and other languages, routine phrases left alone", () => {
+  for (const label of ["Submit order", "Erase all data", "Remove member", "Reset store", "Send", "Post", "Confirm", "Jetzt kaufen", "Löschen", "Supprimer", "Eliminar", "Acquista", "Verwijderen", "削除", "删除", "提交"]) assert.ok(finalAction(label, { confirm: [], neverConfirm: [] }), label);
+  for (const label of ["Next", "Continue", "Order history", "Reset filters", "Post code", "Send code", "Confirm email", "Weiter", "Products"]) assert.equal(finalAction(label, { confirm: [], neverConfirm: [] }), null, label);
+  assert.equal(finalAction("Submit form", { confirm: [], neverConfirm: ["submit"] }), null, "neverConfirm turns one down");
+  assert.equal(finalKind("löschen"), "delete");
+  assert.equal(finalKind("kaufen"), "pay");
+  assert.equal(finalKind("submit"), "");
 });
 
 test("form values in the page: a card replacing a plain value clears it here; a card typed here is never overwritten", { skip: !runtime, timeout: 60_000 }, async () => {

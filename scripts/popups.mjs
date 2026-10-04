@@ -1,7 +1,7 @@
 // Popups the browser handles by itself, so Claude (and Codex) don't get stuck on them:
 // - Page dialogs: alerts and "leave this page?" are answered right away and reported. A confirm
-//   that pays, deletes, cancels or submits, and a prompt that asks for text, are left for Claude
-//   (browser_handle_dialog), which asks the user.
+//   (a page asks one before something it treats as consequential) and a prompt are left for Claude
+//   (browser_handle_dialog), whose OK asks the user.
 // - New tabs a page opens (sign-in and consent popups, target=_blank links): Claude is told which
 //   tab opened, and when it closes again. Tabs brought back at startup aren't announced.
 // - Overlays inside the page that interrupt (cookie banners, newsletter, discount and app
@@ -9,13 +9,11 @@
 //   opened, and only dismiss buttons, never subscribe, sign up, buy or a final action.
 // - CAPTCHAs and bot checks are the user's: the user is told right away (onYourTurn).
 // What happened is collected as notes and added to the next tool result.
-import { REVIEW_WORDS, CONFIRM_WORDS, escapeRegExp } from "./guard.mjs";
 import { within } from "./util.mjs";
 
 // The "Your turn" text while a CAPTCHA is up (the daemon takes it down once the check is gone).
 export const CHALLENGE_TURN = "Solve the check on this page, then Claude continues";
 
-const RISKY = new RegExp(`(^|[^a-z])(${[...REVIEW_WORDS, ...CONFIRM_WORDS, "cancel", "remove", "unsubscribe", "close account"].map(escapeRegExp).join("|")})([^a-z]|$)`, "i");
 const CHALLENGE = /(recaptcha|hcaptcha|challenges\.cloudflare\.com|turnstile|arkoselabs|funcaptcha|captcha-delivery|geo\.captcha)/i;
 
 const CONSENT_FRAME = /consent|cookie|privacy|cmp|onetrust|sourcepoint|didomi|trustarc|quantcast|usercentrics|cookiebot|iubenda|termly|osano|sp_message/i;
@@ -37,9 +35,6 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
         if (type === "alert" || type === "beforeunload") {
           await dialog.accept();
           note(type === "alert" ? `The page showed an alert and PairBrowse closed it: "${message}"` : "The page asked to confirm leaving; PairBrowse confirmed.");
-        } else if (type === "confirm" && !RISKY.test(message)) {
-          await dialog.accept();
-          note(`The page asked "${message}" and PairBrowse answered OK.`);
         } else {
           note(`The page is waiting on a ${type} dialog: "${message}". Decide with the user, then answer it with browser_handle_dialog.`);
         }
@@ -122,6 +117,10 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
       }
       // In a consent provider's own frame the whole document is the banner.
       if (inConsentFrame && !candidates.length && document.body) candidates.push(document.body);
+      // A button that sends a form, or carries an HTTP method for a script to send, is never a
+      // dismiss button, whatever it says.
+      const submits = (b) => b.matches('input[type="submit"], input[type="image"], [data-method], [data-turbo-method], [hx-post], [hx-delete], [hx-put], [hx-patch]') ||
+        (b.tagName === "BUTTON" && (b.getAttribute("type") || "submit").toLowerCase() === "submit" && !!b.form && (b.getAttribute("formmethod") || b.form.getAttribute("method") || "").toLowerCase() !== "dialog");
       const label = (b) => (b.getAttribute("aria-label") || b.innerText || b.value || "").trim().replace(/\s+/g, " ").slice(0, 60);
       for (const box of candidates) {
         // Buttons, and things styled as one: a short label with a pointer cursor ("GOT IT" in a div).
@@ -133,7 +132,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
         for (const want of order) {
           // "OK" and "Allow" are only taken for a box that's about cookies, not any consent dialog.
           const hit = buttons.find((b) => want.test(label(b)) && (want !== ACCEPT || !/^(ok(ay)?|allow( all)?)$/i.test(label(b)) || /cookie/i.test(box.innerText || "")));
-          if (hit) {
+          if (hit && !submits(hit)) {
             hit.setAttribute("data-pairbrowse-dismiss", "");
             return { label: label(hit) || "close", what: cookie ? "cookie banner" : "popup" };
           }
@@ -163,7 +162,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
       };
       if (closeOffers) for (const box of overlays.filter((el) => !el.closest("[data-pairbrowse-own]"))) {
         const close = [...box.querySelectorAll('button, [role="button"], a, [aria-label]')].find((b) => visible(b, 4) && atCorner(b, box));
-        if (close) {
+        if (close && !submits(close)) {
           close.setAttribute("data-pairbrowse-dismiss", "");
           return { label: label(close) || "×", what: "popup" };
         }
@@ -184,7 +183,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
       }
       return false;
     }
-    if (!found || RISKY.test(found.label)) return false;
+    if (!found) return false;
     const button = frame.locator("[data-pairbrowse-dismiss]").first();
     const ok = await button.click({ timeout: 3000 }).then(() => true, () => false);
     if (ok) note(`Closed a ${found.what} on the page (pressed "${found.label}").`);

@@ -91,8 +91,9 @@ the user to open their webmail in PairBrowse (they log in). SMS codes: hand off 
 ## 6. The final create / submit
 
 Stop before the button that creates the account for real, accepts paid terms, or submits an
-application. Show the user what was filled, then click with `browser_click` (fast mode
-refuses final actions on purpose). PairBrowse's guard asks the user to confirm; in Codex the
+application. Show the user what was filled, then click with `browser_click`, its `element`
+starting with the class ("Submit: Create account", "Pay: Start subscription"; fast mode refuses
+final actions on purpose). PairBrowse's guard asks the user to confirm; in Codex the
 click is refused instead: set `pairbrowse_status` to `you`, name the exact button, and wait.
 Grant OAuth scopes, add team members or change payout details only when the user asked for
 exactly that.

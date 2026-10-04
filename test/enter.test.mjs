@@ -12,8 +12,8 @@ test("Enter that would press a pay or publish button is refused", { skip: !runti
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    await page.setContent(`<form onsubmit="window.sent=true;return false"><label>Card name <input id="n"></label><button>Pay $49 now</button></form>
-      <form onsubmit="window.searched=true;return false"><label>Search <input id="q"></label><button>Search</button></form>`);
+    await page.setContent(`<form onsubmit="window.sent=true;return false"><label>Card name <input id="n" autocomplete="cc-name"></label><button>Pay $49 now</button></form>
+      <form role="search" onsubmit="window.searched=true;return false"><label>Search <input id="q"></label><button>Search</button></form>`);
     const hooks = { activity: () => {}, status: () => {}, cursor: () => {}, remember: () => {}, secrets: { values: {}, domains: {} } };
     const r = await runSteps(page, [{ fill: { "Card name": "Ada" } }, { press: "Enter" }], hooks);
     assert.equal(r.ok, false);
@@ -87,7 +87,7 @@ test("Shift+Enter in a field and Space on a focused Pay button are refused", { s
     const hooks = hooksFor();
     const shift = await runSteps(page, [{ fill: { Name: "Ada" } }, { press: "Shift+Enter" }], hooks);
     assert.equal(shift.ok, false);
-    assert.match(shift.why, /Pay \$49.*pay/);
+    assert.match(shift.why, /Pay \$49.*final action \(submit\)/);
     await page.focus("#pay");
     const space = await runSteps(page, [{ press: "Space" }], hooks);
     assert.equal(space.ok, false);
@@ -98,11 +98,11 @@ test("Shift+Enter in a field and Space on a focused Pay button are refused", { s
   });
 });
 
-test("a click step that matches a longer final-action label is refused", { skip: !runtime, timeout: 60_000 }, async () => {
-  await withPage(`<button onclick="window.paid=true">Confirm payment</button>`, async (page) => {
+test("a click step that matches a payment form's submit is refused, by structure", { skip: !runtime, timeout: 60_000 }, async () => {
+  await withPage(`<form onsubmit="window.paid=true;return false"><input autocomplete="cc-number"><button>Confirm payment</button></form>`, async (page) => {
     const r = await runSteps(page, [{ click: "Confirm" }], hooksFor());
     assert.equal(r.ok, false);
-    assert.match(r.why, /Confirm payment.*final action/);
+    assert.match(r.why, /Confirm payment.*final action \(pay\)/);
     assert.equal(await page.evaluate(() => !!window.paid), false);
   });
 });

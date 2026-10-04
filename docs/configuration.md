@@ -5,8 +5,7 @@
 ```json
 {
   "executablePath": null,
-  "confirm": ["create account"],
-  "neverConfirm": ["publish"],
+  "neverConfirm": ["https://intranet.example.com"],
   "chromeArgs": ["--lang=en-US"]
 }
 ```
@@ -14,9 +13,16 @@
 - `executablePath`: use Brave, Arc, Vivaldi or another Chromium build instead of the PairBrowse browser.
 - `browserEngine`: `"auto"` (default: the native PairBrowse browser where a build is pinned for your computer (macOS, Linux x64, Windows x64), else `"chromium"`), `"pairbrowse"` or `"chromium"`.
 - `browserDriver`: `"patchright"` (default, needs Node.js 20+) or `"playwright"`.
-- `confirm`: more button words that should ask you first.
-- `neverConfirm`: built-in words you want auto-clicked anyway (`"submit"` turns down the prompts for
-  ordinary form submits; a payment form still asks unless `"pay"` is listed too). It's your browser, your call.
+- `neverConfirm`: origins (`"https://intranet.example.com"`) where a plain form submit goes without
+  asking. Payments, deletions and publishing still ask there. PairBrowse reads no button words, so
+  entries that aren't `http(s)` origins (word lists from older versions) do nothing.
+- `clickJudge`: an optional small model that judges, from the click's context (Claude's task, the
+  page, the form, the dialog, the click before), clicks the page's structure finds safe but can't
+  see through. Off by default:
+  `{ "provider": "anthropic", "model": "claude-sonnet-5", "apiKeyEnv": "ANTHROPIC_API_KEY", "timeoutMs": 4000 }`
+  (only `provider` is needed; the rest are the defaults, and the key is read from that environment
+  variable of the helper). It can only make a click ask, never let one through. What it sends is in
+  [Security](security.md).
 - `chromeArgs`: extra Chromium flags.
 - `maxTabs`: most tabs open at once (default 20). When another opens, the tab used longest ago
   closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more

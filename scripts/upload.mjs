@@ -9,9 +9,8 @@ import { copyFile, constants, stat, mkdir } from "node:fs/promises";
 import { realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
-import { finalActionStrict } from "./guard.mjs";
 import { isRef } from "./policy.mjs";
-import { buttonLabel } from "./daemon/page.mjs";
+import { withHelpers, buttonLabel, clickRisk, clickContext } from "./daemon/page.mjs";
 
 export const UPLOAD_TOOL = {
   name: "pairbrowse_upload",
@@ -164,9 +163,10 @@ async function deliver(page, el, files) {
     await nearField.setInputFiles(files, { timeout: 10000 });
     return "file field next to it";
   }
-  // Never click a submit, publish, pay or delete button just to look for a file chooser.
-  const final = finalActionStrict(await el.evaluate(buttonLabel).catch(() => ""));
-  if (final) throw new Error(`the target looks like a final action ("${final.word}"); give the upload field or drop zone instead`);
+  // Never click a submit, pay or delete button just to look for a file chooser (judged by what it
+  // does, as for browser_click; unreadable counts as one).
+  const risk = (await el.evaluate(withHelpers((e) => clickContext(e, "click"), clickContext, clickRisk, buttonLabel)).catch(() => null))?.risk;
+  if (!risk || risk.level !== "safe") throw new Error(`the target looks like a final action (${risk?.word || "unreadable"}); give the upload field or drop zone instead`);
   const chooser = page.waitForEvent("filechooser", { timeout: 2500 }).catch(() => null);
   await el.click({ timeout: 5000 }).catch(() => {});
   const fc = await chooser;

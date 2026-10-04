@@ -29,8 +29,9 @@ const CHECKOUT = `<title>Checkout</title><main><h1>Checkout</h1><form action="/s
 <label>Notes <input id="notes" name="notes"></label>
 <button>Submit order</button></form><div style="height:5000px"></div></main>`;
 
-// A multi-step form's "Next" and a sign-up's last step: only the commit is asked for.
-const WIZARD = `<title>Sign up</title><main><form method="post" action="/wizard/2"><label>First name <input name="first"></label>
+// A multi-step form's step (marked by its step list, not by its words) and a sign-up's last
+// step: only the commit is asked for.
+const WIZARD = `<title>Sign up</title><main><form method="post" action="/wizard/2"><ol><li aria-current="step">Name</li><li>Email</li></ol><label>First name <input name="first"></label>
 <label>Last name <input name="last"></label><button>Next</button></form>
 <form method="post" action="/wizard/done"><label>Email <input name="email"></label><label>Company <input name="company"></label><button>Create account</button></form></main>`;
 
@@ -176,7 +177,7 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     s = await snap(host.call);
     const click = await tool(host.call, "browser_click", { target: ref(s, "button", "Submit order"), element: "Submit order" });
     assert.ok(click.result.isError);
-    assert.match(text(click), /card or billing\/shipping fields: a final action \(pay\)[^\n]*Retry with "Pay"/);
+    assert.match(text(click), /card, IBAN or billing\/shipping fields: a final action \(pay\)[^\n]*Retry with "Pay:"/);
     const enter = await tool(host.call, "browser_type", { target: ref(s, "textbox", "Notes"), text: "x", submit: true });
     assert.ok(enter.result.isError);
     assert.match(text(enter), /^Refused: Enter here would/);
@@ -214,7 +215,7 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     s = await snap(host.call);
     const create = await tool(host.call, "browser_click", { target: ref(s, "button", "Create account"), element: "Create account" });
     assert.ok(create.result.isError);
-    assert.match(text(create), /it submits a form: a final action \(submit\)[^\n]*Retry with "Submit"/);
+    assert.match(text(create), /it submits a form: a final action \(submit\)[^\n]*Retry with "Submit:"/);
     channel.close();
   } catch (e) {
     const log = (h) => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2500); } catch { return ""; } };

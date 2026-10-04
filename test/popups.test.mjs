@@ -22,18 +22,18 @@ test("dialogs, popup windows and CAPTCHAs are handled or handed over", { skip: !
       <button id="w" onclick="window.open('about:blank', 'signin', 'popup')">w</button>`);
 
     await page.click("#a");
-    await page.click("#c");
-    assert.equal(await page.evaluate(() => window.r), true, "a harmless confirm is answered OK");
     let notes = popups.drain();
     assert.match(notes, /alert.*"Saved!"/);
-    assert.match(notes, /Continue to step 2\?.*answered OK/);
 
-    const risky = page.waitForEvent("dialog");
-    page.click("#d").catch(() => {});
-    const dialog = await risky;
-    await wait(100);
-    assert.match(popups.drain(), /waiting on a confirm dialog.*Delete your account\?/);
-    await dialog.dismiss();
+    // Every confirm is left for Claude (whose OK asks the user), whatever it says: no word list.
+    for (const [id, text] of [["#c", "Continue to step 2\\?"], ["#d", "Delete your account\\?"]]) {
+      const shown = page.waitForEvent("dialog");
+      page.click(id).catch(() => {});
+      const dialog = await shown;
+      await wait(100);
+      assert.match(popups.drain(), new RegExp(`waiting on a confirm dialog.*${text}`));
+      await dialog.dismiss();
+    }
 
     await page.click("#w");
     await wait(1200);

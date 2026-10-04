@@ -10,11 +10,11 @@ import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { navigationProblem, isRef, SENSITIVE } from "./policy.mjs";
 import { hostAllowed } from "./secrets.mjs";
-import { isLocalNetwork, finalAction, finalActionStrict } from "./guard.mjs";
+import { isLocalNetwork } from "./guard.mjs";
 import { uploadProblem, uploadFiles } from "./upload.mjs";
 import { slug } from "./runs.mjs";
 import { readJson, sleep, within } from "./util.mjs";
-import { withHelpers, buttonLabel, isVisible, nearbyText, clickRisk } from "./daemon/page.mjs";
+import { withHelpers, buttonLabel, isVisible, nearbyText, clickRisk, clickContext } from "./daemon/page.mjs";
 
 // How long a handoff waits for the user (a sign-in, a CAPTCHA).
 const HANDOFF_MS = 10 * 60_000;
@@ -28,7 +28,7 @@ export const RUN_TOOL = {
     '{"handoff":{"say":"what the user must do","until":"text that appears after"}} (or "untilGone"). ' +
     "Labels match the field's label, placeholder or name. Values may use {{var}} from vars. Stops at the first problem and says why. " +
     "Returns where it ended and an outline of the page (fields, buttons, errors). Save a working flow with saveAs, replay it with playbook + vars; list saved ones with list:true. " +
-    "Final actions (pay, publish, submit for review, delete) are not run here: use browser_click so the user confirms.",
+    "Final actions (form submits, payments, deletions, publishing; judged by what a click does) are refused here: use browser_click so the user confirms.",
   inputSchema: {
     type: "object",
     properties: {
@@ -98,20 +98,40 @@ const pressedButton = withHelpers((a, b) => {
   return button ? buttonLabel(button) : "";
 }, buttonLabel);
 
-// What clicking target commits (or Enter or Space in it, or in the focused element when there's
-// no target): daemon/page.mjs clickRisk, by what it does. prev: what the click just before in
-// this tab committed. Unreadable counts as safe here: the word guard still applies.
-export async function riskAt(page, target, kind = "click", prev = "") {
-  const safe = { level: "safe", word: "", why: [] };
+// Whether a frame on the page (a payment provider's card field lives in its own, cross-origin
+// frame the page's code can't read) has card fields, by their autocomplete cc-* tokens.
+async function cardFrame(page) {
   try {
-    const run = target
-      ? page.locator(isRef(target) ? `aria-ref=${target}` : String(target)).first().evaluate(withHelpers((el, [k, p]) => clickRisk(el, k, p), clickRisk), [kind, prev], { timeout: 1000 })
-      : page.evaluate(withHelpers(([k, p]) => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return clickRisk(el, k, p); }, clickRisk), [kind, prev]);
-    return (await within(1500, run.catch(() => safe))) || safe;
+    const frames = page.frames().filter((f) => f !== page.mainFrame()).slice(0, 12);
+    const found = await Promise.all(frames.map((f) => within(800, f.evaluate(() => !!document.querySelector('input[autocomplete*="cc-" i]')).catch(() => false))));
+    return found.some(Boolean);
   } catch {
-    return safe;
+    return false;
   }
 }
+
+// When the page can't be read, a click counts as one the user confirms.
+export const UNREADABLE = { level: "commit", word: "submit", why: ["PairBrowse couldn't read what it does"] };
+
+// A click's context (daemon/page.mjs clickContext): the one reading every check shares (the
+// helper's browser_click, Enter and Space, fast mode, uploads, the click judge). target: a ref or
+// selector, a Playwright element handle or locator, or none (the focused element). prev: what the
+// click just before in this tab committed. Unreadable counts as a commit (fail safe).
+const inPage = withHelpers((el, [k, p, h]) => clickContext(el, k, p, h), clickContext, clickRisk, buttonLabel);
+const focused = withHelpers(([k, p, h]) => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return clickContext(el, k, p, h); }, clickContext, clickRisk, buttonLabel);
+export async function contextAt(page, target, kind = "click", prev = "") {
+  try {
+    const args = [kind, prev, { payFrame: await cardFrame(page) }];
+    const el = !target ? null : typeof target === "string" ? page.locator(isRef(target) ? `aria-ref=${target}` : target).first() : target;
+    const run = el ? el.evaluate(inPage, args, { timeout: 1000 }) : page.evaluate(focused, args);
+    const ctx = await within(1500, run.catch(() => null));
+    return ctx?.risk ? ctx : { risk: UNREADABLE };
+  } catch {
+    return { risk: UNREADABLE };
+  }
+}
+export const riskAt = async (page, target, kind = "click", prev = "") => (await contextAt(page, target, kind, prev)).risk;
+
 // The refusal's wording for a risky click: why, and what to call it so the user confirms.
 export const riskReason = (risk) => `${risk.why.join(", ") || "it commits something"}: a final action (${risk.word})`;
 
@@ -138,8 +158,7 @@ export function preflight(steps, uploadsDir) {
       if (p) return `${at}: ${p}`;
       if (isLocalNetwork(arg)) return `${at}: ${arg} is on the local network. Use browser_navigate so the user can approve it.`;
     } else if (kind === "click") {
-      const final = finalActionStrict(arg);
-      if (final) return `${at}: "${arg}" is a final action (${final.word}). Run the steps before it, then use browser_click so the user confirms.`;
+      // What the click does is checked when it runs (the page isn't there yet).
     } else if (kind === "upload") {
       for (const p of Object.values(arg || {})) {
         const problem = uploadProblem(p, uploadsDir); // the same checks as pairbrowse_upload
@@ -363,14 +382,11 @@ export async function runSteps(page, steps, hooks) {
         const el = await clickable(page, String(arg));
         if (!el) return fail(`Nothing to click named "${arg}".`);
         await hooks.beforeStep?.("click", el);
-        // The name may match a longer label ("Confirm" finds "Confirm payment"): check what the
-        // element really says before clicking it.
+        // What the matched element does, by the page's structure, whatever it says: a form submit
+        // or another committing action is the user's to confirm (unreadable counts as one).
         const real = String(await el.evaluate(buttonLabel, undefined, { timeout: 2000 }).catch(() => ""));
-        const finalWord = finalAction(real)?.word;
-        if (finalWord) return fail(`"${arg}" is the "${real.slice(0, 60)}" button, a final action (${finalWord}). Use browser_click on it so the user confirms.`);
-        // By what it does, too: a form submit or a commit-style action is the user's to confirm.
-        const risk = await within(2000, el.evaluate(clickRisk, "click", { timeout: 1500 }).catch(() => null));
-        if (risk && risk.level !== "safe") return fail(`"${arg}" ${riskReason(risk).replace(/^it /, "")}. Run the steps before it, then use browser_click on it so the user confirms.`);
+        const { risk } = await contextAt(page, el, "click");
+        if (risk.level !== "safe") return fail(`"${arg}" is the "${real.slice(0, 60)}" button: ${riskReason(risk)}. Run the steps before it, then use browser_click on it so the user confirms.`);
         hooks.cursor?.(el, "click");
         await el.click({ timeout: 5000 });
         await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
@@ -378,11 +394,11 @@ export async function runSteps(page, steps, hooks) {
       } else if (kind === "press") {
         const key = activatingKey(arg);
         if (key) {
-          const label = await enterButtonLabel(page, null, key);
-          const word = finalAction(label)?.word;
-          if (word) return fail(`${String(arg)} here would press "${label.slice(0, 60)}" (${word}). Use browser_click on it so the user confirms.`);
           const risk = await riskAt(page, null, key);
-          if (risk.level !== "safe") return fail(`${String(arg)} here would commit something (${riskReason(risk)}). Use browser_click on its button so the user confirms.`);
+          if (risk.level !== "safe") {
+            const label = await enterButtonLabel(page, null, key);
+            return fail(`${String(arg)} here would ${label ? `press "${label.slice(0, 60)}" and ` : ""}commit something (${riskReason(risk)}). Use browser_click on its button so the user confirms.`);
+          }
         }
         await page.keyboard.press(String(arg));
       } else if (kind === "upload") {

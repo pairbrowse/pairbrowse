@@ -85,7 +85,7 @@ async function release(cdp) {
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null }) {
+  onPause = () => ({}), pauseState = () => null, picker = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -136,6 +136,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     return [...seen.values()];
   };
   const collaborationNow = () => ({ ...collaboration, guests: guests() });
+  // Joiners connected right now (name, app, computer), for the session picker's "Live" badge.
+  const joinersNow = () => [...joiners.values()].filter(recentlySeen).map((j) => ({ who: j.name, app: j.app || "", computer: j.computer || "" }));
 
   const broadcast = (event, data) => {
     const msg = sse(event, data);
@@ -394,6 +396,16 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     // The Profile panel: remembered details in full, passwords by name and sites only.
     { method: "GET", path: "profile.json", right: "profile", handler: ({ res }) => profile ? json(res, 200, profile.get()) : plain(res, 404) },
     { method: "POST", path: "profile", right: "profile", handler: changeProfile },
+    // The session picker (an extension page, with the owner's key from the side panel's memory):
+    // the saved sessions, and the person's pick. picker: { state(), pick(op) } from the helper.
+    { method: "GET", path: "sessions.json", right: "session", handler: ({ res }) => picker ? json(res, 200, picker.state()) : plain(res, 404) },
+    { method: "POST", path: "pick", right: "session", handler: async ({ req, res }) => {
+      if (!picker) return plain(res, 404);
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const r = await picker.pick(JSON.parse(body) || {});
+      json(res, r.error ? 409 : 200, r);
+    } },
     { method: "POST", path: "input", right: "input", handler: human },
     { method: "POST", path: "tab", right: "tab", handler: human },
     // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
@@ -552,6 +564,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     // The port the sharing tunnel forwards to (join codes only).
     guestPort: joinerServer.server.address().port,
     approvals,
+    joinersNow,
     // Who is in the session the user joined (labels and roles), for the participant list.
     setRemote(list) { remote = Array.isArray(list) ? list.slice(0, 20) : []; collaborationChanged(); },
     // Tabs changed hands (claims, a person pausing an agent): show it now.

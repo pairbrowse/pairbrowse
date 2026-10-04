@@ -21,7 +21,8 @@ PairBrowse plugin. Use only PairBrowse's tools.
 
 ## 1. Start
 
-1. `pairbrowse_session` `list`, then `use` the session where the user is logged in to the console.
+1. The session where the user is logged in to the console: the one they named (`pairbrowse_session`
+   `use`), else the one they pick in the browser's session picker (picker off: `list`, then ask).
 2. `run_list` / `run_get` to resume an unfinished listing, or `run_save` with `name`
    (for example `chrome-store-listing`) and `goal`.
 3. `pairbrowse_facts` `get`: company, support email, URLs, saved password names.

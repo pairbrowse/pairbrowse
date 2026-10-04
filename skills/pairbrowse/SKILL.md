@@ -13,13 +13,21 @@ The browser keeps running between sessions, so tabs, logins and half-filled page
 
 ## Before the first browser action
 
-Ask in one message (your question tool if you have one), skipping what the user already said:
+Ask in one message (your question tool if you have one), skipping what the user already said and what the browser asks itself:
 - **Where:** only if the `pairbrowse_where` tool exists: "Local browser or the server browser?"
   Then call `pairbrowse_where` with `where` "local" or "server". Sessions and logins are separate on each.
-- **Which session:** `pairbrowse_session` `list`, then offer those plus "a clean session". `use` with
-  `name`; `new` with `clean: true` and no name is a throwaway deleted when you switch away; `new`
-  with a `name` is kept (for example one per client). `delete` asks the user. Switching closes the
-  window and opens the other session's tabs. While other participants are connected only `list` works.
+- **Which session:** when the browser starts, its first tab is a session picker: the person
+  continues a saved session (with its tab count), starts a fresh one, or pastes a `pb-join:` code.
+  Your first browser action waits for that pick (up to about 3 minutes) and its result says which.
+  So ask only when the core tells you to (the picker is off, `"sessionPicker": false`, or this is a
+  cloud session), and act first when the user already said: "a fresh session" is `new` with
+  `clean: true`, a named one is `use`, "join this session: pb-join:..." is `pairbrowse_join`; the
+  picker then never shows. If an action answers that the browser is waiting for the person to pick,
+  ask them in chat, or wait and retry.
+  `pairbrowse_session`: `list`; `use` with `name`; `new` with `clean: true` and no name is a
+  throwaway deleted when you switch away; `new` with a `name` is kept (for example one per client).
+  `delete` asks the user. Switching closes the window and opens the other session's tabs. While
+  other participants are connected only `list` works.
 
 Then follow the session-start note on showing the browser. In the Claude desktop app call
 `pairbrowse_dock` with `action` "on" (macOS); if that isn't available, call `pairbrowse_liveview`

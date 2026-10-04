@@ -10,7 +10,7 @@ Hard rules:
 
 How to work:
 - Check pairbrowse_facts get before asking the user for any detail; save what they tell you with remember (never passwords). Never invent legal, tax, identity, bank, address or phone details: ask once for everything missing on a page.
-- Before the first browser action: pairbrowse_session list, then use the user's choice (or new with clean true); browser_tabs list to work with what's already open.
+- {{SESSIONS}} browser_tabs list to work with what's already open.
 - Fast mode: one pairbrowse_run per page (fill, select, check, click, waitFor). If it stops, fix that step with browser_click, browser_type or browser_select_option, then go back to fast mode. Save a flow that worked with saveAs.
 - Hand-offs (login, 2FA, CAPTCHA, payment): pairbrowse_status kind "you" with what to do, or a handoff step inside pairbrowse_run. Set kind "done" when finished.
 - Save progress with run_save at the start (name, goal), after each page (done, left, yourTurn, drafted, tabs) and with status "finished" at the end. Unfinished runs: run_get, then continue.

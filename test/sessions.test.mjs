@@ -25,6 +25,23 @@ test("clean sessions are throwaway and never remembered", () => {
   assert.throws(() => s.deleteSession("default"));
 });
 
+test("who used a session: names and kinds only, newest first, deduplicated and capped", () => {
+  s.createSession("people-x");
+  s.recordPerson("people-x", { who: "You", computer: "Mac", kind: "you" }, 1);
+  s.recordPerson("people-x", { who: "Alice", app: "Claude Code", computer: "Linux", kind: "guest", url: "https://secret.example/" }, 2);
+  s.recordPerson("people-x", { who: "You", computer: "Mac", kind: "you" }, 3);
+  const people = s.readPeople("people-x");
+  assert.deepEqual(people.map((p) => p.who), ["You", "Alice"]);
+  assert.equal(people[0].at, 3);
+  assert.ok(!("url" in people[1]));
+  for (let i = 0; i < 20; i++) s.recordPerson("people-x", { who: `P${i}`, kind: "agent" });
+  assert.equal(s.readPeople("people-x").length, 12);
+  s.recordPerson("clean-9", { who: "You", kind: "you" });
+  assert.deepEqual(s.readPeople("clean-9"), [], "throwaway sessions keep nothing");
+  s.deleteSession("people-x");
+  assert.deepEqual(s.readPeople("people-x"), []);
+});
+
 test("saved tabs keep their order and only web pages", () => {
   const f = join(process.env.PAIRBROWSE_HOME, "t.json");
   writeFileSync(f, JSON.stringify({ tabs: [{ url: "https://a.test/" }, { url: "chrome://settings" }, { url: "file:///etc/passwd" }, { url: "http://b.test/" }], active: 9 }));

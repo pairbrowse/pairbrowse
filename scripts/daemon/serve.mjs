@@ -7,7 +7,7 @@ import { paths } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
 import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, SENSITIVE } from "../policy.mjs";
 import { COLLABORATION_TOOL } from "../collaboration.mjs";
-import { appName, personLabel } from "../join.mjs";
+import { appName, personLabel, computerName } from "../join.mjs";
 import { describe } from "../log.mjs";
 import { finalAction, mentions, decide } from "../guard.mjs";
 import { keepFocus } from "../focus.mjs";
@@ -53,6 +53,10 @@ function navigatesOrSubmits(el) {
 const PAGE_READ_TOOLS = new Set(["browser_snapshot", "browser_find", "browser_wait_for"]);
 // PairBrowse's own tools that answer before (or without) the browser being ready.
 const NO_WAIT = new Set(["pairbrowse_status", "pairbrowse_liveview", "pairbrowse_invite", "pairbrowse_session", "pairbrowse_facts"]);
+// Tools that don't wait for the session picker: they choose a session themselves or only talk.
+const NO_PICK_WAIT = new Set([...NO_WAIT, "pairbrowse_join", "pairbrowse_collaboration", "pairbrowse_dock"]);
+const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for the person to pick a session (its first tab asks: continue a saved session, start a fresh one, or join a shared one). " +
+  "Ask them in chat which they want, then use pairbrowse_session (use, or new with clean: true) or pairbrowse_join; or retry once they've picked.";
 // Its own tools that act in a page: their results get the same notes and screenshot as the
 // browser tools'.
 const DECORATED = new Set(["pairbrowse_run", "pairbrowse_upload"]);
@@ -137,6 +141,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const myLabel = () => collaboration.participants.get(participant)?.label;
     let pauseSeen = pause.seq(); // pauses before it connected aren't news
     const fieldNotes = []; // fields left to the people filling them, for the next result
+    let recorded = false; // in the session's list of who used it
 
     const mcpServer = await createConnection({
       browser: { isolated: false },
@@ -466,7 +471,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
       pairbrowse_facts: (args) => facts.command(args),
       pairbrowse_liveview: () => sharing.liveViewCommand(),
       pairbrowse_invite: (args) => sharing.inviteCommand(args),
-      pairbrowse_join: (args) => follow.command(args, { owner: participant, app: clientName }),
+      async pairbrowse_join(args) {
+        const r = await follow.command(args, { owner: participant, app: clientName });
+        if (args?.action === "join" && !r.error) context.agentChose("An agent joined a shared session (pairbrowse_join).");
+        return r;
+      },
       pairbrowse_run: runCommand,
       async pairbrowse_status(args) {
         await context.getContext();
@@ -696,6 +705,19 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const changesTab = tool === "browser_tabs" && ["select", "new"].includes(msg.params?.arguments?.action);
         try { return await (changesTab ? keepFocus(dispatchNow) : dispatchNow()); } finally { done(); }
       };
+      // The session picker: the first browser action waits (outside the shared queue) for the
+      // person to pick a session in the browser, and says which; after a while it says it's waiting.
+      if (msg.method === "tools/call" && !NO_PICK_WAIT.has(tool)) {
+        const r = await context.waitForPick(disconnected.signal);
+        if (r?.waiting) return reply(msg.id, PICK_WAITING, true);
+        if (r) fieldNotes.push(r);
+        // Who used this session, for the session picker: "Alice · Claude Code" -> Alice, Claude Code.
+        if (!recorded) {
+          recorded = true;
+          const [who, app] = String(myLabel() || "Claude").split(" · ");
+          context.recordPerson({ who: who.replace(/ [0-9a-f]{4}$/, ""), app: app || appName(clientName), computer: computerName(), kind: "agent" });
+        }
+      }
       // Paused by a person: wait before the shared queue (it never holds other work up), and
       // after a while say so, so the agent isn't stuck. Only people resume (no tool does).
       if (acting) {

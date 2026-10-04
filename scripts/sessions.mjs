@@ -33,6 +33,8 @@ export function validName(name) {
 
 export const isTemporary = (name) => /^clean-\d+$/.test(name);
 export const profileDir = (name) => (name === "default" ? paths.profile : join(SESSIONS, name));
+// Who used a session: people and agents, with their app and kind of computer (sessions picker).
+export const peopleFile = (name) => (name === "default" ? join(paths.home, "people.json") : join(SESSIONS, `${name}.people.json`));
 export const tabsFile = (name) => (name === "default" ? join(paths.home, "tabs.json") : join(SESSIONS, `${name}.tabs.json`));
 
 export function currentSession() {
@@ -63,6 +65,24 @@ export function deleteSession(name) {
   if (name === "default") throw new Error("The default session can't be deleted.");
   rmSync(profileDir(name), { recursive: true, force: true });
   rmSync(tabsFile(name), { force: true });
+  rmSync(peopleFile(name), { force: true });
+}
+
+const PEOPLE_MAX = 12;
+const short = (v, n) => String(v ?? "").replace(/[\u0000-\u001f\u007f<>]/g, "").trim().slice(0, n);
+// Most recent first. Each: { who, app, computer, kind ("you", "agent", "guest", "host"), at }.
+export function readPeople(name) {
+  const list = readJson(peopleFile(name))?.people;
+  return Array.isArray(list) ? list.filter((p) => p && typeof p.who === "string").slice(0, PEOPLE_MAX) : [];
+}
+// Names and kinds only: never what they did or where.
+export function recordPerson(name, person, now = Date.now()) {
+  if (!validName(name) || isTemporary(name)) return; // a throwaway session is gone after use
+  const p = { who: short(person.who, 40), app: short(person.app, 24), computer: short(person.computer, 12), kind: short(person.kind, 8), at: now };
+  if (!p.who) return;
+  const same = (x) => x.who === p.who && x.app === p.app && x.computer === p.computer && x.kind === p.kind;
+  const people = [p, ...readPeople(name).filter((x) => !same(x))].slice(0, PEOPLE_MAX);
+  try { writeFileSync(peopleFile(name), JSON.stringify({ people }, null, 2)); } catch {}
 }
 
 // Throwaway sessions left behind (by a crash, or at shutdown).

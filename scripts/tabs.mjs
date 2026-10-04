@@ -88,10 +88,11 @@ export function loadingHtml(tabs) {
 
 // Brings back saved tabs one by one, in order. Each tab starts loading before the next one opens,
 // so they appear in sequence but load side by side.
-export async function restoreTabs(ctx, saved, { onProgress = () => {}, log = () => {} } = {}) {
+// screen: the tab to show the progress in (default: the first one); it closes at the end.
+export async function restoreTabs(ctx, saved, { onProgress = () => {}, log = () => {}, screen: given = null } = {}) {
   const { tabs, active } = saved;
-  if (!tabs.length) return;
-  const screen = ctx.pages()[0] || (await ctx.newPage());
+  if (!tabs.length) { if (given) await given.close().catch(() => {}); return; }
+  const screen = given || ctx.pages()[0] || (await ctx.newPage());
   await screen.setContent(loadingHtml(tabs)).catch(() => {});
   await screen.bringToFront().catch(() => {});
   const mark = (i, state, n) => screen.evaluate(([i, state, n, total]) => {

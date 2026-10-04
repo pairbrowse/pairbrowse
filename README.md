@@ -598,8 +598,9 @@ npx skills add pairbrowse/pairbrowse --skill pairbrowse-signup  # one
 - `confirm`: more button words that should ask you first.
 - `neverConfirm`: built-in words you want auto-clicked anyway. It's your browser, your call.
 - `chromeArgs`: extra Chromium flags.
-- `maxTabs`: most tabs open at once (default 10). When another opens, the tab used longest ago
-  closes (never the one Claude is working in), and Claude is told.
+- `maxTabs`: most tabs open at once (default 20). When another opens, the tab used longest ago
+  closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more
+  stay open), and Claude is told.
 - `screenshots`: `false` sends Claude text only, no screenshots.
 - `downloadsDir`: where site downloads are saved (default: your Downloads folder).
 - `liveViewPort`: a fixed live view port (default: a random one each start).

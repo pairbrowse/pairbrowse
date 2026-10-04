@@ -216,4 +216,19 @@ window.pbScreen = {
   // What the helper needs to know each round, and the input waiting for it (no direct connection).
   state: () => ({ visible: document.visibilityState === "visible", conn: state, peer, view, direct: !!(dc && dc.readyState === "open") }),
   takeInput: () => outbox.splice(0, 200),
+  // How the picture and sound arrive: frames a second, sound received, whether it plays, and the
+  // route (direct between the two computers, or found through STUN).
+  async stats() {
+    if (!pc) return { conn: state, view };
+    const out = { conn: state, view, muted: video.muted, paused: video.paused, fps: 0, frames: 0, audioBytes: 0, videoBytes: 0, route: "" };
+    const report = await pc.getStats();
+    let pair = null;
+    report.forEach((s) => {
+      if (s.type === "inbound-rtp" && s.kind === "video") { out.fps = s.framesPerSecond || 0; out.frames = s.framesDecoded || 0; out.videoBytes = s.bytesReceived || 0; out.size = [s.frameWidth, s.frameHeight]; }
+      if (s.type === "inbound-rtp" && s.kind === "audio") out.audioBytes = s.bytesReceived || 0;
+      if (s.type === "candidate-pair" && s.nominated && s.state === "succeeded") pair = s;
+    });
+    if (pair) { const local = report.get(pair.localCandidateId); out.route = local?.candidateType || ""; out.rtt = pair.currentRoundTripTime; }
+    return out;
+  },
 };

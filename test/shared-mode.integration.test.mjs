@@ -20,10 +20,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// The host's page: a button over the top half, a text field below it, a canvas at the bottom that
+// The host's page (its button also starts a tone too quiet to hear, so sound has something to carry): a button over the top half, a text field below it, a canvas at the bottom that
 // draws where a pressed pointer moves (like a whiteboard).
 const APP = `<title>App</title><body style="margin:0">
-<button id="b" style="display:block;width:100vw;height:30vh" onclick="document.title='clicked'">Tap</button>
+<button id="b" style="display:block;width:100vw;height:30vh" onclick="document.title='clicked'; const a = new AudioContext(); const o = a.createOscillator(), v = a.createGain(); v.gain.value = 0.0005; o.connect(v).connect(a.destination); o.start();">Tap</button>
 <input id="i" aria-label="Note" style="display:block;width:100vw;height:20vh;font-size:30px">
 <canvas id="c" width="800" height="300" style="display:block;width:100vw;height:40vh;background:#fff"></canvas>
 <input type="file" id="f" aria-label="Photo" style="display:block;width:100vw;height:9vh">
@@ -60,7 +60,7 @@ function home(prefix) {
   return dir;
 }
 
-async function run({ noDirect = false } = {}) {
+async function run({ noDirect = false, realTunnel = false, youtube = false } = {}) {
   const require = createRequire(join(runtime, "package.json"));
   // PAIRBROWSE_TEST_EXECUTABLE: another Chromium build to run both sides on (the PairBrowse browser, say).
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("playwright").chromium.executablePath();
@@ -71,7 +71,7 @@ async function run({ noDirect = false } = {}) {
   const hostHome = home("sh-"), joinHome = home("sj-");
   writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob", browserDriver: "playwright" }));
   writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice", browserDriver: "playwright" }));
-  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_SCREEN: "1", ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}) });
+  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", ...(realTunnel ? {} : { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" }), ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}) });
   const daemons = [];
   const connect = async (h) => {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
@@ -148,6 +148,34 @@ async function run({ noDirect = false } = {}) {
     await until("the host's page was clicked", async () => (await evaluate(host.call, "() => document.title")) === "clicked", 15_000);
     if (noDirect) return;
 
+    stage = "picture and sound arrive smoothly, and the sound plays";
+    const stats = await until("frames and sound", async () => {
+      const a = (await onScreen({ expr: "window.pbScreen.stats()" }))?.value;
+      await sleep(1000);
+      const b = (await onScreen({ expr: "window.pbScreen.stats()" }))?.value;
+      return a && b && b.audioBytes > a.audioBytes && b.frames > a.frames && b;
+    }, 20_000);
+    console.log(`shared browser stats: ${JSON.stringify(stats)}`);
+    assert.equal(stats.muted, false, "the sound plays, without a click first");
+    assert.equal(stats.paused, false);
+    if (realTunnel) assert.ok(stats.route, "a route was found");
+    if (youtube) {
+      // A real video on YouTube, in the host's tab: the joiner gets it moving, with sound.
+      stage = "a YouTube video plays smoothly in the joiner's picture";
+      assert.ok(!(await tool(host.call, "browser_navigate", { url: "https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=0" })).result.isError);
+      await sleep(4000);
+      await click(toJoiner(0.5, 0.5)); // start it, as the joiner would
+      const yt = await until("the video moving in the picture", async () => {
+        const a = (await onScreen({ expr: "window.pbScreen.stats()" }))?.value;
+        await sleep(3000);
+        const b = (await onScreen({ expr: "window.pbScreen.stats()" }))?.value;
+        const fps = a && b ? (b.frames - a.frames) / 3 : 0;
+        return fps >= 20 && b.audioBytes > a.audioBytes && { fps, ...b };
+      }, 60_000);
+      console.log(`youtube in the picture: ${JSON.stringify(yt)}`);
+      return;
+    }
+
     stage = "keys typed on the picture go into the host's field";
     await tool(host.call, "pairbrowse_collaboration", { action: "release" }); // the host's agent lets the tab go (turns, as everywhere)
     await click(toJoiner(0.5, 0.4));
@@ -207,3 +235,7 @@ async function run({ noDirect = false } = {}) {
 
 test("shared browser: the joiner sees the host's tab live (direct connection) and clicks, types, draws and uploads in it; their agent works there too", { skip: !runtime, timeout: 240_000 }, () => run());
 test("shared browser without a direct connection: pictures and input through the join channel", { skip: !runtime, timeout: 240_000 }, () => run({ noDirect: true }));
+// Through a real Cloudflare Quick Tunnel, as between two computers (needs the network and cloudflared).
+// A real YouTube video through the picture (needs the network).
+test("shared browser: a YouTube video plays smoothly with sound", { skip: !runtime || process.env.PAIRBROWSE_TEST_YOUTUBE !== "1", timeout: 300_000 }, () => run({ youtube: true }));
+test("shared browser through a real Quick Tunnel", { skip: !runtime || process.env.PAIRBROWSE_TEST_REAL_TUNNEL !== "1", timeout: 300_000 }, () => run({ realTunnel: true }));

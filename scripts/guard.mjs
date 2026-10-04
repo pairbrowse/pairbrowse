@@ -78,6 +78,9 @@ export function decide(input, config = loadConfig(), review = latestReview(), no
     return ask(`Creates an invite (a link or join code) that lets ${who} click and type in your logged-in PairBrowse browser (not your saved details or passwords) for ${Number(ti.hours) > 0 ? Math.min(Number(ti.hours), 168) : 24} hours. Share it only with someone you trust.`);
   }
 
+  // share_port needs no prompt here: it only asks the user, Yes or No in the side panel (a real
+  // click there shares the dev server), in Claude Code and Codex alike.
+
   // Letting someone into the session: only the user decides, never an agent on its own (a page
   // could tell it to). The live view's Allow button needs no prompt; this does.
   if (tool === "pairbrowse_invite" && ti.action === "approve") {

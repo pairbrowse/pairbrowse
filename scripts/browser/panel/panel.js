@@ -1,6 +1,6 @@
 // The PairBrowse side panel. Connects to the live view server (status, activity, profile) at the
 // address the daemon handed to background.js; it never asks for the page stream itself.
-import { $, el, rich, clock, whose, activityHead, sparkIcon, joinBanners, profilePanel } from "./common.js";
+import { $, el, rich, clock, whose, activityHead, sparkIcon, joinBanners, profilePanel, devPanel } from "./common.js";
 
 const DRIVING_MS = 8000; // "is driving" for this long after Claude's last action
 const ACTIVITY_SHOWN = 12;
@@ -16,6 +16,7 @@ $("pause-btn").addEventListener("click", () => {
 
 $("driver").prepend(sparkIcon("spark"));
 const drawJoins = joinBanners($("joins"), () => base);
+const drawDev = devPanel($("dev-asks"), $("devs"), $("dev"), () => base);
 const profile = profilePanel(() => base);
 
 function setDriver() {
@@ -91,6 +92,7 @@ function connect(url) {
   });
   on("profile", profile.draw);
   on("join", drawJoins);
+  on("dev", drawDev);
 }
 chrome.storage.session.get("view").then(({ view }) => connect(view));
 chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); });

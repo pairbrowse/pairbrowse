@@ -176,8 +176,13 @@ filled, drafted, left for the user, and remembered. Every action is also logged 
 - `pairbrowse_invite` `create`: `role` "watch" or "drive" (asks the user), `label`, `hours` (default
   24, at most 168), `share` "code" (pb-join code over a Cloudflare Quick Tunnel; the default without
   `inviteBaseUrl`) or "link" (Tailscale or SSH). Pass on the code and the steps from the result.
-- `list` (invites and join requests, no keys), `approve` / `deny` with the request `id` (approve asks
-  the user), `revoke` with the invite `id`, `revoke_all` (also closes the tunnel).
+- `list` (invites, join requests and shared dev servers, no keys), `approve` / `deny` with the request
+  `id` (approve asks the user), `revoke` with the invite `id`, `revoke_all` (also closes the tunnel
+  and stops sharing dev servers).
+- `share_port` with `port` (or none: the current localhost tab's): the user's dev server (Next,
+  Nuxt, Vite) for joiners, under its own address; their localhost tabs then cross there. It only
+  asks the user (Yes / No in the side panel, waits up to 90 s; a later answer comes as a note);
+  watch joiners only look. The user can also Share or Stop in the side panel.
 - With a code, the joiner's own browser opens the host's tabs and follows them: addresses
   (filtered: no tokens, nothing local; origin and path for watch and sites with saved passwords),
   titles, activity, typed values (sensitive ones only as filled), pointers and who is at work

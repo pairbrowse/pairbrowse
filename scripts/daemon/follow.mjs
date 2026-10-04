@@ -9,6 +9,7 @@ import { parseJoinCode, cleanName, displayName } from "../join.mjs";
 import { startJoin } from "../relay.mjs";
 import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
+import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../devshare.mjs";
 import { sleep, currentAccount } from "../util.mjs";
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
@@ -185,10 +186,24 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (r.arrange && !sameOrder(ids, r.arrange) && await tabOrder.arrange(r.arrange.map((id) => cur.pages.get(id))).catch(() => false)) cur.order.arranged(r.arrange);
   }
 
+  // Dev servers the host shares (devshare.mjs): this joiner's key for each, as a cookie for that
+  // address only (HttpOnly: pages can't read it), before the tabs on them open. Checked here too:
+  // Quick Tunnel addresses only.
+  async function allowDevServers(list, cur) {
+    const entries = (Array.isArray(list) ? list : []).slice(0, DEV_PORTS_MAX)
+      .map((x) => readDevEntry(x, { allowLocal: process.env.PAIRBROWSE_TEST_JOIN_LOCAL === "1" })).filter(Boolean);
+    const sig = JSON.stringify(entries);
+    if (sig === cur.devSig) return;
+    const ctx = await context.getContext();
+    if (entries.length) await ctx.addCookies(entries.map((e) => ({ name: DEV_COOKIE, value: e.token, url: e.origin, httpOnly: true, secure: e.origin.startsWith("https:"), sameSite: "Lax" })));
+    cur.devSig = sig;
+  }
+
   // The host's tabs as they changed (pushed): applied here.
   async function applyHost(state, cur) {
     if (s !== cur) return;
     const drive = cur.join.role === "drive";
+    await allowDevServers(state.dev, cur).catch((e) => log("shared dev server", e?.message || e));
 
     const plan = cur.mirror.fromHost(state.tabs, new Set(cur.pages.keys()));
     for (const id of plan.close) { const page = cur.pages.get(id); cur.pages.delete(id); if (page) await closeTab(page); }

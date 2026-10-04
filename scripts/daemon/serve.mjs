@@ -495,7 +495,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       pairbrowse_session: (args) => context.sessionCommand(args),
       pairbrowse_facts: (args) => facts.command(args),
       pairbrowse_liveview: () => sharing.liveViewCommand(),
-      pairbrowse_invite: (args) => sharing.inviteCommand(args),
+      pairbrowse_invite: (args) => sharing.inviteCommand(args, { who: appName(clientName) }),
       async pairbrowse_join(args) {
         const r = await follow.command(args, { owner: participant, app: clientName });
         if (args?.action === "join" && !r.error) context.agentChose("An agent joined a shared session (pairbrowse_join).");

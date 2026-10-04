@@ -122,7 +122,7 @@ const popups = createPopups({
   onCleared: () => { if (hud.badge().text === CHALLENGE_TURN) hud.setBadge("", "clear").catch(() => {}); },
 });
 const context = createContext({
-  config, log, chromium, hud, presence, popups, hostNote,
+  config, log, chromium, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
   onTabClosed: (page) => tabClaims.drop(page), // a closed tab's turn ends with it
   status: (badge) => liveView()?.setStatus(badge),

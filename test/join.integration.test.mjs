@@ -400,7 +400,11 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     assert.doesNotMatch(hostState, /"(Host|Guest|The host)"/, "names, not stand-ins");
 
     stage = "Alice's field is hers: the host's agent leaves it, fast mode skips it and goes on";
-    await until("Alice's text on the host", async () => /Hello from Alice/.test(await snap(host.call)));
+    // Hers for a few seconds after her last keystroke: she types once more first.
+    assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: copy.index }) })).ok);
+    await input([{ type: "mouse", action: "mousePressed", x: 250, y: 320, button: "left", buttons: 1, clickCount: 1 }, { type: "mouse", action: "mouseReleased", x: 250, y: 320, button: "left", buttons: 0, clickCount: 1 }]);
+    await input([{ type: "key", action: "keyDown", key: "End", code: "End" }, { type: "key", action: "keyUp", key: "End", code: "End" }, { type: "text", text: "!" }]);
+    await until("Alice's text on the host", async () => /Hello from Alice!/.test(await snap(host.call)));
     s = await snap(host.call);
     const refusedType = await tool(host.call, "browser_type", { target: ref(s, "textbox", "Comments"), element: "Comments", text: "Bob's note" });
     assert.ok(refusedType.result.isError);

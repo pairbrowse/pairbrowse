@@ -73,8 +73,11 @@ them an invite link instead (see [Working together](sharing.md)).
 
 On a Mac (Apple Silicon or Intel) and on Linux x64, `"browserEngine": "auto"` (the default) uses
 the native PairBrowse browser: a hardened Chromium build made for PairBrowse that looks like an
-everyday browser to sites, so you see fewer CAPTCHAs. A Windows x64 build follows;
-until then PairBrowse uses Playwright's Chromium on Windows (and on Linux on other chips).
+everyday browser to sites, so you see fewer CAPTCHAs. It never switches to another browser on its
+own: if the build can't be installed, or there's none for your platform yet (Windows x64 follows),
+the browser doesn't start and says why. To use Playwright's Chromium instead, set
+`"browserEngine": "chromium"`. While it installs (the first start, or a new version), a
+notification says so, and agents answer "installing" right away instead of waiting.
 
 PairBrowse picks the build for your platform and chip, downloads it once from its
 [GitHub release](https://github.com/pairbrowse/pairbrowse/releases), checks it (the SHA-256 pinned in

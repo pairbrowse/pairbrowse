@@ -118,13 +118,17 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   function cursorTo(page, el, act) {
     within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)).then((box) => pointAt(page, box, act));
   }
-  // Before a browser tool acts on a snapshot ref. pageFor(): the tab it acts in (null: none).
+  // Before a browser tool acts on an element: a snapshot ref, or a selector (the same one the tool
+  // uses). pageFor(): the tab it acts in (null: none).
   async function showCursor(tool, args, pageFor) {
     const act = CURSOR_TOOLS[tool];
     const target = args?.target || args?.fields?.[0]?.target;
-    if (!act || !isRef(target)) return;
+    if (!act || typeof target !== "string" || !target) return;
     const page = await pageFor();
-    if (page) await pointAt(page, await within(CURSOR_WAIT_MS, page.locator(`aria-ref=${target}`).boundingBox().catch(() => null)), act);
+    if (!page) return;
+    let el;
+    try { el = page.locator(isRef(target) ? `aria-ref=${target}` : target).first(); } catch { return; }
+    await pointAt(page, await within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)), act);
   }
 
   // Each page as it loads: the script, then the badge, spark and bar.

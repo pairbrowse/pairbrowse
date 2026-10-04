@@ -45,8 +45,13 @@ export function stopRequestMirroring(page) {
 // shuttingDown(): no new browser then. onStarted(ctx) / onClosed(): the browser came up / went
 // away by itself (not for a session switch).
 // liveOthers(): who else is in this browser's session right now ({ who, app, computer }).
-export function createContext({ config, log, chromium, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [] }) {
+export function createContext({ config, log, chromium, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {} }) {
   let contextPromise = null;
+  // The PairBrowse browser is being downloaded and installed (first start, or a new version):
+  // the user hears of it, and actions say so at once rather than waiting for minutes.
+  let installing = false;
+  let launching = false;
+  const installWaiters = new Set();
   let session = currentSession(); // which browser session (Chrome profile) is in use
   let switching = false;
   let screen = null; // virtual display on a Linux machine without a screen
@@ -157,18 +162,32 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
 
   // The native PairBrowse browser: the pinned build, installed and checked when it's missing or
   // a new version is pinned (scripts/native-install.mjs). A browser of your own stays as it is.
+  // Never a quiet switch to the standard engine: only "browserEngine": "chromium" picks that.
   async function chooseEngine() {
-    if (config.browserEngine === "auto") {
-      // The default: the native build where there is one for this platform and chip (macOS,
-      // Linux x64, Windows x64), else the standard engine.
+    const auto = config.browserEngine === "auto";
+    if (auto && config.executablePath) config.browserEngine = "chromium"; // a browser of your own
+    else if (auto || (config.browserEngine === "pairbrowse" && (!config.executablePath || resolve(config.executablePath) === nativeDirs().exec))) {
+      const optOut = 'To use the standard Chromium instead, set "browserEngine": "chromium" in ~/.pairbrowse/config.json.';
+      const installLog = (m) => {
+        log(m);
+        if (installing || !/^(downloading|unpacking)/.test(m)) return;
+        installing = true;
+        notify("Installing the PairBrowse browser. It takes a minute or two, once.");
+        for (const fn of installWaiters) fn();
+      };
       let native = null;
-      if (!config.executablePath && nativeLayout()) {
-        native = await ensureNative(log).catch((e) => { log(`using the standard browser: ${e.message}`); return null; });
+      try {
+        native = nativeLayout() ? await ensureNative(installLog) : null;
+      } catch (e) {
+        if (installing) notify("The PairBrowse browser couldn't be installed. Ask Claude what happened.");
+        throw new Error(`The PairBrowse browser couldn't be installed: ${e.message} ${optOut}`);
+      } finally {
+        if (installing && native) notify("The PairBrowse browser is installed.");
+        installing = false;
       }
-      config.browserEngine = native ? "pairbrowse" : "chromium";
-      if (native) config.executablePath = native;
-    } else if (config.browserEngine === "pairbrowse" && (!config.executablePath || resolve(config.executablePath) === nativeDirs().exec)) {
-      config.executablePath = (await ensureNative(log)) || config.executablePath;
+      if (!native) throw new Error(`There's no PairBrowse browser build for ${process.platform} ${process.arch} yet. ${optOut}`);
+      config.browserEngine = "pairbrowse";
+      config.executablePath = native;
     }
     validateEngine(config);
   }
@@ -242,11 +261,17 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
 
   function getContext() {
     if (shuttingDown() && !contextPromise) return Promise.reject(new Error("PairBrowse is restarting. Retry in a moment."));
-    contextPromise ??= launch().catch((e) => {
-      contextPromise = null;
-      throw e;
-    });
-    return contextPromise;
+    if (!contextPromise) {
+      launching = true;
+      contextPromise = launch().catch((e) => {
+        contextPromise = null;
+        throw e;
+      }).finally(() => { launching = false; installWaiters.clear(); });
+    }
+    if (!launching) return contextPromise;
+    const busy = () => new Error("PairBrowse is installing its browser (the first start or a new version: a minute or two). Tell the user, then retry the last action in a minute.");
+    if (installing) return Promise.reject(busy());
+    return Promise.race([contextPromise, new Promise((_, reject) => installWaiters.add(() => reject(busy())))]);
   }
 
   // The browser, once saved tabs are back.

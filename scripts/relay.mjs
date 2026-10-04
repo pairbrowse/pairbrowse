@@ -12,7 +12,9 @@ import { connect } from "./ws.mjs";
 const OFFLINE_LONG_MS = 120_000; // offline this long: say the tunnel may be down
 const REQUEST_TIMEOUT_MS = { send: 30_000, leave: 5000, pointer: 5000, connect: 20_000 };
 const WAIT_MS = { idle: 3000, offline: 2000, again: 300 };
-const SILENT_MS = 40_000; // the host sends a heartbeat every 15 s: silence this long means the channel is gone
+const SILENT_MS = 40_000; // silence this long means the channel is gone (a host sending heartbeats 15 s apart: before 0.14.15)
+const SILENT_BEATS = 3; // or this many of the host's heartbeats missed in a row, once their spacing is known
+const SILENT_MIN_MS = 6000;
 const REPLY_MS = 30_000;
 
 // join: a parsed join code ({ url, key, role, label }). name, app: who is joining, as the host
@@ -104,8 +106,10 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
         conn = c;
         offlineSince = 0;
         if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`);
-        let heard = Date.now();
-        const watchdog = setInterval(() => { if (Date.now() - heard > SILENT_MS) c.close(); }, 5000);
+        // A stream that stalls without closing (a free tunnel can) is dropped once the host's
+        // heartbeats stop, and the next address is tried: seconds, not the old 40.
+        let heard = Date.now(), lastPing = 0, silent = SILENT_MS;
+        const watchdog = setInterval(() => { if (Date.now() - heard > silent) c.close(); }, 1000);
         // Pushed events apply in order; pointers right away (only the latest one matters).
         let chain = Promise.resolve();
         c.onMessage((raw) => {
@@ -114,7 +118,12 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
           try { m = JSON.parse(raw); } catch { return; }
           const { event, data } = m || {};
           if (event === "reply") { replies.get(data?.n)?.(data); replies.delete(data?.n); return; }
-          if (event === "ping" || stopped) return;
+          if (event === "ping") {
+            if (lastPing) silent = Math.min(SILENT_MS, Math.max(SILENT_MIN_MS, SILENT_BEATS * (heard - lastPing)));
+            lastPing = heard;
+            return;
+          }
+          if (stopped) return;
           if (event === "pointers") { try { on.pointers?.(data); } catch {} return; }
           if (event === "tabs") takeRelays(data?.relays);
           chain = chain.then(async () => {

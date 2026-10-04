@@ -203,13 +203,13 @@ test("on start, an installed app is kept while the pinned build can't be had", {
   const logs = [];
   assert.equal(await ensureNative((m) => logs.push(m), offline), nativeDirs().exec);
   assert.match(logs.join("\n"), /couldn't install PairBrowse .* \(offline\); keeping 150\.0\.0\.4/);
-  // Without its engine pack the native browser can't launch: the start fails (and the helper
-  // uses the standard browser instead).
+  // Without its engine pack the native browser can't launch: the start fails, and says why.
   await assert.rejects(ensureNative(() => {}, { ...offline, engine: async () => { throw new Error("no engine pack"); } }), /no engine pack/);
   // And with nothing installed it says how to install.
   rmSync(nativeDirs().app, { recursive: true, force: true });
   await assert.rejects(ensureNative(() => {}, offline), /isn't installed \(offline\)\. Install it with: node .*native-install\.mjs <pairbrowse-test\.zip>/);
-  // A platform and chip without a build: nothing to install, the standard browser is used.
+  // A platform and chip without a build: nothing to install (the helper then refuses to start
+  // unless the user picked the standard engine).
   assert.equal(await ensureNative(() => {}, { ...offline, asset: null }), null);
 });
 

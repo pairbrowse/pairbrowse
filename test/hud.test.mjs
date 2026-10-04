@@ -83,3 +83,51 @@ test("a page finds no fixed PairBrowse name, attribute or window property, and t
     await browser.close();
   }
 });
+
+test("fields people edit are known as theirs; the bar's Pause button is a person's and never page input", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { readFields, applyFields } = await import("../scripts/daemon/forms.mjs");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const key = ["__pbtest", "tok"];
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    await page.addInitScript({ content: source });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: `<label>Notes <input id="e"></label><label>Name <input id="n"></label>` }));
+    await page.goto("http://pairbrowse.test/");
+    await page.click("#e");
+    await page.keyboard.type("hello");
+    const owned = await page.locator("#e").evaluate((el) => window.__pbtest("tok", el, "owned"));
+    assert.ok(owned.times.length >= 1 && owned.focused && owned.name === "Notes", JSON.stringify(owned));
+    assert.equal((await page.locator("#n").evaluate((el) => window.__pbtest("tok", el, "owned"))).times.length, 0);
+    const read = await readFields(page, [], key);
+    assert.ok(read.fields.find((f) => f.k === "#e").own.times.length >= 1, "read with the fields");
+    await applyFields(page, [{ f: "top", k: "#n", t: "text", v: "Carol C", o: "Carol" }], "Carol", [], key);
+    const claimed = await page.locator("#n").evaluate((el) => window.__pbtest("tok", el, "owned"));
+    assert.equal(claimed.rw, "Carol", "filled by a person there: theirs here too");
+    const told = await page.evaluate(() => window.__pbtest("tok", "", "user"));
+    assert.ok(told.some((e) => e.kind === "filled" && e.who === "Carol" && e.what === "Name"), JSON.stringify(told));
+    assert.equal(await page.inputValue("#n"), "Carol C");
+
+    await page.evaluate(() => window.__pbtest("tok", "", "user")); // drained
+    await page.evaluate(() => window.__pbtest("tok", JSON.stringify({ items: [], canPause: true, pause: null }), "bar"));
+    await page.mouse.click(800 - 50, 600 - 15);
+    await page.waitForTimeout(100);
+    let events = await page.evaluate(() => window.__pbtest("tok", "", "user"));
+    assert.deepEqual(events.filter((e) => e.kind !== "move").map((e) => e.kind), ["pause"], JSON.stringify(events));
+    assert.equal(await page.evaluate(() => document.activeElement.id), "e", "the button never takes focus from the field");
+    await page.evaluate(() => window.__pbtest("tok", JSON.stringify({ items: [], canPause: true, pause: { by: "Alice" } }), "bar"));
+    await page.mouse.click(800 - 40, 600 - 15);
+    await page.waitForTimeout(100);
+    events = await page.evaluate(() => window.__pbtest("tok", "", "user"));
+    assert.deepEqual(events.filter((e) => e.kind !== "move").map((e) => e.kind), ["resume"]);
+    await page.evaluate(() => window.__pbtest("tok", JSON.stringify({ items: [], canPause: false, pause: { by: "Alice" } }), "bar"));
+    await page.mouse.click(800 - 40, 600 - 15);
+    await page.waitForTimeout(100);
+    events = await page.evaluate(() => window.__pbtest("tok", "", "user"));
+    assert.ok(!events.some((e) => e.kind === "pause" || e.kind === "resume"), "a watcher has no button");
+  } finally {
+    await browser.close();
+  }
+});

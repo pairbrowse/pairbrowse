@@ -100,14 +100,14 @@ test("a person in the other browser counts as a person here, and isn't sent back
     const presence = createPresence({ host: "Alice", readEvents: async () => [], pages: () => [], paused: () => true, onUsed() {}, onStale: () => stale.push(1), applyBar() {}, refreshTabs() {} });
     const page = {};
     presence.elsewhere(page, "Bob", ['typed in "Email"']);
-    assert.equal(presence.personIn(page), "Bob", "agents here wait for Bob");
-    assert.deepEqual(presence.sharedPerson(page), { who: "Bob", local: false }, "not this browser's person: never sent back");
+    assert.equal(presence.actingIn(page), "Bob", "agents' page changes here wait for Bob");
+    assert.deepEqual(presence.sharedPerson(page), { who: "Bob", local: false, acting: true }, "not this browser's person: never sent back");
     assert.match(presence.userNote(page), /Bob used this tab meanwhile: typed in "Email"/);
     assert.equal(stale.length, 1);
     mock.timers.tick(2500);
     assert.equal(presence.personIn(page), null, "and stop waiting once Bob stops");
     presence.userDid([{ kind: "type", t: Date.now(), what: "Name" }], page);
-    assert.deepEqual(presence.sharedPerson(page), { who: "Alice", local: true });
+    assert.deepEqual(presence.sharedPerson(page), { who: "Alice", local: true, acting: true });
     assert.deepEqual(presence.feedAfter(page).filter((e) => e.local).map((e) => e.line), ['typed in "Name"']);
   } finally {
     mock.timers.reset();
@@ -257,4 +257,17 @@ test("the side panel extension arranges tabs into the places they hold, per wind
   await g.pbArrange([4, 1, 3]);
   assert.deepEqual(tabs.map((t) => t.id), [4, 2, 1, 3], "the unshared tab keeps its place");
   assert.deepEqual((await g.pbTabs()).map((t) => t.id), [4, 2, 1, 3]);
+});
+
+test("who filled a field crosses with it (a name, never more), and whether a person is acting there", () => {
+  const [plain, masked] = shareFields([{ f: "top", k: "#notes", t: "textarea", v: "Leave at door", o: "Alice" }, { f: "top", k: "#pw", t: "password", v: "x", o: "Alice" }]);
+  assert.equal(plain.o, "Alice");
+  assert.equal(masked.o, "Alice");
+  assert.equal(masked.v, undefined);
+  const form = readForm({ url: "https://a.example/f", fields: [{ f: "top", k: "#notes", t: "textarea", v: "hi", o: "Alice\u0000<b>" + "x".repeat(200) }] });
+  assert.ok(form.fields[0].o.length <= 60 && !/\u0000/.test(form.fields[0].o));
+  const { ops } = readOps({ ops: [{ op: "person", id: "t1", did: [], acting: true }, { op: "person", id: "t1", did: [], acting: "yes" }] }, new Set(["t1"]));
+  assert.deepEqual(ops.map((o) => o.acting), [true, false]);
+  const st = stateForJoiner({ tabs: [{ id: "t1", url: "https://a.example/", title: "A", person: "Bob", acting: true }] }, { name: "Alice" });
+  assert.equal(st.tabs[0].acting, true);
 });

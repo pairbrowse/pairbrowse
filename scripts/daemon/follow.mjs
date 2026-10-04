@@ -39,7 +39,8 @@ const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 // they may cross). tabOrder: daemon/taborder.mjs. localAgent(page): the agent here holding the
 // tab ({ label, color }), or null.
 // onSession(data, join), onMessage(data, join): who does what there, and messages from there.
-export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null }) {
+// onLeft(): the session ended here (left, denied, ended): its pause no longer holds agents here.
+export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null }) {
   let s = null; // { join, mirror, pages: Map id -> page, owner, window, lastT, candidates, seen, heard, told, agents, outbox }
   const idOf = (cur, page) => { for (const [id, p] of cur.pages) if (p === page) return id; return null; };
 
@@ -109,7 +110,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         // Still there: said again twice a second (the host's agents wait while it's fresh).
         if (fresh.length || Date.now() - (cur.personSent.get(id) || 0) >= PERSON_AGAIN_MS) {
           cur.personSent.set(id, Date.now());
-          ops.push({ op: "person", id, did: fresh.map((e) => e.line) });
+          ops.push({ op: "person", id, did: fresh.map((e) => e.line), ...(person.acting ? { acting: true } : {}) });
         }
       }
     }
@@ -229,7 +230,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       cur.heard.set(t.id, did.length ? Math.max(...did.map((e) => Number(e.n) || 0)) : heard);
       if (first) continue; // on joining, what was done before isn't news
       for (const e of did) presence.elsewhere(page, String(e.who || cur.join.host), [e.line]);
-      if (t.person && !did.length) presence.elsewhere(page, String(t.person), []);
+      if (t.person && !did.length) presence.elsewhere(page, String(t.person), [], t.acting === true);
     }
 
     // What happens there shows here, like local activity.
@@ -300,6 +301,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const cur = s;
     s = null;
     liveView()?.setRemote([]);
+    if (cur) onLeft?.();
     if (cur) for (const page of cur.pages.values()) if (!page.isClosed()) hud.setSharedSpark(page, "");
     if (cur) await cur.join.leave();
     if (cur && why) log(why);
@@ -342,7 +344,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       },
       onChange: (phase) => {
         if (phase === "in") hud.addActivity(`Joined ${parsed.label}'s session (${parsed.role})`, who, null, "joined");
-        if ((phase === "denied" || phase === "ended") && s === cur) { s = null; liveView()?.setRemote([]); hud.addActivity(cur.join.message, "", null, "joined"); }
+        if ((phase === "denied" || phase === "ended") && s === cur) { s = null; liveView()?.setRemote([]); onLeft?.(); hud.addActivity(cur.join.message, "", null, "joined"); }
       },
     });
     (async () => { while (s === cur) { await sleep(OUTBOUND_MS); if (s === cur) await queue(() => outbound(cur)).catch((e) => log("shared tabs", e?.message || e)); } })();
@@ -374,5 +376,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     // A message or session update for the host (both roles: it's only text).
     say: (op) => s?.join.say?.(op),
     joined: () => s?.join.phase === "in",
+    // "drive" or "watch" while in a session joined from here, else null.
+    role: () => (s?.join.phase === "in" ? s.join.role : null),
   };
 }

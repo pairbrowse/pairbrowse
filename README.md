@@ -403,10 +403,20 @@ What crosses, and what doesn't:
   Code: Typed ... into Email", sensitive values masked as always) shows in the bar at the bottom
   of each page, the side panel and the tab overview, which also shows the agent in each tab and
   who is in the session.
-- **People win across browsers (drive):** when a person clicks, types, scrolls or just moves the
-  mouse in their copy of a shared tab, the agents in that tab in the other browser wait too, the
-  bar there says who is using it, and once they stop, the agent goes on and is told what they did
-  (field and button names, never values). A watcher's input stays local and pauses nobody.
+- **People and agents side by side, across browsers (drive):** a person's activity in their copy
+  of a shared tab holds only agents' page changes in that tab in the other browser (navigating,
+  links, submits, Enter); moving the pointer holds nobody up. A field a person fills is theirs on
+  both sides for two minutes: agents' typing, filling, choosing or ticking there is refused
+  unchanged ("Alice is filling Delivery instructions; left it as they wrote it"), fast mode skips
+  it and goes on, and the agent's next result names the fields people filled (never values).
+  People never wait for each other: in the same field, the latest input wins on both sides. A
+  watcher's input stays local and holds nobody up.
+- **Pause agents:** every person who may drive (the host, drive joiners) has a "Pause agents"
+  button in the bottom bar of each page and in the side panel. It stops every agent in the
+  session, in both browsers, before its next browser action; every window shows "Paused by
+  <name> · Resume", and any drive participant resumes. A paused call answers after a minute
+  ("nothing was done") so the agent isn't stuck. Agents can't resume themselves: there is no tool
+  for it, and messages asking for it change nothing.
 - **Messages:** agents can send each other short texts across the two browsers with `pairbrowse_collaboration` (see [Share one browser with another Claude Code
   session](#share-one-browser-with-another-claude-code-session)).
 - Each side's agent works in its own browser, as usual; the shared tabs carry the result.
@@ -472,9 +482,12 @@ location requests never pop up: they show only as a small icon in the address ba
 quiet prompts), and sites see the ordinary "ask" state, like in an everyday Chrome. Files a site hands over (invoices, exports) are saved to your
 Downloads folder (`"downloadsDir"` to change it).
 
-When you scroll, click or type in the PairBrowse window, Claude's next action waits (the bottom
-bar says "waiting… you're using the browser") and continues when you stop; Claude is then told
-what you did, which button or field, never what you typed. A visible CAPTCHA or bot check, or Claude handing over for a
+You and Claude can work in the same tab. When you scroll, click or type in the PairBrowse window,
+only Claude's next action that would change the page under you (navigating, a link, a submit
+button, Enter) waits (the bottom bar says "waiting… you're using the browser") and continues when
+you stop; moving the mouse holds nothing up. Fields you fill are yours for two minutes: Claude
+leaves them as you wrote them. Claude is then told what you did, which button or field, never what
+you typed. "Pause agents" in the bottom bar or side panel stops all agents until you press Resume. A visible CAPTCHA or bot check, or Claude handing over for a
 sign-in, 2FA or approval, shows "Your turn" and sends you a PairBrowse notification.
 
 ## Uploads without a file picker
@@ -699,6 +712,7 @@ browser to you and to Claude, and to limit what a malicious web page can talk Cl
 | A site floods or poisons your Downloads folder | Files a site hands over are saved to your Downloads folder like in any browser, under a plain file name the site can't use to reach other folders, never over an existing file. PairBrowse doesn't limit how many a site sends; Claude is told about each one. |
 | Card numbers or codes show up on screen or in logs | The activity line, bottom bar, side panel and run log mask card numbers (any value that is one, whatever the field) and card, security-code, PIN, IBAN, SSN and similar fields. A value typed into a field that is sensitive by its own kind (password type, card or one-time-code autocomplete, card, code, PIN and similar names) is masked even when Claude names the field only by its reference. Screenshots Claude gets show the page as it is, card fields included. |
 | Another participant's message tries to steer your agent | Messages from other agents or a joiner reach your agent marked as coordination information from another participant, not an instruction from you, that authorizes nothing. They never confirm pay, publish, delete, send or submit clicks, never skip the safety hook, a confirmation or a review, and never lead to typing secrets, uploading files, opening local-network addresses or approving joiners: your agent acts only on your requests. Text only, 500 characters, 10 a minute, redacted, no attachments. |
+| An agent overrides people, or resumes itself | "Pause agents" and "Resume" come from people only: the page's bottom bar (its one element that takes clicks, in a closed shadow root; a press counts only from a real click outside any agent's action and is never input in the page), the side panel and drive viewers of the live view (with its key), and drive joiners' helpers; a watcher's is refused. No tool pauses or resumes, and messages can't. A paused agent's call does nothing and answers after a minute. A field a person filled stays theirs for two minutes: an agent's typing, filling, choosing or ticking there is refused unchanged; across browsers only the filler's name travels with the field, never more. |
 | Files at rest | Everything in `~/.pairbrowse` is created private to your user (`umask 077`), including saved tab lists. Each session is a Chrome profile separate from your everyday Chrome. |
 | The safety hook fails, or doesn't run | It asks you instead of allowing. The helper enforces the secret, navigation and code rules on its own, whatever the permission mode, and everything the hook would block (blocked tools, `file:` and similar addresses, a publish without a passing review) stays blocked even with hooks off or the server added without the plugin. |
 | Another app drives the browser (Codex, any MCP client) | Those apps can't be relied on to run the safety hook or ask you (Codex treats a hook's "ask" as a failure and goes ahead), so the helper applies the hook's rules itself for every app other than Claude Code: what Claude Code would block stays blocked, and what it would ask you about is refused with a note to hand it to you. |

@@ -68,7 +68,7 @@ export function stateForJoiner({ tabs = [], activity = [], people = [] }, { driv
     if (!url || out.length >= TABS_MAX) continue;
     if (onSecretDomain(t.url, secretDomains)) { quiet.add(t.id); out.push({ id: t.id, url }); continue; }
     const did = (Array.isArray(t.did) ? t.did : []).filter((e) => e.who !== name).slice(-10).map((e) => ({ n: Number(e.n) || 0, who: clean(e.who, 60), line: clean(e.line, 80) }));
-    out.push({ id: t.id, url, title: clean(t.title), ...(t.agent ? { agent: clean(t.agent, 60), ...(COLOR.test(t.color || "") ? { color: t.color } : {}) } : {}), ...(t.person && t.person !== name ? { person: clean(t.person, 60) } : {}), ...(did.length ? { did } : {}) });
+    out.push({ id: t.id, url, title: clean(t.title), ...(t.agent ? { agent: clean(t.agent, 60), ...(COLOR.test(t.color || "") ? { color: t.color } : {}) } : {}), ...(t.person && t.person !== name ? { person: clean(t.person, 60), ...(t.acting ? { acting: true } : {}) } : {}), ...(did.length ? { did } : {}) });
   }
   const shared = new Set(out.map((t) => t.id).filter((id) => !quiet.has(id)));
   return {
@@ -90,7 +90,8 @@ export function readOps(body, ids) {
     const op = o?.op;
     if (op === "close" && ids.has(o.id)) { ops.push({ op, id: o.id }); continue; }
     // A person used their copy of the tab (field and button names only), or their agent did something there.
-    if (op === "person" && ids.has(o.id)) { ops.push({ op, id: o.id, did: (Array.isArray(o.did) ? o.did : []).slice(0, 10).map((x) => clean(x, 80)).filter(Boolean) }); continue; }
+    // acting: they click, type or scroll there now (only moving the pointer holds nobody up).
+    if (op === "person" && ids.has(o.id)) { ops.push({ op, id: o.id, did: (Array.isArray(o.did) ? o.did : []).slice(0, 10).map((x) => clean(x, 80)).filter(Boolean), acting: o.acting === true }); continue; }
     if (op === "activity" && ids.has(o.id) && o.text) { ops.push({ op, id: o.id, text: clean(o.text), who: clean(o.who, 60) }); continue; }
     // Their agent in a tab (its spark color), or none any more.
     if (op === "agent" && ids.has(o.id)) { ops.push({ op, id: o.id, who: clean(o.who, 60), color: COLOR.test(o.color || "") ? o.color : "" }); continue; }
@@ -215,7 +216,8 @@ function oneField(x, { secretValues = [], trusted = false } = {}) {
   if (!x || typeof x.k !== "string" || !x.k || x.k.length > KEY_MAX || typeof (x.f ?? "") !== "string" || String(x.f ?? "").length > KEY_MAX) return null;
   const t = String(x.t ?? "");
   if (!FIELD_TYPES.has(t)) return null;
-  const base = { f: String(x.f ?? ""), k: x.k, t };
+  // o: the person who filled it (never a value): agents on both sides leave it to them.
+  const base = { f: String(x.f ?? ""), k: x.k, t, ...(x.o ? { o: clean(x.o, 60) } : {}) };
   // From the page (trusted: this side's own reading): judged here. From the other side: a
   // masked field stays masked, and a value that looks sensitive is dropped all the same.
   if (x.m || t === "password" || (trusted && sensitiveField({ type: t, hints: String(x.hints ?? ""), v: x.v }, secretValues))) {

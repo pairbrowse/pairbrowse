@@ -244,18 +244,26 @@ async function waitOrDisconnect(promise, signal) {
   finally { signal.removeEventListener("abort", abort); }
 }
 
-// Runs steps on page. hooks: { secrets: {values, domains}, uploadsDir, signal, beforeStep(),
-// status(text, kind), activity(text), cursor(el, act), remember(label, value, site) }
+// Runs steps on page. hooks: { secrets: {values, domains}, uploadsDir, signal, beforeStep(kind, el),
+// status(text, kind), activity(text), cursor(el, act), remember(label, value, site), owner(el) }.
+// beforeStep gets "enter" for an Enter press, and a click's element. owner(el): the person
+// filling that field ({ who }) or null: such a field is skipped (in skipped) and the run goes on.
 export async function runSteps(page, steps, hooks) {
   const started = Date.now();
   const done = [];
+  const skipped = []; // [{ label, who }]
+  const theirs = async (el, label) => {
+    const o = await hooks.owner?.(el);
+    if (o) skipped.push({ label, who: o.who });
+    return !!o;
+  };
   // No bringToFront here: on macOS it raises the whole browser window over the app you're in.
   // Background tabs aren't slowed down anyway (the browser starts with throttling switched off).
   for (const [i, step] of steps.entries()) {
     const [kind, arg] = Object.entries(step)[0];
-    const fail = (why) => ({ ok: false, done, stoppedAt: i + 1, why });
+    const fail = (why) => ({ ok: false, done, skipped, stoppedAt: i + 1, why });
     try {
-      await hooks.beforeStep?.();
+      if (kind !== "click") await hooks.beforeStep?.(kind === "press" && activatingKey(arg) === "enter" ? "enter" : kind);
       if (kind === "go") {
         // Wait for the page to arrive, not for every script and image: a slow resource on the
         // site mustn't fail the step when the page itself is there and usable.
@@ -269,6 +277,7 @@ export async function runSteps(page, steps, hooks) {
         for (const [label, raw] of Object.entries(arg)) {
           const el = await field(page, label);
           if (!el) return fail(`No field "${label}".`);
+          if (await theirs(el, label)) continue;
           let value = String(raw);
           const isSecret = Object.hasOwn(hooks.secrets.values, value);
           // Remember what was filled for next time; never passwords or one-time codes.
@@ -303,12 +312,13 @@ export async function runSteps(page, steps, hooks) {
             return fail(`"${f.label}" didn't keep the value${f.secret ? "" : ` "${f.value}"`} (it shows ${f.secret ? "something else" : `"${after}"`}). It may need its picker or a different format: check the screenshot, then fill it step by step.`);
           }
         }
-        hooks.activity(`Filled ${Object.keys(arg).map((k) => `**${k}**`).join(", ")}`);
+        if (filled.length) hooks.activity(`Filled ${filled.map((f) => `**${f.label}**`).join(", ")}`);
       } else if (kind === "check" || kind === "uncheck") {
         // Also a bare box followed by its text, with no label element ("<input> checkbox 1").
         const bare = String(arg).includes('"') ? null : () => page.locator(`xpath=//text()[normalize-space(.)="${String(arg).trim()}"]/preceding-sibling::input[@type="checkbox" or @type="radio"][1]`);
         const el = await find(page, [() => page.getByLabel(arg, { exact: true }), () => page.getByRole("checkbox", { name: arg }), () => page.getByRole("radio", { name: arg }), () => page.getByLabel(arg), ...(bare ? [bare] : [])]);
         if (!el) return fail(`No checkbox "${arg}".`);
+        if (await theirs(el, String(arg))) { done.push(kind); continue; }
         hooks.cursor?.(el, "click");
         await (kind === "check" ? el.check({ timeout: 5000 }) : el.uncheck({ timeout: 5000 }));
         hooks.activity(`${kind === "check" ? "Ticked" : "Unticked"} **${arg}**`);
@@ -318,6 +328,7 @@ export async function runSteps(page, steps, hooks) {
             () => page.getByRole("button", { name: label }),
             () => page.locator(`select[name="${label.replace(/"/g, '\\"')}"], select[id="${label.replace(/"/g, '\\"')}"]`)]) || await onlyOne(page, "select");
           if (!el) return fail(`No dropdown "${label}".`);
+          if (await theirs(el, label)) continue;
           hooks.cursor?.(el, "click");
           const isSelect = await el.evaluate((n) => n.tagName === "SELECT").catch(() => false);
           if (isSelect) await el.selectOption({ label: String(option) }, { timeout: 5000 }).catch(() => el.selectOption(String(option), { timeout: 5000 }));
@@ -334,6 +345,7 @@ export async function runSteps(page, steps, hooks) {
       } else if (kind === "click") {
         const el = await clickable(page, String(arg));
         if (!el) return fail(`Nothing to click named "${arg}".`);
+        await hooks.beforeStep?.("click", el);
         // The name may match a longer label ("Confirm" finds "Confirm payment"): check what the
         // element really says before clicking it.
         const real = String(await el.evaluate(buttonLabel, undefined, { timeout: 2000 }).catch(() => ""));
@@ -379,5 +391,5 @@ export async function runSteps(page, steps, hooks) {
       return fail(String(e?.message || e).split("\n")[0].slice(0, 200));
     }
   }
-  return { ok: true, done, ms: Date.now() - started };
+  return { ok: true, done, skipped, ms: Date.now() - started };
 }

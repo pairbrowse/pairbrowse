@@ -4,7 +4,8 @@
 
 - Claude Code running **on your computer** (CLI, desktop app local session, or IDE extension),
   or Codex CLI 0.160 or newer (see [Codex](codex.md)). Cloud sessions can't show you a browser
-  window (see [Servers and cloud sessions](server.md)).
+  window: run the session on your own computer instead (Remote Control,
+  `claude remote-control`, makes it reachable from the Claude app on any device).
 - Node.js 20+ (on Node.js 18, set `"browserDriver": "playwright"`). Check with `node -v`;
   otherwise install the LTS version from [nodejs.org](https://nodejs.org).
 - Nothing else: PairBrowse downloads its own browser on first use (see [The PairBrowse browser](browser.md)).

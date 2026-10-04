@@ -10,7 +10,7 @@
 import http from "node:http";
 import net from "node:net";
 import { randomBytes } from "node:crypto";
-import { startQuickTunnel } from "./tunnel.mjs";
+import { startQuickTunnel, watchTunnel } from "./tunnel.mjs";
 
 export const DEV_COOKIE = "__pairbrowse_dev";
 export const DEV_PORTS_MAX = 3;
@@ -84,13 +84,16 @@ export function createDevProxy({ hostname, port, access, publicHost, log = () =>
   };
   let proxyPort = 0;
   const agent = new http.Agent({ keepAlive: true }); // its own: closed with the share
-  const publicOrigin = () => { const h = publicHost(); return h ? (h.startsWith("127.0.0.1:") ? `http://${h}` : `https://${h}`) : null; };
+  // The shared address a request came in on (publicHost(): its tunnels' host names), as an origin.
+  const publicOrigin = (req) => {
+    const h = String(req.headers.host || "").toLowerCase().replace(/:443$/, "");
+    if (!h || !(h === `127.0.0.1:${proxyPort}` || [].concat(publicHost() || []).includes(h))) return null;
+    return h.startsWith("127.0.0.1:") ? `http://${h}` : `https://${h}`;
+  };
 
   // The request's way in: the shared address (or this proxy's own loopback address), a token.
   function admit(req, websocket) {
-    const host = String(req.headers.host || "").toLowerCase();
-    const pub = publicHost();
-    if (!(host === `127.0.0.1:${proxyPort}` || (pub && (host === pub || host === `${pub}:443`)))) return { code: 403, text: "Not this address." };
+    if (!publicOrigin(req)) return { code: 403, text: "Not this address." };
     const { value } = splitCookie(req.headers.cookie, DEV_COOKIE);
     const role = value && TOKEN.test(value) ? access(value) : null;
     if (!role) return { code: 403, text: "This dev server is shared through PairBrowse only: join the session to see it." };
@@ -103,8 +106,8 @@ export function createDevProxy({ hostname, port, access, publicHost, log = () =>
   const server = http.createServer((req, res) => {
     const no = admit(req, false);
     if (no) return refuse(res, no.code, no.text);
-    const up = http.request({ agent, host: connectHost, port, method: req.method, path: req.url, headers: toDevHeaders(req.headers, { local, publicOrigin: publicOrigin() }), autoSelectFamily: true }, (r) => {
-      res.writeHead(r.statusCode || 502, fromDevHeaders(r.headers, { local, publicOrigin: publicOrigin() }));
+    const up = http.request({ agent, host: connectHost, port, method: req.method, path: req.url, headers: toDevHeaders(req.headers, { local, publicOrigin: publicOrigin(req) }), autoSelectFamily: true }, (r) => {
+      res.writeHead(r.statusCode || 502, fromDevHeaders(r.headers, { local, publicOrigin: publicOrigin(req) }));
       r.pipe(res);
     });
     up.on("error", () => { if (!res.headersSent) refuse(res, 502, `The dev server at localhost:${port} isn't answering.`); else res.destroy(); });
@@ -116,7 +119,7 @@ export function createDevProxy({ hostname, port, access, publicHost, log = () =>
     const no = admit(req, true);
     if (no) { socket.end(`HTTP/1.1 ${no.code} Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${no.text}`); return; }
     const dev = net.connect({ host: connectHost, port, autoSelectFamily: true }, () => {
-      const headers = toDevHeaders(req.headers, { local, publicOrigin: publicOrigin() });
+      const headers = toDevHeaders(req.headers, { local, publicOrigin: publicOrigin(req) });
       let raw = `${req.method} ${req.url} HTTP/1.1\r\n`;
       for (const [k, v] of Object.entries(headers)) for (const one of [].concat(v)) raw += `${k}: ${one}\r\n`;
       dev.write(`${raw}\r\n`);
@@ -143,7 +146,7 @@ export function createDevProxy({ hostname, port, access, publicHost, log = () =>
 export function createDevShare({ log = () => {}, startTunnel = (port) => startQuickTunnel(port, { log }), direct = process.env.PAIRBROWSE_TEST_TUNNEL === "direct", onStopped = () => {} } = {}) {
   const shares = new Map(); // port -> { port, hostname, proxy, tunnel, origin, host }
   const tokens = new Map(); // token -> { key, role, port }
-  const starting = new Set(); // shares whose tunnel is still starting (unshare and stopAll end them too)
+  const starting = new Set(); // shares whose first tunnel is still starting (stopAll ends them too)
   let isIn = () => false;
 
   const access = (port) => (token) => {
@@ -157,36 +160,63 @@ export function createDevShare({ log = () => {}, startTunnel = (port) => startQu
     const have = shares.get(port);
     if (have) return have;
     if (shares.size >= DEV_PORTS_MAX) throw new Error(`At most ${DEV_PORTS_MAX} dev servers are shared at once. Stop one with unshare_port.`);
-    const entry = { port, hostname, origin: null, host: null };
-    entry.proxy = createDevProxy({ hostname, port, access: access(port), publicHost: () => entry.host, log });
-    const proxyPort = await entry.proxy.listen();
+    const entry = { port, hostname, tunnels: [], proxyPort: 0, get origin() { return this.tunnels[0]?.origin || null; } };
+    entry.proxy = createDevProxy({ hostname, port, access: access(port), publicHost: () => entry.tunnels.map((t) => t.host), log });
+    entry.proxyPort = await entry.proxy.listen();
     starting.add(entry);
     try {
-      entry.tunnel = direct ? { url: `http://127.0.0.1:${proxyPort}`, stop() {} } : await startTunnel(proxyPort);
-      // Unshared while the tunnel was starting: stop it, never keep it.
-      if (entry.stopped) {
-        try { entry.tunnel.stop(); } catch {}
-        throw new Error(`localhost:${port} is no longer shared`);
-      }
+      entry.tunnels.push(await connect(entry));
     } catch (e) {
+      entry.stopped = true;
       entry.proxy.close();
       throw e;
     } finally {
       starting.delete(entry);
     }
-    entry.origin = new URL(entry.tunnel.url).origin;
-    entry.host = new URL(entry.tunnel.url).host;
-    entry.tunnel.child?.once("exit", () => { if (shares.get(port) === entry) { stopOne(port); onStopped(port); } });
     shares.set(port, entry);
+    fill(entry); // the standby, in the background
     log(`dev server localhost:${port} shared`);
     return entry;
+  }
+
+  // Tunnels to the proxy: two per shared dev server (one in tests). Joiners hold a key for both
+  // addresses, so when the first goes down (its process exits, or watchTunnel finds it isn't
+  // answering) the host's tabs move to the second at once and the joiners' tabs follow; a
+  // replacement starts in the background. Only when none can be had is the share stopped.
+  const POOL = direct ? 1 : 2;
+  async function connect(entry) {
+    const t = direct ? { url: `http://127.0.0.1:${entry.proxyPort}`, stop() {} } : await startTunnel(entry.proxyPort);
+    // Unshared while this tunnel was starting: stop it, never add it back.
+    if (entry.stopped) {
+      try { t.stop(); } catch {}
+      throw new Error(`localhost:${entry.port} is no longer shared`);
+    }
+    t.origin = new URL(t.url).origin;
+    t.host = new URL(t.url).host;
+    if (!direct) t.unwatch = watchTunnel(t, { log });
+    t.child?.once("exit", () => {
+      if (shares.get(entry.port) !== entry || !entry.tunnels.includes(t)) return;
+      entry.tunnels = entry.tunnels.filter((x) => x !== t);
+      log(`a tunnel for localhost:${entry.port} stopped; ${entry.tunnels.length ? `now at ${entry.origin}` : "starting another"}`);
+      fill(entry).then(() => { if (shares.get(entry.port) === entry && !entry.tunnels.length) { stopOne(entry.port); onStopped(entry.port); } });
+    });
+    return t;
+  }
+  function fill(entry) {
+    entry.filling ??= (async () => {
+      for (let tries = 0; shares.get(entry.port) === entry && entry.tunnels.length < POOL && tries < 3; tries++) {
+        try { entry.tunnels.push(await connect(entry)); } catch { await new Promise((r) => setTimeout(r, 2000 * (tries + 1))); }
+      }
+    })().finally(() => { entry.filling = null; });
+    return entry.filling;
   }
 
   function stopOne(port) {
     const e = shares.get(port);
     if (!e) return false;
+    e.stopped = true;
     shares.delete(port);
-    try { e.tunnel?.stop(); } catch {}
+    for (const t of e.tunnels) { try { t.unwatch?.(); t.stop(); } catch {} }
     e.proxy.close();
     for (const [t, v] of tokens) if (v.port === port) tokens.delete(t);
     log(`dev server localhost:${port} no longer shared`);
@@ -212,7 +242,9 @@ export function createDevShare({ log = () => {}, startTunnel = (port) => startQu
       for (const e of shares.values()) {
         let token = [...tokens].find(([, v]) => v.key === key && v.port === e.port && v.role === role)?.[0];
         if (!token) { token = randomBytes(32).toString("hex"); tokens.set(token, { key, role, port: e.port }); }
-        out.push({ origin: e.origin, token });
+        // also: the standby addresses (the same key works there), so a switch needs nothing new.
+        const also = e.tunnels.slice(1).map((t) => t.origin);
+        out.push({ origin: e.origin, token, ...(also.length ? { also } : {}) });
       }
       return out;
     },
@@ -229,7 +261,7 @@ export function createDevShare({ log = () => {}, startTunnel = (port) => startQu
     toLocal(raw) {
       let u;
       try { u = new URL(String(raw ?? "")); } catch { return null; }
-      for (const e of shares.values()) if (u.origin === e.origin) return e.proxy.local.origin + u.pathname + u.search + u.hash;
+      for (const e of shares.values()) if (e.tunnels.some((t) => t.origin === u.origin)) return e.proxy.local.origin + u.pathname + u.search + u.hash;
       return null;
     },
   };
@@ -242,7 +274,11 @@ export function readDevEntry(x, { allowLocal = false } = {}) {
   let u;
   try { u = new URL(String(x.origin)); } catch { return null; }
   if (u.origin !== x.origin) return null;
-  if (u.protocol === "https:" && /^[a-z0-9-]+\.trycloudflare\.com$/.test(u.hostname)) return { origin: u.origin, token: x.token };
+  if (u.protocol === "https:" && /^[a-z0-9-]+\.trycloudflare\.com$/.test(u.hostname)) {
+    // Standby addresses for the same key: Quick Tunnel origins only.
+    const also = (Array.isArray(x.also) ? x.also : []).slice(0, 3).filter((o) => { try { const a = new URL(String(o)); return a.origin === o && a.protocol === "https:" && /^[a-z0-9-]+\.trycloudflare\.com$/.test(a.hostname); } catch { return false; } });
+    return { origin: u.origin, token: x.token, ...(also.length ? { also } : {}) };
+  }
   if (allowLocal && u.protocol === "http:" && u.hostname === "127.0.0.1") return { origin: u.origin, token: x.token };
   return null;
 }

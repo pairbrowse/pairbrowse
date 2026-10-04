@@ -88,18 +88,6 @@ test("servers without a screen get a private virtual screen", async () => {
   assert.equal(needsVirtualDisplay({ ...cfg, display: "none" }, {}, "linux"), false);
 });
 
-test("remote mode builds a strict ssh command", async () => {
-  const { remoteCommand } = await import("../scripts/remote.mjs");
-  const { bin, args } = remoteCommand({ remote: "dion@203.0.113.7" }, {});
-  assert.equal(bin, "ssh");
-  assert.ok(args.includes("BatchMode=yes"), "never hangs on a password prompt");
-  assert.deepEqual(args.slice(args.indexOf("-L"), args.indexOf("-L") + 2), ["-L", "47290:127.0.0.1:47290"]);
-  assert.equal(args.at(-2), "dion@203.0.113.7");
-  assert.throws(() => remoteCommand({ remote: "dion@host; rm -rf ~" }, {}), /user@host/);
-  assert.throws(() => remoteCommand({ remote: "-oProxyCommand=evil" }, {}), /user@host/);
-  assert.throws(() => remoteCommand({ remote: "-v" }, {}), /user@host/, "no ssh options");
-});
-
 test("only snapshot refs count as refs, not numbers or short words", async () => {
   const { isRef } = await import("../scripts/policy.mjs");
   for (const ref of ["e42", "f1e7"]) assert.ok(isRef(ref), ref);

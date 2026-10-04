@@ -9,8 +9,8 @@ import { existsSync, copyFileSync, chmodSync, openSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, ensureDirs, loadConfig } from "./paths.mjs";
+import { ancestors } from "./ancestry.mjs";
 import { ensureRuntime } from "./runtime.mjs";
-import { remoteCommand } from "./remote.mjs";
 import { DOCK_TOOL, dockSupported, startPane } from "./dock.mjs";
 import { JOIN_TOOL } from "./policy.mjs";
 
@@ -18,16 +18,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const err = (s) => process.stderr.write(`pairbrowse: ${s}\n`);
 
 const config = loadConfig();
-// With a server configured, the user picks per session: the local browser (in the workspace) or
-// the server browser. Nothing starts a browser until the first browser action.
-const canChoose = !!config.remote && !process.env.PAIRBROWSE_ON_SERVER;
-let target = canChoose && config.start === "server" ? "server" : "local";
-
-const WHERE_TOOL = {
-  name: "pairbrowse_where",
-  description: `Choose which browser to use: "local" (this computer, shown in the workspace) or "server" (${config.remote}). Ask the user before the first browser action of a session. Sessions and logins are separate on each.`,
-  inputSchema: { type: "object", required: ["where"], properties: { where: { type: "string", enum: ["local", "server"] } } },
-};
 
 let localReady = false;
 function prepareLocal() {
@@ -70,21 +60,11 @@ async function connectLocal() {
   throw new Error(`couldn't reach the PairBrowse daemon; see ${paths.daemonLog}`);
 }
 
-// One interface over either upstream: the local daemon socket, or ssh to the server.
-async function openUpstream(kind) {
-  if (kind === "local") {
-    const sock = await connectLocal();
-    sock.on("error", () => {});
-    return { write: (l) => !sock.destroyed && sock.write(l), input: sock, onClose: (cb) => sock.on("close", cb), close: () => sock.destroy() };
-  }
-  const { bin, args } = remoteCommand(config);
-  const child = spawn(bin, args, { stdio: ["pipe", "pipe", "inherit"] });
-  child.stdin.on("error", () => {});
-  await new Promise((resolve, reject) => {
-    child.once("spawn", resolve);
-    child.once("error", reject);
-  });
-  return { write: (l) => child.stdin.writable && child.stdin.write(l), input: child.stdout, onClose: (cb) => child.on("exit", cb), close: () => child.kill() };
+// The upstream: the local daemon socket.
+async function openUpstream() {
+  const sock = await connectLocal();
+  sock.on("error", () => {});
+  return { write: (l) => !sock.destroyed && sock.write(l), input: sock, onClose: (cb) => sock.on("close", cb), close: () => sock.destroy() };
 }
 
 let up = null;
@@ -93,7 +73,6 @@ let initMsg = null;
 const inClaude = () => initMsg?.params?.clientInfo?.name === "claude-code";
 let initializedNote = null;
 let closing = false;
-let switching = false;
 const queue = [];
 const inflight = new Set();
 const out = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
@@ -103,7 +82,7 @@ const failInflight = (message) => {
 };
 
 async function attach(replay) {
-  const conn = await openUpstream(target);
+  const conn = await openUpstream();
   up = conn;
   createInterface({ input: conn.input }).on("line", (line) => {
     let msg;
@@ -118,14 +97,14 @@ async function attach(replay) {
       internalCalls.delete(msg.id);
       return;
     }
-    if (msg.result?.tools) msg.result.tools = [...msg.result.tools, JOIN_TOOL, ...(canChoose ? [WHERE_TOOL] : []), ...(dockSupported() && inClaude() ? [DOCK_TOOL] : [])];
+    if (msg.result?.tools) msg.result.tools = [...msg.result.tools, JOIN_TOOL, ...(dockSupported() && inClaude() ? [DOCK_TOOL] : [])];
     if (msg.id !== undefined && ("result" in msg || "error" in msg)) inflight.delete(msg.id);
     out(msg);
   });
   conn.onClose(async () => {
-    if (closing || switching || up !== conn) return;
+    if (closing || up !== conn) return;
     // The browser restarted or the connection dropped: fail what was in flight, then reconnect.
-    failInflight(target === "server" ? "Lost the connection to the server browser. Retry the last action." : "The PairBrowse browser restarted. Retry the last action.");
+    failInflight("The PairBrowse browser restarted. Retry the last action.");
     up = null;
     try {
       await ensureAttached(true);
@@ -151,12 +130,15 @@ function send(msg) {
   if (msg.method === "initialize") {
     const label = config.participantName || process.env.PAIRBROWSE_PARTICIPANT;
     if (label) msg = { ...msg, params: { ...msg.params, clientInfo: { ...msg.params?.clientInfo, pairbrowseParticipant: String(label).replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, 60) } } };
+    // The processes this bridge runs under: the hook of the same session shares one, so the
+    // helper knows whose click a hook asks about (scripts/ancestry.mjs).
+    msg = { ...msg, params: { ...msg.params, clientInfo: { ...msg.params?.clientInfo, pairbrowseAncestors: ancestors() } } };
   }
   if (msg.method === "initialize") initMsg = msg;
   if (up) up.write(JSON.stringify(msg) + "\n");
   else {
     queue.push(msg);
-    if (!switching) ensureAttached(true).catch((e) => failInflight(String(e.message || e)));
+    ensureAttached(true).catch((e) => failInflight(String(e.message || e)));
   }
 }
 
@@ -171,7 +153,7 @@ function internal(name, args) {
   });
 }
 
-// Live view address of the browser in use (local only: the server's needs an SSH tunnel).
+// Live view address of the browser.
 async function liveViewUrl() {
   const res = await internal("pairbrowse_liveview", {});
   const url = res.result?.content?.[0]?.text?.match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)?.[0];
@@ -187,37 +169,13 @@ async function dockCommand(msg) {
   pane = null;
   if (action === "off") return reply("The browser pane is closed. The browser keeps running.");
   try {
-    // The live view of whichever browser is in use (local, or the server's through the SSH tunnel).
     const url = await liveViewUrl();
     const child = await startPane({ url, width: Number(width) || config.dockWidth || 0, host: config.dockHost || "Claude", top: config.dockTop ?? 52, makeRoom: !!config.dockMakeRoom });
     pane = child;
     child.on("exit", () => { if (pane === child) pane = null; });
-    reply(`The browser now shows as a pane on the right of the Claude window (${target === "server" ? "server" : "local"} browser). The user can click and type in it.`);
+    reply(`The browser now shows as a pane on the right of the Claude window. The user can click and type in it.`);
   } catch (e) {
     reply(`Couldn't open the browser pane: ${String(e.message || e)}. Fall back to the live view link in the Browser pane.`, true);
-  }
-}
-
-async function choose(msg) {
-  const reply = (text, isError = false) => out({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) } });
-  const want = msg.params?.arguments?.where;
-  if (want !== "local" && want !== "server") return reply('Use "local" or "server".', true);
-  const label = (w) => (w === "server" ? `server browser (${config.remote})` : "local browser, shown in your workspace");
-  if (want === target && up) return reply(`Already using the ${label(want)}.`);
-  const previous = target;
-  switching = true;
-  up?.close();
-  up = null;
-  target = want;
-  try {
-    await attach(true);
-    reply(`Now using the ${label(want)}. Its sessions and logins are separate from the other one.`);
-  } catch (e) {
-    target = previous;
-    await attach(true).catch(() => {});
-    reply(`Couldn't switch to the ${label(want)}: ${String(e.message || e)}`, true);
-  } finally {
-    switching = false;
   }
 }
 
@@ -230,7 +188,6 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   }
   if (msg.method === "initialize") initMsg = msg;
   if (msg.method === "notifications/initialized") initializedNote = msg;
-  if (canChoose && msg.method === "tools/call" && msg.params?.name === "pairbrowse_where") return void choose(msg);
   if (dockSupported() && inClaude() && msg.method === "tools/call" && msg.params?.name === "pairbrowse_dock") return void dockCommand(msg);
   if (msg.id !== undefined && msg.method) inflight.add(msg.id);
   send(msg);

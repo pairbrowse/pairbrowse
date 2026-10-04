@@ -1,4 +1,4 @@
-// Private virtual screen for servers: a real, headed Chrome without a monitor.
+// Private virtual screen for a Linux machine without a screen: a real, headed Chrome without a monitor.
 // Xvfb runs without TCP and behind an X cookie stored in ~/.pairbrowse, so other users on the
 // machine can't watch the screen or send it input.
 import { spawn, spawnSync } from "node:child_process";

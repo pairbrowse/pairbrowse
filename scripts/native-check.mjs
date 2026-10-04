@@ -76,7 +76,7 @@ function checkProfile(profile) {
   if (loaded.some((id) => id !== panelExtensionId())) throw new Error(`unexpected extensions installed: ${loaded.join(", ")}`);
 }
 
-// Returns what passed; throws on the first failure. On a Linux server without a screen the check
+// Returns what passed; throws on the first failure. On a Linux machine without a screen the check
 // runs on a private virtual screen of its own, like the browser itself (display.mjs).
 export async function selfCheck(exec, { config = loadConfig(), log = () => {}, timeoutMs = CHECK_TIMEOUT_MS, env = process.env } = {}) {
   ensureRuntime(log);

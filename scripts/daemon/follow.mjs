@@ -20,7 +20,7 @@ function serially() {
 }
 
 const OPEN_MS = 15_000;
-const ADOPT_MS = 10_000; // a tab opened from a shared one has this long to get a web address
+const ADOPT_MS = 10_000; // a tab opened from a shared one has this long to get a web address (in the shared window: no limit)
 const FIRST_ACTIVITY = 3; // on joining, the last few things that happened
 const FORM_BYTES = 60_000; // form values read here in one round, before it's sent
 const AGENT_AGAIN_MS = 10_000; // an agent here is said again this often (the other side forgets it)
@@ -43,7 +43,7 @@ const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 // onSession(data, join), onMessage(data, join): who does what there, and messages from there.
 // onLeft(): the session ended here (left, denied, ended): its pause no longer holds agents here.
 export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null }) {
-  let s = null; // { join, mirror, pages: Map id -> page, owner, window, lastT, candidates, seen, heard, told, agents, outbox }
+  let s = null; // { join, mirror, pages: Map id -> page, owner, window, windowId, lastT, candidates, seen, heard, told, agents, outbox }
   const idOf = (cur, page) => { for (const [id, p] of cur.pages) if (p === page) return id; return null; };
 
   // This browser's agents' activity in a shared tab goes to the other browser (drive), like its
@@ -58,6 +58,11 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   const pageId = async (ctx, page) => {
     const cdp = await ctx.newCDPSession(page);
     try { return (await cdp.send("Target.getTargetInfo")).targetInfo.targetId; } finally { cdp.detach().catch(() => {}); }
+  };
+  // The browser window a tab is in.
+  const windowOf = async (ctx, page) => {
+    const cdp = await ctx.newCDPSession(page);
+    try { return (await cdp.send("Browser.getWindowForTarget")).windowId; } finally { cdp.detach().catch(() => {}); }
   };
 
   // A new tab at url: the first one in a new window, the next ones next to it (the browser puts
@@ -74,7 +79,12 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       try { ({ targetId } = await cdp.send("Target.createTarget", { url, newWindow: !s.window, background: !!s.window })); } finally { cdp.detach().catch(() => {}); }
       const until = Date.now() + OPEN_MS;
       while (Date.now() < until) {
-        for (const p of ctx.pages()) if (!before.has(p) && !p.isClosed() && (await pageId(ctx, p).catch(() => "")) === targetId) { s.window = true; return p; }
+        for (const p of ctx.pages()) {
+          if (before.has(p) || p.isClosed() || (await pageId(ctx, p).catch(() => "")) !== targetId) continue;
+          if (!s.window) s.windowId = await windowOf(ctx, p).catch(() => null); // the shared window
+          s.window = true;
+          return p;
+        }
         await new Promise((r) => setTimeout(r, 100));
       }
       throw new Error("the new tab didn't show up");
@@ -145,14 +155,19 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (Date.now() - (cur.orderAt || 0) > ORDER_MS) await checkOrder(cur);
     await applyForms(cur); // values from there whose page has loaded here since
     ops.push(...cur.outbox.splice(0));
-    // Tabs opened from a shared tab (a link to a new tab, a popup) are shared too.
+    // Tabs opened from a shared tab (a link to a new tab, a popup) are shared too, and so are new
+    // tabs opened in the shared window (they wait there until they have a web address).
     const adopting = [];
     if (drive) {
       const mapped = new Set(cur.pages.values());
       for (const p of ctx.pages()) {
         if (mapped.has(p) || p.isClosed() || cur.seen.has(p)) continue;
         let since = cur.candidates.get(p);
-        if (since === undefined) { const opener = await p.opener().catch(() => null); since = opener && mapped.has(opener) ? Date.now() : -1; }
+        if (since === undefined) {
+          const opener = await p.opener().catch(() => null);
+          since = opener && mapped.has(opener) ? Date.now()
+            : cur.windowId != null && (await windowOf(ctx, p).catch(() => null)) === cur.windowId ? Infinity : -1;
+        }
         if (since < 0 || Date.now() - since > ADOPT_MS) { cur.seen.add(p); cur.candidates.delete(p); continue; }
         cur.candidates.set(p, since);
         const url = shareableUrl(p.url(), mine);
@@ -196,7 +211,9 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const sig = JSON.stringify(entries);
     if (sig === cur.devSig) return;
     const ctx = await context.getContext();
-    if (entries.length) await ctx.addCookies(entries.map((e) => ({ name: DEV_COOKIE, value: e.token, url: e.origin, httpOnly: true, secure: e.origin.startsWith("https:"), sameSite: "Lax" })));
+    // The same key for the standby addresses (also): a switch there needs nothing new.
+    const cookies = entries.flatMap((e) => [e.origin, ...(e.also || [])].map((url) => ({ name: DEV_COOKIE, value: e.token, url, httpOnly: true, secure: url.startsWith("https:"), sameSite: "Lax" })));
+    if (cookies.length) await ctx.addCookies(cookies);
     cur.devSig = sig;
   }
 
@@ -357,7 +374,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     await stop();
     // The name given at join wins; then the same default the host's side uses.
     const who = cleanName(name, "") || displayName({ configured: config.participantName, env: process.env.PAIRBROWSE_PARTICIPANT, ...currentAccount() }) || cleanName(name);
-    const cur = { mirror: createMirror(), pages: new Map(), owner, window: false, lastT: 0, candidates: new Map(), seen: new WeakSet(), heard: new Map(), told: new WeakMap(), agents: new Map(), outbox: [],
+    const cur = { mirror: createMirror(), pages: new Map(), owner, window: false, windowId: null, lastT: 0, candidates: new Map(), seen: new WeakSet(), heard: new Map(), told: new WeakMap(), agents: new Map(), outbox: [],
       forms: createFormSync(), order: createOrderSync(), quiet: new Set(), agentSent: new Map(), personSent: new Map(), dirty: new Set(), formsAllAt: 0,
       formT: new Map(), pointed: new WeakMap(), pointerTimer: null, pointerSig: "", drawn: new Set(), formTimer: null };
     const queue = serially(); // the host's changes and this side's, one at a time
@@ -380,7 +397,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     (async () => { while (s === cur) { await sleep(OUTBOUND_MS); if (s === cur) await queue(() => outbound(cur)).catch((e) => log("shared tabs", e?.message || e)); } })();
     return {
       text: `Asked ${parsed.label} to let ${who} in (${parsed.role}). They have to approve first. Then this browser opens ${parsed.label}'s tabs in a window of their own and keeps following them` +
-        (parsed.role === "drive" ? "; what you or your agent change in those tabs (another address, a new tab from one of them, closing one) happens in their browser too." : " (watch: changes here stay here).") +
+        (parsed.role === "drive" ? "; what you or your agent change in those tabs (another address, a new tab in their window or from one of them, closing one) happens in their browser too." : " (watch: changes here stay here).") +
         " You also see each other's pointers and what's typed in shared tabs (sensitive fields only as filled); logins and cookies are never shared: each of you stays signed in as yourselves. Check with pairbrowse_join status; stop with leave.",
     };
   }

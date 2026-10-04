@@ -86,7 +86,7 @@ async function release(cdp) {
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null, picker = null, devShare = null, devPanel = null }) {
+  onPause = () => ({}), pauseState = () => null, picker = null, devShare = null, devPanel = null, relays = () => [] }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -184,7 +184,9 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     const state = stateForJoiner({ tabs, activity, people }, { drive: j.invite.role === "drive", secretDomains: secretDomains(), name: j.name, from: joinerKey(j), mapUrl: devUrl });
     // Shared dev servers (devshare.mjs): their addresses and this joiner's own token for them.
     const dev = devShare?.forJoiner(joinerKey(j), j.invite.role) || [];
-    return dev.length ? { ...state, dev } : state;
+    // Every tunnel address to this session (relay.mjs moves to another when one goes down).
+    const urls = relays();
+    return { ...state, ...(dev.length ? { dev } : {}), ...(urls.length > 1 ? { relays: urls } : {}) };
   }
 
   // A drive joiner's changes in the shared tabs: opened, moved to another address, closed, as if

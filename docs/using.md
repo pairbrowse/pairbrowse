@@ -16,7 +16,7 @@ The person icon in the live view's toolbar opens the **Profile** panel:
 Details and passwords live on the machine the browser runs on. In a cloud session that's the
 cloud container, which is reset when the session ends, so keep long-lived ones on your own computer.
 
-## Sessions, and local or server
+## Sessions
 
 When the browser starts, its first tab is the session picker: your three most recently used
 sessions with how many tabs each has and who used them ("Mac · You", "Bob · Codex", "Alice · Linux";
@@ -29,11 +29,7 @@ fresh session", "use the client-x session", "join this session: pb-join:...") an
 shows. It doesn't show the very first time either (there's nothing to go back to), nor in cloud
 sessions. Set `"sessionPicker": false` to turn it off: Claude then asks you in the chat.
 
-Claude asks which browser to use (local or server) when a server is set up. You can also just say
-it, for example "use a clean session on the server".
-
 - `pairbrowse_session`: list, use, new (named and kept, or clean and throwaway), delete (asks you).
-- `pairbrowse_where`: switch between the local and the server browser at any time.
 
 Tabs: PairBrowse remembers each session's tabs, in order. When Chrome restarts, it shows an
 "Opening tabs" screen and brings them back one by one, then puts you on the tab you were on.
@@ -67,7 +63,7 @@ Downloads folder (`"downloadsDir"` to change it).
 
 You and Claude can work in the same tab. When you click or type in the PairBrowse window, Claude's
 next action in that tab waits (the bottom bar says "waiting… you're using the browser") and
-continues when you've stopped for two seconds; moving the mouse or scrolling holds nothing up. Fields you fill are yours for two minutes: Claude
+continues when you've stopped for two seconds; moving the mouse or scrolling holds nothing up. Fields you fill are yours for 5 seconds after your last keystroke (10 while you stay in them): Claude
 leaves them as you wrote them. Claude is then told what you did, which button or field, never what
 you typed. "Pause agents" in the bottom bar or side panel stops all agents until you press Resume. A visible CAPTCHA or bot check, or Claude handing over for a
 sign-in, 2FA or approval, shows "Your turn" and sends you a PairBrowse notification.

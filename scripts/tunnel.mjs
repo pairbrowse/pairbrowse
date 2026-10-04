@@ -96,3 +96,25 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
     throw e;
   }
 }
+
+// Keeps an eye on a running tunnel from the outside: a request to its public address every
+// everyMs. Any answer from this computer's server (below 500, a 429 included: busy, not down)
+// counts as up; Cloudflare's own errors (502, 530: the tunnel lost its connection) or no answer
+// count as down. After `misses` downs in a row the tunnel is stopped, and the code that started
+// it replaces it (its exit handler). Returns stop().
+export function watchTunnel(t, { everyMs = 30_000, misses = 2, timeoutMs = 10_000, log = () => {}, probe } = {}) {
+  let down = 0;
+  const check = probe || (async () => {
+    try { return (await fetch(t.url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(timeoutMs) })).status < 500; } catch { return false; }
+  });
+  const timer = setInterval(async () => {
+    if ((t.child?.exitCode ?? null) !== null) return clearInterval(timer);
+    if (await check()) { down = 0; return; }
+    if (++down < misses) return;
+    clearInterval(timer);
+    log(`tunnel ${t.host} isn't answering; replacing it`);
+    try { t.stop(); } catch {}
+  }, everyMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}

@@ -181,18 +181,59 @@ test("a localhost tab crosses only as its shared address", () => {
   assert.deepEqual(out.map((t) => t.url), ["https://abc.trycloudflare.com/dash?tab=2"]);
 });
 
+test("a dev server keeps a standby tunnel: when one goes down the other takes over at once", async () => {
+  const { EventEmitter } = await import("node:events");
+  let n = 0;
+  const children = [];
+  const fakeTunnel = async () => { const child = new EventEmitter(); child.exitCode = null; children.push(child); n++; return { url: `https://t${n}.trycloudflare.com`, child, stop() { child.exitCode = 0; child.emit("exit", 0); } }; };
+  const share = createDevShare({ startTunnel: fakeTunnel, direct: false });
+  share.members(() => true);
+  const wait = async (ok) => { for (let i = 0; i < 100 && !ok(); i++) await new Promise((r) => setTimeout(r, 10)); };
+  try {
+    await share.share("localhost", 3000);
+    await wait(() => share.forJoiner("i:j", "watch")[0]?.also?.length === 1);
+    const [first] = share.forJoiner("i:j", "watch");
+    assert.equal(first.origin, "https://t1.trycloudflare.com");
+    assert.deepEqual(first.also, ["https://t2.trycloudflare.com"], "joiners hold the standby's address in advance");
+    // The first goes down: the standby is the address at once, and a new standby starts.
+    children[0].exitCode = 1;
+    children[0].emit("exit", 1);
+    assert.equal(share.toPublic("http://localhost:3000/a"), "https://t2.trycloudflare.com/a", "no wait for a new tunnel");
+    await wait(() => share.forJoiner("i:j", "watch")[0]?.also?.length === 1);
+    const [now] = share.forJoiner("i:j", "watch");
+    assert.deepEqual(now, { origin: "https://t2.trycloudflare.com", token: first.token, also: ["https://t3.trycloudflare.com"] }, "the same key everywhere");
+    assert.equal(share.toLocal("https://t3.trycloudflare.com/a"), "http://localhost:3000/a");
+    assert.equal(share.toLocal("https://t1.trycloudflare.com/a"), null, "the dead address maps nowhere");
+  } finally { share.stopAll(); }
+});
+
+test("a tunnel that stops answering is stopped (and so replaced by its owner)", async () => {
+  const { watchTunnel } = await import("../scripts/tunnel.mjs");
+  let stopped = false;
+  const answers = [true, false, false];
+  const stop = watchTunnel({ host: "x", child: { exitCode: null }, stop: () => { stopped = true; } }, { everyMs: 10, misses: 2, probe: async () => answers.shift() ?? false });
+  for (let i = 0; i < 50 && !stopped; i++) await new Promise((r) => setTimeout(r, 10));
+  stop();
+  assert.equal(stopped, true);
+});
+
+test("the joiner takes standby addresses for a dev server key: Quick Tunnels only", () => {
+  const token = "cd".repeat(32);
+  assert.deepEqual(readDevEntry({ origin: "https://a.trycloudflare.com", token, also: ["https://b.trycloudflare.com", "https://evil.example.com"] }), { origin: "https://a.trycloudflare.com", token, also: ["https://b.trycloudflare.com"] });
+});
+
 test("a tunnel that finishes starting after the share ended is stopped, never kept", async () => {
   let release;
   const stopped = [];
   const slow = createDevShare({ startTunnel: () => new Promise((r) => { release = r; }) });
   const server = http.createServer((_, res) => res.end("ok")).listen(0, "127.0.0.1");
   await new Promise((r) => server.once("listening", r));
-  const sharing = slow.share("localhost", server.address().port);
+  const port = server.address().port;
+  const sharing = slow.share("localhost", port);
   await new Promise((r) => setTimeout(r, 50));
   slow.stopAll();
   release({ url: "https://late-river-test.trycloudflare.com", stop() { stopped.push(this.url); } });
   await assert.rejects(sharing, /no longer shared/);
   assert.deepEqual(stopped, ["https://late-river-test.trycloudflare.com"]);
-  assert.deepEqual(slow.list(), []);
   server.close();
 });

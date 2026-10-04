@@ -176,6 +176,12 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     assert.ok(!(await urls(host.call)).some((u) => /joiner-local/.test(u)), "the host never opens the joiner's local address");
     assert.ok((await urls(host.call)).includes("http://one.pbtest.example/c?page=2"));
 
+    stage = "a new tab the drive joiner opens in the shared window opens on the host";
+    assert.ok(!(await tool(joiner.call, "browser_tabs", { action: "new" })).result.isError);
+    await sleep(1000); // blank for a while first: it waits for a web address
+    assert.ok(!(await tool(joiner.call, "browser_navigate", { url: "http://two.pbtest.example/new" })).result.isError);
+    await until("the host opens the joiner's new tab", async () => (await urls(host.call)).includes("http://two.pbtest.example/new"));
+
     stage = "watch: one way";
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "leave" })), /Left Bob's session/);
     const watchCode = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "watch", label: "Alice", share: "code" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];

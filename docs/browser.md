@@ -7,7 +7,7 @@ PairBrowse checks where Claude Code runs and shows the browser in the matching w
 | Claude Code | The browser |
 |---|---|
 | Terminal (CLI) or IDE | The **PairBrowse browser**: a Chromium window of its own (on macOS named PairBrowse, with its icon in the Dock). Pages render natively, so scrolling and clicking feel like Chrome. See [The PairBrowse browser](#the-pairbrowse-browser). |
-| Desktop app (macOS), the Claude workspace | A pane on the right of the Claude window (`pairbrowse_dock`), styled like Claude's own UI and moving, resizing and hiding with it. It attaches beside the window when the screen has room, or inside its right edge when it doesn't. No permission needed; set `"dockMakeRoom": true` to let it narrow the Claude window once (needs Accessibility). Works with the local and the server browser. |
+| Desktop app (macOS), the Claude workspace | A pane on the right of the Claude window (`pairbrowse_dock`), styled like Claude's own UI and moving, resizing and hiding with it. It attaches beside the window when the screen has room, or inside its right edge when it doesn't. No permission needed; set `"dockMakeRoom": true` to let it narrow the Claude window once (needs Accessibility). |
 | Desktop app, Browser pane | The live view link also opens in the app's own Browser pane (Local sessions). |
 | Cloud session | Runs in the cloud container, which you can't see into. Fine for jobs without logins; use a local session for signups. |
 
@@ -89,8 +89,8 @@ node scripts/native-install.mjs /path/to/pairbrowse-<version>-macos-arm64.zip   
 ```
 
 On Linux the build brings its own metric-compatible font clones (for fonts such as Arial and
-Segoe UI), so pages render the same on a bare server. On a server without a screen, the launch
-test runs on a private virtual screen (Xvfb, as the browser itself does; see server mode), so
+Segoe UI), so pages render the same on a bare machine. On a Linux machine without a screen, the launch
+test runs on a private virtual screen (Xvfb, as the browser itself does), so
 install `xvfb` and `xauth` first. On Linux the browser runs with a fingerprint seed kept per
 profile (the capture from your own computer is macOS only).
 

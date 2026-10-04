@@ -1,5 +1,5 @@
 // The desktop-app pane (macOS): a borderless panel inside the right edge of the Claude window,
-// showing the live view of the local or server browser. Runs on the user's computer, from the
+// showing the browser's live view. Runs on the user's computer, from the
 // bridge. See scripts/dock/dock-mac.js.
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 export const DOCK_TOOL = {
   name: "pairbrowse_dock",
-  description: 'Show the browser as a pane on the right side of the Claude desktop app window (macOS), so it looks like part of the app and follows the window. action "on" or "off". Works for the local and the server browser.',
+  description: 'Show the browser as a pane on the right side of the Claude desktop app window (macOS), so it looks like part of the app and follows the window. action "on" or "off".',
   inputSchema: { type: "object", required: ["action"], properties: { action: { type: "string", enum: ["on", "off"] }, width: { type: "number", description: "Pane width in points (default: about half the window)" } } },
 };
 

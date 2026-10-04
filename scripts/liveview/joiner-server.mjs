@@ -32,11 +32,11 @@ const joinerOf = (req) => ({
 // live: the coordinator's { tabsFor(j), openStream(j, conn), applyTabs(body, j), pointersFor(body, j), say(body, j), changed } (changed: the participant
 // list changed).
 export function createJoinerServer({ key, invites, approvals, joiners, tunnelHost, live, onJoinRequest, log }) {
-  // Answers to the tunnel's public name, or to loopback (cloudflared may pass either).
+  // Answers to the tunnels' public names (tunnelHost(): one or a list), or to loopback
+  // (cloudflared may pass either).
   const joinerHostOk = (host) => {
     const h = String(host || "").toLowerCase();
-    const t = String(tunnelHost() || "").toLowerCase();
-    return LOOPBACK.test(h) || (!!t && (h === t || h === `${t}:443`));
+    return LOOPBACK.test(h) || [].concat(tunnelHost() || []).some((t) => { t = String(t).toLowerCase(); return !!t && (h === t || h === `${t}:443`); });
   };
   // The join code invite a key belongs to, or null (the owner's key and link invites never work here).
   const codeInvite = (given) => {

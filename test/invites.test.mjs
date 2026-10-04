@@ -58,6 +58,7 @@ test("invite store: roles, labels, expiry and limits", () => {
   const invites = createInvites({ now: () => t });
   assert.throws(() => invites.create({ role: "admin" }), /watch.*drive/);
   assert.throws(() => invites.create({ role: "watch", hours: -1 }), /hours/);
+  assert.equal(invites.create({ label: "Dee" }).role, "drive", "drive unless watch is asked for");
   const a = invites.create({ role: "watch", label: "  Alice <script>‮  " });
   assert.equal(a.label, "Alice script");
   assert.equal(a.expiresAt - a.createdAt, 24 * 3_600_000, "24 hours by default");

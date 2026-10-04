@@ -3,7 +3,7 @@
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
 import { createApprovals, encodeJoinCode, cleanName } from "../join.mjs";
 import { savedName, saveParticipantName } from "../paths.mjs";
-import { startQuickTunnel } from "../tunnel.mjs";
+import { startQuickTunnel, watchTunnel } from "../tunnel.mjs";
 import { randomBytes } from "node:crypto";
 import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../devshare.mjs";
 import { where } from "./context.mjs";
@@ -26,45 +26,71 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
   if (baseProblem) inviteProblems.push(baseProblem);
   for (const p of inviteProblems) log(p);
 
-  // One Quick Tunnel for every join code, started with the first and stopped when the last code
-  // ends (revoked, expired, revoke_all) or the helper shuts down. It reaches the live view's guest
-  // port only, which takes join code keys and nothing else.
-  let tunnel = null; // { url, host, port, stop, child }
+  // Quick Tunnels to the live view's guest port (which takes join code keys and nothing else),
+  // while join codes are out: two at once. Codes carry the first's address; approved joiners learn
+  // every address (relay.mjs), so when one tunnel goes down their PairBrowse moves to the other
+  // and nothing drops, and a replacement starts here. Stopped when the last code ends
+  // (revoked, expired, revoke_all) or the helper shuts down.
+  const direct = process.env.PAIRBROWSE_TEST_TUNNEL === "direct"; // tests: the guest port stands in
+  const POOL = direct ? 1 : 2;
+  let pool = []; // [{ url, host, port, stop, child }], the first is the one new codes carry
   let tunnelStarting = null;
+  let filling = null;
   let guestPortWanted = 0;
-  let generation = 0; // bumped by stopTunnel: a tunnel still starting then is stopped once it's up
+  let wanted = false; // join codes are out
+  let generation = 0; // bumped by stopTunnel
+  const alive = (t, port) => t.port === port && (t.child?.exitCode ?? null) === null;
 
   function stopTunnel() {
-    generation++;
-    const t = tunnel;
-    tunnel = null;
-    try { t?.stop(); } catch {}
-    if (t) log("sharing tunnel stopped");
+    wanted = false;
+    generation++; // a tunnel still starting when this runs is stopped as soon as it's up
+    const was = pool;
+    pool = [];
+    for (const t of was) { try { t.stop(); } catch {} }
+    if (was.length) log("sharing tunnels stopped");
   }
 
-  async function ensureTunnel(live) {
-    if (tunnel && tunnel.port === live.guestPort && (tunnel.child?.exitCode ?? null) === null) return tunnel;
-    if (tunnel) stopTunnel(); // a dead or stale one; never cancels a start already under way
-    tunnelStarting ??= (async () => {
-      const started = generation;
-      // Tests only: the guest port itself stands in for the tunnel (no network).
-      const t = process.env.PAIRBROWSE_TEST_TUNNEL === "direct"
-        ? { url: `http://127.0.0.1:${live.guestPort}`, host: `127.0.0.1:${live.guestPort}`, stop() {} }
-        : await startQuickTunnel(live.guestPort, { log });
-      if (started !== generation) {
-        try { t.stop(); } catch {}
-        throw new Error("Sharing stopped while the tunnel was starting.");
-      }
-      t.port = live.guestPort;
-      t.child?.once("exit", () => {
-        if (tunnel !== t) return;
-        tunnel = null;
-        hostNote("The sharing tunnel stopped; join codes made before don't work any more. Make a new one with pairbrowse_invite create.");
+  async function startOne(port) {
+    const started = generation;
+    const t = direct ? { url: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, stop() {} } : await startQuickTunnel(port, { log });
+    if (started !== generation) {
+      try { t.stop(); } catch {}
+      throw new Error("sharing stopped while the tunnel was starting");
+    }
+    t.port = port;
+    if (!direct) watchTunnel(t, { log }); // not answering: stopped, and replaced below
+    t.child?.once("exit", () => {
+      if (!pool.includes(t)) return;
+      pool = pool.filter((x) => x !== t);
+      log(`a sharing tunnel stopped; ${pool.length} left`);
+      if (!wanted) return;
+      fill(port).then(() => {
+        if (!pool.length) hostNote("The sharing tunnels stopped and couldn't be replaced; join codes made before don't work any more. Make a new one with pairbrowse_invite create.");
       });
-      tunnel = t;
-      return t;
-    })().finally(() => { tunnelStarting = null; });
-    return tunnelStarting;
+    });
+    return t;
+  }
+  // Up to POOL live tunnels, in the background (a failed start is retried with the next change).
+  function fill(port) {
+    filling ??= (async () => {
+      pool = pool.filter((t) => alive(t, port));
+      while (wanted && pool.length < POOL) {
+        try { pool.push(await startOne(port)); } catch (e) { log(`sharing tunnel didn't start: ${e?.message || e}`); break; }
+      }
+    })().finally(() => { filling = null; });
+    return filling;
+  }
+
+  // The tunnel new codes carry: the first live one (started now if there's none).
+  async function ensureTunnel(live) {
+    wanted = true;
+    pool = pool.filter((t) => alive(t, live.guestPort));
+    if (!pool.length) {
+      tunnelStarting ??= startOne(live.guestPort).then((t) => { pool.unshift(t); return t; }).finally(() => { tunnelStarting = null; });
+      await tunnelStarting;
+    }
+    fill(live.guestPort).catch(() => {}); // the standby, in the background
+    return pool[0];
   }
 
   // Dev servers shared with joiners (devshare.mjs): each with its own tunnel, ended with the
@@ -87,13 +113,14 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
       extraOrigins: view.extraOrigins, getContext: view.getContext, currentUrl: view.currentUrl, log, port: config.liveViewPort || 0, profile: view.profile,
       hosts: liveViewHosts, inviteOrigin: inviteBase, invites, guestPort: guestPortWanted, approvals, tabMeta: view.tabMeta,
       onHumanInput: view.onHumanInput,
-      tunnelHost: () => (tunnel ? new URL(tunnel.url).hostname : null),
+      tunnelHost: () => pool.map((t) => new URL(t.url).hostname),
+      relays: () => pool.map((t) => t.url),
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
       onPause: view.onPause, pauseState: view.pauseState, picker: view.picker, devShare, devPanel,
     });
     // Keep the sharing tunnel's port when the live view restarts with the browser.
     guestPortWanted = liveView.guestPort;
-    if (tunnel && tunnel.port !== liveView.guestPort) {
+    if (pool.length && pool[0].port !== liveView.guestPort) {
       stopTunnel();
       hostNote("The sharing tunnel had to stop when the browser restarted; earlier join codes don't work any more. Make a new one with pairbrowse_invite.");
     }

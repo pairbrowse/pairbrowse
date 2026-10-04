@@ -14,7 +14,7 @@ const MAX_LINES = 130;
 const PAIRBROWSE_TOOLS = [
   "pairbrowse_run", "pairbrowse_upload", "pairbrowse_click_at", "pairbrowse_status", "pairbrowse_facts",
   "pairbrowse_session", "pairbrowse_liveview", "pairbrowse_dock", "pairbrowse_collaboration",
-  "pairbrowse_where", "pairbrowse_invite", "pairbrowse_join",
+  "pairbrowse_invite", "pairbrowse_join",
 ];
 const PLAYWRIGHT_TOOLS = [
   "browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_click", "browser_type",

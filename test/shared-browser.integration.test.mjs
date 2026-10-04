@@ -99,7 +99,7 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
     const drive = await other.call("tools/call", { name: "pairbrowse_invite", arguments: { action: "create", role: "drive", label: "Dee" } });
     assert.equal(drive.result.isError, true);
     assert.match(drive.result.content[0].text, /This needs the user's OK/);
-    const watch = await other.call("tools/call", { name: "pairbrowse_invite", arguments: { action: "create", role: "watch", label: "Wes", hours: 1, share: "link" } });
+    const watch = await other.call("tools/call", { name: "pairbrowse_invite", arguments: { action: "create", role: "watch", label: "Wes", hours: 1, share: "link", name: "Host" } });
     assert.ok(!watch.result.isError, watch.result.content[0].text);
     const link = watch.result.content[0].text.match(/Link: (http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{64}\/)/)?.[1];
     assert.ok(link, watch.result.content[0].text);

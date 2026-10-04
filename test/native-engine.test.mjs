@@ -1,10 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, nativeManifest } from "../scripts/native-engine.mjs";
+import { launchNative, nativeManifest, macHostProfile, hostCachePath, screenInfoArg } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native-pack.mjs";
+
+// The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
+process.env.PAIRBROWSE_HOME = mkdtempSync(join(tmpdir(), "pairbrowse-home-test-"));
 
 function appFixture(metadata = { product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" }) {
   const root = mkdtempSync(join(tmpdir(), "pairbrowse-native-test-"));
@@ -22,9 +25,12 @@ function fakeChromium(captured = { webgl: { vendor: "Apple", renderer: "Apple te
   const calls = [];
   const chromium = {
     calls,
+    captures: 0,
     launchPersistentContext: async (profile, options) => {
       if (profile.includes(".mac-host-capture-")) {
         if (!options.args.includes("--disable-gpu-fingerprint")) throw new Error("probe must disable GPU fingerprinting");
+        if (options.headless !== true) throw new Error("the capture must never show a window");
+        chromium.captures++;
         return { pages() { return [{ async evaluate() { return captured; } }]; }, async close() {} };
       }
       calls.push({ profile, options });
@@ -43,6 +49,37 @@ const macPackTest = engineDir && process.platform === "darwin" ? test : test.ski
 const offMacPackTest = engineDir && process.platform !== "darwin" ? test : test.skip;
 const PLATFORM = { darwin: "macos", linux: "linux", win32: "windows" }[process.platform];
 const loadPack = () => loadEngine(engineDir);
+
+// The capture runs once per Mac: a cached host profile is reused until the build or hardware changes.
+const fakePack = { collector: "", DEFAULT_IGNORED_ARGS: [] };
+test("the Mac host capture is cached privately and reused by new profiles", async () => {
+  rmSync(hostCachePath(), { force: true });
+  const chromium = fakeChromium({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" } });
+  const hardware = () => "Mac15,7|AGXAcceleratorG15X";
+  const first = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p1-")), "150.0.7871.114", hardware);
+  assert.equal(chromium.captures, 1);
+  if (process.platform !== "win32") assert.equal(statSync(hostCachePath()).mode & 0o777, 0o600);
+  const second = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p2-")), "150.0.7871.114", hardware);
+  assert.equal(chromium.captures, 1, "a second profile reuses the cache: no launch");
+  assert.deepEqual(second, first);
+  await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p3-")), "150.0.7871.200", hardware);
+  assert.equal(chromium.captures, 2, "a new browser version captures again");
+  await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p4-")), "150.0.7871.200", () => "Mac16,1|other GPU");
+  assert.equal(chromium.captures, 3, "other hardware captures again");
+});
+
+test("a software WebGL renderer is never kept as this Mac's profile", async () => {
+  rmSync(hostCachePath(), { force: true });
+  const chromium = fakeChromium({ webgl: { webgl1: { UNMASKED_RENDERER_WEBGL: "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)" } } });
+  await assert.rejects(() => macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-sw-")), "150.0.7871.114", () => "x"), /software WebGL renderer/);
+  assert.equal(existsSync(hostCachePath()), false);
+});
+
+test("the hidden capture is told the real screen in physical pixels", () => {
+  assert.equal(screenInfoArg({ width: 1728, height: 1117, top: 34, bottom: 77, scale: 2, edr: 16 }),
+    "--screen-info={0,0 3456x2234 colorDepth=30 devicePixelRatio=2 workAreaTop=68 workAreaBottom=154}");
+  assert.match(screenInfoArg({ width: 1920, height: 1080, top: 25, bottom: 0, scale: 1, edr: 1 }), /colorDepth=24 devicePixelRatio=1 /);
+});
 
 test("native app metadata requires a PairBrowse Chromium 150 bundle", () => {
   const good = appFixture();
@@ -94,6 +131,7 @@ packTest("engine pack emits this platform's fingerprint, proxy, locale, and stab
 });
 
 macPackTest("macOS host capture keeps its seed across persisted restarts", async () => {
+  rmSync(hostCachePath(), { force: true });
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-host-capture-"));
@@ -130,6 +168,7 @@ offMacPackTest("off macOS there's no host capture: the browser runs seeded, and 
 });
 
 macPackTest("nested collector WebGPU info is flattened for native profile import", async () => {
+  rmSync(hostCachePath(), { force: true });
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-webgpu-normalize-"));

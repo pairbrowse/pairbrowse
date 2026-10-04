@@ -194,6 +194,13 @@ test("PairBrowse, not Chrome: no Chrome sign-in, default-browser check, translat
   assert.equal(prefs.autofill.last_version_deduped, 1, "other settings stay");
 });
 
+test("headless test browsers send no notifications; the visible browser keeps them", async () => {
+  const { launchArgs } = await import("../scripts/browser.mjs");
+  // Otherwise each test run's browser starts its notification helper and macOS asks to allow it.
+  assert.ok(launchArgs({ chromeArgs: ["--headless=new"] }).includes("--disable-notifications"));
+  assert.equal(launchArgs({}).includes("--disable-notifications"), false);
+});
+
 test("hidden tabs keep foreground priority, in one --enable-features that keeps Playwright's", async () => {
   const { launchArgs } = await import("../scripts/browser.mjs");
   const args = launchArgs({ chromeArgs: ["--headless=new", "--enable-features=Foo,Bar"] });

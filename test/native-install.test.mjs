@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, rmSync, symlinkSync, renameSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const home = mkdtempSync(join(tmpdir(), "pb-install-"));
 process.env.PAIRBROWSE_HOME = home;
@@ -44,6 +44,13 @@ function fakeArchive(version, dir = temp("pb-build-")) {
   symlinkSync("Versions/Current/Resources", join(fw, "Resources"));
   mkdirSync(join(fw, "Versions", "A", "Resources", "en.lproj"), { recursive: true });
   writeFileSync(join(fw, "Versions", "A", "Resources", "en.lproj", "locale.pak"), pak(LOCALE));
+  // Chromium's notification helper as it's built: Chromium's name, ID and localized name.
+  const alerts = join(fw, "Versions", "A", "Helpers", "Chromium Helper (Alerts).app", "Contents");
+  mkdirSync(join(alerts, "MacOS"), { recursive: true });
+  mkdirSync(join(alerts, "Resources", "base.lproj"), { recursive: true });
+  copyFileSync("/usr/bin/true", join(alerts, "MacOS", "Chromium Helper (Alerts)"));
+  writeFileSync(join(alerts, "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleName</key><string>Chromium Helper (Alerts)</string><key>CFBundleDisplayName</key><string>Chromium Helper (Alerts)</string><key>CFBundleExecutable</key><string>Chromium Helper (Alerts)</string><key>CFBundleIdentifier</key><string>org.chromium.Chromium.framework.AlertNotificationService</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>`);
+  writeFileSync(join(alerts, "Resources", "base.lproj", "InfoPlist.strings"), '"CFBundleDisplayName" = "Chromium";\n');
   copyFileSync("/usr/bin/true", join(app, "Contents", "MacOS", "pairbrowse"));
   writeFileSync(join(app, "Contents", "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleName</key><string>PairBrowse</string><key>CFBundleExecutable</key><string>pairbrowse</string><key>CFBundleIdentifier</key><string>app.pairbrowse.test</string></dict></plist>`);
   writeFileSync(join(app, "Contents", "Resources", "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version, arch: process.arch === "arm64" ? "arm64" : "x86_64" }));
@@ -57,6 +64,19 @@ function fakeArchive(version, dir = temp("pb-build-")) {
 }
 const installedVersion = () => JSON.parse(readFileSync(join(nativeDirs().app, "Contents", "Resources", "PairBrowse-build.json"), "utf8")).version;
 const installedPak = () => readFileSync(join(nativeDirs().app, "Contents", "Frameworks", "Chromium Framework.framework", "Versions", "A", "Resources", "en.lproj", "locale.pak"));
+// What macOS shows in the notification prompt: the helper's names, localized ones first, and its ID.
+const alertsHelper = () => join(nativeDirs().app, "Contents", "Frameworks", "Chromium Framework.framework", "Versions", "A", "Helpers", "Chromium Helper (Alerts).app", "Contents");
+const plistJson = (file) => JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", file], { encoding: "utf8" }));
+function assertAlertsBranded() {
+  const info = plistJson(join(alertsHelper(), "Info.plist"));
+  assert.equal(info.CFBundleName, "PairBrowse");
+  assert.equal(info.CFBundleDisplayName, "PairBrowse");
+  assert.equal(info.CFBundleIdentifier, "app.pairbrowse.test.framework.AlertNotificationService", "Chromium finds it by the app's ID");
+  for (const folder of ["base.lproj", "en.lproj"]) assert.equal(plistJson(join(alertsHelper(), "Resources", folder, "InfoPlist.strings")).CFBundleDisplayName, "PairBrowse");
+  assert.ok(readFileSync(join(alertsHelper(), "Resources", "app.icns")).equals(readFileSync(new URL("../scripts/browser/pairbrowse.icns", import.meta.url))));
+  const signature = execFileSync("sh", ["-c", 'codesign -dv "$0" 2>&1', dirname(alertsHelper())], { encoding: "utf8" });
+  assert.match(signature, /Identifier=app\.pairbrowse\.test\.framework\.AlertNotificationService\n/, "signed under its new ID");
+}
 const verifies = (app) => { try { execFileSync("codesign", ["--verify", "--deep", "--strict", app], { stdio: "ignore" }); return true; } catch { return false; } };
 
 test("rebranding interface text only rewrites entries that name Chromium", () => {
@@ -104,6 +124,7 @@ test("installs, keeps the previous app, and rolls back when the check fails", { 
   await installNative(fakeArchive("150.0.0.1"), opts);
   assert.equal(installedVersion(), "150.0.0.1");
   assert.deepEqual(installedPak(), pak(["Customize PairBrowse", "About PairBrowse", "Settings"]), "interface text says PairBrowse");
+  assertAlertsBranded();
   assert.ok(verifies(nativeDirs().app), "signature still verifies");
   assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).branding, BRANDING);
   const config = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
@@ -162,10 +183,14 @@ test("on start, an installed build branded by an older version is branded again,
   const d = nativeDirs();
   // As if installed before interface text was rebranded: the pin matches, the branding is older.
   writeFileSync(join(d.app, "Contents", "Frameworks", "Chromium Framework.framework", "Versions", "A", "Resources", "en.lproj", "locale.pak"), pak(LOCALE));
+  // ...and before the notification helper got PairBrowse's name (BRANDING 5).
+  writeFileSync(join(alertsHelper(), "Resources", "base.lproj", "InfoPlist.strings"), '"CFBundleDisplayName" = "Chromium";\n');
+  rmSync(join(alertsHelper(), "Resources", "en.lproj"), { recursive: true, force: true });
   execFileSync("codesign", ["--force", "--deep", "--sign", "-", d.app]);
   writeFileSync(d.record, JSON.stringify({ version: "150.0.0.4", sha256: offline.asset.sha256, branding: 1 }));
   assert.equal(await ensureNative(() => {}, offline), d.exec);
   assert.deepEqual(installedPak(), pak(["Customize PairBrowse", "About PairBrowse", "Settings"]));
+  assertAlertsBranded();
   assert.ok(verifies(d.app), "signature still verifies");
   assert.equal(JSON.parse(readFileSync(d.record, "utf8")).branding, BRANDING);
   assert.equal(existsSync(d.pending) || existsSync(d.rollback), false, "no swap left behind");

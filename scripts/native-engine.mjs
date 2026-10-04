@@ -1,9 +1,11 @@
 // Launches the native PairBrowse browser with the engine pack (native-pack.mjs): its fingerprint,
 // persona and launch switches, and humanized input. Settings come from "pairbrowse" in config.json.
-import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, renameSync, chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
+import { execFileSync } from "node:child_process";
 import { NATIVE } from "./native-pack.mjs";
 
 const CHROMIUM_MAJOR = NATIVE.version.split(".")[0];
@@ -29,16 +31,45 @@ export function nativeManifest(executablePath) {
   return metadata;
 }
 
+// The primary display as Chromium reports it, so the hidden capture sees the real screen, not
+// headless's 800x600. Chromium on macOS reports 30-bit color on EDR (XDR) displays.
+function macScreen() {
+  const script = 'ObjC.import("AppKit"); const s = $.NSScreen.screens.objectAtIndex(0); const f = s.frame, v = s.visibleFrame;'
+    + ' JSON.stringify({ width: f.size.width, height: f.size.height, top: f.size.height - v.origin.y - v.size.height, bottom: v.origin.y,'
+    + ' scale: s.backingScaleFactor, edr: s.maximumPotentialExtendedDynamicRangeColorComponentValue })';
+  try {
+    const screen = JSON.parse(execFileSync("osascript", ["-l", "JavaScript", "-e", script], { encoding: "utf8", timeout: 10000 }));
+    return screen.width > 0 && screen.scale > 0 ? screen : null;
+  } catch { return null; }
+}
+
+// --screen-info takes physical pixels; work area insets are the menu bar (top) and the Dock (bottom).
+export function screenInfoArg(screen) {
+  const px = (value) => Math.round(value * screen.scale);
+  return `--screen-info={0,0 ${px(screen.width)}x${px(screen.height)} colorDepth=${screen.edr > 1 ? 30 : 24} devicePixelRatio=${screen.scale}`
+    + ` workAreaTop=${px(screen.top)} workAreaBottom=${px(screen.bottom)}}`;
+}
+
+// A software renderer means the capture missed the real GPU: never keep that as this Mac's profile.
+const SOFTWARE_GL = /swiftshader|llvmpipe|software|basic render/i;
+function webglRenderer(captured) {
+  const text = JSON.stringify(captured?.webgl ?? {});
+  return text.match(/"UNMASKED_RENDERER_WEBGL":"([^"]*)"/)?.[1] ?? captured?.webgl?.renderer ?? null;
+}
+
 // This Mac's real fingerprint, read by the engine pack's collector in a throwaway browser that
-// sees the real GPU (the browser itself always runs seeded). null when nothing came back.
-export async function captureMacHost(chromium, executablePath, pack, directory) {
+// sees the real GPU (the browser itself always runs seeded). It runs headless, so no window or
+// Dock icon appears: headless on macOS still renders WebGL and WebGPU with Metal on the real GPU,
+// and the real screen is passed in. null when nothing came back.
+export async function captureMacHost(chromium, executablePath, pack, directory, screen = macScreen()) {
   let browser, server, captureDirectory;
   try {
     // The collector comes with the engine pack, checked against its pin when the pack is loaded.
     if (typeof pack.collector !== "string") throw new Error("the engine pack has no host collector");
     captureDirectory = mkdtempSync(join(directory, ".mac-host-capture-"));
-    browser = await chromium.launchPersistentContext(captureDirectory, { headless: false, viewport: null, executablePath,
-      ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS, args: ["--disable-extensions", "--disable-gpu-fingerprint"] });
+    browser = await chromium.launchPersistentContext(captureDirectory, { headless: true, viewport: null, executablePath,
+      ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS,
+      args: ["--disable-extensions", "--disable-gpu-fingerprint", "--window-size=1200,960", ...(screen ? [screenInfoArg(screen)] : [])] });
     const page = browser.pages?.()[0] ?? await browser.newPage();
     if (page.goto) {
       server = createServer((_, response) => response.end("<!doctype html><title>PairBrowse host capture</title>"));
@@ -47,6 +78,10 @@ export async function captureMacHost(chromium, executablePath, pack, directory) 
     }
     const captured = await page.evaluate((source) => { (0, eval)(source); return globalThis.collectFingerprint(); }, pack.collector);
     if (!captured || typeof captured !== "object") return null;
+    const renderer = webglRenderer(captured);
+    if (renderer && SOFTWARE_GL.test(renderer)) throw new Error(`the capture got a software WebGL renderer (${renderer}), not this Mac's GPU`);
+    // Headless keeps 8 bits per component whatever --screen-info says; a 30-bit screen has 10.
+    if (screen?.edr > 1 && captured.css && typeof captured.css.color === "number") captured.css.color = 10;
     // The engine's profile import uses these two compact forms; the collector reports the long ones.
     if (captured.media_devices && !captured.mediaDevices) captured.mediaDevices = captured.media_devices;
     if (captured.webgpu?.info && !captured.webgpu.vendor) captured.webgpu = { ...captured.webgpu.info, limits: captured.webgpu.limits };
@@ -58,6 +93,41 @@ export async function captureMacHost(chromium, executablePath, pack, directory) 
     try { if (server) await new Promise((resolve) => server.close(() => resolve())); } catch {}
     if (captureDirectory) rmSync(captureDirectory, { recursive: true, force: true });
   }
+}
+
+// What the captured profile depends on: the browser build and this Mac's model and GPUs. A new
+// build or other hardware (a migrated home folder, an eGPU) captures again.
+export function macHardware() {
+  const run = (file, args) => { try { return execFileSync(file, args, { encoding: "utf8", timeout: 10000 }).trim(); } catch { return ""; } };
+  const model = run("/usr/sbin/sysctl", ["-n", "hw.model"]);
+  const gpus = run("/usr/sbin/ioreg", ["-rd1", "-c", "IOAccelerator"]).split("\n")
+    .filter((line) => /"(model|IOClass)" =/.test(line)).map((line) => line.trim()).join(";");
+  return `${model}|${gpus}`;
+}
+
+export function hostCachePath() {
+  return join(process.env.PAIRBROWSE_HOME || join(homedir(), ".pairbrowse"), "mac-host-profile.json");
+}
+
+// The capture runs once per Mac: every new profile (sessions, clean sessions, tests) reuses it.
+// Kept private (0600) in the PairBrowse home; a stale or unreadable cache just captures again.
+export async function macHostProfile(chromium, executablePath, pack, directory, version, hardware = macHardware) {
+  const file = hostCachePath();
+  const key = createHash("sha256").update(JSON.stringify({ version, hardware: hardware() })).digest("hex");
+  try {
+    const cached = JSON.parse(readFileSync(file, "utf8"));
+    if (cached.key === key && cached.profile && typeof cached.profile === "object") return cached.profile;
+  } catch {}
+  const profile = await captureMacHost(chromium, executablePath, pack, directory);
+  if (!profile) return null;
+  try {
+    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+    const temporary = `${file}.${process.pid}.tmp`;
+    writeFileSync(temporary, JSON.stringify({ key, version, profile }), { mode: 0o600 });
+    chmodSync(temporary, 0o600);
+    renameSync(temporary, file);
+  } catch {}
+  return profile;
 }
 
 // The three layers of settings, lowest first: the persona saved in the profile, a saved profile
@@ -73,7 +143,7 @@ function readSettings(config, pack, personaPath) {
 }
 
 // The fingerprint to launch with: the layered settings, then a persona (picked, or this Mac's own
-// captured once), the seed, and the region (geoip, else this computer's time zone and language).
+// captured once per Mac), the seed, and the region (geoip, else this computer's time zone and language).
 async function resolveFingerprint(chromium, options, pack, directory, settings, version) {
   const { selection, profileSelect, geoip, overrides, saved, persisted } = settings;
   const { fingerprint, rest } = pack.splitFingerprintOptions({ ...persisted, ...saved, ...overrides });
@@ -93,7 +163,7 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   if (fingerprint.fingerprintProfile === undefined) {
     fingerprint.fingerprint ??= createHash("sha256").update(directory).digest("hex");
     if (process.platform === "darwin") {
-      fingerprint.fingerprintProfile = await captureMacHost(chromium, options.executablePath, pack, directory);
+      fingerprint.fingerprintProfile = await macHostProfile(chromium, options.executablePath, pack, directory, version);
       if (!fingerprint.fingerprintProfile) throw new Error("PairBrowse macOS host capture failed; provide an explicit fingerprintProfile.");
       hostCapture = true;
     }

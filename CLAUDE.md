@@ -33,7 +33,7 @@ claude plugin validate .
 ## Rules
 
 - Security is the product. Don't add a TCP debugging port, unrestricted file access, the
-  run-code or WebMCP tools, or a CAPTCHA solver. Keep the README's Security table true: update
+  run-code or WebMCP tools, or a CAPTCHA solver. Keep the Security table in `docs/security.md` true: update
   it in the same change as any behaviour it describes.
 - Hooks and the daemon use only Node's standard library; new runtime dependencies go in
   `runtime/` with a regenerated lockfile.

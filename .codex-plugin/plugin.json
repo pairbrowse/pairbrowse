@@ -1,6 +1,6 @@
 {
   "name": "pairbrowse",
-  "version": "0.15.13",
+  "version": "0.15.14",
   "description": "Pair-browse with Codex: it fills sign-ups, listings and settings pages in a visible PairBrowse browser window at full speed, keeps your logins, and hands you only the CAPTCHAs, 2FA and final submits.",
   "author": {
     "name": "pairbrowse contributors"

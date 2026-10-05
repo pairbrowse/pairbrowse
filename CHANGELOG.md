@@ -5,6 +5,21 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.14 (2026-10-06)
+
+Security and reliability: 21 bugs found by new fuzz and connection tests, fixed, each with a regression test.
+
+- A connection reset while being refused on the joiner port (reachable through the public tunnel) no longer crashes the host's helper; nor does a `null` line on the helper's socket or the bridge's input.
+- A malformed tool call is refused at once instead of holding every agent's queue.
+- Uploads: credential folders can't be reached with other casing (macOS) or through a link in the uploads folder.
+- A drag named as a final action at either end asks first.
+- A saved password that contains another is masked whole; values with unusual line separators survive saving.
+- Secret query strings no longer cross to joiners after brackets, on IPv6 addresses or before a line break; local IPv6 addresses aren't named; malformed data from a joiner is refused instead of throwing; names drop invisible formatting characters.
+- Host folders are hidden in a joiner's agent's results also inside web addresses, without mangling them.
+- Joined sessions: a person's click is never lost when the page answers slowly, and a joiner's clicks always reach the host's agents.
+- Playbook placeholders like `{{constructor}}` are reported as missing; old snapshots with passwords are cleaned up on time.
+- New tests: fuzz properties for sharing and the user's guards, live connection tests (helper killed, churn, drops, malformed input), unit tests for six modules.
+
 ## 0.15.13 (2026-10-05)
 
 Faster human-like typing; switch sessions from the side panel; one stuck call no longer holds up every agent.

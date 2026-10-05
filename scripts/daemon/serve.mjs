@@ -226,7 +226,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // doing when it changed: coordination information only, marked as from someone else.
       const paused = pause.noteAfter(pauseSeen);
       pauseSeen = paused.n;
-      const lines = [...drainHostNotes().map((n) => `- ${n}`), paused.text, ...fieldNotes.splice(0).map((n) => `- ${n}`), presence.userNote(actingIn || hud.sparkPage(participant)), session.messagesNote(participant), session.note(participant)].filter(Boolean).join("\n");
+      // The host's notes (join requests, downloads) are for the host's own agents, never a joiner's.
+      const lines = [...(remote ? [] : drainHostNotes()).map((n) => `- ${n}`), paused.text, ...fieldNotes.splice(0).map((n) => `- ${n}`), presence.userNote(actingIn || hud.sparkPage(participant), remote?.name), session.messagesNote(participant), session.note(participant)].filter(Boolean).join("\n");
       return handled && lines ? `${handled}\n${lines}` : handled || (lines && `\n### PairBrowse\n${lines}`);
     }
 

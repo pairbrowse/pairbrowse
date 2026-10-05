@@ -55,3 +55,27 @@ test("pointer moves hold nobody up; clicks and typing do, the pause button is ne
     mock.timers.reset();
   }
 });
+
+test("each person's steps are named as theirs, from the reader's side", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 3_000_000 });
+  try {
+    const presence = createPresence({ host: "Kees", readEvents: async () => [], pages: () => [], paused: () => true,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    const page = {};
+    presence.userDid([{ kind: "type", t: Date.now(), what: "Email" }, { kind: "click", t: Date.now(), what: "Continue" }], page);
+    presence.elsewhere(page, "Sven", ["clicked \"Board\""]);
+    // A joiner's agent: Kees's steps are Kees's, Sven's own are "the user".
+    const forSven = presence.userNote(page, "Sven");
+    assert.match(forSven, /^- Kees used this tab meanwhile: typed in "Email", clicked "Continue"\.$/m);
+    assert.match(forSven, /^- The user used this tab meanwhile: clicked "Board"\. Look at the page again/m);
+    assert.match(forSven, /"Email" \(Kees\)/);
+    // The host's agent: the other way round.
+    presence.userDid([{ kind: "click", t: Date.now(), what: "Share" }], page);
+    presence.elsewhere(page, "Sven", ["clicked \"Board\""]);
+    const forKees = presence.userNote(page);
+    assert.match(forKees, /^- The user used this tab meanwhile: clicked "Share"\.$/m);
+    assert.match(forKees, /^- Sven used this tab meanwhile: clicked "Board"\./m);
+  } finally {
+    mock.timers.reset();
+  }
+});

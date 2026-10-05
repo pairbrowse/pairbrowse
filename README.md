@@ -1,8 +1,8 @@
 # PairBrowse
 
-**A browser you and your AI agent share.** Claude Code or Codex works through sign-ups, app
-listings and settings pages; you step in only for the CAPTCHA, the 2FA code and the final Submit,
-and a teammate can watch or take the wheel from their own computer.
+**Work in one live browser with your AI agent and your team.** Claude Code or Codex drives the
+tabs, teammates join from their own computers with their own cursor and their own agent, and you
+step in whenever you like. Sites see an everyday browser, not an automated one.
 
 [pairbrowse.com](https://pairbrowse.com)
 
@@ -16,12 +16,18 @@ and a teammate can watch or take the wheel from their own computer.
 
 ![PairBrowse: your AI agent fills the form, a teammate joins with their own cursor, you approve the final step](docs/media/pairbrowse-demo.gif)
 
-- **One browser, several people and agents.** Send a watch or drive code. Your teammate's own
-  Claude or Codex can work in another tab of the same session, and you can pause every agent at
-  once.
-- **Your turn only when it matters.** Typing, Next and cookie banners just run. Pay, delete,
-  publish and send stop and wait for you. Step into any tab at any time; the agent waits and
-  then takes a fresh look.
+- **Built for working together.** Send a watch or drive code: a teammate sees the same tabs live,
+  clicks and types with their own cursor, and their Claude or Codex can work in another tab of the
+  same session. Pause every agent at once with one click.
+- **Stealth browser with a real fingerprint.** A hardened Chromium driven through
+  [Patchright](https://www.npmjs.com/package/patchright) instead of stock Playwright: no
+  automation flag, AutomationControlled off, no debugging port. On a Mac the fingerprint is
+  captured from your own machine and kept per profile, so the GPU and WebGL it reports, time zone and
+  language match real hardware. Clicks and typing follow human timing and curved mouse paths.
+  Fewer CAPTCHAs, fewer "unusual activity" blocks.
+- **Fast, accurate forms.** Fast mode fills a whole page (fields, dropdowns, checkboxes, Next) in
+  one action from the page's accessibility tree, then checks a screenshot for what the tree
+  can't show. Remembered details mean no retyping; Pay, delete, publish and send still wait for you.
 - **Separate from your everyday Chrome, but it remembers.** Logins persist in their own profile,
   one per client if you like. Passwords are filled only on the sites you allow and never shown to
   the model. Half-finished jobs resume tomorrow.
@@ -54,7 +60,8 @@ once; they stay signed in.
 | Works from both Claude Code and Codex | No | No | Yes |
 
 **Use the built-ins** for a quick task in a site you're already signed into.
-**Use PairBrowse** for long form work, client accounts kept apart, or doing it together.
+**Use PairBrowse** for doing it together, long form work, sites that block automated browsers, or
+client accounts kept apart.
 
 ## Safety
 

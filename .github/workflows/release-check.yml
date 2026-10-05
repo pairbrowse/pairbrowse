@@ -1,0 +1,103 @@
+# Release check for the native PairBrowse browser builds.
+#
+# The builds are made by the maintainers outside CI (see BINARY-LICENSE.md). This workflow downloads
+# every file of the release named by scripts/native-pack.mjs, checks each one against the SHA-256
+# pinned there, and records a signed attestation of that check (Sigstore, public transparency log).
+# It shows the published files are exactly the ones the plugin installs; it does not show who built
+# them or from what. Verify a download with:
+#   gh attestation verify <file> -R pairbrowse/pairbrowse
+# With a VT_API_KEY secret, each file is also sent to VirusTotal and the reports are linked in the
+# release notes.
+name: Release check
+
+on:
+  push:
+    branches: [main]
+    paths: [scripts/native-pack.mjs, .github/workflows/release-check.yml]
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the pinned files and check their SHA-256s
+        id: pins
+        run: |
+          mkdir release
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            import { NATIVE } from "./scripts/native-pack.mjs";
+            const files = Object.values(NATIVE).filter((a) => a?.file && a.sha256);
+            writeFileSync("release/pins.txt", files.map((a) => `${a.sha256}  ${a.file}\n`).join(""));
+            writeFileSync(process.env.GITHUB_OUTPUT, `tag=browser-${NATIVE.version}\n`, { flag: "a" });
+          '
+          cd release
+          for file in $(awk '{ print $2 }' pins.txt); do
+            gh release download "$(grep '^tag=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)" -R "$GITHUB_REPOSITORY" -p "$file"
+          done
+          sha256sum --check --strict pins.txt
+
+      - name: Write the attestation statement
+        run: |
+          node --input-type=module -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            const pins = readFileSync("release/pins.txt", "utf8").trim().split("\n").map((l) => l.split(/\s+/));
+            writeFileSync("release/predicate.json", JSON.stringify({
+              release: process.env.TAG,
+              pinnedIn: { file: "scripts/native-pack.mjs", repository: process.env.GITHUB_REPOSITORY, commit: process.env.GITHUB_SHA },
+              check: "Each subject was downloaded from the release and matched its SHA-256 pinned in scripts/native-pack.mjs at this commit.",
+              builtInCi: false,
+              files: pins.map(([sha256, file]) => ({ file, sha256 })),
+            }, null, 2));
+          '
+        env:
+          TAG: ${{ steps.pins.outputs.tag }}
+
+      - id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: release/pins.txt
+          predicate-type: https://pairbrowse.com/attestations/release-check/v1
+          predicate-path: release/predicate.json
+
+      - name: Publish the attestation with the release
+        run: |
+          bundle="release/pairbrowse-${TAG#browser-}-release-check.sigstore.json"
+          cp "$BUNDLE" "$bundle"
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$bundle"
+        env:
+          TAG: ${{ steps.pins.outputs.tag }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+
+      - name: VirusTotal
+        if: ${{ env.VT_API_KEY != '' }}
+        env:
+          TAG: ${{ steps.pins.outputs.tag }}
+        run: |
+          cd release
+          links=""
+          while read -r sha file <&3; do
+            known=$(curl -s -o /dev/null -w '%{http_code}' -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$sha")
+            if [ "$known" != 200 ]; then
+              url=$(curl -sf -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data)
+              curl -sf -H "x-apikey: $VT_API_KEY" -F "file=@$file" "$url" > /dev/null
+            fi
+            links="$links- [$file](https://www.virustotal.com/gui/file/$sha)"$'\n'
+          done 3< pins.txt
+          printf '## VirusTotal\n\n%s' "$links" >> "$GITHUB_STEP_SUMMARY"
+          body=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body | sed '/^<!-- virustotal -->$/,$d')
+          printf '%s\n\n<!-- virustotal -->\n**VirusTotal reports**\n\n%s' "$body" "$links" > notes.md
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file notes.md

@@ -6,6 +6,10 @@ and a teammate can watch or take the wheel from their own computer.
 
 [pairbrowse.com](https://pairbrowse.com)
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pairbrowse/pairbrowse/badge)](https://scorecard.dev/viewer/?uri=github.com/pairbrowse/pairbrowse)
+[![CodeQL](https://github.com/pairbrowse/pairbrowse/actions/workflows/codeql.yml/badge.svg)](https://github.com/pairbrowse/pairbrowse/actions/workflows/codeql.yml)
+[![Release check](https://github.com/pairbrowse/pairbrowse/actions/workflows/release-check.yml/badge.svg)](https://github.com/pairbrowse/pairbrowse/actions/workflows/release-check.yml)
+
 ![PairBrowse: your AI agent fills the form, a teammate joins with their own cursor, you approve the final step](docs/media/pairbrowse-demo.gif)
 
 - **One browser, several people and agents.** Send a watch or drive code. Your teammate's own

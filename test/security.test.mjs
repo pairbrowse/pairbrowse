@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, chmodSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseSecrets, loadSecrets, hostAllowed } from "../scripts/secrets.mjs";
+import { parseSecrets, loadSecrets, hostAllowed, redact } from "../scripts/secrets.mjs";
 import { secretNamesIn, navigationProblem, looksLikeSecretName, BLOCKED_TOOLS } from "../scripts/policy.mjs";
 
 test("secrets carry their allowed domains", () => {
@@ -11,6 +11,15 @@ test("secrets carry their allowed domains", () => {
   assert.deepEqual(s.values, { SHOP_PW: "p@ss", LOOSE_PW: "x" });
   assert.deepEqual(s.domains.SHOP_PW, ["accounts.shopify.com", "example.com"]);
   assert.deepEqual(s.domains.LOOSE_PW, []);
+});
+
+test("a password with U+2028 or U+2029 in it reads back from the file", () => {
+  assert.deepEqual(parseSecrets('SHOP_PW="a b c"\nSHOP_PW_DOMAINS=shopify.com\n').values, { SHOP_PW: "a b c" });
+});
+
+test("a password that holds a shorter one is masked whole", () => {
+  assert.equal(redact("pw: hunter2hunter2!", { SHORT: "hunter2", LONG: "hunter2hunter2!" }), "pw: <secret>LONG</secret>");
+  assert.equal(redact("pw: hunter2", { SHORT: "hunter2", LONG: "hunter2hunter2!" }), "pw: <secret>SHORT</secret>");
 });
 
 test("a secret is typed only on its HTTPS domains", () => {

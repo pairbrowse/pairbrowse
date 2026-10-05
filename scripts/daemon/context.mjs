@@ -292,13 +292,14 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
   // ---- the session picker ----------------------------------------------------------------
 
   // Its tab, instead of the saved tabs (they come back once the person chose this session).
-  function showPicker(ctx) {
+  // reopened: asked for again from the side panel, in a tab of its own; the open tabs stay.
+  function showPicker(ctx, { reopened = false } = {}) {
     pick.state = "showing";
-    tabTracker = null; // the saved tabs stay as they were until the person chose
+    if (!reopened) tabTracker = null; // the saved tabs stay as they were until the person chose
     (async () => {
       // The browser may start without a window and open its first one a moment later: use that.
-      for (let i = 0; i < 20 && !ctx.pages().length; i++) await sleep(150);
-      const page = ctx.pages()[0] || (await ctx.newPage());
+      for (let i = 0; !reopened && i < 20 && !ctx.pages().length; i++) await sleep(150);
+      const page = reopened ? await ctx.newPage() : ctx.pages()[0] || (await ctx.newPage());
       pick.page = page;
       // The extension may still be loading right after launch: try a few times.
       for (let i = 0; i < 20 && pick.state === "showing" && !page.isClosed(); i++) {
@@ -308,6 +309,18 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
       await keepFocus(() => page.bringToFront().catch(() => {}));
       log("session picker shown");
     })().catch((e) => log("session picker", e?.message || e));
+  }
+
+  // The person asked to switch (the side panel's "Switch session..."): the picker opens again in a
+  // new tab, and agents' next actions wait for the pick as at the start. Agents can't ask for it.
+  async function reopenPicker() {
+    if (pick.state === "showing") { await pick.page?.bringToFront().catch(() => {}); return { text: "The session picker is open." }; }
+    const ctx = await getContext();
+    pick.reopened = true;
+    pick.text = "";
+    pick.done = new Promise((r) => { pick.resolve = r; });
+    showPicker(ctx, { reopened: true });
+    return { text: "Pick a session in the new tab." };
   }
 
   // A choice was made (by the person in the picker, or by an agent): waiting agents go on.
@@ -362,6 +375,14 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
     if (pick.state !== "showing") return { text: "A session is already chosen.", error: true };
     if (action === "use") {
       if (!validName(name) || isTemporary(name) || !listSessions().some((s) => s.name === name)) return { text: `No session "${name}".`, error: true };
+      if (name === session && pick.reopened) {
+        // Asked for again, and the person kept the open session: the picker just closes.
+        pick.reopened = false;
+        picked(`The person kept session "${name}" in the browser's session picker.`);
+        await pick.page?.close().catch(() => {});
+        return { text: `Staying in session "${name}".` };
+      }
+      pick.reopened = false;
       if (name === session) {
         // Back to the session that's open: the picker's tab shows its tabs coming back.
         const ctx = await getContext();
@@ -376,6 +397,7 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
       return { text: `Opening session "${name}".` };
     }
     if (action === "new") {
+      pick.reopened = false;
       const target = `clean-${Date.now()}`;
       createSession(target);
       switchFromPicker(target);
@@ -391,6 +413,7 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
   function pickedJoin(text) {
     if (pick.state !== "showing") return;
     picked(text);
+    if (pick.reopened) { pick.reopened = false; return; } // the open tabs are still there
     contextPromise?.then(async (ctx) => restore(ctx, await ctx.newPage())).catch((e) => log("restore", e?.message || e));
   }
 
@@ -483,7 +506,7 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
     currentUrl: () => lastCurrentUrl, setCurrentUrl: (url) => { lastCurrentUrl = url; },
     sessionInfo, sessionCommand, startUp, close,
     waitForPick, pickerState, pickSession, pickedJoin, // In the session being opened, when the person just picked another.
-    recordPerson: async (person) => { while (pickSwitch) await pickSwitch; recordPerson(session, person); }, picking: () => pick.state === "showing",
+    recordPerson: async (person) => { while (pickSwitch) await pickSwitch; recordPerson(session, person); }, picking: () => pick.state === "showing", reopenPicker,
     // An agent chose (pairbrowse_join): the picker goes, the saved tabs come back.
     agentChose(text) {
       if (pick.state !== "showing") { if (pick.state === "pending") pick.state = "done"; return; }

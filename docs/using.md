@@ -29,6 +29,13 @@ fresh session", "use the client-x session", "join this session: pb-join:...") an
 shows. It doesn't show the very first time either (there's nothing to go back to), nor in cloud
 sessions. Set `"sessionPicker": false` to turn it off: Claude then asks you in the chat.
 
+To switch later, click **Switch session…** in the side panel: the picker opens in a new tab.
+Keeping the open session just closes it; another one switches the browser, whoever else is
+connected (agents' next actions wait for your pick, then carry on in the new session). Claude or
+Codex can switch too (`pairbrowse_session`), but not while another session is using the browser:
+one that called a tool in the last 10 minutes, or holds it with `acquire`. Sessions that are only
+open (a Claude Code window left idle) don't count.
+
 - `pairbrowse_session`: list, use, new (named and kept, or clean and throwaway), delete (asks you).
 
 Tabs: PairBrowse remembers each session's tabs, in order. When Chrome restarts, it shows an

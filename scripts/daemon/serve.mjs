@@ -118,10 +118,13 @@ const REMOTE_TOOLS = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse
 // A result on its way to a joiner's agent: nothing of this computer's folders. Links to files
 // saved here (snapshots, downloads) keep their name only; this computer's home becomes "~".
 export function forJoiner(text, homes = [paths.home, homedir(), tmpdir()]) {
-  let t = String(text ?? "").replace(/\]\(((?:\.{1,2}[\\/]|[\\/]|~[\\/]|[A-Za-z]:[\\/]|file:)[^)\s]*)\)/g, (_m, p) => `](on the host's computer: ${String(p).split(/[\\/]/).pop()})`);
-  for (const h of homes.filter(Boolean).sort((a, b) => b.length - a.length)) t = t.split(h).join("~");
-  // Other places on this computer (accounts, temp and system folders, other disks): the name only.
-  return t.replace(/(?<![\w.~-])(?:\/(?:Users|home|root|private|tmp|var\/folders|Volumes|mnt|media)|[A-Za-z]:\\(?:Users|Windows|Temp))[\\/][^\s"'`)\]]+/g, (m) => `~/${m.split(/[\\/]/).pop()}`);
+  const t = String(text ?? "").replace(/\]\(((?:\.{1,2}[\\/]|[\\/]|~[\\/]|[A-Za-z]:[\\/]|file:)[^)\s]*)\)/g, (_m, p) => `](on the host's computer: ${String(p).split(/[\\/]/).pop()})`);
+  // A home only as a whole path ("/tmp" is not in "/private/tmp"); web addresses stay whole
+  // ("https://a.example/tmp?next=/home/feed").
+  const homeAt = homes.filter(Boolean).sort((a, b) => b.length - a.length).map((h) => new RegExp(`(?<![\\w.~-])${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-]|\\.\\w)`, "g"));
+  return t.split(/(https?:\/\/[^\s"'`<>]+)/i).map((part, i) => (i % 2 ? part : homeAt.reduce((s, re) => s.replace(re, "~"), part)
+    // Other places on this computer (accounts, temp and system folders, other disks): the name only.
+    .replace(/(?<![\w.~-])(?:\/(?:Users|home|root|private|tmp|var\/folders|Volumes|mnt|media)|[A-Za-z]:\\(?:Users|Windows|Temp))[\\/][^\s"'`)\]]+/g, (m) => `~/${m.split(/[\\/]/).pop()}`))).join("");
 }
 // The same call with its file paths swapped (map: path -> new path).
 export function withPaths(name, args = {}, map) {

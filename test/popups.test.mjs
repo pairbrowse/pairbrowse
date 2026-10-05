@@ -22,7 +22,7 @@ test("dialogs, popup windows and CAPTCHAs are handled or handed over", { skip: !
       <button id="w" onclick="window.open('about:blank', 'signin', 'popup')">w</button>`);
 
     await page.click("#a");
-    let notes = popups.drain();
+    const notes = popups.drain();
     assert.match(notes, /alert.*"Saved!"/);
 
     // Every confirm is left for Claude (whose OK asks the user), whatever it says: no word list.

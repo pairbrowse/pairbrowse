@@ -14,7 +14,7 @@ export function detectSurface(env = process.env) {
 // Claude Code as <session id>.jsonl in its projects folder. Codex hooks may inherit Claude Code's
 // environment (Codex started from Claude Code), so the transcript decides.
 export function detectHost(input = {}) {
-  return /(^|[\/\\])rollout-[^\/\\]*\.jsonl$/.test(String(input.transcript_path || "")) ? "codex" : "claude";
+  return /(^|[/\\])rollout-[^/\\]*\.jsonl$/.test(String(input.transcript_path || "")) ? "codex" : "claude";
 }
 
 // One or two lines for the agent at session start: how the user sees the browser here.
@@ -54,7 +54,7 @@ const SESSIONS = {
 
 // The always-on core, worded for the app running the session.
 export function coreText(host = "claude", { picker = false } = {}) {
-  let text = "";
+  let text;
   try { text = readFileSync(new URL("./core.md", import.meta.url), "utf8").trim(); } catch { return ""; }
   return text.replace("{{FINAL}}", FINAL[host] || FINAL.claude).replace("{{SAME}}", SAME[host] ?? SAME.claude).replace("{{SESSIONS}}", picker ? SESSIONS.picker : SESSIONS.ask);
 }

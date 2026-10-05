@@ -50,6 +50,8 @@ export function createTabOrder({ call, getContext, log = () => {} }) {
     },
     // Tests only (daemon.mjs, PAIRBROWSE_TEST_TAB_ORDER=1). list: the addresses as the strip
     // shows them. move: the tab at url to where the tab at before stands, as dragging it would.
+    // The functions passed to call() run in the side panel extension, where chrome is defined.
+    /* global chrome */
     async testCommand({ action, url, before } = {}) {
       if (action === "move") {
         const moved = await call(([u, b]) => chrome.tabs.query({}).then((ts) => {

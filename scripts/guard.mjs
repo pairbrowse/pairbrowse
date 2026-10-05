@@ -11,7 +11,7 @@
 // - Only web pages can be opened; local-network addresses ask you first.
 // - If anything goes wrong in here, it asks rather than allows.
 import { resolve, sep } from "node:path";
-import { loadConfig, paths } from "./paths.mjs";
+import { paths } from "./paths.mjs";
 import { navigationProblem, BLOCKED_TOOLS, BROWSER_PREFIX } from "./policy.mjs";
 import { latestReview, REVIEW_MAX_AGE_MIN } from "./runs.mjs";
 import { secretInside, MEDIA } from "./upload.mjs";
@@ -61,7 +61,7 @@ function out(permissionDecision, reason) {
 const RUNS_PREFIX = /^mcp__(plugin_pairbrowse_runs|pairbrowse_runs)__/;
 export const isCodexTool = (name) => /^mcp__pairbrowse_(browser|runs)__/.test(String(name || ""));
 
-export function decide(input, config = loadConfig(), review = latestReview(), now = Date.now()) {
+export function decide(input, _config, review = latestReview(), now = Date.now()) {
   const name = String(input.tool_name || "");
   if (RUNS_PREFIX.test(name)) return allow();
   const tool = name.replace(BROWSER_PREFIX, "");

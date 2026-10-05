@@ -64,6 +64,7 @@ function claudeWindow(owner) {
   return null;
 }
 
+/* exported run */
 function run(argv) {
   const url = argv[0];
   // top: leave the Claude window's own header (with its buttons) visible above the pane.

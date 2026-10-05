@@ -65,7 +65,7 @@ const describe = (ev) => ev.type === "mouse" ? (ev.action === "mousePressed" ? "
 
 // call: the extension worker. getContext(): the browser. log.
 // during(who): marks a joiner's input while it's replayed (presence.remoteStart; returns done()).
-export function createScreenShare({ call, getContext, log = () => {}, during = () => () => {} }) {
+export function createScreenShare({ call, log = () => {}, during = () => () => {} }) {
   const peers = new Map(); // peer -> { page, tabId, view, frame, onInput, onState, role }
   const sessions = new Map(); // page -> { cdp, replayer, view, viewAt }
   let looping = false;

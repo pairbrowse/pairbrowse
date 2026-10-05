@@ -20,6 +20,16 @@ PairBrowse version. You'll get an answer within a few days.
 Only the latest release gets security fixes. Updating is one command (see
 [docs/install.md](docs/install.md#update)); the changelog says when an update needs anything more.
 
+## Checking a release
+
+Plugin releases are git tags `vX.Y.Z`, signed by the maintainers (from 0.15.12 on). GitHub shows
+them as **Verified**. To check one yourself, with the public keys in
+[`.github/allowed_signers`](.github/allowed_signers):
+
+```bash
+git -c gpg.ssh.allowedSignersFile=.github/allowed_signers tag -v v0.15.12
+```
+
 ## Checking a download
 
 Every file of a native browser release is checked in GitHub Actions against the SHA-256 the

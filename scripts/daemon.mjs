@@ -376,6 +376,7 @@ const serve = createServe({
       // goto: an address typed into this tab's address bar; url: the tab's own address.
       if (args.goto) { await page.goto(String(args.goto), { waitUntil: "commit" }).catch(() => {}); return { text: "went" }; }
       if (args.url) return { text: JSON.stringify({ url: page.url() }) };
+      if (args.inSight) return { text: JSON.stringify({ id: follow.inSight() }) };
       if (args.list) { const ctx = await context.getContext(); return { text: JSON.stringify(await Promise.all(follow.pages().filter((p) => !p.isClosed()).map(async (p) => ({ index: ctx.pages().indexOf(p), title: await p.title().catch(() => "") })))) }; }
       if (type) { await page.keyboard.type(String(type), { delay: 20 }); return { text: "typed" }; }
       const index = (await context.getContext()).pages().indexOf(page);

@@ -6,7 +6,7 @@ import { savedName, saveParticipantName, paths } from "../paths.mjs";
 import { readJson } from "../util.mjs";
 import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { startQuickTunnel, watchTunnel, adoptTunnel, onTunnelExit } from "../tunnel.mjs";
+import { startQuickTunnel, watchTunnel, adoptTunnel, onTunnelExit, helperAlive } from "../tunnel.mjs";
 import { randomBytes } from "node:crypto";
 import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../devshare.mjs";
 import { where } from "./context.mjs";
@@ -114,6 +114,9 @@ export function createSharing({ config, log, host, view, notify, hostNote, start
   // reconnect to the same address, already let in. Closing the browser window, revoking and
   // expiry end them (endAll). Invite links are never kept.
   const stateFile = join(paths.home, "sharing.json");
+  // The tunnels' keepers stop them when this stops beating for a while (tunnel-keeper.mjs).
+  helperAlive();
+  setInterval(helperAlive, 15_000).unref();
   function save() {
     if (restoring) return;
     try {

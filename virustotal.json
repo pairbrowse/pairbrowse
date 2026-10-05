@@ -1,1 +1,6 @@
-{"schemaVersion":1,"label":"VirusTotal","message":"0 detections · 4 files","color":"brightgreen"}
+{
+  "schemaVersion": 1,
+  "label": "VirusTotal",
+  "message": "0 detections · 4 files",
+  "color": "brightgreen"
+}

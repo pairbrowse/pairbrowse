@@ -748,7 +748,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (action === "identify" && !remote) collaboration.register(participant, personLabel(label, appName(clientName)));
         else if (action === "acquire" && remote) return reply(msg.id, "Only the host's own agents can take the whole browser. Work tab by tab.", true);
         else if (action === "acquire") await collaboration.run(participant, () => collaboration.acquire(participant));
-        else if (action === "release") { collaboration.release(participant); tabClaims.release(participant); }
+        else if (action === "release") {
+          collaboration.release(participant); tabClaims.release(participant);
+          // Shared browser mode, joined from here: this agent's turns are held in the host's browser.
+          if (!remote && follow.forwards?.("browser_tabs")) await follow.remoteCall(participant, { params: { name: "pairbrowse_collaboration", arguments: { action: "release" } } }, { app: clientName, label: myLabel() }).catch(() => {});
+        }
         else if (action === "message") {
           // Text only, to the other agents here and in a joined session; it makes nobody act.
           const r = session.compose(participant, msg.params.arguments?.to, msg.params.arguments?.text);

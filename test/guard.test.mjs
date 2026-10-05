@@ -57,6 +57,30 @@ test("uploads run only for media and documents in the uploads folder", () => {
   assert.equal(run("browser_file_upload", { paths: [`${up}/.env`] }), "ask");
 });
 
+test("a link in the uploads folder is judged by the file it points to", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { uploadAllowed } = await import("../scripts/guard.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "pb-guard-"));
+  const up = join(dir, "uploads");
+  mkdirSync(join(dir, ".gnupg"), { recursive: true });
+  mkdirSync(up);
+  writeFileSync(join(up, "logo.png"), "x");
+  writeFileSync(join(dir, ".gnupg", "pubring.png"), "x");
+  symlinkSync(join(dir, ".gnupg", "pubring.png"), join(up, "photo.png"));
+  symlinkSync(join(dir, ".gnupg"), join(up, "album"));
+  assert.equal(uploadAllowed(join(up, "logo.png"), up), true);
+  assert.equal(uploadAllowed(join(up, "photo.png"), up), false, "a link to a file elsewhere");
+  assert.equal(uploadAllowed(join(up, "album", "pubring.png"), up), false, "a link to a folder elsewhere");
+});
+
+test("a drag named with a class at either end asks", () => {
+  assert.equal(run("browser_drag", { startElement: "Invoice row", endElement: "Delete: Trash" }), "ask");
+  assert.equal(run("browser_drag", { startElement: "Pay: Card", endElement: "Checkout" }), "ask");
+  assert.equal(run("browser_drag", { startElement: "Invoice row", endElement: "Archive" }), "allow");
+});
+
 test("only web pages open; local network asks", () => {
   for (const url of ["file:///etc/passwd", "javascript:alert(1)", "chrome://settings", "data:text/html,hi", "view-source:https://x.com"]) {
     assert.equal(run("browser_navigate", { url }), "deny", url);

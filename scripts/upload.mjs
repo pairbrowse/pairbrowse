@@ -60,15 +60,22 @@ export function secretInside(full) {
   }
 }
 
+// The path as the disk spells it: links followed and, on a case-insensitive disk (macOS, Windows),
+// each name in its real casing, so ~/.SSH is caught as ~/.ssh.
+export const realPath = (p) => realpathSync.native(resolve(String(p)));
+
 export function uploadProblem(file, uploadsDir) {
   let full;
   try {
-    full = realpathSync(resolve(String(file)));
+    full = realPath(file);
   } catch {
     return `${file}: not found`;
   }
-  const home = homedir();
-  const inUploads = full.startsWith(resolve(uploadsDir) + sep);
+  let home = homedir();
+  try { home = realPath(home); } catch {}
+  let uploads = resolve(uploadsDir);
+  try { uploads = realPath(uploads); } catch {}
+  const inUploads = full.startsWith(uploads + sep);
   if (!inUploads && SECRET_DIRS.some((d) => full.startsWith(join(home, d) + sep))) return `${file}: in a folder with keys or credentials; never uploaded`;
   if (SECRET_NAME.test(full)) return `${file}: looks like a key or credentials file; never uploaded`;
   if (secretInside(full)) return `${file}: contains a private key or password; never uploaded`;

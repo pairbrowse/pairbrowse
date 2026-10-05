@@ -8,7 +8,7 @@ get in, and how the project carries on if a maintainer is gone.
 | Role | Who | Responsibilities |
 |---|---|---|
 | Owner | [@pairbrowse](https://github.com/pairbrowse) | Holds the repository, its settings and secrets, the GitHub releases and the pairbrowse.com site. Sets direction (the [roadmap](ROADMAP.md)), cuts releases, answers security reports ([SECURITY.md](SECURITY.md)). Also a maintainer. |
-| Maintainer | [@pairbrowse](https://github.com/pairbrowse), [@scoutscapital](https://github.com/scoutscapital) | Reviews and approves pull requests (listed in [`.github/CODEOWNERS`](.github/CODEOWNERS)), triages issues, keeps the docs true to the code, enforces the [code of conduct](CODE_OF_CONDUCT.md). |
+| Maintainer | [@pairbrowse](https://github.com/pairbrowse), [@scoutscapital](https://github.com/scoutscapital) | Reviews and merges pull requests (listed in [`.github/CODEOWNERS`](.github/CODEOWNERS)), triages issues, keeps the docs true to the code, enforces the [code of conduct](CODE_OF_CONDUCT.md). |
 | Contributor | Anyone | Opens issues and pull requests under [CONTRIBUTING.md](CONTRIBUTING.md). |
 
 AI coding agents (Claude Code, Codex) write some of the changes. They are tools of the maintainer
@@ -17,9 +17,11 @@ approves a change.
 
 ## How decisions are made
 
-- **Changes.** Every change to `main` is a pull request. It needs an approval from a maintainer
-  other than its author, and passing tests and CodeQL. Nobody, owner included, can push to `main`
-  directly or skip the review.
+- **Changes.** Maintainers push to `main` or merge pull requests; contributors send pull requests,
+  which a maintainer reviews before merging. Tests, lint and CodeQL run on every push and pull
+  request, and a failing run is fixed before the next release. `main` can't be force-pushed or
+  deleted. Changes are not required to have a second maintainer's review, and OpenSSF Scorecard
+  shows that.
 - **Day-to-day questions** (a bug fix, a doc change, a small feature) are settled in the pull
   request by the reviewing maintainer.
 - **Larger questions** (a new feature area, a change to the security model or the Security table
@@ -33,9 +35,8 @@ approves a change.
 ## Releases
 
 A maintainer bumps the version in `package.json` and both plugin manifests, adds the
-[CHANGELOG.md](CHANGELOG.md) entry and tags `vX.Y.Z`; the release goes in through a reviewed pull
-request like any change. Native browser builds are released as `browser-<version>` on the GitHub
-releases page, checked and attested by the Release check workflow.
+[CHANGELOG.md](CHANGELOG.md) entry and tags `vX.Y.Z` (tags are signed). Native browser builds are
+released as `browser-<version>` on the GitHub releases page, checked and attested by the Release check workflow.
 
 ## Continuity
 
@@ -53,4 +54,4 @@ The project must keep going if any one person can't continue.
 
 ## Changing this document
 
-Like any change: a pull request approved by a maintainer other than its author.
+Through a pull request, merged by a maintainer.

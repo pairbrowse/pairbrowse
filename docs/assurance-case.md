@@ -82,8 +82,8 @@ software can stop, such as a person the user deliberately let drive their browse
 ## How we know it stays true
 
 - The Security table in [security.md](security.md) is updated in the same change as any behaviour
-  it describes ([CONTRIBUTING.md](../CONTRIBUTING.md)), and changes are reviewed by a second
-  maintainer.
+  it describes ([CONTRIBUTING.md](../CONTRIBUTING.md)), and pull requests from contributors are
+  reviewed by a maintainer.
 - On every push and pull request: unit tests, property-based fuzzing of the security checks
   (`test/fuzz/`), and CodeQL (security-extended). Live browser tests run before releases.
 - Releases: native builds checked against their pins and attested in Sigstore's public log;

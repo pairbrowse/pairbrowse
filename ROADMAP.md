@@ -1,7 +1,7 @@
 # Roadmap
 
 What PairBrowse plans for the next year (to late 2027), and what it won't do. Plans change; this
-file changes with them, through a reviewed pull request like any change.
+file changes with them, like any change.
 
 ## Will do
 

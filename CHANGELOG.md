@@ -5,6 +5,17 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.15 (2026-10-06)
+
+Join requests: answer them in a prompt in your own tab, and clearer invite and join copy.
+
+- When someone asks to join, a small prompt ("Sam (Claude Code) wants to join (drive)") shows in the bottom-right corner of the tab in front, with Allow, Deny and a close. It goes by itself after about 10 seconds (the request stays in the side panel) and comes down once the request is answered anywhere, revoked or expires.
+- Only a real click by you counts on it: never an agent's, a page script's, a joiner's or the live view's input, nor a click while it is covered or just appeared. See the Security table.
+- Claude now hears your Allow, Deny and Remove from the side panel, the live view or the prompt in its next result.
+- A joiner you remove sees "<host> took you out of the session." instead of "didn't let you in".
+- Answering a request that is already gone (answered elsewhere, or timed out) now says so in the side panel and live view, instead of a button that does nothing.
+- Invite, join and notification wording now points to the side panel (and the prompt), and says what really happens: someone turned away or removed who tries the code again is asked about again (revoke the invite to stop it), codes survive a restart of PairBrowse and end when you close the browser window. The sharing docs, the together skill and the tool descriptions are corrected to match, including shared browser mode as the default.
+
 ## 0.15.14 (2026-10-06)
 
 Security and reliability: 21 bugs found by new fuzz and connection tests, fixed, each with a regression test.

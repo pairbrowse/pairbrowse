@@ -12,7 +12,7 @@ import { spawn } from "node:child_process";
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-function waitForLine(socket, predicate, timeout = 20_000) {
+function waitForLine(socket, predicate, timeout = 60_000) { // a hang guard: the first call starts the browser
   return new Promise((resolve, reject) => {
     let buf = "";
     const timer = setTimeout(() => { cleanup(); reject(new Error("timed out waiting for daemon response")); }, timeout);
@@ -47,10 +47,17 @@ async function connectClient(socketPath, label, app = "claude-code") {
   return { socket, call };
 }
 
-async function waitForSocket(path) {
-  for (let i = 0; i < 100; i++) {
-    if (existsSync(path)) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+// Until the helper listens: loading the browser runtime takes a while on a busy computer (the
+// whole suite at once), so this waits for the helper to accept a connection or to exit, not for a
+// fixed time.
+async function waitForSocket(path, daemon, ms = 90_000) {
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise((resolve) => setTimeout(resolve, 100))) {
+    if (daemon.exitCode !== null) throw new Error(`the helper exited (${daemon.exitCode}) before listening`);
+    if (!existsSync(path)) continue;
+    const probe = net.createConnection(path);
+    const ok = await new Promise((resolve) => { probe.once("connect", () => resolve(true)); probe.once("error", () => resolve(false)); });
+    probe.destroy();
+    if (ok) return;
   }
   throw new Error("daemon socket did not appear");
 }
@@ -69,7 +76,7 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
   });
   let alice; let bob; let fixture; let stage = "starting daemon";
   try {
-    await waitForSocket(socketPath);
+    await waitForSocket(socketPath, daemon);
     fixture = createServer((req, res) => {
       res.writeHead(200, { "content-type": "text/html" });
       res.end("<title>Pairbrowse fixture</title><main>shared fixture</main><button id='go'>Go</button>");
@@ -168,11 +175,13 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
     assert.equal(staleClick.result.isError, true);
     alice.socket.destroy(); alice = null;
     stage = "waiting for Alice's lease to end";
-    for (let i = 0; i < 50; i++) {
+    let owner = true;
+    for (const end = Date.now() + 15_000; owner && Date.now() < end;) {
       const status = await bob.call("tools/call", { name: "pairbrowse_collaboration", arguments: { action: "status" } });
-      if (!JSON.parse(status.result.content[0].text).owner) break;
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      owner = JSON.parse(status.result.content[0].text).owner;
+      if (owner) await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    assert.ok(!owner, "Alice's lease ends when she disconnects");
     stage = "Bob snapshot after disconnect";
     const afterDisconnect = await bob.call("tools/call", { name: "browser_snapshot", arguments: {} });
     assert.equal(afterDisconnect.result.isError, undefined, JSON.stringify(afterDisconnect.result));
@@ -210,7 +219,7 @@ test("a client that answers roots/list mid-call isn't deadlocked", { skip: !runt
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home }, stdio: "ignore" });
   let socket;
   try {
-    await waitForSocket(socketPath);
+    await waitForSocket(socketPath, daemon);
     socket = net.createConnection(socketPath);
     await new Promise((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
     let rootsAsked = false;
@@ -277,7 +286,7 @@ test("two agents' tabs stay their own through new, navigate and close", { skip: 
     return r;
   };
   try {
-    await waitForSocket(socketPath);
+    await waitForSocket(socketPath, daemon);
     fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>${req.url}</title><main>${req.url}</main>`); });
     await new Promise((resolve) => fixture.listen(0, "127.0.0.1", resolve));
     const base = `http://127.0.0.1:${fixture.address().port}`;

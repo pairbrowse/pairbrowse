@@ -29,12 +29,12 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   const busy = []; // when agents' actions ran: input in those moments is theirs
   // What people did in each tab, numbered, for a browser that shares it (a joined session):
   // local is this browser's own person; the others came from the other browser.
-  const feeds = new WeakMap(); // tab -> [{ n, who, line, local }]
+  const feeds = new WeakMap(); // tab -> [{ n, who, line, local, t }]
   let feedSeq = 0;
   const toFeed = (page, who, line, local) => {
     const feed = feeds.get(page) || [];
     feeds.set(page, feed);
-    feed.push({ n: ++feedSeq, who, line, local });
+    feed.push({ n: ++feedSeq, who, line, local, t: Date.now() });
     if (feed.length > 20) feed.shift();
   };
 
@@ -127,19 +127,27 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     if (yours.some((e) => !["move", "wheel", "scroll"].includes(e.kind))) onStale();
   }
 
-  // Reads every tab, and its first frames (card and code fields often live in one).
+  // Reads every tab, and its first frames (card and code fields often live in one). A read takes
+  // the page's input out of it, so a late answer (a busy computer) is still used, never dropped:
+  // dropped, a person's click would be lost (agents wouldn't wait for them nor hear of it). A
+  // frame still answering is skipped until it does; a slow one doesn't hold up the others.
   let polling = false;
+  const reading = new WeakSet();
+  const took = (page, events) => {
+    if (!Array.isArray(events) || !events.length) return;
+    if (events.some((e) => e?.kind !== "move")) onUsed(page);
+    userDid(events, page);
+  };
   setInterval(async () => {
     if (paused() || polling) return;
     polling = true;
     try {
       const frames = (await pages()).flatMap((p) => p.isClosed() ? [] : p.frames().slice(0, 8).map((f) => [p, f]));
-      const all = await Promise.all(frames.map(([, f]) => within(1000, readEvents(f).catch(() => null))));
-      all.forEach((events, i) => {
-        if (!Array.isArray(events) || !events.length) return;
-        if (events.some((e) => e?.kind !== "move")) onUsed(frames[i][0]);
-        userDid(events, frames[i][0]);
+      const reads = frames.filter(([, f]) => !reading.has(f)).map(([p, f]) => {
+        reading.add(f);
+        return readEvents(f).then((events) => { if (!paused()) took(p, events); }, () => {}).finally(() => reading.delete(f));
       });
+      await within(1000, Promise.all(reads));
     } finally {
       polling = false;
     }

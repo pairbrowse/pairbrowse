@@ -51,6 +51,19 @@ function rpc(write, input) {
 const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const tool = (call, name, args = {}) => call("tools/call", { name, arguments: args });
 
+// The helper's socket once it accepts: loading the browser runtime takes a while on a busy
+// computer (the whole suite at once), so this waits for the helper to listen or to exit, not for
+// a fixed time.
+async function reach(socketPath, daemon, h, ms = 90_000) {
+  for (const end = Date.now() + ms; ; await sleep(100)) {
+    if (daemon.exitCode !== null) throw new Error(`the helper exited (${daemon.exitCode}): ${(() => { try { return readFileSync(join(h, "daemon.stderr.log"), "utf8").slice(-1500); } catch { return ""; } })()}`);
+    const sock = net.createConnection(socketPath);
+    if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) return sock;
+    sock.destroy();
+    if (Date.now() > end) throw new Error(`couldn't connect to ${socketPath}`);
+  }
+}
+
 function home(prefix) {
   mkdirSync(shortBase, { recursive: true });
   const dir = mkdtempSync(join(shortBase, prefix));
@@ -77,17 +90,7 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
   const connect = async (h) => {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
-    const socketPath = join(h, "run", "browser.sock");
-    for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
-    // The socket file can show a moment before the helper listens on it (a busy machine): retry.
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
-      if (ok) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await reach(join(h, "run", "browser.sock"), daemons.at(-1), h);
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
@@ -152,24 +155,32 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     const copy = (await tabs(joiner.call)).find((t) => /one\.pbtest\.example\/c\?/.test(t.url));
     assert.ok(copy, "the joiner's copy");
     assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: copy.index }) })).ok);
-    const scrolling = (async () => { for (let i = 0; i < 12; i++) { await fetch(`${live}input`, { method: "POST", body: JSON.stringify([{ type: "wheel", x: 5, y: 5, dy: 10 }]) }); await sleep(250); } })();
-    await sleep(1500);
+    // She keeps scrolling until the host's agent's key press is done: had scrolling held it up, the
+    // press would wait for her to stop (and 2 s more), so it finishing while she scrolls is the proof.
+    let pressed = false, scrolls = 0;
+    const scrolling = (async () => { for (; !pressed && scrolls < 240; scrolls++) { await fetch(`${live}input`, { method: "POST", body: JSON.stringify([{ type: "wheel", x: 5, y: 5, dy: 10 }]) }); await sleep(250); } })();
+    await until("she has scrolled for a moment", async () => scrolls >= 6, 15_000);
     const hostTab = (await tabs(host.call)).find((t) => t.url === "http://one.pbtest.example/c?page=2");
     await tool(host.call, "browser_tabs", { action: "select", index: hostTab.index });
-    const t0 = Date.now();
     await tool(host.call, "browser_press_key", { key: "Enter" });
-    assert.ok(Date.now() - t0 < 1500, `scrolling holds nobody up (${Date.now() - t0} ms)`);
+    const stillScrolling = scrolls < 240;
+    pressed = true;
     await scrolling;
-    await fetch(`${live}input`, { method: "POST", body: JSON.stringify([{ type: "mouse", action: "mouseMoved", x: 40, y: 40 }, { type: "mouse", action: "mousePressed", x: 40, y: 40, button: "left", buttons: 1, clickCount: 1 }, { type: "mouse", action: "mouseReleased", x: 40, y: 40, button: "left", buttons: 0, clickCount: 1 }]) });
+    assert.ok(stillScrolling, "scrolling holds nobody up: the press finished while she was still scrolling");
     // Read there twice a second, sent on within a quarter: on the host about a second later (more
     // on a busy computer). Until it arrives a Tab press goes at once; the first one after waits.
-    let heard = "", waited = 0;
-    for (const end = Date.now() + 8000; Date.now() < end && waited < 700; await sleep(300)) {
-      const t1 = Date.now();
-      heard += text(await tool(host.call, "browser_press_key", { key: "Tab" }));
-      waited = Date.now() - t1;
-    }
-    assert.ok(waited >= 700, `a click there pauses even a Tab press (${waited} ms)`);
+    // The presses start with the click, not once its request returns: on a busy computer that can
+    // come after the news crossed and its pause ended. Press until the agent is told of the click;
+    // the press that was told waited for it, or (already under way as the news came) the next one.
+    const clicking = fetch(`${live}input`, { method: "POST", body: JSON.stringify([{ type: "mouse", action: "mouseMoved", x: 40, y: 40 }, { type: "mouse", action: "mousePressed", x: 40, y: 40, button: "left", buttons: 1, clickCount: 1 }, { type: "mouse", action: "mouseReleased", x: 40, y: 40, button: "left", buttons: 0, clickCount: 1 }]) });
+    let heard = "";
+    const press = async () => { const t1 = Date.now(); heard += text(await tool(host.call, "browser_press_key", { key: "Tab" })); return Date.now() - t1; };
+    let told = 0;
+    for (const end = Date.now() + 20_000; Date.now() < end && !/Alice used this tab meanwhile: [^\n]*clicked/.test(heard); await sleep(300)) told = await press();
+    await sleep(300);
+    const next = await press();
+    assert.ok((await clicking).ok, "the click went in");
+    assert.ok(Math.max(told, next) >= 700, `a click there pauses even a Tab press (${told}, then ${next} ms): ${heard.split("\n").filter((l) => /meanwhile/.test(l)).join(" | ")}`);
     assert.match(heard, /Alice used this tab meanwhile: [^\n]*clicked/, "and the agent hears of it");
 
     stage = "local addresses never cross back";
@@ -238,17 +249,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
   const connect = async (h) => {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
-    const socketPath = join(h, "run", "browser.sock");
-    for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
-    // The socket file can show a moment before the helper listens on it (a busy machine): retry.
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
-      if (ok) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await reach(join(h, "run", "browser.sock"), daemons.at(-1), h);
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
@@ -353,7 +354,10 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     await input([{ type: "mouse", action: "mouseMoved", x: 60, y: 320 }, { type: "mouse", action: "mousePressed", x: 60, y: 320, button: "left", buttons: 1, clickCount: 1 }, { type: "mouse", action: "mouseReleased", x: 60, y: 320, button: "left", buttons: 0, clickCount: 1 }]);
     await input([{ type: "text", text: "Hello from Alice" }]);
     let moving = true;
-    const moves = (async () => { for (let i = 0; moving && i < 40; i++) { await input([{ type: "mouse", action: "mouseMoved", x: 100 + (i % 5) * 10, y: 330 }]); await sleep(150); } })();
+    // Her pointer keeps moving until told to stop (at most a minute): a hold on moves would last as
+    // long as she moves, so the host's agent going on while she does is the proof.
+    let movedLast = false;
+    const moves = (async () => { for (let i = 0; moving && i < 400; i++) { await input([{ type: "mouse", action: "mouseMoved", x: 100 + (i % 5) * 10, y: 330 }]); await sleep(150); } movedLast = true; })();
     const alicePointer = await until("Alice's pointer reaches Carol", async () => seen.pointers.find((p) => p.who === "Alice" && p.x >= 90), 15_000);
     assert.equal(alicePointer.id, wire.id);
     assert.ok(alicePointer.x >= 90 && alicePointer.x <= 150 && Math.abs(alicePointer.y - 330) <= 5, `page position ${alicePointer.x},${alicePointer.y}`);
@@ -361,10 +365,10 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     // Her typing pauses agents for 2 s after her last key (and its news takes a moment to cross);
     // after that only her pointer moves, which must hold nobody up.
     await sleep(3000);
-    const t0 = Date.now();
     // Told with the first result in that tab (here the select, or the key press).
-    const waited = text(await tool(host.call, "browser_tabs", { action: "select", index: hostForm.index })) + text(await tool(host.call, "browser_press_key", { key: "Shift" }));
-    assert.ok(Date.now() - t0 < 1500, `pointer moves hold nobody up (${Date.now() - t0} ms)`);
+    const going = (async () => text(await tool(host.call, "browser_tabs", { action: "select", index: hostForm.index })) + text(await tool(host.call, "browser_press_key", { key: "Shift" })))();
+    const waited = await Promise.race([going, sleep(15_000).then(() => null)]);
+    assert.ok(waited !== null && !movedLast, "pointer moves hold nobody up: the agent went on while she kept moving");
     assert.match(waited, /Alice used this tab meanwhile/);
     moving = false;
     await moves;
@@ -387,10 +391,14 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     await tool(host.call, "browser_hover", { target: ref(s, "textbox", "Name") });
     const agentPointer = await until("the host's agent's pointer", async () => seen.pointers.find((p) => p.k.startsWith("host-agent")), 5000);
     assert.ok(agentPointer && /^#[0-9a-f]{6}$/i.test(agentPointer.color), JSON.stringify(agentPointer));
-    for (let i = 0; i < 5; i++) { channel.send(JSON.stringify({ route: "pointer", body: { me: { id: wire.id, x: 50 + i, y: 50 } } })); await sleep(100); }
-    const t1 = Date.now();
-    await tool(host.call, "browser_press_key", { key: "Shift" });
-    assert.ok(Date.now() - t1 < 1500, "a watcher's pointer doesn't pause the host's agent");
+    // Carol's pointer keeps moving while the host's agent presses a key: it goes on regardless.
+    let pointing = true, pointedLast = false;
+    const carolMoves = (async () => { for (let i = 0; pointing && i < 400; i++) { channel.send(JSON.stringify({ route: "pointer", body: { me: { id: wire.id, x: 50 + (i % 10), y: 50 } } })); await sleep(100); } pointedLast = true; })();
+    await sleep(500);
+    const pressedNow = await Promise.race([tool(host.call, "browser_press_key", { key: "Shift" }).then(() => !pointedLast), sleep(15_000).then(() => false)]);
+    pointing = false;
+    await carolMoves;
+    assert.ok(pressedNow, "a watcher's pointer doesn't pause the host's agent");
     assert.equal((await carol("pointer", { me: { id: wire.id, x: 1, y: 1 }, junk: "x".repeat(5000) })).status, 413, "bounded");
 
     stage = "the host's own pointer crosses under the host's name; the host's browser names Alice";

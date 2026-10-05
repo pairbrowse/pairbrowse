@@ -32,6 +32,7 @@ const AGENT_AGAIN_MS = 10_000; // an agent here is said again this often (the ot
 const POINTER_FRESH_MS = 3000; // a pointer still for this long fades out
 const POINTER_MS = 40; // pointers go out at most 25 times a second
 const PERSON_AGAIN_MS = 500;
+const LATE_NEWS_MS = 15_000; // what a person here did, still sent when a round comes this late
 const FORMS_ALL_MS = 2000; // every field is read again this often, in case a change went unannounced
 const ORDER_MS = 1000; // the tab order here is checked this often
 const OUTBOUND_MS = 250; // this side's tab changes are looked for this often
@@ -135,14 +136,17 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       const op = cur.mirror.fromLocal(id, shareableUrl(page.url(), mine));
       if (drive && op) ops.push(op);
       // A person here, using this copy by hand: agents there wait for them too (drive only).
+      // What they did lately is sent even when this round comes late (a busy computer, a slow
+      // round before it) and they are idle again by now: dropped, the host's agents would never
+      // hear of a click.
       const person = presence.sharedPerson(page);
-      if (drive && person?.local) {
-        const fresh = presence.feedAfter(page, cur.told.get(page) || 0).filter((e) => e.local);
+      const fresh = drive ? presence.feedAfter(page, cur.told.get(page) || 0).filter((e) => e.local && (person?.local || Date.now() - e.t < LATE_NEWS_MS)) : [];
+      if (drive && (person?.local || fresh.length)) {
         if (fresh.length) cur.told.set(page, fresh.at(-1).n);
         // Still there: said again twice a second (the host's agents wait while it's fresh).
         if (fresh.length || Date.now() - (cur.personSent.get(id) || 0) >= PERSON_AGAIN_MS) {
           cur.personSent.set(id, Date.now());
-          ops.push({ op: "person", id, did: fresh.map((e) => e.line), ...(person.acting ? { acting: true } : {}) });
+          ops.push({ op: "person", id, did: fresh.map((e) => e.line), ...(person?.acting ? { acting: true } : {}) });
         }
       }
     }

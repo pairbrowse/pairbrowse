@@ -292,15 +292,28 @@ test("a joiner's agent's results name no folder on the host's computer, and web 
     const homes = [`/Users/${parts[0][1].u}`, `/home/${parts[0][1].u}`, "/tmp"];
     const out = forJoiner(text, homes);
     for (const [, p] of parts) {
-      if (!p.path.startsWith("/tmp/")) assert.ok(!out.includes(p.u), `${JSON.stringify(text)} -> ${JSON.stringify(out)}`);
+      // The account name never shows as a word of its own ("zqab" may still be part of "zqabc",
+      // a folder kept under the home "/tmp", or a folder another path keeps).
+      const kept = parts.some(([, x]) => x.segs.includes(p.u) || (x.path.startsWith("/tmp/") && x.u === p.u));
+      if (!p.path.startsWith("/tmp/") && !kept) assert.doesNotMatch(out, new RegExp(`(?<![\\w-])${p.u}(?![\\w-])`), `${JSON.stringify(text)} -> ${JSON.stringify(out)}`);
       // Under a home: "~/" and the folders below it; elsewhere the name only.
       if (!homes.some((h) => p.path.includes(`${h}/`))) for (const s of p.segs.slice(0, -1).filter((s) => !parts.some(([, x]) => x !== p && x.segs.includes(s)))) assert.ok(!out.includes(`/${s}/`) && !out.includes(`\\${s}\\`), `${s} in ${JSON.stringify(out)}`);
     }
   }));
+  // Web addresses stay whole: their own paths, and values that name no home of this computer.
   const query = fc.tuple(label, fc.array(pathSeg.filter((s) => s !== "tmp"), { minLength: 1, maxLength: 3 })).map(([k, s]) => `?${k}=/${s.join("/")}`);
   check(fc.property(webUrl, fc.oneof(fc.constant(""), query), fc.constantFrom("", "[a](", "see ", "("), fc.constantFrom("", ")", " ok"), user, (u, q, a, b, who) => {
     const url = `${u}${q}`;
     const out = forJoiner(`${a}${url}${b}`, [`/Users/${who}`, `/home/${who}`, "/tmp"]);
     assert.ok(out.includes(url), `${url} -> ${out}`);
+  }));
+  // A home of this computer inside a web address (a query value, plain or percent-encoded): hidden
+  // as "~", and the rest of the address stays as it was.
+  check(fc.property(webUrl, label, fc.constantFrom("/Users/@", "/home/@", "/tmp"), fc.array(label, { maxLength: 2 }), fc.boolean(), fc.constantFrom("", "&x=1", "#top"), user, (u, k, home, rest, encode, tail, who) => {
+    const value = [home.replace("@", who), ...rest].join("/");
+    const url = `${u}?${k}=${encode ? value.replace(/\//g, "%2F") : value}${tail}`;
+    const out = forJoiner(`see ${url} ok`, [`/Users/${who}`, `/home/${who}`, "/tmp"]);
+    assert.equal(out, `see ${u}?${k}=${["~", ...rest].join(encode ? "%2F" : "/")}${tail} ok`);
+    if (!u.includes(who)) assert.doesNotMatch(out, new RegExp(`(?<![\\w-])${who}(?![\\w-])`));
   }));
 });

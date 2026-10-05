@@ -7,6 +7,7 @@ and a teammate can watch or take the wheel from their own computer.
 [pairbrowse.com](https://pairbrowse.com)
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pairbrowse/pairbrowse/badge)](https://scorecard.dev/viewer/?uri=github.com/pairbrowse/pairbrowse)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15234/badge)](https://www.bestpractices.dev/projects/15234)
 [![CodeQL](https://github.com/pairbrowse/pairbrowse/actions/workflows/codeql.yml/badge.svg)](https://github.com/pairbrowse/pairbrowse/actions/workflows/codeql.yml)
 [![Release check](https://github.com/pairbrowse/pairbrowse/actions/workflows/release-check.yml/badge.svg)](https://github.com/pairbrowse/pairbrowse/actions/workflows/release-check.yml)
 [![Tests](https://github.com/pairbrowse/pairbrowse/actions/workflows/tests.yml/badge.svg)](https://github.com/pairbrowse/pairbrowse/actions/workflows/tests.yml)

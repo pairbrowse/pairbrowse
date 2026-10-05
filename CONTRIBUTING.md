@@ -10,7 +10,10 @@ Thanks for helping. PairBrowse has two parts, and changes go to the one they bel
 ## This repository (public)
 
 Anyone can contribute here. By sending a change you agree it's licensed under the MIT License in
-`LICENSE`.
+`LICENSE`, and you certify the [Developer Certificate of Origin](https://developercertificate.org/):
+that you wrote it or otherwise have the right to submit it. Sign off each commit (`git commit -s`).
+How the project is run is in [GOVERNANCE.md](GOVERNANCE.md); everyone follows the
+[code of conduct](CODE_OF_CONDUCT.md).
 
 Before you send it:
 

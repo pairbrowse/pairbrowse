@@ -7,6 +7,19 @@ Please report vulnerabilities privately through GitHub's "Report a vulnerability
 this repository (Security tab), not in a public issue. Include steps to reproduce and the
 PairBrowse version. You'll get an answer within a few days.
 
+## How we handle a report
+
+1. **Acknowledge** within 3 working days, in the private advisory.
+2. **Confirm and rate** it (CVSS) together with you, within 14 days.
+3. **Fix** it in a private fork of the advisory; a confirmed high or critical issue is fixed and
+   released within 30 days, a medium one within 60. You may test the fix before it ships.
+4. **Release and disclose**: the fixed version, a published GitHub security advisory (with a CVE
+   when the issue warrants one) and its `CHANGELOG.md` entry go out together.
+5. **Credit**: the advisory and the changelog name you, unless you ask to stay anonymous.
+
+Only the latest release gets security fixes. Updating is one command (see
+[docs/install.md](docs/install.md#update)); the changelog says when an update needs anything more.
+
 ## Checking a download
 
 Every file of a native browser release is checked in GitHub Actions against the SHA-256 the

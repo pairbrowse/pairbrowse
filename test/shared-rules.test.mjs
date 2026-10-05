@@ -308,4 +308,10 @@ test("a joiner's agent's results name no folder on the host's computer", async (
   // A home ("/tmp" on Linux) only as a whole path, and never inside a web address.
   assert.equal(forJoiner("see https://a.example/tmp-files/x and https://a.example/Foo_(b)/tmp?next=/home/feed", ["/tmp", "/home/kees"]), "see https://a.example/tmp-files/x and https://a.example/Foo_(b)/tmp?next=/home/feed");
   assert.equal(forJoiner("at /private/tmp/kees/a.png and /tmp/b.png", ["/tmp"]), "at ~/a.png and ~/b.png");
+  // This computer's homes are hidden inside a web address too (where a value starts, plain or
+  // percent-encoded); the address is otherwise left whole.
+  assert.equal(forJoiner("see https://x.example/?f=/Users/kees/a.txt&next=/home/feed#/Users/kees", ["/Users/kees", "/tmp"]), "see https://x.example/?f=~/a.txt&next=/home/feed#~");
+  assert.equal(forJoiner("https://x.example/Users/kees/a?f=%2FUsers%2Fkees%2Fb.txt", ["/Users/kees"]), "https://x.example/Users/kees/a?f=~%2Fb.txt");
+  assert.equal(forJoiner("https://x.example/?f=/private/tmp/x&g=/tmp-files&h=/tmp.txt&i=/tmp", ["/tmp"]), "https://x.example/?f=/private/tmp/x&g=/tmp-files&h=/tmp.txt&i=~");
+  assert.equal(forJoiner("https://x.example/?f=/Users/keesje/a", ["/Users/kees"]), "https://x.example/?f=/Users/keesje/a");
 });

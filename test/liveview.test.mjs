@@ -183,8 +183,9 @@ test("showing a tab: one CDP session at a time, each tab wired once, all release
     stream.close();
     view.close();
   }
-  await wait(50);
+  // Released as the close runs its course (later on a busy computer): wait for it, not a fixed time.
   const last = sessions.at(-1);
+  for (let i = 0; i < 100 && !last.detached; i++) await wait(50);
   assert.ok(last.detached, "close releases the shown tab");
   assert.ok(last.calls.includes("Page.stopScreencast"));
   assert.ok(last.calls.includes("Emulation.clearDeviceMetricsOverride"));

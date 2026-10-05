@@ -144,10 +144,15 @@ const REMOTE_TOOLS = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse
 // saved here (snapshots, downloads) keep their name only; this computer's home becomes "~".
 export function forJoiner(text, homes = [paths.home, homedir(), tmpdir()]) {
   const t = String(text ?? "").replace(/\]\(((?:\.{1,2}[\\/]|[\\/]|~[\\/]|[A-Za-z]:[\\/]|file:)[^)\s]*)\)/g, (_m, p) => `](on the host's computer: ${String(p).split(/[\\/]/).pop()})`);
-  // A home only as a whole path ("/tmp" is not in "/private/tmp"); web addresses stay whole
-  // ("https://a.example/tmp?next=/home/feed").
-  const homeAt = homes.filter(Boolean).sort((a, b) => b.length - a.length).map((h) => new RegExp(`(?<![\\w.~-])${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-]|\\.\\w)`, "g"));
-  return t.split(/(https?:\/\/[^\s"'`<>]+)/i).map((part, i) => (i % 2 ? part : homeAt.reduce((s, re) => s.replace(re, "~"), part)
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const byLength = homes.filter(Boolean).map(String).sort((a, b) => b.length - a.length);
+  // A home only as a whole path ("/tmp" is not in "/private/tmp", "/tmp-files" or "/tmp.txt").
+  const end = "(?![\\w-]|\\.\\w)";
+  const homeAt = byLength.map((h) => new RegExp(`(?<![\\w.~-])${esc(h)}${end}`, "g"));
+  // In a web address, only where a value starts (after "=", "?", "&" or "#"; also percent-encoded),
+  // so its own path ("https://a.example/Foo_(b)/tmp") is never touched.
+  const homeInUrl = byLength.flatMap((h) => [new RegExp(`(?<=[=?&#])${esc(h)}${end}`, "g"), new RegExp(`(?<=[=?&#])${esc(h).replace(/\//g, "%2F")}(?![\\w-]|\\.\\w|%(?!2F))`, "gi")]);
+  return t.split(/(https?:\/\/[^\s"'`<>]+)/i).map((part, i) => (i % 2 ? homeInUrl.reduce((s, re) => s.replace(re, "~"), part) : homeAt.reduce((s, re) => s.replace(re, "~"), part)
     // Other places on this computer (accounts, temp and system folders, other disks): the name only.
     .replace(/(?<![\w.~-])(?:\/(?:Users|home|root|private|tmp|var\/folders|Volumes|mnt|media)|[A-Za-z]:\\(?:Users|Windows|Temp))[\\/][^\s"'`)\]]+/g, (m) => `~/${m.split(/[\\/]/).pop()}`))).join("");
 }

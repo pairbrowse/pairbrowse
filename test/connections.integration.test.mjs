@@ -68,16 +68,22 @@ function setup() {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     const d = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, ...env }, stdio: ["ignore", out, out] });
     daemons.push(d);
+    helperOf.set(h, d);
     return d;
   };
+  const helperOf = new Map(); // home -> the helper started last there
   // A session on the helper's socket, as a bridge opens one.
   const attach = async (h, name = "t") => {
+    // Until the helper listens: loading the browser runtime takes a while on a busy computer (the
+    // whole suite at once), so this waits for it to accept or to exit, not for a fixed time.
     let sock;
-    for (let i = 0; ; i++) {
+    for (const end = Date.now() + 90_000; ; await sleep(100)) {
+      const d = helperOf.get(h);
+      if (d && d.exitCode !== null) throw new Error(`the helper exited (${d.exitCode}) before listening on ${socketOf(h)}`);
       sock = net.createConnection(socketOf(h));
       if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
-      if (i > 100) throw new Error(`couldn't connect to ${socketOf(h)}`);
-      await sleep(100);
+      sock.destroy();
+      if (Date.now() > end) throw new Error(`couldn't connect to ${socketOf(h)}`);
     }
     sock.on("error", () => {});
     socks.push(sock);

@@ -79,3 +79,24 @@ test("each person's steps are named as theirs, from the reader's side", () => {
     mock.timers.reset();
   }
 });
+
+test("input read late from a busy page is still taken (a read empties the page's list), and a slow frame isn't read twice at once", async () => {
+  const frame = {};
+  const page = { isClosed: () => false, frames: () => [frame] };
+  let reads = 0;
+  // The first read answers 1.6 s later (past the poll's 1 s wait): its click must not be lost.
+  const readEvents = () => { reads++; return reads === 1 ? new Promise((r) => setTimeout(() => r([{ kind: "click", t: Date.now(), what: "Go" }]), 1600)) : Promise.resolve([]); };
+  let stopped = false; // the poll stops after the test (its read waits keep the process alive)
+  const presence = createPresence({ host: "Bob", readEvents, pages: () => [page], paused: () => stopped, onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+  try {
+    // Polls at 0.5 s (the read, answered at 2.1 s), 1 s and 1.5 s (that frame still answering).
+    await new Promise((r) => setTimeout(r, 1800));
+    assert.equal(reads, 1, "a frame still answering is skipped");
+    assert.equal(presence.actingIn(page), null);
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal(presence.actingIn(page), "Bob", "the late click counts");
+    assert.match(presence.userNote(page), /The user used this tab meanwhile: clicked "Go"/);
+  } finally {
+    stopped = true;
+  }
+});

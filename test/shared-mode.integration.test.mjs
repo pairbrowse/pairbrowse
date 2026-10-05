@@ -231,8 +231,10 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
 
     stage = "keys typed on the picture go into the host's field";
     await tool(host.call, "pairbrowse_collaboration", { action: "release" }); // the host's agent lets the tab go (turns, as everywhere)
+    // Keys go where the click put the focus: typed before that click reached the host's tab (a
+    // busy computer), they would land nowhere. So type once the host's field has the focus.
     await click(toJoiner(0.5, 0.4));
-    await sleep(300);
+    await until("the click focuses the host's field", async () => (await evaluate(host.call, "() => document.activeElement?.id")) === "i", 15_000);
     await onScreen({ type: "hi!" }); // real key presses on the picture page
     await until("the host's field has the text", async () => (await evaluate(host.call, "() => document.getElementById('i').value")) === "hi!", 15_000);
     // The host sees Alice in that tab: a dot in her pointer's color on its icon.

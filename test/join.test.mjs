@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { EventEmitter } from "node:events";
-import { encodeJoinCode, parseJoinCode, createApprovals, stripUrl, stripText, newJoinerId, personLabel, appName, displayName } from "../scripts/join.mjs";
+import { encodeJoinCode, parseJoinCode, createApprovals, stripUrl, stripText, newJoinerId, personLabel, appName, displayName, cleanName } from "../scripts/join.mjs";
 import { readAccount } from "../scripts/util.mjs";
 import { startJoin } from "../scripts/relay.mjs";
 import { startLiveView, createInvites } from "../scripts/liveview.mjs";
@@ -84,6 +84,20 @@ test("joiners see addresses without query strings or fragments", () => {
   assert.equal(stripText("Opened https://a.example/p?q=secret#f and http://b.example/?x=1"), "Opened https://a.example/p and http://b.example/");
   assert.equal(personLabel("Alice", appName("codex-mcp-client")), "Alice · Codex");
   assert.equal(personLabel("Alice"), "Alice (by hand)");
+});
+
+test("addresses in text lose their query string even after brackets, and on IPv6 hosts", () => {
+  assert.equal(stripText("see https://en.wikipedia.org/wiki/Foo_(bar)?token=s1 now"), "see https://en.wikipedia.org/wiki/Foo_(bar) now");
+  assert.equal(stripText("(https://a.example/?q=(b)&token=s1)"), "(https://a.example/)");
+  assert.equal(stripText("http://[::1]:8080/a?token=s1"), "http://[::1]:8080/a");
+  assert.equal(stripUrl("not a url?token=s1\nmore"), "not a url");
+});
+
+test("names lose every formatting character and never end in half a character", () => {
+  assert.equal(cleanName("Al؜ice￹­᠎"), "Alice");
+  assert.equal(cleanName(`${"a".repeat(39)}😀`), "a".repeat(39));
+  assert.equal(cleanName("\ud800"), "Guest");
+  assert.equal(cleanName(JSON.parse('{"toString":""}')), "Guest");
 });
 
 test("a person's default name: participantName, PAIRBROWSE_PARTICIPANT, the account's full name, the login; never a stand-in", () => {

@@ -26,6 +26,7 @@ Before you send it:
   ```bash
   npm test
   PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime npm test   # also the live browser tests
+  npm ci && npm run test:fuzz                              # fuzzing of the security checks
   claude plugin validate .
   ```
 

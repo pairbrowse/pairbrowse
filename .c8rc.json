@@ -1,0 +1,7 @@
+{
+  "all": true,
+  "include": ["scripts/**/*.mjs", "scripts/**/*.js"],
+  "exclude": ["scripts/dock/**", "scripts/browser/**", "scripts/hud.js"],
+  "reporter": ["text-summary", "json-summary"],
+  "report-dir": "coverage"
+}

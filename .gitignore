@@ -18,3 +18,5 @@ graphify-out/
 /PROGRESS.md
 docs/media/*
 !docs/media/pairbrowse-demo.gif
+
+coverage/

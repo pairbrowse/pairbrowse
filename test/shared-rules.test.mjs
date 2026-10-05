@@ -305,4 +305,7 @@ test("a joiner's agent's results name no folder on the host's computer", async (
   const more = forJoiner("at /var/folders/xy/T/pb/page.yml, /private/tmp/a/b.png, /tmp/c/d.txt, /root/x/y, C:\\Users\\kees\\e.txt; see https://site.example/tmp/page", ["/Users/kees"]);
   assert.doesNotMatch(more, /folders|private|\/tmp\/c|root|kees/);
   assert.match(more, /https:\/\/site\.example\/tmp\/page/, "addresses on the web stay whole");
+  // A home ("/tmp" on Linux) only as a whole path, and never inside a web address.
+  assert.equal(forJoiner("see https://a.example/tmp-files/x and https://a.example/Foo_(b)/tmp?next=/home/feed", ["/tmp", "/home/kees"]), "see https://a.example/tmp-files/x and https://a.example/Foo_(b)/tmp?next=/home/feed");
+  assert.equal(forJoiner("at /private/tmp/kees/a.png and /tmp/b.png", ["/tmp"]), "at ~/a.png and ~/b.png");
 });

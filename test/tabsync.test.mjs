@@ -318,3 +318,15 @@ test("shared browser: an address typed in a picture tab goes to the host even wh
   for (let i = 0; i < 10; i++) m.typed("000000a1", `https://a.example/${i}`);
   assert.equal(m.typed("000000a1", "https://a.example/again"), null, "still limited when it keeps bouncing");
 });
+
+test("a joiner's malformed changes are refused, never thrown, and IPv6 local addresses aren't named", async () => {
+  const { crossingText } = await import("../scripts/tabsync.mjs");
+  const odd = JSON.parse('{"toString":""}');
+  const ids = new Set(["aaaaaaaa"]);
+  assert.deepEqual(readOps({ ops: [{ op: "open", ref: ["n1"], url: "https://a.example/" }] }, ids), { problem: "Unknown change." });
+  assert.equal(readOps({ ops: [{ op: "activity", id: "aaaaaaaa", text: odd, who: odd }, { op: "agent", id: "aaaaaaaa", color: odd, left: odd }] }, ids).ops.length, 2);
+  assert.equal(readForm({ url: "https://a.example/", fields: [{ k: "a", t: odd, v: "x" }] }).fields.length, 1);
+  assert.equal(readPointers({ me: { id: "aaaaaaaa", x: odd, y: 1 }, agents: [{ id: "aaaaaaaa", x: 1, y: 1, who: odd, color: odd }] }, ids).me, null);
+  assert.equal(stateForJoiner({ tabs: [{ id: "aaaaaaaa", url: "https://a.example/", did: [{ n: odd, who: "x", line: "y" }] }], people: [odd] }).tabs.length, 1);
+  assert.equal(crossingText("Opened http://[::1]:8080/a and http://[fe80::1]/"), "Opened a local page and a local page");
+});

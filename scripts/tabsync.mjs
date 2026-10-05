@@ -10,7 +10,7 @@
 // bookkeeping that keeps an update applied on one side from bouncing back.
 import { SENSITIVE, looksLikeCard } from "./policy.mjs";
 import { isLocalNetwork } from "./guard.mjs";
-import { stripText } from "./join.mjs";
+import { stripText, eachUrl, textOf, numOf } from "./join.mjs";
 import { redact } from "./daemon/session.mjs";
 
 export const TABS_MAX = 40; // tabs that cross, in order
@@ -27,15 +27,15 @@ const CREDENTIAL = /auth|key|sig|session|sid$|state|nonce|ticket|jwt|saml|assert
 const secretish = (v) => /@|%40/.test(v) || /^eyJ/.test(v) || [...String(v).matchAll(/[A-Za-z0-9_~+/=-]{24,}/g)].some(([m]) => /\d/.test(m) && /[A-Za-z]/.test(m));
 // An agent's turn in a tab, as it crosses: whole ms, at most TURN_MAX_MS (0: no turn held).
 export const TURN_MAX_MS = 600_000;
-export const turnLeft = (ms) => Math.max(0, Math.min(TURN_MAX_MS, Math.round(Number(ms) || 0)));
-const clean = (s, max = TEXT_MAX) => stripText(String(s ?? "")).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").slice(0, max);
+export const turnLeft = (ms) => Math.max(0, Math.min(TURN_MAX_MS, Math.round(numOf(ms) || 0)));
+const clean = (s, max = TEXT_MAX) => stripText(textOf(s)).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").slice(0, max);
 
 // Text about what someone did (activity lines, an agent's last action) as it may cross: saved
 // passwords as their names, card numbers, IBANs, SSNs and JWTs masked, addresses cut to origin and
 // path, and addresses on the sender's own computer or network not named at all.
 export function crossingText(text, secrets = {}) {
-  return stripText(redact(text, secrets).replace(/\beyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]*){0,2}/g, "••••"))
-    .replace(/https?:\/\/[^\s"'`<>()[\]]+/gi, (m) => { try { return localAddress(new URL(m)) ? "a local page" : m; } catch { return m; } });
+  return eachUrl(stripText(redact(textOf(text), secrets).replace(/\beyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]*){0,2}/g, "••••")),
+    (u) => { try { return localAddress(new URL(u)) ? "a local page" : u; } catch { return u; } });
 }
 
 // Addresses on someone's own computer or network: the local-network rule, plus single-label
@@ -80,15 +80,15 @@ export function stateForJoiner({ tabs = [], activity = [], people = [] }, { driv
     const url = shareableUrl(mapUrl(t.url) || t.url, { full: drive, secretDomains });
     if (!url || out.length >= TABS_MAX) continue;
     if (onSecretDomain(t.url, secretDomains)) { quiet.add(t.id); out.push({ id: t.id, url }); continue; }
-    const did = (Array.isArray(t.did) ? t.did : []).filter((e) => e.who !== name).slice(-10).map((e) => ({ n: Number(e.n) || 0, who: clean(e.who, 60), line: clean(e.line, 80) }));
-    out.push({ id: t.id, url, title: clean(t.title), ...(t.agent ? { agent: clean(t.agent, 60), ...(COLOR.test(t.color || "") ? { color: t.color } : {}), ...(turnLeft(t.left) ? { left: turnLeft(t.left) } : {}) } : {}), ...(t.person && t.person !== name ? { person: clean(t.person, 60), ...(t.acting ? { acting: true } : {}) } : {}), ...(did.length ? { did } : {}) });
+    const did = (Array.isArray(t.did) ? t.did : []).filter((e) => e.who !== name).slice(-10).map((e) => ({ n: numOf(e.n) || 0, who: clean(e.who, 60), line: clean(e.line, 80) }));
+    out.push({ id: t.id, url, title: clean(t.title), ...(t.agent ? { agent: clean(t.agent, 60), ...(COLOR.test(textOf(t.color)) ? { color: t.color } : {}), ...(turnLeft(t.left) ? { left: turnLeft(t.left) } : {}) } : {}), ...(t.person && t.person !== name ? { person: clean(t.person, 60), ...(t.acting ? { acting: true } : {}) } : {}), ...(did.length ? { did } : {}) });
   }
   const shared = new Set(out.map((t) => t.id).filter((id) => !quiet.has(id)));
   return {
     tabs: out,
     // Activity in tabs that don't cross stays home, and so does the tab it happened in.
     activity: activity.filter((a) => (!a.tabId || shared.has(a.tabId)) && (!from || a.from !== from)).slice(-ACTIVITY_MAX)
-      .map((a) => ({ t: Number(a.t) || 0, text: clean(crossingText(a.text)), who: clean(a.who, 60), ...(a.tabId ? { tabId: a.tabId } : {}) })),
+      .map((a) => ({ t: numOf(a.t) || 0, text: clean(crossingText(a.text)), who: clean(a.who, 60), ...(a.tabId ? { tabId: a.tabId } : {}) })),
     people: people.filter((p) => p && p !== name).slice(0, 20).map((p) => clean(p, 60)),
   };
 }
@@ -108,7 +108,7 @@ export function readOps(body, ids) {
     if (op === "activity" && ids.has(o.id) && o.text) { ops.push({ op, id: o.id, text: clean(crossingText(o.text)), who: clean(o.who, 60) }); continue; }
     // Their agent in a tab (its spark color), or none any more. left: how long its turn there
     // still holds (agents here wait for it), 0 when it only shows there.
-    if (op === "agent" && ids.has(o.id)) { ops.push({ op, id: o.id, who: clean(o.who, 60), color: COLOR.test(o.color || "") ? o.color : "", left: turnLeft(o.left) }); continue; }
+    if (op === "agent" && ids.has(o.id)) { ops.push({ op, id: o.id, who: clean(o.who, 60), color: COLOR.test(textOf(o.color)) ? o.color : "", left: turnLeft(o.left) }); continue; }
     // Their tab order: the known ids, as they now stand.
     if (op === "order" && Array.isArray(o.ids)) { ops.push({ op, ids: [...new Set(o.ids.filter((id) => ids.has(id)))].slice(0, TABS_MAX) }); continue; }
     // Values typed there (checked again here: sensitive ones never carry a value).
@@ -122,7 +122,7 @@ export function readOps(body, ids) {
     const url = shareableUrl(o?.url, { full: true });
     if (!url) return { problem: "Refused: only public web addresses (http or https, not on someone's local network) cross between browsers." };
     if (op === "navigate" && ids.has(o.id)) ops.push({ op, id: o.id, url });
-    else if (op === "open" && REF.test(String(o.ref))) ops.push({ op, ref: o.ref, url });
+    else if (op === "open" && typeof o.ref === "string" && REF.test(o.ref)) ops.push({ op, ref: o.ref, url });
     else return { problem: "Unknown change." };
   }
   return { ops };
@@ -165,7 +165,7 @@ export function createMirror({ now = () => Date.now(), settleMs = 2500, staleMs 
       const seen = new Set();
       for (const t of (Array.isArray(tabs) ? tabs : []).slice(0, TABS_MAX)) {
         const url = shareableUrl(t?.url, { full: true });
-        if (!ID.test(String(t?.id)) || !url || seen.has(t.id)) continue;
+        if (!ID.test(textOf(t?.id)) || !url || seen.has(t.id)) continue;
         seen.add(t.id);
         const l = links.get(t.id);
         if (!l) { link(t.id, url); plan.open.push({ id: t.id, url }); continue; }
@@ -202,7 +202,7 @@ export function createMirror({ now = () => Date.now(), settleMs = 2500, staleMs 
     closedHere(id) { const l = links.get(id); if (!l) return null; l.closedHere = true; return { op: "close", id }; },
     // A new tab opened here from a shared one (a drive joiner sends it; the host answers its id).
     opening(url) { return { op: "open", ref: `n${++refSeq}`, url }; },
-    opened(id, url) { if (!ID.test(String(id))) return false; const l = link(id, url); l.baseline = url; return true; },
+    opened(id, url) { if (!ID.test(textOf(id))) return false; const l = link(id, url); l.baseline = url; return true; },
   };
 }
 
@@ -239,14 +239,14 @@ export function sensitiveField({ type = "", hints = "", v = "" }, secretValues =
 
 // One field as it may cross, or null. Values are cut to size; anything else is dropped.
 function oneField(x, { secretValues = [], trusted = false } = {}) {
-  if (!x || typeof x.k !== "string" || !x.k || x.k.length > KEY_MAX || typeof (x.f ?? "") !== "string" || String(x.f ?? "").length > KEY_MAX) return null;
-  const t = String(x.t ?? "");
+  if (!x || typeof x.k !== "string" || !x.k || x.k.length > KEY_MAX || typeof (x.f ?? "") !== "string" || (x.f ?? "").length > KEY_MAX) return null;
+  const t = textOf(x.t);
   if (!FIELD_TYPES.has(t)) return null;
   // o: the person who filled it (never a value): agents on both sides leave it to them.
-  const base = { f: String(x.f ?? ""), k: x.k, t, ...(x.o ? { o: clean(x.o, 60) } : {}) };
+  const base = { f: x.f ?? "", k: x.k, t, ...(x.o ? { o: clean(x.o, 60) } : {}) };
   // From the page (trusted: this side's own reading): judged here. From the other side: a
   // masked field stays masked, and a value that looks sensitive is dropped all the same.
-  if (x.m || t === "password" || (trusted && sensitiveField({ type: t, hints: String(x.hints ?? ""), v: x.v }, secretValues))) {
+  if (x.m || t === "password" || (trusted && sensitiveField({ type: t, hints: textOf(x.hints), v: x.v }, secretValues))) {
     const filled = trusted ? (Array.isArray(x.v) ? x.v.length > 0 : typeof x.v === "string" ? x.v.length > 0 : !!x.v) : !!x.filled;
     return { ...base, m: 1, filled };
   }
@@ -373,7 +373,7 @@ export function sameOrder(a, b) {
 export function createOrderSync({ now = () => Date.now(), holdMs = 5000 } = {}) {
   let host = [], baseline = null, holdUntil = 0;
   return {
-    fromHost(ids) { host = ids.filter((id) => ID.test(String(id))).slice(0, TABS_MAX); },
+    fromHost(ids) { host = ids.filter((id) => ID.test(textOf(id))).slice(0, TABS_MAX); },
     // The order here now (shared ids, left to right). Returns { send } (a move made here),
     // { arrange } (the host's order to apply here), or {}.
     fromLocal(ids) {
@@ -395,17 +395,17 @@ export function createOrderSync({ now = () => Date.now(), holdMs = 5000 } = {}) 
 // tab, at the same place in the document. Only a tab id, a position, a name and a color cross:
 // never what is under the pointer, and nothing for tabs on secret domains.
 export const POINTER_MAX = 1_000_000;
-const coord = (n) => Math.max(0, Math.min(POINTER_MAX, Math.round(Number(n) || 0)));
+const coord = (n) => Math.max(0, Math.min(POINTER_MAX, Math.round(numOf(n) || 0)));
 export function readPointer(p, ids) {
-  if (!p || !ids.has(p.id) || !Number.isFinite(Number(p.x)) || !Number.isFinite(Number(p.y))) return null;
-  return { id: p.id, x: coord(p.x), y: coord(p.y), ...(p.who ? { who: clean(p.who, 60) } : {}), ...(COLOR.test(p.color || "") ? { color: p.color } : {}) };
+  if (!p || !ids.has(p.id) || !Number.isFinite(numOf(p.x)) || !Number.isFinite(numOf(p.y))) return null;
+  return { id: p.id, x: coord(p.x), y: coord(p.y), ...(p.who ? { who: clean(p.who, 60) } : {}), ...(COLOR.test(textOf(p.color)) ? { color: p.color } : {}) };
 }
 // Where a person is reading in a shared tab (a mark on the other side's scrollbar): the top of
 // their viewport and its height, in document pixels. Marked v: 1 among the pointers.
 export const VIEW_FRESH_MS = 60_000; // a view not moved for this long stops showing
 export function readView(p, ids) {
-  if (!p || !ids.has(p.id) || !Number.isFinite(Number(p.y)) || !Number.isFinite(Number(p.h))) return null;
-  return { id: p.id, x: 0, y: coord(p.y), h: coord(p.h), v: 1, ...(p.who ? { who: clean(p.who, 60) } : {}), ...(COLOR.test(p.color || "") ? { color: p.color } : {}) };
+  if (!p || !ids.has(p.id) || !Number.isFinite(numOf(p.y)) || !Number.isFinite(numOf(p.h))) return null;
+  return { id: p.id, x: 0, y: coord(p.y), h: coord(p.h), v: 1, ...(p.who ? { who: clean(p.who, 60) } : {}), ...(COLOR.test(textOf(p.color)) ? { color: p.color } : {}) };
 }
 // A joiner's pointers: theirs (me), their agents' (agents) and where they read (view), checked.
 export function readPointers(body, ids) {
@@ -419,7 +419,7 @@ export function readPointers(body, ids) {
 const PEOPLE_COLORS = ["#f472b6", "#facc15", "#38bdf8", "#fb923c", "#34d399", "#c084fc"];
 export function personColor(name) {
   let h = 0;
-  for (const c of String(name)) h = (h * 31 + c.codePointAt(0)) >>> 0;
+  for (const c of textOf(name)) h = (h * 31 + c.codePointAt(0)) >>> 0;
   return PEOPLE_COLORS[h % PEOPLE_COLORS.length];
 }
 
@@ -432,6 +432,6 @@ export function tabWho(t, prev = null, now = Date.now()) {
   const person = t?.person ? clean(t.person, 40) : prev?.person && now < prev.until ? prev.person : "";
   const until = t?.person ? now + PERSON_SHOWN_MS : person ? prev.until : 0;
   // An agent's label is "Name · App": the name is enough next to its spark.
-  const agent = t?.agent ? clean(String(t.agent).split(" · ")[0], 40) : "";
-  return { person, until, personColor: person ? personColor(person) : "", agent, agentColor: agent ? (COLOR.test(t.color || "") ? t.color : "#e9763f") : "" };
+  const agent = t?.agent ? clean(textOf(t.agent).split(" · ")[0], 40) : "";
+  return { person, until, personColor: person ? personColor(person) : "", agent, agentColor: agent ? (COLOR.test(textOf(t.color)) ? t.color : "#e9763f") : "" };
 }

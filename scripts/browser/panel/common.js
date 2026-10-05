@@ -59,8 +59,12 @@ export function joinBanners(container, base) {
     if (!base()) return;
     for (const b of row.querySelectorAll("button")) b.disabled = true;
     postJson(base() + "approve", op)
-      .then((r) => { if (!r.ok) throw new Error(); })
-      .catch(() => { for (const b of row.querySelectorAll("button")) b.disabled = false; });
+      .then((r) => { if (!r.ok) throw r; })
+      .catch((r) => {
+        // Gone meanwhile (answered elsewhere, timed out after 10 minutes): say so, rather than a button that does nothing.
+        if (r?.status === 404) { const t = row.querySelector("strong"); t.textContent = t.title = "That request is gone (answered, or it timed out)."; return; }
+        for (const b of row.querySelectorAll("button")) b.disabled = false;
+      });
   }
   return function draw(list) {
     const open = Array.isArray(list) ? list.filter((r) => r && r.id && (!r.state || r.state === "pending" || r.state === "approved")) : [];
@@ -74,7 +78,7 @@ export function joinBanners(container, base) {
       const role = r.role === "drive" ? "can drive" : "watch";
       let row;
       if (r.state === "approved") {
-        const remove = el("button", { className: "mini", type: "button", textContent: "Remove", title: "Take them out of your session now" });
+        const remove = el("button", { className: "mini", type: "button", textContent: "Remove", title: "Take them out now. If they try their code again, you're asked again." });
         const text = `${who} is in (${role})`;
         row = el("div", { className: "join in" }, el("strong", { textContent: text, title: text }), el("span", {}, remove));
         remove.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer({ id: r.id, remove: true }, row); });

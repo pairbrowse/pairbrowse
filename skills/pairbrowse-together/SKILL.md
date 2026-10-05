@@ -41,25 +41,26 @@ sessions, and closing the browser, are refused until they disconnect.
      Cloudflare Quick Tunnel. Nothing to set up on either side.
    - `share: "link"`: only when the user wants a Tailscale or SSH link.
 2. Give the user the code or link and the steps from the result to send on.
-3. With a code, the joiner's own PairBrowse browser opens the user's tabs and follows them (no
-   screen is streamed; each person stays signed in as themselves). **Watch**: one way. **Drive**:
-   their changes in those tabs (another address, a new tab, closing one) happen here too, and a
-   person at work in their copy counts like a person here (section 6). A "link" shows the live view instead.
+3. Shared browser code (the default): the joiner sees the user's tabs live and, with drive, works
+   in this browser itself. Follow code: their own browser opens the user's tabs and follows them
+   (one way for **watch**; **drive**: their tab changes happen here too, and a person at work in
+   their copy counts like a person here, section 6). A "link" shows the live view instead.
 
 ## 3. Approving joiners
 
 1. When a result or the side panel says "<name> wants to join", tell the user who and which role.
-2. The user clicks **Allow** or **Deny** in the live view or side panel (nothing is sent before Allow).
+2. The user clicks **Allow** or **Deny** in the side panel or the ~10 s prompt in the corner of
+   their tab (nothing is sent before Allow). Their answer comes in your next result.
 3. If the user tells you to let them in, `pairbrowse_invite` `approve` with the join request `id`
    (from `list`); it asks the user. `deny` with `id` is always fine.
 4. In Codex (any app that can't ask the user), `approve` and drive invites are refused with a
    note: the user clicks Allow, or asks for the drive invite, themselves.
 5. Someone else with the same code has to ask again. After Allow, **Remove** next to them in the
-   side panel or live view takes them out at once (that code won't let them back in).
+   side panel takes them out at once; a new try with that code asks again (`revoke` stops it).
 6. `list` shows invites and join requests (no keys). When the user says the person is done:
    `revoke` with the invite `id`, or `revoke_all`, which ends every invite and closes the tunnel.
 
-## 4. What crosses with a code
+## 4. What crosses with a follow code
 
 - Tab addresses, titles, activity lines, the tab order, form field values, mouse pointers and
   who is doing what. Never cookies, logins, passwords, remembered details, files or a picture of
@@ -84,8 +85,7 @@ sessions, and closing the browser, are refused until they disconnect.
 
 1. The user gives you a `pb-join:...` code. Call `pairbrowse_join` with `action: "join"`, the
    `code`, and `name` (the user's name as the host sees it) if they said it.
-2. It says "Waiting for the host to approve" until the host lets them in. Then this browser opens
-   the host's tabs in a window of their own and keeps following them.
+2. "Waiting for the host to approve" until they let them in; then the host's tabs open here.
 3. Shared browser code (the join result says so): your browser tools work in the host's browser
    itself (drive), with their turns and rules; uploads go from this computer. Follow code: your tools
    stay here, changes in the shared tabs reach the host. People there count like people here; `status` shows the join.

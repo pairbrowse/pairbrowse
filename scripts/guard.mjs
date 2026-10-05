@@ -82,9 +82,9 @@ export function decide(input, _config, review = latestReview(), now = Date.now()
   // click there shares the dev server), in Claude Code and Codex alike.
 
   // Letting someone into the session: only the user decides, never an agent on its own (a page
-  // could tell it to). The live view's Allow button needs no prompt; this does.
+  // could tell it to). The side panel's, live view's and in-page prompt's Allow need no prompt (a person's click); this does.
   if (tool === "pairbrowse_invite" && ti.action === "approve") {
-    return ask(`Lets the person behind join request ${String(ti.id || "").replace(/[^\w-]/g, "").slice(0, 20)} into your PairBrowse session. Allow only if you are expecting them.`);
+    return ask(`Lets the person behind join request ${String(ti.id || "").replace(/[^\w-]/g, "").slice(0, 20)} into your PairBrowse session. Allow only if you are expecting them: the name on the request is in the PairBrowse side panel, where you can also click Allow yourself.`);
   }
 
   // Page scripts can read what was typed (including passwords) and send it anywhere, so they

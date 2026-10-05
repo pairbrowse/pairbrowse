@@ -14,7 +14,7 @@ Anyone can contribute here. By sending a change you agree it's licensed under th
 
 Before you send it:
 
-- Read `CLAUDE.md`. Security is the product: no debugging port, no unrestricted file access, no
+- Read `.claude/CLAUDE.md`. Security is the product: no debugging port, no unrestricted file access, no
   run-code or WebMCP tools, no CAPTCHA solver. If your change alters behaviour described in the
   Security table in `docs/security.md`, update the table in the same change.
 - Hooks and the helper use only Node's standard library. New runtime dependencies go in

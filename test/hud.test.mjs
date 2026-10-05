@@ -58,9 +58,9 @@ test("a page finds no fixed PairBrowse name, attribute or window property, and t
     const seen = await page.evaluate(() => {
       const all = [...document.querySelectorAll("*")];
       return {
-        tags: all.map((e) => e.localName).filter((t) => /pairbrowse|^pb-/.test(t)),
+        tags: all.map((e) => e.localName).filter((t) => t.includes("pairbrowse") || t.startsWith("pb-")),
         custom: all.filter((e) => e.localName.includes("-")).map((e) => ({ tag: e.localName, attrs: e.getAttributeNames() })),
-        props: Object.getOwnPropertyNames(window).filter((k) => /^__pb|pairbrowse/i.test(k)),
+        props: Object.getOwnPropertyNames(window).filter((k) => /^__pb/i.test(k) || /pairbrowse/i.test(k)),
         linkAttrs: [...document.querySelectorAll("link")].flatMap((l) => l.getAttributeNames()),
         text: document.documentElement.innerText,
       };

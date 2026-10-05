@@ -42,7 +42,7 @@ post("two");
 
 // Sven's agent holds the IANA tab; then says release, and it's free here at once.
 await wait("held");
-await h.tool("browser_tabs", { action: "select", index: (await tabs()).find((t) => /iana\.org/.test(t.url)).index });
+await h.tool("browser_tabs", { action: "select", index: (await tabs()).find((t) => /(^|\.)iana\.org$/.test(new URL(t.url).hostname)).index });
 let r = await h.tool("browser_press_key", { key: "Shift" });
 say({ whileHeld: { refused: !!r.result?.isError, text: text(r).slice(0, 120) } });
 post("checked");

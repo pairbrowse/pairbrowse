@@ -184,7 +184,7 @@ export function profilePanel(base) {
   $("add-secret").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target;
-    const name = /^[A-Z][A-Z0-9_]+$/.test(f.label.value) ? f.label.value : toName(f.label.value) + (/PASSWORD|_PW$/.test(toName(f.label.value)) ? "" : "_PASSWORD");
+    const name = /^[A-Z][A-Z0-9_]+$/.test(f.label.value) ? f.label.value : toName(f.label.value) + (toName(f.label.value).includes("PASSWORD") || toName(f.label.value).endsWith("_PW") ? "" : "_PASSWORD");
     const err = await change({ op: "setSecret", name, value: f.value.value, domains: f.domains.value });
     f.value.value = ""; // never keep a password in the page longer than needed
     if (err) return say(err, "error");

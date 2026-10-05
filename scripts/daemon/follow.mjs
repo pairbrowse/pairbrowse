@@ -15,7 +15,7 @@ import { sleep, currentAccount, within } from "../util.mjs";
 import { panelExtensionId } from "../browser.mjs";
 import { pathsIn, withPaths } from "./serve.mjs";
 import { uploadProblem } from "../upload.mjs";
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
@@ -669,8 +669,13 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   async function sendFile(cur, path) {
     const problem = uploadProblem(path, paths.uploads);
     if (problem) throw new Error(problem);
-    if (statSync(path).size > 50 * 1024 * 1024) throw new Error(`${path} is too large to send (50 MB at most).`);
-    const data = readFileSync(path);
+    // Size and contents from one open file, so it can't be swapped between the check and the read.
+    const fd = openSync(path, "r");
+    let data;
+    try {
+      if (fstatSync(fd).size > 50 * 1024 * 1024) throw new Error(`${path} is too large to send (50 MB at most).`);
+      data = readFileSync(fd);
+    } finally { closeSync(fd); }
     const token = randomBytes(8).toString("hex");
     const parts = Math.max(1, Math.ceil(data.length / FILE_PART));
     for (let part = 0; part < parts; part++) {

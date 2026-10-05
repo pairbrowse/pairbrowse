@@ -108,7 +108,7 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
     if (verdict === "ask") c.prompts++;
     assert.notEqual(verdict, "deny", `${name} denied`);
     const r = await claude.call("tools/call", { name, arguments: args });
-    if (r.result?.isError && /^Refused|Stopped|stopped|refused/.test(text(r))) { c.refusals++; (c.why ||= []).push(`${name}: ${text(r).slice(0, 300)}`); }
+    if (r.result?.isError && (/^Refused/.test(text(r)) || /[Ss]topped|refused/.test(text(r)))) { c.refusals++; (c.why ||= []).push(`${name}: ${text(r).slice(0, 300)}`); }
     return r;
   };
   const snap = async () => text(await claude.call("tools/call", { name: "browser_snapshot", arguments: {} }));

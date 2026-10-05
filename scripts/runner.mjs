@@ -236,14 +236,16 @@ async function byNearbyText(page, label) {
   return index >= 0 ? all.nth(index) : null;
 }
 
+// A CSS attribute value in double quotes: backslashes and quotes escaped.
+const cssString = (s) => s.replace(/[\\"]/g, "\\$&");
 const field = (page, label) => find(page, [
   () => page.getByLabel(label, { exact: true }),
   () => page.getByPlaceholder(label, { exact: true }),
   () => page.getByRole("textbox", { name: label, exact: true }),
   () => page.getByLabel(label),
   () => page.getByPlaceholder(label),
-  () => page.locator(`[name="${label.replace(/"/g, '\\"')}"]`),
-  () => page.locator(`[id="${label.replace(/"/g, '\\"')}"]`),
+  () => page.locator(`[name="${cssString(label)}"]`),
+  () => page.locator(`[id="${cssString(label)}"]`),
 ]).then((el) => el || byNearbyText(page, label));
 // The page's only visible field of a kind: the one meant when it has no label at all.
 async function onlyOne(page, selector) {
@@ -398,7 +400,7 @@ async function stepsIn(page, steps, hooks) {
         for (const [label, option] of Object.entries(arg)) {
           const el = await find(page, [() => page.getByLabel(label, { exact: true }), () => page.getByRole("combobox", { name: label }), () => page.getByLabel(label),
             () => page.getByRole("button", { name: label }),
-            () => page.locator(`select[name="${label.replace(/"/g, '\\"')}"], select[id="${label.replace(/"/g, '\\"')}"]`)]) || await onlyOne(page, "select");
+            () => page.locator(`select[name="${cssString(label)}"], select[id="${cssString(label)}"]`)]) || await onlyOne(page, "select");
           if (!el) return fail(`No dropdown "${label}".`);
           if (await theirs(el, label)) continue;
           hooks.cursor?.(el, "click");

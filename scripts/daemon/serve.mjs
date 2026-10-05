@@ -63,6 +63,10 @@ const LATE_POPUP_CHECKS_MS = [3000, 8000]; // an offer that shows up a few secon
 const TAB_WAIT_MS = 5000; // a tab another agent's turn frees within this is waited for
 const TURN_ROUNDS = 40;
 const STALLED_MS = 30_000; // a disconnected participant's action may run this long
+// The most one call may hold the shared queue. Past it the browser is reset (as for a stalled
+// client that left), so one stuck call can't keep every other agent on this computer waiting.
+const TURN_MAX_MS = Number(process.env.PAIRBROWSE_TURN_MAX_MS) || 10 * 60_000;
+const TURN_MAX = TURN_MAX_MS >= 60_000 ? `${Math.round(TURN_MAX_MS / 60_000)} minutes` : `${Math.round(TURN_MAX_MS / 1000)} seconds`;
 const image = (data) => ({ type: "image", data, mimeType: "image/jpeg" });
 
 // browser_handle_dialog gets an element, like a click: what OK confirms, named with its class
@@ -194,6 +198,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const calls = new Map(); // request id -> tool name, for the result
     const tabActions = new Map(); // request id -> browser_tabs action
     const refused = new Set(); // calls the helper itself turned down: they changed nothing in the browser
+    const late = new Set(); // calls answered for running too long: a result that still comes is dropped
     let observedRevision = -1;
     let tabsListed = false; // this session's browser server has seen the tab list
     let snapshotReturned = false;
@@ -293,6 +298,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           return;
         }
         if (msg.result?.tools) msg.result.tools = [...msg.result.tools.filter((t) => !BLOCKED_TOOLS.has(t.name) && !HIDDEN_TOOLS.has(t.name)).map(withDialogLabel), ...PAIRBROWSE_TOOLS];
+        if (late.delete(msg.id)) { calls.delete(msg.id); return; }
         const tool = calls.get(msg.id);
         calls.delete(msg.id);
         await finishResult(msg, tool);
@@ -790,9 +796,18 @@ export function createServe({ config, log, host, createConnection, clients, coll
         snapshotReturned = false;
         const upToDate = observedRevision === revision();
         const response = msg.id === undefined ? Promise.resolve() : new Promise((r) => completed.set(msg.id, r));
+        const overran = msg.id === undefined ? null : setTimeout(async () => {
+          log(`${tool || msg.method} held the browser for ${TURN_MAX}; resetting the browser so other agents can go on`);
+          // The answer first: resetting the browser ends every session's connection (their bridges
+          // reconnect by themselves, failing what was in flight).
+          late.add(msg.id);
+          reply(msg.id, `${tool || "This call"} didn't finish in ${TURN_MAX}, so PairBrowse reset the browser for the other agents waiting on it. Take a browser_snapshot, then try again.`, true);
+          try { await (await context.current())?.close(); } catch {}
+        }, TURN_MAX_MS);
         try {
           await handle(msg);
           await response;
+          clearTimeout(overran);
           if (msg.method === "tools/call" && !refused.delete(msg.id) && changesPage(tool)) {
             bumpRevision();
             // Your own action doesn't make your refs stale (Playwright tells you if one is gone);
@@ -800,6 +815,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
             if (snapshotReturned || upToDate) observedRevision = revision();
           }
         } catch (e) {
+          clearTimeout(overran);
           finish(msg.id);
           throw e;
         }

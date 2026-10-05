@@ -21,6 +21,8 @@ Before you send it:
   `runtime/` with a regenerated lockfile.
 - Fixes should be general: no lists of particular sites or words. Check them live on several real
   sites, and say which ones in your change.
+- New behaviour comes with tests, and a fixed bug with a test that fails without the fix
+  (`test/*.test.mjs`; checks on untrusted input also get a property in `test/fuzz/`).
 - Run the checks:
 
   ```bash

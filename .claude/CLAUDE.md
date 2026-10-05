@@ -41,4 +41,6 @@ claude plugin validate .
   it in the same change as any behaviour it describes.
 - Hooks and the daemon use only Node's standard library; new runtime dependencies go in
   `runtime/` with a regenerated lockfile.
+- A version bump (package.json and both plugin manifests) also adds its entry to `CHANGELOG.md` and an
+  annotated tag `vX.Y.Z` on that commit, pushed with it.
 - Never commit anything from `~/.pairbrowse` (profile, secrets, facts, runs, logs).

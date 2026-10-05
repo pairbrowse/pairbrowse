@@ -84,6 +84,17 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     return () => { span[1] = Date.now() + 300; };
   }
   const byRemote = (t) => remote.find(([start, end]) => t >= start && t <= end)?.[2] || null;
+  // Input the live view replays here (the owner's or an invite link's viewer): theirs to make,
+  // but never an answer to a join prompt (the live view has its own Allow).
+  const replays = []; // [start, end]
+  function replayStart() {
+    const span = [Date.now() - 50, Infinity];
+    replays.push(span);
+    if (replays.length > 100) replays.shift();
+    return () => { span[1] = Date.now() + 300; };
+  }
+  // Any input replayed at time t: the live view's, or a joiner's (named or not).
+  const byReplay = (t) => replays.some(([start, end]) => t >= start && t <= end) || remote.some(([start, end]) => t >= start && t <= end);
   const agentActing = () => busy.some(([, end]) => end === Infinity);
 
   // Entries come from the page, so each one is checked: a known kind, a short label, and a time
@@ -245,7 +256,10 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     // Whether time t fell in an agent's own tool call (typing in fields happens only there).
     typedByAgent: (t) => busy.some((s) => s.tag !== "popup" && t >= s[0] && t <= s[1]),
     // Shared browser mode: marks a joiner's replayed input (returns done()); whose input time t was.
-    remoteStart, byRemote,
+    remoteStart, byRemote, replayStart,
+    // A person's own input at time t: no agent acting then (or just before), nothing replayed
+    // (a joiner's, the live view's). The join prompt's answers must be.
+    byPerson: (t) => !byAgent(t, 300) && !byReplay(t),
     personIn, actingIn, recentPerson, humanIn, elsewhere, sharedPerson, feedAfter, busyStart, agentActing, userDid, watchUser, waitForUser, userNote, didIn,
     waiting: (page) => waitingIn.get(page), loadedAt: (page) => loadedAt.get(page) || 0,
   };

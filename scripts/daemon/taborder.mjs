@@ -27,6 +27,14 @@ export function createTabOrder({ call, getContext, log = () => {} }) {
     return out;
   }
   return {
+    // The page in front (the active tab of the window last focused), or null when it can't be told.
+    async front() {
+      const id = await within(ASK_MS + 500, call(() => { if (!globalThis.pbFront) throw new Error("not ready"); return globalThis.pbFront(); }, null, ASK_MS).catch(() => null));
+      if (id === null || id === undefined) return null;
+      const at = await places();
+      for (const [page, t] of at || []) if (t.id === id) return page;
+      return null;
+    },
     // The given pages in the order they stand (window, then position); null when unknown.
     async order(pages) {
       const at = await places();

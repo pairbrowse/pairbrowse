@@ -376,6 +376,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       if (!sc) { sc = { peer: null, conn: "none", since: now, tries: 0, fallback: false, framesOn: false, hiddenSince: 0, busy: false }; cur.screens.set(page, sc); }
       if (st.conn !== sc.conn) { sc.conn = st.conn; sc.since = now; }
       sc.hiddenSince = st.visible ? 0 : sc.hiddenSince || now;
+      if (st.visible) sc.seenAt = now; // the last one looked at, for this side's agents
       const outOfSight = sc.hiddenSince && now - sc.hiddenSince > SCREEN_KEEP_MS;
       if (sc.fallback) {
         if (outOfSight && sc.framesOn) { sc.framesOn = false; cur.join.screen({ op: "frames", id, on: false }).catch(() => {}); }
@@ -645,7 +646,17 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (done) { pendingCalls.delete(k); done(m); }
   }
   // The host's tab the person here is looking at (its picture page is in sight), or "".
-  const tabInSight = (cur) => { for (const [id, page] of cur.pages) { const sc = cur.screens.get(page); if (sc && !sc.hiddenSince) return id; } return ""; };
+  // In sight now, else the one looked at last.
+  const tabInSight = (cur) => {
+    let best = "", at = 0;
+    for (const [id, page] of cur.pages) {
+      const sc = cur.screens.get(page);
+      if (!sc) continue;
+      if (!sc.hiddenSince) return id;
+      if ((sc.seenAt || 0) > at) { at = sc.seenAt; best = id; }
+    }
+    return best;
+  };
   function sendLine(cur, agent, msg, wait = true) {
     if (!wait) return cur.join.agent(agent, JSON.stringify(msg), tabInSight(cur)).then(() => null);
     return new Promise((resolve) => {

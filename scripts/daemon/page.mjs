@@ -3,6 +3,8 @@
 
 // fn, as a function whose source also declares the given helper functions (by their names).
 export function withHelpers(fn, ...helpers) {
+  // Built only from PairBrowse's own functions (fn and helpers), never from page or user input.
+  // eslint-disable-next-line no-new-func
   return new Function("...args", `${helpers.map(String).join("\n")}\nreturn (${fn})(...args);`);
 }
 

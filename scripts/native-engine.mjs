@@ -76,6 +76,8 @@ export async function captureMacHost(chromium, executablePath, pack, directory, 
       await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
       await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "domcontentloaded" });
     }
+    // The engine pack's collector (SHA-256 checked before load), run in this throwaway local page.
+    // eslint-disable-next-line no-eval
     const captured = await page.evaluate((source) => { (0, eval)(source); return globalThis.collectFingerprint(); }, pack.collector);
     if (!captured || typeof captured !== "object") return null;
     const renderer = webglRenderer(captured);

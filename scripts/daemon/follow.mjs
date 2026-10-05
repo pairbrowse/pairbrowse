@@ -247,7 +247,6 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   // The host's tabs as they changed (pushed): applied here.
   async function applyHost(state, cur) {
     if (s !== cur) return;
-    const drive = cur.join.role === "drive";
     await allowDevServers(state.dev, cur).catch((e) => log("shared dev server", e?.message || e));
 
     const plan = cur.mirror.fromHost(state.tabs, new Set(cur.pages.keys()));
@@ -684,7 +683,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       if (part === parts - 1) return r.path;
     }
   }
-  async function remoteCall(participant, msg, { app, label }) {
+  async function remoteCall(participant, msg, { app }) {
     const cur = s;
     if (!cur?.shared) return { error: { code: -32000, message: "Not in a shared browser session." } };
     const agent = participant.slice(0, 16);

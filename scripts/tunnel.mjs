@@ -6,7 +6,8 @@
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Resolver } from "node:dns/promises";
-import { existsSync, rmSync, renameSync, chmodSync } from "node:fs";
+import { existsSync, rmSync, renameSync, chmodSync, mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { downloadPinned } from "./util.mjs";
@@ -63,38 +64,66 @@ async function resolvesAtCloudflare(host) {
   try { return (await r.resolve4(host)).length > 0; } catch { return false; }
 }
 
-// Starts a Quick Tunnel to http://127.0.0.1:<port>. Resolves { url, stop } once it's reachable:
-// cloudflared has registered a connection and the name resolves (or DNS_WAIT_MS went by).
+// Starts a Quick Tunnel to http://127.0.0.1:<port>. Resolves { url, host, pid, stop, child } once
+// it's reachable: cloudflared has registered a connection and the name resolves (or DNS_WAIT_MS
+// went by). cloudflared runs on its own, writing to a file of its own (logDir, private): it
+// outlives a restart of the helper, whose next run takes it over (adoptTunnel), so joiners just
+// reconnect to the same address. stop() ends it.
 const DNS_WAIT_MS = 15_000;
-export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe, resolves = resolvesAtCloudflare } = {}) {
+export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe, resolves = resolvesAtCloudflare, logDir = join(paths.home, "tunnels") } = {}) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("bad live view port");
   const program = exe || await ensureCloudflared(log);
-  const child = spawn(program, ["tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${port}`], { stdio: ["ignore", "pipe", "pipe"] });
-  const stop = () => { if (child.exitCode === null) child.kill("SIGTERM"); };
+  mkdirSync(logDir, { recursive: true, mode: 0o700 });
+  const file = join(logDir, `${port}-${randomBytes(4).toString("hex")}.log`);
+  const fd = openSync(file, "a", 0o600);
+  let child;
+  try { child = spawn(program, ["tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${port}`], { stdio: ["ignore", fd, fd], detached: process.platform !== "win32" }); } finally { closeSync(fd); }
+  child.unref();
+  const stop = () => { if (child.exitCode === null) { try { child.kill("SIGTERM"); } catch {} } rmSync(file, { force: true }); };
   try {
     const url = await new Promise((ok, no) => {
-      let seen = "";
-      const timer = setTimeout(() => no(new Error("the sharing tunnel didn't start in time")), timeoutMs);
       let found = null;
-      const read = (chunk) => {
-        seen = (seen + chunk).slice(-8000);
+      const timer = setTimeout(() => { clearInterval(poll); no(new Error("the sharing tunnel didn't start in time")); }, timeoutMs);
+      const poll = setInterval(() => {
+        let seen = "";
+        try { seen = readFileSync(file, "utf8").slice(-16000); } catch {}
         found ||= tunnelUrl(seen);
-        if (found && /Registered tunnel connection/.test(seen)) { clearTimeout(timer); ok(found); }
-      };
-      child.stdout.on("data", read);
-      child.stderr.on("data", read);
-      child.once("error", (e) => { clearTimeout(timer); no(e); });
-      child.once("exit", (code) => { clearTimeout(timer); no(new Error(`the sharing tunnel stopped (exit ${code})`)); });
+        if (found && /Registered tunnel connection/.test(seen)) { clearTimeout(timer); clearInterval(poll); ok(found); }
+      }, 150);
+      child.once("error", (e) => { clearTimeout(timer); clearInterval(poll); no(e); });
+      child.once("exit", (code) => { clearTimeout(timer); clearInterval(poll); no(new Error(`the sharing tunnel stopped (exit ${code})`)); });
     });
-    child.stdout.resume();
-    child.stderr.resume();
     for (const end = Date.now() + DNS_WAIT_MS; !(await resolves(new URL(url).host)) && Date.now() < end;) await new Promise((r) => setTimeout(r, 500));
     log(`sharing tunnel up: ${new URL(url).host}`);
-    return { url, host: new URL(url).host, stop, child };
+    return { url, host: new URL(url).host, pid: child.pid, log: file, stop, child };
   } catch (e) {
     stop();
     throw e;
   }
+}
+
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+
+// A tunnel a previous run of the helper started (its saved { url, pid, port, log }), taken over
+// if it is still that: a running cloudflared to this very port. Anything else: null.
+export async function adoptTunnel(saved, { psCommand = async (pid) => (await run("ps", ["-p", String(pid), "-o", "command="])).stdout } = {}) {
+  if (process.platform === "win32" || !saved) return null;
+  const { url, pid, port } = saved;
+  if (tunnelUrl(url) !== url || !Number.isInteger(pid) || pid < 2 || !Number.isInteger(port) || !pidAlive(pid)) return null;
+  let command = "";
+  try { command = String(await psCommand(pid)); } catch { return null; }
+  if (!/cloudflared/.test(command) || !new RegExp(`--url http://127\\.0\\.0\\.1:${port}(\\s|$)`).test(command)) return null;
+  const file = typeof saved.log === "string" && saved.log.startsWith(join(paths.home, "tunnels")) ? saved.log : null;
+  const t = { url, host: new URL(url).host, pid, port, log: file, child: null, adopted: true, gone: false };
+  t.stop = () => { if (!t.gone && pidAlive(pid)) { try { process.kill(pid, "SIGTERM"); } catch {} } t.gone = true; if (file) rmSync(file, { force: true }); };
+  return t;
+}
+
+// fn() once the tunnel's cloudflared has ended: its exit, or (taken over) its process gone.
+export function onTunnelExit(t, fn, everyMs = 2000) {
+  if (t.child) return t.child.once("exit", fn);
+  const timer = setInterval(() => { if (t.gone || !pidAlive(t.pid)) { clearInterval(timer); t.gone = true; fn(); } }, everyMs);
+  timer.unref?.();
 }
 
 // Keeps an eye on a running tunnel from the outside: a request to its public address every
@@ -108,7 +137,7 @@ export function watchTunnel(t, { everyMs = 30_000, misses = 2, timeoutMs = 10_00
     try { return (await fetch(t.url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(timeoutMs) })).status < 500; } catch { return false; }
   });
   const timer = setInterval(async () => {
-    if ((t.child?.exitCode ?? null) !== null) return clearInterval(timer);
+    if ((t.child?.exitCode ?? null) !== null || t.gone) return clearInterval(timer);
     if (await check()) { down = 0; return; }
     if (++down < misses) return;
     clearInterval(timer);

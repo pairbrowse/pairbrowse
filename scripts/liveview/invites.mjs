@@ -38,7 +38,8 @@ export function inviteBaseFrom(value, hosts = []) {
 // A name to show, not markup: the same rule as joiners' names.
 export const inviteLabel = (label) => cleanName(label);
 
-// The invites, for as long as the helper runs (the live view may restart with the browser).
+// The invites, for as long as the helper runs (the live view may restart with the browser). Join
+// codes are also saved (sharing.mjs) so they outlive a restart of the helper; links never are.
 export function createInvites({ now = () => Date.now() } = {}) {
   const all = new Map(); // id -> invite
   const listeners = new Set(); // called with the ids that stopped working
@@ -84,6 +85,21 @@ export function createInvites({ now = () => Date.now() } = {}) {
     },
     sweep,
     onEnd(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    // Join codes still valid, whole (keys too), for the helper's saved sharing state.
+    savedCodes() { sweep(); return [...all.values()].filter((i) => i.share === "code").map((i) => ({ ...i })); },
+    // Join codes from that saved state, each checked: nothing malformed or expired comes back.
+    restore(list) {
+      let n = 0;
+      for (const i of Array.isArray(list) ? list : []) {
+        if (!i || !/^[0-9a-f]{8}$/.test(i.id) || !/^[0-9a-f]{64}$/.test(i.key) || i.share !== "code" || all.has(i.id)) continue;
+        if (!["watch", "drive"].includes(i.role) || !["shared", "follow"].includes(i.mode)) continue;
+        const createdAt = Number(i.createdAt), expiresAt = Number(i.expiresAt);
+        if (!Number.isFinite(createdAt) || !Number.isFinite(expiresAt) || expiresAt <= now() || expiresAt - createdAt > INVITE_MAX_HOURS * HOUR_MS) continue;
+        all.set(i.id, { id: i.id, role: i.role, share: "code", mode: i.mode, label: inviteLabel(i.label), key: i.key, createdAt, expiresAt });
+        n++;
+      }
+      return n;
+    },
   };
 }
 

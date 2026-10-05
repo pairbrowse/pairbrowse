@@ -349,7 +349,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     return { ok: true, opened };
   }
 
-  const stopApprovals = approvals.onChange(() => broadcast("join", approvals.pending()));
+  const stopApprovals = approvals.onChange(() => broadcast("join", approvals.open()));
   // A revoked or expired link stops at once, including a page already open with it.
   const stopEnded = invites.onEnd((ids) => {
     let changed = false;
@@ -507,6 +507,18 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
       const op = JSON.parse(body);
+      if (op.remove === true) {
+        // Remove, after a yes: out at once (their channel, pictures and agent), and not back in.
+        const gone = approvals.remove(op.id);
+        if (!gone) return json(res, 404, { ok: false });
+        const j = joiners.get(gone.key);
+        joiners.delete(gone.key);
+        push.end(gone.key);
+        if (j) await stopJoiner(j).catch(() => {});
+        collaborationChanged();
+        const { key: _k, ...request } = gone;
+        return json(res, 200, { ok: true, request });
+      }
       const done = op.allow === true ? approvals.approve(op.id) : approvals.deny(op.id);
       json(res, done ? 200 : 404, { ok: !!done, request: done });
     } },
@@ -567,7 +579,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     res.write(sse("session", sessionInfo));
     res.write(sse("collaboration", collaborationNow()));
     res.write(sse("activity", invite ? guestActivity(activity) : activity));
-    if (!invite) res.write(sse("join", approvals.pending()));
+    if (!invite) res.write(sse("join", approvals.open()));
     if (!invite && devState) res.write(sse("dev", devState));
     if (!invite && board) res.write(sse("board", board));
     const paused = pauseState();
@@ -633,10 +645,12 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     }
   });
 
+  // A joiner gone (left or removed): their agent here and their pictures stop.
+  async function stopJoiner(j) { remoteAgents?.stop(joinerKey(j)); await screens?.stopAll(`${joinerKey(j)}|`); }
   const joinerServer = createJoinerServer({
     key, invites, approvals, joiners, tunnelHost, onJoinRequest, log,
     live: { tabsFor, applyTabs, screen, agent: remoteAgent, file: remoteFile,
-      stopScreens: async (j) => { remoteAgents?.stop(joinerKey(j)); await screens?.stopAll(`${joinerKey(j)}|`); }, openStream: (j, conn) => { watchPages(); return push.open(j, conn).catch((e) => log("push", e?.message || e)); }, pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
+      stopScreens: stopJoiner, openStream: (j, conn) => { watchPages(); return push.open(j, conn).catch((e) => log("push", e?.message || e)); }, pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
   });
 
   try {

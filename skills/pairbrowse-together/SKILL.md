@@ -49,13 +49,13 @@ sessions, and closing the browser, are refused until they disconnect.
 ## 3. Approving joiners
 
 1. When a result or the side panel says "<name> wants to join", tell the user who and which role.
-2. The user clicks **Allow** or **Deny** in the live view or side panel. Nothing of the session is
-   sent before Allow.
+2. The user clicks **Allow** or **Deny** in the live view or side panel (nothing is sent before Allow).
 3. If the user tells you to let them in, `pairbrowse_invite` `approve` with the join request `id`
    (from `list`); it asks the user. `deny` with `id` is always fine.
 4. In Codex (any app that can't ask the user), `approve` and drive invites are refused with a
    note: the user clicks Allow, or asks for the drive invite, themselves.
-5. Someone else with the same code has to ask again.
+5. Someone else with the same code has to ask again. After Allow, **Remove** next to them in the
+   side panel or live view takes them out at once (that code won't let them back in).
 6. `list` shows invites and join requests (no keys). When the user says the person is done:
    `revoke` with the invite `id`, or `revoke_all`, which ends every invite and closes the tunnel.
 
@@ -67,7 +67,7 @@ sessions, and closing the browser, are refused until they disconnect.
 - Watch gets origin and path; drive also gets the query string minus anything that looks like a
   token, code, session or personal detail. Tabs on sites with saved passwords: origin and path
   only. Local-network, `file:`, `chrome:`, `data:` and `javascript:` addresses never cross.
-- A code stops working when the host's browser restarts; make a new one.
+- A code keeps working through a restart of the host's PairBrowse (joiners reconnect, already let in); it ends when the host closes the browser window, revokes it, or it expires.
 - Drive lets someone open addresses in a logged-in browser: suggest drive only for people the
   user trusts, and revoke it when they're done.
 

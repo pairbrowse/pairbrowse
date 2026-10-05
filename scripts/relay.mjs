@@ -71,7 +71,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     if (res.ok) { offlineSince = 0; if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`); return body; }
     if (res.status === 403 && body.waiting) set("waiting", `Waiting for ${code.label} to approve. They see your request now.`);
     else if (res.status === 403 && body.denied) { set("denied", `${Host} didn't let you in.`); stopped = true; }
-    else if (res.status === 404) { set("ended", "This join code doesn't work any more (revoked, expired, or the host's browser restarted). Ask for a new one."); stopped = true; }
+    else if (res.status === 404) { set("ended", "This join code doesn't work any more (revoked, expired, or the host closed their browser). Ask for a new one."); stopped = true; }
     else if (res.status === 429) set(phase === "in" ? "in" : "waiting", body.error || "The host is busy. Retrying.");
     // The tunnel's own error page (Cloudflare's 502 or 530 when the host's helper is gone), not the host.
     else if (res.status >= 500 && !body.error) offline();

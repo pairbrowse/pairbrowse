@@ -137,6 +137,9 @@ const context = createContext({
   // The window is gone: end the sessions (the bridge reconnects and reopens Chrome on the next
   // action), or shut down if nobody is connected.
   onClosed: () => {
+    // The host closed the window: sharing ends with it (codes, yeses, tunnels). A restart of the
+    // helper closes it too, but keeps them.
+    if (!shuttingDown) sharing.endAll();
     sharing.closeLiveView();
     if (clients.size) for (const sock of clients.values()) sock.destroy();
     else shutdown(0);
@@ -388,7 +391,8 @@ async function shutdown(code) {
   // would otherwise start the browser again inside a helper that's on its way out.
   shuttingDown = true;
   socketServer?.close();
-  sharing.stopTunnel();
+  // Join codes outlive a restart: their tunnels keep running for the next run (sharing.mjs).
+  sharing.suspend();
   // Joiners' channels end before the browser closes: its tabs closing isn't the host closing them,
   // and joiners keep their copies.
   sharing.closeLiveView();

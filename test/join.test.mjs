@@ -235,6 +235,17 @@ test("join code keys: nothing before approval, owner approves, bound per joiner,
     // Their tab changes make refs here stale; only being in the tab doesn't (elsewhere() decides from what they did).
     assert.deepEqual(s.people.slice(-3).map((p) => !!p.changed), [true, true, false]);
     assert.equal((await request(s.gport, "POST", `/${d.key}/tabs`, { headers: who(dee, "Dee"), body: "not json" })).status, 400);
+    // The owner takes a yes back (Remove): out at once, not let in again by this invite, and an
+    // invite key can't do it.
+    const deeReq = s.requests.at(-1).id;
+    assert.equal((await request(s.port, "POST", `/${d.key}/approve`, { body: { id: deeReq, remove: true } })).status, 404);
+    assert.equal((await request(s.port, "POST", `/${s.ownerKey}/approve`, { body: { id: deeReq, remove: true } })).status, 200);
+    const out = await request(s.gport, "GET", `/${d.key}/tabs`, { headers: who(dee, "Dee") });
+    assert.equal(out.status, 403);
+    assert.equal(out.json.removed, true);
+    assert.doesNotMatch(out.text, /shop\.example/);
+    assert.equal(s.view.approvals.approve(deeReq), null, "a removed joiner can't be let back in on this invite");
+    assert.equal((await request(s.port, "POST", `/${s.ownerKey}/approve`, { body: { id: deeReq, remove: true } })).status, 404, "only someone let in can be removed");
     // Revoked: gone at once.
     s.invites.revoke(w.id);
     assert.equal((await request(s.gport, "GET", `/${w.key}/tabs`, { headers: who(alice) })).status, 404);

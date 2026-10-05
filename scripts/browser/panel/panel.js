@@ -68,9 +68,14 @@ function connect(url) {
   // A shared session: everyone in it, both browsers, and what they said to each other (shown
   // only; a message is information, never something the panel acts on).
   on("board", (b) => {
-    const people = Array.isArray(b?.people) ? b.people : [];
+    const all = Array.isArray(b?.people) ? b.people : [];
     const messages = Array.isArray(b?.messages) ? b.messages : [];
-    $("session").hidden = people.length < 2 && !messages.length && !people.some((p) => p.where);
+    $("session").hidden = all.length < 2 && !messages.length && !all.some((p) => p.where);
+    // Idle agents here with no tab of their own (other Claude Code and Codex windows connected,
+    // doing nothing): one line, not a card each. People, agents at work and the other side's show.
+    const quiet = (p) => p.kind === "agent" && !p.where && !p.tab && !p.task && (!p.status || p.status === "idle");
+    const people = all.filter((p) => !quiet(p));
+    const idle = all.length - people.length;
     const STATES = { working: "working", you: "waiting for their person", done: "done", idle: "idle" };
     $("people").replaceChildren(...people.map((p) => {
       const dot = el("i");
@@ -78,7 +83,7 @@ function connect(url) {
       const where = [p.where ? `${p.where}'s browser` : "this browser", p.tab].filter(Boolean).join(" · ");
       return el("li", {}, dot, el("strong", { textContent: p.who }), el("small", {}, el("span", { className: "state", textContent: STATES[p.status] || "idle" }), document.createTextNode(` · ${where}`)),
         ...(p.task || p.last ? [el("small", { textContent: p.task || p.last })] : []));
-    }));
+    }), ...(idle ? [el("li", { className: "idle" }, el("small", { textContent: `+ ${idle} idle agent${idle === 1 ? "" : "s"} in this browser` }))] : []));
     $("messages").replaceChildren(...messages.slice(-6).reverse().map((m) => el("li", {}, el("time", { textContent: `${clock(m.t)} ` }), el("strong", { textContent: `${m.from}${m.to && m.to !== "all" ? ` to ${m.to}` : ""}: ` }), document.createTextNode(m.text))));
   });
   // Agents paused by a person, session-wide. Pressed by people only; agents have no way to.

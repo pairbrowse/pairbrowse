@@ -105,7 +105,7 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
   const settle = (ref, state) => {
     sweep();
     const e = find(ref);
-    if (!e || (state === "approved" && e.state === "denied")) return null;
+    if (!e || (state === "approved" && (e.state === "denied" || e.state === "removed"))) return null;
     e.state = state;
     changed();
     return publicView(e);
@@ -132,10 +132,21 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
     },
     approve: (ref) => settle(ref, "approved"),
     deny: (ref) => settle(ref, "denied"),
+    // The host takes back a yes: that joiner is out at once, and this invite never lets them in
+    // again (their key belongs to it; a new invite asks anew). Returns the entry with its key.
+    remove(ref) {
+      const e = find(ref);
+      if (!e || e.state !== "approved") return null;
+      e.state = "removed";
+      changed();
+      return { ...publicView(e), key: `${e.inviteId}:${e.joinerId}` };
+    },
     // The joiner left: their approval ends with them (joining again asks again).
     leave(inviteId, joinerId) { if (all.delete(`${inviteId}:${joinerId}`)) changed(); },
     get(inviteId, joinerId) { const e = all.get(`${inviteId}:${joinerId}`); return e ? publicView(e) : null; },
     pending() { sweep(); return [...all.values()].filter((e) => e.state === "pending").map(publicView); },
+    // Asking and let in, for the owner's Allow / Deny and Remove.
+    open() { sweep(); return [...all.values()].filter((e) => e.state === "pending" || e.state === "approved").map(publicView); },
     list() { sweep(); return [...all.values()].map(publicView); },
     // Invites that ended take their approvals and requests with them.
     forget(inviteIds) {
@@ -144,6 +155,19 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
       if (gone) changed();
     },
     onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    // The yeses (and removals), whole, for the helper's saved sharing state.
+    saved() { return [...all.values()].filter((e) => e.state === "approved" || e.state === "removed").map((e) => ({ ...e })); },
+    // From that saved state, each checked; only for invites that came back (validInvite(id)).
+    restore(list, validInvite = () => true) {
+      for (const e of Array.isArray(list) ? list : []) {
+        if (!e || !JOINER_ID.test(String(e.joinerId || "")) || !/^r[0-9a-f]{6}$/.test(String(e.id || "")) || !validInvite(String(e.inviteId))) continue;
+        if (e.state !== "approved" && e.state !== "removed") continue;
+        const k = `${e.inviteId}:${e.joinerId}`;
+        if (all.has(k) || find(e.id)) continue;
+        all.set(k, { id: e.id, inviteId: String(e.inviteId), joinerId: e.joinerId, name: cleanName(e.name), app: e.app ? appName(e.app) : "", computer: cleanComputer(e.computer), role: e.role === "drive" ? "drive" : "watch", state: e.state, at: Number(e.at) || now() });
+      }
+      changed();
+    },
   };
 }
 

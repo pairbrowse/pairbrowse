@@ -9,6 +9,9 @@ and a teammate can watch or take the wheel from their own computer.
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pairbrowse/pairbrowse/badge)](https://scorecard.dev/viewer/?uri=github.com/pairbrowse/pairbrowse)
 [![CodeQL](https://github.com/pairbrowse/pairbrowse/actions/workflows/codeql.yml/badge.svg)](https://github.com/pairbrowse/pairbrowse/actions/workflows/codeql.yml)
 [![Release check](https://github.com/pairbrowse/pairbrowse/actions/workflows/release-check.yml/badge.svg)](https://github.com/pairbrowse/pairbrowse/actions/workflows/release-check.yml)
+[![Tests](https://github.com/pairbrowse/pairbrowse/actions/workflows/tests.yml/badge.svg)](https://github.com/pairbrowse/pairbrowse/actions/workflows/tests.yml)
+[![VirusTotal](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fpairbrowse%2Fpairbrowse%2Fbadges%2Fvirustotal.json)](https://github.com/pairbrowse/pairbrowse/releases/latest)
+[![Releases signed with Sigstore](https://img.shields.io/badge/releases-signed%20%28Sigstore%29-blue)](SECURITY.md#checking-a-download)
 
 ![PairBrowse: your AI agent fills the form, a teammate joins with their own cursor, you approve the final step](docs/media/pairbrowse-demo.gif)
 

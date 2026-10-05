@@ -90,6 +90,7 @@ async function attach(replay) {
     } catch {
       return;
     }
+    if (!msg || typeof msg !== "object") return;
     if (msg.id === "pb-reinit") return;
     if (typeof msg.id === "string" && internalCalls.has(msg.id)) {
       internalCalls.get(msg.id)(msg);
@@ -182,6 +183,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   } catch {
     return;
   }
+  if (!msg || typeof msg !== "object") return; // not a message (null would throw below)
   if (msg.method === "initialize") initMsg = msg;
   if (msg.method === "notifications/initialized") initializedNote = msg;
   if (dockSupported() && inClaude() && msg.method === "tools/call" && msg.params?.name === "pairbrowse_dock") return void dockCommand(msg);

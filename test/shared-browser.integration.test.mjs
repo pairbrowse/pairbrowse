@@ -122,9 +122,12 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
     assert.match(anonReply.result.content[0].text, /final action \(delete\)/);
     anon.destroy();
     await new Promise((resolve) => setTimeout(resolve, 200));
-    stage = "denying profile use while peers connected";
+    stage = "denying profile use while another session uses the browser";
+    // Only a session that used the browser lately holds up a switch (an idle one doesn't).
+    assert.ok(!(await bob.call("tools/call", { name: "browser_tabs", arguments: { action: "list" } })).result?.isError);
     const profileDenied = await alice.call("tools/call", { name: "pairbrowse_session", arguments: { action: "new", name: "two-peers" } });
     assert.equal(profileDenied.result.isError, true);
+    assert.match(profileDenied.result.content[0].text, /using the browser \(Bob/);
     stage = "Alice acquiring";
     const acquired = await alice.call("tools/call", { name: "pairbrowse_collaboration", arguments: { action: "acquire" } });
     assert.equal(acquired.result.isError, undefined);

@@ -722,6 +722,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     agentIn: (page) => s?.agents.get(page) || null,
     // The shared copies here (the page script is read in them, daemon/cobrowse.mjs).
     pages: () => (s ? [...s.pages.values()] : []),
+    // The host tab this side's new agents start on (in sight, else looked at last), by its id.
+    inSight: () => (s ? tabInSight(s) : ""),
     // A field changed in a shared copy: its values go there within a few tens of ms.
     dirty(page) {
       const cur = s;

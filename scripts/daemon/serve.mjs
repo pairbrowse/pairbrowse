@@ -9,7 +9,7 @@ import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, s
 import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { describe } from "../log.mjs";
 import { decide, clickClass } from "../guard.mjs";
 import { clickRule, dialogRule, strongSignal } from "../clickrule.mjs";
@@ -113,10 +113,11 @@ async function sensitiveTarget(page, target) {
 const REMOTE_TOOLS = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_click_at", "pairbrowse_collaboration"]);
 // A result on its way to a joiner's agent: nothing of this computer's folders. Links to files
 // saved here (snapshots, downloads) keep their name only; this computer's home becomes "~".
-export function forJoiner(text, homes = [paths.home, homedir()]) {
+export function forJoiner(text, homes = [paths.home, homedir(), tmpdir()]) {
   let t = String(text ?? "").replace(/\]\(((?:\.{1,2}[\\/]|[\\/]|~[\\/]|[A-Za-z]:[\\/]|file:)[^)\s]*)\)/g, (_m, p) => `](on the host's computer: ${String(p).split(/[\\/]/).pop()})`);
   for (const h of homes.filter(Boolean).sort((a, b) => b.length - a.length)) t = t.split(h).join("~");
-  return t.replace(/(?:\/Users|\/home|[A-Za-z]:\\Users)[\\/][^\s"'`)\]]+/g, (m) => `~/${m.split(/[\\/]/).pop()}`);
+  // Other places on this computer (accounts, temp and system folders, other disks): the name only.
+  return t.replace(/(?<![\w.~-])(?:\/(?:Users|home|root|private|tmp|var\/folders|Volumes|mnt|media)|[A-Za-z]:\\(?:Users|Windows|Temp))[\\/][^\s"'`)\]]+/g, (m) => `~/${m.split(/[\\/]/).pop()}`);
 }
 // The same call with its file paths swapped (map: path -> new path).
 export function withPaths(name, args = {}, map) {

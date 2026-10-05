@@ -270,7 +270,10 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     // says it's in the background, as it would be in a window.
     assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: two.index }) })).ok);
     await onScreen({ at: screen.index, expr: "Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }) && 1" });
-    await sleep(2000); // the joiner's helper sees which picture is in sight
+    // The joiner's helper has seen which picture is in sight (its rounds take longer on a busy computer).
+    const twoId = ((await onScreen({ at: two.index, url: true }))?.url || "").split("#")[1];
+    assert.ok(twoId, "the second picture's tab id");
+    await until("the second picture in sight for the joiner's helper", async () => (await onScreen({ inSight: true }))?.id === twoId, 20_000);
     await tool(host.call, "pairbrowse_collaboration", { action: "release" });
     const held = await tool(host.call, "browser_press_key", { key: "Shift" }); // the host's agent holds only that tab now
     assert.ok(!held.result?.isError, text(held));
@@ -299,9 +302,9 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     assert.match(snap, /button "Tap"/, `the host's page, not the picture: ${snap.slice(0, 800)}`);
     const note = snap.match(/textbox "Note"[^\n]*\[ref=((?:f\d+)?e\d+)\]/)?.[1];
     assert.ok(note, snap.slice(0, 600));
-    await sleep(6000); // the field Alice typed in stays hers for a few seconds, even for her agent
-    const typed = await tool(joiner.call, "browser_type", { target: note, element: "Note", text: " from Alice's agent" });
-    assert.ok(!typed.result?.isError, text(typed));
+    // The field Alice typed in stays hers for a few seconds, even for her agent: it types once it's free.
+    const typed = await until("the agent may type in the field", async () => { const r = await tool(joiner.call, "browser_type", { target: note, element: "Note", text: " from Alice's agent" }); return !r.result?.isError && r; }, 30_000);
+    assert.ok(typed);
     await until("the agent's text in the host's field", async () => /from Alice's agent/.test(String(await evaluate(host.call, "() => document.getElementById('i').value"))), 15_000);
     const pic = join(joinHome, "pic.png");
     writeFileSync(pic, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));

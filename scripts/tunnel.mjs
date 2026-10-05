@@ -6,9 +6,10 @@
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Resolver } from "node:dns/promises";
-import { existsSync, rmSync, renameSync, chmodSync, mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
+import { existsSync, rmSync, renameSync, chmodSync, mkdirSync, openSync, closeSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { paths } from "./paths.mjs";
 import { downloadPinned } from "./util.mjs";
 
@@ -66,18 +67,27 @@ async function resolvesAtCloudflare(host) {
 
 // Starts a Quick Tunnel to http://127.0.0.1:<port>. Resolves { url, host, pid, stop, child } once
 // it's reachable: cloudflared has registered a connection and the name resolves (or DNS_WAIT_MS
-// went by). cloudflared runs on its own, writing to a file of its own (logDir, private): it
-// outlives a restart of the helper, whose next run takes it over (adoptTunnel), so joiners just
-// reconnect to the same address. stop() ends it.
+// went by). cloudflared runs under a keeper of its own (tunnel-keeper.mjs, pid), writing to a
+// private file (logDir): it outlives a restart of the helper, whose next run takes it over
+// (adoptTunnel), so joiners just reconnect to the same address; and it stops by itself when no
+// helper has touched the heartbeat file (helperAlive) for KEEP_GRACE_MS. stop() ends it.
 const DNS_WAIT_MS = 15_000;
+export const KEEP_GRACE_MS = Number(process.env.PAIRBROWSE_TEST_KEEP_GRACE_MS) || 120_000;
+const KEEPER = join(dirname(fileURLToPath(import.meta.url)), "tunnel-keeper.mjs");
+export const heartbeatFile = () => join(paths.home, "run", "helper-alive");
+// The helper is here (sharing.mjs touches it every few seconds).
+export function helperAlive() {
+  try { mkdirSync(join(paths.home, "run"), { recursive: true, mode: 0o700 }); writeFileSync(heartbeatFile(), String(Date.now()), { mode: 0o600 }); } catch {}
+}
 export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe, resolves = resolvesAtCloudflare, logDir = join(paths.home, "tunnels") } = {}) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("bad live view port");
   const program = exe || await ensureCloudflared(log);
   mkdirSync(logDir, { recursive: true, mode: 0o700 });
   const file = join(logDir, `${port}-${randomBytes(4).toString("hex")}.log`);
   const fd = openSync(file, "a", 0o600);
+  helperAlive();
   let child;
-  try { child = spawn(program, ["tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${port}`], { stdio: ["ignore", fd, fd], detached: process.platform !== "win32" }); } finally { closeSync(fd); }
+  try { child = spawn(process.execPath, [KEEPER, program, String(port), heartbeatFile(), String(KEEP_GRACE_MS)], { stdio: ["ignore", fd, fd], detached: process.platform !== "win32" }); } finally { closeSync(fd); }
   child.unref();
   const stop = () => { if (child.exitCode === null) { try { child.kill("SIGTERM"); } catch {} } rmSync(file, { force: true }); };
   try {
@@ -103,26 +113,40 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
 }
 
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+const defaultPs = async (pid) => (await run("ps", ["-p", String(pid), "-o", "command="])).stdout;
+// Whether pid is still a tunnel keeper of ours for this port (a pid can be reused by anything).
+async function isKeeper(pid, port, psCommand = defaultPs) {
+  if (!pidAlive(pid)) return false;
+  let command = "";
+  try { command = String(await psCommand(pid)); } catch { return false; }
+  const m = command.match(/tunnel-keeper\.mjs \S*cloudflared\S* (\d+) /);
+  return !!m && Number(m[1]) === port;
+}
 
 // A tunnel a previous run of the helper started (its saved { url, pid, port, log }), taken over
-// if it is still that: a running cloudflared to this very port. Anything else: null.
-export async function adoptTunnel(saved, { psCommand = async (pid) => (await run("ps", ["-p", String(pid), "-o", "command="])).stdout } = {}) {
+// if it is still that: our keeper of a cloudflared to this very port. Anything else: null.
+// Before any signal it's checked again, so a reused pid is never stopped by mistake.
+export async function adoptTunnel(saved, { psCommand = defaultPs } = {}) {
   if (process.platform === "win32" || !saved) return null;
   const { url, pid, port } = saved;
-  if (tunnelUrl(url) !== url || !Number.isInteger(pid) || pid < 2 || !Number.isInteger(port) || !pidAlive(pid)) return null;
-  let command = "";
-  try { command = String(await psCommand(pid)); } catch { return null; }
-  if (!/cloudflared/.test(command) || !new RegExp(`--url http://127\\.0\\.0\\.1:${port}(\\s|$)`).test(command)) return null;
+  if (tunnelUrl(url) !== url || !Number.isInteger(pid) || pid < 2 || !Number.isInteger(port)) return null;
+  if (!(await isKeeper(pid, port, psCommand))) return null;
   const file = typeof saved.log === "string" && saved.log.startsWith(join(paths.home, "tunnels")) ? saved.log : null;
   const t = { url, host: new URL(url).host, pid, port, log: file, child: null, adopted: true, gone: false };
-  t.stop = () => { if (!t.gone && pidAlive(pid)) { try { process.kill(pid, "SIGTERM"); } catch {} } t.gone = true; if (file) rmSync(file, { force: true }); };
+  t.check = () => isKeeper(pid, port, psCommand);
+  t.stop = () => {
+    if (t.gone) return;
+    t.gone = true;
+    if (file) rmSync(file, { force: true });
+    t.check().then((ours) => { if (ours) { try { process.kill(pid, "SIGTERM"); } catch {} } }, () => {});
+  };
   return t;
 }
 
 // fn() once the tunnel's cloudflared has ended: its exit, or (taken over) its process gone.
 export function onTunnelExit(t, fn, everyMs = 2000) {
   if (t.child) return t.child.once("exit", fn);
-  const timer = setInterval(() => { if (t.gone || !pidAlive(t.pid)) { clearInterval(timer); t.gone = true; fn(); } }, everyMs);
+  const timer = setInterval(async () => { if (t.gone || !(await (t.check ? t.check() : pidAlive(t.pid)))) { clearInterval(timer); t.gone = true; fn(); } }, everyMs);
   timer.unref?.();
 }
 

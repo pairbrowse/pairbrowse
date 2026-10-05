@@ -16,15 +16,19 @@ export const JOINER_ID = /^[0-9a-f]{32}$/;
 // Quick Tunnel addresses: https://<words>.trycloudflare.com, nothing else.
 const QUICK_TUNNEL_HOST = /^[a-z0-9]+(-[a-z0-9]+)*\.trycloudflare\.com$/;
 
-// A name to show, not markup: no control or formatting characters, at most 40 characters
-// (joiners, participants and invite labels).
-export const cleanName = (name, fallback = "Guest") => String(name ?? "").normalize("NFC")
-  .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff<>"'`]/g, "")
-  .replace(/\s+/g, " ").trim().slice(0, 40) || fallback;
+// Any value as text, never a throw: a request body can hold { "toString": "" }, which String() can't convert.
+export const textOf = (v) => { try { return String(v ?? ""); } catch { return ""; } };
+export const numOf = (v) => { try { return Number(v); } catch { return NaN; } };
+
+// A name to show, not markup: no control or formatting characters (bidi, zero-width, broken
+// surrogates), at most 40 characters (joiners, participants and invite labels).
+export const cleanName = (name, fallback = "Guest") => textOf(name).normalize("NFC")
+  .replace(/[\p{Cc}\p{Cf}\p{Cs}<>"'`]/gu, "")
+  .replace(/\s+/g, " ").trim().slice(0, 40).replace(/[\ud800-\udbff]$/, "").trim() || fallback;
 
 // What a participant is called everywhere: "Alice · Claude Code", "Alice · Codex", "Alice (by hand)".
 export function appName(clientName) {
-  const c = String(clientName || "");
+  const c = textOf(clientName || "");
   if (c === "claude-code") return "Claude Code";
   if (c === "codex-mcp-client" || /^codex/i.test(c)) return "Codex";
   return c ? cleanName(c, "Agent").slice(0, 24) : "Agent";
@@ -61,7 +65,7 @@ export function encodeJoinCode({ url, key, role, label, mode = "follow" }) {
 // joinHosts), a well-formed key, and a known role. Throws with a plain reason otherwise.
 // allowLocal (tests only, PAIRBROWSE_TEST_JOIN_LOCAL) also takes http://127.0.0.1:<port>.
 export function parseJoinCode(code, { hosts = [], allowLocal = false } = {}) {
-  const text = String(code ?? "").trim();
+  const text = textOf(code).trim();
   if (!text.startsWith(JOIN_PREFIX)) throw new Error(`A join code starts with ${JOIN_PREFIX}`);
   const packed = text.slice(JOIN_PREFIX.length);
   if (!packed || packed.length > 1500 || !/^[A-Za-z0-9_-]+$/.test(packed)) throw new Error("That join code is damaged. Ask for it again.");
@@ -99,7 +103,7 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
     if (gone) changed();
   };
   const find = (ref) => {
-    const r = String(ref ?? "");
+    const r = textOf(ref);
     return [...all.values()].find((e) => e.id === r || e.joinerId === r) || null;
   };
   const settle = (ref, state) => {
@@ -114,7 +118,7 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
     // Where this joiner stands. A new joiner becomes a request (unless too many wait already).
     check(invite, joinerId, name, app = "", computer = "") {
       sweep();
-      if (!JOINER_ID.test(String(joinerId || ""))) return { state: "bad" };
+      if (!JOINER_ID.test(textOf(joinerId || ""))) return { state: "bad" };
       const k = `${invite.id}:${joinerId}`;
       const e = all.get(k);
       if (e) return { state: e.state, entry: publicView(e) };
@@ -160,11 +164,11 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
     // From that saved state, each checked; only for invites that came back (validInvite(id)).
     restore(list, validInvite = () => true) {
       for (const e of Array.isArray(list) ? list : []) {
-        if (!e || !JOINER_ID.test(String(e.joinerId || "")) || !/^r[0-9a-f]{6}$/.test(String(e.id || "")) || !validInvite(String(e.inviteId))) continue;
+        if (!e || !JOINER_ID.test(textOf(e.joinerId || "")) || !/^r[0-9a-f]{6}$/.test(textOf(e.id || "")) || !validInvite(textOf(e.inviteId))) continue;
         if (e.state !== "approved" && e.state !== "removed") continue;
         const k = `${e.inviteId}:${e.joinerId}`;
         if (all.has(k) || find(e.id)) continue;
-        all.set(k, { id: e.id, inviteId: String(e.inviteId), joinerId: e.joinerId, name: cleanName(e.name), app: e.app ? appName(e.app) : "", computer: cleanComputer(e.computer), role: e.role === "drive" ? "drive" : "watch", state: e.state, at: Number(e.at) || now() });
+        all.set(k, { id: e.id, inviteId: textOf(e.inviteId), joinerId: e.joinerId, name: cleanName(e.name), app: e.app ? appName(e.app) : "", computer: cleanComputer(e.computer), role: e.role === "drive" ? "drive" : "watch", state: e.state, at: numOf(e.at) || now() });
       }
       changed();
     },
@@ -175,13 +179,16 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
 
 // Addresses without their query string and fragment (where tokens, emails and order numbers live).
 export function stripUrl(raw) {
-  const s = String(raw ?? "");
+  const s = textOf(raw);
   try {
     const u = new URL(s);
     if (u.protocol === "http:" || u.protocol === "https:") return u.origin + u.pathname;
     return u.href === "about:blank" ? s : `${u.protocol}`;
   } catch {
-    return s.replace(/[?#].*$/, "");
+    return s.replace(/[?#][\s\S]*$/, "");
   }
 }
-export const stripText = (text) => String(text ?? "").replace(/https?:\/\/[^\s"'`<>()[\]]+/gi, (m) => stripUrl(m));
+// Each web address in a text, through fn. Brackets are part of an address (a query string or a
+// path can hold them, and IPv6 hosts do), except closing ones it ends with: "(see https://a.b/c)".
+export const eachUrl = (text, fn) => textOf(text).replace(/https?:\/\/[^\s"'`<>]+/gi, (m) => { const [, url, close] = /^([\s\S]*?)([)\]]*)$/.exec(m); return fn(url) + close; });
+export const stripText = (text) => eachUrl(text, stripUrl);

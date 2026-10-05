@@ -247,7 +247,7 @@ const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, m
 // ...and a joiner's own agent works here as a participant (serve, below), files only from its side.
 const remoteAgents = createRemoteAgents({ serve: (sock, opts) => serve(sock, opts), dir: join(paths.uploads, "remote"), log });
 const sharing = createSharing({
-  config, log, host: HOST, notify: panel.notify, hostNote,
+  config, log, host: HOST, notify: panel.notify, hostNote, joinAlert: (entry) => joinPrompt.alert(entry),
   view: {
     secretDomains, screens, remoteAgents,
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
@@ -308,9 +308,13 @@ const follow = createFollow({
   onLeft: () => pause.mirror({ paused: false, resumedBy: HOST }),
   onMessage: (data) => session.receive(readMessage(data)),
 });
-// A join request's corner prompt (Allow / Deny), in the host's tab in front (daemon/joinprompt.mjs).
+// A join request: the bottom bar in the host's tab in front asks (Allow / Deny) while the browser
+// has the focus, else a notification with Allow / Deny (daemon/joinprompt.mjs).
+let testFocus = null; // tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): true or false in place of the browser's own
 const joinPrompt = createJoinPrompt({
   approvals: sharing.approvals, log, show: hud.call, byPerson: presence.byPerson,
+  notify: panel.notifyJoin, clear: panel.clearJoin,
+  focused: async () => (testFocus !== null ? testFocus : tabOrder.focused()),
   front: async () => {
     const page = await tabOrder.front().catch(() => null);
     if (page) return page;
@@ -376,11 +380,14 @@ const serve = createServe({
   // by dragging them; no app gets this tool otherwise.
   testTools: {
     ...(process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
-    // Tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): the join prompt in each tab, and clicks on it as
-    // a person would (a trusted click), as an agent's or a joiner's input would, or as a page
-    // script would (synthetic events).
+    // Tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): the join request in each tab's bottom bar, and
+    // clicks on it as a person would (a trusted click), as an agent's or a joiner's input would,
+    // or as a page script would (synthetic events); the browser's focus set (focus: true, false,
+    // or "real"); the requests with a notification up (notes).
     ...(process.env.PAIRBROWSE_TEST_JOIN_PROMPT === "1" ? { pairbrowse_test_join_prompt: async (args = {}) => {
       const pages = (await context.openPages()).filter((p) => !p.isClosed());
+      if (args.focus !== undefined) { testFocus = typeof args.focus === "boolean" ? args.focus : null; joinPrompt.refresh(); return { text: `focus ${testFocus}` }; }
+      if (args.notes) return { text: JSON.stringify(await panel.call(() => globalThis.pbJoinNotes?.() ?? null, null, 5000).catch(() => null)) };
       if (args.move) { const p = await joinPrompt.front(); await p?.mouse.move(5, 5); return { text: "moved" }; }
       if (!args.click) return { text: JSON.stringify(await Promise.all(pages.map(async (p) => ({ url: p.url(), rows: (await hud.call(p, "", "join-state").catch(() => null)) || [] })))) };
       const page = await joinPrompt.front();

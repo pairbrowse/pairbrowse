@@ -16,7 +16,8 @@ The browser keeps running between sessions, so tabs, logins and half-filled page
 Ask in one message (your question tool if you have one), skipping what the user already said and what the browser asks itself:
 - **Which session:** when the browser starts, its first tab is a session picker: the person
   continues a saved session (with its tab count), starts a fresh one, or pastes a `pb-join:` code.
-  Your first browser action waits for that pick (up to about 3 minutes) and its result says which.
+  Your first browser action waits for that pick (up to about 15 seconds) and its result says which;
+  if they haven't picked yet, it says so: tell them in chat what the first tab asks, then retry.
   So ask only when the core tells you to (the picker is off, `"sessionPicker": false`, or this is a
   cloud session), and act first when the user already said: "a fresh session" is `new` with
   `clean: true`, a named one is `use`, "join this session: pb-join:..." is `pairbrowse_join`; the

@@ -23,7 +23,7 @@ sessions with how many tabs each has and who used them ("Mac · You", "Bob · Co
 a **Live** badge when people are in it right now), the rest under **More sessions** with a search
 field (continue one), **Start a fresh session** (a clean, throwaway browser) and **Join a
 shared session** (paste a `pb-join:` code; the host still has to let you in). Claude's or Codex's
-first browser action waits for your pick (after about 3 minutes it stops and asks you in the chat
+first browser action waits for your pick (after about 15 seconds it stops and asks you in the chat
 instead), then carries on in the session you picked and is told which. Tell Claude first ("I want a
 fresh session", "use the client-x session", "join this session: pb-join:...") and the picker never
 shows. It doesn't show the very first time either (there's nothing to go back to), nor in cloud

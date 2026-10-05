@@ -50,32 +50,44 @@ export function sparkIcon(className, label = "") {
 
 const postJson = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
-// People asking to join: Allow or Deny, always by a click. Banners go into container; base():
-// the live view address (null: not connected yet). Returns draw(list of requests).
+// People asking to join: Allow or Deny; people let in: Remove. Always by a click. Banners go
+// into container; base(): the live view address (null: not connected yet). Returns draw(list of
+// requests, asking and let in).
 export function joinBanners(container, base) {
-  const rows = new Map(); // request id -> banner
-  function answer(id, allow, row) {
+  const rows = new Map(); // `${request id}:${state}` -> banner
+  function answer(op, row) {
     if (!base()) return;
     for (const b of row.querySelectorAll("button")) b.disabled = true;
-    postJson(base() + "approve", { id, allow })
+    postJson(base() + "approve", op)
       .then((r) => { if (!r.ok) throw new Error(); })
       .catch(() => { for (const b of row.querySelectorAll("button")) b.disabled = false; });
   }
   return function draw(list) {
-    const pending = Array.isArray(list) ? list.filter((r) => r && r.id && (!r.state || r.state === "pending")) : [];
-    const ids = new Set(pending.map((r) => String(r.id)));
-    for (const [id, row] of rows) if (!ids.has(id)) { row.remove(); rows.delete(id); }
-    for (const r of pending) {
-      const id = String(r.id);
-      if (rows.has(id)) continue;
-      const allow = el("button", { className: "primary", type: "button", textContent: "Allow" });
-      const deny = el("button", { className: "mini", type: "button", textContent: "Deny" });
-      const text = `${r.name || "Someone"}${r.app ? ` (${r.app})` : ""} wants to join (${r.role === "drive" ? "can drive" : "watch"})`;
-      const row = el("div", { className: "join" }, el("strong", { textContent: text, title: text }), el("span", {}, allow, deny));
-      // A real pointer click only: no synthetic events, no keyboard default.
-      allow.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer(r.id, true, row); });
-      deny.addEventListener("click", (ev) => { if (ev.isTrusted) answer(r.id, false, row); });
-      rows.set(id, row);
+    const open = Array.isArray(list) ? list.filter((r) => r && r.id && (!r.state || r.state === "pending" || r.state === "approved")) : [];
+    const keyOf = (r) => `${r.id}:${r.state === "approved" ? "in" : "asking"}`;
+    const keys = new Set(open.map(keyOf));
+    for (const [k, row] of rows) if (!keys.has(k)) { row.remove(); rows.delete(k); }
+    for (const r of open) {
+      const k = keyOf(r);
+      if (rows.has(k)) continue;
+      const who = `${r.name || "Someone"}${r.app ? ` (${r.app})` : ""}`;
+      const role = r.role === "drive" ? "can drive" : "watch";
+      let row;
+      if (r.state === "approved") {
+        const remove = el("button", { className: "mini", type: "button", textContent: "Remove", title: "Take them out of your session now" });
+        const text = `${who} is in (${role})`;
+        row = el("div", { className: "join in" }, el("strong", { textContent: text, title: text }), el("span", {}, remove));
+        remove.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer({ id: r.id, remove: true }, row); });
+      } else {
+        const allow = el("button", { className: "primary", type: "button", textContent: "Allow" });
+        const deny = el("button", { className: "mini", type: "button", textContent: "Deny" });
+        const text = `${who} wants to join (${role})`;
+        row = el("div", { className: "join" }, el("strong", { textContent: text, title: text }), el("span", {}, allow, deny));
+        // A real pointer click only: no synthetic events, no keyboard default.
+        allow.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer({ id: r.id, allow: true }, row); });
+        deny.addEventListener("click", (ev) => { if (ev.isTrusted) answer({ id: r.id, allow: false }, row); });
+      }
+      rows.set(k, row);
       container.append(row);
     }
   };

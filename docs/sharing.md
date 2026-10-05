@@ -96,6 +96,8 @@ either side beyond PairBrowse itself.
 3. When Sam joins, "Sam (Claude Code) wants to join (can drive)" shows in the live view and side
    panel with **Allow** and **Deny**, and you get a notification. Nothing of your session is
    sent before you click Allow. Someone else with the same code has to ask again.
+   Once Sam is in, the side panel shows "Sam (Claude Code) is in" with **Remove**: it takes Sam
+   out at once (their pictures, input and agent stop), and that code never lets Sam in again.
 4. "Revoke Sam's invite" (or "revoke all") ends it; the tunnel closes with the last code.
 
 **If you're joining:** ask your Claude or Codex "Join this PairBrowse session: pb-join:...", or

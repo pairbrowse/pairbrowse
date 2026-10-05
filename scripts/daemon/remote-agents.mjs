@@ -33,15 +33,32 @@ export function createRemoteAgents({ serve, dir, log = () => {} }) {
       const id = `${who.key}|${agent}`;
       let d = conns.get(id);
       if (!d) {
+        // An agent already set up on its side, whose first message here isn't its initialize: this
+        // helper restarted under it (join codes outlive that). It's set up here first, silently.
+        let first = null;
+        try { first = JSON.parse(line); } catch {}
+        const resume = first && first.method !== "initialize";
+        const SETUP = "pb-resume-init";
         d = new Duplex({
           read() {},
-          write(chunk, _enc, cb) { for (const l of chunk.toString().split("\n")) if (l) { try { send(l); } catch {} } cb(); },
+          write(chunk, _enc, cb) {
+            for (const l of chunk.toString().split("\n")) {
+              if (!l) continue;
+              if (resume && l.includes(SETUP)) { try { if (JSON.parse(l).id === SETUP) continue; } catch {} }
+              try { send(l); } catch {}
+            }
+            cb();
+          },
         });
         d.on("error", () => {});
         conns.set(id, d);
         d.once("close", () => conns.delete(id));
         d.remote = { name: who.name, key: who.key, files: folder(who.key), startPage, started: false };
         serve(d, { remote: d.remote }).catch?.((e) => log("remote agent", e?.message || e));
+        if (resume) {
+          d.push(JSON.stringify({ jsonrpc: "2.0", id: SETUP, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: who.app || "agent", version: "1" } } }) + "\n");
+          d.push(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+        }
       } else if (startPage && !d.remote.started) d.remote.startPage = startPage;
       d.push(line + "\n");
       return true;

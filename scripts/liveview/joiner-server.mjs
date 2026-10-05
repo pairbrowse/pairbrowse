@@ -68,6 +68,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
     }
     if (r.state === "pending") return { code: 403, body: { waiting: true, error: "Waiting for the host to approve. They see a request to let you in." } };
     if (r.state === "denied") return { code: 403, body: { denied: true, error: "The host didn't let you in." } };
+    if (r.state === "removed") return { code: 403, body: { denied: true, removed: true, error: "The host removed you from this session." } };
     return { code: 429, body: { error: "Too many people are asking to join right now. Try again in a few minutes." } };
   }
 

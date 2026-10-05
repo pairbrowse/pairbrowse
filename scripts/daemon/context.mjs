@@ -25,8 +25,9 @@ const KEEP_ENTRIES = 200;
 // keeps it until the tab closes: about a third of a megabyte per action, for good. Drop those
 // listeners (MCP adds its own short-lived ones while an action waits for the network).
 const NETWORK_EVENTS = ["request", "response", "requestfailed", "requestfinished"];
-// The session picker: agents' first browser action waits this long for the person's pick.
-const PICK_WAIT_MS = Number(process.env.PAIRBROWSE_TEST_PICK_WAIT_MS) || 3 * 60_000;
+// The session picker: agents' first browser action waits this long for the person's pick, then
+// says what it waits for, so the agent tells them in chat instead of hanging silently.
+const PICK_WAIT_MS = Number(process.env.PAIRBROWSE_TEST_PICK_WAIT_MS) || 15_000;
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
 const pickerUrl = () => `chrome-extension://${panelExtensionId()}/picker.html`;
 

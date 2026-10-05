@@ -292,7 +292,7 @@ const sharing = createSharing({
       },
     },
     status: () => hud.badge(), session: () => context.sessionInfo(), collaboration: () => collaboration.state(),
-    picker: { state: () => context.pickerState(), pick: (op) => pickFromBrowser(op) },
+    picker: { state: () => context.pickerState(), pick: (op) => pickFromBrowser(op), open: () => context.reopenPicker() },
   },
 });
 // Sessions joined from here: their tabs, followed in this browser.

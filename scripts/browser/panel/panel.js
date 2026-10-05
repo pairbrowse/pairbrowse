@@ -10,6 +10,10 @@ let lastActivity = 0;
 let lastWho = "";
 let driveTimer = 0;
 let paused = false;
+// The session picker again (a person's choice: agents' next actions wait for it).
+$("switch-btn").addEventListener("click", () => {
+  if (base) fetch(base + "picker", { method: "POST" }).catch(() => {});
+});
 $("pause-btn").addEventListener("click", () => {
   if (base) fetch(base + "pause", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ paused: !paused }) }).catch(() => {});
 });

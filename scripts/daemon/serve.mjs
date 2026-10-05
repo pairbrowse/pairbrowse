@@ -147,6 +147,10 @@ export function pathsIn(name, args = {}) {
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
   screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, revision, bumpRevision, session, shareMessage = () => {}, testTools = {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
+  // When each session last called a tool: only the ones in use hold up a session switch or closing
+  // the browser. An open but idle session (a Claude Code window left for hours) doesn't.
+  const lastCall = new Map();
+  const ACTIVE_MS = 10 * 60_000;
 
   return async function serve(sock, { remote = null } = {}) {
     const participant = randomBytes(8).toString("hex");
@@ -154,11 +158,18 @@ export function createServe({ config, log, host, createConnection, clients, coll
     let clientName = ""; // the app on this connection, from its MCP initialize ("claude-code", "codex-mcp-client", ...)
     const disconnected = new AbortController();
     clients.set(participant, sock);
+    // The other sessions using the browser: a call in the last ACTIVE_MS, or holding it (acquire).
+    const inUse = () => {
+      const { owner, participants } = collaboration.state();
+      const label = (id) => participants.find((p) => p.id === id)?.label || "an agent";
+      return [...clients.keys()].filter((id) => id !== participant && (owner?.id === id || Date.now() - (lastCall.get(id) || 0) < ACTIVE_MS)).map(label);
+    };
     session.join(participant);
     sock.once("close", () => {
       session.forget(participant);
       disconnected.abort();
       clients.delete(participant);
+      lastCall.delete(participant);
       collaboration.unregister(participant);
       tabClaims.release(participant);
       screenshots.forget(participant);
@@ -402,8 +413,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
         return `${reason} This needs the user's OK, which this app can't ask for. ` +
           "Set pairbrowse_status to \"you\" and ask the user to do this step themselves in the PairBrowse window, then continue from what they did.";
       }
-      if (name === "browser_close" && clients.size > 1) return "Other participants are connected. Closing the shared browser is disabled.";
-      if (name === "pairbrowse_session" && clients.size > 1 && args.action !== "list") return "Other participants are connected. Browser profile changes are disabled until they disconnect.";
+      if ((name === "browser_close" || (name === "pairbrowse_session" && args.action !== "list")) && inUse().length) {
+        const who = inUse();
+        return `${who.length === 1 ? "Another session is" : `${who.length} other sessions are`} using the browser (${who.join(", ")}): ` +
+          `${name === "browser_close" ? "closing it" : "switching sessions"} would close their tabs. Wait until they're done (idle 10 minutes), ` +
+          "or ask the person to switch with \"Switch session\" in the PairBrowse side panel.";
+      }
       return null;
     }
 
@@ -744,6 +759,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
 
     // Complete a queued turn only after the MCP result arrives, not when dispatch returns.
     const execute = async (msg) => {
+      if (msg.method === "tools/call") lastCall.set(participant, Date.now());
       if (sock.destroyed) return;
       if (msg.method === "initialize") {
         // The first initialize names the app for good: a later one can't relabel the connection.

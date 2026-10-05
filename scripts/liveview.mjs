@@ -544,6 +544,11 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       const r = await picker.pick(JSON.parse(body) || {});
       json(res, r.error ? 409 : 200, r);
     } },
+    // "Switch session..." in the side panel: the picker again, in a new tab (the owner only).
+    { method: "POST", path: "picker", right: "session", handler: async ({ res }) => {
+      if (!picker?.open) return plain(res, 404);
+      json(res, 200, await picker.open());
+    } },
     { method: "POST", path: "input", right: "input", handler: human },
     { method: "POST", path: "tab", right: "tab", handler: human },
     // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone

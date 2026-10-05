@@ -271,3 +271,49 @@ test("joining from the picker takes the same code checks and the host's approval
     rmSync(joinHome, { recursive: true, force: true });
   }
 });
+
+test("an idle session doesn't block a switch, an active one does, and the person can always reopen the picker", { skip: !runtime, timeout: 150_000 }, async () => {
+  const executablePath = createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
+  const site = await fixture();
+  const h = home("ps-");
+  writeFileSync(join(h, "config.json"), config(executablePath, site.address().port));
+  const { connect, stop } = startDaemons();
+  let stage = "first agent";
+  try {
+    const alice = await connect(h);
+    assert.match(text(await alice.tool("pairbrowse_session", { action: "use", name: "work" })), /work/);
+    stage = "an idle second session";
+    const bob = await connect(h); // connected, never called a tool: idle
+    const switched = await alice.tool("pairbrowse_session", { action: "new", clean: true });
+    assert.match(text(switched), /clean, throwaway browser/, "an idle session doesn't hold up the switch");
+
+    stage = "an active second session";
+    const bob2 = await connect(h); // the switch reset the browser, so Bob reconnects, as his bridge would
+    assert.ok(!(await bob2.tool("browser_tabs", { action: "list" })).result.isError);
+    const refused = await alice.tool("pairbrowse_session", { action: "use", name: "work" });
+    assert.ok(refused.result.isError, text(refused));
+    assert.match(text(refused), /Another session is using the browser .*Switch session/, text(refused));
+    void bob;
+
+    stage = "the side panel reopens the picker";
+    const live = await bob2.live();
+    await panelConnected(live);
+    const opened = await post(`${live}picker`, {}, EXTENSION);
+    assert.equal(opened.status, 200, JSON.stringify(opened.json));
+    await until("the picker open", async () => (await (await fetch(`${live}sessions.json`)).json()).picking === true);
+    await until("the picker shown", async () => (logOf(h).match(/session picker shown/g) || []).length >= 1);
+    // Keeping the open session just closes the picker; the tabs stay.
+    const current = (await (await fetch(`${live}sessions.json`)).json()).sessions.find((s) => s.current);
+    const kept = current ? await post(`${live}pick`, { action: "use", name: current.name }, EXTENSION) : await post(`${live}pick`, { action: "new" }, EXTENSION);
+    assert.equal(kept.status, 200, JSON.stringify(kept.json));
+    await until("the picker closed", async () => (await (await fetch(`${live}sessions.json`)).json()).picking === false);
+    assert.ok(!(await bob2.tool("browser_tabs", { action: "list" })).result.isError, "agents go on in the same session");
+    assert.equal((await post(`${live}picker`, {}, "https://evil.example")).status >= 400, true, "a web page can't open it");
+  } catch (e) {
+    throw new Error(`${stage}: ${e.message}\n${logOf(h)}`);
+  } finally {
+    await stop();
+    site.close();
+    rmSync(h, { recursive: true, force: true });
+  }
+});

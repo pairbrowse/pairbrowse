@@ -135,13 +135,16 @@ export async function macHostProfile(chromium, executablePath, pack, directory, 
 // The three layers of settings, lowest first: the persona saved in the profile, a saved profile
 // chosen by name, and config.json. Every layer is checked for options this engine can't honour.
 function readSettings(config, pack, personaPath) {
-  const { profile: selection, profileSelect = {}, humanize = true, showCursor = false, geoip = false, ...overrides } = config.pairbrowse ?? {};
+  // typingPace: how fast humanized typing goes, 0.2 (fastest) to 1 (the engine's own, about 60 words a
+  // minute); the gaps between keys scale, how long each key is held doesn't. 0.35: about 95 (measured:
+  // 0.5 is 80, 0.3 is 104).
+  const { profile: selection, profileSelect = {}, humanize = true, showCursor = false, geoip = false, typingPace = 0.35, ...overrides } = config.pairbrowse ?? {};
   const saved = selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {};
   const persisted = existsSync(personaPath) ? pack.Profile.load(personaPath).options : {};
   for (const key of UNSUPPORTED) {
     if ([persisted, saved, overrides].some((layer) => layer[key] !== undefined)) throw new Error(`PairBrowse native does not support pairbrowse.${key} on this engine.`);
   }
-  return { selection, profileSelect, humanize, showCursor, geoip, overrides, saved, persisted };
+  return { selection, profileSelect, humanize, showCursor, geoip, typingPace, overrides, saved, persisted };
 }
 
 // The fingerprint to launch with: the layered settings, then a persona (picked, or this Mac's own
@@ -243,7 +246,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
     ignoreDefaultArgs: [...new Set([...pack.DEFAULT_IGNORED_ARGS, ...(merged.ignoreDefaultArgs ?? []), "--enable-automation"])],
   });
   try {
-    pack.installHumanizeOnContext(context, { humanize: settings.humanize, showCursor: settings.showCursor, seed: fingerprint.fingerprint });
+    pack.installHumanizeOnContext(context, { humanize: settings.humanize, showCursor: settings.showCursor, typingPace: settings.typingPace, seed: fingerprint.fingerprint });
     return context;
   } catch (error) {
     try { await context.close?.(); } catch {}

@@ -33,9 +33,11 @@ Limits, honestly:
 
 - Anything running as your user can read files in your home folder, including this Chrome
   profile. PairBrowse can't protect against malware already on your computer.
-- The click guard works from button labels (the one Claude reports, checked against the
-  button's own) and from a form's payment fields. It catches mistakes and injected instructions, not every possible trick (an
-  icon-only "Buy" button has no words to check). Read what a confirmation prompt says.
+- The click guard reads a click by what it does, from the page's structure (payment fields and
+  frames, danger styling, delete methods, confirmation dialogs), plus the final actions Claude
+  names from its task. It catches mistakes and injected instructions, not every possible trick: a
+  plain-looking button that commits to something, on a page with none of those signals, goes
+  through unless Claude names it. Read what a confirmation prompt says.
 - Prompt injection can't be fully solved. Watch the browser (or the live view) on sites you don't trust.
 - An invite link shows everything on screen in your logged-in browser, and a drive link lets
   that person click and type in it as you, on any site you're signed in to. Share links only

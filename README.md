@@ -96,8 +96,10 @@ Chromium elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse
 - [Working together](docs/sharing.md): invites, join codes, several agents on one browser
 - [Skills](docs/skills.md)
 - [Configuration](docs/configuration.md)
-- [Security](docs/security.md)
+- [Security](docs/security.md), the [assurance case](docs/assurance-case.md) and [reporting a vulnerability](SECURITY.md)
+- [Architecture](docs/architecture.md)
 - [Development](docs/development.md) and [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md), [Roadmap](ROADMAP.md), [Governance](GOVERNANCE.md), [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## Status
 

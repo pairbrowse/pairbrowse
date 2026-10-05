@@ -103,3 +103,22 @@ jobs:
           body=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body | sed '/^<!-- virustotal -->$/,$d')
           printf '%s\n\n<!-- virustotal -->\n**VirusTotal reports**\n\n%s' "$body" "$links" > notes.md
           gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file notes.md
+          # The README badge (shields.io reads virustotal.json on the badges branch): detections
+          # across all files, once VirusTotal has analysed each one (up to about 8 minutes a file).
+          bad=0; pending=0; total=0
+          while read -r sha file <&3; do
+            total=$((total + 1)); stats=""
+            for i in $(seq 1 30); do
+              stats=$(vt "https://www.virustotal.com/api/v3/files/$sha" | jq -c '.data.attributes.last_analysis_stats // empty')
+              if [ -n "$stats" ] && [ "$(jq '.malicious + .suspicious + .undetected + .harmless' <<< "$stats")" -gt 0 ]; then break; fi
+              stats=""
+            done
+            if [ -z "$stats" ]; then pending=$((pending + 1)); else bad=$((bad + $(jq '.malicious + .suspicious' <<< "$stats"))); fi
+          done 3< pins.txt
+          if [ "$bad" -gt 0 ]; then msg="$bad detections · $total files"; color=red
+          elif [ "$pending" -gt 0 ]; then msg="scan pending"; color=lightgrey
+          else msg="0 detections · $total files"; color=brightgreen; fi
+          jq -n --arg m "$msg" --arg c "$color" '{schemaVersion: 1, label: "VirusTotal", message: $m, color: $c}' > badge.json
+          old=$(gh api "repos/$GITHUB_REPOSITORY/contents/virustotal.json?ref=badges" -q .sha)
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/virustotal.json" -f branch=badges -f message="VirusTotal: $msg" \
+            -f sha="$old" -f content="$(base64 -w0 badge.json)" > /dev/null

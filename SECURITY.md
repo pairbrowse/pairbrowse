@@ -20,6 +20,8 @@ gh attestation verify pairbrowse-150.0.7871.114-macos-arm64.zip -R pairbrowse/pa
 This shows the file is exactly the one the plugin installs. The builds are made by the
 maintainers, not in CI, so it doesn't show what they were built from.
 
+Each file is also scanned by VirusTotal; the reports are linked in the release notes.
+
 The repository is also scanned by [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/pairbrowse/pairbrowse),
 CodeQL and Dependabot; results are in the Security tab.
 

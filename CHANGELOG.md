@@ -5,6 +5,15 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.13 (2026-10-05)
+
+Faster human-like typing; switch sessions from the side panel; one stuck call no longer holds up every agent.
+
+- Human-like typing is about 95 words a minute instead of 60 (new engine pack; `"pairbrowse": { "typingPace" }` sets it, 0.2 to 1).
+- Side panel: "Switch session..." opens the session picker again at any time.
+- Only sessions that used the browser in the last 10 minutes hold up an agent's session switch; open but idle ones don't.
+- A call that holds the shared browser queue for more than 10 minutes is answered with an error and the browser resets, so other agents go on.
+
 ## 0.15.12 (2026-10-05)
 
 Shared browser fixes found by the live tests, now run in CI; lint; project docs. The first release with a signed tag.

@@ -28,8 +28,8 @@ export const NATIVE = {
   windows: { file: "pairbrowse-150.0.7871.114-windows-x64.zip", sha256: null },
   engine: {
     file: "pairbrowse-engine-150.0.7871.114.tgz",
-    sha256: "629d7bf87293b1707ff07e597581dd44c528733a93644b17d84245d966705cf2",
-    files: { "engine.mjs": "6d72cf1a49807f23fa0a73fe8b7678ed88727913b5ec403c3ca61b358194d6d9", "collector.js": "38d4afc53caccc1b92d640354166f53c2108f489c6c054ad0f81ca9d7a02b151" },
+    sha256: "2545223667e8248c21482dcaf9394083ad800e653b989cce2a9592b8e1844826",
+    files: { "engine.mjs": "97800643e9a6bc57e5bda5a93fa65bc8e441acbbb0127ebe27b4497807058392", "collector.js": "38d4afc53caccc1b92d640354166f53c2108f489c6c054ad0f81ca9d7a02b151" },
   },
   baseUrl: "https://github.com/pairbrowse/pairbrowse/releases/download/browser-150.0.7871.114",
 };

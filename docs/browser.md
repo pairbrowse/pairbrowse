@@ -129,6 +129,14 @@ actions, for testing):
 { "pairbrowse": { "humanize": false } }
 ```
 
+Typing speed: `typingPace` from 0.2 (fastest) to 1 (slowest, about 60 words a minute). The
+default, 0.35, types about 95 words a minute: the gaps between keys, the short pauses and the
+occasional corrected typo scale with it; how long each key is held doesn't.
+
+```json
+{ "pairbrowse": { "typingPace": 0.3 } }
+```
+
 For a fully open-source setup, set `"browserEngine": "chromium"` in `~/.pairbrowse/config.json`:
 ungoogled-chromium on macOS, Playwright's Chromium elsewhere, both under their own open licenses.
 With it, PairBrowse removes Playwright's automation flag and disables

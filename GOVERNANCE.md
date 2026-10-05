@@ -42,6 +42,9 @@ releases page, checked and attested by the Release check workflow.
 The project must keep going if any one person can't continue.
 
 - Two maintainers can review, merge and release. Either can triage and close issues.
+- [@scoutscapital](https://github.com/scoutscapital) is the owner account's GitHub
+  [successor](https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-personal-account-on-github/managing-access-to-your-personal-repositories/maintaining-ownership-continuity-of-your-personal-accounts-repositories):
+  if the owner can't continue, they can take over the repository and its settings.
 - Everything needed to work on the project is public in this repository: code, tests, docs, the
   release and signing workflows. Releases are signed by GitHub Actions (Sigstore), not by a key
   one person holds.

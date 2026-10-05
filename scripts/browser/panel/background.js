@@ -29,6 +29,63 @@ globalThis.pbNotify = (title, message, id) => {
     .then((id) => console.log("notification shown", id), (e) => console.warn("notification failed", e?.message || e));
   return "queued";
 };
+// A join request while the person isn't looking at the browser: the notification has Allow and
+// Deny. Only a person can press a notification's button (no script, page or agent can), and the
+// press answers the request the side panel's way: POST approve to the live view with the owner's
+// key, which this worker holds in memory (session storage). Each notification answers only the
+// request it was made for (the live view answers only one still waiting). Clicking the
+// notification itself brings the browser to the front, where the bottom bar asks too.
+const JOIN_PREFIX = "pbjoin-";
+const joinNotes = new Map(); // notification id -> request id
+const noteId = (request) => JOIN_PREFIX + request;
+globalThis.pbNotifyJoin = (title, message, request) => {
+  request = String(request || "");
+  if (!/^r[0-9a-f]{6}$/.test(request)) return "bad request";
+  const nid = noteId(request);
+  if (joinNotes.has(nid)) return "already shown";
+  joinNotes.set(nid, request);
+  chrome.notifications.create(nid, { type: "basic", iconUrl: "icon128.png", title, message, priority: 2, requireInteraction: true, buttons: [{ title: "Allow" }, { title: "Deny" }] })
+    .then((id) => console.log("notification shown", id), (e) => console.warn("notification failed", e?.message || e));
+  return "queued";
+};
+// The request was answered or is gone: its notification goes.
+globalThis.pbClearJoin = (request) => {
+  const nid = noteId(String(request || ""));
+  if (!joinNotes.delete(nid)) return false;
+  chrome.notifications.clear(nid).catch(() => {});
+  return true;
+};
+// The list, for the helper's tests: request ids with a notification up.
+globalThis.pbJoinNotes = () => [...joinNotes.values()];
+async function joinButton(nid, index) {
+  const request = joinNotes.get(nid);
+  if (!request || (index !== 0 && index !== 1)) return false;
+  joinNotes.delete(nid);
+  chrome.notifications.clear(nid).catch(() => {});
+  const { view } = await chrome.storage.session.get("view");
+  if (!view) return false;
+  const r = await fetch(view + "approve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: request, allow: index === 0 }) }).catch(() => null);
+  return !!r?.ok;
+}
+async function bringToFront() {
+  const w = await chrome.windows.getLastFocused().catch(() => null);
+  if (w?.id !== undefined) await chrome.windows.update(w.id, w.state === "minimized" ? { focused: true, state: "normal" } : { focused: true }).catch(() => {});
+}
+chrome.notifications.onButtonClicked?.addListener((nid, index) => { joinButton(nid, index).catch(() => {}); });
+chrome.notifications.onClicked?.addListener((nid) => {
+  bringToFront().catch(() => {});
+  if (!joinNotes.has(nid)) chrome.notifications.clear(nid).catch(() => {});
+});
+chrome.notifications.onClosed?.addListener((nid) => { joinNotes.delete(nid); });
+// Whether the person is looking at the browser: its last focused window has the system's focus
+// and isn't minimized. Read here, from the browser itself, because a page can't tell: Playwright
+// emulates focus for every page it drives (document.hasFocus() stays true), and a tab behind
+// another app stays "visible". The helper shows a join request in the bar only then, else a
+// notification.
+globalThis.pbFocused = async () => {
+  const w = await chrome.windows.getLastFocused();
+  return w?.focused === true && w.state !== "minimized";
+};
 // A shared session's tabs stand in the same order in both browsers: the helper reads the tabs'
 // places (and addresses, to tell them apart) and moves them. Asked only by the helper, over the
 // browser's private pipe; nothing here talks to a page or the network.
@@ -48,7 +105,7 @@ globalThis.pbArrange = async (ids) => {
 // peer). Asked only by the helper. A tab's DevTools target id is how the helper names it; here
 // it becomes the tab id the capture needs (listing targets attaches to nothing).
 // The tab in front (the active tab of the window last focused), by its tab id (pbTabs names the
-// rest): where the helper shows a join request's corner prompt.
+// rest): where the helper shows a join request in the bottom bar.
 globalThis.pbFront = async () => (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id ?? null;
 globalThis.pbTabId = async (targetId) => (await chrome.debugger.getTargets()).find((t) => t.id === targetId)?.tabId ?? null;
 async function shareDocument() {

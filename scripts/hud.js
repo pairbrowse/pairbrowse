@@ -261,12 +261,10 @@
   // "Alice" -> "Alice's Claude". Unnamed ("Claude 3fed") and app-labelled ("Alice · Codex") stay as they are.
   const whose = (who) => !who ? "Claude" : /^Claude\b| · /.test(who) ? who : `${who}'s Claude`;
   const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  let barShadow = null; // the bar's closed shadow root: the join prompt lives in it too
   function ensureBar() {
     if (barHost && barHost.isConnected) return;
     barHost = document.createElement(TAG_BAR);
-    const shadow = barShadow = barHost.attachShadow({ mode: "closed" });
-    joinBox = null; // a new bar: its join prompt is drawn anew
+    const shadow = barHost.attachShadow({ mode: "closed" });
     shadow.innerHTML = html(`<style>
       :host{all:initial !important;position:fixed !important;z-index:2147483646 !important;left:0 !important;right:0 !important;bottom:0 !important;pointer-events:none !important}
       .bar{display:flex;align-items:center;gap:14px;height:30px;padding:0 14px;box-sizing:border-box;
@@ -294,9 +292,28 @@
       .pz[hidden]{display:none}
       .bar.paused{background:rgba(120,52,24,.95)}
       .bar.paused .pz{background:#ef7d45;color:#fff}
+      .bar.asking{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgb(27,30,60)}
+      .jq{flex:none;pointer-events:auto;display:flex;align-items:center;gap:7px;max-width:min(520px,62vw);min-width:0;padding-left:12px;border-left:1px solid rgba(255,255,255,.16);cursor:default;font-weight:600;color:#f4f6ff}
+      .jq[hidden]{display:none}
+      .jq svg{flex:none;width:13px;height:13px;color:#ef7d45}
+      .jq .t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .jq .t b{color:#fff}
+      .jq .h,.jq .m{font-weight:500;color:#ffd2bd;white-space:nowrap}
+      .jq .m[hidden]{display:none}
+      .jq button{flex:none;border:0;border-radius:6px;padding:4px 10px;font:600 11.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+      .jq .ok{background:#ef7d45;color:#fff}
+      .jq .ok:hover{background:#f48d5a}
+      .jq .no{background:rgba(255,255,255,.14);color:#f4f6ff}
+      .jq .no:hover{background:rgba(255,255,255,.24)}
+      .jq button:disabled{cursor:default;filter:saturate(.4)}
+      .jq .x{flex:none;color:#aab2df;font:500 15px/1 system-ui;cursor:pointer;padding:0 3px}
+      .jq .x:hover{color:#fff}
       @media (prefers-reduced-motion:reduce){.bar,.bar *{animation:none!important;transition:none!important}}
-    </style><div class="bar" aria-hidden="true"><span class="who"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span></span><ol></ol><button class="pz" tabindex="-1" hidden></button></div>`);
+    </style><div class="bar" aria-hidden="true"><span class="who"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><span class="jq" hidden><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span class="t"><b></b> wants to join (<span class="r"></span>)<span class="h"></span></span><span class="m" hidden></span><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button><b class="x" title="Dismiss (it stays in the side panel)">×</b></span></div>`);
     bar = shadow.querySelector(".bar");
+    joinWire(shadow); // a new bar: a join request it shows is drawn anew
+    joinShown = "";
+    joinDraw();
     // Pressed by a person only (trusted); it never takes focus from the page's fields.
     const pz = shadow.querySelector(".pz");
     pz.addEventListener("mousedown", (e) => e.preventDefault());
@@ -311,7 +328,8 @@
         const r = b.getBoundingClientRect();
         return e.clientX >= r.left - 40 && e.clientX <= r.right + 40;
       };
-      document.addEventListener("mousemove", (e) => bar?.classList.toggle("away", e.clientY > innerHeight - 56 && !nearButton(e)), { passive: true });
+      // Never while it asks someone in: its buttons stay put and fully visible.
+      document.addEventListener("mousemove", (e) => bar?.classList.toggle("away", !joins.size && e.clientY > innerHeight - 56 && !nearButton(e)), { passive: true });
     }
   }
   function drawBar() {
@@ -346,77 +364,100 @@
     drawBar();
     placeBadge();
   }
-  // The badge sits above the bar when there is one, and above the join prompt while it shows.
+  // The badge sits above the bar when there is one.
   function placeBadge() {
     if (!hostPlace) return;
-    const prompt = joinBox?.isConnected && joins.size ? joinBox.offsetHeight + 8 : 0;
-    hostPlace.textContent = barHost?.isConnected ? `:host{bottom:${42 + prompt}px !important}` : "";
+    hostPlace.textContent = barHost?.isConnected ? `:host{bottom:42px !important}` : "";
   }
 
-  // Someone asks to join the session (shown on the host's tab in front only): "Sam wants to join
-  // (drive)" with Allow, Deny and a close, bottom right, above the bar. It goes by itself after
-  // JOIN_SHOWN_MS (not while the pointer is on it); the request stays in the side panel.
+  // Someone asks to join the session (shown on the host's tab in front only, when the browser has
+  // the focus): the bottom bar keeps who's driving and Claude's last actions on the left, and at
+  // its right end shows "Sam wants to join (drive) · Allow · Deny · ×", the newest request, with
+  // "+N more" pointing to the side panel. Each goes by itself after JOIN_SHOWN_MS (not while the
+  // pointer is on it); the request stays in the side panel.
   // It lives in the bar's closed shadow root, so the page's DOM doesn't change when it shows, and
   // a page can't read, click or fake it. Only a real click counts: trusted, from a pointer (not a
-  // key), at least JOIN_ARM_MS after the prompt (or the stack under it) last changed, and while
-  // the browser reports it fully visible (nothing over it, no opacity or filter: IntersectionObserver
-  // v2), so a page can't slip it under a click meant for something else. The click is only
-  // recorded here; the helper reads it with the key, checks it again (not during an agent's
-  // action, nor a joiner's or the live view's replayed input) and answers the request the side
-  // panel's way (daemon/joinprompt.mjs). Its text comes as an object, never through JSON.parse.
-  const JOIN_SHOWN_MS = 10_000, JOIN_ARM_MS = 600, JOIN_ROWS = 3;
-  let joinBox = null, joinSeen = null;
+  // key), at least JOIN_ARM_MS after what it shows last changed, and while the browser reports it
+  // fully visible (nothing over it, no opacity or filter: IntersectionObserver v2; the bar drops
+  // its blur and never fades while it asks), so a page can't slip it under a click meant for
+  // something else. The click is only recorded here; the helper reads it with the key, checks it
+  // again (not during an agent's action, nor a joiner's or the live view's replayed input) and
+  // answers the request the side panel's way (daemon/joinprompt.mjs). Its text comes as an
+  // object, never through JSON.parse.
+  const JOIN_SHOWN_MS = 10_000, JOIN_ARM_MS = 600, JOIN_KEEP = 5;
+  let joinSeen = null, joinVisible = false, joinAt = 0, joinShown = "";
   // Answers given, for the helper (kind "join-answers"): a chain of object literals in this
-  // closure, never an array a page could reach through Array.prototype; at most 5 kept.
-  let answered = null, answeredCount = 0;
-  const joins = new Map(); // id -> { row, at, timer, visible, who }
-  function joinRoot() {
-    if (joinBox?.isConnected) return joinBox;
-    ensureBar();
-    const style = document.createElement("style");
-    style.textContent = `.jp{position:fixed;right:12px;bottom:42px;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
-      .jr{pointer-events:auto;display:flex;align-items:center;gap:9px;max-width:min(460px,calc(100vw - 24px));box-sizing:border-box;padding:8px 9px 8px 12px;border-radius:14px;cursor:default;
-        font:600 12.5px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;color:#f4f6ff;-webkit-font-smoothing:antialiased;
-        background:linear-gradient(160deg,rgb(62,84,150),rgb(27,30,64));
-        box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),inset 0 1px 0 rgba(255,255,255,.18),0 8px 24px rgba(10,12,40,.35),0 0 0 3px rgba(239,125,69,.35);animation:jin .16s ease-out}
-      .jr svg{flex:none;width:15px;height:15px;color:#ef7d45}
-      .jr .t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .jr .t b{color:#fff}
-      .jr .h{font-weight:500;color:#ffd2bd}
-      .jr button{flex:none;border:0;border-radius:7px;padding:5px 11px;font:600 12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
-      .jr .ok{background:#ef7d45;color:#fff}
-      .jr .ok:hover{background:#f48d5a}
-      .jr .no{background:rgba(255,255,255,.14);color:#f4f6ff}
-      .jr .no:hover{background:rgba(255,255,255,.24)}
-      .jr button:disabled{cursor:default;filter:saturate(.4)}
-      .jr .x{flex:none;color:#aab2df;font:500 15px/1 system-ui;cursor:pointer;padding:0 3px}
-      .jr .x:hover{color:#fff}
-      @keyframes jin{from{opacity:0}}
-      @media (prefers-reduced-motion:reduce){.jr{animation:none}}`;
-    joinBox = document.createElement("div");
-    joinBox.className = "jp";
-    joinBox.setAttribute("aria-hidden", "true"); // out of agents' snapshots, like the bar
-    barShadow.append(style, joinBox);
+  // closure, never an array a page could reach through Array.prototype; at most 5 kept. gone:
+  // the ids whose time ran out (not dismissed), as one string.
+  let answered = null, answeredCount = 0, gone = "";
+  const joins = new Map(); // id -> { timer, who, role }, oldest first
+  function joinWire(shadow) {
+    const jq = shadow.querySelector(".jq");
+    const answer = (kind) => (e) => {
+      const id = joinShown;
+      if (!e.isTrusted || !(e.detail > 0) || !id || !joins.has(id)) return;
+      if (now() - joinAt < JOIN_ARM_MS) return;
+      if (!joinVisible) return joinHint("covered: answer in the side panel");
+      if (answeredCount < 5) { answered = { t: now(), kind, what: id, next: answered }; answeredCount++; }
+      for (const b of jq.querySelectorAll("button")) b.disabled = true;
+      joinHint(kind === "join-allow" ? "letting them in…" : "");
+      // Not answered after a moment (the helper didn't take the click): back to the buttons.
+      setTimeout(() => { if (joinShown === id && joins.has(id)) { for (const b of jq.querySelectorAll("button")) b.disabled = false; joinHint("didn't go through: use the side panel"); } }, 3000);
+    };
+    for (const b of jq.querySelectorAll("button, .x")) b.addEventListener("mousedown", (e) => e.preventDefault()); // never takes focus from the page
+    jq.querySelector(".ok").addEventListener("click", answer("join-allow"));
+    jq.querySelector(".no").addEventListener("click", answer("join-deny"));
+    jq.querySelector(".x").addEventListener("click", (e) => { if (e.isTrusted && joinShown) joinOff(joinShown); });
+    // Not while the pointer is on it: someone reaching for Allow doesn't see it vanish.
+    jq.addEventListener("pointerenter", () => { for (const j of joins.values()) clearTimeout(j.timer); });
+    jq.addEventListener("pointerleave", () => { for (const id of joins.keys()) joinLater(id, 3000); });
     joinSeen?.disconnect();
     joinSeen = null;
+    joinVisible = false;
     try {
       joinSeen = new IntersectionObserver((entries) => {
-        for (const en of entries) for (const j of joins.values()) if (j.row === en.target) j.visible = "isVisible" in en ? en.isVisible : en.isIntersecting;
+        for (const en of entries) joinVisible = "isVisible" in en ? en.isVisible : en.isIntersecting;
       }, { trackVisibility: true, delay: 100 });
-    } catch {}
-    return joinBox;
+      joinSeen.observe(jq);
+    } catch { joinVisible = true; }
   }
-  // The stack changed under the pointer: no row takes a click for a moment.
-  const rearm = () => { const t = now(); for (const j of joins.values()) j.at = t; };
+  function joinHint(text) { const h = bar?.querySelector(".jq .h"); if (h) h.textContent = text ? ` · ${text}` : ""; }
+  function joinLater(id, ms) {
+    const j = joins.get(id);
+    if (!j) return;
+    clearTimeout(j.timer);
+    j.timer = setTimeout(() => { if (joins.has(id)) { gone = `${gone},${id}`.slice(-200); joinOff(id); } }, ms);
+  }
+  // The bar shows the newest request, or none.
+  function joinDraw() {
+    if (!bar) return;
+    const jq = bar.querySelector(".jq");
+    const ids = [...joins.keys()];
+    const id = ids.at(-1) || "";
+    bar.classList.toggle("asking", !!id);
+    if (id) bar.classList.remove("away");
+    jq.hidden = !id;
+    if (id !== joinShown) {
+      joinShown = id;
+      joinAt = now(); // what a click lands on just changed: no click counts for a moment
+      for (const b of jq.querySelectorAll("button")) b.disabled = false;
+      joinHint("");
+    }
+    if (!id) return;
+    const j = joins.get(id);
+    jq.querySelector(".t b").textContent = j.who;
+    jq.querySelector(".r").textContent = j.role;
+    const more = ids.length - 1;
+    const m = jq.querySelector(".m");
+    m.hidden = !more;
+    m.textContent = more ? `+${more} more in the side panel` : "";
+  }
   function joinOff(id) {
     const j = joins.get(id);
     if (!j) return false;
     clearTimeout(j.timer);
-    joinSeen?.unobserve(j.row);
-    j.row.remove();
     joins.delete(id);
-    rearm();
-    placeBadge();
+    joinDraw();
     return true;
   }
   // r: { id, who, role }.
@@ -425,47 +466,22 @@
     const id = String(r.id || "");
     if (!/^r[0-9a-f]{6}$/.test(id)) return false;
     if (joins.has(id)) return true;
-    const box = joinRoot();
-    while (joins.size >= JOIN_ROWS) joinOff(joins.keys().next().value);
-    const who = String(r.who || "Someone").slice(0, 60);
-    const row = document.createElement("div");
-    row.className = "jr";
-    row.innerHTML = html(`<svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span class="t"><b></b> wants to join (${r.role === "drive" ? "drive" : "watch"})<span class="h"></span></span><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button><b class="x" title="Dismiss (it stays in the side panel)">×</b>`);
-    row.querySelector(".t b").textContent = who;
-    const hint = (text) => { row.querySelector(".h").textContent = text ? ` · ${text}` : ""; };
-    const j = { row, at: now(), timer: 0, visible: !joinSeen, who };
-    const later = (ms) => { clearTimeout(j.timer); j.timer = setTimeout(() => joinOff(id), ms); };
-    // Your answer: recorded for the helper, which takes the prompt down once the request is answered.
-    const answer = (kind) => (e) => {
-      if (!e.isTrusted || !(e.detail > 0) || !joins.has(id)) return;
-      if (now() - j.at < JOIN_ARM_MS) return;
-      if (!j.visible) return hint("covered: answer in the side panel");
-      if (answeredCount < 5) { answered = { t: now(), kind, what: id, next: answered }; answeredCount++; }
-      for (const b of row.querySelectorAll("button")) b.disabled = true;
-      hint(kind === "join-allow" ? "letting them in…" : "");
-      // Not answered after a moment (the helper didn't take the click): back to the buttons.
-      setTimeout(() => { if (joins.get(id) === j) { for (const b of row.querySelectorAll("button")) b.disabled = false; hint("didn't go through: use the side panel"); } }, 3000);
-    };
-    for (const b of row.querySelectorAll("button, .x")) b.addEventListener("mousedown", (e) => e.preventDefault()); // never takes focus from the page
-    row.querySelector(".ok").addEventListener("click", answer("join-allow"));
-    row.querySelector(".no").addEventListener("click", answer("join-deny"));
-    row.querySelector(".x").addEventListener("click", (e) => { if (e.isTrusted) joinOff(id); });
-    // Not while the pointer is on it: someone reaching for Allow doesn't see it vanish.
-    row.addEventListener("pointerenter", () => clearTimeout(j.timer));
-    row.addEventListener("pointerleave", () => later(3000));
-    joins.set(id, j);
-    rearm();
-    box.prepend(row); // newest on top: the rows below don't move
-    joinSeen?.observe(row);
-    later(JOIN_SHOWN_MS);
-    placeBadge();
+    const wasBar = !!barHost?.isConnected;
+    ensureBar();
+    if (!wasBar) { drawBar(); placeBadge(); }
+    while (joins.size >= JOIN_KEEP) joinOff(joins.keys().next().value);
+    joins.set(id, { timer: 0, who: String(r.who || "Someone").slice(0, 60), role: r.role === "drive" ? "drive" : "watch" });
+    joinLater(id, JOIN_SHOWN_MS);
+    joinDraw();
     return true;
   }
-  // For the helper's tests: where each row's buttons are (geometry only).
-  const joinState = () => [...joins].map(([id, j]) => {
-    const at = (sel) => { const b = j.row.querySelector(sel).getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; };
-    return { id, who: j.who, visible: !!j.visible, allow: at(".ok"), deny: at(".no"), close: at(".x") };
-  });
+  // For the helper's tests: the request the bar shows and where its buttons are (geometry only).
+  const joinState = () => {
+    const jq = bar?.querySelector(".jq");
+    if (!joinShown || !jq || jq.hidden || !barHost?.isConnected) return [];
+    const at = (sel) => { const b = jq.querySelector(sel).getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; };
+    return [{ id: joinShown, who: joins.get(joinShown).who, more: joins.size - 1, visible: !!joinVisible, allow: at(".ok"), deny: at(".no"), close: at(".x") }];
+  };
 
   // Claude's cursor: glides to where Claude clicks or types, rings on a click, fades when idle.
   let curHost, cur, curTimer;
@@ -634,7 +650,7 @@
     if (kind === "join") return joinOn(text);
     if (kind === "join-off") return joinOff(String(text || ""));
     if (kind === "join-state") return joinState();
-    if (kind === "join-answers") { const a = answered; answered = null; answeredCount = 0; return { a, open: joins.size }; }
+    if (kind === "join-answers") { const a = answered, g = gone; answered = null; answeredCount = 0; gone = ""; return { a, open: joins.size, gone: g }; }
     if (kind === "spark") {
       spark(String(text || ""));
       return true;

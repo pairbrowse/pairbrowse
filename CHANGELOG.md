@@ -5,6 +5,15 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.16 (2026-10-06)
+
+Join requests answered in the page's bottom bar or the notification, one at a time.
+
+- When you're looking at the browser (its window has the focus and a web page is in front), the bottom bar of that tab asks at its right end: "Sam (Claude Code) wants to join (drive) · Allow · Deny · ×", for about 10 seconds, with who's driving and Claude's last actions still on its left. Several requests: the newest, with "+N more in the side panel". No notification then. The separate prompt in the tab's corner is gone.
+- When you're not (another app in front, the window minimized, the new tab page or session picker in front), a notification instead, now with Allow and Deny buttons; clicking it brings the browser to the front, where the bar asks if the request is still waiting. A request whose time in the bar ran out while you were away asks again when you come back. Without the side panel the system's notification is used, text only, pointing to the side panel.
+- Whether you're looking is read from the browser itself (the side panel's worker), not from the page. The side panel still lists every waiting request.
+- The same rules as before: only your own real click counts in the bar, never an agent's, a page script's, a joiner's or the live view's; a notification's button answers only the request it was made for. See the Security table.
+
 ## 0.15.15 (2026-10-06)
 
 Join requests: answer them in a prompt in your own tab, and clearer invite and join copy.

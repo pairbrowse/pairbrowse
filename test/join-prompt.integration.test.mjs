@@ -1,6 +1,8 @@
-// The corner prompt for a join request ("Sam wants to join (drive)", Allow / Deny / close): shown
-// by the page script, answered only by a real click; and end to end, with a host helper and a
-// joiner's (PAIRBROWSE_TEST_TUNNEL=direct, as in join.integration.test.mjs). Needs PAIRBROWSE_TEST_RUNTIME.
+// A join request in the page's bottom bar ("Sam wants to join (drive)", Allow / Deny / close, at
+// the bar's right end): shown by the page script, answered only by a real click; and end to end,
+// with a host helper and a joiner's (PAIRBROWSE_TEST_TUNNEL=direct, as in
+// join.integration.test.mjs): the bar while the browser has the focus, else a notification with
+// Allow / Deny, one at a time. Needs PAIRBROWSE_TEST_RUNTIME.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -8,7 +10,7 @@ import { createServer } from "node:http";
 import { join, dirname } from "node:path";
 import net from "node:net";
 import { createInterface } from "node:readline";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync, openSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -31,15 +33,17 @@ const HOSTILE = `<title>hostile</title><body style="height:2000px">page
       if (el.shadowRoot) hits++;
       for (const b of el.shadowRoot?.querySelectorAll("button") || []) { b.click(); hits++; }
     }
-    // A synthetic click wherever the prompt's Allow is.
-    const at = document.elementFromPoint(innerWidth - 120, innerHeight - 60);
-    at?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, detail: 1, clientX: innerWidth - 120, clientY: innerHeight - 60 }));
+    // Synthetic clicks all along the bar's right end, where its Allow is.
+    for (let x = innerWidth - 10; x > innerWidth - 400; x -= 10) {
+      const at = document.elementFromPoint(x, innerHeight - 15);
+      at?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, detail: 1, clientX: x, clientY: innerHeight - 15 }));
+    }
     for (const r of window.found) for (const b of r.querySelectorAll("button")) { b.click(); hits++; }
     return { hits, text: document.documentElement.innerText.includes("wants to join") };
   };
 </script></body>`;
 
-test("the join prompt: shows on the page, goes by itself, can be dismissed, takes only a real click", { skip: !runtime, timeout: 90_000 }, async () => {
+test("the join request in the bottom bar: shows at its right end, goes by itself, can be dismissed, takes only a real click", { skip: !runtime, timeout: 90_000 }, async () => {
   const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
   const server = createServer((req, res) => {
     // Strict CSP and Trusted Types, as on YouTube or Google's apps.
@@ -64,16 +68,22 @@ test("the join prompt: shows on the page, goes by itself, can be dismissed, take
       for (let a = (await hud("", "join-answers")).a; a; a = a.next) out.push({ kind: a.kind, what: a.what });
       return out;
     };
-    await hud(JSON.stringify({ items: [] }), "bar");
+    await hud(JSON.stringify({ items: [{ t: Date.now(), text: "Clicked **Next**", who: "" }] }), "bar");
     const before = await page.evaluate(() => document.documentElement.children.length);
 
-    // Shown: the page's DOM doesn't change (it's inside the bar's closed shadow root).
+    // Shown at the bar's right end, the bar's own content kept on its left: the page's DOM doesn't
+    // change (it's inside the bar's closed shadow root).
     assert.equal(await hud({ id: "r00aa01", who: "Sam (Claude Code)", role: "drive" }, "join"), true);
     assert.equal(await hud({ id: "nope", who: "x" }, "join"), false, "a bad id draws nothing");
     let s = await state();
     assert.equal(s.length, 1);
     assert.equal(s[0].who, "Sam (Claude Code)");
+    assert.equal(s[0].more, 0);
+    assert.ok(s[0].allow.y > 700 - 30 && s[0].close.x > 1000 - 40 && s[0].allow.x > 500, `at the right end of the bottom bar: ${JSON.stringify(s[0])}`);
     assert.equal(await page.evaluate(() => document.documentElement.children.length), before, "no new element in the page");
+    // The pointer near the bottom: the bar doesn't fade while it asks.
+    await page.mouse.move(100, 690);
+    await sleep(300);
     const shot = await page.screenshot();
     assert.ok(shot.length > 0);
 
@@ -86,25 +96,30 @@ test("the join prompt: shows on the page, goes by itself, can be dismissed, take
     assert.equal(await page.evaluate(([n]) => window[n]("guess", "", "join-state"), [name]), false, "no state without the key");
     assert.equal((await state()).length, 1, "still there");
 
-    // A real click too soon after it showed doesn't count; nor from the keyboard.
+    // A newer request: the bar shows it, with "+1 more"; a real click just then doesn't count
+    // (what's under the pointer just changed); nor from the keyboard.
     await hud({ id: "r00aa02", who: "Ann", role: "watch" }, "join");
     s = await state();
-    assert.equal(s.length, 2);
-    const ann = s.find((x) => x.id === "r00aa02"), sam = s.find((x) => x.id === "r00aa01");
-    assert.ok(ann.allow.y < sam.allow.y, "the newest stacks on top; the older row doesn't move");
-    await page.mouse.click(sam.allow.x, sam.allow.y);
-    assert.deepEqual(await answers(), [], "the stack just changed: not yet");
+    assert.equal(s.length, 1);
+    assert.equal(s[0].id, "r00aa02", "the newest");
+    assert.equal(s[0].more, 1);
+    await page.mouse.click(s[0].allow.x, s[0].allow.y);
+    assert.deepEqual(await answers(), [], "it just changed: not yet");
     await page.keyboard.press("Enter");
     assert.deepEqual(await answers(), []);
 
-    // A real click on Allow, once armed: recorded for the helper with the request's id.
+    // A real click on Allow, once armed: recorded for the helper with the shown request's id.
     await sleep(800);
-    await page.mouse.click(sam.allow.x, sam.allow.y);
+    s = await state();
+    await page.mouse.click(s[0].allow.x, s[0].allow.y);
     let got = await answers();
-    assert.deepEqual(got.map((e) => [e.kind, e.what]), [["join-allow", "r00aa01"]]);
-    // Answered (the helper takes it down).
-    assert.equal(await hud("r00aa01", "join-off"), true);
-    assert.equal((await state()).length, 1);
+    assert.deepEqual(got.map((e) => [e.kind, e.what]), [["join-allow", "r00aa02"]]);
+    // Answered (the helper takes it down): the bar shows the one before.
+    assert.equal(await hud("r00aa02", "join-off"), true);
+    s = await state();
+    assert.equal(s.length, 1);
+    assert.equal(s[0].id, "r00aa01");
+    assert.equal(s[0].more, 0);
 
     // Covered by the page: the click isn't taken.
     await sleep(800);
@@ -122,11 +137,12 @@ test("the join prompt: shows on the page, goes by itself, can be dismissed, take
     await page.evaluate(() => document.getElementById("cover").remove());
     await sleep(400);
 
-    // The close button dismisses it (nothing is answered).
+    // The close button dismisses it (nothing is answered); the bar is back to normal.
     s = await state();
     await page.mouse.click(s[0].close.x, s[0].close.y);
     assert.equal((await state()).length, 0, "dismissed");
     assert.deepEqual(await answers(), []);
+    assert.equal((await hud("", "join-answers")).gone, "", "dismissed, not timed out");
 
     // Deny, by a real click.
     await hud({ id: "r00aa03", who: "Eve", role: "drive" }, "join");
@@ -144,6 +160,7 @@ test("the join prompt: shows on the page, goes by itself, can be dismissed, take
     assert.equal((await state()).length, 1, "still there at 9 s");
     await sleep(1800);
     assert.equal((await state()).length, 0, "gone after 10 s");
+    assert.match((await hud("", "join-answers")).gone, /r00aa04/, "its time ran out (the helper may ask again)");
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
@@ -173,7 +190,7 @@ function rpc(write, input) {
 const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const tool = (call, name, args = {}) => call("tools/call", { name, arguments: args });
 
-test("a join request shows a corner prompt in the host's tab in front: only the person's own click answers it", { skip: !runtime, timeout: 240_000 }, async () => {
+test("a join request: the bar in the host's tab in front when the browser has the focus (no notification), else a notification; only the person's own click answers", { skip: !runtime, timeout: 240_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
   const executablePath = require("playwright").chromium.executablePath();
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>${req.headers.host}</title><main>fixture</main>`); });
@@ -213,7 +230,11 @@ test("a join request shows a corner prompt in the host's tab in front: only the 
   };
   let host, joiner;
   try {
-    host = await connect(home("ph-", "Bob"));
+    const hostHome = home("ph-", "Bob");
+    host = await connect(hostHome);
+    // The join notifications the host's helper sent (its log), by request.
+    const notified = (id) => existsSync(join(hostHome, "daemon.log")) && new RegExp(`notification sent \\(join request ${id}`).test(readFileSync(join(hostHome, "daemon.log"), "utf8"));
+    const notifiedAny = () => existsSync(join(hostHome, "daemon.log")) && /notification sent \(join request/.test(readFileSync(join(hostHome, "daemon.log"), "utf8"));
     joiner = await connect(home("pj-", "Alice"));
     assert.ok(!(await tool(host.call, "browser_navigate", { url: "http://one.pbtest.example/" })).result.isError);
     assert.ok(!(await tool(host.call, "browser_tabs", { action: "new" })).result.isError);
@@ -222,10 +243,12 @@ test("a join request shows a corner prompt in the host's tab in front: only the 
     const rowsIn = async (re) => (await prompts()).find((p) => re.test(p.url))?.rows || [];
     const click = async (args) => text(await tool(host.call, "pairbrowse_test_join_prompt", args));
     const requests = async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" }));
+    // The person looks at the browser (a headless browser has no window focus to read: set here).
+    assert.equal(await click({ focus: true }), "focus true");
     const code = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code", mode: "follow" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     assert.ok(code);
     const ask = async () => {
-      await tool(host.call, "pairbrowse_test_join_prompt", { move: true }); // the pointer away from the corner
+      await tool(host.call, "pairbrowse_test_join_prompt", { move: true }); // the pointer away from the bar
       assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code })), /Asked Bob to let Alice in/);
       await until("the prompt", async () => (await rowsIn(/two\.pbtest/)).length === 1);
       return (await requests()).match(/request (r[0-9a-f]{6}): Alice \(Claude Code\), waiting/)?.[1];
@@ -239,6 +262,7 @@ test("a join request shows a corner prompt in the host's tab in front: only the 
     assert.equal(row.who, "Alice (Claude Code)");
     assert.equal((await rowsIn(/one\.pbtest/)).length, 0, "not in the tab behind");
     await sleep(800);
+    assert.equal(notified(first), false, "the bar asked: no notification");
 
     // A page script, an agent's click, a joiner's or the live view's replayed click: nothing.
     for (const as of ["page", "agent", "joiner", "liveview"]) {
@@ -277,6 +301,29 @@ test("a join request shows a corner prompt in the host's tab in front: only the 
     await click({ click: "deny" });
     await until("turned away", async () => new RegExp(`request ${fifth}: Alice \\(Claude Code\\), turned away`).test(await requests()));
     await until("the prompt goes", async () => (await rowsIn(/two\.pbtest/)).length === 0, 4000);
+
+    // One alert at a time: none of those sent a notification.
+    assert.equal(notifiedAny(), false, "no notification while the bar asked");
+
+    // The person in another app: a notification with Allow / Deny, nothing in the page; back in
+    // the browser, the bar asks for the request still waiting, and no second notification.
+    assert.equal(await click({ focus: false }), "focus false");
+    await tool(host.call, "pairbrowse_test_join_prompt", { move: true });
+    assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code })), /Asked Bob to let Alice in/);
+    const away = await until("the request", async () => (await requests()).match(/request (r[0-9a-f]{6}): Alice \(Claude Code\), waiting/)?.[1]);
+    await until("the notification", async () => notified(away), 15_000);
+    const notes = JSON.parse(text(await tool(host.call, "pairbrowse_test_join_prompt", { notes: true })));
+    assert.deepEqual(notes, [away], "a notification with Allow / Deny for that request");
+    await sleep(1500);
+    assert.equal((await rowsIn(/two\.pbtest/)).length, 0, "nothing in the page while no one looks");
+    assert.equal(await click({ focus: true }), "focus true");
+    await until("the bar asks on return", async () => (await rowsIn(/two\.pbtest/))[0]?.id === away, 8000);
+    await sleep(800);
+    assert.equal(await click({ click: "allow" }), "clicked");
+    await until("let in", async () => new RegExp(`request ${away}: Alice \\(Claude Code\\), let in`).test(await requests()));
+    await until("its notification goes", async () => { const n = JSON.parse(text(await tool(host.call, "pairbrowse_test_join_prompt", { notes: true }))); return Array.isArray(n) && n.length === 0; }, 8000);
+    const log = readFileSync(join(hostHome, "daemon.log"), "utf8");
+    assert.equal(log.match(new RegExp(`notification sent \\(join request ${away}`, "g"))?.length, 1, "one notification, once");
 
     // A revoke takes it down too.
     await ask();

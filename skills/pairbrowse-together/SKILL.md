@@ -49,8 +49,8 @@ sessions, and closing the browser, are refused until they disconnect.
 ## 3. Approving joiners
 
 1. When a result or the side panel says "<name> wants to join", tell the user who and which role.
-2. The user clicks **Allow** or **Deny** in the side panel or the ~10 s prompt in the corner of
-   their tab (nothing is sent before Allow). Their answer comes in your next result.
+2. The user clicks **Allow** or **Deny** in the side panel, the bar at the bottom of their tab
+   (~10 s) or the notification (nothing is sent before Allow). Their answer comes in your next result.
 3. If the user tells you to let them in, `pairbrowse_invite` `approve` with the join request `id`
    (from `list`); it asks the user. `deny` with `id` is always fine.
 4. In Codex (any app that can't ask the user), `approve` and drive invites are refused with a

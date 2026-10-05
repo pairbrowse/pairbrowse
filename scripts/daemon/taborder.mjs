@@ -35,6 +35,12 @@ export function createTabOrder({ call, getContext, log = () => {} }) {
       for (const [page, t] of at || []) if (t.id === id) return page;
       return null;
     },
+    // Whether the browser window has the system's focus (not minimized, no other app in front):
+    // true or false, or null when the side panel's worker can't say (pbFocused, background.js).
+    async focused() {
+      const v = await within(ASK_MS + 500, call(() => { if (!globalThis.pbFocused) throw new Error("not ready"); return globalThis.pbFocused(); }, null, ASK_MS).catch(() => null));
+      return typeof v === "boolean" ? v : null;
+    },
     // The given pages in the order they stand (window, then position); null when unknown.
     async order(pages) {
       const at = await places();

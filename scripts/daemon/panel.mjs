@@ -78,19 +78,42 @@ export function createPanel({ context, liveViewUrl, log }) {
     throw new Error(`no answer from the side panel (${last})`);
   }
 
-  // When the user is needed (sign-in, 2FA, CAPTCHA, an approval, a join request): a
-  // notification through the side panel, else from the system.
+  // From the system, when the side panel can't (text only). The text goes as an argument, never
+  // into the script.
+  function systemNotify(say) {
+    if (process.platform === "darwin") execFile("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv) sound name \"Glass\"", "-e", "end run", NOTIFY_TITLE, say], () => {});
+    else if (process.platform === "linux") execFile("notify-send", [NOTIFY_TITLE, say], () => {});
+  }
+
+  // When the user is needed (sign-in, 2FA, CAPTCHA, an approval): a notification through the
+  // side panel, else from the system.
   function notify(text) {
     const id = randomBytes(8).toString("hex"); // the same id on a retry: shown once
     const say = String(text).slice(0, 200);
     call(([t, m, i]) => globalThis.pbNotify?.(t, m, i), [NOTIFY_TITLE, say, id], 5000)
       .then((r) => { if (r !== "queued" && r !== "already shown") throw new Error(`the side panel answered ${JSON.stringify(r)}`); log("notification sent"); })
       .catch((e) => {
-        // The text goes as an argument, never into the script.
         log(`notification through the side panel failed (${e?.message || e}); using the system's`);
-        if (process.platform === "darwin") execFile("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv) sound name \"Glass\"", "-e", "end run", NOTIFY_TITLE, say], () => {});
-        else if (process.platform === "linux") execFile("notify-send", [NOTIFY_TITLE, say], () => {});
+        systemNotify(say);
       });
+  }
+
+  // A join request (daemon/joinprompt.mjs) while the person isn't looking at the browser: a
+  // notification with Allow and Deny (the side panel's worker answers a press: background.js),
+  // else the system's, text only, pointing to the side panel. who: "Sam (Claude Code)"; role:
+  // drive or watch; request: its id.
+  function notifyJoin({ who, role, request }) {
+    const head = `${String(who).slice(0, 80)} wants to join (${role === "drive" ? "drive" : "watch"}).`;
+    call(([t, m, r]) => (globalThis.pbNotifyJoin ? globalThis.pbNotifyJoin(t, m, r) : "no buttons"), [NOTIFY_TITLE, `${head} Allow or Deny here, or in the PairBrowse side panel.`, String(request)], 5000)
+      .then((r) => { if (r !== "queued" && r !== "already shown") throw new Error(`the side panel answered ${JSON.stringify(r)}`); log(`notification sent (join request ${request}, with Allow and Deny)`); })
+      .catch((e) => {
+        log(`notification through the side panel failed (${e?.message || e}); using the system's`);
+        systemNotify(`${head} Answer in the PairBrowse side panel.`);
+      });
+  }
+  // The request was answered or is gone: its notification goes (best effort).
+  function clearJoin(request) {
+    call((r) => globalThis.pbClearJoin?.(r) ?? false, String(request), 3000).catch(() => {});
   }
 
   // The side panel gets the live view address in memory, through its service worker (session
@@ -103,5 +126,5 @@ export function createPanel({ context, liveViewUrl, log }) {
     log(`side panel connected (${origin})`);
   }
 
-  return { notify, connect, origins, call };
+  return { notify, notifyJoin, clearJoin, connect, origins, call };
 }

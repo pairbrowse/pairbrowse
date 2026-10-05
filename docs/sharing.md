@@ -57,20 +57,34 @@ working on this computer and through an SSH tunnel.
 
 ## The join prompt in your tab
 
-When someone asks to join, besides the side panel's **Allow** and **Deny** (and the notification),
-a small prompt shows in the bottom-right corner of the tab you're looking at: "Sam (Claude Code)
-wants to join (drive)" with **Allow**, **Deny** and a close (×).
+When someone asks to join, the side panel always lists the request with **Allow** and **Deny**.
+Besides that you get one alert, never two at once:
 
-- It shows once per request, only in your tab in front (on web pages; not on the new tab page),
-  and goes by itself after about 10 seconds (not while your pointer is on it). The request stays
-  waiting in the side panel. Several requests stack, newest on top.
-- It goes away as soon as the request is answered anywhere (the side panel, the live view, Claude
-  with your OK) or the invite is revoked.
+- **You're looking at the browser** (its window has the focus and a web page is in front): the
+  bar at the bottom of that tab keeps who's driving and Claude's last actions on its left, and at
+  its right end shows "Sam (Claude Code) wants to join (drive) · **Allow** · **Deny** · ×". No
+  notification.
+- **You're not** (another app in front, the window minimized, or the new tab page or session
+  picker in front): a notification "Sam (Claude Code) wants to join (drive)" with **Allow** and
+  **Deny** buttons. Clicking the notification itself brings the browser to the front, and the bar
+  then asks if the request is still waiting. (When the side panel can't show it, the system's
+  notification is used, text only: answer in the side panel.)
+
+- The bar shows the request for about 10 seconds (not while your pointer is on it), then goes
+  back to normal; the request stays waiting in the side panel. If its time ran out while you were
+  in another app, it asks again when you come back. Several requests: the bar shows the newest,
+  with "+N more in the side panel".
+- Both go away as soon as the request is answered anywhere (the side panel, the bar, the
+  notification, the live view, Claude with your OK) or the invite is revoked.
 - Only your own click counts. Clicks made by agents, by people already in the session (through
   their picture of your tab) or through the live view never answer it; nor do a page's scripts,
-  which can't see, click or imitate it. A click right after it appears (or changes), or while
-  something of the page covers it, doesn't count either: it says "covered: answer in the side
-  panel". See the [Security](security.md) table for the details.
+  which can't see, click or imitate it. A click right after the bar's request appears (or
+  changes), or while something of the page covers it, doesn't count either: it says "covered:
+  answer in the side panel". A notification's buttons can only be pressed by you. See the
+  [Security](security.md) table for the details.
+- Whether you're looking is read from the browser itself (the side panel's worker: the last
+  focused window has the system's focus and isn't minimized), not from the page, which can't
+  tell.
 
 ## Shared browser: one browser for everyone
 
@@ -111,9 +125,9 @@ either side beyond PairBrowse itself.
    watch" for view-only.
 2. Send Sam the `pb-join:...` code it gives you (chat, email, whatever you use).
 3. When Sam joins, "Sam (Claude Code) wants to join (can drive)" shows in the side panel (and the
-   live view) with **Allow** and **Deny**, you get a notification, and a small prompt with the
-   same buttons shows for about 10 seconds in the bottom-right corner of the tab you're on (see
-   [The join prompt in your tab](#the-join-prompt-in-your-tab)). Nothing of your session is sent
+   live view) with **Allow** and **Deny**, and either the bar at the bottom of the tab you're on
+   asks for about 10 seconds or, when you're not looking at the browser, a notification with the
+   same buttons does (see [The join prompt in your tab](#the-join-prompt-in-your-tab)). Nothing of your session is sent
    before you click Allow, and Claude hears your answer. Someone else with the same code has to
    ask again. Once Sam is in, the side panel shows "Sam (Claude Code) is in" with **Remove**: it
    takes Sam out at once (their pictures, input and agent stop). Each try with a code is a new

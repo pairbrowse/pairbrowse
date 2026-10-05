@@ -55,10 +55,11 @@ export function createOutput({ dir, secretValues }) {
       `For the rest use browser_find (text or regex), or browser_snapshot with depth or target (a ref). The whole snapshot is in ${file}.`;
   }
 
-  // At startup: files from before (masked with today's passwords), then a sweep now and then.
+  // At startup: old files swept (before masking, which would make them look new), the rest
+  // masked with today's passwords, then a sweep now and then.
   function start() {
-    try { for (const f of readdirSync(dir)) if (PLAYWRIGHT_OUTPUT.test(f)) maskFile(join(dir, f)); } catch {}
     sweep();
+    try { for (const f of readdirSync(dir)) if (PLAYWRIGHT_OUTPUT.test(f)) maskFile(join(dir, f)); } catch {}
     setInterval(sweep, SWEEP_EVERY_MS).unref();
   }
 

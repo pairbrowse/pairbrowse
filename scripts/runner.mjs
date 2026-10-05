@@ -81,7 +81,7 @@ export function savePlaybook(name, steps) {
 export function substitute(value, vars = {}) {
   if (typeof value === "string") {
     return value.replace(/\{\{(\w+)\}\}/g, (m, k) => {
-      if (!(k in vars)) throw new Error(`missing var ${k}`);
+      if (!Object.hasOwn(vars, k)) throw new Error(`missing var ${k}`); // not inherited: {{constructor}} is missing too
       return String(vars[k]);
     });
   }

@@ -121,7 +121,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       if (e.kind === "type") filledIn(page, host, e.what);
       const line = e.kind === "click" ? `clicked ${e.what ? `"${e.what}"` : "on the page"}` : e.kind === "type" ? `typed in ${e.what ? `"${e.what}"` : "a field"}` :
         e.kind === "key" ? `pressed ${e.what}` : e.kind === "went" ? `went to ${e.what}` : "scrolled";
-      if (userLog.at(-1) !== line) { userLog.push(line); toFeed(page, host, line, true); }
+      if (!same(userLog.at(-1), host, line)) { userLog.push({ who: host, line }); toFeed(page, host, line, true); }
     }
     if (userLog.length > 20) userLog.splice(0, userLog.length - 20);
     if (yours.some((e) => !["move", "wheel", "scroll"].includes(e.kind))) onStale();
@@ -155,7 +155,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       const before = lastUrls.get(page);
       lastUrls.set(page, url);
       // A new address only: news sites and dashboards reload themselves in background tabs.
-      if (url !== before && !byAgent(Date.now(), 5000) && /^https?:/.test(url)) userDid([{ t: Date.now(), kind: "went", what: url.slice(0, 120) }], page);
+      if (url !== before && !byAgent(Date.now(), 5000) && /^https?:/.test(url)) userDid([{ t: Date.now(), kind: "went", what: url.split(/[?#]/)[0].slice(0, 120) }], page);
     });
   }
 
@@ -197,7 +197,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     userLogs.set(page, userLog);
     for (const raw of lines.slice(0, 10)) {
       const line = String(raw ?? "").replace(/[\u0000-\u001f\u007f`<>]/g, "").slice(0, 80);
-      if (line && userLog.at(-1) !== line) { userLog.push(line); toFeed(page, who, line, false); }
+      if (line && !same(userLog.at(-1), who, line)) { userLog.push({ who, line }); toFeed(page, who, line, false); }
       const field = line.match(/^typed in "(.+)"$/)?.[1];
       if (field) filledIn(page, who, field);
     }
@@ -208,23 +208,28 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   const sharedPerson = (page) => { const h = page && humanAt.get(page); return h && Date.now() - h.t < USER_IDLE_MS ? { who: h.who, local: !h.remote, acting: !!actingIn(page) } : null; };
   const feedAfter = (page, n = 0) => (feeds.get(page) || []).filter((e) => e.n > n);
 
-  // What the person did in the tab, as a note for the agent's next result (once).
-  // Also the fields people filled (names, never values): theirs, so agents leave them be.
-  function userNote(page) {
+  // What people did in the tab, as a note for the agent's next result (once), each under their
+  // own name. Also the fields people filled (names, never values): theirs, so agents leave them
+  // be. me: the person whose agent reads it ("the user"): the host, or a joiner for their agent.
+  const same = (e, who, line) => e?.who === who && e.line === line;
+  function userNote(page, me = host) {
     const userLog = page && userLogs.get(page);
     const fields = page && filled.get(page);
     const out = [];
+    const name = (who, cap) => (who === me ? (cap ? "The user" : "the user") : who);
     if (userLog?.length) {
-      const who = humanAt.get(page)?.who || host;
-      out.push(`- ${who === host ? "The user" : who} used this tab meanwhile: ${userLog.splice(0).join(", ")}. Look at the page again (browser_snapshot) before you go on.`);
+      const runs = [];
+      for (const e of userLog.splice(0)) { if (runs.at(-1)?.who === e.who) runs.at(-1).lines.push(e.line); else runs.push({ who: e.who, lines: [e.line] }); }
+      for (const r of runs) out.push(`- ${name(r.who, true)} used this tab meanwhile: ${r.lines.join(", ")}.`);
+      out[out.length - 1] += " Look at the page again (browser_snapshot) before you go on.";
     }
     if (fields?.size) {
-      out.push(`- Fields people filled: ${[...fields].map(([name, who]) => `"${name}" (${who === host ? "the user" : who})`).join(", ")}. Leave them as they wrote them.`);
+      out.push(`- Fields people filled: ${[...fields].map(([field, who]) => `"${field}" (${name(who)})`).join(", ")}. Leave them as they wrote them.`);
       fields.clear();
     }
     return out.join("\n");
   }
-  const didIn = (page) => (userLogs.get(page) || []).join(", ");
+  const didIn = (page) => (userLogs.get(page) || []).map((e) => e.line).join(", ");
 
   return {
     // Whether something at time t happened during an agent's action (its own pointer moves).

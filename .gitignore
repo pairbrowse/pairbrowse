@@ -6,7 +6,8 @@ __pycache__/
 .DS_Store
 
 # Local Claude Code settings
-.claude/
+.claude/*
+!.claude/CLAUDE.md
 # Never commit PairBrowse user data (profile, secrets, facts, runs, logs)
 .pairbrowse/
 *.log

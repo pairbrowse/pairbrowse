@@ -57,7 +57,7 @@ async function brandNotificationHelper(helper, appId) {
   const resources = join(helper, "Contents", "Resources");
   mkdirSync(join(resources, "en.lproj"), { recursive: true });
   const english = join(resources, "en.lproj", "InfoPlist.strings");
-  if (!existsSync(english)) { writeFileSync(english, '"CFBundleDisplayName" = "PairBrowse";\n"CFBundleName" = "PairBrowse";\n'); changed = true; }
+  try { writeFileSync(english, '"CFBundleDisplayName" = "PairBrowse";\n"CFBundleName" = "PairBrowse";\n', { flag: "wx" }); changed = true; } catch {} // wx: only when it isn't there
   for (const folder of readdirSync(resources).filter((name) => name.endsWith(".lproj"))) {
     const strings = join(resources, folder, "InfoPlist.strings");
     if (!existsSync(strings)) continue;
@@ -178,7 +178,9 @@ async function iconRenderer() {
 
 // The product icon for the web UI's icon set: the flat app icon's shapes.
 function productIconGroup() {
-  const shapes = readFileSync(PRODUCT_ICON, "utf8").replace(/<!--[\s\S]*?-->/g, "").match(/<svg[^>]*>([\s\S]*)<\/svg>/)[1].trim();
+  let svg = readFileSync(PRODUCT_ICON, "utf8");
+  for (let before; before !== svg;) { before = svg; svg = svg.replace(/<!--[\s\S]*?-->/g, ""); } // until none are left
+  const shapes = svg.match(/<svg[^>]*>([\s\S]*)<\/svg>/)[1].trim();
   return `<g id="chrome-product" viewBox="100 100 824 824">${shapes.replace(/\s*\n\s*/g, "")}</g>`;
 }
 

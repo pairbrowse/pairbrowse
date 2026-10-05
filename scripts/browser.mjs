@@ -7,7 +7,7 @@
 // color theme, set in the profile (profilePreferences), so there's no "Installed theme" bar.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -229,7 +229,7 @@ export function launchArgs(config = {}, { firstRun = false } = {}) {
 // with fresh random names: the window function it answers on, the key it needs, and the names
 // of its three page elements. New ones each time the helper starts, so no fixed name gives
 // PairBrowse away to a page (and a page can't drive the badge).
-const randomLetters = (n) => [...randomBytes(n)].map((b) => String.fromCharCode(97 + (b % 26))).join("");
+const randomLetters = (n) => Array.from({ length: n }, () => String.fromCharCode(97 + randomInt(26))).join("");
 export function hudScript() {
   const name = randomLetters(1) + randomBytes(6).toString("hex");
   const token = randomBytes(24).toString("hex");

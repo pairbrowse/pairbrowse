@@ -24,7 +24,7 @@ const nativeTarget = join(paths.home, "browser", "PairBrowse.app");
 // live in versioned folders, so the path, and the extension id derived from it, change).
 const OLD_THEME_DIR = join(here, "browser", "theme");
 // (Chromium records the theme's folder, or its compiled pack file inside it.)
-const isOldThemePath = (p) => typeof p === "string" && /[\/\\]scripts[\/\\]browser[\/\\]theme([\/\\](Cached Theme\.pak)?)?$/.test(p);
+const isOldThemePath = (p) => typeof p === "string" && /[/\\]scripts[/\\]browser[/\\]theme([/\\](Cached Theme\.pak)?)?$/.test(p);
 export const PANEL_DIR = join(here, "browser", "panel");
 
 // The origin a page of the extension sends (URL.origin is "null" for chrome-extension: URLs).
@@ -49,7 +49,7 @@ export function panelExtensionId(dir = PANEL_DIR) {
 // Earlier versions' side panel had no key, so its ID came from its folder path.
 const pathPanelId = (dir = PANEL_DIR) => idFrom(dir);
 // (Any copy of PairBrowse: Chromium records an unpacked extension's folder as its path.)
-const isPanelPath = (p) => typeof p === "string" && /[\/\\]scripts[\/\\]browser[\/\\]panel[\/\\]?$/.test(p);
+const isPanelPath = (p) => typeof p === "string" && /[/\\]scripts[/\\]browser[/\\]panel[/\\]?$/.test(p);
 // The IDs of earlier side panel copies recorded in a profile's Secure Preferences (parsed).
 export const oldPanelIds = (secure, panelId = panelExtensionId()) => Object.entries(secure?.extensions?.settings || {})
   .filter(([id, entry]) => id !== panelId && (id === pathPanelId() || isPanelPath(entry?.path))).map(([id]) => id);

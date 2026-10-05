@@ -5,6 +5,17 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.12 (2026-10-05)
+
+Shared browser fixes found by the live tests, now run in CI; lint; project docs. The first release with a signed tag.
+
+- Shared browser: an address typed in the picture tab always reaches the host's tab, also right after the host moved its tab (it was sometimes lost on a slow computer).
+- Shared browser: a pointer resting over a page no longer counts as the person reading it.
+- The safety hook no longer reads the config file on every call (left over from a removed setting).
+- Live browser tests run in CI on every push and pull request, with coverage (81.6% of statements); ESLint in CI.
+- Governance, roadmap, code of conduct, architecture and assurance case docs; how to report and how reports are handled, in SECURITY.md.
+- Release tags are signed; see SECURITY.md to verify one.
+
 ## 0.15.11 (2026-10-05)
 
 Tunnels stop without a helper; signals only to our own keeper; more paths hidden.

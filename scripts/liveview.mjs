@@ -283,7 +283,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     if (!remoteAgents) return { problem: "Shared browser mode isn't available here." };
     if (j.invite.role !== "drive") return { problem: "This code is for watching only: your agent can't act in the host's browser." };
     const key = joinerKey(j);
-    const start = typeof body?.tab === "string" ? (await getContext()).pages().findIndex((p) => idOf(p) === body.tab) : -1;
+    // The tab they look at: only one whose picture goes to joiners.
+    const start = typeof body?.tab === "string" ? (await getContext()).pages().find((p) => idOf(p) === body.tab && crossesWhole(p)) || null : null;
     const ok = remoteAgents.line({ name: j.name, app: j.app, key }, String(body?.a || ""), body?.line, (line) => push.broadcast("agent", { a: String(body.a), line }, { to: key }), start);
     return ok ? { ok: true } : { problem: "Bad message." };
   }

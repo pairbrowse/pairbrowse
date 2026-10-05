@@ -67,6 +67,13 @@ are the same for everyone, because there is only one browser.
   calls use), up to 60 frames a second. The free tunnel only sets the connection up. On networks
   that block direct connections it switches by itself to pictures through the tunnel (slower).
 - **Cursors:** everyone's pointer and every agent's cursor shows with a name tag.
+- **Who is in each tab:** a picture's tab starts its title with the name of whoever works there
+  (a person by hand, or "✦ Name" for an agent) and shows their mark as its icon: a dot in the
+  person's color, the agent's spark. On your side, a tab they use by hand shows their dot.
+- **The real address:** a picture's tab has your page's title, and its real address shows at the
+  top of the picture, with a lock for a secure page (it fades, and comes back when the pointer
+  goes near it). Their own address bar shows the picture page (the site never loads in their
+  browser); an address typed there takes your tab to it.
 - **Files:** a file field they click asks them for the file on their own computer; it's sent over.
 - **Their Claude or Codex** works in your browser too, as a participant you see by name, taking
   turns per tab. Final actions (pay, delete, publish, send) still need you; it never uses your saved
@@ -132,7 +139,8 @@ What crosses, and what doesn't:
   localhost and local-network addresses never cross, in either direction (a dev server you share
   crosses under its own address: see [Share your dev server](#share-your-dev-server)).
 - **Agents show as sparks:** the other side's agents carry their spark, in their color, on the
-  tab they work in (a drive joiner's agents too, on the host).
+  tab they work in (a drive joiner's agents too, on the host). A person on the other side using a
+  tab by hand shows as a dot in their pointer's color on its icon, for a few seconds after.
 - **Live pointers:** in your copy of a shared tab you see the other people's and agents' mouse
   pointers at the same place in the page, with their name and color, fading after 3 seconds of
   stillness. Only positions cross, never what is under them. They are drawn in a closed shadow

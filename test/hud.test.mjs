@@ -131,3 +131,25 @@ test("fields people edit are known as theirs; the bar's Pause button is a person
     await browser.close();
   }
 });
+
+test("a person from the other browser shows as a dot on the tab's icon, in the corner of any agent's spark", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const icons = [];
+  const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => { if (args?.[3] === "spark") icons.push(args[2]); } };
+  const hud = createHud({ pages: async () => [page], participants: () => ["a"], waiting: () => null, liveView: () => null, notify: () => {} });
+  hud.setPersonMark(page, "#38bdf8");
+  assert.equal(hud.tabIcon(page), "o#38bdf8");
+  assert.deepEqual(icons, ["o#38bdf8"]);
+  hud.setPersonMark(page, "#38bdf8"); // said again while they're there: nothing new
+  assert.equal(icons.length, 1);
+  // An agent from the other browser comes in: its spark, with the dot; when it goes, the dot alone.
+  hud.setSharedSpark(page, "#4fd1e8");
+  hud.setSharedSpark(page, "");
+  // An agent here: its spark over the other one's.
+  await hud.moveSpark("a", page);
+  hud.setPersonMark(page, "");
+  await hud.moveSpark("a", null);
+  assert.deepEqual(icons, ["o#38bdf8", "#4fd1e8 o#38bdf8", "o#38bdf8", "#e9763f o#38bdf8", "#e9763f", ""]);
+  hud.setPersonMark(page, "not a color");
+  assert.equal(hud.tabIcon(page), "");
+});

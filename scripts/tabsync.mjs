@@ -410,3 +410,16 @@ export function personColor(name) {
   for (const c of String(name)) h = (h * 31 + c.codePointAt(0)) >>> 0;
   return PEOPLE_COLORS[h % PEOPLE_COLORS.length];
 }
+
+// Shared browser mode, the joiner's side: who works in one of the host's tabs, for the tab of its
+// picture page (a short name before the title, a colored mark as its icon). t: the tab as the
+// host sent it ({ person, agent, color }); prev: what was shown before. A person stays shown for
+// PERSON_SHOWN_MS after they were last there, so a pause in their typing doesn't blink the tab.
+export const PERSON_SHOWN_MS = 8000;
+export function tabWho(t, prev = null, now = Date.now()) {
+  const person = t?.person ? clean(t.person, 40) : prev?.person && now < prev.until ? prev.person : "";
+  const until = t?.person ? now + PERSON_SHOWN_MS : person ? prev.until : 0;
+  // An agent's label is "Name · App": the name is enough next to its spark.
+  const agent = t?.agent ? clean(String(t.agent).split(" · ")[0], 40) : "";
+  return { person, until, personColor: person ? personColor(person) : "", agent, agentColor: agent ? (COLOR.test(t.color || "") ? t.color : "#e9763f") : "" };
+}

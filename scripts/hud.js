@@ -196,17 +196,34 @@
     ctx.fill(new Path2D(SPARK));
     ctx.restore();
   }
-  // The spark fills the whole tab icon, so Claude's tab stands out in a row of tabs.
-  function sparkIcon(color) {
+  // The spark fills the whole tab icon, so Claude's tab stands out in a row of tabs. A person from
+  // the other browser of a shared tab: a dot in their color with a light rim (in the spark's
+  // corner when an agent is there too).
+  function drawDot(ctx, x, y, r, color) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, r / 5);
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+  }
+  function sparkIcon(color, person) {
     const c = document.createElement("canvas");
     c.width = c.height = 64;
-    drawSpark(c.getContext("2d"), 0, 0, 64, color);
+    const ctx = c.getContext("2d");
+    if (color) drawSpark(ctx, 0, 0, 64, color);
+    if (person) drawDot(ctx, color ? 48 : 32, color ? 48 : 32, color ? 14 : 24, person);
     return c.toDataURL("image/png");
   }
-  // color: that participant's spark color ("#rrggbb"), or "" to put the site's own icon back.
-  function spark(color) {
+  // value: that participant's spark color ("#rrggbb"), a person's dot ("o#rrggbb"), both (space
+  // apart), or "" to put the site's own icon back.
+  function spark(value) {
     const head = document.head || document.documentElement;
-    if (!/^#[0-9a-f]{6}$/i.test(color || "")) {
+    const parts = String(value || "").split(" ");
+    const color = parts.find((p) => /^#[0-9a-f]{6}$/i.test(p)) || "";
+    const person = parts.find((p) => /^o#[0-9a-f]{6}$/i.test(p))?.slice(1) || "";
+    if (!color && !person) {
       if (!sparkLink) return;
       sparkLink.remove();
       sparkLink = null;
@@ -215,17 +232,17 @@
       return;
     }
     if (sparkLink?.isConnected) {
-      if (sparkColor !== color) { sparkLink.href = sparkIcon(color); sparkColor = color; }
+      if (sparkColor !== value) { sparkLink.href = sparkIcon(color, person); sparkColor = value; }
       return;
     }
     const icons = [...document.querySelectorAll('link[rel~="icon"]')];
-    const href = sparkIcon(color);
+    const href = sparkIcon(color, person);
     savedIcons = icons;
     icons.forEach((l) => l.remove());
     sparkLink = document.createElement("link");
     sparkLink.rel = "icon";
     sparkLink.href = href;
-    sparkColor = color;
+    sparkColor = value;
     head.appendChild(sparkLink);
   }
 

@@ -1,6 +1,6 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { shareableUrl, stateForJoiner, readOps, createMirror, createFormSync, createOrderSync, shareFields, readForm, formForJoiner, readPointers, sameOrder, TABS_MAX, OPS_MAX, FIELDS_MAX, VALUE_MAX } from "../scripts/tabsync.mjs";
+import { shareableUrl, stateForJoiner, readOps, createMirror, createFormSync, createOrderSync, shareFields, readForm, formForJoiner, readPointers, sameOrder, tabWho, personColor, PERSON_SHOWN_MS, TABS_MAX, OPS_MAX, FIELDS_MAX, VALUE_MAX } from "../scripts/tabsync.mjs";
 import { createPresence } from "../scripts/daemon/presence.mjs";
 
 test("only public web addresses cross, and only the safe parts of them", () => {
@@ -283,4 +283,21 @@ test("what someone did, as it crosses: no query strings, local addresses, card n
   assert.equal(crossingText("Typed `Ada Lovelace` into **Name**"), "Typed `Ada Lovelace` into **Name**");
   const st = stateForJoiner({ tabs: [{ id: "0000000a", url: "https://a.example/form" }], activity: [{ t: 1, text: "Typed `4242 4242 4242 4242` into **Notes**", who: "Bob", tabId: "0000000a" }] }, { drive: false });
   assert.doesNotMatch(JSON.stringify(st), /4242 4242/);
+});
+
+test("a picture page's tab shows who works there, and a person stays a few seconds after", () => {
+  const t0 = 1_000_000;
+  const first = tabWho({ id: "a", person: "Kees", acting: true, agent: "Sven · Claude Code", color: "#4fd1e8" }, null, t0);
+  assert.equal(first.person, "Kees");
+  assert.equal(first.personColor, personColor("Kees"));
+  assert.equal(first.agent, "Sven", "the agent's name, without its app");
+  assert.equal(first.agentColor, "#4fd1e8");
+  // Gone from the host's state: still shown for a moment, then not.
+  const pause = tabWho({ id: "a" }, first, t0 + PERSON_SHOWN_MS - 1);
+  assert.equal(pause.person, "Kees");
+  assert.equal(pause.agent, "");
+  assert.equal(tabWho({ id: "a" }, pause, t0 + PERSON_SHOWN_MS).person, "");
+  // An agent without a valid color gets the default spark color; nobody: nothing.
+  assert.equal(tabWho({ id: "a", agent: "Claude", color: "red" }).agentColor, "#e9763f");
+  assert.deepEqual(tabWho({ id: "a" }), { person: "", until: 0, personColor: "", agent: "", agentColor: "" });
 });

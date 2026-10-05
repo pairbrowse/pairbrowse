@@ -83,6 +83,7 @@ function wrap(socket, { client, head, maxMessage = MESSAGE_MAX }) {
 // The server's side of an upgrade request already checked by the caller. Returns the connection,
 // or null (and answers 400) when it isn't a proper WebSocket request.
 export function acceptUpgrade(req, socket, head, opts = {}) {
+  socket.on("error", () => {}); // see refuseUpgrade
   const key = String(req.headers["sec-websocket-key"] || "");
   if (String(req.headers.upgrade || "").toLowerCase() !== "websocket" || req.headers["sec-websocket-version"] !== "13" || !/^[A-Za-z0-9+/]{22}==$/.test(key)) {
     socket.end("HTTP/1.1 400 Bad Request\r\nconnection: close\r\ncontent-length: 0\r\n\r\n");
@@ -94,6 +95,9 @@ export function acceptUpgrade(req, socket, head, opts = {}) {
 
 // Refuses an upgrade with a JSON answer, like a plain request would get.
 export function refuseUpgrade(socket, code, body) {
+  // An upgrade's socket has no error listener of the HTTP server's any more: a caller hanging up
+  // (a reset) while the answer goes out would otherwise take the whole process down.
+  socket.on("error", () => {});
   const text = JSON.stringify(body);
   socket.end(`HTTP/1.1 ${code} ${http.STATUS_CODES[code] || "Error"}\r\ncontent-type: application/json\r\ncache-control: no-store\r\ncontent-length: ${Buffer.byteLength(text)}\r\nconnection: close\r\n\r\n${text}`);
 }

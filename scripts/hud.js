@@ -91,7 +91,9 @@
     if (!e.isTrusted) return;
     const n = now();
     ptr = { x: Math.round(e.pageX), y: Math.round(e.pageY), t: n };
-    if (!view || n - view.t > 1000) looked();
+    // Only a move that moves: Chromium also sends one, with no distance, when a page loads or
+    // scrolls under a resting pointer, and that isn't the person looking.
+    if ((e.movementX || e.movementY) && (!view || n - view.t > 1000)) looked();
     if (n - lastMove > 500) { lastMove = n; record("move", ""); }
   }, opts);
 

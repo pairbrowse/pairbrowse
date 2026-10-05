@@ -149,7 +149,11 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     // Values typed here (sensitive ones only as filled), read at most every few hundred ms per
     // tab; and the agents here (drive). A watcher's stay here; reading them still keeps values
     // from there from landing on top of what the person here is typing.
-    if (cur.shared) await screensRound(cur);
+    if (cur.shared) await screensRound(cur, (id, page) => {
+      const op = drive ? cur.mirror.typed(id, shareableUrl(page.url(), mine)) : null;
+      if (op) ops.push(op);
+      log(`shared browser: an address typed in a picture tab (${new URL(page.url()).host}) ${op ? "goes to the host's tab" : "stays here (watch, the same address, or not shareable)"}`);
+    });
     let formBytes = 0;
     const all = !cur.shared && Date.now() - cur.formsAllAt > FORMS_ALL_MS; // in case a change went unannounced
     if (all) cur.formsAllAt = Date.now();
@@ -359,12 +363,14 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   // again; the tab in sight gets its direct connection (offer from the host, answer from the
   // page); one that can't connect directly moves to the slower route (pictures and input through
   // the join channel); one out of sight for a while lets its connection go.
-  async function screensRound(cur) {
+  // tell(id, page): passes on a picture page's new address before it shows the picture again (it
+  // can arrive after this round read the addresses, and would then never reach the host).
+  async function screensRound(cur, tell = () => {}) {
     const now = Date.now();
     for (const [id, page] of cur.pages) {
       if (page.isClosed()) continue;
       if (!isScreen(page)) {
-        if (/^https?:/.test(page.url())) { cur.screens.delete(page); cur.titles.delete(id); if (cur.who.has(id)) cur.who.get(id).sig = ""; await page.goto(screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {}); }
+        if (/^https?:/.test(page.url())) { tell(id, page); cur.screens.delete(page); cur.titles.delete(id); if (cur.who.has(id)) cur.who.get(id).sig = ""; await page.goto(screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {}); }
         continue;
       }
       const st = await within(800, page.evaluate(() => window.pbScreen?.state() || null).catch(() => null));

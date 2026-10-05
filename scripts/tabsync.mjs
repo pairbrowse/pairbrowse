@@ -138,6 +138,18 @@ export function readOps(body, ids) {
 //   sending for a while.
 export function createMirror({ now = () => Date.now(), settleMs = 2500, staleMs = 5000, bounceMax = 6, bounceMs = 30_000 } = {}) {
   const links = new Map(); // id -> { remote, baseline, settleUntil, stale, staleUntil, sends, closedHere }
+  // A navigation to send there, unless it's where the tab already is or it keeps bouncing.
+  const send = (l, id, url) => {
+    if (!url || url === l.remote) return null;
+    const t = now();
+    l.sends = l.sends.filter((s) => s > t - bounceMs);
+    if (l.sends.length >= bounceMax) return null;
+    l.sends.push(t);
+    l.stale = l.remote;
+    l.staleUntil = t + staleMs;
+    l.remote = url;
+    return { op: "navigate", id, url };
+  };
   let refSeq = 0;
   const link = (id, url) => {
     const l = { remote: url, baseline: undefined, settleUntil: now() + settleMs, stale: null, staleUntil: 0, sends: [], closedHere: false };
@@ -176,15 +188,15 @@ export function createMirror({ now = () => Date.now(), settleMs = 2500, staleMs 
       if (now() < l.settleUntil || l.baseline === undefined) { l.baseline = url; return null; }
       if (url === l.baseline) return null;
       l.baseline = url;
-      if (!url || url === l.remote) return null;
-      const t = now();
-      l.sends = l.sends.filter((s) => s > t - bounceMs);
-      if (l.sends.length >= bounceMax) return null;
-      l.sends.push(t);
-      l.stale = l.remote;
-      l.staleUntil = t + staleMs;
-      l.remote = url;
-      return { op: "navigate", id, url };
+      return send(l, id, url);
+    },
+    // Shared browser: an address a person typed in a picture tab (the host's own navigations never
+    // move a picture tab, so this is never an echo of one): sent even while the tab is settling.
+    typed(id, url) {
+      const l = links.get(id);
+      if (!l || l.closedHere) return null;
+      l.baseline = url;
+      return send(l, id, url);
     },
     // The tab here was closed by hand (a drive joiner sends the returned change).
     closedHere(id) { const l = links.get(id); if (!l) return null; l.closedHere = true; return { op: "close", id }; },

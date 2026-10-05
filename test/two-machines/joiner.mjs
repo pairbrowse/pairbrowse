@@ -52,7 +52,7 @@ await hide(ia.index);
 await sleep(4000);
 const a3 = await attach(home);
 say({ lastLookedAt: { startsOn: pageOf(text(await a3.tool("browser_snapshot"))) } });
-let r = await a3.tool("browser_press_key", { key: "Shift" });
+const r = await a3.tool("browser_press_key", { key: "Shift" });
 say({ agentHolds: { ok: !r.result?.isError, text: text(r).slice(0, 120) } });
 post("held");
 await wait("checked");

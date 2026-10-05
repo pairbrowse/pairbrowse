@@ -117,7 +117,7 @@ const defaultPs = async (pid) => (await run("ps", ["-p", String(pid), "-o", "com
 // Whether pid is still a tunnel keeper of ours for this port (a pid can be reused by anything).
 async function isKeeper(pid, port, psCommand = defaultPs) {
   if (!pidAlive(pid)) return false;
-  let command = "";
+  let command;
   try { command = String(await psCommand(pid)); } catch { return false; }
   const m = command.match(/tunnel-keeper\.mjs \S*cloudflared\S* (\d+) /);
   return !!m && Number(m[1]) === port;

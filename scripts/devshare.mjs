@@ -74,7 +74,7 @@ export function fromDevHeaders(headers, { local, publicOrigin }) {
 
 // One shared port: the proxy server (listen on 127.0.0.1) in front of the dev server.
 // access(token) -> "watch" | "drive" | null. publicHost(): the tunnel's host name, once known.
-export function createDevProxy({ hostname, port, access, publicHost, log = () => {} }) {
+export function createDevProxy({ hostname, port, access, publicHost }) {
   const connectHost = hostname === "[::1]" ? "::1" : hostname.endsWith(".localhost") ? "localhost" : hostname;
   const name = hostname === "localhost" || hostname.endsWith(".localhost") ? hostname : connectHost === "::1" ? "[::1]" : connectHost;
   const local = {

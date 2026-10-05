@@ -97,7 +97,7 @@ function takeLock(dir) {
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
       const pid = Number(readFileSync(file, "utf8")) || 0;
-      let alive = false;
+      let alive;
       try { process.kill(pid, 0); alive = pid > 0; } catch (err) { alive = err.code === "EPERM"; }
       if (alive) throw new Error(`another PairBrowse install is running (process ${pid})`);
       // Take the dead lock over atomically: only one process can move it aside, and only if it's

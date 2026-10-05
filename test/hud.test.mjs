@@ -1,12 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("the page records what the user did, never what they typed", { skip: !runtime, timeout: 60_000 }, async () => {
   const { chromium } = createRequire(join(runtime, "package.json"))("playwright");

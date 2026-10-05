@@ -506,7 +506,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         uploadsDir: paths.uploads,
         secrets: secrets.get(),
         signal: disconnected.signal,
-        beforeStep: async (kind, el) => {
+        beforeStep: async () => {
           if (sock.destroyed) throw new Error("Participant disconnected. Refresh the browser before continuing.");
           // Paused by a person: stop here (never waiting inside the shared queue).
           const held = pause.view();
@@ -697,7 +697,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // scrolling holds nobody up): wait outside the shared queue, so agents in other tabs carry
     // on. Another agent holding the tab, here or on another computer of a shared session: wait a
     // moment if its turn is about to end, else refuse; never act in this copy meanwhile.
-    async function takeTurn(dispatch, id, tool, args = {}) {
+    async function takeTurn(dispatch, id, tool) {
       for (let round = 0; ; round++) {
         const page = await myTab();
         // A joiner's agent never acts without a tab of its own (it would act in someone else's).

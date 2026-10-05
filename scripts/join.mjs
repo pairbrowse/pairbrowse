@@ -19,7 +19,7 @@ const QUICK_TUNNEL_HOST = /^[a-z0-9]+(-[a-z0-9]+)*\.trycloudflare\.com$/;
 // A name to show, not markup: no control or formatting characters, at most 40 characters
 // (joiners, participants and invite labels).
 export const cleanName = (name, fallback = "Guest") => String(name ?? "").normalize("NFC")
-  .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁩﻿<>"'`]/g, "")
+  .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff<>"'`]/g, "")
   .replace(/\s+/g, " ").trim().slice(0, 40) || fallback;
 
 // What a participant is called everywhere: "Alice · Claude Code", "Alice · Codex", "Alice (by hand)".

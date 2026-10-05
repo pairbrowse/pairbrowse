@@ -46,7 +46,7 @@ test("a message asking for an action does nothing by itself", () => {
 });
 
 test("who is doing what: the other side's agents in one line, only when it changed; entries checked", () => {
-  let tasks = [];
+  const tasks = [];
   const s = make({ locals: () => [{ who: "Alice · Claude Code", color: "#e9763f", status: "working", task: "Sign-up" }], onRemoteTask: (src, who, task) => tasks.push([src, who, task]) });
   s.join("a");
   assert.equal(s.note("a"), "");

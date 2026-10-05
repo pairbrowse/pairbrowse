@@ -89,11 +89,13 @@ jobs:
         run: |
           cd release
           links=""
+          # The public API takes 4 requests a minute: one every 16 s.
+          vt() { sleep 16; curl -s "$@" -H "x-apikey: $VT_API_KEY"; }
           while read -r sha file <&3; do
-            known=$(curl -s -o /dev/null -w '%{http_code}' -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$sha")
+            known=$(vt -o /dev/null -w '%{http_code}' "https://www.virustotal.com/api/v3/files/$sha")
             if [ "$known" != 200 ]; then
-              url=$(curl -sf -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data)
-              curl -sf -H "x-apikey: $VT_API_KEY" -F "file=@$file" "$url" > /dev/null
+              url=$(vt -f https://www.virustotal.com/api/v3/files/upload_url | jq -r .data)
+              vt -f -F "file=@$file" "$url" > /dev/null
             fi
             links="$links- [$file](https://www.virustotal.com/gui/file/$sha)"$'\n'
           done 3< pins.txt

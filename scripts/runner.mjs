@@ -448,8 +448,12 @@ async function stepsIn(page, steps, hooks) {
         await mark(pts[0]);
         await page.mouse.move(pts[0].x, pts[0].y);
         await page.mouse.down();
-        for (const p of pts.slice(1)) { await page.mouse.move(p.x, p.y, { steps: 8 }); await mark(p); }
-        await page.mouse.up();
+        // Let go whatever happens on the way: a stroke that fails must never leave the button held.
+        try {
+          for (const p of pts.slice(1)) { await page.mouse.move(p.x, p.y, { steps: 8 }); await mark(p); }
+        } finally {
+          await page.mouse.up().catch(() => {});
+        }
         hooks.activity(`Drew a stroke (${pts.length} points)`);
       } else if (kind === "scroll") {
         // The cursor onto the page, then the wheel: in small eased steps that glide like a person

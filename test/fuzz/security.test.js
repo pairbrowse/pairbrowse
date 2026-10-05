@@ -14,7 +14,8 @@ const RUNS = Number(process.env.PAIRBROWSE_FUZZ_RUNS) || 5000;
 const check = (property) => fc.assert(property, { numRuns: RUNS });
 
 const label = fc.stringMatching(/^[a-z0-9]([a-z0-9-]{0,10}[a-z0-9])?$/);
-const domain = fc.tuple(label, fc.constantFrom("com", "io", "dev", "example")).map(([a, b]) => `${a}.${b}`);
+// Hostnames as a URL keeps them (not "xn--" labels that aren't valid punycode: no URL parses those).
+const domain = fc.tuple(label, fc.constantFrom("com", "io", "dev", "example")).map(([a, b]) => `${a}.${b}`).filter((d) => { try { return new URL(`https://${d}`).hostname === d; } catch { return false; } });
 const junk = fc.string({ maxLength: 40 });
 
 test("a password goes only to its own domain or a subdomain, and only over https", () => {

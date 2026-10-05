@@ -149,7 +149,11 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     // Values typed here (sensitive ones only as filled), read at most every few hundred ms per
     // tab; and the agents here (drive). A watcher's stay here; reading them still keeps values
     // from there from landing on top of what the person here is typing.
-    if (cur.shared) await screensRound(cur, (id, page) => { const op = cur.mirror.fromLocal(id, shareableUrl(page.url(), mine)); if (drive && op) ops.push(op); });
+    if (cur.shared) await screensRound(cur, (id, page) => {
+      const op = drive ? cur.mirror.typed(id, shareableUrl(page.url(), mine)) : null;
+      if (op) ops.push(op);
+      log(`shared browser: an address typed in a picture tab (${new URL(page.url()).host}) ${op ? "goes to the host's tab" : "stays here (watch, the same address, or not shareable)"}`);
+    });
     let formBytes = 0;
     const all = !cur.shared && Date.now() - cur.formsAllAt > FORMS_ALL_MS; // in case a change went unannounced
     if (all) cur.formsAllAt = Date.now();

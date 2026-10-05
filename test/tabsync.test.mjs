@@ -301,3 +301,20 @@ test("a picture page's tab shows who works there, and a person stays a few secon
   assert.equal(tabWho({ id: "a", agent: "Claude", color: "red" }).agentColor, "#e9763f");
   assert.deepEqual(tabWho({ id: "a" }), { person: "", until: 0, personColor: "", agent: "", agentColor: "" });
 });
+
+test("shared browser: an address typed in a picture tab goes to the host even while the tab settles", () => {
+  let t = 1_000_000;
+  const m = createMirror({ now: () => t });
+  const local = new Set(["000000a1"]);
+  m.fromHost([{ id: "000000a1", url: "https://a.example/app" }], new Set());
+  // The host just moved its tab (the picture tab here doesn't move): settling for a while.
+  m.fromHost([{ id: "000000a1", url: "https://a.example/next" }], local);
+  m.applied("000000a1");
+  assert.equal(m.fromLocal("000000a1", "https://a.example/typed"), null, "a plain tab still absorbs it");
+  assert.deepEqual(m.typed("000000a1", "https://a.example/typed2"), { op: "navigate", id: "000000a1", url: "https://a.example/typed2" });
+  assert.equal(m.typed("000000a1", "https://a.example/typed2"), null, "where the host's tab already is: nothing to send");
+  assert.equal(m.typed("000000a1", null), null, "an address that can't be shared stays here");
+  t += 1000;
+  for (let i = 0; i < 10; i++) m.typed("000000a1", `https://a.example/${i}`);
+  assert.equal(m.typed("000000a1", "https://a.example/again"), null, "still limited when it keeps bouncing");
+});

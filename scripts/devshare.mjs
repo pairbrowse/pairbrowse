@@ -117,6 +117,7 @@ export function createDevProxy({ hostname, port, access, publicHost }) {
   // WebSockets (hot reload): the same checks, then the two connections are joined as they are.
   server.on("upgrade", (req, socket, head) => {
     const no = admit(req, true);
+    socket.on("error", () => {}); // a caller hanging up mid-answer mustn't take the helper down (ws.mjs refuseUpgrade)
     if (no) { socket.end(`HTTP/1.1 ${no.code} Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${no.text}`); return; }
     const dev = net.connect({ host: connectHost, port, autoSelectFamily: true }, () => {
       const headers = toDevHeaders(req.headers, { local, publicOrigin: publicOrigin(req) });

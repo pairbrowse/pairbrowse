@@ -49,7 +49,7 @@ import { createServe } from "./daemon/serve.mjs";
 import { readFields, applyFields } from "./daemon/forms.mjs";
 import { createTabOrder } from "./daemon/taborder.mjs";
 import { createCobrowse } from "./daemon/cobrowse.mjs";
-import { shareFields, shareableUrl, crossingText, onSecretDomain } from "./tabsync.mjs";
+import { shareFields, shareableUrl, crossingText, onSecretDomain, personColor } from "./tabsync.mjs";
 import { createSession, readEntries, readMessage } from "./daemon/session.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
@@ -248,7 +248,8 @@ const sharing = createSharing({
     secretDomains, screens, remoteAgents,
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
     // their pointer alone, or just being in the tab, leaves the page as it was.
-    onJoinerPerson: (page, who, did, acting, changed = false) => { presence.elsewhere(page, who, did, acting); if (changed) bumpRevision(); },
+    // Their mark (a dot in their pointer's color) shows on the tab's icon here while they're in it.
+    onJoinerPerson: (page, who, did, acting, changed = false) => { presence.elsewhere(page, who, did, acting); hud.setPersonMark(page, personColor(who)); if (changed) bumpRevision(); },
     onPause: (paused, who) => pressPause(paused, who || HOST), pauseState,
     // A joiner's agent at work in their copy of a tab: in use, so the tab cap here keeps it (closing
     // it would close their copy too).
@@ -361,12 +362,17 @@ const serve = createServe({
   testTools: {
     ...(process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
     // Tests only (PAIRBROWSE_TEST_SCREEN=1): the shared browser picture page here, as a person
-    // would use it (its state, its place among the tabs, keys typed on it).
+    // would use it (its state, its place among the tabs, keys typed on it, its address bar).
     ...(process.env.PAIRBROWSE_TEST_SCREEN === "1" ? { pairbrowse_test_screen: async (args = {}) => { const { expr, type, choose } = args;
-      const page = follow.pages().find((p) => !p.isClosed() && p.url().includes("/screen.html"));
+      // at: a picture page by its place among the tabs (list gives them); else the first one.
+      const all = (await context.getContext()).pages();
+      const page = follow.pages().find((p) => !p.isClosed() && p.url().includes("/screen.html") && (!Number.isInteger(args.at) || all.indexOf(p) === args.at));
       if (!page) return { text: "no picture page", error: true };
       if (Array.isArray(choose)) { page.once("filechooser", (fc) => fc.setFiles(choose.map(String)).catch(() => {})); return { text: "will choose" }; }
       if (args.shot) { await page.screenshot({ path: String(args.shot) }); return { text: "saved" }; }
+      // goto: an address typed into this tab's address bar; url: the tab's own address.
+      if (args.goto) { await page.goto(String(args.goto), { waitUntil: "commit" }).catch(() => {}); return { text: "went" }; }
+      if (args.url) return { text: JSON.stringify({ url: page.url() }) };
       if (args.list) { const ctx = await context.getContext(); return { text: JSON.stringify(await Promise.all(follow.pages().filter((p) => !p.isClosed()).map(async (p) => ({ index: ctx.pages().indexOf(p), title: await p.title().catch(() => "") })))) }; }
       if (type) { await page.keyboard.type(String(type), { delay: 20 }); return { text: "typed" }; }
       const index = (await context.getContext()).pages().indexOf(page);

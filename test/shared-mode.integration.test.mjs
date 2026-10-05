@@ -14,6 +14,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { personColor } from "../scripts/tabsync.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -77,6 +78,10 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
   const connect = async (h, app = "claude-code") => {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
+    return attach(h, app);
+  };
+  // One more agent on a running helper: a participant of its own.
+  const attach = async (h, app = "claude-code") => {
     const socketPath = join(h, "run", "browser.sock");
     for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
     let sock;
@@ -147,7 +152,31 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     stage = "a click on the picture clicks the host's button";
     await click(toJoiner(0.5, 0.15));
     await until("the host's page was clicked", async () => (await evaluate(host.call, "() => document.title")) === "clicked", 15_000);
+
+    stage = "the picture's tab says who works in the host's tab: the host's agent, by name and spark";
+    const inTab = await until("the host's agent on the picture's tab", async () => { const w = (await onScreen({ expr: "window.pbScreen.inTab()" }))?.value; return w?.agent && w.icon && w.title === `\u2726 ${w.agent} \u00b7 clicked` && w; }, 15_000);
+    assert.equal(inTab.person, "", "the joiner's own hand isn't shown to them");
+
+    stage = "the picture shows the host tab's real address; its own address is short";
+    const own = (await onScreen({ url: true }))?.url || "";
+    assert.match(own, /^chrome-extension:\/\/[a-p]{32}\/screen\.html#[0-9a-f]{8}$/, own);
+    const shownAt = async (want) => until(`the address ${want} on the picture`, async () => { const a = (await onScreen({ expr: "window.pbScreen.address()" }))?.value; return a?.shown && a.text === want && a; }, 15_000);
+    const addr = await shownAt("one.pbtest.example/app");
+    assert.equal(addr.lock, false, "no lock on a plain http page");
+    assert.equal(addr.warn, true, "it says the page isn't secure");
+
+    stage = "an address typed into the picture tab's address bar takes the host's tab there";
+    const hostUrl = async () => String(await evaluate(host.call, "() => location.href"));
+    await tool(host.call, "pairbrowse_collaboration", { action: "release" });
+    await onScreen({ goto: "http://one.pbtest.example/typed" });
+    await until("the host's tab at the typed address", async () => (await hostUrl()) === "http://one.pbtest.example/typed", 15_000);
+    await shownAt("one.pbtest.example/typed"); // and the tab here is the picture again
+    await until("the picture tab's own address again", async () => /\/screen\.html#[0-9a-f]{8}$/.test((await onScreen({ url: true }))?.url || ""), 10_000);
+    await onScreen({ goto: "http://one.pbtest.example/app" });
+    await until("the host's tab back at the app", async () => (await hostUrl()) === "http://one.pbtest.example/app", 15_000);
+    await shownAt("one.pbtest.example/app");
     if (noDirect) return;
+    await until("connected again", async () => (await onScreen({ expr: "window.pbScreen.state()" }))?.value?.conn === "connected", 45_000);
 
     stage = "picture and sound arrive smoothly, and the sound plays";
     const stats = await until("frames and sound", async () => {
@@ -206,6 +235,9 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     await sleep(300);
     await onScreen({ type: "hi!" }); // real key presses on the picture page
     await until("the host's field has the text", async () => (await evaluate(host.call, "() => document.getElementById('i').value")) === "hi!", 15_000);
+    // The host sees Alice in that tab: a dot in her pointer's color on its icon.
+    const iconAt = "async () => { const l = [...document.querySelectorAll('link[rel~=\"icon\"]')].pop(); if (!l || !l.href.startsWith('data:image/png')) return ''; const img = new Image(); img.src = l.href; await img.decode(); const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(40, 40, 1, 1).data; return '#' + [d[0], d[1], d[2]].map((x) => x.toString(16).padStart(2, '0')).join(''); }";
+    await until("Alice's dot on the host's tab icon", async () => (await evaluate(host.call, iconAt)) === personColor("Alice"), 10_000);
 
     stage = "a drag on the picture draws on the host's canvas";
     const a = toJoiner(0.2, 0.75), b = toJoiner(0.8, 0.8);
@@ -228,10 +260,44 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     await click(toJoiner(0.3, 0.945));
     await until("the picked file in the host's field", async () => (await evaluate(host.call, "() => document.getElementById('f').files[0] && document.getElementById('f').files[0].name")) === "doc.png", 20_000);
 
+    stage = "the host's agent holds the tab the joiner looks at: another agent of the joiner's hears it's in use, and acts in no other tab";
+    await tool(host.call, "pairbrowse_collaboration", { action: "release" });
+    assert.ok(!(await tool(host.call, "browser_tabs", { action: "new" })).result.isError);
+    assert.ok(!(await tool(host.call, "browser_navigate", { url: "http://two.pbtest.example/other" })).result.isError);
+    await evaluate(host.call, "() => { document.title = 'Two'; }");
+    const two = await until("the second tab's picture", async () => { try { return JSON.parse(text(await tool(joiner.call, "pairbrowse_test_screen", { list: true }))).find((p) => /(^| \u00b7 )Two$/.test(p.title)); } catch { return null; } });
+    // Alice looks at it: in a headless browser every tab counts as visible, so the app's picture
+    // says it's in the background, as it would be in a window.
+    assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: two.index }) })).ok);
+    await onScreen({ at: screen.index, expr: "Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }) && 1" });
+    await sleep(2000); // the joiner's helper sees which picture is in sight
+    await tool(host.call, "pairbrowse_collaboration", { action: "release" });
+    const held = await tool(host.call, "browser_press_key", { key: "Shift" }); // the host's agent holds only that tab now
+    assert.ok(!held.result?.isError, text(held));
+    const second = await attach(joinHome, joinerApp);
+    try {
+      for (const [name, args] of [["browser_navigate", { url: "http://three.pbtest.example/x" }], ["browser_press_key", { key: "z" }]]) {
+        const r = await tool(second.call, name, args);
+        assert.ok(r.result?.isError, `${name} waits for its turn: ${text(r)}`);
+        assert.match(text(r), /in use by Claude [0-9a-f]{4}\./, `${name}: ${text(r)}`);
+      }
+      const after = await tabs(host.call);
+      assert.ok(after.some((t) => t.url === "http://one.pbtest.example/app") && !after.some((t) => /three\./.test(t.url)), `nothing happened in the free tab: ${JSON.stringify(after)}`);
+      // Its tab is still the one it was sent to (reading takes no turn).
+      assert.match(text(await tool(second.call, "browser_snapshot")), /two\.pbtest\.example\/other/, "in the tab it was sent to");
+    } finally { second.sock.destroy(); }
+    // Back to the app's tab alone, on both sides.
+    await tool(host.call, "pairbrowse_collaboration", { action: "release" });
+    assert.ok(!(await tool(host.call, "browser_tabs", { action: "close", index: (await tabs(host.call)).find((t) => t.url === "http://two.pbtest.example/other").index })).result.isError);
+    assert.ok(!(await tool(host.call, "browser_tabs", { action: "select", index: (await tabs(host.call)).find((t) => t.url === "http://one.pbtest.example/app").index })).result.isError);
+    await onScreen({ at: screen.index, expr: "delete document.visibilityState" });
+    assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: screen.index }) })).ok);
+    await until("the second tab's picture gone", async () => { try { return !JSON.parse(text(await tool(joiner.call, "pairbrowse_test_screen", { list: true }))).some((p) => /(^| \u00b7 )Two$/.test(p.title)); } catch { return false; } });
+
     stage = "the joiner's own agent works in the host's browser: reads, types, uploads a file from the joiner's computer";
     const snap = text(await tool(joiner.call, "browser_snapshot"));
-    assert.match(snap, /button "Tap"/, "the host's page, not the picture");
-    const note = snap.match(/textbox "Note"[^\n]*\[ref=(e\d+)\]/)?.[1];
+    assert.match(snap, /button "Tap"/, `the host's page, not the picture: ${snap.slice(0, 800)}`);
+    const note = snap.match(/textbox "Note"[^\n]*\[ref=((?:f\d+)?e\d+)\]/)?.[1];
     assert.ok(note, snap.slice(0, 600));
     await sleep(6000); // the field Alice typed in stays hers for a few seconds, even for her agent
     const typed = await tool(joiner.call, "browser_type", { target: note, element: "Note", text: " from Alice's agent" });

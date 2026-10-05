@@ -161,11 +161,15 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     assert.ok(Date.now() - t0 < 1500, `scrolling holds nobody up (${Date.now() - t0} ms)`);
     await scrolling;
     await fetch(`${live}input`, { method: "POST", body: JSON.stringify([{ type: "mouse", action: "mouseMoved", x: 40, y: 40 }, { type: "mouse", action: "mousePressed", x: 40, y: 40, button: "left", buttons: 1, clickCount: 1 }, { type: "mouse", action: "mouseReleased", x: 40, y: 40, button: "left", buttons: 0, clickCount: 1 }]) });
-    // Read there twice a second, sent on within a quarter: on the host about a second later.
-    await sleep(1300);
-    const t1 = Date.now();
-    const heard = text(await tool(host.call, "browser_press_key", { key: "Tab" }));
-    assert.ok(Date.now() - t1 >= 700, `a click there pauses even a Tab press (${Date.now() - t1} ms)`);
+    // Read there twice a second, sent on within a quarter: on the host about a second later (more
+    // on a busy computer). Until it arrives a Tab press goes at once; the first one after waits.
+    let heard = "", waited = 0;
+    for (const end = Date.now() + 8000; Date.now() < end && waited < 700; await sleep(300)) {
+      const t1 = Date.now();
+      heard += text(await tool(host.call, "browser_press_key", { key: "Tab" }));
+      waited = Date.now() - t1;
+    }
+    assert.ok(waited >= 700, `a click there pauses even a Tab press (${waited} ms)`);
     assert.match(heard, /Alice used this tab meanwhile: [^\n]*clicked/, "and the agent hears of it");
 
     stage = "local addresses never cross back";

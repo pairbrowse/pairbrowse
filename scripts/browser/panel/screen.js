@@ -7,7 +7,7 @@
 const ICE = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const MOD = (e) => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
 const $ = (id) => document.getElementById(id);
-const video = $("v"), still = $("still"), statusBox = $("status"), statusText = $("status-text"), tag = $("tag"), tagText = $("tag-text"), soundButton = $("sound");
+const video = $("v"), still = $("still"), statusBox = $("status"), statusText = $("status-text"), bar = $("top"), tagText = $("tag-text"), soundButton = $("sound");
 
 let pc = null, dc = null, peer = "", host = "", view = "video"; // view: "video" or "frames"
 const outbox = []; // input for the helper, while there's no direct connection
@@ -18,12 +18,45 @@ function setStatus(text) {
 }
 let tagTimer = null;
 function showLive(on) {
-  // Says whose tab it is, then gets out of the way (it comes back when the pointer goes near it).
-  tag.classList.toggle("on", on);
+  // Says whose tab it is and where it is, then gets out of the way (it comes back when the
+  // pointer goes near it, and when the host's tab goes somewhere else).
+  bar.classList.toggle("on", on);
   clearTimeout(tagTimer);
-  if (on) tagTimer = setTimeout(() => tag.classList.remove("on"), 4000);
+  if (on) tagTimer = setTimeout(() => bar.classList.remove("on"), 4000);
   setStatus(on ? "" : statusText.textContent);
 }
+const live = () => state === "connected" || view === "frames";
+
+// ---- the host tab's real address, as a browser's address bar shows it ----
+// This page's own address can't be the host's (an extension page), and the site is never loaded
+// here (that would be you, with your cookies, on their page). So the address shows on the
+// picture: the site in full, the rest dimmed, a lock for a secure page.
+const LOCK = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M6 1a2.6 2.6 0 0 0-2.6 2.6V5H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-.4V3.6A2.6 2.6 0 0 0 6 1Zm-1.4 4V3.6a1.4 1.4 0 0 1 2.8 0V5Z"/></svg>';
+const INFO = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="4.6"/><path d="M6 5.4v3M6 3.6v.1" stroke-linecap="round"/></svg>';
+const LOCAL = /^(localhost|127(\.\d+){3}|\[::1\])$/;
+// { host, rest, secure: true | false | null (no web address) } for a tab address; null: none.
+function readAddress(raw) {
+  let u;
+  try { u = new URL(String(raw || "")); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return { host: "", rest: u.href, secure: null };
+  const rest = (u.pathname === "/" && !u.search && !u.hash ? "" : u.pathname) + u.search + u.hash;
+  return { host: u.host, rest, secure: u.protocol === "https:" ? true : LOCAL.test(u.hostname) ? null : false };
+}
+let shownAddress = "";
+function showAddress(raw) {
+  const a = readAddress(raw), box = $("addr"), st = $("addr-state");
+  box.hidden = !a;
+  if (!a) return false;
+  $("addr-host").textContent = a.host;
+  $("addr-rest").textContent = a.rest;
+  st.className = a.secure === false ? "warn" : "";
+  st.innerHTML = a.secure === true ? LOCK : a.secure === false ? `${INFO}<span class="note">Not secure</span>` : a.host ? INFO : "";
+  const changed = shownAddress !== "" && shownAddress !== raw;
+  shownAddress = String(raw);
+  return changed;
+}
+// A tab without a title is named by its address (without https://), as a browser does.
+const titleFor = (title, url) => { const a = readAddress(url); return String(title || (a ? a.host + a.rest : "") || "Shared tab").slice(0, 200); };
 
 // The part of the window the host's tab fills (it keeps its shape, centered).
 function shown() {
@@ -52,7 +85,7 @@ function send(ev) {
 let moveQueued = null;
 const BUTTON = ["left", "middle", "right"];
 addEventListener("pointermove", (e) => {
-  if (e.clientX < 220 && e.clientY < 60 && (state === "connected" || view === "frames") && !tag.classList.contains("on")) showLive(true);
+  if (e.clientY < 60 && e.clientX < bar.offsetWidth + 60 && live() && !bar.classList.contains("on")) showLive(true);
   const at = norm(e);
   if (!at) return;
   const first = !moveQueued;
@@ -122,6 +155,49 @@ function pointers(list) {
     el.style.transform = `translate(${Math.round(r.x + p.nx * r.w)}px, ${Math.round(r.y + p.ny * r.h)}px)`;
   }
   for (const [k, el] of drawn) if (!keep.has(k)) { el.remove(); drawn.delete(k); }
+}
+
+// ---- who works in the host's tab: their name before the title, their mark as the tab's icon ----
+// A person using it by hand: a dot in their color. An agent holding it: the spark in its color
+// (with the person's dot in a corner when both are there).
+const SPARK = "M8 0.8c.5 0 .8.4.9.9l.5 4 3.3-2.3c.4-.3 1-.2 1.3.2.3.4.2 1-.2 1.3L10.6 7.3l4 .6c.5.1.9.5.8 1-.1.5-.5.8-1 .7l-4-.5 2.3 3.3c.3.4.2 1-.2 1.3-.4.3-1 .2-1.3-.2L8.9 10.2l-.5 4c-.1.5-.5.9-1 .8-.5 0-.8-.5-.8-1l.6-4-3.3 2.3c-.4.3-1 .2-1.3-.2-.3-.4-.2-1 .2-1.3l3.2-2.4-4-.5c-.5-.1-.9-.5-.8-1 .1-.5.5-.8 1-.8l4 .6L3.9 3.5c-.3-.4-.2-1 .2-1.3.4-.3 1-.2 1.3.2l2.4 3.3.5-4c0-.5.4-.9.9-.9Z";
+const COLOR = /^#[0-9a-f]{6}$/i;
+let baseTitle = "Shared tab";
+let inTab = { person: "", personColor: "", agent: "", agentColor: "" };
+function dot(ctx, x, y, r, color) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = Math.max(2, r / 5);
+  ctx.strokeStyle = "#fff";
+  ctx.stroke();
+}
+function whoIcon() {
+  const agent = inTab.agent && COLOR.test(inTab.agentColor) ? inTab.agentColor : "";
+  const person = inTab.person && COLOR.test(inTab.personColor) ? inTab.personColor : "";
+  if (!agent && !person) return "";
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const ctx = c.getContext("2d");
+  if (agent) {
+    ctx.save();
+    ctx.scale(4, 4);
+    ctx.fillStyle = agent;
+    ctx.fill(new Path2D(SPARK));
+    ctx.restore();
+    if (person) dot(ctx, 48, 48, 14, person);
+  } else dot(ctx, 32, 32, 24, person);
+  return c.toDataURL("image/png");
+}
+function showWho() {
+  const names = [inTab.person, inTab.agent ? `\u2726 ${inTab.agent}` : ""].filter(Boolean);
+  document.title = (names.length ? `${names.join(" ")} \u00b7 ` : "") + baseTitle;
+  let link = document.querySelector('link[rel="icon"]');
+  const href = whoIcon();
+  if (!href) { link?.remove(); return; }
+  if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+  if (link.href !== href) link.href = href;
 }
 
 // ---- the connection ----
@@ -214,10 +290,22 @@ window.pbScreen = {
   pointers,
   info({ title, url, who } = {}) {
     host = String(who || host || "").slice(0, 40);
-    document.title = String(title || url || "Shared tab").slice(0, 200);
+    baseTitle = titleFor(title, url);
+    showWho();
     tagText.textContent = host ? `${host}'s tab · live` : "Shared tab · live";
+    if (showAddress(url) && live()) showLive(true); // the host's tab went somewhere else: say where
     if (state === "none" && view === "video") setStatus(`Connecting to ${host || "the host"}'s tab…`);
+    return true;
   },
+  // Who works in the host's tab ({ person, personColor, agent, agentColor }; empty: nobody).
+  who(w = {}) {
+    inTab = { person: String(w.person || "").slice(0, 40), personColor: String(w.personColor || ""), agent: String(w.agent || "").slice(0, 40), agentColor: String(w.agentColor || "") };
+    showWho();
+    return true;
+  },
+  inTab: () => ({ ...inTab, title: document.title, icon: !!document.querySelector('link[rel="icon"]') }),
+  // The address shown on the picture (as the person reads it), and whether a lock is there.
+  address: () => ({ shown: !$("addr").hidden, text: $("addr-text").textContent, lock: $("addr-state").innerHTML === LOCK, warn: $("addr-state").classList.contains("warn") }),
   // What the helper needs to know each round, and the input waiting for it (no direct connection).
   state: () => ({ visible: document.visibilityState === "visible", conn: state, peer, view, direct: !!(dc && dc.readyState === "open") }),
   takeInput: () => outbox.splice(0, 200),

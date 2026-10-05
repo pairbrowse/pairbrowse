@@ -7,7 +7,7 @@
 // and the tab overview.
 import { parseJoinCode, cleanName, displayName } from "../join.mjs";
 import { startJoin } from "../relay.mjs";
-import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
+import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, tabWho, personColor, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
 import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../devshare.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
@@ -42,7 +42,9 @@ const SCREEN_KEEP_MS = 60_000; // a tab out of sight stays connected this long (
 const SCREEN_CONNECT_MS = process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" ? 3000 : 12_000; // no direct connection by then: try again, then the slower route
 const SCREEN_INPUT_MS = 30; // on the slower route, input goes to the host this often
 const screenBase = () => `chrome-extension://${panelExtensionId()}/screen.html`;
-const screenUrl = (id) => `${screenBase()}?id=${encodeURIComponent(id)}`;
+// The tab id after # keeps the address short (screen.html#a1b2c3d4); the page itself shows the
+// host tab's real address and title (screen.js).
+const screenUrl = (id) => `${screenBase()}#${encodeURIComponent(id)}`;
 const isScreen = (page) => page.url().startsWith(screenBase());
 // The tools an agent here uses in the host's browser while in a shared browser session (the rest,
 // such as its status, remembered details and sessions, stay here).
@@ -249,7 +251,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     await allowDevServers(state.dev, cur).catch((e) => log("shared dev server", e?.message || e));
 
     const plan = cur.mirror.fromHost(state.tabs, new Set(cur.pages.keys()));
-    for (const id of plan.close) { const page = cur.pages.get(id); cur.pages.delete(id); if (page) await closeTab(page); }
+    for (const id of plan.close) { const page = cur.pages.get(id); cur.pages.delete(id); cur.who.delete(id); cur.infos.delete(id); if (page) await closeTab(page); }
     for (const { id, url } of plan.navigate) {
       const page = cur.pages.get(id);
       // Shared browser: the picture shows the host's tab wherever it goes.
@@ -279,12 +281,10 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         if (!t?.id) continue;
         const info = { title: String(t.title || "").slice(0, 200), url: String(t.url || "").slice(0, 2048) };
         cur.urls.set(t.id, info.url);
-        const page = cur.pages.get(t.id);
-        const sig = `${info.title}\u0001${info.url}`;
-        if (page && !page.isClosed() && isScreen(page) && cur.titles.get(t.id) !== sig) {
-          cur.titles.set(t.id, sig);
-          page.evaluate((i) => window.pbScreen?.info(i), { ...info, who: cur.join.host }).catch(() => cur.titles.delete(t.id));
-        }
+        cur.infos.set(t.id, info);
+        showInfo(cur, t.id);
+        cur.who.set(t.id, { ...tabWho(t, cur.who.get(t.id)), sig: cur.who.get(t.id)?.sig || "" });
+        showWho(cur, t.id);
       }
     }
 
@@ -303,8 +303,12 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         cur.agents.set(page, { label: String(t.agent).slice(0, 60), color: /^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "", held: left > 0, until: Date.now() + left });
         context.touch?.(page);
       }
-      // Their agent's spark, in its color, on the copy here too.
-      hud.setSharedSpark(page, t.agent ? (/^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "#e9763f") : "");
+      // Their agent's spark, in its color, on the copy here too; else a person using it there, as a
+      // dot in their color. A picture page (shared browser) shows both in its own tab (showWho).
+      if (!cur.shared) {
+        hud.setSharedSpark(page, t.agent ? (/^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "#e9763f") : "");
+        if (t.person) hud.setPersonMark(page, personColor(t.person));
+      }
       const first = !cur.heard.has(t.id);
       const heard = cur.heard.get(t.id) || 0;
       const did = (Array.isArray(t.did) ? t.did : []).filter((e) => Number(e.n) > heard);
@@ -321,6 +325,36 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     liveView()?.setRemote((Array.isArray(state.people) ? state.people : []).map((label) => ({ label: `${label} (${cur.join.host}'s session)`, role: cur.join.role })));
   }
 
+  // Shared browser mode: a picture page's title and address (the host tab's), said again only
+  // when they changed. Not taken yet (the page still loading, say after a typed address took it
+  // away and back): tried again next round.
+  function showInfo(cur, id) {
+    const info = cur.infos.get(id);
+    const page = cur.pages.get(id);
+    if (!info || !page || page.isClosed() || !isScreen(page)) return;
+    const sig = `${info.title}\u0001${info.url}`;
+    if (cur.titles.get(id) === sig) return;
+    cur.titles.set(id, sig);
+    const unsaid = () => { if (cur.titles.get(id) === sig) cur.titles.delete(id); };
+    page.evaluate((i) => window.pbScreen?.info(i) === true, { ...info, who: cur.join.host }).then((ok) => { if (!ok) unsaid(); }, unsaid);
+  }
+
+  // Shared browser mode: who works in one of the host's tabs (a person by hand, an agent holding
+  // it), on its picture page's tab here: their name before the title, their mark as its icon.
+  // Said again only when it changed; a person who left goes after a few seconds (tabWho).
+  function showWho(cur, id) {
+    const w = cur.who.get(id);
+    const page = cur.pages.get(id);
+    if (!w || !page || page.isClosed() || !isScreen(page)) return;
+    if (w.person && Date.now() >= w.until) Object.assign(w, { person: "", personColor: "", until: 0 });
+    const shown = { person: w.person, personColor: w.personColor, agent: w.agent, agentColor: w.agentColor };
+    const sig = JSON.stringify(shown);
+    if (w.sig === sig) return;
+    w.sig = sig;
+    // Not taken yet (the page still loading): tried again next round.
+    page.evaluate((x) => window.pbScreen?.who(x) === true, shown).then((ok) => { if (!ok) w.sig = ""; }, () => { w.sig = ""; });
+  }
+
   // Shared browser mode, each round: a picture page that was sent somewhere else (an address typed
   // in its address bar: that already went to the host as the tab's new address) shows the picture
   // again; the tab in sight gets its direct connection (offer from the host, answer from the
@@ -331,11 +365,13 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     for (const [id, page] of cur.pages) {
       if (page.isClosed()) continue;
       if (!isScreen(page)) {
-        if (/^https?:/.test(page.url())) { cur.screens.delete(page); cur.titles.delete(id); await page.goto(screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {}); }
+        if (/^https?:/.test(page.url())) { cur.screens.delete(page); cur.titles.delete(id); if (cur.who.has(id)) cur.who.get(id).sig = ""; await page.goto(screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {}); }
         continue;
       }
       const st = await within(800, page.evaluate(() => window.pbScreen?.state() || null).catch(() => null));
       if (!st) continue;
+      showInfo(cur, id);
+      showWho(cur, id);
       let sc = cur.screens.get(page);
       if (!sc) { sc = { peer: null, conn: "none", since: now, tries: 0, fallback: false, framesOn: false, hiddenSince: 0, busy: false }; cur.screens.set(page, sc); }
       if (st.conn !== sc.conn) { sc.conn = st.conn; sc.since = now; }
@@ -526,7 +562,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     s = null;
     liveView()?.setRemote([]);
     if (cur) onLeft?.();
-    if (cur) for (const page of cur.pages.values()) if (!page.isClosed()) hud.setSharedSpark(page, "");
+    if (cur) for (const page of cur.pages.values()) if (!page.isClosed()) { hud.setSharedSpark(page, ""); hud.setPersonMark(page, ""); }
     if (cur) { clearInterval(cur.inputTimer); cur.inputTimer = null; }
     if (cur) await cur.join.leave();
     // Shared browser: each picture becomes the tab it showed, as your own (signed in as you).
@@ -560,7 +596,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const cur = { mirror: createMirror(), pages: new Map(), owner, window: false, windowId: null, lastT: 0, candidates: new Map(), seen: new WeakSet(), heard: new Map(), told: new WeakMap(), agents: new Map(), outbox: [],
       forms: createFormSync(), order: createOrderSync(), quiet: new Set(), agentSent: new Map(), personSent: new Map(), dirty: new Set(), formsAllAt: 0,
       formT: new Map(), pointed: new WeakMap(), pointerTimer: null, pointerSig: "", drawn: new Set(), formTimer: null,
-      shared: parsed.mode === "shared", screens: new Map(), titles: new Map(), urls: new Map(), inputTimer: null };
+      shared: parsed.mode === "shared", screens: new Map(), titles: new Map(), infos: new Map(), who: new Map(), urls: new Map(), inputTimer: null };
     const queue = serially(); // the host's changes and this side's, one at a time
     cur.queue = queue;
     s = cur;

@@ -1,5 +1,6 @@
 // What PairBrowse shows inside the pages (scripts/hud.js): the status badge, the bottom bar with
-// the last actions, the spark on each agent's tab icon, and Claude's cursor.
+// the last actions, the spark on each agent's tab icon (a dot for a person from the other browser
+// of a shared tab), and Claude's cursor.
 import { hudScript } from "../browser.mjs";
 import { isRef } from "../policy.mjs";
 import { within } from "../util.mjs";
@@ -12,6 +13,7 @@ const CURSOR_TOOLS = { browser_click: "click", browser_type: "type", browser_hov
 const CURSOR_WAIT_MS = 300; // never holds an action up for longer
 const RECENT_ITEMS = 4;
 const SHARED_SPARK_MS = 30_000;
+const PERSON_MARK_MS = 8000; // a person from the other browser stays marked this long after their last input
 
 // pages(): the open tabs (none while the browser is closed). participants(): ids in the order
 // they joined. waiting(page): the person an agent waits for there. liveView(): the live view, if
@@ -51,11 +53,26 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (!page || page.isClosed()) return;
     const before = sharedSpark(page);
     if (color) sharedSparks.set(page, { color, until: Date.now() + SHARED_SPARK_MS }); else sharedSparks.delete(page);
-    if (before !== (color || "") && !sparkOn(page)) applySpark(page, color);
+    if (before !== (color || "") && !sparkOn(page)) applySpark(page, tabIcon(page));
+  }
+  // A person from the other browser of a shared tab using it by hand: a dot in their color on the
+  // tab's icon (in a corner of an agent's spark, when one is there). It goes PERSON_MARK_MS after
+  // their last input.
+  const personMarks = new Map(); // tab -> { color, until }
+  const personMark = (page) => { const m = personMarks.get(page); return m && Date.now() < m.until ? `o${m.color}` : ""; };
+  // What the tab's icon shows: the spark of an agent here, else of one there; and a person there
+  // ("#rrggbb", "o#rrggbb" or both, space apart; empty: the site's own icon).
+  const tabIcon = (page) => [sparkOn(page)?.color || sharedSpark(page), personMark(page)].filter(Boolean).join(" ");
+  function setPersonMark(page, color) {
+    if (!page || page.isClosed()) return;
+    const before = tabIcon(page);
+    if (/^#[0-9a-f]{6}$/i.test(color || "")) personMarks.set(page, { color, until: Date.now() + PERSON_MARK_MS }); else personMarks.delete(page);
+    if (tabIcon(page) !== before) applySpark(page, tabIcon(page));
   }
   setInterval(() => {
-    for (const [page, s] of sharedSparks) if (Date.now() >= s.until) { sharedSparks.delete(page); if (!page.isClosed() && !sparkOn(page)) applySpark(page, ""); }
-  }, 5000).unref();
+    for (const [page, s] of sharedSparks) if (Date.now() >= s.until) { sharedSparks.delete(page); if (!page.isClosed() && !sparkOn(page)) applySpark(page, tabIcon(page)); }
+    for (const [page, m] of personMarks) if (Date.now() >= m.until) { personMarks.delete(page); if (!page.isClosed()) applySpark(page, tabIcon(page)); }
+  }, 2000).unref();
   // Where the person and the agent last pointed in a tab (document coordinates), and the others'
   // pointers from the other browser of a shared tab, drawn in the page.
   const readPointer = (page) => within(800, call(page, "", "pointer").catch(() => null));
@@ -87,9 +104,8 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (prev?.page === page) return;
     if (page) sparks.set(participant, { page, color: sparkColor(participant) });
     else sparks.delete(participant);
-    const still = prev?.page && sparkOn(prev.page);
-    if (prev?.page && !prev.page.isClosed()) await applySpark(prev.page, still?.color || sharedSpark(prev.page));
-    if (page) await applySpark(page, sparks.get(participant).color);
+    if (prev?.page && !prev.page.isClosed()) await applySpark(prev.page, tabIcon(prev.page));
+    if (page) await applySpark(page, tabIcon(page));
   }
   const sparkPage = (participant) => sparks.get(participant)?.page;
   // The agent whose spark is on this tab: { id, color }, or null.
@@ -136,7 +152,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   async function onPageLoad(page) {
     await ensure(page);
     if (badge.text) applyBadge(page);
-    if (sparkOn(page) || sharedSpark(page)) applySpark(page, sparkOn(page)?.color || sharedSpark(page));
+    if (tabIcon(page)) applySpark(page, tabIcon(page));
     applyBar(page);
   }
 
@@ -145,7 +161,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
     source, call, ensure, onPageLoad, applyBar, setBadge, badge: () => badge,
-    moveSpark, sparkPage, sparkOwner, sparkColor, clearSparks: () => sparks.clear(), setSharedSpark, sharedSpark, readPointer, showPointers,
+    moveSpark, sparkPage, sparkOwner, sparkColor, clearSparks: () => sparks.clear(), setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor,
   };
 }

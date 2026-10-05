@@ -6,10 +6,11 @@ import { readFileSync, statSync, writeFileSync, chmodSync } from "node:fs";
 export function parseSecrets(text) {
   const raw = {};
   for (const line of text.split(/\r?\n/)) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    // "s": a value may hold U+2028 or U+2029, which "." alone doesn't match.
+    const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/s);
     if (!m) continue;
     let v = m[2];
-    if (/^(['"]).*\1$/.test(v)) v = v.slice(1, -1);
+    if (/^(['"]).*\1$/s.test(v)) v = v.slice(1, -1);
     raw[m[1]] = v;
   }
   const values = {};
@@ -63,11 +64,10 @@ export function secretStore(file, log = () => {}) {
 }
 
 // text with every saved password (4+ characters) replaced by its name, for whatever Claude reads.
-// Longest first: a password that starts with (or holds) a shorter one is masked whole, not
-// left with its remainder showing.
+// Longest first: a password that holds a shorter one goes whole, not with its other characters left.
 export function redact(text, values) {
   let out = String(text);
-  const longestFirst = Object.entries(values).sort(([, a], [, b]) => String(b).length - String(a).length);
+  const longestFirst = Object.entries(values).sort(([, a], [, b]) => String(b ?? "").length - String(a ?? "").length);
   for (const [name, value] of longestFirst) if (value && value.length >= 4) out = out.split(value).join(`<secret>${name}</secret>`);
   return out;
 }

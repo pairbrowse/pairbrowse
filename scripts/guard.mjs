@@ -14,7 +14,7 @@ import { resolve, sep } from "node:path";
 import { paths } from "./paths.mjs";
 import { navigationProblem, BLOCKED_TOOLS, BROWSER_PREFIX } from "./policy.mjs";
 import { latestReview, REVIEW_MAX_AGE_MIN } from "./runs.mjs";
-import { secretInside, MEDIA } from "./upload.mjs";
+import { secretInside, MEDIA, realPath } from "./upload.mjs";
 
 // A click Claude knows commits something is named with its class first: "Pay: Submit order",
 // "Delete: OK", "Submit: Create account", "Send: Reply", "Publish: Submit for review". The helper
@@ -32,9 +32,12 @@ export function clickClass(element) {
   return CLICK_CLASSES.includes(c) ? c : "";
 }
 
+// Judged where the file really is: a link in the uploads folder to a file or folder elsewhere
+// is that file. A path that doesn't exist yet is judged as written.
 export function uploadAllowed(p, uploadsDir = paths.uploads) {
-  const full = resolve(String(p));
-  return full.startsWith(resolve(uploadsDir) + sep) && MEDIA.test(full) && !secretInside(full);
+  const real = (q) => { try { return realPath(q); } catch { return resolve(String(q)); } };
+  const full = real(p);
+  return full.startsWith(real(uploadsDir) + sep) && MEDIA.test(full) && !secretInside(full);
 }
 
 // Loopback, private and link-local addresses: your router, NAS, local dev servers.
@@ -112,7 +115,9 @@ export function decide(input, _config, review = latestReview(), now = Date.now()
   }
 
   if (tool === "browser_click" || tool === "browser_drag" || tool === "browser_drop") {
-    const raw = String(ti.element || ti.startElement || ti.endElement || "");
+    // A drag is named by either end: dropping onto "Delete: Trash" deletes, whatever is dragged.
+    const ends = [ti.element, ti.startElement, ti.endElement].map((e) => String(e || ""));
+    const raw = ends.find(clickClass) || ends.find(Boolean) || "";
     const cls = clickClass(raw);
 
     if (cls === "publish") {

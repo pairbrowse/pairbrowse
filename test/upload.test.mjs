@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -40,6 +40,22 @@ test("files in credential folders are refused even if they look like images", ()
   const p = join(ssh, "not-really.png");
   const problem = uploadProblem(p, uploads);
   assert.ok(problem === `${p}: not found` || /never uploaded/.test(problem));
+});
+
+test("a credential folder spelled in other casing is the same folder on a case-insensitive disk", () => {
+  writeFileSync(join(dir, "case-probe"), "");
+  if (!existsSync(join(dir, "CASE-PROBE"))) return; // a case-sensitive disk: ~/.SSH is another folder
+  const home = join(dir, "home");
+  mkdirSync(join(home, ".ssh"), { recursive: true });
+  writeFileSync(join(home, ".ssh", "photo.png"), "x");
+  const saved = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    assert.match(uploadProblem(join(home, ".SSH", "photo.png"), uploads), /never uploaded/);
+    assert.match(uploadProblem(join(home, ".sSh", "PHOTO.PNG"), uploads), /never uploaded/);
+  } finally {
+    process.env.HOME = saved;
+  }
 });
 
 test("other file types are pointed to browser_file_upload", () => {

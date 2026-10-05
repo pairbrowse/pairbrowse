@@ -69,6 +69,31 @@ const TURN_MAX_MS = Number(process.env.PAIRBROWSE_TURN_MAX_MS) || 10 * 60_000;
 const TURN_MAX = TURN_MAX_MS >= 60_000 ? `${Math.round(TURN_MAX_MS / 60_000)} minutes` : `${Math.round(TURN_MAX_MS / 1000)} seconds`;
 const image = (data) => ({ type: "image", data, mimeType: "image/jpeg" });
 
+// A client's message as the browser server reads it, or null. The server drops a message it can't
+// read (another jsonrpc, an object id, params that aren't an object, a field it doesn't know, a
+// malformed _meta) without answering, and a tool call waiting for that answer would hold the
+// shared queue until the turn cap. So only the fields it knows go on, and _meta's typed ones only
+// when they're the right type.
+const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+const RELATED_TASK = "io.modelcontextprotocol/related-task";
+export function wellFormed(msg) {
+  if (!isObject(msg) || msg.jsonrpc !== "2.0") return null;
+  const { id, method, params } = msg;
+  if (id !== undefined && typeof id !== "string" && typeof id !== "number") return null;
+  // An answer to one of the server's own requests (roots/list, elicitation).
+  if (method === undefined) return id === undefined ? null : "error" in msg ? { jsonrpc: "2.0", id, error: Number.isInteger(msg.error?.code) && typeof msg.error.message === "string" ? msg.error : { code: -32603, message: "Malformed error" } } : { jsonrpc: "2.0", id, result: isObject(msg.result) ? msg.result : {} };
+  if (typeof method !== "string" || (params !== undefined && !isObject(params))) return null;
+  let p = params;
+  if (p && "_meta" in p) {
+    const { _meta, ...rest } = p;
+    const meta = isObject(_meta) ? { ..._meta } : null;
+    if (meta && meta.progressToken !== undefined && typeof meta.progressToken !== "string" && typeof meta.progressToken !== "number") delete meta.progressToken;
+    if (meta && meta[RELATED_TASK] !== undefined && typeof meta[RELATED_TASK]?.taskId !== "string") delete meta[RELATED_TASK];
+    p = meta ? { ...rest, _meta: meta } : rest;
+  }
+  return { jsonrpc: "2.0", ...(id !== undefined ? { id } : {}), method, ...(p !== undefined ? { params: p } : {}) };
+}
+
 // browser_handle_dialog gets an element, like a click: what OK confirms, named with its class
 // ("Delete: OK") when it's a final action. The helper reads it and drops it before the browser server.
 function withDialogLabel(t) {
@@ -881,6 +906,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
     createInterface({ input: sock }).on("line", (line) => {
       let msg;
       try { msg = JSON.parse(line); } catch { return; }
+      // Not one the browser server reads (null would even throw here): refused at once (see wellFormed).
+      const read = wellFormed(msg);
+      if (!read) return void (msg?.id !== undefined && msg?.method !== undefined && toClient({ jsonrpc: "2.0", id: typeof msg.id === "string" || typeof msg.id === "number" ? msg.id : null, error: { code: -32600, message: "Invalid Request: not a JSON-RPC 2.0 message." } }));
+      msg = read;
       if (msg.method === "notifications/cancelled") { transport.onmessage?.(msg); return; }
       // Answers to the server's own requests (roots/list, elicitation) go straight through: the
       // tool call that asked is still running, so queueing them behind it would deadlock.

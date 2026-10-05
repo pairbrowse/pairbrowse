@@ -1,0 +1,13 @@
+# Dependabot: known vulnerabilities and updates for the pinned runtime (runtime/package-lock.json)
+# and for the pinned GitHub Actions. Runtime pins stay deliberate: each update is a pull request.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /runtime
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

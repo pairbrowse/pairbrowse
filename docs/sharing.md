@@ -55,6 +55,23 @@ people who have one anyway.
 Under the names in `liveViewHosts` only invite links work; your own live view link keeps
 working on this computer and through an SSH tunnel.
 
+## The join prompt in your tab
+
+When someone asks to join, besides the side panel's **Allow** and **Deny** (and the notification),
+a small prompt shows in the bottom-right corner of the tab you're looking at: "Sam (Claude Code)
+wants to join (drive)" with **Allow**, **Deny** and a close (×).
+
+- It shows once per request, only in your tab in front (on web pages; not on the new tab page),
+  and goes by itself after about 10 seconds (not while your pointer is on it). The request stays
+  waiting in the side panel. Several requests stack, newest on top.
+- It goes away as soon as the request is answered anywhere (the side panel, the live view, Claude
+  with your OK) or the invite is revoked.
+- Only your own click counts. Clicks made by agents, by people already in the session (through
+  their picture of your tab) or through the live view never answer it; nor do a page's scripts,
+  which can't see, click or imitate it. A click right after it appears (or changes), or while
+  something of the page covers it, doesn't count either: it says "covered: answer in the side
+  panel". See the [Security](security.md) table for the details.
+
 ## Shared browser: one browser for everyone
 
 A join code is a **shared browser** code unless you ask for "follow": the people you let in work
@@ -93,18 +110,22 @@ either side beyond PairBrowse itself.
 1. Ask Claude: "Make a join code for Sam" (co-drive; Claude asks you first), or "for Sam to only
    watch" for view-only.
 2. Send Sam the `pb-join:...` code it gives you (chat, email, whatever you use).
-3. When Sam joins, "Sam (Claude Code) wants to join (can drive)" shows in the live view and side
-   panel with **Allow** and **Deny**, and you get a notification. Nothing of your session is
-   sent before you click Allow. Someone else with the same code has to ask again.
-   Once Sam is in, the side panel shows "Sam (Claude Code) is in" with **Remove**: it takes Sam
-   out at once (their pictures, input and agent stop), and that code never lets Sam in again.
+3. When Sam joins, "Sam (Claude Code) wants to join (can drive)" shows in the side panel (and the
+   live view) with **Allow** and **Deny**, you get a notification, and a small prompt with the
+   same buttons shows for about 10 seconds in the bottom-right corner of the tab you're on (see
+   [The join prompt in your tab](#the-join-prompt-in-your-tab)). Nothing of your session is sent
+   before you click Allow, and Claude hears your answer. Someone else with the same code has to
+   ask again. Once Sam is in, the side panel shows "Sam (Claude Code) is in" with **Remove**: it
+   takes Sam out at once (their pictures, input and agent stop). Each try with a code is a new
+   request: if Sam tries again you're asked again, so revoke the invite to stop it working.
 4. "Revoke Sam's invite" (or "revoke all") ends it; the tunnel closes with the last code.
 
 **If you're joining:** ask your Claude or Codex "Join this PairBrowse session: pb-join:...", or
 paste the code under **Join a shared session** in the session picker when your browser starts.
-It says "Waiting for the host to approve" until they let you in. Then **your own PairBrowse
-browser** opens the host's tabs, in the same order, in a window of their own, and keeps
-following them: the host opens, closes, moves or goes to another address in a tab, and your copy
+It says "Waiting for the host to approve" until they let you in. With a shared browser code (the
+default) the host's tabs then open as live pictures (see [Shared browser](#shared-browser-one-browser-for-everyone)).
+With a follow code, **your own PairBrowse browser** opens the host's tabs, in the same order, in
+a window of their own, and keeps following them: the host opens, closes, moves or goes to another address in a tab, and your copy
 does the same. Nobody streams a screen: two browsers, the same tabs, each person signed in as
 themselves. "Leave the session" stops following (the tabs stay open as yours).
 
@@ -184,8 +205,9 @@ What crosses, and what doesn't:
 
 The code goes through a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/):
 Cloudflare's free, no-account testing tunnel, with no uptime guarantee and a limit on requests
-in flight. If it drops, the joiner's status says so and keeps retrying; a code stops working when
-your browser restarts (make a new one). PairBrowse downloads `cloudflared` once, pinned by
+in flight. If it drops, the joiner's status says so and keeps retrying; a code keeps working through a
+restart of PairBrowse (joiners reconnect by themselves) and ends when you close the browser
+window, revoke it, or it expires. PairBrowse downloads `cloudflared` once, pinned by
 SHA-256. Drive lets someone (and their AI) open addresses in your logged-in browser: share drive
 codes only with people you trust, and revoke them when you're done.
 
@@ -199,7 +221,7 @@ tab closes). Another agent's action in that tab is refused with who holds it ("t
 by Alice · Codex"), so it opens or selects another tab; agents in different tabs carry on. People
 always win: when you (or a drive joiner, in their copy of a shared tab) click or type in a tab, the agents in that tab
 wait until you've stopped for two seconds and are told what you did (scrolling and moving the pointer pause nobody), and its bottom bar says
-"waiting… you're using this tab". Agents in other tabs aren't paused. The whole-browser lease
+"waiting… you're using the browser" (or "Sam is using this tab" for a joiner). Agents in other tabs aren't paused. The whole-browser lease
 (`pairbrowse_collaboration` acquire) still works for work that must keep the browser to itself.
 The live view's tab overview shows who is in each tab, with their spark color, and the activity
 feed names the participant ("Alice · Claude Code", "Bob · Codex", "Sam (by hand)") and the tab,

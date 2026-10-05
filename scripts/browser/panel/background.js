@@ -47,6 +47,9 @@ globalThis.pbArrange = async (ids) => {
 // Shared browser mode (share.js, the offscreen document that captures a tab and sends it peer to
 // peer). Asked only by the helper. A tab's DevTools target id is how the helper names it; here
 // it becomes the tab id the capture needs (listing targets attaches to nothing).
+// The tab in front (the active tab of the window last focused), by its tab id (pbTabs names the
+// rest): where the helper shows a join request's corner prompt.
+globalThis.pbFront = async () => (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id ?? null;
 globalThis.pbTabId = async (targetId) => (await chrome.debugger.getTargets()).find((t) => t.id === targetId)?.tabId ?? null;
 async function shareDocument() {
   if (await chrome.offscreen.hasDocument()) return;

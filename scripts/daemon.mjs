@@ -51,6 +51,7 @@ import { createTabOrder } from "./daemon/taborder.mjs";
 import { createCobrowse } from "./daemon/cobrowse.mjs";
 import { shareFields, shareableUrl, crossingText, onSecretDomain, personColor } from "./tabsync.mjs";
 import { createSession, readEntries, readMessage } from "./daemon/session.mjs";
+import { createJoinPrompt } from "./daemon/joinprompt.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
 const { createConnection } = require("@playwright/mcp");
@@ -259,6 +260,7 @@ const sharing = createSharing({
     onJoinerActivity: (page, text, who, from) => { context.touch(page); hud.addActivity(text, who, page, from); },
     extraOrigins: panel.origins, getContext: () => context.getContext(), currentUrl: () => context.currentUrl(), profile: facts.profile, tabMeta,
     onHumanInput: (page, who, changes = true) => { presence.humanIn(page, who || HOST); if (changes) bumpRevision(); },
+    onReplay: () => presence.replayStart(), // the live view's input never answers a join prompt
     shared: {
       host: HOST, readForm: forms.read, arrange: (pages) => tabOrder.arrange(pages), order: (pages) => tabOrder.strip(pages), showPointers: hud.showPointers,
       // The host's person typing in that tab wins: the joiner gets the host's value instead.
@@ -305,6 +307,16 @@ const follow = createFollow({
   // Out of the session: a pause from there no longer holds the agents here.
   onLeft: () => pause.mirror({ paused: false, resumedBy: HOST }),
   onMessage: (data) => session.receive(readMessage(data)),
+});
+// A join request's corner prompt (Allow / Deny), in the host's tab in front (daemon/joinprompt.mjs).
+const joinPrompt = createJoinPrompt({
+  approvals: sharing.approvals, log, show: hud.call, byPerson: presence.byPerson,
+  front: async () => {
+    const page = await tabOrder.front().catch(() => null);
+    if (page) return page;
+    const pages = (await context.openPages()).filter((p) => !p.isClosed());
+    return pages.length === 1 ? pages[0] : null; // the side panel couldn't say: only when there's no doubt
+  },
 });
 // Who used each session, for the session picker: joiners the host let in.
 sharing.approvals.onChange(() => {
@@ -364,6 +376,25 @@ const serve = createServe({
   // by dragging them; no app gets this tool otherwise.
   testTools: {
     ...(process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
+    // Tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): the join prompt in each tab, and clicks on it as
+    // a person would (a trusted click), as an agent's or a joiner's input would, or as a page
+    // script would (synthetic events).
+    ...(process.env.PAIRBROWSE_TEST_JOIN_PROMPT === "1" ? { pairbrowse_test_join_prompt: async (args = {}) => {
+      const pages = (await context.openPages()).filter((p) => !p.isClosed());
+      if (args.move) { const p = await joinPrompt.front(); await p?.mouse.move(5, 5); return { text: "moved" }; }
+      if (!args.click) return { text: JSON.stringify(await Promise.all(pages.map(async (p) => ({ url: p.url(), rows: (await hud.call(p, "", "join-state").catch(() => null)) || [] })))) };
+      const page = await joinPrompt.front();
+      const row = page && ((await hud.call(page, "", "join-state").catch(() => null)) || [])[0];
+      if (!row) return { text: "no prompt", error: true };
+      const { x, y } = row[args.click];
+      if (args.as === "page") {
+        await page.evaluate(([cx, cy]) => { const el = document.elementFromPoint(cx, cy); for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) el?.dispatchEvent(new MouseEvent(type, { bubbles: true, composed: true, detail: 1, clientX: cx, clientY: cy })); }, [x, y]);
+        return { text: "page clicked" };
+      }
+      const done = args.as === "agent" ? presence.busyStart() : args.as === "joiner" ? presence.remoteStart("Eve") : args.as === "liveview" ? presence.replayStart() : () => {};
+      try { await page.mouse.click(x, y); } finally { done(); }
+      return { text: "clicked" };
+    } } : {}),
     // Tests only (PAIRBROWSE_TEST_SCREEN=1): the shared browser picture page here, as a person
     // would use it (its state, its place among the tabs, keys typed on it, its address bar).
     ...(process.env.PAIRBROWSE_TEST_SCREEN === "1" ? { pairbrowse_test_screen: async (args = {}) => { const { expr, type, choose } = args;

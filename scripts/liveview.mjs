@@ -79,6 +79,7 @@ async function release(cdp) {
 // tabMeta(page): who is in a tab ({ agent: { label, color }, person, last }).
 // onHumanInput(page, who, changes): someone used a tab by hand (a drive joiner's tab changes count
 // too); changes: false when they only moved the pointer or scrolled.
+// onReplay(): marks input replayed from a viewer while it runs (returns done()).
 // secretDomains(): sites with saved passwords, whose tabs reach joiners as origin + path only.
 // onJoinerPerson(page, who, did, acting, changed): a drive joiner uses their copy of a tab by
 // hand (agents here wait, as for a person here; changed: they navigated, opened or closed it).
@@ -87,7 +88,7 @@ async function release(cdp) {
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null, picker = null, devShare = null, devPanel = null, relays = () => [], screens = null, remoteAgents = null }) {
+  onPause = () => ({}), pauseState = () => null, picker = null, devShare = null, devPanel = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {} }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -467,7 +468,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       return humanQueue(async () => {
         // Only moving the pointer (or the wheel) changes nothing an agent's refs point at.
         if (batch.some((one) => one?.type !== "viewport")) await onHumanInput(shown?.page || null, who, batch.some((one) => !["viewport", "wheel"].includes(one?.type) && !(one?.type === "mouse" && one.action === "mouseMoved")));
-        for (const one of batch) await replayer.replay(shown, one, role).catch((e) => log("liveview input", e?.message || e));
+        const done = onReplay();
+        try { for (const one of batch) await replayer.replay(shown, one, role).catch((e) => log("liveview input", e?.message || e)); } finally { done(); }
       });
     }
     return humanQueue(async () => {

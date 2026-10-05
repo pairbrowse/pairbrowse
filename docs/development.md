@@ -3,6 +3,7 @@
 ```
 npm test                  # unit tests; live ones need PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime,
                           # the native launch ones PAIRBROWSE_TEST_ENGINE=~/.pairbrowse/engine
+npm ci && npm run test:fuzz  # property-based fuzzing of the security checks (test/fuzz, fast-check)
 claude plugin validate .  # the Claude Code manifests
 ```
 

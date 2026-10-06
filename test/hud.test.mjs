@@ -179,18 +179,50 @@ test("the agent cursor moves like a hand, lands exactly on the target and rings 
     await point({ x: 100, y: 500 });
     await page.waitForTimeout(200);
     await page.evaluate(() => { window.trail = []; });
-    await point({ x: 850, y: 140, act: "click", w: 20 });
-    await page.waitForTimeout(800);
+    const { ms } = await point({ x: 850, y: 140, act: "click", w: 20 });
+    assert.ok(ms >= 120 && ms <= 350, `says how long it takes to arrive (${ms} ms)`);
+    await page.waitForTimeout(ms + 100);
+    await page.mouse.click(850, 140);
+    await page.waitForTimeout(100);
     const trail = await page.evaluate(() => window.trail);
     const moving = trail.filter((p) => !(p.x === 850 && p.y === 140));
     assert.ok(moving.length >= 5, `it moves over several frames (${moving.length})`);
     assert.ok(moving.some((p) => p.x > 300 && p.x < 650), "passes through the middle");
     const end = trail.at(-1);
-    assert.deepEqual([end.x, end.y, end.click], [850, 140, true], "lands exactly and rings");
-    const firstRing = trail.findIndex((p) => p.click);
-    assert.ok(trail.slice(firstRing).every((p) => p.x === 850 && p.y === 140), "rings only once there");
-    const took = trail[firstRing].t - trail[0].t;
-    assert.ok(took > 100 && took < 700, `takes a moment, not long (${took.toFixed(0)} ms)`);
+    assert.deepEqual([end.x, end.y, end.click], [850, 140, true], "lands exactly and rings on the press");
+    const arrived = trail.findIndex((p) => p.x === 850 && p.y === 140);
+    assert.ok(trail.slice(arrived).every((p) => p.x === 850 && p.y === 140), "stays once there");
+    const took = trail[arrived].t - trail[0].t;
+    assert.ok(took > 80 && took < 450, `takes a moment, not long (${took.toFixed(0)} ms)`);
+
+    // Actions one after another, the press at any point inside the target (a humanized click picks
+    // its own) and at any time (before the cursor arrives too): at every press the drawn cursor is
+    // exactly at the press, never beside it or still on the previous target.
+    await page.evaluate(() => {
+      window.presses = [];
+      addEventListener("pointerdown", (e) => {
+        for (const el of document.documentElement.children) {
+          const m = el.shadowRoot && /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(el.shadowRoot.querySelector(".c")?.style.transform || "");
+          if (m) window.presses.push({ x: e.clientX, y: e.clientY, cx: +m[1], cy: +m[2] });
+        }
+      }, true);
+    });
+    let seed = 7;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 60; i++) {
+      const box = { x: r() * 940, y: r() * 600, width: 6 + r() * 54, height: 6 + r() * 34 };
+      await point({ x: box.x + box.width / 2, y: box.y + box.height / 2, act: "click", w: Math.min(box.width, box.height) });
+      const wait = [0, 0, 30, 120, 400][i % 5];
+      if (wait) await page.waitForTimeout(wait);
+      await page.mouse.click(Math.round((box.x + r() * box.width) * 4) / 4, Math.round((box.y + r() * box.height) * 4) / 4);
+    }
+    await page.waitForTimeout(500);
+    const presses = await page.evaluate(() => window.presses);
+    assert.equal(presses.length, 60);
+    const off = presses.map((p) => Math.hypot(p.x - p.cx, p.y - p.cy));
+    assert.equal(Math.max(...off), 0, `drawn at the press every time (worst ${Math.max(...off)} px)`);
+    const last = (await page.evaluate(() => window.trail)).at(-1);
+    assert.deepEqual([last.x, last.y], [presses.at(-1).x, presses.at(-1).y], "and stays there after");
   } finally {
     await browser.close();
   }

@@ -115,6 +115,19 @@ packTest("browser options are read from the pairbrowse key", async () => {
   assert.equal(chromium.calls[0].options.args.find(a => a.startsWith("--fingerprint=")), "--fingerprint=named-seed");
 });
 
+packTest("humanized mouse moves take the combined shape unless config asks for the classic one", async () => {
+  const pack = await loadPack();
+  const seen = [];
+  const spy = { ...pack, installHumanizeOnContext: (context, opts) => seen.push(opts) };
+  const app = appFixture();
+  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "anything else" }]) {
+    await launchNative(fakeChromium(), { pairbrowse: { fingerprint: "motion-seed", ...pairbrowse } }, mkdtempSync(join(tmpdir(), "pairbrowse-motion-")),
+      { executablePath: app.executablePath, headless: false }, spy);
+  }
+  assert.deepEqual(seen.map((o) => o.motion), ["combined", "classic", "combined"]);
+  assert.ok(seen.every((o) => o.humanize === true && o.seed));
+});
+
 packTest("engine pack emits this platform's fingerprint, proxy, locale, and stable seed flags", async () => {
   const pack = await loadPack();
   const app = appFixture();

@@ -485,14 +485,24 @@
 
   // Claude's cursor: moves to where Claude clicks or types the way a hand moves a mouse (a quick
   // reach that lands a touch short or past, then homes in: scripts/motion.mjs), rings on a click
-  // once there, fades when idle.
+  // when it presses, fades when idle. The helper waits for it to arrive before acting, and the
+  // press itself puts it exactly where the press was (the real point, which a humanized click
+  // picks itself), so it never points beside the click or still at the previous target.
   const motion = "__PB_MOTION__";
-  const CURSOR_MOTION = { fittsA: 60, fittsB: 70, minMs: 120, maxMs: 450 }; // quicker than a hand: actions don't wait for it
-  let curHost, cur, curTimer, curAt = null, curFrame = 0;
+  const CURSOR_MOTION = { fittsA: 50, fittsB: 60, minMs: 120, maxMs: 350 }; // quicker than a hand
+  const PRESS_WINDOW_MS = 4000; // the first press this soon after the cursor was sent is the agent's
+  let curHost, cur, curTimer, curAt = null, curFrame = 0, pressBy = 0, pressAct = "";
   let agentPtr = null; // where it last pointed, in document coordinates
   const reducedMotion = () => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
-  const placeCursor = (p) => { curAt = p; cur.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)`; };
+  const placeCursor = (p) => { curAt = { x: p.x, y: p.y }; cur.style.transform = `translate(${+p.x.toFixed(3)}px, ${+p.y.toFixed(3)}px)`; };
   const ring = () => { cur.classList.remove("click"); void cur.offsetWidth; cur.classList.add("click"); };
+  addEventListener("pointerdown", (e) => {
+    if (!e.isTrusted || !cur || now() > pressBy) return;
+    pressBy = 0;
+    cancelAnimationFrame(curFrame);
+    placeCursor({ x: e.clientX, y: e.clientY });
+    if (pressAct === "click") ring();
+  }, opts);
   // who, color: the agent's name on a tag in its color (people see whose cursor it is).
   // w: the target's smaller side (a small target takes a little longer to reach).
   function pointer(x, y, act, who = "Claude", color = "", w = 24) {
@@ -519,25 +529,28 @@
     tag.style.background = /^#[0-9a-f]{6}$/i.test(color) ? color : "#e9763f";
     cancelAnimationFrame(curFrame);
     cur.classList.remove("click");
+    pressBy = now() + PRESS_WINDOW_MS;
+    pressAct = act;
     const to = { x, y };
+    let duration = 0;
     // Hidden or just made, or the person asked for less motion: it appears in place.
     if (!curAt || !cur.classList.contains("on") || reducedMotion()) {
       placeCursor(to);
-      if (act === "click") ring();
     } else {
       const path = motion.plan(curAt, to, { ...CURSOR_MOTION, targetW: w });
       const start = now();
+      duration = path.duration;
       const step = () => {
         const t = now() - start;
         placeCursor(path.at(t));
         if (t < path.duration) curFrame = requestAnimationFrame(step);
-        else if (act === "click") ring();
       };
       step();
     }
     cur.classList.add("on");
     clearTimeout(curTimer);
     curTimer = setTimeout(() => cur.classList.remove("on"), 2500);
+    return Math.ceil(duration); // how long it takes to arrive, ms
   }
 
   // Other people's and agents' pointers from the other browser of a shared tab: named, in their
@@ -660,10 +673,10 @@
     if (kind === "cursor") {
       try {
         const c = JSON.parse(text);
-        pointer(Number(c.x) || 0, Number(c.y) || 0, String(c.act || ""), String(c.who || "Claude"), String(c.color || ""), Number(c.w) || 24);
+        const ms = pointer(Number(c.x) || 0, Number(c.y) || 0, String(c.act || ""), String(c.who || "Claude"), String(c.color || ""), Number(c.w) || 24);
         agentPtr = { x: Math.round((Number(c.x) || 0) + scrollX), y: Math.round((Number(c.y) || 0) + scrollY), t: now() };
         agentAt = now(); // the scrolling an agent's action causes isn't the person's
-
+        return { ms }; // until it arrives
       } catch {}
       return true;
     }

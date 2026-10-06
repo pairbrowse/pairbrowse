@@ -134,3 +134,70 @@ test("tab order follows in a shared session: a move on the host reaches the join
     rmSync(joinHome, { recursive: true, force: true });
   }
 });
+
+test("a new agent starts on the tab the person looks at, unless another agent is in it; a released tab is free again", { skip: !runtime, timeout: 240_000 }, async () => {
+  const require = createRequire(join(runtime, "package.json"));
+  const executablePath = require("patchright").chromium.executablePath();
+  const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>${req.headers.host}${req.url}</title><main>start fixture</main>`); });
+  await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
+  const h = home("ts-");
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`], display: "none", screenshots: false, participantName: "Bob" }));
+  const out = openSync(join(h, "daemon.stderr.log"), "a");
+  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TAB_ORDER: "1" }, stdio: ["ignore", out, out] });
+  const socks = [];
+  const connect = async () => {
+    const socketPath = join(h, "run", "browser.sock");
+    for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
+    let sock;
+    for (let i = 0; ; i++) {
+      sock = net.createConnection(socketPath);
+      if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
+      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
+      await sleep(200);
+    }
+    socks.push(sock);
+    const call = rpc((l) => sock.write(l), sock);
+    await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
+    sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+    return call;
+  };
+  // The tab an agent's first action lands in, by host name.
+  const firstTab = async (call) => {
+    const r = await tool(call, "browser_snapshot");
+    assert.ok(!r.result?.isError, text(r));
+    return text(r).match(/Page URL: http:\/\/(\w+)\.pbtest\.example\//)?.[1];
+  };
+  const show = async (call, url, before) => assert.equal(text(await tool(call, "pairbrowse_test_tab_order", { action: "front", url, before })), "shown");
+  let stage = "start";
+  try {
+    const a = await connect();
+    stage = "agent A opens three tabs";
+    assert.ok(!(await tool(a, "browser_navigate", { url: "http://one.pbtest.example/" })).result.isError);
+    for (const url of ["http://two.pbtest.example/", "http://three.pbtest.example/"]) {
+      assert.ok(!(await tool(a, "browser_tabs", { action: "new" })).result.isError);
+      assert.ok(!(await tool(a, "browser_navigate", { url })).result.isError);
+    }
+    stage = "the person looks at tab two: a new agent starts there";
+    await show(a, "http://two.pbtest.example/");
+    assert.equal(await firstTab(await connect()), "two");
+    stage = "the person looks at A's tab: a new agent starts in a free tab instead";
+    await show(a, "http://three.pbtest.example/");
+    assert.equal(await firstTab(await connect()), "one");
+    stage = "A releases: its tab, in front, is where the next agent starts";
+    assert.ok(!(await tool(a, "pairbrowse_collaboration", { action: "release" })).result?.isError);
+    assert.equal(await firstTab(await connect()), "three");
+    stage = "the person opens a new tab: the next agent starts there";
+    await show(a, "http://four.pbtest.example/", "new");
+    await sleep(500);
+    assert.equal(await firstTab(await connect()), "four");
+  } catch (e) {
+    let log = "";
+    try { log = readFileSync(join(h, "daemon.log"), "utf8").slice(-2000); } catch {}
+    throw new Error(`${stage}: ${e.message}\n${log}`);
+  } finally {
+    for (const s of socks) s.destroy();
+    fixture.close();
+    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    rmSync(h, { recursive: true, force: true });
+  }
+});

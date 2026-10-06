@@ -60,6 +60,7 @@ const SETTLE_MS = 1000; // after it loaded
 const CLICK_SETTLE_MS = 500; // at least, after a click: in-page changes (menus, single-page apps) don't load a page
 const TIDY_MAX_MS = 8000; // the most a result waits for the page to settle
 const LATE_POPUP_CHECKS_MS = [3000, 8000]; // an offer that shows up a few seconds later
+const FRONT_WAIT_MS = 5000; // for the side panel's worker to name the tab in front (a new agent's first tab; slow on a busy machine)
 const TAB_WAIT_MS = 5000; // a tab another agent's turn frees within this is waited for
 const TURN_ROUNDS = 40;
 const STALLED_MS = 30_000; // a disconnected participant's action may run this long
@@ -178,7 +179,7 @@ export function pathsIn(name, args = {}) {
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, revision, bumpRevision, session, shareMessage = () => {}, testTools = {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, testTools = {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // When each session last called a tool: only the ones in use hold up a session switch or closing
   // the browser. An open but idle session (a Claude Code window left for hours) doesn't.
@@ -379,6 +380,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const held = tabClaims.holder(page);
       const spark = hud.sparkOwner(page);
       return (held && held.id !== participant) || (spark && spark.id !== participant);
+    };
+    // Another agent's turn in it, here or on another computer of a shared session (its spark alone
+    // stays after it released the tab).
+    const takenByOther = (page) => {
+      const held = tabClaims.holder(page);
+      return (held && held.id !== participant) || !!remoteHolder(page);
     };
     async function freeTab() {
       for (const page of [...used].reverse()) if (!page.isClosed() && !othersTab(page)) return page;
@@ -744,7 +751,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
         else noTabWhy = "every tab here is in use by another agent";
         return mine;
       }
-      if (serverAt) setMine(serverAt);
+      // Its first tab: the one the person looks at (or looked at last), unless another agent is
+      // in it; else its browser server's tab when free, else any free tab. Every tab taken: its
+      // browser server's, where it hears "in use".
+      const looked = await within(FRONT_WAIT_MS, front().catch(() => null));
+      const start = [looked, serverAt].find((p) => p && !p.isClosed() && !takenByOther(p)) || (await openTabs()).find((p) => !p.isClosed() && !takenByOther(p)) || serverAt;
+      if (start) setMine(start);
       return mine;
     }
     // Per-tab turns. A person clicking or typing in the tab goes first (moving the pointer or
@@ -815,6 +827,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         else if (action === "acquire") await collaboration.run(participant, () => collaboration.acquire(participant));
         else if (action === "release") {
           collaboration.release(participant); tabClaims.release(participant);
+          hud.moveSpark(participant, null).catch(() => {}); // its tab is free: no spark says otherwise
           // Shared browser mode, joined from here: this agent's turns are held in the host's browser.
           if (!remote && follow.forwards?.("browser_tabs")) await follow.remoteCall(participant, { params: { name: "pairbrowse_collaboration", arguments: { action: "release" } } }, { app: clientName, label: myLabel() }).catch(() => {});
         }

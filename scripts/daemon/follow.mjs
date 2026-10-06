@@ -24,6 +24,10 @@ function serially() {
   return (task) => { const run = last.then(task); last = run.catch(() => {}); return run; };
 }
 
+// The shared browser's picture page (screen.html, PairBrowse's own extension page) is called in its
+// own script world, where its script put window.pbScreen: Patchright's page.evaluate otherwise runs
+// in a hidden world of its own (the extra arguments are Patchright's; Playwright ignores them).
+const inScreen = (page, fn, arg) => page.evaluate(fn, arg, undefined, false);
 const OPEN_MS = 15_000;
 const ADOPT_MS = 10_000; // a tab opened from a shared one has this long to get a web address (in the shared window: no limit)
 const FIRST_ACTIVITY = 3; // on joining, the last few things that happened
@@ -343,7 +347,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (cur.titles.get(id) === sig) return;
     cur.titles.set(id, sig);
     const unsaid = () => { if (cur.titles.get(id) === sig) cur.titles.delete(id); };
-    page.evaluate((i) => window.pbScreen?.info(i) === true, { ...info, who: cur.join.host }).then((ok) => { if (!ok) unsaid(); }, unsaid);
+    inScreen(page, (i) => window.pbScreen?.info(i) === true, { ...info, who: cur.join.host }).then((ok) => { if (!ok) unsaid(); }, unsaid);
   }
 
   // Shared browser mode: who works in one of the host's tabs (a person by hand, an agent holding
@@ -359,7 +363,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (w.sig === sig) return;
     w.sig = sig;
     // Not taken yet (the page still loading): tried again next round.
-    page.evaluate((x) => window.pbScreen?.who(x) === true, shown).then((ok) => { if (!ok) w.sig = ""; }, () => { w.sig = ""; });
+    inScreen(page, (x) => window.pbScreen?.who(x) === true, shown).then((ok) => { if (!ok) w.sig = ""; }, () => { w.sig = ""; });
   }
 
   // Shared browser mode, each round: a picture page that was sent somewhere else (an address typed
@@ -377,7 +381,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         if (/^https?:/.test(page.url())) { tell(id, page); cur.screens.delete(page); cur.titles.delete(id); if (cur.who.has(id)) cur.who.get(id).sig = ""; await page.goto(screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {}); }
         continue;
       }
-      const st = await within(800, page.evaluate(() => window.pbScreen?.state() || null).catch(() => null));
+      const st = await within(800, inScreen(page, () => window.pbScreen?.state() || null).catch(() => null));
       if (!st) continue;
       showInfo(cur, id);
       showWho(cur, id);
@@ -394,7 +398,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       }
       if (sc.busy) continue;
       if (st.conn === "connected") {
-        if (outOfSight) { const peer = sc.peer; sc.peer = null; await page.evaluate(() => window.pbScreen?.close()).catch(() => {}); if (peer) cur.join.screen({ op: "stop", peer }).catch(() => {}); }
+        if (outOfSight) { const peer = sc.peer; sc.peer = null; await inScreen(page, () => window.pbScreen?.close()).catch(() => {}); if (peer) cur.join.screen({ op: "stop", peer }).catch(() => {}); }
         continue;
       }
       const stuck = st.conn === "failed" || (st.conn === "connecting" && now - sc.since > SCREEN_CONNECT_MS) || (st.conn === "disconnected" && now - sc.since > 6000);
@@ -402,7 +406,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         sc.tries++;
         if (sc.peer) cur.join.screen({ op: "stop", peer: sc.peer }).catch(() => {});
         sc.peer = null;
-        await page.evaluate(() => window.pbScreen?.close()).catch(() => {});
+        await inScreen(page, () => window.pbScreen?.close()).catch(() => {});
         if (sc.tries >= 2) { sc.fallback = true; log("shared browser: no direct connection; using the slower route"); startScreenInput(cur); continue; }
       }
       if (st.visible && (st.conn === "none" || stuck)) {
@@ -414,7 +418,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
             if (!r?.sdp) { log("shared browser", r?.error || "no offer"); return; }
             sc.peer = r.peer;
             // Tests only (PAIRBROWSE_TEST_NO_DIRECT=1): a network where no direct connection can be made.
-            const answer = await page.evaluate((o) => window.pbScreen.offer(o), { sdp: r.sdp, peer: r.peer, noDirect: process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" });
+            const answer = await inScreen(page, (o) => window.pbScreen.offer(o), { sdp: r.sdp, peer: r.peer, noDirect: process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" });
             const a = await cur.join.screen({ op: "answer", peer: r.peer, sdp: answer });
             if (a?.error) log("shared browser", a.error);
           } catch (e) {
@@ -438,7 +442,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       try {
         for (const [id, page] of cur.pages) {
           if (page.isClosed() || !cur.screens.get(page)?.fallback) continue;
-          const events = await within(500, page.evaluate(() => window.pbScreen?.takeInput() || []).catch(() => []));
+          const events = await within(500, inScreen(page, () => window.pbScreen?.takeInput() || []).catch(() => []));
           if (Array.isArray(events) && events.length && cur.join.role === "drive") await cur.join.screen({ op: "input", id, events });
         }
       } finally {
@@ -455,7 +459,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       const page = cur.pages.get(data.id);
       if (!page || page.isClosed() || cur.join.role !== "drive") return;
       (async () => {
-        const picked = await page.evaluate((o) => window.pbScreen?.pick(o), { multiple: !!data.multiple }).catch(() => null);
+        const picked = await inScreen(page, (o) => window.pbScreen?.pick(o), { multiple: !!data.multiple }).catch(() => null);
         log(`shared browser: ${Array.isArray(picked) ? picked.length : 0} file(s) picked for the host's page`);
         if (!Array.isArray(picked) || !picked.length) return;
         const files = [];
@@ -487,7 +491,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         while (sc.nextFrame && s === cur) {
           const img = sc.nextFrame;
           sc.nextFrame = null;
-          await page.evaluate((b) => window.pbScreen?.frame(b), img).catch(() => {});
+          await inScreen(page, (b) => window.pbScreen?.frame(b), img).catch(() => {});
         }
         sc.drawing = false;
       })();
@@ -531,9 +535,9 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         if (!page || page.isClosed() || raw.v || typeof raw.nx !== "number" || typeof raw.ny !== "number") continue;
         byPage.set(page, [...(byPage.get(page) || []), { k: String(raw.k || "").slice(0, 100), who: String(raw.who || "").slice(0, 40), color: raw.color, nx: raw.nx, ny: raw.ny }]);
       }
-      for (const page of cur.drawn) if (!byPage.has(page) && !page.isClosed()) page.evaluate(() => window.pbScreen?.pointers([])).catch(() => {});
+      for (const page of cur.drawn) if (!byPage.has(page) && !page.isClosed()) inScreen(page, () => window.pbScreen?.pointers([])).catch(() => {});
       cur.drawn = new Set(byPage.keys());
-      for (const [page, l] of byPage) page.evaluate((x) => window.pbScreen?.pointers(x), l).catch(() => {});
+      for (const [page, l] of byPage) inScreen(page, (x) => window.pbScreen?.pointers(x), l).catch(() => {});
       return;
     }
     const ids = new Set([...cur.pages.keys()].filter((id) => !cur.quiet.has(id)));

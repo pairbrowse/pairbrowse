@@ -10,7 +10,7 @@ export const text = (r) => (r.result?.content || []).map((c) => c.text || "").jo
 const mail = process.env.PB_MAIL || "/tmp/pbmail";
 export const post = (name, value = "") => writeFileSync(join(mail, name), String(value));
 export async function wait(name, ms = 600_000) { const f = join(mail, name); for (let t = 0; t < ms && !existsSync(f); t += 300) await sleep(300); return readFileSync(f, "utf8"); }
-// This machine's browser: the PairBrowse browser on macOS, Playwright's Chromium on Linux.
+// This machine's browser: the PairBrowse browser on macOS, Patchright's Chromium on Linux.
 export function browserPath() {
   if (process.platform === "darwin") return process.env.HOME + "/.pairbrowse/browser/PairBrowse.app/Contents/MacOS/pairbrowse";
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright";

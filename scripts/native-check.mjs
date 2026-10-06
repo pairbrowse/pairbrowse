@@ -11,7 +11,7 @@ import { launchEngine } from "./engine.mjs";
 import { nativeManifest } from "./native-engine.mjs";
 import { ensureRuntime } from "./runtime.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "./display.mjs";
-import { loadBrowserDriver } from "./driver.mjs";
+import { loadBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { readJson, sleep, withTimeout } from "./util.mjs";
 
 const CHECK_TIMEOUT_MS = 180_000;
@@ -80,7 +80,7 @@ function checkProfile(profile) {
 // runs on a private virtual screen of its own, like the browser itself (display.mjs).
 export async function selfCheck(exec, { config = loadConfig(), log = () => {}, timeoutMs = CHECK_TIMEOUT_MS, env = process.env } = {}) {
   ensureRuntime(log);
-  const { chromium } = loadBrowserDriver(createRequire(join(paths.runtime, "package.json")), config);
+  const { chromium } = loadBrowserDriver(createRequire(join(paths.runtime, "package.json")), config, process.versions.node, patchrightNodeMinimum(paths.runtime));
   const browserDir = join(paths.home, "browser");
   mkdirSync(browserDir, { recursive: true });
   const scratch = mkdtempSync(join(browserDir, ".selfcheck-"));

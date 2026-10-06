@@ -12,7 +12,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSyn
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
-import { validateBrowserDriver } from "./driver.mjs";
+import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createMotion } from "./motion.mjs";
 import { ICON, rebrandInterfaceText, registerApp } from "./macos-app.mjs";
 import { downloadPinned, readJson } from "./util.mjs";
@@ -312,7 +312,7 @@ async function ungoogledApp(log) {
 }
 
 // The installer of the browser driver PairBrowse runs with (config browserDriver).
-export const driverCli = () => join(paths.runtime, "node_modules", validateBrowserDriver(loadConfig()), "cli.js");
+export const driverCli = () => join(paths.runtime, "node_modules", validateBrowserDriver(loadConfig(), process.versions.node, patchrightNodeMinimum(paths.runtime)), "cli.js");
 
 // Path of the browser to launch: on macOS the branded copy of ungoogled-chromium (built first when
 // it's missing or out of date), elsewhere Playwright's Chromium (downloaded once if missing).

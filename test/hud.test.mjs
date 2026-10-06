@@ -2,11 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { ensureHud } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 
 test("the page records what the user did, never what they typed", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const hud = (await import("../scripts/browser.mjs")).hudScript();
   const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
   const browser = await chromium.launch();
@@ -16,6 +17,7 @@ test("the page records what the user did, never what they typed", { skip: !runti
     await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: `<label>Email <input id="e"></label>
       <input id="p" type="password" aria-label="Password"> <button id="b">Sign in</button><div style="height:3000px"></div>` }));
     await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
     await page.click("#e");
     await page.keyboard.type("me@example.com");
     await page.click("#p");
@@ -38,7 +40,7 @@ test("the page records what the user did, never what they typed", { skip: !runti
 });
 
 test("a page finds no fixed PairBrowse name, attribute or window property, and the bar still shows", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const { hudScript } = await import("../scripts/browser.mjs");
   const hud = hudScript();
   const other = hudScript();
@@ -50,6 +52,7 @@ test("a page finds no fixed PairBrowse name, attribute or window property, and t
     await page.addInitScript({ content: hud.source });
     await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: `<link rel="icon" href="data:,"><style>*{position:static!important;display:block}</style><h1>Shop</h1>` }));
     await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, hud.source, hud.name);
     await page.evaluate(([n, t]) => { window[n](t, JSON.stringify({ items: [{ t: Date.now(), text: "Clicked Next", who: "Claude" }] }), "bar"); window[n](t, "Your turn", "you"); window[n](t, "#e9763f", "spark"); window[n](t, JSON.stringify({ x: 10, y: 10, act: "click" }), "cursor"); }, [hud.name, hud.token]);
     await page.waitForTimeout(100);
     const seen = await page.evaluate(() => {
@@ -82,7 +85,7 @@ test("a page finds no fixed PairBrowse name, attribute or window property, and t
 });
 
 test("fields people edit are known as theirs; the bar's Pause button is a person's and never page input", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const { readFields, applyFields } = await import("../scripts/daemon/forms.mjs");
   const hud = (await import("../scripts/browser.mjs")).hudScript();
   const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
@@ -93,6 +96,7 @@ test("fields people edit are known as theirs; the bar's Pause button is a person
     await page.addInitScript({ content: source });
     await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: `<label>Notes <input id="e"></label><label>Name <input id="n"></label>` }));
     await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
     await page.click("#e");
     await page.keyboard.type("hello");
     const owned = await page.locator("#e").evaluate((el) => window.__pbtest("tok", el, "owned"));
@@ -152,13 +156,14 @@ test("a person from the other browser shows as a dot on the tab's icon, in the c
 });
 
 test("the agent cursor moves like a hand, lands exactly on the target and rings once there", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const hud = (await import("../scripts/browser.mjs")).hudScript();
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
-    // Test only: open shadow roots, so the test can read where the cursor is drawn each frame.
-    await page.addInitScript(() => {
+    // Test only: open shadow roots, so the test can read where the cursor is drawn each frame. In
+    // the script world the page script runs in (see ensureHud), before it starts.
+    const openShadows = () => {
       const real = Element.prototype.attachShadow;
       Element.prototype.attachShadow = function (o) { return real.call(this, { ...o, mode: "open" }); };
       window.trail = [];
@@ -171,10 +176,12 @@ test("the agent cursor moves like a hand, lands exactly on the target and rings 
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
-    });
+    };
     await page.addInitScript({ content: hud.source });
     await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<p>Page</p>" }));
     await page.goto("http://pairbrowse.test/");
+    await page.evaluate(openShadows);
+    await ensureHud(page, hud.source, hud.name);
     const point = (c) => page.evaluate(([n, t, v]) => window[n](t, v, "cursor"), [hud.name, hud.token, JSON.stringify(c)]);
     await point({ x: 100, y: 500 });
     await page.waitForTimeout(200);

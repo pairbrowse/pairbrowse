@@ -9,7 +9,7 @@ const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const say = (o) => console.log(JSON.stringify({ joiner: process.platform, ...o }));
 const home = mkdtempSync(join(tmpdir(), "pbj-"));
 const j = await helper({ home, repo, runtime: process.env.PB_RUNTIME || process.env.HOME + "/.pairbrowse/runtime", env: { PAIRBROWSE_TEST_SCREEN: "1" },
-  config: { executablePath: browserPath(), chromeArgs, display: "none", screenshots: false, participantName: "Sven", browserDriver: "playwright" } });
+  config: { executablePath: browserPath(), chromeArgs, display: "none", screenshots: false, participantName: "Sven" } });
 const code = (await wait("code")).trim();
 say({ join: text(await j.tool("pairbrowse_join", { action: "join", code })).slice(0, 120) });
 for (let i = 0; i < 120; i++) { const s = text(await j.tool("pairbrowse_join", { action: "status" })); if (/You're in/.test(s)) { say({ status: s.slice(0, 200) }); break; } await sleep(1000); }

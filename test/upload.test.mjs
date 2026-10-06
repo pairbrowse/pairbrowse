@@ -5,6 +5,7 @@ import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { uploadProblem, uploadFiles } from "../scripts/upload.mjs";
+import { inPage } from "./live.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "pb-upload-"));
 const uploads = join(dir, "uploads");
@@ -67,7 +68,7 @@ test("other file types are pointed to browser_file_upload", () => {
 // A real browser: a file field, a button that opens a file chooser, and a drop zone with no field.
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 test("uploads reach a file field, an upload button and a drop zone", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -98,7 +99,7 @@ test("uploads reach a file field, an upload button and a drop zone", { skip: !ru
     r = await uploadFiles(page, { files: [mp4], target: "Drop files here" }, opts);
     assert.ok(r.ok, r.text);
     assert.match(r.text, /drop zone/);
-    const dropped = await page.evaluate(() => window.dropped);
+    const dropped = await inPage(page, () => window.dropped);
     assert.equal(dropped.length, 1);
     assert.match(dropped[0], /demo\.mp4:15$/);
     assert.equal(await page.locator("[data-pairbrowse-upload]").count(), 0, "temporary field removed");
@@ -108,7 +109,7 @@ test("uploads reach a file field, an upload button and a drop zone", { skip: !ru
     r = await uploadFiles(page, { files: [png], target: "Publish" }, opts);
     assert.equal(r.ok, false);
     assert.match(r.text, /final action/);
-    assert.equal(await page.evaluate(() => !!window.sent), false);
+    assert.equal(await inPage(page, () => !!window.sent), false);
   } finally {
     await browser.close();
   }

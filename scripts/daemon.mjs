@@ -33,7 +33,7 @@ import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
 import { cleanName, displayName } from "./join.mjs";
 import { currentAccount } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
-import { loadBrowserDriver } from "./driver.mjs";
+import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
 import { createHud } from "./daemon/hud.mjs";
 import { createPresence } from "./daemon/presence.mjs";
@@ -61,8 +61,11 @@ const { chromium: playwrightChromium } = require("playwright");
 const SHUTDOWN_GRACE_MS = 8000;
 const log = (...a) => appendFileSync(paths.daemonLog, `${new Date().toISOString()} ${a.join(" ")}\n`);
 const config = loadConfig();
-const { chromium } = loadBrowserDriver((name) => name === "playwright" ? { chromium: playwrightChromium } : require(name), config);
+// Patchright unless the config opts into Playwright, or this Node.js is too old for Patchright.
+const driverChoice = chooseBrowserDriver(config, process.versions.node, patchrightNodeMinimum(paths.runtime));
+const { chromium } = driverChoice.driver === "playwright" ? { chromium: playwrightChromium } : require("patchright");
 ensureDirs();
+if (driverChoice.notice) log(driverChoice.notice);
 
 // The host's name as joiners see it (pointers, presence, the join code): a person's, never "Host".
 const HOST = displayName({ configured: config.participantName, env: process.env.PAIRBROWSE_PARTICIPANT, ...currentAccount() }) || "The host";
@@ -419,7 +422,7 @@ const serve = createServe({
       if (args.list) { const ctx = await context.getContext(); return { text: JSON.stringify(await Promise.all(follow.pages().filter((p) => !p.isClosed()).map(async (p) => ({ index: ctx.pages().indexOf(p), title: await p.title().catch(() => "") })))) }; }
       if (type) { await page.keyboard.type(String(type), { delay: 20 }); return { text: "typed" }; }
       const index = (await context.getContext()).pages().indexOf(page);
-      return { text: JSON.stringify({ index, value: expr ? await page.evaluate(String(expr)) : null }) };
+      return { text: JSON.stringify({ index, value: expr ? await page.evaluate(String(expr), undefined, undefined, false) : null }) };
     } } : {}),
     // Tests only (PAIRBROWSE_TEST_PANEL=1): the side panel's worker state, the running worker made
     // to look like an earlier version's (stale: no build, no join notification buttons) and

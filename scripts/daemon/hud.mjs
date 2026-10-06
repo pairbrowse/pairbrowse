@@ -129,7 +129,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
 
   // who: the agent's name, shown on its cursor in its spark color (like people's pointers).
   function pointAt(page, box, act, who = "") {
-    if (box) return quietly(page, JSON.stringify({ x: box.x + Math.min(box.width / 2, 24), y: box.y + box.height / 2, act, who: who || "Claude", color: sparkOwner(page)?.color || "" }), "cursor");
+    if (box) return quietly(page, JSON.stringify({ x: box.x + Math.min(box.width / 2, 24), y: box.y + box.height / 2, act, who: who || "Claude", color: sparkOwner(page)?.color || "", w: Math.round(Math.min(box.width, box.height)) }), "cursor");
   }
   // Moves the cursor to an element (fast mode). Returns a promise: most steps go on without it.
   function cursorTo(page, el, act, who = "") {

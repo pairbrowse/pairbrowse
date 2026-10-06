@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
 import { validateBrowserDriver } from "./driver.mjs";
+import { createMotion } from "./motion.mjs";
 import { ICON, rebrandInterfaceText, registerApp } from "./macos-app.mjs";
 import { downloadPinned, readJson } from "./util.mjs";
 
@@ -279,7 +280,9 @@ export function hudScript() {
     tags[k] = tag;
   }
   const source = readFileSync(join(here, "hud.js"), "utf8").replaceAll("__PB_NAME__", name).replaceAll("__PB_TOKEN__", token)
-    .replaceAll("__PB_TAG_HUD__", tags.hud).replaceAll("__PB_TAG_BAR__", tags.bar).replaceAll("__PB_TAG_CURSOR__", tags.cursor);
+    .replaceAll("__PB_TAG_HUD__", tags.hud).replaceAll("__PB_TAG_BAR__", tags.bar).replaceAll("__PB_TAG_CURSOR__", tags.cursor)
+    // The agent cursor's motion model (scripts/motion.mjs), the same code the helper uses.
+    .replace('"__PB_MOTION__"', () => `(${createMotion.toString()})()`);
   if (source.includes("__PB_")) throw new Error("pairbrowse: page script placeholders not replaced");
   return { source, name, token, tags };
 }

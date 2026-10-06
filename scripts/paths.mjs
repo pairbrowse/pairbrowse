@@ -51,6 +51,9 @@ export const DEFAULT_CONFIG = {
   downloadsDir: null,
   // Extra Chrome flags, e.g. ["--lang=en-US"].
   chromeArgs: [],
+  // Chromium's own sandbox. On by default; false turns it off (off by itself as root on Linux,
+  // and where the system can't run it).
+  chromeSandbox: true,
   // On a Linux machine without a screen, PairBrowse runs the browser headed on a private virtual
   // screen (Xvfb) and you watch through the live view. "auto": use one when there's no screen;
   // "xvfb": always; "none": never.

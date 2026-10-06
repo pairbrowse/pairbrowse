@@ -67,7 +67,7 @@ export async function captureMacHost(chromium, executablePath, pack, directory, 
     // The collector comes with the engine pack, checked against its pin when the pack is loaded.
     if (typeof pack.collector !== "string") throw new Error("the engine pack has no host collector");
     captureDirectory = mkdtempSync(join(directory, ".mac-host-capture-"));
-    browser = await chromium.launchPersistentContext(captureDirectory, { headless: true, viewport: null, executablePath,
+    browser = await chromium.launchPersistentContext(captureDirectory, { headless: true, viewport: null, executablePath, chromiumSandbox: true,
       ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS,
       args: ["--disable-extensions", "--disable-gpu-fingerprint", "--window-size=1200,960", ...(screen ? [screenInfoArg(screen)] : [])] });
     const page = browser.pages?.()[0] ?? await browser.newPage();
@@ -162,7 +162,7 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   const picksPersona = selection === "auto" || selection === "local";
   let source = null;
   if (picksPersona) {
-    const host = await pack.measureHost((probe) => chromium.launch({ ...probe, executablePath: options.executablePath, ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS }),
+    const host = await pack.measureHost((probe) => chromium.launch({ ...probe, executablePath: options.executablePath, chromiumSandbox: options.chromiumSandbox, ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS }),
       options.executablePath, Number(CHROMIUM_MAJOR));
     const resolved = selection === "local" ? pack.resolveLocal(host, profileSelect) : await pack.resolveAuto(host, profileSelect);
     fingerprint.fingerprintProfile = resolved.profile;

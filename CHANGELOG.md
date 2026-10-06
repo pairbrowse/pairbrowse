@@ -5,6 +5,15 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.20 (2026-10-07)
+
+Chromium's sandbox on by default; agents start on the tab you have in front and can share a tab when told; joiners who leave, are removed or revoked release everything.
+
+- Chromium's own sandbox is on by default (macOS, and Linux as a regular user), so a page that exploits a browser bug is contained as in your everyday Chrome. `"chromeSandbox": false` turns it off; PairBrowse turns it off by itself only where it can't run (as root on Linux, or a container without user namespaces) and says so once in the helper log.
+- An agent's first action starts on the tab you have in front, unless another agent is in it; otherwise on a free tab. A tab another agent released counts as free.
+- Agents share a tab when you tell them to (`pairbrowse_collaboration` `share`, "work in the same tab as Codex"): both act there in turn, each with its own spark and cursor, and a person using the tab pauses all of them. One agent per tab stays the default.
+- A joiner who leaves, is removed or whose invite is revoked or expires leaves nothing behind: their channel, pictures and agent stop at once, and what their side said about its agents is dropped. A remote agent's slot is never reused once its connection ends.
+
 ## 0.15.19 (2026-10-07)
 
 Human-like mouse motion of PairBrowse's own, and Patchright is what everything runs on.

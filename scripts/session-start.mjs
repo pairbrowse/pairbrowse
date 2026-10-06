@@ -4,7 +4,8 @@
 import { listRuns, summarize } from "./runs.mjs";
 import { readFileSync } from "node:fs";
 import { detectSurface, detectHost, surfaceGuidance, coreText } from "./surface.mjs";
-import { loadConfig } from "./paths.mjs";
+import { loadConfig, paths } from "./paths.mjs";
+import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 
 try {
   let input = {};
@@ -12,8 +13,13 @@ try {
   const host = detectHost(input);
   const surface = host === "codex" ? "terminal" : detectSurface();
   // The browser asks the person which session (its session picker) unless that's turned off.
-  const picker = loadConfig().sessionPicker !== false && surface !== "cloud";
+  const config = loadConfig();
+  const picker = config.sessionPicker !== false && surface !== "cloud";
   const parts = [coreText(host, { picker }), surfaceGuidance(surface, host)];
+  // Node.js too old for Patchright: the helper falls back to Playwright; tell the user once.
+  let driver = null;
+  try { driver = chooseBrowserDriver(config, process.versions.node, patchrightNodeMinimum(paths.runtime)); } catch {}
+  if (driver?.notice) parts.push(`Tell the user once, in these words: "${driver.notice}"`);
   const open = listRuns().filter((r) => r.status !== "finished").slice(0, 5);
   if (open.length) {
     parts.push(

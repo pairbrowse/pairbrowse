@@ -5,6 +5,15 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.19 (2026-10-07)
+
+Human-like mouse motion of PairBrowse's own, and Patchright is what everything runs on.
+
+- Mouse motion: the visible agent cursor and real clicks now move like a hand, with a motion model of PairBrowse's own: one smooth move that lands close to the target, then one or two natural corrections, a slight bow, and a duration from distance and target size (Fitts' law). The native browser's humanized moves use it by default (`"pairbrowse": { "motion": "classic" }` keeps the older moves). No more pointer jump just before a click: the pointer arrives where the press happens.
+- Clicks always land on the intended element, at a natural point inside it; the drawn cursor is exactly where the click is, never beside it or still on the previous target.
+- Patchright drives the browser everywhere, the tests included; plain Playwright stays an opt-in (`"browserDriver": "playwright"`). On a Node.js older than 20, PairBrowse falls back to Playwright and says so once, at the start of a session and in its log. Node.js 20 or newer is effectively required.
+- Shared browser fixes under Patchright: joiners get their picture and their input again, and tabs that open already loaded (a joiner's tab opened at its address) get PairBrowse's bar, cursor and field ownership.
+
 ## 0.15.18 (2026-10-07)
 
 Shared browser: a joiner's click right after their picture tab reloads is no longer lost.

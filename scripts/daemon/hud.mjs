@@ -10,7 +10,8 @@ import { within } from "../util.mjs";
 const SPARK_COLORS = ["#e9763f", "#4fd1e8", "#a78bfa", "#4ade80"];
 // Claude's cursor: before a click, typing or a choice, show where in the page it happens.
 const CURSOR_TOOLS = { browser_click: "click", browser_type: "type", browser_hover: "hover", browser_select_option: "click", browser_fill_form: "type", pairbrowse_upload: "click" };
-const CURSOR_WAIT_MS = 300; // never holds an action up for longer
+const CURSOR_WAIT_MS = 300; // never holds an action up for longer finding its element
+const CURSOR_ARRIVE_MS = 350; // nor for longer while the cursor gets there (the page script's limit)
 const RECENT_ITEMS = 4;
 const SHARED_SPARK_MS = 30_000;
 const PERSON_MARK_MS = 8000; // a person from the other browser stays marked this long after their last input
@@ -128,10 +129,15 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   }
 
   // who: the agent's name, shown on its cursor in its spark color (like people's pointers).
-  function pointAt(page, box, act, who = "") {
-    if (box) return quietly(page, JSON.stringify({ x: box.x + Math.min(box.width / 2, 24), y: box.y + box.height / 2, act, who: who || "Claude", color: sparkOwner(page)?.color || "" }), "cursor");
+  // It goes to the element's center, where a click lands (a humanized click picks its own point
+  // inside: the press puts the cursor there). Resolves to how long it takes to arrive (ms).
+  async function pointAt(page, box, act, who = "") {
+    if (!box) return 0;
+    const r = await quietly(page, JSON.stringify({ x: box.x + box.width / 2, y: box.y + box.height / 2, act, who: who || "Claude", color: sparkOwner(page)?.color || "", w: Math.round(Math.min(box.width, box.height)) }), "cursor");
+    return Math.max(0, Math.min(CURSOR_ARRIVE_MS, Number(r?.ms) || 0));
   }
-  // Moves the cursor to an element (fast mode). Returns a promise: most steps go on without it.
+  // Moves the cursor to an element (fast mode). Returns a promise: fast mode doesn't wait for the
+  // cursor to arrive, only for it to be sent (so the press that follows puts it on the click).
   function cursorTo(page, el, act, who = "") {
     return within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)).then((box) => pointAt(page, box, act, who)).catch(() => {});
   }
@@ -145,7 +151,9 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (!page) return;
     let el;
     try { el = page.locator(isRef(target) ? `aria-ref=${target}` : target).first(); } catch { return; }
-    await pointAt(page, await within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)), act, who);
+    const ms = await pointAt(page, await within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)), act, who);
+    // The action waits for the cursor to arrive, so it is there when the click happens.
+    if (ms) await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Each page as it loads: the script, then the badge, spark and bar.

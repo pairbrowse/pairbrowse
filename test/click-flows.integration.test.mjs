@@ -77,7 +77,7 @@ function connect(socketPath, app) {
 test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, timeout: 180_000 }, async () => {
   const { decide } = await import("../scripts/guard.mjs");
   const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("playwright").chromium.executablePath();
+  const executablePath = require("patchright").chromium.executablePath();
   const posted = [];
   const fixture = createServer((req, res) => {
     const path = req.url.split("?")[0];
@@ -91,7 +91,7 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
   const home = mkdtempSync(join(base, "cf-"));
   symlinkSync(runtime, join(home, "runtime"), "dir");
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, browserDriver: "playwright" }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false }));
   const out = openSync(join(home, "daemon.stderr.log"), "a");
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home }, stdio: ["ignore", out, out] });
   const socketPath = join(home, "run", "browser.sock");
@@ -124,7 +124,8 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
     stage = "sign-up, step by step with browser_click";
     flow = "sign-up (clicks)";
     await call("browser_navigate", { url: `${site}/signup` });
-    await click("button", "Accept all");
+    // The helper may have closed the cookie banner itself by now ("Closed a cookie banner").
+    if (ref(await snap(), "button", "Accept all")) await click("button", "Accept all");
     await type("Full name", "Ada Lovelace");
     await type("Email", "ada@example.com");
     assert.ok(!(await click("button", "Continue")).result.isError);

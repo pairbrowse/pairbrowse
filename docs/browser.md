@@ -137,6 +137,15 @@ occasional corrected typo scale with it; how long each key is held doesn't.
 { "pairbrowse": { "typingPace": 0.3 } }
 ```
 
+Mouse movement: `motion` is `"combined"` by default. The profile keeps its own speed, tremor and
+habits, and each move is shaped like a hand's: one quick reach that lands close (now and then a few
+pixels past), then homes in without stopping. Every click still lands exactly on its point.
+`"classic"` uses the engine's own shape instead:
+
+```json
+{ "pairbrowse": { "motion": "classic" } }
+```
+
 For a fully open-source setup, set `"browserEngine": "chromium"` in `~/.pairbrowse/config.json`:
 ungoogled-chromium on macOS, Playwright's Chromium elsewhere, both under their own open licenses.
 With it, PairBrowse removes Playwright's automation flag and disables

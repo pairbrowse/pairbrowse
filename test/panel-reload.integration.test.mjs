@@ -55,7 +55,7 @@ function earlierCopy(base) {
 }
 
 test("after an update the browser runs the side panel's current worker, not its cached copy, and join notifications have their buttons", { skip: !runtime, timeout: 180_000 }, async () => {
-  const executablePath = createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
+  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end("<title>fixture</title><main>fixture</main>"); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   mkdirSync(shortBase, { recursive: true });
@@ -63,7 +63,7 @@ test("after an update the browser runs the side panel's current worker, not its 
   const home = join(base, "home");
   mkdirSync(home);
   symlinkSync(runtime, join(home, "runtime"), "dir");
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, participantName: "Bob", browserDriver: "playwright", sessionPicker: false }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, participantName: "Bob", sessionPicker: false }));
   const logText = () => (existsSync(join(home, "daemon.log")) ? readFileSync(join(home, "daemon.log"), "utf8") : "");
   const fail = (what) => new Error(`timed out: ${what}\n${logText().split("\n").slice(-30).join("\n")}`);
   let helper = null;

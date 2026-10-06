@@ -1,8 +1,8 @@
 // End to end with two temporary homes on this computer: a host helper and a joiner's helper, each
 // with its own real (headless) browser; the joiner joins with a code and gets the same tabs. The sharing tunnel is
 // skipped (PAIRBROWSE_TEST_TUNNEL=direct: the code points at the guest port on 127.0.0.1).
-// Needs PAIRBROWSE_TEST_RUNTIME. Uses the upstream Playwright driver: under patchright with
-// headless Chromium, opening a tab (browser_tabs new) can hang, with or without joiners. Homes live on a short path: socket paths must stay short.
+// Needs PAIRBROWSE_TEST_RUNTIME. Drives the browsers through Patchright, as PairBrowse ships.
+// Homes live on a short path: socket paths must stay short.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
@@ -73,7 +73,7 @@ function home(prefix) {
 
 test("join with a code: approval first, then the same tabs in the joiner's own browser, both ways for drive, one way for watch", { skip: !runtime, timeout: 240_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("playwright").chromium.executablePath();
+  const executablePath = require("patchright").chromium.executablePath();
   // Public-looking names that the browsers resolve to the fixture (127.0.0.1 itself never crosses).
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>${req.headers.host}${req.url}</title><main>shared fixture</main><input aria-label='Name'>`); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
@@ -81,10 +81,10 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("jh-");
   const joinHome = home("jj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob", browserDriver: "playwright" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
   writeFileSync(join(hostHome, "secrets.env"), "SHOP_PASSWORD=hunter2hunter2\nSHOP_PASSWORD_DOMAINS=shop.pbtest.example\n");
   chmodSync(join(hostHome, "secrets.env"), 0o600);
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice", browserDriver: "playwright" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
   const daemons = [];
   const connect = async (h) => {
@@ -227,7 +227,7 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
 
 test("co-browsing: form values both ways (never sensitive ones), no echo, pointers, sparks and presence across browsers", { skip: !runtime, timeout: 300_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("playwright").chromium.executablePath();
+  const executablePath = require("patchright").chromium.executablePath();
   let submitted = 0;
   const fixture = createServer((req, res) => {
     if (req.url.startsWith("/submitted")) submitted++;
@@ -240,10 +240,10 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
   const hostHome = home("fh-");
   const joinHome = home("fj-");
   // No participantName on the host: its name comes from PAIRBROWSE_PARTICIPANT (env below).
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, browserDriver: "playwright" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false }));
   writeFileSync(join(hostHome, "secrets.env"), "SHOP_PASSWORD=hunter2hunter2\nSHOP_PASSWORD_DOMAINS=shop.pbtest.example\n");
   chmodSync(join(hostHome, "secrets.env"), 0o600);
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice", browserDriver: "playwright" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_PARTICIPANT: h === hostHome ? "Bob" : "" });
   const daemons = [];
   const connect = async (h) => {

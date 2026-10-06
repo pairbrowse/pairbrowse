@@ -11,7 +11,7 @@ const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const say = (o) => console.log(JSON.stringify({ host: process.platform, ...o }));
 const home = mkdtempSync(join(tmpdir(), "pbh-"));
 const h = await helper({ home, repo, runtime: process.env.PB_RUNTIME || process.env.HOME + "/.pairbrowse/runtime",
-  config: { executablePath: browserPath(), chromeArgs, display: "none", screenshots: false, participantName: "Kees", browserDriver: "playwright" } });
+  config: { executablePath: browserPath(), chromeArgs, display: "none", screenshots: false, participantName: "Kees" } });
 const tabs = async () => [...text(await h.tool("browser_tabs", { action: "list" })).matchAll(/^- (\d+):( \(current\))? \[[^\n]*\]\(([^)\s]*)\)/gm)].map((m) => ({ index: Number(m[1]), url: m[3] }));
 say({ nav: !(await h.tool("browser_navigate", { url: "https://www.google.com/?hl=en" })).result?.isError });
 const made = text(await h.tool("pairbrowse_invite", { action: "create", role: "drive", label: "Sven", share: "code", name: "Kees" }));

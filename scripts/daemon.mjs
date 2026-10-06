@@ -272,6 +272,7 @@ const sharing = createSharing({
       sessionFor: (j) => ({ where: HOST, entries: session.entries(`${j.invite.id}:${j.joinerId}`), pause: pause.view() }),
       // From a joiner's side (text only, any role): who does what there, or a message for the
       // agents here and the other joiners. Shown and handed on, nothing more.
+      onJoinerGone: (key) => session.dropRemote(key),
       onJoinerSay: (body, j, key) => {
         if (body?.op === "session") session.setRemote(key, crossingEntries(body.entries), cleanName(j.name));
         else if (body?.op === "pause") {

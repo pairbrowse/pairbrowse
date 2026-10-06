@@ -266,6 +266,31 @@ test("join code keys: nothing before approval, owner approves, bound per joiner,
   } finally { s.view.close(); }
 });
 
+test("a joiner who goes (invite revoked, removed) leaves nothing behind: their agent here, pictures and what they said", async () => {
+  const stopped = [], gone = [];
+  const remoteAgents = { stop: (k) => stopped.push(k), folder: () => "/nonexistent", line: () => true, file: () => ({}) };
+  const s = await setup({ remoteAgents, shared: { onJoinerGone: (k) => gone.push(k) } });
+  try {
+    const d = s.invites.create({ role: "drive", label: "Dee", share: "code" });
+    const e = s.invites.create({ role: "drive", label: "Eve", share: "code" });
+    const dee = newJoinerId(), eve = newJoinerId();
+    await request(s.gport, "GET", `/${d.key}/tabs`, { headers: who(dee, "Dee") });
+    await request(s.gport, "GET", `/${e.key}/tabs`, { headers: who(eve, "Eve") });
+    for (const r of s.requests) s.view.approvals.approve(r.id);
+    assert.equal((await request(s.gport, "GET", `/${d.key}/tabs`, { headers: who(dee, "Dee") })).status, 200);
+    // Revoked invite: their agent (and its tab turns) stop at once, not only their channel.
+    s.invites.revoke(d.id);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(stopped, [`${d.id}:${dee}`]);
+    assert.deepEqual(gone, [`${d.id}:${dee}`]);
+    // Removed before they ever came back in: stopped by key all the same.
+    const eveReq = s.requests.find((r) => r.name === "Eve").id;
+    assert.equal((await request(s.port, "POST", `/${s.ownerKey}/approve`, { body: { id: eveReq, remove: true } })).status, 200);
+    assert.equal(stopped.at(-1), `${e.id}:${eve}`);
+    assert.equal(gone.at(-1), `${e.id}:${eve}`);
+  } finally { s.view.close(); }
+});
+
 test("the joiner's connection: asks, waits for approval, then gets the shared tabs and sends changes", async () => {
   const s = await setup();
   try {

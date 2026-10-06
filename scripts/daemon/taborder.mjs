@@ -11,8 +11,8 @@ const ASK_MS = 3000;
 // call(fn, arg, timeoutMs): runs fn(arg) in the side panel's worker (panel.mjs).
 export function createTabOrder({ call, getContext, log = () => {} }) {
   // page -> { id, windowId, index }, for the pages that could be matched.
-  async function places() {
-    const tabs = await within(ASK_MS + 500, call(() => { if (!globalThis.pbTabs) throw new Error("not ready"); return globalThis.pbTabs(); }, null, ASK_MS).catch((e) => { log("tab order", e?.message || e); return null; }));
+  async function places(ms = ASK_MS) {
+    const tabs = await within(ms + 500, call(() => { if (!globalThis.pbTabs) throw new Error("not ready"); return globalThis.pbTabs(); }, null, ms).catch((e) => { log("tab order", e?.message || e); return null; }));
     if (!Array.isArray(tabs)) return null;
     const ctx = await getContext();
     const pagesBy = new Map(), tabsBy = new Map();
@@ -28,10 +28,11 @@ export function createTabOrder({ call, getContext, log = () => {} }) {
   }
   return {
     // The page in front (the active tab of the window last focused), or null when it can't be told.
-    async front() {
-      const id = await within(ASK_MS + 500, call(() => { if (!globalThis.pbFront) throw new Error("not ready"); return globalThis.pbFront(); }, null, ASK_MS).catch(() => null));
+    // ms: how long each question to the worker may take.
+    async front(ms = ASK_MS) {
+      const id = await within(ms + 500, call(() => { if (!globalThis.pbFront) throw new Error("not ready"); return globalThis.pbFront(); }, null, ms).catch(() => null));
       if (id === null || id === undefined) return null;
-      const at = await places();
+      const at = await places(ms);
       for (const [page, t] of at || []) if (t.id === id) return page;
       return null;
     },
@@ -74,6 +75,14 @@ export function createTabOrder({ call, getContext, log = () => {} }) {
           return t && there ? chrome.tabs.move(t.id, { windowId: there.windowId, index: there.index }).then(() => true) : false;
         }), [String(url), String(before)], 15_000);
         return moved ? { text: "moved" } : { text: `no tab at ${url} or ${before}`, error: true };
+      }
+      // front: the person clicks the tab at url (or, with before: "new", opens a new tab there).
+      if (action === "front") {
+        const shown = await call(([u, b]) => (b === "new" ? chrome.tabs.create({ url: u, active: true }).then(() => true) : chrome.tabs.query({}).then((ts) => {
+          const t = ts.find((x) => (x.url || x.pendingUrl) === u);
+          return t ? chrome.tabs.update(t.id, { active: true }).then(() => chrome.windows.update(t.windowId, { focused: true })).then(() => true) : false;
+        })), [String(url), String(before ?? "")], 15_000);
+        return shown ? { text: "shown" } : { text: `no tab at ${url}`, error: true };
       }
       const tabs = await call(() => { if (!globalThis.pbTabs) throw new Error("not ready"); return globalThis.pbTabs(); }, null, 15_000);
       return { text: JSON.stringify(tabs.sort((a, b) => (a.windowId - b.windowId) || (a.index - b.index)).map((t) => t.url)) };

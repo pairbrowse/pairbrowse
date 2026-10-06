@@ -380,7 +380,7 @@ const cobrowse = createCobrowse({
 });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
+  secrets, facts, sharing, follow, pause, remoteHolder, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {

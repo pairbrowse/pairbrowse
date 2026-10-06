@@ -144,6 +144,30 @@ test("tab turns: one agent per tab, expiry, release, one tab per agent", () => {
   assert.equal(c.holder(B), null, "a closed tab's turn ends");
 });
 
+test("tab turns: a held tab is shared only on request; both act there, and leaving or releasing ends it", () => {
+  let t = 0;
+  const c = new TabClaims({ ttlMs: 1000, now: () => t });
+  const A = {}, B = {};
+  c.claim(A, "x", "Alice · Codex");
+  assert.equal(c.claim(A, "y", "Bob").ok, false, "never by chance");
+  const s = c.share(A, "y", "Bob · Claude Code");
+  assert.deepEqual(s.with.map((m) => m.label), ["Alice · Codex"]);
+  assert.equal(c.claim(A, "y", "Bob").ok, true);
+  assert.equal(c.claim(A, "x", "Alice").ok, true, "the holder still acts there");
+  assert.deepEqual(c.members(A).map((m) => m.id), ["x", "y"]);
+  assert.equal(c.claim(A, "z", "Carol").ok, false, "a third agent that wasn't told to share is refused");
+  c.release("x");
+  assert.equal(c.holder(A).id, "y", "the holder released: the one it shared with holds it");
+  c.share(A, "x", "Alice");
+  c.claim(B, "y", "Bob");
+  assert.deepEqual(c.members(A).map((m) => m.id), ["x"], "acting in another tab leaves the shared one");
+  c.share(B, "x", "Alice");
+  t = 1500;
+  c.claim(B, "x", "Alice");
+  assert.deepEqual(c.members(B).map((m) => m.id), ["x"], "an idle member's turn runs out");
+  assert.equal(c.holder(A), null);
+});
+
 // ---- the guest port, in process ------------------------------------------------------------
 
 // Tabs that load addresses, so the host side of shared tabs runs without a browser.

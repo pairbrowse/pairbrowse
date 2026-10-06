@@ -12,6 +12,11 @@ const video = $("v"), still = $("still"), statusBox = $("status"), statusText = 
 let pc = null, dc = null, peer = "", host = "", view = "video"; // view: "video" or "frames"
 const outbox = []; // input for the helper, while there's no direct connection
 let state = "none";
+// This document, as the helper knows it: an offer asked for before the page was reloaded or sent
+// somewhere and back (an address typed in its bar) isn't for this one, and is refused (it would
+// replace the connection this page already has, and drop what you do meanwhile).
+const DOC = Math.random().toString(36).slice(2, 10);
+let offers = 0; // connections offered to this document (one, unless one failed)
 
 function setStatus(text) {
   if (text) { statusText.textContent = text; statusBox.classList.remove("hidden"); } else statusBox.classList.add("hidden");
@@ -201,7 +206,9 @@ function showWho() {
 }
 
 // ---- the connection ----
-async function offer({ sdp, peer: id, noDirect = false }) {
+async function offer({ sdp, peer: id, noDirect = false, doc = "" }) {
+  if (doc !== DOC) return null;
+  offers++;
   close();
   peer = String(id || "");
   pc = new RTCPeerConnection(noDirect ? { iceServers: [], iceTransportPolicy: "relay" } : { iceServers: ICE });
@@ -307,7 +314,7 @@ window.pbScreen = {
   // The address shown on the picture (as the person reads it), and whether a lock is there.
   address: () => ({ shown: !$("addr").hidden, text: $("addr-text").textContent, lock: $("addr-state").innerHTML === LOCK, warn: $("addr-state").classList.contains("warn") }),
   // What the helper needs to know each round, and the input waiting for it (no direct connection).
-  state: () => ({ visible: document.visibilityState === "visible", conn: state, peer, view, direct: !!(dc && dc.readyState === "open") }),
+  state: () => ({ visible: document.visibilityState === "visible", conn: state, peer, view, direct: !!(dc && dc.readyState === "open"), doc: DOC, offers }),
   takeInput: () => outbox.splice(0, 200),
   // How the picture and sound arrive: frames a second, sound received, whether it plays, and the
   // route (direct between the two computers, or found through STUN).

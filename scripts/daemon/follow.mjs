@@ -381,8 +381,11 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       if (!st) continue;
       showInfo(cur, id);
       showWho(cur, id);
-      let sc = cur.screens.get(page);
-      if (!sc) { sc = { peer: null, conn: "none", since: now, tries: 0, fallback: false, framesOn: false, hiddenSince: 0, busy: false }; cur.screens.set(page, sc); }
+      // One record per document: a picture page reloaded (or sent somewhere and back) starts afresh,
+      // and the connection asked for the one before it is let go (the slower route, once found, stays).
+      let sc = cur.screens.get(page), was = null;
+      if (sc && sc.doc !== st.doc) { if (sc.peer) cur.join.screen({ op: "stop", peer: sc.peer }).catch(() => {}); was = sc; sc = null; }
+      if (!sc) { sc = { doc: st.doc, peer: null, conn: "none", since: now, tries: was?.tries || 0, fallback: !!was?.fallback, framesOn: !!was?.framesOn, hiddenSince: 0, busy: false }; cur.screens.set(page, sc); }
       if (st.conn !== sc.conn) { sc.conn = st.conn; sc.since = now; }
       sc.hiddenSince = st.visible ? 0 : sc.hiddenSince || now;
       if (st.visible) sc.seenAt = now; // the last one looked at, for this side's agents
@@ -412,9 +415,14 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
           try {
             const r = await cur.join.screen({ op: "want", id });
             if (!r?.sdp) { log("shared browser", r?.error || "no offer"); return; }
+            // The page went somewhere else while the host made the offer (an address typed in its
+            // bar): its new document asks for its own; this one is let go, never offered to it.
+            const stale = () => { cur.join.screen({ op: "stop", peer: r.peer }).catch(() => {}); };
+            if (cur.screens.get(page) !== sc || page.isClosed()) return stale();
             sc.peer = r.peer;
             // Tests only (PAIRBROWSE_TEST_NO_DIRECT=1): a network where no direct connection can be made.
-            const answer = await page.evaluate((o) => window.pbScreen.offer(o), { sdp: r.sdp, peer: r.peer, noDirect: process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" });
+            const answer = await page.evaluate((o) => window.pbScreen?.offer(o) ?? null, { sdp: r.sdp, peer: r.peer, doc: sc.doc, noDirect: process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" });
+            if (!answer) { if (sc.peer === r.peer) sc.peer = null; return stale(); }
             const a = await cur.join.screen({ op: "answer", peer: r.peer, sdp: answer });
             if (a?.error) log("shared browser", a.error);
           } catch (e) {

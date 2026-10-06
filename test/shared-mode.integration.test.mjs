@@ -137,8 +137,11 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
       // No direct connection possible: pictures come through the join channel, and input goes back that way.
       await until("pictures on the slower route", async () => (await onScreen({ expr: "window.pbScreen && window.pbScreen.state()" }))?.value?.view === "frames", 60_000);
     } else {
-      const state = await until("connected", async () => { const s = (await onScreen({ expr: "window.pbScreen && window.pbScreen.state()" }))?.value; return s?.conn === "connected" && s; }, 45_000);
-      assert.equal(state.direct, true, "input goes over the direct connection");
+      await until("connected", async () => (await onScreen({ expr: "window.pbScreen && window.pbScreen.state()" }))?.value?.conn === "connected", 45_000);
+      // The input channel opens just after the connection itself (WebRTC announces it once the
+      // connection is up): moments later, not never.
+      const state = await until("input goes over the direct connection", async () => { const s = (await onScreen({ expr: "window.pbScreen.state()" }))?.value; return s?.conn === "connected" && s.direct && s; }, 5000);
+      assert.equal(state.offers, 1, "one connection for the picture page");
     }
     const size = await until("the picture", async () => { const s = (await onScreen({ expr: noDirect ? "[document.getElementById('still').width, document.getElementById('still').height, innerWidth, innerHeight]" : "[document.getElementById('v').videoWidth, document.getElementById('v').videoHeight, innerWidth, innerHeight]" }))?.value; return Array.isArray(s) && s[0] > 0 && s; }, 20_000);
 
@@ -176,7 +179,13 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     await until("the host's tab back at the app", async () => (await hostUrl()) === "http://one.pbtest.example/app", 15_000);
     await shownAt("one.pbtest.example/app");
     if (noDirect) return;
-    await until("connected again", async () => (await onScreen({ expr: "window.pbScreen.state()" }))?.value?.conn === "connected", 45_000);
+    const again = await until("connected again", async () => { const s = (await onScreen({ expr: "window.pbScreen.state()" }))?.value; return s?.conn === "connected" && s; }, 45_000);
+    // The picture page, back from the typed address, is a new document: the offer asked for before
+    // it went (a busy computer, a slow host) never replaces the connection it has (that dropped the
+    // joiner's next click).
+    await sleep(3000);
+    const settled = (await onScreen({ expr: "window.pbScreen.state()" }))?.value;
+    assert.deepEqual([settled?.doc, settled?.offers, settled?.peer], [again.doc, 1, again.peer], "one connection for the picture page, kept");
 
     stage = "picture and sound arrive smoothly, and the sound plays";
     const stats = await until("frames and sound", async () => {

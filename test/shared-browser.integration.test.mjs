@@ -64,7 +64,7 @@ async function waitForSocket(path, daemon, ms = 90_000) {
 
 test("two clients share one browser and survive peer disconnect", { skip: !runtime, timeout: 90_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("playwright").chromium.executablePath();
+  const executablePath = require("patchright").chromium.executablePath();
   const home = mkdtempSync(join(tmpdir(), "pairbrowse-shared-"));
   const linkedRuntime = join(home, "runtime");
   symlinkSync(runtime, linkedRuntime, "dir");
@@ -210,7 +210,7 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
 // That answer must not wait behind the call that is waiting for it.
 test("a client that answers roots/list mid-call isn't deadlocked", { skip: !runtime, timeout: 60_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("playwright").chromium.executablePath();
+  const executablePath = require("patchright").chromium.executablePath();
   const home = mkdtempSync(join(tmpdir(), "pairbrowse-roots-"));
   const linkedRuntime = join(home, "runtime");
   symlinkSync(runtime, linkedRuntime, "dir");
@@ -263,7 +263,7 @@ test("a client that answers roots/list mid-call isn't deadlocked", { skip: !runt
 // shift when tabs open and close).
 test("two agents' tabs stay their own through new, navigate and close", { skip: !runtime, timeout: 120_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("playwright").chromium.executablePath();
+  const executablePath = require("patchright").chromium.executablePath();
   const home = mkdtempSync(join(tmpdir(), "pairbrowse-tabs-"));
   const linkedRuntime = join(home, "runtime");
   symlinkSync(runtime, linkedRuntime, "dir");

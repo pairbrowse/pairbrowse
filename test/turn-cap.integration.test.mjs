@@ -3,56 +3,26 @@
 // (PAIRBROWSE_TEST_RUNTIME).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import net from "node:net";
 import { createRequire } from "node:module";
-import { createInterface } from "node:readline";
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { session } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 
-// A session on the helper's socket, as Claude Code would open one.
-async function session(socketPath, name) {
-  let sock;
-  for (let i = 0; ; i++) {
-    sock = net.createConnection(socketPath);
-    if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
-    if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-    await sleep(200);
-  }
-  const waiting = new Map();
-  const answers = [];
-  createInterface({ input: sock }).on("line", (line) => {
-    let m;
-    try { m = JSON.parse(line); } catch { return; }
-    if (m.id !== undefined) answers.push(m.id);
-    if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
-  });
-  let seq = 0;
-  const call = (method, params = {}, ms = 60_000) => new Promise((resolve, reject) => {
-    const id = `${name}${++seq}`;
-    const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms);
-    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
-    sock.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
-  await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
-  sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
-  return { sock, answers, tool: (tool, args = {}, ms) => call("tools/call", { name: tool, arguments: args }, ms) };
-}
-
 test("a call that runs past the cap is answered, the browser resets, and the next agent goes on", { skip: !runtime, timeout: 240_000 }, async () => {
-  const executablePath = createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
+  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "cap-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, browserDriver: "playwright" }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
   const out = openSync(join(h, "daemon.stderr.log"), "a");
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TURN_MAX_MS: "20000" }, stdio: ["ignore", out, out] });
   const a = [];

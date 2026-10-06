@@ -33,7 +33,7 @@ const APP = `<title>App</title><body style="margin:0">
 const c = document.getElementById("c"), g = c.getContext("2d"); let down = false;
 const at = (e) => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
 c.addEventListener("pointerdown", (e) => { down = true; g.beginPath(); g.moveTo(...at(e)); });
-c.addEventListener("pointermove", (e) => { if (!down) return; g.lineWidth = 8; g.lineTo(...at(e)); g.stroke(); window.drawn = (window.drawn || 0) + 1; });
+c.addEventListener("pointermove", (e) => { if (!down) return; g.lineWidth = 8; g.lineTo(...at(e)); g.stroke(); c.dataset.drawn = (Number(c.dataset.drawn) || 0) + 1; });
 addEventListener("pointerup", () => { down = false; });
 </script>`;
 
@@ -65,14 +65,14 @@ function home(prefix) {
 async function run({ noDirect = false, realTunnel = false, youtube = false, excalidraw = false, joinerApp = "claude-code" } = {}) {
   const require = createRequire(join(runtime, "package.json"));
   // PAIRBROWSE_TEST_EXECUTABLE: another Chromium build to run both sides on (the PairBrowse browser, say).
-  const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("playwright").chromium.executablePath();
+  const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("patchright").chromium.executablePath();
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   const port = fixture.address().port;
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("sh-"), joinHome = home("sj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob", browserDriver: "playwright" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice", browserDriver: "playwright" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", ...(realTunnel ? {} : { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" }), ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}) });
   const daemons = [];
   const connect = async (h, app = "claude-code") => {
@@ -246,7 +246,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     const moves = [];
     for (let i = 1; i <= 10; i++) moves.push({ type: "mouse", action: "mouseMoved", x: Math.round(a.x + (b.x - a.x) * i / 10), y: Math.round(a.y + (b.y - a.y) * i / 10), button: "left", buttons: 1 });
     await input([{ type: "mouse", action: "mouseMoved", ...a }, { type: "mouse", action: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 }, ...moves, { type: "mouse", action: "mouseReleased", ...b, button: "left", buttons: 0, clickCount: 1 }]);
-    await until("drawn on the host's canvas", async () => Number(await evaluate(host.call, "() => window.drawn || 0")) >= 5, 15_000);
+    await until("drawn on the host's canvas", async () => Number(await evaluate(host.call, "() => Number(document.getElementById('c').dataset.drawn) || 0")) >= 5, 15_000);
 
     stage = "the wheel on the picture scrolls the host's page";
     await input([{ type: "wheel", ...toJoiner(0.5, 0.5), dx: 0, dy: 400 }]);

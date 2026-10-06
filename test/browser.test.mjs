@@ -201,7 +201,7 @@ test("headless test browsers send no notifications; the visible browser keeps th
   assert.equal(launchArgs({}).includes("--disable-notifications"), false);
 });
 
-test("hidden tabs keep foreground priority, in one --enable-features that keeps Playwright's", async () => {
+test("hidden tabs keep foreground priority, in one --enable-features that keeps the driver's", async () => {
   const { launchArgs } = await import("../scripts/browser.mjs");
   const args = launchArgs({ chromeArgs: ["--headless=new", "--enable-features=Foo,Bar"] });
   const enable = args.filter((a) => a.startsWith("--enable-features="));
@@ -209,13 +209,13 @@ test("hidden tabs keep foreground priority, in one --enable-features that keeps 
   const features = enable[0].slice("--enable-features=".length).split(",");
   for (const f of ["ForceForegroundPriorityForAllTabs", "Foo", "Bar"]) assert.ok(features.includes(f), f);
   assert.ok(args.includes("--headless=new"));
-  // The features the pinned Playwright enables itself (its flag comes first, so ours replaces it).
+  // The features the pinned driver (Patchright) enables itself (its flag comes first, so ours replaces it).
   const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
   if (!runtime || process.env.PLAYWRIGHT_LEGACY_SCREENSHOT) return;
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
-  const bundle = readFileSync(join(runtime, "node_modules", "playwright-core", "lib", "coreBundle.js"), "utf8");
-  for (const [, list] of bundle.matchAll(/"--enable-features=([A-Za-z0-9,]+)"/g)) for (const f of list.split(",")) assert.ok(features.includes(f), `Playwright's ${f}`);
+  const bundle = readFileSync(join(runtime, "node_modules", "patchright-core", "lib", "coreBundle.js"), "utf8");
+  for (const [, list] of bundle.matchAll(/"--enable-features=([A-Za-z0-9,]+)"/g)) for (const f of list.split(",")) assert.ok(features.includes(f), `Patchright's ${f}`);
 });
 
 test("a new profile starts without a window on macOS, so the side panel opens the first one", async () => {

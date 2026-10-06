@@ -247,7 +247,9 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
     }, log);
     await ctx.addInitScript({ content: hud.source });
     for (const p of ctx.pages()) { adopt(p, ctx); hud.ensure(p); }
-    ctx.on("page", (p) => { adopt(p, ctx); setTimeout(() => capTabs(ctx, p).catch(() => {}), 300); });
+    // A tab can arrive already loaded (one the side panel opened at its address): its page
+    // script comes now, since under Patchright it isn't there until ensure adds it.
+    ctx.on("page", (p) => { adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => hud.onPageLoad(p), () => {}); setTimeout(() => capTabs(ctx, p).catch(() => {}), 300); });
     if (pick.state === "pending") showPicker(ctx);
     else restore(ctx);
     ctx.on("close", () => {

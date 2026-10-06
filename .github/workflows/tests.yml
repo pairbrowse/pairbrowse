@@ -48,11 +48,12 @@ jobs:
       - name: Pinned browser runtime, as the plugin installs it
         working-directory: runtime
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Chromium for both drivers, and a virtual screen
+      - name: Patchright's Chromium (the driver PairBrowse ships with), and a virtual screen
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q xvfb
-          node runtime/node_modules/playwright/cli.js install --with-deps chromium
-          node runtime/node_modules/patchright/cli.js install chromium
+          node runtime/node_modules/patchright/cli.js install --with-deps chromium
+          # Only for the test of the "playwright" opt-in (test/driver-optin.integration.test.mjs).
+          node runtime/node_modules/playwright/cli.js install chromium
       - name: Unit and live tests, with coverage
         run: xvfb-run -a --server-args="-screen 0 1920x1200x24" npm run coverage
         env:

@@ -6,8 +6,13 @@
   or Codex CLI 0.160 or newer (see [Codex](codex.md)). Cloud sessions can't show you a browser
   window: run the session on your own computer instead (Remote Control,
   `claude remote-control`, makes it reachable from the Claude app on any device).
-- Node.js 20+ (on Node.js 18, set `"browserDriver": "playwright"`). Check with `node -v`;
-  otherwise install the LTS version from [nodejs.org](https://nodejs.org).
+- Node.js 20+. Check with `node -v`; otherwise install the LTS version from
+  [nodejs.org](https://nodejs.org). PairBrowse drives the browser with Patchright, which needs
+  Node.js 20 or newer (its own `engines` field). On an older Node.js, PairBrowse falls back to plain
+  Playwright instead of failing and tells you once, at the start of a session and in the helper log
+  (`~/.pairbrowse/daemon.log`): "PairBrowse is using Playwright instead of Patchright because
+  Node.js 18.x is too old for Patchright. Update to Node.js 20 or newer for the default,
+  harder-to-detect driver."
 - Nothing else: PairBrowse downloads its own browser on first use (see [The PairBrowse browser](browser.md)).
 
 ## Claude Code

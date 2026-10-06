@@ -35,7 +35,7 @@ function home(prefix, { saved = true } = {}) {
 }
 
 function config(executablePath, port, extra = {}) {
-  return JSON.stringify({ executablePath, chromeArgs: ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`], display: "none", screenshots: false, browserDriver: "playwright", ...extra });
+  return JSON.stringify({ executablePath, chromeArgs: ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`], display: "none", screenshots: false, ...extra });
 }
 
 // POST to the live view as a page at origin would (null: no Origin header).
@@ -106,7 +106,7 @@ async function fixture() {
 }
 
 test("the picker shows when nobody chose, websites can't drive it, and the pick reaches the agent", { skip: !runtime, timeout: 120_000 }, async () => {
-  const executablePath = createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
+  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const site = await fixture();
   const h = home("pp-");
   writeFileSync(join(h, "config.json"), config(executablePath, site.address().port));
@@ -179,7 +179,7 @@ test("the picker shows when nobody chose, websites can't drive it, and the pick 
 });
 
 test("no picker when the agent chose first, when it's off, or on the very first start", { skip: !runtime, timeout: 120_000 }, async () => {
-  const executablePath = createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
+  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const site = await fixture();
   const homes = [home("pc-"), home("po-"), home("pf-", { saved: false })];
   writeFileSync(join(homes[0], "config.json"), config(executablePath, site.address().port));
@@ -214,7 +214,7 @@ test("no picker when the agent chose first, when it's off, or on the very first 
 });
 
 test("joining from the picker takes the same code checks and the host's approval", { skip: !runtime, timeout: 180_000 }, async () => {
-  const executablePath = createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
+  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const site = await fixture();
   const hostHome = home("ph-", { saved: false });
   const joinHome = home("pj-");
@@ -273,7 +273,7 @@ test("joining from the picker takes the same code checks and the host's approval
 });
 
 test("an idle session doesn't block a switch, an active one does, and the person can always reopen the picker", { skip: !runtime, timeout: 150_000 }, async () => {
-  const executablePath = createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
+  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const site = await fixture();
   const h = home("ps-");
   writeFileSync(join(h, "config.json"), config(executablePath, site.address().port));

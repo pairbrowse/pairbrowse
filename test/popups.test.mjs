@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { createPopups } from "../scripts/popups.mjs";
+import { inPage } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test("dialogs, popup windows and CAPTCHAs are handled or handed over", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const browser = await chromium.launch();
   try {
     const ctx = await browser.newContext();
@@ -53,7 +54,7 @@ test("dialogs, popup windows and CAPTCHAs are handled or handed over", { skip: !
 });
 
 test("interrupting overlays inside the page are closed, other dialogs are left alone", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -65,17 +66,17 @@ test("interrupting overlays inside the page are closed, other dialogs are left a
         <button onclick="this.parentNode.remove(); window.choice='reject'">Reject all</button>
       </div>`);
     await popups.dismissOverlay(page);
-    assert.equal(await page.evaluate(() => window.choice), "accept", "accepts by default");
+    assert.equal(await inPage(page, () => window.choice), "accept", "accepts by default");
     assert.match(popups.drain(), /cookie banner.*Accept all/);
 
     // Wording no list knows: Claude is told what covers the page and which buttons it has.
-    await page.evaluate(() => { window.choice = undefined; });
+    await inPage(page, () => { window.choice = undefined; });
     await page.setContent(`
       <div style="position:fixed;bottom:0;left:0;right:0;height:140px;background:#eee">Wir respektieren Ihre Daten.
         <button onclick="window.choice='accept'">Passt schon</button> <button>Einstellungen</button>
       </div>`);
     await popups.dismissOverlay(page);
-    assert.equal(await page.evaluate(() => window.choice), undefined, "unknown labels are never pressed by PairBrowse");
+    assert.equal(await inPage(page, () => window.choice), undefined, "unknown labels are never pressed by PairBrowse");
     assert.match(popups.drain(), /covers the page.*"Passt schon", "Einstellungen"/);
     await popups.dismissOverlay(page);
     assert.equal(popups.drain(), "", "described once per page");
@@ -94,18 +95,18 @@ test("interrupting overlays inside the page are closed, other dialogs are left a
     await page.setContent(offer); // shows up later on its own
     await popups.dismissOverlay(page, { closeOffers: true });
     assert.equal(await page.locator("#offer").count(), 0, "closed by its ×");
-    assert.equal(await page.evaluate(() => !!window.subscribed), false, "never takes the offer");
+    assert.equal(await inPage(page, () => !!window.subscribed), false, "never takes the offer");
     assert.match(popups.drain(), /Closed a popup/);
 
     const rejecting = createPopups({ cookieChoice: "reject" });
-    await page.evaluate(() => { window.choice = undefined; });
+    await inPage(page, () => { window.choice = undefined; });
     await page.setContent(`
       <div class="cookie-banner" style="position:fixed;bottom:0;left:0;right:0;height:120px;background:#eee">We use cookies.
         <button onclick="window.choice='accept'">Accept all</button>
         <button onclick="this.parentNode.remove(); window.choice='necessary'">Reject all</button>
       </div>`);
     await rejecting.dismissOverlay(page);
-    assert.equal(await page.evaluate(() => window.choice), "necessary", 'cookieChoice "reject" picks necessary only');
+    assert.equal(await inPage(page, () => window.choice), "necessary", 'cookieChoice "reject" picks necessary only');
 
     await page.setContent(`
       <div role="dialog" aria-modal="true" style="position:fixed;inset:20%;background:#fff">
@@ -114,7 +115,7 @@ test("interrupting overlays inside the page are closed, other dialogs are left a
         <button aria-label="Close" onclick="this.parentNode.remove()">×</button>
       </div>`);
     await popups.dismissOverlay(page);
-    assert.equal(await page.evaluate(() => !!window.subscribed), false, "never presses Subscribe");
+    assert.equal(await inPage(page, () => !!window.subscribed), false, "never presses Subscribe");
     assert.equal(await page.locator('[role="dialog"]').count(), 0);
     assert.match(popups.drain(), /popup.*Close/);
 

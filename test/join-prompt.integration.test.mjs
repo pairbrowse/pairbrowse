@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { hudScript } from "../scripts/browser.mjs";
+import { ensureHud, inPage } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,7 +45,7 @@ const HOSTILE = `<title>hostile</title><body style="height:2000px">page
 </script></body>`;
 
 test("the join request in the bottom bar: shows at its right end, goes by itself, can be dismissed, takes only a real click", { skip: !runtime, timeout: 90_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const server = createServer((req, res) => {
     // Strict CSP and Trusted Types, as on YouTube or Google's apps.
     res.writeHead(200, { "content-type": "text/html", "content-security-policy": "require-trusted-types-for 'script'; default-src 'self' 'unsafe-inline'" });
@@ -59,6 +60,7 @@ test("the join request in the bottom bar: shows at its right end, goes by itself
     page.on("pageerror", (e) => errors.push(e.message));
     await page.addInitScript({ content: source });
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await ensureHud(page, source, name);
     const hud = (value, kind) => page.evaluate(([n, t, v, k]) => window[n](t, v, k), [name, token, value, kind]);
     const state = () => hud("", "join-state");
     // The answers recorded for the helper (a chain, newest first), and never in the page's input.
@@ -89,11 +91,11 @@ test("the join request in the bottom bar: shows at its right end, goes by itself
 
     // The page can't see, click or fake it.
     await sleep(800); // armed
-    const tried = await page.evaluate(() => window.tryEverything());
+    const tried = await inPage(page, () => window.tryEverything());
     assert.equal(tried.text, false, "the page can't read it");
-    await page.evaluate(() => document.documentElement.click());
+    await inPage(page, () => document.documentElement.click());
     assert.deepEqual(await answers(), [], "no answer from a page's clicks");
-    assert.equal(await page.evaluate(([n]) => window[n]("guess", "", "join-state"), [name]), false, "no state without the key");
+    assert.equal(await inPage(page, ([n]) => window[n]("guess", "", "join-state"), [name]), false, "no state without the key");
     assert.equal((await state()).length, 1, "still there");
 
     // A newer request: the bar shows it, with "+1 more"; a real click just then doesn't count
@@ -192,7 +194,7 @@ const tool = (call, name, args = {}) => call("tools/call", { name, arguments: ar
 
 test("a join request: the bar in the host's tab in front when the browser has the focus (no notification), else a notification; only the person's own click answers", { skip: !runtime, timeout: 240_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("playwright").chromium.executablePath();
+  const executablePath = require("patchright").chromium.executablePath();
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>${req.headers.host}</title><main>fixture</main>`); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
@@ -201,7 +203,7 @@ test("a join request: the bar in the host's tab in front when the browser has th
     mkdirSync(shortBase, { recursive: true });
     const dir = mkdtempSync(join(shortBase, prefix));
     symlinkSync(runtime, join(dir, "runtime"), "dir");
-    writeFileSync(join(dir, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: name, browserDriver: "playwright" }));
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: name }));
     homes.push(dir);
     return dir;
   };

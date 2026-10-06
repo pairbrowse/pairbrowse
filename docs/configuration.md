@@ -16,6 +16,10 @@
   Patchright, PairBrowse uses Playwright by itself and says so once (see [Install](install.md)); the
   pinned Playwright also requires Node.js 20+, so Node.js 20 or newer is effectively required either way.
 - `chromeArgs`: extra Chromium flags.
+- `chromeSandbox`: `false` turns off Chromium's own sandbox (default `true`). PairBrowse turns it off
+  by itself only where it can't run: as root on Linux, and where the system has no user namespaces
+  (Docker's default seccomp profile blocks them); the helper log says so once. In a container, run
+  as a regular user to keep it.
 - `maxTabs`: most tabs open at once (default 20). When another opens, the tab used longest ago
   closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more
   stay open), and Claude is told.

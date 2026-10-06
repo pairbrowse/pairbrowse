@@ -33,8 +33,9 @@ export const DEFAULT_CONFIG = {
   // downloadable from its pinned release), otherwise "chromium" (ungoogled-chromium on macOS,
   // Playwright's Chromium elsewhere). Set "chromium" or "pairbrowse" to choose.
   browserEngine: "auto",
-  // Browser automation driver. Patchright is the default stealth driver; use "playwright" only
-  // when an integration explicitly needs the upstream Playwright implementation.
+  // Browser automation driver. Patchright is the default and recommended one; "playwright" is an
+  // optional opt-in. On a Node.js too old for Patchright the helper falls back to Playwright
+  // and says so once (scripts/driver.mjs).
   browserDriver: "patchright",
   // Path to another Chromium-based browser (Brave, Arc, Vivaldi) instead of the PairBrowse browser.
   executablePath: null,

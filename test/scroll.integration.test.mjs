@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { join } from "node:path";
+import { ensureHud } from "./live.mjs";
 import { hudScript } from "../scripts/browser.mjs";
 import { runSteps, preflight } from "../scripts/runner.mjs";
 
@@ -13,7 +14,7 @@ const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 test("scroll step: smooth, with the agent's cursor, never taken for a person", { skip: !runtime, timeout: 60_000 }, async () => {
   assert.match(preflight([{ scroll: "sideways" }]), /scroll takes "down", "up" or a number/);
   assert.equal(preflight([{ scroll: "down" }, { scroll: -300 }]), null);
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const server = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end("<title>long</title><body style='height:5000px'>top</body>"); });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const browser = await chromium.launch({ headless: true });
@@ -22,6 +23,7 @@ test("scroll step: smooth, with the agent's cursor, never taken for a person", {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
     await page.addInitScript({ content: source });
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await ensureHud(page, source, name);
     const said = [];
     const hooks = {
       activity: (t) => said.push(t),

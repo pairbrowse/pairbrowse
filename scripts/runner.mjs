@@ -393,7 +393,7 @@ async function stepsIn(page, steps, hooks) {
         const el = await find(page, [() => page.getByLabel(arg, { exact: true }), () => page.getByRole("checkbox", { name: arg }), () => page.getByRole("radio", { name: arg }), () => page.getByLabel(arg), ...(bare ? [bare] : [])]);
         if (!el) return fail(`No checkbox "${arg}".`);
         if (await theirs(el, String(arg))) { done.push(kind); continue; }
-        hooks.cursor?.(el, "click");
+        await hooks.cursor?.(el, "click"); // sent before the press, which puts it on the click
         await (kind === "check" ? el.check({ timeout: 5000 }) : el.uncheck({ timeout: 5000 }));
         hooks.activity(`${kind === "check" ? "Ticked" : "Unticked"} **${arg}**`);
       } else if (kind === "select") {
@@ -403,7 +403,7 @@ async function stepsIn(page, steps, hooks) {
             () => page.locator(`select[name="${cssString(label)}"], select[id="${cssString(label)}"]`)]) || await onlyOne(page, "select");
           if (!el) return fail(`No dropdown "${label}".`);
           if (await theirs(el, label)) continue;
-          hooks.cursor?.(el, "click");
+          await hooks.cursor?.(el, "click");
           const isSelect = await el.evaluate((n) => n.tagName === "SELECT").catch(() => false);
           if (isSelect) await el.selectOption({ label: String(option) }, { timeout: 5000 }).catch(() => el.selectOption(String(option), { timeout: 5000 }));
           else {
@@ -427,7 +427,7 @@ async function stepsIn(page, steps, hooks) {
         const real = String(await el.evaluate(buttonLabel, undefined, { timeout: 2000 }).catch(() => ""));
         const { risk } = await contextAt(page, el, "click");
         if (strongSignal(risk)) return fail(`"${arg}" is the "${real.slice(0, 60)}" button: ${riskReason(risk)}. Run the steps before it, then use browser_click on it so the user confirms.`);
-        hooks.cursor?.(el, "click");
+        await hooks.cursor?.(el, "click"); // sent before the press, which puts it on the click
         await el.click({ timeout: 5000 });
         await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
         hooks.activity(`Clicked **${arg}**`);

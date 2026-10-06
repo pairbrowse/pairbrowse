@@ -6,6 +6,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { ensureHud } from "./live.mjs";
 import { readOps, stateForJoiner, readPointers, readView, turnLeft, TURN_MAX_MS, createFormSync } from "../scripts/tabsync.mjs";
 import { createPresence } from "../scripts/daemon/presence.mjs";
 import { clickRisk, clickContext, buttonLabel } from "../scripts/daemon/page.mjs";
@@ -88,7 +89,7 @@ test("form sync: a card number replacing a plain value there leaves no stale val
 });
 
 test("final actions by what they do, by structure only: commits are asked for in any wording or language, steps and links aren't", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -230,7 +231,7 @@ test("nothing about a click leaves the computer: no model, API key or network in
 });
 
 test("form values in the page: a card replacing a plain value clears it here; a card typed here is never overwritten", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -259,7 +260,7 @@ test("form values in the page: a card replacing a plain value clears it here; a 
 });
 
 test("scroll presence in the page: the person's own scrolling is their view, an agent's isn't; another's view draws as a named mark", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const hud = (await import("../scripts/browser.mjs")).hudScript();
   const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
   const browser = await chromium.launch();
@@ -268,6 +269,7 @@ test("scroll presence in the page: the person's own scrolling is their view, an 
     await page.addInitScript({ content: source });
     await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: `<div style="height:6000px">long</div>` }));
     await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
     const tick = () => page.evaluate(() => window.__pbtest("tok", "", "tick"));
     assert.equal((await tick()).view, null, "nothing before they read");
     await page.mouse.move(100, 100);

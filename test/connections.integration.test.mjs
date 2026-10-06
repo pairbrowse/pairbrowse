@@ -51,7 +51,7 @@ function rpc(write, input, prefix = "t") {
 }
 
 function setup() {
-  const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
+  const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   mkdirSync(shortBase, { recursive: true });
   const homes = [];
   const daemons = [];
@@ -60,7 +60,7 @@ function setup() {
     const h = mkdtempSync(join(shortBase, prefix));
     homes.push(h);
     symlinkSync(runtime, join(h, "runtime"), "dir");
-    writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, browserDriver: "playwright", sessionPicker: false, ...config }));
+    writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false, ...config }));
     return h;
   };
   const socketOf = (h) => join(h, "run", "browser.sock");

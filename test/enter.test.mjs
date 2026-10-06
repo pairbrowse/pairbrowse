@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { runSteps, enterButtonLabel } from "../scripts/runner.mjs";
+import { inPage } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 
 // Enter in a checkout field presses its Pay button: no click for the guard to see.
 test("Enter that would press a pay or publish button is refused", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -18,12 +19,12 @@ test("Enter that would press a pay or publish button is refused", { skip: !runti
     const r = await runSteps(page, [{ fill: { "Card name": "Ada" } }, { press: "Enter" }], hooks);
     assert.equal(r.ok, false);
     assert.match(r.why, /Pay \$49 now.*pay/);
-    assert.equal(await page.evaluate(() => !!window.sent), false, "not submitted");
+    assert.equal(await inPage(page, () => !!window.sent), false, "not submitted");
     await page.focus("#q");
     assert.equal(await enterButtonLabel(page), "Search");
     const ok = await runSteps(page, [{ press: "Enter" }], hooks);
     assert.equal(ok.ok, true, JSON.stringify(ok));
-    assert.equal(await page.evaluate(() => !!window.searched), true, "a harmless Enter still works");
+    assert.equal(await inPage(page, () => !!window.searched), true, "a harmless Enter still works");
   } finally {
     await browser.close();
   }
@@ -31,7 +32,7 @@ test("Enter that would press a pay or publish button is refused", { skip: !runti
 
 // Date pickers and masks can throw a pasted value away when focus moves on.
 test("a field that drops a filled value is retyped, and one that never keeps it is reported", { skip: !runtime, timeout: 60_000 }, async () => {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -60,7 +61,7 @@ test("a field that drops a filled value is retyped, and one that never keeps it 
 
 const hooksFor = () => ({ activity: () => {}, status: () => {}, cursor: () => {}, remember: () => {}, secrets: { values: {}, domains: {} } });
 async function withPage(html, fn) {
-  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -90,12 +91,12 @@ test("Shift+Enter in a payment form and Space on its focused button are refused;
     assert.equal(shift.ok, false);
     assert.match(shift.why, /Pay \$49.*final action \(pay\)/);
     assert.equal((await runSteps(page, [{ fill: { Nickname: "ada" } }, { press: "Enter" }], hooks)).ok, true, "an ordinary submit goes");
-    assert.equal(await page.evaluate(() => !!window.saved), true);
+    assert.equal(await inPage(page, () => !!window.saved), true);
     await page.focus("#pay");
     const space = await runSteps(page, [{ press: "Space" }], hooks);
     assert.equal(space.ok, false);
     assert.match(space.why, /Pay \$49/);
-    assert.equal(await page.evaluate(() => !!window.sent), false, "not submitted");
+    assert.equal(await inPage(page, () => !!window.sent), false, "not submitted");
     await page.focus("#ok");
     assert.equal((await runSteps(page, [{ press: "Space" }], hooks)).ok, true, "Space on a harmless button works");
   });
@@ -106,7 +107,7 @@ test("a click step that matches a payment form's submit is refused, by structure
     const r = await runSteps(page, [{ click: "Confirm" }], hooksFor());
     assert.equal(r.ok, false);
     assert.match(r.why, /Confirm payment.*final action \(pay\)/);
-    assert.equal(await page.evaluate(() => !!window.paid), false);
+    assert.equal(await inPage(page, () => !!window.paid), false);
   });
 });
 

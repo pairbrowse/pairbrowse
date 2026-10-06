@@ -47,13 +47,13 @@ function home(prefix) {
 
 test("tab order follows in a shared session: a move on the host reaches the joiner, a drive joiner's move reaches the host", { skip: !runtime, timeout: 240_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("playwright").chromium.executablePath();
+  const executablePath = require("patchright").chromium.executablePath();
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>${req.headers.host}${req.url}</title><main>shared fixture</main>`); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
   const hostHome = home("th-");
   const joinHome = home("tj-");
-  for (const [h, name] of [[hostHome, "Bob"], [joinHome, "Alice"]]) writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: name, browserDriver: "playwright" }));
+  for (const [h, name] of [[hostHome, "Bob"], [joinHome, "Alice"]]) writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: name }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_TAB_ORDER: "1" });
   const daemons = [];
   const connect = async (h) => {

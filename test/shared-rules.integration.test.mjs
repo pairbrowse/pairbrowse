@@ -3,7 +3,7 @@
 // the other computer's agents wait or hear "in use" (never typing into their copy); where each
 // person reads crosses; a payment form's "Submit order" is a final action by structure; a card
 // number replacing a plain value leaves no stale value and echoes nothing. Like
-// join.integration.test.mjs: PAIRBROWSE_TEST_RUNTIME, the upstream Playwright driver, no tunnel.
+// join.integration.test.mjs: PAIRBROWSE_TEST_RUNTIME, Patchright, no tunnel.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
@@ -61,7 +61,7 @@ function home(prefix) {
 
 test("shared sessions: agent turns across computers, scroll presence, payment forms by structure, card values", { skip: !runtime, timeout: 300_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("playwright").chromium.executablePath();
+  const executablePath = require("patchright").chromium.executablePath();
   let submitted = 0;
   const fixture = createServer((req, res) => {
     if (req.url.startsWith("/submitted")) submitted++;
@@ -73,8 +73,8 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("sh-");
   const joinHome = home("sj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob", browserDriver: "playwright" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice", browserDriver: "playwright" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
   const daemons = [];
   const connect = async (h) => {

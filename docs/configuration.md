@@ -11,7 +11,10 @@
 
 - `executablePath`: use Brave, Arc, Vivaldi or another Chromium build instead of the PairBrowse browser.
 - `browserEngine`: `"auto"` (default: the native PairBrowse browser where a build is pinned for your computer (macOS, Linux x64, Windows x64), else `"chromium"`), `"pairbrowse"` or `"chromium"`.
-- `browserDriver`: `"patchright"` (default, needs Node.js 20+) or `"playwright"`.
+- `browserDriver`: `"patchright"` (default and recommended, needs Node.js 20+) or `"playwright"`
+  (optional opt-in: plain Playwright, easier for sites to detect). On a Node.js too old for
+  Patchright, PairBrowse uses Playwright by itself and says so once (see [Install](install.md)); the
+  pinned Playwright also requires Node.js 20+, so Node.js 20 or newer is effectively required either way.
 - `chromeArgs`: extra Chromium flags.
 - `maxTabs`: most tabs open at once (default 20). When another opens, the tab used longest ago
   closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more

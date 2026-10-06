@@ -54,7 +54,7 @@ before(() => {
   removeContainers();
   watchContainer();
   sh("docker", ["run", "-d", "--rm", "--name", "pb-joiner", "--label", LABEL, "-v", `${runtime}:/runtime:ro`, "-v", `${repo}:/repo:ro`, "-v", `${mail}:/mail`, "-e", "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright", "node:22-bookworm", "sleep", "7200"]);
-  sh("docker", ["exec", "pb-joiner", "node", "/runtime/node_modules/playwright-core/cli.js", "install", "--with-deps", "chromium"]);
+  sh("docker", ["exec", "pb-joiner", "node", "/runtime/node_modules/patchright/cli.js", "install", "--with-deps", "chromium"]);
 });
 after(cleanUp);
 

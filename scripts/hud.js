@@ -483,17 +483,35 @@
     return [{ id: joinShown, who: joins.get(joinShown).who, more: joins.size - 1, visible: !!joinVisible, allow: at(".ok"), deny: at(".no"), close: at(".x") }];
   };
 
-  // Claude's cursor: glides to where Claude clicks or types, rings on a click, fades when idle.
-  let curHost, cur, curTimer;
+  // Claude's cursor: moves to where Claude clicks or types the way a hand moves a mouse (a quick
+  // reach that lands a touch short or past, then homes in: scripts/motion.mjs), rings on a click
+  // when it presses, fades when idle. The helper waits for it to arrive before acting, and the
+  // press itself puts it exactly where the press was (the real point, which a humanized click
+  // picks itself), so it never points beside the click or still at the previous target.
+  const motion = "__PB_MOTION__";
+  const CURSOR_MOTION = { fittsA: 50, fittsB: 60, minMs: 120, maxMs: 350 }; // quicker than a hand
+  const PRESS_WINDOW_MS = 4000; // the first press this soon after the cursor was sent is the agent's
+  let curHost, cur, curTimer, curAt = null, curFrame = 0, pressBy = 0, pressAct = "";
   let agentPtr = null; // where it last pointed, in document coordinates
+  const reducedMotion = () => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
+  const placeCursor = (p) => { curAt = { x: p.x, y: p.y }; cur.style.transform = `translate(${+p.x.toFixed(3)}px, ${+p.y.toFixed(3)}px)`; };
+  const ring = () => { cur.classList.remove("click"); void cur.offsetWidth; cur.classList.add("click"); };
+  addEventListener("pointerdown", (e) => {
+    if (!e.isTrusted || !cur || now() > pressBy) return;
+    pressBy = 0;
+    cancelAnimationFrame(curFrame);
+    placeCursor({ x: e.clientX, y: e.clientY });
+    if (pressAct === "click") ring();
+  }, opts);
   // who, color: the agent's name on a tag in its color (people see whose cursor it is).
-  function pointer(x, y, act, who = "Claude", color = "") {
+  // w: the target's smaller side (a small target takes a little longer to reach).
+  function pointer(x, y, act, who = "Claude", color = "", w = 24) {
     if (!curHost || !curHost.isConnected) {
       curHost = document.createElement(TAG_CURSOR);
       const shadow = curHost.attachShadow({ mode: "closed" });
       shadow.innerHTML = html(`<style>
         :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;left:0 !important;top:0 !important;pointer-events:none !important}
-        .c{position:fixed;left:0;top:0;transition:transform .22s cubic-bezier(.22,1,.36,1),opacity .3s;opacity:0;will-change:transform}
+        .c{position:fixed;left:0;top:0;transition:opacity .3s;opacity:0;will-change:transform}
         .c.on{opacity:1}
         svg{width:22px;height:22px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))}
         .r{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(27,30,60,.5);opacity:0}
@@ -504,16 +522,35 @@
       </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="0 0 24 24"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#1b1e3c" stroke-width="1.6" stroke-linejoin="round"/></svg><span></span></div>`);
       cur = shadow.querySelector(".c");
       document.documentElement.appendChild(curHost);
+      curAt = null;
     }
-    cur.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     const tag = cur.querySelector("span");
     tag.textContent = String(who || "Claude").slice(0, 40);
     tag.style.background = /^#[0-9a-f]{6}$/i.test(color) ? color : "#e9763f";
-    cur.classList.add("on");
+    cancelAnimationFrame(curFrame);
     cur.classList.remove("click");
-    if (act === "click") { void cur.offsetWidth; cur.classList.add("click"); }
+    pressBy = now() + PRESS_WINDOW_MS;
+    pressAct = act;
+    const to = { x, y };
+    let duration = 0;
+    // Hidden or just made, or the person asked for less motion: it appears in place.
+    if (!curAt || !cur.classList.contains("on") || reducedMotion()) {
+      placeCursor(to);
+    } else {
+      const path = motion.plan(curAt, to, { ...CURSOR_MOTION, targetW: w });
+      const start = now();
+      duration = path.duration;
+      const step = () => {
+        const t = now() - start;
+        placeCursor(path.at(t));
+        if (t < path.duration) curFrame = requestAnimationFrame(step);
+      };
+      step();
+    }
+    cur.classList.add("on");
     clearTimeout(curTimer);
     curTimer = setTimeout(() => cur.classList.remove("on"), 2500);
+    return Math.ceil(duration); // how long it takes to arrive, ms
   }
 
   // Other people's and agents' pointers from the other browser of a shared tab: named, in their
@@ -636,10 +673,10 @@
     if (kind === "cursor") {
       try {
         const c = JSON.parse(text);
-        pointer(Number(c.x) || 0, Number(c.y) || 0, String(c.act || ""), String(c.who || "Claude"), String(c.color || ""));
+        const ms = pointer(Number(c.x) || 0, Number(c.y) || 0, String(c.act || ""), String(c.who || "Claude"), String(c.color || ""), Number(c.w) || 24);
         agentPtr = { x: Math.round((Number(c.x) || 0) + scrollX), y: Math.round((Number(c.y) || 0) + scrollY), t: now() };
         agentAt = now(); // the scrolling an agent's action causes isn't the person's
-
+        return { ms }; // until it arrives
       } catch {}
       return true;
     }

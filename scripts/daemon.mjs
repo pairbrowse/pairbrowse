@@ -40,6 +40,7 @@ import { createPresence } from "./daemon/presence.mjs";
 import { createPause } from "./daemon/pause.mjs";
 import { fieldOwner } from "./daemon/fields.mjs";
 import { createPanel } from "./daemon/panel.mjs";
+import { forgetPanelBuild } from "./browser.mjs";
 import { createScreenShare } from "./daemon/screenshare.mjs";
 import { createRemoteAgents } from "./daemon/remote-agents.mjs";
 import { createSharing } from "./daemon/sharing.mjs";
@@ -84,7 +85,7 @@ const collaboration = new BrowserCoordinator({ onChange: (state) => liveView()?.
 // Per-tab turns (the default); the whole-browser lease above stays for pairbrowse_collaboration.
 const tabClaims = new TabClaims({ onChange: refreshTabs });
 
-const panel = createPanel({ context: () => context.current(), liveViewUrl: async () => (await sharing.ensureLiveView()).url, log });
+const panel = createPanel({ context: () => context.current(), liveViewUrl: async () => (await sharing.ensureLiveView()).url, log, onStale: () => forgetPanelBuild(context.profile()) });
 // "Pause agents", session-wide: held here, or mirrored from the host of a session joined from
 // here (only a drive participant may press it there; a watcher sees it but can't).
 const canPause = () => !follow.joined() || follow.role() === "drive";
@@ -419,6 +420,19 @@ const serve = createServe({
       if (type) { await page.keyboard.type(String(type), { delay: 20 }); return { text: "typed" }; }
       const index = (await context.getContext()).pages().indexOf(page);
       return { text: JSON.stringify({ index, value: expr ? await page.evaluate(String(expr)) : null }) };
+    } } : {}),
+    // Tests only (PAIRBROWSE_TEST_PANEL=1): the side panel's worker state, the running worker made
+    // to look like an earlier version's (stale: no build, no join notification buttons) and
+    // checked again, and a join notification sent through it (notifyJoin: a request id).
+    ...(process.env.PAIRBROWSE_TEST_PANEL === "1" ? { pairbrowse_test_panel: async (args = {}) => {
+      if (args.stale) {
+        await panel.call(() => { delete globalThis.pbBuild; delete globalThis.pbNotifyJoin; return true; }, null, 10_000);
+        return { text: await panel.recheck() };
+      }
+      if (args.notifyJoin) { panel.notifyJoin({ who: "Sam (Claude Code)", role: "watch", request: String(args.notifyJoin) }); return { text: "sent" }; }
+      const state = await panel.call(async () => ({ build: globalThis.pbBuild ?? null, notifyJoin: typeof globalThis.pbNotifyJoin, view: !!(await globalThis.chrome.storage.session.get("view")).view }), null, 20_000);
+      const pages = (await context.getContext()).pages().filter((p) => !p.isClosed()).map((p) => p.url());
+      return { text: JSON.stringify({ ...state, pages }) };
     } } : {}),
   },
 });

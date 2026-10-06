@@ -3,16 +3,29 @@
 // own protocol, on the private pipe.
 import { randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
-import { panelExtensionId } from "../browser.mjs";
+import { panelExtensionId, panelBuild } from "../browser.mjs";
 import { sleep } from "../util.mjs";
 
 const NOTIFY_TITLE = "PairBrowse needs you";
 
+// What to do with the side panel's worker, by the build it reports (running: undefined while it
+// didn't answer, null for an earlier version's worker that reports none) and the one its file on
+// disk declares (expected). A browser can keep running an old cached copy of the worker after an
+// update (it then lacks newer functions, such as the join notification's Allow and Deny): it's
+// replaced at the next browser start (checkBuild below).
+export function workerFreshness({ running, expected }) {
+  if (running === undefined) return "unknown"; // no answer yet: ask again later
+  if (!expected || running === expected) return "current";
+  return "stale";
+}
+
 // context(): the browser context's promise, or null while it's closed. liveViewUrl(): starts the
-// live view if needed and returns its address.
-export function createPanel({ context, liveViewUrl, log }) {
+// live view if needed and returns its address. expectedBuild(): the worker build on disk.
+// onStale(): the browser runs an old worker (its record is dropped, see checkBuild).
+export function createPanel({ context, liveViewUrl, log, expectedBuild = () => panelBuild(), onStale = () => {} }) {
   let panelId = null; // the side panel's extension id as the browser runs it
   const origins = []; // its origin once connected (the live view lets it in)
+  const checked = new WeakMap(); // browser context -> what checkBuild found
 
   // Runs code in the side panel's service worker. Patchright hides service workers from
   // Playwright, so ask the browser directly. timeoutMs bounds the whole try, so a worker that
@@ -78,6 +91,30 @@ export function createPanel({ context, liveViewUrl, log }) {
     throw new Error(`no answer from the side panel (${last})`);
   }
 
+  // Whether the worker the browser runs is the one on disk (workerFreshness), once per browser
+  // run. An old one can't be swapped in place (chrome.runtime.reload leaves a command-line
+  // extension disabled, and the browser's own update calls keep its cached copy), so its record
+  // is dropped (onStale) and the next browser start loads it anew (resetPanelWorker in
+  // browser.mjs); meanwhile it's used as it is (a join notification without buttons goes out as
+  // the system's). Returns what it found.
+  async function checkBuild() {
+    const ctx = await context();
+    if (!ctx) return "unknown";
+    if (checked.has(ctx)) return checked.get(ctx);
+    const expected = expectedBuild();
+    const running = await call(() => globalThis.pbBuild ?? null, null, 8000).catch(() => undefined);
+    const what = workerFreshness({ running, expected });
+    if (what === "unknown") return what;
+    checked.set(ctx, what);
+    if (what === "stale") {
+      log(`side panel: the browser runs an old copy of its worker (build ${running ?? "none"}, not ${expected}); it's loaded anew at the next browser start`);
+      onStale();
+    }
+    return what;
+  }
+  // Tests only: the build is checked again.
+  const recheck = async () => { const ctx = await context(); if (ctx) checked.delete(ctx); return checkBuild(); };
+
   // From the system, when the side panel can't (text only). The text goes as an argument, never
   // into the script.
   function systemNotify(say) {
@@ -117,14 +154,15 @@ export function createPanel({ context, liveViewUrl, log }) {
   }
 
   // The side panel gets the live view address in memory, through its service worker (session
-  // storage, never on disk). Its origin is read from the worker itself.
+  // storage, never on disk). Its origin is read from the worker itself. Then its build is checked.
   async function connect() {
     const url = await liveViewUrl();
     await call((u) => globalThis.pbSetView(u), url, 30_000);
     const origin = `chrome-extension://${panelId || panelExtensionId()}`;
     if (!origins.includes(origin)) origins.push(origin);
     log(`side panel connected (${origin})`);
+    await checkBuild().catch(() => {});
   }
 
-  return { notify, notifyJoin, clearJoin, connect, origins, call };
+  return { notify, notifyJoin, clearJoin, connect, origins, call, recheck };
 }

@@ -5,6 +5,14 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.17 (2026-10-06)
+
+The side panel loads its new version after an update, so join notifications have their Allow and Deny buttons.
+
+- After an update the browser could go on running the side panel's previous version, which the browser keeps in your profile: join notifications then came without Allow and Deny. Now the side panel reports its version, and when it changed since the browser last started, the browser loads the new one from disk before it opens. Sites' background workers in the PairBrowse profile are reset with it (they come back on your next visit to the site); their stored data stays.
+- If the helper still finds an old side panel running, it says so in its log and the next browser start loads the new one; until then join requests are announced by your system's notification and answered in the side panel.
+- Tests: the two-machine test always removes its Docker container, also after Ctrl+C, a kill or an earlier interrupted run.
+
 ## 0.15.16 (2026-10-06)
 
 Join requests answered in the page's bottom bar or the notification, one at a time.

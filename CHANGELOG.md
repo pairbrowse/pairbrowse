@@ -5,6 +5,12 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.18 (2026-10-07)
+
+Shared browser: a joiner's click right after their picture tab reloads is no longer lost.
+
+- After a joiner typed an address in the picture tab and came back, a connection offer asked for before the reload could replace the working direct connection with one that had no picture yet, dropping the joiner's next click (mostly on busy computers). Each picture page now has an id, an offer applies only to the page it was asked for, and stale ones are refused and closed on the host side.
+
 ## 0.15.17 (2026-10-06)
 
 The side panel loads its new version after an update, so join notifications have their Allow and Deny buttons.

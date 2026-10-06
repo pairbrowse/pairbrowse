@@ -246,8 +246,8 @@ export function launchArgs(config = {}, { firstRun = false } = {}) {
   const features = [...FEATURES, ...extra.filter((a) => a.startsWith(ENABLE)).flatMap((a) => a.slice(ENABLE.length).split(","))];
   return [
     "--window-size=1366,900", "--hide-crash-restore-bubble",
-    // Playwright runs Chrome without its sandbox (--no-sandbox); this hides Chrome's
-    // "unsupported command-line flag" bar about it.
+    // Hides Chrome's "unsupported command-line flag" bar (about --no-sandbox where the sandbox is
+    // off, see sandboxDecision in engine.mjs, and the other launch flags).
     "--test-type",
     // Keep rendering when the window is behind other windows, so the live view stays live.
     "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling",

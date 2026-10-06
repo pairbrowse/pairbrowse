@@ -33,7 +33,7 @@ Attackers we defend against:
 - **A mistaken agent**: misreads a page and clicks something final.
 
 Out of scope, said plainly in the "Limits, honestly" part of [security.md](security.md): malware already running
-as the user, a browser exploit (Chromium currently runs without its own sandbox), and attacks no
+as the user, a browser exploit (Chromium's own sandbox contains one, except where it's off: as root on Linux, in containers without user namespaces, or by choice), and attacks no
 software can stop, such as a person the user deliberately let drive their browser.
 
 ## Trust boundaries

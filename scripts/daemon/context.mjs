@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync, rmSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { paths } from "../paths.mjs";
-import { ensureBrowser, launchArgs, prepareProfile, panelExtensionId } from "../browser.mjs";
+import { ensureBrowser, launchArgs, prepareProfile, panelExtensionId, resetPanelWorker } from "../browser.mjs";
 import { engineProfile, launchEngine, validateEngine } from "../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout } from "../native-install.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "../display.mjs";
@@ -229,6 +229,9 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
     // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
     // colors; see prepareProfile in browser.mjs), written before each launch.
     const firstRun = prepareProfile(profile());
+    // A side panel worker from another build (an update): the browser would keep running its
+    // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
+    try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
     forgetTemporaryDownloads();
     if (!screen && needsVirtualDisplay(config)) screen = await startVirtualDisplay(log);
     createSession(session);
@@ -501,7 +504,7 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
   }
 
   return {
-    getContext, current: () => contextPromise, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
+    getContext, current: () => contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
     isRestoring: () => restoring !== null, isSwitching: () => switching,
     currentUrl: () => lastCurrentUrl, setCurrentUrl: (url) => { lastCurrentUrl = url; },
     sessionInfo, sessionCommand, startUp, close,

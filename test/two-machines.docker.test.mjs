@@ -26,13 +26,37 @@ const run = (cmd, args, env = {}) => new Promise((resolve) => {
 const inLinux = (script) => run("docker", ["exec", "-e", "PB_MAIL=/mail", "-e", "PB_RUNTIME=/runtime", "pb-joiner", "node", `/repo/test/two-machines/${script}`]);
 const onMac = (script) => run(process.execPath, [join(repo, "test", "two-machines", script)], { PB_MAIL: mail, PB_RUNTIME: runtime });
 
+// The container never outlives the test: any left by an interrupted run (this one's name, its
+// label, or the name earlier versions used) goes before it starts; it goes after the run, on
+// Ctrl+C or a kill, and, through a watcher outside this process group, whenever this process ends
+// however it ended (the test runner can end it before its own handlers run); failing all that, it
+// stops by itself after two hours and Docker removes it (--rm).
+const LABEL = "pairbrowse-test=two-machines";
+function removeContainers() {
+  let ids = [];
+  try { ids = sh("docker", ["ps", "-aq", "--filter", `label=${LABEL}`], 30_000).split(/\s+/).filter(Boolean); } catch {}
+  for (const name of [...ids, "pb-joiner", "pb-sven"]) try { sh("docker", ["rm", "-f", name], 60_000); } catch {}
+}
+const cleanUp = () => { if (!skip) removeContainers(); rmSync(mail, { recursive: true, force: true }); };
+for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) process.once(signal, () => { cleanUp(); process.exit(code); });
+function watchContainer() {
+  const watcher = `const { execFileSync } = require("node:child_process");
+    const timer = setInterval(() => {
+      try { process.kill(${process.pid}, 0); return; } catch {}
+      clearInterval(timer);
+      try { execFileSync("docker", ["rm", "-f", "pb-joiner"], { stdio: "ignore", timeout: 60000 }); } catch {}
+    }, 1000);`;
+  spawn(process.execPath, ["-e", watcher], { detached: true, stdio: "ignore" }).unref();
+}
+
 before(() => {
   if (skip) return;
-  try { sh("docker", ["rm", "-f", "pb-joiner"]); } catch {}
-  sh("docker", ["run", "-d", "--name", "pb-joiner", "-v", `${runtime}:/runtime:ro`, "-v", `${repo}:/repo:ro`, "-v", `${mail}:/mail`, "-e", "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright", "node:22-bookworm", "sleep", "infinity"]);
+  removeContainers();
+  watchContainer();
+  sh("docker", ["run", "-d", "--rm", "--name", "pb-joiner", "--label", LABEL, "-v", `${runtime}:/runtime:ro`, "-v", `${repo}:/repo:ro`, "-v", `${mail}:/mail`, "-e", "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright", "node:22-bookworm", "sleep", "7200"]);
   sh("docker", ["exec", "pb-joiner", "node", "/runtime/node_modules/playwright-core/cli.js", "install", "--with-deps", "chromium"]);
 });
-after(() => { if (!skip) try { sh("docker", ["rm", "-f", "pb-joiner"]); } catch {} rmSync(mail, { recursive: true, force: true }); });
+after(cleanUp);
 
 function check(out) {
   assert.match(out, /"conn":"connected"[^\n]*"direct":true/, out);

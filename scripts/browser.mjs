@@ -46,6 +46,43 @@ export function panelExtensionId(dir = PANEL_DIR) {
   return panelIds.get(dir);
 }
 
+// The side panel worker's build. Chromium keeps an extension's service worker script in the
+// profile (its "Service Worker" folder) and goes on running that copy after the file on disk
+// changed (an update), whatever the manifest's version or path; neither chrome.runtime.reload
+// (it leaves a command-line extension disabled) nor the browser's own update calls replace it.
+// So the worker reports the build it was made from (PB_BUILD in background.js; the helper checks
+// it, daemon/panel.mjs), and before a launch whose build differs from the profile's last one the
+// stored worker registrations go (resetPanelWorker). The value is a hash of background.js with
+// the value itself blanked (test/browser.test.mjs keeps it true).
+const BUILD_LINE = /(const PB_BUILD = ")([0-9a-f]*)(";)/;
+export const panelBuildOf = (source) => createHash("sha256").update(String(source).replace(BUILD_LINE, "$1$3")).digest("hex").slice(0, 16);
+// The build the file on disk declares (null: none, an earlier version's file).
+export const panelBuild = (dir = PANEL_DIR) => {
+  try { return readFileSync(join(dir, "background.js"), "utf8").match(BUILD_LINE)?.[2] || null; } catch { return null; }
+};
+const PANEL_BUILD_FILE = "PairBrowse panel build"; // in the profile folder: the build it last ran
+// Whether a profile's stored worker must go: it has stored workers (stored) and its last build
+// (recorded: null if none, as in profiles from before builds were recorded) isn't this one.
+export const panelWorkerStale = ({ recorded, build, stored }) => !!stored && !!build && recorded !== build;
+// Before a launch (the browser not running in this profile): drops the stored service worker
+// registrations if the side panel's build changed, so the browser registers its worker from disk.
+// Sites' registrations go too (they register again on the next visit); their caches stay
+// (CacheStorage). Returns true if it dropped them.
+export function resetPanelWorker(profile, build = panelBuild()) {
+  const marker = join(profile, PANEL_BUILD_FILE);
+  const workers = join(profile, "Default", "Service Worker");
+  let recorded = null;
+  try { recorded = readFileSync(marker, "utf8").trim(); } catch {}
+  if (!build || recorded === build) return false;
+  const stale = panelWorkerStale({ recorded, build, stored: existsSync(join(workers, "Database")) || existsSync(join(workers, "ScriptCache")) });
+  if (stale) for (const part of ["Database", "ScriptCache"]) rmSync(join(workers, part), { recursive: true, force: true });
+  mkdirSync(profile, { recursive: true });
+  writeFileSync(marker, build);
+  return stale;
+}
+// The running worker turned out old (daemon/panel.mjs): the next launch drops it.
+export const forgetPanelBuild = (profile) => rmSync(join(profile, PANEL_BUILD_FILE), { force: true });
+
 // Earlier versions' side panel had no key, so its ID came from its folder path.
 const pathPanelId = (dir = PANEL_DIR) => idFrom(dir);
 // (Any copy of PairBrowse: Chromium records an unpacked extension's folder as its path.)

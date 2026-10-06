@@ -1,6 +1,12 @@
 // The PairBrowse side panel opens from its pinned toolbar button, or with Cmd+Shift+Y
 // (Ctrl+Shift+Y elsewhere), which opens the panel itself rather than going through the button.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+// The build this worker was made from. The browser can keep running an old cached copy of this
+// file after an update; the helper compares this with the file on disk and reloads the extension
+// when they differ (daemon/panel.mjs). A hash of this file with the value blanked (browser.mjs
+// panelBuildOf).
+const PB_BUILD = "6857c228c9660448";
+globalThis.pbBuild = PB_BUILD;
 // In a new profile on macOS the browser starts without a window (--no-startup-window, see
 // browserArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
 // the user closed every window brings none back.

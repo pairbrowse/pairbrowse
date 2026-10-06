@@ -236,3 +236,51 @@ test("a new profile starts without a window on macOS, so the side panel opens th
   const background = readFileSync(new URL("../scripts/browser/panel/background.js", import.meta.url), "utf8");
   assert.match(background, /windows\.getAll\(\)\)\.length\) await chrome\.windows\.create\(\{ url: "about:blank" \}\)/);
 });
+
+test("the side panel worker declares the build it's made from: a hash of its file with the value blanked", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { PANEL_DIR, panelBuild, panelBuildOf } = await import("../scripts/browser.mjs");
+  const source = readFileSync(join(PANEL_DIR, "background.js"), "utf8");
+  assert.equal(panelBuild(), panelBuildOf(source), `background.js changed: set its PB_BUILD to "${panelBuildOf(source)}"`);
+  assert.notEqual(panelBuildOf(source.replace("pbNotifyJoin", "pbNotifyJoin2")), panelBuild(), "any change gives another build");
+  assert.equal(panelBuild("/nonexistent"), null);
+});
+
+test("an old side panel worker: what the helper makes of the build the running worker reports", async () => {
+  const { workerFreshness } = await import("../scripts/daemon/panel.mjs");
+  assert.equal(workerFreshness({ running: "abc", expected: "abc" }), "current");
+  assert.equal(workerFreshness({ running: null, expected: "abc" }), "stale", "an earlier version's worker reports none");
+  assert.equal(workerFreshness({ running: "old", expected: "abc" }), "stale");
+  assert.equal(workerFreshness({ running: undefined, expected: "abc" }), "unknown", "no answer: asked again later");
+  assert.equal(workerFreshness({ running: null, expected: null }), "current", "nothing on disk to compare with");
+});
+
+test("before a launch, a profile's stored workers go when the side panel's build changed, once", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const { panelWorkerStale, resetPanelWorker, forgetPanelBuild } = await import("../scripts/browser.mjs");
+  assert.equal(panelWorkerStale({ recorded: null, build: "b", stored: true }), true, "a profile from before builds were recorded");
+  assert.equal(panelWorkerStale({ recorded: "a", build: "b", stored: true }), true);
+  assert.equal(panelWorkerStale({ recorded: "b", build: "b", stored: true }), false);
+  assert.equal(panelWorkerStale({ recorded: null, build: "b", stored: false }), false, "a new profile has none");
+  assert.equal(panelWorkerStale({ recorded: "a", build: null, stored: true }), false);
+  const profile = mkdtempSync(join(tmpdir(), "pb-sw-"));
+  try {
+    const workers = join(profile, "Default", "Service Worker");
+    const make = () => { for (const part of ["Database", "ScriptCache", "CacheStorage"]) { mkdirSync(join(workers, part), { recursive: true }); writeFileSync(join(workers, part, "x"), "1"); } };
+    make();
+    assert.equal(resetPanelWorker(profile, "b1"), true);
+    assert.equal(existsSync(join(workers, "Database")), false);
+    assert.equal(existsSync(join(workers, "ScriptCache")), false);
+    assert.equal(existsSync(join(workers, "CacheStorage", "x")), true, "sites' caches stay");
+    make();
+    assert.equal(resetPanelWorker(profile, "b1"), false, "the same build: nothing goes");
+    assert.equal(existsSync(join(workers, "Database")), true);
+    assert.equal(resetPanelWorker(profile, "b2"), true, "an update");
+    make();
+    forgetPanelBuild(profile); // the running worker turned out old
+    assert.equal(resetPanelWorker(profile, "b2"), true);
+  } finally { rmSync(profile, { recursive: true, force: true }); }
+});

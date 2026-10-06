@@ -150,3 +150,48 @@ test("a person from the other browser shows as a dot on the tab's icon, in the c
   hud.setPersonMark(page, "not a color");
   assert.equal(hud.tabIcon(page), "");
 });
+
+test("the agent cursor moves like a hand, lands exactly on the target and rings once there", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("playwright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
+    // Test only: open shadow roots, so the test can read where the cursor is drawn each frame.
+    await page.addInitScript(() => {
+      const real = Element.prototype.attachShadow;
+      Element.prototype.attachShadow = function (o) { return real.call(this, { ...o, mode: "open" }); };
+      window.trail = [];
+      const loop = () => {
+        for (const el of document.documentElement?.children || []) {
+          const c = el.shadowRoot?.querySelector(".c");
+          const m = c && /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(c.style.transform);
+          if (m) window.trail.push({ t: performance.now(), x: +m[1], y: +m[2], click: c.classList.contains("click") });
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    });
+    await page.addInitScript({ content: hud.source });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<p>Page</p>" }));
+    await page.goto("http://pairbrowse.test/");
+    const point = (c) => page.evaluate(([n, t, v]) => window[n](t, v, "cursor"), [hud.name, hud.token, JSON.stringify(c)]);
+    await point({ x: 100, y: 500 });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => { window.trail = []; });
+    await point({ x: 850, y: 140, act: "click", w: 20 });
+    await page.waitForTimeout(800);
+    const trail = await page.evaluate(() => window.trail);
+    const moving = trail.filter((p) => !(p.x === 850 && p.y === 140));
+    assert.ok(moving.length >= 5, `it moves over several frames (${moving.length})`);
+    assert.ok(moving.some((p) => p.x > 300 && p.x < 650), "passes through the middle");
+    const end = trail.at(-1);
+    assert.deepEqual([end.x, end.y, end.click], [850, 140, true], "lands exactly and rings");
+    const firstRing = trail.findIndex((p) => p.click);
+    assert.ok(trail.slice(firstRing).every((p) => p.x === 850 && p.y === 140), "rings only once there");
+    const took = trail[firstRing].t - trail[0].t;
+    assert.ok(took > 100 && took < 700, `takes a moment, not long (${took.toFixed(0)} ms)`);
+  } finally {
+    await browser.close();
+  }
+});

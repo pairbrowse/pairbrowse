@@ -5,6 +5,13 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.24 (2026-10-07)
+
+0.15.23 with its form-filling change corrected (its release check failed on it).
+
+- A fast-mode form fill waits while a person uses the tab, then goes on, leaving the fields they filled alone; 0.15.23 stopped the run instead. Drawing strokes still stop at once.
+- An agent's own typing is never taken for a person's (0.15.23 could, on a busy computer).
+
 ## 0.15.23 (2026-10-07)
 
 People always come first, also mid-action; two agents on two computers can build on one board together; sharing survives restarts and dropped links.

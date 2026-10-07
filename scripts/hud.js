@@ -259,6 +259,27 @@
     head.appendChild(sparkLink);
   }
 
+  // The name of the agent at work in this tab, in front of the tab's title ("Claude (Mac) · Inbox"),
+  // so the tab strip says who works where. The page's own title stays underneath: when the page
+  // changes it, the name goes back in front; when the agent leaves, the title is the page's again.
+  let tabName = "", titleWatch = null;
+  const namePrefix = (n) => `${n} · `;
+  const titleOnly = () => (tabName && document.title.startsWith(namePrefix(tabName)) ? document.title.slice(namePrefix(tabName).length) : document.title);
+  function keepName() {
+    if (tabName && !document.title.startsWith(namePrefix(tabName))) document.title = namePrefix(tabName) + document.title;
+  }
+  function setTabName(name) {
+    name = String(name || "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 32);
+    if (name === tabName) return keepName();
+    const own = titleOnly();
+    tabName = name;
+    document.title = name ? namePrefix(name) + own : own;
+    if (name && !titleWatch) {
+      titleWatch = new MutationObserver(keepName);
+      titleWatch.observe(document.head || document.documentElement, { subtree: true, childList: true, characterData: true });
+    } else if (!name && titleWatch) { titleWatch.disconnect(); titleWatch = null; }
+  }
+
   // The bottom bar: who's driving and Claude's last actions, like the PairBrowse live view's.
   // It takes no clicks but its "Pause agents" button's, and fades out while the pointer is near
   // the bottom of the page (not near the button).
@@ -709,6 +730,10 @@
     if (kind === "join-off") return joinOff(String(text || ""));
     if (kind === "join-state") return joinState();
     if (kind === "join-answers") { const a = answered, g = gone, d = dismissed; answered = null; answeredCount = 0; gone = ""; dismissed = ""; return { a, open: joins.size, ids: [...joins.keys()].join(","), gone: g, dismissed: d }; }
+    if (kind === "tab-name") {
+      setTabName(text);
+      return true;
+    }
     if (kind === "spark") {
       spark(String(text || ""));
       return true;

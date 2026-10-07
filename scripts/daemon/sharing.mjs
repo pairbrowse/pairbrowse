@@ -1,5 +1,6 @@
 // The live view and letting other people in: invite links, join codes through the sharing tunnel
 // (joiners get the shared tabs, tabsync.mjs), and the host's approvals.
+import { ownTitle } from "./tablabels.mjs";
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
 import { createApprovals, encodeJoinCode, cleanName } from "../join.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
@@ -308,7 +309,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     try {
       for (const p of (await view.getContext()).pages()) {
         const d = devAddress(p.url());
-        if (d && !shared.some((x) => x.port === d.port) && !open.has(d.port)) open.set(d.port, { port: d.port, title: (await p.title().catch(() => "")).slice(0, 80) });
+        if (d && !shared.some((x) => x.port === d.port) && !open.has(d.port)) open.set(d.port, { port: d.port, title: (await ownTitle(p)).slice(0, 80) });
       }
     } catch {}
     return {

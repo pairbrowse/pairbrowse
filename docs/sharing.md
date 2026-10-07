@@ -228,8 +228,9 @@ codes only with people you trust, and revoke them when you're done.
 ## Share one browser with another Claude Code session
 
 Each person uses their own Claude Code account and conversation. Connections to the same
-Pairbrowse daemon share its browser tabs, logins and remembered details. Individual tool calls
-run one at a time, and agents take turns **per tab**: the agent that acts in a tab holds it
+Pairbrowse daemon share its browser tabs, logins and remembered details. Agents in different
+tabs act at the same time; calls in one tab run one at a time, and browser-wide calls (opening a
+tab, switching the session) wait for all. Agents take turns **per tab**: the agent that acts in a tab holds it
 (renewed with each action, released after two idle minutes, on release, disconnect or when the
 tab closes). Another agent's action in that tab is refused with who holds it ("tab 1 is in use
 by Alice · Codex"), so it opens or selects another tab; agents in different tabs carry on. That

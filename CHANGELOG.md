@@ -5,6 +5,12 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.26 (2026-10-08)
+
+- Agents in different tabs act at the same time: two agents drawing in two tabs no longer wait for each other. Actions in one tab still take turns, and browser-wide actions (opening a tab, switching the session) wait for all.
+- The tab strip says who works where: the agent's name goes in front of its tab's title ("Claude (Mac) · Inbox") while it works there. Agents, saved sessions, the live view and joiners still get the page's own title.
+- Recordings: the strip above the video no longer names the agent twice.
+
 ## 0.15.25 (2026-10-08)
 
 - Record the browser: the side panel's Record button, or `pairbrowse_record` for agents. The video (60 fps, the browser's own tab capture, no screen permission) follows the tab in front, or with `follow: "agents"` the tabs agents work in, under a strip naming each tab and its agent. Saved in Downloads.

@@ -39,3 +39,24 @@ test("explicit lease can renew, and another peer cannot release it", () => {
   assert.throws(() => c.release("b"), /Alice/);
   c.release("a"); assert.equal(c.state().owner, null);
 });
+
+test("tasks in different tabs run at the same time; one tab takes turns; a browser-wide task waits for all", async () => {
+  const c = new BrowserCoordinator();
+  c.register("a", "A");
+  c.register("b", "B");
+  const log = [];
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const task = (name, ms) => async () => { log.push(`${name}+`); await sleep(ms); log.push(`${name}-`); };
+  const tab1 = {}, tab2 = {};
+  const started = Date.now();
+  await Promise.all([c.run("a", task("a1", 100), tab1), c.run("b", task("b2", 100), tab2)]);
+  assert.ok(Date.now() - started < 180, `two tabs at once (${Date.now() - started} ms)`);
+  assert.deepEqual(log.slice(0, 2).sort(), ["a1+", "b2+"]);
+  log.length = 0;
+  await Promise.all([c.run("a", task("x", 40), tab1), c.run("b", task("y", 40), tab1)]);
+  assert.deepEqual(log, ["x+", "x-", "y+", "y-"], "one tab: in turn");
+  log.length = 0;
+  await Promise.all([c.run("a", task("t1", 60), tab1), c.run("b", task("all", 20)), c.run("a", task("t2", 20), tab2)]);
+  assert.deepEqual(log, ["t1+", "t1-", "all+", "all-", "t2+", "t2-"], "the browser-wide task waits for the tab before it, and the tab after waits for it");
+  assert.equal(c.isActing("a"), false);
+});

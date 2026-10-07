@@ -105,10 +105,14 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (prev?.page === page) return;
     if (page) sparks.set(participant, { page, color: sparkColor(participant) });
     else sparks.delete(participant);
+    sparksChanged();
     if (prev?.page && !prev.page.isClosed()) await applySpark(prev.page, tabIcon(prev.page));
     if (page) await applySpark(page, tabIcon(page));
   }
   const sparkPage = (participant) => sparks.get(participant)?.page;
+  // Someone wants to know when an agent's spark moved (the tab labels: daemon/tablabels.mjs).
+  const sparkListeners = new Set();
+  function sparksChanged() { for (const fn of sparkListeners) try { fn(); } catch {} }
   // The agent is done in a tab: its cursor there goes at once instead of after a while.
   const hideCursor = (page) => (page && !page.isClosed() ? quietly(page, "", "cursor-off") : Promise.resolve());
   // Every agent's spark: [{ id, page, color }].
@@ -173,7 +177,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
     source, call, ensure, onPageLoad, applyBar, setBadge, badge: () => badge,
-    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, sparkColor, clearSparks: () => sparks.clear(), setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
+    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor,
   };
 }

@@ -179,7 +179,7 @@ export function pathsIn(name, args = {}) {
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, testTools = {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, testTools = {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // When each session last called a tool: only the ones in use hold up a session switch or closing
   // the browser. An open but idle session (a Claude Code window left for hours) doesn't.
@@ -351,7 +351,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const text = notes();
         if (text && msg.result) (msg.result.content ||= []).push({ type: "text", text });
       }
-      for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = output.mask(part.text); if (remote) part.text = forJoiner(part.text); }
+      for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(part.text)); if (remote) part.text = forJoiner(part.text); }
       if (tool === "browser_snapshot") for (const part of content()) if (part.type === "text") part.text = output.capSnapshot(part.text);
       if (tool !== undefined && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && !msg.result.isError) {
         const shot = await screenshots.take(ownPage || await context.pageAt(shotUrl || context.currentUrl()), participant);
@@ -846,7 +846,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           actingIn = page;
           try { await dispatch(); } finally { actingIn = null; }
           return { done: true };
-        });
+        }, page); // its tab's lane: agents in other tabs go on at the same time
         if (r.done) return;
         if (r.waitMs) await sleep(r.waitMs);
         if (round > TURN_ROUNDS) { reply(id, "The tab stayed busy. Retry in a moment.", true); return; }
@@ -1019,7 +1019,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // If a disconnected client leaves an unresponsive action, reset the browser before
       // permitting another agent to run; releasing the queue early could overlap actions.
       const watchdog = setTimeout(async () => {
-        if (collaboration.state().active?.id !== participant) return;
+        if (!collaboration.isActing(participant)) return;
         log("resetting browser after disconnected participant stalled");
         try { await (await context.current())?.close(); } catch {}
         for (const id of completed.keys()) finish(id);

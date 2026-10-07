@@ -97,7 +97,10 @@ function strip() {
     }
     ctx.font = `${12.5 * scale}px system-ui, sans-serif`;
     ctx.fillStyle = front ? "#f1f1f3" : "#a8a8ad";
-    if (room > tx) ctx.fillText(fit(ctx, String(t.title || "New tab"), room - tx), tx, h / 2 + 3 * scale);
+    // The page title without the agent's name in front (daemon/tablabels.mjs): it's named already.
+    const title = String(t.title || "New tab");
+    const own = label?.prefix && title.startsWith(label.prefix) ? title.slice(label.prefix.length) : title;
+    if (room > tx) ctx.fillText(fit(ctx, own, room - tx), tx, h / 2 + 3 * scale);
   });
 }
 

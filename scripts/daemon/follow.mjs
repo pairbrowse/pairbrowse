@@ -92,6 +92,17 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     try { return (await cdp.send("Browser.getWindowForTarget")).windowId; } finally { cdp.detach().catch(() => {}); }
   };
 
+  // The shared window in front once this browser's own saved tabs are back (joining from the
+  // session picker or by an agent reopens them, in the other window): they must not cover the
+  // session the person just joined. On macOS the browser itself isn't pulled over the app in use.
+  function frontOnceRestored(page) {
+    (async () => {
+      for (let i = 0; i < 300 && context.isRestoring?.(); i++) await sleep(100);
+      await sleep(300);
+      if (!page.isClosed()) await keepFocus(() => page.bringToFront()).catch(() => {});
+    })().catch(() => {});
+  }
+
   // A new tab at url: the first one in a new window, the next ones next to it (the browser puts
   // a new tab in the window used last). Found by its target id, so another tab opening at the
   // same moment (an agent's) is never taken for it.
@@ -108,7 +119,10 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       while (Date.now() < until) {
         for (const p of ctx.pages()) {
           if (before.has(p) || p.isClosed() || (await pageId(ctx, p).catch(() => "")) !== targetId) continue;
-          if (!s.window) s.windowId = await windowOf(ctx, p).catch(() => null); // the shared window
+          if (!s.window) {
+            s.windowId = await windowOf(ctx, p).catch(() => null); // the shared window
+            frontOnceRestored(p);
+          }
           s.window = true;
           return p;
         }

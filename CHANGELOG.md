@@ -5,6 +5,11 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.27 (2026-10-08)
+
+- Joining a shared session shows it: the shared window comes to the front once this browser's own saved tabs are back, instead of staying hidden behind them.
+- A joiner sees the host's agent's pointer for as long as the host sees its cursor (while it works), and it goes when the agent is done.
+
 ## 0.15.26 (2026-10-08)
 
 - Agents in different tabs act at the same time: two agents drawing in two tabs no longer wait for each other. Actions in one tab still take turns, and browser-wide actions (opening a tab, switching the session) wait for all.

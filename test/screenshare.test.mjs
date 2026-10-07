@@ -2,7 +2,7 @@
 // joiner's agent may name, and whose a field is after a joiner typed in it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { frameFor, readInput } from "../scripts/daemon/screenshare.mjs";
+import { frameFor, readInput, createScreenShare } from "../scripts/daemon/screenshare.mjs";
 import { pathsIn, withPaths } from "../scripts/daemon/serve.mjs";
 import { fieldOwner } from "../scripts/daemon/fields.mjs";
 import { preflight } from "../scripts/runner.mjs";
@@ -48,4 +48,20 @@ test("fast mode's drag: 2 to 200 points inside the page, and it has to move", ()
   assert.match(preflight([{ drag: [[0.4, 0.4]] }]), /2 to 200 points/);
   assert.match(preflight([{ drag: [[0.4, 0.4], [1.2, 0.5]] }]), /fractions 0-1/);
   assert.match(preflight([{ drag: [[0.4, 0.4], [0.401, 0.4]] }]), /has to move/);
+});
+
+test("the slower route lets go of a tab that closed: nothing reopens on it, nothing is kept", async () => {
+  let sessions = 0, onClose = () => {};
+  const sent = [];
+  const cdp = { send: async (m) => { sent.push(m); return {}; }, on() {}, off() {}, detach: async () => {} };
+  const page = { isClosed: () => false, once: (e, cb) => { if (e === "close") onClose = cb; }, context: () => ({ newCDPSession: async () => { sessions++; return cdp; } }), evaluate: async () => [800, 600, 1, 0, 0] };
+  const share = createScreenShare({ call: async () => null });
+  await share.frames(page, "joiner-a", () => {});
+  assert.equal(sessions, 1);
+  page.isClosed = () => true;
+  onClose();
+  await share.frames(page, "joiner-a", null); // the joiner's "frames off" after the tab closed
+  await share.stopAll("joiner-a|");
+  assert.equal(sessions, 1, "no new session on a closed tab");
+  await share.close();
 });

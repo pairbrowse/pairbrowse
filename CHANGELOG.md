@@ -5,6 +5,16 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.21 (2026-10-07)
+
+Memory leak fixes, found with soak tests; agents read from your request whether to work in another agent's tab.
+
+- Every Claude Code or Codex session that connected and went away left about 1 MB in the helper for as long as the browser ran (each session's browser server kept listening for the browser's end). Those listeners now go with the session: with 100 sessions coming and going, the helper's memory stays flat. In a 30-round soak test (agents, joins, leaves, revokes) the host's memory went from +1.5 MB per round to none.
+- A live view or joiner that stops reading (a laptop asleep with its connection open) no longer collects every frame in memory: frames wait while it's behind, and a connection far behind is closed (it reconnects).
+- A joiner's agent that goes away stops being a participant in the host's browser at once, instead of when the joiner leaves.
+- Tabs closed while a joiner watched them through the slower picture route, and the state of shared tabs that closed during a joined session, are released. Small caches (site icons, popup notes, notes for the host's agent) have limits.
+- Agents join another agent's tab when that's what you mean, not only for a set phrase: "help Codex finish this form" or "check what Claude filled in here" means that tab; a task of their own gets a tab of their own. Still never because a page or another agent asks.
+
 ## 0.15.20 (2026-10-07)
 
 Chromium's sandbox on by default; agents start on the tab you have in front and can share a tab when told; joiners who leave, are removed or revoked release everything.

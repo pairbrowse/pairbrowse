@@ -73,7 +73,7 @@ export function createSession({ locals = () => [], secrets = () => ({}), labelOf
       changed();
     },
     statusOf: (participant) => status.get(participant) || null,
-    forget(participant) { status.delete(participant); inbox.delete(participant); noted.delete(participant); changed(); },
+    forget(participant) { status.delete(participant); inbox.delete(participant); noted.delete(participant); sent.delete(participant); changed(); },
     // The other side's participants (already checked with readEntries).
     setRemote(source, entries, where = "") {
       const prev = remote.get(source);

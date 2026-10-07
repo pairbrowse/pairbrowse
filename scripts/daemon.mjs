@@ -74,7 +74,7 @@ let socketServer = null; // closed first on shutdown
 let revision = 0; // goes up whenever a page may have changed under an agent's refs
 const bumpRevision = () => ++revision;
 const hostNotes = []; // for the host's agent's next result: downloads, join requests, a session that ended
-const hostNote = (text) => hostNotes.push(text);
+const hostNote = (text) => { hostNotes.push(text); if (hostNotes.length > 50) hostNotes.shift(); }; // kept while no host agent reads them
 const clients = new Map(); // participant -> socket
 
 // The parts below reach each other through these (each is called only once all exist).
@@ -358,6 +358,7 @@ setInterval(() => {
 hud.onActivity((text, who, page, from) => {
   if (from || !who || !text) return;
   const quiet = page && !page.isClosed() && (!shareableUrl(page.url()) || onSecretDomain(page.url(), secretDomains()));
+  if (!lastActions.has(who) && lastActions.size >= 200) lastActions.delete(lastActions.keys().next().value); // the longest-known name goes
   lastActions.set(who, quiet ? "" : crossingText(text, secrets.get().values || {}).slice(0, 140));
   sessionChanged();
 });
@@ -384,6 +385,12 @@ const serve = createServe({
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {
+    // Tests only (PAIRBROWSE_TEST_MEMORY=1): how many listeners the browser has for its own end,
+    // which grows with every session that came and went if their servers' listeners are kept.
+    ...(process.env.PAIRBROWSE_TEST_MEMORY === "1" ? { pairbrowse_test_memory: async () => {
+      const ctx = await context.current();
+      return { text: JSON.stringify({ close: ctx?.listenerCount("close") ?? -1, disconnected: ctx?.browser?.()?.listenerCount("disconnected") ?? -1 }) };
+    } } : {}),
     ...(process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
     // Tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): the join request in each tab's bottom bar, and
     // clicks on it as a person would (a trusted click), as an agent's or a joiner's input would,

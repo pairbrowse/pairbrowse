@@ -186,6 +186,31 @@ export function createServe({ config, log, host, createConnection, clients, coll
   const lastCall = new Map();
   const ACTIVE_MS = 10 * 60_000;
 
+  // Each session's browser server (Playwright MCP) listens for the browser closing (once "close"
+  // on the context, once "disconnected" on its browser) and never stops listening, so every session that came and went would stay in
+  // memory with the browser (about 1 MB each). The browser is handed to one session's server at
+  // a time; the listener its server adds right then is noted, and removed when the session ends.
+  let handing = Promise.resolve();
+  const ENDS = [["close", (ctx) => ctx], ["disconnected", (ctx) => ctx.browser?.()]];
+  const listenersOn = (emitter, event) => (emitter?.rawListeners?.(event) || []).map((w) => w.listener || w);
+  const contextFor = (noted) => async () => {
+    const ctx = await context.getContext();
+    const before = handing;
+    let done;
+    handing = new Promise((r) => { done = r; });
+    await before;
+    const had = ENDS.map(([event, of]) => new Set(listenersOn(of(ctx), event)));
+    // The server builds its backend as soon as this returns, before anything else runs.
+    setImmediate(() => {
+      ENDS.forEach(([event, of], i) => {
+        const emitter = of(ctx);
+        for (const fn of listenersOn(emitter, event)) if (!had[i].has(fn) && fn.name === "markDisconnected") noted.push({ emitter, event, fn });
+      });
+      done();
+    });
+    return ctx;
+  };
+
   return async function serve(sock, { remote = null } = {}) {
     const participant = randomBytes(8).toString("hex");
     let initialized = false;
@@ -208,6 +233,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       tabClaims.release(participant);
       screenshots.forget(participant);
       follow.ownerGone(participant);
+      follow.agentGone?.(participant);
     });
     collaboration.register(participant, `Claude ${participant.slice(0, 4)}`);
     let actingIn = null; // the tab this participant's current call acts in
@@ -230,12 +256,13 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const fieldNotes = []; // fields left to the people filling them, for the next result
     let recorded = false; // in the session's list of who used it
 
+    const serverListeners = []; // its browser server's listeners on the browser (contextFor)
     const mcpServer = await createConnection({
       browser: { isolated: false },
       webmcp: false, // passwords are swapped in and masked by PairBrowse itself (see handle and finishResult)
       outputDir: paths.files,
       imageResponses: "omit", // the helper adds its own small screenshots, checked for passwords first
-    }, context.getContext);
+    }, contextFor(serverListeners));
 
     const toClient = (msg) => !sock.destroyed && sock.write(JSON.stringify(msg) + "\n");
     const pending = new Map(); // the helper's own calls to the server, by id
@@ -779,7 +806,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           if (page && page.isClosed()) return { again: true };
           if (presence.actingIn(page)) return { again: true };
           // Numbered as browser_tabs select takes it.
-          const busy = (label) => reply(id, `Tab ${page.context().pages().indexOf(page)} is in use by ${label}. Open or select another tab (browser_tabs), or wait and retry. Only if the user told you to work there together: pairbrowse_collaboration share.`, true);
+          const busy = (label) => reply(id, `Tab ${page.context().pages().indexOf(page)} is in use by ${label}. Open or select another tab (browser_tabs), or wait and retry. If your user means you to work in this tab with ${label} (said or clear from their request, such as helping with or checking its work here), join it: pairbrowse_collaboration share.`, true);
           // A joiner's agent yields to the host's agent that already holds the tab here (a tie
           // when both started at once); else the other computer's agent goes first.
           const remote = page && remoteHolder(page);
@@ -972,7 +999,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
         clearTimeout(watchdog);
         transport.onclose?.();
         return mcpServer.close();
-      }).catch((e) => log("participant cleanup", e?.message || e));
+      }).catch((e) => log("participant cleanup", e?.message || e)).finally(() => {
+        for (const { emitter, event, fn } of serverListeners.splice(0)) emitter.removeListener(event, fn);
+      });
       hud.moveSpark(participant, null).catch(() => {});
       log(`participant disconnected ${participant}`);
     });

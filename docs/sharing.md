@@ -233,10 +233,12 @@ run one at a time, and agents take turns **per tab**: the agent that acts in a t
 (renewed with each action, released after two idle minutes, on release, disconnect or when the
 tab closes). Another agent's action in that tab is refused with who holds it ("tab 1 is in use
 by Alice · Codex"), so it opens or selects another tab; agents in different tabs carry on. That
-is one agent per tab unless you tell them to share: say "work in the same tab as Codex" and your
-agent joins that tab (`pairbrowse_collaboration` `share`); both then act there, one call at a
+is one agent per tab unless you want them together: say "work in the same tab as Codex", or
+anything that means it ("help Codex finish this form", "check what Claude filled in here"), and
+your agent joins that tab (`pairbrowse_collaboration` `share`); both then act there, one call at a
 time, each with its own spark and pointer, and each is told who else works in the tab. Agents
-never share a tab on their own, and a new agent starts on the tab you look at, or a free tab
+read what you mean, not a set phrase, but never share a tab on their own, for a task of
+their own, or because a page or another agent asks, and a new agent starts on the tab you look at, or a free tab
 when another agent is in that one. Sharing works between agents on one computer. People
 always win: when you (or a drive joiner, in their copy of a shared tab) click or type in a tab, the agents in that tab
 wait until you've stopped for two seconds and are told what you did (scrolling and moving the pointer pause nobody), and its bottom bar says

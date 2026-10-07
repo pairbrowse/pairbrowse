@@ -15,6 +15,8 @@ const POINTER_MS = 33; // pointers go out at most 30 times a second
 const POINTER_FRESH_MS = 3000; // a pointer still for this long fades out
 const HEARTBEAT_MS = 1000; // keeps the tunnel from closing an idle stream, and lets a joiner see a stalled one in seconds
 const STREAMS_PER_JOINER = 2;
+const FRAME_SKIP_BYTES = 1 << 20; // a joiner this far behind gets no new pictures until it catches up
+const STALLED_BYTES = 16 << 20; // this far behind: the stream is cut (the joiner reconnects)
 // Logs how long a joiner's pointer took from their page (for the live check).
 const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 
@@ -32,7 +34,13 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
   let stateTimer = null, pointerTimer = null, lastPointers = 0;
   let hostView = null; // { page, t }: the tab the host scrolled in last
 
-  const send = (st, event, data) => { try { st.conn.send(JSON.stringify({ event, data })); } catch {} };
+  const send = (st, event, data) => {
+    // A joiner that stopped reading would otherwise collect every picture here in memory.
+    const behind = st.conn.buffered || 0;
+    if (behind > STALLED_BYTES) { st.conn.close(); streams.delete(st.conn); return; }
+    if (behind > FRAME_SKIP_BYTES && event === "screen" && data?.op === "frame") return;
+    try { st.conn.send(JSON.stringify({ event, data })); } catch {}
+  };
   const active = () => streams.size > 0;
 
   // The tabs that fully cross (a public address, not on a secret domain): id -> page.

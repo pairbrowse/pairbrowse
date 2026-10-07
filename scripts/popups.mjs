@@ -182,6 +182,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     if (found?.unresolved) {
       const key = `${frame.page().url()} ${found.text}`;
       if (!described.has(key)) {
+        if (described.size >= 500) described.clear(); // kept small: at worst one is described again
         described.add(key);
         note(`Something covers the page: "${found.text}" (buttons: ${found.buttons.map((b) => `"${b}"`).join(", ")}). ` +
           `If it's a cookie or consent banner, click the button that ${cookieChoice === "reject" ? "accepts only necessary cookies" : "accepts"}; otherwise close it if it's in the way. Never a subscribe, pay or sign-up button.`);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRemoteAgents } from "../scripts/daemon/remote-agents.mjs";
+import { createRemoteAgents, AGENT_GONE } from "../scripts/daemon/remote-agents.mjs";
 
 const init = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
 
@@ -23,5 +23,20 @@ test("remote agents: a joiner who leaves never hands their connection (participa
   // The old one's close must not drop the new one from its slot.
   agents.line(who, "a1", JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }), () => {});
   assert.equal(served.length, 2, "the newer connection kept its place");
+  agents.stop(who.key);
+});
+
+test("remote agents: an agent that went away on the joiner's side stops being a participant here", async () => {
+  const served = [];
+  const agents = createRemoteAgents({ serve: async (d) => { served.push(d); }, dir: mkdtempSync(join(tmpdir(), "pb-ra-")) });
+  const who = { name: "Dee", key: "inv:dee", app: "claude-code" };
+  agents.line(who, "a1", init, () => {});
+  agents.line(who, "a2", init, () => {});
+  assert.ok(agents.line(who, "a1", JSON.stringify({ jsonrpc: "2.0", method: AGENT_GONE }), () => {}));
+  assert.ok(served[0].destroyed, "the one that went is closed");
+  assert.ok(!served[1].destroyed, "the other agent stays");
+  // Gone for an agent that has no participant here: nothing starts.
+  agents.line(who, "a9", JSON.stringify({ jsonrpc: "2.0", method: AGENT_GONE }), () => {});
+  assert.equal(served.length, 2);
   agents.stop(who.key);
 });

@@ -81,7 +81,7 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     await replayer.attach(cdp);
     s = { cdp, replayer, view: null, viewAt: 0 };
     sessions.set(page, s);
-    page.once("close", () => { sessions.delete(page); for (const [peer, p] of peers) if (p.page === page) stop(peer); });
+    page.once("close", () => { sessions.delete(page); watchers.delete(page); for (const [peer, p] of peers) if (p.page === page) stop(peer); });
     return s;
   }
   // The tab's size in CSS pixels and its scroll (for pointers), read at most once a second.
@@ -130,7 +130,12 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
   async function handle(item) {
     const p = peers.get(String(item?.peer || ""));
     if (!p) return;
-    if (item.state) { try { p.onState?.(item.state); } catch {} return; }
+    if (item.state) {
+      try { p.onState?.(item.state); } catch {}
+      // A connection that failed or closed is gone for good (the extension drops it too).
+      if (item.state === "failed" || item.state === "closed") await stop(String(item.peer));
+      return;
+    }
     if (p.role !== "drive") return; // watching: the picture only
     await replay(p.page, item.ev, p.onInput, p.who, p.onPick);
   }
@@ -174,30 +179,34 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
   // each joiner watching it that way. watchers: page -> Map(key -> onFrame).
   const watchers = new Map();
   async function frames(page, key, onFrame) {
-    const s = await session(page);
     let w = watchers.get(page);
-    if (onFrame) {
-      if (!w) {
-        w = new Map();
-        watchers.set(page, w);
-        s.onFrame = ({ data, sessionId }) => {
-          s.cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
-          for (const fn of (watchers.get(page) || new Map()).values()) { try { fn(data); } catch {} }
-        };
-        s.cdp.on("Page.screencastFrame", s.onFrame);
-        await s.cdp.send("Page.startScreencast", { format: "jpeg", quality: 60, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 });
-      }
-      w.set(key, onFrame);
-      keepViews();
-    } else if (w) {
+    if (!onFrame) {
+      // Stopping never opens a session: the tab may have closed already.
+      if (!w) return;
       w.delete(key);
-      if (!w.size) {
-        watchers.delete(page);
-        await s.cdp.send("Page.stopScreencast").catch(() => {});
-        if (s.onFrame) s.cdp.off("Page.screencastFrame", s.onFrame);
-        s.onFrame = null;
-      }
+      if (w.size) return;
+      watchers.delete(page);
+      const s = sessions.get(page);
+      if (!s) return;
+      await s.cdp.send("Page.stopScreencast").catch(() => {});
+      if (s.onFrame) s.cdp.off("Page.screencastFrame", s.onFrame);
+      s.onFrame = null;
+      return;
     }
+    const s = await session(page);
+    w = watchers.get(page);
+    if (!w) {
+      w = new Map();
+      watchers.set(page, w);
+      s.onFrame = ({ data, sessionId }) => {
+        s.cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+        for (const fn of (watchers.get(page) || new Map()).values()) { try { fn(data); } catch {} }
+      };
+      s.cdp.on("Page.screencastFrame", s.onFrame);
+      await s.cdp.send("Page.startScreencast", { format: "jpeg", quality: 60, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 });
+    }
+    w.set(key, onFrame);
+    keepViews();
   }
   // One key as a person presses it: down (with its text) and up, so pages that listen for keys
   // (games, typing tests, editors, shortcuts) get them.

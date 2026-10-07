@@ -345,9 +345,11 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
     await getContext();
     if (pick.state !== "showing") return pick.state === "done" ? pick.text : "";
     let timer;
-    const aborted = new Promise((r) => signal?.addEventListener("abort", () => r(null), { once: true }));
+    let onAbort;
+    const aborted = new Promise((r) => { onAbort = () => r(null); signal?.addEventListener("abort", onAbort, { once: true }); });
     const r = await Promise.race([pick.done, new Promise((ok) => { timer = setTimeout(() => ok(null), PICK_WAIT_MS); }), aborted]);
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
     return r === null ? { waiting: true } : r;
   }
 

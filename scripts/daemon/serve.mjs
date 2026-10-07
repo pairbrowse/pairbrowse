@@ -611,6 +611,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
           throw new Error(`${who === host ? "The user" : who} used this tab (${presence.didIn(page) || "clicked"}). Take a snapshot, then run the remaining steps.`);
         },
         owner: (el) => ownerOf(el, hud.key, { host, byAgent: presence.typedByAgent, byRemote: presence.byRemote }),
+        // Between two fields: paused agents stop; a person using the tab is waited for.
+        holdForPeople: async () => {
+          const held = pause.view();
+          if (held.paused) throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`);
+          if (presence.actingIn(page)) await presence.waitForUser(page);
+        },
         // Mid-step (a long stroke): a person acting in this tab or pausing agents stops it at once.
         interrupted: () => {
           const held = pause.view();

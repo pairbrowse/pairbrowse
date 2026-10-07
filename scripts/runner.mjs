@@ -351,9 +351,8 @@ async function stepsIn(page, steps, hooks) {
       } else if (kind === "fill") {
         const filled = [];
         for (const [label, raw] of Object.entries(arg)) {
-          // A person took over between two fields: stop before the next one.
-          const why = hooks.interrupted?.();
-          if (why) throw new Error(why);
+          // A person using the tab: wait until they're done, then go on (their fields stay theirs).
+          await hooks.holdForPeople?.();
           const el = await field(page, label);
           if (!el) return fail(`No field "${label}".`);
           if (await theirs(el, label)) continue;

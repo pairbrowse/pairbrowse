@@ -106,8 +106,10 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
   const go = async (call, re, url) => {
     const t = (await tabs(call)).find((x) => re.test(x.url));
     assert.ok(t, `a tab matching ${re}`);
-    assert.ok(!(await tool(call, "browser_tabs", { action: "select", index: t.index })).result.isError);
-    assert.ok(!(await tool(call, "browser_navigate", { url })).result.isError);
+    const selected = await tool(call, "browser_tabs", { action: "select", index: t.index });
+    assert.ok(!selected.result.isError, `select ${t.url}: ${text(selected)}`);
+    const went = await tool(call, "browser_navigate", { url });
+    assert.ok(!went.result.isError, `navigate to ${url}: ${text(went)}`);
   };
   let host, joiner, stage = "start";
   try {
@@ -324,6 +326,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     assert.deepEqual(f["#card"], { f: "top", k: "#card", t: "text", m: 1, filled: true });
     if (!typedPw.result.isError) assert.deepEqual(f["#pw"], { f: "top", k: "#pw", t: "password", m: 1, filled: true });
     const carolAll = seen.raw;
+    { const m = carolAll.match(/hunter2|42424242|4242 4242/); if (m) console.error("DEBUGMATCH", JSON.stringify(carolAll.slice(Math.max(0, m.index - 400), m.index + 200))); }
     assert.doesNotMatch(carolAll, /hunter2|42424242|4242 4242/, "sensitive values never cross"); // (shorter digit runs turn up in times and ids)
     assert.ok(!seen.forms.has(seen.tabs.tabs.find((t) => /shop\.pbtest/.test(t.url)).id), "secret-domain tabs: no values");
     assert.equal((await carol("tabs", { ops: [] })).status, 403, "a watcher sends nothing");

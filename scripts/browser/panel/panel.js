@@ -14,6 +14,30 @@ let paused = false;
 $("switch-btn").addEventListener("click", () => {
   if (base) fetch(base + "picker", { method: "POST" }).catch(() => {});
 });
+// Record: the browser as a video (the helper saves it in Downloads and says where).
+let recording = null; // { since } while recording
+let recordTimer = 0;
+function drawRecord() {
+  const btn = $("record-btn");
+  btn.textContent = recording ? "Stop recording" : "Record";
+  document.body.dataset.recording = String(!!recording);
+  clearInterval(recordTimer);
+  if (!recording) return;
+  const tick = () => { const s = Math.round((Date.now() - recording.since) / 1000); $("record-note").hidden = false; $("record-note").textContent = `Recording ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+  tick();
+  recordTimer = setInterval(tick, 1000);
+}
+$("record-btn").addEventListener("click", async () => {
+  if (!base) return;
+  const btn = $("record-btn");
+  btn.disabled = true;
+  if (recording) $("record-note").textContent = "Saving the recording…";
+  try {
+    const r = await fetch(base + "record", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ on: !recording }) }).then((x) => x.json()).catch(() => null);
+    if (r && !r.recording) { recording = null; drawRecord(); $("record-note").hidden = false; $("record-note").textContent = r.path ? `Saved to ${r.path}` : r.text || "Recording stopped."; }
+    else if (r?.recording) { recording = { since: r.since || Date.now() }; drawRecord(); }
+  } finally { btn.disabled = false; }
+});
 $("pause-btn").addEventListener("click", () => {
   if (base) fetch(base + "pause", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ paused: !paused }) }).catch(() => {});
 });
@@ -98,6 +122,11 @@ function connect(url) {
     $("pause-btn").hidden = !p?.can;
     $("pause-btn").textContent = paused ? "Resume" : "Pause agents";
     $("pause-text").replaceChildren(...(paused ? [document.createTextNode("Paused by "), el("b", { textContent: p.by || "someone" })] : [document.createTextNode("Agents can act in the browser")]));
+  });
+  on("record", (r) => {
+    const was = !!recording;
+    recording = r?.recording ? { since: r.since || Date.now() } : null;
+    if (was !== !!recording || recording) drawRecord();
   });
   on("profile", profile.draw);
   on("join", drawJoins);

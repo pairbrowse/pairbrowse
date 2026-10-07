@@ -4,7 +4,7 @@
 // joiner does (pointer, keys) comes back on the same connection and waits here until the helper
 // takes it (it alone decides what to replay, and where). Asked only by the helper, through the
 // extension's worker (background.js).
-const tabs = new Map(); // tabId -> { stream, audio, frame: { w, h }, peers: Set }
+const tabs = new Map(); // tabId -> { stream, audio, frame: { w, h }, peers: Set, rec: recording uses it }
 const peers = new Map(); // peer -> { pc, tabId }
 const inbox = []; // { peer, ev } or { peer, state }, until the helper takes them
 let wake = null;
@@ -45,6 +45,7 @@ function stopTab(tabId) {
   const t = tabs.get(tabId);
   if (!t) return;
   tabs.delete(tabId);
+  globalThis.forgetRecorded?.(tabId); // record.js
   for (const peer of t.peers) stopPeer(peer);
   for (const track of t.stream.getTracks()) track.stop();
   t.audio?.close().catch(() => {});
@@ -56,7 +57,7 @@ function stopPeer(peer) {
   peers.delete(peer);
   try { p.pc.close(); } catch {}
   const t = tabs.get(p.tabId);
-  if (t) { t.peers.delete(peer); if (!t.peers.size) stopTab(p.tabId); }
+  if (t) { t.peers.delete(peer); if (!t.peers.size && !t.rec) stopTab(p.tabId); } // a recording may still use it
 }
 
 async function offer({ peer, tabId, streamId, frame, ice }) {
@@ -118,6 +119,7 @@ chrome.runtime.onMessage.addListener((m, _sender, reply) => {
     if (m.op === "resize") return resize(m);
     if (m.op === "take") return take(m);
     if (m.op === "peers") return [...peers.keys()];
+    if (String(m.op).startsWith("rec")) return globalThis.record(m); // record.js
     return { error: "unknown" };
   })().then(reply, (e) => reply({ error: String(e?.message || e) }));
   return true;

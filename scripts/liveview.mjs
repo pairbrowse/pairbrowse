@@ -90,7 +90,7 @@ async function release(cdp) {
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null, picker = null, devShare = null, devPanel = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {} }) {
+  onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {} }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -584,6 +584,13 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     { method: "POST", path: "tab", right: "tab", handler: human },
     // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
     // who may drive. who: the guest's name (null: the owner).
+    // Record (the side panel): the browser as a video, saved in Downloads. The owner only.
+    { method: "POST", path: "record", right: "record", handler: async ({ req, res }) => {
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const r = await onRecord(JSON.parse(body)?.on === true);
+      json(res, r?.error ? 409 : 200, { ...recordState(), text: r?.text || "", path: r?.path || "" });
+    } },
     { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite }) => {
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
@@ -620,6 +627,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     if (!invite && board) res.write(sse("board", board));
     const paused = pauseState();
     if (paused) res.write(sse("pause", paused));
+    if (!invite && recordState()) res.write(sse("record", recordState()));
     if (viewer && lastFrame) res.write(sse("frame", lastFrame));
   }
 
@@ -764,6 +772,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     pushToJoiners: (event, data, opts) => push.broadcast(event, data, opts),
     // Agents paused or resumed by a person (daemon/pause.mjs), with whether the owner may press it.
     setPause: () => broadcast("pause", pauseState()),
+    // A recording started or stopped (daemon/recorder.mjs): the owner's side panels show it.
+    setRecord: (state) => { for (const r of owners) r.write(sse("record", state)); },
     // Who is doing what across the session, and its messages: the side panel's Session section.
     setBoard: (next) => { board = next; broadcast("board", board); },
     close: () => {

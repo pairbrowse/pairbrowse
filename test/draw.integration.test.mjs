@@ -63,6 +63,15 @@ test("a stroke presses at its first point, goes through the rest and lets go at 
     assert.ok(Math.abs(ux - 0.3) <= 0.02 && Math.abs(uy - 0.6) <= 0.02, `let go at the last point: ${ux},${uy}`);
     assert.ok(moves >= 8, `moved along the way (${moves} moves)`);
     assert.ok(took < 8000, `drawn at a drawing pace, not a hand's reach per point (${took} ms for 20 points)`);
+    // The next stroke starts across the page: the hand glides there from the last one's end in
+    // well under a second, not a slow reach each time.
+    const t2 = Date.now();
+    const r2 = await a.tool("pairbrowse_run", { steps: [{ drag: [[0.85, 0.2], [0.9, 0.25]] }] });
+    const took2 = Date.now() - t2;
+    assert.ok(!r2.result?.isError, text(r2));
+    const log2 = text(await a.tool("browser_find", { text: "down" }));
+    assert.match(log2, /down 0\.8[4-6],0\.(19|20|21) up 0\.(89|90|91),0\.2[4-6]/, log2.slice(0, 300));
+    assert.ok(took2 < 3000, `the next stroke started quickly (${took2} ms)`);
   } catch (e) {
     throw new Error(`${e.message}\n${(() => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-1500); } catch { return ""; } })()}`);
   } finally {

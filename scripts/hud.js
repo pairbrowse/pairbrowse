@@ -496,11 +496,13 @@
 
   // Claude's cursor: moves to where Claude clicks or types the way a hand moves a mouse (a quick
   // reach that lands a touch short or past, then homes in: scripts/motion.mjs), rings on a click
-  // when it presses, fades when idle. The helper waits for it to arrive before acting, and the
+  // when it presses, stays while the agent works (CURSOR_HOLD_MS after its last move: an agent
+  // taking turns with others waits seconds between actions) and goes when it's done. The helper waits for it to arrive before acting, and the
   // press itself puts it exactly where the press was (the real point, which a humanized click
   // picks itself), so it never points beside the click or still at the previous target.
   const motion = "__PB_MOTION__";
   const CURSOR_MOTION = { fittsA: 50, fittsB: 60, minMs: 120, maxMs: 350 }; // quicker than a hand
+  const CURSOR_HOLD_MS = 12000;
   const PRESS_WINDOW_MS = 4000; // the first press this soon after the cursor was sent is the agent's
   let curHost, cur, curTimer, curAt = null, curFrame = 0, pressBy = 0, pressAct = "";
   let agentPtr = null; // where it last pointed, in document coordinates
@@ -560,7 +562,7 @@
     }
     cur.classList.add("on");
     clearTimeout(curTimer);
-    curTimer = setTimeout(() => cur.classList.remove("on"), 2500);
+    curTimer = setTimeout(() => cur.classList.remove("on"), CURSOR_HOLD_MS);
     return Math.ceil(duration); // how long it takes to arrive, ms
   }
 
@@ -681,6 +683,12 @@
     // Agents' screenshots never show other people's pointers: hidden while one is taken.
     if (kind === "peers-hidden") { if (peersBox) peersBox.style.display = text ? "none" : ""; return true; }
     if (!document.documentElement) return false;
+    // The agent is done here (its status says so, or it went away): its cursor goes now.
+    if (kind === "cursor-off") {
+      clearTimeout(curTimer);
+      cur?.classList.remove("on");
+      return true;
+    }
     if (kind === "cursor") {
       try {
         const c = JSON.parse(text);

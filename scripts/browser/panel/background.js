@@ -5,7 +5,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 // file after an update; the helper compares this with the file on disk and reloads the extension
 // when they differ (daemon/panel.mjs). A hash of this file with the value blanked (browser.mjs
 // panelBuildOf).
-const PB_BUILD = "19e6636c3b225ec3";
+const PB_BUILD = "245e80db46b3b706";
 globalThis.pbBuild = PB_BUILD;
 // In a new profile on macOS the browser starts without a window (--no-startup-window, see
 // browserArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
@@ -118,7 +118,7 @@ globalThis.pbFront = async () => (await chrome.tabs.query({ active: true, lastFo
 globalThis.pbTabId = async (targetId) => (await chrome.debugger.getTargets()).find((t) => t.id === targetId)?.tabId ?? null;
 async function shareDocument() {
   if (await chrome.offscreen.hasDocument()) return;
-  await chrome.offscreen.createDocument({ url: "share.html", reasons: ["USER_MEDIA"], justification: "Show a shared tab live to the people the user let in." }).catch((e) => {
+  await chrome.offscreen.createDocument({ url: "share.html", reasons: ["USER_MEDIA"], justification: "Show a shared tab live to the people the user let in, and record the browser when asked." }).catch((e) => {
     if (!/single offscreen/i.test(String(e?.message))) throw e; // made at the same moment by another call
   });
 }
@@ -128,4 +128,61 @@ globalThis.pbShare = async (msg) => {
     msg = { ...msg, streamId: await chrome.tabCapture.getMediaStreamId({ targetTabId: msg.tabId }) };
   }
   return chrome.runtime.sendMessage({ ...msg, to: "share" });
+};
+// Recording the browser (record.js in the offscreen document): the tab in front, followed as the
+// person switches tabs, under a strip of the window's tabs. Asked only by the helper.
+let recording = null; // { follow } while a recording runs
+const toShare = (m) => chrome.runtime.sendMessage({ ...m, to: "share" });
+const stripOf = async (windowId) => (await chrome.tabs.query({ windowId })).map((t) => ({ id: t.id, title: t.title || t.url || "", active: t.active }));
+// The tab's picture: a capture of it unless the offscreen document has one (a capture can't be
+// taken twice). Its size in CSS pixels.
+async function frontOf(tab) {
+  const has = await toShare({ op: "has", tabId: tab.id });
+  return { tabId: tab.id, frame: { w: tab.width || 1280, h: tab.height || 800 }, streamId: has ? undefined : await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }), tabs: await stripOf(tab.windowId) };
+}
+async function recordShow(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || !recording) return;
+  // A page the browser won't capture (its own settings pages): the video keeps the last tab.
+  await toShare({ op: "recFront", ...(await frontOf(tab)) }).catch((e) => console.warn("recording a tab failed", e?.message || e));
+}
+let stripTimer = 0;
+const stripChanged = (windowId) => {
+  if (!recording) return;
+  clearTimeout(stripTimer);
+  stripTimer = setTimeout(async () => { if (recording) await toShare({ op: "recTabs", tabs: await stripOf(windowId) }).catch(() => {}); }, 150);
+};
+// Following the tab in front; following agents, the helper says which tab to show.
+chrome.tabs?.onActivated?.addListener(({ tabId }) => { if (recording?.follow === "front") recordShow(tabId).catch(() => {}); });
+chrome.tabs?.onUpdated?.addListener((_id, change, tab) => { if (change.title || change.url) stripChanged(tab.windowId); });
+chrome.tabs?.onCreated?.addListener((tab) => stripChanged(tab.windowId));
+chrome.tabs?.onRemoved?.addListener((_id, info) => stripChanged(info.windowId));
+chrome.tabs?.onMoved?.addListener((_id, info) => stripChanged(info.windowId));
+chrome.windows?.onFocusChanged?.addListener(async (windowId) => {
+  if (recording?.follow !== "front" || windowId === chrome.windows.WINDOW_ID_NONE) return;
+  const [tab] = await chrome.tabs.query({ active: true, windowId });
+  if (tab) recordShow(tab.id).catch(() => {});
+});
+// msg.op: start (labels: tab id -> { who, color }, scale, follow), labels, show (tabId: following
+// agents), stop, chunk, clear, state.
+globalThis.pbRecord = async (msg = {}) => {
+  await shareDocument();
+  if (msg.op === "start") {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!tab) return { error: "no tab in front" };
+    recording = { follow: msg.follow === "agents" ? "agents" : "front" };
+    const r = await toShare({ op: "recStart", ...(await frontOf(tab)), labels: msg.labels || {}, scale: msg.scale });
+    if (!r || r.error) recording = null;
+    return r;
+  }
+  if (msg.op === "labels") {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return toShare({ op: "recTabs", labels: msg.labels || {}, ...(tab ? { tabs: await stripOf(tab.windowId) } : {}) });
+  }
+  if (msg.op === "show") return recordShow(Number(msg.tabId)).then(() => true);
+  if (msg.op === "stop") { recording = null; return toShare({ op: "recStop" }); }
+  if (msg.op === "chunk") return toShare({ op: "recChunk", offset: msg.offset, size: msg.size });
+  if (msg.op === "clear") return toShare({ op: "recClear" });
+  if (msg.op === "state") return toShare({ op: "recState" });
+  return { error: "unknown" };
 };

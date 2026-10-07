@@ -230,6 +230,15 @@ test("the agent cursor moves like a hand, lands exactly on the target and rings 
     assert.equal(Math.max(...off), 0, `drawn at the press every time (worst ${Math.max(...off)} px)`);
     const last = (await page.evaluate(() => window.trail)).at(-1);
     assert.deepEqual([last.x, last.y], [presses.at(-1).x, presses.at(-1).y], "and stays there after");
+
+    // With its name, it stays up while the agent waits its turn between actions (seconds), and
+    // goes once the agent is done.
+    const shown = () => page.evaluate(() => [...document.documentElement.children].some((el) => el.shadowRoot?.querySelector(".c.on span")?.textContent === "Claude (Mac)"));
+    await point({ x: 300, y: 300, act: "click", who: "Claude (Mac)" });
+    await page.waitForTimeout(6000);
+    assert.ok(await shown(), "the cursor and its name stay between actions");
+    await page.evaluate(([n, t]) => window[n](t, "", "cursor-off"), [hud.name, hud.token]);
+    assert.ok(!(await shown()), "and go when the agent is done");
   } finally {
     await browser.close();
   }

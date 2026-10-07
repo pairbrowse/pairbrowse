@@ -95,7 +95,8 @@ test("input read late from a busy page is still taken (a read empties the page's
     await new Promise((r) => setTimeout(r, 1800));
     assert.equal(reads, 1, "a frame still answering is skipped");
     assert.equal(presence.actingIn(page), null);
-    await new Promise((r) => setTimeout(r, 600));
+    // Taken once it arrives (at about 2.1 s; a busy computer runs timers late, so wait up to 6 s).
+    for (let i = 0; i < 60 && presence.actingIn(page) !== "Bob"; i++) await new Promise((r) => setTimeout(r, 100));
     assert.equal(presence.actingIn(page), "Bob", "the late click counts");
     assert.match(presence.userNote(page), /The user used this tab meanwhile: clicked "Go"/);
   } finally {

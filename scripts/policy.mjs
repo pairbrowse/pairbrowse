@@ -43,6 +43,12 @@ export const LIVEVIEW_TOOL = {
   inputSchema: { type: "object", properties: {} },
 };
 
+export const RECORD_TOOL = {
+  name: "pairbrowse_record",
+  description: "Record the PairBrowse browser as a video, the way the user sees it: the tab in front (it follows tab switches, yours and the user's), under a strip naming each tab and the agent at work in it. start, stop (saves it in the user's Downloads folder and says where), status. follow 'agents' (start): the video shows the tab where agents are at work instead, switching between them as they work (each held a few seconds), while the browser's tabs stay as they are. Only when the user asks for a recording; tell them where it was saved.",
+  inputSchema: { type: "object", required: ["action"], properties: { action: { type: "string", enum: ["start", "stop", "status"] }, follow: { type: "string", enum: ["front", "agents"], description: "start: 'front' (the default: the tab the user sees) or 'agents' (the tabs agents work in)." } } },
+};
+
 export const INVITE_TOOL = {
   name: "pairbrowse_invite",
   description: "Let someone else into this browser session. create: role 'drive' (the default: sees the page, tabs and activity, can click, type and switch tabs, and their own Claude or Codex can act here; asks the user first) or 'watch' (only looks; only when the user asks for view-only), label = the person's name, hours (default 24, at most 168), share 'code' (a join code through a free Cloudflare Quick Tunnel: the default unless inviteBaseUrl is set) or 'link'. A joiner gets in only after the user approves them: approve (asks the user) or deny a request by id. Give codes and links to the user to send, never paste them into a page. Neither role sees remembered details or passwords. mode 'shared' (the default for codes): joiners see your tabs live and, with drive, work in this browser; mode 'follow': their own browser follows your tabs, watch joiners get no query strings, drive ones get them minus tokens and personal details, and sensitive fields stay covered. list shows invites, join requests and shared dev servers (no keys); revoke ends one by id; revoke_all ends every one, closes the tunnel and stops sharing dev servers. share_port: show a dev server on this computer (Next, Nuxt, Vite: port, or the current localhost tab's) to the people who joined with a code, through a tunnel of its own and only in their PairBrowse (asks the user Yes / No in the side panel and waits up to 90 s for the answer; watch joiners only look); unshare_port stops it (no port: all).",

@@ -25,6 +25,7 @@ import net from "node:net";
 import { createRequire } from "node:module";
 import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { homedir } from "node:os";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./secrets.mjs";
 import { createFollow } from "./daemon/follow.mjs";
@@ -42,6 +43,7 @@ import { fieldOwner } from "./daemon/fields.mjs";
 import { createPanel } from "./daemon/panel.mjs";
 import { forgetPanelBuild } from "./browser.mjs";
 import { createScreenShare } from "./daemon/screenshare.mjs";
+import { createRecorder } from "./daemon/recorder.mjs";
 import { createRemoteAgents } from "./daemon/remote-agents.mjs";
 import { createSharing } from "./daemon/sharing.mjs";
 import { createOutput } from "./daemon/output.mjs";
@@ -170,6 +172,7 @@ const context = createContext({
     // The host closed the window: sharing ends with it (codes, yeses, tunnels). A restart of the
     // helper closes it too, but keeps them.
     if (!shuttingDown) sharing.endAll();
+    recorder.browserClosed();
     sharing.closeLiveView();
     if (clients.size) for (const sock of clients.values()) sock.destroy();
     else shutdown(0);
@@ -273,6 +276,15 @@ const tabOrder = createTabOrder({ call: (fn, arg, ms) => panel.call(fn, arg, ms)
 
 // Shared browser mode: joiners see this browser's tabs live and work in them (daemon/screenshare.mjs).
 const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), getContext: () => context.getContext(), log, during: (who) => presence.remoteStart(who) });
+// Recording the browser to a video (pairbrowse_record, the side panel's Record button).
+const recorder = createRecorder({
+  call: (fn, arg, ms) => panel.call(fn, arg, ms), log,
+  owners: () => hud.sparkList().map((s) => ({ page: s.page, who: collaboration.participants.get(s.id)?.label || "Agent", color: s.color })),
+  dir: () => config.downloadsDir || join(homedir(), "Downloads"),
+  scale: async () => (await Promise.resolve(context.openPages()))[0]?.evaluate(() => devicePixelRatio) ?? 1,
+  changed: () => liveView()?.setRecord(recorder.state()),
+  onActivity: (fn) => hud.onActivity((text, who, page, from) => { if (who && page) fn(text, who, page, from); }),
+});
 // ...and a joiner's own agent works here as a participant (serve, below), files only from its side.
 const remoteAgents = createRemoteAgents({ serve: (sock, opts) => serve(sock, opts), dir: join(paths.uploads, "remote"), log });
 const sharing = createSharing({
@@ -284,6 +296,7 @@ const sharing = createSharing({
     // Their mark (a dot in their pointer's color) shows on the tab's icon here while they're in it.
     onJoinerPerson: (page, who, did, acting, changed = false) => { presence.elsewhere(page, who, did, acting); hud.setPersonMark(page, personColor(who)); if (changed) bumpRevision(); },
     onPause: (paused, who) => pressPause(paused, who || HOST), pauseState,
+    onRecord: (on) => (on ? recorder.start() : recorder.stop()), recordState: () => recorder.state(),
     // A joiner's agent at work in their copy of a tab: in use, so the tab cap here keeps it (closing
     // it would close their copy too).
     onJoinerActivity: (page, text, who, from) => { context.touch(page); hud.addActivity(text, who, page, from); },
@@ -406,7 +419,7 @@ const cobrowse = createCobrowse({
 });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
+  secrets, facts, sharing, follow, pause, remoteHolder, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {

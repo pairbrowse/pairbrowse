@@ -32,7 +32,10 @@ export function sandboxDecision(config = {}, { platform = process.platform, uid 
 }
 
 // The messages Chromium (and Playwright's rewrite of them) gives when it can't start its sandbox.
-export const SANDBOX_FAILED = /No usable sandbox|sandboxing failed|crbug\.com\/(638180|357670)/i;
+// Without user namespaces (a container, or Ubuntu's AppArmor rule against them) Chromium turns to
+// its setuid helper, chrome-sandbox, which a browser unpacked by a user can't have (root-owned,
+// mode 4755): it then aborts with "The SUID sandbox helper binary was found, but is not configured correctly".
+export const SANDBOX_FAILED = /No usable sandbox|sandboxing failed|crbug\.com\/(638180|357670)|SUID sandbox helper binary/i;
 
 const noted = new Set();
 function noteOnce(log, text) {
@@ -62,7 +65,7 @@ export async function launchEngine(chromium, config, profile, options, log = () 
     return await start(true);
   } catch (e) {
     if (!SANDBOX_FAILED.test(String(e?.message || e))) throw e;
-    noteOnce(log, "Chromium sandbox off: this system can't run it (no user namespaces, or a container blocks them); set \"chromeSandbox\": false in config.json to skip the first try");
+    noteOnce(log, "Chromium sandbox off: this system can't run it (no user namespaces: a container or an AppArmor rule blocks them); set \"chromeSandbox\": false in config.json to skip the first try");
     return start(false);
   }
 }

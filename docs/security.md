@@ -47,8 +47,9 @@ Limits, honestly:
   it's only reachable over your private route.
 - Chrome's own sandbox is on by default (macOS, and Linux as a regular user). It's off when you set
   `"chromeSandbox": false`, when PairBrowse runs as root on Linux (Chromium refuses it there), and
-  where the system can't run it (no user namespaces, or a container such as Docker with its default
-  seccomp profile): the browser then starts without it and the helper log says so once. Without it,
+  where the system can't run it (no user namespaces: a container such as Docker with its default
+  seccomp profile, or Ubuntu's AppArmor rule that restricts them, where Chromium would need a
+  root-owned setuid helper): the browser then starts without it and the helper log says so once. Without it,
   a page that exploits a browser bug isn't contained the way it is in your everyday Chrome.
 - PairBrowse doesn't solve CAPTCHAs or bot checks and won't integrate solving services.
 - On macOS the browser is ungoogled-chromium, which has no Google Safe Browsing (no phishing or

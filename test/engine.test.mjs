@@ -43,6 +43,14 @@ test("Chromium's sandbox is on unless config, root on Linux, or the system turns
   assert.deepEqual(tries, expected);
   assert.equal(result.opts.chromiumSandbox, false);
   assert.equal(logs.filter((m) => /sandbox off/.test(m)).length, 1);
+  // No user namespaces, so Chromium tried its setuid helper, which an unpacked browser can't have.
+  const suid = [];
+  await launchEngine({ launchPersistentContext: async (profile, opts) => {
+    suid.push(opts.chromiumSandbox);
+    if (opts.chromiumSandbox) throw new Error("browserType.launchPersistentContext: Target page, context or browser has been closed\n[err] FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox helper binary was found, but is not configured correctly. Rather than run without sandboxing I'm aborting now.");
+    return { opts };
+  } }, {}, "/a", {});
+  assert.deepEqual(suid, expected);
   const other = { launchPersistentContext: async () => { throw new Error("profile in use"); } };
   if (expected.length === 2) await assert.rejects(launchEngine(other, {}, "/a", {}), /profile in use/);
 });

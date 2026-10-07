@@ -5,6 +5,13 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.22 (2026-10-07)
+
+The native browser installs again on Linux systems that block user namespaces.
+
+- On Linux without user namespaces (containers, and Ubuntu's AppArmor rule that restricts them), Chromium turns to its setuid sandbox helper, which a browser installed for one user can't have, and aborts. PairBrowse didn't recognize that failure, so installing or starting the native browser failed there since 0.15.20. It now starts without the sandbox, as it does for the other cases where the system can't run it, and the helper log says so once.
+- The native browser's launch self-check no longer fails on a slow computer when the test form's own page load is still on its way.
+
 ## 0.15.21 (2026-10-07)
 
 Memory leak fixes, found with soak tests; agents read from your request whether to work in another agent's tab.

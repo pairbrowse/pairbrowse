@@ -55,6 +55,10 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
   const installWaiters = new Set();
   let session = currentSession(); // which browser session (Chrome profile) is in use
   let switching = false;
+// While a session switch closes one browser and opens the next, anyone else asking for the
+// browser waits for it: a browser started in between would be left running, unknown to the
+// helper (a second window, and the next start fails on its profile in use).
+let switched = Promise.resolve();
   let screen = null; // virtual display on a Linux machine without a screen
   let tabTracker = null;
   let restoring = null; // promise while saved tabs are being reopened
@@ -252,11 +256,13 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
     ctx.on("page", (p) => { adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => hud.onPageLoad(p), () => {}); setTimeout(() => capTabs(ctx, p).catch(() => {}), 300); });
     if (pick.state === "pending") showPicker(ctx);
     else restore(ctx);
+    const mine = contextPromise;
     ctx.on("close", () => {
       log("browser closed");
       // Closed while asking: the next browser asks again.
       if (pick.state === "showing") { pick.state = "pending"; pick.page = null; }
-      contextPromise = null;
+      // Only the browser in use: an older one closing late never drops the next one.
+      if (contextPromise === mine) contextPromise = null;
       hud.clearSparks();
       if (!switching) onClosed(); // switching sessions: the next one opens right away
     });
@@ -267,6 +273,7 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
 
   function getContext() {
     if (shuttingDown() && !contextPromise) return Promise.reject(new Error("PairBrowse is restarting. Retry in a moment."));
+    if (switching) return switched.then(() => getContext());
     if (!contextPromise) {
       launching = true;
       contextPromise = launch().catch((e) => {
@@ -430,6 +437,9 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
 
   async function switchTo(name) {
     if (name === session && contextPromise) return;
+    while (switching) await switched; // one switch at a time
+    let done;
+    switched = new Promise((r) => { done = r; });
     switching = true;
     try {
       const ctx = contextPromise && (await contextPromise);
@@ -447,6 +457,7 @@ export function createContext({ config, log, chromium, hud, presence, popups, ho
       contextPromise = null;
     } finally {
       switching = false;
+      done();
     }
     // An agent switching is a choice too: no picker in the next browser.
     picked(`Session "${isTemporary(name) ? "clean" : name}" was chosen by an agent.`);

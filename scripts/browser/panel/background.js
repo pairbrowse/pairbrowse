@@ -5,7 +5,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 // file after an update; the helper compares this with the file on disk and reloads the extension
 // when they differ (daemon/panel.mjs). A hash of this file with the value blanked (browser.mjs
 // panelBuildOf).
-const PB_BUILD = "e4da2826d74a0979";
+const PB_BUILD = "19e6636c3b225ec3";
 globalThis.pbBuild = PB_BUILD;
 // In a new profile on macOS the browser starts without a window (--no-startup-window, see
 // browserArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
@@ -78,6 +78,8 @@ async function bringToFront() {
   if (w?.id !== undefined) await chrome.windows.update(w.id, w.state === "minimized" ? { focused: true, state: "normal" } : { focused: true }).catch(() => {});
 }
 chrome.notifications.onButtonClicked?.addListener((nid, index) => { joinButton(nid, index).catch(() => {}); });
+// For the helper's tests: a press on a join notification's button, as the click runs it.
+globalThis.pbJoinPress = (request, index) => joinButton(noteId(String(request || "")), index);
 chrome.notifications.onClicked?.addListener((nid) => {
   bringToFront().catch(() => {});
   if (!joinNotes.has(nid)) chrome.notifications.clear(nid).catch(() => {});

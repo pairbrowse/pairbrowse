@@ -55,7 +55,8 @@ const isScreen = (page) => page.url().startsWith(screenBase());
 // The tools an agent here uses in the host's browser while in a shared browser session (the rest,
 // such as its status, remembered details and sessions, stay here).
 const FORWARDED = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_click_at"]);
-const AGENT_CALL_MS = 15 * 60_000; // a call there (a hand-off waits for a person) answers within this
+const AGENT_CALL_MS = 15 * 60_000;
+const RECONNECT_WAIT_MS = 60_000; // a call while the link to the host is down waits this long for it // a call there (a hand-off waits for a person) answers within this
 const FILE_PART = 120_000; // bytes of a file per message to the host
 // Logs how long pointers and field values took from the other side's page (for the live check).
 const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
@@ -645,7 +646,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         message: (data) => onMessage?.(data, cur.join),
       },
       onChange: (phase) => {
-        if (phase === "in") hud.addActivity(`Joined ${parsed.label}'s session (${parsed.role})`, who, null, "joined");
+        if (phase === "in") { if (!cur.wasIn) hud.addActivity(`Joined ${parsed.label}'s session (${parsed.role})`, who, null, "joined"); cur.wasIn = true; }
         if ((phase === "denied" || phase === "ended") && s === cur) { s = null; liveView()?.setRemote([]); onLeft?.(); hud.addActivity(cur.join.message, "", null, "joined"); }
       },
     });
@@ -719,6 +720,10 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   async function remoteCall(participant, msg, { app }) {
     const cur = s;
     if (!cur?.shared) return { error: { code: -32000, message: "Not in a shared browser session." } };
+    // The link to the host is down for now: wait for it, up to RECONNECT_WAIT_MS.
+    for (const end = Date.now() + RECONNECT_WAIT_MS; cur.join.phase !== "in" && s === cur && Date.now() < end;) await sleep(500);
+    if (s !== cur) return { result: { content: [{ type: "text", text: "The shared session ended: nothing was done in the host's browser." }], isError: true } };
+    if (cur.join.phase !== "in") return { result: { content: [{ type: "text", text: `Can't reach ${cur.join.host || "the host"}'s browser right now (${cur.join.message}): nothing was done. Try again in a minute; it reconnects by itself.` }], isError: true } };
     const agent = participant.slice(0, 16);
     let st = agentState.get(participant);
     if (!st || st.cur !== cur) {
@@ -744,7 +749,9 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     command,
     // Shared browser mode: whether a tool call from an agent here goes to the host's browser, and
     // making that call (see remoteCall).
-    forwards: (name) => !!s?.shared && s.join.phase === "in" && s.join.role === "drive" && (String(name).startsWith("browser_") || FORWARDED.has(name)),
+    // Once in, it stays that way while the link is down (the host restarting, the tunnel): the
+    // calls wait for it to come back, never landing in this browser instead.
+    forwards: (name) => !!s?.shared && (s.join.phase === "in" || s.wasIn) && s.join.role === "drive" && (String(name).startsWith("browser_") || FORWARDED.has(name)),
     remoteCall,
     // The connection that joined went away: so does the join.
     ownerGone(owner) { if (s?.owner === owner) stop("left the shared session: its connection closed").catch(() => {}); },

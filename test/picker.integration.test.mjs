@@ -178,6 +178,52 @@ test("the picker shows when nobody chose, websites can't drive it, and the pick 
   }
 });
 
+// PAIRBROWSE_TEST_NATIVE=<PairBrowse browser>: the native one, which starts more slowly (as most users run it).
+test("a pick while many agents wait opens one browser, not two", { skip: !runtime, timeout: 180_000 }, async () => {
+  const native = process.env.PAIRBROWSE_TEST_NATIVE;
+  const executablePath = native || createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
+  const site = await fixture();
+  const h = home("pr-");
+  writeFileSync(join(h, "config.json"), config(executablePath, site.address().port, native ? { browserEngine: "pairbrowse" } : {}));
+  const { connect, stop } = startDaemons();
+  let stage = "start";
+  try {
+    const agent = await connect(h);
+    const live = await agent.live();
+    await panelConnected(live);
+    // Other sessions (other Claude Code and Codex windows) keep asking for the browser while the
+    // person picks: one of them must never start a browser of its own mid-switch.
+    // A viewer connected, as the side panel and live view are: they read the browser all along.
+    const viewer = new AbortController();
+    fetch(`${live}events`, { signal: viewer.signal }).then(async (res) => { for await (const _ of res.body) { /* reading keeps it flowing */ } }).catch(() => {});
+    const others = await Promise.all([1, 2, 3].map(() => connect(h)));
+    let going = true;
+    const busy = others.map(async (o) => { while (going) { await o.tool("browser_tabs", { action: "list" }, 60_000).catch(() => {}); await sleep(20); } });
+    // New sessions connecting all along (bridges reconnecting): each one's browser server asks for the browser.
+    busy.push((async () => { while (going) { const n = await connect(h).catch(() => null); n?.tool("browser_tabs", { action: "list" }, 60_000).catch(() => {}); await sleep(30); } })());
+    await sleep(500);
+    stage = "the person starts a fresh session";
+    assert.equal((await post(`${live}pick`, { action: "new" }, EXTENSION)).status, 200);
+    await sleep(6000);
+    going = false;
+    viewer.abort();
+    await Promise.all(busy);
+    const log = readFileSync(join(h, "daemon.log"), "utf8");
+    const after = log.slice(log.indexOf("session picked"));
+    assert.equal((after.match(/browser started/g) || []).length, 1, after);
+    stage = "the agents work in that browser";
+    const listed = await agent.tool("browser_tabs", { action: "list" });
+    assert.ok(!listed.result.isError, text(listed));
+    assert.ok(!/profile is already in use/.test(readFileSync(join(h, "daemon.log"), "utf8")));
+  } catch (e) {
+    throw new Error(`${stage}: ${e.message}\n${logOf(h)}`);
+  } finally {
+    await stop();
+    site.close();
+    rmSync(h, { recursive: true, force: true });
+  }
+});
+
 test("no picker when the agent chose first, when it's off, or on the very first start", { skip: !runtime, timeout: 120_000 }, async () => {
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const site = await fixture();

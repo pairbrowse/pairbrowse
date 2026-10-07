@@ -340,9 +340,14 @@ test("a joiner's link to the host drops, stalls or the host's helper crashes: ba
     stage = "the link is cut; the host opens a tab meanwhile";
     proxy.set("cut");
     await until("the joiner notices", async () => /dropped|reach|Retrying|Reconnecting/i.test(await status(joiner)), 15_000);
+    // Meanwhile the joiner's agent never falls back to its own browser: its call waits for the
+    // link, then works there (or says nothing was done).
+    const meanwhile = tool(joiner, "browser_snapshot", {}, 90_000);
     assert.ok(!(await tool(host, "browser_tabs", { action: "new", url: "http://two.pbtest.example/" })).result.isError);
     await tool(host, "pairbrowse_collaboration", { action: "release" });
     proxy.set("pass");
+    const during = text(await meanwhile);
+    assert.ok(/button "Tap (one|two)"|nothing was done/.test(during) && !/screen\.html|Choose a session/.test(during), `the joiner's agent acted in the host's browser, not its own: ${during.slice(0, 300)}`);
     await backIn("after the cut");
     await until("the tab opened meanwhile shows here", async () => /Page two/.test(await titles(joiner)), 30_000);
 

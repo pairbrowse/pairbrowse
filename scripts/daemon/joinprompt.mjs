@@ -59,7 +59,7 @@ export function createJoinPrompt({ approvals, front, focused = async () => null,
       for (const r of todo) {
         const who = `${r.name || "Someone"}${r.app ? ` (${r.app})` : ""}`;
         const ok = !!page && !page.isClosed() && (await show(page, { id: r.id, who, role: r.role }, "join").catch(() => false)) === true;
-        if (ok) { shown.set(r.id, { page, at: Date.now(), away: false }); unseen.delete(r.id); }
+        if (ok) { shown.set(r.id, { page, at: Date.now(), away: false }); unseen.delete(r.id); if (notified.has(r.id)) log(`join request ${r.id}: asked in the bar too, now that the browser has the focus`); }
         if (shouldNotify({ focused: hasFocus, shown: ok })) send(r, who);
         else if (alerted.has(r.id) && !notified.has(r.id)) log(`join request ${r.id}: asked in the bar (the browser has the focus), no notification`);
         // Shown where the focus can't be told: as before, no waiting to show it again.
@@ -113,8 +113,15 @@ export function createJoinPrompt({ approvals, front, focused = async () => null,
           shown.delete(id);
           if (s.away || (await focused().catch(() => null)) === false) unseen.add(id);
         }
-        // Gone from the page (dismissed, the page went elsewhere): nothing to read there.
-        if (!got.open) for (const [id, s] of shown) if (s.page === page) shown.delete(id);
+        // Gone from the page. Dismissed (×): stays down. Lost without anyone's say (the page
+        // reloaded or went elsewhere, taking the bar with it): asked again while it still waits.
+        const open = typeof got.ids === "string" ? new Set(got.ids.split(",").filter(Boolean)) : null;
+        const dismissed = new Set(String(got.dismissed || "").split(",").filter(Boolean));
+        for (const [id, s] of shown) {
+          if (s.page !== page || (open ? open.has(id) : got.open)) continue;
+          shown.delete(id);
+          if (open && !dismissed.has(id) && !expired.has(id)) unseen.add(id);
+        }
       }
     } finally {
       reading = false;
@@ -127,7 +134,9 @@ export function createJoinPrompt({ approvals, front, focused = async () => null,
     const at = Date.now();
     t = Math.min(at, Number.isFinite(t) ? t : at); // a time from the page is never later than now
     const s = shown.get(String(id));
-    if (!KINDS.has(kind) || !s || s.page !== page || t < s.at + ARM_MS || !byPerson(t)) return null;
+    if (!KINDS.has(kind)) return null;
+    const refused = !s ? "not shown there" : s.page !== page ? "another tab" : t < s.at + ARM_MS ? "too soon after it showed" : !byPerson(t) ? "not a person's own click (an agent or replayed input then)" : "";
+    if (refused) { log(`join request ${String(id).slice(0, 12)}: a click in the bar didn't count (${refused})`); return null; }
     if (!approvals.pending().some((r) => r.id === id)) return null;
     const done = kind === "join-allow" ? approvals.approve(id) : approvals.deny(id);
     if (done) log(`join request ${id} ${kind === "join-allow" ? "allowed" : "denied"} in the page's prompt`);

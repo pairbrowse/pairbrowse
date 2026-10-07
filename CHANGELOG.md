@@ -5,6 +5,20 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.23 (2026-10-07)
+
+People always come first, also mid-action; two agents on two computers can build on one board together; sharing survives restarts and dropped links.
+
+- When you click or type in a tab, the agents in it stop and wait until you're done, also while one is in the middle of an action: a long drawing stroke or a fast-mode run stops at once, and form filling stops before the next field. Before, input made while an agent acted was taken for the agent's own and ignored. Pause agents now always works too (only Resume is refused while an agent acts, so an agent can't undo a person's pause).
+- A join request shows again in the bar after you reload the page; only your × or an answer takes it down.
+- Agents on two computers in a shared browser session can share a tab when the user means them to; sharing a tab means taking turns (one pointer, one selected tool). To build something at the same time in an app that keeps everyone in sync (a whiteboard, a design file, a shared doc), agents open the same address in a tab each, and they're told so.
+- Drawing strokes go at a drawing pace: about 3 s for a 30-point stroke instead of 19 s (the humanized mouse used to give every point of a stroke a whole reach-and-settle move).
+- A joined agent never falls back to its own browser: while the link to the host is down, its calls wait up to a minute for it to come back, then say nothing was done. Before, they silently ran in the joiner's own browser.
+- Answers to a joiner's agent survive the link dropping and reconnecting (kept for two minutes and sent again), instead of leaving the agent waiting up to 15 minutes.
+- One helper at a time, settled before anything starts: when several Claude Code and Codex windows each start a helper at once (after an update or a crash), the extra ones now leave before touching the browser or the sharing tunnel. Before, they could stop the kept tunnel, so joiners couldn't reconnect after a restart.
+- A session switch opens exactly one browser, even while other parts ask for the browser during it (before, it could open two windows and lose track of one).
+- The helper log now says where a join request was answered (the bar, the side panel, a notification) and why a click in the bar didn't count.
+
 ## 0.15.22 (2026-10-07)
 
 The native browser installs again on Linux systems that block user namespaces.

@@ -285,6 +285,26 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     }
     return { problem: "Unknown request." };
   }
+  // A joiner's agent's answers, kept for a while: their channel can drop and reconnect (a busy
+  // computer, the tunnel), and an answer sent just then would be lost, leaving their agent waiting
+  // for it. Each goes again when a channel opens; their side takes each answer once.
+  const AGENT_KEEP_MS = 120_000;
+  const agentOutbox = new Map(); // joiner key -> [{ msg, t }]
+  function toJoinerAgent(key, msg) {
+    const now = Date.now();
+    const list = (agentOutbox.get(key) || []).filter((x) => now - x.t < AGENT_KEEP_MS).slice(-49);
+    list.push({ msg, t: now });
+    agentOutbox.set(key, list);
+    push.broadcast("agent", msg, { to: key });
+  }
+  function resendAgent(key) {
+    const now = Date.now();
+    const list = (agentOutbox.get(key) || []).filter((x) => now - x.t < AGENT_KEEP_MS);
+    if (!list.length) { agentOutbox.delete(key); return; }
+    agentOutbox.set(key, list);
+    for (const { msg } of list) push.broadcast("agent", msg, { to: key });
+  }
+
   // A joiner's own agent at work in this browser (daemon/remote-agents.mjs): its MCP messages,
   // its answers back on the channel; files it sends over for an upload.
   async function remoteAgent(body, j) {
@@ -293,7 +313,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     const key = joinerKey(j);
     // The tab they look at: only one whose picture goes to joiners.
     const start = typeof body?.tab === "string" ? (await getContext()).pages().find((p) => idOf(p) === body.tab && crossesWhole(p)) || null : null;
-    const ok = remoteAgents.line({ name: j.name, app: j.app, key }, String(body?.a || ""), body?.line, (line) => push.broadcast("agent", { a: String(body.a), line }, { to: key }), start);
+    const ok = remoteAgents.line({ name: j.name, app: j.app, key }, String(body?.a || ""), body?.line, (line) => toJoinerAgent(key, { a: String(body.a), line }), start);
     return ok ? { ok: true } : { problem: "Bad message." };
   }
   function remoteFile(body, j) {
@@ -530,6 +550,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
         return json(res, 200, { ok: true, request });
       }
       const done = op.allow === true ? approvals.approve(op.id) : approvals.deny(op.id);
+      log(`join request ${String(op.id).slice(0, 12)}: ${op.allow === true ? "Allow" : "Deny"} from the side panel or a notification${done ? "" : ", but it wasn't waiting any more"}`);
       json(res, done ? 200 : 404, { ok: !!done, request: done });
     } },
     // Dev servers (devshare.mjs), for the owner only: what's open on localhost and shared, an
@@ -662,12 +683,12 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
 
   // A joiner gone (left or removed): their agent here and their pictures stop.
   // What they said about their side's agents goes too.
-  async function stopJoinerKey(key) { remoteAgents?.stop(key); shared.onJoinerGone(key); await screens?.stopAll(`${key}|`); }
+  async function stopJoinerKey(key) { agentOutbox.delete(key); remoteAgents?.stop(key); shared.onJoinerGone(key); await screens?.stopAll(`${key}|`); }
   const stopJoiner = (j) => stopJoinerKey(joinerKey(j));
   const joinerServer = createJoinerServer({
     key, invites, approvals, joiners, tunnelHost, onJoinRequest, log,
     live: { tabsFor, applyTabs, screen, agent: remoteAgent, file: remoteFile,
-      stopScreens: stopJoiner, openStream: (j, conn) => { watchPages(); return push.open(j, conn).catch((e) => log("push", e?.message || e)); }, pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
+      stopScreens: stopJoiner, openStream: (j, conn) => { watchPages(); return push.open(j, conn).then(() => resendAgent(joinerKey(j))).catch((e) => log("push", e?.message || e)); }, pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
   });
 
   try {

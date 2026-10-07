@@ -96,3 +96,25 @@ test("a risky click's refusal says why and what kind of final action it is", () 
   assert.equal(riskReason({ why: ["a card field on the page"], word: "pay" }), "a card field on the page: a final action (pay)");
   assert.equal(riskReason({ why: [], word: "submit" }), "it commits something: a final action (submit)");
 });
+
+test("a stroke stops where it is when a person takes over, and the button is let go", async () => {
+  const { runSteps } = await import("../scripts/runner.mjs");
+  const did = [];
+  const cdp = { send: async (m, p) => { did.push(p.type === "mouseMoved" ? `move ${p.x},${p.y}` : p.type === "mousePressed" ? "down" : "up"); }, detach: async () => {} };
+  const page = {
+    evaluate: async () => [1000, 800],
+    context: () => ({ newCDPSession: async () => cdp }),
+    mouse: { move: async (x, y) => { did.push(`reach ${x},${y}`); } },
+  };
+  let moves = 0;
+  const r = await runSteps(page, [{ drag: [[0.1, 0.1], [0.2, 0.2], [0.3, 0.3], [0.4, 0.4], [0.5, 0.5]] }], {
+    activity() {}, cursor: async () => {},
+    interrupted: () => (++moves > 2 ? "The user took over this tab mid-step" : ""),
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.why, /took over/);
+  assert.equal(did.at(-1), "up", "never left holding the button");
+  assert.equal(did[0], "reach 100,80", "the hand reaches the start first");
+  assert.equal(did[1], "down", "pressed right where it reached");
+  assert.ok(!did.some((d) => d.startsWith("move 500")), "it stopped before the end");
+});

@@ -25,10 +25,28 @@
       (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ? el.getAttribute("name") : el.innerText) || "";
     return String(label).trim().replace(/\s+/g, " ").slice(0, 60);
   }
-  function record(kind, what) {
+  function record(kind, what, far = false) {
     if (userEvents.length >= 60) return;
-    userEvents[userEvents.length] = { t: now(), kind, what };
+    userEvents[userEvents.length] = far ? { t: now(), kind, what, far: true } : { t: now(), kind, what };
   }
+  // A press well away from what the agent is acting on (its cursor's target, last placed by the
+  // helper): a person's, even while an agent's action runs. The agent's own presses land on its
+  // target, so everything near it stays the agent's.
+  const FAR_PX = 48;
+  const awayFromAgent = (e) => {
+    const b = agentBox;
+    if (!b || now() - b.t > 15_000) return false;
+    const x = e.clientX + scrollX, y = e.clientY + scrollY;
+    return x < b.x - FAR_PX || x > b.x + b.w + FAR_PX || y < b.y - FAR_PX || y > b.y + b.h + FAR_PX;
+  };
+  // Typing in a field other than the one the agent is filling (its target): a person's.
+  const awayFromAgentEl = (el) => {
+    const b = agentBox;
+    if (!b || now() - b.t > 15_000 || !el.getBoundingClientRect) return false;
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2 + scrollX, cy = r.top + r.height / 2 + scrollY;
+    return cx < b.x - FAR_PX || cx > b.x + b.w + FAR_PX || cy < b.y - FAR_PX || cy > b.y + b.h + FAR_PX;
+  };
   function drainUser() {
     const out = userEvents;
     userEvents = [];
@@ -60,11 +78,11 @@
       (el.scrollWidth > el.clientWidth && e.clientY - r.top >= el.clientTop + el.clientHeight);
   };
   const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"]);
-  addEventListener("pointerdown", (e) => { if (e.isTrusted && !ours(e)) { if (onScrollbar(e)) record("scroll", ""); else record("click", named(control(e))); } }, opts);
+  addEventListener("pointerdown", (e) => { if (e.isTrusted && !ours(e)) { if (onScrollbar(e)) record("scroll", ""); else record("click", named(control(e)), awayFromAgent(e)); } }, opts);
   addEventListener("keydown", (e) => {
     if (!e.isTrusted || ours(e)) return;
     const el = focused();
-    if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) record("type", named(el));
+    if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) record("type", named(el), awayFromAgentEl(el));
     else if (SCROLL_KEYS.has(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey) record("scroll", "");
     else if (e.key.length > 1) record("key", e.key); // Enter, Escape, Tab: never the letters
   }, opts);
@@ -76,6 +94,7 @@
   // a shared tab marks it on the other side's scrollbar. Taken from scrolling that follows their
   // own input (wheel, keys, a press on the scrollbar, touch), never the page's or an agent's.
   let view = null, personAt = 0, agentAt = 0;
+  let agentBox = null; // { x, y, w, h, t }: what the agent acts on now, in document pixels
   const looked = () => {
     const n = now();
     if (n - agentAt < 1500) return;
@@ -389,7 +408,7 @@
   // Answers given, for the helper (kind "join-answers"): a chain of object literals in this
   // closure, never an array a page could reach through Array.prototype; at most 5 kept. gone:
   // the ids whose time ran out (not dismissed), as one string.
-  let answered = null, answeredCount = 0, gone = "";
+  let answered = null, answeredCount = 0, gone = "", dismissed = "";
   const joins = new Map(); // id -> { timer, who, role }, oldest first
   function joinWire(shadow) {
     const jq = shadow.querySelector(".jq");
@@ -407,7 +426,7 @@
     for (const b of jq.querySelectorAll("button, .x")) b.addEventListener("mousedown", (e) => e.preventDefault()); // never takes focus from the page
     jq.querySelector(".ok").addEventListener("click", answer("join-allow"));
     jq.querySelector(".no").addEventListener("click", answer("join-deny"));
-    jq.querySelector(".x").addEventListener("click", (e) => { if (e.isTrusted && joinShown) joinOff(joinShown); });
+    jq.querySelector(".x").addEventListener("click", (e) => { if (e.isTrusted && joinShown) { dismissed = `${dismissed},${joinShown}`.slice(-200); joinOff(joinShown); } });
     // Not while the pointer is on it: someone reaching for Allow doesn't see it vanish.
     jq.addEventListener("pointerenter", () => { for (const j of joins.values()) clearTimeout(j.timer); });
     jq.addEventListener("pointerleave", () => { for (const id of joins.keys()) joinLater(id, 3000); });
@@ -469,7 +488,7 @@
     const wasBar = !!barHost?.isConnected;
     ensureBar();
     if (!wasBar) { drawBar(); placeBadge(); }
-    while (joins.size >= JOIN_KEEP) joinOff(joins.keys().next().value);
+    while (joins.size >= JOIN_KEEP) { const old = joins.keys().next().value; dismissed = `${dismissed},${old}`.slice(-200); joinOff(old); }
     joins.set(id, { timer: 0, who: String(r.who || "Someone").slice(0, 60), role: r.role === "drive" ? "drive" : "watch" });
     joinLater(id, JOIN_SHOWN_MS);
     joinDraw();
@@ -675,6 +694,8 @@
         const c = JSON.parse(text);
         const ms = pointer(Number(c.x) || 0, Number(c.y) || 0, String(c.act || ""), String(c.who || "Claude"), String(c.color || ""), Number(c.w) || 24);
         agentPtr = { x: Math.round((Number(c.x) || 0) + scrollX), y: Math.round((Number(c.y) || 0) + scrollY), t: now() };
+        const bw = Math.max(0, Number(c.bw) || 0), bh = Math.max(0, Number(c.bh) || 0);
+        agentBox = { x: agentPtr.x - bw / 2, y: agentPtr.y - bh / 2, w: bw, h: bh, t: now() };
         agentAt = now(); // the scrolling an agent's action causes isn't the person's
         return { ms }; // until it arrives
       } catch {}
@@ -687,7 +708,7 @@
     if (kind === "join") return joinOn(text);
     if (kind === "join-off") return joinOff(String(text || ""));
     if (kind === "join-state") return joinState();
-    if (kind === "join-answers") { const a = answered, g = gone; answered = null; answeredCount = 0; gone = ""; return { a, open: joins.size, gone: g }; }
+    if (kind === "join-answers") { const a = answered, g = gone, d = dismissed; answered = null; answeredCount = 0; gone = ""; dismissed = ""; return { a, open: joins.size, ids: [...joins.keys()].join(","), gone: g, dismissed: d }; }
     if (kind === "spark") {
       spark(String(text || ""));
       return true;

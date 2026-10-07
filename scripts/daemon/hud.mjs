@@ -133,7 +133,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   // inside: the press puts the cursor there). Resolves to how long it takes to arrive (ms).
   async function pointAt(page, box, act, who = "") {
     if (!box) return 0;
-    const r = await quietly(page, JSON.stringify({ x: box.x + box.width / 2, y: box.y + box.height / 2, act, who: who || "Claude", color: sparkOwner(page)?.color || "", w: Math.round(Math.min(box.width, box.height)) }), "cursor");
+    const r = await quietly(page, JSON.stringify({ x: box.x + box.width / 2, y: box.y + box.height / 2, act, who: who || "Claude", color: sparkOwner(page)?.color || "", w: Math.round(Math.min(box.width, box.height)), bw: Math.round(box.width), bh: Math.round(box.height) }), "cursor");
     return Math.max(0, Math.min(CURSOR_ARRIVE_MS, Number(r?.ms) || 0));
   }
   // Moves the cursor to an element (fast mode). Returns a promise: fast mode doesn't wait for the

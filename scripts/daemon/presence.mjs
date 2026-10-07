@@ -74,6 +74,8 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     return () => { span[1] = Date.now() + (tag === "popup" ? 100 : 700); };
   }
   const byAgent = (t, after = 0) => busy.some(([start, end]) => t >= start && t <= end + after);
+  // Keys at time t could be an agent's: one of its actions then types (fills, presses keys).
+  const typingAgent = (t) => busy.some((span) => t >= span[0] && t <= span[1] && span.tag !== "no-keys");
   // Shared browser mode: a joiner's input replayed here (screenshare.mjs) is real input in the
   // page, but it's theirs: marked while it runs, so it's never taken for the host's.
   const remote = []; // [start, end, who]
@@ -103,9 +105,11 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   // the time recorded for the person is kept recent.
   function userDid(events, page = null) {
     const at = Date.now();
-    // The bar's own button: a person's (never during an agent's action), and not page input.
+    // The bar's own button, not page input. Pause always counts: a person reaches for it exactly
+    // while agents are busy, and stopping them is harmless whoever presses it. Resume never
+    // during an agent's action: an agent must not undo a person's pause.
     for (const e of (Array.isArray(events) ? events : []).slice(0, 60)) {
-      if ((e?.kind === "pause" || e?.kind === "resume") && !byAgent(Math.min(at, Number(e.t) || at))) onPauseButton(e.kind);
+      if (e?.kind === "pause" || (e?.kind === "resume" && !byAgent(Math.min(at, Number(e.t) || at)))) onPauseButton(e.kind);
       // A person in the other browser filled this field (set here by the helper itself).
       if (e?.kind === "filled" && page) filledIn(page, cleanName(e.who, "Someone"), String(e.what ?? "").replace(/[\u0000-\u001f\u007f"`<>]/g, "").trim().slice(0, 60));
     }
@@ -113,12 +117,16 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       const happened = Math.min(at, Number(e.t) || at);
       return {
         kind: e.kind,
+        far: e.far === true,
         happened,
         t: Math.max(at - READ_LATE_MS, happened),
         what: String(e.what ?? "").replace(/[\u0000-\u001f\u007f"`<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 60),
       };
     });
-    const yours = clean.filter((e) => (e.kind === "wheel" || !byAgent(e.happened)) && !byRemote(e.happened)); // a joiner's is told where it's replayed
+    // During an agent's action its own input is real input too, so whose is told by where and what:
+    // a press well away from its target (far, from the page), or keys while it doesn't type.
+    const theirs = (e) => e.kind === "wheel" || e.far || !byAgent(e.happened) || ((e.kind === "type" || e.kind === "key") && !typingAgent(e.happened));
+    const yours = clean.filter((e) => theirs(e) && !byRemote(e.happened)); // a joiner's is told where it's replayed
     if (!yours.length) return;
     humanIn(page, host, Math.min(at, Math.max(...yours.map((e) => e.t))));
     // Reading along (moving, scrolling) holds nobody up; clicks, typing and keys do.

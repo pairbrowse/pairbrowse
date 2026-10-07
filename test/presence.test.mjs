@@ -37,8 +37,10 @@ test("pointer moves hold nobody up; clicks and typing do, the pause button is ne
     assert.equal(presence.actingIn(page), null, "the button isn't input in the page");
     const done = presence.busyStart();
     presence.userDid([{ kind: "resume", t: Date.now() }], page);
+    assert.deepEqual(pressed, ["pause"], "an agent can't resume");
+    presence.userDid([{ kind: "pause", t: Date.now() }], page);
     done();
-    assert.deepEqual(pressed, ["pause"], "an agent can't press it");
+    assert.deepEqual(pressed, ["pause", "pause"], "pausing works while an agent is mid-action (when a person needs it most)");
     mock.timers.tick(3000);
     presence.userDid([{ kind: "type", t: Date.now(), what: "Delivery instructions" }], page);
     assert.equal(presence.actingIn(page), "Bob");
@@ -98,5 +100,33 @@ test("input read late from a busy page is still taken (a read empties the page's
     assert.match(presence.userNote(page), /The user used this tab meanwhile: clicked "Go"/);
   } finally {
     stopped = true;
+  }
+});
+
+test("during an agent's action, a person's press away from its target and their typing while it doesn't type are theirs", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 3_000_000 });
+  try {
+    const presence = createPresence({ host: "Bob", readEvents: async () => [], pages: () => [], paused: () => true,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {}, onPauseButton() {} });
+    const page = {};
+    // A drag (keyless): its own press is near its target, so it stays the agent's.
+    let done = presence.busyStart("no-keys");
+    presence.userDid([{ kind: "click", t: Date.now(), what: "" }], page);
+    assert.equal(presence.actingIn(page), null, "the agent's own press");
+    presence.userDid([{ kind: "click", t: Date.now(), what: "", far: true }], page);
+    assert.equal(presence.actingIn(page), "Bob", "a press away from the agent's target is the person's");
+    done();
+    mock.timers.tick(5000);
+    done = presence.busyStart("no-keys");
+    presence.userDid([{ kind: "type", t: Date.now(), what: "Search" }], page);
+    assert.equal(presence.actingIn(page), "Bob", "typing while the agent only draws");
+    done();
+    mock.timers.tick(5000);
+    done = presence.busyStart();
+    presence.userDid([{ kind: "type", t: Date.now(), what: "Search" }], page);
+    assert.equal(presence.actingIn(page), null, "typing while the agent types: the agent's");
+    done();
+  } finally {
+    mock.timers.reset();
   }
 });

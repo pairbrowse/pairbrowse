@@ -15,7 +15,11 @@ function setup({ front = null, byPerson = () => true, focus = { now: true } } = 
   const show = async (page, value, kind) => {
     calls.push({ page: page.name, value, kind });
     if (kind === "join") return true;
-    if (kind === "join-answers") { const a = answers.get(page) || null, gone = page.gone || ""; answers.delete(page); page.gone = ""; return { a, open: 1, gone }; }
+    if (kind === "join-answers") {
+      const a = answers.get(page) || null, gone = page.gone || ""; answers.delete(page); page.gone = "";
+      if (page.reply) { const r = page.reply; page.reply = null; return { a, open: r.ids ? 1 : 0, gone, ...r }; }
+      return { a, open: 1, gone };
+    }
     return true;
   };
   const notes = [], cleared = [];
@@ -227,4 +231,22 @@ test("a join notification's body brings the browser to the front; answered elsew
   assert.equal(g.pbClearJoin("r00aa03"), false);
   assert.equal(await (await worker({ focused: true })).g.pbFocused(), true);
   assert.equal(await (await worker({ focused: false, state: "normal" })).g.pbFocused(), false, "another app in front");
+});
+
+test("a request the page lost (a reload) asks again; one the person dismissed stays down", async () => {
+  const front = fakePage("front");
+  const { calls, prompt, ask } = setup({ front });
+  const lostId = ask("Sam");
+  await prompt.refresh();
+  assert.deepEqual(prompt.shown(), [lostId]);
+  // The page reloaded: its new script shows nothing and nobody dismissed anything.
+  const show0 = calls.length;
+  front.reply = { ids: "", dismissed: "" };
+  await sleep(400);
+  await prompt.refresh();
+  assert.ok(calls.slice(show0).some((c) => c.kind === "join" && c.value.id === lostId), "shown again");
+  front.reply = { ids: "", dismissed: lostId };
+  await sleep(400);
+  await prompt.refresh();
+  assert.deepEqual(prompt.shown(), [], "dismissed: down");
 });

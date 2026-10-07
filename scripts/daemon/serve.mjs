@@ -611,6 +611,13 @@ export function createServe({ config, log, host, createConnection, clients, coll
           throw new Error(`${who === host ? "The user" : who} used this tab (${presence.didIn(page) || "clicked"}). Take a snapshot, then run the remaining steps.`);
         },
         owner: (el) => ownerOf(el, hud.key, { host, byAgent: presence.typedByAgent, byRemote: presence.byRemote }),
+        // Mid-step (a long stroke): a person acting in this tab or pausing agents stops it at once.
+        interrupted: () => {
+          const held = pause.view();
+          if (held.paused) return `Paused by ${held.by} mid-step: stopped there. Run the remaining steps once someone resumes.`;
+          const who = presence.actingIn(page);
+          return who ? `${who === host ? "The user" : who} took over this tab mid-step (${presence.didIn(page) || "clicked"}): stopped there. Take a snapshot, then go on.` : "";
+        },
         status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); },
         activity: (text) => hud.addActivity(text, myLabel(), page),
         cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
@@ -806,7 +813,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           if (page && page.isClosed()) return { again: true };
           if (presence.actingIn(page)) return { again: true };
           // Numbered as browser_tabs select takes it.
-          const busy = (label) => reply(id, `Tab ${page.context().pages().indexOf(page)} is in use by ${label}. Open or select another tab (browser_tabs), or wait and retry. If your user means you to work in this tab with ${label} (said or clear from their request, such as helping with or checking its work here), join it: pairbrowse_collaboration share.`, true);
+          const busy = (label) => reply(id, `Tab ${page.context().pages().indexOf(page)} is in use by ${label}. Open or select another tab (browser_tabs), or wait and retry. If your user means you to work in this tab with ${label} (said or clear from their request, such as helping with or checking its work here), join it: pairbrowse_collaboration share (you then take turns). To work at the same time in an app that keeps everyone in sync (a whiteboard, a design file, a shared doc), open the same address in a tab of your own.`, true);
           // A joiner's agent yields to the host's agent that already holds the tab here (a tie
           // when both started at once); else the other computer's agent goes first.
           const remote = page && remoteHolder(page);
@@ -865,17 +872,24 @@ export function createServe({ config, log, host, createConnection, clients, coll
         else if (action === "share") {
           // Joining a tab another agent works in, on the user's word: both act there, one call at
           // a time; never by chance (a new agent starts on a free tab, an agent's tab is refused).
-          if (remote || follow.forwards?.("browser_tabs")) return reply(msg.id, "Sharing a tab works between agents on one computer. In a shared session, work tab by tab.", true);
+          // Shared browser mode, joined from here: the tab is in the host's browser, so the host
+          // takes the turns (this agent is a participant there, like the host's own agents).
+          if (!remote && follow.forwards?.("browser_tabs")) {
+            const out = await follow.remoteCall(participant, msg, { app: clientName, label: myLabel() });
+            if (msg.id !== undefined) toClient({ jsonrpc: "2.0", ...out, id: msg.id });
+            return;
+          }
           const n = msg.params.arguments?.tab;
           const page = Number.isInteger(n) ? (await openTabs())[n] : null;
           if (!page || page.isClosed()) return reply(msg.id, `There's no tab ${n}. List them with browser_tabs.`, true);
-          if (remoteHolder(page)) return reply(msg.id, "An agent on another computer works in that tab: it can't be shared.", true);
+          // Follow mode: that agent acts in its own copy of the tab on its computer, so there are no turns to share.
+          if (remoteHolder(page)) return reply(msg.id, "An agent on another computer works in its own copy of that tab (follow mode): it can't be shared. In a shared browser session it can.", true);
           const s = tabClaims.share(page, participant, myLabel());
           setMine(page);
           await syncServer();
           hud.moveSpark(participant, page).catch(() => {});
           return reply(msg.id, s.with.length
-            ? `You now work in tab ${n} together with ${s.with.map((m) => m.label).join(", ")}. Your calls take turns with theirs, and a person using the tab pauses you all. Snapshot before acting: the page may change between your calls.`
+            ? `You now work in tab ${n} together with ${s.with.map((m) => m.label).join(", ")}. Your calls take turns with theirs (one pointer, one selected tool: theirs may change it between your calls), and a person using the tab pauses you all. Snapshot before acting: the page may change between your calls. To work at the same time in an app that keeps everyone in sync (a whiteboard, a design file, a shared doc), open the same address in a tab of your own instead.`
             : `Tab ${n} is your tab now; nobody else works in it.`);
         } else if (action === "message") {
           // Text only, to the other agents here and in a joined session; it makes nobody act.
@@ -932,7 +946,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // agent reads (a snapshot, a tab list) is still the person.
       const acting = msg.method === "tools/call" && (TAB_TOOLS.has(tool) || (tool === "browser_tabs" && msg.params?.arguments?.action !== "list"));
       const dispatch = async () => {
-        const done = acting ? presence.busyStart() : () => {};
+        // Actions that never type (a click, a drag, a scroll, a tab): keys meanwhile are a person's.
+        const runArgs = msg.params?.arguments || {};
+        const keyless = tool === "pairbrowse_run" ? Array.isArray(runArgs.steps) && runArgs.steps.every((s) => s && typeof s === "object" && ["drag", "click", "check", "uncheck", "scroll", "waitFor", "expect", "go"].includes(Object.keys(s)[0]))
+          : ["browser_click", "browser_hover", "browser_drag", "browser_tabs", "browser_navigate", "browser_navigate_back", "pairbrowse_scroll", "pairbrowse_click_at"].includes(tool);
+        const done = acting ? presence.busyStart(keyless ? "no-keys" : "") : () => {};
         // Showing another tab (or fast mode bringing its tab up) mustn't pull the browser over the
         // app you're in, like the Claude desktop app with its pane.
         const changesTab = tool === "browser_tabs" && ["select", "new"].includes(msg.params?.arguments?.action);

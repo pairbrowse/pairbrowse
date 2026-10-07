@@ -23,8 +23,8 @@
 //   serve.mjs     one connected agent: the rules before each call, the notes after
 import net from "node:net";
 import { createRequire } from "node:module";
-import { rmSync, existsSync, appendFileSync } from "node:fs";
-import { join } from "node:path";
+import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./secrets.mjs";
 import { createFollow } from "./daemon/follow.mjs";
@@ -65,6 +65,31 @@ const config = loadConfig();
 const driverChoice = chooseBrowserDriver(config, process.versions.node, patchrightNodeMinimum(paths.runtime));
 const { chromium } = driverChoice.driver === "playwright" ? { chromium: playwrightChromium } : require("patchright");
 ensureDirs();
+
+// One helper at a time, settled before anything else starts: each Claude Code and Codex window
+// starts one when there's none (after an update, a crash), often several at once, and a second
+// one must never touch the browser, the sharing tunnel or its saved state before it finds out.
+const lockFile = join(dirname(paths.daemonLog), "daemon.lock");
+function claimHelper() {
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+  for (let i = 0; i < 3; i++) {
+    try { writeFileSync(lockFile, String(process.pid), { flag: "wx", mode: 0o600 }); break; } catch (e) {
+      if (e.code !== "EEXIST") return true; // no lock possible here: as before (the socket decides)
+      let pid = 0, age = Infinity;
+      try { pid = Number(readFileSync(lockFile, "utf8")); age = Date.now() - statSync(lockFile).mtimeMs; } catch {}
+      // A live helper holds it (still starting, or with its socket up); otherwise it's left over.
+      if (pid && pid !== process.pid && alive(pid) && (age < 30_000 || existsSync(paths.socket))) return false;
+      rmSync(lockFile, { force: true });
+    }
+  }
+  // Several that found the same leftover lock: the last one written holds it, the others leave.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  try { return Number(readFileSync(lockFile, "utf8")) === process.pid; } catch { return false; }
+}
+if (process.argv[1]?.endsWith("daemon.mjs")) {
+  if (!claimHelper()) { log("another daemon is running; exiting"); process.exit(0); }
+  process.on("exit", () => { try { if (Number(readFileSync(lockFile, "utf8")) === process.pid) rmSync(lockFile, { force: true }); } catch {} });
+}
 if (driverChoice.notice) log(driverChoice.notice);
 
 // The host's name as joiners see it (pointers, presence, the join code): a person's, never "Host".
@@ -400,6 +425,7 @@ const serve = createServe({
       const pages = (await context.openPages()).filter((p) => !p.isClosed());
       if (args.focus !== undefined) { testFocus = typeof args.focus === "boolean" ? args.focus : null; joinPrompt.refresh(); return { text: `focus ${testFocus}` }; }
       if (args.notes) return { text: JSON.stringify(await panel.call(() => globalThis.pbJoinNotes?.() ?? null, null, 5000).catch(() => null)) };
+      if (args.press) return { text: JSON.stringify(await panel.call((a) => globalThis.pbJoinPress?.(a.r, a.i) ?? "none", { r: String(args.request || ""), i: args.press === "allow" ? 0 : 1 }, 8000).catch((e) => `failed: ${e?.message || e}`)) };
       if (args.move) { const p = await joinPrompt.front(); await p?.mouse.move(5, 5); return { text: "moved" }; }
       if (!args.click) return { text: JSON.stringify(await Promise.all(pages.map(async (p) => ({ url: p.url(), rows: (await hud.call(p, "", "join-state").catch(() => null)) || [] })))) };
       const page = await joinPrompt.front();

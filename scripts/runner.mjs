@@ -17,6 +17,8 @@ import { slug } from "./runs.mjs";
 import { readJson, sleep, within } from "./util.mjs";
 import { withHelpers, buttonLabel, isVisible, nearbyText, clickRisk, clickContext } from "./daemon/page.mjs";
 
+// A stroke's pace: one small move this often (a steady hand drawing).
+const STROKE_STEP_MS = 8;
 // How long a handoff waits for the user (a sign-in, a CAPTCHA).
 const HANDOFF_MS = 10 * 60_000;
 
@@ -349,6 +351,9 @@ async function stepsIn(page, steps, hooks) {
       } else if (kind === "fill") {
         const filled = [];
         for (const [label, raw] of Object.entries(arg)) {
+          // A person took over between two fields: stop before the next one.
+          const why = hooks.interrupted?.();
+          if (why) throw new Error(why);
           const el = await field(page, label);
           if (!el) return fail(`No field "${label}".`);
           if (await theirs(el, label)) continue;
@@ -448,13 +453,35 @@ async function stepsIn(page, steps, hooks) {
         const pts = arg.map(([x, y]) => ({ x: Math.round(x * w), y: Math.round(y * h) }));
         const mark = (p) => hooks.cursor?.({ boundingBox: async () => ({ x: p.x, y: p.y, width: 0, height: 0 }) }, "");
         await mark(pts[0]);
+        // The hand comes to the start as a person's does (human paths in the PairBrowse browser).
         await page.mouse.move(pts[0].x, pts[0].y);
-        await page.mouse.down();
-        // Let go whatever happens on the way: a stroke that fails must never leave the button held.
+        // The stroke itself goes straight to the browser's input at a steady drawing pace: the
+        // humanized mouse gives every move a hand's whole reach-and-settle time (about half a
+        // second per point) and presses where its own last move ended.
+        const cdp = await page.context().newCDPSession(page);
+        const send = (type, p) => cdp.send("Input.dispatchMouseEvent", { type, x: p.x, y: p.y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+        let at = pts[0];
         try {
-          for (const p of pts.slice(1)) { await page.mouse.move(p.x, p.y, { steps: 8 }); await mark(p); }
+          await send("mousePressed", at);
+          // Let go whatever happens on the way: a stroke that fails must never leave the button held.
+          try {
+            for (const p of pts.slice(1)) {
+              // A person took over (clicked, typed, paused agents): the stroke stops where it is.
+              const why = hooks.interrupted?.();
+              if (why) throw new Error(why);
+              const n = Math.max(2, Math.min(12, Math.round(Math.hypot(p.x - at.x, p.y - at.y) / 12)));
+              for (let k = 1; k <= n; k++) {
+                await send("mouseMoved", { x: Math.round(at.x + (p.x - at.x) * k / n), y: Math.round(at.y + (p.y - at.y) * k / n) });
+                await new Promise((r) => setTimeout(r, STROKE_STEP_MS));
+              }
+              at = p;
+              await mark(p);
+            }
+          } finally {
+            await send("mouseReleased", at).catch(() => {});
+          }
         } finally {
-          await page.mouse.up().catch(() => {});
+          cdp.detach().catch(() => {});
         }
         hooks.activity(`Drew a stroke (${pts.length} points)`);
       } else if (kind === "scroll") {

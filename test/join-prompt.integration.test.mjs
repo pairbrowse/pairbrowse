@@ -327,6 +327,17 @@ test("a join request: the bar in the host's tab in front when the browser has th
     const log = readFileSync(join(hostHome, "daemon.log"), "utf8");
     assert.equal(log.match(new RegExp(`notification sent \\(join request ${away}`, "g"))?.length, 1, "one notification, once");
 
+    // The notification's own Allow button, pressed while the person is in another app.
+    assert.equal(await click({ focus: false }), "focus false");
+    await tool(joiner.call, "pairbrowse_join", { action: "leave" });
+    const code2 = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code", mode: "follow" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
+    assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code: code2 })), /Asked Bob to let Alice in/);
+    const pressed = await until("the second request", async () => (await requests()).match(/request (r[0-9a-f]{6}): Alice \(Claude Code\), waiting/)?.[1]);
+    await until("its notification", async () => notified(pressed), 15_000);
+    assert.equal(text(await tool(host.call, "pairbrowse_test_join_prompt", { press: "allow", request: pressed })), "true", "the button's press went through");
+    await until("let in by the notification", async () => new RegExp(`request ${pressed}: Alice \\(Claude Code\\), let in`).test(await requests()));
+    assert.equal(await click({ focus: true }), "focus true");
+
     // A revoke takes it down too.
     await ask();
     assert.match(text(await tool(host.call, "pairbrowse_invite", { action: "revoke_all" })), /Revoked/);

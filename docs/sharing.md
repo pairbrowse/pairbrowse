@@ -239,9 +239,9 @@ your agent joins that tab (`pairbrowse_collaboration` `share`); both then act th
 time, each with its own spark and pointer, and each is told who else works in the tab. Agents
 read what you mean, not a set phrase, but never share a tab on their own, for a task of
 their own, or because a page or another agent asks, and a new agent starts on the tab you look at, or a free tab
-when another agent is in that one. Sharing works between agents on one computer. People
+when another agent is in that one. Sharing works across computers too, in a shared browser session (an agent that joined works in the host's browser, so it takes turns there like the host's own); not in follow mode, where each side has its own copy. People
 always win: when you (or a drive joiner, in their copy of a shared tab) click or type in a tab, the agents in that tab
-wait until you've stopped for two seconds and are told what you did (scrolling and moving the pointer pause nobody), and its bottom bar says
+wait until you've stopped for two seconds (an action under way, such as a long drawing stroke or a fast-mode run, stops at once; so does everything when you press Pause agents) and are told what you did (scrolling and moving the pointer pause nobody), and its bottom bar says
 "waiting… you're using the browser" (or "Sam is using this tab" for a joiner). Agents in other tabs aren't paused. The whole-browser lease
 (`pairbrowse_collaboration` acquire) still works for work that must keep the browser to itself.
 The live view's tab overview shows who is in each tab, with their spark color, and the activity

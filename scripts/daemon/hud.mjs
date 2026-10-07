@@ -109,6 +109,10 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (page) await applySpark(page, tabIcon(page));
   }
   const sparkPage = (participant) => sparks.get(participant)?.page;
+  // The agent is done in a tab: its cursor there goes at once instead of after a while.
+  const hideCursor = (page) => (page && !page.isClosed() ? quietly(page, "", "cursor-off") : Promise.resolve());
+  // Every agent's spark: [{ id, page, color }].
+  const sparkList = () => [...sparks.entries()].map(([id, s]) => ({ id, page: s.page, color: s.color }));
   // The agent whose spark is on this tab: { id, color }, or null.
   function sparkOwner(page) {
     const entry = [...sparks.entries()].find(([, s]) => s.page === page);
@@ -169,7 +173,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
     source, call, ensure, onPageLoad, applyBar, setBadge, badge: () => badge,
-    moveSpark, sparkPage, sparkOwner, sparkColor, clearSparks: () => sparks.clear(), setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
+    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, sparkColor, clearSparks: () => sparks.clear(), setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor,
   };
 }

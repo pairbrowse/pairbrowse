@@ -19,6 +19,7 @@ import { withHelpers, buttonLabel, isVisible, nearbyText, clickRisk, clickContex
 
 // A stroke's pace: one small move this often (a steady hand drawing).
 const STROKE_STEP_MS = 8;
+const strokeEnds = new WeakMap(); // page -> where its last stroke let go (moves the humanized mouse doesn't know of)
 // How long a handoff waits for the user (a sign-in, a CAPTCHA).
 const HANDOFF_MS = 10 * 60_000;
 
@@ -321,10 +322,39 @@ async function waitOrDisconnect(promise, signal) {
 export async function runSteps(page, steps, hooks) {
   const human = !hooks.smooth && page._pairbrowseHumanized === true;
   if (human) page._pairbrowseHumanized = false;
-  try { return await stepsIn(page, steps, hooks); } finally { if (human) page._pairbrowseHumanized = true; }
+  const touched = []; // [{ el, label }]: the fields the run filled or chose in
+  try {
+    const result = await stepsIn(page, steps, hooks, touched);
+    result.checks = await fieldProblems(touched).catch(() => []);
+    return result;
+  } finally { if (human) page._pairbrowseHumanized = true; }
 }
 
-async function stepsIn(page, steps, hooks) {
+// What the page says is wrong with the fields the run just filled (its own error text, or the
+// browser's validation message), so the agent fixes them before going on: an address the site
+// wants in another format, a date out of range, a choice that didn't stick.
+async function fieldProblems(touched) {
+  const out = [];
+  for (const { el, label, want } of touched.slice(0, 40)) {
+    const p = await within(1500, el.evaluate((n, want) => {
+      const text = (id) => id.split(/\s+/).map((x) => document.getElementById(x)?.innerText || "").join(" ").replace(/\s+/g, " ").trim();
+      const invalid = n.getAttribute("aria-invalid") === "true" || (n.willValidate && n.validity && !n.validity.valid && (n.value !== "" || n.required));
+      let says = "";
+      if (invalid) says = text(n.getAttribute("aria-errormessage") || "") || text(n.getAttribute("aria-describedby") || "") || n.validationMessage || "marked as not valid";
+      // A choice that didn't stick: the dropdown shows something else.
+      if (!says && want) {
+        const shown = n.tagName === "SELECT" ? n.selectedOptions[0]?.text || "" : (n.value ?? n.innerText ?? "");
+        if (!String(shown).toLowerCase().includes(String(want).toLowerCase())) says = `shows "${String(shown).slice(0, 60)}", not "${want}"`;
+      }
+      return says.slice(0, 160);
+    }, want || "").catch(() => "")).catch(() => "");
+    if (p) out.push(`"${label}": ${p}`);
+  }
+  return out;
+}
+
+
+async function stepsIn(page, steps, hooks, touched = []) {
   const started = Date.now();
   const done = [];
   const skipped = []; // [{ label, who }]
@@ -390,6 +420,7 @@ async function stepsIn(page, steps, hooks) {
             return fail(`"${f.label}" didn't keep the value${f.secret ? "" : ` "${f.value}"`} (it shows ${f.secret ? "something else" : `"${after}"`}). It may need its picker or a different format: check the screenshot, then fill it step by step.`);
           }
         }
+        for (const f of filled) touched.push({ el: f.el, label: f.label });
         if (filled.length) hooks.activity(`Filled ${filled.map((f) => `**${f.label}**`).join(", ")}`);
       } else if (kind === "check" || kind === "uncheck") {
         // Also a bare box followed by its text, with no label element ("<input> checkbox 1").
@@ -418,6 +449,7 @@ async function stepsIn(page, steps, hooks) {
             if (!pick) return fail(`Opened "${label}" but found no option "${option}".`);
             await pick.click({ timeout: 5000 });
           }
+          touched.push({ el, label, want: isSelect ? String(option) : "" });
         }
         hooks.activity(`Chose ${Object.entries(arg).map(([k, v]) => `**${k}** = \`${v}\``).join(", ")}`);
       } else if (kind === "click") {
@@ -451,14 +483,27 @@ async function stepsIn(page, steps, hooks) {
         const [w, h] = await page.evaluate(() => [innerWidth, innerHeight]);
         const pts = arg.map(([x, y]) => ({ x: Math.round(x * w), y: Math.round(y * h) }));
         const mark = (p) => hooks.cursor?.({ boundingBox: async () => ({ x: p.x, y: p.y, width: 0, height: 0 }) }, "");
-        await mark(pts[0]);
-        // The hand comes to the start as a person's does (human paths in the PairBrowse browser).
-        await page.mouse.move(pts[0].x, pts[0].y);
-        // The stroke itself goes straight to the browser's input at a steady drawing pace: the
-        // humanized mouse gives every move a hand's whole reach-and-settle time (about half a
-        // second per point) and presses where its own last move ended.
+        const glide = Math.min(600, Number(await mark(pts[0])) || 0); // how long the cursor takes to get there
+        // The stroke goes straight to the browser's input at a steady drawing pace: the humanized
+        // mouse gives every move a hand's whole reach-and-settle time (about half a second per
+        // point, seconds for a long reach) and presses where its own last move ended.
         const cdp = await page.context().newCDPSession(page);
         const send = (type, p) => cdp.send("Input.dispatchMouseEvent", { type, x: p.x, y: p.y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+        const from = strokeEnds.get(page);
+        if (!from) {
+          // The first stroke here: the hand comes to the start as a person's does (human paths in
+          // the PairBrowse browser).
+          await page.mouse.move(pts[0].x, pts[0].y);
+        } else {
+          // From the last stroke's end: along a gentle curve, eased, in the time the cursor glides.
+          const dx = pts[0].x - from.x, dy = pts[0].y - from.y;
+          const n = Math.max(3, Math.round(glide / 16));
+          for (let k = 1; k <= n; k++) {
+            const e = (1 - Math.cos((Math.PI * k) / n)) / 2, bend = 0.08 * Math.sin(Math.PI * e);
+            await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(from.x + dx * e - dy * bend), y: Math.round(from.y + dy * e + dx * bend), button: "none", buttons: 0 });
+            await new Promise((r) => setTimeout(r, glide / n));
+          }
+        }
         let at = pts[0];
         try {
           await send("mousePressed", at);
@@ -478,6 +523,7 @@ async function stepsIn(page, steps, hooks) {
             }
           } finally {
             await send("mouseReleased", at).catch(() => {});
+            strokeEnds.set(page, at);
           }
         } finally {
           cdp.detach().catch(() => {});

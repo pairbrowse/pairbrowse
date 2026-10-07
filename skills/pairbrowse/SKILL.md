@@ -63,6 +63,33 @@ payment, legal or tax steps, and when the user wants to watch closely. Mix freel
 - Autocompletes and custom dropdowns: type, wait for the suggestion, click it. Don't press Enter
   to pick one: it may submit the form.
 
+## Check your own work and correct it
+
+After each step, read the result and its screenshot as a reviewer would: did it come out the way
+you meant? If not, fix it yourself before going on, without waiting to be told.
+
+- Forms: a run ends with "Check before going on, the page says: ..." when the page flags a field it
+  filled (its error text or the browser's validation message) or a dropdown shows another choice.
+  Fix those fields in one more run (another format, the picker step by step), then go on. A filled
+  value the page threw away is retyped key by key by the run itself; if it still won't keep, the run
+  stops and says so.
+- Drawing and canvas apps (whiteboards, editors): compare the screenshot with what you meant to
+  draw. A stroke off, too short, crossing another shape: undo it right away (`press` Meta+z on
+  macOS, Control+z elsewhere) if it is your last action there; otherwise erase just that part
+  (the app's eraser, or select it and Delete) and draw it again. Never undo another participant's
+  work: in a shared board, Undo may take back theirs, so use the eraser on your own strokes.
+- Clicks: if the page didn't change as expected (a menu didn't open, a tab didn't switch), look
+  again and click the right element; don't repeat the same click blindly.
+- Say what you corrected in your summary.
+
+## Recording the browser
+
+`pairbrowse_record` start / stop / status records the browser as a video (only when the user asks
+for one): the tab in front, following tab switches, under a strip naming each tab and the agent
+working in it. `follow: "agents"` shows the tabs agents work in instead, switching between them as
+they work, without changing what the user sees. stop saves it in the user's Downloads folder and
+says where; the side panel's Record button does the same. A recording ends with the browser.
+
 ## Details and passwords
 
 - You may draft marketing copy (descriptions, taglines, features) within the field's limit; list it

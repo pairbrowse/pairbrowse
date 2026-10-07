@@ -5,6 +5,13 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.25 (2026-10-08)
+
+- Record the browser: the side panel's Record button, or `pairbrowse_record` for agents. The video (60 fps, the browser's own tab capture, no screen permission) follows the tab in front, or with `follow: "agents"` the tabs agents work in, under a strip naming each tab and its agent. Saved in Downloads.
+- Agents check their own work: a fast-mode run reports fields the page flags as wrong (in the page's own words) and dropdowns that show another choice, and agents are told to look at each result and fix mistakes (forms, drawings, missed clicks) before going on.
+- Drawing is faster: after the first stroke, the hand glides to the next one in a fraction of a second instead of a slow reach; two agents drew a full house in under a minute.
+- An agent's cursor and name stay on screen while it works, also while it waits its turn between actions, and go when it's done or leaves.
+
 ## 0.15.24 (2026-10-07)
 
 0.15.23 with its form-filling change corrected (its release check failed on it).

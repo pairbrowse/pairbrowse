@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
 import { paths } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
-import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, SENSITIVE } from "../policy.mjs";
+import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, SENSITIVE } from "../policy.mjs";
 import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
@@ -25,7 +25,7 @@ import { buttonLabel } from "./page.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 
-const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
+const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
 // A small picture of the page goes with each result that changes what's on screen, taken once
 // the page has loaded and settled for a second: the layout, overlays and images the text
 // snapshot can't show. config.screenshots = false turns it off.
@@ -179,7 +179,7 @@ export function pathsIn(name, args = {}) {
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, testTools = {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, testTools = {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // When each session last called a tool: only the ones in use hold up a session switch or closing
   // the browser. An open but idle session (a Claude Code window left for hours) doesn't.
@@ -635,8 +635,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const head = result.ok
         ? `Done: ${result.done.length} steps in ${(result.ms / 1000).toFixed(1)}s.${left}${saving ? ` Saved as playbook "${args.saveAs}".` : ""}`
         : `Stopped at step ${result.stoppedAt} of ${resolved.length}: ${result.why}${left}`;
+      // The page says something it filled is wrong: the agent fixes it before going on.
+      const checks = result.checks?.length ? `\nCheck before going on, the page says: ${result.checks.join("; ")}. Fix these (look at the screenshot), then continue.` : "";
       const out = await outline(page).catch(() => `Page: ${page.url()}`);
-      return { text: `${head}\n${out}`, error: !result.ok, url: page.url() };
+      return { text: `${head}${checks}\n${out}`, error: !result.ok, url: page.url() };
     }
 
     // PairBrowse's own tools. Each returns { text, error, url } (or { content } with a picture).
@@ -644,6 +646,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
       pairbrowse_session: (args) => context.sessionCommand(args),
       pairbrowse_facts: (args) => facts.command(args),
       pairbrowse_liveview: () => sharing.liveViewCommand(),
+      async pairbrowse_record(args) {
+        await context.getContext();
+        return recorder ? recorder.command(args) : { text: "Recording isn't available here.", error: true };
+      },
       pairbrowse_invite: (args) => sharing.inviteCommand(args, { who: appName(clientName) }),
       async pairbrowse_join(args) {
         const r = await follow.command(args, { owner: participant, app: clientName });
@@ -654,6 +660,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       async pairbrowse_status(args) {
         await context.getContext();
       await hud.setBadge(args.text, args.kind);
+        if (args.kind === "done" || args.kind === "clear") await hud.hideCursor(hud.sparkPage(participant));
         session.setStatus(participant, args.text, args.kind); // the side panels in a shared session show it
         return { text: "ok" };
       },
@@ -1006,6 +1013,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     }).on("error", () => {}); // a client gone mid-write (EPIPE) must not take the helper down
     sock.on("error", () => {});
     sock.on("close", () => {
+      hud.hideCursor(hud.sparkPage(participant)).catch(() => {}); // the agent is gone: so is its cursor
       // Let an already-dispatched action finish before disposing this MCP backend. The
       // shared queue stays locked meanwhile; queued requests from this socket are skipped.
       // If a disconnected client leaves an unresponsive action, reset the browser before

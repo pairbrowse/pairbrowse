@@ -181,7 +181,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       tunnelHost: () => pool.map((t) => new URL(t.url).hostname),
       relays: () => pool.map((t) => t.url),
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
-      onPause: view.onPause, pauseState: view.pauseState, picker: view.picker, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel,
+      onPause: view.onPause, pauseState: view.pauseState, onRecord: view.onRecord, recordState: view.recordState, picker: view.picker, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel,
     });
     await restoring;
     // Keep the sharing tunnel's port when the live view restarts with the browser.

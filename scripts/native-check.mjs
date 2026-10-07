@@ -108,7 +108,12 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
     for (let i = 0; i < 20 && site.sent.name === null; i++) await sleep(100);
     if (site.sent.name !== "PairBrowse check") throw new Error(`the form sent ${JSON.stringify(site.sent.name)}`);
     passed.push("form fill and send");
-    await page.goto(site.origin, { waitUntil: "domcontentloaded" });
+    // The form's own navigation back to this page can still be on its way on a slow computer (the
+    // wait above ends at once: the address is already this one); the page ends up here either way.
+    await page.goto(site.origin, { waitUntil: "domcontentloaded" }).catch(async (e) => {
+      if (!/interrupted by another navigation/.test(String(e?.message || e))) throw e;
+      await page.waitForLoadState("domcontentloaded");
+    });
     const [file] = await Promise.all([page.waitForEvent("download", { timeout: 15_000 }), page.click("#dl")]);
     const saved = join(scratch, "download.txt");
     await file.saveAs(saved);

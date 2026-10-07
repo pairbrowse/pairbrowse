@@ -70,7 +70,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     span.tag = tag;
     busy.push(span);
     if (busy.length > 50) busy.shift();
-    // A popup check that found nothing takes a moment: a person's click right after it is theirs.
+    // A popup's close button clicked by PairBrowse: a person's click right after it is theirs.
     return () => { span[1] = Date.now() + (tag === "popup" ? 100 : 700); };
   }
   const byAgent = (t, after = 0) => busy.some(([start, end]) => t >= start && t <= end + after);

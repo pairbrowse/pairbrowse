@@ -271,8 +271,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
       for (const ms of LATE_POPUP_CHECKS_MS) {
         setTimeout(() => {
           if (page.isClosed() || page.url() !== seenUrl || presence.agentActing()) return; // never click alongside an agent
-          const done = presence.busyStart("popup");
-          popups.dismissOverlay(page, { closeOffers: true }).catch(() => {}).finally(done);
+          // Only its click (if it finds a popup) counts as PairBrowse's: a person's click while it
+          // looks is theirs (agents wait for it, and hear of it).
+          popups.dismissOverlay(page, { closeOffers: true, clicking: () => presence.busyStart("popup") }).catch(() => {});
         }, ms).unref();
       }
     }

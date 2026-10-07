@@ -65,8 +65,14 @@ test("interrupting overlays inside the page are closed, other dialogs are left a
         <button onclick="this.parentNode.remove(); window.choice='accept'">Accept all</button>
         <button onclick="this.parentNode.remove(); window.choice='reject'">Reject all</button>
       </div>`);
-    await popups.dismissOverlay(page);
+    // Only the click itself is PairBrowse's own input; a look that finds nothing clicks nothing.
+    let clicks = 0;
+    const clicking = () => { clicks++; return () => {}; };
+    await popups.dismissOverlay(page, { clicking });
     assert.equal(await inPage(page, () => window.choice), "accept", "accepts by default");
+    assert.equal(clicks, 1, "its click is marked as PairBrowse's");
+    await popups.dismissOverlay(page, { clicking });
+    assert.equal(clicks, 1, "nothing to close: nothing marked, a person's click meanwhile stays theirs");
     assert.match(popups.drain(), /cookie banner.*Accept all/);
 
     // Wording no list knows: Claude is told what covers the page and which buttons it has.

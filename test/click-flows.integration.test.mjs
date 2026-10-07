@@ -124,8 +124,13 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
     stage = "sign-up, step by step with browser_click";
     flow = "sign-up (clicks)";
     await call("browser_navigate", { url: `${site}/signup` });
-    // The helper may have closed the cookie banner itself by now ("Closed a cookie banner").
-    if (ref(await snap(), "button", "Accept all")) await click("button", "Accept all");
+    // The helper may close the cookie banner itself ("Closed a cookie banner"), before this
+    // snapshot or between it and the click: either way the banner being handled is a pass.
+    const accept = ref(await snap(), "button", "Accept all");
+    // A click on a banner already gone answers with an error that isn't a refusal of the flow.
+    if (accept && (await claude.call("tools/call", { name: "browser_click", arguments: { target: accept, element: "Accept all" } })).result?.isError) {
+      assert.ok(!ref(await snap(), "button", "Accept all"), "the cookie banner is handled");
+    }
     await type("Full name", "Ada Lovelace");
     await type("Email", "ada@example.com");
     assert.ok(!(await click("button", "Continue")).result.isError);

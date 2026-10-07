@@ -13,6 +13,7 @@ const STATE_AGAIN_MS = 1000; // titles and the like, which no event announces
 const PERSON_AGAIN_MS = 900;
 const POINTER_MS = 33; // pointers go out at most 30 times a second
 const POINTER_FRESH_MS = 3000; // a pointer still for this long fades out
+const AGENT_POINTER_MS = 12000; // an agent's stays as long as its cursor here does (hud.js CURSOR_HOLD_MS)
 const HEARTBEAT_MS = 1000; // keeps the tunnel from closing an idle stream, and lets a joiner see a stalled one in seconds
 const STREAMS_PER_JOINER = 2;
 const FRAME_SKIP_BYTES = 1 << 20; // a joiner this far behind gets no new pictures until it catches up
@@ -118,7 +119,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       if (r?.view && Date.now() - Number(r.view.t) < VIEW_FRESH_MS && !(hostView && hostView.page !== page && hostView.t > r.view.t)) out.push({ id, x: 0, y: r.view.y, h: r.view.h, v: 1, t: r.view.t, who: shared.host || "Host", color: personColor(shared.host || "Host"), k: "host-view" });
       let meta = {};
       try { meta = tabMeta(page) || {}; } catch {}
-      if (fresh(r?.agent) && meta.agent && !meta.agent.joined) out.push({ id, x: r.agent.x, y: r.agent.y, t: r.agent.t, who: meta.agent.label, color: meta.agent.color || "#e9763f", k: `host-agent:${id}` });
+      if (r?.agent && Date.now() - Number(r.agent.t) < AGENT_POINTER_MS && meta.agent && !meta.agent.joined) out.push({ id, x: r.agent.x, y: r.agent.y, t: r.agent.t, who: meta.agent.label, color: meta.agent.color || "#e9763f", k: `host-agent:${id}` });
     }
     for (const [key, e] of joinerPointers) if (key !== st.key && Date.now() - e.t < POINTER_FRESH_MS) out.push(...e.list);
     for (const [key, v] of joinerViews) if (key !== st.key && pages.has(v.id) && Date.now() - v.t < VIEW_FRESH_MS) out.push(v);

@@ -707,6 +707,7 @@
     // The agent is done here (its status says so, or it went away): its cursor goes now.
     if (kind === "cursor-off") {
       clearTimeout(curTimer);
+      agentPtr = null; // joiners stop showing it too
       cur?.classList.remove("on");
       return true;
     }

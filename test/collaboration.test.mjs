@@ -48,10 +48,8 @@ test("tasks in different tabs run at the same time; one tab takes turns; a brows
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const task = (name, ms) => async () => { log.push(`${name}+`); await sleep(ms); log.push(`${name}-`); };
   const tab1 = {}, tab2 = {};
-  const started = Date.now();
   await Promise.all([c.run("a", task("a1", 100), tab1), c.run("b", task("b2", 100), tab2)]);
-  assert.ok(Date.now() - started < 180, `two tabs at once (${Date.now() - started} ms)`);
-  assert.deepEqual(log.slice(0, 2).sort(), ["a1+", "b2+"]);
+  assert.deepEqual(log.slice(0, 2).sort(), ["a1+", "b2+"], "two tabs at once: both start before either ends");
   log.length = 0;
   await Promise.all([c.run("a", task("x", 40), tab1), c.run("b", task("y", 40), tab1)]);
   assert.deepEqual(log, ["x+", "x-", "y+", "y-"], "one tab: in turn");

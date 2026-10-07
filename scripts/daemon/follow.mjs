@@ -15,6 +15,7 @@ import { sleep, currentAccount, within } from "../util.mjs";
 import { panelExtensionId } from "../browser.mjs";
 import { pathsIn, withPaths } from "./serve.mjs";
 import { uploadProblem } from "../upload.mjs";
+import { AGENT_GONE } from "./remote-agents.mjs";
 import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 
@@ -136,7 +137,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const mine = { full: drive, secretDomains: secretDomains() };
     const ops = [];
     for (const [id, page] of cur.pages) {
-      if (page.isClosed()) { cur.pages.delete(id); const op = cur.mirror.closedHere(id); if (drive && op) ops.push(op); continue; }
+      if (page.isClosed()) { forgetTab(cur, id, page); const op = cur.mirror.closedHere(id); if (drive && op) ops.push(op); continue; }
       const op = cur.mirror.fromLocal(id, shareableUrl(page.url(), mine));
       if (drive && op) ops.push(op);
       // A person here, using this copy by hand: agents there wait for them too (drive only).
@@ -193,6 +194,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const adopting = [];
     if (drive) {
       const mapped = new Set(cur.pages.values());
+      for (const p of cur.candidates.keys()) if (p.isClosed()) cur.candidates.delete(p); // closed before it was adopted
       for (const p of ctx.pages()) {
         if (mapped.has(p) || p.isClosed() || cur.seen.has(p)) continue;
         let since = cur.candidates.get(p);
@@ -256,13 +258,21 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     cur.devSig = sig;
   }
 
+  // A shared tab closed (there or here): everything kept about it goes, so a long session doesn't
+  // collect the state of every tab it ever saw.
+  function forgetTab(cur, id, page) {
+    for (const m of [cur.pages, cur.who, cur.infos, cur.urls, cur.heard, cur.titles, cur.agentSent, cur.personSent, cur.formT]) m.delete(id);
+    cur.forms.drop(id);
+    if (page) { cur.screens.delete(page); cur.dirty.delete(page); }
+  }
+
   // The host's tabs as they changed (pushed): applied here.
   async function applyHost(state, cur) {
     if (s !== cur) return;
     await allowDevServers(state.dev, cur).catch((e) => log("shared dev server", e?.message || e));
 
     const plan = cur.mirror.fromHost(state.tabs, new Set(cur.pages.keys()));
-    for (const id of plan.close) { const page = cur.pages.get(id); cur.pages.delete(id); cur.who.delete(id); cur.infos.delete(id); if (page) await closeTab(page); }
+    for (const id of plan.close) { const page = cur.pages.get(id); forgetTab(cur, id, page); if (page) await closeTab(page); }
     for (const { id, url } of plan.navigate) {
       const page = cur.pages.get(id);
       // Shared browser: the picture shows the host's tab wherever it goes.
@@ -586,6 +596,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (cur) onLeft?.();
     if (cur) for (const page of cur.pages.values()) if (!page.isClosed()) { hud.setSharedSpark(page, ""); hud.setPersonMark(page, ""); }
     if (cur) { clearInterval(cur.inputTimer); cur.inputTimer = null; }
+    for (const [participant, st] of agentState) if (st.cur === cur) agentState.delete(participant);
     if (cur) await cur.join.leave();
     // Shared browser: each picture becomes the tab it showed, as your own (signed in as you).
     if (cur?.shared) for (const [id, page] of cur.pages) if (!page.isClosed() && isScreen(page) && /^https?:/.test(cur.urls.get(id) || "")) page.goto(cur.urls.get(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {});
@@ -737,6 +748,13 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     remoteCall,
     // The connection that joined went away: so does the join.
     ownerGone(owner) { if (s?.owner === owner) stop("left the shared session: its connection closed").catch(() => {}); },
+    // An agent here disconnected: the participant it had in the host's browser goes too.
+    agentGone(participant) {
+      const st = agentState.get(participant);
+      if (!st) return;
+      agentState.delete(participant);
+      if (s === st.cur && s.join.phase === "in") s.join.agent(participant.slice(0, 16), JSON.stringify({ jsonrpc: "2.0", method: AGENT_GONE })).catch(() => {});
+    },
     stop,
     // The agent holding this shared tab in the other browser ({ label, color, held, until }), for
     // the tab overview and turns (an agent here waits while it's held).

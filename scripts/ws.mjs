@@ -77,6 +77,8 @@ function wrap(socket, { client, head, maxMessage = MESSAGE_MAX }) {
     onMessage(fn) { on.message.add(fn); },
     onClose(fn) { if (closed) fn(); else on.close.add(fn); },
     get closed() { return closed; },
+    // Bytes written but not yet taken by the other side (a reader that fell behind).
+    get buffered() { return closed ? 0 : socket.writableLength; },
   };
 }
 

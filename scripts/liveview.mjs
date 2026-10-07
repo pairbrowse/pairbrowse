@@ -36,6 +36,8 @@ const JOINER_NAV_MS = 15_000; // a joiner's change: until the host's tab starts 
 const ACTIVITY_MAX = 30;
 const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
+const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
+const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
 const OWNER_ONLY = new Set(["profile", "join", "board", "dev"]); // events only the owner's streams get
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
 // readForm(page): { url, fields } as they may cross, or null. applyForm(page, fields, who).
@@ -146,6 +148,10 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   const broadcast = (event, data) => {
     const msg = sse(event, data);
     for (const res of event === "frame" ? viewers : OWNER_ONLY.has(event) ? owners : clients) {
+      // A reader that stopped reading (a laptop asleep with the connection still open) would
+      // otherwise collect every frame in memory: frames wait for it, and one far behind is cut.
+      if (res.writableLength > STALLED_BYTES) { res.destroy(); continue; }
+      if (event === "frame" && res.writableLength > FRAME_SKIP_BYTES) continue;
       // Link guests get addresses without query strings, like joiners.
       if (linkGuests.has(res) && event === "tabs") res.write(sse(event, guestTabs(data)));
       else if (linkGuests.has(res) && event === "activity") res.write(sse(event, guestActivity(data)));
@@ -214,6 +220,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       if (!line) return;
       const k = `${key}|${id}`;
       if (Date.now() - (lastInput.get(k) || 0) < 500 && line !== "clicked on the page") return;
+      if (lastInput.size >= 500) for (const [x, t] of lastInput) if (Date.now() - t >= 500) lastInput.delete(x); // only the last half second counts
       lastInput.set(k, Date.now());
       onJoinerPerson(page, j.name, [line], line !== "scrolled");
       onHumanInput(page, j.name, line !== "scrolled");

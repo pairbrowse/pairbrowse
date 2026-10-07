@@ -5,7 +5,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 // file after an update; the helper compares this with the file on disk and reloads the extension
 // when they differ (daemon/panel.mjs). A hash of this file with the value blanked (browser.mjs
 // panelBuildOf).
-const PB_BUILD = "6857c228c9660448";
+const PB_BUILD = "e4da2826d74a0979";
 globalThis.pbBuild = PB_BUILD;
 // In a new profile on macOS the browser starts without a window (--no-startup-window, see
 // browserArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
@@ -30,7 +30,7 @@ setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20_000);
 const shown = new Set();
 globalThis.pbNotify = (title, message, id) => {
   if (id && shown.has(id)) return "already shown";
-  if (id) shown.add(id);
+  if (id) { if (shown.size >= 500) shown.delete(shown.values().next().value); shown.add(id); }
   chrome.notifications.create({ type: "basic", iconUrl: "icon128.png", title, message, priority: 2, requireInteraction: true })
     .then((id) => console.log("notification shown", id), (e) => console.warn("notification failed", e?.message || e));
   return "queued";

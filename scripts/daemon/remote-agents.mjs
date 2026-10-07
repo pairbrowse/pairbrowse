@@ -12,6 +12,8 @@ import { randomBytes } from "node:crypto";
 const FILE_MAX = 50 * 1024 * 1024; // one file sent over by a joiner's agent
 const FILES_MAX = 20; // files kept per joiner at once
 const LINE_MAX = 200_000;
+// Sent by the joiner's side when one of its agents went away (its Claude Code window closed).
+export const AGENT_GONE = "pairbrowse/agent_gone";
 
 // serve(sock, { remote }): runs one participant (serve.mjs). dir: where joiners' files go.
 export function createRemoteAgents({ serve, dir, log = () => {} }) {
@@ -33,6 +35,12 @@ export function createRemoteAgents({ serve, dir, log = () => {} }) {
       const id = `${who.key}|${agent}`;
       let d = conns.get(id);
       if (d?.destroyed) { conns.delete(id); d = null; } // gone (its joiner left): never reused
+      if (line.length < 200 && line.includes(AGENT_GONE)) {
+        let m = null;
+        try { m = JSON.parse(line); } catch {}
+        // Its participant here goes too (its turns, tab and name), instead of staying until the joiner leaves.
+        if (m?.method === AGENT_GONE) { d?.destroy(); return true; }
+      }
       if (!d) {
         // An agent already set up on its side, whose first message here isn't its initialize: this
         // helper restarted under it (join codes outlive that). It's set up here first, silently.

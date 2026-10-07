@@ -1,6 +1,7 @@
 // PairBrowse remembers the open tabs itself and brings them back one by one after Chrome
 // starts, behind an "Opening tabs" screen. Chrome's own restore reloads every tab at once
 // during startup, which made the first action wait many seconds.
+import { ownTitle } from "./daemon/tablabels.mjs";
 import { writeFileSync } from "node:fs";
 import { readJson, sleep } from "./util.mjs";
 
@@ -24,7 +25,7 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
     for (const p of pages) {
       const url = p.url();
       if (!restorable(url)) continue;
-      tabs.push({ url, title: (await p.title().catch(() => "")).slice(0, 120) });
+      tabs.push({ url, title: (await ownTitle(p)).slice(0, 120) });
     }
     const active = Math.max(0, tabs.findIndex((t) => t.url === activePage()?.url()));
     return { tabs, active, savedAt: new Date().toISOString() };

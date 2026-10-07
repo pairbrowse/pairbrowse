@@ -5,6 +5,7 @@
 // it in the Downloads folder.
 import { openSync, writeSync, closeSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { shortLabel } from "./tablabels.mjs";
 
 const LABELS_EVERY_MS = 1500; // who works in which tab, while recording
 const DWELL_MS = 4000; // following agents: a tab stays in the video at least this long while they work there
@@ -48,7 +49,7 @@ export function createRecorder({ call, owners = () => [], dir, scale = async () 
     for (const { page, who, color } of owners()) {
       if (!page || page.isClosed()) continue;
       const id = await tabIdOf(page).catch(() => null);
-      if (id != null && !out[id]) out[id] = { who: String(who || "").slice(0, 40), color };
+      if (id != null && !out[id]) out[id] = { who: String(who || "").slice(0, 40), color, prefix: `${shortLabel(who)} · ` };
     }
     return out;
   }

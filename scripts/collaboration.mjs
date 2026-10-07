@@ -12,7 +12,9 @@ export class BrowserCoordinator {
     this.participants = new Map();
     this.owner = null;
     this.active = null;
-    this.queue = Promise.resolve();
+    this.queue = Promise.resolve(); // the last task that has the browser alone
+    this.lanes = new Map(); // tab -> its last task
+    this.acting = new Map(); // participant id -> its tasks running now
   }
 
   _expire() {
@@ -81,21 +83,46 @@ export class BrowserCoordinator {
     return this.state();
   }
 
-  run(id, task) {
+  // Runs an agent's task in turn. lane: the tab it acts in. Tasks in one tab take turns; tasks in
+  // different tabs run at the same time (two agents drawing in two tabs), so one agent never waits
+  // on another's work elsewhere. A task without a lane (opening a tab, switching the session) is
+  // the browser's alone: it waits for everything before it, and everything after waits for it.
+  run(id, task, lane = null) {
     const key = String(id);
     const execute = async () => {
       this._expire();
       const p = this._requireParticipant(key);
       if (this.owner && this.owner.id !== key) throw new Error(`Browser is leased to ${this.owner.label}.`);
       this.active = { id: p.id, label: p.label };
+      this.acting.set(p.id, (this.acting.get(p.id) || 0) + 1);
       this._changed();
       try { return await task(); }
-      finally { this.active = null; this._changed(); }
+      finally {
+        const n = (this.acting.get(p.id) || 1) - 1;
+        if (n) this.acting.set(p.id, n); else this.acting.delete(p.id);
+        if (this.active?.id === p.id && !n) this.active = this.acting.size ? { id: [...this.acting.keys()].at(-1), label: this.participants.get([...this.acting.keys()].at(-1))?.label || "" } : null;
+        this._changed();
+      }
     };
-    const turn = this.queue.then(execute, execute);
-    this.queue = turn.catch(() => {});
+    let turn;
+    if (lane == null) {
+      // The browser's alone: after the last one like it and every tab's work queued so far.
+      const lanes = [...this.lanes.values()];
+      turn = (lanes.length ? Promise.allSettled([this.queue, ...lanes]) : this.queue).then(execute, execute);
+      this.queue = turn.catch(() => {});
+      this.lanes.clear(); // what's queued from now on waits for this one (through this.queue)
+    } else {
+      // A tab's last task was queued after the last browser-wide one (which clears the lanes).
+      turn = (this.lanes.get(lane) || this.queue).then(execute, execute);
+      const tail = turn.catch(() => {});
+      this.lanes.set(lane, tail);
+      tail.then(() => { if (this.lanes.get(lane) === tail) this.lanes.delete(lane); });
+    }
     return turn;
   }
+
+  // Whether this participant has a task running now.
+  isActing(id) { return this.acting.has(String(id)); }
 }
 
 export const COLLABORATION_TOOL = {

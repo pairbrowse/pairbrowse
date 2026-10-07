@@ -44,6 +44,7 @@ import { createPanel } from "./daemon/panel.mjs";
 import { forgetPanelBuild } from "./browser.mjs";
 import { createScreenShare } from "./daemon/screenshare.mjs";
 import { createRecorder } from "./daemon/recorder.mjs";
+import { createTabLabels } from "./daemon/tablabels.mjs";
 import { createRemoteAgents } from "./daemon/remote-agents.mjs";
 import { createSharing } from "./daemon/sharing.mjs";
 import { createOutput } from "./daemon/output.mjs";
@@ -111,7 +112,9 @@ const refreshTabs = () => liveView()?.refreshTabs().catch(() => {});
 // Passwords are read live, so one added in the Profile panel works at once. PairBrowse swaps
 // them in itself and masks them in everything Claude reads back.
 const secrets = secretStore(paths.secrets, log);
-const collaboration = new BrowserCoordinator({ onChange: (state) => liveView()?.setCollaboration(state) });
+const collaboration = new BrowserCoordinator({ onChange: (state) => { liveView()?.setCollaboration(state); labelsChanged(); } });
+// An agent's name changed (identify): its tab's label follows (tabLabels, below).
+function labelsChanged() { try { tabLabels.changed(); } catch {} }
 // Per-tab turns (the default); the whole-browser lease above stays for pairbrowse_collaboration.
 const tabClaims = new TabClaims({ onChange: refreshTabs });
 
@@ -285,6 +288,10 @@ const recorder = createRecorder({
   changed: () => liveView()?.setRecord(recorder.state()),
   onActivity: (fn) => hud.onActivity((text, who, page, from) => { if (who && page) fn(text, who, page, from); }),
 });
+// Who works in which tab, named on the tab strip (the agent's name in front of the tab's title).
+const tabLabels = createTabLabels({ sparks: () => hud.sparkList(), labelOf: (id) => collaboration.participants.get(id)?.label || "Agent", lastIn: (page) => hud.lastIn(page), name: (page, text) => hud.call(page, text, "tab-name").catch(() => {}), log });
+hud.onSparks(() => tabLabels.changed());
+hud.onActivity((_text, who, page) => { if (who && page) tabLabels.changed(); });
 // ...and a joiner's own agent works here as a participant (serve, below), files only from its side.
 const remoteAgents = createRemoteAgents({ serve: (sock, opts) => serve(sock, opts), dir: join(paths.uploads, "remote"), log });
 const sharing = createSharing({
@@ -419,7 +426,7 @@ const cobrowse = createCobrowse({
 });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder,
+  secrets, facts, sharing, follow, pause, remoteHolder, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {

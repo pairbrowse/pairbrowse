@@ -154,7 +154,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
 
     stage = "a click on the picture clicks the host's button";
     await click(toJoiner(0.5, 0.15));
-    await until("the host's page was clicked", async () => (await evaluate(host.call, "() => document.title")) === "clicked", 15_000);
+    await until("the host's page was clicked", async () => /(^| · )clicked$/.test(await evaluate(host.call, "() => document.title")), 15_000);
 
     stage = "the picture's tab says who works in the host's tab: the host's agent, by name and spark";
     const inTab = await until("the host's agent on the picture's tab", async () => { const w = (await onScreen({ expr: "window.pbScreen.inTab()" }))?.value; return w?.agent && w.icon && w.title === `\u2726 ${w.agent} \u00b7 clicked` && w; }, 15_000);

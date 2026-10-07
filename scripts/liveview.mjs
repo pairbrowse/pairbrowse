@@ -11,6 +11,7 @@
 // This file coordinates; the parts live in scripts/liveview/: http (checks, headers, the page),
 // invites, input (replaying a viewer's input), joiner-server (the port the sharing tunnel
 // reaches: shared tabs for joiners, never frames) and tabs.
+import { ownTitle } from "./daemon/tablabels.mjs";
 import { resolve, sep } from "node:path";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
@@ -128,7 +129,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     return Promise.all(ctx.pages().map(async (p, i) => {
       let meta = {};
       try { meta = tabMeta(p) || {}; } catch {}
-      return { i, title: (await p.title().catch(() => "")) || p.url(), url: p.url(), icon: await iconFor(p), shown: p === shown?.page, claude: p === followedPage,
+      return { i, title: (await ownTitle(p)) || p.url(), url: p.url(), icon: await iconFor(p), shown: p === shown?.page, claude: p === followedPage,
         agent: meta.agent || null, person: meta.person || null, waiting: !!meta.waiting, last: meta.last || null };
     }));
   };
@@ -186,7 +187,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       // left: how long its turn there still holds (the joiner's agents wait or hear "in use"), in
       // whole seconds so the state isn't news every round.
       const left = agent?.until > Date.now() ? Math.ceil((agent.until - Date.now()) / 1000) * 1000 : 0;
-      return { id: idOf(p), url: p.url(), title: await p.title().catch(() => ""), agent: agent?.label || "", color: agent?.color || "", left, person: meta.sharedPerson?.who || "", acting: !!meta.sharedPerson?.acting, did: meta.did || [] };
+      return { id: idOf(p), url: p.url(), title: await ownTitle(p), agent: agent?.label || "", color: agent?.color || "", left, person: meta.sharedPerson?.who || "", acting: !!meta.sharedPerson?.acting, did: meta.did || [] };
     }));
     const people = [...collaboration.participants.map((x) => x?.label || ""), ...guests().map((g) => g.label)].filter((x) => x && x !== personLabel(j.name, j.app));
     const state = stateForJoiner({ tabs, activity, people }, { drive: j.invite.role === "drive", secretDomains: secretDomains(), name: j.name, from: joinerKey(j), mapUrl: devUrl });

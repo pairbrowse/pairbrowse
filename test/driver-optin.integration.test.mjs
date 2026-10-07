@@ -42,7 +42,7 @@ test("the Playwright opt-in still launches the browser and works", { skip: !runt
     assert.ok(ref, "the button is in the snapshot");
     assert.ok(!(await s.tool("browser_click", { target: ref, element: "Go" })).result?.isError);
     let title = "";
-    for (let i = 0; i < 40 && title !== "clicked"; i++, await sleep(100)) title = text(await s.tool("browser_evaluate", { function: "() => document.title" })).match(/### Result\n"?([^"\n]*)/)?.[1];
+    for (let i = 0; i < 40 && title !== "clicked"; i++, await sleep(100)) title = text(await s.tool("browser_evaluate", { function: "() => document.title" })).match(/### Result\n"?([^"\n]*)/)?.[1]?.replace(/^.* · /, "");
     assert.equal(title, "clicked");
     assert.doesNotMatch(readFileSync(join(h, "daemon.log"), "utf8"), /instead of Patchright/, "an opt-in, not a fallback");
   } finally {

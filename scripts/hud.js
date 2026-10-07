@@ -39,14 +39,6 @@
     const x = e.clientX + scrollX, y = e.clientY + scrollY;
     return x < b.x - FAR_PX || x > b.x + b.w + FAR_PX || y < b.y - FAR_PX || y > b.y + b.h + FAR_PX;
   };
-  // Typing in a field other than the one the agent is filling (its target): a person's.
-  const awayFromAgentEl = (el) => {
-    const b = agentBox;
-    if (!b || now() - b.t > 15_000 || !el.getBoundingClientRect) return false;
-    const r = el.getBoundingClientRect();
-    const cx = r.left + r.width / 2 + scrollX, cy = r.top + r.height / 2 + scrollY;
-    return cx < b.x - FAR_PX || cx > b.x + b.w + FAR_PX || cy < b.y - FAR_PX || cy > b.y + b.h + FAR_PX;
-  };
   function drainUser() {
     const out = userEvents;
     userEvents = [];
@@ -82,7 +74,7 @@
   addEventListener("keydown", (e) => {
     if (!e.isTrusted || ours(e)) return;
     const el = focused();
-    if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) record("type", named(el), awayFromAgentEl(el));
+    if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) record("type", named(el));
     else if (SCROLL_KEYS.has(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey) record("scroll", "");
     else if (e.key.length > 1) record("key", e.key); // Enter, Escape, Tab: never the letters
   }, opts);

@@ -45,7 +45,7 @@ const OWNER_ONLY = new Set(["profile", "join", "board", "dev"]); // events only 
 // or null. showPointers(page, list): draws the others' pointers
 // there. sessionFor(j): who is doing what, for joiner j. onJoinerSay(body, j, key): who is doing
 // what on a joiner's side, or a message from there (text only; any role).
-const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, onJoinerAgent: () => {}, arrange: async () => {}, order: async () => null, showPointers: () => {}, sessionFor: () => null, onJoinerSay: () => {} };
+const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, onJoinerAgent: () => {}, arrange: async () => {}, order: async () => null, showPointers: () => {}, sessionFor: () => null, onJoinerSay: () => {}, onJoinerGone: () => {} };
 
 // Shows a tab in its browser window. (document.visibilityState can't tell: Playwright emulates focus.)
 const bringTabForward = (page) => keepFocus(() => page.bringToFront().catch(() => {}));
@@ -366,6 +366,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       if (!ids.includes(j.invite.id)) continue;
       joiners.delete(k);
       push.end(k);
+      stopJoinerKey(k).catch(() => {}); // their agent here (its tab turns) and pictures too
       changed = true;
     }
     approvals.forget(ids);
@@ -513,10 +514,10 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
         // Remove, after a yes: out at once (their channel, pictures and agent), and not back in.
         const gone = approvals.remove(op.id);
         if (!gone) return json(res, 404, { ok: false });
-        const j = joiners.get(gone.key);
         joiners.delete(gone.key);
         push.end(gone.key);
-        if (j) await stopJoiner(j).catch(() => {});
+        // By key: their agent may still be at work here after their own entry went.
+        await stopJoinerKey(gone.key).catch(() => {});
         collaborationChanged();
         const { key: _k, ...request } = gone;
         return json(res, 200, { ok: true, request });
@@ -653,7 +654,9 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   });
 
   // A joiner gone (left or removed): their agent here and their pictures stop.
-  async function stopJoiner(j) { remoteAgents?.stop(joinerKey(j)); await screens?.stopAll(`${joinerKey(j)}|`); }
+  // What they said about their side's agents goes too.
+  async function stopJoinerKey(key) { remoteAgents?.stop(key); shared.onJoinerGone(key); await screens?.stopAll(`${key}|`); }
+  const stopJoiner = (j) => stopJoinerKey(joinerKey(j));
   const joinerServer = createJoinerServer({
     key, invites, approvals, joiners, tunnelHost, onJoinRequest, log,
     live: { tabsFor, applyTabs, screen, agent: remoteAgent, file: remoteFile,

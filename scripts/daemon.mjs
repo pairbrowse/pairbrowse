@@ -272,6 +272,7 @@ const sharing = createSharing({
       sessionFor: (j) => ({ where: HOST, entries: session.entries(`${j.invite.id}:${j.joinerId}`), pause: pause.view() }),
       // From a joiner's side (text only, any role): who does what there, or a message for the
       // agents here and the other joiners. Shown and handed on, nothing more.
+      onJoinerGone: (key) => session.dropRemote(key),
       onJoinerSay: (body, j, key) => {
         if (body?.op === "session") session.setRemote(key, crossingEntries(body.entries), cleanName(j.name));
         else if (body?.op === "pause") {
@@ -379,7 +380,7 @@ const cobrowse = createCobrowse({
 });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
+  secrets, facts, sharing, follow, pause, remoteHolder, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {

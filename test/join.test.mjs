@@ -144,6 +144,30 @@ test("tab turns: one agent per tab, expiry, release, one tab per agent", () => {
   assert.equal(c.holder(B), null, "a closed tab's turn ends");
 });
 
+test("tab turns: a held tab is shared only on request; both act there, and leaving or releasing ends it", () => {
+  let t = 0;
+  const c = new TabClaims({ ttlMs: 1000, now: () => t });
+  const A = {}, B = {};
+  c.claim(A, "x", "Alice · Codex");
+  assert.equal(c.claim(A, "y", "Bob").ok, false, "never by chance");
+  const s = c.share(A, "y", "Bob · Claude Code");
+  assert.deepEqual(s.with.map((m) => m.label), ["Alice · Codex"]);
+  assert.equal(c.claim(A, "y", "Bob").ok, true);
+  assert.equal(c.claim(A, "x", "Alice").ok, true, "the holder still acts there");
+  assert.deepEqual(c.members(A).map((m) => m.id), ["x", "y"]);
+  assert.equal(c.claim(A, "z", "Carol").ok, false, "a third agent that wasn't told to share is refused");
+  c.release("x");
+  assert.equal(c.holder(A).id, "y", "the holder released: the one it shared with holds it");
+  c.share(A, "x", "Alice");
+  c.claim(B, "y", "Bob");
+  assert.deepEqual(c.members(A).map((m) => m.id), ["x"], "acting in another tab leaves the shared one");
+  c.share(B, "x", "Alice");
+  t = 1500;
+  c.claim(B, "x", "Alice");
+  assert.deepEqual(c.members(B).map((m) => m.id), ["x"], "an idle member's turn runs out");
+  assert.equal(c.holder(A), null);
+});
+
 // ---- the guest port, in process ------------------------------------------------------------
 
 // Tabs that load addresses, so the host side of shared tabs runs without a browser.
@@ -263,6 +287,31 @@ test("join code keys: nothing before approval, owner approves, bound per joiner,
     // Revoked: gone at once.
     s.invites.revoke(w.id);
     assert.equal((await request(s.gport, "GET", `/${w.key}/tabs`, { headers: who(alice) })).status, 404);
+  } finally { s.view.close(); }
+});
+
+test("a joiner who goes (invite revoked, removed) leaves nothing behind: their agent here, pictures and what they said", async () => {
+  const stopped = [], gone = [];
+  const remoteAgents = { stop: (k) => stopped.push(k), folder: () => "/nonexistent", line: () => true, file: () => ({}) };
+  const s = await setup({ remoteAgents, shared: { onJoinerGone: (k) => gone.push(k) } });
+  try {
+    const d = s.invites.create({ role: "drive", label: "Dee", share: "code" });
+    const e = s.invites.create({ role: "drive", label: "Eve", share: "code" });
+    const dee = newJoinerId(), eve = newJoinerId();
+    await request(s.gport, "GET", `/${d.key}/tabs`, { headers: who(dee, "Dee") });
+    await request(s.gport, "GET", `/${e.key}/tabs`, { headers: who(eve, "Eve") });
+    for (const r of s.requests) s.view.approvals.approve(r.id);
+    assert.equal((await request(s.gport, "GET", `/${d.key}/tabs`, { headers: who(dee, "Dee") })).status, 200);
+    // Revoked invite: their agent (and its tab turns) stop at once, not only their channel.
+    s.invites.revoke(d.id);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(stopped, [`${d.id}:${dee}`]);
+    assert.deepEqual(gone, [`${d.id}:${dee}`]);
+    // Removed before they ever came back in: stopped by key all the same.
+    const eveReq = s.requests.find((r) => r.name === "Eve").id;
+    assert.equal((await request(s.port, "POST", `/${s.ownerKey}/approve`, { body: { id: eveReq, remove: true } })).status, 200);
+    assert.equal(stopped.at(-1), `${e.id}:${eve}`);
+    assert.equal(gone.at(-1), `${e.id}:${eve}`);
   } finally { s.view.close(); }
 });
 

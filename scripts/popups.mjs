@@ -81,7 +81,10 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
   // closeOffers: also close upsell and newsletter popups by their close button. Only when nothing
   // Claude clicked could have opened them (after loading a page, or while waiting).
   // markOwn: right after Claude's click, mark the overlays on screen as Claude's (never closed as offers).
-  async function dismissOverlay(page, { closeOffers = false, markOwn = false } = {}) {
+  // clicking(): called just before PairBrowse clicks a dismiss button; returns done(). Only that
+  // click is PairBrowse's own input: looking for a popup clicks nothing, so a person's click
+  // meanwhile stays theirs.
+  async function dismissOverlay(page, { closeOffers = false, markOwn = false, clicking = null } = {}) {
     if (markOwn && page && !page.isClosed()) {
       await settle(800, page.evaluate(() => document.querySelectorAll('[role="dialog"], [aria-modal="true"], [role="alertdialog"], body > *, body > * > *, body > * > * > *').forEach((el) => {
         if (!el.matches('[role="dialog"], [aria-modal="true"], [role="alertdialog"]') && getComputedStyle(el).position !== "fixed") return;
@@ -96,10 +99,10 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     const deadline = Date.now() + 2500;
     for (const frame of frames) {
       if (Date.now() > deadline) return;
-      if (await settle(1000, dismissIn(frame, closeOffers))) return;
+      if (await settle(1000, dismissIn(frame, closeOffers, clicking))) return;
     }
   }
-  async function dismissIn(frame, closeOffers) {
+  async function dismissIn(frame, closeOffers, clicking) {
     const found = await frame.evaluate(([acceptFirst, inConsentFrame, closeOffers]) => {
       const COOKIE = /cookie|consent|privacy|gdpr/i;
       const INTERRUPTION = /cookie|consent|privacy (settings|choices)|gdpr|newsletter|subscribe to|sign up for (our|updates)|get \d+% off|discount|special offer|download (our|the) app|get the app|turn on notifications|allow notifications/i;
@@ -187,7 +190,8 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     }
     if (!found) return false;
     const button = frame.locator("[data-pairbrowse-dismiss]").first();
-    const ok = await button.click({ timeout: 3000 }).then(() => true, () => false);
+    const done = clicking?.() || (() => {});
+    const ok = await button.click({ timeout: 3000 }).then(() => true, () => false).finally(done);
     if (ok) note(`Closed a ${found.what} on the page (pressed "${found.label}").`);
     // The button is usually gone with its overlay; clear the marker without waiting for it.
     await frame.evaluate(() => document.querySelectorAll("[data-pairbrowse-dismiss]").forEach((b) => b.removeAttribute("data-pairbrowse-dismiss"))).catch(() => {});

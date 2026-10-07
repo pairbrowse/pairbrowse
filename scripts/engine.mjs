@@ -19,15 +19,50 @@ export function engineProfile(config, profile) {
   return config.browserEngine === "pairbrowse" ? join(profile, "pairbrowse-native") : profile;
 }
 
+// Chromium's own sandbox (renderer and GPU processes walled off from the computer) is on unless
+// "chromeSandbox": false or a --no-sandbox in chromeArgs turns it off. On Linux, Chromium refuses
+// it as root, so it's off there; and where the kernel or container gives it nothing to work with
+// (no user namespaces, Docker's default seccomp profile), the launch fails and runs again
+// without it (launchEngine). Either way the log says so once.
+export function sandboxDecision(config = {}, { platform = process.platform, uid = process.getuid?.() } = {}) {
+  if (config.chromeSandbox === false) return { on: false, reason: "chromeSandbox is false in config.json" };
+  if ((config.chromeArgs || []).includes("--no-sandbox")) return { on: false, reason: "chromeArgs has --no-sandbox" };
+  if (platform === "linux" && uid === 0) return { on: false, reason: "running as root, where Chromium refuses its sandbox" };
+  return { on: true, reason: null };
+}
+
+// The messages Chromium (and Playwright's rewrite of them) gives when it can't start its sandbox.
+export const SANDBOX_FAILED = /No usable sandbox|sandboxing failed|crbug\.com\/(638180|357670)/i;
+
+const noted = new Set();
+function noteOnce(log, text) {
+  if (noted.has(text)) return;
+  noted.add(text);
+  log(text);
+}
+
 // loadPack: the native engine pack's helpers (tests pass their own); default: the pinned pack,
 // installed first when it isn't yet (scripts/native-pack.mjs).
 export async function launchEngine(chromium, config, profile, options, log = () => {}, loadPack) {
   const engine = validateEngine(config);
-  if (engine === "chromium") return chromium.launchPersistentContext(profile, {
-    ...options,
-    ignoreDefaultArgs: [...new Set([...(options.ignoreDefaultArgs || []), "--enable-automation"])],
-    args: [...(options.args || []), "--disable-blink-features=AutomationControlled"],
-  });
-  const pack = loadPack ? await loadPack() : await loadEngine(await ensureEngine(log));
-  return launchNative(chromium, config, profile, options, pack, log);
+  const sandbox = sandboxDecision(config);
+  if (!sandbox.on) noteOnce(log, `Chromium sandbox off: ${sandbox.reason}`);
+  const pack = engine === "chromium" ? null : loadPack ? await loadPack() : await loadEngine(await ensureEngine(log));
+  const start = (chromiumSandbox) => {
+    const opts = { ...options, chromiumSandbox };
+    if (engine !== "chromium") return launchNative(chromium, config, profile, opts, pack, log);
+    return chromium.launchPersistentContext(profile, {
+      ...opts,
+      ignoreDefaultArgs: [...new Set([...(options.ignoreDefaultArgs || []), "--enable-automation"])],
+      args: [...(options.args || []), "--disable-blink-features=AutomationControlled"],
+    });
+  };
+  if (!sandbox.on) return start(false);
+  try {
+    return await start(true);
+  } catch (e) {
+    if (!SANDBOX_FAILED.test(String(e?.message || e))) throw e;
+    noteOnce(log, "Chromium sandbox off: this system can't run it (no user namespaces, or a container blocks them); set \"chromeSandbox\": false in config.json to skip the first try");
+    return start(false);
+  }
 }

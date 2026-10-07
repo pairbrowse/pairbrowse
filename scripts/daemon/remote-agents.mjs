@@ -32,6 +32,7 @@ export function createRemoteAgents({ serve, dir, log = () => {} }) {
       if (typeof line !== "string" || line.length > LINE_MAX || !/^[\w-]{1,40}$/.test(String(agent))) return false;
       const id = `${who.key}|${agent}`;
       let d = conns.get(id);
+      if (d?.destroyed) { conns.delete(id); d = null; } // gone (its joiner left): never reused
       if (!d) {
         // An agent already set up on its side, whose first message here isn't its initialize: this
         // helper restarted under it (join codes outlive that). It's set up here first, silently.
@@ -52,7 +53,8 @@ export function createRemoteAgents({ serve, dir, log = () => {} }) {
         });
         d.on("error", () => {});
         conns.set(id, d);
-        d.once("close", () => conns.delete(id));
+        const own = d;
+        d.once("close", () => { if (conns.get(id) === own) conns.delete(id); }); // a newer one keeps its place
         d.remote = { name: who.name, key: who.key, files: folder(who.key), startPage, started: false };
         serve(d, { remote: d.remote }).catch?.((e) => log("remote agent", e?.message || e));
         if (resume) {

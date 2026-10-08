@@ -29,7 +29,10 @@ test("scroll step: smooth, with the agent's cursor, never taken for a person", {
       activity: (t) => said.push(t),
       cursor: async (el, act) => { const b = await el.boundingBox(); await page.evaluate(([n, t, c]) => window[n](t, c, "cursor"), [name, token, JSON.stringify({ x: b.x, y: b.y, act })]); },
     };
-    const r = await runSteps(page, [{ scroll: "down" }], hooks);
+    const started = Date.now();
+    const r = await runSteps(page, [{ scroll: "down" }], { ...hooks, smooth: true });
+    const took = Date.now() - started;
+    assert.ok(took < 450, `a screen glides by quickly (${took} ms)`);
     assert.ok(r.ok !== false, JSON.stringify(r));
     const after = await page.evaluate(() => scrollY);
     assert.ok(after > 400 && after < 700, `about a screen down (${after})`);

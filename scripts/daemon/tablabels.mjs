@@ -59,7 +59,7 @@ export function createTabLabels({ sparks, labelOf, lastIn = () => null, name, lo
     let out = String(text);
     for (const n of new Set(named.values())) {
       const esc = `${n} · `.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      out = out.replace(new RegExp(`(Page Title: |\\[)${esc}`, "g"), "$1");
+      out = out.replace(new RegExp(`(Page Title: |Page: |\\[)${esc}`, "g"), "$1");
     }
     return out;
   }

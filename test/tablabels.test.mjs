@@ -34,5 +34,6 @@ test("agents read the page's own title: the names in front are taken off", async
   const names = createTabLabels({ sparks: () => [{ id: "m", page: p }], labelOf: () => "Claude (Mac) · Claude Code", name: async () => {} });
   await names.apply();
   assert.equal(names.strip("- Page Title: Claude (Mac) · Inbox\n- 0: (current) [Claude (Mac) · Inbox](https://x/)"), "- Page Title: Inbox\n- 0: (current) [Inbox](https://x/)");
+  assert.equal(names.strip("Done: 1 steps in 0.1s.\nPage: Claude (Mac) · Inbox <https://x/>"), "Done: 1 steps in 0.1s.\nPage: Inbox <https://x/>");
   assert.equal(names.strip("Text that mentions Claude (Mac) · elsewhere"), "Text that mentions Claude (Mac) · elsewhere");
 });

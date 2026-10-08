@@ -768,6 +768,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     // The page script says a field changed in a tab, or a pointer moved (daemon/cobrowse.mjs).
     fieldsChanged: (page) => push.dirty(page),
     pointed: (page, value) => push.pointed(page, value),
+    agentPointed: (page, agent) => push.agentPointed(page, agent),
     sharing: () => push.active(),
     // Something for the joiners' streams: who is doing what, a message.
     pushToJoiners: (event, data, opts) => push.broadcast(event, data, opts),

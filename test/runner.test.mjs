@@ -118,3 +118,14 @@ test("a stroke stops where it is when a person takes over, and the button is let
   assert.equal(did[1], "down", "pressed right where it reached");
   assert.ok(!did.some((d) => d.startsWith("move 500")), "it stopped before the end");
 });
+
+test("dates for date fields: only ones that can mean a single day become YYYY-MM-DD", async () => {
+  const { isoDate } = await import("../scripts/runner.mjs");
+  assert.equal(isoDate("03/15/1990"), "1990-03-15");
+  assert.equal(isoDate("15.03.1990"), "1990-03-15");
+  assert.equal(isoDate("March 15, 1990"), "1990-03-15");
+  assert.equal(isoDate("15 Mar 1990"), "1990-03-15");
+  assert.equal(isoDate("1990-03-15"), "1990-03-15");
+  assert.equal(isoDate("03/04/1990"), "", "ambiguous: never a guess");
+  assert.equal(isoDate("13/13/1990"), "");
+});

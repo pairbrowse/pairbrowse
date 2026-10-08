@@ -14,7 +14,8 @@ const FIRST_FRAME_MS = 3000;
 const CDP_WAIT_MS = 3000;
 // The first frame can be the last one already drawn, from before a popup closed: keep taking
 // frames this long and use the newest.
-const NEWEST_FRAME_MS = 250;
+const NEWEST_FRAME_MS = 80; // about five frames: results wait for a quiet page before this (serve.mjs tidy)
+const FRAME_QUIET_MS = 40; // no newer frame for this long: the last one is current
 
 export const CLICK_AT_TOOL = {
   name: "pairbrowse_click_at",
@@ -102,11 +103,12 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
       const opening = page.context().newCDPSession(page);
       const cdp = await within(CDP_WAIT_MS, opening);
       if (!cdp) { opening.then((late) => late.detach().catch(() => {}), () => {}); return null; } // one that comes late still goes
-      let latest = null;
-      const first = new Promise((ok) => cdp.on("Page.screencastFrame", (fr) => { cdp.send("Page.screencastFrameAck", { sessionId: fr.sessionId }).catch(() => {}); latest = fr; ok(fr); }));
+      let latest = null, latestAt = 0;
+      const first = new Promise((ok) => cdp.on("Page.screencastFrame", (fr) => { cdp.send("Page.screencastFrameAck", { sessionId: fr.sessionId }).catch(() => {}); latest = fr; latestAt = Date.now(); ok(fr); }));
       if ((await within(CDP_WAIT_MS, cdp.send("Page.startScreencast", SHOT).then(() => true))) !== true) { cdp.detach().catch(() => {}); return null; }
       await within(FIRST_FRAME_MS, first);
-      await sleep(NEWEST_FRAME_MS);
+      // Frames come only when the picture changes: done once none came for a moment.
+      for (const until = Date.now() + NEWEST_FRAME_MS; Date.now() < until && Date.now() - latestAt < FRAME_QUIET_MS;) await sleep(15);
       const f = latest;
       await cdp.send("Page.stopScreencast").catch(() => {});
       cdp.detach().catch(() => {});

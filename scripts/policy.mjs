@@ -15,9 +15,12 @@ export const HIDDEN_TOOLS = new Set([
 // browser_tabs itself) and console/event notices. Keeps results to a few hundred tokens.
 export function trimResult(tool, text) {
   const sections = String(text).split(/(?=^### )/m);
+  // browser_tabs list answers with the tabs in its Result; the open-tabs section the browser server
+  // adds when another agent changed the tabs meanwhile would list them all a second time.
+  const listed = tool === "browser_tabs" && sections.some((sec) => sec.startsWith("### Result") && /^- \d+: /m.test(sec));
   return sections
     .filter((sec) => {
-      if (sec.startsWith("### Open tabs")) return tool === "browser_tabs";
+      if (sec.startsWith("### Open tabs")) return tool === "browser_tabs" && !listed;
       if (sec.startsWith("### Events")) return false;
       return true;
     })

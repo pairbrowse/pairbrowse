@@ -28,9 +28,14 @@ export function fieldOwner(info, { host, byAgent = () => false, byRemote = () =>
 
 // The person a field (a Playwright locator) belongs to now, or null. hudKey: the page script's
 // name and key (daemon/hud.mjs).
+// A page too busy to answer in time is asked again; a field whose owner still can't be read is
+// never taken for nobody's: { unknown: true } (the caller waits instead of typing over a person).
 export async function ownerOf(locator, hudKey, opts) {
-  const info = await within(READ_MS, locator.evaluate((el, [n, k]) => window[n]?.(k, el, "owned"), hudKey).catch(() => null));
-  return fieldOwner(info, opts);
+  const read = () => locator.evaluate((el, [n, k]) => window[n]?.(k, el, "owned"), hudKey).then((v) => ({ v }), () => ({ v: null, gone: true }));
+  let r = await within(READ_MS, read());
+  if (!r) { opts?.log?.(`field owner check took over ${READ_MS} ms; asking again`); r = await within(READ_MS * 2, read()); }
+  if (!r) return { unknown: true };
+  return fieldOwner(r.v, opts);
 }
 
 // The note an agent gets for a field it left alone.

@@ -424,6 +424,7 @@ const cobrowse = createCobrowse({
   },
   onDirty: (page) => { liveView()?.fieldsChanged(page); follow.dirty(page); },
 });
+hud.onCursor((page, at) => liveView()?.agentPointed?.(page, at));
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
   secrets, facts, sharing, follow, pause, remoteHolder, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels,

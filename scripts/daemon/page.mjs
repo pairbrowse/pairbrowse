@@ -215,3 +215,31 @@ export function clickContext(n, kind = "click", prev = "", hints = {}) {
   const dialog = d ? { role: d.getAttribute("role") || "dialog", confirmation: !!risk.confirming, text: clip(d.innerText, 200) } : null;
   return { risk, page, control: { label: clip(buttonLabel(control), 200), does: risk.does }, form, dialog, prev };
 }
+
+// Waits until the page is quiet: at least two animation frames, then QUIET_MS without any change
+// to its document (no nodes, attributes or text changing), at most maxMs. A page that is already
+// still answers in about a tenth of a second; one still loading or animating a menu gets up to
+// maxMs, as the fixed wait it replaces did. Resolves to how long it waited (ms).
+export const QUIET_MS = 120;
+export async function settle(page, maxMs) {
+  if (!page || page.isClosed() || maxMs <= 0) return 0;
+  const started = Date.now();
+  await Promise.race([
+    page.evaluate(({ quiet, max }) => new Promise((done) => {
+      let last = performance.now(), frames = 0;
+      const seen = new MutationObserver(() => { last = performance.now(); });
+      seen.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+      const finish = () => { seen.disconnect(); done(); };
+      setTimeout(finish, max);
+      const tick = () => {
+        if (++frames >= 2 && performance.now() - last >= quiet) return finish();
+        // A tab the browser doesn't paint gets no frames: fall back to timers.
+        if (document.visibilityState === "hidden") setTimeout(tick, 16); else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      setTimeout(tick, 34);
+    }), { quiet: QUIET_MS, max: maxMs }).catch(() => {}),
+    new Promise((r) => setTimeout(r, maxMs + 200)),
+  ]);
+  return Date.now() - started;
+}

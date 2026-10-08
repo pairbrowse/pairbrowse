@@ -110,6 +110,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (page) await applySpark(page, tabIcon(page));
   }
   const sparkPage = (participant) => sparks.get(participant)?.page;
+  const cursorListeners = new Set(); // fn(page, { x, y, t }): an agent's cursor was sent there
   // Someone wants to know when an agent's spark moved (the tab labels: daemon/tablabels.mjs).
   const sparkListeners = new Set();
   function sparksChanged() { for (const fn of sparkListeners) try { fn(); } catch {} }
@@ -142,6 +143,9 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   async function pointAt(page, box, act, who = "") {
     if (!box) return 0;
     const r = await quietly(page, JSON.stringify({ x: box.x + box.width / 2, y: box.y + box.height / 2, act, who: who || "Claude", color: sparkOwner(page)?.color || "", w: Math.round(Math.min(box.width, box.height)), bw: Math.round(box.width), bh: Math.round(box.height) }), "cursor");
+    // Where it points goes to people in other browsers at once, not only on their next poll (a
+    // busy computer can let polls time out for seconds).
+    if (r?.at) for (const fn of cursorListeners) try { fn(page, r.at); } catch {}
     return Math.max(0, Math.min(CURSOR_ARRIVE_MS, Number(r?.ms) || 0));
   }
   // Moves the cursor to an element (fast mode). Returns a promise: fast mode doesn't wait for the
@@ -177,7 +181,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
     source, call, ensure, onPageLoad, applyBar, setBadge, badge: () => badge,
-    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
+    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor,
   };
 }

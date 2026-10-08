@@ -185,6 +185,11 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
     dirty(page) { if (active()) readForm(page).catch(() => {}); },
     // A field's plain value as last shared from this tab (frame and key), or undefined.
     sharedValue(page, f, k) { const x = forms.get(page)?.form?.fields?.find((y) => y.f === f && y.k === k); return x && !x.m && typeof x.v === "string" ? x.v : undefined; },
+    // An agent's cursor moved here: its pointer goes out now, the person's and their view stay.
+    agentPointed(page, agent) {
+      hostPointers.set(page, { ...(hostPointers.get(page) || {}), agent });
+      if (active()) pointersChanged();
+    },
     pointed(page, value) {
       hostPointers.set(page, value);
       // The host reads in one tab at a time: the one they scrolled in last.

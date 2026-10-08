@@ -21,7 +21,7 @@ import { FACTS_TOOL } from "../facts.mjs";
 import { RUN_TOOL, SCROLL_TOOL, enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
 import { sleep, within } from "../util.mjs";
 import { CLICK_AT_TOOL } from "./screenshot.mjs";
-import { buttonLabel } from "./page.mjs";
+import { buttonLabel, settle } from "./page.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 
@@ -288,9 +288,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (page && CLICKING_TOOLS.has(tool)) await popups.dismissOverlay(page, { markOwn: true });
       if (page && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false) {
         await within(LOAD_WAIT_MS, page.waitForLoadState("load").catch(() => {}));
-        // A second after the page loaded (only what's left of it: an old page is ready now).
+        // Until the page is quiet, at most a second after it loaded (only what's left of it: an
+        // old page is ready now) or half a second after a click (menus, single-page apps).
         const left = Math.max(CLICKING_TOOLS.has(tool) ? CLICK_SETTLE_MS : 0, SETTLE_MS - (Date.now() - presence.loadedAt(page)));
-        if (left > 0) await sleep(left);
+        if (left > 0) await settle(page, left);
       }
       await popups.dismissOverlay(page, { closeOffers: true });
       await popups.checkChallenge(page);
@@ -610,7 +611,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           await presence.waitForUser(page);
           throw new Error(`${who === host ? "The user" : who} used this tab (${presence.didIn(page) || "clicked"}). Take a snapshot, then run the remaining steps.`);
         },
-        owner: (el) => ownerOf(el, hud.key, { host, byAgent: presence.typedByAgent, byRemote: presence.byRemote }),
+        owner: (el) => ownerOf(el, hud.key, { host, log, byAgent: presence.typedByAgent, byRemote: presence.byRemote }),
         // Between two fields: paused agents stop; a person using the tab is waited for.
         holdForPeople: async () => {
           const held = pause.view();
@@ -685,7 +686,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (r.error) return r;
         hud.addActivity(`Clicked ${String(args.element || "a spot").slice(0, 80)}`, myLabel(), r.page);
         await popups.dismissOverlay(r.page, { markOwn: true });
-        await sleep(SETTLE_MS);
+        await settle(r.page, SETTLE_MS);
         await popups.dismissOverlay(r.page, { closeOffers: true });
         const content = [{ type: "text", text: r.text + popups.drain() }];
         const shot = config.screenshots !== false ? await screenshots.take(r.page, participant) : null;
@@ -732,9 +733,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // A field a person is filling (here or in the other browser) is theirs: left unchanged.
       if (FIELD_TOOLS.has(name)) {
         const page = actingIn || await serverPage();
-        const ownerAt = (target) => (page && isRef(target) ? ownerOf(page.locator(`aria-ref=${target}`).first(), hud.key, { host, byAgent: presence.typedByAgent, byRemote: presence.byRemote }) : null);
+        const ownerAt = (target) => (page && isRef(target) ? ownerOf(page.locator(`aria-ref=${target}`).first(), hud.key, { host, byAgent: presence.typedByAgent, byRemote: presence.byRemote, log }) : null);
         if (name === "browser_fill_form" && Array.isArray(args.fields)) {
           const owners = await Promise.all(args.fields.map((f) => ownerAt(f?.target)));
+          if (owners.some((o) => o?.unknown)) return reply(msg.id, "The page is too busy right now to tell whether a person is filling these fields; nothing was typed. Try again in a moment.", true);
           const left = owners.map((o, i) => o && leftAlone(o, args.fields[i]?.name)).filter(Boolean);
           if (left.length === args.fields.length && left.length) return reply(msg.id, left.join("\n"), true);
           if (left.length) {
@@ -745,6 +747,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           }
         } else {
           const o = await ownerAt(args.target);
+          if (o?.unknown) return reply(msg.id, `The page is too busy right now to tell whether a person is filling ${args.element || "that field"}; nothing was typed. Try again in a moment.`, true);
           if (o) return reply(msg.id, leftAlone(o, args.element), true);
         }
       }

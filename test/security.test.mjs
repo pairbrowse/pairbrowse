@@ -119,3 +119,12 @@ test("the launch self-check's virtual screen has its own X cookie, so a running 
     check.stop();
   }
 });
+
+test("a tab list comes once: the open-tabs section is dropped when browser_tabs already lists them", async () => {
+  const { trimResult } = await import("../scripts/policy.mjs");
+  const out = trimResult("browser_tabs", "### Result\n- 0: [A](http://a/)\n- 1: (current) [B](http://b/)\n### Open tabs\n- 0: [A](http://a/)\n- 1: (current) [B](http://b/)\n");
+  assert.equal((out.match(/^- \d+: /gm) || []).length, 2, out);
+  // A tab change (new, close) without its own list still shows the open tabs.
+  assert.match(trimResult("browser_tabs", "### Result\nClosed tab 1\n### Open tabs\n- 0: [A](http://a/)\n"), /### Open tabs/);
+  assert.doesNotMatch(trimResult("browser_click", "### Result\nok\n### Open tabs\n- 0: [A](http://a/)\n"), /Open tabs/);
+});

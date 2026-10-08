@@ -5,6 +5,18 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.28 (2026-10-09)
+
+Fast mode, tested on about 220 real forms from well-known sites (never submitted): every real form found filled completely, checked by picture.
+
+- Faster: a fast-mode call waits for the page to go quiet instead of a fixed pause, and the result picture comes sooner (about 1.1 s per call down to about 0.5 s).
+- Says what it left: every blank field in the form it filled, unanswered questions, unticked required boxes, values the page changed afterwards, and the page's own error text, by the names a person reads.
+- Fills more kinds of forms: dropdowns built from plain elements or long scrolling lists, type-to-search fields, forms inside frames and web components, fields named only by text drawn over them, phone fields that format or add a country code, date fields in their own format, fields inside closed sections.
+- Plain messages instead of raw errors: fields hidden or removed by an earlier answer, read-only pickers, covered dropdowns, number-only fields, choices to tick. Validation a form switched off is not reported.
+- Payment providers' card frames are never filled; a saved password must match the frame's own address too.
+- Scrolling is quicker: a screen in about 0.35 s, and fields come into view at once on pages that animate scrolling.
+- Shared sessions: a joiner sees the host agent's pointer at once; a tab list no longer repeats its tabs; a field whose owner can't be read in time is left alone.
+
 ## 0.15.27 (2026-10-08)
 
 - Joining a shared session shows it: the shared window comes to the front once this browser's own saved tabs are back, instead of staying hidden behind them.

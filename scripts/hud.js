@@ -719,7 +719,7 @@
         const bw = Math.max(0, Number(c.bw) || 0), bh = Math.max(0, Number(c.bh) || 0);
         agentBox = { x: agentPtr.x - bw / 2, y: agentPtr.y - bh / 2, w: bw, h: bh, t: now() };
         agentAt = now(); // the scrolling an agent's action causes isn't the person's
-        return { ms }; // until it arrives
+        return { ms, at: agentPtr }; // until it arrives; where it points, in document coordinates
       } catch {}
       return true;
     }

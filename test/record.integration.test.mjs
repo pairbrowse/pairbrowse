@@ -20,9 +20,13 @@ const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n"
 const PAGE = `<!doctype html><title>Form</title><body>
 <label for=e>Email</label> <input id=e type=email aria-describedby=eh><span id=eh></span>
 <label for=n>Name</label> <input id=n>
+<form novalidate><label for=u>Username</label> <input id=u pattern="[A-Z]+"></form>
+<label for=ph>Phone</label> <input id=ph>
 <label for=c>Country</label> <select id=c><option>Belgium</option><option>Netherlands</option></select>
+<div><input type=checkbox id=t aria-label="I agree to the terms" style="position:absolute;opacity:0;width:1px;height:1px"><p onclick="t.click()" style="cursor:pointer">I agree to the terms</p></div>
 <div id=dot style="width:40px;height:40px;background:#d97757;position:relative"></div>
 <script>
+ph.addEventListener("blur", () => { const d = ph.value.replace(/\\D/g, ""); if (d.length === 10) ph.value = "+1 " + d.slice(0, 3) + " " + d.slice(3, 6) + " " + d.slice(6); });
 e.addEventListener("blur", () => { const bad = !e.validity.valid; e.setAttribute("aria-invalid", String(bad)); eh.textContent = bad ? "Enter an email address like name@example.com" : ""; });
 let x = 0; setInterval(() => { x = (x + 4) % 400; dot.style.left = x + "px"; }, 16);
 </script>`;
@@ -52,8 +56,20 @@ test("the page's own errors come back with the run, and a recording is saved as 
     const bad = text(await a.tool("pairbrowse_run", { steps: [{ fill: { Email: "not an email", Name: "Ada" } }, { select: { Country: "Netherlands" } }] }));
     assert.match(bad, /Check before going on, the page says: "Email": Enter an email address like name@example\.com/, bad);
     assert.doesNotMatch(bad, /"Name"|"Country"/, "only the field that's wrong");
+    // A form that switched the browser's check off (novalidate) checks fields itself: its pattern isn't reported.
+    const own = text(await a.tool("pairbrowse_run", { steps: [{ fill: { Username: "ada" } }] }));
+    assert.doesNotMatch(own, /"Username"/, own);
     const good = text(await a.tool("pairbrowse_run", { steps: [{ fill: { Email: "ada@example.com" } }] }));
-    assert.doesNotMatch(good, /Check before going on/, good);
+    assert.doesNotMatch(good, /"Email"/, good);
+    // A field that only formats the number (a phone mask) kept it: the run goes on.
+    const phone = text(await a.tool("pairbrowse_run", { steps: [{ fill: { Phone: "4155550142" } }, { select: { Country: "Belgium" } }] }));
+    assert.match(phone, /^Done: 2 steps/, phone);
+    assert.match(phone, /"Phone": shows "\+1 415 555 0142": the field put \+1 in front/, phone);
+    // A styled box: the real checkbox hidden, its text beside it clicked instead, and checked.
+    const box = text(await a.tool("pairbrowse_run", { steps: [{ check: "I agree to the terms" }] }));
+    assert.match(box, /^Done: 1 steps/, box);
+    const after = text(await a.tool("browser_snapshot"));
+    assert.match(after, /checkbox "I agree to the terms" \[checked\]/, after.slice(0, 600));
 
     // A recording: the tab in front, then another tab, saved in Downloads.
     const started = text(await a.tool("pairbrowse_record", { action: "start" }));

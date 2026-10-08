@@ -1,6 +1,7 @@
 // Fast mode on common form patterns, each built generically: three date field styles, an address
 // that suggests as you type, a multi-step wizard, password rules, a required group of boxes,
-// labels in another language, fields inside a closed section, and a value a script rewrites late.
+// labels in another language, fields inside a closed section, a value a script rewrites late, a
+// date the field shows its own way, and a styled dropdown on a big page that renames itself.
 // Every check reads the values the page really holds. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -29,7 +30,7 @@ const PAGE = `<!doctype html><title>Patterns</title><body>
 <label for=yy>Year</label> <select id=yy><option value="">Year</option>${Array.from({ length: 60 }, (_, i) => `<option>${2030 - i}</option>`).join("")}</select></fieldset>
 <h2>Address</h2>
 <label for=ad>Street address</label> <input id=ad role=combobox aria-autocomplete=list oninput="sug.hidden = this.value.length < 3" onblur="setTimeout(() => { if (!this.dataset.picked) this.value = ''; }, 50)">
-<ul id=sug role=listbox hidden style="position:absolute;z-index:5;background:#fff"><li role=option onmousedown="ad.value = this.textContent; ad.dataset.picked = 1; sug.hidden = true">500 Howard Street, San Francisco, CA</li><li role=option onmousedown="ad.value = this.textContent; ad.dataset.picked = 1; sug.hidden = true">500 Howard Ave, Burlingame, CA</li></ul>
+<ul id=sug role=listbox hidden style="position:absolute;z-index:5;background:#fff;margin-top:90px"><li role=option onmousedown="ad.value = this.textContent; ad.dataset.picked = 1; sug.hidden = true">500 Howard Street, San Francisco, CA</li><li role=option onmousedown="ad.value = this.textContent; ad.dataset.picked = 1; sug.hidden = true">500 Howard Ave, Burlingame, CA</li></ul>
 <h2>Password</h2>
 <div><label for=pw>Password</label> <input id=pw type=password onblur="pwerr.hidden = this.value.length >= 12"><span id=pwerr class=error hidden>Use at least 12 characters</span></div>
 <h2>Interests (choose at least one)</h2>
@@ -72,6 +73,11 @@ const PAGE = `<!doctype html><title>Patterns</title><body>
 <label for=dep>Department</label> <select id=dep aria-invalid=true onchange="/* the page forgets to clear aria-invalid */"><option value="">Choose</option><option>Sales</option></select>
 <div style="position:relative"><button type=button id=lto aria-label="Sales region" onclick="setTimeout(() => { ltl.innerHTML = '<li role=option>East</li><li role=option>West</li>'; ltl.hidden = false; }, 1500)">Choose</button>
 <ul id=ltl role=listbox hidden style="position:absolute;z-index:5;background:#fff;margin:0" onclick="if (event.target.matches('li')) { lto.textContent = event.target.textContent; this.hidden = true; }"></ul></div>
+<h2>Trip</h2>
+<label for=lv>Leaving on</label> <input id=lv onblur="const d = new Date(this.value); if (!isNaN(d)) this.value = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })">
+<div style="position:relative"><button type=button id=tk aria-haspopup=listbox aria-label="Ticket kind. Return" onclick="tkl.hidden = false">Return</button>
+<ul id=tkl role=listbox hidden style="position:absolute;z-index:5;background:#fff;margin:0" onclick="if (event.target.matches('li')) { tk.textContent = event.target.textContent; tk.setAttribute('aria-label', 'Ticket kind. ' + event.target.textContent); this.hidden = true; }"><li role=option>Return</li><li role=option>Single</li></ul></div>
+<div id=filler>${Array.from({ length: 300 }, (_, i) => `<div>${Array.from({ length: 15 }, (_, j) => `<span>Deal ${i}-${j}</span> `).join("")}</div>`).join("")}</div>
 <h2>Residence</h2>
 <label for=lr>Country of residence</label> <input id=lr onblur="setTimeout(() => { this.value = 'Germany'; }, 300)">
 <h2>Wizard</h2>
@@ -175,6 +181,25 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     r = await run([{ select: { "Sales region": "West" } }]);
     assert.match(r, /^Done: 1 steps/, r);
     assert.equal(await shows("lto"), "West");
+    // A big page (thousands of elements): a styled dropdown whose name says its choice ("Ticket
+    // kind. Return", then "... Single") is picked fast, and the run doesn't wait on the name it was
+    // found by. A date the field rewrites its own way ("Nov 20, 2026" shown as "Fri, Nov 20") counts as kept.
+    const t0 = Date.now();
+    r = await run([{ select: { "Ticket kind. Return": "Single" } }]);
+    const took = Date.now() - t0;
+    assert.match(r, /^Done: 1 steps/, r);
+    assert.equal(await shows("tk"), "Single");
+    assert.ok(took < 5000, `a styled pick on a big page took ${took} ms`);
+    r = await run([{ fill: { "Leaving on": "Nov 20, 2026" } }]);
+    assert.match(r, /^Done: 1 steps/, r);
+    assert.doesNotMatch(r, /Leaving on"?:/, r);
+    assert.equal(await value("lv"), "Fri, Nov 20");
+    // A suggestion picked by the run is the agent's click: never taken for a person's.
+    r = await run([{ fill: { "Street address": "500 Howard Ave" } }]);
+    assert.equal(await value("ad"), "500 Howard Ave, Burlingame, CA");
+    // (Its list opens well below the field: a click there without the agent's cursor would be a person's.)
+    const after = r + text(await a.tool("browser_snapshot"));
+    assert.doesNotMatch(after, /used this tab|by hand/i, after.split("### Page")[0]);
     // A value a script rewrites 300 ms after the field is left: read again once the page is quiet
     // and named in the run's checks with what it shows now. Fields nothing rewrote aren't named.
     r = await run([{ fill: { "Country of residence": "United States", Vorname: "Alex" } }]);

@@ -166,7 +166,9 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         // Still there: said again twice a second (the host's agents wait while it's fresh).
         if (fresh.length || Date.now() - (cur.personSent.get(id) || 0) >= PERSON_AGAIN_MS) {
           cur.personSent.set(id, Date.now());
-          ops.push({ op: "person", id, did: fresh.map((e) => e.line), ...(person?.acting ? { acting: true } : {}) });
+          // ago: how long ago they last clicked or typed here (news that crosses late holds nobody longer).
+          const ago = person?.acting ? person.ago : fresh.length ? Date.now() - fresh.at(-1).t : 0;
+          ops.push({ op: "person", id, did: fresh.map((e) => e.line), ...(person?.acting ? { acting: true } : {}), ago: Math.max(0, Math.round(ago || 0)) });
         }
       }
     }

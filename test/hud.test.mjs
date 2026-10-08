@@ -243,3 +243,25 @@ test("the agent cursor moves like a hand, lands exactly on the target and rings 
     await browser.close();
   }
 });
+
+test("an agent's cursor still goes out when a busy computer is slow to say where the element is", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const sent = [];
+  const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => { if (args?.[3] === "cursor") { const c = JSON.parse(args[2]); sent.push(c); return { ms: 0, at: { x: c.x, y: c.y, t: Date.now() } }; } } };
+  const hud = createHud({ pages: async () => [page], participants: () => ["a"], waiting: () => null, liveView: () => null, notify: () => {} });
+  const pointed = [];
+  hud.onCursor((p, at) => pointed.push(at));
+  const slow = (x, ms) => ({ boundingBox: () => new Promise((r) => setTimeout(() => r({ x, y: 10, width: 20, height: 20 }), ms)) });
+  // The action isn't held up: the cursor goes once the box is known, and its pointer crosses.
+  const t0 = Date.now();
+  await hud.cursorTo(page, slow(100, 700), "click");
+  assert.ok(Date.now() - t0 < 600, "the action never waits for a slow box");
+  await new Promise((r) => setTimeout(r, 800));
+  assert.deepEqual(sent.map((c) => c.x), [110]);
+  assert.equal(pointed.length, 1);
+  // A late box for an element the agent has already left: the newer cursor stands.
+  await hud.cursorTo(page, slow(300, 700), "click");
+  await hud.cursorTo(page, slow(500, 0), "click");
+  await new Promise((r) => setTimeout(r, 800));
+  assert.deepEqual(sent.map((c) => c.x), [110, 510]);
+});

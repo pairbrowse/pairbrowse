@@ -477,7 +477,7 @@ async function pickFromOpened(page, opener, option, label, hooks) {
 // After typing into a field that suggests as you type: the suggestion matching the value (the same
 // text, else one starting with it), clicked as a person would. Waits up to SUGGEST_MS for the list.
 const SUGGEST_MS = 1200;
-async function pickSuggestion(page, el, value, mark, typed = "") {
+async function pickSuggestion(page, el, value, mark, typed = "", hooks = {}) {
   if (!String(value).trim()) return { picked: "", seen: [] };
   let choices = [];
   const near = await el.evaluate(rectOf, null, { timeout: 1000 }).catch(() => null); // in its own frame
@@ -487,6 +487,8 @@ async function pickSuggestion(page, el, value, mark, typed = "") {
     const lead = typed ? choices.filter((c) => c.text.toLowerCase().startsWith(typed.toLowerCase())) : [];
     const best = bestChoice(choices, value) || (lead.length === 1 ? lead[0] : null);
     if (best) {
+      // The cursor first, on the suggestion: the click is the agent's, never taken for a person's.
+      await hooks.cursor?.(choiceAt(best, mark), "click");
       await choiceAt(best, mark).click({ timeout: 3000 }).catch(() => {});
       return { picked: best.text, seen: choices };
     }
@@ -736,6 +738,11 @@ export async function runSteps(page, steps, hooks) {
     }
     return result;
   } finally {
+    // Elements held by hand (a styled dropdown): let go of them.
+    for (const t of touched) {
+      if (typeof t.el?.asElement === "function") t.el.dispose().catch(() => {});
+      Promise.resolve(t.handle).then((h) => h?.dispose()).catch(() => {});
+    }
     if (human) page._pairbrowseHumanized = true;
     if (instant) await within(500, page.evaluate(() => document.querySelectorAll("style[data-pb-instant]").forEach((n) => n.remove())).catch(() => {}));
   }
@@ -743,11 +750,27 @@ export async function runSteps(page, steps, hooks) {
 
 // The fields a run filled or chose in, each with what it showed right after (seen, a promise) and
 // when: what lateRewrites compares against.
+// Each is also held by its element (handle): a field found by a name the page then changes (a
+// dropdown that shows its choice in its name, a label that moves) is still read at once, never
+// waited for by a name nothing has any more.
 class Touched extends Array {
   push(...ts) {
-    for (const t of ts) if (t?.el && !t.seen) { t.at = Date.now(); t.seen = shownValue(t.el); }
+    for (const t of ts) {
+      if (!t?.el || t.seen) continue;
+      t.at = Date.now();
+      t.handle = typeof t.el.elementHandle === "function" ? t.el.elementHandle({ timeout: 700 }).catch(() => null) : null;
+      t.seen = shownValue(t.el);
+    }
     return super.push(...ts);
   }
+}
+// The element a touched field is now: the one it was, while it's in the page; else found again
+// by its name (a form that drew the field anew). null: neither is there (never waited for).
+async function nodeOf(t) {
+  const h = await t.handle;
+  if (h && (await within(500, h.evaluate((n) => n.isConnected)).catch(() => false))) return h;
+  if (typeof t.el?.count === "function" && !(await t.el.count().catch(() => 0))) return null;
+  return t.el;
 }
 // What a field shows a person: a dropdown's chosen text, a box ticked or not, a field's value, or
 // the text of a styled control. null: couldn't be read.
@@ -778,12 +801,16 @@ async function lateRewrites(page, touched) {
     const was = await (touched.findLast((x) => x.el === t.el) || t).seen;
     seen.add(t.el);
     if (typeof was !== "string") continue;
-    const now = await shownValue(t.el);
+    const node = await nodeOf(t);
+    if (!node) continue;
+    const now = await shownValue(node);
     if (typeof now !== "string") continue;
     // Also a text answer another answer overwrote during the run (a lookup from the email): one
     // with digits may be just reformatted (a date, a phone), so only its later changes count.
     const given = typeof t.value === "string" && !/\d/.test(t.value) && now.trim() && !same(now, t.value) ? t.value : null;
     if (same(now, was) && !given) continue;
+    // The value filled, now shown the field's way (a date with its weekday): kept.
+    if (typeof t.value === "string" && sameDate(now, t.value)) continue;
     const say = (v) => (v.trim() ? `"${v.trim().slice(0, 60)}"` : "empty");
     const what = t.secret ? "changed it after it was filled" : now === "ticked" || now === "unticked" ? `${now} it after the run` : `changed it to ${say(now)} after it was filled (it ${given ? "was filled with" : "showed"} ${say(given ?? was)})`;
     out.push({ t, text: `"${t.label}": the page ${what}; ${now.trim() ? "set it back with another step if that's not what the user wants" : "fill it again"}` });
@@ -797,7 +824,8 @@ async function lateRewrites(page, touched) {
 // site's search field never counts. { required: [names], optional: [names] }.
 async function leftovers(page, touched) {
   const out = { required: [], optional: [] };
-  for (const t of touched) await t.el.evaluate((n) => n.setAttribute("data-pb-touched", ""), null, { timeout: 1000 }).catch(() => {});
+  const nodes = (await Promise.all(touched.map(nodeOf))).filter(Boolean);
+  for (const n of nodes) await n.evaluate((x) => x.setAttribute("data-pb-touched", ""), null, { timeout: 1000 }).catch(() => {});
   try {
     for (const root of await formRoots(page)) {
       const found = await within(1500, root.evaluate(() => {
@@ -857,7 +885,7 @@ async function leftovers(page, touched) {
       for (const k of ["required", "optional"]) for (const n of found?.[k] || []) if (!out[k].includes(n)) out[k].push(n);
     }
   } finally {
-    for (const t of touched) await t.el.evaluate((n) => n.removeAttribute("data-pb-touched"), null, { timeout: 1000 }).catch(() => {});
+    for (const n of nodes) await n.evaluate((x) => x.removeAttribute("data-pb-touched"), null, { timeout: 1000 }).catch(() => {});
   }
   return out;
 }
@@ -867,8 +895,11 @@ async function leftovers(page, touched) {
 // wants in another format, a date out of range, a choice that didn't stick.
 async function fieldProblems(touched) {
   const out = [];
-  for (const { el, label, want, note } of touched.slice(0, 40)) {
+  for (const t of touched.slice(0, 40)) {
+    const { label, want, note } = t;
     if (note) { out.push(`"${label}": ${note}`); continue; }
+    const el = await nodeOf(t);
+    if (!el) continue;
     const p = await within(1500, el.evaluate((n, want) => {
       const text = (id) => id.split(/\s+/).map((x) => document.getElementById(x)?.innerText || "").join(" ").replace(/\s+/g, " ").trim();
       // The browser's own check counts only where the form uses it (not novalidate): a form that
@@ -905,6 +936,23 @@ async function fieldProblems(touched) {
   return out;
 }
 
+
+// The same date written the field's way (a shown "Fri, Nov 20" for a filled "Nov 20, 2026"): same
+// month and day, and the same year when the field shows one.
+// Both must read as a date (a month by name with a day, or day and month in figures): the
+// browser's date reading takes almost anything ("nope 1234" is a date in year 1234).
+const MONTH = "(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?";
+const DATE_LIKE = new RegExp(`\\b${MONTH}\\s+\\d{1,2}\\b|\\b\\d{1,2}\\.?\\s+${MONTH}|\\b\\d{1,2}[/.-]\\d{1,2}([/.-]\\d{2,4})?\\b|\\b\\d{4}-\\d{1,2}-\\d{1,2}\\b`, "i");
+export function sameDate(a, b) {
+  if (!DATE_LIKE.test(String(a)) || !DATE_LIKE.test(String(b))) return false;
+  const weekday = /^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+/i;
+  const d = (t) => { const x = new Date(String(t).replace(weekday, "")); return isNaN(x) ? null : x; };
+  const y = d(b);
+  // A shown date without a year ("Fri, Nov 20") takes the typed one's to be read at all.
+  const x = d(/\d{4}/.test(a) || !y ? a : `${String(a).replace(weekday, "")} ${y.getFullYear()}`);
+  if (!x || !y || !/[A-Za-z]{3}|\d{1,2}[/.-]\d{1,2}/.test(a)) return false;
+  return x.getMonth() === y.getMonth() && x.getDate() === y.getDate() && (!/\d{4}/.test(a) || x.getFullYear() === y.getFullYear());
+}
 
 async function stepsIn(page, steps, hooks, touched = []) {
   const started = Date.now();
@@ -944,7 +992,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
           if (!el) {
             // Its input hidden inside a box a person clicks: a styled dropdown, picked with select.
             const box = await hiddenDropdown(page, label);
-            if (box) { await box.evaluate((n) => n.removeAttribute("data-pb-dropdown")).catch(() => {}); return fail(`"${label}" is a dropdown: use a select step with the option's text ({"select": {"${label}": "..."}}).`); }
+            if (box) { await box.evaluate((n) => n.removeAttribute("data-pb-dropdown"), null, { timeout: 1000 }).catch(() => {}); return fail(`"${label}" is a dropdown: use a select step with the option's text ({"select": {"${label}": "..."}}).`); }
             return fail(await hiddenNow(page, label) ? `"${label}" is hidden right now: the form shows it only for some answers. Leave it, or change the answer it depends on.` : `No field "${label}".${gone()}`);
           }
           if (await theirs(el, label)) continue;
@@ -987,14 +1035,14 @@ async function stepsIn(page, steps, hooks, touched = []) {
             throw e;
           }
           if (suggests) {
-            let s2 = await pickSuggestion(page, el, value, mark).finally(() => clearChoices(page, mark));
+            let s2 = await pickSuggestion(page, el, value, mark, "", hooks).finally(() => clearChoices(page, mark));
             // Nothing matched the whole text: as a person would, type less (its first word, then its
             // first letters) and take the suggestion that matches the value.
             for (const shorter of [String(value).trim().split(/\s+/)[0], String(value).trim().slice(0, 3)]) {
               if (s2.picked || !shorter || shorter === String(value).trim()) continue;
               const m2 = await choicesBefore(page);
               await el.fill(shorter, { timeout: 5000 }).catch(() => {});
-              s2 = await pickSuggestion(page, el, value, m2, shorter).finally(() => clearChoices(page, m2));
+              s2 = await pickSuggestion(page, el, value, m2, shorter, hooks).finally(() => clearChoices(page, m2));
             }
             if (s2.picked) { hooks.activity(`Picked **${s2.picked}** for **${label}**`); touched.push({ el, label }); continue; }
             suggestionsSeen.set(label, s2.seen.map((c) => c.text));
@@ -1013,7 +1061,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
         const digits = (v) => bare(v).replace(/[\s\-()./]/g, "");
         // Or take it off when the form picks the country separately ("+1 415 555 0142" shown as "415 555 0142").
         const coded = (withCode, plain) => /^\+\d{1,4}/.test(withCode) && /^\d{6,}$/.test(plain) && withCode.endsWith(plain) && withCode.length - plain.length >= 2 && withCode.length - plain.length <= 5;
-        const same = (a, b) => bare(a) === bare(b) || (/\d/.test(b) && (digits(a) === digits(b) || coded(digits(a), digits(b)) || coded(digits(b), digits(a))));
+        const same = (a, b) => sameDate(a, b) || bare(a) === bare(b) || (/\d/.test(b) && (digits(a) === digits(b) || coded(digits(a), digits(b)) || coded(digits(b), digits(a))));
         for (const f of filled) {
           const multiline = await f.el.evaluate((n) => n.tagName === "TEXTAREA" || n.isContentEditable).catch(() => true);
           if (!multiline) await f.el.press("Tab", { timeout: 2000 }).catch(() => {});
@@ -1021,7 +1069,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
           if (now !== null && !f.secret && coded(digits(f.value), digits(now))) {
             // Kept without its country code: the form takes the country from its own picker.
             f.note = `shows "${now}": the field dropped ${digits(f.value).slice(0, digits(f.value).length - digits(now).length)}; make sure the form's country or code picker shows that country`;
-          } else if (now !== null && !f.secret && digits(now) !== digits(f.value) && same(now, f.value)) {
+          } else if (now !== null && !f.secret && digits(now) !== digits(f.value) && !sameDate(now, f.value) && same(now, f.value)) {
             // Kept, with a country code the field put in front: right only if that's the number's country.
             f.note = `shows "${now}": the field put ${digits(now).slice(0, digits(now).length - digits(f.value).length)} in front; if the number is from another country, choose that country in the field first`;
           }
@@ -1119,14 +1167,14 @@ async function stepsIn(page, steps, hooks, touched = []) {
           // A native <select> drawn invisible over (or under) its styled box: chosen as its own list
           // would, with the events a person's choice fires.
           if (control && (await control.field.evaluate((n) => n.tagName === "SELECT").catch(() => false))) {
-            await control.evaluate((n) => n.removeAttribute("data-pb-dropdown")).catch(() => {});
+            await control.evaluate((n) => n.removeAttribute("data-pb-dropdown"), null, { timeout: 1000 }).catch(() => {});
             const picked = await chooseNative(control.field, option);
             if (!picked.picked) return fail(`"${label}" has no option "${option}". Its options: ${picked.options.join(", ")}.`);
             touched.push({ el: control.field, label, want: picked.picked });
             continue;
           }
           if (control) {
-            const why = await pickFromOpened(page, control, option, label, hooks).finally(() => control.evaluate((n) => n.removeAttribute("data-pb-dropdown")).catch(() => {}));
+            const why = await pickFromOpened(page, control, option, label, hooks).finally(() => control.evaluate((n) => n.removeAttribute("data-pb-dropdown"), null, { timeout: 1000 }).catch(() => {}));
             if (why) return fail(why);
             touched.push({ el: control.field, label });
             continue;
@@ -1153,8 +1201,12 @@ async function stepsIn(page, steps, hooks, touched = []) {
           }
           else {
             // A styled dropdown (a button or combobox with its own list): open it, click the option.
-            const why = await pickFromOpened(page, el, option, label, hooks).finally(() => el.evaluate((n) => n.removeAttribute("data-pb-dropdown")).catch(() => {}));
+            // Its name often says the choice ("Ticket type. Round trip"), so the name it was found by
+            // no longer finds it once chosen: the element itself is held for what comes after.
+            const node = await el.elementHandle({ timeout: 1000 }).catch(() => null);
+            const why = await pickFromOpened(page, el, option, label, hooks).finally(() => (node || el).evaluate((n) => n.removeAttribute("data-pb-dropdown"), null, { timeout: 1000 }).catch(() => {}));
             if (why) return fail(why);
+            if (node) { touched.push({ el: node, label, want: "" }); continue; }
           }
           touched.push({ el, label, want: isSelect ? String(option) : "" });
         }

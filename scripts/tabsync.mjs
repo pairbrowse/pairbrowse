@@ -104,7 +104,7 @@ export function readOps(body, ids) {
     if (op === "close" && ids.has(o.id)) { ops.push({ op, id: o.id }); continue; }
     // A person used their copy of the tab (field and button names only), or their agent did something there.
     // acting: they click or type there now (moving the pointer or scrolling holds nobody up).
-    if (op === "person" && ids.has(o.id)) { ops.push({ op, id: o.id, did: (Array.isArray(o.did) ? o.did : []).slice(0, 10).map((x) => clean(x, 80)).filter(Boolean), acting: o.acting === true }); continue; }
+    if (op === "person" && ids.has(o.id)) { ops.push({ op, id: o.id, did: (Array.isArray(o.did) ? o.did : []).slice(0, 10).map((x) => clean(x, 80)).filter(Boolean), acting: o.acting === true, ago: Number.isFinite(o.ago) ? Math.max(0, Math.min(15_000, Math.round(o.ago))) : 0 }); continue; }
     if (op === "activity" && ids.has(o.id) && o.text) { ops.push({ op, id: o.id, text: clean(crossingText(o.text)), who: clean(o.who, 60) }); continue; }
     // Their agent in a tab (its spark color), or none any more. left: how long its turn there
     // still holds (agents here wait for it), 0 when it only shows there.

@@ -84,7 +84,7 @@ async function release(cdp) {
 // too); changes: false when they only moved the pointer or scrolled.
 // onReplay(): marks input replayed from a viewer while it runs (returns done()).
 // secretDomains(): sites with saved passwords, whose tabs reach joiners as origin + path only.
-// onJoinerPerson(page, who, did, acting, changed): a drive joiner uses their copy of a tab by
+// onJoinerPerson(page, who, did, acting, changed, ago): a drive joiner uses their copy of a tab by
 // hand (agents here wait, as for a person here; changed: they navigated, opened or closed it).
 // onJoinerActivity(page, text, who, from): their agent acted there.
 // shared: the rest of what shared tabs carry (see sharedDefaults): form values, their agents'
@@ -352,7 +352,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
         if (o.op === "order") { await shared.arrange(o.ids.map((id) => known.get(id)).filter((p) => p && !p.isClosed())); continue; }
         const page = o.op === "open" ? await keepFocus(() => ctx.newPage()) : known.get(o.id);
         if (!page || page.isClosed()) continue;
-        if (o.op === "person") { onJoinerPerson(page, j.name, o.did, o.acting); continue; }
+        if (o.op === "person") { onJoinerPerson(page, j.name, o.did, o.acting, false, o.ago); continue; }
         if (o.op === "activity") { onJoinerActivity(page, o.text, o.who || who, joinerKey(j)); continue; }
         if (o.op === "agent") { shared.onJoinerAgent(page, o.who, o.color, o.left, joinerKey(j), cleanName(j.name)); continue; }
         if (o.op === "form") {

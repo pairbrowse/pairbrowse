@@ -129,3 +129,14 @@ test("dates for date fields: only ones that can mean a single day become YYYY-MM
   assert.equal(isoDate("03/04/1990"), "", "ambiguous: never a guess");
   assert.equal(isoDate("13/13/1990"), "");
 });
+
+test("a date the field shows its own way counts as the same date; other text never does", async () => {
+  const { sameDate } = await import("../scripts/runner.mjs");
+  assert.equal(sameDate("Fri, Nov 20", "Nov 20, 2026"), true);
+  assert.equal(sameDate("20 Nov 2026", "Nov 20, 2026"), true);
+  assert.equal(sameDate("11/20/2026", "Nov 20, 2026"), true);
+  assert.equal(sameDate("Nov 21", "Nov 20, 2026"), false, "another day");
+  assert.equal(sameDate("Fri, Nov 20, 2027", "Nov 20, 2026"), false, "another year");
+  assert.equal(sameDate("nope", "1234"), false, "not dates at all");
+  assert.equal(sameDate("415 555 0142", "4155550142"), false);
+});

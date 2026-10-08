@@ -6,6 +6,7 @@
 import { sleep, within } from "../util.mjs";
 import { cleanName } from "../join.mjs";
 
+const LATE_NEWS_MAX_MS = 15_000; // how late a person's news from the other browser can say it is
 const USER_IDLE_MS = 2000; // a person counts as busy in a tab until this long after their last input
 const PERSON_SHOWN_MS = USER_IDLE_MS + 3000; // the tab overview keeps showing them a little longer
 const USER_WAIT_MS = 10 * 60_000; // an agent gives up waiting for a person after this
@@ -210,13 +211,15 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   // someone here (agents in this tab wait, then hear what they did). lines: field and button
   // names only, never values (the other side's presence made them).
   // acting: they clicked or typed there just now (not only moved the pointer or scrolled).
-  function elsewhere(page, who, lines = [], acting = false) {
+  // ago: how long before this news arrived they did (it can cross late on a busy computer): they
+  // count as busy from then, not from now.
+  function elsewhere(page, who, lines = [], acting = false, ago = 0) {
     if (!page) return;
     // Only there (moving the pointer, scrolling): nothing waits, but agents are told someone was.
     const acted = lines.some((l) => l !== "scrolled" && l !== "was in this tab");
     if (!acted && personIn(page) !== who) lines = ["was in this tab"];
     humanIn(page, who);
-    if (acted || acting) actedIn(page, who);
+    if (acted || acting) actedIn(page, who, Date.now() - Math.max(0, Math.min(LATE_NEWS_MAX_MS, Number(ago) || 0)));
     if (lines.length) onUsed(page); // in use on the other side too: the tab cap keeps it
     const h = humanAt.get(page);
     if (h.who === who) h.remote = true; // never sent back to where it came from
@@ -232,7 +235,8 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     if (acted) onStale();
   }
   // Who is using this tab by hand right now ({ who, local }), and what people did there after n.
-  const sharedPerson = (page) => { const h = page && humanAt.get(page); return h && Date.now() - h.t < USER_IDLE_MS ? { who: h.who, local: !h.remote, acting: !!actingIn(page) } : null; };
+  // ago: how long ago they last clicked or typed (ms), so news that crosses late holds nobody longer.
+  const sharedPerson = (page) => { const h = page && humanAt.get(page); return h && Date.now() - h.t < USER_IDLE_MS ? { who: h.who, local: !h.remote, acting: !!actingIn(page), ago: actingIn(page) ? Date.now() - actedAt.get(page).t : null } : null; };
   const feedAfter = (page, n = 0) => (feeds.get(page) || []).filter((e) => e.n > n);
 
   // What people did in the tab, as a note for the agent's next result (once), each under their

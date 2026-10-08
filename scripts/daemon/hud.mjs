@@ -140,18 +140,33 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   // who: the agent's name, shown on its cursor in its spark color (like people's pointers).
   // It goes to the element's center, where a click lands (a humanized click picks its own point
   // inside: the press puts the cursor there). Resolves to how long it takes to arrive (ms).
+  const cursorSeq = new WeakMap(); // tab -> how many times a cursor was sent there
   async function pointAt(page, box, act, who = "") {
     if (!box) return 0;
+    cursorSeq.set(page, (cursorSeq.get(page) || 0) + 1);
     const r = await quietly(page, JSON.stringify({ x: box.x + box.width / 2, y: box.y + box.height / 2, act, who: who || "Claude", color: sparkOwner(page)?.color || "", w: Math.round(Math.min(box.width, box.height)), bw: Math.round(box.width), bh: Math.round(box.height) }), "cursor");
     // Where it points goes to people in other browsers at once, not only on their next poll (a
     // busy computer can let polls time out for seconds).
     if (r?.at) for (const fn of cursorListeners) try { fn(page, r.at); } catch {}
     return Math.max(0, Math.min(CURSOR_ARRIVE_MS, Number(r?.ms) || 0));
   }
+  // Where an element is, for the cursor: the action never waits longer than CURSOR_WAIT_MS for it.
+  // A busy computer can take longer to say: then the cursor still goes there once it's known
+  // (unless it was sent somewhere else meanwhile), so people in other browsers see the agent's
+  // pointer all the same.
+  async function boxFor(page, el, act, who) {
+    const asked = el.boundingBox().catch(() => null);
+    const box = await within(CURSOR_WAIT_MS, asked);
+    if (!box) {
+      const seq = cursorSeq.get(page) || 0;
+      asked.then((late) => { if (late && (cursorSeq.get(page) || 0) === seq && !page.isClosed()) pointAt(page, late, act, who).catch(() => {}); }).catch(() => {});
+    }
+    return box;
+  }
   // Moves the cursor to an element (fast mode). Returns a promise: fast mode doesn't wait for the
   // cursor to arrive, only for it to be sent (so the press that follows puts it on the click).
   function cursorTo(page, el, act, who = "") {
-    return within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)).then((box) => pointAt(page, box, act, who)).catch(() => {});
+    return boxFor(page, el, act, who).then((box) => pointAt(page, box, act, who)).catch(() => {});
   }
   // Before a browser tool acts on an element: a snapshot ref, or a selector (the same one the tool
   // uses). pageFor(): the tab it acts in (null: none).
@@ -163,7 +178,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (!page) return;
     let el;
     try { el = page.locator(isRef(target) ? `aria-ref=${target}` : target).first(); } catch { return; }
-    const ms = await pointAt(page, await within(CURSOR_WAIT_MS, el.boundingBox().catch(() => null)), act, who);
+    const ms = await pointAt(page, await boxFor(page, el, act, who), act, who);
     // The action waits for the cursor to arrive, so it is there when the click happens.
     if (ms) await new Promise((resolve) => setTimeout(resolve, ms));
   }

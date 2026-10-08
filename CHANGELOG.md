@@ -5,6 +5,14 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.29 (2026-10-09)
+
+- Shared sessions: the agent's pointer reaches the people watching even when a busy computer is slow to say where the element is (it used to be dropped; the action still never waits for it).
+- Shared sessions: a joiner's click or typing that crosses late on a busy computer holds agents from when it happened, not from when the news arrived (agents no longer stop for a click seconds old; they still hear of it).
+- Faster fast mode on big pages: a styled dropdown whose name shows its choice ("Ticket type. Round trip") no longer holds the run up for 30 s once chosen, and the checks after a run never wait on a field the page drew anew (a flight search form: 30.5 s down to 0.5 s for the dropdown, about 6 s down to under 3 s for the whole form).
+- A date the field shows its own way ("Nov 20, 2026" shown as "Fri, Nov 20") counts as kept, with no note about a country code and no false "changed after it was filled".
+- A suggestion the agent picks from a list is the agent's own click, never reported as the user's.
+
 ## 0.15.28 (2026-10-09)
 
 Fast mode, tested on about 220 real forms from well-known sites (never submitted): every real form found filled completely, checked by picture.

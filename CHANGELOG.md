@@ -5,6 +5,10 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.34 (2026-10-09)
+
+- Sharing again soon after the last code ended no longer opens a new tunnel each time (Cloudflare allows only so many new Quick Tunnels in a while, and sharing then failed): the tunnel stays up for a quarter of an hour after the last code ends, with no code working on it meanwhile, and the next invite reuses it. The browser closing or the helper stopping still closes it at once.
+
 ## 0.15.33 (2026-10-09)
 
 A live tester ran two helpers sharing a session through a real tunnel (host and joiner) and found these.

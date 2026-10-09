@@ -176,6 +176,8 @@ export function preflight(steps, uploadsDir) {
   for (const [i, step] of steps.entries()) {
     const [kind, arg] = Object.entries(step || {})[0] || [];
     const at = `Step ${i + 1} (${kind})`;
+    const names = arg && typeof arg === "object" && !Array.isArray(arg) ? Object.keys(arg) : typeof arg === "string" ? [arg] : Array.isArray(arg) ? arg.filter((x) => typeof x === "string") : [];
+    if (names.some((n) => n.length > 300)) return `${at}: a name that long (${Math.max(...names.map((n) => n.length))} characters) is no field's; use the label a person reads.`;
     if (kind === "go") {
       const p = navigationProblem(arg);
       if (p) return `${at}: ${p}`;
@@ -194,7 +196,10 @@ export function preflight(steps, uploadsDir) {
       if (far < 0.01) return `${at}: a drag has to move (for a click use click).`;
     } else if (kind === "scroll") {
       if (!(arg === "down" || arg === "up" || (Number.isFinite(Number(arg)) && Number(arg) !== 0 && Math.abs(Number(arg)) <= 20000))) return `${at}: scroll takes "down", "up" or a number of pixels (negative: up).`;
-    } else if (!["fill", "check", "uncheck", "select", "press", "waitFor", "expect", "handoff"].includes(kind)) {
+    } else if (kind === "handoff") {
+      if (!arg || typeof arg !== "object" || Array.isArray(arg) || (arg.until === undefined && arg.untilGone === undefined)) return `${at}: handoff takes {"say": "what the user must do", "until": "text that appears after"} (or "untilGone").`;
+      if ((arg.until !== undefined && typeof arg.until !== "string") || (arg.untilGone !== undefined && typeof arg.untilGone !== "string") || (arg.say !== undefined && typeof arg.say !== "string")) return `${at}: say, until and untilGone are text.`;
+    } else if (!["fill", "check", "uncheck", "select", "press", "waitFor", "expect"].includes(kind)) {
       return `${at}: unknown step. Use one of go, fill, check, uncheck, select, click, press, scroll, upload, waitFor, expect, handoff.`;
     }
   }
@@ -233,13 +238,16 @@ async function find(page, candidates, { frames = true } = {}) {
   }
   return null;
 }
+// Each look is bounded: a page whose scripts never pause answers nothing, and a run must still
+// end (with a word about the page) rather than hold every agent behind it.
+const LOOK_MS = 2500;
 async function findIn(root, candidates) {
   for (const make of candidates) {
     const loc = make(root);
-    const n = await loc.count().catch(() => 0);
+    const n = (await within(LOOK_MS, loc.count().catch(() => 0))) ?? 0;
     for (let i = 0; i < Math.min(n, 5); i++) {
       const one = loc.nth(i);
-      if (await one.isVisible().catch(() => false)) return one;
+      if (await within(LOOK_MS, one.isVisible().catch(() => false))) return one;
     }
   }
   return null;
@@ -741,6 +749,7 @@ const dialogStop = (d, what) => `${what} opened the page's own ${d.type} dialog:
 export async function runSteps(page, steps, hooks) {
   const human = !hooks.smooth && page._pairbrowseHumanized === true;
   if (human) page._pairbrowseHumanized = false;
+  // hooks.signal: aborted when the agent left, or when the run's time is up (serve.mjs).
   const touched = new Touched(); // [{ el, label }]: the fields the run filled or chose in
   // Fields are brought into view at once: a page's smooth scrolling (CSS scroll-behavior) would
   // animate every jump to the next field. Put back when the run ends.
@@ -751,12 +760,17 @@ export async function runSteps(page, steps, hooks) {
     if (result.dialog) return { ...result, checks: [] };
     // A value the page rewrites a moment after it was filled (a lookup from another answer, a
     // location guess, a script on blur): looked at again once the page is quiet.
-    const late = await lateRewrites(page, touched).catch(() => []);
-    result.checks = [...late.map((c) => c.text), ...await fieldProblems(touched.filter((t) => !late.some((c) => c.t === t))).catch(() => [])];
+    // Each read of the page after the run is bounded: a restless page (a travel site redrawing
+    // its search box without end) must never hold the run, and every agent behind it, for good.
+    hooks.trace?.("after the steps: looking for values the page changed");
+    const late = (await within(LATE_MAX_MS + 6000, lateRewrites(page, touched)).catch(() => [])) ?? [];
+    hooks.trace?.("after the steps: looking for problems the page shows");
+    result.checks = [...late.map((c) => c.text), ...((await within(8000, fieldProblems(touched.filter((t) => !late.some((c) => c.t === t)))).catch(() => [])) ?? [])];
     // What's still blank in that form: often fields the form added while it was filled (a state once
     // the country is chosen). Only after a run that filled something, and not when it stopped.
     if (result.ok && touched.length) {
-      const left = await leftovers(page, touched).catch(() => ({ required: [], optional: [] }));
+      hooks.trace?.("after the steps: looking for fields left empty");
+      const left = (await within(8000, leftovers(page, touched)).catch(() => null)) ?? { required: [], optional: [] };
       const list = (names) => names.map((n) => `"${n}"`).join(", ");
       if (left.required.length) result.checks.push(`still empty and required: ${list(left.required)}`);
       if (left.optional.length) result.checks.push(`left empty (optional; fill them if the user's details or task cover them): ${list(left.optional)}`);
@@ -1004,9 +1018,14 @@ async function stepsIn(page, steps, hooks, touched = []) {
   };
   // No bringToFront here: on macOS it raises the whole browser window over the app you're in.
   // Background tabs aren't slowed down anyway (the browser starts with throttling switched off).
+  // hooks.trace(text): where the run is now, for the word on a run that gets stuck (serve.mjs).
+  const trace = (t) => { try { hooks.trace?.(t); } catch {} };
   for (const [i, step] of steps.entries()) {
     const [kind, arg] = Object.entries(step)[0];
     const fail = (why) => ({ ok: false, done, skipped, stoppedAt: i + 1, why });
+    trace(`step ${i + 1} (${kind})`);
+    // Out of time (the run's deadline), or the agent left: stop here, between steps.
+    if (hooks.signal?.aborted && i > 0) return fail(`This run took too long (${Math.round((Date.now() - started) / 1000)} s on the steps before this one: a slow or restless page). Take a browser_snapshot, then run the remaining steps.`);
     // A field missing after earlier steps of this run: forms add and remove fields as they're answered.
     const gone = () => (touched.length ? " An earlier answer in this run may have removed it (forms add and remove fields as they're filled): take a snapshot, then fill what's there now." : "");
     try {
@@ -1025,6 +1044,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
         for (const [label, raw] of Object.entries(arg)) {
           // A person using the tab: wait until they're done, then go on (their fields stay theirs).
           await hooks.holdForPeople?.();
+          trace(`step ${i + 1}: finding "${label}"`);
           let el = await field(page, label);
           if (!el && (await openSectionOf(page, label))) el = await field(page, label);
           if (!el) {
@@ -1047,29 +1067,36 @@ async function stepsIn(page, steps, hooks, touched = []) {
           }
           if (isSecret) {
             // The address of the document the field is in: a frame's own, not the page around it.
-            const where = await el.evaluate(() => location.href).catch(() => "");
+            const where = await within(2000, el.evaluate(() => location.href)).catch(() => "");
             if (!where || !hostAllowed(where, hooks.secrets.domains[value] || []) || !hostAllowed(page.url(), hooks.secrets.domains[value] || [])) return fail(`${value} may only be typed on HTTPS pages of ${(hooks.secrets.domains[value] || []).join(", ") || "(no domains set)"}; this field is on ${where || page.url()}. Hand this field to the user.`);
             value = hooks.secrets.values[value];
           }
           hooks.cursor?.(el, "type");
           // A field that suggests as you type (a combobox): a person picks the suggestion that
           // matches; typing alone often doesn't count. Wait briefly for the list, then click it.
-          const kindOf = await el.evaluate((n) => ({ readOnly: !!n.readOnly, number: n.type === "number", date: n.type === "date" })).catch(() => ({}));
+          const kindOf = await within(2000, el.evaluate((n) => ({ readOnly: !!n.readOnly, number: n.type === "number", date: n.type === "date" }))).catch(() => ({}));
           // A date field takes YYYY-MM-DD: a date written another way is turned into that when it
           // can only mean one day (03/15/1990, 15.03.1990, March 15, 1990); an ambiguous one (03/04) isn't.
           if (kindOf.date && !isSecret) value = isoDate(value) || value;
           if (kindOf.readOnly) return fail(`"${label}" can't be typed into (a picker): use a select step with the choice's text ({"select": {"${label}": "..."}}).`);
           if (kindOf.number && !/^-?\d+([.,]\d+)?$/.test(value.trim())) return fail(`"${label}" takes a number only (it got "${value.slice(0, 40)}").`);
-          const suggests = !isSecret && (await el.evaluate((n) => n.getAttribute("role") === "combobox" || !!n.getAttribute("aria-autocomplete") || n.hasAttribute("aria-controls") && n.getAttribute("aria-haspopup") === "listbox").catch(() => false));
+          const suggests = !isSecret && (await within(2000, el.evaluate((n) => n.getAttribute("role") === "combobox" || !!n.getAttribute("aria-autocomplete") || n.hasAttribute("aria-controls") && n.getAttribute("aria-haspopup") === "listbox")).catch(() => false));
           const mark = suggests ? await choicesBefore(page) : "";
+          trace(`step ${i + 1}: filling "${label}"`);
           try {
             await el.fill(value, { timeout: 5000 });
           } catch (e) {
             const m = String(e?.message);
             if (/type "(radio|checkbox)" cannot be filled/i.test(m)) return fail(`"${label}" is a choice to tick, not a text field: use a check step with the choice's own text ({"check": "..."}).`);
-            if (/not an <input>|not an input|contenteditable/i.test(m)) return fail(`"${label}" isn't a text field (it's a dropdown or a button): use a select step ({"select": {"${label}": "..."}}) or click it.`);
+            if (/not an <input>|not an input|contenteditable/i.test(m)) {
+              // The name matched something else first (a floating label, a wrapper): the text box
+              // named that, when there is one.
+              const box = await find(page, [(root) => root.getByRole("textbox", { name: label, exact: true }), (root) => root.getByRole("textbox", { name: label })]);
+              if (box && (await box.fill(value, { timeout: 5000 }).then(() => true, () => false))) { el = (await box.elementHandle({ timeout: 1000 }).catch(() => null)) || box; filled.push({ el, label, value, secret: isSecret }); continue; }
+              return fail(`"${label}" isn't a text field (it's a dropdown or a button): use a select step ({"select": {"${label}": "..."}}) or click it.`);
+            }
             if (/Malformed value/i.test(m)) {
-              const type = await el.evaluate((n) => n.type).catch(() => "");
+              const type = await within(2000, el.evaluate((n) => n.type)).catch(() => "");
               const shape = { date: "YYYY-MM-DD", "datetime-local": "YYYY-MM-DDThh:mm", month: "YYYY-MM", week: "YYYY-Www", time: "hh:mm", color: "#rrggbb" }[type];
               return fail(`"${label}" is a ${type || "special"} field: it takes ${shape ? `a value like ${shape}` : "a value in its own format"} (it got "${value.slice(0, 40)}").`);
             }
@@ -1077,6 +1104,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
             throw e;
           }
           if (suggests) {
+            trace(`step ${i + 1}: picking a suggestion for "${label}"`);
             let s2 = await pickSuggestion(page, el, value, mark, "", hooks).finally(() => clearChoices(page, mark));
             // Nothing matched the whole text: as a person would, type less (its first word, then its
             // first letters) and take the suggestion that matches the value.
@@ -1105,9 +1133,10 @@ async function stepsIn(page, steps, hooks, touched = []) {
         const coded = (withCode, plain) => /^\+\d{1,4}/.test(withCode) && /^\d{6,}$/.test(plain) && withCode.endsWith(plain) && withCode.length - plain.length >= 2 && withCode.length - plain.length <= 5;
         const same = (a, b) => sameDate(a, b) || bare(a) === bare(b) || (/\d/.test(b) && (digits(a) === digits(b) || coded(digits(a), digits(b)) || coded(digits(b), digits(a))));
         for (const f of filled) {
-          const multiline = await f.el.evaluate((n) => n.tagName === "TEXTAREA" || n.isContentEditable, undefined, { timeout: 2000 }).catch(() => true);
-          if (!multiline) await f.el.press("Tab", { timeout: 2000 }).catch(() => {});
-          const now = await f.el.inputValue({ timeout: 2000 }).catch(() => null);
+          trace(`step ${i + 1}: checking "${f.label}" kept its value`);
+          const multiline = await within(2000, f.el.evaluate((n) => n.tagName === "TEXTAREA" || n.isContentEditable)).catch(() => true);
+          if (!multiline) await within(3000, f.el.press("Tab", { timeout: 2000 }).catch(() => {}));
+          const now = await within(3000, f.el.inputValue({ timeout: 2000 }).catch(() => null));
           if (now !== null && !f.secret && coded(digits(f.value), digits(now))) {
             // Kept without its country code: the form takes the country from its own picker.
             f.note = `shows "${now}": the field dropped ${digits(f.value).slice(0, digits(f.value).length - digits(now).length)}; make sure the form's country or code picker shows that country`;
@@ -1125,13 +1154,16 @@ async function stepsIn(page, steps, hooks, touched = []) {
             const kept = await f.el.inputValue({ timeout: 2000 }).catch(() => null);
             if (kept !== null && same(kept, f.value)) continue;
           }
-          await f.el.fill("", { timeout: 3000 }).catch(() => {});
+          await within(4000, f.el.fill("", { timeout: 3000 }).catch(() => {}));
           await hooks.cursor?.(f.el, "click"); // its own click, never taken for a person's
-          await f.el.click({ timeout: 3000 }).catch(() => {});
-          // (A held element types with type(): its pressSequentially.)
-          await (typeof f.el.pressSequentially === "function" ? f.el.pressSequentially(f.value, { delay: 15, timeout: 15000 }) : f.el.type(f.value, { delay: 15, timeout: 15000 })).catch(() => {});
-          await f.el.press("Tab", { timeout: 2000 }).catch(() => {});
-          const after = await f.el.inputValue({ timeout: 2000 }).catch(() => null);
+          await within(4000, f.el.click({ timeout: 3000 }).catch(() => {}));
+          // (A held element types with type(): its pressSequentially.) Each key waits for the
+          // page to take it: a page whose scripts stopped pausing takes none, so the typing is
+          // bounded and the run says so instead of waiting on it.
+          const typed = await within(20_000, (typeof f.el.pressSequentially === "function" ? f.el.pressSequentially(f.value, { delay: 15, timeout: 15000 }) : f.el.type(f.value, { delay: 15, timeout: 15000 })).then(() => true, () => true));
+          if (typed === null) return fail(`"${f.label}": the page stopped answering while it was retyped (its scripts are busy without pause, or it froze). Wait a moment and try again, or reload the page with browser_navigate.`);
+          await within(3000, f.el.press("Tab", { timeout: 2000 }).catch(() => {}));
+          const after = await within(3000, f.el.inputValue({ timeout: 2000 }).catch(() => null));
           if (after !== null && !same(after, f.value)) {
             const offered = suggestionsSeen.get(f.label);
             const code = !f.secret && /^\+/.test(String(after).trim()) && !/^\+/.test(bare(f.value)) ? " It puts a country code in front: fill the number with its code, like +1 415 555 0142." : "";
@@ -1156,13 +1188,13 @@ async function stepsIn(page, steps, hooks, touched = []) {
             if (await box.count().catch(() => 0)) { hidden = box; break; }
           }
           const want = kind === "check";
-          const was = hidden ? await hidden.isChecked().catch(() => null) : null;
+          const was = hidden ? await hidden.isChecked({ timeout: 1500 }).catch(() => null) : null;
           const text = was === null ? null : await find(page, [(root) => root.getByText(String(arg), { exact: true }), (root) => root.getByText(String(arg))]);
           if (!text) return fail(`No checkbox "${arg}".${gone()}`);
           if (was !== want) {
             await hooks.cursor?.(text, "click");
             await text.click({ timeout: 5000 });
-            if ((await hidden.isChecked().catch(() => null)) !== want) return fail(`Clicked "${String(arg).slice(0, 60)}" but its box is still ${want ? "unticked" : "ticked"}. Look at the screenshot and click the box itself.`);
+            if ((await hidden.isChecked({ timeout: 1500 }).catch(() => null)) !== want) return fail(`Clicked "${String(arg).slice(0, 60)}" but its box is still ${want ? "unticked" : "ticked"}. Look at the screenshot and click the box itself.`);
           }
           hooks.activity(`${want ? "Ticked" : "Unticked"} **${arg}**`);
           touched.push({ el: hidden, label: String(arg) });
@@ -1173,9 +1205,12 @@ async function stepsIn(page, steps, hooks, touched = []) {
         await hooks.cursor?.(el, "click"); // sent before the press, which puts it on the click
         // A box drawn over by its styled look: click its label as a person does, then make sure.
         await (kind === "check" ? el.check({ timeout: 3000 }) : el.uncheck({ timeout: 3000 })).catch(async () => {
-          const label = await el.evaluate((n) => !!n.labels?.length).catch(() => false);
-          if (label) await el.evaluate((n) => n.labels[0].click());
-          if ((await el.isChecked().catch(() => null)) !== (kind === "check")) throw new Error(`Couldn't ${kind} "${String(arg).slice(0, 60)}": something covers it. Look at the screenshot.`);
+          const label = await el.evaluate((n) => !!n.labels?.length, undefined, { timeout: 1500 }).catch(() => false);
+          if (label) await el.evaluate((n) => n.labels[0].click(), undefined, { timeout: 1500 }).catch(() => {});
+          if ((await el.isChecked({ timeout: 1500 }).catch(() => null)) !== (kind === "check")) {
+            const shown = await within(1500, el.isVisible()).catch(() => false);
+            throw new Error(shown ? `Couldn't ${kind} "${String(arg).slice(0, 60)}": something covers it. Look at the screenshot.` : `"${String(arg).slice(0, 60)}" is hidden right now: the form shows it only for some answers (an earlier answer in this run may have removed it). Leave it, or change the answer it depends on.`);
+          }
         });
         touched.push({ el, label: String(arg) });
         hooks.activity(`${kind === "check" ? "Ticked" : "Unticked"} **${arg}**`);
@@ -1267,8 +1302,15 @@ async function stepsIn(page, steps, hooks, touched = []) {
         if (strongSignal(risk)) return fail(`"${arg}" is the "${real.slice(0, 60)}" button: ${riskReason(risk)}. Run the steps before it, then use browser_click on it so the user confirms.`);
         await hooks.cursor?.(el, "click"); // sent before the press, which puts it on the click
         try {
-          await el.click({ timeout: 5000 });
+          // A click that opens the page's own confirm or prompt never returns while the page
+          // waits on it: stop as soon as the dialog is up instead of waiting the click out.
+          let watching = true;
+          const dialogUp = new Promise((resolve) => { const tick = () => { if (!watching) return; if (hooks.dialogOpen?.()) resolve("dialog"); else setTimeout(tick, 100); }; setTimeout(tick, 100); });
+          const r = await Promise.race([el.click({ timeout: 5000 }).then(() => "clicked"), dialogUp]).finally(() => { watching = false; });
+          if (r === "dialog") return { ...fail(dialogStop(hooks.dialogOpen(), "This step")), dialog: true };
         } catch (e) {
+          const asked = hooks.dialogOpen?.();
+          if (asked) return { ...fail(dialogStop(asked, "This step")), dialog: true };
           if (!/Timeout|intercepts pointer events|not visible|outside of the viewport/i.test(String(e?.message))) throw e;
           return fail(`"${arg}" is on the page but couldn't be clicked (hidden, covered or not ready): look at the screenshot, close what covers it or wait, then try again.`);
         }

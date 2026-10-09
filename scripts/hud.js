@@ -25,19 +25,25 @@
       (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ? el.getAttribute("name") : el.innerText) || "";
     return String(label).trim().replace(/\s+/g, " ").slice(0, 60);
   }
-  function record(kind, what, far = false) {
+  // at: the pointer event of a press far from the agent's target: where it landed (document
+  // pixels), so the helper can tell it from an agent's own press whose cursor came late.
+  function record(kind, what, far = false, at = null) {
     if (userEvents.length >= 60) return;
-    userEvents[userEvents.length] = far ? { t: now(), kind, what, far: true } : { t: now(), kind, what };
+    const ev = { t: now(), kind, what };
+    if (far) { ev.far = true; if (at) { ev.x = Math.round(at.clientX + scrollX); ev.y = Math.round(at.clientY + scrollY); } }
+    userEvents[userEvents.length] = ev;
   }
   // A press well away from what the agent is acting on (its cursor's target, last placed by the
   // helper): a person's, even while an agent's action runs. The agent's own presses land on its
   // target, so everything near it stays the agent's.
   const FAR_PX = 48;
+  const outside = (b, x, y) => x < b.x - FAR_PX || x > b.x + b.w + FAR_PX || y < b.y - FAR_PX || y > b.y + b.h + FAR_PX;
   const awayFromAgent = (e) => {
     const b = agentBox;
     if (!b || now() - b.t > 15_000) return false;
     const x = e.clientX + scrollX, y = e.clientY + scrollY;
-    return x < b.x - FAR_PX || x > b.x + b.w + FAR_PX || y < b.y - FAR_PX || y > b.y + b.h + FAR_PX;
+    if (agentTargets && now() - agentTargets.t < 60_000 && agentTargets.list.some((t) => !outside(t, x, y))) return false;
+    return outside(b, x, y);
   };
   function drainUser() {
     const out = userEvents;
@@ -70,13 +76,13 @@
       (el.scrollWidth > el.clientWidth && e.clientY - r.top >= el.clientTop + el.clientHeight);
   };
   const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"]);
-  addEventListener("pointerdown", (e) => { if (e.isTrusted && !ours(e)) { if (onScrollbar(e)) record("scroll", ""); else record("click", named(control(e)), awayFromAgent(e)); } }, opts);
+  addEventListener("pointerdown", (e) => { if (e.isTrusted && !ours(e)) { if (onScrollbar(e)) record("scroll", ""); else record("click", named(control(e)), awayFromAgent(e), e); } }, opts);
   addEventListener("keydown", (e) => {
     if (!e.isTrusted || ours(e)) return;
     const el = focused();
     if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) record("type", named(el));
     else if (SCROLL_KEYS.has(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey) record("scroll", "");
-    else if (e.key.length > 1) record("key", e.key); // Enter, Escape, Tab: never the letters
+    else if (e.key.length > 1 && !/^(Shift|Control|Alt|Meta|CapsLock|AltGraph|Fn|OS)$/.test(e.key)) record("key", e.key); // Enter, Escape, Tab: never the letters, nor a modifier alone
   }, opts);
   // A wheel is a person's, unless an agent's scroll step just put its cursor here (agentAt): it
   // wheels in small steps right after. Plain scroll events aren't counted: pages scroll themselves
@@ -87,6 +93,7 @@
   // own input (wheel, keys, a press on the scrollbar, touch), never the page's or an agent's.
   let view = null, personAt = 0, agentAt = 0;
   let agentBox = null; // { x, y, w, h, t }: what the agent acts on now, in document pixels
+  let agentTargets = null; // { list: [{ x, y, w, h }], t }: everything a form fill will act on
   const looked = () => {
     const n = now();
     if (n - agentAt < 1500) return;
@@ -129,8 +136,10 @@
     // of a shared tab: typing there fires "input" anyway, so only that counts.
     if (e.type === "change" && (el.tagName === "TEXTAREA" || el.isContentEditable || (el.tagName === "INPUT" && !/^(checkbox|radio|file|range|color)$/.test(el.type)))) return;
     const x = editOf(el);
-    // Typing without key presses (pasting, dictation, the live view) is typing all the same.
-    if (now() - (x.times.at(-1) || 0) > 1000) record("type", named(el));
+    // Typing without key presses (pasting, dictation, the live view) is typing all the same. A
+    // tick, a choice or a slider is a click (recorded by its press, judged by where it landed).
+    const typed = el.isContentEditable || el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !/^(checkbox|radio|file|range|color|button|submit|reset|image)$/i.test(el.type));
+    if (typed && now() - (x.times.at(-1) || 0) > 1000) record("type", named(el));
     x.times.push(now());
     if (x.times.length > 8) x.times.shift();
   };
@@ -291,7 +300,7 @@
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const rich = (t) => esc(t).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/`([^`]*)`/g, "<code>$1</code>");
   // "Alice" -> "Alice's Claude". Unnamed ("Claude 3fed") and app-labelled ("Alice · Codex") stay as they are.
-  const whose = (who) => !who ? "Claude" : /^Claude\b| · /.test(who) ? who : `${who}'s Claude`;
+  const whose = (who) => !who ? "Claude" : /^(Claude|Codex|Gemini|Cursor|Copilot)\b| · /.test(who) ? who : `${who}'s Claude`;
   const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   function ensureBar() {
     if (barHost && barHost.isConnected) return;
@@ -719,8 +728,15 @@
         const bw = Math.max(0, Number(c.bw) || 0), bh = Math.max(0, Number(c.bh) || 0);
         agentBox = { x: agentPtr.x - bw / 2, y: agentPtr.y - bh / 2, w: bw, h: bh, t: now() };
         agentAt = now(); // the scrolling an agent's action causes isn't the person's
-        return { ms, at: agentPtr }; // until it arrives; where it points, in document coordinates
+        return { ms, at: { ...agentPtr, w: bw, h: bh } }; // until it arrives; where it points (and its target's size), in document coordinates
       } catch {}
+      return true;
+    }
+    if (kind === "targets") {
+      try {
+        const list = JSON.parse(text);
+        agentTargets = Array.isArray(list) ? { list: list.slice(0, 40).map((b) => ({ x: (Number(b.x) || 0) + scrollX, y: (Number(b.y) || 0) + scrollY, w: Number(b.w) || 0, h: Number(b.h) || 0 })), t: now() } : null;
+      } catch { agentTargets = null; }
       return true;
     }
     if (kind === "bar") {
@@ -745,7 +761,8 @@
     }
     ensure();
     box.className = "b " + (kind === "you" || kind === "done" ? kind : "claude");
-    box.querySelector("span").textContent = (kind === "you" ? "Your turn: " : kind === "done" ? "Done: " : "Claude: ") + String(text).slice(0, 140);
+    // kind "agent": the text names the agent itself ("Codex: ...").
+    box.querySelector("span").textContent = (kind === "you" ? "Your turn: " : kind === "done" ? "Done: " : kind === "agent" ? "" : "Claude: ") + String(text).slice(0, 140);
     return true;
   }
 

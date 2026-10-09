@@ -28,7 +28,10 @@ test("unknown and empty steps are refused before anything runs", () => {
   assert.match(preflight([{ eval: "document.cookie" }]), /^Step 1 \(eval\): unknown step/);
   assert.match(preflight([{}]), /^Step 1 \(undefined\): unknown step/);
   assert.match(preflight([null]), /unknown step/);
-  for (const kind of ["fill", "check", "uncheck", "select", "press", "waitFor", "expect", "handoff", "click"]) assert.equal(preflight([{ [kind]: "x" }]), null, kind);
+  for (const kind of ["fill", "check", "uncheck", "select", "press", "waitFor", "expect", "click"]) assert.equal(preflight([{ [kind]: "x" }]), null, kind);
+  assert.equal(preflight([{ handoff: { say: "Sign in", until: "Welcome" } }]), null);
+  assert.match(preflight([{ handoff: "x" }]), /handoff takes/);
+  assert.match(preflight([{ handoff: { say: "x" } }]), /handoff takes/, "nothing to wait for");
 });
 
 test("drag steps take 2 to 200 points as fractions of the page, and must move", () => {
@@ -166,4 +169,11 @@ test("a step that fails while the page waits on its dialog reports the dialog, n
   assert.match(r.why, /^This step opened the page's own prompt dialog: "Your name\?"/);
   assert.doesNotMatch(r.why, /Target page/);
   assert.deepEqual(r.checks, []);
+});
+
+test("a step naming a field by a 300+ character name is refused before the page is touched", () => {
+  const long = "x".repeat(400);
+  assert.match(preflight([{ fill: { [long]: "v" } }]), /^Step 1 \(fill\): a name that long \(400 characters\)/);
+  assert.match(preflight([{ click: long }]), /Step 1 \(click\): a name that long/);
+  assert.equal(preflight([{ fill: { Email: "a@b.c" } }, { click: "Next" }]), null);
 });

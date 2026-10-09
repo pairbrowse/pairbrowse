@@ -26,6 +26,10 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
   const notes = []; // [{ text, page }]: page is the tab it's about (null: for every agent)
   const described = new Set(); // overlays already described to Claude, by page and text
   const note = (text, page = null) => { notes.push({ text, page }); if (notes.length > 40) notes.shift(); };
+  // A new tab's note is written a moment after it opens (for its address): the result of the
+  // click that opened it waits for it (settled), so the note goes with that click.
+  const pendingNotes = new WeakMap(); // opener -> Promise
+  const settled = (page) => (page && pendingNotes.get(page)) || Promise.resolve();
   let challengeOn = null; // the page currently showing a CAPTCHA
   const waiting = new WeakMap(); // page -> the confirm or prompt it waits on: { type, message }
 
@@ -48,10 +52,12 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     page.opener().then((opener) => {
       if (!opener || quiet()) return;
       const index = () => ctx.pages().indexOf(page);
-      setTimeout(() => {
-        if (page.isClosed()) return;
-        note(`The page opened a new tab (tab ${index()}): ${page.url() || "(loading)"}. If it's a sign-in or consent page, switch to it with browser_tabs select ${index()}.`, opener);
-      }, 800);
+      const written = new Promise((resolve) => setTimeout(() => {
+        if (!page.isClosed()) note(`The page opened a new tab (tab ${index()}): ${page.url() || "(loading)"}. If it's a sign-in or consent page, switch to it with browser_tabs select ${index()}.`, opener);
+        if (pendingNotes.get(opener) === written) pendingNotes.delete(opener);
+        resolve();
+      }, 400));
+      pendingNotes.set(opener, written);
       page.once("close", () => { if (!agentActing()) note(`That tab closed again. Switch back with browser_tabs select ${ctx.pages().indexOf(opener)} if you were in it.`, opener); });
     }).catch(() => {});
   }
@@ -221,5 +227,5 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
   // The confirm or prompt a page waits on (answered through daemon/serve.mjs), until answered.
   const waitingDialog = (page) => waiting.get(page) || null;
   const dialogAnswered = (page) => { if (page) waiting.delete(page); };
-  return { watchPage, checkChallenge, dismissOverlay, drain, waitingDialog, dialogAnswered };
+  return { watchPage, checkChallenge, dismissOverlay, drain, waitingDialog, dialogAnswered, settled };
 }

@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
 import { paths } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
-import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, SENSITIVE } from "../policy.mjs";
+import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, sensitiveLabel } from "../policy.mjs";
 import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
@@ -14,24 +14,23 @@ import { describe } from "../log.mjs";
 import { decide, clickClass } from "../guard.mjs";
 import { clickRule, dialogRule, strongSignal } from "../clickrule.mjs";
 import { keepFocus } from "../focus.mjs";
-import { CHALLENGE_TURN } from "../popups.mjs";
 import { SESSION_TOOL } from "../sessions.mjs";
 import { UPLOAD_TOOL, uploadFiles } from "../upload.mjs";
 import { FACTS_TOOL } from "../facts.mjs";
-import { RUN_TOOL, SCROLL_TOOL, enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks } from "../runner.mjs";
+import { RUN_TOOL, SCROLL_TOOL, enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks, isoDate } from "../runner.mjs";
 import { sleep, within } from "../util.mjs";
 import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel, settle } from "./page.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 import { dragBetween, reason as dragReason } from "./drag.mjs";
-import { createRefNames } from "./output.mjs";
+import { createRefNames, plainError } from "./output.mjs";
 
 const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
 // A small picture of the page goes with each result that changes what's on screen, taken once
 // the page has loaded and settled for a second: the layout, overlays and images the text
 // snapshot can't show. config.screenshots = false turns it off.
-const SCREENSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_click", "browser_press_key", "browser_tabs", "browser_wait_for", "browser_snapshot", "browser_handle_dialog", "browser_drag", "pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload"]);
+const SCREENSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_click", "browser_press_key", "browser_tabs", "browser_wait_for", "browser_snapshot", "browser_handle_dialog", "browser_drag", "browser_select_option", "pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload"]);
 // Results after which the page may load new popups (checked again a few seconds later); after
 // Claude's clicks, overlays already on screen count as Claude's own and stay.
 const LOADING_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_tabs"]);
@@ -54,7 +53,9 @@ const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for th
 // Its own tools that act in a page: their results get the same notes and screenshot as the
 // browser tools'. browser_drag is the helper's own too (daemon/drag.mjs): a drag as a hand does
 // it, where Playwright's makes one move and most boards put the card back.
-const DECORATED = new Set(["pairbrowse_run", "pairbrowse_upload", "browser_drag"]);
+const DECORATED = new Set(["pairbrowse_run", "pairbrowse_upload", "browser_drag", "browser_wait_for"]);
+const WAIT_FOR_MS = 8000; // browser_wait_for: how long text gets to appear or go
+const RUN_MAX_MS = 120_000; // a fast-mode run stops between steps past this
 // Calls after which other participants' refs may be stale.
 const changesPage = (tool) => tool?.startsWith("browser_") || tool?.startsWith("pairbrowse_click") || ["pairbrowse_run", "pairbrowse_upload", "pairbrowse_session"].includes(tool);
 
@@ -123,7 +124,13 @@ async function realLabel(page, target) {
   try {
     el = page.locator(isRef(target) ? `aria-ref=${target}` : String(target)).first();
   } catch {
-    return "";
+    return undefined; // not a ref, not a selector Playwright reads
+  }
+  // A selector (not a ref) that matches nothing on the page, or that Playwright can't read.
+  if (!isRef(target)) {
+    const n = await within(1500, el.count()).catch(() => undefined);
+    if (n === undefined) return undefined;
+    if (n === 0) return null;
   }
   // Read in the page: ariaSnapshot() would renumber the refs Claude just got.
   const got = await within(2000, el.evaluate(buttonLabel, undefined, { timeout: 1500 }).then(String, () => null));
@@ -138,7 +145,7 @@ async function sensitiveTarget(page, target) {
   if (!page || !isRef(target)) return false;
   const read = page.locator(`aria-ref=${target}`).first().evaluate((el) => [el.type, el.getAttribute("autocomplete"), el.getAttribute("name"), el.id, el.getAttribute("aria-label"), el.labels?.[0]?.innerText].join(" "), undefined, { timeout: 1000 }).catch(() => "");
   const hints = String(await within(1500, read) || "");
-  return /^password\b/.test(hints) || /cc-|one-time-code|current-password|new-password/i.test(hints) || SENSITIVE.test(hints);
+  return /^password\b/.test(hints) || /cc-(?!name)|one-time-code|current-password|new-password/i.test(hints) || sensitiveLabel(hints);
 }
 
 // Shared browser mode: what a joiner's agent (a remote participant, daemon/remote-agents.mjs) may
@@ -229,6 +236,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     session.join(participant);
     sock.once("close", () => {
       session.forget(participant);
+      hud.setBadgeFor(participant, "", "clear").catch(() => {});
       disconnected.abort();
       clients.delete(participant);
       lastCall.delete(participant);
@@ -251,7 +259,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
     let serverAt = null; // the page its browser server has current, when known
     let lostTab = false; // it closed its tab and every other tab was another agent's
     // Why it has no tab, for the answer it then gets.
-    let noTabWhy = "you closed yours and the others are in use by other agents";
+    let closedByMe = false; // it closed its own tab itself (else a person or the page did)
+    const lostWhy = () => (closedByMe ? "you closed yours and the others are in use by other agents" : "your tab was closed (by a person, the page or the browser) and the others are in use by other agents");
+    let noTabWhy = lostWhy();
     const noTab = () => `You have no tab of your own: ${noTabWhy}. Open one with browser_tabs new.`;
     const used = []; // tabs it worked in before, latest last: where it goes back to
     const myLabel = () => collaboration.participants.get(participant)?.label;
@@ -284,6 +294,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const finish = (id) => { const done = completed.get(id); completed.delete(id); done?.(); };
     const reply = (id, text, isError = false) => {
       if (isError) refused.add(id);
+      // A message naming a ref names it as Claude knows it (the main frame's number off).
+      text = refNames.toPlain(actingIn || (mine && !mine.isClosed() ? mine : null), text);
       toClient({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) } });
       finish(id);
     };
@@ -293,7 +305,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
     async function tidy(tool, page, seenUrl) {
       if (page && CLICKING_TOOLS.has(tool)) await popups.dismissOverlay(page, { markOwn: true });
       if (page && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false) {
-        await within(LOAD_WAIT_MS, page.waitForLoadState("load").catch(() => {}));
+        // A page restored by Back (the browser's cache) fires no load event again: ask it.
+        const ready = await within(400, page.evaluate(() => document.readyState).catch(() => "")).catch(() => "");
+        if (ready !== "complete") await within(LOAD_WAIT_MS, page.waitForLoadState("load").catch(() => {}));
         // Until the page is quiet, at most a second after it loaded (only what's left of it: an
         // old page is ready now) or half a second after a click (menus, single-page apps).
         const left = Math.max(CLICKING_TOOLS.has(tool) ? CLICK_SETTLE_MS : 0, SETTLE_MS - (Date.now() - presence.loadedAt(page)));
@@ -315,7 +329,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // The agents this one shares its tab with (pairbrowse_collaboration share), for each result.
     function sharedNote() {
       const page = actingIn || (mine && !mine.isClosed() ? mine : null);
-      const others = page ? tabClaims.members(page).filter((m) => m.id !== participant).map((m) => m.label) : [];
+      const members = page ? tabClaims.members(page) : [];
+      const others = members.some((m) => m.id === participant) ? members.filter((m) => m.id !== participant).map((m) => m.label) : [];
       return others.length ? `- ${others.join(", ")} also ${others.length > 1 ? "work" : "works"} in this tab: your calls take turns.` : "";
     }
     // Notes for this result: popups PairBrowse handled, downloads and join requests, and what a
@@ -333,7 +348,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
 
     // Every tool result on its way to the client. knownUrl: the tab it's about, when the text
     // doesn't say.
-    async function finishResult(msg, tool, knownUrl = null) {
+    async function finishResult(msg, tool, knownUrl = null, fullSnapshot = false) {
       const content = () => msg.result?.content || [];
       let shotUrl = null;
       let ownPage = null;
@@ -353,19 +368,28 @@ export function createServe({ config, log, host, createConnection, clients, coll
           hud.moveSpark(participant, ownPage || (lostTab || (remote && !mine) ? null : seenUrl)).catch(() => {});
         }
         for (const part of content()) if (part.type === "text") part.text = trimResult(tool, part.text);
+        if (tool === "browser_handle_dialog" && msg.result && !msg.result.isError && !content().some((c) => /### Result|Accepted|Dismissed/.test(c.text || ""))) {
+          const a = callArgs.get(msg.id) ?? msg.params?.arguments;
+          content().unshift({ type: "text", text: `${a?.accept === false ? "Dismissed" : "Accepted"} the page's dialog.` });
+        }
+        if (tool === "browser_snapshot" && msg.result && !msg.result.isError && content().some((c) => /```yaml\s*```/.test(c.text || ""))) {
+          (msg.result.content ||= []).push({ type: "text", text: "\n### PairBrowse\n- The page shows nothing yet (still loading, or empty). browser_wait_for a second or two, then snapshot again." });
+        }
         // The main frame's refs plain, frames' with their number (refNames).
         if (content().some((part) => /\[ref=|\bf\d+e\d+\b/.test(part.text || ""))) {
           const about = ownPage || (seenUrl ? await context.pageAt(seenUrl) : null);
-          for (const part of content()) if (part.type === "text") part.text = refNames.toPlain(about, part.text);
+          for (const part of content()) if (part.type === "text") part.text = refNames.toPlain(about, part.text, fullSnapshot);
         }
         const tidying = context.current() ? context.openPages().then((pages) => tidy(tool, ownPage || pages.find((p) => p.url() === seenUrl), seenUrl)).catch(() => {}) : null;
         if (tidying && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false) await within(TIDY_MAX_MS, tidying);
+        if (ownPage && CLICKING_TOOLS.has(tool)) await within(1000, popups.settled(ownPage)).catch(() => {});
         const text = notes();
         if (text && msg.result) (msg.result.content ||= []).push({ type: "text", text });
       }
-      for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(part.text)); if (remote) part.text = forJoiner(part.text); }
+      for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text))); if (remote) part.text = forJoiner(part.text); }
       if (tool === "browser_snapshot") for (const part of content()) if (part.type === "text") part.text = output.capSnapshot(part.text);
-      if (tool !== undefined && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && !msg.result.isError) {
+      // A picture also with a failed action (a stopped run, a covered click): the message says to look at it.
+      if (tool !== undefined && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
         const shot = await screenshots.take(ownPage || await context.pageAt(shotUrl || context.currentUrl()), participant);
         if (shot?.data) msg.result.content.push(image(shot.data));
         else if (shot?.skipped) msg.result.content.push({ type: "text", text: `\n### PairBrowse\n- ${shot.skipped}` });
@@ -417,12 +441,26 @@ export function createServe({ config, log, host, createConnection, clients, coll
         calls.delete(msg.id);
         callArgs.delete(msg.id);
         if (tool === "browser_type" && args?.submit && msg.result?.isError) await enterAfterReplaced(msg, args).catch((e) => log("enter after replaced", e?.message || e));
+        if (tool?.startsWith("browser_") && msg.result?.isError) {
+          const raw = (msg.result.content || []).map((c) => c.text || "").join("\n");
+          // No dialog to answer: said plainly (the server's "modal state" wording is for developers).
+          if (tool === "browser_handle_dialog" && /modal state/.test(raw)) msg.result.content = [{ type: "text", text: "No dialog is open right now (no alert, confirm or prompt from the page). Take a browser_snapshot and go on." }];
+          // A file from outside the folders the browser reads: refused, and the chooser it left
+          // open is closed again (nothing else works in the tab while it's open).
+          else if (tool === "browser_file_upload" && /outside allowed roots|File access denied/i.test(raw)) {
+            await within(3000, internal("browser_file_upload", { paths: [] })).catch(() => {});
+            msg.result.content = [{ type: "text", text: `Refused: browser_file_upload takes files from ${paths.files} (or the project folder); ${(args?.paths || []).map((x) => String(x).split(/[\\/]/).pop()).join(", ") || "that file"} is elsewhere. Copy it there, or use pairbrowse_upload, which takes images, video, PDFs and office documents from anywhere. The file chooser was closed again.` }];
+          } else {
+            const plain = plainError(tool, raw);
+            msg.result.content = [{ type: "text", text: plain ? `### Error\n${plain}` : raw.replace(/\x1b\[[0-9;]*m/g, "") }];
+          }
+        }
         // The bar said what was tried; a failure says so too, or it reads as done.
         if (tool && msg.result?.isError && describe(tool, args || {})) {
           const why = output.mask(String((msg.result.content || []).map((c) => c.text || "").join(" ").replace(/^### Error\s*/i, "").split("\n")[0]).slice(0, 100));
           hud.addActivity(`That didn't work: ${why}`, myLabel(), mine && !mine.isClosed() ? mine : null);
         }
-        await finishResult(msg, tool);
+        await finishResult(msg, tool, null, tool === "browser_snapshot" && !args?.target);
       },
     };
     // A call of the helper's own to this participant's server (never shown to the client).
@@ -490,7 +528,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (!mine || mine.isClosed()) {
           const next = await freeTab();
           if (next) setMine(next);
-          else { mine = null; lostTab = true; noTabWhy = "you closed yours and the others are in use by other agents"; }
+          else { mine = null; lostTab = true; noTabWhy = lostWhy(); }
         }
         await syncServer();
         // The list in the result shows the tab it now has, not the one the browser server picked.
@@ -506,6 +544,32 @@ export function createServe({ config, log, host, createConnection, clients, coll
     }
 
     // The PairBrowse rules every call passes first. Returns a refusal, or null.
+    // Arguments the browser server would answer with a raw parser error: said plainly instead.
+    function argProblem(name, args) {
+      const needs = { browser_click: ["target"], browser_type: ["target"], browser_hover: ["target"], browser_select_option: ["target"], browser_drag: ["startTarget", "endTarget"], browser_drop: ["target"] }[name] || [];
+      for (const k of needs) {
+        if (typeof args[k] !== "string" || !args[k].trim()) return `${name} needs ${k}: a ref from a browser_snapshot (like e12), or a selector.`;
+        if (args[k].length > 2000) return `${name}: ${k} is far too long for a ref or a selector.`;
+      }
+      if (name === "browser_fill_form") {
+        if (!Array.isArray(args.fields) || !args.fields.length) return "browser_fill_form needs fields: a list of { name, type, target, value }.";
+        if (args.fields.some((f) => !f || typeof f !== "object" || typeof f.target !== "string" || !f.target.trim())) return "browser_fill_form: every field needs a target, a ref from a browser_snapshot (like e12).";
+      }
+      if ((name === "browser_file_upload" || name === "browser_drop") && args.paths !== undefined && !(Array.isArray(args.paths) && args.paths.every((x) => typeof x === "string"))) return `${name}: paths is a list of file paths (text); [] closes an open file chooser.`;
+      if (name === "browser_select_option" && !(Array.isArray(args.values) && args.values.length && args.values.every((x) => typeof x === "string"))) return "browser_select_option needs values: a list of the option texts (or values) to choose.";
+      if (name === "browser_tabs" && ["select", "close"].includes(args.action) && args.index !== undefined && !(Number.isInteger(Number(args.index)) && Number(args.index) >= 0)) return "browser_tabs: index is a tab's number from browser_tabs list (0 is the first).";
+      if (name === "pairbrowse_upload" && !(Array.isArray(args.files) && args.files.length && args.files.every((x) => typeof x === "string"))) return "pairbrowse_upload needs files: a list of absolute paths.";
+      if (name === "pairbrowse_facts" && args.action === "forget" && !(Array.isArray(args.labels) && args.labels.every((x) => typeof x === "string"))) return "pairbrowse_facts forget needs labels: a list of the details' labels.";
+      if (name === "pairbrowse_status") {
+        if (!["claude", "you", "done", "clear"].includes(args.kind)) return 'pairbrowse_status: kind is "claude", "you", "done" or "clear".';
+        if (args.text !== undefined && (typeof args.text !== "string" || args.text.length > 140)) return "pairbrowse_status: text is up to 140 characters.";
+      }
+      if (name === "browser_wait_for") {
+        if (args.time !== undefined && !(Number.isFinite(Number(args.time)) && Number(args.time) >= 0 && Number(args.time) <= 120)) return "browser_wait_for: time is 0 to 120 seconds.";
+        if (args.text === undefined && args.textGone === undefined && args.time === undefined) return "browser_wait_for takes time (seconds), text (to appear) or textGone (to disappear).";
+      }
+      return null;
+    }
     function refusal(name, args) {
       if (BLOCKED_TOOLS.has(name)) return `${name} is disabled by PairBrowse.`;
       if (remote) {
@@ -609,10 +673,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (name === "browser_click") {
         const page = await serverPage();
         const text = await realLabel(page, args.target);
-        if (text === null) return `Ref ${args.target} isn't on the page any more. Take a browser_snapshot and use its fresh refs.`;
+        if (text === undefined) return `target "${String(args.target).slice(0, 60)}" isn't a ref (like e12) or a selector Playwright reads. Take a browser_snapshot and use a ref from it.`;
+        if (text === null) return isRef(args.target) ? `Ref ${refNames.plainOf(args.target).slice(0, 60)} isn't on the page any more. Take a browser_snapshot and use its fresh refs.` : `Nothing on the page matches "${String(args.target).slice(0, 60)}". Take a browser_snapshot and use a ref from it.`;
         const risk = page ? (await contextAt(page, args.target, "click", recentRisk(page))).risk : { level: "safe", word: "", why: [] };
         // Gone while it was read (a banner closed meanwhile): said as such, never clicked.
-        if (risk.unreadable && (await realLabel(page, args.target)) === null) return `Ref ${args.target} isn't on the page any more. Take a browser_snapshot and use its fresh refs.`;
+        if (risk.unreadable && (await realLabel(page, args.target)) === null) return `Ref ${refNames.plainOf(args.target).slice(0, 60)} isn't on the page any more. Take a browser_snapshot and use its fresh refs.`;
         if (clickRule(risk, args.element) === "name") {
           log(`refused click (${risk.word}: ${risk.why.join(", ")}) described as "${String(args.element || "").slice(0, 80)}"`);
           return `Refused: this click is a final action, whatever its label ("${String(text).slice(0, 60)}"): ${riskReason(risk)}. ` +
@@ -652,10 +717,18 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const problem = preflight(resolved, paths.uploads);
       if (problem) return { text: problem, error: true };
       const page = (await serverPage()) || (await (await context.getContext()).newPage());
-      const result = await runSteps(page, resolved, {
+      // A page that answers nothing (its scripts never pause, or it froze): said at once.
+      if ((await within(4000, page.evaluate(() => 1).catch(() => null))) === null) return { text: "The page isn't answering right now (its scripts are busy without pause, or it froze): nothing was done. Wait a moment and try again, or reload it with browser_navigate.", error: true, url: page.url() };
+      // A run gets RUN_MAX_MS; past that it stops between steps and says so, and a run stuck
+      // inside a step on a page that stopped answering is given up on a little later (never the
+      // browser's 10-minute reset for everyone waiting behind it).
+      const stuck = Symbol("stuck");
+      let lastTrace = "";
+      const result = await Promise.race([sleep(RUN_MAX_MS + 15_000).then(() => stuck), runSteps(page, resolved, {
+        trace: (t) => { lastTrace = String(t); },
         uploadsDir: paths.uploads,
         secrets: secrets.get(),
-        signal: disconnected.signal,
+        signal: AbortSignal.any([disconnected.signal, AbortSignal.timeout(RUN_MAX_MS)]),
         beforeStep: async () => {
           if (sock.destroyed) throw new Error("Participant disconnected. Refresh the browser before continuing.");
           // Paused by a person: stop here (never waiting inside the shared queue).
@@ -687,7 +760,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
         cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
         remember: facts.seenInForm,
         dialogOpen: () => popups.waitingDialog(page),
-      });
+      })]);
+      if (result === stuck) {
+        log(`run given up on at: ${lastTrace || "?"} (${page.url()})`);
+        hud.addActivity("That didn't work: the page stopped answering", myLabel(), page);
+        return { text: `Stopped: the page stopped answering during this run (its scripts run without pause, or it froze), so the run was given up on after ${Math.round((RUN_MAX_MS + 15_000) / 60_000)} minutes${lastTrace ? `, at ${lastTrace}` : ""}. Take a browser_snapshot; if the page is still stuck, reload it with browser_navigate.`, error: true, url: page.url() };
+      }
       const saving = result.ok && args.saveAs && !args.playbook;
       if (saving) savePlaybook(args.saveAs, steps);
       const left = result.skipped?.length ? ` Left to the people filling them: ${result.skipped.map((x) => `${x.label} (${x.who})`).join(", ")}.` : "";
@@ -719,7 +797,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       pairbrowse_run: runCommand,
       async pairbrowse_status(args) {
         await context.getContext();
-      await hud.setBadge(args.text, args.kind);
+        await hud.setBadgeFor(participant, args.text, args.kind, myLabel());
         if (args.kind === "done" || args.kind === "clear") await hud.hideCursor(hud.sparkPage(participant));
         session.setStatus(participant, args.text, args.kind); // the side panels in a shared session show it
         return { text: "ok" };
@@ -768,12 +846,56 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const snap = ((await internal("browser_snapshot", {})).result?.content || []).map((c) => c.text || "").join("\n");
         return { text: `Dragged ${what.replace(/\*\*/g, "")}. Check the picture: the card or item should be where you meant it.\n${snap}`, url: page.url() };
       },
+      // browser_wait_for, looking in the page and its frames (a consent wall or a sign-in box
+      // often lives in one; Playwright's own looks at the page alone, so a wall "was gone" while
+      // it stood). Bounded: time at most 120 s, text at most WAIT_FOR_MS.
+      async browser_wait_for(args) {
+        const page = actingIn || await serverPage();
+        if (!page) return { text: "No page open to wait on.", error: true };
+        const time = args.time === undefined ? 0 : Math.min(120, Math.max(0, Number(args.time) || 0));
+        // The wait ends with the browser (closed, or reset by the turn cap) or the agent leaving:
+        // it never holds the shared queue after that.
+        let unwatch = () => {};
+        const over = new Promise((resolve) => { unwatch = context.watchClose(() => resolve("closed")); disconnected.signal.addEventListener("abort", () => resolve("left"), { once: true }); });
+        const ended = () => (page.isClosed() ? { text: "The tab closed while waiting. browser_tabs list shows what's open.", error: true } : null);
+        try {
+          if (time) { const w = await Promise.race([sleep(time * 1000).then(() => "ok"), over]); if (w === "closed") return { text: "The browser closed while waiting.", error: true }; if (w === "left") return { text: "Stopped waiting.", error: true }; }
+          const want = typeof args.text === "string" && args.text ? args.text : null;
+          const gone = typeof args.textGone === "string" && args.textGone ? args.textGone : null;
+          const seen = async (t) => {
+            for (const f of page.frames()) if (await within(500, f.getByText(t).first().isVisible()).catch(() => false)) return true;
+            return false;
+          };
+          const deadline = Date.now() + WAIT_FOR_MS;
+          const found = [];
+          if (gone) {
+            while (!ended() && !disconnected.signal.aborted && await seen(gone)) {
+              if (Date.now() > deadline) return { text: `"${gone.slice(0, 80)}" is still on the page after ${WAIT_FOR_MS / 1000} s (in the page or one of its frames). Look at the screenshot: a dialog or banner has its own buttons (browser_find finds them).`, error: true, url: page.url() };
+              await sleep(150);
+            }
+            if (ended()) return ended();
+            found.push(`"${gone.slice(0, 80)}" is gone`);
+          }
+          if (want) {
+            while (!ended() && !disconnected.signal.aborted && !(await seen(want))) {
+              if (Date.now() > deadline) return { text: `Didn't see "${want.slice(0, 80)}" within ${WAIT_FOR_MS / 1000} s (looked in the page and its frames). Take a browser_snapshot to see what's there.`, error: true, url: page.url() };
+              await sleep(150);
+            }
+            if (ended()) return ended();
+            found.push(`"${want.slice(0, 80)}" is on the page`);
+          }
+          return { text: `Waited${time ? ` ${time} s` : ""}${found.length ? `${time ? ";" : ":"} ${found.join("; ")}` : ""}.`, url: page.url() };
+        } finally {
+          unwatch();
+        }
+      },
       async pairbrowse_click_at(args) {
         // A final action the agent names (Pay, Delete, Publish, Send, Submit) goes through
         // browser_click, where the user confirms it (and a publish needs its review).
         const cls = clickClass(args.element);
         if (cls) return { text: `Refused: "${String(args.element).slice(0, 60)}" names a final action (${cls}). Take a browser_snapshot and use browser_click with its ref, so the user confirms it.`, error: true };
-        const r = await screenshots.clickAt(args, participant);
+        const here = actingIn || (mine && !mine.isClosed() ? mine : null);
+        const r = await screenshots.clickAt(args, participant, { current: here, cursor: (x, y) => hud.cursorTo(here || hud.sparkPage(participant), { boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, "click", myLabel()) });
         if (r.error) return r;
         hud.addActivity(`Clicked ${String(args.element || "a spot").slice(0, 80)}`, myLabel(), r.page);
         await popups.dismissOverlay(r.page, { markOwn: true });
@@ -794,20 +916,19 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       if (!DECORATED.has(tool)) return reply(id, r.text, !!r.error);
       if (r.error) refused.add(id);
-      return finishResult({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: r.text }], ...(r.error ? { isError: true } : {}) } }, tool, r.url);
+      return finishResult({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: r.text }], ...(r.error ? { isError: true } : {}) } }, tool, r.url, tool === "browser_drag");
     }
 
     async function handle(msg) {
       if (msg.method !== "tools/call") return transport.onmessage?.(msg);
       const { name } = msg.params || {};
       let args = msg.params?.arguments || {};
-      const denied = refusal(name, args);
+      const denied = argProblem(name, args) || refusal(name, args);
       if (denied) return reply(msg.id, denied, true);
       if (!NO_WAIT.has(name)) await whenReady();
       // "Your turn" is done once Claude acts again: take the badge down.
-      const badge = hud.badge();
-      if (badge.kind === "you" && badge.text !== CHALLENGE_TURN && (CLICKING_TOOLS.has(name) || name === "browser_navigate" || name === "pairbrowse_click_at")) {
-        hud.setBadge("", "clear").catch(() => {});
+      if (hud.statusOf(participant)?.kind === "you" && (CLICKING_TOOLS.has(name) || name === "browser_navigate" || name === "pairbrowse_click_at")) {
+        hud.setBadgeFor(participant, "", "clear").catch(() => {});
       }
       // Act in this participant's own tab (browser_tabs new and select pick a new one).
       const picksTab = name === "browser_tabs" && ["new", "select"].includes(args.action);
@@ -820,6 +941,22 @@ export function createServe({ config, log, host, createConnection, clients, coll
         args = framed;
       }
       // browser_drag is the helper's own, after the checks every browser tool gets.
+      // The page waits on its own confirm or prompt: nothing else works until it's answered.
+      if (name.startsWith("browser_") && !["browser_handle_dialog", "browser_tabs", "browser_close", "browser_file_upload"].includes(name)) {
+        const here = actingIn || (mine && !mine.isClosed() ? mine : null);
+        const d = here && popups.waitingDialog(here);
+        if (d) return reply(msg.id, `The page is waiting on its ${d.type} dialog ("${String(d.message).slice(0, 120)}"): answer it with browser_handle_dialog (accept, or dismiss) before anything else.`, true);
+      }
+      // Another agent's tab is theirs to close.
+      if (name === "browser_tabs" && args.action === "close") {
+        const tabs = await openTabs();
+        const target = args.index === undefined ? (mine && !mine.isClosed() ? mine : null) : tabs[Number(args.index)] || null;
+        const owner = target && hud.sparkOwner(target);
+        if (target && owner && owner.id !== participant && !tabClaims.members(target).some((m) => m.id === participant)) {
+          return reply(msg.id, `Tab ${tabs.indexOf(target)} is ${collaboration.participants.get(owner.id)?.label || "another agent"}'s: their agent works there. Leave it, and close only your own tabs (browser_tabs close without index).`, true);
+        }
+        if (target && target === mine) closedByMe = true;
+      }
       if (Object.hasOwn(ownTools, name) && name !== "browser_drag") return respond(msg.id, name, await ownTools[name](args));
 
       const problem = await browserToolProblem(name, args);
@@ -833,7 +970,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // A field a person is filling (here or in the other browser) is theirs: left unchanged.
       if (FIELD_TOOLS.has(name)) {
         const page = actingIn || await serverPage();
-        const ownerAt = (target) => (page && isRef(target) ? ownerOf(page.locator(`aria-ref=${target}`).first(), hud.key, { host, byAgent: presence.typedByAgent, byRemote: presence.byRemote, log }) : null);
+        // A field can only be a person's where a person has just been: elsewhere the read (slow on
+        // a busy page) is skipped, so a quiet page never turns typing away as "too busy".
+        const ownerAt = (target) => (page && isRef(target) && presence.personWithin(page, 15_000) ? ownerOf(page.locator(`aria-ref=${target}`).first(), hud.key, { host, byAgent: presence.typedByAgent, byRemote: presence.byRemote, log }) : null);
         if (name === "browser_fill_form" && Array.isArray(args.fields)) {
           const owners = await Promise.all(args.fields.map((f) => ownerAt(f?.target)));
           if (owners.some((o) => o?.unknown)) return reply(msg.id, "The page is too busy right now to tell whether a person is filling these fields; nothing was typed. Try again in a moment.", true);
@@ -849,6 +988,43 @@ export function createServe({ config, log, host, createConnection, clients, coll
           const o = await ownerAt(args.target);
           if (o?.unknown) return reply(msg.id, `The page is too busy right now to tell whether a person is filling ${args.element || "that field"}; nothing was typed. Try again in a moment.`, true);
           if (o) return reply(msg.id, leftAlone(o, args.element), true);
+        }
+      }
+      // A date, time, month or week field takes one exact shape (YYYY-MM-DD, hh:mm): typing into it
+      // key by key, as the PairBrowse browser does, leaves garbage. PairBrowse sets such fields
+      // itself, a date in another spelling turned into YYYY-MM-DD when it can only mean one day.
+      if (name === "browser_type" || name === "browser_fill_form") {
+        const page = actingIn || await serverPage();
+        const items = name === "browser_type" ? [{ target: args.target, value: args.text, name: args.element }] : args.fields;
+        const typeOf = async (t) => (page && isRef(t) ? within(800, page.locator(`aria-ref=${t}`).first().evaluate((n) => (n.tagName === "INPUT" ? String(n.type).toLowerCase() : ""), undefined, { timeout: 700 })).catch(() => "") : "");
+        const kinds = await Promise.all(items.map((f) => typeOf(f?.target)));
+        const dated = items.filter((_, i) => /^(date|time|month|week|datetime-local)$/.test(kinds[i] || ""));
+        if (dated.length && !secretNamesIn(name, args, secretNames()).length) {
+          const shape = { date: "YYYY-MM-DD", "datetime-local": "YYYY-MM-DDThh:mm", month: "YYYY-MM", week: "YYYY-Www", time: "hh:mm" };
+          const lines = [];
+          for (const f of dated) {
+            const kind = kinds[items.indexOf(f)];
+            const value = kind === "date" ? isoDate(String(f.value ?? "")) || String(f.value ?? "") : String(f.value ?? "");
+            const loc = page.locator(`aria-ref=${f.target}`).first();
+            const human = page._pairbrowseHumanized === true;
+            if (human) page._pairbrowseHumanized = false;
+            try {
+              await hud.cursorTo(page, loc, "type", myLabel());
+              await loc.fill(value, { timeout: 5000 });
+              const now = await loc.inputValue({ timeout: 1000 }).catch(() => null);
+              lines.push(now === value ? `Filled ${f.name || f.target} with ${value}.` : `${f.name || f.target} didn't take "${String(f.value).slice(0, 40)}": a ${kind} field takes ${shape[kind]}.`);
+            } catch (e) {
+              lines.push(`${f.name || f.target} didn't take "${String(f.value).slice(0, 40)}": a ${kind} field takes ${shape[kind]} (${dragReason(e)}).`);
+            } finally {
+              if (human) page._pairbrowseHumanized = true;
+            }
+          }
+          hud.addActivity(lines.join(" "), myLabel(), page);
+          if (name === "browser_type" || dated.length === items.length) return reply(msg.id, lines.join("\n"), lines.some((l) => /didn't take/.test(l)));
+          fieldNotes.push(...lines);
+          msg = structuredClone(msg);
+          msg.params.arguments.fields = args.fields.filter((f) => !dated.includes(f));
+          args = msg.params.arguments;
         }
       }
       // Swap password names for the real values on the way to the browser; Claude's copy keeps names.
@@ -874,6 +1050,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       hud.addActivity(describe(name, shown), myLabel(), actingIn);
       await hud.showCursor(name, args, () => context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
+      if (name === "browser_fill_form") await hud.markTargets(actingIn || (mine && !mine.isClosed() ? mine : null), args.fields.map((f) => f.target)).catch(() => {});
       calls.set(msg.id, name);
       callArgs.set(msg.id, args);
       if (name === "browser_tabs") tabActions.set(msg.id, args.action);
@@ -888,7 +1065,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (mine) {
         const next = await freeTab();
         if (next) setMine(next);
-        else { mine = null; lostTab = true; noTabWhy = "you closed yours and the others are in use by other agents"; }
+        else { mine = null; lostTab = true; noTabWhy = lostWhy(); }
         return mine;
       }
       await whenReady();
@@ -1046,9 +1223,17 @@ export function createServe({ config, log, host, createConnection, clients, coll
           reply(msg.id, `${tool || "This call"} didn't finish in ${TURN_MAX}, so PairBrowse reset the browser for the other agents waiting on it. Take a browser_snapshot, then try again.`, true);
           try { await (await context.current())?.close(); } catch {}
         }, TURN_MAX_MS);
+        // The browser closing (by hand, or a crash) under a call: the call is answered at once,
+        // never left hanging while every other call waits in the queue behind it.
+        let unwatch = () => {};
+        const browserGone = new Promise((resolve) => { unwatch = context.watchClose(() => resolve("closed")); });
         try {
           await handle(msg);
-          await response;
+          const outcome = await Promise.race([response, browserGone]);
+          if (outcome === "closed" && msg.id !== undefined && completed.has(msg.id)) {
+            late.add(msg.id);
+            reply(msg.id, "The browser closed while this ran (closed by hand, or it crashed), so nothing more was done. It opens again on your next action: take a browser_snapshot first.", true);
+          }
           clearTimeout(overran);
           if (msg.method === "tools/call" && !refused.delete(msg.id) && changesPage(tool)) {
             // A session switch or a tab action may have changed any tab: every tab's refs go.
@@ -1061,6 +1246,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
           clearTimeout(overran);
           finish(msg.id);
           throw e;
+        } finally {
+          unwatch();
         }
       };
       // Only calls that act in a page count as the agent's input time: a person typing while an
@@ -1070,7 +1257,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         // Actions that never type (a click, a drag, a scroll, a tab): keys meanwhile are a person's.
         const runArgs = msg.params?.arguments || {};
         const keyless = tool === "pairbrowse_run" ? Array.isArray(runArgs.steps) && runArgs.steps.every((s) => s && typeof s === "object" && ["drag", "click", "check", "uncheck", "scroll", "waitFor", "expect", "go"].includes(Object.keys(s)[0]))
-          : ["browser_click", "browser_hover", "browser_drag", "browser_tabs", "browser_navigate", "browser_navigate_back", "pairbrowse_scroll", "pairbrowse_click_at"].includes(tool);
+          : (tool === "browser_click" && !(Array.isArray(runArgs.modifiers) && runArgs.modifiers.length)) || ["browser_hover", "browser_drag", "browser_tabs", "browser_navigate", "browser_navigate_back", "pairbrowse_scroll", "pairbrowse_click_at"].includes(tool);
         // Its own wheel turns (a scroll, a run with a scroll step) are the agent's, not a person's.
         const wheels = tool === "pairbrowse_scroll" || (tool === "pairbrowse_run" && Array.isArray(runArgs.steps) && runArgs.steps.some((s) => s && typeof s === "object" && Object.keys(s)[0] === "scroll"));
         const done = acting ? presence.busyStart(`${keyless ? "no-keys" : ""}${wheels ? " wheel" : ""}`.trim()) : () => {};

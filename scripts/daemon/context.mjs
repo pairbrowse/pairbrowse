@@ -259,6 +259,9 @@ let switched = Promise.resolve();
     const mine = contextPromise;
     ctx.on("close", () => {
       log("browser closed");
+      // Closed for good (by hand, a crash, the turn cap), not on the way to another session: the
+      // calls in flight hear of it.
+      if (!switching) for (const fn of closeWatchers) try { fn(); } catch {}
       // Closed while asking: the next browser asks again.
       if (pick.state === "showing") { pick.state = "pending"; pick.page = null; }
       // Only the browser in use: an older one closing late never drops the next one.
@@ -288,6 +291,9 @@ let switched = Promise.resolve();
   }
 
   // The browser, once saved tabs are back.
+  // Calls in flight when the browser closes (closed by hand, or crashed) are told at once.
+  const closeWatchers = new Set();
+  const watchClose = (fn) => { closeWatchers.add(fn); return () => closeWatchers.delete(fn); };
   async function ready() {
     while (pickSwitch) await pickSwitch; // never the old browser after the person picked another
     const ctx = await getContext();
@@ -528,7 +534,7 @@ let switched = Promise.resolve();
   }
 
   return {
-    getContext, current: () => contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
+    getContext, watchClose, current: () => contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
     isRestoring: () => restoring !== null, isSwitching: () => switching,
     currentUrl: () => lastCurrentUrl, setCurrentUrl: (url) => { lastCurrentUrl = url; },
     sessionInfo, sessionCommand, startUp, close,

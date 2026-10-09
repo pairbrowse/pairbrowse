@@ -107,6 +107,12 @@ export function createSession({ locals = () => [], secrets = () => ({}), labelOf
       if (times.length >= MESSAGES_PER_MINUTE) return { problem: `At most ${MESSAGES_PER_MINUTE} messages a minute. Wait a little.` };
       if (!String(text ?? "").trim()) return { problem: "Say something: text is empty." };
       if (String(text).length > TEXT_MAX) return { problem: `Keep it under ${TEXT_MAX} characters.` };
+      // Someone here or on the other side, by their label or first name.
+      if (to && String(to).toLowerCase() !== "all") {
+        const want = String(to).toLowerCase();
+        const names = [...locals().map((e) => e.who), ...[...remote.values()].flatMap((r) => (r.entries || []).map((e) => e.who))].map((n) => String(n || "")).filter(Boolean);
+        if (!names.some((n) => n.toLowerCase() === want || n.toLowerCase().startsWith(`${want} `))) return { problem: `Nobody here is called "${String(to).slice(0, 40)}". ${names.length ? `Participants: ${[...new Set(names)].join(", ")}.` : "Nobody else is in this session."} Or send to "all".` };
+      }
       times.push(t);
       sent.set(participant, times);
       const msg = readMessage({ from: labelOf(participant), to: to || "all", text: redact(text, secrets()), t });

@@ -5,6 +5,27 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.31 (2026-10-09)
+
+Six live testers, in parallel: fast mode on new real forms, every step tool on dynamic sites, several agents in one browser, dialogs and files and bad input, the security table claim by claim, the native browser and daemon or browser crashes. Everything general they found is fixed.
+
+- A page whose scripts stop pausing (a travel site's search box after a letter is typed) no longer holds a fast-mode run, and every agent behind it, for ten minutes until the browser is reset: each look at the page is bounded, a run stops between steps after two minutes, a run stuck inside a step is given up on with the phase it was in ("at step 1: checking "Abflugort" kept its value"), and a page that answers nothing is said so at once.
+- The browser closed by hand or crashed under a call: the call is answered ("the browser closed while this ran") instead of hanging, and the next connection gets a new browser.
+- Security: Enter on a focused button outside any form (most app delete buttons are script buttons) is judged like a click, as Space already was; it went through before. A card number inside other text is masked in the activity line; "Name on card" is a name, not a card. The tester's table check found every other claim true.
+- No more "the user used this tab" for the agent's own work: a tick or a choice is a click (not typing), a modifier key alone is no key press, a click with modifiers presses keys, a form fill's later fields are the agent's targets too, click_at shows the agent's cursor first, and a press near where the agent's cursor went (even when it got there late on a busy computer) is the agent's.
+- Typing was turned away as "the page is too busy to tell whether a person is filling this" on heavy pages (Google Flights): the field-owner check runs only where a person has just been.
+- Danger buttons are red, not orange: a consent wall's orange "Consent and continue" is no longer refused as a delete. A button's label is said once, not three times.
+- Snapshot refs: a snapshot of one element in a frame, or a find result, never changes the page's numbering (it put the wrong element under a ref); a message about a ref names it as Claude sent it.
+- browser_wait_for looks in the page's frames too (a consent wall in one "was gone" while it stood) and is bounded (time at most 120 s, text at most 8 s), with plain messages.
+- browser_drag, browser_select_option and a failed action also carry a picture; a stopped run keeps its picture, as its message says to look at it.
+- A long snapshot cut short still shows a dialog open over the page (it sat past the cut, so an agent clicked under it). An empty snapshot says the page is still loading. Links to snapshot files are absolute.
+- Playwright's own errors read plainly: something covers it (and what), the element was replaced, not a dropdown, not a text field, unknown key, the address doesn't exist or refused the connection, the page didn't load in time, no such tab, no dialog open, a file chooser open and how to close it. A file refused for browser_file_upload (outside the folders the browser reads) no longer leaves the file chooser open and the tab stuck.
+- Bad arguments get plain answers (a missing or empty target, fields or paths not a list, a 10 kB name, an unknown status kind) instead of raw parser or type errors; a selector that matches nothing is said so rather than read as an unreadable final action.
+- Fast mode: a click that opens the page's confirm stops at once with the dialog named (it blamed a covered element after 5 s); a checkbox an earlier answer removed is reported as hidden within a few seconds, not as covered after 66 s; a text field whose name matched a floating label first is still filled; a date, time, month or week field is set in its own shape (typing into one in the PairBrowse browser left garbage).
+- Several agents: another agent's tab can't be closed from your session; "also works in this tab" shows only when a tab is shared; the status badge keeps a hand-off to the user over other agents' statuses and names a Codex agent as such; a message to nobody is said so; an untitled tab's name is stripped cleanly; the bar names Codex, not "Codex's Claude".
+- The note about a new tab a click opened goes with that click's result; a dialog answer says what it did; results after Back no longer wait 8 s for a load event a restored page never fires.
+- browser_click while the page waits on its dialog says so instead of "the ref isn't on the page".
+
 ## 0.15.30 (2026-10-09)
 
 Checked live, action by action, on real sites and a test page, with two agents working in one browser: what was wrong is fixed, and what the helper says now matches what happened.

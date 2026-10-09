@@ -96,7 +96,7 @@ export function decide(input, _config, review = latestReview(), now = Date.now()
 
   if (tool === "browser_file_upload" || (tool === "browser_drop" && ti.paths)) {
     const files = ti.paths || [];
-    const odd = files.filter((p) => !uploadAllowed(p));
+    const odd = (Array.isArray(files) ? files : []).filter((p) => !uploadAllowed(p));
     if (odd.length) return ask(`Upload of ${odd.join(", ")}: only images, video and documents copied into ${paths.uploads} upload without asking.`);
     if (tool === "browser_file_upload") return allow();
   }

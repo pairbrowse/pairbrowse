@@ -39,3 +39,10 @@ test("a drag is logged by its two ends", () => {
   assert.equal(describe("browser_drag", { startElement: "Card A", startTarget: "e4", endElement: "Done", endTarget: "e6" }), "Dragged **Card A** to **Done**");
   assert.equal(describe("browser_drag", { startTarget: "e4", endTarget: "e6" }), "Dragged **e4** to **e6**");
 });
+
+test("a card number inside other text is masked; the name on a card is a name", () => {
+  assert.equal(describe("browser_type", { element: "Comment", text: "ref 4242 4242 4242 4242 paid" }), "Typed `ref ••••42 paid` into **Comment**");
+  assert.equal(describe("browser_type", { element: "Comment", text: "order 1234567890123 ok" }), "Typed `order 1234567890123 ok` into **Comment**", "digits that aren't a card number stay");
+  assert.equal(describe("browser_type", { element: "Name on card", text: "Ada Lovelace" }), "Typed `Ada Lovelace` into **Name on card**");
+  assert.equal(describe("browser_type", { element: "Card number", text: "4242424242424242" }), "Typed `••••42` into **Card number**");
+});

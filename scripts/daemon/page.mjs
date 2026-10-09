@@ -14,8 +14,11 @@ export function withHelpers(fn, ...helpers) {
 export function buttonLabel(n) {
   const by = (n.getAttribute("aria-labelledby") || "").split(/\s+/).map((id) => document.getElementById(id)?.textContent || "").join(" ");
   const icons = [...n.querySelectorAll("img[alt], svg [aria-label], svg title, [aria-label]")].slice(0, 10).map((i) => i.getAttribute("alt") || i.getAttribute("aria-label") || i.textContent || "");
-  return [n.getAttribute("aria-label"), by, n.value, n.innerText || n.textContent, n.getAttribute("title"), n.getAttribute("alt"), ...icons]
-    .filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 400);
+  // Each text once: a button's aria-label, title and text often say the same thing.
+  const parts = [n.getAttribute("aria-label"), by, n.value, n.innerText || n.textContent, n.getAttribute("title"), n.getAttribute("alt"), ...icons]
+    .map((t) => String(t || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  const seen = new Set();
+  return parts.filter((t) => { const k = t.toLowerCase(); if (seen.has(k) || [...seen].some((s) => s.includes(k))) return false; seen.add(k); return true; }).join(" ").slice(0, 400);
 }
 
 export function isVisible(el) {
@@ -77,12 +80,20 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
   };
   const rgb = (c) => (String(c).match(/[\d.]+/g) || []).map(Number);
   // Red: a danger button (by its computed color, not its class name).
+  // Red means the hue of red (within about 15 degrees of it) and well saturated: orange and
+  // amber brand buttons (a consent wall's "Continue", a shop's "Add to cart") are not danger.
+  const redHue = (r, g, b) => {
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    if (max < 150 || max - min < 70 || r !== max) return false;
+    const hue = ((g - b) / (max - min)) * 60; // -60..60 around red when r is the max
+    return hue >= -22 && hue <= 9; // orange-red brand buttons (hue 12 and up) aren't danger
+  };
   const red = (el) => {
     const st = getComputedStyle(el);
     const [r, g, b, a = 1] = rgb(st.backgroundColor);
-    if (a > 0.3 && r >= 170 && r - g >= 80 && r - b >= 60) return true;
+    if (a > 0.3) return redHue(r, g, b);
     const [tr, tg, tb] = rgb(st.color);
-    return (!(a > 0.3)) && tr >= 170 && tr - tg >= 80 && tr - tb >= 60;
+    return redHue(tr, tg, tb);
   };
   // A filled button (an opaque, colored or dark background): the one a dialog wants pressed.
   const filled = (el) => {
@@ -175,7 +186,9 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
     if (stepOf(form) === "middle") return safe();
     return { level: "commit", word: "submit", why: [...why, "it submits a form"] };
   }
-  if (kind === "enter" || (kind === "space" && !b)) return safe();
+  // Enter or Space elsewhere than on a button presses nothing; on a button (a script button
+  // outside any form: most app delete buttons) either key presses it, judged as a click.
+  if ((kind === "enter" || kind === "space") && !b) return safe();
 
   // Not a submit: links go somewhere; buttons act through the page's scripts.
   const verb = verbOf(control);

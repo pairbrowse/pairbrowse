@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { createSession, redact, readEntries, readMessage } from "../scripts/daemon/session.mjs";
 
 const labels = { a: "Alice · Claude Code", b: "Bob · Codex" };
-const make = (extra = {}) => createSession({ labelOf: (p) => labels[p] || "Agent", secrets: () => ({ SHOP_PASSWORD: "hunter2hunter2" }), ...extra });
+const make = (extra = {}) => createSession({ labelOf: (p) => labels[p] || "Agent", locals: () => Object.values(labels).map((who) => ({ who, kind: "agent" })), secrets: () => ({ SHOP_PASSWORD: "hunter2hunter2" }), ...extra });
 
 test("messages: to one or all, here only as information; never back to the sender", () => {
   const s = make();
   s.join("a");
   s.join("b");
+  assert.match(s.compose("a", "Zed", "hi").problem, /Nobody here is called "Zed".*Participants: Alice · Claude Code, Bob · Codex/, "an unknown name is said, not sent into the void");
   const r = s.compose("a", "Bob", "I take tab 2, you take the billing form");
   assert.equal(r.msg.from, "Alice · Claude Code");
   assert.deepEqual(s.drain("a"), [], "not to the sender");

@@ -120,9 +120,12 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
   }
 
   // pairbrowse_click_at. Returns { text, error } or { text, page }.
-  async function clickAt({ x, y }, participant) {
+  // current: the tab the agent works in now (a screenshot of another tab is no map of this one).
+  // cursor(x, y): shows the agent's cursor at the spot before the press (daemon/hud.mjs).
+  async function clickAt({ x, y }, participant, { current = null, cursor = null } = {}) {
     const shot = shots.get(participant);
     if (!shot || shot.page.isClosed()) return { text: "No screenshot to click on yet. Take a browser_snapshot first.", error: true };
+    if (current && shot.page !== current) return { text: "The last screenshot was of another tab, not this one. Take a browser_snapshot here first, then click by its picture.", error: true };
     const { page, toCss } = shot;
     const cx = Number(x) * toCss, cy = Number(y) * toCss;
     if (!Number.isFinite(cx) || !Number.isFinite(cy)) return { text: "x and y must be numbers.", error: true };
@@ -131,8 +134,10 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
     if (hit.frame) return { text: "That spot is inside a frame. Use browser_click with the element's ref from browser_snapshot.", error: true };
     // Strong signals (payment, danger, DELETE, a confirmation after one): only browser_click asks the user.
     if (hit.risk && strongSignal(hit.risk)) return { text: `Refused: that spot commits something (${(hit.risk.why || []).join(", ") || hit.risk.word}). Use browser_click with its ref so the user confirms.`, error: true };
+    await cursor?.(cx, cy);
     await page.mouse.click(cx, cy);
-    return { text: `Clicked "${hit.label.slice(0, 80) || "the spot"}" at ${Math.round(cx)},${Math.round(cy)} on the page.`, page };
+    const label = hit.label.length > 80 ? hit.label.slice(0, 80).replace(/\s+\S*$/, "") + "..." : hit.label;
+    return { text: `Clicked "${label || "the spot"}" at ${Math.round(cx)},${Math.round(cy)} on the page.`, page };
   }
 
   return { take, clickAt, forget: (participant) => shots.delete(participant) };

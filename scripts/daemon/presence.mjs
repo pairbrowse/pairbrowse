@@ -22,6 +22,20 @@ const USER_KINDS = new Set(["click", "type", "key", "wheel", "scroll", "move", "
 // "Pause agents" or "Resume" in the page's bar ("pause" or "resume"; never page input).
 export function createPresence({ host, readEvents, pages, paused, onUsed, onStale, applyBar, refreshTabs, onPauseButton = () => {}, restoring = () => false }) {
   const humanAt = new WeakMap(); // tab -> { t, who }: the last time a person used it, and who
+  // Where agents' cursors went in each tab lately ([{ x, y, t }], document pixels): a press far
+  // from the agent's last target is still the agent's when its cursor got there, even late.
+  const cursorsIn = new WeakMap();
+  function agentPointed(page, at) {
+    if (!page || !at) return;
+    const list = cursorsIn.get(page) || [];
+    list.push({ x: Number(at.x) || 0, y: Number(at.y) || 0, w: Number(at.w) || 0, h: Number(at.h) || 0, t: Number(at.t) || Date.now() });
+    if (list.length > 12) list.shift();
+    cursorsIn.set(page, list);
+  }
+  const NEAR_CURSOR_PX = 60;
+  const nearAgentCursor = (page, e) => Number.isFinite(e.x) && Number.isFinite(e.y) && (cursorsIn.get(page) || []).some((c) => Math.abs(c.t - e.happened) < 3000 && Math.abs(c.x - e.x) <= c.w / 2 + NEAR_CURSOR_PX && Math.abs(c.y - e.y) <= c.h / 2 + NEAR_CURSOR_PX);
+  // Whether a person used this tab within ms.
+  const personWithin = (page, ms) => { const h = page && humanAt.get(page); return !!h && Date.now() - h.t < ms; };
   const actedAt = new WeakMap(); // tab -> { t, who }: the same, without pointer moves
   const filled = new WeakMap(); // tab -> Map field name -> who filled it, for the agent's next result
   const userLogs = new WeakMap(); // tab -> what they did there, for the agent's next result
@@ -127,11 +141,12 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
         happened,
         t: Math.max(at - READ_LATE_MS, happened),
         what: String(e.what ?? "").replace(/[\u0000-\u001f\u007f"`<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 60),
+        x: Number(e.x), y: Number(e.y),
       };
     });
     // During an agent's action its own input is real input too, so whose is told by where and what:
     // a press well away from its target (far, from the page), or keys while it doesn't type.
-    const theirs = (e) => (e.kind === "wheel" && !wheelingAgent(e.happened)) || e.far || !byAgent(e.happened) || ((e.kind === "type" || e.kind === "key") && !typingAgent(e.happened));
+    const theirs = (e) => (e.kind === "wheel" && !wheelingAgent(e.happened)) || (e.far && !nearAgentCursor(page, e)) || !byAgent(e.happened) || ((e.kind === "type" || e.kind === "key") && !typingAgent(e.happened));
     const yours = clean.filter((e) => theirs(e) && !byRemote(e.happened)); // a joiner's is told where it's replayed
     if (!yours.length) return;
     humanIn(page, host, Math.min(at, Math.max(...yours.map((e) => e.t))));
@@ -278,7 +293,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     // A person's own input at time t: no agent acting then (or just before), nothing replayed
     // (a joiner's, the live view's). The join prompt's answers must be.
     byPerson: (t) => !byAgent(t, 300) && !byReplay(t),
-    personIn, actingIn, recentPerson, humanIn, elsewhere, sharedPerson, feedAfter, busyStart, agentActing, userDid, watchUser, waitForUser, userNote, didIn,
+    personIn, actingIn, recentPerson, humanIn, agentPointed, personWithin, elsewhere, sharedPerson, feedAfter, busyStart, agentActing, userDid, watchUser, waitForUser, userNote, didIn,
     waiting: (page) => waitingIn.get(page), loadedAt: (page) => loadedAt.get(page) || 0,
   };
 }

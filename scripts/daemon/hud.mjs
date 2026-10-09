@@ -4,6 +4,7 @@
 import { hudScript } from "../browser.mjs";
 import { isRef } from "../policy.mjs";
 import { within } from "../util.mjs";
+import { CHALLENGE_TURN } from "../popups.mjs";
 
 // Each connected agent's tab carries the spark on its icon, in that participant's color (in the
 // order they joined: orange, cyan, purple, green). It moves when that agent works in another tab.
@@ -90,6 +91,24 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   }
   const sparkOn = (page) => [...sparks.values()].find((s) => s.page === page);
 
+  // Each agent's status (pairbrowse_status). The badge shows a hand-off to the user ("you")
+  // over agents' own statuses, else the latest; an agent that isn't Claude is named in its
+  // status ("Codex: filling the form"). PairBrowse's own "solve the check" badge (popups) stands.
+  const statuses = new Map(); // participant -> { text, kind, t }
+  async function setBadgeFor(participant, text, kind, label = "") {
+    if (kind === "clear" || !text) { if (!statuses.delete(participant)) return; } // nothing to take down
+    else {
+      const app = String(label || "").split(" · ")[1] || "";
+      const other = kind === "claude" && app && !/^Claude/i.test(app);
+      statuses.set(participant, { text: other ? `${app}: ${text}` : String(text), kind: other ? "agent" : kind, t: Date.now() });
+    }
+    if (badge.kind === "you" && badge.text === CHALLENGE_TURN) return; // PairBrowse's own hand-off stands
+    const all = [...statuses.values()].sort((a, b) => b.t - a.t);
+    const shown = all.find((s) => s.kind === "you") || all[0];
+    if ((shown?.text || "") === badge.text && (shown?.kind || "clear") === badge.kind) return; // as shown already
+    await setBadge(shown?.text || "", shown?.kind || "clear");
+  }
+  const statusOf = (participant) => statuses.get(participant) || null;
   // The badge in every tab and the live view. kind "you" also notifies the user.
   async function setBadge(text, kind) {
     badge = kind === "clear" ? { text: "", kind: "clear" } : { text: String(text || ""), kind };
@@ -197,6 +216,13 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (ms) await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  // What a form fill will act on, all of it (document pixels), so the page script knows the
+  // agent's own clicks on the later fields (and on the labels of ticked boxes) from a person's.
+  async function markTargets(page, targets) {
+    if (!page || page.isClosed()) return;
+    const boxes = (await Promise.all((targets || []).filter((t) => typeof t === "string" && t).slice(0, 40).map((t) => within(400, page.locator(isRef(t) ? `aria-ref=${t}` : t).first().boundingBox().catch(() => null)).catch(() => null)))).filter(Boolean);
+    if (boxes.length) await quietly(page, JSON.stringify(boxes.map((b) => ({ x: b.x, y: b.y, w: b.width, h: b.height }))), "targets");
+  }
   // Each page as it loads: the script, then the badge, spark and bar.
   async function onPageLoad(page) {
     await ensure(page);
@@ -209,8 +235,8 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     // The page script's name and key: forms.mjs reads and claims fields through it.
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
-    source, call, ensure, onPageLoad, applyBar, setBadge, badge: () => badge,
+    source, call, ensure, onPageLoad, applyBar, setBadge, setBadgeFor, statusOf, badge: () => badge,
     moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
-    addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor,
+    addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor, markTargets,
   };
 }

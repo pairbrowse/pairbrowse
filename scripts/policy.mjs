@@ -133,10 +133,14 @@ export function looksLikeCard(value) {
   }
   return sum % 10 === 0;
 }
+// A field sensitive by its label: SENSITIVE, except the cardholder's name ("Name on card").
+export const sensitiveLabel = (label) => { const l = String(label ?? ""); return SENSITIVE.test(l) && !/(\bname\b|\bholder\b)[^]{0,12}\bcard|card ?holder/i.test(l); };
+// Card numbers inside other text ("ref 4242 4242 4242 4242 paid"): masked to their last two digits.
+export const maskCards = (text) => String(text ?? "").replace(/(?<![\d-])(?:\d[ -]?){12,18}\d(?![\d-])/g, (m) => (looksLikeCard(m) ? `••••${m.replace(/[\s-]/g, "").slice(-2)}` : m));
 // What the activity line shows for a typed value.
 export function shownValue(label, value) {
   const s = String(value ?? "");
   if (SECRET_NAME.test(s)) return s; // a saved password's name, not the password
-  if (SENSITIVE.test(String(label ?? "")) || looksLikeCard(s)) return s.length > 4 ? `••••${s.replace(/\s/g, "").slice(-2)}` : "••••";
-  return s;
+  if (sensitiveLabel(label) || looksLikeCard(s)) return s.length > 4 ? `••••${s.replace(/\s/g, "").slice(-2)}` : "••••";
+  return maskCards(s);
 }

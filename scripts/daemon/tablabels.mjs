@@ -60,8 +60,9 @@ export function createTabLabels({ sparks, labelOf, lastIn = () => null, name, lo
   function strip(text) {
     let out = String(text);
     for (const n of new Set([...named.values(), ...everNamed])) {
-      const esc = `${n} · `.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      out = out.replace(new RegExp(`(Page Title: |Page: |\\[)${esc}`, "g"), "$1");
+      const esc = `${n} ·`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      // "Name · Title", and "Name ·" alone when the page has no title.
+      out = out.replace(new RegExp(`(Page Title: |Page: |\\[)${esc}( |(?=\\])|$)`, "gm"), "$1");
     }
     return out;
   }

@@ -182,7 +182,10 @@ const context = createContext({
     if (!shuttingDown) sharing.endAll();
     recorder.browserClosed();
     sharing.closeLiveView();
-    if (clients.size) for (const sock of clients.values()) sock.destroy();
+    // The agents' connections end a moment later: each session's browser server was bound to the
+    // browser that closed (a fresh connection gets the next one), and the answer to a call that
+    // was in flight ("the browser closed while this ran") goes out first.
+    if (clients.size) { const gone = [...clients.values()]; setTimeout(() => { for (const sock of gone) sock.destroy(); }, 150); } // the ones there now, never a connection made meanwhile
     else shutdown(0);
   },
 });
@@ -429,7 +432,7 @@ const cobrowse = createCobrowse({
   },
   onDirty: (page) => { liveView()?.fieldsChanged(page); follow.dirty(page); },
 });
-hud.onCursor((page, at) => liveView()?.agentPointed?.(page, at));
+hud.onCursor((page, at) => { liveView()?.agentPointed?.(page, at); presence.agentPointed(page, at); });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
   secrets, facts, sharing, follow, pause, remoteHolder, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels,

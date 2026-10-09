@@ -5,7 +5,12 @@ import { EventEmitter } from "node:events";
 import { encodeJoinCode, parseJoinCode, createApprovals, stripUrl, stripText, newJoinerId, personLabel, appName, displayName, cleanName } from "../scripts/join.mjs";
 import { readAccount } from "../scripts/util.mjs";
 import { startJoin } from "../scripts/relay.mjs";
-import { startLiveView, createInvites } from "../scripts/liveview.mjs";
+import { acceptKey } from "../scripts/ws.mjs";
+
+// A dead joiner is noticed in a few seconds here (push.mjs reads these as it loads).
+process.env.PAIRBROWSE_TEST_SILENT_MS = "1500";
+process.env.PAIRBROWSE_TEST_GONE_MS = "500";
+const { startLiveView, createInvites } = await import("../scripts/liveview.mjs");
 import { TabClaims } from "../scripts/collaboration.mjs";
 
 const KEY = "a".repeat(64);
@@ -338,17 +343,72 @@ test("the joiner's connection: asks, waits for approval, then gets the shared ta
   } finally { s.view.close(); }
 });
 
-test("the joiner's status when the tunnel answers for a host that's gone: plain words, still retrying", async () => {
+test("the joiner's status when the tunnel answers for a host that's gone: plain words, still asking", async () => {
   const { createServer } = await import("node:http");
   const tunnel = createServer((req, res) => { res.writeHead(530, { "content-type": "text/html" }); res.end("<html>error code: 1033</html>"); });
   await new Promise((r) => tunnel.listen(0, "127.0.0.1", r));
   const j = startJoin({ join: { url: `http://127.0.0.1:${tunnel.address().port}`, key: "k".repeat(43), role: "drive", label: "Bob" }, name: "Dee" });
   try {
-    for (let i = 0; i < 40 && j.phase !== "offline"; i++) await new Promise((r) => setTimeout(r, 50));
-    assert.equal(j.phase, "offline");
-    assert.match(j.message, /Can't reach the host's session/);
+    // Right after a code is made the tunnel's edge may answer this way for a moment: it keeps asking.
+    for (let i = 0; i < 40 && j.message.startsWith("Asking"); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(j.phase, "asking");
+    assert.equal(j.message, "Reaching Bob's session…");
     assert.doesNotMatch(j.message, /530/);
   } finally { await j.leave().catch(() => {}); tunnel.close(); }
+});
+
+test("a joiner whose helper died (no pong to any ping) is gone within seconds, their agent stopped, the host told; the yes stands", async () => {
+  const stopped = [], lost = [];
+  const remoteAgents = { stop: (k) => stopped.push(k), folder: () => "/nonexistent", line: () => true, file: () => ({}) };
+  const s = await setup({ remoteAgents, shared: { onJoinerLost: (j) => lost.push(j.name) } });
+  try {
+    const d = s.invites.create({ role: "drive", label: "Dee", share: "code" });
+    const dee = newJoinerId();
+    await request(s.gport, "GET", `/${d.key}/tabs`, { headers: who(dee, "Dee") });
+    s.view.approvals.approve(s.requests[0].id);
+    // A push channel that answers nothing: the socket stays open (as a tunnel keeps it after a kill).
+    const key = Buffer.alloc(16, 7).toString("base64");
+    const sock = await new Promise((ok, no) => {
+      const req = http.request({ host: "127.0.0.1", port: s.gport, path: `/${d.key}/events`, headers: { ...who(dee, "Dee"), connection: "Upgrade", upgrade: "websocket", "sec-websocket-version": "13", "sec-websocket-key": key } });
+      req.on("upgrade", (res, socket) => { assert.equal(res.headers["sec-websocket-accept"], acceptKey(key)); ok(socket); });
+      req.on("response", (res) => no(new Error(`answered ${res.statusCode}`)));
+      req.end();
+    });
+    sock.on("data", () => {}); // reads, never pongs
+    await new Promise((r) => setTimeout(r, 300));
+    assert.ok(s.view.joinersNow().some((j) => j.who === "Dee"), "there while the channel is fresh");
+    for (let i = 0; i < 100 && !lost.length; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(lost, ["Dee"], "lost within seconds of the first unanswered pings");
+    assert.deepEqual(stopped, [`${d.id}:${dee}`], "their agent here stopped: its tab turns end");
+    assert.ok(!s.view.joinersNow().some((j) => j.who === "Dee"), "not listed any more");
+    assert.equal(s.view.approvals.get(d.id, dee)?.state, "approved", "a rejoin asks nothing new");
+    assert.equal((await request(s.gport, "GET", `/${d.key}/tabs`, { headers: who(dee, "Dee") })).status, 200, "and works at once");
+    sock.destroy();
+  } finally { s.view.close(); }
+});
+
+test("a join right after a fresh tunnel keeps asking quietly; a code that doesn't work is refused at once", async () => {
+  // Nothing answers yet (the name hasn't reached this resolver): asking, not "can't reach".
+  const closed = http.createServer(); await new Promise((r) => closed.listen(0, "127.0.0.1", r));
+  const port = closed.address().port; await new Promise((r) => closed.close(r));
+  const j = startJoin({ join: { url: `http://127.0.0.1:${port}`, key: "k".repeat(43), role: "drive", label: "Bob" }, name: "Dee" });
+  try {
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(j.phase, "asking");
+    assert.equal(j.message, "Reaching Bob's session…");
+  } finally { await j.leave().catch(() => {}); }
+  // The host answers 404: revoked, expired or a wrong key. Ended, and no more retries.
+  const s = await setup();
+  try {
+    let hits = 0;
+    const bad = startJoin({ join: { url: `http://127.0.0.1:${s.gport}`, key: "b".repeat(64), role: "drive", label: "Bob" }, name: "Dee" });
+    for (let i = 0; i < 60 && bad.phase !== "ended"; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(bad.phase, "ended");
+    assert.match(bad.message, /doesn't work any more/);
+    hits = s.requests.length;
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(s.requests.length, hits, "stopped: nothing more reaches the host");
+  } finally { s.view.close(); }
 });
 
 test("letting a joiner in through Claude always asks; turning one away doesn't", async () => {

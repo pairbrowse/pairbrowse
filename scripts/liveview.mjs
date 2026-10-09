@@ -48,7 +48,7 @@ const OWNER_ONLY = new Set(["profile", "join", "board", "dev"]); // events only 
 // or null. showPointers(page, list): draws the others' pointers
 // there. sessionFor(j): who is doing what, for joiner j. onJoinerSay(body, j, key): who is doing
 // what on a joiner's side, or a message from there (text only; any role).
-const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, onJoinerAgent: () => {}, arrange: async () => {}, order: async () => null, showPointers: () => {}, sessionFor: () => null, onJoinerSay: () => {}, onJoinerGone: () => {} };
+const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, onJoinerAgent: () => {}, arrange: async () => {}, order: async () => null, showPointers: () => {}, sessionFor: () => null, onJoinerSay: () => {}, onJoinerGone: () => {}, onJoinerLost: () => {} };
 
 // Shows a tab in its browser window. (document.visibilityState can't tell: Playwright emulates focus.)
 const bringTabForward = (page) => keepFocus(() => page.bringToFront().catch(() => {}));
@@ -205,7 +205,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   // A tab on a shared dev server, as its shared address (null: not one).
   const devUrl = (url) => devShare?.toPublic(url) || null;
   devShare?.members((key) => joiners.has(key));
-  const push = createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared: { ...shared, toView: (page, x, y) => screens?.viewCached(page, x, y) || null }, tabMeta, isIn: (key) => joiners.has(key), sessionFor: (j) => shared.sessionFor(j), mapUrl: devUrl, log });
+  const push = createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared: { ...shared, toView: (page, x, y) => screens?.viewCached(page, x, y) || null }, tabMeta, isIn: (key) => joiners.has(key), sessionFor: (j) => shared.sessionFor(j), mapUrl: devUrl, onLost: (j) => lostJoiner(j), log });
 
   // Shared browser mode (invites with mode "shared", daemon/screenshare.mjs): a joiner sees the
   // tabs live and works in them. Here: setting up the direct connection for one tab (its offer
@@ -694,6 +694,18 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   // What they said about their side's agents goes too.
   async function stopJoinerKey(key) { agentOutbox.delete(key); remoteAgents?.stop(key); shared.onJoinerGone(key); await screens?.stopAll(`${key}|`); }
   const stopJoiner = (j) => stopJoinerKey(joinerKey(j));
+  // Their helper died or lost the network (no pong, no reconnect): out like one who left, their
+  // agent's tab turns released; a rejoin asks nothing new (the approval stands).
+  function lostJoiner(j) {
+    const k = joinerKey(j);
+    if (joiners.get(k) !== j) return;
+    joiners.delete(k);
+    log(`joiner ${j.name} lost the connection`);
+    stopJoinerKey(k).catch(() => {});
+    try { shared.onJoinerLost(j); } catch {}
+    collaborationChanged();
+    push.changed();
+  }
   const joinerServer = createJoinerServer({
     key, invites, approvals, joiners, tunnelHost, onJoinRequest, log,
     live: { tabsFor, applyTabs, screen, agent: remoteAgent, file: remoteFile,

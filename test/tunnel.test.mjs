@@ -7,7 +7,7 @@ import { join } from "node:path";
 const home = mkdtempSync(join(tmpdir(), "pb-tunnel-"));
 process.env.PAIRBROWSE_HOME = home;
 process.env.PAIRBROWSE_TEST_KEEP_GRACE_MS = "1500";
-const { tunnelUrl, CLOUDFLARED, ensureCloudflared, startQuickTunnel, adoptTunnel, heartbeatFile, helperAlive } = await import("../scripts/tunnel.mjs");
+const { tunnelExitReason, tunnelUrl, CLOUDFLARED, ensureCloudflared, startQuickTunnel, adoptTunnel, heartbeatFile, helperAlive } = await import("../scripts/tunnel.mjs");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
@@ -37,12 +37,26 @@ test("the address is handed out only once cloudflared has a connection and the n
   chmodSync(exe, 0o755);
   const t0 = Date.now();
   let asked = 0;
-  const t = await startQuickTunnel(4321, { exe, resolves: async (host) => { assert.equal(host, "quiet-river-test.trycloudflare.com"); return ++asked >= 3; } });
+  let here = 0;
+  const t = await startQuickTunnel(4321, { exe, resolves: async (host) => { assert.equal(host, "quiet-river-test.trycloudflare.com"); return ++asked >= 3; }, resolvesLocally: async () => ++here >= 2 });
   try {
     assert.equal(t.url, "https://quiet-river-test.trycloudflare.com");
     assert.equal(asked, 3, "waited until the name resolved");
+    assert.equal(here, 2, "and until this computer's own resolver saw it");
     assert.ok(Date.now() - t0 >= 1200, "and for the connection");
   } finally { t.stop(); }
+});
+
+test("why cloudflared stopped, in plain words: rate-limited, or its last error line", async () => {
+  const log = "2026-10-09T13:30:00Z INF Requesting new quick Tunnel on trycloudflare.com...\n2026-10-09T13:30:01Z ERR Couldn't start tunnel error=\"Unauthorized: 429 Too Many Requests, error code: 1015\"\n";
+  assert.match(tunnelExitReason(1, log), /rate-limiting new tunnels from here; wait a few minutes/);
+  assert.equal(tunnelExitReason(1, "INF something\nERR failed to dial edge: no route to host\n"), "the sharing tunnel stopped (exit 1): failed to dial edge: no route to host");
+  assert.equal(tunnelExitReason(2, ""), "the sharing tunnel stopped (exit 2)");
+  // A cloudflared that dies with that error: the host's agent gets the reason, not an exit code.
+  const exe = join(home, "fake-cloudflared-429");
+  writeFileSync(exe, `#!${process.execPath}\nconsole.error("ERR Couldn't start tunnel error=\\"429 Too Many Requests, error code: 1015\\"");\nsetTimeout(() => process.exit(1), 100);\n`);
+  chmodSync(exe, 0o755);
+  await assert.rejects(startQuickTunnel(4323, { exe, resolves: async () => true, resolvesLocally: async () => true }), /rate-limiting new tunnels/);
 });
 
 test("a tunnel stops by itself once no helper is around, and only our own keeper is ever taken over or stopped", async () => {

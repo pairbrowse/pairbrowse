@@ -118,7 +118,10 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     const seen = approvals.list();
     for (const r of seen) {
       const was = states.get(r.id);
-      if (!was || was === r.state || r.id === answering) continue;
+      if (!was || was === r.state) continue;
+      // Answered: a "wants to join" the agent hasn't read yet would ask it to answer again.
+      if (was === "pending") hostNote.drop?.((n) => !n.includes(`request ${r.id})`));
+      if (r.id === answering) continue;
       const who = `${r.name}${r.app ? ` (${r.app})` : ""}`;
       if (r.state === "approved") hostNote(`The user let ${who} into the session (${r.role}).`);
       else if (r.state === "denied") hostNote(`The user turned ${who} away.`);

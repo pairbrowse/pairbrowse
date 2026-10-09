@@ -5,6 +5,19 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.33 (2026-10-09)
+
+A live tester ran two helpers sharing a session through a real tunnel (host and joiner) and found these.
+
+- A joiner whose helper died (killed, or the network gone) stayed in the session as a ghost: their agent held the host's tab for the full two minutes, they stayed listed, and a rejoin was refused by their own ghost. The host now expects an answer to each ping; about ten seconds of silence (a slow computer may miss a few) and they are out: tab turns released, not listed, and the host's agent reads "Alice's helper lost the connection". Joining again with the same code asks nothing new.
+- A join right after a fresh tunnel could take 15 s or never reach the host (the new name hadn't reached the joiner's resolver yet). The host hands out the code only once its own computer's resolver sees the name too (up to 10 s more), and the joiner keeps asking every 2 s for 45 s with status "Reaching Bob's session…" instead of "Can't reach".
+- A revoked, expired or wrong-key code answered "Asked Bob to let Alice in…" and then status "Not in anyone's session." pairbrowse_join join now answers the refusal as an error at once, and status says it afterwards.
+- A joiner the host turned away is told: status says "Bob didn't let you in." and the agent reads it in its next result.
+- Revoking a shared browser invite left the joiner's picture tabs as pictures, with calls landing on them. They become real tabs again (as leave does), status and the next result say "Bob ended the sharing; your tabs are your own again", and a call that waited out a down tunnel no longer says it reconnects by itself without saying the host may have ended the sharing.
+- The host's agent still read "Alice wants to join your session … Allow or Deny" in the result after it had approved (and 30 s later in browser_tabs): a request's note goes with its answer.
+- A tunnel that Cloudflare turned away said "the sharing tunnel stopped (exit 1)"; it now says "Cloudflare is rate-limiting new tunnels from here; wait a few minutes", or cloudflared's last error line.
+- A joiner's agent could take its own empty browser with pairbrowse_collaboration acquire while in a shared browser session; it is refused like the host's remote agents are, and status shows the host's session.
+
 ## 0.15.32 (2026-10-09)
 
 Three more live testers: the PairBrowse browser (headed, humanized) on 50 real sites, two helpers sharing a session through a real tunnel, and the agent's cursor and tab labels.

@@ -10,6 +10,7 @@ import { sleep } from "./util.mjs";
 import { connect } from "./ws.mjs";
 
 const OFFLINE_LONG_MS = 120_000; // offline this long: say the tunnel may be down
+const REACHING_MS = 45_000; // a fresh tunnel's name may take this long to reach the joiner's resolver: keep asking, quietly
 const REQUEST_TIMEOUT_MS = { send: 30_000, leave: 5000, pointer: 5000, connect: 20_000 };
 const WAIT_MS = { idle: 3000, offline: 2000, again: 300 };
 const SILENT_MS = 40_000; // silence this long means the channel is gone (a host sending heartbeats 15 s apart: before 0.14.15)
@@ -56,6 +57,8 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
   let message = `Asking ${code.label} to let you in.`;
   let stopped = false;
   let offlineSince = 0;
+  const startedAt = Date.now();
+  let answered = false; // the host's side answered at least once (in, waiting, denied...)
   const set = (p, m) => {
     if (p === phase && m === message) return;
     const before = phase;
@@ -68,6 +71,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
   async function understand(res) {
     let body = {};
     try { body = await res.json(); } catch {}
+    if (!(res.status >= 500 && !body.error)) answered = true; // the host's side, not the tunnel's error page
     if (res.ok) { offlineSince = 0; if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`); return body; }
     if (res.status === 403 && body.waiting) set("waiting", `Waiting for ${code.label} to approve. They see your request now.`);
     else if (res.status === 403 && body.denied) { set("denied", body.removed ? `${Host} took you out of the session.` : `${Host} didn't let you in.`); stopped = true; }
@@ -81,6 +85,9 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
   const request = (path, init = {}, ms) => fetch(`${base()}/${path}`, { ...init, headers: { ...headers, ...(init.body ? { "content-type": "application/json" } : {}) }, signal: AbortSignal.timeout(ms) });
   const offline = () => {
     offlineSince ||= Date.now();
+    // Nothing from the host yet, right after the code was made: the tunnel's name may not have
+    // reached this computer's resolver (or the tunnel's edge) yet; retrying every 2 s is the fix.
+    if (!answered && Date.now() - startedAt < REACHING_MS) return set("asking", `Reaching ${code.label}'s session…`);
     const long = Date.now() - offlineSince > OFFLINE_LONG_MS;
     set("offline", long ? "Can't reach the host's session for a while: the free tunnel may be down. Still retrying; ask the host for a new code if it doesn't come back." : "Can't reach the host's session right now. Retrying.");
   };
@@ -105,6 +112,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
       try {
         const c = await connect(`${base()}/events`, { headers });
         conn = c;
+        answered = true;
         offlineSince = 0;
         if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`);
         // A stream that stalls without closing (a free tunnel can) is dropped once the host's

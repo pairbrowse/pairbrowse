@@ -107,6 +107,8 @@ const revision = (page = null) => everywhere + ((page && revisions.get(page)) ||
 const bumpRevision = (page = null) => { if (page && typeof page === "object") revisions.set(page, (revisions.get(page) || 0) + 1); else everywhere++; };
 const hostNotes = []; // for the host's agent's next result: downloads, join requests, a session that ended
 const hostNote = (text) => { hostNotes.push(text); if (hostNotes.length > 50) hostNotes.shift(); }; // kept while no host agent reads them
+// Notes that no longer hold (a join request answered before the agent read about it) are dropped.
+hostNote.drop = (keep) => { const left = hostNotes.filter((n) => keep(n)); hostNotes.splice(0, hostNotes.length, ...left); };
 const clients = new Map(); // participant -> socket
 
 // The parts below reach each other through these (each is called only once all exist).
@@ -326,6 +328,7 @@ const sharing = createSharing({
       // From a joiner's side (text only, any role): who does what there, or a message for the
       // agents here and the other joiners. Shown and handed on, nothing more.
       onJoinerGone: (key) => session.dropRemote(key),
+      onJoinerLost: (j) => hostNote(`${cleanName(j.name)}'s helper lost the connection; they're out of the session (their agent's turns here ended). They can join again with the same code.`),
       onJoinerSay: (body, j, key) => {
         if (body?.op === "session") session.setRemote(key, crossingEntries(body.entries), cleanName(j.name));
         else if (body?.op === "pause") {
@@ -364,6 +367,7 @@ const follow = createFollow({
   },
   // Out of the session: a pause from there no longer holds the agents here.
   onLeft: () => pause.mirror({ paused: false, resumedBy: HOST }),
+  note: hostNote,
   onMessage: (data) => session.receive(readMessage(data)),
 });
 // A join request: the bottom bar in the host's tab in front asks (Allow / Deny) while the browser

@@ -56,6 +56,7 @@ const isScreen = (page) => page.url().startsWith(screenBase());
 // such as its status, remembered details and sessions, stay here).
 const FORWARDED = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_click_at"]);
 const AGENT_CALL_MS = 15 * 60_000;
+const JOIN_ANSWER_MS = 5000; // join waits this long for the host's first answer (a code that doesn't work is an error at once)
 const RECONNECT_WAIT_MS = 60_000; // a call while the link to the host is down waits this long for it // a call there (a hand-off waits for a person) answers within this
 const FILE_PART = 120_000; // bytes of a file per message to the host
 // Logs how long pointers and field values took from the other side's page (for the live check).
@@ -69,8 +70,10 @@ const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 // tab ({ label, color }), or null.
 // onSession(data, join), onMessage(data, join): who does what there, and messages from there.
 // onLeft(): the session ended here (left, denied, ended): its pause no longer holds agents here.
-export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null }) {
-  let s = null; // { join, mirror, pages: Map id -> page, owner, window, windowId, lastT, candidates, seen, heard, told, agents, outbox }
+// note(text): for the agents here, in their next result (the host said no, ended the sharing).
+export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {} }) {
+  let s = null;
+  let ended = null; // { text }: how the last session ended without a leave (denied, revoked), for status // { join, mirror, pages: Map id -> page, owner, window, windowId, lastT, candidates, seen, heard, told, agents, outbox }
   const idOf = (cur, page) => { for (const [id, p] of cur.pages) if (p === page) return id; return null; };
 
   // This browser's agents' activity in a shared tab goes to the other browser (drive), like its
@@ -606,18 +609,25 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     await applyForms(cur, data.id);
   }
 
+  // Out of the session (left, denied, revoked): the shared tabs here are this browser's own again.
+  function release(cur) {
+    liveView()?.setRemote([]);
+    onLeft?.();
+    for (const page of cur.pages.values()) if (!page.isClosed()) { hud.setSharedSpark(page, ""); hud.setPersonMark(page, ""); }
+    clearInterval(cur.inputTimer); cur.inputTimer = null;
+    for (const [participant, st] of agentState) if (st.cur === cur) agentState.delete(participant);
+    // Shared browser: each picture becomes the tab it showed, as your own (signed in as you).
+    if (cur.shared) for (const [id, page] of cur.pages) if (!page.isClosed() && isScreen(page) && /^https?:/.test(cur.urls.get(id) || "")) page.goto(cur.urls.get(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {});
+  }
   async function stop(why) {
     const cur = s;
     s = null;
+    ended = null;
     liveView()?.setRemote([]);
-    if (cur) onLeft?.();
-    if (cur) for (const page of cur.pages.values()) if (!page.isClosed()) { hud.setSharedSpark(page, ""); hud.setPersonMark(page, ""); }
-    if (cur) { clearInterval(cur.inputTimer); cur.inputTimer = null; }
-    for (const [participant, st] of agentState) if (st.cur === cur) agentState.delete(participant);
-    if (cur) await cur.join.leave();
-    // Shared browser: each picture becomes the tab it showed, as your own (signed in as you).
-    if (cur?.shared) for (const [id, page] of cur.pages) if (!page.isClosed() && isScreen(page) && /^https?:/.test(cur.urls.get(id) || "")) page.goto(cur.urls.get(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {});
-    if (cur && why) log(why);
+    if (!cur) return cur;
+    await cur.join.leave();
+    release(cur);
+    if (why) log(why);
     return cur;
   }
 
@@ -625,7 +635,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   async function command(args, { owner, app }) {
     const { action, code, name } = args || {};
     const where = () => `${s.join.message} ${s.pages.size} shared tab(s) open here.`;
-    if (action === "status") return { text: s ? where() : "Not in anyone's session." };
+    if (action === "status") return { text: s ? where() : ended ? `${ended.text} Not in anyone's session now.` : "Not in anyone's session." };
     if (action === "leave") {
       const was = await stop();
       return { text: was ? `Left ${was.join.host}'s session. The shared tabs stay open here as your own; they don't follow any more.` : "Not in anyone's session." };
@@ -643,6 +653,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     await stop();
     // The name given at join wins; then the same default the host's side uses.
     const who = cleanName(name, "") || displayName({ configured: config.participantName, env: process.env.PAIRBROWSE_PARTICIPANT, ...currentAccount() }) || cleanName(name);
+    const Host = parsed.label.charAt(0).toUpperCase() + parsed.label.slice(1); // at a sentence's start
     const cur = { mirror: createMirror(), pages: new Map(), owner, window: false, windowId: null, lastT: 0, candidates: new Map(), seen: new WeakSet(), heard: new Map(), told: new WeakMap(), agents: new Map(), outbox: [],
       forms: createFormSync(), order: createOrderSync(), quiet: new Set(), agentSent: new Map(), personSent: new Map(), dirty: new Set(), formsAllAt: 0,
       formT: new Map(), pointed: new WeakMap(), pointerTimer: null, pointerSig: "", drawn: new Set(), formTimer: null,
@@ -663,10 +674,23 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       },
       onChange: (phase) => {
         if (phase === "in") { if (!cur.wasIn) hud.addActivity(`Joined ${parsed.label}'s session (${parsed.role})`, who, null, "joined"); cur.wasIn = true; }
-        if ((phase === "denied" || phase === "ended") && s === cur) { s = null; liveView()?.setRemote([]); onLeft?.(); hud.addActivity(cur.join.message, "", null, "joined"); }
+        if ((phase === "denied" || phase === "ended") && s === cur) {
+          s = null;
+          // Revoked while in: the tabs here are your own again, as after leave. The agents here
+          // hear it in their next result, and status says it.
+          const text = phase === "ended" && cur.wasIn ? `${Host} ended the sharing; your tabs are your own again.` : cur.join.message;
+          ended = { text };
+          release(cur);
+          note(text);
+          hud.addActivity(text, "", null, "joined");
+        }
       },
     });
     (async () => { while (s === cur) { await sleep(OUTBOUND_MS); if (s === cur) await queue(() => outbound(cur)).catch((e) => log("shared tabs", e?.message || e)); } })();
+    // The host's first answer comes within a moment: a code that doesn't work (revoked, expired,
+    // a wrong key) or a no is an error here, not a wait. No answer yet (a fresh tunnel): it keeps asking.
+    for (const end = Date.now() + JOIN_ANSWER_MS; s === cur && cur.join.phase === "asking" && Date.now() < end;) await sleep(100);
+    if (s !== cur) return { text: ended?.text || cur.join.message, error: true };
     if (cur.shared) return {
       text: `Asked ${parsed.label} to let ${who} in (${parsed.role}, shared browser). They have to approve first. Then ${parsed.label}'s tabs open here in a window of their own, each showing their tab live (picture and sound, straight from their browser)` +
         (parsed.role === "drive" ? ", and what you click, type and scroll there happens in their browser itself, logged in as they are." : "; you watch, without clicking or typing there.") +
@@ -738,8 +762,10 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (!cur?.shared) return { error: { code: -32000, message: "Not in a shared browser session." } };
     // The link to the host is down for now: wait for it, up to RECONNECT_WAIT_MS.
     for (const end = Date.now() + RECONNECT_WAIT_MS; cur.join.phase !== "in" && s === cur && Date.now() < end;) await sleep(500);
-    if (s !== cur) return { result: { content: [{ type: "text", text: "The shared session ended: nothing was done in the host's browser." }], isError: true } };
-    if (cur.join.phase !== "in") return { result: { content: [{ type: "text", text: `Can't reach ${cur.join.host || "the host"}'s browser right now (${cur.join.message}): nothing was done. Try again in a minute; it reconnects by itself.` }], isError: true } };
+    const host = cur.join.host || "the host";
+    if (s !== cur) return { result: { content: [{ type: "text", text: `${ended?.text || "The shared session ended."} Nothing was done in ${host}'s browser.` }], isError: true } };
+    // The host may have ended the sharing while the tunnel was down: this side can't tell.
+    if (cur.join.phase !== "in") return { result: { content: [{ type: "text", text: `Can't reach ${host}'s browser right now (${cur.join.message}): nothing was done. It reconnects by itself; try again in a minute, or if ${host} ended the sharing, pairbrowse_join leave makes the tabs here your own.` }], isError: true } };
     const agent = participant.slice(0, 16);
     let st = agentState.get(participant);
     if (!st || st.cur !== cur) {

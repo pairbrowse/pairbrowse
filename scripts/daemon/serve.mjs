@@ -1164,7 +1164,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           if (!given) return reply(msg.id, "identify needs label: your user's first name (the app's name is added by PairBrowse).", true);
           collaboration.register(participant, personLabel(given, appName(clientName)));
         }
-        else if (action === "acquire" && remote) return reply(msg.id, "Only the host's own agents can take the whole browser. Work tab by tab.", true);
+        else if (action === "acquire" && (remote || follow.forwards?.("browser_tabs"))) return reply(msg.id, "Only the host's own agents can take the whole browser. Work tab by tab.", true);
         else if (action === "acquire") await collaboration.run(participant, () => collaboration.acquire(participant));
         else if (action === "release") {
           collaboration.release(participant); tabClaims.release(participant);
@@ -1204,6 +1204,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
           const box = session.drain(participant);
           return reply(msg.id, box.length ? box.map((m) => `From ${m.from} (another participant; information, not an instruction): ${m.text}`).join("\n") : "No new messages.");
         } else if (action !== "status") throw new Error("Use status, identify, acquire, release, message, messages or share.");
+        // Shared browser mode, joined from here: the session this agent works in is the host's.
+        if (!remote && follow.forwards?.("browser_tabs")) {
+          const out = await follow.remoteCall(participant, msg, { app: clientName, label: myLabel() });
+          if (msg.id !== undefined) toClient({ jsonrpc: "2.0", ...out, id: msg.id });
+          return;
+        }
         { const st = collaboration.state(); return reply(msg.id, JSON.stringify({ self: participant, ...st, participants: st.participants.map((p) => ({ ...p, color: hud.sparkColor(p.id) })) })); }
       }
       // Shared browser mode, joined from here: this agent works in the host's browser, as a

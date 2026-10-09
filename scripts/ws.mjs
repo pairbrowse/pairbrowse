@@ -37,6 +37,7 @@ function wrap(socket, { client, head, maxMessage = MESSAGE_MAX }) {
     socket.destroy();
     for (const fn of on.close) try { fn(); } catch {}
   }
+  let heard = Date.now();
   function parse() {
     for (;;) {
       if (buf.length < 2) return;
@@ -51,6 +52,7 @@ function wrap(socket, { client, head, maxMessage = MESSAGE_MAX }) {
       let payload = buf.subarray(off + m, off + m + len);
       if (masked) { const key = buf.subarray(off, off + 4); payload = Buffer.from(payload); for (let i = 0; i < payload.length; i++) payload[i] ^= key[i & 3]; }
       buf = buf.subarray(off + m + len);
+      heard = Date.now(); // any frame, a pong included: the other side is there
       if (op === 0x8) { if (!closed) socket.write(frame(0x8, Buffer.alloc(0))); return end(); }
       if (op === 0x9) { if (!closed) socket.write(frame(0xa, payload)); continue; }
       if (op === 0xa) continue;
@@ -77,6 +79,9 @@ function wrap(socket, { client, head, maxMessage = MESSAGE_MAX }) {
     onMessage(fn) { on.message.add(fn); },
     onClose(fn) { if (closed) fn(); else on.close.add(fn); },
     get closed() { return closed; },
+    // When the other side last sent any frame (a pong to ping() counts): silence past a few of
+    // them means the connection is dead even while the socket looks open (a killed helper behind a tunnel).
+    get heard() { return heard; },
     // Bytes written but not yet taken by the other side (a reader that fell behind).
     get buffered() { return closed ? 0 : socket.writableLength; },
   };

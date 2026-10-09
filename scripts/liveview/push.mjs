@@ -15,6 +15,11 @@ const POINTER_MS = 33; // pointers go out at most 30 times a second
 const POINTER_FRESH_MS = 3000; // a pointer still for this long fades out
 const AGENT_POINTER_MS = 12000; // an agent's stays as long as its cursor here does (hud.js CURSOR_HOLD_MS)
 const HEARTBEAT_MS = 1000; // keeps the tunnel from closing an idle stream, and lets a joiner see a stalled one in seconds
+// A joiner that answered no ping (their side pongs each one) for this long is gone, even while
+// the tunnel keeps the socket open (their helper killed): a slow computer may miss a few.
+const SILENT_MS = Number(process.env.PAIRBROWSE_TEST_SILENT_MS) || 10_000;
+// A joiner whose channel closed and didn't come back within this (a reconnect takes a second or two) is gone.
+const GONE_MS = Number(process.env.PAIRBROWSE_TEST_GONE_MS) || 10_000;
 const STREAMS_PER_JOINER = 2;
 const FRAME_SKIP_BYTES = 1 << 20; // a joiner this far behind gets no new pictures until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the stream is cut (the joiner reconnects)
@@ -25,7 +30,8 @@ const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 // joinerKey(j). shared: the helper's hooks (see liveview.mjs). tabMeta(page). sessionFor(j): who
 // is doing what, as joiner j may see it.
 // mapUrl(url): a tab's shared dev server address for its localhost one (devshare.mjs), else null.
-export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared, tabMeta, isIn = () => true, sessionFor = () => null, mapUrl = () => null, log = () => {} }) {
+// onLost(j): joiner j's channel is gone and didn't come back (their helper died or lost the network).
+export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared, tabMeta, isIn = () => true, sessionFor = () => null, mapUrl = () => null, onLost = () => {}, log = () => {} }) {
   const streams = new Map(); // conn -> { j, key, conn, stateSig, pointersSig, formSigs: Map id -> sig }
   const forms = new WeakMap(); // tab -> { sig, form, t }
   const hostPointers = new WeakMap(); // tab -> { me, agent }
@@ -171,10 +177,15 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       if (mine.length >= STREAMS_PER_JOINER) { mine[0].conn.close(); streams.delete(mine[0].conn); }
       const st = { j, key, conn, stateSig: "", stateAt: 0, sessionSig: "", pointersSig: "", formSigs: new Map() };
       streams.set(conn, st);
-      // While it's open the joiner counts as there; a heartbeat keeps the tunnel from closing it.
-      const seen = setInterval(() => { j.seen = Date.now(); }, 2000);
-      const beat = setInterval(() => send(st, "ping", Date.now()), HEARTBEAT_MS);
-      conn.onClose(() => { clearInterval(seen); clearInterval(beat); streams.delete(conn); });
+      // The joiner counts as there while it answers the pings (a pong to each); an open socket
+      // alone says nothing behind a tunnel. The heartbeat also keeps the tunnel from closing it.
+      const seen = setInterval(() => { if (Date.now() - (conn.heard ?? Date.now()) > SILENT_MS) conn.close(); else j.seen = Date.now(); }, 2000);
+      const beat = setInterval(() => { send(st, "ping", Date.now()); try { conn.ping?.(); } catch {} }, HEARTBEAT_MS);
+      conn.onClose(() => {
+        clearInterval(seen); clearInterval(beat); streams.delete(conn);
+        const gone = setTimeout(() => { if (![...streams.values()].some((x) => x.key === key)) { try { onLost(j); } catch (e) { log("push", e?.message || e); } } }, GONE_MS);
+        gone.unref?.();
+      });
       await pushState();
       for (const page of (await crossing()).values()) { if (!forms.has(page)) await readForm(page); else pushForm(page, st); }
       pointersChanged();

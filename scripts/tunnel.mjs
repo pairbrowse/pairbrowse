@@ -5,7 +5,7 @@
 // cloudflared itself is downloaded once from Cloudflare's GitHub releases, pinned by SHA-256.
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { Resolver } from "node:dns/promises";
+import { Resolver, lookup } from "node:dns/promises";
 import { existsSync, rmSync, renameSync, chmodSync, mkdirSync, openSync, closeSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
@@ -65,6 +65,18 @@ async function resolvesAtCloudflare(host) {
   try { return (await r.resolve4(host)).length > 0; } catch { return false; }
 }
 
+// Why cloudflared stopped, in plain words, from its last error line (its log, text). Cloudflare
+// turns new Quick Tunnels away with a 429 (error 1015) when too many came from one place.
+export function tunnelExitReason(code, text) {
+  const lines = String(text || "").split("\n").filter((l) => /\bERR\b|error/i.test(l));
+  const last = lines.at(-1)?.replace(/^.*?\b(ERR)\b\s*/, "").trim().slice(0, 200) || "";
+  if (/\b429\b|\b1015\b|Too Many Requests/i.test(last)) return "Cloudflare is rate-limiting new tunnels from here; wait a few minutes and try again";
+  return `the sharing tunnel stopped (exit ${code})${last ? `: ${last}` : ""}`;
+}
+// Whether the name resolves with this computer's own resolver (joiners' resolvers are much like
+// it): a new name may take seconds more to reach it than Cloudflare's own.
+const resolvesHere = async (host) => { try { await lookup(host); return true; } catch { return false; } };
+
 // Starts a Quick Tunnel to http://127.0.0.1:<port>. Resolves { url, host, pid, stop, child } once
 // it's reachable: cloudflared has registered a connection and the name resolves (or DNS_WAIT_MS
 // went by). cloudflared runs under a keeper of its own (tunnel-keeper.mjs, pid), writing to a
@@ -72,6 +84,7 @@ async function resolvesAtCloudflare(host) {
 // (adoptTunnel), so joiners just reconnect to the same address; and it stops by itself when no
 // helper has touched the heartbeat file (helperAlive) for KEEP_GRACE_MS. stop() ends it.
 const DNS_WAIT_MS = 15_000;
+const LOCAL_DNS_WAIT_MS = 10_000; // more, for the system resolver to see the name too
 export const KEEP_GRACE_MS = Number(process.env.PAIRBROWSE_TEST_KEEP_GRACE_MS) || 120_000;
 const KEEPER = join(dirname(fileURLToPath(import.meta.url)), "tunnel-keeper.mjs");
 export const heartbeatFile = () => join(paths.home, "run", "helper-alive");
@@ -79,7 +92,7 @@ export const heartbeatFile = () => join(paths.home, "run", "helper-alive");
 export function helperAlive() {
   try { mkdirSync(join(paths.home, "run"), { recursive: true, mode: 0o700 }); writeFileSync(heartbeatFile(), String(Date.now()), { mode: 0o600 }); } catch {}
 }
-export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe, resolves = resolvesAtCloudflare, logDir = join(paths.home, "tunnels") } = {}) {
+export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe, resolves = resolvesAtCloudflare, resolvesLocally = resolvesHere, logDir = join(paths.home, "tunnels") } = {}) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("bad live view port");
   const program = exe || await ensureCloudflared(log);
   mkdirSync(logDir, { recursive: true, mode: 0o700 });
@@ -101,9 +114,17 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
         if (found && /Registered tunnel connection/.test(seen)) { clearTimeout(timer); clearInterval(poll); ok(found); }
       }, 150);
       child.once("error", (e) => { clearTimeout(timer); clearInterval(poll); no(e); });
-      child.once("exit", (code) => { clearTimeout(timer); clearInterval(poll); no(new Error(`the sharing tunnel stopped (exit ${code})`)); });
+      child.once("exit", (code) => {
+        clearTimeout(timer); clearInterval(poll);
+        let seen = "";
+        try { seen = readFileSync(file, "utf8").slice(-16000); } catch {}
+        no(new Error(tunnelExitReason(code, seen)));
+      });
     });
     for (const end = Date.now() + DNS_WAIT_MS; !(await resolves(new URL(url).host)) && Date.now() < end;) await new Promise((r) => setTimeout(r, 500));
+    // The code goes out only once this computer's resolver sees the name too: a joiner asking
+    // too early gets "no such name", cached for a minute.
+    for (const end = Date.now() + LOCAL_DNS_WAIT_MS; !(await resolvesLocally(new URL(url).host)) && Date.now() < end;) await new Promise((r) => setTimeout(r, 500));
     log(`sharing tunnel up: ${new URL(url).host}`);
     return { url, host: new URL(url).host, pid: child.pid, log: file, stop, child };
   } catch (e) {

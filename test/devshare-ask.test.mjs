@@ -12,11 +12,37 @@ const { createSharing } = await import("../scripts/daemon/sharing.mjs");
 // records what the side panel would get.
 function sharingWith(notes) {
   const panel = [];
+  let live = null;
   const fakeLive = { url: "http://127.0.0.1:1/k/", port: 1, guestPort: 2, setStatus() {}, setSession() {}, setCollaboration() {}, setDev: (s) => panel.push(s), close() {} };
   const view = { currentUrl: () => "http://localhost:5199/app", getContext: async () => ({ pages: () => [] }), status: () => ({}), session: () => null, collaboration: () => ({}), secretDomains: () => [] };
-  const sharing = createSharing({ config: {}, log() {}, host: "Me", view, notify: (t) => notes.push(`notify: ${t}`), hostNote: (t) => notes.push(`note: ${t}`), startLive: async () => fakeLive });
-  return { sharing, panel };
+  // Notes for the host's agent, dropped like the helper's when they no longer hold (daemon.mjs).
+  const hostNote = (t) => notes.push(`note: ${t}`);
+  hostNote.drop = (keep) => notes.splice(0, notes.length, ...notes.filter((n) => !n.startsWith("note: ") || keep(n.slice(6))));
+  const sharing = createSharing({ config: {}, log() {}, host: "Me", view, notify: (t) => notes.push(`notify: ${t}`), hostNote, startLive: async (opts) => { live = opts; return fakeLive; } });
+  return { sharing, panel, live: () => live };
 }
+
+test("a join request's note for the host's agent goes when the request is answered", async () => {
+  const notes = [];
+  const { sharing, live } = sharingWith(notes);
+  try {
+    const made = await sharing.inviteCommand({ action: "create", role: "drive", share: "code", name: "Bob" }, { who: "Claude Code" });
+    const inviteId = made.text.match(/Invite (\w+) for/)[1];
+    const r = sharing.approvals.check({ id: inviteId, role: "drive" }, "a".repeat(32), "Alice", "claude-code");
+    live().onJoinRequest(r.entry);
+    assert.match(notes.join("\n"), /Alice \(Claude Code\) wants to join your session/);
+    // Answered by the agent itself: the request's note is gone (it would ask the agent to answer again).
+    await sharing.inviteCommand({ action: "approve", id: r.entry.id }, { who: "Claude Code" });
+    assert.doesNotMatch(notes.join("\n"), /wants to join/);
+    // Answered by the user (side panel, notification): the same, and the agent hears the answer.
+    const r2 = sharing.approvals.check({ id: inviteId, role: "drive" }, "b".repeat(32), "Carol", "claude-code");
+    live().onJoinRequest(r2.entry);
+    assert.match(notes.join("\n"), /Carol \(Claude Code\) wants to join/);
+    sharing.approvals.deny(r2.entry.id);
+    assert.doesNotMatch(notes.join("\n"), /wants to join/);
+    assert.match(notes.join("\n"), /turned Carol \(Claude Code\) away/);
+  } finally { sharing.endAll?.(); }
+});
 
 test("an agent's share_port is a question in the side panel: Yes shares, No doesn't", async () => {
   const notes = [];

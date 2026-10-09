@@ -99,8 +99,12 @@ if (driverChoice.notice) log(driverChoice.notice);
 const HOST = displayName({ configured: config.participantName, env: process.env.PAIRBROWSE_PARTICIPANT, ...currentAccount() }) || "The host";
 let shuttingDown = false;
 let socketServer = null; // closed first on shutdown
-let revision = 0; // goes up whenever a page may have changed under an agent's refs
-const bumpRevision = () => ++revision;
+// Goes up whenever a page may have changed under an agent's refs: per tab, so an agent's refs
+// stay good while other agents work in other tabs. Without a tab, a bump concerns every tab.
+const revisions = new WeakMap(); // page -> its own count
+let everywhere = 0;
+const revision = (page = null) => everywhere + ((page && revisions.get(page)) || 0);
+const bumpRevision = (page = null) => { if (page && typeof page === "object") revisions.set(page, (revisions.get(page) || 0) + 1); else everywhere++; };
 const hostNotes = []; // for the host's agent's next result: downloads, join requests, a session that ended
 const hostNote = (text) => { hostNotes.push(text); if (hostNotes.length > 50) hostNotes.shift(); }; // kept while no host agent reads them
 const clients = new Map(); // participant -> socket
@@ -148,13 +152,14 @@ const hud = createHud({
 });
 const presence = createPresence({
   host: HOST, readEvents: (frame) => hud.call(frame, "", "user"), pages: () => context.openPages(), paused: () => context.isSwitching(),
-  onUsed: (page) => context.touch(page), onStale: bumpRevision, applyBar: hud.applyBar, refreshTabs,
+  onUsed: (page) => context.touch(page), onStale: bumpRevision, applyBar: hud.applyBar, refreshTabs, restoring: () => context.isRestoring(),
   onPauseButton: (kind) => pressPause(kind === "pause"),
 });
 const popups = createPopups({
   log,
   quiet: () => context.isRestoring(), // tabs reopened at startup aren't new
   cookieChoice: config.cookieChoice, // "accept" (default) or "reject"
+  agentActing: () => presence.agentActing(), // a tab an agent closes itself needs no note
   onYourTurn: (text) => hud.setBadge(text, "you").catch(() => {}),
   // The check is done: take "Your turn" down again if it was this one.
   onCleared: () => { if (hud.badge().text === CHALLENGE_TURN) hud.setBadge("", "clear").catch(() => {}); },
@@ -301,14 +306,14 @@ const sharing = createSharing({
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
     // their pointer alone, or just being in the tab, leaves the page as it was.
     // Their mark (a dot in their pointer's color) shows on the tab's icon here while they're in it.
-    onJoinerPerson: (page, who, did, acting, changed = false, ago = 0) => { presence.elsewhere(page, who, did, acting, ago); hud.setPersonMark(page, personColor(who)); if (changed) bumpRevision(); },
+    onJoinerPerson: (page, who, did, acting, changed = false, ago = 0) => { presence.elsewhere(page, who, did, acting, ago); hud.setPersonMark(page, personColor(who)); if (changed) bumpRevision(page); },
     onPause: (paused, who) => pressPause(paused, who || HOST), pauseState,
     onRecord: (on) => (on ? recorder.start() : recorder.stop()), recordState: () => recorder.state(),
     // A joiner's agent at work in their copy of a tab: in use, so the tab cap here keeps it (closing
     // it would close their copy too).
     onJoinerActivity: (page, text, who, from) => { context.touch(page); hud.addActivity(text, who, page, from); },
     extraOrigins: panel.origins, getContext: () => context.getContext(), currentUrl: () => context.currentUrl(), profile: facts.profile, tabMeta,
-    onHumanInput: (page, who, changes = true) => { presence.humanIn(page, who || HOST); if (changes) bumpRevision(); },
+    onHumanInput: (page, who, changes = true) => { presence.humanIn(page, who || HOST); if (changes) bumpRevision(page); },
     onReplay: () => presence.replayStart(), // the live view's input never answers a join prompt
     shared: {
       host: HOST, readForm: forms.read, arrange: (pages) => tabOrder.arrange(pages), order: (pages) => tabOrder.strip(pages), showPointers: hud.showPointers,

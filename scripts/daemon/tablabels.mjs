@@ -26,6 +26,7 @@ export function shortLabel(label) {
 // thing done in that tab. name(page, text): shows text in front of that tab's title ("" for none).
 export function createTabLabels({ sparks, labelOf, lastIn = () => null, name, log = () => {} }) {
   let named = new Map(); // page -> the name it shows
+  const everNamed = new Set(); // every name shown so far: a title read while a name went off still carries it
   let timer = null;
   let running = Promise.resolve();
 
@@ -40,7 +41,8 @@ export function createTabLabels({ sparks, labelOf, lastIn = () => null, name, lo
       next.set(page, shortLabel(labelOf((here.find((s) => labelOf(s.id) === last) || here[0]).id)));
     }
     // Sent every time: a page that loaded anew has lost it.
-    for (const [page, text] of next) { shownOn.set(page, text); await name(page, text); }
+    for (const [page, text] of next) { shownOn.set(page, text); everNamed.add(text); await name(page, text); }
+    if (everNamed.size > 50) everNamed.delete(everNamed.values().next().value);
     for (const page of named.keys()) if (!next.has(page) && !page.isClosed()) { await name(page, ""); shownOn.delete(page); }
     const now = [...next.values()].join(", "), before = [...named.values()].join(", ");
     if (now !== before) log(`tab names: ${now || "none"}`);
@@ -57,7 +59,7 @@ export function createTabLabels({ sparks, labelOf, lastIn = () => null, name, lo
   // The page title with the agent's name taken off again: what agents read is the page's own.
   function strip(text) {
     let out = String(text);
-    for (const n of new Set(named.values())) {
+    for (const n of new Set([...named.values(), ...everNamed])) {
       const esc = `${n} · `.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       out = out.replace(new RegExp(`(Page Title: |Page: |\\[)${esc}`, "g"), "$1");
     }

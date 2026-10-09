@@ -17,9 +17,10 @@ const USER_KINDS = new Set(["click", "type", "key", "wheel", "scroll", "move", "
 // host: the host's name. readEvents(frame): the page script's recorded input in that frame.
 // pages(): the open tabs. paused(): true while no tab should be read (a session switch).
 // onUsed(page): a tab used by hand (the tab cap's "used"). onStale(): refs may be stale now.
-// applyBar(page), refreshTabs(): show who is waiting where. onPauseButton(kind): a person pressed
+// restoring(): saved tabs are being reopened (their loads are nobody's). applyBar(page),
+// refreshTabs(): show who is waiting where. onPauseButton(kind): a person pressed
 // "Pause agents" or "Resume" in the page's bar ("pause" or "resume"; never page input).
-export function createPresence({ host, readEvents, pages, paused, onUsed, onStale, applyBar, refreshTabs, onPauseButton = () => {} }) {
+export function createPresence({ host, readEvents, pages, paused, onUsed, onStale, applyBar, refreshTabs, onPauseButton = () => {}, restoring = () => false }) {
   const humanAt = new WeakMap(); // tab -> { t, who }: the last time a person used it, and who
   const actedAt = new WeakMap(); // tab -> { t, who }: the same, without pointer moves
   const filled = new WeakMap(); // tab -> Map field name -> who filled it, for the agent's next result
@@ -76,7 +77,11 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   }
   const byAgent = (t, after = 0) => busy.some(([start, end]) => t >= start && t <= end + after);
   // Keys at time t could be an agent's: one of its actions then types (fills, presses keys).
-  const typingAgent = (t) => busy.some((span) => t >= span[0] && t <= span[1] && span.tag !== "no-keys");
+  const typingAgent = (t) => busy.some((span) => t >= span[0] && t <= span[1] && !/no-keys/.test(span.tag || ""));
+  // Wheel turns at time t could be an agent's: one of its actions then scrolls with the wheel
+  // (pairbrowse_scroll, a fast-mode scroll step), tagged "wheel"; the page's own smooth scrolling
+  // reports a little after the last turn.
+  const wheelingAgent = (t) => busy.some((span) => t >= span[0] && t <= span[1] + 300 && /wheel/.test(span.tag || ""));
   // Shared browser mode: a joiner's input replayed here (screenshare.mjs) is real input in the
   // page, but it's theirs: marked while it runs, so it's never taken for the host's.
   const remote = []; // [start, end, who]
@@ -126,7 +131,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     });
     // During an agent's action its own input is real input too, so whose is told by where and what:
     // a press well away from its target (far, from the page), or keys while it doesn't type.
-    const theirs = (e) => e.kind === "wheel" || e.far || !byAgent(e.happened) || ((e.kind === "type" || e.kind === "key") && !typingAgent(e.happened));
+    const theirs = (e) => (e.kind === "wheel" && !wheelingAgent(e.happened)) || e.far || !byAgent(e.happened) || ((e.kind === "type" || e.kind === "key") && !typingAgent(e.happened));
     const yours = clean.filter((e) => theirs(e) && !byRemote(e.happened)); // a joiner's is told where it's replayed
     if (!yours.length) return;
     humanIn(page, host, Math.min(at, Math.max(...yours.map((e) => e.t))));
@@ -144,7 +149,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       if (!same(userLog.at(-1), host, line)) { userLog.push({ who: host, line }); toFeed(page, host, line, true); }
     }
     if (userLog.length > 20) userLog.splice(0, userLog.length - 20);
-    if (yours.some((e) => !["move", "wheel", "scroll"].includes(e.kind))) onStale();
+    if (yours.some((e) => !["move", "wheel", "scroll"].includes(e.kind))) onStale(page);
   }
 
   // Reads every tab, and its first frames (card and code fields often live in one). A read takes
@@ -183,7 +188,8 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       const before = lastUrls.get(page);
       lastUrls.set(page, url);
       // A new address only: news sites and dashboards reload themselves in background tabs.
-      if (url !== before && !byAgent(Date.now(), 5000) && /^https?:/.test(url)) userDid([{ t: Date.now(), kind: "went", what: url.split(/[?#]/)[0].slice(0, 120) }], page);
+      // Never a saved tab coming back after a start or a session switch: nobody went there.
+      if (url !== before && !byAgent(Date.now(), 5000) && !restoring() && /^https?:/.test(url)) userDid([{ t: Date.now(), kind: "went", what: url.split(/[?#]/)[0].slice(0, 120) }], page);
     });
   }
 
@@ -232,7 +238,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       if (field) filledIn(page, who, field);
     }
     if (userLog.length > 20) userLog.splice(0, userLog.length - 20);
-    if (acted) onStale();
+    if (acted) onStale(page);
   }
   // Who is using this tab by hand right now ({ who, local }), and what people did there after n.
   // ago: how long ago they last clicked or typed (ms), so news that crosses late holds nobody longer.

@@ -14,6 +14,7 @@ export function describe(tool, ti = {}) {
     case "browser_type": return `Typed ${short(shownValue(ti.element || ti.target, ti.text))} into **${ti.element || ti.target}**${ti.submit ? " and pressed Enter" : ""}`;
     case "browser_select_option": return `Chose ${(ti.values || []).join(", ")} in **${ti.element || ti.target}**`;
     case "browser_click": return `Clicked **${ti.element || ti.target}**`;
+    case "browser_drag": return `Dragged **${ti.startElement || ti.startTarget}** to **${ti.endElement || ti.endTarget}**`;
     case "browser_file_upload": return `Uploaded ${(ti.paths || []).map((p) => p.split(/[\\/]/).pop()).join(", ") || "nothing (cancelled)"}`;
     case "browser_tabs": return ti.action === "list" ? null : `Tab ${ti.action}${ti.url ? ` ${ti.url}` : ""}${ti.index !== undefined ? ` #${ti.index}` : ""}`;
     case "browser_handle_dialog": return `${ti.accept ? "Accepted" : "Dismissed"} a browser dialog`;

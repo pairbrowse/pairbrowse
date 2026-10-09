@@ -140,3 +140,30 @@ test("a date the field shows its own way counts as the same date; other text nev
   assert.equal(sameDate("nope", "1234"), false, "not dates at all");
   assert.equal(sameDate("415 555 0142", "4155550142"), false);
 });
+
+// A page's own confirm or prompt after a step (hooks.dialogOpen): the run stops there and says
+// how to go on. A press step reaches the same check as a click step would, without a page a
+// click step would have to read (clickable, contextAt).
+test("a run stops at the page's own dialog and names browser_handle_dialog, with no checks", async () => {
+  const { runSteps } = await import("../scripts/runner.mjs");
+  let open = null;
+  const page = { keyboard: { press: async () => { open = { type: "confirm", message: "Proceed?" }; } } };
+  const r = await runSteps(page, [{ press: "Tab" }, { press: "Tab" }], { activity() {}, dialogOpen: () => open });
+  assert.equal(r.ok, false);
+  assert.equal(r.dialog, true);
+  assert.match(r.why, /confirm dialog: "Proceed\?"/);
+  assert.match(r.why, /browser_handle_dialog/);
+  assert.deepEqual(r.checks, []);
+  assert.deepEqual(r.done, ["press"]);
+});
+
+test("a step that fails while the page waits on its dialog reports the dialog, not the error", async () => {
+  const { runSteps } = await import("../scripts/runner.mjs");
+  const page = { keyboard: { press: async () => { throw new Error("Target page, context or browser has been closed"); } } };
+  const r = await runSteps(page, [{ press: "Tab" }], { activity() {}, dialogOpen: () => ({ type: "prompt", message: "Your name?" }) });
+  assert.equal(r.ok, false);
+  assert.equal(r.dialog, true);
+  assert.match(r.why, /^This step opened the page's own prompt dialog: "Your name\?"/);
+  assert.doesNotMatch(r.why, /Target page/);
+  assert.deepEqual(r.checks, []);
+});

@@ -61,6 +61,19 @@ dep.onclick = () => { depm.hidden = false; };
 function pick(li) { si.value = li.textContent; shown.textContent = li.textContent; list.hidden = true; }
 </script>`,
   "/card": `<!doctype html><label for=c>Card number</label> <input id=c autocomplete="cc-number">`,
+  // Dropdowns whose choices have no text of their own (icons named by aria-label) or live inside
+  // a web component's shadow root; the Colour one's list only shows its names on the choices.
+  "/icons": `<!doctype html><body><label for=cur>Currency</label>
+<div id=box style="width:200px;height:30px;border:1px solid #888;cursor:pointer"><input id=cur style="width:0;height:0;opacity:0;border:0;padding:0" readonly><span id=curv>Pick</span></div>
+<ul id=menu role=listbox hidden style="position:absolute;background:#fff;border:1px solid #888;list-style:none;padding:4px">
+<li role=option aria-label="Euro" onclick="cur.value='EUR';curv.textContent='Euro';menu.hidden=true"><svg width=24 height=24><circle cx=12 cy=12 r=10 fill=blue /></svg></li>
+<li role=option aria-label="US dollar" onclick="cur.value='USD';curv.textContent='US dollar';menu.hidden=true"><svg width=24 height=24><circle cx=12 cy=12 r=10 fill=green /></svg></li>
+</ul>
+<pb-color></pb-color>
+<script>
+box.onclick = () => { menu.hidden = false; };
+customElements.define("pb-color", class extends HTMLElement { connectedCallback() { const r = this.attachShadow({ mode: "open" }); r.innerHTML = '<label for=col>Colour</label><div id=cb style="width:200px;height:30px;border:1px solid #888;cursor:pointer"><input id=col style="width:0;height:0;opacity:0;border:0;padding:0" readonly><span id=cv>Pick</span></div><ul id=cm role=listbox hidden style="position:absolute;background:#fff;border:1px solid #888"><li role=option>Red</li><li role=option>Teal</li></ul>'; const cb = r.getElementById("cb"), cm = r.getElementById("cm"); cb.onclick = () => { cm.hidden = false; }; for (const li of cm.children) li.onclick = () => { r.getElementById("col").value = li.textContent; r.getElementById("cv").textContent = li.textContent; cm.hidden = true; }; } });
+</script>`,
 };
 
 test("fast mode fills a form inside a frame, opens a styled dropdown, ticks a styled box, and leaves card frames alone", { skip: !runtime, timeout: 180_000 }, async () => {
@@ -135,6 +148,17 @@ test("fast mode fills a form inside a frame, opens a styled dropdown, ticks a st
     // A card frame is never filled by fast mode: card details are the user's.
     const card = text(await a.tool("pairbrowse_run", { steps: [{ fill: { "Card number": "4242424242424242" } }] }));
     assert.match(card, /No field "Card number"/, card);
+    // Choices with no text of their own (icons named by aria-label), and a list inside a web
+    // component's shadow root, are read and clicked like any other.
+    await a.tool("browser_navigate", { url: `http://127.0.0.1:${site.address().port}/icons` });
+    const icons = text(await a.tool("pairbrowse_run", { steps: [{ select: { Currency: "US dollar", Colour: "Teal" } }] }));
+    assert.match(icons, /^Done: 1 steps/, icons);
+    const picked = text(await a.tool("browser_snapshot"));
+    assert.match(picked, /textbox "Currency"[^\n]*: USD/, picked.slice(0, 800));
+    assert.match(picked, /textbox "Colour"[^\n]*: Teal/, picked.slice(0, 800));
+    // A choice it doesn't have is named with the ones it has, read by their names.
+    const noCur = text(await a.tool("pairbrowse_run", { steps: [{ select: { Currency: "Yen" } }] }));
+    assert.match(noCur, /Its options: Euro, US dollar/, noCur);
   } catch (e) {
     throw new Error(`${e.message}\n${(() => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-1500); } catch { return ""; } })()}`);
   } finally {

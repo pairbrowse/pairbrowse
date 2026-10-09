@@ -26,7 +26,8 @@ Ask in one message (your question tool if you have one), skipping what the user 
   `pairbrowse_session`: `list`; `use` with `name`; `new` with `clean: true` and no name is a
   throwaway deleted when you switch away; `new` with a `name` is kept (for example one per client).
   `delete` asks the user. Switching closes the window and opens the other session's tabs. While
-  other participants are connected only `list` works.
+  another agent session (here or a joiner's) has used the browser in the last 10 minutes or holds
+  the whole-browser lease, only `list` works; people joined without an agent don't block it.
 
 Then follow the session-start note on showing the browser. In the Claude desktop app call
 `pairbrowse_dock` with `action` "on" (macOS); if that isn't available, call `pairbrowse_liveview`
@@ -34,7 +35,8 @@ once and open its URL in the Browser pane (or give it to the user for that pane)
 controls the browser: never paste it anywhere else. In a terminal or IDE the PairBrowse window is enough.
 
 Make a task list with one item per page or section, and set a badge:
-`pairbrowse_status` `{ "text": "Filling the Shopify app listing", "kind": "claude" }`.
+`pairbrowse_status` `{ "text": "Filling the Shopify app listing", "kind": "claude" }`. `kind`
+"clear" takes the badge down.
 
 ## Fast or step by step: decide per page
 
@@ -57,7 +59,13 @@ payment, legal or tax steps, and when the user wants to watch closely. Mix freel
   `pairbrowse_scroll` (people watching see it glide), never PageDown or End.
 - Results that change the page carry a small screenshot. Act on snapshot refs; for what the
   snapshot doesn't name (an icon-only ×, a map, a canvas) use `pairbrowse_click_at` with x, y in
-  that screenshot and `element`. It can't click pay, publish, submit or delete buttons, or inside frames.
+  that screenshot and `element`. It refuses what the page's structure marks as a payment or
+  deletion, and anything inside a frame; never use it for a final action you'd name (Pay/Delete/
+  Publish/Send/Submit): use `browser_click` with its ref so the user confirms.
+- To move a card or item between lists, `browser_drag` with both refs: it drags as a hand does
+  (press, a short move that starts the drag, steps across, let go), so boards built on pointer
+  events or HTML5 drag-and-drop take it. Its result has a fresh snapshot and a picture: check the
+  item landed. For drawing on a canvas, fast mode's `drag` step.
 - Don't re-snapshot after every fill. Check once per page for validation errors and fix them in one fill.
 - Accept cookie banners, Next, Continue, Save, I agree and standard terms checkboxes without asking.
 - Autocompletes and custom dropdowns: type, wait for the suggestion, click it. Don't press Enter
@@ -95,6 +103,7 @@ says where; the side panel's Record button does the same. A recording ends with 
 - You may draft marketing copy (descriptions, taglines, features) within the field's limit; list it
   under "Drafted by me" so the user can check it.
 - The user can edit details and passwords in the Profile panel (person icon in the live view).
+  `pairbrowse_facts` `forget` with `labels` removes remembered details the user no longer wants kept.
 - A password's name typed as the value (from `pairbrowse_facts` `get`) is replaced with the real one
   and shows to you as `<secret>NAME</secret>`. Each works only on the HTTPS sites saved with it. If
   none exists or it's refused, ask the user to save it in the Profile panel or type it themselves.
@@ -113,13 +122,15 @@ says where; the side panel's Record button does the same. A recording ends with 
 ## What PairBrowse handles by itself
 
 It reports these in a "### PairBrowse" block in the next result. Read it.
-- Alerts and "leave this page?" are answered; harmless confirms get OK. Confirms that pay, delete,
-  cancel or submit, and text prompts, are yours: decide with the user, then `browser_handle_dialog`.
+- Alerts and "leave this page?" are answered. Every confirm and text prompt is yours; PairBrowse
+  never answers one OK. Decide with the user, then `browser_handle_dialog`: right after a delete
+  or payment click the OK needs that class ("Delete: OK"); any other OK goes unless you name it.
 - Plain popups are closed. "Something covers the page" lists the rest: close offers, newsletters and
   app prompts with ×, "No thanks" or "Close" without asking. Never press subscribe, buy, sign-up or
   trial buttons to get rid of one.
-- At most 10 tabs stay open; opening another closes the one used longest ago. List tabs before
-  selecting by number. New tabs a page opens are reported by number; switch with `browser_tabs`.
+- At most 20 tabs (`maxTabs`) stay open: opening one more closes the tab used longest ago, never
+  the current tab, one just opened or one anyone used in the last 10 minutes (so more may stay
+  open for a while). The result says which went. List tabs before selecting by number. New tabs a page opens are reported by number; switch with `browser_tabs`.
 - Downloads go to the Downloads folder; the result says where.
 - While the user clicks or types in the tab, your next action there waits, then the result says
   what they did (scrolling and moving the mouse don't hold you up). Take a fresh snapshot and carry on from where the page is now.
@@ -158,8 +169,8 @@ Open only the verification message: select the inbox tab, `browser_find` with a 
   or payment, or an element it can't read. Such a click is refused until it carries the class the
   refusal names ("Pay: Submit order"); retry with it.
 - `browser_handle_dialog` with accept takes `element` the same way: "Delete: OK" right after a
-  delete click (required); any other OK goes, or name its class if it commits something. `browser_evaluate` always asks the user; avoid it. Final actions are never
-  run in fast mode.
+  delete click (required); any other OK goes, or name its class if it commits something.
+  `browser_evaluate` isn't offered. Final actions are never run in fast mode.
 - In Codex those clicks are refused with a note: badge "you", name the button and what it does,
   wait, and carry on from the result. Record the passing review first for submit or publish.
 
@@ -212,15 +223,17 @@ filled, drafted, left for the user, and remembered. Every action is also logged 
   ends it. Works across computers in a shared browser session (the tab is in the host's browser); not in follow mode.
 - `pairbrowse_collaboration`: `status` (participants, controller), `identify` with `label`,
   `acquire` the whole-browser lease for work that must keep the browser to itself (two minutes,
-  renew with `acquire`), `release` when done or before a hand-off, `share` (above). Take a fresh snapshot after acquiring.
+  renew with `acquire`; refused for a joiner's agent, which works tab by tab), `release` when done
+  or before a hand-off, `share` (above). Take a fresh snapshot after acquiring.
 - A stale-ref error means the page changed: snapshot again and reassess before acting.
 - Remote participants need SSH access to the same host user and PairBrowse home: a trusted setup,
   not a public invitation. Never share account credentials or expose the socket.
 
 ## Invites and join codes
 
-- `pairbrowse_invite` `create`: `role` "drive" (the default; asks the user) or "watch" (only when the user asks for view-only), `label`, `hours` (default
-  24, at most 168), `share` "code" (pb-join code over a Cloudflare Quick Tunnel; the default without
+- `pairbrowse_invite` `create`: `role` "drive" (the default; asks the user) or "watch" (only when the user asks for view-only), `label`, `name`
+  (the user's own first name, as joiners see it: required the first time, refused without it,
+  then remembered), `hours` (default 24, at most 168), `share` "code" (pb-join code over a Cloudflare Quick Tunnel; the default without
   `inviteBaseUrl`) or "link" (Tailscale or SSH). Pass on the code and the steps from the result.
 - `list` (invites, join requests and shared dev servers, no keys), `approve` / `deny` with the request
   `id` (approve asks the user), `revoke` with the invite `id`, `revoke_all` (also closes the tunnel
@@ -235,7 +248,8 @@ filled, drafted, left for the user, and remembered. Every action is also logged 
   (filtered: no tokens, nothing local; origin and path for watch and sites with saved passwords),
   titles, activity, typed values (sensitive ones only as filled), pointers and who is at work
   where. Never logins, cookies, passwords or a picture.
-- `pairbrowse_join` `join` with `code` and the user's `name`: waits for approval, then this browser
+- `pairbrowse_join` `join` with `code` and the user's `name` (their first name, as the host sees
+  it: required the first time, refused without it, then remembered): waits for approval, then this browser
   opens the host's tabs in a window of their own and follows them. Browser tools stay in this
   browser; with a drive code, changes in the shared tabs reach the host's browser. A person at
   work in the other copy of a tab pauses agents in it, as here. `status`, `leave`.

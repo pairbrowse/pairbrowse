@@ -25,7 +25,12 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   const { source, name: HUD_NAME, token: HUD_TOKEN } = hudScript();
   let badge = { text: "", kind: "clear" };
   const sparks = new Map(); // participant -> { page, color }
-  const recent = []; // the bar's last actions, newest last
+  // The bar's last actions, newest last: each tab's own (what was done there), and the ones about
+  // no tab (a session joined or ended, a joiner's task), shown in every tab. Another agent's work
+  // in another tab never shows in yours.
+  const recentInTab = new WeakMap(); // tab -> [{ t, text, who }]
+  const recentEverywhere = [];
+  const recentFor = (page) => [...(recentInTab.get(page) || []), ...recentEverywhere].sort((a, b) => a.t - b.t).slice(-RECENT_ITEMS);
   const lastInTab = new WeakMap(); // tab -> { text, who }, for the tab overview
   const listeners = new Set(); // onActivity: a joined session's shared tabs send theirs on
 
@@ -81,7 +86,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   function applyBar(page) {
     const person = waiting(page);
     const p = pause();
-    return quietly(page, JSON.stringify({ items: recent, waiting: !!person, person: person || "", pause: p.by ? { by: p.by } : null, canPause: !!p.can }), "bar");
+    return quietly(page, JSON.stringify({ items: recentFor(page), waiting: !!person, person: person || "", pause: p.by ? { by: p.by } : null, canPause: !!p.can }), "bar");
   }
   const sparkOn = (page) => [...sparks.values()].find((s) => s.page === page);
 
@@ -132,8 +137,17 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     liveView()?.addActivity(text, who, page ? tabName(page) : "", page, from);
     for (const fn of listeners) try { fn(text, who, page, from); } catch {}
     if (!text) return;
-    recent.push({ t: Date.now(), text: String(text).slice(0, 200), who: String(who).slice(0, 60) });
-    if (recent.length > RECENT_ITEMS) recent.shift();
+    const item = { t: Date.now(), text: String(text).slice(0, 200), who: String(who).slice(0, 60) };
+    if (page) {
+      const list = recentInTab.get(page) || [];
+      list.push(item);
+      if (list.length > RECENT_ITEMS) list.shift();
+      recentInTab.set(page, list);
+      if (!page.isClosed()) applyBar(page);
+      return;
+    }
+    recentEverywhere.push(item);
+    if (recentEverywhere.length > RECENT_ITEMS) recentEverywhere.shift();
     pages().then((all) => all.forEach(applyBar)).catch(() => {});
   }
 

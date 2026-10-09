@@ -136,3 +136,33 @@ test("interrupting overlays inside the page are closed, other dialogs are left a
     await browser.close();
   }
 });
+
+// A fake tab: popups.watchPage needs its dialog handler, its opener and whether it's closed.
+function fakePage() {
+  const handlers = {};
+  const page = { closed: false, on: (ev, fn) => { handlers[ev] = fn; }, opener: async () => null, isClosed: () => page.closed };
+  page.alert = (message) => handlers.dialog({ type: () => "alert", message: () => message, accept: async () => {} });
+  return page;
+}
+
+test("notes are drained per tab: a result about one tab leaves the other tabs' notes for their agents", async () => {
+  const popups = createPopups();
+  const ctx = { pages: () => [] };
+  const a = fakePage(), b = fakePage();
+  popups.watchPage(a, ctx);
+  popups.watchPage(b, ctx);
+  await a.alert("Saved in A");
+  await b.alert("Saved in B");
+  assert.doesNotMatch(popups.drain(b), /Saved in A/, "A's note isn't B's");
+  assert.equal(popups.drain(b), "", "B's note went with B's result");
+  assert.match(popups.drain(a), /Saved in A/, "A's note waits for A's result");
+  // No tab given: every note goes.
+  await a.alert("Later in A");
+  await b.alert("Later in B");
+  assert.match(popups.drain(), /Later in A[\s\S]*Later in B/);
+  assert.equal(popups.drain(), "");
+  // A note on a closed tab goes to whoever reads next.
+  await a.alert("Last in A");
+  a.closed = true;
+  assert.match(popups.drain(b), /Last in A/);
+});

@@ -24,12 +24,14 @@ import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel, settle } from "./page.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
+import { dragBetween, reason as dragReason } from "./drag.mjs";
+import { createRefNames } from "./output.mjs";
 
 const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
 // A small picture of the page goes with each result that changes what's on screen, taken once
 // the page has loaded and settled for a second: the layout, overlays and images the text
 // snapshot can't show. config.screenshots = false turns it off.
-const SCREENSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_click", "browser_press_key", "browser_tabs", "browser_wait_for", "browser_snapshot", "browser_handle_dialog", "pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload"]);
+const SCREENSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_click", "browser_press_key", "browser_tabs", "browser_wait_for", "browser_snapshot", "browser_handle_dialog", "browser_drag", "pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload"]);
 // Results after which the page may load new popups (checked again a few seconds later); after
 // Claude's clicks, overlays already on screen count as Claude's own and stay.
 const LOADING_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_tabs"]);
@@ -50,8 +52,9 @@ const NO_PICK_WAIT = new Set([...NO_WAIT, "pairbrowse_join", "pairbrowse_collabo
 const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for the person to pick a session (its first tab asks: continue a saved session, start a fresh one, or join a shared one). " +
   "Ask them in chat which they want, then use pairbrowse_session (use, or new with clean: true) or pairbrowse_join; or retry once they've picked.";
 // Its own tools that act in a page: their results get the same notes and screenshot as the
-// browser tools'.
-const DECORATED = new Set(["pairbrowse_run", "pairbrowse_upload"]);
+// browser tools'. browser_drag is the helper's own too (daemon/drag.mjs): a drag as a hand does
+// it, where Playwright's makes one move and most boards put the card back.
+const DECORATED = new Set(["pairbrowse_run", "pairbrowse_upload", "browser_drag"]);
 // Calls after which other participants' refs may be stale.
 const changesPage = (tool) => tool?.startsWith("browser_") || tool?.startsWith("pairbrowse_click") || ["pairbrowse_run", "pairbrowse_upload", "pairbrowse_session"].includes(tool);
 
@@ -254,6 +257,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const myLabel = () => collaboration.participants.get(participant)?.label;
     let pauseSeen = pause.seq(); // pauses before it connected aren't news
     const fieldNotes = []; // fields left to the people filling them, for the next result
+    const refNames = createRefNames(); // the main frame's refs plain for Claude (output.mjs)
     let recorded = false; // in the session's list of who used it
 
     const serverListeners = []; // its browser server's listeners on the browser (contextFor)
@@ -268,10 +272,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const pending = new Map(); // the helper's own calls to the server, by id
     const completed = new Map(); // calls in flight: resolved once their result went out
     const calls = new Map(); // request id -> tool name, for the result
+    const callArgs = new Map(); // request id -> the call's arguments (Claude's: secret names, never values)
     const tabActions = new Map(); // request id -> browser_tabs action
     const refused = new Set(); // calls the helper itself turned down: they changed nothing in the browser
     const late = new Set(); // calls answered for running too long: a result that still comes is dropped
     let observedRevision = -1;
+    let acted = false; // a call of this participant's got past the session picker
     let tabsListed = false; // this session's browser server has seen the tab list
     let snapshotReturned = false;
     let seq = 0;
@@ -315,7 +321,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // Notes for this result: popups PairBrowse handled, downloads and join requests, and what a
     // person did in the tab meanwhile.
     function notes() {
-      const handled = popups.drain();
+      const handled = popups.drain(actingIn || (mine && !mine.isClosed() ? mine : null));
       // Messages from other participants, and one line on what the other side's agents are
       // doing when it changed: coordination information only, marked as from someone else.
       const paused = pause.noteAfter(pauseSeen);
@@ -347,6 +353,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
           hud.moveSpark(participant, ownPage || (lostTab || (remote && !mine) ? null : seenUrl)).catch(() => {});
         }
         for (const part of content()) if (part.type === "text") part.text = trimResult(tool, part.text);
+        // The main frame's refs plain, frames' with their number (refNames).
+        if (content().some((part) => /\[ref=|\bf\d+e\d+\b/.test(part.text || ""))) {
+          const about = ownPage || (seenUrl ? await context.pageAt(seenUrl) : null);
+          for (const part of content()) if (part.type === "text") part.text = refNames.toPlain(about, part.text);
+        }
         const tidying = context.current() ? context.openPages().then((pages) => tidy(tool, ownPage || pages.find((p) => p.url() === seenUrl), seenUrl)).catch(() => {}) : null;
         if (tidying && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false) await within(TIDY_MAX_MS, tidying);
         const text = notes();
@@ -361,6 +372,28 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       toClient(msg);
       finish(msg.id);
+    }
+
+    // Typing with submit on a field the page replaces as it's typed in (a search box that becomes
+    // a suggesting one on the first key): the text went in, the Enter on the old element failed.
+    // Enter then goes to the field that took its place, when it has the text and the focus.
+    async function enterAfterReplaced(msg, args) {
+      const text = (msg.result.content || []).map((c) => c.text || "").join("\n");
+      if (!/locator\.press/.test(text)) return;
+      const page = mine && !mine.isClosed() ? mine : await context.pageAt(context.currentUrl());
+      if (!page) return;
+      const same = await within(1500, page.evaluate((want) => {
+        const a = document.activeElement;
+        if (!a || !(a.isContentEditable || /^(INPUT|TEXTAREA)$/.test(a.tagName))) return false;
+        return String(a.value ?? a.textContent ?? "") === want;
+      }, String(args.text ?? ""))).catch(() => false);
+      if (!same) return;
+      await page.keyboard.press("Enter");
+      // Enter often loads a page (a search): say where it ended, not where it started.
+      await within(5000, page.waitForLoadState("domcontentloaded", { timeout: 4500 })).catch(() => {});
+      await settle(page, SETTLE_MS).catch(() => {});
+      const title = await within(1000, page.title()).catch(() => "");
+      msg.result = { content: [{ type: "text", text: `Typed into ${args.element || args.target} and pressed Enter. The page replaced that field as it was typed in, so Enter went to the field that took its place.\n### Page\n- Page URL: ${page.url()}${title ? `\n- Page Title: ${title}` : ""}` }] };
     }
 
     // The transport the Playwright MCP server talks to.
@@ -378,9 +411,17 @@ export function createServe({ config, log, host, createConnection, clients, coll
           return;
         }
         if (msg.result?.tools) msg.result.tools = [...msg.result.tools.filter((t) => !BLOCKED_TOOLS.has(t.name) && !HIDDEN_TOOLS.has(t.name)).map(withDialogLabel), ...PAIRBROWSE_TOOLS];
-        if (late.delete(msg.id)) { calls.delete(msg.id); return; }
+        if (late.delete(msg.id)) { calls.delete(msg.id); callArgs.delete(msg.id); return; }
         const tool = calls.get(msg.id);
+        const args = callArgs.get(msg.id);
         calls.delete(msg.id);
+        callArgs.delete(msg.id);
+        if (tool === "browser_type" && args?.submit && msg.result?.isError) await enterAfterReplaced(msg, args).catch((e) => log("enter after replaced", e?.message || e));
+        // The bar said what was tried; a failure says so too, or it reads as done.
+        if (tool && msg.result?.isError && describe(tool, args || {})) {
+          const why = output.mask(String((msg.result.content || []).map((c) => c.text || "").join(" ").replace(/^### Error\s*/i, "").split("\n")[0]).slice(0, 100));
+          hud.addActivity(`That didn't work: ${why}`, myLabel(), mine && !mine.isClosed() ? mine : null);
+        }
         await finishResult(msg, tool);
       },
     };
@@ -485,7 +526,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
         return `${reason} This needs the user's OK, which this app can't ask for. ` +
           "Set pairbrowse_status to \"you\" and ask the user to do this step themselves in the PairBrowse window, then continue from what they did.";
       }
-      if ((name === "browser_close" || (name === "pairbrowse_session" && args.action !== "list")) && inUse().length) {
+      // While the session picker is up nobody has tabs to lose: an agent may choose for everyone.
+      if ((name === "browser_close" || (name === "pairbrowse_session" && args.action !== "list")) && !context.picking() && inUse().length) {
         const who = inUse();
         return `${who.length === 1 ? "Another session is" : `${who.length} other sessions are`} using the browser (${who.join(", ")}): ` +
           `${name === "browser_close" ? "closing it" : "switching sessions"} would close their tabs. Wait until they're done (idle 10 minutes), ` +
@@ -516,6 +558,21 @@ export function createServe({ config, log, host, createConnection, clients, coll
           log(`refused ${wrong} on ${url}`);
           return `Refused: ${wrong} may only be typed on HTTPS pages of ${domains[wrong].join(", ") || "(no domains set)"}, ` +
             `and the current page is ${url || "unknown"}. Hand this field to the user. If the site is right, the user can add it in the Profile panel.`;
+        }
+        // A field inside a frame: the frame's own address must allow the secret too (a sign-in
+        // frame from elsewhere on an allowed page), as fast mode checks (runner.mjs).
+        const inFrames = (name === "browser_type" ? [[args.target, used[0]]] : (args.fields || []).map((f) => [f.target, f.value]))
+          .filter(([t, v]) => /^f\d+e\d+$/.test(String(t || "")) && used.includes(v));
+        if (inFrames.length) {
+          const page = await serverPage();
+          for (const [target, s] of inFrames) {
+            const where = page ? await within(1500, page.locator(`aria-ref=${target}`).evaluate((n) => n.ownerDocument.location.href)).catch(() => null) : null;
+            if (!where || !hostAllowed(where, domains[s])) {
+              log(`refused ${s} in a frame at ${where || "an unreadable address"} on ${url}`);
+              return `Refused: ${s} may only be typed on HTTPS pages of ${domains[s].join(", ") || "(no domains set)"}, ` +
+                `and this field sits in a frame from ${where || "an address that couldn't be read"}. Hand this field to the user.`;
+            }
+          }
         }
       }
       if (problem && looksLikeSecretName(name, args)) return problem;
@@ -629,6 +686,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         activity: (text) => hud.addActivity(text, myLabel(), page),
         cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
         remember: facts.seenInForm,
+        dialogOpen: () => popups.waitingDialog(page),
       });
       const saving = result.ok && args.saveAs && !args.playbook;
       if (saving) savePlaybook(args.saveAs, steps);
@@ -638,7 +696,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
         : `Stopped at step ${result.stoppedAt} of ${resolved.length}: ${result.why}${left}`;
       // The page says something it filled is wrong: the agent fixes it before going on.
       const checks = result.checks?.length ? `\nCheck before going on, the page says: ${result.checks.join("; ")}. Fix these (look at the screenshot), then continue.` : "";
-      const out = await outline(page).catch(() => `Page: ${page.url()}`);
+      // A page waiting on its dialog answers nothing: its outline would hang until it's answered.
+      const out = popups.waitingDialog(page) ? `Page: ${page.url()}` : await within(10_000, outline(page)).catch(() => `Page: ${page.url()}`);
       return { text: `${head}${checks}\n${out}`, error: !result.ok, url: page.url() };
     }
 
@@ -679,16 +738,48 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (!page) return { text: "No page open to scroll.", error: true };
         const r = await runSteps(page, [step], { smooth: true, signal: disconnected.signal,
           cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()), activity: (text) => hud.addActivity(text, myLabel(), page) });
-        return r.ok === false ? { text: r.why, error: true } : { text: `Scrolled. ${await page.evaluate(() => `Now ${Math.round(scrollY)} of ${Math.max(0, document.documentElement.scrollHeight - innerHeight)} px down.`).catch(() => "")}`, url: page.url() };
+        return r.ok === false ? { text: r.why, error: true } : { text: `Scrolled. ${await page.evaluate(() => `Now ${Math.min(Math.round(scrollY), Math.max(0, Math.round(document.documentElement.scrollHeight - innerHeight)))} of ${Math.max(0, Math.round(document.documentElement.scrollHeight - innerHeight))} px down.`).catch(() => "")}`, url: page.url() };
+      },
+      // browser_drag: press on the first element, a short move that starts the drag, steps across
+      // to the second, let go (daemon/drag.mjs). The guard's rules ran first (refusal): a drag
+      // named as a final action at either end asked the user. The result carries a fresh snapshot,
+      // as Playwright's would.
+      async browser_drag(args) {
+        const page = actingIn || await serverPage();
+        if (!page) return { text: "No page open to drag in.", error: true };
+        const named = (el, target) => String(el || target || "").slice(0, 80);
+        const what = `**${named(args.startElement, args.startTarget)}** to **${named(args.endElement, args.endTarget)}**`;
+        const locate = (t) => { if (typeof t !== "string" || !t) return null; try { return page.locator(isRef(t) ? `aria-ref=${t}` : t).first(); } catch { return null; } };
+        const from = locate(args.startTarget), to = locate(args.endTarget);
+        if (!from || !to) return { text: "browser_drag takes startTarget and endTarget: refs from a browser_snapshot (or selectors), with startElement and endElement saying what they are.", error: true };
+        hud.addActivity(`Dragging ${what}`, myLabel(), page);
+        try {
+          await dragBetween(page, from, to, {
+            cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
+            interrupted: () => { const held = pause.view(); if (held.paused) return `Paused by ${held.by} mid-drag: let go where it was.`; const who = presence.actingIn(page); return who ? `${who === host ? "The user" : who} took over this tab mid-drag: let go where it was.` : ""; },
+          });
+        } catch (e) {
+          const why = dragReason(e);
+          hud.addActivity(`That didn't work: ${why}`, myLabel(), page);
+          return { text: `Couldn't drag ${what.replace(/\*\*/g, "")}: ${why}. Look at the screenshot, take a browser_snapshot, then try again.`, error: true, url: page.url() };
+        }
+        hud.addActivity(`Dragged ${what}`, myLabel(), page);
+        await settle(page, CLICK_SETTLE_MS).catch(() => {});
+        const snap = ((await internal("browser_snapshot", {})).result?.content || []).map((c) => c.text || "").join("\n");
+        return { text: `Dragged ${what.replace(/\*\*/g, "")}. Check the picture: the card or item should be where you meant it.\n${snap}`, url: page.url() };
       },
       async pairbrowse_click_at(args) {
+        // A final action the agent names (Pay, Delete, Publish, Send, Submit) goes through
+        // browser_click, where the user confirms it (and a publish needs its review).
+        const cls = clickClass(args.element);
+        if (cls) return { text: `Refused: "${String(args.element).slice(0, 60)}" names a final action (${cls}). Take a browser_snapshot and use browser_click with its ref, so the user confirms it.`, error: true };
         const r = await screenshots.clickAt(args, participant);
         if (r.error) return r;
         hud.addActivity(`Clicked ${String(args.element || "a spot").slice(0, 80)}`, myLabel(), r.page);
         await popups.dismissOverlay(r.page, { markOwn: true });
         await settle(r.page, SETTLE_MS);
         await popups.dismissOverlay(r.page, { closeOffers: true });
-        const content = [{ type: "text", text: r.text + popups.drain() }];
+        const content = [{ type: "text", text: r.text + popups.drain(r.page) }];
         const shot = config.screenshots !== false ? await screenshots.take(r.page, participant) : null;
         if (shot?.data) content.push(image(shot.data));
         return { content };
@@ -721,10 +812,19 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // Act in this participant's own tab (browser_tabs new and select pick a new one).
       const picksTab = name === "browser_tabs" && ["new", "select"].includes(args.action);
       if ((name.startsWith("browser_") && !picksTab) || DECORATED.has(name)) { await myTab(); await syncServer(); }
-      if (Object.hasOwn(ownTools, name)) return respond(msg.id, name, await ownTools[name](args));
+      // The main frame's refs Claude got plain get Playwright's frame number back (refNames).
+      const framed = refNames.toFrame(actingIn || (mine && !mine.isClosed() ? mine : null), args);
+      if (framed !== args) {
+        msg = structuredClone(msg);
+        msg.params.arguments = framed;
+        args = framed;
+      }
+      // browser_drag is the helper's own, after the checks every browser tool gets.
+      if (Object.hasOwn(ownTools, name) && name !== "browser_drag") return respond(msg.id, name, await ownTools[name](args));
 
       const problem = await browserToolProblem(name, args);
       if (problem) return reply(msg.id, problem, true);
+      if (name === "browser_drag") return respond(msg.id, name, await ownTools.browser_drag(args));
       if (name === "browser_handle_dialog" && Object.hasOwn(args, "element")) {
         msg = structuredClone(msg);
         delete msg.params.arguments.element;
@@ -775,6 +875,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       hud.addActivity(describe(name, shown), myLabel(), actingIn);
       await hud.showCursor(name, args, () => context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
       calls.set(msg.id, name);
+      callArgs.set(msg.id, args);
       if (name === "browser_tabs") tabActions.set(msg.id, args.action);
       transport.onmessage?.(msg);
     }
@@ -928,11 +1029,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       const tool = msg.params?.name;
       const dispatchNow = async () => {
-        if (msg.method === "tools/call" && containsRef(msg.params?.arguments) && observedRevision !== revision()) {
-          return reply(msg.id, "The page changed since your last snapshot (the user or another session used the browser). Call browser_snapshot and use its fresh refs before retrying.", true);
+        // Refs are good for this agent's own tab: what people or other agents do in that tab
+        // makes them stale, work in other tabs never does.
+        const ownTab = () => actingIn || (mine && !mine.isClosed() ? mine : null);
+        if (msg.method === "tools/call" && containsRef(msg.params?.arguments) && observedRevision !== revision(ownTab())) {
+          return reply(msg.id, "This tab changed since your last snapshot (a person used it, or another agent acted in it). Call browser_snapshot and use its fresh refs before retrying.", true);
         }
         snapshotReturned = false;
-        const upToDate = observedRevision === revision();
+        const upToDate = observedRevision === revision(ownTab());
         const response = msg.id === undefined ? Promise.resolve() : new Promise((r) => completed.set(msg.id, r));
         const overran = msg.id === undefined ? null : setTimeout(async () => {
           log(`${tool || msg.method} held the browser for ${TURN_MAX}; resetting the browser so other agents can go on`);
@@ -947,10 +1051,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
           await response;
           clearTimeout(overran);
           if (msg.method === "tools/call" && !refused.delete(msg.id) && changesPage(tool)) {
-            bumpRevision();
+            // A session switch or a tab action may have changed any tab: every tab's refs go.
+            bumpRevision(["pairbrowse_session", "browser_tabs"].includes(tool) ? null : ownTab());
             // Your own action doesn't make your refs stale (Playwright tells you if one is gone);
-            // the user's or another session's does, until you take a snapshot.
-            if (snapshotReturned || upToDate) observedRevision = revision();
+            // the user's or another agent's in your tab does, until you take a snapshot.
+            if (snapshotReturned || upToDate) observedRevision = revision(ownTab());
           }
         } catch (e) {
           clearTimeout(overran);
@@ -966,7 +1071,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const runArgs = msg.params?.arguments || {};
         const keyless = tool === "pairbrowse_run" ? Array.isArray(runArgs.steps) && runArgs.steps.every((s) => s && typeof s === "object" && ["drag", "click", "check", "uncheck", "scroll", "waitFor", "expect", "go"].includes(Object.keys(s)[0]))
           : ["browser_click", "browser_hover", "browser_drag", "browser_tabs", "browser_navigate", "browser_navigate_back", "pairbrowse_scroll", "pairbrowse_click_at"].includes(tool);
-        const done = acting ? presence.busyStart(keyless ? "no-keys" : "") : () => {};
+        // Its own wheel turns (a scroll, a run with a scroll step) are the agent's, not a person's.
+        const wheels = tool === "pairbrowse_scroll" || (tool === "pairbrowse_run" && Array.isArray(runArgs.steps) && runArgs.steps.some((s) => s && typeof s === "object" && Object.keys(s)[0] === "scroll"));
+        const done = acting ? presence.busyStart(`${keyless ? "no-keys" : ""}${wheels ? " wheel" : ""}`.trim()) : () => {};
         // Showing another tab (or fast mode bringing its tab up) mustn't pull the browser over the
         // app you're in, like the Claude desktop app with its pane.
         const changesTab = tool === "browser_tabs" && ["select", "new"].includes(msg.params?.arguments?.action);
@@ -976,7 +1083,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // person to pick a session in the browser, and says which; after a while it says it's waiting.
       if (msg.method === "tools/call" && !NO_PICK_WAIT.has(tool)) {
         const r = await context.waitForPick(disconnected.signal);
-        if (r?.waiting) return reply(msg.id, PICK_WAITING, true);
+        // A call the picker turned away did nothing: it doesn't make this agent one that uses the
+        // browser (which would stop the others from choosing a session for everyone).
+        if (r?.waiting) { if (!acted) lastCall.delete(participant); return reply(msg.id, PICK_WAITING, true); }
+        acted = true;
         if (r) fieldNotes.push(r);
         // Who used this session, for the session picker: "Alice · Claude Code" -> Alice, Claude Code.
         if (!recorded) {

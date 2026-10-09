@@ -93,9 +93,9 @@ export function createOutput({ dir, secretValues }) {
 export function plainError(tool, text) {
   const t = String(text ?? "").replace(/\x1b\[[0-9;]*m/g, "");
   const first = t.replace(/^### Error\s*/i, "").split("\n")[0].replace(/^(Error: )+/, "");
-  const el = (t.match(/<(\w+)[^>]*>/) || [])[0]?.replace(/\s+/g, " ").slice(0, 100);
+  const el = (() => { const m = t.match(/<(\w+)([^>]*)>/); if (!m) return ""; const a = (n) => (m[2].match(new RegExp(`${n}="([^"]*)"`, "i")) || [])[1]; const name = a("aria-label") || a("title") || a("id"); return `<${m[1]}${name ? ` ${name.slice(0, 40)}` : ""}>`; })();
   const again = "Look at the screenshot, take a browser_snapshot, then act on what's there.";
-  if (/intercepts pointer events/i.test(t)) return `Something covers it${el ? ` (${el})` : ""}: a dialog, banner or overlay. Deal with that first (its buttons are in the snapshot; browser_find finds them), then try again.`;
+  if (/intercepts pointer events/i.test(t)) return `Something covers it${el ? ` (${el})` : ""}: a dialog, banner or overlay. Take a browser_snapshot to see it (browser_find finds its buttons), deal with it, then try again.`;
   if (/detached from the DOM|not attached to the DOM|Element is not attached/i.test(t)) return `The page changed under the action (the element was replaced). Take a browser_snapshot and use its fresh ref.`;
   if (/does not handle the modal state|related modal state/i.test(t)) {
     if (/file ?chooser/i.test(t)) return "A file chooser is open: give it files with browser_file_upload (paths), or close it with browser_file_upload and paths: [].";
@@ -136,7 +136,9 @@ export function plainError(tool, text) {
 // sends gets the main frame's number back when it's one it was given for this page, else it goes
 // as it is (a ref from the page before stays one Playwright turns away).
 export function createRefNames() {
-  const known = new WeakMap(); // tab -> { seq, refs: Set of the plain refs handed out }
+  // One state per agent: the whole-page snapshot it last got sets the main frame's number; the
+  // refs handed out plain since then are the ones a plain ref it sends can mean.
+  let state = null; // { seq, refs: Set }
   // The main frame's number in a snapshot: that of the first ref outside any iframe's subtree
   // (an iframe's own ref is its parent's). null when the text has no ref of the main frame.
   function mainFrameSeq(text) {
@@ -150,25 +152,30 @@ export function createRefNames() {
     }
     return null;
   }
-  // A result's text for Claude, about page. full: the text holds a whole-page snapshot (only
-  // that tells the main frame's number; a find result or a snapshot of one element doesn't).
-  function toPlain(page, text, full = false) {
+  // A result's text for Claude. full: the text holds a whole-page snapshot (only that tells the
+  // main frame's number; a find result or a snapshot of one element doesn't).
+  function toPlain(text, full = false) {
     const t = String(text ?? "");
-    if (!page) return t;
-    let state = known.get(page);
     if (full && /\[ref=/.test(t)) {
       const seq = mainFrameSeq(t);
-      if (seq !== null && seq !== state?.seq) { state = { seq, refs: new Set() }; known.set(page, state); }
+      if (seq !== null && seq !== state?.seq) state = { seq, refs: new Set() };
     }
     if (!state?.seq) return t;
     return t.replace(new RegExp(`\\bf${state.seq}(e\\d+)\\b`, "g"), (_m, e) => { state.refs.add(e); return e; });
   }
+  // A snapshot file an action's result links to (the whole page): read and rewritten the same way.
+  function plainFile(file) {
+    try {
+      const text = readFileSync(file, "utf8");
+      const plain = toPlain(text, true);
+      if (plain !== text) writeFileSync(file, plain);
+    } catch {}
+  }
   // The ref as Claude sent it, for a message about a call whose refs were given their number.
   const sent = new Map(); // framed -> plain, the last few
   const plainOf = (ref) => sent.get(String(ref)) || String(ref ?? "");
-  // Claude's arguments for a call in page, with the main frame's number back on its plain refs.
-  function toFrame(page, args) {
-    const state = page && known.get(page);
+  // Claude's arguments for a call, with the main frame's number back on its plain refs.
+  function toFrame(args) {
     if (!state?.seq || !args || typeof args !== "object") return args;
     const fix = (v) => { if (!(typeof v === "string" && /^e\d+$/.test(v) && state.refs.has(v))) return v; const f = `f${state.seq}${v}`; sent.set(f, v); if (sent.size > 50) sent.delete(sent.keys().next().value); return f; };
     let changed = false;
@@ -180,5 +187,5 @@ export function createRefNames() {
     }
     return changed ? out : args;
   }
-  return { toPlain, toFrame, mainFrameSeq, plainOf };
+  return { toPlain, toFrame, mainFrameSeq, plainOf, plainFile };
 }

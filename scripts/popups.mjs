@@ -174,10 +174,16 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
       const atCorner = (b, overlay) => {
         const br = b.getBoundingClientRect();
         if (br.width > 80 || br.height > 80) return false;
+        // Not a link to a page, not a button that opens something (a menu, a dialog, details), not
+        // one with a whole sentence for a name (an info button), not a carousel's arrow.
+        if (b.matches('a[href]') && !/^\s*(#|javascript:)/i.test(b.getAttribute("href") || "")) return false;
+        if (b.matches("[aria-haspopup], [aria-expanded], [aria-controls], [aria-describedby]")) return false;
+        if (label(b).length > 30 || b.closest('[aria-roledescription*="carousel" i], [class*="carousel" i], [class*="slider" i], [class*="swiper" i]')) return false;
+        const ov = overlay.getBoundingClientRect();
         for (let el = b.parentElement; el && overlay.contains(el); el = el.parentElement) {
           const r = el.getBoundingClientRect();
-          // A popup card, not a full-screen app layout (its corner buttons are the app's own).
-          if (r.width >= 200 && r.height >= 100 && (r.width < vw * 0.95 || r.height < vh * 0.95) && br.right >= r.right - 80 && br.right <= r.right + 4 && br.top <= r.top + 80 && br.top >= r.top - 4) return true;
+          // The popup's own card (most of the overlay), not a card inside it, nor a full-screen app layout.
+          if (r.width >= 200 && r.height >= 100 && r.width >= ov.width * 0.6 && (r.width < vw * 0.95 || r.height < vh * 0.95) && br.right >= r.right - 80 && br.right <= r.right + 4 && br.top <= r.top + 80 && br.top >= r.top - 4) return true;
         }
         return false;
       };

@@ -108,7 +108,10 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
   const dialogButtons = dialog ? [...dialog.querySelectorAll(BUTTONS)].filter(shown).slice(0, 20) : [];
   const danger = control.matches(BUTTONS) && red(control); // a red link or red text is just a color
   // A confirmation dialog, by its shape: an alert dialog, or a dialog with a danger button.
-  const confirming = !!dialog && (dialog.matches('[role=alertdialog]') || dialogButtons.some(red));
+  // A confirmation is short and offers choices; a dialog with a long text and links (a consent
+  // notice, terms) informs, whatever the colour of its main button.
+  const informs = !!dialog && (dialog.innerText || "").trim().length > 300 && dialog.querySelectorAll("a[href]").length >= 2;
+  const confirming = !!dialog && !informs && (dialog.matches('[role=alertdialog]') || dialogButtons.some(red));
   // The button that closes a dialog rather than confirming it: a plain one next to a filled one.
   const dismiss = !!dialog && control.matches(BUTTONS) && !filled(control) && !danger && dialogButtons.some((x) => x !== control && (filled(x) || red(x)));
   if (danger) why.push("it's styled as a danger button");

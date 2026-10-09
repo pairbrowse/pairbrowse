@@ -65,3 +65,53 @@ export function createOutput({ dir, secretValues }) {
 
   return { mask, maskLinkedFiles, capSnapshot, start };
 }
+
+// Snapshot refs as Claude reads them. Playwright numbers the main frame anew on every navigation
+// to a new page (its refs then read f1e5, f3e5, ...), so a ref from the page before can never
+// match one in the page after. To an agent the prefix reads as "inside a frame", which it isn't.
+// Claude gets the main frame's refs plain (e5) and frames' refs with their prefix; a plain ref it
+// sends gets the main frame's number back when it's one it was given for this page, else it goes
+// as it is (a ref from the page before stays one Playwright turns away).
+export function createRefNames() {
+  const known = new WeakMap(); // tab -> { seq, refs: Set of the plain refs handed out }
+  // The main frame's number in a snapshot: that of the first ref outside any iframe's subtree
+  // (an iframe's own ref is its parent's). null when the text has no ref of the main frame.
+  function mainFrameSeq(text) {
+    let inFrame = -1; // the indent of the iframe whose subtree is being skipped
+    for (const line of String(text).split("\n")) {
+      const indent = line.match(/^ */)[0].length;
+      if (inFrame >= 0) { if (indent > inFrame) continue; inFrame = -1; }
+      const m = line.match(/\[ref=(?:f(\d+))?e\d+\]/);
+      if (/^\s*- iframe\b/.test(line)) { if (m) return m[1] === undefined ? 0 : Number(m[1]); inFrame = indent; continue; }
+      if (m) return m[1] === undefined ? 0 : Number(m[1]);
+    }
+    return null;
+  }
+  // A result's text for Claude, about page.
+  function toPlain(page, text) {
+    const t = String(text ?? "");
+    if (!page) return t;
+    let state = known.get(page);
+    if (/\[ref=/.test(t)) {
+      const seq = mainFrameSeq(t);
+      if (seq !== null && seq !== state?.seq) { state = { seq, refs: new Set() }; known.set(page, state); }
+    }
+    if (!state?.seq) return t;
+    return t.replace(new RegExp(`\\bf${state.seq}(e\\d+)\\b`, "g"), (_m, e) => { state.refs.add(e); return e; });
+  }
+  // Claude's arguments for a call in page, with the main frame's number back on its plain refs.
+  function toFrame(page, args) {
+    const state = page && known.get(page);
+    if (!state?.seq || !args || typeof args !== "object") return args;
+    const fix = (v) => (typeof v === "string" && /^e\d+$/.test(v) && state.refs.has(v) ? `f${state.seq}${v}` : v);
+    let changed = false;
+    const out = { ...args };
+    for (const k of ["target", "startTarget", "endTarget", "ref"]) if (typeof out[k] === "string" && fix(out[k]) !== out[k]) { out[k] = fix(out[k]); changed = true; }
+    if (Array.isArray(out.fields)) {
+      const fields = out.fields.map((f) => (f && typeof f === "object" && fix(f.target) !== f.target ? { ...f, target: fix(f.target) } : f));
+      if (fields.some((f, i) => f !== out.fields[i])) { out.fields = fields; changed = true; }
+    }
+    return changed ? out : args;
+  }
+  return { toPlain, toFrame, mainFrameSeq };
+}

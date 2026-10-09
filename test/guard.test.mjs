@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.PAIRBROWSE_HOME = "/home/me/.pairbrowse";
-const { decide, clickClass } = await import("../scripts/guard.mjs");
+const { decide, clickClass, forMode } = await import("../scripts/guard.mjs");
 
 const cfg = {};
 const NOW = Date.parse("2026-10-01T12:00:00Z");
@@ -162,4 +162,23 @@ test("the hook in a real process: Codex allow prints nothing; unreadable input a
   assert.equal(codexBad.permissionDecision, "deny");
   const nul = JSON.parse(execFileSync(process.execPath, [hook], { input: "null" }).toString()).hookSpecificOutput;
   assert.equal(nul.permissionDecision, "allow", "no tool name: nothing of PairBrowse's to guard");
+});
+
+test("a click at a spot named with its class asks or is blocked like browser_click", () => {
+  const clickAt = (element, opts) => run("pairbrowse_click_at", { element, x: 0.5, y: 0.5 }, opts);
+  assert.equal(clickAt("Pay: Buy now"), "ask");
+  assert.equal(clickAt("Publish: Submit"), "deny", "no passing review");
+  assert.equal(clickAt("Publish: Submit", { rev: review(5) }), "ask", "a passing review still asks");
+  assert.equal(clickAt("Next"), "allow");
+});
+
+test("in bypass-permissions mode an ask becomes an allow; a deny stays", () => {
+  // The user chose to be asked nothing: the guard asks nothing either, and says why in the log.
+  const ask = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: "pairbrowse: \"Pay: Buy\" pays." } };
+  const deny = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "pairbrowse: no review." } };
+  assert.equal(forMode({ permission_mode: "bypassPermissions" }, ask).hookSpecificOutput.permissionDecision, "allow");
+  assert.match(forMode({ permission_mode: "bypassPermissions" }, ask).hookSpecificOutput.permissionDecisionReason, /bypass-permissions mode.*pays/);
+  assert.equal(forMode({ permission_mode: "bypassPermissions" }, deny).hookSpecificOutput.permissionDecision, "deny");
+  assert.equal(forMode({ permission_mode: "default" }, ask).hookSpecificOutput.permissionDecision, "ask");
+  assert.equal(forMode({}, ask).hookSpecificOutput.permissionDecision, "ask");
 });

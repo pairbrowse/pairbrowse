@@ -30,13 +30,13 @@ A session is a separate browser with its own logins and tabs.
    `new` with a `name`: kept, for example one per client.
 4. `delete` with `name` removes one; the user confirms.
 
-While other participants are connected, only `list` works: switching, creating and deleting
-sessions, and closing the browser, are refused until they disconnect.
+While another agent session (here or a joiner's) used the browser in the last 10 minutes or holds the whole-browser lease, only `list` works:
+switching, creating and deleting sessions are refused until it has been idle 10 minutes (the user can still switch in the side panel). People joined without an agent don't block it.
 
 ## 2. Invite someone (you're the host)
 
 1. `pairbrowse_invite` with `action: "create"`, `role` "drive" (default; asks the user
-   first) or "watch" (view-only, if asked), `mode` "shared" (default: they work in this browser, live) or "follow" (if asked), `label` the person's name, `hours` (default 24, max 168).
+   first) or "watch" (view-only, if asked), `mode` "shared" (default: they work in this browser, live) or "follow" (if asked), `label` the person's name, `name` the user's own first name as joiners see it (required the first time: without it `create` is refused; remembered after), `hours` (default 24, max 168).
    - `share: "code"` (the default without an `inviteBaseUrl`): a `pb-join:...` code through a free
      Cloudflare Quick Tunnel. Nothing to set up on either side.
    - `share: "link"`: only when the user wants a Tailscale or SSH link.
@@ -84,7 +84,7 @@ sessions, and closing the browser, are refused until they disconnect.
 ## 5. Join someone else's session
 
 1. The user gives you a `pb-join:...` code. Call `pairbrowse_join` with `action: "join"`, the
-   `code`, and `name` (the user's name as the host sees it) if they said it.
+   `code`, and `name` (the user's first name, as the host sees it; required the first time, refused without it, then remembered).
 2. "Waiting for the host to approve" until they let them in; then the host's tabs open here.
 3. Shared browser code (the join result says so): your browser tools work in the host's browser
    itself (drive), with their turns and rules; uploads go from this computer. Follow code: your tools
@@ -105,7 +105,7 @@ sessions, and closing the browser, are refused until they disconnect.
   `identify` with a short `label` if your connection is unnamed, `acquire` for work that must keep
   the browser to itself (lasts two minutes, renew with `acquire`), `release` when done or before a
   hand-off. If someone else holds it, wait and retry; don't keep clicking or switching tabs.
-  Take a fresh `browser_snapshot` after acquiring.
+  Take a fresh `browser_snapshot` after acquiring. A joiner's agent can't `acquire` (refused; only the host's own agents can): it works tab by tab.
 - A stale-ref error means someone changed the page: snapshot again and reassess.
 - Each connection keeps its own selected tab: agree with the others which tab is whose.
 

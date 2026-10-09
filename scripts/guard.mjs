@@ -114,7 +114,7 @@ export function decide(input, _config, review = latestReview(), now = Date.now()
     return ask(`OK on the page's dialog ("${String(ti.element).slice(0, 80)}") ${CLASS_TEXT[cls]}: a final action (${cls}). Check what it confirms.`);
   }
 
-  if (tool === "browser_click" || tool === "browser_drag" || tool === "browser_drop") {
+  if (tool === "browser_click" || tool === "browser_drag" || tool === "browser_drop" || tool === "pairbrowse_click_at") {
     // A drag is named by either end: dropping onto "Delete: Trash" deletes, whatever is dragged.
     const ends = [ti.element, ti.startElement, ti.endElement].map((e) => String(e || ""));
     const raw = ends.find(clickClass) || ends.find(Boolean) || "";
@@ -152,6 +152,14 @@ export function forHost(input, verdict) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } });
 }
 
+// Claude Code in bypass-permissions mode asks the user for nothing, by their choice: what the
+// guard would ask about goes too (the reason is kept for the log). Its refusals stay refusals.
+export function forMode(input, verdict) {
+  const given = verdict?.hookSpecificOutput;
+  if (input?.permission_mode !== "bypassPermissions" || given?.permissionDecision !== "ask") return verdict;
+  return out("allow", `allowed without asking (bypass-permissions mode): ${String(given.permissionDecisionReason || "").replace(/^pairbrowse: /, "")}`);
+}
+
 if (process.argv[1]?.endsWith("guard.mjs")) {
   let raw = "";
   process.stdin.on("data", (d) => (raw += d));
@@ -159,7 +167,7 @@ if (process.argv[1]?.endsWith("guard.mjs")) {
     let input = {};
     try {
       input = JSON.parse(raw) || {};
-      process.stdout.write(forHost(input, decide(input)));
+      process.stdout.write(forHost(input, forMode(input, decide(input))));
     } catch {
       // Fail closed: if the guard can't decide, you do. Unreadable input from Codex (which would
       // treat an "ask" as a failed hook and go ahead) is refused outright.

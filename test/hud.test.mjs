@@ -265,3 +265,28 @@ test("an agent's cursor still goes out when a busy computer is slow to say where
   await new Promise((r) => setTimeout(r, 800));
   assert.deepEqual(sent.map((c) => c.x), [110, 510]);
 });
+
+test("the bar in a tab shows what was done in that tab, not another agent's work elsewhere; news about no tab shows everywhere", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const bars = new Map(); // page -> last bar items' texts
+  const fake = (name) => ({ name, isClosed: () => false, url: () => `https://example.com/${name}`, evaluate: async (fn, args) => { if (args?.[3] === "bar") bars.set(name, JSON.parse(args[2]).items.map((i) => i.text)); } });
+  const a = fake("a"), b = fake("b");
+  const hud = createHud({ pages: async () => [a, b], participants: () => ["x", "y"], waiting: () => null, liveView: () => null, notify: () => {} });
+  hud.addActivity("Clicked **Buy**", "Alice · Claude Code", a);
+  hud.addActivity("Typed `hi` into **Search**", "Bob · Codex", b);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(bars.get("a"), ["Clicked **Buy**"]);
+  assert.deepEqual(bars.get("b"), ["Typed `hi` into **Search**"]);
+  hud.addActivity("Joined Sam's session (drive)", "", null, "joined");
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(bars.get("a"), ["Clicked **Buy**", "Joined Sam's session (drive)"]);
+  assert.deepEqual(bars.get("b"), ["Typed `hi` into **Search**", "Joined Sam's session (drive)"]);
+  // A tab keeps only its last few, newest last.
+  for (let i = 0; i < 6; i++) hud.addActivity(`Step ${i}`, "Alice · Claude Code", a);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(bars.get("a"), ["Step 2", "Step 3", "Step 4", "Step 5"]);
+  assert.equal(hud.lastIn(a).text, "Step 5");
+  // The bar drawn afresh (a page load) shows the same.
+  await hud.applyBar(b);
+  assert.deepEqual(bars.get("b"), ["Typed `hi` into **Search**", "Joined Sam's session (drive)"]);
+});

@@ -80,6 +80,10 @@ const PAGE = `<!doctype html><title>Patterns</title><body>
 <div id=filler>${Array.from({ length: 300 }, (_, i) => `<div>${Array.from({ length: 15 }, (_, j) => `<span>Deal ${i}-${j}</span> `).join("")}</div>`).join("")}</div>
 <h2>Residence</h2>
 <label for=lr>Country of residence</label> <input id=lr onblur="setTimeout(() => { this.value = 'Germany'; }, 300)">
+<h2>Placeholder labels</h2>
+<style>.phl.populated + span { display: none }</style>
+<label for=nk><input id=nk class=phl oninput="this.classList.toggle('populated', !!this.value)"><span>Nickname</span></label>
+<label for=tn><input id=tn class=phl oninput="this.classList.toggle('populated', !!this.value)"><span>Team name</span></label>
 <h2>Wizard</h2>
 <div id=s1><label for=w1>Company</label> <input id=w1> <button type=button onclick="s1.hidden = true; s2.hidden = false">Next</button></div>
 <div id=s2 hidden><label for=w2>Team size</label> <input id=w2 type=number> <button type=button>Submit</button></div>
@@ -194,6 +198,14 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     assert.match(r, /^Done: 1 steps/, r);
     assert.doesNotMatch(r, /Leaving on"?:/, r);
     assert.equal(await value("lv"), "Fri, Nov 20");
+    // Fields named by the text drawn in the box, gone once they hold a value (a label as the
+    // placeholder): filled and checked at once, never waited for by the name that went away.
+    const t1 = Date.now();
+    r = await run([{ fill: { Nickname: "Riv", "Team name": "Rivera Labs" } }]);
+    const tookGone = Date.now() - t1;
+    assert.match(r, /^Done: 1 steps/, r);
+    assert.deepEqual([await value("nk"), await value("tn")], ["Riv", "Rivera Labs"]);
+    assert.ok(tookGone < 6000, `fields whose names go away once filled took ${tookGone} ms`);
     // A suggestion picked by the run is the agent's click: never taken for a person's.
     r = await run([{ fill: { "Street address": "500 Howard Ave" } }]);
     assert.equal(await value("ad"), "500 Howard Ave, Burlingame, CA");

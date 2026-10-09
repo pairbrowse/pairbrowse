@@ -21,10 +21,11 @@ const CONSENT_FRAME = /consent|cookie|privacy|cmp|onetrust|sourcepoint|didomi|tr
 const settle = (ms, work) => within(ms, work.catch(() => null));
 
 // cookieChoice: "accept" (default) or "reject" for cookie banners.
-export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared = () => {}, quiet = () => false, cookieChoice = "accept" } = {}) {
-  const notes = [];
+// agentActing(): an agent's action is under way (a tab it closes itself needs no note).
+export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared = () => {}, quiet = () => false, cookieChoice = "accept", agentActing = () => false } = {}) {
+  const notes = []; // [{ text, page }]: page is the tab it's about (null: for every agent)
   const described = new Set(); // overlays already described to Claude, by page and text
-  const note = (text) => { notes.push(text); if (notes.length > 20) notes.shift(); };
+  const note = (text, page = null) => { notes.push({ text, page }); if (notes.length > 40) notes.shift(); };
   let challengeOn = null; // the page currently showing a CAPTCHA
   const waiting = new WeakMap(); // page -> the confirm or prompt it waits on: { type, message }
 
@@ -35,10 +36,10 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
       try {
         if (type === "alert" || type === "beforeunload") {
           await dialog.accept();
-          note(type === "alert" ? `The page showed an alert and PairBrowse closed it: "${message}"` : "The page asked to confirm leaving; PairBrowse confirmed.");
+          note(type === "alert" ? `The page showed an alert and PairBrowse closed it: "${message}"` : "The page asked to confirm leaving; PairBrowse confirmed.", page);
         } else {
           waiting.set(page, { type, message });
-          note(`The page is waiting on a ${type} dialog: "${message}". Decide with the user, then answer it with browser_handle_dialog.`);
+          note(`The page is waiting on a ${type} dialog: "${message}". Decide with the user, then answer it with browser_handle_dialog.`, page);
         }
       } catch (e) {
         log("dialog", e?.message || e);
@@ -49,9 +50,9 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
       const index = () => ctx.pages().indexOf(page);
       setTimeout(() => {
         if (page.isClosed()) return;
-        note(`The page opened a new tab (tab ${index()}): ${page.url() || "(loading)"}. If it's a sign-in or consent page, switch to it with browser_tabs select ${index()}.`);
+        note(`The page opened a new tab (tab ${index()}): ${page.url() || "(loading)"}. If it's a sign-in or consent page, switch to it with browser_tabs select ${index()}.`, opener);
       }, 800);
-      page.once("close", () => note(`That tab closed again. Switch back with browser_tabs select ${ctx.pages().indexOf(opener)} if you were in it.`));
+      page.once("close", () => { if (!agentActing()) note(`That tab closed again. Switch back with browser_tabs select ${ctx.pages().indexOf(opener)} if you were in it.`, opener); });
     }).catch(() => {});
   }
 
@@ -63,16 +64,25 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     const candidates = page.frames().filter((f) => CHALLENGE.test(f.url()) && !/size=invisible|[?&]render=/.test(f.url())).slice(0, 4);
     let found = false;
     for (const f of candidates) {
-      const box = await settle(800, f.frameElement().then((el) => el.boundingBox()));
+      // On screen for real: a challenge frame kept ready but hidden (visibility hidden, opacity 0,
+      // or parked off screen, as invisible checks keep theirs) needs nothing from anyone.
+      const box = await settle(800, f.frameElement().then(async (el) => {
+        const shown = await el.evaluate((n) => {
+          const st = getComputedStyle(n);
+          const r = n.getBoundingClientRect();
+          return st.visibility !== "hidden" && Number(st.opacity) > 0.05 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight;
+        });
+        return shown ? el.boundingBox() : null;
+      }));
       if (box && box.width >= 150 && box.height >= 65) { found = true; break; }
     }
     if (found && challengeOn !== page) {
       challengeOn = page;
-      note("This page shows a CAPTCHA or bot check. PairBrowse told the user. Wait for it to clear (browser_wait_for), don't try to solve it.");
+      note("This page shows a CAPTCHA or bot check. PairBrowse told the user. Wait for it to clear (browser_wait_for), don't try to solve it.", page);
       onYourTurn(CHALLENGE_TURN);
     } else if (!found && challengeOn === page) {
       challengeOn = null;
-      note("The CAPTCHA or bot check is gone; carry on.");
+      note("The CAPTCHA or bot check is gone; carry on.", page);
       onCleared();
     }
   }
@@ -185,7 +195,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
         if (described.size >= 500) described.clear(); // kept small: at worst one is described again
         described.add(key);
         note(`Something covers the page: "${found.text}" (buttons: ${found.buttons.map((b) => `"${b}"`).join(", ")}). ` +
-          `If it's a cookie or consent banner, click the button that ${cookieChoice === "reject" ? "accepts only necessary cookies" : "accepts"}; otherwise close it if it's in the way. Never a subscribe, pay or sign-up button.`);
+          `If it's a cookie or consent banner, click the button that ${cookieChoice === "reject" ? "accepts only necessary cookies" : "accepts"}; otherwise close it if it's in the way. Never a subscribe, pay or sign-up button.`, frame.page());
       }
       return false;
     }
@@ -193,18 +203,19 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     const button = frame.locator("[data-pairbrowse-dismiss]").first();
     const done = clicking?.() || (() => {});
     const ok = await button.click({ timeout: 3000 }).then(() => true, () => false).finally(done);
-    if (ok) note(`Closed a ${found.what} on the page (pressed "${found.label}").`);
+    if (ok) note(`Closed a ${found.what} on the page (pressed "${found.label}").`, frame.page());
     // The button is usually gone with its overlay; clear the marker without waiting for it.
     await frame.evaluate(() => document.querySelectorAll("[data-pairbrowse-dismiss]").forEach((b) => b.removeAttribute("data-pairbrowse-dismiss"))).catch(() => {});
     return ok;
   }
 
-  // Notes since the last tool result, as one block to append, or "".
-  function drain() {
-    if (!notes.length) return "";
-    const text = `\n### PairBrowse\n${notes.map((n) => `- ${n}`).join("\n")}`;
-    notes.length = 0;
-    return text;
+  // Notes since the last tool result, as one block to append, or "". page: the tab the result is
+  // about: notes on other tabs stay for the agents working there (a closed tab's go to anyone).
+  function drain(page = null) {
+    const mine = page ? notes.filter((n) => !n.page || n.page === page || n.page.isClosed?.()) : notes.slice();
+    if (!mine.length) return "";
+    for (const n of mine) notes.splice(notes.indexOf(n), 1);
+    return `\n### PairBrowse\n${mine.map((n) => `- ${n.text}`).join("\n")}`;
   }
 
   // The confirm or prompt a page waits on (answered through daemon/serve.mjs), until answered.

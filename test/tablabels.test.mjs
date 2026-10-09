@@ -37,3 +37,13 @@ test("agents read the page's own title: the names in front are taken off", async
   assert.equal(names.strip("Done: 1 steps in 0.1s.\nPage: Claude (Mac) · Inbox <https://x/>"), "Done: 1 steps in 0.1s.\nPage: Inbox <https://x/>");
   assert.equal(names.strip("Text that mentions Claude (Mac) · elsewhere"), "Text that mentions Claude (Mac) · elsewhere");
 });
+
+test("a title read while the name goes off still loses it", async () => {
+  // The spark leaves and the name comes off the tab a moment later: a result read in between carries the old title.
+  let sparks = [{ id: "m", page: { isClosed: () => false } }];
+  const names = createTabLabels({ sparks: () => sparks, labelOf: () => "Checker · Claude Code", name: async () => {} });
+  await names.apply();
+  sparks = [];
+  await names.apply();
+  assert.equal(names.strip("Page: Checker · Claude · Onboarding <https://x/>"), "Page: Onboarding <https://x/>");
+});

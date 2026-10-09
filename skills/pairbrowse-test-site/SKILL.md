@@ -17,7 +17,7 @@ PairBrowse plugin. PairBrowse is the browser; code changes happen in the project
 - If a person is using a tab, wait; then take a fresh snapshot and continue from where the page is.
 - Don't launch other browsers or automation tools (Playwright test runners, Puppeteer,
   Selenium, other browser MCPs or skills that drive their own browser). PairBrowse's tools only.
-- No page scripts: `browser_evaluate` always asks the user. Use `browser_snapshot` and
+- No page scripts: `browser_evaluate` isn't offered. Use `browser_snapshot` and
   `browser_find` instead.
 
 ## 1. Set up
@@ -29,7 +29,9 @@ PairBrowse plugin. PairBrowse is the browser; code changes happen in the project
 3. Local addresses (`localhost`, `127.0.0.1`, `*.local`, `192.168.*`, `10.*`) ask the user
    before `browser_navigate` opens them; that is expected, say why you are opening it. In
    Codex the navigation is refused with a note: ask the user to open the address in the
-   PairBrowse window themselves, then continue from `browser_tabs` `list`.
+   PairBrowse window themselves, then continue from `browser_tabs` `list`. A `pairbrowse_run`
+   `go` step to a local address is refused outright: open it with `browser_navigate` first, then
+   run `pairbrowse_run` on that tab without a `go` step.
 4. `pairbrowse_status` `{ "text": "Testing the sign-up flow", "kind": "claude" }`.
 
 ## 2. Click through like a user

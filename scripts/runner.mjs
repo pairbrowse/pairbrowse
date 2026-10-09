@@ -327,9 +327,14 @@ const field = (page, label) => find(page, [
 // choices, a field's suggestions), whatever the list is built from: role="option" or plain
 // elements (many dropdown libraries). before(root): marks what shows now; after(root): the new
 // texts, each clickable by its index (choiceAt). Works in the page or a frame.
+// Both look through open shadow roots too (a list built as a web component), and read a choice
+// with no text of its own (an icon, a flag, a colour swatch) by its accessible name: aria-label,
+// aria-labelledby, title or its picture's alt text.
 const markShown = (mark) => {
-  for (const el of document.querySelectorAll("body *")) {
-    if (el.children.length) continue;
+  const all = (root, out = []) => { for (const el of root.querySelectorAll("*")) { out.push(el); if (el.shadowRoot) all(el.shadowRoot, out); } return out; };
+  const optionLike = (el) => /^(option|menuitem|menuitemradio|treeitem)$/.test(el.getAttribute("role") || "") || el.tagName === "LI" || (!(el.innerText || "").trim() && el.hasAttribute("aria-label"));
+  for (const el of all(document.body)) {
+    if (el.children.length && !optionLike(el)) continue;
     const r = el.getBoundingClientRect();
     // Seen means a person sees it: a list drawn in advance but invisible (visibility, opacity)
     // shows its choices only once opened.
@@ -339,16 +344,24 @@ const markShown = (mark) => {
 const newlyShown = (arg) => {
   const [mark, near] = Array.isArray(arg) ? arg : [arg, null];
   const out = [];
+  const all = (root, out2 = []) => { for (const el of root.querySelectorAll("*")) { out2.push(el); if (el.shadowRoot) all(el.shadowRoot, out2); } return out2; };
+  const everything = all(document.body);
   // Marks from an earlier look (a list that redrew as it was typed into) would point at old rows.
-  for (const el of document.querySelectorAll(`[data-pb-choice^="${mark}-"]`)) el.removeAttribute("data-pb-choice");
-  for (const el of document.querySelectorAll("body *")) {
+  for (const el of everything) if ((el.getAttribute("data-pb-choice") || "").startsWith(`${mark}-`)) el.removeAttribute("data-pb-choice");
+  const nameOf = (el) => {
+    const own = (el.innerText || "").replace(/\s+/g, " ").trim();
+    if (own) return own;
+    const byIds = (el.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean).map((id) => el.getRootNode().getElementById?.(id)?.textContent || "").join(" ");
+    return (el.getAttribute("aria-label") || byIds || el.getAttribute("title") || el.querySelector?.("img[alt], [aria-label]")?.getAttribute("alt") || el.querySelector?.("[aria-label]")?.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim();
+  };
+  for (const el of everything) {
     if (el.getAttribute("data-pb-seen") === mark) continue;
     const r = el.getBoundingClientRect();
     if (!(r.width > 0 && r.height > 0) || el.checkVisibility?.({ opacityProperty: true, visibilityProperty: true }) === false) continue;
-    const t = (el.innerText || "").replace(/\s+/g, " ").trim();
+    const t = nameOf(el);
     // A choice: short text of its own (a leaf, or an option-like element), not a field, not filler.
     if (!t || t.length > 80 || !/[\p{L}\p{N}]/u.test(t) || /^(INPUT|TEXTAREA|SELECT|SCRIPT|STYLE)$/.test(el.tagName) || (el.tagName === "LABEL" && el.control)) continue;
-    const optionLike = /^(option|menuitem|menuitemradio|treeitem)$/.test(el.getAttribute("role") || "") || el.tagName === "LI";
+    const optionLike = /^(option|menuitem|menuitemradio|treeitem)$/.test(el.getAttribute("role") || "") || el.tagName === "LI" || (!(el.innerText || "").trim() && el.hasAttribute("aria-label"));
     if (el.children.length && !optionLike) continue;
     if (el.closest("nav, header, footer, [role=navigation], [role=banner]")) continue;
     // In a list that popped up: a listbox or menu, or a box laid over the page (absolute or
@@ -378,7 +391,7 @@ const newlyShown = (arg) => {
     el.setAttribute("data-pb-choice", `${mark}-${out.length}`);
     out.push({ t });
   }
-  for (const el of document.querySelectorAll(`[data-pb-seen="${mark}"]`)) el.removeAttribute("data-pb-seen");
+  for (const el of everything) if (el.getAttribute("data-pb-seen") === mark) el.removeAttribute("data-pb-seen");
   return out.slice(0, 400).map((o) => o.t);
 };
 const rectOf = (n) => { const r = n.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
@@ -405,7 +418,7 @@ function bestChoice(choices, want) {
 }
 const choiceAt = (c, mark) => c.root.locator(`[data-pb-choice="${mark}-${c.index}"]`).first();
 async function clearChoices(page, mark) {
-  for (const root of await formRoots(page)) await within(1000, root.evaluate((m) => { for (const el of document.querySelectorAll("[data-pb-choice]")) if (el.getAttribute("data-pb-choice").startsWith(m)) el.removeAttribute("data-pb-choice"); }, mark).catch(() => {}));
+  for (const root of await formRoots(page)) await within(1000, root.evaluate((m) => { const all = (r, out = []) => { for (const el of r.querySelectorAll("[data-pb-choice], *")) { if (el.hasAttribute("data-pb-choice")) out.push(el); if (el.shadowRoot) all(el.shadowRoot, out); } return out; }; for (const el of all(document)) if (el.getAttribute("data-pb-choice").startsWith(m)) el.removeAttribute("data-pb-choice"); }, mark).catch(() => {}));
 }
 // A styled list opened by clicking `opener`: the choice matching option, clicked. Returns "" when
 // clicked, else why not (with the choices it saw).
@@ -455,7 +468,9 @@ async function pickFromOpened(page, opener, option, label, hooks) {
     }
     if (!best) {
       await page.keyboard.press("Escape").catch(() => {});
-      return `Opened "${label}" but found no option "${option}".${choices.length ? ` Its options: ${choices.map((c) => c.text).slice(0, 25).join(", ")}.` : ""}`;
+      // No choice could be read at all (pictures with no name, a list drawn on a canvas): the
+      // agent looks for itself instead of trying other spellings.
+      return `Opened "${label}" but found no option "${option}".${choices.length ? ` Its options: ${choices.map((c) => c.text).slice(0, 25).join(", ")}.` : " Its list shows nothing readable (pictures or icons without names): look at the screenshot, take a browser_snapshot, and click the choice by its ref with browser_click."}`;
     }
     // Lists that redraw their options under the pointer replace the marked one: then the visible
     // option with that exact text.
@@ -680,7 +695,10 @@ const describePage = withHelpers(() => {
   // Real messages only: short text with no fields inside (a wrapper named "...error-handling"
   // isn't an error), plus what an invalid field points to with aria-describedby.
   const described = [...document.querySelectorAll('[aria-invalid="true"][aria-describedby]')].flatMap((f) => f.getAttribute("aria-describedby").split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean));
-  const errors = [...document.querySelectorAll('[role=alert], [aria-live=assertive], .error, .errors, [class*="error" i], [class*="invalid" i]'), ...described].filter(isVisible)
+  // A message a person can see: screen-reader-only live regions ("Page loaded", "Expanded":
+  // a 1 px box, or clipped away) are announcements, not errors.
+  const onScreen = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width >= 8 && r.height >= 8 && st.clip === "auto" && (st.clipPath === "none" || !st.clipPath); };
+  const errors = [...document.querySelectorAll('[role=alert], [aria-live=assertive], .error, .errors, [class*="error" i], [class*="invalid" i]'), ...described].filter(isVisible).filter(onScreen)
     .filter((el) => !el.matches("input, select, textarea, button, option") && !el.querySelector("input, select, textarea, button") && (el.innerText || "").trim().length <= 160)
     .map((el) => el.innerText.replace(/\s+/g, " ").trim().slice(0, 100)).filter(Boolean);
   const h = document.querySelector("h1, h2")?.innerText.replace(/\s+/g, " ").trim().slice(0, 80);
@@ -715,6 +733,11 @@ async function waitOrDisconnect(promise, signal) {
 // Fast mode is just fast: the engine's human-like mouse and typing (on by default for single
 // actions) are off for the run, and a scroll step goes at once. hooks.smooth: a single action
 // (pairbrowse_scroll) that glides like a person.
+// Why a run stops at a page's confirm or prompt dialog ({ type, message }, popups.mjs).
+const dialogStop = (d, what) => `${what} opened the page's own ${d.type} dialog: "${d.message}". The page waits on it, so nothing more was done. ` +
+  `Decide with the user, answer it with browser_handle_dialog (accept, or dismiss), then run the remaining steps.`;
+
+// hooks.dialogOpen(): the confirm or prompt the page waits on, or null.
 export async function runSteps(page, steps, hooks) {
   const human = !hooks.smooth && page._pairbrowseHumanized === true;
   if (human) page._pairbrowseHumanized = false;
@@ -724,6 +747,8 @@ export async function runSteps(page, steps, hooks) {
   const instant = hooks.smooth || typeof page.evaluate !== "function" ? null : await within(500, Promise.resolve().then(() => page.evaluate(() => { const st = document.createElement("style"); st.textContent = "html, body, * { scroll-behavior: auto !important; }"; st.setAttribute("data-pb-instant", ""); (document.head || document.documentElement).appendChild(st); return true; })).catch(() => null));
   try {
     const result = await stepsIn(page, steps, hooks, touched);
+    // A page waiting on its own confirm or prompt runs no script: nothing more can be read from it.
+    if (result.dialog) return { ...result, checks: [] };
     // A value the page rewrites a moment after it was filled (a lookup from another answer, a
     // location guess, a script on blur): looked at again once the page is quiet.
     const late = await lateRewrites(page, touched).catch(() => []);
@@ -769,7 +794,8 @@ class Touched extends Array {
 async function nodeOf(t) {
   const h = await t.handle;
   if (h && (await within(500, h.evaluate((n) => n.isConnected)).catch(() => false))) return h;
-  if (typeof t.el?.count === "function" && !(await t.el.count().catch(() => 0))) return null;
+  // One match only: with two fields of that name, reading the other one would blame the wrong field.
+  if (typeof t.el?.count === "function" && (await t.el.count().catch(() => 0)) !== 1) return null;
   return t.el;
 }
 // What a field shows a person: a dropdown's chosen text, a box ticked or not, a field's value, or
@@ -836,7 +862,13 @@ async function leftovers(page, touched) {
         // "account.help_desk_size".
         const near = (el) => { for (let a = el, i = 0; a && i < 5; a = a.parentElement, i++) { for (let p = a.previousElementSibling, j = 0; p && j < 3; p = p.previousElementSibling, j++) { const t = (p.innerText || "").trim(); if (t && t.length < 80 && !/[.!]$/.test(t)) return t; } } return ""; };
         const coded = (t) => !!t && !/\s/.test(t) && /[._[\]]|[a-z][A-Z]/.test(t);
-        const nameOf = (el) => clean(([...(el.labels || [])].map((l) => l.innerText).join(" ") || el.getAttribute("aria-label") || (el.getAttribute("aria-labelledby") || "").split(/\s+/).map((id) => document.getElementById(id)?.innerText || "").join(" ") || el.placeholder || el.title || near(el) || el.name).replace(/"/g, "'"));
+        // A label's text as a person sees it: hidden helper text inside it (a "Validation Error"
+        // kept for screen readers, clipped to nothing) stays out, and two labels saying the same
+        // thing (one visible, one for screen readers) count once.
+        const vis = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 1 && r.height > 1 && st.clip === "auto" && st.visibility !== "hidden"; };
+        const textOf = (node) => !node ? "" : node.nodeType === 3 ? node.textContent : node.nodeType !== 1 || !vis(node) ? "" : [...node.childNodes].map(textOf).join(" ");
+        const once = (texts) => [...new Set(texts.map(clean).filter(Boolean))].join(" ");
+        const nameOf = (el) => clean((once([...(el.labels || [])].map(textOf)) || el.getAttribute("aria-label") || once((el.getAttribute("aria-labelledby") || "").split(/\s+/).map((id) => document.getElementById(id)?.innerText || "")) || el.placeholder || el.title || near(el) || el.name).replace(/"/g, "'"));
         // Fields inside web components too (open shadow roots), as the run's own lookups see them.
         const all = [];
         const walk = (r) => { for (const el of r.querySelectorAll("*")) { if (el.matches("input, select, textarea")) all.push(el); if (el.shadowRoot) walk(el.shadowRoot); } };
@@ -859,12 +891,18 @@ async function leftovers(page, touched) {
           while (box && box.parentElement && box !== document.body && fieldsIn(box) < Math.max(4, touched.length + 2)) box = box.parentElement;
         }
         const inScope = (el) => (forms.size ? forms.has(formOf(el)) : !!box && contains(box, el));
+        const overlayOf = (el) => { for (let a = el.parentElement, i = 0; a && a !== document.body && i < 30; a = a.parentElement, i++) if (getComputedStyle(a).position === "fixed") return a; return null; };
         const required = (el) => el.required || el.getAttribute("aria-required") === "true";
         const res = { required: [], optional: [] };
         const radios = new Map();
         for (const el of all) {
           if (!inScope(el) || el.disabled || el.readOnly || !shown(el)) continue;
           if (/^(hidden|submit|button|image|reset|file|password|search|range|color)$/i.test(el.type)) continue;
+          // A site's search box, or a chat widget's input (a box fixed over the page that the run
+          // never touched), is no field of this form, whatever box it shares with it.
+          if (el.getAttribute("role") === "searchbox" || el.closest("[role=search], [role=searchbox], [role=log]")) continue;
+          const over = overlayOf(el);
+          if (over && !touched.some((t) => over.contains(t))) continue;
           if (el.type === "radio") { const k = el.name || nameOf(el); if (!radios.has(k)) radios.set(k, []); radios.get(k).push(el); continue; }
           if (el.type === "checkbox") { if (required(el) && !el.checked) res.required.push(nameOf(el)); continue; }
           const empty = el.tagName === "SELECT" ? !el.value || el.selectedOptions[0]?.disabled : !el.value.trim();
@@ -996,6 +1034,10 @@ async function stepsIn(page, steps, hooks, touched = []) {
             return fail(await hiddenNow(page, label) ? `"${label}" is hidden right now: the form shows it only for some answers. Leave it, or change the answer it depends on.` : `No field "${label}".${gone()}`);
           }
           if (await theirs(el, label)) continue;
+          // The element itself is held from here: a field named by text that goes away once it holds
+          // a value (its label drawn in the box as its placeholder) can't be found by that name after
+          // the fill, and every later look at it would wait for the name instead.
+          el = (await el.elementHandle({ timeout: 1000 }).catch(() => null)) || el;
           let value = String(raw);
           const isSecret = Object.hasOwn(hooks.secrets.values, value);
           // Remember what was filled for next time; never passwords or one-time codes.
@@ -1063,7 +1105,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
         const coded = (withCode, plain) => /^\+\d{1,4}/.test(withCode) && /^\d{6,}$/.test(plain) && withCode.endsWith(plain) && withCode.length - plain.length >= 2 && withCode.length - plain.length <= 5;
         const same = (a, b) => sameDate(a, b) || bare(a) === bare(b) || (/\d/.test(b) && (digits(a) === digits(b) || coded(digits(a), digits(b)) || coded(digits(b), digits(a))));
         for (const f of filled) {
-          const multiline = await f.el.evaluate((n) => n.tagName === "TEXTAREA" || n.isContentEditable).catch(() => true);
+          const multiline = await f.el.evaluate((n) => n.tagName === "TEXTAREA" || n.isContentEditable, undefined, { timeout: 2000 }).catch(() => true);
           if (!multiline) await f.el.press("Tab", { timeout: 2000 }).catch(() => {});
           const now = await f.el.inputValue({ timeout: 2000 }).catch(() => null);
           if (now !== null && !f.secret && coded(digits(f.value), digits(now))) {
@@ -1086,8 +1128,9 @@ async function stepsIn(page, steps, hooks, touched = []) {
           await f.el.fill("", { timeout: 3000 }).catch(() => {});
           await hooks.cursor?.(f.el, "click"); // its own click, never taken for a person's
           await f.el.click({ timeout: 3000 }).catch(() => {});
-          await f.el.pressSequentially(f.value, { delay: 15, timeout: 15000 }).catch(() => {});
-          await f.el.press("Tab").catch(() => {});
+          // (A held element types with type(): its pressSequentially.)
+          await (typeof f.el.pressSequentially === "function" ? f.el.pressSequentially(f.value, { delay: 15, timeout: 15000 }) : f.el.type(f.value, { delay: 15, timeout: 15000 })).catch(() => {});
+          await f.el.press("Tab", { timeout: 2000 }).catch(() => {});
           const after = await f.el.inputValue({ timeout: 2000 }).catch(() => null);
           if (after !== null && !same(after, f.value)) {
             const offered = suggestionsSeen.get(f.label);
@@ -1223,7 +1266,12 @@ async function stepsIn(page, steps, hooks, touched = []) {
         const { risk } = await contextAt(page, el, "click");
         if (strongSignal(risk)) return fail(`"${arg}" is the "${real.slice(0, 60)}" button: ${riskReason(risk)}. Run the steps before it, then use browser_click on it so the user confirms.`);
         await hooks.cursor?.(el, "click"); // sent before the press, which puts it on the click
-        await el.click({ timeout: 5000 });
+        try {
+          await el.click({ timeout: 5000 });
+        } catch (e) {
+          if (!/Timeout|intercepts pointer events|not visible|outside of the viewport/i.test(String(e?.message))) throw e;
+          return fail(`"${arg}" is on the page but couldn't be clicked (hidden, covered or not ready): look at the screenshot, close what covers it or wait, then try again.`);
+        }
         await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
         hooks.activity(`Clicked **${arg}**`);
       } else if (kind === "press") {
@@ -1333,7 +1381,12 @@ async function stepsIn(page, steps, hooks, touched = []) {
         if (!ok) return fail(`The user didn't finish within ${HANDOFF_MS / 60_000} minutes.`);
       }
       done.push(kind);
+      // The step opened the page's own confirm or prompt: nothing runs until it's answered.
+      const asked = hooks.dialogOpen?.();
+      if (asked) return { ...fail(dialogStop(asked, "The step before this one")), done, stoppedAt: Math.min(i + 2, steps.length), dialog: true };
     } catch (e) {
+      const asked = hooks.dialogOpen?.();
+      if (asked) return { ...fail(dialogStop(asked, "This step")), dialog: true };
       return fail(String(e?.message || e).split("\n")[0].slice(0, 200));
     }
   }

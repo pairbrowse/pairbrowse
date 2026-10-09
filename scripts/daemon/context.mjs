@@ -436,7 +436,16 @@ let switched = Promise.resolve();
   const sessionInfo = () => ({ name: isTemporary(session) ? "Clean session" : session, where: where(), temporary: isTemporary(session) });
 
   async function switchTo(name) {
-    if (name === session && contextPromise) return;
+    if (name === session && contextPromise) {
+      // The open session, chosen by an agent while the picker is up: the picker goes, its tabs come back.
+      if (pick.state === "showing") {
+        const ctx = await contextPromise;
+        picked(`Session "${name}" was chosen by an agent. Its tabs are reopening.`);
+        await pick.page?.goto("about:blank").catch(() => {});
+        restore(ctx);
+      }
+      return;
+    }
     while (switching) await switched; // one switch at a time
     let done;
     switched = new Promise((r) => { done = r; });

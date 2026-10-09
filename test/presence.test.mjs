@@ -127,6 +127,41 @@ test("during an agent's action, a person's press away from its target and their 
     presence.userDid([{ kind: "type", t: Date.now(), what: "Search" }], page);
     assert.equal(presence.actingIn(page), null, "typing while the agent types: the agent's");
     done();
+    mock.timers.tick(5000);
+    // The agent's own wheel turns (a scroll, a run with a scroll step) are its own; a wheel
+    // while it does something else (fills a form) is a person reading along.
+    presence.userNote(page); // reading the note takes it
+    done = presence.busyStart("no-keys wheel");
+    presence.userDid([{ kind: "wheel", t: Date.now(), what: "" }], page);
+    assert.equal(presence.userNote(page), "", "the agent's own scrolling");
+    done();
+    mock.timers.tick(5000);
+    done = presence.busyStart();
+    presence.userDid([{ kind: "wheel", t: Date.now(), what: "" }], page);
+    assert.match(presence.userNote(page), /scrolled/, "a person's wheel while the agent types");
+    done();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("a saved tab coming back (restoring) is nobody going there; a load by hand is the user's", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 4_000_000 });
+  try {
+    let restoring = true;
+    const presence = createPresence({ host: "Bob", readEvents: async () => [], pages: () => [], paused: () => true,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {}, restoring: () => restoring });
+    const handlers = {};
+    let url = "about:blank";
+    const page = { url: () => url, on: (ev, fn) => { handlers[ev] = fn; } };
+    presence.watchUser(page);
+    url = "https://shop.example/account";
+    handlers.load();
+    assert.equal(presence.userNote(page), "", "a restored tab's load is nobody's");
+    restoring = false;
+    url = "https://shop.example/orders?page=2";
+    handlers.load();
+    assert.match(presence.userNote(page), /The user used this tab meanwhile: went to https:\/\/shop.example\/orders\./);
   } finally {
     mock.timers.reset();
   }

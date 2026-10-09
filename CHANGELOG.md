@@ -5,6 +5,30 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.30 (2026-10-09)
+
+Checked live, action by action, on real sites and a test page, with two agents working in one browser: what was wrong is fixed, and what the helper says now matches what happened.
+
+- Two agents, two tabs: an agent's refs stayed good only until the other agent acted anywhere, so with two agents at work every click with a ref was turned away ("the page changed since your last snapshot"). Refs now go stale only when a person or another agent acts in that tab.
+- Notes about a tab (a cookie banner closed, a new tab opened, a dialog waiting, a CAPTCHA) go to the agent working in that tab, not to whichever agent's result came next.
+- Fast mode stops at once when a step opens the page's own confirm or prompt, says what the page asks and how to answer it (browser_handle_dialog), and reads nothing more from a page that waits on it. Before, the run hung for up to ten minutes and then blamed a click timeout, and the helper could reset the browser under everyone.
+- Typing with Enter into a field the page replaces as it's typed in (a search box that becomes a suggesting one on the first key) presses Enter on the field that took its place and says where the page went; it used to fail with a raw timeout after the text was in.
+- After a helper restart with agents connected, nobody could choose a session: the picker waited for a person, and the agents' turned-away calls counted as "using the browser". An agent may now choose for everyone while the picker is up, and choosing the open session closes the picker and brings its tabs back.
+- No more false notes: the agent's own scrolling is no longer "the user scrolled"; a saved tab coming back after a restart is no longer "the user went to"; a tab the agent closes itself gets no "that tab closed again"; the page outline no longer lists screen-reader announcements ("Page loaded", "Expanded") as errors.
+- The bar says when an action failed ("That didn't work: ...") instead of only what was tried.
+- browser_drag moves cards on boards and lists: it presses, makes a short move that starts the drag, steps across to the target as a hand does, holds a moment and lets go. Playwright's drag made one move, and boards that pick a card up on the first move and carry it on the ones after (most of them) put it back where it was. HTML5 drag-and-drop and a drag in the PairBrowse browser work the same way; a stale ref is named at once, and a failed drag never leaves the button held. The result carries a fresh snapshot and a picture.
+- Fast mode reads a dropdown's choices that have no text of their own (icons, flags, swatches named by aria-label, aria-labelledby, title or a picture's alt) and lists inside a web component's shadow root; a list with nothing readable says so and points to the snapshot instead of reporting no options.
+- The bar at the bottom of a tab shows what was done in that tab (and news about no tab, such as a session joined), not another agent's actions in another tab.
+- Snapshot refs for the page itself read plain (e5) after every navigation; Playwright numbers the main frame anew on each one (f1e5, f3e5, ...), which read as "inside a frame". Refs inside frames keep their number. A ref from the page before is still turned away, never pointed at something else.
+- Fast mode's "left empty" list names fields as a person reads them (no "Phone number Phone number" from a second screen-reader label, no hidden "Validation Error" text), never a site's search box or a chat widget's input (a box fixed over the page the run never touched); a value "changed after it was filled" is only reported for a field the run can still tell apart from a same-named one.
+- "Your turn: solve the check" is no longer shown for an invisible check kept ready off screen (its frame hidden or parked outside the window); a visible one still is.
+- An agent's name in front of its tab's title no longer leaks into the "Page:" line of a result read as the name goes off.
+- A fast-mode click on something found but covered or hidden says so in plain words instead of a raw timeout.
+- A form whose field names go away once a field is filled (a label drawn inside the box that hides when a value is in) no longer stalls fast mode for 30 s per field: the run holds each field by the element itself (one such contact form: 162 s down to 1.8 s).
+- Security: a saved password typed with browser_type or browser_fill_form into a field inside a frame is checked against the frame's own address too, as fast mode already did. pairbrowse_click_at refuses a spot named as a final action (Pay, Delete, Publish, Send, Submit) and is under the same guard as browser_click, so a named publish needs its review.
+- Claude Code in bypass-permissions mode, which you turn on yourself, is asked nothing by the guard either: what it would have asked about is allowed (and logged); its refusals stay. Codex is unchanged.
+- The instructions Claude reads were checked line by line against the code: the tab cap (20, idle tabs only), confirms (always Claude's to answer, never answered OK by PairBrowse), pairbrowse_click_at's limits, when a session switch is refused, the first-time `name` an invite or join needs, `facts forget`, status `clear`, a joiner's agent and `acquire`, and fast-mode `go` to local addresses.
+
 ## 0.15.29 (2026-10-09)
 
 - Shared sessions: the agent's pointer reaches the people watching even when a busy computer is slow to say where the element is (it used to be dropped; the action still never waits for it).

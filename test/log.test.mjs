@@ -34,3 +34,8 @@ test("Codex's tool names are logged too", async () => {
   assert.equal(files.length, 1);
   assert.match(readFileSync(join(home, "log", files[0]), "utf8"), /Opened https:\/\/example\.com/);
 });
+
+test("a drag is logged by its two ends", () => {
+  assert.equal(describe("browser_drag", { startElement: "Card A", startTarget: "e4", endElement: "Done", endTarget: "e6" }), "Dragged **Card A** to **Done**");
+  assert.equal(describe("browser_drag", { startTarget: "e4", endTarget: "e6" }), "Dragged **e4** to **e6**");
+});

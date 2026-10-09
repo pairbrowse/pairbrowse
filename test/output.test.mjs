@@ -86,36 +86,34 @@ test("a files folder that isn't there doesn't stop the helper", () => {
 test("the main frame's refs come to Claude plain whatever Playwright numbers the frame; frames keep theirs", async () => {
   const { createRefNames } = await import("../scripts/daemon/output.mjs");
   const refs = createRefNames();
-  const page = {};
   // The first page in a tab: Playwright's refs are plain already.
-  assert.equal(refs.toPlain(page, '- button "One" [ref=e4]', true), '- button "One" [ref=e4]');
-  assert.equal(refs.toFrame(page, { target: "e4" }).target, "e4");
+  assert.equal(refs.toPlain('- button "One" [ref=e4]', true), '- button "One" [ref=e4]');
+  assert.equal(refs.toFrame({ target: "e4" }).target, "e4");
   // After a navigation Playwright numbers the main frame (f3), and a frame inside it (f4).
   const snap = ['- generic [active] [ref=f3e1]:', '  - button "Two" [ref=f3e4]', '  - iframe [ref=f3e5]:', '    - button "In frame" [ref=f4e2]'].join("\n");
   assert.equal(refs.mainFrameSeq(snap), 3);
-  const plain = refs.toPlain(page, snap, true);
+  const plain = refs.toPlain(snap, true);
   assert.equal(plain, ['- generic [active] [ref=e1]:', '  - button "Two" [ref=e4]', '  - iframe [ref=e5]:', '    - button "In frame" [ref=f4e2]'].join("\n"));
   // What Claude sends gets the number back, for refs it was given; a frame's ref and a selector go as they are.
-  assert.deepEqual(refs.toFrame(page, { element: "Two", target: "e4" }), { element: "Two", target: "f3e4" });
-  assert.deepEqual(refs.toFrame(page, { startTarget: "e4", endTarget: "f4e2" }), { startTarget: "f3e4", endTarget: "f4e2" });
-  assert.deepEqual(refs.toFrame(page, { fields: [{ name: "a", target: "e1", value: "x" }, { name: "b", target: "#id", value: "y" }] }).fields.map((f) => f.target), ["f3e1", "#id"]);
+  assert.deepEqual(refs.toFrame({ element: "Two", target: "e4" }), { element: "Two", target: "f3e4" });
+  assert.deepEqual(refs.toFrame({ startTarget: "e4", endTarget: "f4e2" }), { startTarget: "f3e4", endTarget: "f4e2" });
+  assert.deepEqual(refs.toFrame({ fields: [{ name: "a", target: "e1", value: "x" }, { name: "b", target: "#id", value: "y" }] }).fields.map((f) => f.target), ["f3e1", "#id"]);
   // A ref from the page before (never handed out for this one) stays as it is: Playwright turns it away, as before.
   const stale = { target: "e9" };
-  assert.equal(refs.toFrame(page, stale), stale);
+  assert.equal(refs.toFrame(stale), stale);
   // A later result about the same page (an error naming the ref) reads plain too.
-  assert.equal(refs.toPlain(page, "Ref f3e4 not found"), "Ref e4 not found");
+  assert.equal(refs.toPlain("Ref f3e4 not found"), "Ref e4 not found");
   // The next navigation numbers the frame anew: the old plain refs are forgotten with it.
   // A snapshot of one element inside a frame, or a find result, never changes the number: its
   // frame's refs keep their prefix (f9e2 is in a frame, not the page).
-  assert.equal(refs.toPlain(page, '- combobox "Pet" [ref=f9e2]'), '- combobox "Pet" [ref=f9e2]');
-  assert.equal(refs.toFrame(page, { target: "f9e2" }).target, "f9e2");
-  refs.toPlain(page, '- button "Three" [ref=f6e2]', true);
-  assert.equal(refs.toFrame(page, { target: "e4" }).target, "e4");
-  assert.equal(refs.toFrame(page, { target: "e2" }).target, "f6e2");
+  assert.equal(refs.toPlain('- combobox "Pet" [ref=f9e2]'), '- combobox "Pet" [ref=f9e2]');
+  assert.equal(refs.toFrame({ target: "f9e2" }).target, "f9e2");
+  refs.toPlain('- button "Three" [ref=f6e2]', true);
+  assert.equal(refs.toFrame({ target: "e4" }).target, "e4");
+  assert.equal(refs.toFrame({ target: "e2" }).target, "f6e2");
   assert.equal(refs.plainOf("f6e2"), "e2", "a message about that call names the ref as Claude sent it");
-  // Another tab has its own numbering; no page known: nothing changes.
-  assert.equal(refs.toPlain({}, '- button [ref=f6e2]', true).includes("f6e2"), false, "another tab: its own whole snapshot sets its own number");
-  assert.equal(refs.toPlain(null, "[ref=f6e2]"), "[ref=f6e2]");
+  // A whole snapshot of another tab sets the number anew (the agent works there now).
+  assert.equal(refs.toPlain('- button [ref=f9e2]', true).includes("f9e2"), false);
 });
 
 test("a snapshot whose first refs are inside a frame still finds the main frame's number", async () => {

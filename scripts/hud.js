@@ -273,9 +273,11 @@
   // changes it, the name goes back in front; when the agent leaves, the title is the page's again.
   let tabName = "", titleWatch = null;
   const namePrefix = (n) => `${n} · `;
-  const titleOnly = () => (tabName && document.title.startsWith(namePrefix(tabName)) ? document.title.slice(namePrefix(tabName).length) : document.title);
+  // The browser trims the title: with no title of its own, the tab reads "Name ·" (no space).
+  const titleNamed = () => !!tabName && (document.title.startsWith(namePrefix(tabName)) || document.title === `${tabName} ·`);
+  const titleOnly = () => (titleNamed() ? document.title.slice(`${tabName} ·`.length).replace(/^ /, "") : document.title);
   function keepName() {
-    if (tabName && !document.title.startsWith(namePrefix(tabName))) document.title = namePrefix(tabName) + document.title;
+    if (tabName && !titleNamed()) document.title = namePrefix(tabName) + document.title;
   }
   function setTabName(name) {
     name = String(name || "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 32);
@@ -548,6 +550,8 @@
   }, opts);
   // who, color: the agent's name on a tag in its color (people see whose cursor it is).
   // w: the target's smaller side (a small target takes a little longer to reach).
+  // A name on a tag: at most 40 characters, cut between words.
+  const shortWho = (who) => { const t = String(who || "Claude"); return t.length > 40 ? `${t.slice(0, 40).replace(/\s+\S*$/, "")}…` : t; };
   function pointer(x, y, act, who = "Claude", color = "", w = 24) {
     if (!curHost || !curHost.isConnected) {
       curHost = document.createElement(TAG_CURSOR);
@@ -568,7 +572,7 @@
       curAt = null;
     }
     const tag = cur.querySelector("span");
-    tag.textContent = String(who || "Claude").slice(0, 40);
+    tag.textContent = shortWho(who);
     tag.style.background = /^#[0-9a-f]{6}$/i.test(color) ? color : "#e9763f";
     cancelAnimationFrame(curFrame);
     cur.classList.remove("click");
@@ -673,7 +677,7 @@
           views.set(c.k, v);
         }
         if (v.color !== color) { v.color = color; v.el.querySelector("i").style.background = color; v.el.querySelector("b").style.background = color; }
-        const who = String(c.who || "").slice(0, 40);
+        const who = c.who ? shortWho(c.who) : "";
         if (v.who !== who) { v.who = who; v.el.querySelector("b").textContent = who; }
         const y = Math.max(0, Number(c.y) || 0), h = Math.max(0, Number(c.h) || 0);
         if (y !== v.y || h !== v.h) { v.y = y; v.h = h; v.t = now(); }
@@ -691,7 +695,7 @@
         peers.set(c.k, p);
       }
       if (p.color !== color) { p.color = color; p.el.querySelector("path").setAttribute("fill", color); p.el.querySelector("span").style.background = color; }
-      const who = String(c.who || "").slice(0, 40);
+      const who = c.who ? shortWho(c.who) : "";
       if (p.who !== who) { p.who = who; p.el.querySelector("span").textContent = who; }
       if (x !== p.tx || y !== p.ty) { p.tx = x; p.ty = y; p.t = now(); }
     }

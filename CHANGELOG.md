@@ -5,6 +5,17 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.32 (2026-10-09)
+
+Three more live testers: the PairBrowse browser (headed, humanized) on 50 real sites, two helpers sharing a session through a real tunnel, and the agent's cursor and tab labels.
+
+- The popup closer pressed the wrong thing on three sites (an info button that opened a terms dialog, a carousel arrow, a link in a consent text) and reported "Closed a popup": a corner close button is now one at the popup's own corner, never a link, a button that opens something, a described action or a carousel arrow.
+- A red primary button in a long dialog with links (a consent notice, terms) is no longer taken for a delete confirmation.
+- Snapshot files an action's result links to (every browser_navigate) now hold the main frame's refs plain too; a ref from one no longer gets "the tab changed since your last snapshot" on a fresh tab. The plain-ref numbering is kept per agent, not per tab, so a redirect or a hash can't lose it.
+- Typing with submit: PairBrowse presses Enter itself on the field that has the focus (Wikipedia's search, which the page replaces as it's typed in: 20 s down to 3.6 s).
+- Cursor and tab labels: with two agents the cursor went to the browser's current tab, not the acting agent's; a page with no title got the agent's name twice and read it back as the title; an agent that only looked at another agent's tab got its name on that tab; an empty identify became "Guest" and a name could spoof an app with " · "; long names on the cursor's tag are cut between words; pairbrowse_collaboration status says each agent's colour.
+- A failed click's "something covers it" names the covering element briefly and says to take a browser_snapshot (a consent dialog may have appeared after the last one).
+
 ## 0.15.31 (2026-10-09)
 
 Six live testers, in parallel: fast mode on new real forms, every step tool on dynamic sites, several agents in one browser, dialogs and files and bad input, the security table claim by claim, the native browser and daemon or browser crashes. Everything general they found is fixed.

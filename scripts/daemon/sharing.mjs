@@ -46,8 +46,22 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   let generation = 0; // bumped by stopTunnel
   const alive = (t, port) => t.port === port && (t.child?.exitCode ?? null) === null;
 
+  // Cloudflare lets a computer open only so many Quick Tunnels in a while: when the last code
+  // ends, the tunnel stays up for TUNNEL_IDLE_MS (no code works on it meanwhile, so nothing
+  // reaches anything) and the next invite reuses it. The browser closing or the helper stopping
+  // still stops it at once.
+  const TUNNEL_IDLE_MS = 15 * 60_000;
+  let idleTimer = null;
+  function releaseTunnel() {
+    wanted = false;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { idleTimer = null; if (!wanted) stopTunnel(); }, TUNNEL_IDLE_MS);
+    idleTimer.unref?.();
+    if (pool.length) log(`sharing tunnel kept for ${TUNNEL_IDLE_MS / 60_000} min in case of a new code`);
+  }
   function stopTunnel() {
     wanted = false;
+    clearTimeout(idleTimer); idleTimer = null;
     generation++; // a tunnel still starting when this runs is stopped as soon as it's up
     const was = pool;
     pool = [];
@@ -95,6 +109,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // The tunnel new codes carry: the first live one (started now if there's none).
   async function ensureTunnel(live) {
     wanted = true;
+    clearTimeout(idleTimer); idleTimer = null;
     pool = pool.filter((t) => alive(t, live.guestPort));
     if (!pool.length) {
       tunnelStarting ??= startOne(live.guestPort).then((t) => { pool.unshift(t); save(); return t; }).finally(() => { tunnelStarting = null; });
@@ -108,7 +123,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // last join code, revoke_all, or the helper.
   const devShare = createDevShare({ log, onStopped: (port) => hostNote(`The tunnel for the shared dev server localhost:${port} stopped; joiners can't open it any more. Share it again with pairbrowse_invite share_port.`) });
 
-  invites.onEnd(() => { if (!invites.list().some((i) => i.share === "code")) { stopTunnel(); devShare.stopAll(); } save(); });
+  invites.onEnd(() => { if (!invites.list().some((i) => i.share === "code")) { releaseTunnel(); devShare.stopAll(); } save(); });
   approvals.onChange(() => save());
   // The user's answers in the side panel, the live view or the page's prompt: the host's agent
   // hears them in its next result (its own approve and deny already say so).
@@ -247,7 +262,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     if (action === "revoke") {
       return invites.revoke(args.id) ? { text: `Revoked ${args.id}. Anyone using it lost the session at once.` } : fail(`No invite ${args.id}. Use list to see them.`);
     }
-    if (action === "revoke_all") { const n = invites.revokeAll(); stopTunnel(); devShare.stopAll(); return { text: `Revoked ${n} invite(s). The sharing tunnel is closed and no dev server is shared.` }; }
+    if (action === "revoke_all") { const n = invites.revokeAll(); releaseTunnel(); devShare.stopAll(); return { text: `Revoked ${n} invite(s). No code works any more and no dev server is shared; the sharing tunnel stays ready for a quarter of an hour in case you share again, then closes.` }; }
     if (action === "share_port") return sharePort(args, who);
     if (action === "unshare_port") {
       if (args.port === undefined) { const n = devShare.list().length; devShare.stopAll(); refreshDev().catch(() => {}); return { text: n ? `Stopped sharing ${n} dev server(s).` : "No dev server is shared." }; }

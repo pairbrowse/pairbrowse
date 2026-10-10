@@ -11,65 +11,84 @@
   <header class="top">
     <img src="logo.svg" alt="" width="22" height="22">
     <h1>PairBrowse</h1>
-    <span class="where" id="where" hidden></span>
+    <span class="where pill" id="where" hidden></span>
+    <ul class="avatars" id="avatars" aria-label="In this session"></ul>
   </header>
 
   <section class="status" aria-live="polite">
-    <div class="turn" id="turn"><i aria-hidden="true"></i><div><strong id="turn-text">Your turn</strong><small>Claude continues when the page moves on</small></div></div>
     <div class="joins" id="joins" role="region" aria-label="Join requests" aria-live="assertive"></div>
     <div class="joins" id="dev-asks" role="region" aria-label="Requests to share a dev server" aria-live="assertive"></div>
     <div class="joins" id="host-asks" role="region" aria-label="Join codes with another address" aria-live="assertive"></div>
-    <div class="driver" id="driver"><span id="driver-text">Waiting for pairbrowse</span></div>
-    <div class="pause" id="pause" hidden><span id="pause-text">Agents can act in the browser</span><button id="pause-btn" type="button">Pause agents</button></div>
+    <div class="turn" id="turn"><i aria-hidden="true"></i><div><strong id="turn-text">Your turn</strong><small>Claude continues when the page moves on</small></div></div>
+    <article class="agent" id="agent" aria-labelledby="agent-name">
+      <span class="avatar" id="agent-avatar" aria-hidden="true">C</span>
+      <strong class="agent-name" id="agent-name">Claude</strong>
+      <div class="driver" id="driver"><span id="driver-text">Waiting for PairBrowse</span></div>
+      <p class="agent-status" id="agent-status" hidden><span class="k">Status</span> <span id="agent-status-text"></span></p>
+      <p class="agent-tab" id="agent-tab" hidden></p>
+      <div class="pause" id="pause" hidden><span id="pause-text">Agents can act in the browser</span><button id="pause-btn" type="button">Pause agents</button></div>
+    </article>
   </section>
 
   <section class="switch"><button id="switch-btn" type="button" title="Open the session picker: another saved session, a fresh one, or join one">Switch session…</button><button id="record-btn" type="button" title="Record the browser as a video: the tab in front, following tab switches. Saved in your Downloads folder.">Record</button></section>
   <p class="note record-note" id="record-note" role="status" aria-live="polite" hidden></p>
 
-  <section id="session" hidden>
-    <h2>Session</h2>
-    <ul class="people" id="people"></ul>
-    <ol class="messages" id="messages"></ol>
+  <section class="sec" id="session" data-key="session" hidden>
+    <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="session-body">Session</button></h2>
+    <div class="body" id="session-body" hidden>
+      <ul class="people" id="people"></ul>
+      <ol class="messages" id="messages"></ol>
+    </div>
   </section>
 
-  <section id="hosts" hidden>
-    <h2>Join addresses</h2>
-    <p class="note">Addresses you allowed in join codes besides PairBrowse's own (*.trycloudflare.com): a host's own tunnel. "Always" ones are kept in your config.</p>
-    <ul class="devs" id="host-list"></ul>
+  <section class="sec" id="dev" data-key="dev" hidden>
+    <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="dev-body">Dev servers</button></h2>
+    <div class="body" id="dev-body" hidden>
+      <p class="note">Show a dev server on this computer to the people in your session, at an address only their PairBrowse opens. Watchers can only look.</p>
+      <ul class="devs" id="devs"></ul>
+    </div>
   </section>
 
-  <section id="dev" hidden>
-    <h2>Dev servers</h2>
-    <p class="note">Show a dev server on this computer to the people in your session, at an address only their PairBrowse opens. Watchers can only look.</p>
-    <ul class="devs" id="devs"></ul>
+  <section class="sec" id="hosts" data-key="hosts" hidden>
+    <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="hosts-body">Join addresses</button></h2>
+    <div class="body" id="hosts-body" hidden>
+      <p class="note">Addresses you allowed in join codes besides PairBrowse's own (*.trycloudflare.com): a host's own tunnel. "Always" ones are kept in your config.</p>
+      <ul class="devs" id="host-list"></ul>
+    </div>
   </section>
 
-  <section>
-    <h2>Activity</h2>
-    <p class="note" id="collaboration" role="status" aria-live="polite"></p>
-    <ol class="activity" id="activity"><li class="empty">Claude's actions show up here.</li></ol>
+  <section class="sec" id="sec-activity" data-key="activity">
+    <h2><button class="disclose" type="button" aria-expanded="true" aria-controls="activity-body">Activity</button></h2>
+    <div class="body" id="activity-body">
+      <p class="note" id="collaboration" role="status" aria-live="polite"></p>
+      <ol class="activity" id="activity"><li class="empty">Claude's actions show up here.</li></ol>
+    </div>
   </section>
 
-  <section>
-    <h2>Remembered details</h2>
-    <p class="note">Used to fill forms. Claude adds what you tell it, and what gets filled in forms is kept here too. Passwords never are.</p>
-    <div id="details"></div>
-    <form class="add" id="add-detail" autocomplete="off">
-      <div class="pair"><input class="field" name="label" placeholder="Label, e.g. VAT number" maxlength="80"><input class="field" name="value" placeholder="Value" maxlength="2000"></div>
-      <button class="primary" type="submit">Add detail</button>
-    </form>
+  <section class="sec" id="sec-details" data-key="details">
+    <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="details-body">Remembered details</button></h2>
+    <div class="body" id="details-body" hidden>
+      <p class="note">Used to fill forms. Claude adds what you tell it, and what gets filled in forms is kept here too. Passwords never are.</p>
+      <div id="details"></div>
+      <form class="add" id="add-detail" autocomplete="off">
+        <div class="pair"><input class="field" name="label" placeholder="Label, e.g. VAT number" maxlength="80"><input class="field" name="value" placeholder="Value" maxlength="2000"></div>
+        <button class="primary" type="submit">Add detail</button>
+      </form>
+    </div>
   </section>
 
-  <section>
-    <h2>Passwords</h2>
-    <p class="note">Saved on this computer, readable only by you. Claude sees the name, never the password, and it's only filled in on the sites you list.</p>
-    <div id="secrets"></div>
-    <form class="add" id="add-secret" autocomplete="off">
-      <div class="pair"><input class="field" name="label" placeholder="Name, e.g. Shopify" maxlength="60"><input class="field" name="value" type="password" placeholder="Password" autocomplete="new-password" maxlength="4096"></div>
-      <input class="field" name="domains" placeholder="Sites, e.g. accounts.shopify.com" maxlength="400">
-      <button class="primary" type="submit">Save password</button>
-    </form>
-    <p class="msg" id="profile-msg" role="status" aria-live="polite"></p>
+  <section class="sec" id="sec-secrets" data-key="secrets">
+    <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="secrets-body">Passwords</button></h2>
+    <div class="body" id="secrets-body" hidden>
+      <p class="note">Saved on this computer, readable only by you. Claude sees the name, never the password, and it's only filled in on the sites you list.</p>
+      <div id="secrets"></div>
+      <form class="add" id="add-secret" autocomplete="off">
+        <div class="pair"><input class="field" name="label" placeholder="Name, e.g. Shopify" maxlength="60"><input class="field" name="value" type="password" placeholder="Password" autocomplete="new-password" maxlength="4096"></div>
+        <input class="field" name="domains" placeholder="Sites, e.g. accounts.shopify.com" maxlength="400">
+        <button class="primary" type="submit">Save password</button>
+      </form>
+      <p class="msg" id="profile-msg" role="status" aria-live="polite"></p>
+    </div>
   </section>
   <script type="module" src="panel.js"></script>
 </body>

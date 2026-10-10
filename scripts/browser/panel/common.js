@@ -233,3 +233,18 @@ export function profilePanel(base) {
   });
   return { draw, load, say };
 }
+
+// Participants as the side panel shows them: a color only when it is a plain #rrggbb (board
+// colors cross from other computers), "Name · App" split in two, and a round avatar with the
+// name's initial and the name as its accessible name.
+export const isColor = (c) => /^#[0-9a-f]{6}$/i.test(c || "");
+export const splitLabel = (who) => { const [name, app] = String(who || "").split(" · "); return { name: name || "", app: app || "" }; };
+export const initialOf = (name) => (String(name || "").trim()[0] || "?").toUpperCase();
+export function avatar(name, color, tag = "span") {
+  const a = el(tag, { className: "avatar", textContent: initialOf(name), title: String(name || "") });
+  a.setAttribute("role", "img");
+  a.setAttribute("aria-label", String(name || ""));
+  if (isColor(color)) a.style.background = color;
+  else a.classList.add("plain");
+  return a;
+}

@@ -294,6 +294,19 @@ share the pill. Reduced motion: the glide jumps, the click ring is a static dot.
 or observer. `docs/security.md` row on join requests updated. Looked at (headless, the helper's
 own pictures of six states): matches the reference's bar, card, badge and cursors.
 
+**panel** (2026-10-11, `design-subset` run wf_1569325e: review pass in round two; 391 unit pass,
+the panel and tokens live suites green). The side panel is the agent panel: header with the
+unchanged logo, the wordmark (visually hidden under 340 px, still in the tree), the session pill
+("● Live session" with guests, else "Local · name") and an avatar stack from the board and the
+guests (initials in their colors, "+N" past four); requests (join, dev share, host asks) as
+approval cards at the top with their gating untouched; the active agent card (avatar, name, the
+driver line, the agent's own status named "Status", the tab it holds, Pause/Resume); other
+participants as compact rows in Session; Switch session… and Record in one row; Session, Dev
+servers, Join addresses, Activity (open), Remembered details and Passwords as disclosures with
+aria-expanded, remembered in `chrome.storage.local` under `pb-panel`. No new state, route or
+timer (the two existing timers stay); `test/panel.test.mjs` pins the markup, the logo hash, the
+timer count and, with the runtime, renders the panel over a fake SSE feed.
+
 **hud** (2026-10-11, `design-subset`, built by Opus; the lead commits). `scripts/hud.js`: the
 bottom bar has a driver dot in the tab's spark color (orange until set, muted while
 reconnecting) in front of the unchanged who-lines, and the last three actions as chips, oldest
@@ -325,8 +338,48 @@ cursor-off), waiting; reduced motion: the static white dot on Continue. Tests: 5
 `test/hud.test.mjs`, the join-prompt geometry assertion now "a card above the bottom bar's
 right end" plus the badge-above-card check.
 
+**panel** (2026-10-11, `design-subset`, built by Opus; the lead commits). The side panel is the
+reference's agent panel, fed only by events already on the owner stream (status, session,
+collaboration, board, activity, pause, record, join, dev, joinhost); no new route, listener,
+timer, observer or SSE event. Header: the unchanged logo line, "PairBrowse", `#where` as a pill
+("● Live session" while `collaboration.guests` is non-empty, else "Local · <name>", the full
+"where · name" as its title, `data-clean` kept) and an avatar stack from the board's people
+plus guests not already on it: four initials in the board's colors (only a plain `#rrggbb`;
+else an outlined plain avatar), then "+N", each `role=img` named by the person. Requests
+(`#joins`, `#dev-asks`, `#host-asks`) come first as cards (edge ring, accent left edge, a dot:
+accent for join and dev asks, warn for join addresses, ok for "is in"); `joinBanners`,
+`devPanel`, `hostPanel` and their trusted-click gating are untouched. The active agent card
+wraps the unchanged `#turn`-adjacent `#driver` and `#pause` blocks: avatar in its board color
+(`--spark` when none), the name (`whose` of the newest activity's agent), "Status" plus that
+board entry's `pairbrowse_status` text (hidden when none), "In <tab>" (board tab, else the
+newest activity's tab). The spark no longer spins. Other participants are compact rows in
+Session (avatar, name, app split from "Name · App", the state word, where/tab, task or last
+action), the active agent not repeated; the idle-agents line, messages and the `#session`
+hidden rule unchanged; the dead `.people .state[data-s]` selectors are gone. Session, Dev
+servers, Join addresses, Activity, Remembered details and Passwords fold under an h2 button
+(`aria-expanded`, `aria-controls`; body `hidden`, content and listeners kept), Activity open
+by default, remembered in `chrome.storage.local` "pb-panel" `{ collapsed }`; every `chrome.*`
+access is guarded so the page renders as a plain page. `common.js` gained definitions only
+(`isColor`, `splitLabel`, `initialOf`, `avatar`). `.field:focus` no longer removes the outline
+(the sheet's `:focus-visible` ring shows). Looked at (`panel-look.mjs`, 360x900 @2x over a fake
+stream): idle/connecting, live with Claude driving plus a join card and a dev-share question,
+paused (warn edge, Resume), your turn with the local pill (ellipsis, full name in the title),
+all sections open, reduced motion with keyboard focus, and without `chrome` at all (no page
+error); the logo unchanged (sha256 415a3f8e…bffd8a). Deviations: the agent card's name falls
+back to the first working local agent only when there is no activity yet; with activity from
+an agent not on the board, the card shows no status rather than another agent's; the request
+cards sit above the "Your turn" card. Tests: new `test/panel.test.mjs` (markup ids, folding
+markup, logo hashes, two timers, one storage key, sheet rules; live: rendered over a fake
+stream, header, card, rows, pause click, join card gating, folding and its persistence,
+no interval, no page error with and without `chrome`, reduced motion). `docs/security.md`,
+`using.md`, `development.md`: no change needed (same clicks, routes and gating; the one new
+storage is a list of folded section names). Full suite with the runtime: one failure,
+`memory.integration` "leave no screenshot maps behind", which fails the same on the tree
+without this change.
+
 ## Next
 
-1. `design-validate` for `hud`; then `design-subset` with `panel`, `liveview`, `modes`, `design-validate` after each.
-2. Rerun the 3000-round soak (`test/bench.mjs --soak 3000`) in a quiet window; the earlier run
+1. `design-validate` for `hud` and `panel`; then `design-subset` with `liveview`, `modes`, `design-validate` after each.
+2. Look into `memory.integration` "leave no screenshot maps behind" ("a picture went to the session"), failing before the panel change too.
+3. Rerun the 3000-round soak (`test/bench.mjs --soak 3000`) in a quiet window; the earlier run
    died with an interrupt.

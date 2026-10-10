@@ -66,7 +66,7 @@ function setup() {
   const socketOf = (h) => join(h, "run", "browser.sock");
   const start = (h, env = {}) => {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
-    const d = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, ...env }, stdio: ["ignore", out, out] });
+    const d = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_FAILOVER_MS: "2000", ...env }, stdio: ["ignore", out, out] });
     daemons.push(d);
     helperOf.set(h, d);
     return d;

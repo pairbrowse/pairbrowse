@@ -14,7 +14,10 @@ const REACHING_MS = 45_000; // a fresh tunnel's name may take this long to reach
 // In, and the connection dropped: the other addresses are tried for this long before anything
 // shows (phase stays "in"). A tunnel going down with a standby up is a non-event for the joiner.
 export const FAILOVER_MS = Number(process.env.PAIRBROWSE_TEST_FAILOVER_MS) || 20_000;
-const REQUEST_TIMEOUT_MS = { send: 30_000, leave: 5000, pointer: 5000, connect: 20_000 };
+// connect: a fresh join through a tunnel whose name is still spreading. switch: the next address
+// after the channel dropped while in; a standby tunnel answers well within this, a stalled one
+// (open, nothing crossing) is given up on sooner so the addresses keep turning.
+const REQUEST_TIMEOUT_MS = { send: 30_000, leave: 5000, pointer: 5000, connect: 20_000, switch: 8000 };
 const WAIT_MS = { idle: 3000, offline: 2000, again: 300, switch: 500 };
 const SILENT_MS = 40_000; // silence this long means the channel is gone (a host sending heartbeats 15 s apart: before 0.14.15)
 const SILENT_BEATS = 3; // or this many of the host's heartbeats missed in a row, once their spacing is known
@@ -64,8 +67,17 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
   let answered = false; // the host's side answered at least once (in, waiting, denied...)
   let lostAt = 0; // when the channel dropped while in (0: not dropped)
   const switching = () => phase === "in" && lostAt && Date.now() - lostAt < FAILOVER_MS;
+  // An "offline" held back while switching: it shows once FAILOVER_MS has passed with the channel
+  // still down, even while a connect to a stalled address is still waiting on its timeout.
+  let heldBack = null;
   const set = (p, m) => {
-    if (p === "offline" && switching()) return; // still moving to another address
+    clearTimeout(heldBack);
+    heldBack = null;
+    if (p === "offline" && switching()) { // still moving to another address
+      heldBack = setTimeout(() => { heldBack = null; if (lostAt && phase === "in") set(p, m); }, FAILOVER_MS - (Date.now() - lostAt) + 50);
+      heldBack.unref?.();
+      return;
+    }
     if (p === phase && m === message) return;
     const before = phase;
     phase = p;
@@ -116,7 +128,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     let dropped = false;
     while (!stopped) {
       try {
-        const c = await connect(`${base()}/events`, { headers });
+        const c = await connect(`${base()}/events`, { headers, timeoutMs: lostAt ? REQUEST_TIMEOUT_MS.switch : REQUEST_TIMEOUT_MS.connect });
         conn = c;
         const connectedAt = Date.now();
         answered = true;
@@ -124,7 +136,8 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
         lostAt = 0;
         if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`);
         // A stream that stalls without closing (a free tunnel can) is dropped once the host's
-        // heartbeats stop (3 s), and the next address is tried at once.
+        // heartbeats stop (3 s, SILENT_BEATS of them, 1 s apart since 0.14.15; 40 s before the
+        // first two are in or with an older host), and the next address is tried at once.
         let heard = Date.now(), lastPing = 0, silent = SILENT_MS;
         const watchdog = setInterval(() => { if (Date.now() - heard > silent) c.close(); }, 250);
         // Pushed events apply in order; pointers right away (only the latest one matters).

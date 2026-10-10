@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, nativeManifest, macHostProfile, hostCachePath, screenInfoArg } from "../scripts/native-engine.mjs";
+import { launchNative, nativeManifest, macHostProfile, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, TYPING_PACE, FILL_PACE_FLOOR } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native-pack.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
@@ -126,6 +126,148 @@ packTest("humanized mouse moves take the combined shape unless config asks for t
   }
   assert.deepEqual(seen.map((o) => o.motion), ["combined", "classic", "combined"]);
   assert.ok(seen.every((o) => o.humanize === true && o.seed));
+  assert.ok(seen.every((o) => o.typingPace === TYPING_PACE), "single actions type at the default pace");
+});
+
+// A seeded generator, so a schedule's shape can be checked on fixed numbers.
+function seeded(seed = 7) {
+  let s = seed >>> 0;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
+}
+
+test("form fill settings: typingPace 0.3 and Tab between fields by default, floored and parsed", () => {
+  assert.equal(TYPING_PACE, 0.3);
+  assert.deepEqual(fillSettings({}), { typingPace: 0.3, formMove: "tab" });
+  assert.deepEqual(fillSettings(undefined), { typingPace: 0.3, formMove: "tab" });
+  assert.deepEqual(fillSettings({ pairbrowse: { typingPace: 0.5, formMove: "mouse" } }), { typingPace: 0.5, formMove: "mouse" });
+  assert.equal(fillSettings({ pairbrowse: { formMove: "anything else" } }).formMove, "tab");
+  assert.equal(fillSettings({ pairbrowse: { typingPace: 0.2 } }).typingPace, FILL_PACE_FLOOR, "a form never types quicker than the floor");
+  assert.equal(fillSettings({ pairbrowse: { typingPace: 3 } }).typingPace, 1);
+  assert.equal(fillSettings({ pairbrowse: { typingPace: "fast" } }).typingPace, 0.3);
+});
+
+test("a keystroke schedule types every key with a person's rhythm: rollover, Shift held, no faster than 40 ms a key", () => {
+  const text = "Visser Tuinen BV, anna.visser@example.com";
+  const events = keystrokeSchedule(text, 0.3, seeded());
+  for (let i = 1; i < events.length; i++) assert.ok(events[i].at >= events[i - 1].at, "in time order");
+  const downs = events.filter((e) => e.type === "down" && e.key !== "Shift").map((e) => e.key);
+  assert.deepEqual(downs, Array.from(text), "every character goes down once, in order");
+  const open = new Map();
+  for (const e of events) {
+    if (e.type === "down") { assert.equal(open.has(e.key), false, `${e.key} is up before it goes down again`); open.set(e.key, e.at); }
+    else { assert.ok(open.has(e.key), `${e.key} was down`); assert.ok(e.at > open.get(e.key)); open.delete(e.key); }
+  }
+  assert.equal(open.size, 0, "every key comes up");
+  // Shift is down while a capital or a sign is typed, up while plain letters are.
+  let shift = false;
+  for (const e of events) {
+    if (e.key === "Shift") shift = e.type === "down";
+    else if (e.type === "down") assert.equal(shift, /[A-Z@]/.test(e.key), `Shift ${shift ? "held" : "up"} for ${e.key}`);
+  }
+  // Rollover: some key goes down before the one before it is up.
+  const keyed = events.filter((e) => e.key !== "Shift");
+  assert.ok(keyed.some((e, i) => e.type === "down" && keyed[i - 1]?.type === "down"), "a quick typist's overlap");
+  const perChar = (pace, rng) => { let total = 0, n = 0; for (let i = 0; i < 200; i++) { const ev = keystrokeSchedule(text, pace, rng); total += ev[ev.length - 1].at; n += text.length; } return total / n; };
+  const rng = seeded(3);
+  const floor = perChar(0.2, rng), fast = perChar(0.3, rng), slow = perChar(1, rng);
+  assert.ok(floor >= 40, `the floor is about 40 ms a key: ${floor.toFixed(1)}`);
+  assert.ok(floor < fast && fast < slow, "a lower pace is quicker");
+  assert.ok(fast < 65, `0.3 is a quick hand: ${fast.toFixed(1)} ms a key`);
+  assert.ok(slow > 110, `1 is the engine's own pace: ${slow.toFixed(1)} ms a key`);
+  assert.deepEqual(keystrokeSchedule("", 0.3), []);
+  assert.deepEqual(keystrokeSchedule("a\n", 0.3, seeded()).filter((e) => e.type === "down").map((e) => e.key), ["a", "Enter"]);
+});
+
+// A page with fields in tab order: what humanFill asks of it is recorded.
+function fakeForm(fields) {
+  const log = [];
+  const byRef = new Map(fields.map((f) => [f.ref, { ...f, value: f.value ?? "", checked: f.checked ?? false, index: f.index ?? 0 }]));
+  let focus = null, held = "";
+  const typed = () => { const f = byRef.get(focus); if (f) f.value += held; held = ""; };
+  const page = {
+    _pairbrowseHumanized: true,
+    keyboard: {
+      press: async (key) => {
+        log.push(`press ${key}`);
+        if (key === "Tab") { const refs = fields.map((f) => f.ref); focus = refs[refs.indexOf(focus) + 1] ?? null; }
+        else if (key === "Space") { const f = byRef.get(focus); if (f?.type === "checkbox") f.checked = !f.checked; }
+        else if (key === "Backspace") { const f = byRef.get(focus); if (f) f.value = ""; }
+      },
+      down: async (key) => {
+        const f = byRef.get(focus);
+        // A closed select picks the first option starting with what is typed, as Chrome does.
+        if (f?.type === "combobox" && key.length === 1) { f.prefix = (f.prefix || "") + key; f.index = f.options.findIndex((o) => o.toLowerCase().startsWith(f.prefix.toLowerCase())); }
+        else if (key.length === 1 || key === "Enter") { held += key === "Enter" ? "\n" : key; typed(); }
+        log.push(`down ${key}`);
+      },
+      up: async (key) => { log.push(`up ${key}`); },
+    },
+    locator: (selector) => {
+      const ref = selector.replace("aria-ref=", "");
+      const f = byRef.get(ref);
+      const loc = {
+        first: () => loc,
+        evaluate: async (fn, arg) => {
+          const source = String(fn);
+          const refs = fields.map((x) => x.ref);
+          if (source.includes("activeElement") && source.includes("order")) return focus === ref ? "focused" : refs[refs.indexOf(focus) + 1] === ref && !f.unreachable ? "tab" : "no";
+          if (source.includes("activeElement")) return focus === ref;
+          if (source.includes("prefix")) return { from: f.index, to: f.options.indexOf(arg), prefix: arg[0] };
+          if (source.includes("selectedIndex")) return f.index;
+          return null;
+        },
+        click: async () => { log.push(`click ${ref}`); focus = ref; },
+        inputValue: async () => { if (f.type === "checkbox") throw new Error("not a text field"); return f.value; },
+        isChecked: async () => f.checked,
+        setChecked: async (want) => { log.push(`setChecked ${ref}`); f.checked = want; },
+        selectOption: async ({ label }) => { log.push(`selectOption ${ref}`); f.index = f.options.indexOf(label); },
+        fill: async (value) => { log.push(`fill ${ref}`); f.value = value; },
+      };
+      return loc;
+    },
+  };
+  return { page, log, byRef };
+}
+
+test("a form fill goes field to field by Tab where that is next, by mouse otherwise, and reads each back", async () => {
+  const form = fakeForm([
+    { ref: "e1", type: "textbox" }, { ref: "e2", type: "textbox", value: "old" }, { ref: "e3", type: "combobox", options: ["Pick one", "Germany", "Netherlands"] },
+    { ref: "e4", type: "textbox", unreachable: true }, { ref: "e5", type: "checkbox" },
+  ]);
+  const items = [
+    { target: "e1", name: "First name", type: "textbox", value: "Anna" },
+    { target: "e2", name: "Last name", type: "textbox", value: "Visser" },
+    { target: "e3", name: "Country", type: "combobox", value: "Netherlands" },
+    { target: "e4", name: "Notes", type: "textbox", value: "Hi" },
+    { target: "e5", name: "I agree", type: "checkbox", value: "true" },
+  ];
+  const { lines, failed } = await humanFill(form.page, items, fillSettings({}), { rng: seeded(), wait: async () => {} });
+  assert.equal(failed, false);
+  assert.deepEqual(lines, ["Filled First name with Anna.", "Filled Last name with Visser.", "Chose Netherlands for Country.", "Filled Notes with Hi.", "Ticked I agree."]);
+  assert.deepEqual([...form.byRef.values()].map((f) => f.value || f.index || f.checked), ["Anna", "Visser", 2, "Hi", true]);
+  const moves = form.log.filter((l) => /^(click|press Tab|press Space|setChecked|selectOption|press ControlOrMeta\+a|press Backspace)/.test(l));
+  // A fresh page: Tab into the first field; a field with text in it is cleared first; the select by
+  // its first letter; a field not next in the order by mouse; the box by Space.
+  assert.deepEqual(moves, ["press Tab", "press Tab", "press ControlOrMeta+a", "press Backspace", "press Tab", "click e4", "press Tab", "press Space"]);
+  assert.deepEqual(form.log.filter((l) => l === "down N"), ["down N"], "the select heard its option's first letter");
+  assert.ok(!form.log.some((l) => l.startsWith("fill ")), "no instant paste: every value went in key by key");
+});
+
+test("a form fill by mouse reaches for every field; a secret is never said; a value that doesn't stay is", async () => {
+  const form = fakeForm([{ ref: "e1", type: "textbox" }, { ref: "e2", type: "textbox" }, { ref: "e3", type: "textbox", swallow: true }]);
+  form.page.locator("aria-ref=e3"); // the page keeps what is typed into e3 only until it is read back
+  const original = form.page.locator;
+  form.page.locator = (selector) => { const loc = original(selector); if (selector.endsWith("e3")) loc.inputValue = async () => ""; return loc; };
+  const items = [
+    { target: "e1", name: "Email", type: "textbox", value: "a@b.c" },
+    { target: "e2", name: "Password", type: "textbox", value: "real-secret", shown: "SITE_PASSWORD" },
+    { target: "e3", name: "Code", type: "textbox", value: "1234" },
+  ];
+  const { lines, failed } = await humanFill(form.page, items, fillSettings({ pairbrowse: { formMove: "mouse" } }), { rng: seeded(), wait: async () => {} });
+  assert.equal(failed, true);
+  assert.deepEqual(lines, ["Filled Email with a@b.c.", "Filled Password with SITE_PASSWORD.", "Code didn't take what was typed: it is empty."]);
+  assert.deepEqual(form.log.filter((l) => /^(click|press Tab)/.test(l)), ["click e1", "click e2", "click e3"], "by mouse: never Tab");
+  assert.equal(lines.join().includes("real-secret"), false);
 });
 
 packTest("engine pack emits this platform's fingerprint, proxy, locale, and stable seed flags", async () => {

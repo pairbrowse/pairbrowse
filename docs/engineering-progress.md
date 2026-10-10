@@ -63,8 +63,10 @@ count verified in the click's own result):
 |---|---|---|---|---|---|---|---|
 | 1 | 11.7 s | 2.6 | 10 / 0 | 398 ms | 265 ms | 519 ms | 1.39 GB |
 | 3 | 19.5 s | 4.6 | 30 / 0 | 559–807 ms | 519–780 ms | 551–812 ms | 1.84 GB |
+| 5 | 23.1 s | 6.5 | 50 / 0 | 617–1062 ms | 552–912 ms | 618–1027 ms | 2.20 GB |
 
-Three agents get 1.8× the throughput of one, with every click correct; per-call latency rises
+Three agents get 1.8× the throughput of one and five get 2.5×, with every click correct
+(helper RSS 214 MB with five); per-call latency rises
 about 1.5–2× (shared helper queue, three renderers). Tabs are independent lanes (`collaboration.run`
 per tab), so the remaining serialization is the helper's single thread and the browser.
 
@@ -150,6 +152,21 @@ newest-frame wait.
     186 MB; helper heap 95 → 94 MB and RSS 216 → 205 MB over the soak, tree flat. The sharp
     still 180 ms after motion is unchanged. (A third of the browser's CPU with viewers is the
     JPEG encoding itself; WebRTC for shared-browser joiners is the cheaper route and unchanged.)
+24. **Popup looks on a heavy page** (`scratchpad/heavy-popups.mjs`: about 4000 nodes, 40 fixed
+    boxes): tidy after a click 148–162 ms against 130–138 on the small form page, so the two
+    looks cost about 20 ms there; a snapshot's tidy is 10 ms. Not worth a cache. The heavy part
+    is Playwright's own inline snapshot of the page (190 ms in the MCP phase).
+25. **Shared-browser joiner soak** (`scratchpad/joiner-soak.mjs`: a host helper and a joiner
+    helper, a pb-join code approved, the joiner's picture page connected over WebRTC, 60 rounds
+    of host navigate + click with the joiner's agent snapshotting in the host's browser at the
+    same time): both helpers' memory flat (host heap 84 → 96 MB, RSS 227 → 191; joiner heap
+    88 → 84, RSS 221 → 182; both trees flat), the connection stayed "connected" throughout,
+    60 of 60 host clicks verified, 0 joiner errors; host navigate p50 398 ms, host click 531 ms,
+    joiner snapshot 735 ms (over the join channel). CPU during the soak: host tree 67%, joiner
+    tree 41% of a core, mostly the tab capture at 60 fps and its decoding. Fixed: capped at
+    30 fps (`scripts/browser/panel/share.js`, capture and encoder; docs/sharing.md says so).
+    Same soak after: host tree 54%, joiner tree 32%, same latencies (host click p50 519 ms,
+    joiner snapshot 733 ms), 60 of 60 verified, memory flat, connection stable.
 19. **No multi-agent measurement.** Added `test/bench.mjs --agents N --rounds R`: N sessions in
     tabs of their own, each navigate + snapshot + click with the count verified in the click's
     own result; per-agent p50/p95, calls per second, verified and wrong counts.
@@ -197,18 +214,23 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
    page first (the bench's long page shows little).
 5. The fallback screencast and the live view each run their own screencast of the same tab:
    share one (rare combination: a joiner on the slow route while the host watches the live view).
-6. A shared-browser joiner soak (two helpers, a pb-join code, WebRTC): `test/shared-mode.integration`
-   has the two-home setup to build on. A soak with `--expose-gc` and thousands of rounds.
+6. Fold the joiner soak (scratchpad `joiner-soak.mjs`, built on `test/shared-mode.integration`'s
+   two-home setup) into `test/bench.mjs` as `--joiner`; a soak with `--expose-gc` and thousands
+   of rounds.
 7. Idle CPU of the GPU process after work (several seconds at 5–9%) is Chromium's; nothing of
    PairBrowse's drives it (checked: about:blank idles at 0).
 
 ## Final run (2026-10-11, every change in place)
 
 - `npm run lint`: clean.
-- Full suite with the runtime: 458 tests, 438 pass, 0 fail, 20 skipped (opt-in modes).
-- Fuzz: 36 pass. Bench: `bench-after4` figures in the table above.
-- One flake seen once in five full runs under the suite's load (eleven browsers at once):
+- Full suite with the runtime: 458 tests, 438 pass, 0 fail, 20 skipped (opt-in modes), run
+  after the last change (the 30 fps cap).
+- Fuzz: 36 pass. Bench: `bench-after4` figures in the table above; agents 1/3/5 and the
+  viewer and joiner soaks as recorded.
+- One flake seen once in six full runs under the suite's load (eleven browsers at once):
   form-patterns' "a value a script rewrites 300 ms after the field is left" read the field
-  mid-rewrite ("GermanyUnited States"). It passes alone (2 of 2) and in the other full runs.
-- Committed on branch `perf/screenshots-presence-lifecycle` (two commits; not pushed, no
-  version bump).
+  mid-rewrite. It passes alone (2 of 2) and in the other full runs.
+- Committed on branch `perf/screenshots-presence-lifecycle` (three commits; not pushed, no
+  version bump). Scratchpad scripts used for the one-off measurements (`realsites.mjs`,
+  `scroll-exp.mjs`, `heavy-popups.mjs`, `joiner-soak.mjs`, `idle-exp.mjs`) are described
+  above; `test/bench.mjs` holds the repeatable ones.

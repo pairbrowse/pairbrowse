@@ -61,7 +61,8 @@ const require = createRequire(join(paths.runtime, "package.json"));
 const { createConnection } = require("@playwright/mcp");
 const { chromium: playwrightChromium } = require("playwright");
 
-const SHUTDOWN_GRACE_MS = 8000;
+// How long a stopping helper waits for the browser to close cleanly before killing it (shutdown).
+const SHUTDOWN_GRACE_MS = 5000;
 const log = (...a) => appendFileSync(paths.daemonLog, `${new Date().toISOString()} ${a.join(" ")}\n`);
 const config = loadConfig();
 // Patchright unless the config opts into Playwright, or this Node.js is too old for Patchright.
@@ -531,8 +532,13 @@ async function shutdown(code) {
   sharing.closeLiveView();
   follow.stop().catch(() => {});
   cobrowse.stop();
-  setTimeout(() => process.exit(code), SHUTDOWN_GRACE_MS).unref();
+  // The browser gets a clean close (Chromium writes its cookies and logins on the way out; it
+  // writes them only every ~30 s otherwise), at most SHUTDOWN_GRACE_MS: then the helper exits
+  // and Playwright's exit handler kills what's left of it.
+  const started = Date.now();
+  setTimeout(() => { log(`shutdown: the browser didn't close within ${SHUTDOWN_GRACE_MS} ms; killing it`); process.exit(code); }, SHUTDOWN_GRACE_MS).unref();
   await context.close();
+  log(`shutdown: browser closed cleanly in ${Date.now() - started} ms`);
   if (process.platform !== "win32") rmSync(paths.socket, { force: true });
   process.exit(code);
 }

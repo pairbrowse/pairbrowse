@@ -211,7 +211,8 @@ function fakeForm(fields) {
           const source = String(fn);
           const refs = fields.map((x) => x.ref);
           if (source.includes("activeElement") && source.includes("order")) return focus === ref ? "focused" : refs[refs.indexOf(focus) + 1] === ref && !f.unreachable ? "tab" : "no";
-          if (source.includes("activeElement")) return focus === ref;
+          if (source.includes("activeElement")) return focus === ref ? "here" : "elsewhere";
+          if (source.includes("datetime-local") && source.includes("tagName")) return f.kind || "";
           if (source.includes("prefix")) return { from: f.index, to: f.options.indexOf(arg), prefix: arg[0] };
           if (source.includes("selectedIndex")) return f.index;
           return null;
@@ -221,7 +222,7 @@ function fakeForm(fields) {
         isChecked: async () => f.checked,
         setChecked: async (want) => { log.push(`setChecked ${ref}`); f.checked = want; },
         selectOption: async ({ label }) => { log.push(`selectOption ${ref}`); f.index = f.options.indexOf(label); },
-        fill: async (value) => { log.push(`fill ${ref}`); f.value = value; },
+        fill: async (value) => { log.push(`fill ${ref} ${page._pairbrowseHumanized ? "humanized" : "plain"}`); focus = ref; f.value = value; },
       };
       return loc;
     },
@@ -232,25 +233,28 @@ function fakeForm(fields) {
 test("a form fill goes field to field by Tab where that is next, by mouse otherwise, and reads each back", async () => {
   const form = fakeForm([
     { ref: "e1", type: "textbox" }, { ref: "e2", type: "textbox", value: "old" }, { ref: "e3", type: "combobox", options: ["Pick one", "Germany", "Netherlands"] },
-    { ref: "e4", type: "textbox", unreachable: true }, { ref: "e5", type: "checkbox" },
+    { ref: "e4", type: "textbox", kind: "date" }, { ref: "e5", type: "textbox", unreachable: true }, { ref: "e6", type: "checkbox" },
   ]);
   const items = [
     { target: "e1", name: "First name", type: "textbox", value: "Anna" },
     { target: "e2", name: "Last name", type: "textbox", value: "Visser" },
     { target: "e3", name: "Country", type: "combobox", value: "Netherlands" },
-    { target: "e4", name: "Notes", type: "textbox", value: "Hi" },
-    { target: "e5", name: "I agree", type: "checkbox", value: "true" },
+    { target: "e4", name: "Birthday", type: "textbox", value: "17 May 1990" },
+    { target: "e5", name: "Notes", type: "textbox", value: "Hi" },
+    { target: "e6", name: "I agree", type: "checkbox", value: "true" },
   ];
-  const { lines, failed } = await humanFill(form.page, items, fillSettings({}), { rng: seeded(), wait: async () => {} });
+  const { lines, failed } = await humanFill(form.page, items, fillSettings({}), { rng: seeded(), wait: async () => {}, isoDate: (v) => (v === "17 May 1990" ? "1990-05-17" : null) });
   assert.equal(failed, false);
-  assert.deepEqual(lines, ["Filled First name with Anna.", "Filled Last name with Visser.", "Chose Netherlands for Country.", "Filled Notes with Hi.", "Ticked I agree."]);
-  assert.deepEqual([...form.byRef.values()].map((f) => f.value || f.index || f.checked), ["Anna", "Visser", 2, "Hi", true]);
-  const moves = form.log.filter((l) => /^(click|press Tab|press Space|setChecked|selectOption|press ControlOrMeta\+a|press Backspace)/.test(l));
+  assert.deepEqual(lines, ["Filled First name with Anna.", "Filled Last name with Visser.", "Chose Netherlands for Country.", "Filled Birthday with 1990-05-17.", "Filled Notes with Hi.", "Ticked I agree."]);
+  assert.deepEqual([...form.byRef.values()].map((f) => f.value || f.index || f.checked), ["Anna", "Visser", 2, "1990-05-17", "Hi", true]);
+  const moves = form.log.filter((l) => /^(click|fill|press Tab|press Space|setChecked|selectOption|press ControlOrMeta\+a|press Backspace)/.test(l));
   // A fresh page: Tab into the first field; a field with text in it is cleared first; the select by
-  // its first letter; a field not next in the order by mouse; the box by Space.
-  assert.deepEqual(moves, ["press Tab", "press Tab", "press ControlOrMeta+a", "press Backspace", "press Tab", "click e4", "press Tab", "press Space"]);
+  // its first letter; the date set at once in its turn, with the human-like input off for that; a
+  // field not next in the order by mouse; the box by Space.
+  assert.deepEqual(moves, ["press Tab", "press Tab", "press ControlOrMeta+a", "press Backspace", "press Tab", "press Tab", "fill e4 plain", "click e5", "press Tab", "press Space"]);
+  assert.equal(form.page._pairbrowseHumanized, true, "the human-like input is back on after the date");
   assert.deepEqual(form.log.filter((l) => l === "down N"), ["down N"], "the select heard its option's first letter");
-  assert.ok(!form.log.some((l) => l.startsWith("fill ")), "no instant paste: every value went in key by key");
+  assert.equal(form.log.filter((l) => l.startsWith("fill ")).length, 1, "no instant paste: every text went in key by key");
 });
 
 test("a form fill by mouse reaches for every field; a secret is never said; a value that doesn't stay is", async () => {

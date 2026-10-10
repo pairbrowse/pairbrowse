@@ -142,10 +142,12 @@ given: into the first field, then on to the next with the Tab key when it is the
 page's own order (the mouse reaches for it otherwise, and for any field Tab didn't land on), the value
 typed key by key at `typingPace` with a quick typist's rhythm (the next key often down before the
 last is up, a beat after each word), a closed select picked by typing its option's first letters, a
-box ticked with Space. Every field is read back, and a value that didn't stay is said so in the
-result. A form never types quicker than about 40 ms a key on average (`typingPace` below 0.25
-counts as 0.25 there). An 11-field form takes about 10 s this way, against 25 s with a mouse reach
-and a full key hold for every field. `formMove` picks how PairBrowse goes from field to field:
+box ticked with Space, a date or time field set at once in its turn (its exact shape, YYYY-MM-DD).
+Every field is read back, and a value that didn't stay is said so in the result. A form never types
+quicker than about 40 ms a key on average (`typingPace` below 0.25 counts as 0.25 there). An
+11-field form takes about 9 s this way (the first fill after the browser starts a little longer),
+against 25 s with a mouse reach and a full key hold for every field. `formMove` picks how
+PairBrowse goes from field to field:
 
 ```json
 { "pairbrowse": { "formMove": "mouse" } }

@@ -992,7 +992,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // A date, time, month or week field takes one exact shape (YYYY-MM-DD, hh:mm): typing into it
       // key by key, as the PairBrowse browser does, leaves garbage. PairBrowse sets such fields
       // itself, a date in another spelling turned into YYYY-MM-DD when it can only mean one day.
-      if (name === "browser_type" || name === "browser_fill_form") {
+      // A form PairBrowse fills itself (ownFill, below) sets its date fields in their turn.
+      const ownFill = name === "browser_fill_form" && Array.isArray(args.fields) && args.fields.every((f) => isRef(f?.target)) && (actingIn || await serverPage())?._pairbrowseHumanized === true;
+      if ((name === "browser_type" || name === "browser_fill_form") && !ownFill) {
         const page = actingIn || await serverPage();
         const items = name === "browser_type" ? [{ target: args.target, value: args.text, name: args.element }] : args.fields;
         const typeOf = async (t) => (page && isRef(t) ? within(800, page.locator(`aria-ref=${t}`).first().evaluate((n) => (n.tagName === "INPUT" ? String(n.type).toLowerCase() : ""), undefined, { timeout: 700 })).catch(() => "") : "");
@@ -1064,13 +1066,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // humanFill). The browser server's fill would reach for every field by mouse and type at the
       // engine's own pace: over 2 s a field. Values come from the swapped copy (real secrets), what the
       // result says from Claude's (names, masked).
-      if (name === "browser_fill_form" && Array.isArray(args.fields) && args.fields.every((f) => isRef(f?.target))) {
+      if (ownFill) {
         const page = actingIn || await serverPage();
-        if (page && page._pairbrowseHumanized === true) {
-          const items = msg.params.arguments.fields.map((f, i) => ({ ...f, shown: shown.fields[i]?.value }));
-          const { lines, failed } = await humanFill(page, items, fillSettings(config), { trace: log });
-          return reply(msg.id, [...lines, ...fieldNotes.splice(0)].join("\n"), failed);
-        }
+        const items = msg.params.arguments.fields.map((f, i) => ({ ...f, shown: shown.fields[i]?.value }));
+        const { lines, failed } = await humanFill(page, items, fillSettings(config), { trace: log, isoDate });
+        return reply(msg.id, [...lines, ...fieldNotes.splice(0)].join("\n"), failed);
       }
       calls.set(msg.id, name);
       callArgs.set(msg.id, args);

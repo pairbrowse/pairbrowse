@@ -249,8 +249,10 @@ function selectByTyping(el, label) {
 // focused, else by its click. Every field is read back. items: [{ target (aria ref), name, type,
 // value (what goes in), shown (what the result may say: a secret shows its name) }].
 // Returns { lines, failed }. A field whose value doesn't stay is said so; the rest go on. trace: one
-// line on how each field was reached and how long it took (the daemon log).
-export async function humanFill(page, items, settings, { rng = Math.random, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), trace = null } = {}) {
+// line on how each field was reached and how long it took (the daemon log). isoDate: a date in
+// another spelling as YYYY-MM-DD, or null (runner.mjs).
+const DATE_SHAPES = { date: "YYYY-MM-DD", "datetime-local": "YYYY-MM-DDThh:mm", month: "YYYY-MM", week: "YYYY-Www", time: "hh:mm" };
+export async function humanFill(page, items, settings, { rng = Math.random, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), trace = null, isoDate: toIso = () => null } = {}) {
   const between = (a, b) => a + (b - a) * rng();
   const keys = page.keyboard;
   const lines = [], took = [];
@@ -279,13 +281,35 @@ export async function humanFill(page, items, settings, { rng = Math.random, wait
         const next = await loc.evaluate(nextByTab, undefined, { timeout: 1500 }).catch(() => "no");
         if (next === "focused") focused = true;
         else if (next === "tab") {
-          await keys.press("Tab");
-          await wait(between(70, 160));
-          focused = await loc.evaluate((el) => el === document.activeElement || el.contains(document.activeElement), undefined, { timeout: 1500 }).catch(() => false);
+          // A date or time field just left has parts (month, day, year): Tab moves through them
+          // first, up to three more presses while the focus stays in that same field.
+          for (let presses = 0; presses < 4 && !focused; presses++) {
+            await keys.press("Tab");
+            await wait(between(50, 120));
+            const at = await loc.evaluate((el) => {
+              const active = document.activeElement;
+              if (el === active || el.contains(active)) return "here";
+              return active?.tagName === "INPUT" && /^(date|time|month|week|datetime-local)$/.test(active.type) ? "parts" : "elsewhere";
+            }, undefined, { timeout: 1500 }).catch(() => "elsewhere");
+            if (at === "here") focused = true;
+            else if (at !== "parts") break;
+          }
         }
         if (focused) how = next;
       }
-      if (item.type === "checkbox" || item.type === "radio") {
+      // A date, time, month or week field takes one exact shape (YYYY-MM-DD, hh:mm): key by key
+      // leaves garbage, so it is set at once (a date in another spelling becomes YYYY-MM-DD when
+      // it can only mean one day). Focused by Tab or not, the field is where a person's eyes are.
+      const dated = item.type === "textbox" ? await loc.evaluate((el) => (el.tagName === "INPUT" && /^(date|time|month|week|datetime-local)$/.test(el.type) ? el.type : ""), undefined, { timeout: 1500 }).catch(() => "") : "";
+      if (dated) {
+        const exact = dated === "date" ? toIso(value) || value : value;
+        const human = page._pairbrowseHumanized;
+        page._pairbrowseHumanized = false;
+        try { await loc.fill(exact, { timeout: 5000 }); } finally { page._pairbrowseHumanized = human; }
+        const now = await loc.inputValue({ timeout: 1500 }).catch(() => null);
+        if (now === exact) lines.push(`Filled ${label} with ${plain ? exact : shown}.`);
+        else { failed = true; lines.push(`${label} didn't take ${plain ? `"${value.slice(0, 40)}"` : "it"}: a ${dated} field takes ${DATE_SHAPES[dated]}.`); }
+      } else if (item.type === "checkbox" || item.type === "radio") {
         const want = value === "true";
         if ((await loc.isChecked({ timeout: 3000 })) !== want) {
           if (focused) { await keys.press("Space"); await wait(between(40, 110)); }

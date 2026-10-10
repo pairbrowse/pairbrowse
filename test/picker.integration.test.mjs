@@ -397,7 +397,6 @@ test("a join code that leads elsewhere than a PairBrowse address asks the person
   try {
     const joiner = await connect(h);
     const live = await joiner.live();
-    const waiting = joiner.tool("browser_tabs", { action: "list" }, 120_000);
     await until("the picker", async () => (await (await fetch(`${live}sessions.json`)).json()).picking);
     await panelConnected(live);
 
@@ -435,6 +434,8 @@ test("a join code that leads elsewhere than a PairBrowse address asks the person
     assert.deepEqual((await sseEvent(`${live}events?panel=1`, "joinhost")).asks.map((a) => a.host), ["share.pbtest.example"]);
 
     stage = "Always allow in the picker: written to config.json, and the join starts with that code";
+    const waiting = joiner.tool("browser_tabs", { action: "list" }, 120_000); // an agent's action waits for the pick
+    await sleep(300);
     const allowed = await post(`${live}joinhost`, { op: "allow", id: askId, always: true }, EXTENSION);
     assert.equal(allowed.status, 200, JSON.stringify(allowed.json));
     assert.equal(allowed.json.joined, true, JSON.stringify(allowed.json));

@@ -225,9 +225,8 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
 
 ## Next highest-priority actions
 
-1. Merge or review branch `perf/screenshots-presence-lifecycle` (a version bump needs
-   CHANGELOG.md and a tag: see CLAUDE.md). Look at the bar and badge in the headed browser once:
-   the blur is gone (flat, slightly more opaque backgrounds).
+1. Shipped as 0.15.42. Look at the bar and badge in the headed browser once: the blur is gone
+   (flat, slightly more opaque backgrounds).
 2. The 200 ms MCP settle passed 6 of 6 on real sites both headless and with the native headed
    build; an SPA that reacts late without any request would need `settleMs` higher (config).
 3. Screenshot cost (≈110 ms per decorated result) is the screencast's first frame plus the
@@ -255,7 +254,7 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
 - One flake seen once in six full runs under the suite's load (eleven browsers at once):
   form-patterns' "a value a script rewrites 300 ms after the field is left" read the field
   mid-rewrite. It passes alone (2 of 2) and in the other full runs.
-- Committed on branch `perf/screenshots-presence-lifecycle` (five commits; not pushed, no
-  version bump: the repo's rules leave merge, push and bump to the user). Scratchpad scripts used for the one-off measurements (`realsites.mjs`,
+- Shipped as PairBrowse 0.15.42: merged into main (fast-forward), tagged `v0.15.42`, pushed
+  with the tag on 2026-10-11 at the user's word. Scratchpad scripts used for the one-off measurements (`realsites.mjs`,
   `scroll-exp.mjs`, `heavy-popups.mjs`, `joiner-soak.mjs`, `idle-exp.mjs`) are described
   above; `test/bench.mjs` holds the repeatable ones.

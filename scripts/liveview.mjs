@@ -31,6 +31,9 @@ export { addressToUrl } from "./liveview/input.mjs";
 
 const TICK_MS = 1500; // following Claude's tab, and the tab strip
 const SETTLE_MS = 180; // the page is still this long: send one sharp frame
+// Frames come as fast as they're acknowledged: at most this many a second (a form being filled
+// or a page scrolling reads fine at 30; unpaced, a busy page encodes 60 a second for the viewers).
+const FRAME_EVERY_MS = 33;
 const SHARP_QUALITY = 90;
 const THUMB_QUALITY = { min: 20, max: 80, default: 50 };
 const JOINER_NAV_MS = 15_000; // a joiner's change: until the host's tab starts loading it
@@ -435,8 +438,13 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     }
     const cdp = await page.context().newCDPSession(page);
     try {
+      let lastAt = 0;
       cdp.on("Page.screencastFrame", ({ data, metadata, sessionId }) => {
-        cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+        // The next frame comes once this one is acknowledged: paced to FRAME_EVERY_MS.
+        const wait = Math.max(0, FRAME_EVERY_MS - (Date.now() - lastAt));
+        lastAt = Date.now() + wait;
+        const ack = () => cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+        if (wait) setTimeout(ack, wait).unref(); else ack();
         frameSeq++;
         lastFrame = { img: data, w: metadata.deviceWidth, h: metadata.deviceHeight };
         broadcast("frame", lastFrame);

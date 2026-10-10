@@ -169,15 +169,33 @@ async function run({ screenshots }) {
 
 // --soak N: N rounds of navigate + snapshot + click + type on one helper, the helper's heap and
 // the tree's RSS every 50 rounds: growth that doesn't level off is a leak.
-async function soak(rounds) {
+// --viewers N: N people watching through the live view (a watch link, each an open event
+// stream taking every frame) during the soak: the frames they got and the tree's CPU meanwhile.
+async function soak(rounds, viewers = 0) {
   const { server, url } = await site();
   const helper = await startHelper({ screenshots: true });
   const { s, daemon } = helper;
   const samples = [];
+  const watching = [];
+  const got = { frames: 0, bytes: 0, events: 0 };
   try {
     const mem = async () => JSON.parse(text(await s.tool("pairbrowse_test_memory")));
     const probe = async (i) => { const m = await mem(); samples.push({ round: i, heapMb: Math.round(m.heapUsed / 1048576), helperRssMb: Math.round(m.rss / 1048576), treeMb: Math.round(sumRss(tree(daemon.pid)) / 1024), contexts: m.contexts }); };
     await s.tool("browser_navigate", { url: url("/form") }, 60_000);
+    if (viewers) {
+      const inv = text(await s.tool("pairbrowse_invite", { action: "create", role: "watch", label: "Watcher", hours: 1, share: "link", name: "Host" }));
+      const link = inv.match(/Link: (http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{64}\/)/)?.[1];
+      if (!link) throw new Error(`no watch link: ${inv.slice(0, 200)}`);
+      for (let v = 0; v < viewers; v++) {
+        const ac = new AbortController();
+        const res = await fetch(`${link}events`, { signal: ac.signal });
+        const reader = res.body.getReader();
+        const pump = (async () => { for (;;) { const { done, value } = await reader.read().catch(() => ({ done: true })); if (done) return; got.bytes += value.length; const t = Buffer.from(value).toString("latin1"); got.frames += (t.match(/event: frame/g) || []).length; got.events += (t.match(/\nevent: /g) || []).length; } })();
+        watching.push({ ac, pump });
+      }
+      await sleep(1500);
+    }
+    const cpu0 = tree(daemon.pid), t0 = Date.now();
     await probe(0);
     for (let i = 1; i <= rounds; i++) {
       await s.tool("browser_navigate", { url: url(i % 2 ? "/form" : `/p${i}`) }, 60_000);
@@ -188,11 +206,17 @@ async function soak(rounds) {
       if (field) await s.tool("browser_type", { element: "field", target: field, text: `r${i}` });
       if (i % 50 === 0) await probe(i);
     }
+    const secs = (Date.now() - t0) / 1000;
+    const cpu1 = tree(daemon.pid);
+    const perKind = {};
+    for (const p of cpu1) { const was = cpu0.find((x) => x.pid === p.pid); perKind[p.kind] = Math.round(((perKind[p.kind] || 0) + ((p.cpu - (was?.cpu || 0)) / secs) * 100) * 10) / 10; }
     await sleep(3000);
     await probe(rounds + 1);
+    samples.push({ viewers, secs: Math.round(secs), cpuPctDuring: perKind, viewersGot: viewers ? { ...got, mb: Math.round(got.bytes / 1048576 * 10) / 10 } : undefined });
   } catch (e) {
     samples.push({ error: `${e.message}\n${helper.log().slice(-1000)}` });
   } finally {
+    for (const w of watching) w.ac.abort();
     await helper.stop();
     server.close();
   }
@@ -249,7 +273,7 @@ if (opt("--agents", "")) {
 }
 
 if (opt("--soak", "")) {
-  const samples = await soak(Number(opt("--soak", 200)));
+  const samples = await soak(Number(opt("--soak", 200)), Number(opt("--viewers", 0)));
   console.log(JSON.stringify(samples, null, 1));
   if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify({ at: new Date().toISOString(), soak: samples }, null, 1));
   process.exit(0);

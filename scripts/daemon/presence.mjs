@@ -22,18 +22,22 @@ const USER_KINDS = new Set(["click", "type", "key", "wheel", "scroll", "move", "
 // "Pause agents" or "Resume" in the page's bar ("pause" or "resume"; never page input).
 export function createPresence({ host, readEvents, pages, paused, onUsed, onStale, applyBar, refreshTabs, onPauseButton = () => {}, restoring = () => false }) {
   const humanAt = new WeakMap(); // tab -> { t, who }: the last time a person used it, and who
-  // Where agents' cursors went in each tab lately ([{ x, y, t }], document pixels): a press far
-  // from the agent's last target is still the agent's when its cursor got there, even late.
+  // Where agents' cursors went in each tab lately ([{ x, y, w, h, t, press }], document pixels,
+  // x and y the center): a press far from the agent's last target is still the agent's when its
+  // cursor got there, even late. press: a box PairBrowse declared it was about to press (an
+  // agent's click, a fast-mode step, the popup closer's button: hud.declarePress), good for
+  // longer, as the page script keeps it: a humanized press takes its time to land.
   const cursorsIn = new WeakMap();
   function agentPointed(page, at) {
     if (!page || !at) return;
     const list = cursorsIn.get(page) || [];
-    list.push({ x: Number(at.x) || 0, y: Number(at.y) || 0, w: Number(at.w) || 0, h: Number(at.h) || 0, t: Number(at.t) || Date.now() });
-    if (list.length > 12) list.shift();
+    list.push({ x: Number(at.x) || 0, y: Number(at.y) || 0, w: Number(at.w) || 0, h: Number(at.h) || 0, t: Number(at.t) || Date.now(), press: at.press === true });
+    if (list.length > 24) list.shift();
     cursorsIn.set(page, list);
   }
   const NEAR_CURSOR_PX = 60;
-  const nearAgentCursor = (page, e) => Number.isFinite(e.x) && Number.isFinite(e.y) && (cursorsIn.get(page) || []).some((c) => Math.abs(c.t - e.happened) < 3000 && Math.abs(c.x - e.x) <= c.w / 2 + NEAR_CURSOR_PX && Math.abs(c.y - e.y) <= c.h / 2 + NEAR_CURSOR_PX);
+  const NEAR_CURSOR_MS = 3000, NEAR_PRESS_MS = 8000;
+  const nearAgentCursor = (page, e) => Number.isFinite(e.x) && Number.isFinite(e.y) && (cursorsIn.get(page) || []).some((c) => Math.abs(c.t - e.happened) < (c.press ? NEAR_PRESS_MS : NEAR_CURSOR_MS) && Math.abs(c.x - e.x) <= c.w / 2 + NEAR_CURSOR_PX && Math.abs(c.y - e.y) <= c.h / 2 + NEAR_CURSOR_PX);
   // Whether a person used this tab within ms.
   const personWithin = (page, ms) => { const h = page && humanAt.get(page); return !!h && Date.now() - h.t < ms; };
   const actedAt = new WeakMap(); // tab -> { t, who }: the same, without pointer moves

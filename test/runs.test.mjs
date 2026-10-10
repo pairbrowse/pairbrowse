@@ -88,3 +88,36 @@ test("runs are saved and read back through the server; a review says what fails"
   assert.equal(bad.result.isError, true);
   assert.equal(text(bad), "Unknown tool no_such_tool");
 });
+
+test("an auto run reads back as the agent's own notes; a taken-over one points to its new run", async () => {
+  const { writeFileSync, mkdirSync } = await import("node:fs");
+  const home = mkdtempSync(join(tmpdir(), "pairbrowse-auto-"));
+  mkdirSync(join(home, "runs"));
+  const auto = { name: "shopify.com 2026-10-10 14:05", status: "in progress", source: "auto", session: "default", createdAt: "2026-10-10T12:05:00.000Z", updatedAt: new Date().toISOString(),
+    done: ["Create your account <https://www.shopify.com/signup>: Filled **Email** = `ada@example.com`; Clicked **Continue**"], left: ["Company"], yourTurn: ["Enter the code from your phone"], drafted: [], tabs: [{ title: "Choose a password", url: "https://www.shopify.com/signup/2" }] };
+  writeFileSync(join(home, "runs", "shopify-com-2026-10-10-14-05.json"), JSON.stringify(auto));
+  writeFileSync(join(home, "runs", ".current.json"), JSON.stringify({ file: join(home, "runs", "shopify-com-2026-10-10-14-05.json"), session: "default" }));
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, [join(import.meta.dirname, "..", "scripts", "runs.mjs")], { env: { ...process.env, PAIRBROWSE_HOME: home }, stdio: ["pipe", "pipe", "inherit"] });
+  let out = "";
+  child.stdout.on("data", (d) => { out += d; });
+  const ask = async (id, name, args) => {
+    child.stdin.write(`${JSON.stringify(call(id, name, args))}\n`);
+    const until = Date.now() + 10_000;
+    while (!out.split("\n").filter(Boolean).some((l) => JSON.parse(l).id === id) && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
+    return text(JSON.parse(out.split("\n").filter(Boolean).find((l) => JSON.parse(l).id === id)));
+  };
+  const got = await ask(1, "run_get", { name: "shopify.com 2026-10-10 14:05" });
+  assert.match(got, /^Run "shopify\.com 2026-10-10 14:05" \(in progress, updated [^)]+\)\nKept by PairBrowse automatically from what was done in the browser \(no run_save was called\): treat it as your own notes\.\nDone: Create your account <https:\/\/www\.shopify\.com\/signup>: Filled \*\*Email\*\* = `ada@example\.com`; Clicked \*\*Continue\*\*\nWaiting on the user: Enter the code from your phone\nLeft: Company\nTabs when saved: Choose a password <https:\/\/www\.shopify\.com\/signup\/2>$/);
+  // The agent's run_save takes it over: one run under the agent's name.
+  const saved = await ask(2, "run_save", { name: "Shopify signup", goal: "Open a store" });
+  assert.match(saved, /^Run "Shopify signup" \(open/);
+  assert.doesNotMatch(saved, /Kept by PairBrowse/);
+  assert.match(saved, /Goal: Open a store\nDone: Create your account <https:\/\/www\.shopify\.com\/signup>: Filled/);
+  assert.match(saved, /Waiting on the user: Enter the code from your phone\nLeft: Company\nTabs when saved: Choose a password/);
+  assert.equal(await ask(3, "run_get", { name: "shopify.com 2026-10-10 14:05" }), 'Run "shopify.com 2026-10-10 14:05" was taken over by run "Shopify signup": run_get that one.');
+  assert.doesNotMatch(await ask(4, "run_list", {}), /14:05/, "the merged run isn't listed");
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.stdin.end();
+  await exited;
+});

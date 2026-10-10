@@ -3,6 +3,9 @@
 // screenshots, and memory after a long run of actions. Not a test: run it by hand.
 //
 //   PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime node test/bench.mjs [--ops 60] [--json out.json]
+//   ... --soak N [--viewers V]   N rounds on one helper, memory over time, V live-view viewers
+//   ... --agents N [--rounds R]  N agents at once in their own tabs
+//   ... --joiner R               a shared-browser joiner (two helpers) over R rounds
 //
 // It starts its own helper on a temporary home with a headless browser, so a running PairBrowse
 // is untouched. Numbers are wall-clock on this machine: compare runs on the same machine only.
@@ -263,6 +266,110 @@ async function agents(n, rounds = 10) {
     server.close();
   }
   return out;
+}
+
+// --joiner R: a shared-browser joiner soak. A host helper (Bob) and a joiner helper (Alice) on
+// this computer, a pb-join code approved, the joiner's picture page connected (WebRTC). Then R
+// rounds in which the host's agent navigates and clicks (the count verified in the click's own
+// result) while the joiner's agent, working in the host's browser, snapshots. Both helpers'
+// memory every 20 rounds, both trees' CPU over the soak, and the connection's state.
+async function joinerSoak(rounds) {
+  const net = await import("node:net");
+  const { createInterface } = await import("node:readline");
+  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
+  const APP = `<title>App</title><body style="margin:0"><h1>App</h1><button id="b" style="display:block;width:100vw;height:30vh" onclick="document.getElementById('n').textContent=(+document.getElementById('n').textContent||0)+1">Tap</button><span id="n">0</span><input id="i" aria-label="Note" style="display:block;width:100vw;height:20vh;font-size:30px"><div style="height:150vh">more below</div>`;
+  const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP); });
+  await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
+  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
+  const home = (prefix, name) => { const dir = mkdtempSync(join(tmpdir(), prefix)); symlinkSync(runtime, join(dir, "runtime"), "dir"); writeFileSync(join(dir, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", participantName: name })); return dir; };
+  const hostHome = home("pbj-h-", "Bob"), joinHome = home("pbj-j-", "Alice");
+  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", PAIRBROWSE_TEST_MEMORY: "1", PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
+  const rpc = (write, input) => {
+    const waiting = new Map();
+    createInterface({ input }).on("line", (line) => { let m; try { m = JSON.parse(line); } catch { return; } if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); } });
+    let seq = 0;
+    return (method, params = {}, ms = 60_000) => new Promise((resolve, reject) => { const id = `t${++seq}`; const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms); waiting.set(id, (m) => { clearTimeout(timer); resolve(m); }); write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"); });
+  };
+  const tool = (call, name, args = {}, ms) => call("tools/call", { name, arguments: args }, ms);
+  const daemons = [];
+  const connect = async (h) => {
+    const out = openSync(join(h, "daemon.stderr.log"), "a");
+    const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] });
+    daemons.push(daemon);
+    const socketPath = join(h, "run", "browser.sock");
+    for (let i = 0; i < 200 && !existsSync(socketPath); i++) await sleep(50);
+    let sock;
+    for (let i = 0; ; i++) { sock = net.createConnection(socketPath); const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); }); if (ok) break; if (i > 50) throw new Error(`couldn't connect to ${socketPath}`); await sleep(200); }
+    const call = rpc((l) => sock.write(l), sock);
+    await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
+    sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+    return { sock, call, daemon, home: h };
+  };
+  const until = async (what, check, ms = 30_000) => { let last; for (const end = Date.now() + ms; Date.now() < end; await sleep(300)) if ((last = await check())) return last; throw new Error(`timed out: ${what}`); };
+  const out = { rounds, samples: [] };
+  let host, joiner;
+  try {
+    host = await connect(hostHome);
+    joiner = await connect(joinHome);
+    await tool(host.call, "pairbrowse_session", { action: "new", clean: true }, 120_000);
+    await tool(joiner.call, "pairbrowse_session", { action: "new", clean: true }, 120_000);
+    if ((await tool(host.call, "browser_navigate", { url: "http://one.pbtest.example/app" })).result?.isError) throw new Error("the host's navigate failed");
+    const made = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" }));
+    const code = made.match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
+    if (!code) throw new Error(`no join code: ${made.slice(0, 300)}`);
+    await tool(joiner.call, "pairbrowse_join", { action: "join", code });
+    const id = await until("the join request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Alice \((?:Claude Code|Codex)\), waiting/)?.[1]);
+    await tool(host.call, "pairbrowse_invite", { action: "approve", id });
+    const onScreen = async (args) => { const r = text(await tool(joiner.call, "pairbrowse_test_screen", args)); try { return JSON.parse(r); } catch { return null; } };
+    const screen = await until("the picture page", async () => (await onScreen({}))?.index >= 0 && await onScreen({}));
+    const live = text(await tool(joiner.call, "pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)[0];
+    await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: screen.index }) });
+    await until("the direct connection", async () => (await onScreen({ expr: "window.pbScreen && window.pbScreen.state()" }))?.value?.conn === "connected", 45_000);
+    const mem = async (c) => { try { return JSON.parse(text(await tool(c.call, "pairbrowse_test_memory"))); } catch { return {}; } };
+    const probe = async (round) => {
+      const hm = await mem(host), jm = await mem(joiner);
+      out.samples.push({ round, host: { heapMb: Math.round(hm.heapUsed / 1048576), rssMb: Math.round(hm.rss / 1048576), treeMb: Math.round(sumRss(tree(host.daemon.pid)) / 1024) }, joiner: { heapMb: Math.round(jm.heapUsed / 1048576), rssMb: Math.round(jm.rss / 1048576), treeMb: Math.round(sumRss(tree(joiner.daemon.pid)) / 1024) }, conn: (await onScreen({ expr: "window.pbScreen.state()" }))?.value?.conn });
+    };
+    await probe(0);
+    const h0 = tree(host.daemon.pid), j0 = tree(joiner.daemon.pid), t0 = Date.now();
+    const lat = { hostNavigate: [], hostClick: [], joinerSnapshot: [] };
+    let verified = 0, wrong = 0, joinerErrors = 0;
+    for (let r = 1; r <= rounds; r++) {
+      const [navMs, nav] = await timed(() => tool(host.call, "browser_navigate", { url: `http://one.pbtest.example/app?r=${r}` }, 60_000));
+      lat.hostNavigate.push(navMs);
+      const ref = text(nav).match(/button "Tap"[^\n]*\[ref=([^\]]+)\]/)?.[1] || text(await tool(host.call, "browser_snapshot", {})).match(/button "Tap"[^\n]*\[ref=([^\]]+)\]/)?.[1];
+      const [[clickMs, cr], [snapMs, js]] = await Promise.all([
+        timed(() => (ref ? tool(host.call, "browser_click", { element: "Tap", target: ref }, 60_000) : null)),
+        timed(() => tool(joiner.call, "browser_snapshot", {}, 60_000)),
+      ]);
+      lat.hostClick.push(clickMs); lat.joinerSnapshot.push(snapMs);
+      if (cr && !cr.result?.isError && /\b1\b/.test(text(cr))) verified++; else wrong++;
+      if (js.result?.isError) joinerErrors++;
+      if (r % 20 === 0) await probe(r);
+    }
+    const secs = (Date.now() - t0) / 1000;
+    const pct = (a, b) => Math.round(((sumCpu(b) - sumCpu(a)) / secs) * 1000) / 10;
+    out.cpuPctDuring = { hostTree: pct(h0, tree(host.daemon.pid)), joinerTree: pct(j0, tree(joiner.daemon.pid)), secs: Math.round(secs) };
+    out.latency = { hostNavigate: stats(lat.hostNavigate), hostClick: stats(lat.hostClick), joinerSnapshot: stats(lat.joinerSnapshot) };
+    out.verified = verified; out.wrong = wrong; out.joinerErrors = joinerErrors;
+    await sleep(3000);
+    await probe(rounds + 1);
+  } catch (e) {
+    out.error = `${e.message}\n${[hostHome, joinHome].map((h) => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-1200); } catch { return ""; } }).join("\n---\n")}`;
+  } finally {
+    for (const c of [host, joiner]) c?.sock.destroy();
+    fixture.close();
+    for (const d of daemons) if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); }
+    for (const h of [hostHome, joinHome]) rmSync(h, { recursive: true, force: true });
+  }
+  return out;
+}
+
+if (opt("--joiner", "")) {
+  const r = await joinerSoak(Number(opt("--joiner", 60)));
+  console.log(JSON.stringify(r, null, 1));
+  if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify({ at: new Date().toISOString(), joiner: r }, null, 1));
+  process.exit(0);
 }
 
 if (opt("--agents", "")) {

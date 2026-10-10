@@ -197,7 +197,7 @@ export function pathsIn(name, args = {}) {
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, testTools = {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, testTools = {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // What PairBrowse declares it is about to press (an agent's click, a fast-mode step, the popup
   // closer's dismiss button) counts as where an agent pointed: a press there is never a person's.
@@ -800,6 +800,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         : `Stopped at step ${result.stoppedAt} of ${resolved.length}: ${result.why}${left}`;
       // The page says something it filled is wrong: the agent fixes it before going on.
       const checks = result.checks?.length ? `\nCheck before going on, the page says: ${result.checks.join("; ")}. Fix these (look at the screenshot), then continue.` : "";
+      journal.ranLeft(result); // the goal log: what this page still lacks
       // A page waiting on its dialog answers nothing: its outline would hang until it's answered.
       const out = popups.waitingDialog(page) ? `Page: ${page.url()}` : await within(10_000, outline(page)).catch(() => `Page: ${page.url()}`);
       return { text: `${head}${checks}\n${out}`, error: !result.ok, url: page.url() };
@@ -826,6 +827,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         await hud.setBadgeFor(participant, args.text, args.kind, myLabel());
         if (args.kind === "done" || args.kind === "clear") await hud.hideCursor(hud.sparkPage(participant));
         session.setStatus(participant, args.text, args.kind); // the side panels in a shared session show it
+        journal.status(args.kind, args.text); // a hand-off goes to the goal log's yourTurn
         return { text: "ok" };
       },
       async pairbrowse_upload(args) {

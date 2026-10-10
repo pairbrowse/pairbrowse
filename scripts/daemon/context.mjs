@@ -542,7 +542,7 @@ let switched = Promise.resolve();
     getContext, watchClose, current: () => contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
     isRestoring: () => restoring !== null, isSwitching: () => switching,
     currentUrl: () => lastCurrentUrl, setCurrentUrl: (url) => { lastCurrentUrl = url; },
-    sessionInfo, sessionCommand, startUp, close,
+    sessionInfo, sessionCommand, startUp, close, sessionName: () => session,
     waitForPick, pickerState, pickSession, pickedJoin, // In the session being opened, when the person just picked another.
     recordPerson: async (person) => { while (pickSwitch) await pickSwitch; recordPerson(session, person); }, picking: () => pick.state === "showing", reopenPicker,
     // An agent chose (pairbrowse_join): the picker goes, the saved tabs come back.

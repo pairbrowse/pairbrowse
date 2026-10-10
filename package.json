@@ -1,6 +1,6 @@
 {
   "name": "pairbrowse",
-  "version": "0.15.36",
+  "version": "0.15.37",
   "private": true,
   "type": "module",
   "description": "Pair-browse with Claude Code in a visible Chrome window.",

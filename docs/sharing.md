@@ -225,6 +225,93 @@ window, revoke it, or it expires. PairBrowse downloads `cloudflared` once, pinne
 SHA-256. Drive lets someone (and their AI) open addresses in your logged-in browser: share drive
 codes only with people you trust, and revoke them when you're done.
 
+### Using your own tunnel
+
+Join codes can go through a tunnel of your own instead of Cloudflare's free one: a named
+Cloudflare tunnel, ngrok, Tailscale Funnel, or any command that prints an https address. Set
+`sharing.tunnel` in `~/.pairbrowse/config.json`. Whatever the kind, the tunnel reaches only the
+port join codes are served on (nothing else on your computer), and codes still need your Allow
+for every joiner. One connection runs; when its program ends it is started again on the same
+address, so codes keep working, also through a restart of PairBrowse. `pairbrowse_invite list`
+says which one is in use ("Join codes go through your own ngrok address share.example.com").
+
+Two things hold for every kind:
+
+- **Joiners' side:** a joiner's PairBrowse takes join codes for `*.trycloudflare.com` only, unless
+  the address is in their `joinHosts`. Tell the people you invite to add your host name there
+  (`"joinHosts": ["share.example.com"]` in their `config.json`) once.
+- **Credentials** (a token or authtoken) stay in your `config.json`, readable by your account only,
+  and reach the provider's own program through its environment, never its command line. They
+  show in no log, result, bar or panel; the log names the program and its options with any
+  secret masked.
+
+**Default:** `{ "sharing": { "tunnel": { "kind": "quick" } } }` (or nothing at all): a Cloudflare
+Quick Tunnel, two connections at once, as described above.
+
+**A named Cloudflare tunnel** (your own domain on Cloudflare, with a Zero Trust account):
+
+```json
+{
+  "sharing": {
+    "guestPort": 47555,
+    "tunnel": { "kind": "cloudflare", "token": "<the tunnel's token>", "hostname": "share.example.com" }
+  }
+}
+```
+
+In the Cloudflare dashboard (Zero Trust, Networks, Tunnels) create a tunnel, copy its token, and
+add a public hostname `share.example.com` whose service is `http://localhost:47555`. With a token,
+the routing lives in the dashboard, not on this computer, so the guest port must be fixed: that is
+what `sharing.guestPort` does (any free port; without it the port is random each start and the
+dashboard entry would point at nothing). PairBrowse runs `cloudflared tunnel run` with the token
+in `TUNNEL_TOKEN`, using the `cloudflared` on your PATH or the one it downloads for Quick Tunnels.
+If the port is taken by another program when you share, PairBrowse says so and shares nothing.
+
+**ngrok** (an ngrok account; a reserved domain keeps the address the same):
+
+```json
+{ "sharing": { "tunnel": { "kind": "ngrok", "authtoken": "<your authtoken>", "domain": "share.ngrok.app" } } }
+```
+
+Install `ngrok` so it's on your PATH. PairBrowse runs `ngrok http <guest port> --log=stdout
+--log-format=json` (plus `--domain` when set) with the authtoken in `NGROK_AUTHTOKEN`, and reads
+the address from ngrok's log. Without `domain` the address is a new random one each time the
+connection starts, so codes made before don't survive a restart; `list` shows the current one.
+
+**Tailscale Funnel** (Tailscale on this computer, Funnel enabled for it in the tailnet's settings):
+
+```json
+{ "sharing": { "tunnel": { "kind": "tailscale" } } }
+```
+
+PairBrowse runs `tailscale funnel <guest port>` in the foreground and reads the
+`https://<machine>.<tailnet>.ts.net` address it prints; the funnel ends with the program. Funnel
+serves on port 443, so the address has no port. Joiners add that `.ts.net` name to their
+`joinHosts`.
+
+**Any other program** that opens an https address to a local port:
+
+```json
+{
+  "sharing": {
+    "tunnel": {
+      "kind": "command",
+      "run": "mytunnel --port {port}",
+      "url": "ready at (https://\\S+)",
+      "env": { "MYTUNNEL_TOKEN": "..." }
+    }
+  }
+}
+```
+
+`run` is the command line (split like a shell would, but no shell runs it), with `{port}` where
+the guest port goes; `url` is a regular expression with exactly one capture group that finds the
+public https address in what the program prints; `env` is extra environment for it, every value
+treated as a secret. The program must keep running while the tunnel is up, and end the tunnel when
+it is stopped (SIGTERM). It runs under your own account with your own rights, as anything you
+start does: use one you trust. The public address must forward the request's `Host` header as
+is (every provider above does), since the guest port answers to the tunnel's name only.
+
 ## Share one browser with another Claude Code session
 
 Each person uses their own Claude Code account and conversation. Connections to the same

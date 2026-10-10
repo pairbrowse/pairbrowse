@@ -10,11 +10,11 @@ claude plugin validate .  # the Claude Code manifests
 
 ### The design tokens
 
-`scripts/browser/panel/tokens.css` is the one sheet (colors, type, radii, spacing) for the side
+`scripts/browser/panel/tokens.css` is the one sheet (colors, type, radii; `--edge-input` is a text field's border at 3:1 or more) for the side
 panel, the session picker, the new tab page, a joiner's picture page and the live view (served
 from the same file through the live view's fixed asset list). The live view alone opts into the
 light scheme with `data-scheme="system"`; the extension pages stay dark. `scripts/hud.js` (closed
-shadow roots) and `record.js` (a canvas) carry the same hex values inline, and
+shadow roots), `record.js` (a canvas) and the "Opening tabs" page in `scripts/tabs.mjs` carry the same hex values inline, and
 `test/tokens.test.mjs` keeps every literal color in those files and the page sheets equal to a
 sheet value or a `SPARK_COLORS` entry and checks WCAG AA contrast in both schemes. Participant
 colors are `SPARK_COLORS` in `scripts/daemon/hud.mjs`. The window frame follows `THEME_COLOR` in

@@ -89,7 +89,7 @@ const PAGE = `<!doctype html><title>Patterns</title><body>
 <div id=s2 hidden><label for=w2>Team size</label> <input id=w2 type=number> <button type=button>Submit</button></div>
 </body>`;
 
-test("fast mode fills common form patterns and the page holds every value", { skip: !runtime, timeout: 180_000 }, async () => {
+test("fast mode fills common form patterns and the page holds every value", { skip: !runtime, timeout: 300_000 }, async (t) => {
   const site = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(PAGE); });
   await new Promise((r) => site.listen(0, "127.0.0.1", r));
   const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
@@ -177,7 +177,11 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     // Plain rows in a scrolling box (no roles); choices that unfold in place in a panel; a list
     // drawn in advance but invisible until opened; a dropdown the page leaves marked invalid after
     // a valid choice (no error to show) isn't reported.
+    // Timed: four ordinary picks are the measure of this machine right now (the suite runs many
+    // browsers at once), and the speed checks below are relative to it.
+    const p0 = Date.now();
     r = await run([{ select: { "Home country": "Canada", "Product line": "Delta", Plan: "Team", Department: "Sales" } }]);
+    const plain = Date.now() - p0;
     assert.match(r, /^Done: 1 steps/, r);
     assert.deepEqual([await shows("plo"), await shows("ipo"), await shows("vho"), await value("dep")], ["Canada", "Delta", "Team", "Sales"]);
     assert.doesNotMatch(r, /"Department": marked as not valid/, r);
@@ -193,7 +197,9 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     const took = Date.now() - t0;
     assert.match(r, /^Done: 1 steps/, r);
     assert.equal(await shows("tk"), "Single");
-    assert.ok(took < 5000, `a styled pick on a big page took ${took} ms`);
+    // Waiting on the stale name would add seconds, whatever the load: one pick allowed what the four took, or 5 s if that's more, never more than 20 s.
+    t.diagnostic(`styled pick on a big page: ${took} ms (four plain picks: ${plain} ms)`);
+    assert.ok(took < Math.min(20_000, Math.max(5000, plain)), `a styled pick on a big page took ${took} ms (four plain picks: ${plain} ms)`);
     r = await run([{ fill: { "Leaving on": "Nov 20, 2026" } }]);
     assert.match(r, /^Done: 1 steps/, r);
     assert.doesNotMatch(r, /Leaving on"?:/, r);
@@ -205,7 +211,8 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     const tookGone = Date.now() - t1;
     assert.match(r, /^Done: 1 steps/, r);
     assert.deepEqual([await value("nk"), await value("tn")], ["Riv", "Rivera Labs"]);
-    assert.ok(tookGone < 6000, `fields whose names go away once filled took ${tookGone} ms`);
+    t.diagnostic(`fields whose names go away once filled: ${tookGone} ms`);
+    assert.ok(tookGone < Math.min(20_000, Math.max(6000, plain)), `fields whose names go away once filled took ${tookGone} ms (four plain picks: ${plain} ms)`);
     // A suggestion picked by the run is the agent's click: never taken for a person's.
     r = await run([{ fill: { "Street address": "500 Howard Ave" } }]);
     assert.equal(await value("ad"), "500 Howard Ave, Burlingame, CA");

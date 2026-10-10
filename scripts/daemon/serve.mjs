@@ -27,6 +27,7 @@ import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 import { dragBetween, reason as dragReason } from "./drag.mjs";
 import { createRefNames, plainError } from "./output.mjs";
+import { humanFill, fillSettings } from "../native-engine.mjs";
 
 const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
 // A small picture of the page goes with each result that changes what's on screen, taken once
@@ -1058,6 +1059,19 @@ export function createServe({ config, log, host, createConnection, clients, coll
       hud.addActivity(describe(name, shown), myLabel(), actingIn);
       await hud.showCursor(name, args, async () => actingIn || (mine && !mine.isClosed() ? mine : null) || context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
       if (name === "browser_fill_form") await hud.markTargets(actingIn || (mine && !mine.isClosed() ? mine : null), args.fields.map((f) => f.target)).catch(() => {});
+      // A form in the native browser with human-like input on: PairBrowse fills it itself, field by
+      // field as a person does (Tab to the next field, key by key at typingPace; native-engine.mjs
+      // humanFill). The browser server's fill would reach for every field by mouse and type at the
+      // engine's own pace: over 2 s a field. Values come from the swapped copy (real secrets), what the
+      // result says from Claude's (names, masked).
+      if (name === "browser_fill_form" && Array.isArray(args.fields) && args.fields.every((f) => isRef(f?.target))) {
+        const page = actingIn || await serverPage();
+        if (page && page._pairbrowseHumanized === true) {
+          const items = msg.params.arguments.fields.map((f, i) => ({ ...f, shown: shown.fields[i]?.value }));
+          const { lines, failed } = await humanFill(page, items, fillSettings(config), { trace: log });
+          return reply(msg.id, [...lines, ...fieldNotes.splice(0)].join("\n"), failed);
+        }
+      }
       calls.set(msg.id, name);
       callArgs.set(msg.id, args);
       if (name === "browser_tabs") tabActions.set(msg.id, args.action);

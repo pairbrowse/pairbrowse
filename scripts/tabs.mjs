@@ -86,10 +86,10 @@ const host = (url) => { try { return new URL(url).host; } catch { return url; } 
 export function loadingHtml(tabs) {
   const rows = tabs.map((t, i) => `<li data-i="${i}" data-s="waiting"><span class="dot"></span><span class="t">${esc(t.title || host(t.url))}</span><span class="h">${esc(host(t.url))}</span></li>`).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><title>Opening tabs</title><style>
-  :root{--bg:#0B1421;--card:#111E2D;--edge:#293B50;--ink:#F1F5FA;--ink-2:#A2B2C6;--muted:#8699B1;--accent:#3285F6;--ok:#20C997;--bad:#EF6468}
+  :root{--bg:#0B1421;--sidebar:#111E2D;--edge:#293B50;--ink:#F1F5FA;--ink-2:#A2B2C6;--muted:#8699B1;--accent:#3285F6;--ok:#20C997;--bad:#EF6468}
   *{box-sizing:border-box}html,body{margin:0;height:100%}
   body{display:grid;place-items:center;padding:24px;color:var(--ink);background:var(--bg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-  main{width:min(460px,100%);padding:28px 28px 18px;border-radius:10px;background:var(--card);border:1px solid var(--edge)}
+  main{width:min(460px,100%);padding:28px 28px 18px;border-radius:10px;background:var(--sidebar);border:1px solid var(--edge)}
   h1{font-size:20px;font-weight:600;margin:0 0 4px;letter-spacing:-0.01em}
   p{margin:0 0 18px;color:var(--ink-2)}
   .bar{height:4px;border-radius:4px;background:var(--edge);overflow:hidden;margin-bottom:12px}
@@ -104,6 +104,8 @@ export function loadingHtml(tabs) {
   li[data-s=opening] .dot{background:var(--accent)}
   li[data-s=open] .dot{background:var(--ok)}
   li[data-s=failed] .dot{background:var(--bad)}
+  li[data-s=waiting] .h::before{content:"waiting · "}
+  li[data-s=opening] .h::before{content:"opening · "}
   li[data-s=failed] .h::before{content:"failed · ";color:var(--bad)}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   </style></head><body><main>

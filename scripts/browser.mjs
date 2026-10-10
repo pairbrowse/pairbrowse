@@ -142,7 +142,10 @@ export function profilePreferences(prefs = {}, panelId = panelExtensionId(), old
   // theme extension's entry goes: Chromium would keep drawing its saved theme pack.
   const theme = prefs.extensions.theme;
   const ownOldSeed = theme?.id === USER_COLOR_THEME_ID && prefs.browser?.theme?.user_color2 === OLD_THEME_COLOR;
-  if (!theme || theme.id === undefined || theme.id === panelExtensionId(OLD_THEME_DIR) || isOldThemePath(theme.pack) || ownOldSeed) {
+  if (ownOldSeed) {
+    // Only the seed moves: the scheme (light, dark or the system's) the user chose stays.
+    prefs.browser = { ...prefs.browser, theme: { ...prefs.browser.theme, user_color2: THEME_COLOR } };
+  } else if (!theme || theme.id === undefined || theme.id === panelExtensionId(OLD_THEME_DIR) || isOldThemePath(theme.pack)) {
     prefs.extensions.theme = { id: USER_COLOR_THEME_ID };
     const browserTheme = { ...(prefs.browser?.theme || {}), user_color2: THEME_COLOR, color_variant2: 1, color_scheme2: 2, follows_system_colors: false };
     prefs.browser = { ...(prefs.browser || {}), theme: browserTheme };

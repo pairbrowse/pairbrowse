@@ -148,3 +148,27 @@ test("the window frame's seed is the sheet's chrome navy", async () => {
   const { THEME_COLOR } = await import("../scripts/browser.mjs");
   assert.equal("#" + (THEME_COLOR >>> 0).toString(16).slice(2), norm(dark.chrome));
 });
+
+test("text that sits on --hover takes --ink-2, which keeps AA there (muted does not)", () => {
+  for (const [scheme, t] of [["dark", dark], ["light", light]]) {
+    const r = contrast(t["ink-2"], t.hover);
+    assert.ok(r >= 4.5, `${scheme}: --ink-2 on --hover is ${r.toFixed(2)}:1`);
+  }
+  const css = read("scripts/liveview.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rule = css.match(/([^{}]*\.overview \[aria-current="true"\] \.last[^{}]*)\{([^}]*)\}/);
+  assert.ok(rule && /color:\s*var\(--ink-2\)/.test(rule[2]), "the current tab's last action is --ink-2");
+  assert.match(rule[1], /\.activity li:not\(:first-child\) code/, "older actions' code chips are --ink-2");
+});
+
+test("Claude's owner dot in the live view is the sheet's --spark, like the spark beside it", async () => {
+  const { SPARK_COLORS } = await import("../scripts/daemon/hud.mjs");
+  const js = read("scripts/liveview.js");
+  assert.ok(js.toLowerCase().includes(`=== "${SPARK_COLORS[0].toLowerCase()}" ? "var(--spark)"`));
+});
+
+test("the Opening tabs page says each row's state in text, not by color alone", async () => {
+  const { loadingHtml } = await import("../scripts/tabs.mjs");
+  const html = loadingHtml([{ url: "https://example.com/", title: "Example" }]);
+  for (const s of ["waiting", "opening", "failed"]) assert.match(html, new RegExp(`li\\[data-s=${s}\\] \\.h::before\\{content:"${s} · "`), s);
+  assert.doesNotMatch(html, /--card\b/, "the sheet's name, --sidebar");
+});

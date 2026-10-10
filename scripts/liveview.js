@@ -128,6 +128,9 @@ on("frame", (f) => {
 
 // An agent's spark color, only if it is a plain color value.
 const agentColor = (c) => /^#[0-9a-f]{3,8}$|^(rgb|hsl|oklch)a?\([\d.,%\s/]+\)$/i.test(String(c || "")) ? c : "";
+// Claude's own orange (SPARK_COLORS[0]) is the sheet's --spark, which darkens in the light scheme:
+// the owner dot then matches the spark beside it.
+const dotColor = (c) => { const v = agentColor(c); return v.toLowerCase() === "#e9763f" ? "var(--spark)" : v; };
 const tabName = (t) => t.title && t.title !== "about:blank" ? t.title : "New tab";
 
 // ---- tab overview: who is in each tab ----
@@ -139,7 +142,7 @@ function drawOverview() {
     const row = el("button", { type: "button", disabled: !canDrive, title: t.url || "" });
     if (t.shown) row.setAttribute("aria-current", "true");
     const who = el("span", { className: "who" });
-    const color = t.agent ? agentColor(t.agent.color) : "";
+    const color = t.agent ? dotColor(t.agent.color) : "";
     if (color) who.style.setProperty("--agent", color);
     if (t.waiting && t.person) { who.dataset.waiting = "true"; who.append(el("i"), `Paused: ${t.person} is using this tab`); }
     else if (t.agent) who.append(el("i"), t.agent.label || "An agent", ...(t.person ? [` · ${t.person} is here too`] : []));
@@ -186,7 +189,7 @@ function tabChip(t) {
   b.append(fav, el("span", { textContent: tabName(t) }));
   if (t.agent) {
     const dot = el("i", { className: "agent", title: t.agent.label || "" });
-    const color = agentColor(t.agent.color);
+    const color = dotColor(t.agent.color);
     if (color) dot.style.setProperty("--agent", color);
     dot.setAttribute("aria-label", `${t.agent.label || "An agent"} is in this tab`);
     b.append(dot);

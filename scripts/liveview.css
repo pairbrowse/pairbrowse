@@ -239,6 +239,10 @@ body[data-role="watch"] .tab, body[data-role="watch"] .url { cursor: default; }
 .overview .who[data-waiting="true"] { color: var(--accent-ink); }
 .overview .last { font-size: var(--fs-2); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .overview .last strong { color: var(--ink-2); font-weight: var(--fw-name); }
+/* Muted text is 4.1:1 on --hover: a row on --hover (the current tab, one under the pointer) and
+   the older actions' code chips take --ink-2 (AA). */
+.overview [aria-current="true"] .last, .overview button:hover:not(:disabled) .last,
+.activity li:not(:first-child) code { color: var(--ink-2); }
 .overview code { font-family: var(--mono); font-size: var(--fs-1); padding: 0 4px; border-radius: 4px; background: var(--hover); }
 .overview .empty { padding: 8px 9px; font-size: var(--fs-2); color: var(--muted); }
 

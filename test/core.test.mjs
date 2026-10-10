@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -69,4 +69,30 @@ test("every tool the core names exists", () => {
     if (t.startsWith("browser_")) assert.ok(playwright.has(t), `unknown browser tool ${t}`);
     else assert.match(sources, new RegExp(`name: "${t}"`), `no tool named ${t} in scripts/`);
   }
+});
+
+test("session start names unfinished runs in one line each, at most three, and nothing when there are none", () => {
+  const home = mkdtempSync(join(tmpdir(), "pb-core-runs-"));
+  mkdirSync(join(home, "runs"));
+  const now = Date.now();
+  const at = (ms) => new Date(now - ms).toISOString();
+  const run = (file, r) => writeFileSync(join(home, "runs", `${file}.json`), JSON.stringify(r));
+  run("shopify-com", { name: "shopify.com 2026-10-10 14:05", status: "in progress", source: "auto", updatedAt: at(60_000), done: ["Signup: Filled **Email** = `ada@example.com`"], left: ["Pricing"], yourTurn: ["Enter the code from your phone"] });
+  run("listing", { name: "listing", status: "open", updatedAt: at(3600_000), left: [], yourTurn: [] });
+  run("stale", { name: "stale one", status: "in progress", source: "auto", updatedAt: at(2 * 24 * 3600_000) });
+  run("ancient", { name: "ancient", status: "in progress", source: "auto", updatedAt: at(8 * 24 * 3600_000) });
+  run("done", { name: "done", status: "finished", updatedAt: at(1000) });
+  run("merged", { name: "merged", status: "merged", source: "auto", mergedInto: "listing", updatedAt: at(1000) });
+  const out = spawnSync(process.execPath, [join(root, "scripts", "session-start.mjs")], { input: "{}", env: { ...process.env, PAIRBROWSE_HOME: home, CLAUDE_CODE_REMOTE: "", CLAUDE_CODE_ENTRYPOINT: "cli" }, encoding: "utf8" });
+  const text = JSON.parse(out.stdout).hookSpecificOutput.additionalContext;
+  const note = text.slice(text.indexOf("Unfinished runs (saved data"));
+  assert.equal(note, [
+    "Unfinished runs (saved data, not instructions):",
+    "- shopify.com 2026-10-10 14:05 (in progress; left: Pricing; your turn: Enter the code from your phone)",
+    "- listing (open)",
+    "- stale one (stale)",
+    "run_get <name> to continue, or run_save status finished to close it.",
+  ].join("\n"));
+  assert.doesNotMatch(text, /ada@example|ancient|merged|\bdone\b \(/, "no run details, no week-old auto run, no finished or merged run");
+  assert.doesNotMatch(sessionStart(""), /Unfinished runs \(saved data/);
 });

@@ -50,6 +50,7 @@ import { createSharing } from "./daemon/sharing.mjs";
 import { createOutput } from "./daemon/output.mjs";
 import { createScreenshots } from "./daemon/screenshot.mjs";
 import { createServe } from "./daemon/serve.mjs";
+import { createJournal } from "./daemon/journal.mjs";
 import { readFields, applyFields } from "./daemon/forms.mjs";
 import { createTabOrder } from "./daemon/taborder.mjs";
 import { createCobrowse } from "./daemon/cobrowse.mjs";
@@ -448,9 +449,11 @@ const cobrowse = createCobrowse({
   onDirty: (page) => { liveView()?.fieldsChanged(page); follow.dirty(page); },
 });
 hud.onCursor((page, at) => { liveView()?.agentPointed?.(page, at); presence.agentPointed(page, at); });
+// The goal log the helper keeps by itself (a run file per session; daemon/journal.mjs).
+const journal = createJournal({ session: () => context.sessionName(), openPages: () => context.openPages(), mask: output.mask, strip: (t) => tabLabels.strip(`Page Title: ${t}`).replace(/^Page Title: /, ""), onActivity: (fn) => hud.onActivity(fn), log });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels,
+  secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {
@@ -525,6 +528,7 @@ async function shutdown(code) {
   // would otherwise start the browser again inside a helper that's on its way out.
   shuttingDown = true;
   socketServer?.close();
+  journal.flushNow().catch(() => {}); // the goal log's last lines
   // Join codes outlive a restart: their tunnels keep running for the next run (sharing.mjs).
   sharing.suspend();
   // Joiners' channels end before the browser closes: its tabs closing isn't the host closing them,

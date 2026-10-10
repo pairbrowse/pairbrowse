@@ -1,7 +1,7 @@
 // Small helpers shared by the helper, the hooks and the install steps (Node's standard library only).
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { basename, dirname } from "node:path";
 import { Readable } from "node:stream";
@@ -12,6 +12,14 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // A JSON file's contents, or `fallback` when it's missing or not valid JSON.
 export function readJson(file, fallback = null) {
   try { return JSON.parse(readFileSync(file, "utf8")); } catch { return fallback; }
+}
+
+// Writes `value` as JSON through a .tmp file and a rename, so another process reading the file
+// (the helper and the runs server share the run files) never sees half of it.
+export function writeJsonAtomic(file, value) {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2));
+  renameSync(`${file}.tmp`, file);
 }
 
 export const sha256 = (data) => createHash("sha256").update(data).digest("hex");

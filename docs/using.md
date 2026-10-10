@@ -56,6 +56,24 @@ Ordinary buttons and form submits run in fast mode. Final actions (pay and delet
 page's structure, not its words, and any click Claude names as publish, send or submit for review)
 never do: the run stops and Claude uses a normal click for them, so you confirm.
 
+## Runs: picking a task up again
+
+A bigger task (a sign-up over several pages, a store listing) survives a context reset, a new
+Claude Code session or a helper restart. Claude saves its own notes with `run_save`, and PairBrowse
+keeps a log by itself whether Claude does or not: the first browser action in a session opens a
+run named after the site and time ("shopify.com 2026-10-10 14:05"), every page acted on gets a
+line (its title and what the bottom bar said was done there, masked the same way: password names,
+never values), hand-offs go to "waiting on the user", the open tabs are kept, and what a fast-mode
+run left empty is listed as left. It is written every few seconds, under `~/.pairbrowse/runs/`,
+in the same shape as a saved run, so `run_get` and `run_list` read it. When Claude saves a run of
+its own, the log goes in under Claude's name (one run, not two); `status: "finished"` closes it;
+one nothing touched for a day shows as stale. Every run records the browser session it was in,
+and `run_get` names it (`pairbrowse_session use <name>`), so Claude picks it up in the right
+session; if the browser restarted since the run was written, `run_get` says so, and Claude takes a
+fresh snapshot of each tab before trusting what was done. At the start of each session Claude is
+told the unfinished runs in one line each ("left: ..., your turn: ...") and can continue one with
+`run_get` or close it with `run_save`.
+
 ## Popups and notifications
 
 PairBrowse keeps pages out of Claude's way: alerts and "leave this page?" prompts are answered,

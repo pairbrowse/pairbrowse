@@ -27,6 +27,7 @@ import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 import { dragBetween, reason as dragReason } from "./drag.mjs";
 import { createRefNames, plainError } from "./output.mjs";
+import { humanFill, fillSettings } from "../native-engine.mjs";
 
 const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
 // A small picture of the page goes with each result that changes what's on screen, taken once
@@ -991,7 +992,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // A date, time, month or week field takes one exact shape (YYYY-MM-DD, hh:mm): typing into it
       // key by key, as the PairBrowse browser does, leaves garbage. PairBrowse sets such fields
       // itself, a date in another spelling turned into YYYY-MM-DD when it can only mean one day.
-      if (name === "browser_type" || name === "browser_fill_form") {
+      // A form PairBrowse fills itself (ownFill, below) sets its date fields in their turn.
+      const ownFill = name === "browser_fill_form" && Array.isArray(args.fields) && args.fields.every((f) => isRef(f?.target)) && (actingIn || await serverPage())?._pairbrowseHumanized === true;
+      if ((name === "browser_type" || name === "browser_fill_form") && !ownFill) {
         const page = actingIn || await serverPage();
         const items = name === "browser_type" ? [{ target: args.target, value: args.text, name: args.element }] : args.fields;
         const typeOf = async (t) => (page && isRef(t) ? within(800, page.locator(`aria-ref=${t}`).first().evaluate((n) => (n.tagName === "INPUT" ? String(n.type).toLowerCase() : ""), undefined, { timeout: 700 })).catch(() => "") : "");
@@ -1058,6 +1061,17 @@ export function createServe({ config, log, host, createConnection, clients, coll
       hud.addActivity(describe(name, shown), myLabel(), actingIn);
       await hud.showCursor(name, args, async () => actingIn || (mine && !mine.isClosed() ? mine : null) || context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
       if (name === "browser_fill_form") await hud.markTargets(actingIn || (mine && !mine.isClosed() ? mine : null), args.fields.map((f) => f.target)).catch(() => {});
+      // A form in the native browser with human-like input on: PairBrowse fills it itself, field by
+      // field as a person does (Tab to the next field, key by key at typingPace; native-engine.mjs
+      // humanFill). The browser server's fill would reach for every field by mouse and type at the
+      // engine's own pace: over 2 s a field. Values come from the swapped copy (real secrets), what the
+      // result says from Claude's (names, masked).
+      if (ownFill) {
+        const page = actingIn || await serverPage();
+        const items = msg.params.arguments.fields.map((f, i) => ({ ...f, shown: shown.fields[i]?.value }));
+        const { lines, failed } = await humanFill(page, items, fillSettings(config), { trace: log, isoDate });
+        return reply(msg.id, [...lines, ...fieldNotes.splice(0)].join("\n"), failed);
+      }
       calls.set(msg.id, name);
       callArgs.set(msg.id, args);
       if (name === "browser_tabs") tabActions.set(msg.id, args.action);

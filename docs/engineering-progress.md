@@ -225,8 +225,9 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
 
 ## Next highest-priority actions
 
-1. Shipped as 0.15.42. Look at the bar and badge in the headed browser once: the blur is gone
-   (flat, slightly more opaque backgrounds).
+1. Shipped as 0.15.42. The bar and badge were looked at in the native headed browser (the
+   helper's own picture of a form page with a status up): bar text, time, address and the Pause
+   button crisp on the flat dark bar, the badge readable bottom-right; nothing lost with the blur.
 2. The 200 ms MCP settle passed 6 of 6 on real sites both headless and with the native headed
    build; an SPA that reacts late without any request would need `settleMs` higher (config).
 3. Screenshot cost (≈110 ms per decorated result) is the screencast's first frame plus the

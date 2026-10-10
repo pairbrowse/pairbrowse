@@ -268,7 +268,10 @@ one orange per scheme; other participants' dots keep their color. Muted text is 
 actions' code chips) is `--ink-2` (5.6:1). ESLint skips `.claude/` (local worktrees and
 workflow scripts, not shipped), noted in `docs/development.md`. A half-finished daemon change
 from the hud subset (badge `{ text, color }`) slipped into 6706756 and was taken back out
-(fca819b); it lands with the hud subset. `docs/development.md` describes the sheet. Not verified by eye: the window frame's tint from the
+(fca819b); it lands with the hud subset. `node test/bench.mjs` on abef3ee (screenshots on,
+against the engineering-progress "After" column): click p50/p95 508/528 ms (517/537), small
+snapshot 67 ms with 1 image (74, 1), long snapshot 149 (166), navigate 386 (400), fast-mode form
+336 (350), click_at 249 (251), status 1/4 ms (1/5), 9 processes; no regression. `docs/development.md` describes the sheet. Not verified by eye: the window frame's tint from the
 new seed (screen capture isn't permitted for the helper's session here; one glance at the next
 browser start); Chromium's tonal palette takes the seed's hue, so navy is expected.
 

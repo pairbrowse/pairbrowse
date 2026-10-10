@@ -238,7 +238,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       tunnelHost: () => pool.map((t) => new URL(t.url).hostname),
       relays: () => pool.map((t) => t.url),
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
-      onPause: view.onPause, pauseState: view.pauseState, onRecord: view.onRecord, recordState: view.recordState, picker: view.picker, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel,
+      onPause: view.onPause, pauseState: view.pauseState, onRecord: view.onRecord, recordState: view.recordState, picker: view.picker, joinHost: view.joinHost, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel,
     });
     await restoring;
     // Keep the sharing tunnel's port when the live view restarts with the browser.
@@ -355,7 +355,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       lines.push(`Join code: ${encodeJoinCode({ url: t.url, key: invite.key, role: invite.role, mode: invite.mode, label: hostName === "The host" ? "" : hostName })}`);
       lines.push(`The person pastes it into their own PairBrowse ("join this session: <code>"). You approve them when they ask: "<their name> wants to join" shows in the side panel, and in the bar at the bottom of your tab or a notification (Allow / Deny), and here.` +
         (own
-          ? ` It goes through ${via()}; their PairBrowse takes that address once ${t.host} is in their joinHosts (config.json). ${tunnelSpec.stable ? "It keeps working through a restart of PairBrowse (the connection comes back on the same address and they reconnect by themselves)" : "The address changes when the connection restarts (give ngrok a reserved domain to keep it): then list shows the new code"} and ends when you close the browser window, revoke it, or it expires.`
+          ? ` It goes through ${via()}; their PairBrowse shows them ${t.host} and asks before joining through it (Allow once or Always allow, in their side panel or session picker). ${tunnelSpec.stable ? "It keeps working through a restart of PairBrowse (the connection comes back on the same address and they reconnect by themselves)" : "The address changes when the connection restarts (give ngrok a reserved domain to keep it): then list shows the new code"} and ends when you close the browser window, revoke it, or it expires.`
           : " It goes through a free relay (no account, no uptime guarantee); it keeps working through a restart of PairBrowse (they reconnect by themselves) and ends when you close the browser window, revoke it, or it expires."));
     } else if (inviteBase) {
       lines.push(`Link: ${inviteBase}/${invite.key}/`);

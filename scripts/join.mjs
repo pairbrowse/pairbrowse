@@ -7,14 +7,27 @@
 //
 // Once in, the joiner's own browser follows the host's tabs (tabsync.mjs).
 //
-// This file has no side effects: codes, the approval list, and names and addresses as others see them.
+// This file has no side effects on import: codes, the approval list, names and addresses as others
+// see them, and the joiner's allowed addresses (saveJoinHosts is the one thing here that writes:
+// config.json, on the person's "Always allow" or "Remove").
 import { randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 const JOIN_PREFIX = "pb-join:";
 const KEY = /^[0-9a-f]{64}$/;
 export const JOINER_ID = /^[0-9a-f]{32}$/;
 // Quick Tunnel addresses: https://<words>.trycloudflare.com, nothing else.
 const QUICK_TUNNEL_HOST = /^[a-z0-9]+(-[a-z0-9]+)*\.trycloudflare\.com$/;
+// A host name as joinHosts holds it: lower-case labels with dots between, no port, path or
+// wildcard. Anything else is "" (never written, never matched).
+const HOST_NAME = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)+$/;
+export const cleanHost = (h) => { const host = textOf(h).trim().toLowerCase(); return host.length <= 253 && HOST_NAME.test(host) ? host : ""; };
+// The joiner's allowed addresses from their config (joinHosts), cleaned; junk entries are skipped.
+export const joinHostsOf = (config) => [...new Set((Array.isArray(config?.joinHosts) ? config.joinHosts : []).map(cleanHost).filter(Boolean))];
+// Whether a join code's address is taken: a Quick Tunnel, or exactly one of the hosts the person
+// allowed (no suffix or wildcard match: share.example.com allows nothing else).
+export const hostAllowed = (host, hosts = []) => QUICK_TUNNEL_HOST.test(host) || hosts.includes(host);
 
 // Any value as text, never a throw: a request body can hold { "toString": "" }, which String() can't convert.
 export const textOf = (v) => { try { return String(v ?? ""); } catch { return ""; } };
@@ -61,8 +74,10 @@ export function encodeJoinCode({ url, key, role, label, mode = "follow" }) {
   return JOIN_PREFIX + Buffer.from(body).toString("base64url");
 }
 
-// Reads a join code, strictly: an https Quick Tunnel address (or a host you listed in
-// joinHosts), a well-formed key, and a known role. Throws with a plain reason otherwise.
+// Reads a join code, strictly: an https Quick Tunnel address (or a host you allowed: hosts is
+// joinHosts plus the ones allowed once), a well-formed key, and a known role. Throws with a plain
+// reason otherwise; for a well-formed https address that just isn't allowed, the error has code
+// "unlisted-host" and the host, so the person can be asked (the one check that is theirs to decide).
 // allowLocal (tests only, PAIRBROWSE_TEST_JOIN_LOCAL) also takes http://127.0.0.1:<port>.
 export function parseJoinCode(code, { hosts = [], allowLocal = false } = {}) {
   const text = textOf(code).trim();
@@ -77,13 +92,72 @@ export function parseJoinCode(code, { hosts = [], allowLocal = false } = {}) {
   const local = allowLocal && u.protocol === "http:" && u.hostname === "127.0.0.1";
   if (u.protocol !== "https:" && !local) throw new Error("A join code's address must start with https://.");
   if (u.username || u.password || (u.pathname !== "/" && u.pathname !== "") || u.search || u.hash) throw new Error("That join code's address has extra parts. Ask for it again.");
-  const host = u.hostname.toLowerCase();
-  if (!local && (u.port || !(QUICK_TUNNEL_HOST.test(host) || hosts.includes(host)))) {
-    throw new Error(`That join code points to ${host}, which isn't a Cloudflare Quick Tunnel address (*.trycloudflare.com) or one of your joinHosts.`);
-  }
   if (typeof v.k !== "string" || !KEY.test(v.k)) throw new Error("That join code's key is damaged. Ask for it again.");
   if (v.r !== "watch" && v.r !== "drive") throw new Error('A join code\'s role is "watch" or "drive".');
+  // Last, once the rest of the code is sound: the address (a damaged code never asks the person).
+  const host = u.hostname.toLowerCase();
+  if (!local && (u.port || !hostAllowed(host, hosts))) {
+    const e = new Error(`That join code points to ${host}, which isn't a Cloudflare Quick Tunnel address (*.trycloudflare.com) or an address you allowed.`);
+    if (!u.port && cleanHost(host)) { e.code = "unlisted-host"; e.host = host; }
+    throw e;
+  }
   return { url: u.origin, host: u.host, key: v.k, role: v.r, label: hostLabel(v.l), mode: v.m === "s" ? "shared" : "follow" };
+}
+
+// Writes the joiner's allowed addresses (the person's "Always allow" or "Remove" in the side
+// panel) into config.json, keeping the rest of the file, and into the running config. Only clean
+// host names are written. file: the config's path (paths.config; a test's own).
+export function saveJoinHosts(config, hosts, file) {
+  const list = [...new Set((Array.isArray(hosts) ? hosts : []).map(cleanHost).filter(Boolean))];
+  config.joinHosts = list;
+  let saved = {};
+  try { const read = JSON.parse(readFileSync(file, "utf8")); if (read && typeof read === "object" && !Array.isArray(read)) saved = read; } catch {}
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  writeFileSync(file, JSON.stringify({ ...saved, joinHosts: list }, null, 2) + "\n");
+  return list;
+}
+
+// ---- the joiner's own questions: a code whose address they haven't allowed -----------------
+// Each is one code waiting for the person's Allow once / Always allow / Cancel in the side panel
+// or the session picker (never an agent's). It keeps the code and the name, so a yes starts the
+// join at once. Few wait at once, each for ten minutes, like join requests at the host.
+export function createHostAsks({ now = () => Date.now(), maxPending = 5, pendingMs = 10 * 60_000 } = {}) {
+  const all = new Map(); // id -> { id, host, code, name, owner, app, who, at }
+  const listeners = new Set();
+  const changed = () => { for (const fn of listeners) try { fn(); } catch {} };
+  const publicView = ({ id, host, who, at }) => ({ id, host, who, at });
+  const sweep = () => {
+    let gone = false;
+    for (const [k, a] of all) if (a.at + pendingMs <= now()) { all.delete(k); gone = true; }
+    if (gone) changed();
+  };
+  return {
+    // A new question, or the one already waiting for the same code (asked twice: shown once).
+    // null when too many wait already.
+    add({ host, code, name = "", owner = null, app = "", who = "" }) {
+      sweep();
+      const same = [...all.values()].find((a) => a.code === code);
+      if (same) return publicView(same);
+      if (all.size >= maxPending) return null;
+      let id;
+      do id = `h${randomBytes(3).toString("hex")}`; while (all.has(id));
+      const entry = { id, host: cleanHost(host), code, name, owner, app, who: cleanName(who, ""), at: now() };
+      all.set(id, entry);
+      changed();
+      return publicView(entry);
+    },
+    // The question whole (code included), off the list: the person answered it.
+    take(id) {
+      sweep();
+      const a = all.get(textOf(id));
+      if (!a) return null;
+      all.delete(a.id);
+      changed();
+      return { ...a };
+    },
+    list() { sweep(); return [...all.values()].map(publicView); },
+    onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+  };
 }
 
 // ---- host approval ------------------------------------------------------------------------

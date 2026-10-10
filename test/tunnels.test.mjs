@@ -194,7 +194,7 @@ test("sharing: one connection of the user's own, said in plain words, started ag
     const code = made.text.match(/Join code: (pb-join:\S+)/)[1];
     const packed = JSON.parse(Buffer.from(code.slice("pb-join:".length), "base64url").toString());
     assert.equal(packed.u, "https://t.example.net", "the code carries the user's own address");
-    assert.match(made.text, /It goes through your own tunnel command \(mytunnel, at t\.example\.net\); their PairBrowse takes that address once t\.example\.net is in their joinHosts/);
+    assert.match(made.text, /It goes through your own tunnel command \(mytunnel, at t\.example\.net\); their PairBrowse shows them t\.example\.net and asks before joining through it/);
     assert.match(made.text, /comes back on the same address/);
     assert.doesNotMatch(made.text, /secret-token-1|free relay/);
     const list = await sharing.inviteCommand({ action: "list" });

@@ -22,6 +22,8 @@ async function send(op, label) {
   busy = false;
   if (r.error) {
     document.body.dataset.s = "ready";
+    // The code is fine but leads somewhere other than a PairBrowse address: the person decides.
+    if (r.hostAsk?.id && r.hostAsk.host) { showHostAsk(r.hostAsk); say(""); return; }
     say(r.text || "That didn't work.", "error");
     return;
   }
@@ -111,6 +113,38 @@ $("join-form").addEventListener("submit", (ev) => {
   send({ action: "join", code, joinName: $("join-name").value.trim().slice(0, 40) }, "Asking to join...");
 });
 $("join").addEventListener("toggle", () => { if ($("join").open) $("code").focus(); });
+// The address question (the same one the side panel shows): Allow once, Always allow (kept in
+// joinHosts) or Cancel, by a real click here; a yes starts the join with the code pasted above.
+function showHostAsk({ id, host }) {
+  const box = $("host-ask");
+  const once = el("button", { className: "primary", type: "button", textContent: "Allow once" });
+  const always = el("button", { className: "secondary", type: "button", textContent: "Always allow", title: "Remember this address in your config (joinHosts)." });
+  const cancel = el("button", { className: "secondary", type: "button", textContent: "Cancel" });
+  const buttons = [once, always, cancel];
+  async function answer(op, label) {
+    if (!base || busy) return;
+    busy = true;
+    for (const b of buttons) b.disabled = true;
+    document.body.dataset.s = "picking";
+    say(label);
+    const r = await fetch(base + "joinhost", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(op) })
+      .then((x) => x.json(), () => ({ error: "Couldn't reach PairBrowse. Try again." }))
+      .catch(() => ({ error: "Couldn't reach PairBrowse. Try again." }));
+    busy = false;
+    box.hidden = true;
+    box.replaceChildren();
+    if (r.error || (op.op === "allow" && !r.joined)) { document.body.dataset.s = "ready"; say(r.error || r.text || "That didn't work.", "error"); return; }
+    if (op.op === "cancel") { document.body.dataset.s = "ready"; say("Not joined.", ""); return; }
+    document.body.dataset.s = "done";
+    say(r.text || "Done.", "ok");
+  }
+  once.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: false }, "Asking to join..."); });
+  always.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: true }, "Asking to join..."); });
+  cancel.addEventListener("click", (ev) => { if (real(ev)) answer({ op: "cancel", id }, ""); });
+  box.replaceChildren(el("strong", { textContent: `This code leads to ${String(host)}, not a PairBrowse address. Join through it?` }), el("span", { className: "buttons" }, ...buttons));
+  box.hidden = false;
+  once.focus();
+}
 function setMoreLabel() {
   const open = $("more").dataset.open === "true";
   $("more-label").textContent = open ? "Fewer sessions" : `More sessions (${$("more").dataset.count || 0})`;

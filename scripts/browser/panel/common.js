@@ -97,6 +97,42 @@ export function joinBanners(container, base) {
   };
 }
 
+// A join code whose address isn't a PairBrowse one (*.trycloudflare.com) or one this person
+// allowed: the question in asks, with the address plainly and Allow once / Always allow / Cancel,
+// and in list the addresses allowed (Remove). The person decides here, never an agent or a page:
+// real clicks only, posted to the live view with the owner's key. Returns draw({ asks, hosts }).
+export function hostPanel(asks, list, section, base) {
+  const send = (body, buttons) => {
+    if (!base()) return;
+    for (const b of buttons) b.disabled = true;
+    postJson(base() + "joinhost", body).catch(() => {}).finally(() => { for (const b of buttons) b.disabled = false; });
+  };
+  const real = (fn) => (ev) => { if (ev.isTrusted && ev.detail > 0) fn(); };
+  return function draw(state) {
+    const s = state && typeof state === "object" ? state : {};
+    asks.replaceChildren(...(Array.isArray(s.asks) ? s.asks : []).map((a) => {
+      const once = el("button", { className: "primary", type: "button", textContent: "Allow once", title: "Join through this address this time only." });
+      const always = el("button", { className: "mini", type: "button", textContent: "Always allow", title: "Remember this address in your config (joinHosts). Remove it below any time." });
+      const cancel = el("button", { className: "mini", type: "button", textContent: "Cancel" });
+      const text = `This code leads to ${String(a.host)}, not a PairBrowse address. Join through it?`;
+      const buttons = [once, always, cancel];
+      once.addEventListener("click", real(() => send({ op: "allow", id: a.id, always: false }, buttons)));
+      always.addEventListener("click", real(() => send({ op: "allow", id: a.id, always: true }, buttons)));
+      cancel.addEventListener("click", (ev) => { if (ev.isTrusted) send({ op: "cancel", id: a.id }, buttons); });
+      return el("div", { className: "join host" }, el("strong", { textContent: text, title: text }),
+        ...(a.who ? [el("small", { textContent: `The code came from ${a.who}. Only you can allow an address.` })] : []), el("span", {}, ...buttons));
+    }));
+    const rows = (Array.isArray(s.hosts) ? s.hosts : []).map((h) => {
+      const remove = el("button", { className: "mini", type: "button", textContent: "Remove", ariaLabel: `Remove ${String(h.host)}` });
+      remove.addEventListener("click", real(() => send({ op: "forget", host: h.host }, [remove])));
+      const name = `${String(h.host)} · ${h.always ? "always" : "this time"}`;
+      return el("li", { className: "dev" }, el("span", { textContent: name, title: name }), remove);
+    });
+    list.replaceChildren(...rows);
+    section.hidden = !rows.length;
+  };
+}
+
 // Dev servers (the helper's devshare): an agent's question to share one (Yes / No) in asks, and
 // in list the localhost dev servers open in tabs (Share) and those shared (Stop), for the people
 // in the session. Only real clicks answer. section: shown when there is something to show.

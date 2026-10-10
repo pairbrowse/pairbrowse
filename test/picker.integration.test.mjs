@@ -363,3 +363,104 @@ test("an idle session doesn't block a switch, an active one does, and the person
     rmSync(h, { recursive: true, force: true });
   }
 });
+
+// The first `event: <name>` message on the owner's event stream, as the side panel reads it.
+async function sseEvent(url, name, ms = 15_000) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ac.signal });
+    let buf = "";
+    for await (const chunk of res.body) {
+      buf += Buffer.from(chunk).toString("utf8");
+      for (const block of buf.split("\n\n").slice(0, -1)) {
+        const m = block.match(/^event: (\S+)\ndata: ([\s\S]*)$/m);
+        if (m && m[1] === name) return JSON.parse(m[2]);
+      }
+      buf = buf.slice(buf.lastIndexOf("\n\n") + 2);
+    }
+  } finally { clearTimeout(timer); ac.abort(); }
+  return null;
+}
+
+test("a join code that leads elsewhere than a PairBrowse address asks the person: Allow once, Always allow, Cancel; never an agent or a web page", { skip: !runtime, timeout: 180_000 }, async () => {
+  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
+  const site = await fixture();
+  const h = home("pa-");
+  writeFileSync(join(h, "config.json"), config(executablePath, site.address().port, { participantName: "Alice" }));
+  const { connect, stop } = startDaemons();
+  const { encodeJoinCode } = await import("../scripts/join.mjs");
+  // A host sharing through a tunnel of their own: the code's address is theirs, not Cloudflare's.
+  const code = encodeJoinCode({ url: "https://share.pbtest.example", key: "b".repeat(64), role: "watch", label: "Bob" });
+  const other = encodeJoinCode({ url: "https://other.pbtest.example", key: "c".repeat(64), role: "watch", label: "Bob" });
+  let stage = "start";
+  try {
+    const joiner = await connect(h);
+    const live = await joiner.live();
+    const waiting = joiner.tool("browser_tabs", { action: "list" }, 120_000);
+    await until("the picker", async () => (await (await fetch(`${live}sessions.json`)).json()).picking);
+    await panelConnected(live);
+
+    stage = "pasted in the picker: the address is shown and the person asked, nothing joined yet";
+    const asked = await post(`${live}pick`, { action: "join", code }, EXTENSION);
+    assert.equal(asked.status, 409, JSON.stringify(asked.json));
+    assert.match(asked.json.text, /This code leads to share\.pbtest\.example, not a PairBrowse address.*Join through it\?/);
+    assert.equal(asked.json.hostAsk.host, "share.pbtest.example");
+    const askId = asked.json.hostAsk.id;
+    assert.equal((await (await fetch(`${live}sessions.json`)).json()).picking, true);
+    assert.match(text(await joiner.tool("pairbrowse_join", { action: "status" })), /Waiting for the user to allow share\.pbtest\.example in the PairBrowse side panel/);
+    const panel = await sseEvent(`${live}events?panel=1`, "joinhost");
+    assert.deepEqual(panel.asks.map((a) => a.host), ["share.pbtest.example"], "the side panel shows the question too");
+    assert.deepEqual(panel.hosts, []);
+    assert.ok(!("code" in panel.asks[0]), "the code itself stays in the helper");
+
+    stage = "an agent is refused and told to ask the person; the panel's question is the same one";
+    const agent = await joiner.tool("pairbrowse_join", { action: "join", code: other, name: "Alice" });
+    assert.equal(agent.result.isError, true);
+    assert.match(text(agent), /Not joining: This code leads to other\.pbtest\.example.*Ask the user to allow it in the PairBrowse side panel.*Never allow an address for them/s);
+    const two = await sseEvent(`${live}events?panel=1`, "joinhost");
+    assert.deepEqual(two.asks.map((a) => a.host).sort(), ["other.pbtest.example", "share.pbtest.example"]);
+    assert.equal(two.asks.find((a) => a.host === "other.pbtest.example").who, "Claude Code");
+
+    stage = "no web page, wrong key or stranger extension can answer";
+    for (const origin of ["https://evil.example", `chrome-extension://${"a".repeat(32)}`, "null"]) {
+      assert.equal((await post(`${live}joinhost`, { op: "allow", id: askId, always: true }, origin)).status, 403, origin);
+    }
+    assert.equal((await post(live.replace(/\/[^/]+\/$/, "/wrongkey/joinhost"), { op: "allow", id: askId, always: true }, EXTENSION)).status, 404);
+    assert.deepEqual(JSON.parse(readFileSync(join(h, "config.json"), "utf8")).joinHosts, undefined, "nothing allowed");
+
+    stage = "Cancel on the agent's code: gone, nothing allowed";
+    const cancel = await post(`${live}joinhost`, { op: "cancel", id: two.asks.find((a) => a.host === "other.pbtest.example").id }, EXTENSION);
+    assert.equal(cancel.status, 200, JSON.stringify(cancel.json));
+    assert.deepEqual((await sseEvent(`${live}events?panel=1`, "joinhost")).asks.map((a) => a.host), ["share.pbtest.example"]);
+
+    stage = "Always allow in the picker: written to config.json, and the join starts with that code";
+    const allowed = await post(`${live}joinhost`, { op: "allow", id: askId, always: true }, EXTENSION);
+    assert.equal(allowed.status, 200, JSON.stringify(allowed.json));
+    assert.equal(allowed.json.joined, true, JSON.stringify(allowed.json));
+    assert.match(allowed.json.text, /Asked Bob to let Alice in \(watch\)/);
+    assert.deepEqual(JSON.parse(readFileSync(join(h, "config.json"), "utf8")).joinHosts, ["share.pbtest.example"]);
+    const done = await waiting;
+    assert.match(text(done), /joined a shared session from the browser's session picker, after allowing its address share\.pbtest\.example/);
+    await until("the picker closed", async () => (await (await fetch(`${live}sessions.json`)).json()).picking === false);
+    const status = text(await joiner.tool("pairbrowse_join", { action: "status" }));
+    assert.match(status, /Join addresses allowed besides \*\.trycloudflare\.com: share\.pbtest\.example \(always\)/);
+    assert.doesNotMatch(status, /Waiting for the user to allow/);
+    const listed = await sseEvent(`${live}events?panel=1`, "joinhost");
+    assert.deepEqual(listed, { asks: [], hosts: [{ host: "share.pbtest.example", always: true }] });
+    // The same code again takes no question now.
+    assert.equal((await post(`${live}joinhost`, { op: "allow", id: askId, always: true }, EXTENSION)).status, 409, "answered once");
+
+    stage = "Remove in the side panel: out of config.json";
+    assert.equal((await post(`${live}joinhost`, { op: "forget", host: "share.pbtest.example" }, EXTENSION)).status, 200);
+    assert.deepEqual(JSON.parse(readFileSync(join(h, "config.json"), "utf8")).joinHosts, []);
+    assert.deepEqual((await sseEvent(`${live}events?panel=1`, "joinhost")).hosts, []);
+    assert.doesNotMatch(text(await joiner.tool("pairbrowse_join", { action: "status" })), /allowed besides/);
+  } catch (e) {
+    throw new Error(`${stage}: ${e.message}\n${logOf(h)}`);
+  } finally {
+    await stop();
+    site.close();
+    rmSync(h, { recursive: true, force: true });
+  }
+});

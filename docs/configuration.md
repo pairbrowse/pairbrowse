@@ -33,7 +33,8 @@
 - `inviteBaseUrl`: where invite links point, such as `https://myhost.tail1234.ts.net`. Its host
   must be in `liveViewHosts`. See [Invite someone to watch or co-drive](sharing.md#invite-someone-to-watch-or-co-drive).
 - `joinHosts`: https host names, besides `*.trycloudflare.com`, you accept in join codes (a host's
-  own tunnel address, say).
+  own tunnel address, say). Exact names. **Always allow** in the side panel's prompt for such a
+  code writes one here; **Remove** in its Join addresses section takes it out.
 - `sharing.tunnel`: how join codes reach your computer: `{ "kind": "quick" }` (default, a
   Cloudflare Quick Tunnel), or your own `cloudflare` (token, hostname), `ngrok` (authtoken, domain),
   `tailscale` or `command` (run, url, env). `sharing.guestPort` pins the port join codes are served

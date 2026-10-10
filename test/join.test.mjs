@@ -433,3 +433,126 @@ test("the host's other tunnel addresses: Quick Tunnels or the code's own only", 
   assert.equal(relayUrl("http://127.0.0.1:9", code), null, "loopback only in tests");
   assert.equal(relayUrl("https://u:p@x.trycloudflare.com", code), null);
 });
+
+test("a code's address: Quick Tunnels and exactly the hosts the person allowed; any other is theirs to decide", async () => {
+  const { hostAllowed, cleanHost, joinHostsOf } = await import("../scripts/join.mjs");
+  const ok = { v: 1, u: "https://share.example.org", k: KEY, r: "watch", l: "Bob" };
+  const thrown = (fn) => { try { fn(); } catch (e) { return e; } assert.fail("didn't throw"); };
+  // Allowed: the code reads as usual.
+  assert.equal(parseJoinCode(pack(ok), { hosts: ["share.example.org"] }).host, "share.example.org");
+  // Unlisted: refused, with the host on the error so the person can be asked.
+  const err = thrown(() => parseJoinCode(pack(ok)));
+  assert.equal(err.code, "unlisted-host");
+  assert.equal(err.host, "share.example.org");
+  assert.match(err.message, /share\.example\.org.*isn't a Cloudflare Quick Tunnel address/);
+  assert.equal(thrown(() => parseJoinCode(pack({ ...ok, u: "https://Share.Example.ORG" }))).host, "share.example.org", "lower-cased");
+  // Not a question for anyone: a port, http, a path, a damaged key (code stays undefined).
+  for (const v of [{ ...ok, u: "https://share.example.org:8443" }, { ...ok, u: "http://share.example.org" }, { ...ok, u: "https://share.example.org/x" }, { ...ok, k: "x" }]) {
+    assert.equal(thrown(() => parseJoinCode(pack(v))).code, undefined, JSON.stringify(v));
+  }
+  // Exact names only: no suffix, wildcard or lookalike match.
+  assert.equal(hostAllowed("share.example.org", ["share.example.org"]), true);
+  assert.equal(hostAllowed("a.share.example.org", ["share.example.org"]), false);
+  assert.equal(hostAllowed("share.example.org.evil.example", ["share.example.org"]), false);
+  assert.equal(hostAllowed("example.org", ["share.example.org"]), false);
+  assert.equal(hostAllowed("x.trycloudflare.com", []), true);
+  assert.equal(hostAllowed("share.example.org", ["*.example.org"]), false);
+  assert.equal(cleanHost(" Share.Example.org "), "share.example.org");
+  for (const junk of ["*.example.org", "share.example.org:443", "https://share.example.org", "share", "-a.example.org", "a..b", "", 42, { toString: "" }]) assert.equal(cleanHost(junk), "", JSON.stringify(junk));
+  assert.deepEqual(joinHostsOf({ joinHosts: ["A.example.org", "*.bad", "a.example.org", 7] }), ["a.example.org"]);
+  assert.deepEqual(joinHostsOf({ joinHosts: "a.example.org" }), []);
+});
+
+test("Always allow writes the exact host into joinHosts in config.json and keeps the rest; Remove takes it out", async () => {
+  const { saveJoinHosts } = await import("../scripts/join.mjs");
+  const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "pb-joinhosts-"));
+  const file = join(dir, "config.json");
+  try {
+    writeFileSync(file, JSON.stringify({ participantName: "Alice", joinHosts: ["old.example.org"] }));
+    const config = { participantName: "Alice", joinHosts: ["old.example.org"] };
+    assert.deepEqual(saveJoinHosts(config, [...config.joinHosts, "Share.Example.org", "*.bad", "share.example.org"], file), ["old.example.org", "share.example.org"]);
+    assert.deepEqual(config.joinHosts, ["old.example.org", "share.example.org"], "the running config too");
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { participantName: "Alice", joinHosts: ["old.example.org", "share.example.org"] });
+    assert.deepEqual(saveJoinHosts(config, ["share.example.org"], file), ["share.example.org"]);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).joinHosts, ["share.example.org"]);
+    // No config file yet, or a broken one: written anew, nothing thrown.
+    writeFileSync(file, "{ not json");
+    assert.deepEqual(saveJoinHosts({}, ["a.example.org"], file), ["a.example.org"]);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { joinHosts: ["a.example.org"] });
+    const fresh = join(dir, "new", "config.json");
+    saveJoinHosts({}, ["b.example.org"], fresh);
+    assert.deepEqual(JSON.parse(readFileSync(fresh, "utf8")), { joinHosts: ["b.example.org"] });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the person's questions about a code's address: one per code, few at once, ten minutes each", async () => {
+  const { createHostAsks } = await import("../scripts/join.mjs");
+  let t = 1_000_000;
+  const asks = createHostAsks({ now: () => t, maxPending: 2 });
+  let changes = 0;
+  asks.onChange(() => changes++);
+  const a = asks.add({ host: "share.example.org", code: "pb-join:aaa", name: "Alice", owner: "conn1", app: "claude-code", who: "Claude Code" });
+  assert.match(a.id, /^h[0-9a-f]{6}$/);
+  assert.deepEqual(a, { id: a.id, host: "share.example.org", who: "Claude Code", at: t }, "no code or name in the public view");
+  assert.equal(asks.add({ host: "share.example.org", code: "pb-join:aaa" }).id, a.id, "the same code asks once");
+  const b = asks.add({ host: "t.example.net", code: "pb-join:bbb", owner: "picker" });
+  assert.equal(asks.add({ host: "c.example.net", code: "pb-join:ccc" }), null, "too many wait");
+  assert.deepEqual(asks.list().map((x) => x.host), ["share.example.org", "t.example.net"]);
+  const taken = asks.take(a.id);
+  assert.deepEqual({ code: taken.code, name: taken.name, owner: taken.owner, app: taken.app }, { code: "pb-join:aaa", name: "Alice", owner: "conn1", app: "claude-code" }, "taken whole, once");
+  assert.equal(asks.take(a.id), null);
+  t += 10 * 60_000;
+  assert.deepEqual(asks.list(), [], "timed out");
+  assert.equal(asks.take(b.id), null);
+  assert.ok(changes >= 4);
+});
+
+test("pairbrowse_join with an unlisted address: refused for agents, a question for the person, and their Cancel or Remove", async () => {
+  const { createFollow } = await import("../scripts/daemon/follow.mjs");
+  const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "pb-follow-hosts-"));
+  const configFile = join(dir, "config.json");
+  writeFileSync(configFile, JSON.stringify({ participantName: "Alice", joinHosts: ["kept.example.org"] }));
+  const config = { participantName: "Alice", joinHosts: ["kept.example.org"] };
+  const states = [];
+  const notes = [];
+  const hud = { onActivity() {}, addActivity() {}, setSharedSpark() {}, setPersonMark() {}, setReconnecting() {}, showPointers() {} };
+  const follow = createFollow({ config, log() {}, context: {}, hud, presence: {}, liveView: () => null, secretDomains: () => [], forms: {}, tabOrder: {}, note: (t) => notes.push(t), onHostChange: (s) => states.push(s), configFile });
+  try {
+    const code = encodeJoinCode({ url: "https://share.example.org", key: KEY, role: "watch", label: "Bob" });
+    // An agent: refused, told to ask the user; the question is up in the side panel with the code.
+    const r = await follow.command({ action: "join", code }, { owner: "conn1", app: "claude-code" });
+    assert.equal(r.error, true);
+    assert.match(r.text, /^Not joining: This code leads to share\.example\.org, not a PairBrowse address.*Ask the user to allow it in the PairBrowse side panel.*Never allow an address for them/s);
+    assert.equal(states.at(-1).asks.length, 1);
+    assert.deepEqual(states.at(-1).hosts, [{ host: "kept.example.org", always: true }]);
+    assert.equal(states.at(-1).asks[0].host, "share.example.org");
+    assert.equal(states.at(-1).asks[0].who, "Claude Code");
+    assert.match((await follow.command({ action: "status" }, {})).text, /Not in anyone's session\. Waiting for the user to allow share\.example\.org in the PairBrowse side panel.*allowed besides \*\.trycloudflare\.com: kept\.example\.org \(always\)/);
+    // The same code again: the same question, not a second one.
+    await follow.command({ action: "join", code }, { owner: "conn2", app: "codex-mcp-client" });
+    assert.equal(follow.hostState().asks.length, 1);
+    // From the picker: the question comes back to it too.
+    const p = await follow.command({ action: "join", code: encodeJoinCode({ url: "https://t.example.net", key: KEY, role: "drive", label: "Bob" }) }, { owner: "picker", app: "PairBrowse" });
+    assert.equal(p.error, true);
+    assert.equal(p.hostAsk.host, "t.example.net");
+    assert.match(p.text, /Join through it\? Allow once, Always allow, or Cancel\./);
+    assert.equal(follow.hostState().asks.length, 2);
+    // Cancel: gone, nothing allowed, nothing written.
+    assert.deepEqual(await follow.decideHost({ op: "cancel", id: p.hostAsk.id }), { ok: true, host: "t.example.net", owner: "picker" });
+    assert.equal(follow.hostState().asks.length, 1);
+    assert.deepEqual(JSON.parse(readFileSync(configFile, "utf8")).joinHosts, ["kept.example.org"]);
+    assert.equal((await follow.decideHost({ op: "cancel", id: p.hostAsk.id })).error, "That question is gone (answered, or it timed out after 10 minutes).");
+    // Remove an allowed address: out of config.json and the running config.
+    assert.deepEqual(await follow.decideHost({ op: "forget", host: "kept.example.org" }), { ok: true, host: "kept.example.org" });
+    assert.deepEqual(JSON.parse(readFileSync(configFile, "utf8")), { participantName: "Alice", joinHosts: [] });
+    assert.deepEqual(follow.hostState().hosts, []);
+    for (const bad of [{ op: "forget", host: "*.x" }, { op: "allow", id: "nope" }, { op: "steal" }, null]) assert.ok((await follow.decideHost(bad)).error, JSON.stringify(bad));
+    assert.deepEqual(notes, [], "agents hear nothing until the person says yes");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

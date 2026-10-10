@@ -356,6 +356,8 @@ const sharing = createSharing({
     },
     status: () => hud.badge(), session: () => context.sessionInfo(), collaboration: () => collaboration.state(),
     picker: { state: () => context.pickerState(), pick: (op) => pickFromBrowser(op), open: () => context.reopenPicker() },
+    // A join code's address the person hasn't allowed: their answer from the side panel or picker.
+    joinHost: { state: () => follow.hostState(), act: (op) => hostDecision(op) },
   },
 });
 // Sessions joined from here: their tabs, followed in this browser.
@@ -369,7 +371,15 @@ const follow = createFollow({
   onLeft: () => pause.mirror({ paused: false, resumedBy: HOST }),
   note: hostNote,
   onMessage: (data) => session.receive(readMessage(data)),
+  onHostChange: (state) => liveView()?.setJoinHost(state),
 });
+// The person allowed (or not) a code's address in the side panel or the picker. A yes starts
+// the join; one that came from the picker is its pick (the saved tabs come back behind it).
+async function hostDecision(op) {
+  const r = await follow.decideHost(op);
+  if (r.joined && r.owner === "picker") context.pickedJoin(`The person joined a shared session from the browser's session picker, after allowing its address ${r.host}: ${r.text.split(". Then")[0]}. Check with pairbrowse_join status.`);
+  return r;
+}
 // A join request: the bottom bar in the host's tab in front asks (Allow / Deny) while the browser
 // has the focus, else a notification with Allow / Deny (daemon/joinprompt.mjs).
 let testFocus = null; // tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): true or false in place of the browser's own

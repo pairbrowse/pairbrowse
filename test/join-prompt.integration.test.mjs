@@ -44,7 +44,7 @@ const HOSTILE = `<title>hostile</title><body style="height:2000px">page
   };
 </script></body>`;
 
-test("the join request in the bottom bar: shows at its right end, goes by itself, can be dismissed, takes only a real click", { skip: !runtime, timeout: 90_000 }, async () => {
+test("the join request in the bottom bar: shows as a card above its right end, goes by itself, can be dismissed, takes only a real click", { skip: !runtime, timeout: 90_000 }, async () => {
   const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const server = createServer((req, res) => {
     // Strict CSP and Trusted Types, as on YouTube or Google's apps.
@@ -54,7 +54,7 @@ test("the join request in the bottom bar: shows at its right end, goes by itself
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const browser = await chromium.launch({ headless: true });
   try {
-    const { source, name, token } = hudScript();
+    const { source, name, token, tags: hudScriptTags } = hudScript();
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
@@ -71,9 +71,10 @@ test("the join request in the bottom bar: shows at its right end, goes by itself
       return out;
     };
     await hud(JSON.stringify({ items: [{ t: Date.now(), text: "Clicked **Next**", who: "" }] }), "bar");
+    await hud("x", "claude"); // the badge, which must sit above the card
     const before = await page.evaluate(() => document.documentElement.children.length);
 
-    // Shown at the bar's right end, the bar's own content kept on its left: the page's DOM doesn't
+    // Shown as a card above the bar's right end, the bar's own content kept in place: the page's DOM doesn't
     // change (it's inside the bar's closed shadow root).
     assert.equal(await hud({ id: "r00aa01", who: "Sam (Claude Code)", role: "drive" }, "join"), true);
     assert.equal(await hud({ id: "nope", who: "x" }, "join"), false, "a bad id draws nothing");
@@ -81,8 +82,11 @@ test("the join request in the bottom bar: shows at its right end, goes by itself
     assert.equal(s.length, 1);
     assert.equal(s[0].who, "Sam (Claude Code)");
     assert.equal(s[0].more, 0);
-    assert.ok(s[0].allow.y > 700 - 30 && s[0].close.x > 1000 - 40 && s[0].allow.x > 500, `at the right end of the bottom bar: ${JSON.stringify(s[0])}`);
+    assert.ok(s[0].allow.y < 700 - 30 && s[0].allow.y > 700 - 140 && s[0].close.x > 1000 - 40 && s[0].allow.x > 500, `a card above the bottom bar's right end: ${JSON.stringify(s[0])}`);
     assert.equal(await page.evaluate(() => document.documentElement.children.length), before, "no new element in the page");
+    // The badge never covers the card: its bottom is above the card's top (the close sits near it).
+    const badgeBottom = await page.evaluate((tag) => document.querySelector(tag).getBoundingClientRect().bottom, hudScriptTags.hud);
+    assert.ok(badgeBottom < s[0].close.y - 6, `the badge (bottom ${badgeBottom}) is above the card (close at ${s[0].close.y})`);
     // The pointer near the bottom: the bar doesn't fade while it asks.
     await page.mouse.move(100, 690);
     await sleep(300);

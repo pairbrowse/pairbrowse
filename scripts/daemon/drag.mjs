@@ -24,7 +24,7 @@ export async function dragBetween(page, from, to, { cursor = null, interrupted =
     if (n === 0) throw new Error(`couldn't find ${what} on the page (gone, or a stale ref: take a browser_snapshot)`);
   }
   await within(FIND_MS, to.scrollIntoViewIfNeeded({ timeout: FIND_MS })).catch(() => {});
-  cursor?.(from, "click");
+  await cursor?.(from, "click"); // sent, and the press declared, before the button goes down
   await from.hover({ timeout: FIND_MS }).catch((e) => { throw new Error(`${reason(e)} (the element to drag)`); });
   const a = await box(from, "the element to drag");
   const b = await box(to, "the drop target");

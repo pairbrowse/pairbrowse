@@ -101,16 +101,20 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
   // click is PairBrowse's own input: looking for a popup clicks nothing, so a person's click
   // meanwhile stays theirs. declare(page, button): told which button PairBrowse is about to
   // press, before it does (the page then knows the press as PairBrowse's own, not a person's).
-  // One look at a time per tab: two checks finding the same banner at once would both click its
-  // button, and two humanized clicks in flight leave one press somewhere along the way (read as a
-  // person's). The later one skips; the first is doing the job.
+  // One look at a time per tab, and no look while a click of PairBrowse's own is still on its way:
+  // a humanized click takes its time (seconds across a large window), the look that started it
+  // returns before it lands (bounded waits), and a second look meanwhile finds the banner still
+  // up and clicks the same button; two humanized clicks in flight fight over the pointer, and one
+  // press goes down mid-path, far from the button (read as a person's click "on the page"). The
+  // later look skips; the first is doing the job, and the late checks look again.
   const looking = new WeakSet();
   async function dismissOverlay(page, opts = {}) {
     if (!page || looking.has(page)) return;
     looking.add(page);
-    try { await dismissOverlayNow(page, opts); } finally { looking.delete(page); }
+    const pending = []; // the looks (and clicks) this call started, however long they take
+    try { await dismissOverlayNow(page, opts, pending); } finally { Promise.allSettled(pending).then(() => looking.delete(page)); }
   }
-  async function dismissOverlayNow(page, { closeOffers = false, markOwn = false, clicking = null, declare = null } = {}) {
+  async function dismissOverlayNow(page, { closeOffers = false, markOwn = false, clicking = null, declare = null } = {}, pending = []) {
     if (markOwn && page && !page.isClosed()) {
       await settle(800, page.evaluate(() => document.querySelectorAll('[role="dialog"], [aria-modal="true"], [role="alertdialog"], body > *, body > * > *, body > * > * > *').forEach((el) => {
         if (!el.matches('[role="dialog"], [aria-modal="true"], [role="alertdialog"]') && getComputedStyle(el).position !== "fixed") return;
@@ -125,7 +129,9 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     const deadline = Date.now() + 2500;
     for (const frame of frames) {
       if (Date.now() > deadline) return;
-      if (await settle(1000, dismissIn(frame, closeOffers, clicking, declare))) return;
+      const look = dismissIn(frame, closeOffers, clicking, declare);
+      pending.push(look);
+      if (await settle(1000, look)) return;
     }
   }
   async function dismissIn(frame, closeOffers, clicking, declare = null) {

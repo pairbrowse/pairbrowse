@@ -272,8 +272,58 @@ from the hud subset (badge `{ text, color }`) slipped into 6706756 and was taken
 new seed (screen capture isn't permitted for the helper's session here; one glance at the next
 browser start); Chromium's tonal palette takes the seed's hue, so navy is expected.
 
+**hud** (2026-10-11, `design-subset` run wf_a67d6ab3: review pass in one round; 384 unit pass,
+the hud, join-prompt, tokens and native-engine live suites green). The bottom bar: a driver dot
+in the tab's spark color before the unchanged who-line, the last three actions as chips oldest
+to newest with a glyph from the bar's own lines (done ✓ in green, the newest "under way" dots
+only while the agent really drives, a red "!" for "That didn't work"), the time as each chip's
+title, Pause agents at the right, no spinning spark. The join request is a card anchored above
+the bar's right end (avatar dot, "Sam (Claude Code) wants to join · drive", Allow, Deny, ×)
+with the arming, visibility and trusted-click gating untouched; while it shows the badge drops
+its shadow (Chromium's visibility tracking counted the shadow as cover). The badge sits on the
+elevated navy with a 3 px left edge in the agent's color (blue for "your turn", green for
+"done"); the helper passes the participant's spark color with the status. The agent cursor: a
+refined pointer in the participant's color, the label pill in that color with dark ink
+(white fails AA on three of the four participant colors; same choice as the primary buttons),
+a 1 px darker outline, no glow or trail; the control it acts on is outlined 2 px in its color
+inside the cursor's shadow root while the press or targets declaration holds; peers' pointers
+share the pill. Reduced motion: the glide jumps, the click ring is a static dot. No new timer
+or observer. `docs/security.md` row on join requests updated. Looked at (headless, the helper's
+own pictures of six states): matches the reference's bar, card, badge and cursors.
+
+**hud** (2026-10-11, `design-subset`, built by Opus; the lead commits). `scripts/hud.js`: the
+bottom bar has a driver dot in the tab's spark color (orange until set, muted while
+reconnecting) in front of the unchanged who-lines, and the last three actions as chips, oldest
+to newest, the newest next to Pause agents, the row fading at its left. Each chip's state comes
+from the bar's own lines only: a check when done, three dots for the newest while the agent
+drives (the existing 8 s redraw turns it into a check), "!" for a "That didn't work" line; the
+state is in the glyph's shape and the class, not color alone. The spinning spark is gone. The
+join request is a card 12 px from the right, 10 px above the bar (elevated navy, edge ring,
+shadow, an orange dot, "Sam (Claude Code) wants to join · drive", Allow, Deny, × at its corner);
+its arming, visibility and trusted-click checks are unchanged. The badge moves above the card
+and drops its drop shadow meanwhile: Chromium's visibility tracking counts a shadow over the
+card as covering it, so Allow would not have counted (the join-prompt test caught it). The
+badge has a 3 px left edge: the agent's spark color (`scripts/daemon/hud.mjs` sends
+`{ text, color }` for agents' statuses, a plain string for PairBrowse's own), accent for Your
+turn, ok for Done. The agent cursor is a pointer filled in its color with a white edge, tip
+exactly at the point; its name pill and the peers' pills carry dark ink (`#0B1421`) with a 1 px
+darker outline, no glow or trail. Deliberate deviation from the brief: white pill text is 1.7:1
+on cyan and green, dark ink is 6.9:1 to 12:1 on all four colors (the sheet's primary-button rule).
+A 2 px outline in the agent's color is drawn inside the cursor's shadow root around the box the
+cursor, a press declaration or a form fill's first target names; the existing scroll listener
+keeps it in place, the cursor's hold timer and cursor-off take it away. With reduced motion the
+cursor jumps and a click leaves a static dot. No new timer, observer or animation loop (13 call
+sites before and after); the bar payload is unchanged. Looked at (headless, 1100x720 @2x,
+`hud-look.mjs`): driving (dot, three chips with check/check/dots, Email outlined, orange
+"Sam's Claude" pill, Codex and Gemini pointers, orange-edged badge), your turn with the click
+ring on Continue, the join card with the green-edged Done badge above it and the bar intact,
+paused (warn border, Resume, dot still orange), reconnecting (muted dot, outline gone after
+cursor-off), waiting; reduced motion: the static white dot on Continue. Tests: 5 new in
+`test/hud.test.mjs`, the join-prompt geometry assertion now "a card above the bottom bar's
+right end" plus the badge-above-card check.
+
 ## Next
 
-1. `design-subset` with `hud`, then `panel`, `liveview`, `modes`; `design-validate` after each.
+1. `design-validate` for `hud`; then `design-subset` with `panel`, `liveview`, `modes`, `design-validate` after each.
 2. Rerun the 3000-round soak (`test/bench.mjs --soak 3000`) in a quiet window; the earlier run
    died with an interrupt.

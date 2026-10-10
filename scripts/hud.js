@@ -114,6 +114,9 @@
   let agentBox = null; // { x, y, w, h, t }: what the agent acts on now, in document pixels
   let agentTargets = null; // { list: [{ x, y, w, h }], t }: everything a form fill will act on
   let agentPresses = []; // [{ x, y, w, h, until }]: what PairBrowse declared it is about to press (document pixels)
+  // The field the agent acts on, outlined in its color (top page only): { x, y, w, h } in document
+  // pixels while shown, and the outline's element in the cursor's shadow root.
+  let outline = null, outlineEl = null;
   const looked = () => {
     const n = now();
     if (n - agentAt < 1500) return;
@@ -121,7 +124,7 @@
     if (!view || view.y !== y || view.h !== h) view = { y, h, t: n };
   };
   for (const kind of ["keydown", "pointerdown", "touchstart"]) addEventListener(kind, (e) => { if (e.isTrusted) personAt = now(); }, opts);
-  addEventListener("scroll", () => { if (now() - personAt < 1500) looked(); }, opts);
+  addEventListener("scroll", () => { if (outline) placeOutline(); if (now() - personAt < 1500) looked(); }, opts);
   // Where the person's pointer is, in document coordinates (a shared tab shows it in the other
   // browser's copy at the same place in the page, whatever its window size). Never what's under it.
   let ptr = null;
@@ -198,18 +201,18 @@
     if (host && host.isConnected) return;
     host = document.createElement(TAG_HUD);
     const shadow = host.attachShadow({ mode: "closed" });
-    // Flat navy, the sheet's values (tokens.css), the orange spark.
+    // The elevated navy surface, the sheet's values (tokens.css), a 3 px left edge in the agent's
+    // color (accent for your turn, ok for done) and its spark.
     shadow.innerHTML = html(`<style>
       :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;right:12px !important;bottom:12px !important}
       .b{display:flex;align-items:center;gap:9px;font:600 12px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;color:#F1F5FA;
-         padding:9px 14px 9px 11px;border-radius:10px;max-width:min(440px,62vw);cursor:default;
-         background:rgba(25,42,61,.97);
+         padding:9px 14px 9px 10px;border-radius:10px;max-width:min(440px,62vw);cursor:default;
+         background:rgba(25,42,61,.97);border-left:3px solid #e9763f;
          box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35)}
       .b span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       svg{flex:none;width:15px;height:15px;color:#e9763f}
       .you{animation:g 1.8s ease-in-out infinite}
       .you svg{animation:s 1.8s ease-in-out infinite}
-      .done svg{color:#20C997}
       .x{flex:none;margin-left:2px;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:0 2px}
       .x:hover{color:#F1F5FA}
       @keyframes g{50%{box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35),0 0 0 4px rgba(50,133,246,.28)}}
@@ -228,6 +231,7 @@
   const SPARK = "M8 0.8c.5 0 .8.4.9.9l.5 4 3.3-2.3c.4-.3 1-.2 1.3.2.3.4.2 1-.2 1.3L10.6 7.3l4 .6c.5.1.9.5.8 1-.1.5-.5.8-1 .7l-4-.5 2.3 3.3c.3.4.2 1-.2 1.3-.4.3-1 .2-1.3-.2L8.9 10.2l-.5 4c-.1.5-.5.9-1 .8-.5 0-.8-.5-.8-1l.6-4-3.3 2.3c-.4.3-1 .2-1.3-.2-.3-.4-.2-1 .2-1.3l3.2-2.4-4-.5c-.5-.1-.9-.5-.8-1 .1-.5.5-.8 1-.8l4 .6L3.9 3.5c-.3-.4-.2-1 .2-1.3.4-.3 1-.2 1.3.2l2.4 3.3.5-4c0-.5.4-.9.9-.9Z";
   let sparkLink = null;
   let sparkColor = null; // kept here, not on the link: nothing extra for a page to see
+  let sparkAgent = ""; // the agent spark's color alone: the bar's driver dot
   let savedIcons = [];
   function drawSpark(ctx, x, y, size, color = "#e9763f") {
     ctx.save();
@@ -264,6 +268,7 @@
     const parts = String(value || "").split(" ");
     const color = parts.find((p) => /^#[0-9a-f]{6}$/i.test(p)) || "";
     const person = parts.find((p) => /^o#[0-9a-f]{6}$/i.test(p))?.slice(1) || "";
+    if (color !== sparkAgent) { sparkAgent = color; paintDot(); }
     if (!color && !person) {
       if (!sparkLink) return;
       sparkLink.remove();
@@ -338,14 +343,19 @@
       .bar.away{opacity:0;transform:translateY(8px)}
       .who{display:flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
       .who b{color:#F1F5FA;font-weight:600}
-      .who svg{width:13px;height:13px;color:#e9763f}
-      .bar.driving .who svg{animation:r 2.4s linear infinite}
-      @keyframes r{to{transform:rotate(360deg)}}
-      ol{display:flex;gap:16px;margin:0;padding:0;list-style:none;min-width:0;flex:1;overflow:hidden;
-        -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 40px),transparent)}
-      li{display:flex;gap:6px;align-items:baseline;white-space:nowrap}
-      li+li::before{content:"\\00b7";color:#8699B1;margin-right:10px}
-      li:first-child{color:#F1F5FA}
+      .dot{flex:none;width:8px;height:8px;border-radius:50%;background:#e9763f}
+      ol{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:0;padding:0;list-style:none;min-width:0;flex:1;overflow:hidden;
+        -webkit-mask-image:linear-gradient(90deg,transparent,#000 40px);mask-image:linear-gradient(90deg,transparent,#000 40px)}
+      li{display:flex;gap:6px;align-items:center;white-space:nowrap;flex:none}
+      li.empty{margin-right:auto;color:#8699B1;font-size:12px}
+      .chip{height:20px;padding:0 8px;border-radius:6px;background:#192A3D;font-size:12px;color:#A2B2C6}
+      .chip span{min-width:0;max-width:min(360px,40vw);overflow:hidden;text-overflow:ellipsis}
+      .chip.now span{color:#F1F5FA}
+      .g{display:flex;flex:none;width:12px;height:12px}
+      .g svg{width:12px;height:12px}
+      .done .g{color:#20C997}
+      .now .g{color:#F1F5FA}
+      .bad .g{color:#EF6468}
       time{font:500 11px system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums;color:#8699B1}
       li b{font-weight:600;color:#F1F5FA}
       code{font:500 11px system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums;padding:0 4px;border-radius:4px;background:#243750}
@@ -356,23 +366,29 @@
       .bar.paused{background:rgba(11,20,33,.96);border-top-color:#F4B45D}
       .bar.paused .pz{background:#F4B45D;color:#0B1421}
       .bar.asking{background:#0B1421}
-      .jq{flex:none;pointer-events:auto;display:flex;align-items:center;gap:7px;max-width:min(520px,62vw);min-width:0;padding-left:12px;border-left:1px solid #293B50;cursor:default;font-weight:600;color:#F1F5FA}
+      .jq{position:absolute;right:12px;bottom:40px;display:flex;flex-direction:column;gap:9px;box-sizing:border-box;max-width:min(420px,70vw);
+        padding:12px 34px 12px 14px;border-radius:10px;background:rgba(25,42,61,.97);box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35);
+        pointer-events:auto;cursor:default;font:600 12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#F1F5FA}
       .jq[hidden]{display:none}
-      .jq svg{flex:none;width:13px;height:13px;color:#e9763f}
+      .jq .hd{display:flex;align-items:center;gap:8px;min-width:0}
+      .jq .av{flex:none;width:8px;height:8px;border-radius:50%;background:#e9763f}
       .jq .t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .jq .t b{color:#F1F5FA}
+      .jq .r{color:#A2B2C6}
       .jq .h,.jq .m{font-weight:500;color:#A2B2C6;white-space:nowrap}
+      .jq .m{padding-left:16px}
       .jq .m[hidden]{display:none}
-      .jq button{flex:none;border:0;border-radius:6px;padding:4px 10px;font:600 12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+      .jq .act{display:flex;gap:8px;padding-left:16px}
+      .jq button{flex:none;border:0;border-radius:6px;padding:6px 14px;font:600 12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
       .jq .ok{background:#3285F6;color:#0B1421}
       .jq .ok:hover{filter:brightness(1.08)}
       .jq .no{background:#243750;color:#F1F5FA}
       .jq .no:hover{background:#293B50}
       .jq button:disabled{cursor:default;filter:saturate(.4)}
-      .jq .x{flex:none;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:0 3px}
+      .jq .x{position:absolute;right:8px;top:6px;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:4px}
       .jq .x:hover{color:#F1F5FA}
       @media (prefers-reduced-motion:reduce){.bar,.bar *{animation:none!important;transition:none!important}}
-    </style><div class="bar" aria-hidden="true"><span class="who"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><span class="jq" hidden><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span class="t"><b></b> wants to join (<span class="r"></span>)<span class="h"></span></span><span class="m" hidden></span><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button><b class="x" title="Dismiss (it stays in the side panel)">×</b></span></div>`);
+    </style><div class="bar" aria-hidden="true"><span class="who"><i class="dot"></i><span></span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><div class="jq" hidden><div class="hd"><i class="av"></i><span class="t"><b></b> wants to join · <span class="r"></span><span class="h"></span></span></div><span class="m" hidden></span><div class="act"><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button></div><b class="x" title="Dismiss (it stays in the side panel)">×</b></div></div>`);
     bar = shadow.querySelector(".bar");
     joinWire(shadow); // a new bar: a join request it shows is drawn anew
     joinShown = "";
@@ -395,6 +411,16 @@
       document.addEventListener("mousemove", (e) => bar?.classList.toggle("away", !joins.size && e.clientY > innerHeight - 56 && !nearButton(e)), { passive: true });
     }
   }
+  const GLYPH = {
+    done: '<svg viewBox="0 0 12 12"><path d="M2.6 6.3l2.2 2.2 4.6-4.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    now: '<svg viewBox="0 0 12 12"><circle cx="2.4" cy="6" r="1.25" fill="currentColor"/><circle cx="6" cy="6" r="1.25" fill="currentColor"/><circle cx="9.6" cy="6" r="1.25" fill="currentColor"/></svg>',
+    bad: '<svg viewBox="0 0 12 12"><path d="M6 2v4.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="6" cy="9.6" r="1.15" fill="currentColor"/></svg>',
+  };
+  // The driver dot: the tab's spark color (orange until one is set), muted while reconnecting.
+  function paintDot() {
+    const d = bar?.querySelector(".dot");
+    if (d) d.style.background = barReconnecting && !barPause ? "#8699B1" : sparkAgent || "#e9763f";
+  }
   function drawBar() {
     const driving = barItems.length && Date.now() - barItems.at(-1).t < 8000;
     bar.classList.toggle("driving", !!driving);
@@ -403,14 +429,21 @@
     const pz = bar.querySelector(".pz");
     pz.hidden = !barCanPause;
     pz.textContent = barPause ? "Resume" : "Pause agents";
+    paintDot();
     if (barPause) bar.querySelector(".who span").innerHTML = html(`Paused by <b>${esc(barPause.by)}</b>${barCanPause ? " \u00b7" : ""}`);
     else if (barReconnecting) bar.querySelector(".who span").innerHTML = html(`Reconnecting to <b>${esc(barReconnecting)}</b>…`);
     else bar.querySelector(".who span").innerHTML = html(barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`);
-    const recent = barItems.slice(-3).reverse();
+    // Oldest to newest, the newest at the right next to Pause agents. Each chip's state comes from
+    // the bar's own lines: a failure says so, the newest is under way while the agent drives (or
+    // its line says "Now:"), the rest are done. The glyph's shape says it too, not its color alone.
+    const recent = barItems.slice(-3);
     const several = new Set(recent.map((a) => a.who || "")).size > 1; // name each line when people mix
+    // Under way only while the agent really drives: not paused, not waiting for a person, not reconnecting.
+    const underWay = driving && !barPause && !barWaiting && !barReconnecting;
+    const stateOf = (a, i) => /^That didn't work/.test(a.text) ? "bad" : (underWay && i === recent.length - 1) || /^Now:/.test(a.text) ? "now" : "done";
     bar.querySelector("ol").innerHTML = html(recent.length
-      ? recent.map((a) => `<li><time>${clock(a.t)}</time><span>${several && a.who ? `<b>${esc(a.who)}</b> ` : ""}${rich(a.text)}</span></li>`).join("")
-      : "<li><span>Claude's actions show up here</span></li>");
+      ? recent.map((a, i) => { const st = stateOf(a, i); return `<li class="chip ${st}" title="${clock(a.t)}"><i class="g">${GLYPH[st]}</i><span>${several && a.who ? `<b>${esc(a.who)}</b> ` : ""}${rich(a.text)}</span></li>`; }).join("")
+      : "<li class=\"empty\"><span>Claude's actions show up here</span></li>");
     clearTimeout(barTimer);
     if (driving) barTimer = setTimeout(drawBar, 8100 - (Date.now() - barItems.at(-1).t));
   }
@@ -429,22 +462,27 @@
     drawBar();
     placeBadge();
   }
-  // The badge sits above the bar when there is one.
+  // The badge sits above the bar when there is one, and above a join card.
   function placeBadge() {
     if (!hostPlace) return;
-    hostPlace.textContent = barHost?.isConnected ? `:host{bottom:42px !important}` : "";
+    // Above the join card while one shows, so it never covers it (one layout read per change); its
+    // drop shadow goes meanwhile, since the browser counts a shadow over the card as covering it
+    // (and a click on Allow then wouldn't count).
+    const card = joins.size ? bar?.querySelector(".jq") : null;
+    const lift = card && !card.hidden ? card.offsetHeight + 8 : 0;
+    hostPlace.textContent = barHost?.isConnected ? `:host{bottom:${42 + lift}px !important}${lift ? ".b{box-shadow:0 0 0 1px #293B50 !important}" : ""}` : "";
   }
 
   // Someone asks to join the session (shown on the host's tab in front only, when the browser has
-  // the focus): the bottom bar keeps who's driving and Claude's last actions on the left, and at
-  // its right end shows "Sam wants to join (drive) · Allow · Deny · ×", the newest request, with
-  // "+N more" pointing to the side panel. Each goes by itself after JOIN_SHOWN_MS (not while the
+  // the focus): a card above the bottom bar's right end (the bar keeps who's driving, the last
+  // actions and Pause agents in place) shows "Sam wants to join · drive", Allow, Deny and ×, the
+  // newest request, with "+N more" pointing to the side panel. Each goes by itself after JOIN_SHOWN_MS (not while the
   // pointer is on it); the request stays in the side panel.
   // It lives in the bar's closed shadow root, so the page's DOM doesn't change when it shows, and
   // a page can't read, click or fake it. Only a real click counts: trusted, from a pointer (not a
   // key), at least JOIN_ARM_MS after what it shows last changed, and while the browser reports it
-  // fully visible (nothing over it, no opacity or filter: IntersectionObserver v2; the bar drops
-  // its blur and never fades while it asks), so a page can't slip it under a click meant for
+  // fully visible (nothing over it, no opacity or filter: IntersectionObserver v2; the bar never
+  // fades while it asks, and the badge moves above the card), so a page can't slip it under a click meant for
   // something else. The click is only recorded here; the helper reads it with the key, checks it
   // again (not during an agent's action, nor a joiner's or the live view's replayed input) and
   // answers the request the side panel's way (daemon/joinprompt.mjs). Its text comes as an
@@ -510,6 +548,7 @@
     if (id) bar.classList.remove("away");
     jq.hidden = !id;
     joinWatch(!!id);
+    if (!id) placeBadge();
     if (id !== joinShown) {
       joinShown = id;
       joinAt = now(); // what a click lands on just changed: no click counts for a moment
@@ -524,6 +563,7 @@
     const m = jq.querySelector(".m");
     m.hidden = !more;
     m.textContent = more ? `+${more} more in the side panel` : "";
+    placeBadge();
   }
   function joinOff(id) {
     const j = joins.get(id);
@@ -581,6 +621,11 @@
   // who, color: the agent's name on a tag in its color (people see whose cursor it is).
   // w: the target's smaller side (a small target takes a little longer to reach).
   // A name on a tag: at most 40 characters, cut between words.
+  // The pointer's shape (its tip at 0,0 in a "1 1 22 22" view box: exactly at the point) and the
+  // name pill, shared by the agent's cursor and other people's pointers: dark ink on the
+  // participant's color (AA on all four), a 1 px darker outline, no glow.
+  const POINTER = "M1 1v16.6l4.3-3.8 2.7 6.1 2.8-1.3-2.7-6 5.6-.6z";
+  const PILL = "padding:2px 8px;border-radius:999px;font:600 11px/1.45 system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0B1421;white-space:nowrap;box-shadow:0 0 0 1px rgba(0,0,0,.28);-webkit-font-smoothing:antialiased";
   const shortWho = (who) => { const t = String(who || "Claude"); return t.length > 40 ? `${t.slice(0, 40).replace(/\s+\S*$/, "")}…` : t; };
   function pointer(x, y, act, who = "Claude", color = "", w = 24) {
     if (!curHost || !curHost.isConnected) {
@@ -590,20 +635,27 @@
         :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;left:0 !important;top:0 !important;pointer-events:none !important}
         .c{position:fixed;left:0;top:0;transition:opacity .3s;opacity:0;will-change:transform}
         .c.on{opacity:1}
-        svg{width:22px;height:22px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))}
+        svg{position:absolute;left:0;top:0;width:22px;height:22px;overflow:visible;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.35))}
         .r{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(11,20,33,.5);opacity:0}
         .c.click .r{animation:p .45s ease-out}
         @keyframes p{from{opacity:.9;transform:scale(.4)}to{opacity:0;transform:scale(1.4)}}
-        span{position:absolute;left:16px;top:18px;padding:2px 8px;border-radius:999px;font:600 11px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
-          color:#fff;background:#e9763f;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);-webkit-font-smoothing:antialiased}
-      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="0 0 24 24"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#0B1421" stroke-width="1.6" stroke-linejoin="round"/></svg><span></span></div>`);
+        span{position:absolute;left:16px;top:18px;${PILL};background:#e9763f}
+        .f{position:fixed;left:0;top:0;box-sizing:border-box;border:2px solid #e9763f;border-radius:4px;opacity:0;transition:opacity .15s;pointer-events:none}
+        .f.on{opacity:1}
+        @media (prefers-reduced-motion:reduce){.c,.f{transition:none}.c.click .r{animation:none;opacity:.9;transform:scale(.4);background:#fff}}
+      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="1 1 22 22"><path d="${POINTER}" fill="#e9763f" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span></div><div class="f" aria-hidden="true"></div>`);
       cur = shadow.querySelector(".c");
+      outlineEl = shadow.querySelector(".f");
+      outline = null;
       document.documentElement.appendChild(curHost);
       curAt = null;
     }
     const tag = cur.querySelector("span");
     tag.textContent = shortWho(who);
-    tag.style.background = /^#[0-9a-f]{6}$/i.test(color) ? color : "#e9763f";
+    const col = /^#[0-9a-f]{6}$/i.test(color) ? color : "#e9763f";
+    tag.style.background = col;
+    cur.querySelector("path").setAttribute("fill", col);
+    outlineEl.style.borderColor = col;
     cancelAnimationFrame(curFrame);
     cur.classList.remove("click");
     pressBy = now() + PRESS_WINDOW_MS;
@@ -626,8 +678,29 @@
     }
     cur.classList.add("on");
     clearTimeout(curTimer);
-    curTimer = setTimeout(() => cur.classList.remove("on"), CURSOR_HOLD_MS);
+    curTimer = setTimeout(() => { cur.classList.remove("on"); hideOutline(); }, CURSOR_HOLD_MS);
     return Math.ceil(duration); // how long it takes to arrive, ms
+  }
+
+  // The outline around the field the agent acts on (the cursor's target box, then what it declares
+  // it presses), in its color, inside the cursor's shadow root: the page's DOM never changes. It
+  // goes with the cursor (its hold timer, cursor-off); the scroll listener above keeps it in place.
+  function placeOutline() {
+    if (!outline || !outlineEl) return;
+    outlineEl.style.transform = `translate(${+(outline.x - scrollX).toFixed(1)}px, ${+(outline.y - scrollY).toFixed(1)}px)`;
+    outlineEl.style.width = `${outline.w}px`;
+    outlineEl.style.height = `${outline.h}px`;
+  }
+  // b: { x, y, w, h } in document pixels. Only while the agent's cursor is up.
+  function showOutline(b) {
+    if (!outlineEl || !cur?.classList.contains("on") || !(b?.w > 0 && b?.h > 0)) return;
+    outline = { x: b.x, y: b.y, w: b.w, h: b.h };
+    placeOutline();
+    outlineEl.classList.add("on");
+  }
+  function hideOutline() {
+    outline = null;
+    outlineEl?.classList.remove("on");
   }
 
   // Other people's and agents' pointers from the other browser of a shared tab: named, in their
@@ -675,12 +748,11 @@
         :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;left:0 !important;top:0 !important;width:0 !important;height:0 !important;pointer-events:none !important}
         .p{position:fixed;left:0;top:0;opacity:0;transition:opacity .35s ease;will-change:transform;pointer-events:none}
         .p.on{opacity:1}
-        svg{display:block;width:18px;height:18px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
-        span{position:absolute;left:14px;top:16px;padding:2px 8px;border-radius:999px;font:600 11px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
-          color:#fff;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);-webkit-font-smoothing:antialiased}
+        svg{display:block;width:18px;height:18px;overflow:visible;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.35))}
+        span{position:absolute;left:14px;top:16px;${PILL}}
         .v{position:fixed;right:0;top:0;display:flex;align-items:flex-start;gap:4px;opacity:.8;pointer-events:none}
         .v i{display:block;width:4px;border-radius:2px 0 0 2px;box-shadow:0 0 0 1px rgba(255,255,255,.7)}
-        .v b{order:-1;padding:1px 6px;border-radius:999px;font:600 10px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;white-space:nowrap;opacity:0;transition:opacity .35s ease}
+        .v b{order:-1;${PILL};padding:1px 6px;font-size:10px;opacity:0;transition:opacity .35s ease}
         .v.fresh b{opacity:1}
         @media (prefers-reduced-motion:reduce){.p,.v b{transition:none}}
       </style><div aria-hidden="true"></div>`);
@@ -719,7 +791,7 @@
       if (!p) {
         const el = document.createElement("div");
         el.className = "p";
-        el.innerHTML = html(`<svg viewBox="0 0 24 24"><path d="M4 2.5l6.8 18.2 2.5-7.4 7.4-2.5z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><span></span>`);
+        el.innerHTML = html(`<svg viewBox="1 1 22 22"><path d="${POINTER}" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span>`);
         peersBox.appendChild(el);
         p = { el, x, y, tx: x, ty: y, t: now(), on: false, color: "", who: null };
         peers.set(c.k, p);
@@ -753,6 +825,7 @@
       clearTimeout(curTimer);
       agentPtr = null; // joiners stop showing it too
       cur?.classList.remove("on");
+      hideOutline();
       return true;
     }
     if (kind === "cursor") {
@@ -762,6 +835,7 @@
         agentPtr = { x: Math.round((Number(c.x) || 0) + scrollX), y: Math.round((Number(c.y) || 0) + scrollY), t: now() };
         const bw = Math.max(0, Number(c.bw) || 0), bh = Math.max(0, Number(c.bh) || 0);
         agentBox = { x: agentPtr.x - bw / 2, y: agentPtr.y - bh / 2, w: bw, h: bh, t: now() };
+        if (bw > 0 && bh > 0) showOutline(agentBox); else hideOutline();
         agentAt = now(); // the scrolling an agent's action causes isn't the person's
         return { ms, at: { ...agentPtr, w: bw, h: bh } }; // until it arrives; where it points (and its target's size), in document coordinates
       } catch {}
@@ -774,6 +848,8 @@
         const list = JSON.parse(text);
         const until = now() + PRESS_KEEP_MS;
         if (Array.isArray(list)) for (const b of list.slice(0, 40)) agentPresses.push({ x: (Number(b.x) || 0) + scrollX, y: (Number(b.y) || 0) + scrollY, w: Math.max(0, Number(b.w) || 0), h: Math.max(0, Number(b.h) || 0), until });
+        const box = Array.isArray(list) && agentPresses.findLast((p) => p.until === until && p.w > 0 && p.h > 0);
+        if (box) showOutline(box);
         if (agentPresses.length > 80) agentPresses.splice(0, agentPresses.length - 80);
         agentAt = now(); // the scrolling its press causes isn't the person's
       } catch {}
@@ -783,6 +859,8 @@
       try {
         const list = JSON.parse(text);
         agentTargets = Array.isArray(list) ? { list: list.slice(0, 40).map((b) => ({ x: (Number(b.x) || 0) + scrollX, y: (Number(b.y) || 0) + scrollY, w: Number(b.w) || 0, h: Number(b.h) || 0 })), t: now() } : null;
+        const first = agentTargets?.list.find((b) => b.w > 0 && b.h > 0);
+        if (first) showOutline(first);
       } catch { agentTargets = null; }
       return true;
     }
@@ -802,14 +880,22 @@
       spark(String(text || ""));
       return true;
     }
-    if (!text) {
+    // The badge's text, plain or as data with the agent's spark color ({ text, color }), never
+    // through JSON.parse.
+    const label = text && typeof text === "object" ? String(text.text || "") : text;
+    const edge = text && typeof text === "object" && /^#[0-9a-f]{6}$/i.test(text.color || "") ? text.color : "";
+    if (!label) {
       host?.remove();
       return true;
     }
     ensure();
-    box.className = "b " + (kind === "you" || kind === "done" ? kind : "claude");
+    const look = kind === "you" || kind === "done" ? kind : "claude";
+    box.className = "b " + look;
+    const c = look === "you" ? "#3285F6" : look === "done" ? "#20C997" : edge || "#e9763f";
+    box.style.borderLeftColor = c;
+    box.querySelector("svg").style.color = c;
     // kind "agent": the text names the agent itself ("Codex: ...").
-    box.querySelector("span").textContent = (kind === "you" ? "Your turn: " : kind === "done" ? "Done: " : kind === "agent" ? "" : "Claude: ") + String(text).slice(0, 140);
+    box.querySelector("span").textContent = (kind === "you" ? "Your turn: " : kind === "done" ? "Done: " : kind === "agent" ? "" : "Claude: ") + String(label).slice(0, 140);
     return true;
   }
 

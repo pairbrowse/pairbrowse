@@ -463,3 +463,184 @@ test("the page answers a wait for input at once when something happens, empty af
     await browser.close();
   }
 });
+
+// The test opens the closed shadow roots (in the world the page script runs in) to read them.
+const openShadows = () => { const a = Element.prototype.attachShadow; Element.prototype.attachShadow = function (i) { return a.call(this, { ...i, mode: "open" }); }; };
+
+test("the bar's chips carry the bar's own state: done, the newest while driving, a failure", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Shop</h1>" }));
+    await page.goto("http://pairbrowse.test/");
+    await page.evaluate(openShadows);
+    await ensureHud(page, source, "__pbtest");
+    const now = Date.now();
+    const items = [{ t: now - 20000, text: "Typed `a` into **B**", who: "" }, { t: now - 15000, text: "That didn't work: x", who: "" }, { t: now - 300, text: "Clicked **Next**", who: "" }];
+    await page.evaluate((v) => window.__pbtest("tok", JSON.stringify(v), "bar"), { items });
+    const read = () => page.evaluate((tag) => {
+      const root = document.querySelector(tag).shadowRoot;
+      return {
+        chips: [...root.querySelectorAll("li")].map((li) => ({ cls: li.className, text: li.querySelector("span").textContent, g: !!li.querySelector(".g svg"), time: /^\d\d:\d\d/.test(li.getAttribute("title") || "") })),
+        dot: getComputedStyle(root.querySelector(".who .dot")).backgroundColor,
+      };
+    }, hud.tags.bar);
+    let r = await read();
+    assert.deepEqual(r.chips.map((c) => c.cls), ["chip done", "chip bad", "chip now"]);
+    assert.deepEqual(r.chips.map((c) => c.text), ["Typed a into B", "That didn't work: x", "Clicked Next"], "oldest to newest");
+    assert.ok(r.chips.every((c) => c.g && c.time), "each chip has its glyph, and its time as a title");
+    assert.equal(r.dot, "rgb(233, 118, 63)", "the driver dot is orange with no spark set");
+    // Paused by a person: nothing is under way, whatever the newest line's age.
+    await page.evaluate((v) => window.__pbtest("tok", JSON.stringify(v), "bar"), { items, pause: { by: "Alice" }, canPause: true });
+    r = await read();
+    assert.deepEqual(r.chips.map((c) => c.cls), ["chip done", "chip bad", "chip done"], "no 'now' chip while paused");
+    await page.evaluate((v) => window.__pbtest("tok", JSON.stringify(v), "bar"), { items });
+    await page.evaluate(() => window.__pbtest("tok", "#4fd1e8", "spark"));
+    r = await read();
+    assert.equal(r.dot, "rgb(79, 209, 232)", "the tab's spark color");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the badge's left edge is the agent's color, accent for Your turn, ok for Done; a plain string still works", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Shop</h1>" }));
+    await page.goto("http://pairbrowse.test/");
+    await page.evaluate(openShadows);
+    await ensureHud(page, source, "__pbtest");
+    const badge = (text, kind) => page.evaluate(([v, k, tag]) => {
+      window.__pbtest("tok", v, k);
+      const host = document.querySelector(tag);
+      if (!host) return null;
+      const b = host.shadowRoot.querySelector(".b");
+      return { edge: getComputedStyle(b).borderLeftColor, text: b.querySelector("span").textContent };
+    }, [text, kind, hud.tags.hud]);
+    assert.deepEqual(await badge({ text: "filling", color: "#a78bfa" }, "claude"), { edge: "rgb(167, 139, 250)", text: "Claude: filling" });
+    assert.deepEqual(await badge("Your turn", "you"), { edge: "rgb(50, 133, 246)", text: "Your turn: Your turn" });
+    assert.deepEqual(await badge("done", "done"), { edge: "rgb(32, 201, 151)", text: "Done: done" });
+    assert.equal((await badge("plain", "claude")).edge, "rgb(233, 118, 63)", "no color: Claude's orange");
+    assert.equal(await badge("", "clear"), null, "cleared: the badge is gone");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the helper sends the participant's spark color with its status", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const calls = [];
+  const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => { if (!["bar", "spark"].includes(args?.[3])) calls.push(args); } };
+  const statuses = [];
+  const hud = createHud({ pages: async () => [page], participants: () => ["a", "b"], waiting: () => null, liveView: () => ({ setStatus: (s) => statuses.push(s) }), notify: () => {} });
+  await hud.setBadgeFor("b", "typing", "claude", "Bob · Codex");
+  assert.deepEqual(calls.at(-1)[2], { text: "Codex: typing", color: "#4fd1e8" });
+  assert.equal(calls.at(-1)[3], "agent");
+  assert.equal(statuses.at(-1).text, "Codex: typing", "the live view reads text and kind as before");
+  await hud.setBadge("Solve it", "you");
+  assert.equal(calls.at(-1)[2], "Solve it", "PairBrowse's own status stays a plain string");
+  assert.equal(calls.at(-1)[3], "you");
+});
+
+test("the field the agent acts on is outlined in its color inside the cursor's shadow root, follows scrolling and goes when the agent is done", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: `<body style="margin:0;height:3000px"><input id="i" style="position:absolute;left:100px;top:300px;width:240px;height:40px;box-sizing:border-box"><button id="b" style="position:absolute;left:100px;top:420px;width:120px;height:36px">Next</button></body>` }));
+    await page.goto("http://pairbrowse.test/");
+    await page.evaluate(openShadows);
+    await ensureHud(page, source, "__pbtest");
+    const before = await page.evaluate(() => document.documentElement.children.length);
+    const send = (kind, v) => page.evaluate(([v, k]) => window.__pbtest("tok", typeof v === "string" ? v : JSON.stringify(v), k), [v, kind]);
+    const outline = () => page.evaluate((tag) => {
+      for (const el of document.querySelectorAll(tag)) {
+        const f = el.shadowRoot?.querySelector(".f");
+        if (!f) continue;
+        const r = f.getBoundingClientRect(), cs = getComputedStyle(f);
+        const span = el.shadowRoot.querySelector(".c span");
+        return { on: f.classList.contains("on"), x: r.x, y: r.y, w: r.width, h: r.height, border: cs.borderTopColor, ink: getComputedStyle(span).color, fill: el.shadowRoot.querySelector(".c path").getAttribute("fill") };
+      }
+      return null;
+    }, hud.tags.cursor);
+    const near = (a, b) => Math.abs(a - b) <= 1;
+    await send("cursor", { x: 220, y: 320, act: "type", who: "Codex", color: "#a78bfa", w: 40, bw: 240, bh: 40 });
+    let o = await outline();
+    assert.ok(o.on && near(o.x, 100) && near(o.y, 300) && near(o.w, 240) && near(o.h, 40), `around the field: ${JSON.stringify(o)}`);
+    assert.equal(o.border, "rgb(167, 139, 250)");
+    assert.equal(o.ink, "rgb(11, 20, 33)", "dark ink on the pill");
+    assert.equal(o.fill, "#a78bfa");
+    await page.evaluate(() => scrollTo(0, 200));
+    await page.waitForTimeout(100);
+    o = await outline();
+    assert.ok(near(o.y, 100), `moves with the page: ${o.y}`);
+    const b = await page.locator("#b").boundingBox();
+    await send("press", [{ x: b.x, y: b.y, w: b.width, h: b.height }]);
+    o = await outline();
+    assert.ok(o.on && near(o.x, b.x) && near(o.y, b.y) && near(o.w, b.width) && near(o.h, b.height), `on the declared press: ${JSON.stringify(o)}`);
+    assert.equal(await page.evaluate(() => document.documentElement.children.length), before + 1, "the cursor's element only");
+    const attrs = await page.evaluate((tag) => [...document.querySelectorAll(tag)].flatMap((e) => e.getAttributeNames()), hud.tags.cursor);
+    assert.deepEqual(attrs, []);
+    await send("cursor-off", "");
+    assert.equal((await outline()).on, false, "goes when the agent is done");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("with reduced motion the cursor jumps and the click leaves a static dot", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1000, height: 640 } });
+    const page = await context.newPage();
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<p>Page</p>" }));
+    await page.goto("http://pairbrowse.test/");
+    await page.evaluate(() => {
+      const a = Element.prototype.attachShadow; Element.prototype.attachShadow = function (i) { return a.call(this, { ...i, mode: "open" }); };
+      window.trail = [];
+      const loop = () => {
+        for (const el of document.documentElement?.children || []) {
+          const m = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(el.shadowRoot?.querySelector(".c")?.style.transform || "");
+          if (m) window.trail.push({ x: +m[1], y: +m[2] });
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    });
+    await ensureHud(page, source, "__pbtest");
+    const point = (c) => page.evaluate((v) => window.__pbtest("tok", v, "cursor"), JSON.stringify(c));
+    await point({ x: 100, y: 500 });
+    await page.waitForTimeout(150);
+    const { ms } = await point({ x: 850, y: 140, act: "click", w: 20 });
+    assert.equal(ms, 0, "it jumps");
+    await page.waitForTimeout(150);
+    const trail = await page.evaluate(() => window.trail);
+    assert.ok(trail.every((p) => (p.x === 100 && p.y === 500) || (p.x === 850 && p.y === 140)), "no point in between");
+    await page.mouse.click(850, 140);
+    await page.waitForTimeout(100);
+    const ring = await page.evaluate((tag) => {
+      for (const el of document.querySelectorAll(tag)) {
+        const r = el.shadowRoot?.querySelector(".c.click .r");
+        if (r) { const cs = getComputedStyle(r); return { anim: cs.animationName, opacity: +cs.opacity }; }
+      }
+      return null;
+    }, hud.tags.cursor);
+    assert.ok(ring, "the press rang");
+    assert.equal(ring.anim, "none");
+    assert.ok(ring.opacity > 0, "a static dot stays");
+  } finally {
+    await browser.close();
+  }
+});

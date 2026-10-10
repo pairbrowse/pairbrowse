@@ -187,3 +187,36 @@ test("a written run file is never half there", async () => {
   assert.equal(listRuns().some((r) => r?.name === "probe"), false, "junk is skipped");
   assert.ok(!files().some((f) => f.endsWith(".tmp")));
 });
+
+test("a page opened and left again before any action there keeps its title", async () => {
+  // The helper logs an opening with the tab before the tab moves; the page's title is only there
+  // while the tab shows it. Three quick navigations: each page's title, not its bare address.
+  const t = start + 5 * 3600_000;
+  const page = tab("about:blank");
+  const j = createJournal({ session: () => "passing", openPages: async () => [page], now: () => t, delayMs: 10 });
+  j.activity("Opened https://pass.example/one", "Claude", page);
+  page.go("https://pass.example/one", "One");
+  j.activity("Opened https://pass.example/two", "Claude", page);
+  page.go("https://pass.example/two", "Two");
+  j.activity("Opened https://pass.example/three", "Claude", page);
+  page.go("https://pass.example/three", "Three");
+  await j.flushNow();
+  assert.deepEqual(read("pass-example-2026-10-10-19-05.json").done, [
+    "One <https://pass.example/one>",
+    "Two <https://pass.example/two>",
+    "Three <https://pass.example/three>",
+  ]);
+});
+
+test("a title that comes after the page was written is picked up, with nothing else happening", async () => {
+  const t = start + 6 * 3600_000;
+  const page = tab("about:blank");
+  const j = createJournal({ session: () => "late", openPages: async () => [page], now: () => t, delayMs: 10 });
+  j.activity("Opened https://late.example/app", "Claude", page);
+  page.go("https://late.example/app", ""); // the app sets its title from a script, a moment later
+  await j.flushNow();
+  assert.deepEqual(read("late-example-2026-10-10-20-05.json").done, ["https://late.example/app"]);
+  page.go("https://late.example/app", "Dashboard");
+  for (let i = 0; i < 40 && read("late-example-2026-10-10-20-05.json").done[0] === "https://late.example/app"; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(read("late-example-2026-10-10-20-05.json").done, ["Dashboard <https://late.example/app>"]);
+});

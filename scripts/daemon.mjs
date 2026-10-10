@@ -36,6 +36,7 @@ import { currentAccount } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
+import { contextCount } from "./daemon/contexts.mjs";
 import { createHud } from "./daemon/hud.mjs";
 import { createPresence } from "./daemon/presence.mjs";
 import { createPause } from "./daemon/pause.mjs";
@@ -169,7 +170,7 @@ const popups = createPopups({
   onCleared: () => { if (hud.badge().text === CHALLENGE_TURN) hud.setBadge("", "clear").catch(() => {}); },
 });
 const context = createContext({
-  config, log, chromium, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
+  config, log, chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
   onTabClosed: (page) => tabClaims.drop(page), // a closed tab's turn ends with it
   status: (badge) => liveView()?.setStatus(badge),
@@ -461,7 +462,8 @@ const serve = createServe({
     // which grows with every session that came and went if their servers' listeners are kept.
     ...(process.env.PAIRBROWSE_TEST_MEMORY === "1" ? { pairbrowse_test_memory: async () => {
       const ctx = await context.current();
-      return { text: JSON.stringify({ close: ctx?.listenerCount("close") ?? -1, disconnected: ctx?.browser?.()?.listenerCount("disconnected") ?? -1 }) };
+      const m = process.memoryUsage();
+      return { text: JSON.stringify({ close: ctx?.listenerCount("close") ?? -1, disconnected: ctx?.browser?.()?.listenerCount("disconnected") ?? -1, contexts: ctx ? contextCount(ctx) : -1, rss: m.rss, heapUsed: m.heapUsed, heapTotal: m.heapTotal, external: m.external, arrayBuffers: m.arrayBuffers }) };
     } } : {}),
     ...(process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
     // Tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): the join request in each tab's bottom bar, and

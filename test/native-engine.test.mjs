@@ -115,16 +115,16 @@ packTest("browser options are read from the pairbrowse key", async () => {
   assert.equal(chromium.calls[0].options.args.find(a => a.startsWith("--fingerprint=")), "--fingerprint=named-seed");
 });
 
-packTest("humanized mouse moves take the combined shape unless config asks for the classic one", async () => {
+packTest("humanized mouse moves take the combined shape unless config asks for the quick or the classic one", async () => {
   const pack = await loadPack();
   const seen = [];
   const spy = { ...pack, installHumanizeOnContext: (context, opts) => seen.push(opts) };
   const app = appFixture();
-  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "anything else" }]) {
+  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "quick" }, { motion: "anything else" }]) {
     await launchNative(fakeChromium(), { pairbrowse: { fingerprint: "motion-seed", ...pairbrowse } }, mkdtempSync(join(tmpdir(), "pairbrowse-motion-")),
       { executablePath: app.executablePath, headless: false }, spy);
   }
-  assert.deepEqual(seen.map((o) => o.motion), ["combined", "classic", "combined"]);
+  assert.deepEqual(seen.map((o) => o.motion), ["combined", "classic", "quick", "combined"]);
   assert.ok(seen.every((o) => o.humanize === true && o.seed));
   assert.ok(seen.every((o) => o.typingPace === TYPING_PACE), "single actions type at the default pace");
 });

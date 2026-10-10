@@ -27,9 +27,9 @@ export const NATIVE = {
   linux: { file: "pairbrowse-150.0.7871.114-linux-x64.tar.xz", sha256: "5398af78e2a8163a8f08bb1620ae822d774ff821c695f78c73e1d447c534adac" },
   windows: { file: "pairbrowse-150.0.7871.114-windows-x64.zip", sha256: null },
   engine: {
-    file: "pairbrowse-engine-150.0.7871.114.tgz",
-    sha256: "9f2f005c7bba511020be3f8f94ddcc11093eb8673dc322e38161ec6d68570865",
-    files: { "engine.mjs": "8c7438cec71fc15bc99c1219c3a9769f46bcdbff1877ea521476d56b41af1bdb", "collector.js": "38d4afc53caccc1b92d640354166f53c2108f489c6c054ad0f81ca9d7a02b151" },
+    file: "pairbrowse-engine-150.0.7871.114-2.tgz",
+    sha256: "901c12f472635eb69070179eba91f39b96b31a052df58087e8f91e8ed16bc3b4",
+    files: { "engine.mjs": "e6a1755d5df17b9fe32b2f28c94f396e150e01d66b89bf4c3a7106b0b3cd19ad", "collector.js": "38d4afc53caccc1b92d640354166f53c2108f489c6c054ad0f81ca9d7a02b151" },
   },
   baseUrl: "https://github.com/pairbrowse/pairbrowse/releases/download/browser-150.0.7871.114",
 };

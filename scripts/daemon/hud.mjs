@@ -13,6 +13,11 @@ const SPARK_COLORS = ["#e9763f", "#4fd1e8", "#a78bfa", "#4ade80"];
 const CURSOR_TOOLS = { browser_click: "click", browser_type: "type", browser_hover: "hover", browser_select_option: "click", browser_fill_form: "type", pairbrowse_upload: "click" };
 const CURSOR_WAIT_MS = 300; // never holds an action up for longer finding its element
 const CURSOR_ARRIVE_MS = 350; // nor for longer while the cursor gets there (the page script's limit)
+// Declaring what is about to be pressed is what tells the agent's own press from a person's, so
+// it waits longer than the cursor (a busy computer) for the box and for the page to take it; a
+// press itself is never held up past these.
+const PRESS_BOX_WAIT_MS = 1500;
+const PRESS_SEND_WAIT_MS = 1000;
 const RECENT_ITEMS = 4;
 const SHARED_SPARK_MS = 30_000;
 const PERSON_MARK_MS = 8000; // a person from the other browser stays marked this long after their last input
@@ -200,8 +205,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   // A busy computer can take longer to say: then the cursor still goes there once it's known
   // (unless it was sent somewhere else meanwhile), so people in other browsers see the agent's
   // pointer all the same.
-  async function boxFor(page, el, act, who) {
-    const asked = el.boundingBox().catch(() => null);
+  async function boxFor(page, el, act, who, asked = el.boundingBox().catch(() => null)) {
     const box = await within(CURSOR_WAIT_MS, asked);
     if (!box) {
       const seq = cursorSeq.get(page) || 0;
@@ -209,10 +213,43 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     }
     return box;
   }
-  // Moves the cursor to an element (fast mode). Returns a promise: fast mode doesn't wait for the
-  // cursor to arrive, only for it to be sent (so the press that follows puts it on the click).
+  // Declares to the page what PairBrowse is about to press there, before the press: boxes in
+  // viewport pixels (an element's, or a spot with no size). The page script then knows a trusted
+  // press inside one as PairBrowse's own for a while, whatever the cursor animation is doing; the
+  // daemon's presence hears of it too (onPress), in case the page is slow to take it. Resolves
+  // once the page has it (or after a bounded wait: a press is never held up for long).
+  const pressListeners = new Set(); // fn(page, { x, y, w, h, t }): a declared press (box center)
+  async function declarePress(page, boxes) {
+    const list = (boxes || []).filter((b) => b && Number.isFinite(b.x) && Number.isFinite(b.y)).slice(0, 40).map((b) => ({ x: b.x, y: b.y, w: Math.max(0, Number(b.width ?? b.w) || 0), h: Math.max(0, Number(b.height ?? b.h) || 0) }));
+    if (!list.length || !page || page.isClosed()) return false;
+    const t = Date.now();
+    for (const b of list) for (const fn of pressListeners) try { fn(page, { x: b.x + b.w / 2, y: b.y + b.h / 2, w: b.w, h: b.h, t, press: true }); } catch {}
+    return (await within(PRESS_SEND_WAIT_MS, call(page, JSON.stringify(list), "press").catch(() => false))) === true;
+  }
+  // The box of what is about to be pressed: el is a locator, or anything with boundingBox().
+  // asked: its boundingBox() promise when already under way (the cursor asked first), since: when
+  // it was asked (the wait is bounded from then, not from now).
+  const pressBox = (el, asked = null, since = Date.now()) => within(Math.max(50, PRESS_BOX_WAIT_MS - (Date.now() - since)), (asked || el.boundingBox()).catch(() => null)).catch(() => null);
+  // Declares a press on el (see declarePress). Resolves to whether the page took it.
+  async function pressOn(page, el) {
+    if (!page || page.isClosed() || !el) return false;
+    return declarePress(page, [await pressBox(el)]);
+  }
+  // Moves the cursor to an element (fast mode), and declares the press there. Returns a promise:
+  // fast mode doesn't wait for the cursor to arrive, only for it and the declaration to be sent
+  // (so the press that follows puts it on the click, and is known as the agent's).
   function cursorTo(page, el, act, who = "") {
-    return boxFor(page, el, act, who).then((box) => pointAt(page, box, act, who)).catch(() => {});
+    const since = Date.now();
+    const asked = el.boundingBox().catch(() => null);
+    return within(CURSOR_WAIT_MS, asked).then(async (box) => {
+      if (!box) {
+        const seq = cursorSeq.get(page) || 0;
+        asked.then((late) => { if (late && (cursorSeq.get(page) || 0) === seq && !page.isClosed()) pointAt(page, late, act, who).catch(() => {}); }).catch(() => {});
+      }
+      const ms = await pointAt(page, box, act, who);
+      await declarePress(page, [box || await pressBox(el, asked, since)]);
+      return ms;
+    }).catch(() => {});
   }
   // Before a browser tool acts on an element: a snapshot ref, or a selector (the same one the tool
   // uses). pageFor(): the tab it acts in (null: none).
@@ -224,7 +261,12 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (!page) return;
     let el;
     try { el = page.locator(isRef(target) ? `aria-ref=${target}` : target).first(); } catch { return; }
-    const ms = await pointAt(page, await boxFor(page, el, act, who), act, who);
+    const since = Date.now();
+    const asked = el.boundingBox().catch(() => null);
+    const box = await boxFor(page, el, act, who, asked);
+    const ms = await pointAt(page, box, act, who);
+    // The press that follows is the agent's: declared before the action goes on.
+    await declarePress(page, [box || await pressBox(el, asked, since)]);
     // The action waits for the cursor to arrive, so it is there when the click happens.
     if (ms) await new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -251,5 +293,6 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     source, call, ensure, onPageLoad, applyBar, setReconnecting, setBadge, setBadgeFor, statusOf, badge: () => badge,
     moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor, markTargets,
+    pressOn, declarePress, onPress: (fn) => { pressListeners.add(fn); return () => pressListeners.delete(fn); },
   };
 }

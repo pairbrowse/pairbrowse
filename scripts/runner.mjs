@@ -1071,7 +1071,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
             if (!where || !hostAllowed(where, hooks.secrets.domains[value] || []) || !hostAllowed(page.url(), hooks.secrets.domains[value] || [])) return fail(`${value} may only be typed on HTTPS pages of ${(hooks.secrets.domains[value] || []).join(", ") || "(no domains set)"}; this field is on ${where || page.url()}. Hand this field to the user.`);
             value = hooks.secrets.values[value];
           }
-          hooks.cursor?.(el, "type");
+          await hooks.cursor?.(el, "type"); // sent (and the press declared) before the field is touched
           // A field that suggests as you type (a combobox): a person picks the suggestion that
           // matches; typing alone often doesn't count. Wait briefly for the list, then click it.
           const kindOf = await within(2000, el.evaluate((n) => ({ readOnly: !!n.readOnly, number: n.type === "number", date: n.type === "date" }))).catch(() => ({}));

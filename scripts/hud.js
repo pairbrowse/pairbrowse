@@ -33,17 +33,24 @@
     if (far) { ev.far = true; if (at) { ev.x = Math.round(at.clientX + scrollX); ev.y = Math.round(at.clientY + scrollY); } }
     userEvents[userEvents.length] = ev;
   }
-  // A press well away from what the agent is acting on (its cursor's target, last placed by the
-  // helper): a person's, even while an agent's action runs. The agent's own presses land on its
-  // target, so everything near it stays the agent's.
+  // A press well away from what the agent is acting on: a person's, even while an agent's action
+  // runs. What PairBrowse is about to press is declared first ("press": the box of the element,
+  // or the spot, kept PRESS_KEEP_MS; its own popup closer declares the dismiss button the same
+  // way), so a press inside a declared box is the agent's whatever its cursor animation is doing.
+  // Without a declaration the cursor's target (last placed by the helper) and a form fill's
+  // targets tell; with nothing declared at all nothing is far (the helper judges by time alone).
   const FAR_PX = 48;
+  const PRESS_KEEP_MS = 8000;
   const outside = (b, x, y) => x < b.x - FAR_PX || x > b.x + b.w + FAR_PX || y < b.y - FAR_PX || y > b.y + b.h + FAR_PX;
   const awayFromAgent = (e) => {
-    const b = agentBox;
-    if (!b || now() - b.t > 15_000) return false;
+    const n = now();
     const x = e.clientX + scrollX, y = e.clientY + scrollY;
-    if (agentTargets && now() - agentTargets.t < 60_000 && agentTargets.list.some((t) => !outside(t, x, y))) return false;
-    return outside(b, x, y);
+    agentPresses = agentPresses.filter((p) => n < p.until);
+    if (agentPresses.some((p) => !outside(p, x, y))) return false;
+    if (agentTargets && n - agentTargets.t < 60_000 && agentTargets.list.some((t) => !outside(t, x, y))) return false;
+    const b = agentBox && n - agentBox.t <= 15_000 ? agentBox : null;
+    if (b && !outside(b, x, y)) return false;
+    return !!(b || agentPresses.length);
   };
   function drainUser() {
     const out = userEvents;
@@ -94,6 +101,7 @@
   let view = null, personAt = 0, agentAt = 0;
   let agentBox = null; // { x, y, w, h, t }: what the agent acts on now, in document pixels
   let agentTargets = null; // { list: [{ x, y, w, h }], t }: everything a form fill will act on
+  let agentPresses = []; // [{ x, y, w, h, until }]: what PairBrowse declared it is about to press (document pixels)
   const looked = () => {
     const n = now();
     if (n - agentAt < 1500) return;
@@ -736,6 +744,18 @@
         agentBox = { x: agentPtr.x - bw / 2, y: agentPtr.y - bh / 2, w: bw, h: bh, t: now() };
         agentAt = now(); // the scrolling an agent's action causes isn't the person's
         return { ms, at: { ...agentPtr, w: bw, h: bh } }; // until it arrives; where it points (and its target's size), in document coordinates
+      } catch {}
+      return true;
+    }
+    // What PairBrowse presses next (an agent's click, a fast-mode step, its popup closer): the
+    // boxes (viewport pixels, as the helper measured them), kept in document pixels for a while.
+    if (kind === "press") {
+      try {
+        const list = JSON.parse(text);
+        const until = now() + PRESS_KEEP_MS;
+        if (Array.isArray(list)) for (const b of list.slice(0, 40)) agentPresses.push({ x: (Number(b.x) || 0) + scrollX, y: (Number(b.y) || 0) + scrollY, w: Math.max(0, Number(b.w) || 0), h: Math.max(0, Number(b.h) || 0), until });
+        if (agentPresses.length > 80) agentPresses.splice(0, agentPresses.length - 80);
+        agentAt = now(); // the scrolling its press causes isn't the person's
       } catch {}
       return true;
     }

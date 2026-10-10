@@ -252,18 +252,94 @@ test("an agent's cursor still goes out when a busy computer is slow to say where
   const pointed = [];
   hud.onCursor((p, at) => pointed.push(at));
   const slow = (x, ms) => ({ boundingBox: () => new Promise((r) => setTimeout(() => r({ x, y: 10, width: 20, height: 20 }), ms)) });
-  // The action isn't held up: the cursor goes once the box is known, and its pointer crosses.
+  // The cursor is sent at once (a late box: once known); the press declaration waits for the box
+  // (bounded), so the press that follows is known as the agent's.
   const t0 = Date.now();
   await hud.cursorTo(page, slow(100, 700), "click");
-  assert.ok(Date.now() - t0 < 600, "the action never waits for a slow box");
-  await new Promise((r) => setTimeout(r, 800));
+  const took = Date.now() - t0;
+  assert.ok(took >= 650 && took < 1400, `waits for the box to declare the press, not longer (${took} ms)`);
+  await new Promise((r) => setTimeout(r, 100));
   assert.deepEqual(sent.map((c) => c.x), [110]);
   assert.equal(pointed.length, 1);
-  // A late box for an element the agent has already left: the newer cursor stands.
-  await hud.cursorTo(page, slow(300, 700), "click");
+  // A box later than even the press declaration waits (the agent has already left for the next
+  // element): the newer cursor stands.
+  const t1 = Date.now();
+  await hud.cursorTo(page, slow(300, 2200), "click");
+  assert.ok(Date.now() - t1 < 1800, `the press declaration's wait for the box is bounded (${Date.now() - t1} ms)`);
   await hud.cursorTo(page, slow(500, 0), "click");
-  await new Promise((r) => setTimeout(r, 800));
+  await new Promise((r) => setTimeout(r, 900));
   assert.deepEqual(sent.map((c) => c.x), [110, 510]);
+});
+
+test("what PairBrowse is about to press is declared to the page first, and presence hears of it; a page that never answers holds the press up only briefly", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const sent = []; // "press" messages the page took
+  let answer = async (list) => { sent.push(list); return true; };
+  const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => (args?.[3] === "press" ? answer(JSON.parse(args[2])) : args?.[3] === "cursor" ? { ms: 0 } : undefined) };
+  const hud = createHud({ pages: async () => [page], participants: () => ["a"], waiting: () => null, liveView: () => null, notify: () => {} });
+  const heard = [];
+  hud.onPress((p, at) => heard.push(at));
+  const el = (box) => ({ boundingBox: async () => box });
+  // An element's box: the page has it before the call resolves; presence hears its center and size.
+  assert.equal(await hud.pressOn(page, el({ x: 100, y: 200, width: 80, height: 30 })), true);
+  assert.deepEqual(sent, [[{ x: 100, y: 200, w: 80, h: 30 }]]);
+  assert.deepEqual(heard.map(({ t, ...a }) => a), [{ x: 140, y: 215, w: 80, h: 30, press: true }]);
+  // A spot (pairbrowse_click_at, a drawing step): a box with no size.
+  await hud.pressOn(page, el({ x: 5, y: 7, width: 0, height: 0 }));
+  assert.deepEqual(sent.at(-1), [{ x: 5, y: 7, w: 0, h: 0 }]);
+  // The cursor's own path (fast mode, click_at) declares the press as well.
+  await hud.cursorTo(page, el({ x: 10, y: 10, width: 20, height: 20 }), "click");
+  assert.deepEqual(sent.at(-1), [{ x: 10, y: 10, w: 20, h: 20 }]);
+  // No box (the element is gone): nothing declared, nothing waited for.
+  assert.equal(await hud.pressOn(page, { boundingBox: async () => null }), false);
+  assert.equal(sent.length, 3);
+  // A page that never answers: the press goes on after a bounded wait.
+  answer = () => new Promise(() => {});
+  const t0 = Date.now();
+  assert.equal(await hud.pressOn(page, el({ x: 1, y: 1, width: 1, height: 1 })), false);
+  const took = Date.now() - t0;
+  assert.ok(took >= 900 && took < 1500, `bounded wait (${took} ms)`);
+});
+
+test("the page takes a declared press: a trusted press inside the box is the agent's (not far), one outside every declared box is a person's", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: `<body style="margin:0;height:3000px"><button id="ok" style="position:absolute;left:100px;top:1200px;width:300px;height:60px">Accept all</button><button id="x" style="position:absolute;left:800px;top:1300px;width:40px;height:40px">Close</button></body>` }));
+    await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
+    const user = () => page.evaluate(() => window.__pbtest("tok", "", "user").filter((e) => e.kind !== "move")); // presses, not the pointer's moves
+    const send = (kind, v) => page.evaluate(([v, k]) => window.__pbtest("tok", JSON.stringify(v), k), [v, kind]);
+    // No cursor was ever shown here (the popup closer sends none): the press is declared alone,
+    // scrolled into view first, as the helper measures it (viewport pixels).
+    await page.evaluate(() => scrollTo(0, 1000));
+    const ok = await page.locator("#ok").boundingBox();
+    assert.equal(await send("press", [{ x: ok.x, y: ok.y, w: ok.width, h: ok.height }]), true);
+    // The page scrolls on before the press lands (the click brings its button into view): the
+    // declared box stays put in the document.
+    await page.evaluate(() => scrollTo(0, 1100));
+    await page.mouse.click(ok.x + ok.width - 5, ok.y + ok.height - 5 - 100); // the far corner, a humanized click's own spot
+    await page.mouse.click(ok.x + 2, ok.y + 2 - 100);
+    let events = await user();
+    assert.deepEqual(events.map((e) => [e.kind, e.what, e.far === true]), [["click", "Accept all", false], ["click", "Accept all", false]]);
+    // A press outside every declared box while one is declared: a person's, and where it was is told.
+    const x = await page.locator("#x").boundingBox();
+    await page.mouse.click(x.x + 20, x.y + 20);
+    events = await user();
+    assert.equal(events.length, 1);
+    assert.equal(events[0].far, true);
+    assert.deepEqual([events[0].x, events[0].y], [Math.round(x.x + 20), Math.round(x.y + 20 + 1100)]);
+    // The declaration holds for a while (a humanized press takes its time): a press on it after
+    // the person's is still the agent's.
+    await page.mouse.click(ok.x + 150, ok.y + 30 - 100);
+    events = await user();
+    assert.deepEqual(events.map((e) => [e.what, e.far === true]), [["Accept all", false]]);
+  } finally {
+    await browser.close();
+  }
 });
 
 test("the bar in a tab shows what was done in that tab, not another agent's work elsewhere; news about no tab shows everywhere", async () => {

@@ -7,7 +7,7 @@ import { join } from "node:path";
 const home = mkdtempSync(join(tmpdir(), "pb-tunnel-"));
 process.env.PAIRBROWSE_HOME = home;
 process.env.PAIRBROWSE_TEST_KEEP_GRACE_MS = "1500";
-const { tunnelExitReason, tunnelUrl, CLOUDFLARED, ensureCloudflared, startQuickTunnel, adoptTunnel, heartbeatFile, helperAlive } = await import("../scripts/tunnel.mjs");
+const { tunnelExitReason, tunnelUrl, CLOUDFLARED, ensureCloudflared, startQuickTunnel, adoptTunnel, heartbeatFile, helperAlive, watchTunnel, tunnelEnded } = await import("../scripts/tunnel.mjs");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
@@ -88,9 +88,40 @@ test("a tunnel stops by itself once no helper is around, and only our own keeper
     assert.equal(signalled, false, "a reused pid is never signalled");
     // The helper goes away: the keeper stops cloudflared within the grace and a check.
     clearInterval(beat);
+    assert.equal(tunnelEnded(t), false, "live while it runs");
     for (let i = 0; i < 40 && alive(t.pid); i++) await sleep(250);
     assert.ok(!alive(t.pid), "stopped once nobody beat for the grace period");
+    await sleep(50);
+    assert.equal(tunnelEnded(t), true, "over once its keeper ended, however it ended");
   } finally { clearInterval(beat); t.stop(); rmSync(heartbeatFile(), { force: true }); }
+});
+
+test("the watcher leaves a tunnel alone once it's over: stopped, its keeper killed, or taken out of use", async () => {
+  const logs = [];
+  const probes = { a: 0, b: 0, c: 0, d: 0 };
+  // Already over (its keeper ended by a signal: exitCode stays null): never probed, never "replaced".
+  const a = { url: "http://a", host: "a", child: { exitCode: null, signalCode: "SIGTERM" }, gone: false, stop: () => { throw new Error("stopped twice"); } };
+  assert.equal(tunnelEnded(a), true);
+  watchTunnel(a, { everyMs: 10, misses: 2, log: (l) => logs.push(l), probe: async () => { probes.a++; return false; } });
+  // Stopped by the pool while it's down: the stop marks it gone, and the watcher says nothing.
+  const b = { url: "http://b", host: "b", child: { exitCode: null, signalCode: null }, gone: false, stop() { b.gone = true; } };
+  watchTunnel(b, { everyMs: 10, misses: 3, log: (l) => logs.push(l), probe: async () => { probes.b++; return false; } });
+  await sleep(15);
+  b.stop();
+  // Taken out of use (the pool's replacement): its watcher's stop() ends the probing.
+  const c = { url: "http://c", host: "c", child: { exitCode: null, signalCode: null }, gone: false, stop() {} };
+  const unwatch = watchTunnel(c, { everyMs: 10, misses: 3, log: (l) => logs.push(l), probe: async () => { probes.c++; return false; } });
+  await sleep(15);
+  unwatch();
+  // A live tunnel that stops answering is stopped and said so, once.
+  const d = { url: "http://d", host: "d", child: { exitCode: null, signalCode: null }, gone: false, stops: 0, stop() { d.stops++; d.gone = true; } };
+  watchTunnel(d, { everyMs: 10, misses: 2, log: (l) => logs.push(l), probe: async () => { probes.d++; return false; } });
+  await sleep(120);
+  assert.equal(probes.a, 0, "a tunnel over before the first look isn't probed");
+  assert.ok(probes.b <= 2 && probes.c <= 2, `probing ended with the tunnel: ${probes.b}, ${probes.c}`);
+  assert.deepEqual(logs, ["tunnel d isn't answering; replacing it"]);
+  assert.equal(d.stops, 1);
+  assert.equal(probes.d, 2);
 });
 
 test.after(() => rmSync(home, { recursive: true, force: true }));

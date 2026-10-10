@@ -223,6 +223,42 @@ test("sharing: one connection of the user's own, said in plain words, started ag
   } finally { sharing.endAll(); }
 });
 
+test("sharing: a tunnel kept idle for a next code ends with the helper; one with a code out stays for the next run", { timeout: 30_000 }, async () => {
+  const pids = join(home, "pids-idle");
+  rmSync(pids, { force: true });
+  fake("mytunnel", `require("fs").appendFileSync(${JSON.stringify(pids)}, process.pid + "\\n");\nconsole.log("ready at https://t.example.net/ port " + process.argv[3]);\nsetInterval(() => {}, 1000);`);
+  process.env.PATH = PATH;
+  const config = { sharing: { tunnel: { kind: "command", run: "mytunnel --port {port}", url: "ready at (https://\\S+)" } } };
+  const pidAt = (i) => readFileSync(pids, "utf8").trim().split("\n").map(Number)[i];
+  // A code still out: suspend (a restart) leaves the tunnel to the next run, as before.
+  let notes = [], logs = [];
+  let sharing = sharingWith(config, notes, logs);
+  try {
+    assert.equal((await sharing.inviteCommand({ action: "create", role: "watch", share: "code", name: "Bob" }, { who: "Claude Code" })).error, undefined);
+    await sleep(300);
+    sharing.suspend();
+    await sleep(300);
+    assert.ok(alive(pidAt(0)), "kept for the next run while a code is out");
+    assert.doesNotMatch(logs.join("\n"), /sharing tunnels stopped/);
+  } finally { sharing.endAll(); }
+  await until("ended", () => !alive(pidAt(0)));
+  // No code left (revoke_all): the running helper keeps the tunnel 15 min for a next code, but
+  // the helper going away takes it along, at once.
+  notes = []; logs = [];
+  sharing = sharingWith(config, notes, logs);
+  try {
+    assert.equal((await sharing.inviteCommand({ action: "create", role: "watch", share: "code", name: "Bob" }, { who: "Claude Code" })).error, undefined);
+    await sleep(300);
+    await sharing.inviteCommand({ action: "revoke_all" }, { who: "Claude Code" });
+    assert.match(logs.join("\n"), /sharing tunnel kept for 15 min in case of a new code/);
+    await sleep(300);
+    assert.ok(alive(pidAt(1)), "kept while the helper runs");
+    sharing.suspend();
+    await until("stopped with the helper", () => !alive(pidAt(1)), 5000);
+    assert.match(logs.join("\n"), /sharing tunnels stopped/);
+  } finally { sharing.endAll(); }
+});
+
 test("sharing: a bad setting or a missing program fails create plainly, and nothing is shared", async () => {
   const notes = [];
   const bad = sharingWith({ sharing: { tunnel: { kind: "foo" } } }, notes);

@@ -58,6 +58,8 @@ test("a long snapshot is cut at a line and the whole of it saved where Claude is
   assert.ok(head.length <= 24_000 && lines.startsWith(`${head}\n`), "whole lines only");
   const file = capped.match(/The whole snapshot is in (\S+)\.$/)[1];
   assert.equal(join(dir, file.split(/[\\/]/).pop()), file);
+  // The note's shape is what a joiner's masking (serve.mjs forJoiner) turns into the file's name.
+  assert.match(capped, /The whole snapshot is in [^\s]*page-[^\s]*\.yml\.$/);
   assert.equal(readFileSync(file, "utf8"), lines);
   assert.match(capped, /about \d+ tokens/);
 });

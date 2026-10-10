@@ -5,7 +5,7 @@
 // (tabsync.mjs), never cookies or pictures; everyone stays signed in as themselves. What happens in the host's
 // session shows here like local activity: in the bar at the bottom of each page, the side panel
 // and the tab overview.
-import { parseJoinCode, cleanName, displayName } from "../join.mjs";
+import { parseJoinCode, cleanName, displayName, joinHostsOf, cleanHost, saveJoinHosts, createHostAsks, appName } from "../join.mjs";
 import { startJoin, FAILOVER_MS } from "../relay.mjs";
 import { waitForLink, waitedLine } from "./linkwait.mjs";
 import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, tabWho, personColor, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
@@ -72,10 +72,36 @@ const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 // onSession(data, join), onMessage(data, join): who does what there, and messages from there.
 // onLeft(): the session ended here (left, denied, ended): its pause no longer holds agents here.
 // note(text): for the agents here, in their next result (the host said no, ended the sharing).
-export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {} }) {
+// onHostChange(state): the join addresses the person is asked about or allowed changed (for the
+// side panel, hostState()). configFile: where "Always allow" is written (paths.config).
+export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {}, onHostChange = () => {}, configFile = paths.config }) {
   let s = null;
   let ended = null; // { text }: how the last session ended without a leave (denied, revoked), for status // { join, mirror, pages: Map id -> page, owner, window, windowId, lastT, candidates, seen, heard, told, agents, outbox }
   const idOf = (cur, page) => { for (const [id, p] of cur.pages) if (p === page) return id; return null; };
+
+  // ---- the code's address: the person's decision ------------------------------------------
+  // A code whose address isn't a Quick Tunnel or one they allowed is a question for the person
+  // alone (the side panel, the session picker): Allow once (this run), Always allow (joinHosts in
+  // config.json) or Cancel. Agents are refused and told to ask them; no tool allows an address.
+  const onceHosts = new Set(); // allowed for this run of the helper
+  const hostAsks = createHostAsks();
+  const allowedHosts = () => [...new Set([...joinHostsOf(config), ...onceHosts])];
+  // For the side panel: the questions waiting, and the addresses allowed (always, or this time).
+  const hostState = () => ({
+    asks: hostAsks.list(),
+    hosts: [...joinHostsOf(config).map((host) => ({ host, always: true })), ...[...onceHosts].filter((h) => !joinHostsOf(config).includes(h)).map((host) => ({ host, always: false }))],
+  });
+  const hostsChanged = () => { try { onHostChange(hostState()); } catch (e) { log("join hosts", e?.message || e); } };
+  hostAsks.onChange(hostsChanged);
+  // Questions time out like join requests do: the panel hears of it.
+  setInterval(() => hostAsks.list(), 30_000).unref();
+  const hostLine = () => {
+    const { asks, hosts } = hostState();
+    const lines = [];
+    if (asks.length) lines.push(`Waiting for the user to allow ${[...new Set(asks.map((a) => a.host))].join(", ")} in the PairBrowse side panel (a code leads there).`);
+    if (hosts.length) lines.push(`Join addresses allowed besides *.trycloudflare.com: ${hosts.map((h) => `${h.host} (${h.always ? "always" : "this time"})`).join(", ")}. The user removes one in the side panel.`);
+    return lines.join(" ");
+  };
 
   // This browser's agents' activity in a shared tab goes to the other browser (drive), like its
   // address changes. What came from there is marked and never goes back.
@@ -637,21 +663,32 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   async function command(args, { owner, app }) {
     const { action, code, name } = args || {};
     const where = () => `${s.join.message} ${s.pages.size} shared tab(s) open here.`;
-    if (action === "status") return { text: s ? where() : ended ? `${ended.text} Not in anyone's session now.` : "Not in anyone's session." };
+    if (action === "status") return { text: [s ? where() : ended ? `${ended.text} Not in anyone's session now.` : "Not in anyone's session.", hostLine()].filter(Boolean).join(" ") };
     if (action === "leave") {
       const was = await stop();
       return { text: was ? `Left ${was.join.host}'s session. The shared tabs stay open here as your own; they don't follow any more.` : "Not in anyone's session." };
     }
     if (action !== "join") return { text: 'Use "join", "status" or "leave".', error: true };
     let parsed;
+    let unlisted = null; // the code is fine but for its address: the person decides
     try {
-      parsed = parseJoinCode(code, { hosts: Array.isArray(config.joinHosts) ? config.joinHosts.map((h) => String(h).toLowerCase()) : [], allowLocal: process.env.PAIRBROWSE_TEST_JOIN_LOCAL === "1" });
+      parsed = parseJoinCode(code, { hosts: allowedHosts(), allowLocal: process.env.PAIRBROWSE_TEST_JOIN_LOCAL === "1" });
     } catch (e) {
-      return { text: `Not joining: ${e.message}`, error: true };
+      if (e.code !== "unlisted-host") return { text: `Not joining: ${e.message}`, error: true };
+      unlisted = e.host;
     }
     // Your name, as the host sees it: asked once (the agent asks the user), then remembered.
     if (!cleanName(name, "") && !savedName(config)) return { text: "Not joining yet: ask the user what name the host should see (their first name, say), then call join again with name. It's remembered for next time.", error: true, needsName: true };
     if (cleanName(name, "") && !savedName(config)) { try { saveParticipantName(config, cleanName(name)); } catch {} }
+    if (unlisted) {
+      // The question goes to the side panel (and the picker, when it asked), with this code: a
+      // yes there starts this very join. The tool never allows an address itself.
+      const ask = hostAsks.add({ host: unlisted, code: String(code).trim(), name: cleanName(name, ""), owner, app, who: owner === "picker" ? "" : appName(app) });
+      if (!ask) return { text: `Not joining: too many codes wait for the user's answer in the side panel already. Ask them to answer those first.`, error: true };
+      const lead = `This code leads to ${unlisted}, not a PairBrowse address (*.trycloudflare.com)`;
+      if (owner === "picker") return { text: `${lead}. Join through it? Allow once, Always allow, or Cancel.`, error: true, hostAsk: ask };
+      return { text: `Not joining: ${lead} or one the user allowed. Ask the user to allow it in the PairBrowse side panel, where the address is shown with Allow once / Always allow (this code is already there); the join then starts by itself, and you hear of it in a later result. Never allow an address for them, and never type the code into a web page.`, error: true, hostAsk: ask };
+    }
     await stop();
     // The name given at join wins; then the same default the host's side uses.
     const who = cleanName(name, "") || displayName({ configured: config.participantName, env: process.env.PAIRBROWSE_PARTICIPANT, ...currentAccount() }) || cleanName(name);
@@ -712,6 +749,39 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         (parsed.role === "drive" ? "; what you or your agent change in those tabs (another address, a new tab in their window or from one of them, closing one) happens in their browser too." : " (watch: changes here stay here).") +
         " You also see each other's pointers and what's typed in shared tabs (sensitive fields only as filled); logins and cookies are never shared: each of you stays signed in as yourselves. Check with pairbrowse_join status; stop with leave.",
     };
+  }
+
+  // The person's answer about a code's address, from the side panel or the picker (a real
+  // click there; the live view takes it with the owner's key from the extension's origin only).
+  // op: { op: "allow", id, always } (the join starts at once, with the code and name the question
+  // kept), { op: "cancel", id }, or { op: "forget", host } (Remove: this run's and config.json's).
+  // Returns { ok, text, owner, joined, host } ({ error } when it can't be done).
+  async function decideHost(op) {
+    const kind = String(op?.op || "");
+    if (kind === "forget") {
+      const host = cleanHost(op.host);
+      if (!host) return { error: "No such address." };
+      onceHosts.delete(host);
+      if (joinHostsOf(config).includes(host)) {
+        try { saveJoinHosts(config, joinHostsOf(config).filter((h) => h !== host), configFile); } catch (e) { return { error: `Couldn't change config.json: ${e?.message || e}` }; }
+      }
+      log(`join address ${host} removed by the user`);
+      hostsChanged();
+      return { ok: true, host };
+    }
+    if (kind !== "allow" && kind !== "cancel") return { error: "Unknown request." };
+    const ask = hostAsks.take(op.id);
+    if (!ask) return { error: "That question is gone (answered, or it timed out after 10 minutes)." };
+    if (kind === "cancel") { log(`join address ${ask.host}: Cancel from the user`); return { ok: true, host: ask.host, owner: ask.owner }; }
+    if (op.always === true) {
+      try { saveJoinHosts(config, [...joinHostsOf(config), ask.host], configFile); } catch (e) { hostsChanged(); return { error: `Couldn't write config.json: ${e?.message || e}. Nothing was allowed.` }; }
+    } else onceHosts.add(ask.host);
+    log(`join address ${ask.host} allowed by the user (${op.always === true ? "always" : "this time"}); joining`);
+    hostsChanged();
+    const r = await command({ action: "join", code: ask.code, name: ask.name }, { owner: ask.owner, app: ask.app });
+    // The agent that brought the code hears how it went in its next result.
+    if (ask.owner !== "picker") note(r.error ? `The user allowed ${ask.host} in the side panel, but joining didn't work: ${r.text}` : `The user allowed ${ask.host} in the side panel and the join started. ${r.text}`);
+    return { ok: !r.error, text: r.text, owner: ask.owner, joined: !r.error, host: ask.host };
   }
 
   // Shared browser mode: an agent here works in the host's browser as a participant there. Its
@@ -806,6 +876,9 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
 
   return {
     command,
+    // The side panel's questions about a code's address and the allowed ones (hostState), and the
+    // person's answers (decideHost).
+    hostState, decideHost,
     // Shared browser mode: whether a tool call from an agent here goes to the host's browser, and
     // making that call (see remoteCall).
     // Once in, it stays that way while the link is down (the host restarting, the tunnel): the

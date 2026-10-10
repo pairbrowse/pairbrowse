@@ -103,3 +103,10 @@ body[data-s="picking"] .choices { opacity: 0.55; pointer-events: none; }
 #join-form { flex-wrap: wrap; }
 #join-form #code { flex: 2 1 220px; }
 #join-form #join-name { flex: 1 1 160px; }
+.host-ask { display: grid; gap: 10px; margin: 12px 0 2px 46px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--edge); background: rgb(10 12 36 / 0.35); }
+.host-ask[hidden] { display: none; }
+.host-ask strong { font-size: 13.5px; font-weight: 650; overflow-wrap: anywhere; }
+.host-ask .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.host-ask button:disabled { opacity: 0.5; cursor: default; }
+.secondary { height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--edge); background: transparent; color: inherit; font: 600 13px var(--sans); cursor: pointer; }
+.secondary:hover { background: var(--hover); }

@@ -136,7 +136,15 @@ either side beyond PairBrowse itself.
 
 **If you're joining:** ask your Claude or Codex "Join this PairBrowse session: pb-join:...", or
 paste the code under **Join a shared session** in the session picker when your browser starts.
-It says "Waiting for the host to approve" until they let you in. With a shared browser code (the
+It says "Waiting for the host to approve" until they let you in. A code's address is normally a
+PairBrowse one (`*.trycloudflare.com`). If the host shares through a tunnel of their own, the code
+leads somewhere else, and that is your decision, not your agent's: the side panel (and the picker,
+when you pasted it there) shows "This code leads to share.example.com, not a PairBrowse address.
+Join through it?" with **Allow once**, **Always allow** and **Cancel**. Always allow remembers
+that exact host name in your `config.json` (`joinHosts`); the side panel's **Join addresses**
+section lists the allowed ones with **Remove**. An agent given such a code is refused and told to
+ask you; your click in the panel then starts the join with that code, and the code is checked as
+every other (key, role, expiry) before anything is sent. With a shared browser code (the
 default) the host's tabs then open as live pictures (see [Shared browser](#shared-browser-one-browser-for-everyone)).
 With a follow code, **your own PairBrowse browser** opens the host's tabs, in the same order, in
 a window of their own, and keeps following them: the host opens, closes, moves or goes to another address in a tab, and your copy
@@ -237,9 +245,12 @@ says which one is in use ("Join codes go through your own ngrok address share.ex
 
 Two things hold for every kind:
 
-- **Joiners' side:** a joiner's PairBrowse takes join codes for `*.trycloudflare.com` only, unless
-  the address is in their `joinHosts`. Tell the people you invite to add your host name there
-  (`"joinHosts": ["share.example.com"]` in their `config.json`) once.
+- **Joiners' side:** a joiner's PairBrowse takes join codes for `*.trycloudflare.com` without a
+  word. Your address is shown to them first: "This code leads to share.example.com, not a
+  PairBrowse address. Join through it?" with **Allow once**, **Always allow** (kept as that exact
+  host name in their `joinHosts`, with **Remove** in their side panel) and **Cancel**. Only they
+  can answer, in their side panel or session picker; their agent is told to ask them. Nothing to
+  edit by hand (`"joinHosts": ["share.example.com"]` in `config.json` still works).
 - **Credentials** (a token or authtoken) stay in your `config.json`, readable by your account only,
   and reach the provider's own program through its environment, never its command line. They
   show in no log, result, bar or panel; the log names the program and its options with any
@@ -286,8 +297,8 @@ connection starts, so codes made before don't survive a restart; `list` shows th
 
 PairBrowse runs `tailscale funnel <guest port>` in the foreground and reads the
 `https://<machine>.<tailnet>.ts.net` address it prints; the funnel ends with the program. Funnel
-serves on port 443, so the address has no port. Joiners add that `.ts.net` name to their
-`joinHosts`.
+serves on port 443, so the address has no port. Joiners see that `.ts.net` name and allow it once
+or always.
 
 **Any other program** that opens an https address to a local port:
 

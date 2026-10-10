@@ -39,7 +39,7 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost"]); // events only the owner's streams get
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
 // readForm(page): { url, fields } as they may cross, or null. applyForm(page, fields, who).
 // onJoinerAgent(page, who, color, left, from, where): a drive joiner's agent works in their copy
@@ -91,7 +91,7 @@ async function release(cdp) {
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {} }) {
+  onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {} }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -563,6 +563,16 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       const r = await devPanel.act(JSON.parse(body) || {});
       json(res, r.error ? 409 : 200, r);
     } },
+    // A join code whose address this person hasn't allowed (daemon/follow.mjs): their Allow once,
+    // Always allow or Cancel, and Remove for an allowed address. The owner only (the side panel,
+    // the session picker), with a real click; agents have no tool for it.
+    { method: "POST", path: "joinhost", right: "approve", handler: async ({ req, res }) => {
+      if (!joinHost) return plain(res, 404);
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const r = await joinHost.act(JSON.parse(body) || {});
+      json(res, r.error ? 409 : 200, r);
+    } },
     // The Profile panel: remembered details in full, passwords by name and sites only.
     { method: "GET", path: "profile.json", right: "profile", handler: ({ res }) => profile ? json(res, 200, profile.get()) : plain(res, 404) },
     { method: "POST", path: "profile", right: "profile", handler: changeProfile },
@@ -625,6 +635,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     res.write(sse("activity", invite ? guestActivity(activity) : activity));
     if (!invite) res.write(sse("join", approvals.open()));
     if (!invite && devState) res.write(sse("dev", devState));
+    if (!invite && joinHost) res.write(sse("joinhost", joinHost.state()));
     if (!invite && board) res.write(sse("board", board));
     const paused = pauseState();
     if (paused) res.write(sse("pause", paused));
@@ -741,6 +752,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       devState = state;
       broadcast("dev", state);
     },
+    // Join code addresses for the owner's side panel (daemon/follow.mjs): { asks, hosts }.
+    setJoinHost(state) { broadcast("joinhost", state); },
     // Which browser session is shown, and where it runs (Local or Server).
     setSession(info) {
       sessionInfo = info;

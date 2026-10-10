@@ -70,6 +70,8 @@ button { font: inherit; }
 .join span { display: flex; gap: 6px; }
 .join .mini { color: var(--paper-ink); }
 .join button:disabled { opacity: 0.5; cursor: default; }
+.join.host small { font-size: 12px; color: var(--muted); }
+.join.host span { flex-wrap: wrap; }
 
 /* Session: who is in a shared session (people and agents, both browsers) and their messages. */
 .people { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

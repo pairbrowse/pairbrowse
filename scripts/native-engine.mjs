@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
 import { NATIVE } from "./native-pack.mjs";
+import { within } from "./util.mjs";
 
 const CHROMIUM_MAJOR = NATIVE.version.split(".")[0];
 // Options this engine can't honour: refused, never silently ignored.
@@ -207,6 +208,90 @@ export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
   return events.sort((a, b) => a.at - b.at || (a.type === b.type ? 0 : a.type === "down" ? -1 : 1));
 }
 
+// browser_type with slowly: a slower hand, about 90 ms a key (a slower typingPace stays slower).
+export const SLOW_TYPE_PACE = 0.7;
+const defaultWait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Types text on the page's keyboard: each key down and up when the schedule says.
+async function typeKeys(keys, text, pace, rng, wait) {
+  const start = Date.now();
+  for (const e of keystrokeSchedule(text, pace, rng)) {
+    const due = start + e.at - Date.now();
+    if (due > 0) await wait(due);
+    await (e.type === "down" ? keys.down(e.key) : keys.up(e.key));
+  }
+}
+// What a field holds: an input's or textarea's value, a contenteditable's text, else null (also
+// when the page has replaced the element since: every wait here is short).
+const readBack = (loc) => loc.inputValue({ timeout: 1500 }).catch(() => loc.evaluate((el) => (el.isContentEditable ? el.textContent : null), undefined, { timeout: 1500 }).catch(() => null));
+// What the field with the focus holds (where the keys went, also when the page swapped the element
+// for another as it was typed in, as a search box with suggestions does): as readBack, else null.
+const readFocused = (page) => within(1500, page.evaluate(() => { const a = document.activeElement; return a && typeof a.value === "string" ? a.value : a?.isContentEditable ? a.textContent : null; })).catch(() => null);
+// Clears what a focused field holds, as a hand does: select all, Backspace.
+async function clearField(keys, between, wait) {
+  await keys.press("ControlOrMeta+a");
+  await wait(between(30, 90));
+  await keys.press("Backspace");
+  await wait(between(40, 120));
+}
+// How a typed value stayed, read back: { line, failed }. done: the line when it did; said: how the
+// line starts when the page kept something else ("Filled Name", "Typed into Name"); plain: the value
+// may be said in the result (not a secret).
+function afterTyping(label, value, now, plain, said, done) {
+  if (now === value || now === null) return { line: done, failed: false };
+  if (now === "") return { line: `${label} didn't take what was typed: it is empty.`, failed: true };
+  // The page's own spelling of it (a phone mask) may be said; anything else is page content, not.
+  if (plain && now.replace(/\W/g, "") === value.replace(/\W/g, "")) return { line: `${said}; the page shows it as "${now.slice(0, 80)}".`, failed: false };
+  return { line: `${said}; the page changed what was typed.`, failed: false };
+}
+const errorLine = (error) => String(error?.message || error).split("\n")[0].slice(0, 160);
+
+// browser_type in the native browser: the field focused by the engine's own reach and click (none
+// when it has the focus already), what it holds cleared (slowly: typed at the caret, as the key-by-key
+// path always did), the text key by key (keystrokeSchedule) at settings.typingPace, or slowly at
+// SLOW_TYPE_PACE when that is slower; read back. item: { target (aria ref), name, value, shown } as
+// in humanFill. Returns { line, failed }. trace: one line on how it went (the daemon log).
+export async function humanType(page, item, settings, { rng = Math.random, wait = defaultWait, trace = null, slowly = false } = {}) {
+  const between = (a, b) => a + (b - a) * rng();
+  const keys = page.keyboard;
+  const label = item.name || item.target;
+  const value = String(item.value ?? "");
+  const plain = String(item.shown ?? value) === value;
+  const pace = slowly ? Math.max(settings.typingPace, SLOW_TYPE_PACE) : settings.typingPace;
+  const loc = page.locator(`aria-ref=${item.target}`).first();
+  // How long each step took (the trace line): the daemon log shows where a slow page spent it.
+  const steps = [];
+  let at = Date.now();
+  const step = (name) => { steps.push(`${name} ${Date.now() - at}`); at = Date.now(); };
+  let how = "click", result;
+  try {
+    const focused = await loc.evaluate((el) => { const a = document.activeElement; return !!a && a !== document.body && (a === el || el.contains(a)); }, undefined, { timeout: 1500 }).catch(() => false);
+    step("check");
+    if (focused) how = "focused";
+    else { await loc.click({ timeout: 5000 }); await wait(between(60, 140)); step("click"); }
+    // What it holds, read from the field with the focus: the one clicked, or the one the page put
+    // in its place on the click (a ref to the old one would wait out its timeouts, 3 s).
+    const had = (await readFocused(page)) ?? await readBack(loc);
+    step("read");
+    if (!slowly && had?.length) { await clearField(keys, between, wait); step("clear"); }
+    await typeKeys(keys, value, pace, rng, wait);
+    step("type");
+    const now = await readFocused(page);
+    step("read");
+    const said = `Typed into ${label}`, done = `${said}.`;
+    // Slowly: the text went in at the caret, next to what the field held.
+    if (!slowly) result = afterTyping(label, value, now, plain, said, done);
+    else if (now === null || now.includes(value)) result = { line: done, failed: false };
+    else if (now === (had ?? "")) result = { line: `${label} didn't take what was typed${now === "" ? ": it is empty" : ""}.`, failed: true };
+    else result = { line: `${said}; the page changed what was typed.`, failed: false };
+  } catch (error) {
+    step("failed");
+    result = { line: `${label} couldn't be typed into: ${errorLine(error)}`, failed: true };
+  }
+  trace?.(`browser_type, ${value.length} characters${slowly ? " slowly" : ""}: ${label} by ${how}: ${steps.join(", ")} ms`);
+  return result;
+}
+
 // In the page: whether the Tab key would land on this element from the one that has the focus.
 // "tab": it is next in the page's tab order; "focused": it has the focus already; "no": somewhere
 // else (or a list of suggestions is open on the focused field, where Tab may pick one).
@@ -252,21 +337,12 @@ function selectByTyping(el, label) {
 // line on how each field was reached and how long it took (the daemon log). isoDate: a date in
 // another spelling as YYYY-MM-DD, or null (runner.mjs).
 const DATE_SHAPES = { date: "YYYY-MM-DD", "datetime-local": "YYYY-MM-DDThh:mm", month: "YYYY-MM", week: "YYYY-Www", time: "hh:mm" };
-export async function humanFill(page, items, settings, { rng = Math.random, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), trace = null, isoDate: toIso = () => null } = {}) {
+export async function humanFill(page, items, settings, { rng = Math.random, wait = defaultWait, trace = null, isoDate: toIso = () => null } = {}) {
   const between = (a, b) => a + (b - a) * rng();
   const keys = page.keyboard;
   const lines = [], took = [];
   let failed = false;
-  const typeKeys = async (text) => {
-    const start = Date.now();
-    for (const e of keystrokeSchedule(text, settings.typingPace, rng)) {
-      const due = start + e.at - Date.now();
-      if (due > 0) await wait(due);
-      await (e.type === "down" ? keys.down(e.key) : keys.up(e.key));
-    }
-  };
-  // What a field holds: an input's or textarea's value, a contenteditable's text, else null.
-  const readBack = (loc) => loc.inputValue({ timeout: 1500 }).catch(() => loc.evaluate((el) => (el.isContentEditable ? el.textContent : null)).catch(() => null));
+  const type = (text) => typeKeys(keys, text, settings.typingPace, rng, wait);
   for (const item of items) {
     const label = item.name || item.target;
     const value = String(item.value ?? "");
@@ -324,7 +400,7 @@ export async function humanFill(page, items, settings, { rng = Math.random, wait
           const pick = await loc.evaluate(selectByTyping, value, { timeout: 1500 }).catch(() => null);
           if (pick?.from === pick?.to && pick) chosen = true;
           else if (pick?.prefix) {
-            await typeKeys(pick.prefix);
+            await type(pick.prefix);
             await wait(between(60, 140));
             chosen = (await loc.evaluate((el) => el.selectedIndex, undefined, { timeout: 1500 }).catch(() => -1)) === pick.to;
           }
@@ -337,25 +413,17 @@ export async function humanFill(page, items, settings, { rng = Math.random, wait
       } else {
         if (!focused) { await loc.click({ timeout: 5000 }); await wait(between(60, 140)); }
         const had = await readBack(loc);
-        if (had === null ? false : had.length) {
-          await keys.press("ControlOrMeta+a");
-          await wait(between(30, 90));
-          await keys.press("Backspace");
-          await wait(between(40, 120));
-        }
+        if (had?.length) await clearField(keys, between, wait);
         typedAt = Date.now();
-        await typeKeys(value);
-        const now = await readBack(loc);
-        if (now === value || now === null) lines.push(`Filled ${label} with ${shown}${/[.!?]$/.test(shown) ? "" : "."}`);
-        else if (now === "") { failed = true; lines.push(`${label} didn't take what was typed: it is empty.`); }
-        // The page's own spelling of it (a phone mask) may be said; anything else is page content, not.
-        else if (plain && now.replace(/\W/g, "") === value.replace(/\W/g, "")) lines.push(`Filled ${label}; the page shows it as "${now.slice(0, 80)}".`);
-        else lines.push(`Filled ${label}; the page changed what was typed.`);
+        await type(value);
+        const typed = afterTyping(label, value, await readBack(loc), plain, `Filled ${label}`, `Filled ${label} with ${shown}${/[.!?]$/.test(shown) ? "" : "."}`);
+        if (typed.failed) failed = true;
+        lines.push(typed.line);
       }
     } catch (error) {
       failed = true;
       const verb = { checkbox: "ticked", radio: "ticked", combobox: "chosen in" }[item.type] || "filled";
-      lines.push(`${label} couldn't be ${verb}: ${String(error?.message || error).split("\n")[0].slice(0, 160)}`);
+      lines.push(`${label} couldn't be ${verb}: ${errorLine(error)}`);
     }
     took.push(`${label} by ${how} ${typedAt ? `${typedAt - started}+${Date.now() - typedAt}` : Date.now() - started} ms`);
   }

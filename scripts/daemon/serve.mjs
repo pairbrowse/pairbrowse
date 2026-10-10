@@ -27,7 +27,7 @@ import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 import { dragBetween, reason as dragReason } from "./drag.mjs";
 import { createRefNames, plainError } from "./output.mjs";
-import { humanFill, fillSettings } from "../native-engine.mjs";
+import { humanFill, humanType, fillSettings } from "../native-engine.mjs";
 
 const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
 // A small picture of the page goes with each result that changes what's on screen, taken once
@@ -431,15 +431,19 @@ export function createServe({ config, log, host, createConnection, clients, coll
       finish(msg.id);
     }
 
-    // Enter after typing (browser_type with submit): on the field that has the focus now.
-    async function pressEnterAfter(msg, args) {
-      const page = actingIn || (mine && !mine.isClosed() ? mine : null) || await context.pageAt(context.currentUrl());
-      if (!page) return;
+    // Enter after typing (browser_type with submit): on the field that has the focus now. Returns
+    // the result's text: what was done, and the page it left.
+    async function enterAfterTyping(page, args) {
       await page.keyboard.press("Enter");
       await within(5000, page.waitForLoadState("domcontentloaded", { timeout: 4500 })).catch(() => {});
       await settle(page, SETTLE_MS).catch(() => {});
       const title = await within(1000, page.title()).catch(() => "");
-      msg.result.content = [{ type: "text", text: `Typed into ${args?.element || args?.target} and pressed Enter.\n### Page\n- Page URL: ${page.url()}${title ? `\n- Page Title: ${title}` : ""}` }];
+      return `Typed into ${args?.element || args?.target} and pressed Enter.\n### Page\n- Page URL: ${page.url()}${title ? `\n- Page Title: ${title}` : ""}`;
+    }
+    async function pressEnterAfter(msg, args) {
+      const page = actingIn || (mine && !mine.isClosed() ? mine : null) || await context.pageAt(context.currentUrl());
+      if (!page) return;
+      msg.result.content = [{ type: "text", text: await enterAfterTyping(page, args) }];
     }
 
     // The transport the Playwright MCP server talks to.
@@ -1015,10 +1019,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // A date, time, month or week field takes one exact shape (YYYY-MM-DD, hh:mm): typing into it
       // key by key, as the PairBrowse browser does, leaves garbage. PairBrowse sets such fields
       // itself, a date in another spelling turned into YYYY-MM-DD when it can only mean one day.
-      // A form PairBrowse fills itself (ownFill, below) sets its date fields in their turn.
-      const ownFill = name === "browser_fill_form" && Array.isArray(args.fields) && args.fields.every((f) => isRef(f?.target)) && (actingIn || await serverPage())?._pairbrowseHumanized === true;
+      // A form PairBrowse fills itself (ownFill, below) sets its date fields in their turn; a single
+      // browser_type it types itself (ownType) sets a date field here, as before.
+      const typingPage = name === "browser_type" || name === "browser_fill_form" ? actingIn || await serverPage() : null;
+      const humanized = typingPage?._pairbrowseHumanized === true;
+      const ownFill = name === "browser_fill_form" && Array.isArray(args.fields) && args.fields.every((f) => isRef(f?.target)) && humanized;
+      const ownType = name === "browser_type" && isRef(args.target) && humanized;
       if ((name === "browser_type" || name === "browser_fill_form") && !ownFill) {
-        const page = actingIn || await serverPage();
+        const page = typingPage;
         const items = name === "browser_type" ? [{ target: args.target, value: args.text, name: args.element }] : args.fields;
         const typeOf = async (t) => (page && isRef(t) ? within(800, page.locator(`aria-ref=${t}`).first().evaluate((n) => (n.tagName === "INPUT" ? String(n.type).toLowerCase() : ""), undefined, { timeout: 700 })).catch(() => "") : "");
         const kinds = await Promise.all(items.map((f) => typeOf(f?.target)));
@@ -1053,8 +1061,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       // Typing with submit: the text goes in through the browser server, Enter is PairBrowse's own
       // press on the field that has the focus then (a search box the page replaces as it's typed
-      // in kept the server waiting 10 s on the old one). The guard judged the Enter above.
-      if (name === "browser_type" && args.submit) {
+      // in kept the server waiting 10 s on the old one). The guard judged the Enter above. A
+      // browser_type PairBrowse types itself (ownType, below) presses it in its turn.
+      if (name === "browser_type" && args.submit && !ownType) {
         msg = structuredClone(msg);
         delete msg.params.arguments.submit;
         args = msg.params.arguments;
@@ -1094,6 +1103,18 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const items = msg.params.arguments.fields.map((f, i) => ({ ...f, shown: shown.fields[i]?.value }));
         const { lines, failed } = await humanFill(page, items, fillSettings(config), { trace: log, isoDate });
         return reply(msg.id, [...lines, ...fieldNotes.splice(0)].join("\n"), failed);
+      }
+      // A single browser_type there: PairBrowse types it itself too (humanType), the field focused
+      // by the engine's own reach and click (the press declared above), the text at typingPace with
+      // the same typist's rhythm as a form fill (slowly: about 90 ms a key), read back. The engine's
+      // own typing held every key its full time: 41 characters took 6 s. Enter (submit) is PairBrowse's
+      // own press, as before; slowly brings a snapshot, as before (a list of suggestions shows up).
+      if (ownType) {
+        const { line, failed } = await humanType(typingPage, { target: args.target, name: args.element, value: msg.params.arguments.text, shown: shown.text }, fillSettings(config), { trace: log, slowly: args.slowly === true });
+        let text = line;
+        if (args.submit && !failed) text = await enterAfterTyping(typingPage, args).catch((e) => { log("enter after typing", e?.message || e); return line; });
+        else if (args.slowly === true && !failed) text += `\n${((await within(8000, internal("browser_snapshot", {})).catch(() => null))?.result?.content || []).map((c) => c.text || "").join("\n")}`;
+        return finishResult({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text }], ...(failed ? { isError: true } : {}) } }, name);
       }
       calls.set(msg.id, name);
       callArgs.set(msg.id, args);

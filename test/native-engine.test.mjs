@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, nativeManifest, macHostProfile, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, TYPING_PACE, FILL_PACE_FLOOR } from "../scripts/native-engine.mjs";
+import { launchNative, nativeManifest, macHostProfile, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native-pack.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
@@ -186,6 +186,8 @@ function fakeForm(fields) {
   const typed = () => { const f = byRef.get(focus); if (f) f.value += held; held = ""; };
   const page = {
     _pairbrowseHumanized: true,
+    // What the focused field holds (humanType reads back where the keys went).
+    evaluate: async () => { const f = byRef.get(focus); return f && f.type !== "checkbox" ? f.value : null; },
     keyboard: {
       press: async (key) => {
         log.push(`press ${key}`);
@@ -211,7 +213,8 @@ function fakeForm(fields) {
           const source = String(fn);
           const refs = fields.map((x) => x.ref);
           if (source.includes("activeElement") && source.includes("order")) return focus === ref ? "focused" : refs[refs.indexOf(focus) + 1] === ref && !f.unreachable ? "tab" : "no";
-          if (source.includes("activeElement")) return focus === ref ? "here" : "elsewhere";
+          if (source.includes("activeElement") && source.includes("parts")) return focus === ref ? "here" : "elsewhere";
+          if (source.includes("activeElement")) return focus === ref; // humanType: has it the focus
           if (source.includes("datetime-local") && source.includes("tagName")) return f.kind || "";
           if (source.includes("prefix")) return { from: f.index, to: f.options.indexOf(arg), prefix: arg[0] };
           if (source.includes("selectedIndex")) return f.index;
@@ -272,6 +275,73 @@ test("a form fill by mouse reaches for every field; a secret is never said; a va
   assert.deepEqual(lines, ["Filled Email with a@b.c.", "Filled Password with SITE_PASSWORD.", "Code didn't take what was typed: it is empty."]);
   assert.deepEqual(form.log.filter((l) => /^(click|press Tab)/.test(l)), ["click e1", "click e2", "click e3"], "by mouse: never Tab");
   assert.equal(lines.join().includes("real-secret"), false);
+});
+
+const T41 = "Second note typed in, thirty-eight chars."; // 41 characters, as the timing harness types
+// The schedule's average per key at a pace, over 200 texts.
+const perKey = (pace) => { let total = 0; for (let i = 0; i < 200; i++) total += keystrokeSchedule(T41, pace, seeded(i)).at(-1).at; return total / (200 * T41.length); };
+// What humanType waited in all (a mocked clock: the sum grows with the pace, which is what is checked).
+async function waitedBy(settings, options) {
+  let waited = 0;
+  await humanType(fakeForm([{ ref: "e1", type: "textbox" }]).page, { target: "e1", value: T41 }, settings, { rng: seeded(), wait: async (ms) => { waited += ms; }, ...options });
+  return waited;
+}
+
+test("a single browser_type clicks the field once, clears it, types key by key at typingPace and reads it back", async () => {
+  const form = fakeForm([{ ref: "e1", type: "textbox", value: "old" }, { ref: "e2", type: "textbox" }]);
+  const wait = async () => {};
+  const traced = [];
+  const first = await humanType(form.page, { target: "e1", name: "Notes", value: T41 }, fillSettings({}), { rng: seeded(), wait, trace: (l) => traced.push(l) });
+  assert.deepEqual(first, { line: "Typed into Notes.", failed: false });
+  assert.equal(form.byRef.get("e1").value, T41, "the old text is gone, the new one in");
+  const moves = form.log.filter((l) => /^(click|fill|press)/.test(l));
+  assert.deepEqual(moves, ["click e1", "press ControlOrMeta+a", "press Backspace"], "the engine's own click, then a hand's clear; never an instant fill");
+  assert.deepEqual(form.log.filter((l) => l.startsWith("down ") && l !== "down Shift").map((l) => l.slice(5)), Array.from(T41), "every character key by key");
+  const quick = perKey(TYPING_PACE);
+  assert.ok(quick >= 40 && quick < 65, `about 105 words a minute at the default pace: ${quick.toFixed(1)} ms a key`);
+  assert.match(traced[0], /^browser_type, 41 characters: Notes by click: check \d+, click \d+, read \d+, clear \d+, type \d+, read \d+ ms$/);
+  // The field has the focus now: no second click.
+  const again = await humanType(form.page, { target: "e1", name: "Notes", value: "Hi" }, fillSettings({}), { rng: seeded(), wait, trace: (l) => traced.push(l) });
+  assert.deepEqual(again, { line: "Typed into Notes.", failed: false });
+  assert.equal(form.log.filter((l) => l === "click e1").length, 1);
+  assert.match(traced[1], /Notes by focused/);
+});
+
+test("browser_type slowly types at about 90 ms a key, at the caret, and still reads the field back", async () => {
+  const slow = perKey(SLOW_TYPE_PACE);
+  assert.ok(slow > 80 && slow < 100, `slowly is about 90 ms a key: ${slow.toFixed(1)}`);
+  const form = fakeForm([{ ref: "e1", type: "textbox", value: "Ams" }]);
+  const r = await humanType(form.page, { target: "e1", name: "Search", value: "terdam" }, fillSettings({}), { rng: seeded(), wait: async () => {}, slowly: true });
+  assert.deepEqual(r, { line: "Typed into Search.", failed: false });
+  assert.equal(form.byRef.get("e1").value, "Amsterdam", "slowly adds to what the field holds, as key-by-key typing did");
+  assert.equal(form.log.some((l) => l === "press Backspace"), false);
+  // Slowly waits longer than the default pace; a slower typingPace stays slower than slowly.
+  const quick = await waitedBy(fillSettings({}), {});
+  const slowly = await waitedBy(fillSettings({}), { slowly: true });
+  const slowest = await waitedBy(fillSettings({ pairbrowse: { typingPace: 1 } }), { slowly: true });
+  assert.ok(slowly > quick * 1.5 && slowest > slowly, `waited ${quick} < ${slowly} < ${slowest}`);
+});
+
+test("browser_type never says a secret, and says when the value didn't stay", async () => {
+  const form = fakeForm([{ ref: "e1", type: "textbox" }, { ref: "e2", type: "textbox" }, { ref: "e3", type: "textbox", value: "+31612345678" }]);
+  const quiet = { rng: seeded(), wait: async () => {} };
+  const secret = await humanType(form.page, { target: "e1", name: "Password", value: "real-secret", shown: "SITE_PASSWORD" }, fillSettings({}), quiet);
+  assert.deepEqual(secret, { line: "Typed into Password.", failed: false });
+  // The value is read back from the field with the focus: where the keys went, also when the page
+  // swapped the element meanwhile (a search box with suggestions).
+  const focusedValue = form.page.evaluate;
+  form.page.evaluate = async () => "";
+  const gone = await humanType(form.page, { target: "e2", name: "Code", value: "1234" }, fillSettings({}), quiet);
+  assert.deepEqual(gone, { line: "Code didn't take what was typed: it is empty.", failed: true });
+  form.page.evaluate = async () => "+31 6 1234 5678";
+  const masked = await humanType(form.page, { target: "e3", name: "Phone", value: "+31612345678" }, fillSettings({}), quiet);
+  assert.deepEqual(masked, { line: 'Typed into Phone; the page shows it as "+31 6 1234 5678".', failed: false });
+  form.page.evaluate = focusedValue;
+  const original = form.page.locator;
+  form.page.locator = (selector) => { const loc = original(selector); loc.click = async () => { throw new Error("Element is not visible\nmore"); }; return loc; };
+  const failed = await humanType(form.page, { target: "e1", name: "Hidden", value: "x" }, fillSettings({}), quiet);
+  assert.deepEqual(failed, { line: "Hidden couldn't be typed into: Element is not visible", failed: true });
+  assert.equal(JSON.stringify([secret, gone, masked, failed]).includes("real-secret"), false);
 });
 
 packTest("engine pack emits this platform's fingerprint, proxy, locale, and stable seed flags", async () => {

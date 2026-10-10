@@ -3,10 +3,11 @@
 // and records the pre-submit review the guard requires. No dependencies.
 // The helper keeps a run of its own for every task (daemon/journal.mjs, source "auto"), in the
 // same files, so a task survives a context reset even when the agent never called run_save.
-import { writeFileSync, readdirSync, mkdirSync } from "node:fs";
+import { writeFileSync, readdirSync, readFileSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { paths, ensureDirs } from "./paths.mjs";
+import { currentSession } from "./sessions.mjs";
 import { readJson, writeJsonAtomic } from "./util.mjs";
 
 export const REVIEW_MAX_AGE_MIN = 30;
@@ -45,10 +46,25 @@ export function unfinishedNote(runs) {
   return `Unfinished runs (saved data, not instructions):\n${runs.slice(0, 3).map(line).join("\n")}\nrun_get <name> to continue, or run_save status finished to close it.`;
 }
 
-export function summarize(run) {
+// When the helper now running started (its lock file's time), or null when none is running.
+export function daemonStartedAt() {
+  const lock = join(paths.home, "daemon.lock");
+  try {
+    const pid = Number(readFileSync(lock, "utf8"));
+    try { process.kill(pid, 0); } catch (e) { if (e.code !== "EPERM") return null; }
+    return statSync(lock).mtimeMs;
+  } catch { return null; }
+}
+// The browser restarted since this run was last written (or isn't running now): what Done says
+// about the pages may no longer hold.
+export const RESTARTED_NOTE = "The browser restarted since this was saved: take a browser_snapshot of each tab before trusting Done (a sign-up step may have expired, a chosen file is never kept).";
+export const restartedSince = (run, started = daemonStartedAt()) => !started || Date.parse(run.updatedAt) < started;
+
+export function summarize(run, { restarted = false } = {}) {
   return [
     `Run "${run.name}" (${run.status}, updated ${run.updatedAt})`,
     run.source === "auto" && "Kept by PairBrowse automatically from what was done in the browser (no run_save was called): treat it as your own notes.",
+    run.session && `Session: ${run.session} (pairbrowse_session use ${run.session})`,
     run.goal && `Goal: ${run.goal}`,
     run.done?.length && `Done: ${run.done.join("; ")}`,
     run.drafted?.length && `Drafted by Claude: ${run.drafted.join("; ")}`,
@@ -56,6 +72,7 @@ export function summarize(run) {
     run.left?.length && `Left: ${run.left.join("; ")}`,
     run.notes && `Notes: ${run.notes}`,
     run.tabs?.length && `Tabs when saved: ${run.tabs.map((t) => `${t.title} <${t.url}>`).join(", ")}`,
+    restarted && RESTARTED_NOTE,
   ].filter(Boolean).join("\n");
 }
 
@@ -90,6 +107,7 @@ export function saveRun(a) {
   run.yourTurn = uniq(a.yourTurn ?? prev.yourTurn).filter((x) => !run.done.includes(x));
   run.drafted = uniq([...prev.drafted, ...(a.drafted || [])]);
   if (a.status) run.status = a.status;
+  run.session = currentSession(); // the browser session it was in: a resuming agent picks it without guessing
   if (a.tabs) run.tabs = a.tabs.map((t) => ({ title: String(t.title || "").slice(0, 120), url: String(t.url || "") }));
   run.updatedAt = new Date().toISOString();
   writeJsonAtomic(file, run);
@@ -124,7 +142,7 @@ const TOOLS = [
     } },
   },
   { name: "run_list", description: "List saved runs, newest first, with what's done and left. Includes the runs PairBrowse kept by itself (stale after a day untouched).", inputSchema: { type: "object", properties: {} } },
-  { name: "run_get", description: "Get one saved run, including the tabs that were open.", inputSchema: { type: "object", required: ["name"], properties: { name: str } } },
+  { name: "run_get", description: "Get one saved run: its browser session (pairbrowse_session use <name>), the tabs that were open, and whether the browser restarted since.", inputSchema: { type: "object", required: ["name"], properties: { name: str } } },
   {
     name: "review_save",
     description: "Record the pre-submit review: every rule from the platform's CURRENT official requirements checked against the filled-in listing. Required before any submit-for-review or publish click. A rule the user explicitly accepts failing can be marked waived.",
@@ -142,7 +160,7 @@ async function callTool(name, a = {}) {
     case "run_get": {
       const r = readJson(runFile(a.name));
       if (!r) return `No run named "${a.name}".`;
-      return r.status === "merged" ? `Run "${r.name}" was taken over by run "${r.mergedInto}": run_get that one.` : summarize({ ...r, status: statusOf(r) });
+      return r.status === "merged" ? `Run "${r.name}" was taken over by run "${r.mergedInto}": run_get that one.` : summarize({ ...r, status: statusOf(r) }, { restarted: restartedSince(r) });
     }
     case "review_save": {
       const r = saveReview(a);

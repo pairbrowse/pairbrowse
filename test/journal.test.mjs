@@ -137,6 +137,32 @@ test("a helper restart resumes this session's run; a stale one is left alone", a
   assert.ok(listRuns(t).some((r) => r.name === stale.name));
 });
 
+test("pages visited between two writes each get their line; the agent's name comes off tab titles", async () => {
+  const t = start + 4 * 3600_000;
+  const page = tab("about:blank");
+  const j = createJournal({ session: () => "quick", openPages: async () => [page], strip: (s) => s.replace(/^Claude 5dfa · /, ""), now: () => t, delayMs: 10 });
+  j.activity("Opened https://quick.example/", "Claude", null); // no tab of its own yet
+  page.go("https://quick.example/", "Claude 5dfa · Welcome");
+  j.activity("Opened https://quick.example/signup", "Claude", page);
+  page.go("https://quick.example/signup", "Claude 5dfa · Create your account");
+  j.activity("Filled **Email** = `ada@example.com`", "Claude", page);
+  page.go("https://quick.example/done", "Claude 5dfa · Check your email");
+  j.activity("Clicked **Continue**", "Claude", page);
+  await j.flushNow();
+  const run = read("quick-example-2026-10-10-18-05.json");
+  assert.deepEqual(run.done, [
+    "Welcome <https://quick.example/>",
+    "Create your account <https://quick.example/signup>: Filled **Email** = `ada@example.com`",
+    "Check your email <https://quick.example/done>: Clicked **Continue**",
+  ]);
+  assert.deepEqual(run.tabs, [{ title: "Check your email", url: "https://quick.example/done" }]);
+  // More on the last page: its line grows; the earlier ones stay.
+  j.activity("Clicked **Resend**", "Claude", page);
+  await j.flushNow();
+  assert.equal(read("quick-example-2026-10-10-18-05.json").done.length, 3);
+  assert.equal(read("quick-example-2026-10-10-18-05.json").done[2], "Check your email <https://quick.example/done>: Clicked **Continue**; Clicked **Resend**");
+});
+
 test("the session-start note is one line per run, at most three", () => {
   const note = unfinishedNote([
     { name: "shopify.com 2026-10-10 14:05", status: "in progress", left: ["Pricing", "Screenshots"], yourTurn: ["Enter the code from your phone"] },

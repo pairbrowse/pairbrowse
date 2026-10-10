@@ -213,7 +213,7 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     assert.ok(!(await urls(host.call)).some((u) => /watcher/.test(u)), "a watcher's changes stay in their browser");
     await go(host.call, /one\.pbtest\.example\/c/, "http://one.pbtest.example/d");
     await until("the watcher still follows", async () => (await urls(joiner.call)).includes("http://one.pbtest.example/d"));
-    assert.match(text(await tool(host.call, "pairbrowse_invite", { action: "revoke_all" })), /tunnel stays ready/);
+    assert.match(text(await tool(host.call, "pairbrowse_invite", { action: "revoke_all" })), /No code works any more/);
   } catch (e) {
     const log = (h) => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2000); } catch { return ""; } };
     throw new Error(`${stage}: ${e.message}\nhost:\n${log(hostHome)}\njoiner:\n${log(joinHome)}`);

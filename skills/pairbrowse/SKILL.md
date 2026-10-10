@@ -236,8 +236,8 @@ filled, drafted, left for the user, and remembered. Every action is also logged 
   then remembered), `hours` (default 24, at most 168), `share` "code" (pb-join code over a Cloudflare Quick Tunnel; the default without
   `inviteBaseUrl`) or "link" (Tailscale or SSH). Pass on the code and the steps from the result.
 - `list` (invites, join requests and shared dev servers, no keys), `approve` / `deny` with the request
-  `id` (approve asks the user), `revoke` with the invite `id`, `revoke_all` (also closes the tunnel
-  and stops sharing dev servers).
+  `id` (approve asks the user), `revoke` with the invite `id`, `revoke_all` (no code works from then on;
+  also stops sharing dev servers).
 - `share_port` with `port` (or none: the current localhost tab's): the user's dev server (Next,
   Nuxt, Vite) for joiners, under its own address; their localhost tabs then cross there. It only
   asks the user (Yes / No in the side panel, waits up to 90 s; a later answer comes as a note);

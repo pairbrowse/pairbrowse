@@ -49,14 +49,15 @@ test("the address is handed out only once cloudflared has a connection and the n
 
 test("why cloudflared stopped, in plain words: rate-limited, or its last error line", async () => {
   const log = "2026-10-09T13:30:00Z INF Requesting new quick Tunnel on trycloudflare.com...\n2026-10-09T13:30:01Z ERR Couldn't start tunnel error=\"Unauthorized: 429 Too Many Requests, error code: 1015\"\n";
-  assert.match(tunnelExitReason(1, log), /rate-limiting new tunnels from here; wait a few minutes/);
-  assert.equal(tunnelExitReason(1, "INF something\nERR failed to dial edge: no route to host\n"), "the sharing tunnel stopped (exit 1): failed to dial edge: no route to host");
-  assert.equal(tunnelExitReason(2, ""), "the sharing tunnel stopped (exit 2)");
+  assert.match(tunnelExitReason(1, log), /too many fresh sharing connections were opened from this computer in a short time; sharing works again in a few minutes/);
+  assert.doesNotMatch(tunnelExitReason(1, log), /Cloudflare|tunnel/i, "the agent reads this: no tunnel talk");
+  assert.equal(tunnelExitReason(1, "INF something\nERR failed to dial edge: no route to host\n"), "the sharing connection ended (exit 1): failed to dial edge: no route to host");
+  assert.equal(tunnelExitReason(2, ""), "the sharing connection ended (exit 2)");
   // A cloudflared that dies with that error: the host's agent gets the reason, not an exit code.
   const exe = join(home, "fake-cloudflared-429");
   writeFileSync(exe, `#!${process.execPath}\nconsole.error("ERR Couldn't start tunnel error=\\"429 Too Many Requests, error code: 1015\\"");\nsetTimeout(() => process.exit(1), 100);\n`);
   chmodSync(exe, 0o755);
-  await assert.rejects(startQuickTunnel(4323, { exe, resolves: async () => true, resolvesLocally: async () => true }), /rate-limiting new tunnels/);
+  await assert.rejects(startQuickTunnel(4323, { exe, resolves: async () => true, resolvesLocally: async () => true }), /too many fresh sharing connections/);
 });
 
 test("a tunnel stops by itself once no helper is around, and only our own keeper is ever taken over or stopped", async () => {

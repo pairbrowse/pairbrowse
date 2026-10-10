@@ -62,6 +62,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   function stopTunnel() {
     wanted = false;
     clearTimeout(idleTimer); idleTimer = null;
+    clearTimeout(refillTimer); refillTimer = null; emptySince = 0;
     generation++; // a tunnel still starting when this runs is stopped as soon as it's up
     const was = pool;
     pool = [];
@@ -74,12 +75,14 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     const t = direct ? { url: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, stop() {} } : await startQuickTunnel(port, { log });
     if (started !== generation) {
       try { t.stop(); } catch {}
-      throw new Error("sharing stopped while the tunnel was starting");
+      throw new Error("sharing stopped while its connection was starting");
     }
     t.port = port;
     return wire(t, port);
   }
-  // A tunnel in the pool: watched from outside, and replaced when it ends.
+  // A tunnel in the pool: watched from outside, and replaced when it ends. Joiners already in
+  // move to the standby by themselves (relay.mjs); a code not yet used carries the first live
+  // address at the time it's read (list), so its string may change: fine, nobody has it yet.
   function wire(t, port) {
     if (!direct) watchTunnel(t, { log }); // not answering: stopped, and replaced below
     const ended = () => {
@@ -87,13 +90,25 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       pool = pool.filter((x) => x !== t);
       save();
       log(`a sharing tunnel stopped; ${pool.length} left`);
-      if (!wanted) return;
-      fill(port).then(() => {
-        if (!pool.length) hostNote("The sharing tunnels stopped and couldn't be replaced; join codes made before don't work any more. Make a new one with pairbrowse_invite create.");
-      });
+      if (wanted) refill(port);
     };
     if (t.child || t.adopted) onTunnelExit(t, ended);
     return t;
+  }
+  // Every tunnel gone and none coming back: tried again for EMPTY_NOTE_MS, then the host hears
+  // it once, in plain words (nothing while at least one tunnel lives: codes keep working).
+  const EMPTY_NOTE_MS = 60_000, REFILL_MS = 15_000;
+  let emptySince = 0, refillTimer = null;
+  function refill(port) {
+    clearTimeout(refillTimer); refillTimer = null;
+    fill(port).then(() => {
+      if (!wanted || pool.length) { emptySince = 0; return; }
+      emptySince ||= Date.now();
+      if (Date.now() - emptySince < EMPTY_NOTE_MS) { refillTimer = setTimeout(() => refill(port), REFILL_MS); refillTimer.unref?.(); return; }
+      emptySince = 0;
+      log("sharing: no tunnel for a minute; the host is told");
+      hostNote("Sharing lost its connection and couldn't get it back; the people in your session dropped out. Share again when you're ready.");
+    });
   }
   // Up to POOL live tunnels, in the background (a failed start is retried with the next change).
   function fill(port) {
@@ -121,7 +136,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
 
   // Dev servers shared with joiners (devshare.mjs): each with its own tunnel, ended with the
   // last join code, revoke_all, or the helper.
-  const devShare = createDevShare({ log, onStopped: (port) => hostNote(`The tunnel for the shared dev server localhost:${port} stopped; joiners can't open it any more. Share it again with pairbrowse_invite share_port.`) });
+  const devShare = createDevShare({ log, onStopped: (port) => hostNote(`Sharing localhost:${port} lost its connection and couldn't get it back; joiners can't open it any more. Share it again with pairbrowse_invite share_port.`) });
 
   invites.onEnd(() => { if (!invites.list().some((i) => i.share === "code")) { releaseTunnel(); devShare.stopAll(); } save(); });
   approvals.onChange(() => save());
@@ -207,7 +222,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     guestPortWanted = liveView.guestPort;
     if (pool.length && pool[0].port !== liveView.guestPort) {
       stopTunnel();
-      hostNote("The sharing tunnel had to stop when the browser restarted; earlier join codes don't work any more. Make a new one with pairbrowse_invite.");
+      hostNote("Sharing couldn't continue after the browser restarted; the people in your session dropped out. Share again when you're ready.");
     }
     if (wanted && invites.list().some((i) => i.share === "code")) fill(liveView.guestPort).catch(() => {});
     save();
@@ -236,6 +251,9 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     };
   }
 
+  // The host's name as join codes carry it (raw: the fallback too, for create's own check).
+  const codeLabel = (raw = false) => { const n = savedName(config) || host; return raw ? n : n === "The host" ? "" : n; };
+
   // pairbrowse_invite: links or join codes for someone else to watch or co-drive (the guard asks
   // before a drive invite and before letting a joiner in). Returns { text, error }.
   async function inviteCommand(args, { who } = {}) {
@@ -243,7 +261,10 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     const fail = (text) => ({ text, error: true });
     if (action === "list") {
       const asking = approvals.list();
-      const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${i.role === "drive" ? "can drive" : "watch only"}, ${i.share === "code" ? (i.mode === "shared" ? "join code (shared browser)" : "join code (follow)") : "link"}, until ${formatTime(i.expiresAt)}` +
+      // A code's current string: the first live address (the one it was made with may be gone).
+      const live = pool.find((t) => alive(t, guestPortWanted || t.port));
+      const codeOf = (i) => (i.share === "code" && live ? `\n  code: ${encodeJoinCode({ url: live.url, key: i.key, role: i.role, mode: i.mode, label: codeLabel() })}` : "");
+      const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${i.role === "drive" ? "can drive" : "watch only"}, ${i.share === "code" ? (i.mode === "shared" ? "join code (shared browser)" : "join code (follow)") : "link"}, until ${formatTime(i.expiresAt)}` + codeOf(i) +
         asking.filter((r) => r.inviteId === i.id).map((r) => `\n  - request ${r.id}: ${r.name}${r.app ? ` (${r.app})` : ""}, ${r.state === "pending" ? "waiting for the user's OK" : r.state === "approved" ? "let in" : r.state === "removed" ? "removed" : "turned away"}`).join(""));
       const dev = devShare.list().map((d) => `- dev server localhost:${d.port}, shared with joiners at ${d.url}`);
       return { text: [...lines, ...dev].join("\n") || "No invites." };
@@ -262,7 +283,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     if (action === "revoke") {
       return invites.revoke(args.id) ? { text: `Revoked ${args.id}. Anyone using it lost the session at once.` } : fail(`No invite ${args.id}. Use list to see them.`);
     }
-    if (action === "revoke_all") { const n = invites.revokeAll(); releaseTunnel(); devShare.stopAll(); return { text: `Revoked ${n} invite(s). No code works any more and no dev server is shared; the sharing tunnel stays ready for a quarter of an hour in case you share again, then closes.` }; }
+    if (action === "revoke_all") { const n = invites.revokeAll(); releaseTunnel(); devShare.stopAll(); return { text: `Revoked ${n} invite(s). No code works any more and no dev server is shared.` }; }
     if (action === "share_port") return sharePort(args, who);
     if (action === "unshare_port") {
       if (args.port === undefined) { const n = devShare.list().length; devShare.stopAll(); refreshDev().catch(() => {}); return { text: n ? `Stopped sharing ${n} dev server(s).` : "No dev server is shared." }; }
@@ -274,7 +295,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     // Your name, as joiners see it (in the join code): asked once, then remembered.
     if (!cleanName(args.name, "") && !savedName(config)) return fail("Not yet: ask the user what name the people they invite should see (their first name, say), then call create again with name. It's remembered for next time.");
     if (cleanName(args.name, "") && !savedName(config)) { try { saveParticipantName(config, cleanName(args.name)); } catch {} }
-    const hostName = cleanName(args.name, "") || savedName(config) || host;
+    const hostName = cleanName(args.name, "") || codeLabel(true);
     const share = args.share || (inviteBase ? "link" : "code");
     let invite;
     try { invite = invites.create({ role: args.role, label: args.label, hours: args.hours, share, mode: args.mode || "shared" }); } catch (e) { return fail(e.message); }
@@ -296,11 +317,11 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       let t;
       try { t = await ensureTunnel(live); } catch (e) {
         invites.revoke(invite.id);
-        return fail(`Couldn't open the sharing tunnel: ${e?.message || e}. Nothing was shared. Retry, or use share "link" with an SSH tunnel.`);
+        return fail(`Sharing couldn't start: ${e?.message || e}. Nothing was shared.`);
       }
       lines.push(`Join code: ${encodeJoinCode({ url: t.url, key: invite.key, role: invite.role, mode: invite.mode, label: hostName === "The host" ? "" : hostName })}`);
       lines.push(`The person pastes it into their own PairBrowse ("join this session: <code>"). You approve them when they ask: "<their name> wants to join" shows in the side panel, and in the bar at the bottom of your tab or a notification (Allow / Deny), and here.` +
-        " It uses a free Cloudflare Quick Tunnel (no account, no uptime guarantee); it keeps working through a restart of PairBrowse (they reconnect by themselves) and ends when you close the browser window, revoke it, or it expires.");
+        " It goes through a free relay (no account, no uptime guarantee); it keeps working through a restart of PairBrowse (they reconnect by themselves) and ends when you close the browser window, revoke it, or it expires.");
     } else if (inviteBase) {
       lines.push(`Link: ${inviteBase}/${invite.key}/`);
       lines.push(`It works for people who can reach ${new URL(inviteBase).host} (for example, on the user's tailnet), once that name forwards to 127.0.0.1:${port}.`);
@@ -350,7 +371,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     const d = await devShare.share(hostname, port);
     refreshDev().catch(() => {});
     return [`Shared the dev server localhost:${port} with the people in this session (at most ${DEV_PORTS_MAX} at once).`,
-      `Your tabs on localhost:${port} now show up in joiners' browsers, at ${d.origin} (a free Cloudflare Quick Tunnel). It opens only in their PairBrowse, with a key of their own; anyone else gets nothing.`,
+      `Your tabs on localhost:${port} now show up in joiners' browsers, at ${d.origin} (a free relay address). It opens only in their PairBrowse, with a key of their own; anyone else gets nothing.`,
       "Watch joiners can look and get hot reloads; drive joiners can also click, submit and sign in there. Their requests reach your dev server as they are, each signed in as themselves.",
       "Addresses the app has built in (an API at http://localhost:...) point at their own computer: relative URLs work.",
       `Stop it with pairbrowse_invite unshare_port (port ${port}), or Stop in the side panel; it also ends with the last join code.`,

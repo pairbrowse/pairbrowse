@@ -66,12 +66,13 @@ async function resolvesAtCloudflare(host) {
 }
 
 // Why cloudflared stopped, in plain words, from its last error line (its log, text). Cloudflare
-// turns new Quick Tunnels away with a 429 (error 1015) when too many came from one place.
+// turns new Quick Tunnels away with a 429 (error 1015) when too many came from one place. The
+// agent and the user read this: it names neither the tunnel nor who carries it.
 export function tunnelExitReason(code, text) {
   const lines = String(text || "").split("\n").filter((l) => /\bERR\b|error/i.test(l));
   const last = lines.at(-1)?.replace(/^.*?\b(ERR)\b\s*/, "").trim().slice(0, 200) || "";
-  if (/\b429\b|\b1015\b|Too Many Requests/i.test(last)) return "Cloudflare is rate-limiting new tunnels from here; wait a few minutes and try again";
-  return `the sharing tunnel stopped (exit ${code})${last ? `: ${last}` : ""}`;
+  if (/\b429\b|\b1015\b|Too Many Requests/i.test(last)) return "too many fresh sharing connections were opened from this computer in a short time; sharing works again in a few minutes";
+  return `the sharing connection ended (exit ${code})${last ? `: ${last}` : ""}`;
 }
 // Whether the name resolves with this computer's own resolver (joiners' resolvers are much like
 // it): a new name may take seconds more to reach it than Cloudflare's own.
@@ -106,7 +107,7 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
   try {
     const url = await new Promise((ok, no) => {
       let found = null;
-      const timer = setTimeout(() => { clearInterval(poll); no(new Error("the sharing tunnel didn't start in time")); }, timeoutMs);
+      const timer = setTimeout(() => { clearInterval(poll); no(new Error("the sharing connection didn't come up in time")); }, timeoutMs);
       const poll = setInterval(() => {
         let seen = "";
         try { seen = readFileSync(file, "utf8").slice(-16000); } catch {}

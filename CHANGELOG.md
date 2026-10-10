@@ -5,6 +5,11 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.35 (2026-10-10)
+
+- When the connection carrying a shared session goes down, the people in it stay in: PairBrowse keeps a second connection ready, every joiner knows both addresses, and theirs switches over by itself with the same code, so nothing changes for them and nothing is said to anyone. The host waits long enough for that switch before counting a joiner as gone. Only if every connection is lost for over a minute does the host hear, once and in plain words, that sharing lost its connection; join codes made earlier are never declared dead while sharing is up, and `pairbrowse_invite list` shows each code with a working address.
+- Sharing's messages no longer talk about tunnels or who carries them: a start that fails says why in plain words (too many fresh connections in a short time: try again in a few minutes), and revoke_all just says that no code works any more.
+
 ## 0.15.34 (2026-10-09)
 
 - Sharing again soon after the last code ended no longer opens a new tunnel each time (Cloudflare allows only so many new Quick Tunnels in a while, and sharing then failed): the tunnel stays up for a quarter of an hour after the last code ends, with no code working on it meanwhile, and the next invite reuses it. The browser closing or the helper stopping still closes it at once.

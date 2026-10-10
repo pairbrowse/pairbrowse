@@ -66,13 +66,22 @@ test("interrupting overlays inside the page are closed, other dialogs are left a
         <button onclick="this.parentNode.remove(); window.choice='reject'">Reject all</button>
       </div>`);
     // Only the click itself is PairBrowse's own input; a look that finds nothing clicks nothing.
+    // The button is declared to the page (its box) before the press, so that press is PairBrowse's.
     let clicks = 0;
+    const declared = [];
     const clicking = () => { clicks++; return () => {}; };
-    await popups.dismissOverlay(page, { clicking });
+    const declare = async (p, el) => { declared.push({ clicked: clicks, box: await el.boundingBox(), text: await el.textContent() }); };
+    // Two looks at once (a tidy pass and a late check) click the one banner once: the second skips.
+    await Promise.all([popups.dismissOverlay(page, { clicking, declare }), popups.dismissOverlay(page, { clicking, declare })]);
     assert.equal(await inPage(page, () => window.choice), "accept", "accepts by default");
-    assert.equal(clicks, 1, "its click is marked as PairBrowse's");
-    await popups.dismissOverlay(page, { clicking });
+    assert.equal(clicks, 1, "its click is marked as PairBrowse's, once");
+    assert.equal(declared.length, 1, "declared once, before the click");
+    assert.equal(declared[0].clicked, 0, "declared before the press");
+    assert.equal(declared[0].text.trim(), "Accept all");
+    assert.ok(declared[0].box && declared[0].box.width > 0, "with the button's box");
+    await popups.dismissOverlay(page, { clicking, declare });
     assert.equal(clicks, 1, "nothing to close: nothing marked, a person's click meanwhile stays theirs");
+    assert.equal(declared.length, 1, "nothing declared either");
     assert.match(popups.drain(), /cookie banner.*Accept all/);
 
     // Wording no list knows: Claude is told what covers the page and which buttons it has.

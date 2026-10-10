@@ -438,6 +438,7 @@ async function pickFromOpened(page, opener, option, label, hooks) {
     const opened = await opener.click({ timeout: 2500 }).then(() => true, async () => {
       await page.keyboard.press("Escape").catch(() => {});
       await opener.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(() => {});
+      await hooks.cursor?.(opener, "click"); // it moved: the press is declared where it is now
       return opener.click({ timeout: 3000 }).then(() => true, () => false);
     });
     if (!opened) return `"${label}" couldn't be opened: something covers it (a banner, a chat box, another open list) or it's disabled. Look at the screenshot, close what covers it, then try again.`;
@@ -466,6 +467,7 @@ async function pickFromOpened(page, opener, option, label, hooks) {
       await page.keyboard.press("Escape").catch(() => {});
       await clearChoices(page, mark);
       const again = await choicesBefore(page);
+      await hooks.cursor?.(opener, "click"); // declared once more: the first declaration may have run out
       if (await opener.click({ timeout: 2500 }).then(() => true, () => false)) {
         for (const until = Date.now() + 2 * SUGGEST_MS; Date.now() < until && !best; await new Promise((r) => setTimeout(r, 100))) {
           choices = await choicesAfter(page, again, near);
@@ -487,6 +489,7 @@ async function pickFromOpened(page, opener, option, label, hooks) {
     await hooks.cursor?.(choiceAt(best, mark), "click");
     const clicked = await choiceAt(best, mark).click({ timeout: 1500 }).then(() => true, async () => {
       const again = await findIn(best.root, [(r) => r.getByRole("option", { name: best.text, exact: true }), (r) => r.getByText(best.text, { exact: true })]);
+      if (again) await hooks.cursor?.(again, "click"); // another element: its own declaration
       return again ? again.click({ timeout: 3000 }).then(() => true, () => false) : false;
     });
     if (!clicked) return `Opened "${label}" and found "${best.text}", but couldn't click it (the list closed or something covers it). Look at the screenshot, then try again.`;

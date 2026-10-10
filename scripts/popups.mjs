@@ -101,7 +101,16 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
   // click is PairBrowse's own input: looking for a popup clicks nothing, so a person's click
   // meanwhile stays theirs. declare(page, button): told which button PairBrowse is about to
   // press, before it does (the page then knows the press as PairBrowse's own, not a person's).
-  async function dismissOverlay(page, { closeOffers = false, markOwn = false, clicking = null, declare = null } = {}) {
+  // One look at a time per tab: two checks finding the same banner at once would both click its
+  // button, and two humanized clicks in flight leave one press somewhere along the way (read as a
+  // person's). The later one skips; the first is doing the job.
+  const looking = new WeakSet();
+  async function dismissOverlay(page, opts = {}) {
+    if (!page || looking.has(page)) return;
+    looking.add(page);
+    try { await dismissOverlayNow(page, opts); } finally { looking.delete(page); }
+  }
+  async function dismissOverlayNow(page, { closeOffers = false, markOwn = false, clicking = null, declare = null } = {}) {
     if (markOwn && page && !page.isClosed()) {
       await settle(800, page.evaluate(() => document.querySelectorAll('[role="dialog"], [aria-modal="true"], [role="alertdialog"], body > *, body > * > *, body > * > * > *').forEach((el) => {
         if (!el.matches('[role="dialog"], [aria-modal="true"], [role="alertdialog"]') && getComputedStyle(el).position !== "fixed") return;

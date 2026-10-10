@@ -2,6 +2,8 @@
 // Playwright MCP server on the shared browser, with PairBrowse's rules in front of every call and
 // its own notes, masking and screenshot added to every result.
 import { randomBytes } from "node:crypto";
+import { GONE_MS } from "../liveview/push.mjs";
+import { waitForLink, waitedLine } from "./linkwait.mjs";
 import { createInterface } from "node:readline";
 import { paths } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
@@ -189,7 +191,7 @@ export function pathsIn(name, args = {}) {
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, testTools = {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, testTools = {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // When each session last called a tool: only the ones in use hold up a session switch or closing
   // the browser. An open but idle session (a Claude Code window left for hours) doesn't.
@@ -1105,6 +1107,18 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const page = await myTab();
         // A joiner's agent never acts without a tab of its own (it would act in someone else's).
         if (!page && (lostTab || remote)) { reply(id, noTab(), true); return; }
+        // A joiner's connection is moving to another address: the agents here hold their tab work
+        // until it's back (a few seconds, as a rule), so nothing happens while that person can't see.
+        // A longer hold is said in one line; reads never come here. Never a joiner's own call
+        // because of that joiner's reconnect: it came in on their channel, and only they wait for it.
+        const down = () => reconnecting(remote?.key);
+        const lostName = down();
+        if (lostName) {
+          const held = await waitForLink(down, { max: GONE_MS + 5000 });
+          log(`${tool} waited ${held} ms for ${lostName}'s connection`);
+          const line = waitedLine(held, `${lostName}'s connection`);
+          if (line) fieldNotes.push(line);
+        }
         const who = presence.actingIn(page), waitFrom = Date.now();
         await presence.waitForUser(page);
         if (who && Date.now() - waitFrom > 300) log(`${tool} waited ${Date.now() - waitFrom} ms for ${who} using the tab`);

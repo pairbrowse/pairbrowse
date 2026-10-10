@@ -730,6 +730,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   return {
     url: `http://127.0.0.1:${server.address().port}/${key}/`,
     follow,
+    reconnecting: (except) => push.reconnecting(except),
     // The badge state, mirrored in the viewer's own chrome (pages can't fake it there).
     setStatus(next) {
       status = { text: String(next.text || "").slice(0, 140), kind: next.kind || "clear" };

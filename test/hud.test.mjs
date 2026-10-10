@@ -290,3 +290,45 @@ test("the bar in a tab shows what was done in that tab, not another agent's work
   await hud.applyBar(b);
   assert.deepEqual(bars.get("b"), ["Typed `hi` into **Search**", "Joined Sam's session (drive)"]);
 });
+
+test("a shared tab's bar says Reconnecting to the host while its connection moves, then who's driving again", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Shop</h1>" }));
+    await page.goto("http://pairbrowse.test/");
+    // The bar's shadow root is closed; the test opens it (in the world the script runs in) to read the who-line.
+    await page.evaluate(() => { const a = Element.prototype.attachShadow; Element.prototype.attachShadow = function (i) { return a.call(this, { ...i, mode: "open" }); }; });
+    await ensureHud(page, source, "__pbtest");
+    const whoLine = () => page.evaluate((tag) => document.querySelector(tag).shadowRoot.querySelector(".who span").textContent, hud.tags.bar);
+    const items = [{ t: Date.now(), text: "Clicked Next", who: "Bob" }];
+    await page.evaluate((v) => window.__pbtest("tok", JSON.stringify(v), "bar"), { items, reconnecting: "Bob" });
+    assert.equal(await whoLine(), "Reconnecting to Bob…");
+    await page.evaluate((v) => window.__pbtest("tok", JSON.stringify(v), "bar"), { items });
+    assert.equal(await whoLine(), "Bob's Claude is driving", "back to normal once the channel is up");
+    await page.evaluate((v) => window.__pbtest("tok", JSON.stringify(v), "bar"), { items, reconnecting: "Bob", pause: { by: "Alice" }, canPause: true });
+    assert.match(await whoLine(), /^Paused by Alice/, "a pause still shows (it carries the button)");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the helper marks only the shared tabs as reconnecting, and clears them when the channel is back", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const bars = new Map(); // page -> last bar state
+  const fake = (name) => ({ name, isClosed: () => false, url: () => `https://example.com/${name}`, evaluate: async (fn, args) => { if (args?.[3] === "bar") bars.set(name, JSON.parse(args[2])); } });
+  const shared = fake("shared"), own = fake("own");
+  const hud = createHud({ pages: async () => [shared, own], participants: () => [], waiting: () => null, liveView: () => null, notify: () => {} });
+  hud.setReconnecting("Bob", [shared]);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(bars.get("shared").reconnecting, "Bob");
+  assert.equal(bars.get("own"), undefined, "this browser's own tabs hear nothing");
+  await hud.applyBar(own);
+  assert.equal("reconnecting" in bars.get("own"), false);
+  hud.setReconnecting("", [shared]);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal("reconnecting" in bars.get("shared"), false, "cleared once the channel is up");
+});

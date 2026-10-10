@@ -225,7 +225,7 @@ async function offer({ sdp, peer: id, noDirect = false, doc = "" }) {
   };
   pc.onconnectionstatechange = () => {
     state = pc.connectionState;
-    if (state === "connected") { view = "video"; still.hidden = true; video.hidden = false; showLive(true); }
+    if (state === "connected") { view = "video"; still.hidden = true; video.hidden = false; hold(false); showLive(true); }
     else if (state === "disconnected") { showLive(false); setStatus("Reconnecting…"); }
     else if (state === "failed") { showLive(false); setStatus("No direct connection: switching to the slower route…"); }
   };
@@ -252,10 +252,29 @@ function frame(b64) {
     if (still.width !== frameImage.naturalWidth || still.height !== frameImage.naturalHeight) { still.width = frameImage.naturalWidth; still.height = frameImage.naturalHeight; }
     still.getContext("2d").drawImage(frameImage, 0, 0);
     if (view !== "frames") { view = "frames"; still.hidden = false; video.hidden = true; }
+    lastFrameAt = Date.now();
+    hold(false);
     showLive(true);
   };
   frameImage.src = "data:image/jpeg;base64," + b64;
 }
+// Pictures that stop coming (the connection to the host is moving to another address, which takes
+// a few seconds): the last one stays, dimmed, with a spinner and a word for the person. The first
+// new picture takes it down. Said in plain words only; nothing about what carries the connection.
+const HOLD = { after: 1500, long: 30_000 }; // ms without a picture before it shows, before "Still"
+let lastFrameAt = 0, holdSince = 0;
+function hold(on) {
+  const box = $("hold");
+  if (!on) { holdSince = 0; box.hidden = true; still.style.filter = ""; return; }
+  holdSince ||= Date.now();
+  const who = host || "the host";
+  $("hold-text").textContent = Date.now() - holdSince >= HOLD.long ? `Still reconnecting to ${who}…` : `Reconnecting to ${who}…`;
+  if (box.hidden) { box.hidden = false; still.style.filter = "brightness(.75)"; }
+}
+setInterval(() => {
+  if (view !== "frames" || !lastFrameAt) return;
+  if (Date.now() - lastFrameAt >= HOLD.after) hold(true);
+}, 250);
 
 soundButton.addEventListener("click", () => { video.muted = false; video.play().catch(() => {}); soundButton.hidden = true; });
 
@@ -313,6 +332,10 @@ window.pbScreen = {
   inTab: () => ({ ...inTab, title: document.title, icon: !!document.querySelector('link[rel="icon"]') }),
   // The address shown on the picture (as the person reads it), and whether a lock is there.
   address: () => ({ shown: !$("addr").hidden, text: $("addr-text").textContent, lock: $("addr-state").innerHTML === LOCK, warn: $("addr-state").classList.contains("warn") }),
+  // Tests only: how long without a picture before the wait shows, and before it says "Still".
+  holdAfter(after, long) { HOLD.after = Math.max(50, Number(after) || HOLD.after); HOLD.long = Math.max(HOLD.after, Number(long) || HOLD.long); return true; },
+  // The wait over a stilled picture, as the person sees it: { shown, text, dimmed }.
+  hold: () => ({ shown: !$("hold").hidden, text: $("hold-text").textContent, dimmed: still.style.filter !== "" }),
   // What the helper needs to know each round, and the input waiting for it (no direct connection).
   state: () => ({ visible: document.visibilityState === "visible", conn: state, peer, view, direct: !!(dc && dc.readyState === "open"), doc: DOC, offers }),
   takeInput: () => outbox.splice(0, 200),

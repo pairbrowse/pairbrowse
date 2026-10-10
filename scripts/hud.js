@@ -299,6 +299,7 @@
   let barCanPause = false; // this person may pause and resume (not a watch joiner)
   let barWaiting = false; // Claude waits while you use the browser
   let barPerson = ""; // who is using this tab (empty: you)
+  let barReconnecting = ""; // the host this shared tab is being reconnected to (empty: the channel is up)
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const rich = (t) => esc(t).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/`([^`]*)`/g, "<code>$1</code>");
   // "Alice" -> "Alice's Claude". Unnamed ("Claude 3fed") and app-labelled ("Alice · Codex") stay as they are.
@@ -384,6 +385,7 @@
     pz.hidden = !barCanPause;
     pz.textContent = barPause ? "Resume" : "Pause agents";
     if (barPause) bar.querySelector(".who span").innerHTML = html(`Paused by <b>${esc(barPause.by)}</b>${barCanPause ? " \u00b7" : ""}`);
+    else if (barReconnecting) bar.querySelector(".who span").innerHTML = html(`Reconnecting to <b>${esc(barReconnecting)}</b>…`);
     else bar.querySelector(".who span").innerHTML = html(barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`);
     const recent = barItems.slice(-3).reverse();
     const several = new Set(recent.map((a) => a.who || "")).size > 1; // name each line when people mix
@@ -402,6 +404,7 @@
       barItems = (Array.isArray(v) ? v : v.items || []).filter((a) => a && a.t && a.text);
       barPause = !Array.isArray(v) && v.pause && typeof v.pause.by === "string" ? { by: v.pause.by.slice(0, 60) } : null;
       barCanPause = !Array.isArray(v) && !!v.canPause;
+      barReconnecting = !Array.isArray(v) && typeof v.reconnecting === "string" ? v.reconnecting.slice(0, 60) : "";
     } catch { return; }
     ensureBar(); // always there, "idle" until the first action
     drawBar();

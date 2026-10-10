@@ -130,8 +130,13 @@ actions, for testing):
 ```
 
 Typing speed: `typingPace` from 0.2 (fastest) to 1 (slowest, about 60 words a minute). The
-default, 0.3, types a single `browser_type` at about 105 words a minute: the gaps between keys, the
-short pauses and the occasional corrected typo scale with it; how long each key is held doesn't.
+default, 0.3, types a single `browser_type` at about 105 words a minute: the gaps between keys and
+the short pauses scale with it; how long each key is held doesn't. A `browser_type` goes the way a
+form field does (below): the field focused by the engine's own reach and click (none when it has the
+focus already), what it held cleared, the text key by key with a quick typist's rhythm, read back; 41
+characters take about 3.5 s (6 s before 0.15.39), 200 characters into a textarea about 10 s (24 s).
+`slowly: true` types at about 90 ms a key, at the caret, next to what the field holds, and brings a
+snapshot (a list of suggestions shows up); `submit: true` presses Enter once the text is in.
 
 ```json
 { "pairbrowse": { "typingPace": 0.35 } }

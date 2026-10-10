@@ -68,6 +68,8 @@ Three agents get 1.8× the throughput of one, with every click correct; per-call
 about 1.5–2× (shared helper queue, three renderers). Tabs are independent lanes (`collaboration.run`
 per tab), so the remaining serialization is the helper's single thread and the browser.
 
+Soak with viewers (`--soak 100 --viewers N`, two watch-link event streams open): see item 23.
+
 Soak (`--soak 200`: 200 rounds of navigate + snapshot + click + type, about 800 calls): helper
 heap 83 → 108 MB (GC not forced; the bench's own memory probe shows no monotonic climb), helper
 RSS 220 → 189 MB, tree RSS 1.32 → 1.36 GB, driver execution contexts 1 → 2. No leak signal.
@@ -127,6 +129,27 @@ newest-frame wait.
     SIGKILL on the browser while a wait is in flight; the call is answered, the helper lives on,
     the session's picture maps are gone (`pairbrowse_test_memory` now reports `screenshots` and
     `clients`), the next session reopens the browser with both tabs back and works.
+20. **The bottom bar's `backdrop-filter: blur` repainted on every scroll of every page.** Measured
+    (40 agent scrolls of a long page, twice each): GPU process 13.7% of a core with the blur,
+    5.4–5.7% without; helper and renderer unchanged. Fixed: the bar and the badge use a flat,
+    slightly more opaque background (alpha .96/.97 instead of .93/.94).
+21. **The 200 ms MCP settle on real sites** (headless Patchright, `scratchpad/realsites.mjs`):
+    Playwright, React, MDN, Wikipedia, Vue and GitHub, one navigation click each: the click's own
+    result (inline snapshot) showed the new view in 6 of 6 at 200 ms, as at 500 ms. Click totals
+    0.5–1.1 s (react.dev once 5.9 s: its navigation's load, waited for by the MCP's request path,
+    not the settle). The native build wasn't used (needs the headed PairBrowse browser).
+22. **Live view's sharp still** (q90, no size cap): with "Fit to pane" on (the default) the page is
+    already emulated at the pane's size, so the still is pane-sized; only with Fit off is it the
+    window's full size. Left as is.
+23. **The live view's screencast ran unpaced: a busy page encoded about 60 frames a second for
+    the viewers.** Measured with `--soak 100 --viewers 2` (two watch-link event streams open
+    during 100 rounds of navigate + snapshot + click + type): the browser process at 34% of a
+    core (10.5% with no viewer), 15,568 frames and 356 MB to the two viewers in 2 minutes.
+    Fixed: frame acknowledgements paced to one per 33 ms (`FRAME_EVERY_MS`) in the live view and
+    the shared-browser fallback route. After: browser 22.7%, 8,108 frames (about 30 a second),
+    186 MB; helper heap 95 → 94 MB and RSS 216 → 205 MB over the soak, tree flat. The sharp
+    still 180 ms after motion is unchanged. (A third of the browser's CPU with viewers is the
+    JPEG encoding itself; WebRTC for shared-browser joiners is the cheaper route and unchanged.)
 19. **No multi-agent measurement.** Added `test/bench.mjs --agents N --rounds R`: N sessions in
     tabs of their own, each navigate + snapshot + click with the count verified in the click's
     own result; per-agent p50/p95, calls per second, verified and wrong counts.
@@ -161,30 +184,31 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
 
 ## Next highest-priority actions
 
-1. Review and commit this work (a version bump needs CHANGELOG.md and a tag: see CLAUDE.md).
-2. Verify the 200 ms MCP settle on real sites with the native build (an SPA that reacts late
-   without a request would need `settleMs` higher): watch for inline snapshots that miss a menu.
-3. Screenshot cost (≈115 ms per decorated result): reuse one CDP session per page (saves the
-   attach/detach), and end the newest-frame wait at the first frame when tidy settled just
-   before. Measure each.
+1. Merge or review branch `perf/screenshots-presence-lifecycle` (a version bump needs
+   CHANGELOG.md and a tag: see CLAUDE.md). Look at the bar and badge in the headed browser once:
+   the blur is gone (flat, slightly more opaque backgrounds).
+2. The 200 ms MCP settle with the native (headed) PairBrowse build on real sites: the headless
+   check passed 6 of 6; an SPA that reacts late without a request would need `settleMs` higher.
+3. Screenshot cost (≈110 ms per decorated result) is the screencast's first frame plus the
+   40–80 ms newest-frame wait; ending the wait at the first frame when tidy settled just before
+   is the remaining idea (measure; session reuse gave nothing).
 4. Popup looks (two evaluates per result, plus late checks at 3 s and 8 s) on big pages: cache
    per page revision, or skip the second look when the first found nothing. Measure on a heavy
    page first (the bench's long page shows little).
-5. Multiplayer: the live view's sharp still (JPEG q90, no size cap) after each motion burst is the
-   costliest encode; cap it to the viewer's fit size. The fallback screencast and the live view
-   each run their own screencast of the same tab: share one.
-6. A soak with `--expose-gc` and thousands of rounds, and one with joiners connected.
-7. hud.js: the bar's `backdrop-filter: blur` repaints on every scroll of every page; measure a
-   plain background on a heavy page.
+5. The fallback screencast and the live view each run their own screencast of the same tab:
+   share one (rare combination: a joiner on the slow route while the host watches the live view).
+6. A shared-browser joiner soak (two helpers, a pb-join code, WebRTC): `test/shared-mode.integration`
+   has the two-home setup to build on. A soak with `--expose-gc` and thousands of rounds.
+7. Idle CPU of the GPU process after work (several seconds at 5–9%) is Chromium's; nothing of
+   PairBrowse's drives it (checked: about:blank idles at 0).
 
 ## Final run (2026-10-11, every change in place)
 
 - `npm run lint`: clean.
-- Full suite with the runtime (`node --test --test-reporter=spec test/*.test.mjs`): 457 tests,
-  437 pass, 0 fail, 20 skipped (opt-in modes), about 3 min.
-- Fuzz: 36 pass. Bench: `bench-after4` figures in the table above (after the revert of the
-  session reuse: click p50 517 ms, snapshot 65 ms with 1 image of 20, navigate 399 ms).
-- One flake seen once in four full runs under the suite's load (eleven browsers at once):
+- Full suite with the runtime: 458 tests, 438 pass, 0 fail, 20 skipped (opt-in modes).
+- Fuzz: 36 pass. Bench: `bench-after4` figures in the table above.
+- One flake seen once in five full runs under the suite's load (eleven browsers at once):
   form-patterns' "a value a script rewrites 300 ms after the field is left" read the field
   mid-rewrite ("GermanyUnited States"). It passes alone (2 of 2) and in the other full runs.
-- Committed on branch `perf/screenshots-presence-lifecycle` (not pushed, no version bump).
+- Committed on branch `perf/screenshots-presence-lifecycle` (two commits; not pushed, no
+  version bump).

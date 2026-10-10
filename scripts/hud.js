@@ -203,9 +203,8 @@
       :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;right:12px !important;bottom:12px !important}
       .b{display:flex;align-items:center;gap:9px;font:600 12.5px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;color:#f4f6ff;
          padding:9px 14px 9px 11px;border-radius:14px;max-width:min(440px,62vw);cursor:default;
-         background:linear-gradient(160deg,rgba(62,84,150,.94),rgba(27,30,64,.96));
-         box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),inset 0 1px 0 rgba(255,255,255,.18),0 8px 24px rgba(10,12,40,.35);
-         -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+         background:linear-gradient(160deg,rgba(62,84,150,.96),rgba(27,30,64,.97));
+         box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),inset 0 1px 0 rgba(255,255,255,.18),0 8px 24px rgba(10,12,40,.35)}
       .b span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       svg{flex:none;width:15px;height:15px;color:#ef7d45}
       .you{animation:g 1.8s ease-in-out infinite}
@@ -332,7 +331,7 @@
     shadow.innerHTML = html(`<style>
       :host{all:initial !important;position:fixed !important;z-index:2147483646 !important;left:0 !important;right:0 !important;bottom:0 !important;pointer-events:none !important}
       .bar{display:flex;align-items:center;gap:14px;height:30px;padding:0 14px;box-sizing:border-box;
-        background:rgba(27,30,60,.93);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+        background:rgba(27,30,60,.96);
         border-top:1px solid rgba(255,255,255,.12);color:#c9cef0;
         font:12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;
         transition:opacity .18s ease,transform .18s ease}
@@ -356,7 +355,7 @@
       .pz[hidden]{display:none}
       .bar.paused{background:rgba(120,52,24,.95)}
       .bar.paused .pz{background:#ef7d45;color:#fff}
-      .bar.asking{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgb(27,30,60)}
+      .bar.asking{background:rgb(27,30,60)}
       .jq{flex:none;pointer-events:auto;display:flex;align-items:center;gap:7px;max-width:min(520px,62vw);min-width:0;padding-left:12px;border-left:1px solid rgba(255,255,255,.16);cursor:default;font-weight:600;color:#f4f6ff}
       .jq[hidden]{display:none}
       .jq svg{flex:none;width:13px;height:13px;color:#ef7d45}

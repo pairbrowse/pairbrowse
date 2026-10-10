@@ -10,6 +10,7 @@ import { within } from "../util.mjs";
 
 export const ICE_SERVERS = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const FRAME_MAX = 1920; // the picture's longer side, in pixels
+const FRAME_EVERY_MS = 33; // the slower route's pictures: at most this many a second
 const VIEW_EVERY_MS = 250; // the tab's size and scroll are read again this often (pointers follow scrolling)
 const TAKE_MS = 1000;
 const KEY_TEXT = /^.$/u;
@@ -203,8 +204,13 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     if (!w) {
       w = new Map();
       watchers.set(page, w);
+      let lastAt = 0;
       s.onFrame = ({ data, sessionId }) => {
-        s.cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+        // Paced: the next frame comes once this one is acknowledged, at most FRAME_EVERY_MS apart.
+        const wait = Math.max(0, FRAME_EVERY_MS - (Date.now() - lastAt));
+        lastAt = Date.now() + wait;
+        const ack = () => s.cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+        if (wait) setTimeout(ack, wait).unref(); else ack();
         for (const fn of (watchers.get(page) || new Map()).values()) { try { fn(data); } catch {} }
       };
       s.cdp.on("Page.screencastFrame", s.onFrame);

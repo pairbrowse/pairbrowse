@@ -1,5 +1,6 @@
 // What Claude reads back: passwords masked in results and in the snapshot files they point to,
-// long snapshots cut short, and those files swept up after a while.
+// an action's snapshot file brought into its result, long snapshots cut short, and those files
+// swept up after a while.
 import { readFileSync, writeFileSync, rmSync, existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { redact } from "../secrets.mjs";
@@ -13,6 +14,11 @@ const SWEEP_EVERY_MS = 10 * 60_000;
 // doesn't need for a form. Over SNAPSHOT_MAX characters, Claude gets the start of it (whole lines)
 // and the rest goes to a file, with a pointer to the narrower tools.
 const SNAPSHOT_MAX = 24_000;
+// An action's result links the snapshot the browser server took, in a file: the agent needs the
+// refs in it now, not after a second call, so it comes in the result (inlineSnapshot). Typing and
+// hovering change little on the page: theirs come inline only up to this many characters, so a
+// long page isn't sent again for every field.
+const INLINE_SHORT_MAX = 6000;
 
 // dir: the files folder Playwright writes to. secretValues(): the saved passwords by name.
 export function createOutput({ dir, secretValues }) {
@@ -42,6 +48,25 @@ export function createOutput({ dir, secretValues }) {
         try { if (statSync(file).mtimeMs < old) rmSync(file, { force: true }); } catch {}
       }
     } catch {}
+  }
+
+  // The "- [Snapshot](files/page-....yml)" line of an action's result becomes the file's text, as
+  // browser_snapshot prints it (a yaml block under the "### Snapshot" heading); capSnapshot then
+  // cuts a long one as it cuts browser_snapshot's, and only then does a file link stay. short: the
+  // link stays (with a word to snapshot for fresh refs) past INLINE_SHORT_MAX characters. Only
+  // Playwright's own files in the files folder are read, as maskLinkedFiles masks only those; the
+  // file is masked first, so what's on disk is as clean as what the agent reads.
+  function inlineSnapshot(text, { short = false } = {}) {
+    return String(text).replace(/^- \[Snapshot\]\(([^)\s]+)\)[^\n]*$/m, (line, link) => {
+      const file = join(dir, basename(link));
+      if (!PLAYWRIGHT_OUTPUT.test(basename(file)) || !existsSync(file)) return line;
+      maskFile(file);
+      let snap;
+      try { snap = readFileSync(file, "utf8"); } catch { return line; }
+      snap = snap.replace(/^```ya?ml\r?\n/, "").replace(/\r?\n```\s*$/, "").replace(/\s+$/, "");
+      if (short && snap.length > INLINE_SHORT_MAX) return `${line}: long (about ${Math.round(snap.length / 4)} tokens). Take a browser_snapshot for fresh refs.`;
+      return `\`\`\`yaml\n${snap}\n\`\`\``;
+    });
   }
 
   // Already masked by now. A dialog that sits past the cut (a consent wall at the end of the
@@ -84,7 +109,7 @@ export function createOutput({ dir, secretValues }) {
     setInterval(sweep, SWEEP_EVERY_MS).unref();
   }
 
-  return { mask, maskLinkedFiles, capSnapshot, absoluteLinks, start };
+  return { mask, maskLinkedFiles, inlineSnapshot, capSnapshot, absoluteLinks, start };
 }
 
 // Playwright's error for a browser tool, said plainly (its call logs, selectors and escape codes

@@ -37,6 +37,11 @@ const SCREENSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "
 // Results after which the page may load new popups (checked again a few seconds later); after
 // Claude's clicks, overlays already on screen count as Claude's own and stay.
 const LOADING_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_tabs"]);
+// Actions whose result links the page's snapshot in a file: the snapshot comes in the result
+// instead (output.inlineSnapshot), so the next action needs no browser_snapshot first. Typing and
+// hovering get theirs only when short (INLINE_SHORT_TOOLS).
+const INLINE_SNAPSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_click", "browser_select_option", "browser_press_key", "browser_tabs", "browser_hover", "browser_type"]);
+const INLINE_SHORT_TOOLS = new Set(["browser_type", "browser_hover"]);
 const CLICKING_TOOLS = new Set(["browser_click", "browser_press_key", "browser_handle_dialog", "browser_drag", "browser_drop", "browser_select_option", "browser_type", "browser_fill_form", "pairbrowse_run", "pairbrowse_upload"]);
 // Tools that act in the participant's tab: they take turns per tab (TabClaims) and wait for a
 // person using that tab.
@@ -365,6 +370,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const content = () => msg.result?.content || [];
       let shotUrl = null;
       let ownPage = null;
+      let inlined = false; // an action's result carries its snapshot inline
       if (tool !== undefined) {
         const action = tabActions.get(msg.id);
         tabActions.delete(msg.id);
@@ -399,6 +405,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (content().some((part) => /\[ref=|\bf\d+e\d+\b/.test(part.text || ""))) {
           for (const part of content()) if (part.type === "text") part.text = refNames.toPlain(part.text, fullSnapshot);
         }
+        // The linked snapshot file (its refs plain by now) in the result, as browser_snapshot
+        // prints it: the agent acts on these refs at once. A long one is cut below as
+        // browser_snapshot's is, and the file link stays only then.
+        if (INLINE_SNAPSHOT_TOOLS.has(tool) && msg.result && !msg.result.isError) {
+          for (const part of content()) if (part.type === "text") part.text = output.inlineSnapshot(part.text, { short: INLINE_SHORT_TOOLS.has(tool) });
+          inlined = content().some((part) => /^```yaml$/m.test(part.text || ""));
+          snapshotReturned ||= inlined;
+        }
         const tidying = context.current() ? context.openPages().then((pages) => tidy(tool, ownPage || pages.find((p) => p.url() === seenUrl), seenUrl)).catch(() => {}) : null;
         if (tidying && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false) await within(TIDY_MAX_MS, tidying);
         if (ownPage && CLICKING_TOOLS.has(tool)) await within(1000, popups.settled(ownPage)).catch(() => {});
@@ -406,7 +420,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (text && msg.result) (msg.result.content ||= []).push({ type: "text", text });
       }
       for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text))); if (remote) part.text = forJoiner(part.text); }
-      if (tool === "browser_snapshot") for (const part of content()) if (part.type === "text") part.text = output.capSnapshot(part.text);
+      if (tool === "browser_snapshot" || inlined) for (const part of content()) if (part.type === "text") part.text = output.capSnapshot(part.text);
       // A picture also with a failed action (a stopped run, a covered click): the message says to look at it.
       if (tool !== undefined && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
         const shot = await screenshots.take(ownPage || await context.pageAt(shotUrl || context.currentUrl()), participant);

@@ -57,6 +57,10 @@ payment, legal or tax steps, and when the user wants to watch closely. Mix freel
 - One call per page. Without fast mode, put every field into one `browser_fill_form`.
 - On long pages use `browser_find` instead of a fresh full snapshot. To scroll, use
   `pairbrowse_scroll` (people watching see it glide), never PageDown or End.
+- A navigation, click, select, key press or tab switch answers with the page's fresh snapshot
+  (as `browser_snapshot` prints it; a long one cut the same way): act on its refs at once, no
+  `browser_snapshot` in between. `browser_type` and `browser_hover` carry theirs only on a short
+  page; otherwise their result links it and says to snapshot.
 - Results that change the page carry a small screenshot. Act on snapshot refs; for what the
   snapshot doesn't name (an icon-only ×, a map, a canvas) use `pairbrowse_click_at` with x, y in
   that screenshot and `element`. It refuses what the page's structure marks as a payment or

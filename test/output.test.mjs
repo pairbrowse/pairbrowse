@@ -62,6 +62,66 @@ test("a long snapshot is cut at a line and the whole of it saved where Claude is
   assert.match(capped, /about \d+ tokens/);
 });
 
+// An action's result as the browser server writes it: the snapshot in a file, linked.
+const actionResult = (file) => `### Ran Playwright code\n\`\`\`js\nawait page.goto('https://x.test/');\n\`\`\`\n### Page\n- Page URL: https://x.test/\n- Page Title: X\n### Snapshot\n- [Snapshot](${file})`;
+const yaml = '- generic [active] [ref=e1]:\n  - heading "X" [level=1] [ref=e2]\n  - textbox "Password" [ref=e3]: hunter2-secret\n  - button "Go" [ref=e4]\n';
+
+test("an action's linked snapshot file comes into the result as browser_snapshot prints it, masked", () => {
+  const { dir, out } = setup();
+  const file = join(dir, "page-2026-10-10T10-00-00-000Z.yml");
+  writeFileSync(file, yaml);
+  const text = out.inlineSnapshot(actionResult(file));
+  const masked = yaml.replace("hunter2-secret", "<secret>SHOP_PW</secret>");
+  assert.equal(text, `${actionResult(file).split("\n- [Snapshot]")[0]}\n\`\`\`yaml\n${masked.trimEnd()}\n\`\`\``);
+  assert.ok(!text.includes("[Snapshot]"), "the link is gone: the text is here");
+  assert.match(text, /### Page\n- Page URL: https:\/\/x\.test\/\n- Page Title: X\n### Snapshot\n```yaml\n- generic/);
+  assert.equal(readFileSync(file, "utf8"), masked, "the file on disk is masked too");
+  // A file that already carries a fence isn't fenced twice.
+  writeFileSync(file, `\`\`\`yaml\n${yaml}\`\`\`\n`);
+  assert.equal(out.inlineSnapshot(actionResult(file)).match(/```/g).length, 4, "one js fence, one yaml fence");
+});
+
+test("a snapshot link to a missing file, a file outside the files folder or one that isn't Playwright's stays a link", () => {
+  const { dir, out } = setup();
+  const missing = actionResult(join(dir, "page-2026-10-10T10-00-00-000Z.yml"));
+  assert.equal(out.inlineSnapshot(missing), missing);
+  const outside = mkdtempSync(join(tmpdir(), "pb-outside-"));
+  writeFileSync(join(outside, "page-2026-10-10T10-00-00-001Z.yml"), yaml);
+  const far = actionResult(join(outside, "page-2026-10-10T10-00-00-001Z.yml"));
+  assert.equal(out.inlineSnapshot(far), far, "only the files folder is read");
+  writeFileSync(join(dir, "notes.yml"), yaml);
+  const mine = actionResult(join(dir, "notes.yml"));
+  assert.equal(out.inlineSnapshot(mine), mine, "never a file that isn't Playwright's output");
+  assert.equal(out.inlineSnapshot("### Result\nClicked.\n### Page\n- Page URL: https://x.test/"), "### Result\nClicked.\n### Page\n- Page URL: https://x.test/", "a result without a snapshot is left alone");
+});
+
+test("typing and hovering get a short snapshot inline; a long one keeps its link and says to snapshot", () => {
+  const { dir, out } = setup();
+  const file = join(dir, "page-2026-10-10T10-00-00-000Z.yml");
+  writeFileSync(file, yaml);
+  assert.match(out.inlineSnapshot(actionResult(file), { short: true }), /```yaml\n- generic/, "under the limit: inline");
+  const long = Array.from({ length: 400 }, (_, i) => `- link "Item ${i}" [ref=e${i}]`).join("\n");
+  assert.ok(long.length > 6000 && long.length < 24_000);
+  writeFileSync(file, long);
+  const kept = out.inlineSnapshot(actionResult(file), { short: true });
+  assert.ok(kept.includes(`- [Snapshot](${file}): long (about ${Math.round(long.length / 4)} tokens). Take a browser_snapshot for fresh refs.`), kept);
+  assert.ok(!kept.includes("```yaml"));
+  assert.match(out.inlineSnapshot(actionResult(file)), /```yaml\n- link "Item 0"/, "a click or a navigation gets it whatever its length (capSnapshot cuts a very long one)");
+});
+
+test("a very long inlined snapshot is cut as browser_snapshot's is, and only then is a file named", () => {
+  const { dir, out } = setup();
+  const file = join(dir, "page-2026-10-10T10-00-00-000Z.yml");
+  const lines = Array.from({ length: 4000 }, (_, i) => `- line ${i} ${"y".repeat(10)}`).join("\n");
+  writeFileSync(file, lines);
+  const inlined = out.inlineSnapshot(actionResult(file));
+  assert.ok(!/\]\(/.test(inlined), "no link before the cut");
+  const capped = out.capSnapshot(inlined);
+  assert.match(capped, /^### Ran Playwright code\n[\s\S]*### Snapshot\n```yaml\n- line 0 /, "the result's own sections stay in front");
+  assert.match(capped, /\n```\n\n### PairBrowse\n- This page's snapshot is long \(about \d+ tokens\)[\s\S]*The whole snapshot is in \S+page-[^ ]+\.yml\.$/);
+  assert.ok(capped.length < inlined.length);
+});
+
 test("at start, old snapshot files are masked and those over an hour old are swept", () => {
   const { dir, out } = setup();
   const fresh = join(dir, "console-2026-10-06T10-00-00-000Z.log");

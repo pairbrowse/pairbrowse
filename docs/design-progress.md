@@ -256,9 +256,19 @@ page and the live view (served from the fixed asset list, CSP unchanged). `scrip
 inject them) and `test/tokens.test.mjs` keeps every literal equal to a sheet value or a spark
 color and checks the contrast matrix. The theme seed is the sheet's chrome navy (`THEME_COLOR`
 0xff101d2d; hue 254°, as the accent's 257°); profiles still on PairBrowse's old seed move to it
-at the next start, a color the user picked stays (`scripts/browser.mjs`, `test/browser.test.mjs`).
+at the next start (only the seed: a light or follow-the-system scheme the user chose stays), a
+color the user picked stays (`scripts/browser.mjs`, `test/browser.test.mjs`).
 The new tab page is flat navy, the 2.5 MB `ntp.png` and its blur are gone, the logo unchanged.
-A joiner's picture page's pill is `--bg` at .9 (muted text over a white page 4.89:1). The "Opening tabs" restore page (`scripts/tabs.mjs`) carries the sheet's values inline: flat card, no blur or pulse, a failed tab says so in text; the literal-color test covers it. `docs/development.md` describes the sheet. Not verified by eye: the window frame's tint from the
+A joiner's picture page's pill is `--bg` at .9 (muted text over a white page 4.89:1). The "Opening tabs" restore page (`scripts/tabs.mjs`) carries the sheet's values inline: flat card (`--sidebar`), no blur or pulse, a waiting, opening or failed tab says so in text
+(an open one has no label), not by its dot's color alone; the literal-color test covers it. In
+the live view's light scheme the spark is `--spark` `#C4521B` (3:1 on the light tab strip), and
+Claude's owner dot beside it and in the tab overview takes `var(--spark)` too, so one agent has
+one orange per scheme; other participants' dots keep their color. Muted text is 4.1:1 on
+`--hover`, so text that stays on it (the current tab's last action in the overview, the older
+actions' code chips) is `--ink-2` (5.6:1). ESLint skips `.claude/` (local worktrees and
+workflow scripts, not shipped), noted in `docs/development.md`. A half-finished daemon change
+from the hud subset (badge `{ text, color }`) slipped into 6706756 and was taken back out
+(fca819b); it lands with the hud subset. `docs/development.md` describes the sheet. Not verified by eye: the window frame's tint from the
 new seed (screen capture isn't permitted for the helper's session here; one glance at the next
 browser start); Chromium's tonal palette takes the seed's hue, so navy is expected.
 

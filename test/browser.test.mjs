@@ -95,6 +95,13 @@ test("profiles get Chromium's own navy color theme instead of the old theme exte
   assert.equal(picked.browser.theme.user_color2, 0xff00aa00 | 0);
   const stale = profilePreferences({ extensions: { theme: { id: "user_color_theme_id" } }, browser: { theme: { user_color2: 0xff4e6498 | 0, color_scheme2: 2 } } });
   assert.equal(stale.browser.theme.user_color2, THEME_COLOR);
+  // Moving the old seed keeps the scheme the user chose (light, or following the system).
+  const light = profilePreferences({ extensions: { theme: { id: "user_color_theme_id" } }, browser: { theme: { user_color2: 0xff4e6498 | 0, color_scheme2: 1, follows_system_colors: true, color_variant2: 3 } } });
+  assert.equal(light.browser.theme.user_color2, THEME_COLOR);
+  assert.equal(light.browser.theme.color_scheme2, 1);
+  assert.equal(light.browser.theme.follows_system_colors, true);
+  assert.equal(light.browser.theme.color_variant2, 3);
+  assert.deepEqual(light.extensions.theme, { id: "user_color_theme_id" });
 });
 
 test("the browser loads only the side panel extension", async () => {

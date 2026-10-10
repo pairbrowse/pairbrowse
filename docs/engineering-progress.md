@@ -139,7 +139,11 @@ newest-frame wait.
     Playwright, React, MDN, Wikipedia, Vue and GitHub, one navigation click each: the click's own
     result (inline snapshot) showed the new view in 6 of 6 at 200 ms, as at 500 ms. Click totals
     0.5–1.1 s (react.dev once 5.9 s: its navigation's load, waited for by the MCP's request path,
-    not the settle). The native build wasn't used (needs the headed PairBrowse browser).
+    not the settle). **Native headed build** (the installed PairBrowse browser with its engine
+    pack, a temporary home linking `engine/` and the host profile, `PB_NATIVE=1`): the same six
+    sites, 6 of 6 new views in the click's own result at 200 ms. Clicks take 1.4–1.8 s there
+    (MCP phase 1.2–1.6 s: the engine's human-like pointer motion and press), the helper's own
+    phases the same as headless (tidy 127–142 ms, picture 93–109 ms).
 22. **Live view's sharp still** (q90, no size cap): with "Fit to pane" on (the default) the page is
     already emulated at the pane's size, so the still is pane-sized; only with Fit off is it the
     window's full size. Left as is.
@@ -204,19 +208,20 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
 1. Merge or review branch `perf/screenshots-presence-lifecycle` (a version bump needs
    CHANGELOG.md and a tag: see CLAUDE.md). Look at the bar and badge in the headed browser once:
    the blur is gone (flat, slightly more opaque backgrounds).
-2. The 200 ms MCP settle with the native (headed) PairBrowse build on real sites: the headless
-   check passed 6 of 6; an SPA that reacts late without a request would need `settleMs` higher.
+2. The 200 ms MCP settle passed 6 of 6 on real sites both headless and with the native headed
+   build; an SPA that reacts late without any request would need `settleMs` higher (config).
 3. Screenshot cost (≈110 ms per decorated result) is the screencast's first frame plus the
    40–80 ms newest-frame wait; ending the wait at the first frame when tidy settled just before
    is the remaining idea (measure; session reuse gave nothing).
 4. Popup looks (two evaluates per result, plus late checks at 3 s and 8 s) on big pages: cache
    per page revision, or skip the second look when the first found nothing. Measure on a heavy
    page first (the bench's long page shows little).
-5. The fallback screencast and the live view each run their own screencast of the same tab:
-   share one (rare combination: a joiner on the slow route while the host watches the live view).
-6. Fold the joiner soak (scratchpad `joiner-soak.mjs`, built on `test/shared-mode.integration`'s
-   two-home setup) into `test/bench.mjs` as `--joiner`; a soak with `--expose-gc` and thousands
-   of rounds.
+6. The joiner soak is `test/bench.mjs --joiner R` now; a soak with `--expose-gc` and thousands
+   of rounds remains.
+8. Decided against sharing one screencast between the live view and the slow route: they
+   differ in size, session (the live view's carries the input replayer and the fit emulation)
+   and lifetime, and the combination (a joiner on the slow route while the host watches the
+   live view of the same tab) is rare; both are paced to 30 frames a second now.
 7. Idle CPU of the GPU process after work (several seconds at 5–9%) is Chromium's; nothing of
    PairBrowse's drives it (checked: about:blank idles at 0).
 
@@ -230,7 +235,7 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
 - One flake seen once in six full runs under the suite's load (eleven browsers at once):
   form-patterns' "a value a script rewrites 300 ms after the field is left" read the field
   mid-rewrite. It passes alone (2 of 2) and in the other full runs.
-- Committed on branch `perf/screenshots-presence-lifecycle` (three commits; not pushed, no
-  version bump). Scratchpad scripts used for the one-off measurements (`realsites.mjs`,
+- Committed on branch `perf/screenshots-presence-lifecycle` (four commits; not pushed, no
+  version bump: the repo's rules leave merge, push and bump to the user). Scratchpad scripts used for the one-off measurements (`realsites.mjs`,
   `scroll-exp.mjs`, `heavy-popups.mjs`, `joiner-soak.mjs`, `idle-exp.mjs`) are described
   above; `test/bench.mjs` holds the repeatable ones.

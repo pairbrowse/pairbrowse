@@ -8,6 +8,8 @@ import { readJson } from "../util.mjs";
 import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { startQuickTunnel, watchTunnel, adoptTunnel, onTunnelExit, helperAlive } from "../tunnel.mjs";
+import { tunnelConfig } from "../tunnels/config.mjs";
+import { startOwnTunnel } from "../tunnels/start.mjs";
 import { randomBytes } from "node:crypto";
 import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../devshare.mjs";
 import { where } from "./context.mjs";
@@ -37,11 +39,22 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // and nothing drops, and a replacement starts here. Stopped when the last code ends
   // (revoked, expired, revoke_all) or the helper shuts down.
   const direct = process.env.PAIRBROWSE_TEST_TUNNEL === "direct"; // tests: the guest port stands in
-  const POOL = direct ? 1 : 2;
+  // The user's own tunnel instead (config sharing.tunnel: tunnels/config.mjs): one connection on
+  // an address of theirs, started again on that same address when it ends, so join codes keep
+  // working; the pool of two and joiners' address rotation are for Quick Tunnels, whose address
+  // is new each time. A bad setting is kept as a plain message: create says it, nothing starts.
+  let tunnelSpec = null, tunnelProblem = "";
+  try { tunnelSpec = tunnelConfig(config); } catch (e) { tunnelProblem = e.message; log(`sharing: ${tunnelProblem}`); }
+  const own = !!tunnelSpec && tunnelSpec.kind !== "quick";
+  const POOL = direct || own ? 1 : 2;
   let pool = []; // [{ url, host, port, stop, child }], the first is the one new codes carry
   let tunnelStarting = null;
   let filling = null;
-  let guestPortWanted = 0;
+  // sharing.guestPort pins the guest port (a named Cloudflare tunnel's ingress points at it).
+  const pinnedPort = tunnelSpec?.guestPort || 0;
+  let guestPortWanted = pinnedPort;
+  // Which way sharing goes, for the user and the agent ("your own ngrok address share.example.com").
+  const via = () => (tunnelSpec && own ? tunnelSpec.describe(pool[0]?.host || "") : "a free relay");
   let wanted = false; // join codes are out
   let generation = 0; // bumped by stopTunnel
   const alive = (t, port) => t.port === port && (t.child?.exitCode ?? null) === null;
@@ -72,7 +85,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
 
   async function startOne(port) {
     const started = generation;
-    const t = direct ? { url: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, stop() {} } : await startQuickTunnel(port, { log });
+    const t = direct ? { url: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, stop() {} } : own ? await startOwnTunnel(tunnelSpec, port, { log }) : await startQuickTunnel(port, { log });
     if (started !== generation) {
       try { t.stop(); } catch {}
       throw new Error("sharing stopped while its connection was starting");
@@ -89,6 +102,9 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       if (!pool.includes(t)) return;
       pool = pool.filter((x) => x !== t);
       save();
+      // One tunnel of the user's own: started again on its address, after a breath (a program
+      // that ends at once each time isn't restarted in a tight loop).
+      if (own) { log("the sharing connection stopped; starting it again"); if (wanted) refillSoon(port, RESTART_MS); return; }
       log(`a sharing tunnel stopped; ${pool.length} left`);
       if (wanted) refill(port);
     };
@@ -97,8 +113,13 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   }
   // Every tunnel gone and none coming back: tried again for EMPTY_NOTE_MS, then the host hears
   // it once, in plain words (nothing while at least one tunnel lives: codes keep working).
-  const EMPTY_NOTE_MS = 60_000, REFILL_MS = 15_000;
+  const EMPTY_NOTE_MS = 60_000, REFILL_MS = 15_000, RESTART_MS = Number(process.env.PAIRBROWSE_TEST_RESTART_MS) || 2000;
   let emptySince = 0, refillTimer = null;
+  function refillSoon(port, ms) {
+    clearTimeout(refillTimer);
+    refillTimer = setTimeout(() => refill(port), ms);
+    refillTimer.unref?.();
+  }
   function refill(port) {
     clearTimeout(refillTimer); refillTimer = null;
     fill(port).then(() => {
@@ -174,7 +195,9 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     try {
       const codes = invites.savedCodes();
       if (!codes.length) return rmSync(stateFile, { force: true });
-      const tunnels = pool.filter((t) => Number.isInteger(t.pid) && t.port).map((t) => ({ url: t.url, pid: t.pid, port: t.port, log: t.log || null }));
+      // Only Quick Tunnels are kept across a restart (their keeper outlives the helper); the
+      // user's own ends with the helper and the next run starts it again on the same address.
+      const tunnels = pool.filter((t) => !t.own && Number.isInteger(t.pid) && t.port).map((t) => ({ url: t.url, pid: t.pid, port: t.port, log: t.log || null }));
       writeFileSync(stateFile, JSON.stringify({ v: 1, at: Date.now(), guestPort: guestPortWanted, invites: codes, approvals: approvals.saved(), tunnels }), { mode: 0o600 });
     } catch (e) { log(`sharing state not saved: ${e?.message || e}`); }
   }
@@ -186,7 +209,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       const ids = new Set(invites.list().filter((i) => i.share === "code").map((i) => i.id));
       approvals.restore(saved.approvals, (id) => ids.has(id));
       const keep = ids.size > 0 && Number.isInteger(saved.guestPort) && saved.guestPort > 0;
-      if (keep) { guestPortWanted = saved.guestPort; wanted = true; }
+      if (keep) { guestPortWanted = pinnedPort || saved.guestPort; wanted = true; }
       for (const s of Array.isArray(saved.tunnels) ? saved.tunnels.slice(0, POOL) : []) {
         const t = await adoptTunnel(s).catch(() => null);
         if (!t) continue;
@@ -263,11 +286,14 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       const asking = approvals.list();
       // A code's current string: the first live address (the one it was made with may be gone).
       const live = pool.find((t) => alive(t, guestPortWanted || t.port));
-      const codeOf = (i) => (i.share === "code" && live ? `\n  code: ${encodeJoinCode({ url: live.url, key: i.key, role: i.role, mode: i.mode, label: codeLabel() })}` : "");
+      const keys = new Map(invites.savedCodes().map((i) => [i.id, i.key])); // list() leaves keys out
+      const codeOf = (i) => (i.share === "code" && live && keys.has(i.id) ? `\n  code: ${encodeJoinCode({ url: live.url, key: keys.get(i.id), role: i.role, mode: i.mode, label: codeLabel() })}` : "");
       const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${i.role === "drive" ? "can drive" : "watch only"}, ${i.share === "code" ? (i.mode === "shared" ? "join code (shared browser)" : "join code (follow)") : "link"}, until ${formatTime(i.expiresAt)}` + codeOf(i) +
         asking.filter((r) => r.inviteId === i.id).map((r) => `\n  - request ${r.id}: ${r.name}${r.app ? ` (${r.app})` : ""}, ${r.state === "pending" ? "waiting for the user's OK" : r.state === "approved" ? "let in" : r.state === "removed" ? "removed" : "turned away"}`).join(""));
       const dev = devShare.list().map((d) => `- dev server localhost:${d.port}, shared with joiners at ${d.url}`);
-      return { text: [...lines, ...dev].join("\n") || "No invites." };
+      // The user's own tunnel: said once, in plain words (the default relay needs no mention).
+      const how = own && invites.list().some((i) => i.share === "code") ? [`Join codes go through ${via()}.`] : [];
+      return { text: [...lines, ...dev, ...how].join("\n") || "No invites." };
     }
     if (action === "approve" || action === "deny") {
       answering = String(args.id ?? "");
@@ -297,6 +323,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     if (cleanName(args.name, "") && !savedName(config)) { try { saveParticipantName(config, cleanName(args.name)); } catch {} }
     const hostName = cleanName(args.name, "") || codeLabel(true);
     const share = args.share || (inviteBase ? "link" : "code");
+    if (share === "code" && tunnelProblem) return fail(`Sharing couldn't start: ${tunnelProblem}. Nothing was shared.`);
     let invite;
     try { invite = invites.create({ role: args.role, label: args.label, hours: args.hours, share, mode: args.mode || "shared" }); } catch (e) { return fail(e.message); }
     const live = await ensureLiveView();
@@ -314,6 +341,12 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
         : "They can watch the page, tabs and activity, but not click, type or see remembered details or passwords.";
     const lines = [`Invite ${invite.id} for ${invite.label} (${invite.role}), until ${formatTime(invite.expiresAt)}. ${rights}`];
     if (share === "code") {
+      // A pinned guest port taken by another program: the user's tunnel would reach the wrong
+      // thing (nothing of ours), so nothing is shared.
+      if (pinnedPort && live.guestPort !== pinnedPort) {
+        invites.revoke(invite.id);
+        return fail(`Sharing couldn't start: port ${pinnedPort} (sharing.guestPort in config.json) is in use by another program. Free it or pin another port, and point your tunnel at it. Nothing was shared.`);
+      }
       let t;
       try { t = await ensureTunnel(live); } catch (e) {
         invites.revoke(invite.id);
@@ -321,7 +354,9 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       }
       lines.push(`Join code: ${encodeJoinCode({ url: t.url, key: invite.key, role: invite.role, mode: invite.mode, label: hostName === "The host" ? "" : hostName })}`);
       lines.push(`The person pastes it into their own PairBrowse ("join this session: <code>"). You approve them when they ask: "<their name> wants to join" shows in the side panel, and in the bar at the bottom of your tab or a notification (Allow / Deny), and here.` +
-        " It goes through a free relay (no account, no uptime guarantee); it keeps working through a restart of PairBrowse (they reconnect by themselves) and ends when you close the browser window, revoke it, or it expires.");
+        (own
+          ? ` It goes through ${via()}; their PairBrowse takes that address once ${t.host} is in their joinHosts (config.json). ${tunnelSpec.stable ? "It keeps working through a restart of PairBrowse (the connection comes back on the same address and they reconnect by themselves)" : "The address changes when the connection restarts (give ngrok a reserved domain to keep it): then list shows the new code"} and ends when you close the browser window, revoke it, or it expires.`
+          : " It goes through a free relay (no account, no uptime guarantee); it keeps working through a restart of PairBrowse (they reconnect by themselves) and ends when you close the browser window, revoke it, or it expires."));
     } else if (inviteBase) {
       lines.push(`Link: ${inviteBase}/${invite.key}/`);
       lines.push(`It works for people who can reach ${new URL(inviteBase).host} (for example, on the user's tailnet), once that name forwards to 127.0.0.1:${port}.`);

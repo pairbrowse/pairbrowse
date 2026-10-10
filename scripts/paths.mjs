@@ -69,6 +69,12 @@ export const DEFAULT_CONFIG = {
   // Joining: besides Cloudflare Quick Tunnel addresses (*.trycloudflare.com), the https host
   // names you trust in join codes (say, a teammate's own tunnel name).
   joinHosts: [],
+  // Sharing's public address. tunnel: { "kind": "quick" } (default: a Cloudflare Quick Tunnel, no
+  // account), or your own: { "kind": "cloudflare", "token", "hostname" }, { "kind": "ngrok",
+  // "authtoken", "domain" }, { "kind": "tailscale" }, { "kind": "command", "run", "url", "env" }
+  // (docs/sharing.md, "Using your own tunnel"). guestPort pins the port join codes are served
+  // on (0: random), for a tunnel whose target is set on the provider's side.
+  sharing: { tunnel: { kind: "quick" }, guestPort: 0 },
 };
 
 export function loadConfig() {

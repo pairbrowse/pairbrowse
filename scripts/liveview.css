@@ -4,14 +4,101 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
-  display: grid; grid-template-rows: minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr);
+  display: grid; grid-template-rows: minmax(0, 1fr) auto; grid-template-columns: auto minmax(0, 1fr);
   color: var(--ink); background: var(--bg); font: var(--fs-3)/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden;
 }
 button { font: inherit; color: inherit; }
 svg { flex: none; display: block; }
 
+/* ---------- the workspace column (left): tabs, agents, guests, session ---------- */
+/* Open (240 px), a rail of icons (44 px) or hidden; the window and the activity footer keep their
+   own left edge, which is the column's border. */
+.side {
+  grid-row: 1 / span 2; grid-column: 1; width: 240px; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column;
+  background: var(--sidebar); transition: width var(--t);
+}
+.side[data-state="rail"] { width: 44px; }
+.side[data-state="hidden"] { display: none; }
+.side > header { display: flex; align-items: flex-end; gap: 6px; height: 42px; padding-bottom: 10px; box-sizing: border-box; padding: 0 6px 0 14px; flex: none; }
+.side > header h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-2); font-weight: 650; color: var(--ink-2); white-space: nowrap; }
+.side .collapse { color: var(--ink-2); }
+.side .collapse svg { transition: transform var(--t); }
+.side[data-state="rail"] > header { padding: 0 6px; justify-content: center; }
+.side[data-state="rail"] > header h2, .side[data-state="rail"] .body { display: none; }
+.side[data-state="rail"] .collapse svg { transform: rotate(180deg); }
+.side .rail { display: none; }
+.side[data-state="rail"] .rail { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; }
+.rail-btn {
+  position: relative; display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.rail-btn:hover { background: var(--hover); color: var(--ink); }
+.rail-btn:focus-visible, .side .disclose:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rail-btn .n {
+  position: absolute; right: -2px; bottom: -2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px;
+  background: var(--elevated); color: var(--ink-2); box-shadow: 0 0 0 1px var(--edge);
+  font-size: var(--fs-1); font-weight: var(--fw-name); line-height: 15px; text-align: center; font-variant-numeric: tabular-nums;
+}
+.rail-btn .n:empty { display: none; }
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.side .body { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; padding: 0 8px 12px; }
+.side .sec + .sec { margin-top: 6px; }
+.side .sec h2 { margin: 0; font-size: var(--fs-2); }
+.side .disclose {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px; border: 0; border-radius: var(--r-1);
+  background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: 650; text-align: left; cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.side .disclose::before { content: ""; flex: none; width: 6px; height: 6px; margin: 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--t); }
+.side .disclose[aria-expanded="true"]::before { transform: rotate(45deg); }
+.side .disclose:hover { background: var(--hover); color: var(--ink); }
+.side .count { margin-left: auto; font-weight: var(--fw-name); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.rows { margin: 2px 0 0; padding: 0; list-style: none; }
+.rows .empty { padding: 4px 6px; font-size: var(--fs-2); color: var(--ink-2); }
+/* A tab: its title, then who holds it (a dot and words), with Claude's spark when it works there. */
+.rows button {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 6px; align-items: center; width: 100%; padding: 6px; border: 0; border-radius: var(--r-1);
+  background: transparent; color: var(--ink); text-align: left; cursor: pointer; font-size: var(--fs-2); transition: background var(--t);
+}
+.rows button:hover:not(:disabled) { background: var(--hover); }
+.rows button:disabled { cursor: default; opacity: 1; }
+.rows button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rows button[aria-current="true"] { background: var(--hover); }
+.rows .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-name); }
+.rows .claude { width: 14px; height: 14px; color: var(--spark); grid-column: 2; grid-row: 1; }
+.rows .who { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink-2); }
+.rows .who span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rows .who i { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--agent, var(--muted)); }
+.rows .who[data-waiting="true"] { color: var(--accent-ink); }
+/* An agent: avatar, name and app, its state in words, where; a guest: name and what they may do. */
+.rows .person { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 0 8px; align-items: center; padding: 6px; font-size: var(--fs-2); }
+.rows .person > :not(.avatar) { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rows .person strong { color: var(--ink); font-weight: var(--fw-name); }
+.rows .person .app { color: var(--ink-2); font-weight: 400; }
+.rows .person small { font-size: var(--fs-2); color: var(--ink-2); }
+.rows .person .st { color: var(--ink); font-weight: var(--fw-name); }
+.rows .avatar {
+  grid-row: span 3; align-self: start; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--spark); color: #0B1421; /* the sheet's dark --bg: dark ink on every participant color in both schemes (white is 1.7:1 on cyan and green) */
+  font-size: var(--fs-2); font-weight: var(--fw-name); line-height: 1;
+}
+.rows .avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
+.rows .guest { display: flex; align-items: center; gap: 8px; padding: 6px; font-size: var(--fs-2); color: var(--ink); }
+.rows .guest i { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--muted); }
+.rows .guest span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rows .guest small { margin-left: auto; flex: none; font-size: var(--fs-2); color: var(--ink-2); }
+.facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 2px 0 0; padding: 4px 6px; font-size: var(--fs-2); }
+.facts dt { color: var(--ink-2); }
+.facts dd { margin: 0; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.facts b { font-weight: var(--fw-name); }
+.facts .empty { grid-column: 1 / -1; color: var(--ink-2); }
+.side-btn[aria-expanded="true"], .timeline-btn[aria-expanded="true"] { color: var(--accent-ink); background: var(--hover); }
+
 /* ---------- the window ---------- */
 .window {
+  grid-column: 2;
   position: relative; display: flex; flex-direction: column; min-height: 0;
   overflow: hidden;
   background: var(--bg); border-left: 1px solid var(--edge);
@@ -136,7 +223,7 @@ body[data-s="reconnecting"] .overlay, body[data-s="closed"] .overlay { display: 
 .stage:focus .hint { opacity: 1; transform: none; }
 
 /* activity, under the window */
-.activity { display: flex; align-items: center; gap: 12px; padding: 5px 12px; min-height: 32px; border-top: 1px solid var(--edge); border-left: 1px solid var(--edge); background: var(--bg); }
+.activity { grid-column: 2; display: flex; align-items: center; gap: 12px; padding: 5px 12px; min-height: 32px; border-top: 1px solid var(--edge); border-left: 1px solid var(--edge); background: var(--bg); }
 .driver { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-2); color: var(--muted); white-space: nowrap; flex: none; }
 .driver b { color: var(--ink); font-weight: var(--fw-name); }
 .driver[data-who="you"] b { color: var(--accent-ink); }
@@ -170,7 +257,26 @@ body[data-s="reconnecting"] .overlay, body[data-s="closed"] .overlay { display: 
 }
 .drawer[data-open="true"] { transform: none; visibility: visible; transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1); }
 .drawer header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--edge); }
-.drawer header h2 { margin: 0; font-size: 14px; font-weight: 650; flex: 1; }
+/* Profile | Timeline */
+.dtabs { display: flex; gap: 4px; flex: 1; }
+.dtabs [role="tab"] {
+  height: 30px; padding: 0 8px; border: 0; border-radius: var(--r-1) var(--r-1) 0 0; background: transparent; cursor: pointer;
+  color: var(--ink-2); font-size: var(--fs-3); font-weight: 650; box-shadow: inset 0 -2px 0 transparent; transition: color var(--t), box-shadow var(--t);
+}
+.dtabs [role="tab"]:hover { color: var(--ink); }
+.dtabs [role="tab"][aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+.dtabs [role="tab"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.jhead { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.jhead .note { flex: 1; min-width: 0; margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
+.journal { margin: 0; padding: 0; list-style: none; }
+.journal li { padding: 6px 0; border-bottom: 1px solid var(--edge); font-size: var(--fs-2); color: var(--ink); overflow-wrap: anywhere; }
+.journal .page { display: block; color: var(--ink); font-weight: var(--fw-name); }
+.journal .acts { color: var(--ink-2); }
+.journal .acts strong { color: var(--ink); font-weight: var(--fw-name); }
+.journal .acts code { font-family: var(--mono); font-size: var(--fs-1); padding: 0 5px; border-radius: var(--r-1); background: var(--hover); }
+#journal-turn li:not(.empty)::before { content: "→ " / ""; color: var(--accent-ink); }
+#journal-left li:not(.empty)::before { content: "○ " / ""; color: var(--warn); }
+.journal .empty { color: var(--ink-2); }
 .drawer .body { flex: 1; overflow: auto; padding: 4px 14px 16px; scrollbar-width: thin; }
 .drawer h3 { margin: 16px 0 4px; font-size: var(--fs-2); font-weight: 650; color: var(--ink-2); }
 .drawer .note { margin: 0 0 8px; font-size: var(--fs-2); color: var(--muted); line-height: 1.45; }
@@ -209,8 +315,8 @@ body[data-s="reconnecting"] .overlay, body[data-s="closed"] .overlay { display: 
 .profile-btn[aria-expanded="true"] { color: var(--accent-ink); background: var(--hover); }
 
 /* Invite links: the Profile panel is the owner's only; a watch link has no controls at all. */
-body:not([data-role="owner"]) #profile-btn, body:not([data-role="owner"]) #drawer { display: none; }
-body[data-role="watch"] #newtab, body[data-role="watch"] .tab .close, body[data-role="watch"] .toolbar .nav,
+body:not([data-role="owner"]) #profile-btn, body:not([data-role="owner"]) #timeline-btn, body:not([data-role="owner"]) #drawer { display: none; }
+body[data-role="watch"] #newtab, body[data-role="watch"] .tab .close, body[data-role="watch"] .toolbar .nav:not(.side-btn),
 body[data-role="watch"] #hint, body[data-role="watch"] #turn { display: none; }
 body[data-role="watch"] .tab, body[data-role="watch"] .url { cursor: default; }
 [hidden] { display: none !important; }
@@ -273,3 +379,9 @@ body:not([data-role="owner"]) #fit { display: none; }
 .who-filter option { background: var(--chrome); color: var(--ink); }
 .who-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (max-width: 560px) { .who-filter { display: none; } }
+
+/* A narrow window: the open column lies over the page; the rail and hidden states are as wide. */
+@media (max-width: 640px) {
+  .side[data-state="open"] { position: absolute; z-index: 6; top: 0; bottom: 0; left: 0; width: min(280px, 100%); box-shadow: 0 12px 32px oklch(0 0 0 / 0.28); }
+  .side[data-state="open"] ~ .window, .side[data-state="open"] ~ .activity { grid-column: 1 / -1; }
+}

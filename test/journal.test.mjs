@@ -220,3 +220,32 @@ test("a title that comes after the page was written is picked up, with nothing e
   for (let i = 0; i < 40 && read("late-example-2026-10-10-20-05.json").done[0] === "https://late.example/app"; i++) await new Promise((r) => setTimeout(r, 100));
   assert.deepEqual(read("late-example-2026-10-10-20-05.json").done, ["Dashboard <https://late.example/app>"]);
 });
+
+test("read(): the Timeline's view of the log, masked again on read, capped, null without a run", async () => {
+  const later = start + 100 * 24 * 3600_000; // every run above is stale by then
+  const page = tab("https://secret.example/login", "Log in");
+  const mask = (s) => s.replaceAll("hunter2", "[PASSWORD]");
+  const j = createJournal({ session: () => "timeline", openPages: async () => [page], mask, now: () => later, delayMs: 10 });
+  assert.equal(j.read(), null, "no run yet");
+  j.activity("Typed hunter2 into Password", "Claude", page);
+  await j.flushNow();
+  let r = j.read();
+  assert.match(r.done[0], /\[PASSWORD\]/);
+  assert.doesNotMatch(JSON.stringify(r), /hunter2/);
+  assert.equal(r.status, "in progress");
+  // A run_save takeover writes lines the journal never masked: masked on read all the same.
+  const file = j.file();
+  const raw = JSON.parse(readFileSync(file, "utf8"));
+  raw.done = Array.from({ length: 200 }, (_, i) => `Page ${i}: typed hunter2`);
+  raw.yourTurn = ["Enter hunter2 again"];
+  raw.left = ["hunter2 field"];
+  writeFileSync(file, JSON.stringify(raw));
+  r = j.read();
+  assert.doesNotMatch(JSON.stringify(r), /hunter2/);
+  assert.equal(r.done.length, 150, "capped");
+  assert.equal(r.done.at(-1), "Page 199: typed [PASSWORD]");
+  assert.deepEqual(r.yourTurn, ["Enter [PASSWORD] again"]);
+  assert.deepEqual(r.left, ["[PASSWORD] field"]);
+  assert.equal(typeof r.updatedAt, "string");
+  assert.deepEqual(Object.keys(r).sort(), ["done", "left", "name", "status", "updatedAt", "yourTurn"]);
+});

@@ -6,7 +6,9 @@
 // a new Claude Code session or a helper restart even when the agent never called run_save.
 // Written at most every few seconds, from a timer: it never holds up a call. Values never
 // reach it beyond what the bar shows (names for passwords; card numbers and codes masked).
-import { runFile, readRuns, currentFile, STALE_MS } from "../runs.mjs";
+// read() gives the live view's Timeline the current run, every line masked again on read (a
+// run_save can take the file over with lines the journal never masked), capped, never polled.
+import { runFile, readRuns, currentFile, STALE_MS, liveAutoRun } from "../runs.mjs";
 import { readJson, writeJsonAtomic, within } from "../util.mjs";
 
 const FLUSH_MS = 3000;
@@ -206,6 +208,27 @@ export function createJournal({ session = () => "default", openPages = async () 
     await flush();
   }
 
+  // The run as the Timeline shows it: the file being kept (following a run_save's takeover, read
+  // only: nothing here changes what the log keeps), or the auto run still going after a helper
+  // restart; null when there is none.
+  function read() {
+    let run;
+    if (file) {
+      run = readJson(file);
+      for (let hops = 0; run?.mergedInto && hops < 3; hops++) run = readJson(runFile(run.mergedInto));
+    } else run = liveAutoRun(now());
+    if (!run || typeof run !== "object") return null;
+    const list = (a) => (Array.isArray(a) ? a : []);
+    return {
+      name: clean(run.name).slice(0, 120),
+      status: run.status === "finished" ? "finished" : "in progress",
+      done: list(run.done).slice(-MAX_LINES).map((l) => clean(l).slice(0, 400)),
+      yourTurn: uniq(list(run.yourTurn).map((x) => clean(x).slice(0, 140))).slice(0, 20),
+      left: uniq(list(run.left).map((x) => clean(x).slice(0, 80))).slice(0, 50),
+      updatedAt: typeof run.updatedAt === "string" ? run.updatedAt.slice(0, 40) : "",
+    };
+  }
+
   onActivity(activity);
-  return { activity, status, ranLeft, flushNow, file: () => file };
+  return { activity, status, ranLeft, flushNow, read, file: () => file };
 }

@@ -105,11 +105,43 @@ test("every route needs its right; routes that aren't listed are refused", async
     for (const k of [w.key, d.key]) {
       assert.equal((await request(view.port, "GET", `/${k}/joins.json`)).status, 403, "join requests are the owner's");
       assert.equal((await request(view.port, "POST", `/${k}/approve`, { body: { id: "r1", allow: true } })).status, 403);
+      assert.equal((await request(view.port, "GET", `/${k}/journal.json`)).status, 403, "the goal log is the owner's");
     }
+    assert.equal((await request(view.port, "GET", `/${key}/journal.json`)).status, 404, "no journal given");
     for (const [method, path] of [["GET", "nope"], ["DELETE", ""], ["GET", "input"], ["PUT", "profile"], ["GET", "approve"]]) {
       assert.equal((await request(view.port, method, `/${key}/${path}`)).status, 404, `${method} /${path}`);
     }
     assert.equal((await request(view.port, "POST", `/${key}/approve`, { body: { id: "r1", allow: true } })).status, 404, "no such request");
+  } finally { view.close(); }
+});
+
+test("the timeline route serves the owner the goal log and nobody else", async () => {
+  const invites = createInvites();
+  const run = { name: "r", status: "in progress", done: ["a.example <https://a.example/>: Typed into Email"], yourTurn: [], left: ["VAT number"], updatedAt: "2026-10-11T10:00:00.000Z" };
+  let give = run;
+  let calls = 0;
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites, journal: () => { calls++; return give; } });
+  const key = view.url.split("/").at(-2);
+  try {
+    const r = await request(view.port, "GET", `/${key}/journal.json`);
+    assert.equal(r.status, 200);
+    assert.match(r.headers["content-type"], /^application\/json/);
+    assert.equal(r.headers["x-content-type-options"], "nosniff");
+    assert.deepEqual(JSON.parse(r.text), run);
+    for (const role of ["watch", "drive"]) {
+      const i = invites.create({ role, label: role });
+      assert.equal((await request(view.port, "GET", `/${i.key}/journal.json`)).status, 403, role);
+    }
+    const c = invites.create({ role: "drive", label: "C", share: "code" });
+    assert.notEqual((await request(view.guestPort, "GET", `/${c.key}/journal.json`)).status, 200, "the join-code port never serves it");
+    assert.notEqual((await request(view.guestPort, "GET", `/${key}/journal.json`)).status, 200, "not even with the owner's key");
+    assert.equal(calls, 1, "read only when the owner asks");
+    give = null;
+    const none = await request(view.port, "GET", `/${key}/journal.json`);
+    assert.equal(none.status, 200);
+    assert.equal(none.text, "null");
+    const state = JSON.parse((await request(view.port, "GET", `/${key}/state.json`)).text);
+    assert.equal("journal" in state, false, "state.json stays without the goal log");
   } finally { view.close(); }
 });
 
@@ -189,4 +221,172 @@ test("showing a tab: one CDP session at a time, each tab wired once, all release
   assert.ok(last.detached, "close releases the shown tab");
   assert.ok(last.calls.includes("Page.stopScreencast"));
   assert.ok(last.calls.includes("Emulation.clearDeviceMetricsOverride"));
+});
+
+// ---- the page's markup and script, read as files (no browser) ----
+import { readFileSync } from "node:fs";
+const pageFile = (name) => readFileSync(new URL(`../scripts/${name}`, import.meta.url), "utf8");
+const count = (text, needle) => text.split(needle).length - 1;
+
+test("the live view keeps every control's id once, and the workspace column's are named", () => {
+  const html = pageFile("liveview.html");
+  const ids = ["tabs", "newtab", "state", "back", "forward", "reload", "url", "url-input", "where", "collaboration-status", "overview-btn", "overview", "profile-btn", "fit", "turn", "joins", "drawer", "drawer-close", "details", "add-detail", "secrets", "add-secret", "profile-msg", "stage", "frame", "screen", "skeleton", "hint", "driver", "who-filter", "activity",
+    "side", "side-btn", "side-collapse", "side-rail", "side-body", "side-tabs", "side-agents", "side-guests", "side-session", "timeline-btn", "drawer-tab-profile", "drawer-tab-timeline", "profile-body", "timeline-body", "journal-refresh", "journal-done", "journal-turn", "journal-left", "journal-msg"];
+  for (const id of ids) assert.equal(count(html, `id="${id}"`), 1, id);
+  for (const s of ["tabs", "agents", "guests", "session"]) {
+    const tag = html.match(new RegExp(`<button[^>]*id="side-h-${s}"[^>]*>`))?.[0];
+    assert.ok(tag, s);
+    assert.match(tag, /aria-expanded="(true|false)"/);
+    const target = tag.match(/aria-controls="([^"]+)"/)?.[1];
+    assert.equal(count(html, `id="${target}"`), 1, `${s} controls an element there`);
+    assert.match(html, new RegExp(`id="rail-${s}"[^>]*>[\\s\\S]*?<span class="sr">[^<]+</span>`), `rail-${s} has a name`);
+  }
+  for (const id of ["side-btn", "timeline-btn", "side-collapse"]) assert.match(html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))[0], /aria-label="[^"]+"/, id);
+  assert.doesNotMatch(html, /<script>|<style|\sstyle=|\son[a-z]+=/i);
+});
+
+test("the live view adds no timer, observer or poll; storage keys and the journal fetch are single", () => {
+  const js = pageFile("liveview.js");
+  assert.equal(count(js, "setInterval("), 1, "the countdown tick only");
+  assert.equal(count(js, "new ResizeObserver("), 1);
+  assert.equal(count(js, "requestAnimationFrame("), 1, "the input batch only");
+  for (const x of ["MutationObserver", "IntersectionObserver"]) assert.equal(count(js, x), 0, x);
+  assert.equal(count(js, 'localStorage.getItem("pb-view")'), 1);
+  assert.equal(count(js, 'localStorage.getItem("pb-fit")'), 1);
+  assert.equal(count(js, 'fetch(base + "journal.json"'), 1);
+  const css = pageFile("liveview.css");
+  assert.doesNotMatch(css, /backdrop-filter|blur\(/);
+  assert.deepEqual(css.match(/font-size:\s*[\d.]+px/g), ["font-size: 15px"], "type sizes come from --fs-* (the overlay heading aside)");
+  assert.equal(count(css, "infinite"), 3, "pulse x2 and the skeleton's sheen, nothing new");
+});
+
+// ---- the workspace column and the Timeline, rendered (headless Patchright, the real server) ----
+import { patchright } from "./live.mjs";
+const runtime = process.env.PAIRBROWSE_TEST_RUNTIME?.replace(/^~/, process.env.HOME);
+
+test("the workspace column draws only what is seen; the Timeline reads the log on open and Refresh", { skip: !runtime }, async () => {
+  const { ctx, pages } = fakeTabs(3);
+  const invites = createInvites();
+  let calls = 0;
+  const journal = () => { calls++; return { name: "shop.example 2026-10-11 10:00", status: "in progress", done: ["Sign up <https://shop.example/signup>: Filled **Email**; Clicked **Continue**"], yourTurn: ["Enter the code"], left: ["VAT number"], updatedAt: new Date(Date.now() - 5 * 60_000).toISOString() }; };
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => pages[0].url(), invites, journal });
+  const { chromium } = patchright(runtime);
+  const browser = await chromium.launch();
+  const watcher = invites.create({ role: "watch", label: "Wendy" });
+  const guestStream = await openStream(view.port, `/${watcher.key}/events`);
+  const errors = [];
+  try {
+    const context = await browser.newContext({ viewport: { width: 1100, height: 720 } });
+    const page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(view.url);
+    await page.waitForFunction(() => document.querySelectorAll("#side-tabs li").length === 3);
+    view.setBoard({ people: [{ who: "Ada · Claude Code", kind: "agent", color: "#e9763f", status: "working", tab: "shop.example/signup", task: "Signing up" }, { who: "Bo · Codex", kind: "agent", color: "", status: "you", tab: "" }], messages: [] });
+    view.setCollaboration({ participants: [{ id: "a", label: "Ada · Claude Code" }, { id: "c", label: "Cy" }], owner: null, active: null, humanUntil: 0 });
+    view.setSession({ name: "client-x", where: "Local" });
+    await page.waitForFunction(() => document.querySelectorAll("#side-agents li").length === 3 && /client-x/.test(document.querySelector("#side-session").textContent));
+    const agents = await page.locator("#side-agents").innerText();
+    assert.match(agents, /Ada/); assert.match(agents, /Claude Code/); assert.match(agents, /working/); assert.match(agents, /waiting for their person/); assert.match(agents, /Cy/);
+    assert.match(await page.locator("#side-guests").innerText(), /Wendy[\s\S]*\(watching\)/);
+    // Rail, remembered across a reload; a rail button opens its section with focus on it.
+    await page.click("#side-collapse");
+    assert.equal(await page.getAttribute("#side", "data-state"), "rail");
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("pb-view"))).sidebar, "rail");
+    await page.reload();
+    await page.waitForSelector('#side[data-state="rail"]');
+    await page.waitForFunction(() => document.querySelector("#side-n-tabs").textContent === "3");
+    await page.click("#rail-agents");
+    assert.equal(await page.getAttribute("#side", "data-state"), "open");
+    assert.equal(await page.getAttribute("#side-h-agents", "aria-expanded"), "true");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "side-h-agents");
+    // Hidden: a new tab changes nothing inside; shown again, it is drawn at once.
+    await page.click("#side-btn");
+    assert.equal(await page.getAttribute("#side", "data-state"), "hidden");
+    assert.equal(await page.getAttribute("#side-btn", "aria-expanded"), "false");
+    pages.push(Object.assign(new EventEmitter(), { url: () => "about:blank#3", title: async () => "Tab 3", context: () => ctx, bringToFront: async () => {}, evaluate: async () => null }));
+    await view.refreshTabs();
+    await page.waitForFunction(() => document.querySelectorAll("#tabs .tab").length === 4);
+    assert.equal(await page.evaluate(() => document.querySelector("#side-tabs").childElementCount), 3);
+    await page.click("#side-btn");
+    assert.equal(await page.evaluate(() => document.querySelector("#side-tabs").childElementCount), 4);
+    // Folded: not redrawn on the next tabs event.
+    await page.click("#side-h-tabs");
+    assert.equal(await page.isHidden("#side-tabs"), true);
+    await page.evaluate(() => { window.__marker = document.querySelector("#side-tabs li"); });
+    await view.refreshTabs();
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(() => document.querySelector("#side-tabs li") === window.__marker), true);
+    // The Timeline: fetched on open and on Refresh only.
+    assert.equal(calls, 0);
+    await page.click("#timeline-btn");
+    await page.waitForFunction(() => document.querySelectorAll("#journal-done li").length === 1);
+    assert.equal(calls, 1);
+    assert.equal(await page.getAttribute("#drawer-tab-timeline", "aria-selected"), "true");
+    const done = await page.locator("#journal-done").innerText();
+    assert.match(done, /Sign up/); assert.match(done, /Clicked Continue/);
+    assert.match(await page.locator("#journal-meta").innerText(), /Saved 5 min ago/);
+    await page.waitForTimeout(2500);
+    assert.equal(calls, 1, "never polled");
+    await page.click("#journal-refresh");
+    await page.waitForFunction(() => !document.querySelector("#journal-msg").textContent);
+    for (let i = 0; i < 20 && calls < 2; i++) await wait(50);
+    assert.equal(calls, 2);
+    await page.click("#drawer-tab-profile");
+    assert.equal(await page.isVisible("#profile-body"), true);
+    assert.equal(await page.isHidden("#timeline-body"), true);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.getAttribute("#drawer", "data-open"), "false");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "profile-btn", "focus goes back to the button");
+    // Keyboard: Tab from the column's top reaches the column button, with a visible ring.
+    await page.click(".side > header h2");
+    let reached = false;
+    for (let i = 0; i < 40 && !reached; i++) { await page.keyboard.press("Tab"); reached = await page.evaluate(() => document.activeElement?.id === "side-btn"); }
+    assert.ok(reached, "Tab reaches the column button");
+    assert.notEqual(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), "none");
+    // A watch link keeps the column button (Cmd/Ctrl+B hides the column there too, so it must come back).
+    const watchPage = await context.newPage();
+    watchPage.on("pageerror", (e) => errors.push(e.message));
+    await watchPage.goto(`http://127.0.0.1:${view.port}/${watcher.key}/`);
+    await watchPage.waitForSelector('body[data-role="watch"]');
+    await watchPage.waitForSelector("#side-btn", { state: "visible" });
+    assert.notEqual(await watchPage.evaluate(() => getComputedStyle(document.getElementById("side-btn")).display), "none");
+    await watchPage.waitForSelector('#side:not([data-state="hidden"])');
+    await watchPage.click(".side > header h2");
+    await watchPage.keyboard.press("Control+b");
+    assert.equal(await watchPage.getAttribute("#side", "data-state"), "hidden");
+    await watchPage.click("#side-btn");
+    assert.notEqual(await watchPage.getAttribute("#side", "data-state"), "hidden");
+    await watchPage.close();
+    // Reduced motion: the column's width change runs without a transition.
+    const calm = await browser.newContext({ viewport: { width: 1100, height: 720 }, reducedMotion: "reduce" });
+    const still = await calm.newPage();
+    await still.goto(view.url);
+    assert.equal(await still.evaluate(() => getComputedStyle(document.querySelector("#side")).transitionDuration), "0.001s");
+    await calm.close();
+    // Narrow: the open column lies over the toolbar; Escape inside it folds it to the rail.
+    const narrow = await browser.newContext({ viewport: { width: 420, height: 720 } });
+    const small = await narrow.newPage();
+    await small.goto(view.url);
+    await small.waitForSelector('#side[data-state="open"]');
+    await small.focus("#side-h-tabs");
+    await small.keyboard.press("Escape");
+    await small.waitForSelector('#side[data-state="rail"]');
+    assert.equal(await small.evaluate(() => document.activeElement.id), "side-collapse");
+    await narrow.close();
+    assert.deepEqual(errors, []);
+  } finally {
+    guestStream.close();
+    await browser.close();
+    view.close();
+  }
+});
+
+test("ago: minutes while fresh, the date once older than an hour (a run saved yesterday never reads as today)", async () => {
+  const { ago } = await import("../scripts/browser/panel/common.js");
+  const now = Date.parse("2026-10-11T12:00:00Z");
+  assert.equal(ago(new Date(now - 10_000).toISOString(), now), "just now");
+  assert.equal(ago(new Date(now - 5 * 60_000).toISOString(), now), "5 min ago");
+  const day = new Date(now - 86_400_000);
+  assert.ok(ago(day.toISOString(), now).includes(day.toLocaleDateString([], { dateStyle: "short" })));
+  assert.equal(ago("not a date", now), "");
 });

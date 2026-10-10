@@ -311,6 +311,9 @@ const sharing = createSharing({
   config, log, host: HOST, notify: panel.notify, hostNote, joinAlert: (entry) => joinPrompt.alert(entry),
   view: {
     secretDomains, screens, remoteAgents,
+    // The live view's Timeline (owner only). `journal` is declared further down: this runs only
+    // when the route is hit, after startup, so it is always there by then.
+    journal: () => journal.read(),
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
     // their pointer alone, or just being in the tab, leaves the page as it was.
     // Their mark (a dot in their pointer's color) shows on the tab's icon here while they're in it.

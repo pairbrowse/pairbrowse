@@ -90,11 +90,12 @@ async function release(cdp) {
 // onJoinerPerson(page, who, did, acting, changed, ago): a drive joiner uses their copy of a tab by
 // hand (agents here wait, as for a person here; changed: they navigated, opened or closed it).
 // onJoinerActivity(page, text, who, from): their agent acted there.
+// journal(): the goal log for the Timeline (journal.mjs read), or null.
 // shared: the rest of what shared tabs carry (see sharedDefaults): form values, their agents'
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {} }) {
+  onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -584,6 +585,9 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     // The Profile panel: remembered details in full, passwords by name and sites only.
     { method: "GET", path: "profile.json", right: "profile", handler: ({ res }) => profile ? json(res, 200, profile.get()) : plain(res, 404) },
     { method: "POST", path: "profile", right: "profile", handler: changeProfile },
+    // The Timeline: the goal log's lines (journal.mjs read, masked again there), read when the
+    // owner opens it or presses Refresh; null while no run is open.
+    { method: "GET", path: "journal.json", right: "journal", handler: ({ res }) => journal ? json(res, 200, journal() ?? null) : plain(res, 404) },
     // The session picker (an extension page, with the owner's key from the side panel's memory):
     // the saved sessions, and the person's pick. picker: { state(), pick(op) } from the helper.
     { method: "GET", path: "sessions.json", right: "session", handler: ({ res }) => picker ? json(res, 200, picker.state()) : plain(res, 404) },

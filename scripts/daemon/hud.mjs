@@ -152,6 +152,14 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     if (page) await applySpark(page, tabIcon(page));
   }
   const sparkPage = (participant) => sparks.get(participant)?.page;
+  // A tab closed: no spark, shared spark or person mark stays on it (each would hold the page).
+  function forgetPage(page) {
+    let moved = false;
+    for (const [participant, s] of sparks) if (s.page === page) { sparks.delete(participant); moved = true; }
+    sharedSparks.delete(page);
+    personMarks.delete(page);
+    if (moved) sparksChanged();
+  }
   const cursorListeners = new Set(); // fn(page, { x, y, t }): an agent's cursor was sent there
   // Someone wants to know when an agent's spark moved (the tab labels: daemon/tablabels.mjs).
   const sparkListeners = new Set();
@@ -291,7 +299,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
     source, call, ensure, onPageLoad, applyBar, setReconnecting, setBadge, setBadgeFor, statusOf, badge: () => badge,
-    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
+    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, forgetPage, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor, markTargets,
     pressOn, declarePress, onPress: (fn) => { pressListeners.add(fn); return () => pressListeners.delete(fn); },
   };

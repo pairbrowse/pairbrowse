@@ -196,3 +196,43 @@ test("a saved tab coming back (restoring) is nobody going there; a load by hand 
     mock.timers.reset();
   }
 });
+
+// One open wait per frame: a frame still answering isn't asked again, a frame without the page
+// script is asked again only after a while, and a late answer is still used.
+test("one wait per frame, a frame without the page script backs off, a late answer still counts", async () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 3_000_000 });
+  try {
+    const asked = [];
+    const pending = new Map();
+    const frame = (name) => ({ name, evaluate() {} });
+    const page = (frames) => ({ isClosed: () => false, frames: () => frames, url: () => "https://a.example/" });
+    const slow = frame("slow"), blank = frame("blank"), quick = frame("quick");
+    const pages = [page([slow, blank, quick])];
+    const presence = createPresence({ host: "You", pages: () => pages, paused: () => false,
+      readEvents: (f, waitMs) => {
+        asked.push(f.name);
+        assert.equal(waitMs, 5000, "the wait's time goes to the page");
+        if (f === blank) return Promise.resolve(undefined); // no page script there
+        if (f === quick) return Promise.resolve([]);
+        return new Promise((resolve) => pending.set(f, resolve));
+      },
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    // A tick of the clock, then the round's promises (setImmediate isn't mocked).
+    const tick = async (ms) => { for (let i = 0; i < ms / 100; i++) { mock.timers.tick(100); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r)); } };
+    await tick(500);
+    assert.deepEqual(asked.sort(), ["blank", "quick", "slow"], "every frame asked once");
+    asked.length = 0;
+    await tick(1000);
+    assert.ok(asked.includes("quick") && !asked.includes("slow") && !asked.includes("blank"), `the slow frame is still answering, the blank one is left alone for a while: ${asked}`);
+    asked.length = 0;
+    await tick(2000);
+    assert.ok(asked.includes("blank"), "the blank frame is asked again after a while");
+    assert.ok(!asked.includes("slow"), "never two waits in one frame");
+    // The slow frame answers 3 s late with a click: the person counts as using the tab from then.
+    pending.get(slow)([{ t: Date.now() - 100, kind: "click", what: "Submit" }]);
+    await tick(100);
+    assert.equal(presence.personIn(pages[0]), "You", "the late click still counts");
+  } finally {
+    mock.timers.reset();
+  }
+});

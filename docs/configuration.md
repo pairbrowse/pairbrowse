@@ -23,7 +23,13 @@
 - `maxTabs`: most tabs open at once (default 20). When another opens, the tab used longest ago
   closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more
   stay open), and Claude is told.
-- `screenshots`: `false` sends Claude text only, no screenshots.
+- `screenshots`: `false` sends Claude text only, no screenshots. A result whose picture would be
+  byte for byte the last one says so in a line instead of carrying the image again.
+- `settleMs`: the browser server's fixed pause after each action before it answers (default 200;
+  Playwright MCP's own default is 500, and twice that when the action made requests). PairBrowse
+  waits for the page itself after that (until its document is quiet, popups closed) before the
+  picture, so a longer pause only slows things down; raise it for a page whose scripts react late
+  without any request.
 - `sessionPicker`: `false` turns off the session picker the browser shows when it starts (Claude
   asks in the chat instead). Default `true`.
 - `downloadsDir`: where site downloads are saved (default: your Downloads folder).

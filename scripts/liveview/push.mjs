@@ -195,6 +195,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       // alone says nothing behind a tunnel. The heartbeat also keeps the tunnel from closing it.
       const seen = setInterval(() => { if (Date.now() - (conn.heard ?? Date.now()) > SILENT_MS) conn.close(); else j.seen = Date.now(); }, 2000);
       const beat = setInterval(() => { send(st, "ping", Date.now()); try { conn.ping?.(); } catch {} }, HEARTBEAT_MS);
+      seen.unref?.(); beat.unref?.();
       conn.onClose(() => {
         clearInterval(seen); clearInterval(beat); streams.delete(conn);
         log(`push: ${j.name}'s channel closed after ${Math.round((Date.now() - st.openedAt) / 1000)} s; ${[...streams.values()].filter((x) => x.key === key).length} of theirs still open`);

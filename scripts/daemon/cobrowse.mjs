@@ -5,6 +5,7 @@
 import { within } from "../util.mjs";
 
 const HOT_MS = 33;
+const IDLE_MS = 500; // between looks while no tab is shared at all (nothing to read)
 const COLD_MS = 120; // per tab, more with many tabs (15 ms each)
 const HOT_FOR_MS = 2500; // a tab stays "hot" this long after its last pointer move or field change
 const READ_MS = 500;
@@ -39,7 +40,7 @@ export function createCobrowse({ call, pages, onPointer, onDirty, log = () => {}
   }
 
   async function round() {
-    if (busy || stopped) return;
+    if (busy || stopped) return 0;
     busy = true;
     try {
       const now = Date.now();
@@ -50,11 +51,17 @@ export function createCobrowse({ call, pages, onPointer, onDirty, log = () => {}
         if (cold) lastCold.set(p, now);
         return readPage(p, cold).catch((e) => log("cobrowse", e?.message || e));
       }));
+      return list.length;
     } finally {
       busy = false;
     }
   }
-  const timer = setInterval(round, HOT_MS);
-  timer.unref();
-  return { stop() { stopped = true; clearInterval(timer); }, hot: (page) => hotUntil.set(page, Date.now() + HOT_FOR_MS) };
+  // Rounds follow one another: HOT_MS apart while any tab is shared, IDLE_MS apart while none is
+  // (the helper doesn't wake thirty times a second for nothing).
+  let timer = null;
+  const next = (ms) => { if (stopped) return; timer = setTimeout(() => round().then((n) => next(n ? HOT_MS : IDLE_MS), () => next(IDLE_MS)), ms); timer.unref(); };
+  next(HOT_MS);
+  // A tab just became shared or active: a round now, not after the idle gap.
+  const soon = () => { if (stopped || busy) return; clearTimeout(timer); next(0); };
+  return { stop() { stopped = true; clearTimeout(timer); }, hot: (page) => { hotUntil.set(page, Date.now() + HOT_FOR_MS); soon(); }, soon };
 }

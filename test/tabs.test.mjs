@@ -82,7 +82,22 @@ test("quitting the browser doesn't record an empty set of tabs", async (t) => {
   ctx.emit("close");
   t.mock.timers.tick(5000);
   await tracker.saveNow();
-  assert.ok(!existsSync(file));
+  // The tab went down with the browser, not by a person: it stays recorded (or nothing is).
+  if (existsSync(file)) assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).tabs.map((x) => x.url), ["https://a.test/"]);
+});
+
+test("the browser dying before a pending save ran still records the tabs as last known", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const a = fakePage("https://a.test/"), b = fakePage("https://b.test/");
+  const ctx = fakeContext([a, b]);
+  const file = tmpFile();
+  trackTabs(ctx, { file });
+  a.navigate("https://a.test/two"); // a save is due in 1.5 s
+  b.closed = true; b.emit("close"); // a person closed b just before
+  t.mock.timers.tick(1200);
+  a.closed = true; a.emit("close"); // the crash takes a down
+  ctx.emit("close");
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).tabs.map((x) => x.url), ["https://a.test/two"], "the new address, without the tab a person closed");
 });
 
 test("a tabs file that can't be written is logged, not thrown", async () => {

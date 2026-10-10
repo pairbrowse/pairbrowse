@@ -1,5 +1,13 @@
 // The small picture of the page that goes with results (never while a saved password shows),
 // and pairbrowse_click_at, which clicks a spot in the latest one.
+//
+// A picture is taken only once a result is on its way out, and kept nowhere: the result carries
+// it, and what stays per participant is how the latest picture's pixels map onto the page (for
+// pairbrowse_click_at) and a hash of its bytes. A picture whose bytes equal the last one's is
+// not sent again (the result says the page looks the same): a wait, a key press or a tab list
+// that changed nothing costs no image. The map goes stale with the page: another address, a
+// scroll, a resize or a tab that closed, and a click on the old picture is refused.
+import { createHash } from "node:crypto";
 import { redact } from "../secrets.mjs";
 import { sleep, within, pageLoaded } from "../util.mjs";
 import { strongSignal } from "../clickrule.mjs";
@@ -16,6 +24,10 @@ const CDP_WAIT_MS = 3000;
 // frames this long and use the newest.
 const NEWEST_FRAME_MS = 80; // about five frames: results wait for a quiet page before this (serve.mjs tidy)
 const FRAME_QUIET_MS = 40; // no newer frame for this long: the last one is current
+// A picture older than this is no map of the page any more (pages move on their own).
+const SHOT_MAX_AGE_MS = 120_000;
+// The scroll may differ this much (CSS px) from the picture's: sub-pixel and rounding.
+const SCROLL_SLACK_PX = 2;
 
 export const CLICK_AT_TOOL = {
   name: "pairbrowse_click_at",
@@ -53,6 +65,9 @@ function shownText() {
   return values;
 }
 
+// Where the page stands now: its scroll and viewport, compared with the picture's.
+const viewNow = () => [Math.round(scrollX), Math.round(scrollY), innerWidth, innerHeight];
+
 // What's under a spot, read by the helper: the click guard needs a label it can check.
 const hitAt = withHelpers(([px, py]) => {
   let el = document.elementFromPoint(px, py);
@@ -69,12 +84,17 @@ const hitAt = withHelpers(([px, py]) => {
   return { label: buttonLabel(target), risk: clickContext(target).risk };
 }, buttonLabel, clickRisk, clickContext);
 
+const SNAPSHOT_FIRST = "Take a browser_snapshot first (its screenshot is the one to click on).";
+
 // secrets(): the saved passwords ({ values }). log(text).
 // hidePeers(page, hidden): other participants' pointers off (true) or back on, around a picture.
-export function createScreenshots({ secrets, log, hidePeers = async () => {} }) {
-  const shots = new Map(); // per participant: the page of its latest screenshot and how its pixels map to the page's
-
-  // { data } (a base64 JPEG), { skipped: why }, or null.
+// now(): the clock (tests pass their own).
+export function createScreenshots({ secrets, log, hidePeers = async () => {}, now = Date.now }) {
+  // Per participant: the page of its latest screenshot, how its pixels map to the page's, where
+  // the page stood (url, scroll, viewport), when, and the hash of its bytes. Never the bytes.
+  const shots = new Map();
+  // { data } (a base64 JPEG), { same: true } (the picture equals the participant's last one),
+  // { skipped: why }, or null.
   async function take(page, participant) {
     try {
       if (!page || page.isClosed() || !/^https?:/.test(page.url())) return null;
@@ -82,13 +102,16 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
       // event again, and waiting for one took the whole LOAD_WAIT_MS on every browser_navigate_back.
       await pageLoaded(page, { maxMs: LOAD_WAIT_MS });
       // Pictures can't be masked like text: no picture while a saved password shows on the page.
-      // Every frame, and fields inside shadow DOM too. No answer from a frame: no picture.
+      // Every frame, and fields inside shadow DOM too. No answer from a frame: no picture. The
+      // reading (the whole page's text, in every frame) is for pages with saved passwords only.
       const { values } = secrets();
-      const frames = page.frames().slice(0, 20);
-      const shown = await Promise.all(frames.map((f) => within(1500, f.evaluate(shownText).catch(() => null))));
-      if (shown[0] === null) return null;
-      if (Object.keys(values).length && shown.some((v, i) => v === null && !frames[i].isDetached())) return { skipped: "No screenshot this time: part of the page didn't answer the password check." };
-      if (shown.flat().some((v) => v && redact(v, values) !== v)) return { skipped: "No screenshot this time: a saved password is visible on the page." };
+      if (Object.keys(values).some((k) => values[k] && values[k].length >= 4)) {
+        const frames = page.frames().slice(0, 20);
+        const shown = await Promise.all(frames.map((f) => within(1500, f.evaluate(shownText).catch(() => null))));
+        if (shown[0] === null) return null;
+        if (shown.some((v, i) => v === null && !frames[i].isDetached())) return { skipped: "No screenshot this time: part of the page didn't answer the password check." };
+        if (shown.flat().some((v) => v && redact(v, values) !== v)) return { skipped: "No screenshot this time: a saved password is visible on the page." };
+      }
       await hidePeers(page, true);
       try {
         return await capture(page, participant);
@@ -101,24 +124,52 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
     }
   }
   async function capture(page, participant) {
-    {
-      const opening = page.context().newCDPSession(page);
-      const cdp = await within(CDP_WAIT_MS, opening);
-      if (!cdp) { opening.then((late) => late.detach().catch(() => {}), () => {}); return null; } // one that comes late still goes
-      let latest = null, latestAt = 0;
-      const first = new Promise((ok) => cdp.on("Page.screencastFrame", (fr) => { cdp.send("Page.screencastFrameAck", { sessionId: fr.sessionId }).catch(() => {}); latest = fr; latestAt = Date.now(); ok(fr); }));
-      if ((await within(CDP_WAIT_MS, cdp.send("Page.startScreencast", SHOT).then(() => true))) !== true) { cdp.detach().catch(() => {}); return null; }
-      await within(FIRST_FRAME_MS, first);
+    const opening = page.context().newCDPSession(page);
+    const cdp = await within(CDP_WAIT_MS, opening);
+    if (!cdp) { opening.then((late) => late.detach().catch(() => {}), () => {}); return null; } // one that comes late still goes
+    let latest = null, latestAt = 0;
+    let first;
+    const firstFrame = new Promise((ok) => { first = ok; });
+    cdp.on("Page.screencastFrame", (fr) => { cdp.send("Page.screencastFrameAck", { sessionId: fr.sessionId }).catch(() => {}); latest = fr; latestAt = Date.now(); first(fr); });
+    try {
+      if ((await within(CDP_WAIT_MS, cdp.send("Page.startScreencast", SHOT).then(() => true))) !== true) return null;
+      await within(FIRST_FRAME_MS, firstFrame);
       // Frames come only when the picture changes: done once none came for a moment.
       for (const until = Date.now() + NEWEST_FRAME_MS; Date.now() < until && Date.now() - latestAt < FRAME_QUIET_MS;) await sleep(15);
-      const f = latest;
-      await cdp.send("Page.stopScreencast").catch(() => {});
-      cdp.detach().catch(() => {});
-      const width = f && jpegWidth(Buffer.from(f.data, "base64"));
-      if (!f || !width) return null;
-      shots.set(participant, { page, toCss: f.metadata.deviceWidth / width }); // what pairbrowse_click_at maps onto
-      return { data: f.data };
+    } finally {
+      // Stopped and let go whatever happened above: a session kept open keeps its frames coming.
+      // (One session per tab, kept, was measured: no faster; the first frame and the quiet wait
+      // are the cost, not the attach.)
+      cdp.send("Page.stopScreencast").catch(() => {}).finally(() => cdp.detach().catch(() => {}));
     }
+    const f = latest;
+    if (!f) return null;
+    const bytes = Buffer.from(f.data, "base64");
+    const width = jpegWidth(bytes);
+    if (!width) return null;
+    const m = f.metadata || {};
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    const prev = shots.get(participant);
+    // What pairbrowse_click_at maps onto: the page as it stood when this picture was drawn.
+    shots.set(participant, { page, toCss: m.deviceWidth / width, url: page.url(), scrollX: Math.round(m.scrollOffsetX ?? 0), scrollY: Math.round(m.scrollOffsetY ?? 0), width: m.deviceWidth, height: m.deviceHeight, at: now(), hash });
+    if (prev && prev.page === page && prev.hash === hash) return { same: true };
+    return { data: f.data };
+  }
+
+  // Why the participant's latest picture is no map of the page any more, or "" while it is.
+  async function stale(shot, current) {
+    if (shot.page.isClosed()) return "The tab of the last screenshot has closed.";
+    if (current && shot.page !== current) return "The last screenshot was of another tab, not this one.";
+    if (now() - shot.at > SHOT_MAX_AGE_MS) return `The last screenshot is ${Math.round((now() - shot.at) / 1000)} s old.`;
+    const url = shot.page.url();
+    if (url !== shot.url) return `The page moved on since the last screenshot (now at ${url.slice(0, 120)}).`;
+    const view = await within(1500, shot.page.evaluate(viewNow).catch(() => null));
+    if (!view) return "The page didn't answer.";
+    const [sx, sy, w, h] = view;
+    if (Math.abs(sx - shot.scrollX) > SCROLL_SLACK_PX || Math.abs(sy - shot.scrollY) > SCROLL_SLACK_PX) return "The page has scrolled since the last screenshot.";
+    if (shot.width && Math.abs(w - shot.width) > 1) return "The window changed size since the last screenshot.";
+    void h;
+    return "";
   }
 
   // pairbrowse_click_at. Returns { text, error } or { text, page }.
@@ -126,12 +177,14 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
   // cursor(x, y): shows the agent's cursor at the spot before the press (daemon/hud.mjs).
   async function clickAt({ x, y }, participant, { current = null, cursor = null } = {}) {
     const shot = shots.get(participant);
-    if (!shot || shot.page.isClosed()) return { text: "No screenshot to click on yet. Take a browser_snapshot first.", error: true };
-    if (current && shot.page !== current) return { text: "The last screenshot was of another tab, not this one. Take a browser_snapshot here first, then click by its picture.", error: true };
+    if (!shot) return { text: `No screenshot to click on yet. ${SNAPSHOT_FIRST}`, error: true };
+    const why = await stale(shot, current);
+    if (why) return { text: `${why} ${SNAPSHOT_FIRST}`, error: true };
     const { page, toCss } = shot;
     const cx = Number(x) * toCss, cy = Number(y) * toCss;
     if (!Number.isFinite(cx) || !Number.isFinite(cy)) return { text: "x and y must be numbers.", error: true };
-    const hit = await page.evaluate(hitAt, [cx, cy]).catch(() => null);
+    if (cx < 0 || cy < 0 || (shot.width && cx > shot.width) || (shot.height && cy > shot.height)) return { text: "That spot is outside the last screenshot.", error: true };
+    const hit = await within(2000, page.evaluate(hitAt, [cx, cy]).catch(() => null));
     if (!hit) return { text: "Nothing at that spot.", error: true };
     if (hit.frame) return { text: "That spot is inside a frame. Use browser_click with the element's ref from browser_snapshot.", error: true };
     // Strong signals (payment, danger, DELETE, a confirmation after one): only browser_click asks the user.
@@ -142,5 +195,14 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
     return { text: `Clicked "${label || "the spot"}" at ${Math.round(cx)},${Math.round(cy)} on the page.`, page };
   }
 
-  return { take, clickAt, forget: (participant) => shots.delete(participant) };
+  return {
+    take,
+    clickAt,
+    // The participant left: nothing of theirs stays.
+    forget: (participant) => shots.delete(participant),
+    // A tab closed: no map onto it stays (the page object would).
+    forgetPage: (page) => { for (const [p, s] of shots) if (s.page === page) shots.delete(p); },
+    // Tests: what's kept per participant (no image bytes).
+    held: () => new Map([...shots].map(([p, s]) => [p, { url: s.url, hash: s.hash, at: s.at }])),
+  };
 }

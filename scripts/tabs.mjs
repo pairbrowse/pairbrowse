@@ -19,13 +19,20 @@ export function readSavedTabs(file) {
 export function trackTabs(ctx, { file, activePage = () => null, log = () => {} } = {}) {
   let timer = null;
   let stopped = false;
+  // The tabs as last seen (their addresses from the navigations, titles from the last save): what
+  // gets written when the browser dies before a pending save ran (a crash in the second and a
+  // half after a navigation would otherwise lose that tab).
+  const known = new Map(); // page -> { url, title }
+  const titles = new Map(); // url -> title, from the last save
   const snapshot = async () => {
     const pages = ctx.pages();
     const tabs = [];
     for (const p of pages) {
       const url = p.url();
       if (!restorable(url)) continue;
-      tabs.push({ url, title: (await ownTitle(p)).slice(0, 120) });
+      const title = (await ownTitle(p)).slice(0, 120);
+      tabs.push({ url, title });
+      titles.set(url, title);
     }
     const active = Math.max(0, tabs.findIndex((t) => t.url === activePage()?.url()));
     return { tabs, active, savedAt: new Date().toISOString() };
@@ -34,11 +41,22 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
     clearTimeout(timer);
     timer = null;
     if (stopped) return;
+    for (const [page, k] of known) if (k.closedAt !== undefined) known.delete(page); // closed by a person, saved as such now
     try {
       writeFileSync(file, JSON.stringify(await snapshot(), null, 2));
     } catch (e) {
       log("saving tabs failed", e?.message || e);
     }
+  };
+  // What's known without asking the browser (gone, or going): written at once.
+  // Tabs closed in the last moment went down with the browser (a quit or a crash closes them
+  // all at once), not by a person: they count as open. Nothing is written for an empty set.
+  const saveKnown = () => {
+    const now = Date.now();
+    const tabs = [...known.values()].filter((t) => restorable(t.url) && (t.closedAt === undefined || now - t.closedAt < 1000)).map((t) => ({ url: t.url, title: t.title || titles.get(t.url) || "" }));
+    if (!tabs.length) return;
+    const active = Math.max(0, tabs.findIndex((t) => t.url === activePage()?.url()));
+    try { writeFileSync(file, JSON.stringify({ tabs, active, savedAt: new Date().toISOString() }, null, 2)); } catch (e) { log("saving tabs failed", e?.message || e); }
   };
   const soon = () => {
     if (stopped) return;
@@ -46,12 +64,19 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
     timer = setTimeout(saveNow, 1500);
   };
   const watch = (page) => {
-    page.on("framenavigated", (frame) => frame === page.mainFrame() && soon());
-    page.on("close", soon);
+    known.set(page, { url: page.url(), title: "" });
+    page.on("framenavigated", (frame) => { if (frame !== page.mainFrame()) return; known.set(page, { url: page.url(), title: "" }); soon(); });
+    page.on("close", () => { const k = known.get(page); if (k) k.closedAt = Date.now(); soon(); });
   };
   ctx.pages().forEach(watch);
   ctx.on("page", (p) => { watch(p); soon(); });
-  ctx.on("close", () => { stopped = true; clearTimeout(timer); });
+  ctx.on("close", () => {
+    // A save was due (the browser died before it ran): what was known goes down now. A deliberate
+    // stop saved already (saveNow, then stop) and never comes here with a save pending.
+    if (!stopped && timer) saveKnown();
+    stopped = true;
+    clearTimeout(timer);
+  });
   return { saveNow, stop: () => { stopped = true; clearTimeout(timer); } };
 }
 

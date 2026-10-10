@@ -156,7 +156,7 @@ const hud = createHud({
   pause: () => ({ by: pause.view().by, can: canPause() }),
 });
 const presence = createPresence({
-  host: HOST, readEvents: (frame) => hud.call(frame, "", "user"), pages: () => context.openPages(), paused: () => context.isSwitching(),
+  host: HOST, readEvents: (frame, waitMs) => hud.call(frame, String(waitMs), "user-wait"), pages: () => context.openPages(), paused: () => context.isSwitching(),
   onUsed: (page) => context.touch(page), onStale: bumpRevision, applyBar: hud.applyBar, refreshTabs, restoring: () => context.isRestoring(),
   onPauseButton: (kind) => pressPause(kind === "pause"),
 });
@@ -172,7 +172,7 @@ const popups = createPopups({
 const context = createContext({
   config, log, chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
-  onTabClosed: (page) => tabClaims.drop(page), // a closed tab's turn ends with it
+  onTabClosed: (page) => { tabClaims.drop(page); screenshots.forgetPage(page); hud.forgetPage(page); }, // a closed tab's turn ends with it, with the maps onto its pictures and the sparks on it
   status: (badge) => liveView()?.setStatus(badge),
   shuttingDown: () => shuttingDown,
   onStarted: () => {
@@ -463,7 +463,7 @@ const serve = createServe({
     ...(process.env.PAIRBROWSE_TEST_MEMORY === "1" ? { pairbrowse_test_memory: async () => {
       const ctx = await context.current();
       const m = process.memoryUsage();
-      return { text: JSON.stringify({ close: ctx?.listenerCount("close") ?? -1, disconnected: ctx?.browser?.()?.listenerCount("disconnected") ?? -1, contexts: ctx ? contextCount(ctx) : -1, rss: m.rss, heapUsed: m.heapUsed, heapTotal: m.heapTotal, external: m.external, arrayBuffers: m.arrayBuffers }) };
+      return { text: JSON.stringify({ close: ctx?.listenerCount("close") ?? -1, disconnected: ctx?.browser?.()?.listenerCount("disconnected") ?? -1, contexts: ctx ? contextCount(ctx) : -1, screenshots: screenshots.held().size, clients: clients.size, rss: m.rss, heapUsed: m.heapUsed, heapTotal: m.heapTotal, external: m.external, arrayBuffers: m.arrayBuffers }) };
     } } : {}),
     ...(process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
     // Tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): the join request in each tab's bottom bar, and
@@ -539,6 +539,7 @@ async function shutdown(code) {
   sharing.closeLiveView();
   follow.stop().catch(() => {});
   cobrowse.stop();
+  screens.close().catch(() => {}); // joiners' direct connections and the tabs' debugger sessions
   // The browser gets a clean close (Chromium writes its cookies and logins on the way out; it
   // writes them only every ~30 s otherwise), at most SHUTDOWN_GRACE_MS: then the helper exits
   // and Playwright's exit handler kills what's left of it.
@@ -563,6 +564,13 @@ async function main() {
   socketServer = net.createServer((sock) => shuttingDown ? sock.destroy() : serve(sock).catch((e) => { log("session error", e?.stack || e); sock.destroy(); }));
   socketServer.listen(paths.socket, () => log(`listening on ${paths.socket}`));
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => shutdown(0));
+  // A promise nobody caught (a page that closed under a background read, a joiner's channel
+  // dropping mid-send) is logged and the helper goes on: Node would otherwise end the process,
+  // killing the browser before it wrote its cookies. A thrown error outside any handler is a bug
+  // the helper can't reason about: logged, then a clean shutdown (the browser closes properly and
+  // the bridges reopen it on the next action).
+  process.on("unhandledRejection", (e) => log(`unhandled rejection: ${e?.stack || e}`));
+  process.on("uncaughtException", (e) => { log(`uncaught exception: ${e?.stack || e}`); shutdown(1); });
 }
 
 if (process.argv[1]?.endsWith("daemon.mjs")) main();

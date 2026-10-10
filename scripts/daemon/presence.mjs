@@ -3,18 +3,20 @@
 // they have been idle for USER_IDLE_MS; moving the pointer or scrolling pauses nothing. The fields
 // a person fills are theirs (daemon/fields.mjs). An agent is told afterwards what people did:
 // which button or field, never what they typed.
-import { sleep, within } from "../util.mjs";
+import { sleep } from "../util.mjs";
 import { cleanName } from "../join.mjs";
 
 const LATE_NEWS_MAX_MS = 15_000; // how late a person's news from the other browser can say it is
 const USER_IDLE_MS = 2000; // a person counts as busy in a tab until this long after their last input
 const PERSON_SHOWN_MS = USER_IDLE_MS + 3000; // the tab overview keeps showing them a little longer
 const USER_WAIT_MS = 10 * 60_000; // an agent gives up waiting for a person after this
-const POLL_MS = 500;
+const POLL_MS = 500; // how often frames without an open wait get one
+const WAIT_MS = 5000; // how long each wait in a frame stays open (answered at once by any input)
+const NO_SCRIPT_MS = 2000; // a frame without the page script (not loaded yet, a blank tab) is asked again after this
 const READ_LATE_MS = 3000; // input read later than this counts as this long ago
 const USER_KINDS = new Set(["click", "type", "key", "wheel", "scroll", "move", "went"]); // scroll: scrolling keys, a press on a scrollbar
 
-// host: the host's name. readEvents(frame): the page script's recorded input in that frame.
+// host: the host's name. readEvents(frame, waitMs): the page script's recorded input in that frame, waiting up to waitMs for some.
 // pages(): the open tabs. paused(): true while no tab should be read (a session switch).
 // onUsed(page): a tab used by hand (the tab cap's "used"). onStale(): refs may be stale now.
 // restoring(): saved tabs are being reopened (their loads are nobody's). applyBar(page),
@@ -171,12 +173,15 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     if (yours.some((e) => !["move", "wheel", "scroll"].includes(e.kind))) onStale(page);
   }
 
-  // Reads every tab, and its first frames (card and code fields often live in one). A read takes
+  // Waits on every tab, and its first frames (card and code fields often live in one): one open
+  // wait per frame, answered the moment a person does anything there, else empty after WAIT_MS,
+  // and opened again on the next round. Nothing is asked of an idle page meanwhile. A wait takes
   // the page's input out of it, so a late answer (a busy computer) is still used, never dropped:
   // dropped, a person's click would be lost (agents wouldn't wait for them nor hear of it). A
   // frame still answering is skipped until it does; a slow one doesn't hold up the others.
   let polling = false;
   const reading = new WeakSet();
+  const askAgainAt = new WeakMap(); // frame -> when a frame without the page script is asked again
   const took = (page, events) => {
     if (!Array.isArray(events) || !events.length) return;
     if (events.some((e) => e?.kind !== "move")) onUsed(page);
@@ -185,15 +190,21 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   setInterval(async () => {
     if (paused() || polling) return;
     polling = true;
+    let frames;
     try {
-      const frames = (await pages()).flatMap((p) => p.isClosed() ? [] : p.frames().slice(0, 8).map((f) => [p, f]));
-      const reads = frames.filter(([, f]) => !reading.has(f)).map(([p, f]) => {
-        reading.add(f);
-        return readEvents(f).then((events) => { if (!paused()) took(p, events); }, () => {}).finally(() => reading.delete(f));
-      });
-      await within(1000, Promise.all(reads));
-    } finally {
+      frames = (await pages()).flatMap((p) => p.isClosed() ? [] : p.frames().slice(0, 8).map((f) => [p, f]));
+    } catch { frames = []; } finally {
       polling = false;
+    }
+    const now = Date.now();
+    for (const [p, f] of frames) {
+      if (reading.has(f) || now < (askAgainAt.get(f) || 0)) continue;
+      reading.add(f);
+      readEvents(f, WAIT_MS).then((events) => {
+        // No page script there (yet): a blank tab, a page still loading, a frame of a kind that runs none.
+        if (events === undefined || events === false) askAgainAt.set(f, Date.now() + NO_SCRIPT_MS);
+        else if (!paused()) took(p, events);
+      }, () => {}).finally(() => reading.delete(f));
     }
   }, POLL_MS).unref();
 

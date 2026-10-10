@@ -67,6 +67,19 @@ const RUN_MAX_MS = 120_000; // a fast-mode run stops between steps past this
 // Calls after which other participants' refs may be stale.
 const changesPage = (tool) => tool?.startsWith("browser_") || tool?.startsWith("pairbrowse_click") || ["pairbrowse_run", "pairbrowse_upload", "pairbrowse_session"].includes(tool);
 
+// PAIRBROWSE_TRACE=1: each result's phases (tidy, notes, screenshot) and their time, in the log.
+const TRACING = process.env.PAIRBROWSE_TRACE === "1";
+const phaseTrace = (log) => {
+  if (!TRACING) return { mark() {}, done() {} };
+  const t0 = Date.now();
+  let last = t0;
+  const marks = [];
+  return { mark(name) { const now = Date.now(); marks.push(`${name}=${now - last}`); last = now; }, done(tool) { log(`trace ${tool} total=${Date.now() - t0} ${marks.join(" ")}`); } };
+};
+// No new picture when the page's bytes equal the last picture's (screenshot.mjs): the note says so.
+const SAME_PICTURE = "\n### PairBrowse\n- The page looks exactly as in your last screenshot (no new picture).";
+// Playwright MCP's own pause after each action (see createConnection): config.settleMs overrides.
+const MCP_SETTLE_DEFAULT_MS = 200;
 const LOAD_WAIT_MS = 4000; // for the page to load before the screenshot
 const SETTLE_MS = 1000; // after it loaded
 const CLICK_SETTLE_MS = 500; // at least, after a click: in-page changes (menus, single-page apps) don't load a page
@@ -296,12 +309,17 @@ export function createServe({ config, log, host, createConnection, clients, coll
       webmcp: false, // passwords are swapped in and masked by PairBrowse itself (see handle and finishResult)
       outputDir: paths.files,
       imageResponses: "omit", // the helper adds its own small screenshots, checked for passwords first
+      // The browser server's fixed pause after each action (its default: half a second, twice when
+      // the action made requests): short here, since the helper waits for the page itself (tidy:
+      // until its document is quiet, popups closed) before the picture and the notes.
+      timeouts: { settle: Math.max(0, Math.min(5000, Number(config.settleMs ?? MCP_SETTLE_DEFAULT_MS) || 0)) },
     }, contextFor(serverListeners));
 
     const toClient = (msg) => !sock.destroyed && sock.write(JSON.stringify(msg) + "\n");
     const pending = new Map(); // the helper's own calls to the server, by id
     const completed = new Map(); // calls in flight: resolved once their result went out
     const calls = new Map(); // request id -> tool name, for the result
+    const traces = new Map(); // request id -> its phase trace (PAIRBROWSE_TRACE)
     const callArgs = new Map(); // request id -> the call's arguments (Claude's: secret names, never values)
     const tabActions = new Map(); // request id -> browser_tabs action
     const refused = new Set(); // calls the helper itself turned down: they changed nothing in the browser
@@ -314,6 +332,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const finish = (id) => { const done = completed.get(id); completed.delete(id); done?.(); };
     const reply = (id, text, isError = false) => {
       if (isError) refused.add(id);
+      traces.delete(id);
       // A message naming a ref names it as Claude knows it (the main frame's number off).
       text = refNames.toPlain(text);
       toClient({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) } });
@@ -369,6 +388,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // doesn't say.
     async function finishResult(msg, tool, knownUrl = null, fullSnapshot = false) {
       const content = () => msg.result?.content || [];
+      const trace = traces.get(msg.id) || phaseTrace(log);
+      traces.delete(msg.id);
+      trace.mark("mcp");
       let shotUrl = null;
       let ownPage = null;
       let inlined = false; // an action's result carries its snapshot inline
@@ -416,8 +438,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
         }
         const tidying = context.current() ? context.openPages().then((pages) => tidy(tool, ownPage || pages.find((p) => p.url() === seenUrl), seenUrl)).catch(() => {}) : null;
         if (tidying && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false) await within(TIDY_MAX_MS, tidying);
+        trace.mark("tidy");
         if (ownPage && CLICKING_TOOLS.has(tool)) await within(1000, popups.settled(ownPage)).catch(() => {});
         const text = notes();
+        trace.mark("notes");
         if (text && msg.result) (msg.result.content ||= []).push({ type: "text", text });
       }
       for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text))); if (remote) part.text = forJoiner(part.text); }
@@ -427,8 +451,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (tool !== undefined && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
         const shot = await screenshots.take(ownPage || await context.pageAt(shotUrl || context.currentUrl()), participant);
         if (shot?.data) msg.result.content.push(image(shot.data));
+        else if (shot?.same) msg.result.content.push({ type: "text", text: SAME_PICTURE });
         else if (shot?.skipped) msg.result.content.push({ type: "text", text: `\n### PairBrowse\n- ${shot.skipped}` });
+        trace.mark("shot");
       }
+      trace.done(tool);
       toClient(msg);
       finish(msg.id);
     }
@@ -934,6 +961,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const content = [{ type: "text", text: r.text + popups.drain(r.page) }];
         const shot = config.screenshots !== false ? await screenshots.take(r.page, participant) : null;
         if (shot?.data) content.push(image(shot.data));
+        else if (shot?.same) content.push({ type: "text", text: SAME_PICTURE });
         return { content };
       },
       ...testTools, // only with a test switch set (daemon.mjs); empty otherwise
@@ -954,7 +982,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const { name } = msg.params || {};
       let args = msg.params?.arguments || {};
       const denied = argProblem(name, args) || refusal(name, args);
-      if (denied) return reply(msg.id, denied, true);
+      traces.get(msg.id)?.mark("guard");
+      if (denied) { traces.delete(msg.id); return reply(msg.id, denied, true); }
       if (!NO_WAIT.has(name)) await whenReady();
       // "Your turn" is done once Claude acts again: take the badge down.
       if (hud.statusOf(participant)?.kind === "you" && (CLICKING_TOOLS.has(name) || name === "browser_navigate" || name === "pairbrowse_click_at")) {
@@ -1096,6 +1125,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       hud.addActivity(describe(name, shown), myLabel(), actingIn);
       await hud.showCursor(name, args, async () => actingIn || (mine && !mine.isClosed() ? mine : null) || context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
+      traces.get(msg.id)?.mark("cursor");
       if (name === "browser_fill_form") await hud.markTargets(actingIn || (mine && !mine.isClosed() ? mine : null), args.fields.map((f) => f.target)).catch(() => {});
       // A form in the native browser with human-like input on: PairBrowse fills it itself, field by
       // field as a person does (Tab to the next field, key by key at typingPace; native-engine.mjs
@@ -1206,6 +1236,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
             return { done: true };
           }
           actingIn = page;
+          traces.get(id)?.mark("turn");
           try { await dispatch(); } finally { actingIn = null; }
           return { done: true };
         }, page); // its tab's lane: agents in other tabs go on at the same time
@@ -1218,6 +1249,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // Complete a queued turn only after the MCP result arrives, not when dispatch returns.
     const execute = async (msg) => {
       if (msg.method === "tools/call") lastCall.set(participant, Date.now());
+      if (TRACING && msg.method === "tools/call" && msg.id !== undefined) traces.set(msg.id, phaseTrace(log));
       if (sock.destroyed) return;
       if (msg.method === "initialize") {
         // The first initialize names the app for good: a later one can't relabel the connection.

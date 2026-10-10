@@ -11,12 +11,23 @@
   const TOKEN = "__PB_TOKEN__";
 
   // What you do in the page yourself, in every frame (card fields and 2FA codes often sit in one):
-  // which button or field, never what you type. The helper reads it twice a second, drops what
-  // happened during Claude's own actions, and checks every entry. Built from functions saved
-  // here, before the page's own scripts run, so a page can't bend them.
+  // which button or field, never what you type. The helper waits on it ("user-wait": answered
+  // at the first input, or empty after a while), drops what happened during Claude's own
+  // actions, and checks every entry. Built from functions saved here, before the page's own
+  // scripts run, so a page can't bend them.
   const now = Date.now.bind(Date);
+  const setTimer = setTimeout.bind(window), clearTimer = clearTimeout.bind(window);
   let userEvents = [];
   let lastMove = 0, lastWheel = 0;
+  // The helper's wait for input, if one is open: answered as soon as anything is recorded.
+  let waiter = null; // { resolve, timer }
+  const wake = () => { if (!waiter) return; const w = waiter; waiter = null; clearTimer(w.timer); w.resolve(drainUser()); };
+  function waitUser(ms) {
+    if (userEvents.length) return drainUser();
+    if (waiter) { const w = waiter; waiter = null; clearTimer(w.timer); w.resolve([]); } // one wait at a time
+    const wait = Math.min(30000, Math.max(100, Number(ms) || 5000));
+    return new Promise((resolve) => { const timer = setTimer(() => { if (waiter?.resolve === resolve) { waiter = null; resolve(drainUser()); } }, wait); waiter = { resolve, timer }; });
+  }
   const CONTROL = 'button, a, input, select, textarea, label, summary, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="menuitem"], [role="option"]';
   function named(el) {
     if (!el) return "";
@@ -32,6 +43,7 @@
     const ev = { t: now(), kind, what };
     if (far) { ev.far = true; if (at) { ev.x = Math.round(at.clientX + scrollX); ev.y = Math.round(at.clientY + scrollY); } }
     userEvents[userEvents.length] = ev;
+    wake();
   }
   // A press well away from what the agent is acting on: a person's, even while an agent's action
   // runs. What PairBrowse is about to press is declared first ("press": the box of the element,
@@ -165,7 +177,7 @@
     x.rw = String(v[1] || "").slice(0, 60);
     x.rt = now();
     // For the agent's next result: which field they filled (its name, never the value).
-    if (userEvents.length < 60) userEvents[userEvents.length] = { t: now(), kind: "filled", what: named(v[0]), who: x.rw };
+    if (userEvents.length < 60) { userEvents[userEvents.length] = { t: now(), kind: "filled", what: named(v[0]), who: x.rw }; wake(); }
     return true;
   }
   function tickFrame() {
@@ -176,7 +188,7 @@
 
   if (window.top !== window) {
     // Frames only report input; the badge, bar and cursor live in the top page.
-    Object.defineProperty(window, NAME, { value: (token, text, kind) => token !== TOKEN ? false : kind === "user" ? drainUser() : kind === "tick" ? { dirty: tickFrame() } :
+    Object.defineProperty(window, NAME, { value: (token, text, kind) => token !== TOKEN ? false : kind === "user" ? drainUser() : kind === "user-wait" ? waitUser(text) : kind === "tick" ? { dirty: tickFrame() } :
       kind === "owned" ? fields(text, kind) : kind === "claim" ? claim(text) : false, enumerable: false, writable: false, configurable: false });
     return;
   }
@@ -468,6 +480,13 @@
     joinSeen?.disconnect();
     joinSeen = null;
     joinVisible = false;
+  }
+  // Whether the join request is really on screen (not covered, not hidden): watched only while
+  // one shows, since the watching itself costs the page a little on every frame.
+  function joinWatch(on) {
+    const jq = bar?.querySelector(".jq");
+    if (!on || !jq) { joinSeen?.disconnect(); joinSeen = null; joinVisible = false; return; }
+    if (joinSeen) return;
     try {
       joinSeen = new IntersectionObserver((entries) => {
         for (const en of entries) joinVisible = "isVisible" in en ? en.isVisible : en.isIntersecting;
@@ -491,6 +510,7 @@
     bar.classList.toggle("asking", !!id);
     if (id) bar.classList.remove("away");
     jq.hidden = !id;
+    joinWatch(!!id);
     if (id !== joinShown) {
       joinShown = id;
       joinAt = now(); // what a click lands on just changed: no click counts for a moment
@@ -720,6 +740,7 @@
   function status(token, text, kind) {
     if (token !== TOKEN) return false;
     if (kind === "user") return drainUser();
+    if (kind === "user-wait") return waitUser(text);
     if (kind === "pointer") return { me: ptr, agent: agentPtr, view };
     if (kind === "owned") return fields(text, kind);
     if (kind === "claim") return claim(text);

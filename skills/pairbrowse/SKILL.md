@@ -61,11 +61,13 @@ payment, legal or tax steps, and when the user wants to watch closely. Mix freel
   (as `browser_snapshot` prints it; a long one cut the same way): act on its refs at once, no
   `browser_snapshot` in between. `browser_type` and `browser_hover` carry theirs only on a short
   page; otherwise their result links it and says to snapshot.
-- Results that change the page carry a small screenshot. Act on snapshot refs; for what the
+- Results that change the page carry a small screenshot; one that looks exactly like your last
+  says so in a line instead (nothing changed on screen). Act on snapshot refs; for what the
   snapshot doesn't name (an icon-only ×, a map, a canvas) use `pairbrowse_click_at` with x, y in
   that screenshot and `element`. It refuses what the page's structure marks as a payment or
-  deletion, and anything inside a frame; never use it for a final action you'd name (Pay/Delete/
-  Publish/Send/Submit): use `browser_click` with its ref so the user confirms.
+  deletion, anything inside a frame, and a spot on a picture the page has moved on from (another
+  address, scrolled, resized, minutes old: snapshot again first); never use it for a final action
+  you'd name (Pay/Delete/Publish/Send/Submit): use `browser_click` with its ref so the user confirms.
 - To move a card or item between lists, `browser_drag` with both refs: it drags as a hand does
   (press, a short move that starts the drag, steps across, let go), so boards built on pointer
   events or HTML5 drag-and-drop take it. Its result has a fresh snapshot and a picture: check the

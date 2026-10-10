@@ -164,10 +164,12 @@ single actions do. Fast mode (`pairbrowse_run`) is unchanged: it skips the human
 Mouse movement: `motion` is `"combined"` by default. The profile keeps its own speed, tremor and
 habits, and each move is shaped like a hand's: one quick reach that lands close (now and then a few
 pixels past), then homes in without stopping. Every click still lands exactly on its point.
-`"classic"` uses the engine's own shape instead:
+`"quick"` is the same shape with a short hop (under about 200 px, one field to the next) in about
+half the time, a long reach as before, and a shorter pause before the press: a click on the next
+field takes about 0.45 s instead of 0.9. `"classic"` uses the engine's own shape instead:
 
 ```json
-{ "pairbrowse": { "motion": "classic" } }
+{ "pairbrowse": { "motion": "quick" } }
 ```
 
 For a fully open-source setup, set `"browserEngine": "chromium"` in `~/.pairbrowse/config.json`:

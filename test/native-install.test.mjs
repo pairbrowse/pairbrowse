@@ -215,7 +215,8 @@ test("on start, an installed app is kept while the pinned build can't be had", {
 
 test("the pinned builds and engine pack are fetched from the public GitHub release", () => {
   assert.equal(NATIVE.baseUrl, `https://github.com/pairbrowse/pairbrowse/releases/download/browser-${NATIVE.version}`);
-  assert.match(NATIVE.engine.file, new RegExp(`^pairbrowse-engine-${NATIVE.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.tgz$`));
+  // The Chromium version, with a pack revision (-2) for a second pack of the same browser.
+  assert.match(NATIVE.engine.file, new RegExp(`^pairbrowse-engine-${NATIVE.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(-\\d+)?\\.tgz$`));
   for (const hex of [NATIVE.engine.sha256, ...Object.values(NATIVE.engine.files)]) assert.match(hex, /^[0-9a-f]{64}$/);
 });
 

@@ -14,7 +14,9 @@ const MAX_LINES = 150; // pages kept in `done`
 const MAX_ACTS = 12; // descriptions kept per page line
 const ACT_MAX = 100; // characters per description
 const MAX_TABS = 20;
-const TITLE_WAIT_MS = 800; // a navigation's page has loaded by then, mostly
+// When an opened page's title is looked for: the tab shows the address and has loaded by the
+// first or second look, mostly; a title a script sets later is caught by a later one.
+const TITLE_LOOKS_MS = [150, 400, 800, 1500, 3000];
 const uniq = (a) => [...new Set(a.filter(Boolean))];
 const isoNow = (t) => new Date(t).toISOString();
 const siteOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, "") || "page"; } catch { return "page"; } };
@@ -38,9 +40,30 @@ export function createJournal({ session = () => "default", openPages = async () 
   let entries = []; // the pages acted on since the last write, current last
   const clean = (s) => mask(String(s || "")).replace(/\s+/g, " ").trim();
   const titleOf = async (page) => clean(strip(await within(500, page.title()).catch(() => ""))).slice(0, 120);
-  // The page's title, once it has one (a navigation's comes when the page has loaded).
-  const entitle = (e) => { if (e.page && !e.page.isClosed() && keyOf(e.page.url()) === e.key) return titleOf(e.page).then((t) => { if (t) e.title = t; }).catch(() => {}); return Promise.resolve(); };
-  const locate = async (e) => { if (!e.page) e.page = (await openPages()).find((p) => !p.isClosed() && keyOf(p.url()) === e.key) || null; await entitle(e); };
+  const showing = (e) => e.page && !e.page.isClosed() && keyOf(e.page.url()) === e.key;
+  // A page's title with the address it goes with, in one read: read as the tab moves on, the
+  // title is the page's or nothing, never the next page's.
+  const titled = (page) => { if (page.evaluate) return page.evaluate(() => [document.title, location.href]); const url = page.url(); return page.title().then((t) => [t, url]); };
+  // The page's title, once it has one (a navigation's comes when the page has loaded), while the
+  // tab still shows that page.
+  const entitle = (e) => (showing(e) ? within(500, titled(e.page)).then((r) => { const t = r && keyOf(r[1]) === e.key ? clean(strip(r[0])).slice(0, 120) : ""; if (t) e.title = t; }).catch(() => {}) : Promise.resolve());
+  // The tab showing the page (an agent's first navigation has no tab of its own yet; a tab given
+  // with the opening may still show the page before), then its title.
+  const locate = async (e) => { if (!showing(e)) e.page = (await openPages()).find((p) => !p.isClosed() && keyOf(p.url()) === e.key) || e.page; await entitle(e); };
+  // An opened page's title, looked for a few times over three seconds (TITLE_LOOKS_MS) once the
+  // tab shows the address and the page has loaded: a page opened and left again before its next
+  // action, or one that gets its title from a script, keeps its title. A title found after the
+  // line was written writes it again.
+  function watch(e) {
+    const look = async (i) => {
+      if (e.title || e.page?.isClosed()) return;
+      await locate(e);
+      if (!e.title && showing(e) && e.page.waitForLoadState) { await within(1500, e.page.waitForLoadState("domcontentloaded").catch(() => {})); await entitle(e); }
+      if (e.title) { if (e.written) { if (!entries.includes(e)) entries.push(e); schedule(); } return; }
+      if (i + 1 < TITLE_LOOKS_MS.length) setTimeout(() => look(i + 1).catch(() => {}), TITLE_LOOKS_MS[i + 1] - TITLE_LOOKS_MS[i]).unref?.();
+    };
+    setTimeout(() => look(0).catch(() => {}), TITLE_LOOKS_MS[0]).unref?.();
+  }
   let yourTurn = []; // hand-offs set since the last write
   let over = []; // hand-offs ended since the last write (the agent went on)
   let lastHandoff = "";
@@ -103,18 +126,17 @@ export function createJournal({ session = () => "default", openPages = async () 
     if (!webUrl(url)) { if (!current) return; url = current.url; page = page || current.page; }
     ensureFile(url);
     if (!current || current.key !== keyOf(url)) {
-      // The page before had no tab known yet (the first navigation): this tab was it.
-      if (current && !current.page && page) { current.page = page; entitle(current); }
+      // The page before, still without a title: now, while the tab still shows it (an opening is
+      // said before the tab moves). Without a tab known yet (the first navigation): this tab was it.
+      if (current && !current.title) { if (!current.page && page) current.page = page; entitle(current); }
       current = { key: keyOf(url), url: url.slice(0, 200), title: "", page, acts: [], written: "" };
       entries.push(current);
     }
     if (page && !page.isClosed()) current.page = page;
     if (!opened || current.acts.length) current.acts.push(act);
     if (current.acts.length > MAX_ACTS) current.acts.splice(0, current.acts.length - MAX_ACTS);
-    if (!opened) entitle(current);
-    // An agent's first navigation has no tab of its own yet: the tab that shows the address a
-    // moment later is it (its title is only there while it shows that page).
-    else if (!current.page) { const e = current; setTimeout(() => locate(e).catch(() => {}), TITLE_WAIT_MS).unref?.(); }
+    if (opened) watch(current);
+    else entitle(current);
     schedule();
   }
 
@@ -153,7 +175,7 @@ export function createJournal({ session = () => "default", openPages = async () 
     const run = follow();
     if (!run) return;
     await Promise.all(entries.map(entitle));
-    let done = run.done || [];
+    const done = run.done || [];
     for (const e of entries) {
       // Picking up after a restart: the same page's line goes on rather than a second one.
       const last = done[done.length - 1];
@@ -161,9 +183,11 @@ export function createJournal({ session = () => "default", openPages = async () 
         e.acts = [...actsIn(last, e.url), ...e.acts].slice(-MAX_ACTS);
         e.written = last;
       }
-      if (e.written) done = done.filter((l) => l !== e.written);
+      // A line written before keeps its place (a title that came late); a new one goes last.
+      const at = e.written ? done.indexOf(e.written) : -1;
       e.written = lineOf(e);
-      done.push(e.written);
+      if (at >= 0) done[at] = e.written;
+      else done.push(e.written);
     }
     entries = current ? [current] : [];
     run.done = done.slice(-MAX_LINES);

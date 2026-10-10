@@ -145,11 +145,12 @@ const clampPace = (pace, floor = 0.2) => Math.min(1, Math.max(floor, Number(pace
 function readSettings(config, pack, personaPath) {
   // motion: how humanized mouse moves are shaped: "combined" (the profile's own speed, tremor and
   // habits, in PairBrowse's hand-like shape: one reach that lands close, then homes in without
-  // stopping), or "classic" (the engine's own). Every click still lands exactly on its point. An
-  // engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
+  // stopping), "quick" (the same shape, a short hop between fields in about half the time, a long
+  // reach as before) or "classic" (the engine's own). Every click still lands exactly on its point.
+  // An engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
   const { profile: selection, profileSelect = {}, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "combined", formMove, ...overrides } = config.pairbrowse ?? {};
   void formMove;
-  const motion = motionSetting === "classic" ? "classic" : "combined";
+  const motion = ["classic", "quick"].includes(motionSetting) ? motionSetting : "combined";
   const saved = selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {};
   const persisted = existsSync(personaPath) ? pack.Profile.load(personaPath).options : {};
   for (const key of UNSUPPORTED) {

@@ -14,6 +14,7 @@ import { computerName } from "../join.mjs";
 import { validName, isTemporary, profileDir, tabsFile, currentSession, rememberSession, listSessions, createSession, deleteSession, sweepTemporary, readPeople, recordPerson } from "../sessions.mjs";
 import { keepFocus } from "../focus.mjs";
 import { sleep, readJson } from "../util.mjs";
+import { pruneStaleContexts } from "./contexts.mjs";
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
@@ -46,7 +47,7 @@ export function stopRequestMirroring(page) {
 // shuttingDown(): no new browser then. onStarted(ctx) / onClosed(): the browser came up / went
 // away by itself (not for a session switch).
 // liveOthers(): who else is in this browser's session right now ({ who, app, computer }).
-export function createContext({ config, log, chromium, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {} }) {
+export function createContext({ config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {} }) {
   let contextPromise = null;
   // The PairBrowse browser is being downloaded and installed (first start, or a new version):
   // the user hears of it, and actions say so at once rather than waiting for minutes.
@@ -254,6 +255,7 @@ let switched = Promise.resolve();
       ignoreDefaultArgs: ["--disable-extensions"],
       args: launchArgs(config, { firstRun }),
     }, log);
+    pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
     await ctx.addInitScript({ content: hud.source });
     for (const p of ctx.pages()) { adopt(p, ctx); hud.ensure(p); }
     // A tab can arrive already loaded (one the side panel opened at its address): its page

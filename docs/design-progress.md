@@ -374,8 +374,11 @@ stream, header, card, rows, pause click, join card gating, folding and its persi
 no interval, no page error with and without `chrome`, reduced motion). `docs/security.md`,
 `using.md`, `development.md`: no change needed (same clicks, routes and gating; the one new
 storage is a list of folded section names). Full suite with the runtime: one failure,
-`memory.integration` "leave no screenshot maps behind", which fails the same on the tree
-without this change.
+`memory.integration` "leave no screenshot maps behind", caused by the hud subset, not old: the
+old bar's spinning spark made two pictures in a row differ, the static driver dot makes a
+snapshot right after a navigate byte-identical to the navigate's picture (the intended dedupe),
+and the test demanded an image. The test now accepts the same-picture note (gate run
+wf_8b5157bb bisected it to fdab983).
 
 ## Next
 

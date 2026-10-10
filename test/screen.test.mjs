@@ -26,7 +26,12 @@ test("pictures that stop coming show a spinner and 'Reconnecting to Bob…' over
     await page.goto("http://pairbrowse.test/screen.html");
     // The page's own script world (window.pbScreen lives there), as the helper reaches it.
     const hold = () => inPage(page, () => window.pbScreen.hold());
-    await inPage(page, () => { window.pbScreen.holdAfter(200, 700); window.pbScreen.info({ title: "Shop", url: "https://shop.example", who: "Bob" }); });
+    // Short waits, but with room: on a busy machine (the suite runs many browsers at once) a
+    // round trip to the page can take a good part of a second, so the spinner comes 600 ms after
+    // the last picture here and the longer wording at 1.8 s, and the test waits for each state
+    // rather than for a fixed time.
+    await inPage(page, () => { window.pbScreen.holdAfter(600, 1800); window.pbScreen.info({ title: "Shop", url: "https://shop.example", who: "Bob" }); });
+    const holdUntil = async (ok) => { for (let i = 0; i < 80; i++) { const h = await hold(); if (ok(h)) return h; await page.waitForTimeout(50); } return hold(); };
     // A picture a frame at a time, as the helper sends them.
     const sendFrame = () => inPage(page, () => {
       const c = document.createElement("canvas"); c.width = 320; c.height = 200;
@@ -39,22 +44,19 @@ test("pictures that stop coming show a spinner and 'Reconnecting to Bob…' over
     await sendFrame();
     await page.waitForTimeout(80);
     assert.equal((await hold()).shown, false, "nothing while pictures keep coming");
-    await page.waitForTimeout(450);
-    assert.deepEqual(await hold(), { shown: true, text: "Reconnecting to Bob…", dimmed: true });
+    assert.deepEqual(await holdUntil((h) => h.shown), { shown: true, text: "Reconnecting to Bob…", dimmed: true });
     const style = await page.evaluate(() => { const s = getComputedStyle(document.getElementById("hold")); return { pointer: s.pointerEvents, bg: s.backgroundColor }; });
     assert.equal(style.pointer, "none", "never takes a click from the picture");
     assert.match(style.bg, /rgba\(20, 22, 43, 0\.35\)/, "translucent over the last picture");
     assert.equal(await page.evaluate(() => document.getElementById("still").hidden), false, "the last picture stays");
     await page.screenshot({ path: join(process.env.PAIRBROWSE_TEST_SHOTS || "/tmp", "screen-reconnecting.png") }).catch(() => {});
-    await page.waitForTimeout(600);
-    assert.equal((await hold()).text, "Still reconnecting to Bob…", "longer: said so, in the same words");
+    assert.equal((await holdUntil((h) => /Still/.test(h.text))).text, "Still reconnecting to Bob…", "longer: said so, in the same words");
     assert.doesNotMatch(await page.evaluate(() => document.body.textContent), /tunnel|cloudflare|pool/i);
     await sendFrame();
     await page.waitForTimeout(80);
     assert.deepEqual(await hold(), { shown: false, text: "Still reconnecting to Bob…", dimmed: false }, "the next picture takes it down");
     // A fresh stop starts the count anew: "Reconnecting", not "Still".
-    await page.waitForTimeout(450);
-    assert.deepEqual(await hold(), { shown: true, text: "Reconnecting to Bob…", dimmed: true });
+    assert.deepEqual(await holdUntil((h) => h.shown), { shown: true, text: "Reconnecting to Bob…", dimmed: true });
   } finally {
     await browser.close();
   }

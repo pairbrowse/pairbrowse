@@ -5,6 +5,10 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.38 (2026-10-10)
+
+- The live test suite holds up on a busy machine: its speed checks (the smooth scroll, the styled pick on a big page, fields whose names go away once filled) are measured against a plain action timed in the same test at that moment instead of a fixed number of milliseconds, print what they measured, and the longest test gets more time. `docs/development.md` explains the suite's parallelism and its knobs.
+
 ## 0.15.37 (2026-10-10)
 
 - Join codes can go through a tunnel of your own instead of Cloudflare's free one: set `sharing.tunnel` in `~/.pairbrowse/config.json` to a named Cloudflare tunnel (`cloudflare`, with its token and host name), `ngrok` (authtoken, and a reserved domain to keep the address), `tailscale` (Funnel) or any `command` that prints an https address. One connection runs on your address and is started again on that same address when its program ends, so codes keep working, also through a restart of PairBrowse; the pool of two connections stays for Quick Tunnels, whose address is new each time. `pairbrowse_invite list` says which is in use ("Join codes go through your own ngrok address share.example.com"), the create result tells joiners to add the host to their `joinHosts`, and `sharing.guestPort` pins the port join codes are served on for a tunnel routed on the provider's side. Tokens stay in `config.json`, reach the provider's program through its environment only, and show in no log or result; a missing program or a refused token is said in plain words ("Sharing couldn't start: ngrok isn't installed"). See "Using your own tunnel" in docs/sharing.md.

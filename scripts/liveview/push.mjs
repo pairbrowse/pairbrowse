@@ -18,8 +18,10 @@ const HEARTBEAT_MS = 1000; // keeps the tunnel from closing an idle stream, and 
 // A joiner that answered no ping (their side pongs each one) for this long is gone, even while
 // the tunnel keeps the socket open (their helper killed): a slow computer may miss a few.
 const SILENT_MS = Number(process.env.PAIRBROWSE_TEST_SILENT_MS) || 10_000;
-// A joiner whose channel closed and didn't come back within this (a reconnect takes a second or two) is gone.
-const GONE_MS = Number(process.env.PAIRBROWSE_TEST_GONE_MS) || 10_000;
+// A joiner whose channel closed and didn't come back within this is gone. A reconnect takes a
+// second or two; one through another tunnel address (relay.mjs, when one went down) a few more,
+// so this leaves room for that: the joiner comes back on the same key and nothing is lost.
+const GONE_MS = Number(process.env.PAIRBROWSE_TEST_GONE_MS) || 25_000;
 const STREAMS_PER_JOINER = 2;
 const FRAME_SKIP_BYTES = 1 << 20; // a joiner this far behind gets no new pictures until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the stream is cut (the joiner reconnects)

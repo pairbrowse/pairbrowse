@@ -9,10 +9,13 @@ import { newJoinerId, computerName } from "./join.mjs";
 import { sleep } from "./util.mjs";
 import { connect } from "./ws.mjs";
 
-const OFFLINE_LONG_MS = 120_000; // offline this long: say the tunnel may be down
+const OFFLINE_LONG_MS = 120_000; // offline this long: say so in more words
 const REACHING_MS = 45_000; // a fresh tunnel's name may take this long to reach the joiner's resolver: keep asking, quietly
+// In, and the connection dropped: the other addresses are tried for this long before anything
+// shows (phase stays "in"). A tunnel going down with a standby up is a non-event for the joiner.
+const FAILOVER_MS = Number(process.env.PAIRBROWSE_TEST_FAILOVER_MS) || 20_000;
 const REQUEST_TIMEOUT_MS = { send: 30_000, leave: 5000, pointer: 5000, connect: 20_000 };
-const WAIT_MS = { idle: 3000, offline: 2000, again: 300 };
+const WAIT_MS = { idle: 3000, offline: 2000, again: 300, switch: 500 };
 const SILENT_MS = 40_000; // silence this long means the channel is gone (a host sending heartbeats 15 s apart: before 0.14.15)
 const SILENT_BEATS = 3; // or this many of the host's heartbeats missed in a row, once their spacing is known
 const SILENT_MIN_MS = 3000;
@@ -59,7 +62,10 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
   let offlineSince = 0;
   const startedAt = Date.now();
   let answered = false; // the host's side answered at least once (in, waiting, denied...)
+  let lostAt = 0; // when the channel dropped while in (0: not dropped)
+  const switching = () => phase === "in" && lostAt && Date.now() - lostAt < FAILOVER_MS;
   const set = (p, m) => {
+    if (p === "offline" && switching()) return; // still moving to another address
     if (p === phase && m === message) return;
     const before = phase;
     phase = p;
@@ -72,7 +78,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     let body = {};
     try { body = await res.json(); } catch {}
     if (!(res.status >= 500 && !body.error)) answered = true; // the host's side, not the tunnel's error page
-    if (res.ok) { offlineSince = 0; if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`); return body; }
+    if (res.ok) { offlineSince = 0; lostAt = 0; if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`); return body; }
     if (res.status === 403 && body.waiting) set("waiting", `Waiting for ${code.label} to approve. They see your request now.`);
     else if (res.status === 403 && body.denied) { set("denied", body.removed ? `${Host} took you out of the session.` : `${Host} didn't let you in.`); stopped = true; }
     else if (res.status === 404) { set("ended", "This join code doesn't work any more (revoked, expired, or the host closed their browser). Ask for a new one."); stopped = true; }
@@ -89,7 +95,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     // reached this computer's resolver (or the tunnel's edge) yet; retrying every 2 s is the fix.
     if (!answered && Date.now() - startedAt < REACHING_MS) return set("asking", `Reaching ${code.label}'s session…`);
     const long = Date.now() - offlineSince > OFFLINE_LONG_MS;
-    set("offline", long ? "Can't reach the host's session for a while: the free tunnel may be down. Still retrying; ask the host for a new code if it doesn't come back." : "Can't reach the host's session right now. Retrying.");
+    set("offline", long ? "Can't reach the host's session for a while. Still retrying; ask the host for a new code if it doesn't come back." : "Can't reach the host's session right now. Retrying.");
   };
 
   let conn = null; // the open push channel
@@ -114,6 +120,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
         conn = c;
         answered = true;
         offlineSince = 0;
+        lostAt = 0;
         if (phase !== "in") set("in", `You're in ${code.label}'s session (${code.role}).`);
         // A stream that stalls without closing (a free tunnel can) is dropped once the host's
         // heartbeats stop (3 s), and the next address is tried at once.
@@ -147,8 +154,9 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
         conn = null;
         for (const [, resolve] of replies) resolve(null);
         replies.clear();
-        // Dropped while in: straight on to the next address (a standby tunnel), no pause first.
-        if (!stopped) { nextRelay(); set("offline", "The connection to the host's session dropped. Reconnecting."); dropped = true; }
+        // Dropped while in: straight on to the next address (a standby tunnel), no pause first,
+        // and nothing shows unless every address stays down for FAILOVER_MS.
+        if (!stopped) { lostAt ||= Date.now(); nextRelay(); set("offline", "The connection to the host's session dropped. Reconnecting."); dropped = true; }
       } catch (e) {
         if (stopped) break;
         if (e.status) {
@@ -156,7 +164,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
           await understand({ ok: false, status: e.status, json: async () => e.body || {} });
         } else { offline(); nextRelay(); }
       }
-      if (!stopped && !dropped) await sleep(phase === "offline" ? WAIT_MS.offline : phase === "in" ? WAIT_MS.again : WAIT_MS.idle);
+      if (!stopped && !dropped) await sleep(phase === "offline" ? WAIT_MS.offline : phase === "in" ? (switching() ? WAIT_MS.switch : WAIT_MS.again) : WAIT_MS.idle);
       dropped = false;
     }
   })();

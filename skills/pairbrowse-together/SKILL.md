@@ -58,7 +58,7 @@ switching, creating and deleting sessions are refused until it has been idle 10 
 5. Someone else with the same code has to ask again. After Allow, **Remove** next to them in the
    side panel takes them out at once; a new try with that code asks again (`revoke` stops it).
 6. `list` shows invites and join requests (no keys). When the user says the person is done:
-   `revoke` with the invite `id`, or `revoke_all`, which ends every invite (the tunnel stays ready for a quarter of an hour, with no code working on it, then closes).
+   `revoke` with the invite `id`, or `revoke_all`, which ends every invite (no code works from then on).
 
 ## 4. What crosses with a follow code
 

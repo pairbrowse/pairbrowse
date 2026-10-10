@@ -5,6 +5,16 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.40 (2026-10-10)
+
+- `browser_navigate_back` answers in about 0.3 s on a plain page (it took 4.3 s every time): the screenshot waited the whole 4 s bound for a load event that a page restored by Back never fires again. The helper now asks the page whether it has loaded (`document.readyState`), waits briefly for `domcontentloaded` and asks again when the page can't answer right after the move, and waits for the load event only while the page says it's still loading; the same check before an action's screenshot and in the settle after it.
+
+- A joiner's agent no longer reads the host's home folder in the note under a long snapshot ("The whole snapshot is in /tmp/.../files/page-....yml"): the note is masked after the cut too, and names the file as the Snapshot link does ("on the host's computer: page-....yml").
+
+- A sharing tunnel replaced by the pool (its keeper ended, by a signal too) is no longer probed on by its watcher, which said "isn't answering; replacing it" a minute after the replacement: the watcher ends with the tunnel's time in the pool, and a tunnel already over is never probed.
+
+- The helper going away (SIGTERM, an update) takes the tunnels kept idle for a next code along with it, keeper and cloudflared, within a second; they lived on for the keeper's 2-minute grace after `revoke_all`. A tunnel with a join code still out stays for the next run, as before; the running helper still keeps an idle tunnel 15 minutes.
+
 ## 0.15.39 (2026-10-10)
 
 - The result of `browser_navigate`, `browser_navigate_back`, `browser_click`, `browser_select_option`, `browser_press_key` and `browser_tabs` (new, select) carries the page's snapshot itself, as `browser_snapshot` prints it, instead of a link to a `page-....yml` file the agent had to open or follow with a second `browser_snapshot` call: the refs in it are good at once, and count as fresh for the stale-ref check. A long snapshot is cut the same way as `browser_snapshot`'s (the first 24,000 characters and any open dialog, with the file named for the rest). `browser_type` and `browser_hover` bring theirs inline only under 6,000 characters; past that the link stays, with "Take a browser_snapshot for fresh refs.", so a long page isn't sent again for every field. The file on disk is masked before it is read, as before.

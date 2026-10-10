@@ -20,7 +20,7 @@ import { SESSION_TOOL } from "../sessions.mjs";
 import { UPLOAD_TOOL, uploadFiles } from "../upload.mjs";
 import { FACTS_TOOL } from "../facts.mjs";
 import { RUN_TOOL, SCROLL_TOOL, enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks, isoDate } from "../runner.mjs";
-import { sleep, within } from "../util.mjs";
+import { sleep, within, pageLoaded } from "../util.mjs";
 import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel, settle } from "./page.mjs";
 import { stopRequestMirroring } from "./context.mjs";
@@ -162,7 +162,9 @@ const REMOTE_TOOLS = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse
 // A result on its way to a joiner's agent: nothing of this computer's folders. Links to files
 // saved here (snapshots, downloads) keep their name only; this computer's home becomes "~".
 export function forJoiner(text, homes = [paths.home, homedir(), tmpdir()]) {
-  const t = String(text ?? "").replace(/\]\(((?:\.{1,2}[\\/]|[\\/]|~[\\/]|[A-Za-z]:[\\/]|file:)[^)\s]*)\)/g, (_m, p) => `](on the host's computer: ${String(p).split(/[\\/]/).pop()})`);
+  const t = String(text ?? "").replace(/\]\(((?:\.{1,2}[\\/]|[\\/]|~[\\/]|[A-Za-z]:[\\/]|file:)[^)\s]*)\)/g, (_m, p) => `](on the host's computer: ${String(p).split(/[\\/]/).pop()})`)
+    // A long snapshot's note (output.mjs capSnapshot) names the whole snapshot's file: as the link does.
+    .replace(/\bis in ((?:[\\/]|~[\\/]|[A-Za-z]:[\\/])[^\s]*?page-[^\s)]*\.ya?ml)(?=[.\s]|$)/g, (_m, p) => `is on the host's computer: ${String(p).split(/[\\/]/).pop()}`);
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const byLength = homes.filter(Boolean).map(String).sort((a, b) => b.length - a.length);
   // A home only as a whole path ("/tmp" is not in "/private/tmp", "/tmp-files" or "/tmp.txt").
@@ -323,9 +325,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
     async function tidy(tool, page, seenUrl) {
       if (page && CLICKING_TOOLS.has(tool)) await popups.dismissOverlay(page, { markOwn: true, ...closing });
       if (page && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false) {
-        // A page restored by Back (the browser's cache) fires no load event again: ask it.
-        const ready = await within(400, page.evaluate(() => document.readyState).catch(() => "")).catch(() => "");
-        if (ready !== "complete") await within(LOAD_WAIT_MS, page.waitForLoadState("load").catch(() => {}));
+        // A page restored by Back (the browser's cache) fires no load event again: ask it (pageLoaded).
+        await pageLoaded(page, { maxMs: LOAD_WAIT_MS });
         // Until the page is quiet, at most a second after it loaded (only what's left of it: an
         // old page is ready now) or half a second after a click (menus, single-page apps).
         const left = Math.max(CLICKING_TOOLS.has(tool) ? CLICK_SETTLE_MS : 0, SETTLE_MS - (Date.now() - presence.loadedAt(page)));
@@ -420,7 +421,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (text && msg.result) (msg.result.content ||= []).push({ type: "text", text });
       }
       for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text))); if (remote) part.text = forJoiner(part.text); }
-      if (tool === "browser_snapshot" || inlined) for (const part of content()) if (part.type === "text") part.text = output.capSnapshot(part.text);
+      // The cut's note names the whole snapshot's file on this computer: for a joiner, its name only.
+      if (tool === "browser_snapshot" || inlined) for (const part of content()) if (part.type === "text") { part.text = output.capSnapshot(part.text); if (remote) part.text = forJoiner(part.text); }
       // A picture also with a failed action (a stopped run, a covered click): the message says to look at it.
       if (tool !== undefined && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
         const shot = await screenshots.take(ownPage || await context.pageAt(shotUrl || context.currentUrl()), participant);

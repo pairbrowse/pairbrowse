@@ -1,7 +1,7 @@
 // The small picture of the page that goes with results (never while a saved password shows),
 // and pairbrowse_click_at, which clicks a spot in the latest one.
 import { redact } from "../secrets.mjs";
-import { sleep, within } from "../util.mjs";
+import { sleep, within, pageLoaded } from "../util.mjs";
 import { strongSignal } from "../clickrule.mjs";
 import { withHelpers, buttonLabel, clickRisk, clickContext } from "./page.mjs";
 
@@ -78,7 +78,9 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {} }) 
   async function take(page, participant) {
     try {
       if (!page || page.isClosed() || !/^https?:/.test(page.url())) return null;
-      await within(LOAD_WAIT_MS, page.waitForLoadState("load").catch(() => {})); // settled already, usually
+      // Settled already, usually. Asked, not waited for: a page restored by Back fires no load
+      // event again, and waiting for one took the whole LOAD_WAIT_MS on every browser_navigate_back.
+      await pageLoaded(page, { maxMs: LOAD_WAIT_MS });
       // Pictures can't be masked like text: no picture while a saved password shows on the page.
       // Every frame, and fields inside shadow DOM too. No answer from a frame: no picture.
       const { values } = secrets();

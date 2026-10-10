@@ -316,4 +316,10 @@ test("a joiner's agent's results name no folder on the host's computer", async (
   assert.equal(forJoiner("https://x.example/Users/kees/a?f=%2FUsers%2Fkees%2Fb.txt", ["/Users/kees"]), "https://x.example/Users/kees/a?f=~%2Fb.txt");
   assert.equal(forJoiner("https://x.example/?f=/private/tmp/x&g=/tmp-files&h=/tmp.txt&i=/tmp", ["/tmp"]), "https://x.example/?f=/private/tmp/x&g=/tmp-files&h=/tmp.txt&i=~");
   assert.equal(forJoiner("https://x.example/?f=/Users/keesje/a", ["/Users/kees"]), "https://x.example/?f=/Users/keesje/a");
+  // A long snapshot's note (added after the masking pass, by the cut) names the file as the link does.
+  const note = "### PairBrowse\n- This page's snapshot is long (about 9000 tokens); you got the first part. For the rest use browser_find (text or regex), or browser_snapshot with depth or target (a ref). The whole snapshot is in /tmp/pbt8-sh-K49Eod/files/page-2026-10-10T14-53-48-226Z.yml.";
+  const noted = forJoiner(note, ["/tmp/pbt8-sh-K49Eod", "/Users/kees"]);
+  assert.match(noted, /The whole snapshot is on the host's computer: page-2026-10-10T14-53-48-226Z\.yml\.$/);
+  assert.doesNotMatch(noted, /pbt8|\/tmp|files\//);
+  assert.match(forJoiner("The whole snapshot is in C:\\Users\\kees\\.pairbrowse\\files\\page-1.yml.", ["C:\\Users\\kees"]), /is on the host's computer: page-1\.yml\./);
 });

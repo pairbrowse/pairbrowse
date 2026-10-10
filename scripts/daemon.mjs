@@ -524,7 +524,8 @@ async function shutdown(code) {
   // would otherwise start the browser again inside a helper that's on its way out.
   shuttingDown = true;
   socketServer?.close();
-  // Join codes outlive a restart: their tunnels keep running for the next run (sharing.mjs).
+  // Join codes outlive a restart: their tunnels keep running for the next run (sharing.mjs); a
+  // tunnel kept idle for a next code ends with the helper.
   sharing.suspend();
   // Joiners' channels end before the browser closes: its tabs closing isn't the host closing them,
   // and joiners keep their copies.

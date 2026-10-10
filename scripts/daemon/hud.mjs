@@ -29,7 +29,7 @@ const PERSON_MARK_MS = 8000; // a person from the other browser stays marked thi
 export function createHud({ pages, participants, waiting, liveView, notify, pause = () => ({ by: "", can: true }) }) {
   // The page script, with names and a key that are new each time the helper starts.
   const { source, name: HUD_NAME, token: HUD_TOKEN } = hudScript();
-  let badge = { text: "", kind: "clear", color: "" };
+  let badge = { text: "", kind: "clear" };
   const sparks = new Map(); // participant -> { page, color }
   // The bar's last actions, newest last: each tab's own (what was done there), and the ones about
   // no tab (a session joined or ended, a joiner's task), shown in every tab. Another agent's work
@@ -54,9 +54,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     } catch {}
   }
 
-  // With the agent's spark color the text goes as data ({ text, color }: the badge's left edge in
-  // that color), never through the page's JSON.parse; PairBrowse's own statuses stay plain text.
-  const applyBadge = (page) => quietly(page, badge.color ? { text: badge.text, color: badge.color } : badge.text, badge.kind);
+  const applyBadge = (page) => quietly(page, badge.text, badge.kind);
   const applySpark = (page, color) => quietly(page, color || "", "spark");
   // Agents in the other browser of a shared tab (a joined session): their spark shows on this
   // browser's copy too, in their color, unless an agent here holds the tab. Each one lasts
@@ -114,25 +112,24 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   // Each agent's status (pairbrowse_status). The badge shows a hand-off to the user ("you")
   // over agents' own statuses, else the latest; an agent that isn't Claude is named in its
   // status ("Codex: filling the form"). PairBrowse's own "solve the check" badge (popups) stands.
-  const statuses = new Map(); // participant -> { text, kind, t, color }
+  const statuses = new Map(); // participant -> { text, kind, t }
   async function setBadgeFor(participant, text, kind, label = "") {
     if (kind === "clear" || !text) { if (!statuses.delete(participant)) return; } // nothing to take down
     else {
       const app = String(label || "").split(" · ")[1] || "";
       const other = kind === "claude" && app && !/^Claude/i.test(app);
-      statuses.set(participant, { text: other ? `${app}: ${text}` : String(text), kind: other ? "agent" : kind, t: Date.now(), color: sparkColor(participant) });
+      statuses.set(participant, { text: other ? `${app}: ${text}` : String(text), kind: other ? "agent" : kind, t: Date.now() });
     }
     if (badge.kind === "you" && badge.text === CHALLENGE_TURN) return; // PairBrowse's own hand-off stands
     const all = [...statuses.values()].sort((a, b) => b.t - a.t);
     const shown = all.find((s) => s.kind === "you") || all[0];
-    if ((shown?.text || "") === badge.text && (shown?.kind || "clear") === badge.kind && (shown?.color || "") === badge.color) return; // as shown already
-    await setBadge(shown?.text || "", shown?.kind || "clear", shown?.color || "");
+    if ((shown?.text || "") === badge.text && (shown?.kind || "clear") === badge.kind) return; // as shown already
+    await setBadge(shown?.text || "", shown?.kind || "clear");
   }
   const statusOf = (participant) => statuses.get(participant) || null;
-  // The badge in every tab and the live view. kind "you" also notifies the user. color: the
-  // participant's spark color (its status), "" for PairBrowse's own.
-  async function setBadge(text, kind, color = "") {
-    badge = kind === "clear" ? { text: "", kind: "clear", color: "" } : { text: String(text || ""), kind, color: /^#[0-9a-f]{6}$/i.test(color) ? color : "" };
+  // The badge in every tab and the live view. kind "you" also notifies the user.
+  async function setBadge(text, kind) {
+    badge = kind === "clear" ? { text: "", kind: "clear" } : { text: String(text || ""), kind };
     liveView()?.setStatus(badge);
     if (badge.kind === "you" && badge.text) notify(badge.text);
     await Promise.all((await pages()).map(applyBadge));

@@ -197,8 +197,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
   // closer's dismiss button) counts as where an agent pointed: a press there is never a person's.
   hud.onPress?.((page, at) => presence.agentPointed(page, at));
   // The popup closer's own click: its button is declared to the page first (hud.pressOn), so the
-  // press is PairBrowse's own, not the person's, however far from the agent's cursor it lands.
+  // press is PairBrowse's own, not the person's, however far from the agent's cursor it lands; and
+  // it runs as PairBrowse's "popup" action, also after a tool that only reads (a snapshot has no
+  // action span of its own, and its tidy pass closes banners too).
   const declare = (page, el) => hud.pressOn(page, el);
+  const closing = { declare, clicking: () => presence.busyStart("popup") };
   // When each session last called a tool: only the ones in use hold up a session switch or closing
   // the browser. An open but idle session (a Claude Code window left for hours) doesn't.
   const lastCall = new Map();
@@ -312,7 +315,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // After an action in page (the tab at seenUrl): close popups (Claude's own dialog stays), let
     // the page settle before a screenshot, hand a CAPTCHA to the user, and look again for late popups.
     async function tidy(tool, page, seenUrl) {
-      if (page && CLICKING_TOOLS.has(tool)) await popups.dismissOverlay(page, { markOwn: true, declare });
+      if (page && CLICKING_TOOLS.has(tool)) await popups.dismissOverlay(page, { markOwn: true, ...closing });
       if (page && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false) {
         // A page restored by Back (the browser's cache) fires no load event again: ask it.
         const ready = await within(400, page.evaluate(() => document.readyState).catch(() => "")).catch(() => "");
@@ -322,7 +325,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const left = Math.max(CLICKING_TOOLS.has(tool) ? CLICK_SETTLE_MS : 0, SETTLE_MS - (Date.now() - presence.loadedAt(page)));
         if (left > 0) await settle(page, left);
       }
-      await popups.dismissOverlay(page, { closeOffers: true, declare });
+      await popups.dismissOverlay(page, { closeOffers: true, ...closing });
       await popups.checkChallenge(page);
       if (!page || !(LOADING_TOOLS.has(tool) || CLICKING_TOOLS.has(tool))) return;
       for (const ms of LATE_POPUP_CHECKS_MS) {
@@ -330,7 +333,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           if (page.isClosed() || page.url() !== seenUrl || presence.agentActing()) return; // never click alongside an agent
           // Only its click (if it finds a popup) counts as PairBrowse's: a person's click while it
           // looks is theirs (agents wait for it, and hear of it).
-          popups.dismissOverlay(page, { closeOffers: true, declare, clicking: () => presence.busyStart("popup") }).catch(() => {});
+          popups.dismissOverlay(page, { closeOffers: true, ...closing }).catch(() => {});
         }, ms).unref();
       }
     }
@@ -902,9 +905,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const r = await screenshots.clickAt(args, participant, { current: here, cursor: (x, y) => hud.cursorTo(here || hud.sparkPage(participant), { boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, "click", myLabel()) });
         if (r.error) return r;
         hud.addActivity(`Clicked ${String(args.element || "a spot").slice(0, 80)}`, myLabel(), r.page);
-        await popups.dismissOverlay(r.page, { markOwn: true, declare });
+        await popups.dismissOverlay(r.page, { markOwn: true, ...closing });
         await settle(r.page, SETTLE_MS);
-        await popups.dismissOverlay(r.page, { closeOffers: true, declare });
+        await popups.dismissOverlay(r.page, { closeOffers: true, ...closing });
         const content = [{ type: "text", text: r.text + popups.drain(r.page) }];
         const shot = config.screenshots !== false ? await screenshots.take(r.page, participant) : null;
         if (shot?.data) content.push(image(shot.data));

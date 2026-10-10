@@ -103,7 +103,12 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
   let child;
   try { child = spawn(process.execPath, [KEEPER, program, String(port), heartbeatFile(), String(KEEP_GRACE_MS)], { stdio: ["ignore", fd, fd], detached: process.platform !== "win32" }); } finally { closeSync(fd); }
   child.unref();
-  const stop = () => { if (child.exitCode === null) { try { child.kill("SIGTERM"); } catch {} } rmSync(file, { force: true }); };
+  // t.gone: the keeper ended (an exit, or ended by a signal: Node then leaves exitCode null) or
+  // stop() was called; the watcher (watchTunnel) and the pool (sharing.mjs) read it.
+  const t = { url: null, host: null, pid: child.pid, log: file, child, gone: false };
+  child.once("exit", () => { t.gone = true; });
+  const stop = () => { t.gone = true; if (child.exitCode === null && child.signalCode === null) { try { child.kill("SIGTERM"); } catch {} } rmSync(file, { force: true }); };
+  t.stop = stop;
   try {
     const url = await new Promise((ok, no) => {
       let found = null;
@@ -127,7 +132,9 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
     // too early gets "no such name", cached for a minute.
     for (const end = Date.now() + LOCAL_DNS_WAIT_MS; !(await resolvesLocally(new URL(url).host)) && Date.now() < end;) await new Promise((r) => setTimeout(r, 500));
     log(`sharing tunnel up: ${new URL(url).host}`);
-    return { url, host: new URL(url).host, pid: child.pid, log: file, stop, child };
+    t.url = url;
+    t.host = new URL(url).host;
+    return t;
   } catch (e) {
     stop();
     throw e;
@@ -176,20 +183,28 @@ export function onTunnelExit(t, fn, everyMs = 2000) {
 // everyMs. Any answer from this computer's server (below 500, a 429 included: busy, not down)
 // counts as up; Cloudflare's own errors (502, 530: the tunnel lost its connection) or no answer
 // count as down. After `misses` downs in a row the tunnel is stopped, and the code that started
-// it replaces it (its exit handler). Returns stop().
+// it replaces it (its exit handler). A tunnel already over (ended, stopped, or its keeper killed:
+// tunnelEnded) is left alone: nothing to probe, nothing to replace. Returns stop(), which the
+// code that takes the tunnel out of use calls, so no probe outlives the tunnel's time in use.
 export function watchTunnel(t, { everyMs = 30_000, misses = 2, timeoutMs = 10_000, log = () => {}, probe } = {}) {
   let down = 0;
   const check = probe || (async () => {
     try { return (await fetch(t.url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(timeoutMs) })).status < 500; } catch { return false; }
   });
+  let stopped = false;
   const timer = setInterval(async () => {
-    if ((t.child?.exitCode ?? null) !== null || t.gone) return clearInterval(timer);
-    if (await check()) { down = 0; return; }
+    if (stopped || tunnelEnded(t)) return clearInterval(timer);
+    const up = await check();
+    if (stopped || tunnelEnded(t)) return clearInterval(timer); // taken out of use while asking
+    if (up) { down = 0; return; }
     if (++down < misses) return;
     clearInterval(timer);
     log(`tunnel ${t.host} isn't answering; replacing it`);
     try { t.stop(); } catch {}
   }, everyMs);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return () => { stopped = true; clearInterval(timer); };
 }
+// Whether a tunnel is over: stopped or ended (gone), or its keeper process exited, by a signal
+// too (Node leaves exitCode null then, with signalCode set).
+export const tunnelEnded = (t) => !!(t.gone || (t.child && ((t.child.exitCode ?? null) !== null || (t.child.signalCode ?? null) !== null)));

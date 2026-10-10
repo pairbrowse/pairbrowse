@@ -51,6 +51,23 @@ export async function downloadPinned(url, dest, sha256Hex, { timeoutMs = 30 * 60
 // `promise`'s value, or null once `ms` have passed (for checks that give up quietly).
 export const within = (ms, promise) => Promise.race([promise, sleep(ms).then(() => null)]);
 
+// Until a page has loaded, at most maxMs, by asking it first: a page restored by Back (the
+// browser's cache) fires no load event again, and Playwright's waitForLoadState("load") then
+// waits its whole bound for one. Right after a move the old document may be gone and the new
+// one not yet answering (no answer within probeMs): then a short wait for domcontentloaded and a
+// second ask, and only a page that says it's still loading waits for the load event.
+export async function pageLoaded(page, { maxMs = 4000, probeMs = 400, dclMs = 1000 } = {}) {
+  const ask = () => within(probeMs, page.evaluate(() => document.readyState).catch(() => "")).catch(() => "");
+  let ready = await ask();
+  if (ready === "complete") return;
+  if (!ready) {
+    await within(dclMs, page.waitForLoadState("domcontentloaded").catch(() => {}));
+    ready = await ask();
+    if (ready === "complete") return;
+  }
+  await within(maxMs, page.waitForLoadState("load").catch(() => {}));
+}
+
 // `promise`, or a rejection with `message` once `ms` have passed.
 export function withTimeout(promise, ms, message = `timed out after ${ms} ms`) {
   let timer;

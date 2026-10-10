@@ -7,7 +7,7 @@ import { savedName, saveParticipantName, paths } from "../paths.mjs";
 import { readJson } from "../util.mjs";
 import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { startQuickTunnel, watchTunnel, adoptTunnel, onTunnelExit, helperAlive } from "../tunnel.mjs";
+import { startQuickTunnel, watchTunnel, adoptTunnel, onTunnelExit, tunnelEnded, helperAlive } from "../tunnel.mjs";
 import { tunnelConfig } from "../tunnels/config.mjs";
 import { startOwnTunnel } from "../tunnels/start.mjs";
 import { randomBytes } from "node:crypto";
@@ -57,7 +57,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   const via = () => (tunnelSpec && own ? tunnelSpec.describe(pool[0]?.host || "") : "a free relay");
   let wanted = false; // join codes are out
   let generation = 0; // bumped by stopTunnel
-  const alive = (t, port) => t.port === port && (t.child?.exitCode ?? null) === null;
+  const alive = (t, port) => t.port === port && !tunnelEnded(t);
 
   // Cloudflare lets a computer open only so many Quick Tunnels in a while: when the last code
   // ends, the tunnel stays up for TUNNEL_IDLE_MS (no code works on it meanwhile, so nothing
@@ -79,7 +79,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     generation++; // a tunnel still starting when this runs is stopped as soon as it's up
     const was = pool;
     pool = [];
-    for (const t of was) { try { t.stop(); } catch {} }
+    for (const t of was) { t.unwatch?.(); try { t.stop(); } catch {} }
     if (was.length) log("sharing tunnels stopped");
   }
 
@@ -97,8 +97,11 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // move to the standby by themselves (relay.mjs); a code not yet used carries the first live
   // address at the time it's read (list), so its string may change: fine, nobody has it yet.
   function wire(t, port) {
-    if (!direct) watchTunnel(t, { log }); // not answering: stopped, and replaced below
+    // Not answering: stopped, and replaced below. The watcher ends with the tunnel's time in the
+    // pool: one replaced already is never probed on and "replaced" a second time.
+    t.unwatch = direct ? () => {} : watchTunnel(t, { log });
     const ended = () => {
+      t.unwatch();
       if (!pool.includes(t)) return;
       pool = pool.filter((x) => x !== t);
       save();
@@ -466,8 +469,10 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // On shutdown: the join tunnel and every shared dev server.
   const stopAll = () => { stopTunnel(); devShare.stopAll(); clearInterval(devTimer); };
   // The helper is going away but sharing isn't over (a restart): codes, yeses and tunnels stay
-  // for its next run. Dev servers' tunnels end (sharing one again is a click).
-  const suspend = () => { save(); devShare.stopAll(); clearInterval(devTimer); };
+  // for its next run. Dev servers' tunnels end (sharing one again is a click). A tunnel kept only
+  // in case of a new code (no code out: releaseTunnel) ends now, keeper and all: the idle keep is
+  // for a running helper, never for processes left behind one.
+  const suspend = () => { if (!wanted) stopTunnel(); save(); devShare.stopAll(); clearInterval(devTimer); };
   // The host ended it (closed the browser window): every code, yes and tunnel, and the saved state.
   const endAll = () => { invites.revokeAll(); stopAll(); rmSync(stateFile, { force: true }); };
   return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, inviteCommand, stopTunnel: stopAll, suspend, endAll, devPanel };

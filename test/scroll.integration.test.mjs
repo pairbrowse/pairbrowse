@@ -11,7 +11,7 @@ import { runSteps, preflight } from "../scripts/runner.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 
-test("scroll step: smooth, with the agent's cursor, never taken for a person", { skip: !runtime, timeout: 60_000 }, async () => {
+test("scroll step: smooth, with the agent's cursor, never taken for a person", { skip: !runtime, timeout: 60_000 }, async (t) => {
   assert.match(preflight([{ scroll: "sideways" }]), /scroll takes "down", "up" or a number/);
   assert.equal(preflight([{ scroll: "down" }, { scroll: -300 }]), null);
   const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
@@ -29,10 +29,19 @@ test("scroll step: smooth, with the agent's cursor, never taken for a person", {
       activity: (t) => said.push(t),
       cursor: async (el, act) => { const b = await el.boundingBox(); await page.evaluate(([n, t, c]) => window[n](t, c, "cursor"), [name, token, JSON.stringify({ x: b.x, y: b.y, act })]); },
     };
+    // The measure of this machine right now: fast mode's scroll (the same wheel, no glide), there
+    // and back. The glide adds about 170 ms of easing to it; under load (the suite runs many
+    // browsers at once) every turn of the wheel takes longer, for both.
+    const b0 = Date.now();
+    await runSteps(page, [{ scroll: 100 }, { scroll: -100 }], hooks);
+    const plain = (Date.now() - b0) / 2;
+    assert.equal(await page.evaluate(() => scrollY), 0, "back at the top");
+    said.length = 0;
     const started = Date.now();
     const r = await runSteps(page, [{ scroll: "down" }], { ...hooks, smooth: true });
     const took = Date.now() - started;
-    assert.ok(took < 450, `a screen glides by quickly (${took} ms)`);
+    t.diagnostic(`a screen glides by in ${took} ms (a plain scroll: ${plain} ms)`);
+    assert.ok(took < Math.min(3000, Math.max(450, 3 * plain + 200)), `a screen glides by quickly (${took} ms; a plain scroll: ${plain} ms)`);
     assert.ok(r.ok !== false, JSON.stringify(r));
     const after = await page.evaluate(() => scrollY);
     assert.ok(after > 400 && after < 700, `about a screen down (${after})`);

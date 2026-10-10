@@ -27,7 +27,7 @@ const gathered = (pc, ms) => new Promise((resolve) => {
 async function capture(tabId, streamId, frame) {
   const size = { minWidth: frame.w, maxWidth: frame.w, minHeight: frame.h, maxHeight: frame.h };
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId, ...size, maxFrameRate: 60 } },
+    video: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId, ...size, maxFrameRate: 30 } },
     audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
   });
   let audio = null;
@@ -75,7 +75,7 @@ async function offer({ peer, tabId, streamId, frame, ice }) {
     if (track.kind === "video") {
       const params = sender.getParameters();
       params.degradationPreference = "maintain-framerate"; // smooth first; sharpness follows as bandwidth allows
-      params.encodings = [{ ...(params.encodings?.[0] || {}), maxBitrate: 8_000_000, maxFramerate: 60 }];
+      params.encodings = [{ ...(params.encodings?.[0] || {}), maxBitrate: 8_000_000, maxFramerate: 30 }];
       sender.setParameters(params).catch(() => {});
     }
   }

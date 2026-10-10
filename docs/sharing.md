@@ -95,7 +95,7 @@ tab, logged in as you are. Canvases (Excalidraw), typing tests, games and the pa
 are the same for everyone, because there is only one browser.
 
 - **Smooth:** the picture goes straight from your browser to theirs (WebRTC, the technology video
-  calls use), up to 60 frames a second. The free tunnel only sets the connection up. On networks
+  calls use), up to 30 frames a second. The free tunnel only sets the connection up. On networks
   that block direct connections it switches by itself to pictures through the tunnel (slower).
 - **Cursors:** everyone's pointer and every agent's cursor shows with a name tag.
 - **Who is in each tab:** a picture's tab starts its title with the name of whoever works there

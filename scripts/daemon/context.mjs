@@ -242,6 +242,11 @@ let switched = Promise.resolve();
     // The PairBrowse browser (scripts/browser.mjs), or another Chromium browser from config.
     const ctx = await launchEngine(chromium, config, profile(), {
       headless: false,
+      // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
+      // Playwright's signal handlers would start a close of their own on the same SIGTERM, and
+      // then treat the helper's close as a second one: a SIGKILL of Chromium inside 50 ms, before
+      // it wrote its cookies (it writes them every ~30 s and on a clean exit): logins lost.
+      handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
       env: { ...process.env, ...(screen?.env || {}) },
       executablePath: config.executablePath || await ensureBrowser(chromium, log),
       viewport: null,

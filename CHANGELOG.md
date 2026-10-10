@@ -5,6 +5,10 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.40 (2026-10-10)
+
+- A login or cookie set in the last half minute before the helper is stopped (a plugin restart, a `kill`, Ctrl-C) is kept. The helper took the browser down with a SIGKILL inside 50 ms, when Chromium writes its cookies only every ~30 s and on a clean exit; the engine's own signal handlers were closing the browser on the same signal, and the helper's close then counted as a second, forced one. Now the helper alone closes the browser, cleanly, within 5 s (then kills it); the same clean close on a session switch.
+
 ## 0.15.39 (2026-10-10)
 
 - The result of `browser_navigate`, `browser_navigate_back`, `browser_click`, `browser_select_option`, `browser_press_key` and `browser_tabs` (new, select) carries the page's snapshot itself, as `browser_snapshot` prints it, instead of a link to a `page-....yml` file the agent had to open or follow with a second `browser_snapshot` call: the refs in it are good at once, and count as fresh for the stale-ref check. A long snapshot is cut the same way as `browser_snapshot`'s (the first 24,000 characters and any open dialog, with the file named for the rest). `browser_type` and `browser_hover` bring theirs inline only under 6,000 characters; past that the link stays, with "Take a browser_snapshot for fresh refs.", so a long page isn't sent again for every field. The file on disk is masked before it is read, as before.

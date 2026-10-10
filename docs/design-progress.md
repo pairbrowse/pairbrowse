@@ -380,6 +380,18 @@ snapshot right after a navigate byte-identical to the navigate's picture (the in
 and the test demanded an image. The test now accepts the same-picture note (gate run
 wf_8b5157bb bisected it to fdab983).
 
+## Gate (hud + panel), 2026-10-11, run wf_8b5157bb
+
+Lint clean; unit 391 pass; fuzz 37 pass; manifests valid; live suite 459 pass, 1 fail (the
+cleanup test above, fixed since). Bench on a busy machine: click p50 502 ms (517), snapshot
+long page 104 ms (166), navigate 347 ms (390), cold start 1.13 s (1.2), 1 image in 20 repeated
+snapshots, 3-tab idle CPU inside the baseline band, soak with a viewer flat (heap 85 → 83 MB).
+Two flags (helper RSS at the bench's end 249 vs 210 MB; one browser idle sample +0.3 points)
+cleared by a quiet re-run: helper RSS 219 → 227 MB (baseline 202 → 210), browser idle after
+work 1.1% (1.0%), click p50 515 ms, navigate 344 ms, snapshot 67 ms with 1 image in 20. Diff
+checks: no new capture or retention, no timer or observer while hidden, infinite animations
+down (panel 2 → 1, hud 3 → 2), reduced motion honored everywhere added, the logo untouched.
+
 ## Next
 
 1. `design-validate` for `hud` and `panel`; then `design-subset` with `liveview`, `modes`, `design-validate` after each.

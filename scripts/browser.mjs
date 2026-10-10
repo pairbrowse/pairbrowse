@@ -113,10 +113,14 @@ export const browserArgs = ({ firstRun = false } = {}) => [
   ...(process.platform === "darwin" ? ["--show-avatar-button=never", ...(firstRun ? ["--no-startup-window"] : [])] : []),
 ];
 
-// The PairBrowse colors: Chromium's built-in color theme (Settings > Appearance), navy from the
-// PairBrowse logo, dark, tonal. Keys from Chromium 150 chrome/common/pref_names.h; the color is an
-// SkColor (ARGB) stored as a signed 32-bit integer.
-export const THEME_COLOR = 0xff4e6498 | 0;
+// The PairBrowse colors: Chromium's built-in color theme (Settings > Appearance), the sheet's
+// chrome navy (scripts/browser/panel/tokens.css --chrome), dark, tonal: Chromium's tonal palette
+// takes the hue. Keys from Chromium 150 chrome/common/pref_names.h; the color is an SkColor (ARGB)
+// stored as a signed 32-bit integer.
+export const THEME_COLOR = 0xff101d2d | 0;
+// The seed PairBrowse set before 0.15.43: a profile still on it (never a color the user picked)
+// moves to the sheet's navy at the next start.
+const OLD_THEME_COLOR = 0xff4e6498 | 0;
 const USER_COLOR_THEME_ID = "user_color_theme_id";
 
 // The profile settings PairBrowse needs, applied to a profile's Default/Preferences (parsed).
@@ -137,7 +141,8 @@ export function profilePreferences(prefs = {}, panelId = panelExtensionId(), old
   // The color theme, unless the user picked another one (a theme, or Default: id ""). The old
   // theme extension's entry goes: Chromium would keep drawing its saved theme pack.
   const theme = prefs.extensions.theme;
-  if (!theme || theme.id === undefined || theme.id === panelExtensionId(OLD_THEME_DIR) || isOldThemePath(theme.pack)) {
+  const ownOldSeed = theme?.id === USER_COLOR_THEME_ID && prefs.browser?.theme?.user_color2 === OLD_THEME_COLOR;
+  if (!theme || theme.id === undefined || theme.id === panelExtensionId(OLD_THEME_DIR) || isOldThemePath(theme.pack) || ownOldSeed) {
     prefs.extensions.theme = { id: USER_COLOR_THEME_ID };
     const browserTheme = { ...(prefs.browser?.theme || {}), user_color2: THEME_COLOR, color_variant2: 1, color_scheme2: 2, follows_system_colors: false };
     prefs.browser = { ...(prefs.browser || {}), theme: browserTheme };

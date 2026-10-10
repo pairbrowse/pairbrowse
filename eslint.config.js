@@ -4,7 +4,7 @@ import js from "@eslint/js";
 import globals from "globals";
 
 export default [
-  { ignores: ["node_modules/", "runtime/node_modules/", "graphify-out/", "docs/media/"] },
+  { ignores: ["node_modules/", "runtime/node_modules/", "graphify-out/", "docs/media/", ".claude/"] },
   js.configs.recommended,
   {
     languageOptions: {

@@ -63,11 +63,12 @@ function fit(ctx, text, max) {
 }
 
 // The strip: the window's tabs in order, the one in front lit, and on each tab the agent at work
-// there in its spark color.
+// there in its spark color. Colors from tokens.css (a canvas takes no variables), kept equal by
+// test/tokens.test.mjs.
 function strip() {
   const { ctx, w, scale } = rec;
   const h = STRIP * scale;
-  ctx.fillStyle = "#1f1f22";
+  ctx.fillStyle = "#101D2D";
   ctx.fillRect(0, 0, w, h);
   const list = rec.tabs.length ? rec.tabs : [{ id: rec.front, title: "", active: true }];
   const pad = 8 * scale;
@@ -77,7 +78,7 @@ function strip() {
     const x = pad + i * tw;
     const front = t.id === rec.front;
     if (front) {
-      ctx.fillStyle = "#3a3a3f";
+      ctx.fillStyle = "#192A3D";
       roundRect(ctx, x + 2 * scale, 6 * scale, tw - 4 * scale, h - 6 * scale, 8 * scale);
       ctx.fill();
     }
@@ -85,18 +86,18 @@ function strip() {
     const label = rec.labels[t.id];
     const room = x + tw - 12 * scale;
     if (label?.who) {
-      ctx.fillStyle = /^#[0-9a-f]{6}$/i.test(label.color || "") ? label.color : "#d97757";
+      ctx.fillStyle = /^#[0-9a-f]{6}$/i.test(label.color || "") ? label.color : "#e9763f";
       ctx.beginPath();
       ctx.arc(tx + 4 * scale, h / 2 + 3 * scale, 4.5 * scale, 0, Math.PI * 2);
       ctx.fill();
       tx += 14 * scale;
-      ctx.font = `600 ${12.5 * scale}px system-ui, sans-serif`;
+      ctx.font = `600 ${12 * scale}px system-ui, sans-serif`;
       const who = fit(ctx, label.who, Math.max(0, Math.min(room - tx, tw * 0.55)));
       ctx.fillText(who, tx, h / 2 + 3 * scale);
       tx += ctx.measureText(who).width + 8 * scale;
     }
-    ctx.font = `${12.5 * scale}px system-ui, sans-serif`;
-    ctx.fillStyle = front ? "#f1f1f3" : "#a8a8ad";
+    ctx.font = `${12 * scale}px system-ui, sans-serif`;
+    ctx.fillStyle = front ? "#F1F5FA" : "#A2B2C6";
     // The page title without the agent's name in front (daemon/tablabels.mjs): it's named already.
     const title = String(t.title || "New tab");
     const own = label?.prefix && title.startsWith(label.prefix) ? title.slice(label.prefix.length) : title;

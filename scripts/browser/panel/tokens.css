@@ -1,0 +1,27 @@
+/* The PairBrowse design tokens: one sheet for every surface PairBrowse styles itself (side panel,
+   session picker, new tab page, a joiner's picture page and the live view). scripts/hud.js and
+   record.js carry the same values inline (closed shadow roots and a canvas take no variables);
+   test/tokens.test.mjs keeps them equal and checks the contrast. Flat navy; color is for state. */
+:root {
+  --bg: #0B1421; --chrome: #101D2D; --sidebar: #111E2D; --elevated: #192A3D; --hover: #243750;
+  --ink: #F1F5FA; --ink-2: #A2B2C6; --muted: #8699B1; --edge: #293B50;
+  --edge-input: #647891; /* a text field's border: 3:1 on every surface (WCAG 1.4.11) */
+  --accent: #3285F6; --accent-ink: #6AA6F9; --accent-soft: rgb(50 133 246 / 0.18);
+  --ok: #20C997; --warn: #F4B45D; --bad: #EF6468;
+  --spark: #e9763f; /* SPARK_COLORS[0], Claude's own spark; the other participant colors are not tokens */
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --fs-1: 11px; --fs-2: 12px; --fs-3: 13px; --fw-name: 600;
+  --r-1: 6px; --r-2: 8px; --r-3: 10px;
+  --t: 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* The live view alone follows the system's light scheme (liveview.html sets data-scheme); the
+   extension pages stay dark. */
+@media (prefers-color-scheme: light) {
+  :root[data-scheme="system"] {
+    --bg: #F4F7FB; --chrome: #FFFFFF; --sidebar: #FFFFFF; --elevated: #E8EEF5; --hover: #DCE5EF;
+    --ink: #0F1B2A; --ink-2: #3A4B60; --muted: #53667D; --edge: #CBD6E2; --edge-input: #76879C;
+    --accent: #2468D0; --accent-ink: #1F63C7; --accent-soft: rgb(50 133 246 / 0.14);
+    --ok: #11735A; --warn: #8A5A00; --bad: #C0343A;
+  }
+}

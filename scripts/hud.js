@@ -198,21 +198,21 @@
     if (host && host.isConnected) return;
     host = document.createElement(TAG_HUD);
     const shadow = host.attachShadow({ mode: "closed" });
-    // The app icon's look: deep navy glass, a light rim, the orange spark.
+    // Flat navy, the sheet's values (tokens.css), the orange spark.
     shadow.innerHTML = html(`<style>
       :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;right:12px !important;bottom:12px !important}
-      .b{display:flex;align-items:center;gap:9px;font:600 12.5px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;color:#f4f6ff;
-         padding:9px 14px 9px 11px;border-radius:14px;max-width:min(440px,62vw);cursor:default;
-         background:linear-gradient(160deg,rgba(62,84,150,.96),rgba(27,30,64,.97));
-         box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),inset 0 1px 0 rgba(255,255,255,.18),0 8px 24px rgba(10,12,40,.35)}
+      .b{display:flex;align-items:center;gap:9px;font:600 12px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;color:#F1F5FA;
+         padding:9px 14px 9px 11px;border-radius:10px;max-width:min(440px,62vw);cursor:default;
+         background:rgba(25,42,61,.97);
+         box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35)}
       .b span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      svg{flex:none;width:15px;height:15px;color:#ef7d45}
+      svg{flex:none;width:15px;height:15px;color:#e9763f}
       .you{animation:g 1.8s ease-in-out infinite}
       .you svg{animation:s 1.8s ease-in-out infinite}
-      .done svg{color:#6fd39a}
-      .x{flex:none;margin-left:2px;color:#aab2df;font:500 15px/1 system-ui;cursor:pointer;padding:0 2px}
-      .x:hover{color:#fff}
-      @keyframes g{50%{box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),inset 0 1px 0 rgba(255,255,255,.18),0 8px 24px rgba(10,12,40,.35),0 0 0 4px rgba(239,125,69,.28)}}
+      .done svg{color:#20C997}
+      .x{flex:none;margin-left:2px;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:0 2px}
+      .x:hover{color:#F1F5FA}
+      @keyframes g{50%{box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35),0 0 0 4px rgba(50,133,246,.28)}}
       @keyframes s{50%{transform:rotate(45deg) scale(1.12)}}
       @media (prefers-reduced-motion:reduce){.you,.you svg{animation:none}}
     </style><div class="b" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span><b class="x" title="Hide">×</b></div>`);
@@ -331,46 +331,46 @@
     shadow.innerHTML = html(`<style>
       :host{all:initial !important;position:fixed !important;z-index:2147483646 !important;left:0 !important;right:0 !important;bottom:0 !important;pointer-events:none !important}
       .bar{display:flex;align-items:center;gap:14px;height:30px;padding:0 14px;box-sizing:border-box;
-        background:rgba(27,30,60,.96);
-        border-top:1px solid rgba(255,255,255,.12);color:#c9cef0;
+        background:rgba(11,20,33,.96);
+        border-top:1px solid #293B50;color:#A2B2C6;
         font:12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;
         transition:opacity .18s ease,transform .18s ease}
       .bar.away{opacity:0;transform:translateY(8px)}
       .who{display:flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
-      .who b{color:#f5f6ff;font-weight:600}
+      .who b{color:#F1F5FA;font-weight:600}
       .who svg{width:13px;height:13px;color:#e9763f}
       .bar.driving .who svg{animation:r 2.4s linear infinite}
       @keyframes r{to{transform:rotate(360deg)}}
       ol{display:flex;gap:16px;margin:0;padding:0;list-style:none;min-width:0;flex:1;overflow:hidden;
         -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 40px),transparent)}
       li{display:flex;gap:6px;align-items:baseline;white-space:nowrap}
-      li+li::before{content:"\\00b7";color:#8a90b8;margin-right:10px}
-      li:first-child{color:#eef0ff}
-      time{font:500 11px system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums;color:#8a90b8}
-      li b{font-weight:600;color:#f5f6ff}
-      code{font:500 11px system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums;padding:0 4px;border-radius:4px;background:rgba(255,255,255,.12)}
-      .pz{flex:none;pointer-events:auto;cursor:pointer;border:0;border-radius:6px;padding:4px 10px;font:600 11.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;
-        color:#1b1e3c;background:#f4f6ff}
-      .pz:hover{background:#fff}
+      li+li::before{content:"\\00b7";color:#8699B1;margin-right:10px}
+      li:first-child{color:#F1F5FA}
+      time{font:500 11px system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums;color:#8699B1}
+      li b{font-weight:600;color:#F1F5FA}
+      code{font:500 11px system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums;padding:0 4px;border-radius:4px;background:#243750}
+      .pz{flex:none;pointer-events:auto;cursor:pointer;border:0;border-radius:6px;padding:4px 10px;font:600 12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;
+        color:#0B1421;background:#F1F5FA}
+      .pz:hover{background:#FFFFFF}
       .pz[hidden]{display:none}
-      .bar.paused{background:rgba(120,52,24,.95)}
-      .bar.paused .pz{background:#ef7d45;color:#fff}
-      .bar.asking{background:rgb(27,30,60)}
-      .jq{flex:none;pointer-events:auto;display:flex;align-items:center;gap:7px;max-width:min(520px,62vw);min-width:0;padding-left:12px;border-left:1px solid rgba(255,255,255,.16);cursor:default;font-weight:600;color:#f4f6ff}
+      .bar.paused{background:rgba(11,20,33,.96);border-top-color:#F4B45D}
+      .bar.paused .pz{background:#F4B45D;color:#0B1421}
+      .bar.asking{background:#0B1421}
+      .jq{flex:none;pointer-events:auto;display:flex;align-items:center;gap:7px;max-width:min(520px,62vw);min-width:0;padding-left:12px;border-left:1px solid #293B50;cursor:default;font-weight:600;color:#F1F5FA}
       .jq[hidden]{display:none}
-      .jq svg{flex:none;width:13px;height:13px;color:#ef7d45}
+      .jq svg{flex:none;width:13px;height:13px;color:#e9763f}
       .jq .t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .jq .t b{color:#fff}
-      .jq .h,.jq .m{font-weight:500;color:#ffd2bd;white-space:nowrap}
+      .jq .t b{color:#F1F5FA}
+      .jq .h,.jq .m{font-weight:500;color:#A2B2C6;white-space:nowrap}
       .jq .m[hidden]{display:none}
-      .jq button{flex:none;border:0;border-radius:6px;padding:4px 10px;font:600 11.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
-      .jq .ok{background:#ef7d45;color:#fff}
-      .jq .ok:hover{background:#f48d5a}
-      .jq .no{background:rgba(255,255,255,.14);color:#f4f6ff}
-      .jq .no:hover{background:rgba(255,255,255,.24)}
+      .jq button{flex:none;border:0;border-radius:6px;padding:4px 10px;font:600 12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+      .jq .ok{background:#3285F6;color:#0B1421}
+      .jq .ok:hover{filter:brightness(1.08)}
+      .jq .no{background:#243750;color:#F1F5FA}
+      .jq .no:hover{background:#293B50}
       .jq button:disabled{cursor:default;filter:saturate(.4)}
-      .jq .x{flex:none;color:#aab2df;font:500 15px/1 system-ui;cursor:pointer;padding:0 3px}
-      .jq .x:hover{color:#fff}
+      .jq .x{flex:none;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:0 3px}
+      .jq .x:hover{color:#F1F5FA}
       @media (prefers-reduced-motion:reduce){.bar,.bar *{animation:none!important;transition:none!important}}
     </style><div class="bar" aria-hidden="true"><span class="who"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><span class="jq" hidden><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span class="t"><b></b> wants to join (<span class="r"></span>)<span class="h"></span></span><span class="m" hidden></span><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button><b class="x" title="Dismiss (it stays in the side panel)">×</b></span></div>`);
     bar = shadow.querySelector(".bar");
@@ -591,12 +591,12 @@
         .c{position:fixed;left:0;top:0;transition:opacity .3s;opacity:0;will-change:transform}
         .c.on{opacity:1}
         svg{width:22px;height:22px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))}
-        .r{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(27,30,60,.5);opacity:0}
+        .r{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(11,20,33,.5);opacity:0}
         .c.click .r{animation:p .45s ease-out}
         @keyframes p{from{opacity:.9;transform:scale(.4)}to{opacity:0;transform:scale(1.4)}}
         span{position:absolute;left:16px;top:18px;padding:2px 8px;border-radius:999px;font:600 11px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
           color:#fff;background:#e9763f;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);-webkit-font-smoothing:antialiased}
-      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="0 0 24 24"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#1b1e3c" stroke-width="1.6" stroke-linejoin="round"/></svg><span></span></div>`);
+      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="0 0 24 24"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#0B1421" stroke-width="1.6" stroke-linejoin="round"/></svg><span></span></div>`);
       cur = shadow.querySelector(".c");
       document.documentElement.appendChild(curHost);
       curAt = null;

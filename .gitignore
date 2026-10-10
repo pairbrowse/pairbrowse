@@ -8,6 +8,7 @@ __pycache__/
 # Local Claude Code settings
 .claude/*
 !.claude/CLAUDE.md
+!.claude/workflows/
 # Never commit PairBrowse user data (profile, secrets, facts, runs, logs)
 .pairbrowse/
 *.log

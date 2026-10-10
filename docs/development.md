@@ -8,6 +8,32 @@ npm run test:fuzz  # property-based fuzzing of the security checks (test/fuzz, f
 claude plugin validate .  # the Claude Code manifests
 ```
 
+### The live tests
+
+Each live test file starts its own helper and browser (two or three for joining), and
+`node --test` runs files in parallel, one short of the CPU count: a full live run is ten or
+more browsers at once for about three minutes on a 12-core machine. Knobs:
+
+- `node --test --test-reporter=spec test/*.test.mjs` prints each test's duration; the suite's
+  length is set by its longest files (`form-patterns`, `join`, `shared-browser`,
+  `shared-mode`), not by their number.
+- `node --test --test-concurrency=4 test/*.test.mjs` runs fewer browsers at once. The option
+  goes before the files (after them node takes it for a file pattern), and `NODE_OPTIONS`
+  refuses it. On an idle 12-core machine this is slower (measured: 4 files at once 5 min 9 s, 8 files
+  4 min 26 s, the default 11 files 3 min 10 s), since the long files then start late; on a machine busy with other work it keeps each test
+  near its solo pace.
+- `node --test test/scroll.integration.test.mjs` runs one file; the live ones skip without
+  `PAIRBROWSE_TEST_RUNTIME`.
+
+Speed checks (the smooth scroll in `scroll.integration`, the styled pick on a big page and the
+fields whose names go away in `form-patterns.integration`) are relative: each test first times
+a plain action of the same kind on the same page, allows the step under test a multiple of
+that (with a floor at the quiet-machine limit and an absolute ceiling), and prints both as a
+diagnostic (`ℹ` lines with the spec reporter). A regression that waits on a stale name or a
+glide that stops being a glide still fails; a loaded machine doesn't. The long fixed waits in
+the join tests are deliberate: they assert that something never happens (a local address
+crossing, a watcher's change reaching the host), which takes a wait.
+
 The plugin is small:
 
 | Path | What it does |

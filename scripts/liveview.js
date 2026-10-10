@@ -97,10 +97,26 @@ fitBtn.addEventListener("click", () => {
   sendViewport();
 });
 
-const es = new EventSource(base + "events");
-const on = (event, fn) => es.addEventListener(event, (e) => fn(JSON.parse(e.data)));
-es.onopen = () => { setState("live"); fit(); };
-es.onerror = () => setState(es.readyState === EventSource.CLOSED ? "closed" : "reconnecting");
+// The event stream (frames and state). Closed while this page has been out of sight for a few
+// seconds (a hidden pane, a background tab: nobody sees the frames, and with no viewer left the
+// helper stops the tab's screencast), opened again the moment it's shown.
+let es = null;
+const handlers = [];
+const on = (event, fn) => { handlers.push([event, fn]); es?.addEventListener(event, (e) => fn(JSON.parse(e.data))); };
+function openStream() {
+  if (es) return;
+  es = new EventSource(base + "events");
+  for (const [event, fn] of handlers) es.addEventListener(event, (e) => fn(JSON.parse(e.data)));
+  es.onopen = () => { setState("live"); fit(); };
+  es.onerror = () => { if (es) setState(es.readyState === EventSource.CLOSED ? "closed" : "reconnecting"); };
+}
+openStream();
+let hiddenTimer = null;
+document.addEventListener("visibilitychange", () => {
+  clearTimeout(hiddenTimer);
+  if (document.hidden) hiddenTimer = setTimeout(() => { if (document.hidden && es) { es.close(); es = null; } }, 3000);
+  else openStream();
+});
 
 on("frame", (f) => {
   const resized = f.w !== frame.w || f.h !== frame.h;

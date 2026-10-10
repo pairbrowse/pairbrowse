@@ -68,6 +68,7 @@ const describe = (ev) => ev.type === "mouse" ? (ev.action === "mousePressed" ? "
 export function createScreenShare({ call, log = () => {}, during = () => () => {} }) {
   const peers = new Map(); // peer -> { page, tabId, view, frame, onInput, onState, role }
   const sessions = new Map(); // page -> { cdp, replayer, view, viewAt }
+  const watchedClose = new WeakSet(); // tabs whose closing ends their session and peers
   let looping = false;
 
   const ext = (fn, arg, ms = 8000) => call(fn, arg, ms);
@@ -81,7 +82,10 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     await replayer.attach(cdp);
     s = { cdp, replayer, view: null, viewAt: 0 };
     sessions.set(page, s);
-    page.once("close", () => { sessions.delete(page); watchers.delete(page); for (const [peer, p] of peers) if (p.page === page) stop(peer); });
+    if (!watchedClose.has(page)) {
+      watchedClose.add(page);
+      page.once("close", () => { sessions.delete(page); watchers.delete(page); for (const [peer, p] of peers) if (p.page === page) stop(peer); });
+    }
     return s;
   }
   // The tab's size in CSS pixels and its scroll (for pointers), read at most once a second.
@@ -191,6 +195,7 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
       await s.cdp.send("Page.stopScreencast").catch(() => {});
       if (s.onFrame) s.cdp.off("Page.screencastFrame", s.onFrame);
       s.onFrame = null;
+      releaseIfIdle(page);
       return;
     }
     const s = await session(page);
@@ -235,6 +240,16 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     if (!p) return;
     peers.delete(peer);
     await ext((a) => globalThis.pbShare(a), { op: "stop", peer }).catch(() => {});
+    releaseIfIdle(p.page);
+  }
+  // A tab nobody is connected to any more (no direct connection, no pictures) gives its
+  // debugger session back: kept, each tab ever shared would hold one for as long as it lived.
+  function releaseIfIdle(page) {
+    const s = sessions.get(page);
+    if (!s || watchers.has(page) || [...peers.values()].some((x) => x.page === page)) return;
+    sessions.delete(page);
+    if (s.onFrame) { s.cdp.off("Page.screencastFrame", s.onFrame); s.onFrame = null; }
+    s.cdp.send("Page.stopScreencast").catch(() => {}).finally(() => s.cdp.detach().catch(() => {}));
   }
 
   return {

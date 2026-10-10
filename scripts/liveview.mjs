@@ -643,12 +643,24 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     if (viewer && lastFrame) res.write(sse("frame", lastFrame));
   }
 
+  // A still of the tab on screen. With viewers it comes from the shown tab's session; without,
+  // from a session of its own, let go at once: a thumbnail polled by a pane never starts (or
+  // leaves running) the screencast that only viewers need.
   async function thumb({ req, res }) {
-    if (!shown) await follow();
-    if (!shown) return plain(res, 404);
     const q = Number(new URL(req.url, "http://x").searchParams.get("q")) || THUMB_QUALITY.default;
+    const quality = Math.min(THUMB_QUALITY.max, Math.max(THUMB_QUALITY.min, q));
     // What's on screen, unscaled: a clip or scale makes Chromium re-lay out the page (it flickers).
-    const { data } = await shown.cdp.send("Page.captureScreenshot", { format: "jpeg", quality: Math.min(THUMB_QUALITY.max, Math.max(THUMB_QUALITY.min, q)), optimizeForSpeed: true, captureBeyondViewport: false });
+    const still = (cdp) => cdp.send("Page.captureScreenshot", { format: "jpeg", quality, optimizeForSpeed: true, captureBeyondViewport: false });
+    let data;
+    if (shown) ({ data } = await still(shown.cdp));
+    else {
+      const ctx = await getContext();
+      const url = await currentUrl();
+      const page = ctx.pages().find((p) => p.url() === url) || ctx.pages().at(-1);
+      if (!page) return plain(res, 404);
+      const cdp = await page.context().newCDPSession(page);
+      try { ({ data } = await still(cdp)); } finally { cdp.detach().catch(() => {}); }
+    }
     res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "image/jpeg" });
     res.end(Buffer.from(data, "base64"));
   }

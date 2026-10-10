@@ -408,3 +408,58 @@ test("the helper marks only the shared tabs as reconnecting, and clears them whe
   await new Promise((r) => setTimeout(r, 20));
   assert.equal("reconnecting" in bars.get("shared"), false, "cleared once the channel is up");
 });
+
+// The helper waits on the page for input ("user-wait") instead of asking twice a second: the wait
+// answers the moment a person does something, empty after its time, and never two at once.
+test("the page answers a wait for input at once when something happens, empty after its time", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.addInitScript({ content: source });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: `<button id="b">Go</button><iframe id="f" srcdoc="<input id='q' aria-label='Code'>"></iframe>` }));
+    await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
+    // Empty after its time, without input.
+    let t = Date.now();
+    assert.deepEqual(await page.evaluate(() => window.__pbtest("tok", "300", "user-wait")), []);
+    assert.ok(Date.now() - t >= 250, `waited its time: ${Date.now() - t} ms`);
+    // Answered at once by a click (the pointer's move to the button answers a wait too: then the
+    // next wait brings the click).
+    t = Date.now();
+    const waiting = page.evaluate(() => window.__pbtest("tok", "5000", "user-wait"));
+    await page.waitForTimeout(100);
+    await page.click("#b");
+    const events = await waiting;
+    for (let i = 0; i < 3 && !events.some((e) => e.kind === "click"); i++) events.push(...await page.evaluate(() => window.__pbtest("tok", "5000", "user-wait")));
+    assert.ok(Date.now() - t < 2000, `answered at the click, not after 5 s: ${Date.now() - t} ms`);
+    assert.ok(events.some((e) => e.kind === "click" && e.what === "Go"), JSON.stringify(events));
+    // What was recorded before a wait opens comes back at once.
+    await page.click("#b");
+    await page.waitForTimeout(50);
+    t = Date.now();
+    const quick = await page.evaluate(() => window.__pbtest("tok", "5000", "user-wait"));
+    assert.ok(quick.some((e) => e.kind === "click"), "the click from before");
+    assert.ok(Date.now() - t < 500, `no wait with input already there: ${Date.now() - t} ms`);
+    // A second wait ends the first (empty), so a frame never holds two.
+    const first = page.evaluate(() => window.__pbtest("tok", "5000", "user-wait"));
+    await page.waitForTimeout(50);
+    const second = page.evaluate(() => window.__pbtest("tok", "300", "user-wait"));
+    assert.deepEqual(await first, [], "the earlier wait ends empty");
+    assert.deepEqual(await second, []);
+    // Frames wait too.
+    const frame = page.frames().find((f) => f !== page.mainFrame());
+    await ensureHud(frame, source, "__pbtest");
+    const inFrame = frame.evaluate(() => window.__pbtest("tok", "5000", "user-wait"));
+    await page.waitForTimeout(100);
+    await frame.click("#q");
+    await frame.type("#q", "1");
+    const fe = await inFrame;
+    for (let i = 0; i < 3 && !fe.some((e) => e.kind === "type"); i++) fe.push(...await frame.evaluate(() => window.__pbtest("tok", "5000", "user-wait")));
+    assert.ok(fe.some((e) => e.kind === "type" && e.what === "Code"), JSON.stringify(fe));
+  } finally {
+    await browser.close();
+  }
+});

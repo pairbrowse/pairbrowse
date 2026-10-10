@@ -1,0 +1,190 @@
+# Engineering progress: performance, memory, screenshots, reliability
+
+The durable handoff for the engineering mission (fastest, lightest, most precise PairBrowse without
+losing a capability). A new session reads this first, checks the repo state, and resumes from the
+verified work below. Nothing here is claimed done without a test or a measurement.
+
+## Commit examined
+
+- Started from `d73a501` (PairBrowse 0.15.41) on 2026-10-11.
+- Benchmarks: `PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime node test/bench.mjs --json out.json`
+  (its own helper on a temporary home, headless Patchright Chromium, a local site; compare runs
+  on the same machine only). `PAIRBROWSE_TRACE=1` makes the helper log each call's phases
+  (`trace <tool> total=… guard=… turn=… cursor=… mcp=… tidy=… notes=… shot=…` in `daemon.log`).
+
+## Confirmed architecture (what matters for resources)
+
+- One helper process (`scripts/daemon.mjs`) owns the browser over Playwright's pipe; each agent
+  connection gets its own Playwright MCP server instance (`serve.mjs`, about 1 MB each, listeners
+  removed on close); every tool result is decorated (`finishResult`): popups closed, page settled,
+  notes, then a screenshot (`screenshot.mjs`, one CDP screencast frame, JPEG q55 ≤820 px).
+- Screenshots were never kept: the result carries the bytes; per participant only the page and
+  the pixel-to-CSS scale stayed (for `pairbrowse_click_at`).
+- Recurring work while idle (before this work): presence read every frame of every tab twice a
+  second (`presence.mjs`); `cobrowse.mjs` woke 30 times a second even with nothing shared;
+  `sharing.mjs` dev-server refresh every 3 s; live view `invites.sweep` 1.5 s; hud spark expiry 2 s;
+  MCP request-trim 60 s; tunnel heartbeat 15 s; output sweep 10 min.
+- Live view: one shared CDP screencast per shown tab for all viewers (SSE), plus a sharp still
+  180 ms after motion; shared-browser joiners get WebRTC per joiner (one tab capture per tab) or a
+  JPEG fallback screencast per tab.
+
+## Measurements (same bench, same machine, 2026-10-11, macOS, Node 26, headless Patchright)
+
+"Baseline" is commit `d73a501` run from a worktree with this bench; "After" is the working tree
+at the end of this session (`bench-after3`). One run each: treat ±10% as noise, the idle CPU of
+the GPU process as noise (it winds down for seconds after any work).
+
+| Measure (screenshots on) | Baseline | After |
+|---|---|---|
+| `browser_click` p50 / p95 (20 verified clicks) | 802 / 819 ms | 517 / 537 ms |
+| `browser_click` p50, screenshots off | 566 ms | 266 ms |
+| `browser_snapshot` small form p50, images sent of 20 | 70 ms, 20 | 74 ms, 1 |
+| `browser_snapshot` long page p50 | 154 ms | 166 ms |
+| `browser_navigate` local page p50 | 385 ms | 400 ms |
+| `pairbrowse_run` 4-field form p50 | 355 ms | 350 ms |
+| `pairbrowse_click_at` p50 | 250 ms | 251 ms |
+| `pairbrowse_status` round trip p50 / p95 | 1 / 3 ms | 1 / 5 ms |
+| Cold start to first tool answer | 1.5 s | 1.2 s |
+| Helper RSS start → end of bench | 176 → 228 MB | 202 → 210 MB |
+| Tree RSS, 1 tab | 1.14 GB | 1.32 GB (noise: 1.1–1.4 across runs) |
+
+Idle CPU A/B (3 tabs on a form page, 20 s samples after 8 s rest, `idle-exp`):
+
+| Process | Baseline | After |
+|---|---|---|
+| Helper | 1.3% | 0.4% |
+| Renderers (all) | 0.3–1.0% | 0.3–0.7% |
+| Browser / GPU / utility | 0.5–0.7 / 0–0.4 / 0.2 | 0.2–0.8 / 0–0.5 / 0.1–0.2 |
+
+Multi-agent (`--agents N --rounds 10`, one helper, each agent in its own tab, every click's
+count verified in the click's own result):
+
+| Agents | Wall time | Calls/s | Verified / wrong | navigate p50 | snapshot p50 | click p50 | Tree RSS |
+|---|---|---|---|---|---|---|---|
+| 1 | 11.7 s | 2.6 | 10 / 0 | 398 ms | 265 ms | 519 ms | 1.39 GB |
+| 3 | 19.5 s | 4.6 | 30 / 0 | 559–807 ms | 519–780 ms | 551–812 ms | 1.84 GB |
+
+Three agents get 1.8× the throughput of one, with every click correct; per-call latency rises
+about 1.5–2× (shared helper queue, three renderers). Tabs are independent lanes (`collaboration.run`
+per tab), so the remaining serialization is the helper's single thread and the browser.
+
+Soak (`--soak 200`: 200 rounds of navigate + snapshot + click + type, about 800 calls): helper
+heap 83 → 108 MB (GC not forced; the bench's own memory probe shows no monotonic climb), helper
+RSS 220 → 189 MB, tree RSS 1.32 → 1.36 GB, driver execution contexts 1 → 2. No leak signal.
+
+Where the time goes (trace, after): a click is cursor ≈10 ms, MCP action ≈260 ms (its own
+200 ms settle plus Playwright's click), tidy ≈130 ms (popup looks, a 500 ms-bounded quiet wait),
+screenshot ≈115 ms. A navigate is tidy ≈240 ms (load check, quiet wait, popup looks, CAPTCHA
+check) and screenshot ≈115 ms. A screenshot is CDP session + first screencast frame + a 40–80 ms
+newest-frame wait.
+
+## Diagnosed problems (and status)
+
+1. **Screenshot taken after every decorated result, identical or not.** Fixed: bytes are hashed;
+   the same bytes for the same participant and tab send a one-line note instead of an image
+   (`SAME_PICTURE` in serve.mjs). Measured: 1 of 20 repeated snapshots carries an image (was 20).
+2. **Password check read the whole page text in every frame for every screenshot even with no
+   saved password.** Fixed: the reading runs only when a secret value is saved.
+3. **A stale screenshot could be clicked on** (same tab, but navigated, scrolled, resized, or
+   minutes old). Fixed: `pairbrowse_click_at` refuses with the reason and asks for a snapshot;
+   it also refuses spots outside the picture. Metadata kept per participant: url, scroll,
+   viewport, time, hash; never pixels. A closed tab drops its map (`forgetPage`).
+4. **CDP screencast session could stay attached if the capture threw mid-way.** Fixed: stop and
+   detach in `finally`.
+5. **Presence polled every frame of every tab twice a second.** Fixed: the page script now holds
+   one wait per frame (`user-wait`, answered at the first input, empty after 5 s); frames without
+   the script are asked again after 2 s; a late answer still counts. Input is noticed at once
+   rather than up to 500 ms later.
+6. **cobrowse woke 30×/s with nothing shared.** Fixed: self-scheduling rounds, 500 ms apart while
+   no tab is shared, 33 ms while one is.
+7. **Live view `thumb.jpg` started a screencast with no viewer and nothing stopped it.** Fixed:
+   a thumbnail with no shown tab uses a one-off CDP session, detached at once.
+8. **Shared-browser CDP sessions (`Page.enable`) lived for the tab's life after joiners left.**
+   Fixed: released once a tab has no peer and no watcher; the close listener is added once.
+9. **push.mjs per-joiner heartbeat timers were not unref'd.** Fixed.
+10. **The join request's IntersectionObserver (trackVisibility) ran on every page.** Fixed: only
+    while a request shows.
+11. **Shutdown never closed screen-share peers/sessions.** Fixed: `screens.close()` on shutdown.
+12. **Playwright MCP slept 500 ms after every action (and again after any request) before
+    answering.** PairBrowse already waits for the page itself (tidy). Fixed: `timeouts.settle`
+    200 ms (`settleMs` in config.json overrides). Click p50 802 → 517 ms.
+13. **The helper had no `unhandledRejection` / `uncaughtException` handler**: Node would end the
+    process and the browser died without writing cookies. Fixed: rejections are logged and the
+    helper goes on; an uncaught exception logs and shuts down cleanly (browser closed properly).
+14. **The live view page kept its event stream (and so the screencast) while hidden.** Fixed:
+    the stream closes 3 s after the page is hidden and reopens when shown.
+15. **A closed tab's spark stayed in the helper until the agent moved.** Fixed: `hud.forgetPage`
+    on tab close.
+16. **Every screenshot attaches and detaches its own CDP session.** Tried one kept session per
+    tab (captures of a tab serialized on it, tabs in parallel): the screenshot phase stayed at
+    102–116 ms, so it was reverted. The cost is the screencast's first frame plus the 40–80 ms
+    newest-frame wait, not the attach. Noted in `screenshot.mjs`.
+17. **A browser crash within 1.5 s of a navigation lost that tab** (the tab list is saved on a
+    debounce). Fixed (`scripts/tabs.mjs`): when the browser dies with a save pending, the tabs as
+    last known are written at once; tabs closed in the last second count as taken down with the
+    browser, not by a person. Covered by a unit test and the live test below.
+18. **No test killed the browser under a session.** Added `test/interruption.integration.test.mjs`:
+    SIGKILL on the browser while a wait is in flight; the call is answered, the helper lives on,
+    the session's picture maps are gone (`pairbrowse_test_memory` now reports `screenshots` and
+    `clients`), the next session reopens the browser with both tabs back and works.
+19. **No multi-agent measurement.** Added `test/bench.mjs --agents N --rounds R`: N sessions in
+    tabs of their own, each navigate + snapshot + click with the count verified in the click's
+    own result; per-agent p50/p95, calls per second, verified and wrong counts.
+
+## Changed files (this session)
+
+`scripts/daemon/screenshot.mjs` (rewritten around the same behaviour), `scripts/daemon/serve.mjs`
+(same-picture note, phase trace), `scripts/daemon.mjs` (forgetPage on tab close, screens.close,
+user-wait), `scripts/hud.js` (user-wait, join observer gating), `scripts/daemon/presence.mjs`,
+`scripts/daemon/cobrowse.mjs`, `scripts/liveview.mjs` (thumb), `scripts/daemon/screenshare.mjs`,
+`scripts/liveview/push.mjs`, `scripts/liveview.js` (stream pause while hidden),
+`docs/configuration.md` (`settleMs`), `skills/pairbrowse/SKILL.md` (same-picture note, click_at
+freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.test.mjs`,
+`test/presence.test.mjs`. Nothing is committed: the user decides what to commit and publish.
+
+## Tests run (2026-10-11)
+
+- `npm run lint`: clean. `claude plugin validate .`: passed.
+- `node --test test/*.test.mjs` (no runtime): 373 pass, 0 fail, 80 skipped (live).
+- Full live run (`PAIRBROWSE_TEST_RUNTIME`), before the MCP settle change: 435 pass, 0 fail,
+  20 skipped (opt-in modes: real tunnel, YouTube, Excalidraw, two machines), 3 min 12 s.
+- `npm run test:fuzz`: 36 pass.
+- Final full live run with every change: see the end of this file.
+
+## Known limitations
+
+- Identical-picture detection is byte-exact: a blinking caret in a focused field makes frames
+  differ, so a page with a focused text field still gets a picture each time.
+- Freshness can't see a layout shift without a scroll or navigation; the 120 s age bound and the
+  structure check under the spot (label, risk) are the guards.
+- The bench runs headless Patchright Chromium, not the PairBrowse native build.
+
+## Next highest-priority actions
+
+1. Review and commit this work (a version bump needs CHANGELOG.md and a tag: see CLAUDE.md).
+2. Verify the 200 ms MCP settle on real sites with the native build (an SPA that reacts late
+   without a request would need `settleMs` higher): watch for inline snapshots that miss a menu.
+3. Screenshot cost (≈115 ms per decorated result): reuse one CDP session per page (saves the
+   attach/detach), and end the newest-frame wait at the first frame when tidy settled just
+   before. Measure each.
+4. Popup looks (two evaluates per result, plus late checks at 3 s and 8 s) on big pages: cache
+   per page revision, or skip the second look when the first found nothing. Measure on a heavy
+   page first (the bench's long page shows little).
+5. Multiplayer: the live view's sharp still (JPEG q90, no size cap) after each motion burst is the
+   costliest encode; cap it to the viewer's fit size. The fallback screencast and the live view
+   each run their own screencast of the same tab: share one.
+6. A soak with `--expose-gc` and thousands of rounds, and one with joiners connected.
+7. hud.js: the bar's `backdrop-filter: blur` repaints on every scroll of every page; measure a
+   plain background on a heavy page.
+
+## Final run (2026-10-11, every change in place)
+
+- `npm run lint`: clean.
+- Full suite with the runtime (`node --test --test-reporter=spec test/*.test.mjs`): 457 tests,
+  437 pass, 0 fail, 20 skipped (opt-in modes), about 3 min.
+- Fuzz: 36 pass. Bench: `bench-after4` figures in the table above (after the revert of the
+  session reuse: click p50 517 ms, snapshot 65 ms with 1 image of 20, navigate 399 ms).
+- One flake seen once in four full runs under the suite's load (eleven browsers at once):
+  form-patterns' "a value a script rewrites 300 ms after the field is left" read the field
+  mid-rewrite ("GermanyUnited States"). It passes alone (2 of 2) and in the other full runs.
+- Committed on branch `perf/screenshots-presence-lifecycle` (not pushed, no version bump).

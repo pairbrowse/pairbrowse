@@ -91,6 +91,9 @@ Long runs (helpers started with `--expose-gc`; the memory probe collects garbage
   joiner snapshot p50 734 ms, p99 766.
 - `--agents 8`: 8.7 calls/s (3.3× one agent), 80 of 80 verified, helper RSS 252 MB, heap 90 MB,
   tree 2.98 GB (eight renderers); per-agent click p50 665–1211 ms.
+- `--agents 12`: 9.2 calls/s (3.5× one agent), 120 of 120 verified, helper RSS 223 MB, heap
+  96 MB, tree 3.27 GB; per-agent click p50 868–1895 ms. Throughput flattens past eight agents:
+  the helper's single thread and the one browser are the ceiling; correctness holds.
 
 Soak (`--soak 200`: 200 rounds of navigate + snapshot + click + type, about 800 calls): helper
 heap 83 → 108 MB (GC not forced; the bench's own memory probe shows no monotonic climb), helper

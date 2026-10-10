@@ -130,12 +130,31 @@ actions, for testing):
 ```
 
 Typing speed: `typingPace` from 0.2 (fastest) to 1 (slowest, about 60 words a minute). The
-default, 0.35, types about 95 words a minute: the gaps between keys, the short pauses and the
-occasional corrected typo scale with it; how long each key is held doesn't.
+default, 0.3, types a single `browser_type` at about 105 words a minute: the gaps between keys, the
+short pauses and the occasional corrected typo scale with it; how long each key is held doesn't.
 
 ```json
-{ "pairbrowse": { "typingPace": 0.3 } }
+{ "pairbrowse": { "typingPace": 0.35 } }
 ```
+
+A form (`browser_fill_form`) is filled the way a person fills one, field by field in the order
+given: into the first field, then on to the next with the Tab key when it is the next field in the
+page's own order (the mouse reaches for it otherwise, and for any field Tab didn't land on), the value
+typed key by key at `typingPace` with a quick typist's rhythm (the next key often down before the
+last is up, a beat after each word), a closed select picked by typing its option's first letters, a
+box ticked with Space, a date or time field set at once in its turn (its exact shape, YYYY-MM-DD).
+Every field is read back, and a value that didn't stay is said so in the result. A form never types
+quicker than about 40 ms a key on average (`typingPace` below 0.25 counts as 0.25 there). An
+11-field form takes about 9 s this way (the first fill after the browser starts a little longer),
+against 25 s with a mouse reach and a full key hold for every field. `formMove` picks how
+PairBrowse goes from field to field:
+
+```json
+{ "pairbrowse": { "formMove": "mouse" } }
+```
+
+`"tab"` (the default) is described above; `"mouse"` reaches for every field with the mouse, as
+single actions do. Fast mode (`pairbrowse_run`) is unchanged: it skips the human-like input altogether.
 
 Mouse movement: `motion` is `"combined"` by default. The profile keeps its own speed, tremor and
 habits, and each move is shaped like a hand's: one quick reach that lands close (now and then a few

@@ -8,7 +8,7 @@ import { CHALLENGE_TURN } from "../popups.mjs";
 
 // Each connected agent's tab carries the spark on its icon, in that participant's color (in the
 // order they joined: orange, cyan, purple, green). It moves when that agent works in another tab.
-const SPARK_COLORS = ["#e9763f", "#4fd1e8", "#a78bfa", "#4ade80"];
+export const SPARK_COLORS = ["#e9763f", "#4fd1e8", "#a78bfa", "#4ade80"];
 // Claude's cursor: before a click, typing or a choice, show where in the page it happens.
 const CURSOR_TOOLS = { browser_click: "click", browser_type: "type", browser_hover: "hover", browser_select_option: "click", browser_fill_form: "type", pairbrowse_upload: "click" };
 const CURSOR_WAIT_MS = 300; // never holds an action up for longer finding its element

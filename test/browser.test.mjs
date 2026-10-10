@@ -90,6 +90,11 @@ test("profiles get Chromium's own navy color theme instead of the old theme exte
   const own = profilePreferences({ extensions: { theme: { id: "" } }, browser: { theme: { user_color2: 5 } } });
   assert.deepEqual(own.extensions.theme, { id: "" });
   assert.equal(own.browser.theme.user_color2, 5);
+  // A color the user picked in Chromium's own color theme stays; PairBrowse's old seed moves on.
+  const picked = profilePreferences({ extensions: { theme: { id: "user_color_theme_id" } }, browser: { theme: { user_color2: 0xff00aa00 | 0 } } });
+  assert.equal(picked.browser.theme.user_color2, 0xff00aa00 | 0);
+  const stale = profilePreferences({ extensions: { theme: { id: "user_color_theme_id" } }, browser: { theme: { user_color2: 0xff4e6498 | 0, color_scheme2: 2 } } });
+  assert.equal(stale.browser.theme.user_color2, THEME_COLOR);
 });
 
 test("the browser loads only the side panel extension", async () => {

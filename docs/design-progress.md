@@ -163,6 +163,19 @@ Starting values from the brief, to be refined for contrast: background `#0B1421`
 panel, the live view and the in-page script (`scripts/browser/panel/common.js` is the shared
 code today).
 
+Built (tokens subset): `scripts/browser/panel/tokens.css`, linked by the side panel, picker, new
+tab page and joiner's picture page and served to the live view as `assets/tokens.css`. Refined
+for WCAG AA: muted `#8699B1` (was `#71869F`: 3.9:1 on elevated); accent `#3285F6` stays for
+fills, rings and borders, and as text it is `--accent-ink` `#6AA6F9`; primary buttons put `--bg`
+text on `--accent` (white on accent is 3.6:1); the border token is named `--edge`; `--spark` is
+`SPARK_COLORS[0]`. Type 11/12/13 px, radii 6/8/10 px (`--r-1..3`), spacing 4/8/12/16 px. A light
+block under `:root[data-scheme="system"]` (live view only): bg `#F4F7FB`, chrome/sidebar
+`#FFFFFF`, elevated `#E8EEF5`, hover `#DCE5EF`, ink `#0F1B2A` / `#3A4B60` / muted `#53667D`, edge
+`#CBD6E2`, accent `#2468D0` (so `--bg` text on it passes), accent-ink `#1F63C7`, ok `#11735A`,
+warn `#8A5A00`, bad `#C0343A`. `hud.js` and `record.js` carry the values inline (closed shadow
+roots and a canvas take no variables); `test/tokens.test.mjs` keeps them equal and checks the
+contrast. `THEME_COLOR` is the chrome navy `0xff101d2d`. `ntp.png` is gone (flat `--bg`).
+
 ## Subset workflows
 
 `.claude/workflows/`:
@@ -233,9 +246,24 @@ Docs: `docs/using.md` gets a short "Three ways to look at it" paragraph.
 
 ## Done
 
-(nothing yet)
+**tokens** (2026-10-11, `design-subset` run wf_523d6638: plan Fable, build Opus, review pass
+in one round; tests 381 unit pass, 50 live pass on the touched suites). `scripts/browser/panel/
+tokens.css` is the one sheet (dark values from the brief with contrast fixes: muted `#8699B1`,
+accent as text `#6AA6F9`, primary buttons dark text on accent; a light block only for the live
+view under the system scheme); linked by the side panel, picker, new tab page, joiner's picture
+page and the live view (served from the fixed asset list, CSP unchanged). `scripts/hud.js` and
+`record.js` carry the same values inline (closed shadow roots take no variables; a page could
+inject them) and `test/tokens.test.mjs` keeps every literal equal to a sheet value or a spark
+color and checks the contrast matrix. The theme seed is the sheet's chrome navy (`THEME_COLOR`
+0xff101d2d; hue 254°, as the accent's 257°); profiles still on PairBrowse's old seed move to it
+at the next start, a color the user picked stays (`scripts/browser.mjs`, `test/browser.test.mjs`).
+The new tab page is flat navy, the 2.5 MB `ntp.png` and its blur are gone, the logo unchanged.
+`docs/development.md` describes the sheet. Not verified by eye: the window frame's tint from the
+new seed (screen capture isn't permitted for the helper's session here; one glance at the next
+browser start); Chromium's tonal palette takes the seed's hue, so navy is expected.
 
 ## Next
 
-1. `design-subset` with `tokens` (the shared sheet, the theme seed, the new tab page).
-2. `hud`, `panel`, `liveview`, `modes`; `design-validate` after each.
+1. `design-subset` with `hud`, then `panel`, `liveview`, `modes`; `design-validate` after each.
+2. Rerun the 3000-round soak (`test/bench.mjs --soak 3000`) in a quiet window; the earlier run
+   died with an interrupt.

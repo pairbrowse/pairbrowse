@@ -47,7 +47,7 @@ test("pictures that stop coming show a spinner and 'Reconnecting to Bob…' over
     assert.deepEqual(await holdUntil((h) => h.shown), { shown: true, text: "Reconnecting to Bob…", dimmed: true });
     const style = await page.evaluate(() => { const s = getComputedStyle(document.getElementById("hold")); return { pointer: s.pointerEvents, bg: s.backgroundColor }; });
     assert.equal(style.pointer, "none", "never takes a click from the picture");
-    assert.match(style.bg, /rgba\(20, 22, 43, 0\.35\)/, "translucent over the last picture");
+    assert.match(style.bg, /rgba\(11, 20, 33, 0\.35\)/, "translucent over the last picture");
     assert.equal(await page.evaluate(() => document.getElementById("still").hidden), false, "the last picture stays");
     await page.screenshot({ path: join(process.env.PAIRBROWSE_TEST_SHOTS || "/tmp", "screen-reconnecting.png") }).catch(() => {});
     assert.equal((await holdUntil((h) => /Still/.test(h.text))).text, "Still reconnecting to Bob…", "longer: said so, in the same words");

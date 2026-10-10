@@ -8,6 +8,18 @@ npm run test:fuzz  # property-based fuzzing of the security checks (test/fuzz, f
 claude plugin validate .  # the Claude Code manifests
 ```
 
+### The design tokens
+
+`scripts/browser/panel/tokens.css` is the one sheet (colors, type, radii, spacing) for the side
+panel, the session picker, the new tab page, a joiner's picture page and the live view (served
+from the same file through the live view's fixed asset list). The live view alone opts into the
+light scheme with `data-scheme="system"`; the extension pages stay dark. `scripts/hud.js` (closed
+shadow roots) and `record.js` (a canvas) carry the same hex values inline, and
+`test/tokens.test.mjs` keeps every literal color in those files and the page sheets equal to a
+sheet value or a `SPARK_COLORS` entry and checks WCAG AA contrast in both schemes. Participant
+colors are `SPARK_COLORS` in `scripts/daemon/hud.mjs`. The window frame follows `THEME_COLOR` in
+`scripts/browser.mjs` (the sheet's chrome navy) unless the user picked a theme.
+
 ### The live tests
 
 Each live test file starts its own helper and browser (two or three for joining), and
@@ -49,7 +61,7 @@ The plugin is small:
 | `scripts/log.mjs` | PostToolUse hook: plain-English activity log per session in `~/.pairbrowse/log/` |
 | `scripts/hud.js` | In-page status badge, driven only with a per-start random key |
 | `scripts/liveview.mjs`, `scripts/liveview/` | Live view server for the Claude workspace (dock and Browser pane), the side panel's data: request checks, invites, input replay, shared tabs for joiners and their server |
-| `scripts/liveview.html`, `.css`, `.js`, `scripts/browser/panel/common.js` | The live view page, and the code it shares with the side panel |
+| `scripts/liveview.html`, `.css`, `.js`, `scripts/browser/panel/common.js`, `tokens.css` | The live view page, and the code and design tokens it shares with the side panel |
 | `scripts/join.mjs`, `scripts/relay.mjs`, `scripts/tabsync.mjs`, `scripts/daemon/follow.mjs` | Join codes and host approvals; the joiner's connection to the host (one WebSocket both ways); which addresses, field values, pointers and tab orders cross and the loop-safe bookkeeping; the joiner's browser following the shared tabs |
 | `scripts/liveview/push.mjs`, `scripts/liveview/joiner-server.mjs`, `scripts/ws.mjs` | The host's push channel (one WebSocket per approved joiner: tabs, form values, pointers, session, messages), the guest port with its limits, and the small standard-library WebSocket both sides use |
 | `scripts/daemon/forms.mjs`, `scripts/daemon/cobrowse.mjs`, `scripts/daemon/taborder.mjs`, `scripts/daemon/session.mjs` | Reading and filling shared form fields; watching shared tabs for pointer moves and field changes; tab order through the side panel extension; who is doing what and messages between participants |

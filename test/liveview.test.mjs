@@ -124,7 +124,7 @@ test("the viewer runs only its own files, served from a fixed list behind the ke
     assert.match(csp, /style-src 'self'/);
     assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
     assert.doesNotMatch(page.text, /<script>|<script(?![^>]*\bsrc=)[^>]*>|<style|\sstyle=|\son[a-z]+=/i, "no inline code or styles");
-    for (const name of ["liveview.js", "liveview.css", "common.js"]) {
+    for (const name of ["liveview.js", "liveview.css", "tokens.css", "common.js"]) {
       const r = await request(view.port, "GET", `/${key}/assets/${name}`);
       assert.equal(r.status, 200, name);
       assert.match(r.headers["content-type"], name.endsWith(".css") ? /^text\/css/ : /^text\/javascript/);
@@ -132,7 +132,7 @@ test("the viewer runs only its own files, served from a fixed list behind the ke
     }
     const w = invites.create({ role: "watch", label: "W" });
     assert.equal((await request(view.port, "GET", `/${w.key}/assets/liveview.js`)).status, 200, "an invite link loads the page's files too");
-    for (const bad of ["assets/liveview.mjs", "assets/../liveview.mjs", "assets/%2e%2e/liveview.mjs", "assets/", "assets", "assets/common.js/x", "assets/constructor", "assets/__proto__"]) {
+    for (const bad of ["assets/liveview.mjs", "assets/../liveview.mjs", "assets/%2e%2e/liveview.mjs", "assets/", "assets", "assets/common.js/x", "assets/tokens.css/x", "assets/constructor", "assets/__proto__"]) {
       assert.equal((await request(view.port, "GET", `/${key}/${bad}`)).status, 404, bad);
     }
     assert.equal((await request(view.port, "GET", `/${"0".repeat(43)}/assets/liveview.js`)).status, 404, "wrong key");

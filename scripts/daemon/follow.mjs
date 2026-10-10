@@ -6,7 +6,8 @@
 // session shows here like local activity: in the bar at the bottom of each page, the side panel
 // and the tab overview.
 import { parseJoinCode, cleanName, displayName } from "../join.mjs";
-import { startJoin } from "../relay.mjs";
+import { startJoin, FAILOVER_MS } from "../relay.mjs";
+import { waitForLink, waitedLine } from "./linkwait.mjs";
 import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, tabWho, personColor, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
 import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../devshare.mjs";
@@ -614,6 +615,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     liveView()?.setRemote([]);
     onLeft?.();
     for (const page of cur.pages.values()) if (!page.isClosed()) { hud.setSharedSpark(page, ""); hud.setPersonMark(page, ""); }
+    hud.setReconnecting?.("");
     clearInterval(cur.inputTimer); cur.inputTimer = null;
     for (const [participant, st] of agentState) if (st.cur === cur) agentState.delete(participant);
     // Shared browser: each picture becomes the tab it showed, as your own (signed in as you).
@@ -686,7 +688,16 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         }
       },
     });
-    (async () => { while (s === cur) { await sleep(OUTBOUND_MS); if (s === cur) await queue(() => outbound(cur)).catch((e) => log("shared tabs", e?.message || e)); } })();
+    (async () => {
+      while (s === cur) {
+        await sleep(OUTBOUND_MS);
+        if (s !== cur) break;
+        // The channel dropped and another address is being tried: the shared tabs' bars say so to the
+        // person here meanwhile (nothing for agents; a switch that works is a non-event for them).
+        hud.setReconnecting?.(cur.join.switching ? parsed.label : "", [...cur.pages.values()]);
+        await queue(() => outbound(cur)).catch((e) => log("shared tabs", e?.message || e));
+      }
+    })();
     // The host's first answer comes within a moment: a code that doesn't work (revoked, expired,
     // a wrong key) or a no is an error here, not a wait. No answer yet (a fresh tunnel): it keeps asking.
     for (const end = Date.now() + JOIN_ANSWER_MS; s === cur && cur.join.phase === "asking" && Date.now() < end;) await sleep(100);
@@ -760,8 +771,12 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   async function remoteCall(participant, msg, { app }) {
     const cur = s;
     if (!cur?.shared) return { error: { code: -32000, message: "Not in a shared browser session." } };
-    // The link to the host is down for now: wait for it, up to RECONNECT_WAIT_MS.
-    for (const end = Date.now() + RECONNECT_WAIT_MS; cur.join.phase !== "in" && s === cur && Date.now() < end;) await sleep(500);
+    // The connection to the host is moving to another address: the call waits for it (a few
+    // seconds, as a rule) and then runs as usual; only a longer wait is mentioned in the result.
+    const waited = await waitForLink(() => cur.join.switching, { max: FAILOVER_MS + 10_000, isCurrent: () => s === cur });
+    if (waited > 300) log(`${msg.params?.name} waited ${waited} ms for the connection to the host's session`);
+    // The link to the host is down for now: wait for it, up to RECONNECT_WAIT_MS in all.
+    for (const end = Date.now() + Math.max(0, RECONNECT_WAIT_MS - waited); cur.join.phase !== "in" && s === cur && Date.now() < end;) await sleep(500);
     const host = cur.join.host || "the host";
     if (s !== cur) return { result: { content: [{ type: "text", text: `${ended?.text || "The shared session ended."} Nothing was done in ${host}'s browser.` }], isError: true } };
     // The host may have ended the sharing while the tunnel was down: this side can't tell.
@@ -784,6 +799,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     }
     const out = await sendLine(cur, agent, { jsonrpc: "2.0", id: `c-${++callSeq}`, method: "tools/call", params: { ...msg.params, arguments: args } });
     const { id: _id, ...rest } = out || {};
+    const line = waitedLine(waited, `the connection to ${host}'s session`);
+    if (line && Array.isArray(rest.result?.content)) rest.result.content.push({ type: "text", text: `\n### PairBrowse\n- ${line}` });
     return rest.result || rest.error ? rest : { error: { code: -32000, message: "No answer from the host's browser." } };
   }
 

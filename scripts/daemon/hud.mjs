@@ -84,10 +84,23 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   // pointers from the other browser of a shared tab, drawn in the page.
   const readPointer = (page) => within(800, call(page, "", "pointer").catch(() => null));
   const showPointers = (page, list) => quietly(page, JSON.stringify(list), "cursors");
+  // The shared tabs whose connection to the host is being moved to another address: their bars say
+  // "Reconnecting to Bob…" meanwhile (for the person here only; agents hear nothing of it).
+  let reconnecting = { to: "", pages: new Set() };
   function applyBar(page) {
     const person = waiting(page);
     const p = pause();
-    return quietly(page, JSON.stringify({ items: recentFor(page), waiting: !!person, person: person || "", pause: p.by ? { by: p.by } : null, canPause: !!p.can }), "bar");
+    const re = reconnecting.to && reconnecting.pages.has(page) ? reconnecting.to : "";
+    return quietly(page, JSON.stringify({ items: recentFor(page), waiting: !!person, person: person || "", pause: p.by ? { by: p.by } : null, canPause: !!p.can, ...(re ? { reconnecting: re } : {}) }), "bar");
+  }
+  // to: the host's name while the switch is on (empty: over); pages: the shared tabs here.
+  function setReconnecting(to, pages = []) {
+    const next = { to: String(to || "").slice(0, 60), pages: new Set(to ? pages : []) };
+    const same = next.to === reconnecting.to && next.pages.size === reconnecting.pages.size && [...next.pages].every((p) => reconnecting.pages.has(p));
+    if (same) return;
+    const touched = new Set([...reconnecting.pages, ...next.pages]);
+    reconnecting = next;
+    for (const page of touched) if (!page.isClosed()) applyBar(page);
   }
   const sparkOn = (page) => [...sparks.values()].find((s) => s.page === page);
 
@@ -235,7 +248,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     // The page script's name and key: forms.mjs reads and claims fields through it.
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
-    source, call, ensure, onPageLoad, applyBar, setBadge, setBadgeFor, statusOf, badge: () => badge,
+    source, call, ensure, onPageLoad, applyBar, setReconnecting, setBadge, setBadgeFor, statusOf, badge: () => badge,
     moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor, markTargets,
   };

@@ -21,7 +21,7 @@ const SILENT_MS = Number(process.env.PAIRBROWSE_TEST_SILENT_MS) || 10_000;
 // A joiner whose channel closed and didn't come back within this is gone. A reconnect takes a
 // second or two; one through another tunnel address (relay.mjs, when one went down) a few more,
 // so this leaves room for that: the joiner comes back on the same key and nothing is lost.
-const GONE_MS = Number(process.env.PAIRBROWSE_TEST_GONE_MS) || 25_000;
+export const GONE_MS = Number(process.env.PAIRBROWSE_TEST_GONE_MS) || 25_000;
 const STREAMS_PER_JOINER = 2;
 const FRAME_SKIP_BYTES = 1 << 20; // a joiner this far behind gets no new pictures until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the stream is cut (the joiner reconnects)
@@ -35,6 +35,7 @@ const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 // onLost(j): joiner j's channel is gone and didn't come back (their helper died or lost the network).
 export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared, tabMeta, isIn = () => true, sessionFor = () => null, mapUrl = () => null, onLost = () => {}, log = () => {} }) {
   const streams = new Map(); // conn -> { j, key, conn, stateSig, pointersSig, formSigs: Map id -> sig }
+  const lost = new Map(); // joinerKey -> name: channels down but not yet gone (the joiner is moving to another address)
   const forms = new WeakMap(); // tab -> { sig, form, t }
   const hostPointers = new WeakMap(); // tab -> { me, agent }
   const joinerPointers = new Map(); // joinerKey -> { t, list: [{ id, x, y, who, color, k, t }] }
@@ -67,7 +68,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
   async function pushState() {
     stateTimer = null;
     for (const [conn, st] of streams) {
-      if (!isIn(st.key)) { conn.close(); streams.delete(conn); continue; } // left, revoked
+      if (!isIn(st.key)) { conn.close(); streams.delete(conn); lost.delete(st.key); continue; } // left, revoked
       const state = await tabsFor(st.j).catch(() => null);
       if (!state) continue;
       const sig = JSON.stringify(state);
@@ -172,20 +173,34 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
   return {
     active,
     changed,
+    // The joiner whose channel is down but not yet gone (their helper is moving to another
+    // address): their name, or null. The host's agents hold their tab work meanwhile (serve.mjs);
+    // except: a joiner key not to count (that joiner's own forwarded calls never wait for it).
+    reconnecting: (except = null) => {
+      for (const [key, name] of lost) {
+        if (!isIn(key)) { lost.delete(key); continue; } // left or taken out since: gone, not reconnecting
+        if (key !== except) return name;
+      }
+      return null;
+    },
     // An approved joiner's channel opens: everything as it stands now, then changes.
     async open(j, conn) {
       const key = joinerKey(j);
       const mine = [...streams.values()].filter((x) => x.key === key);
       if (mine.length >= STREAMS_PER_JOINER) { mine[0].conn.close(); streams.delete(mine[0].conn); }
-      const st = { j, key, conn, stateSig: "", stateAt: 0, sessionSig: "", pointersSig: "", formSigs: new Map() };
+      const st = { j, key, conn, openedAt: Date.now(), stateSig: "", stateAt: 0, sessionSig: "", pointersSig: "", formSigs: new Map() };
       streams.set(conn, st);
+      lost.delete(key);
       // The joiner counts as there while it answers the pings (a pong to each); an open socket
       // alone says nothing behind a tunnel. The heartbeat also keeps the tunnel from closing it.
       const seen = setInterval(() => { if (Date.now() - (conn.heard ?? Date.now()) > SILENT_MS) conn.close(); else j.seen = Date.now(); }, 2000);
       const beat = setInterval(() => { send(st, "ping", Date.now()); try { conn.ping?.(); } catch {} }, HEARTBEAT_MS);
       conn.onClose(() => {
         clearInterval(seen); clearInterval(beat); streams.delete(conn);
-        const gone = setTimeout(() => { if (![...streams.values()].some((x) => x.key === key)) { try { onLost(j); } catch (e) { log("push", e?.message || e); } } }, GONE_MS);
+        log(`push: ${j.name}'s channel closed after ${Math.round((Date.now() - st.openedAt) / 1000)} s; ${[...streams.values()].filter((x) => x.key === key).length} of theirs still open`);
+        // Down but still in: reconnecting. A joiner who left or was taken out is just gone.
+        if (isIn(key) && ![...streams.values()].some((x) => x.key === key)) lost.set(key, j.name);
+        const gone = setTimeout(() => { if (![...streams.values()].some((x) => x.key === key)) { lost.delete(key); try { onLost(j); } catch (e) { log("push", e?.message || e); } } }, GONE_MS);
         gone.unref?.();
       });
       await pushState();
@@ -193,7 +208,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       pointersChanged();
     },
     // A joiner's stream ends with their invite or approval.
-    end(key) { for (const [conn, st] of streams) if (st.key === key) { conn.close(); streams.delete(conn); } },
+    end(key) { lost.delete(key); for (const [conn, st] of streams) if (st.key === key) { conn.close(); streams.delete(conn); } },
     // From the page script (daemon/cobrowse.mjs): a field changed; the person or agent pointed.
     dirty(page) { if (active()) readForm(page).catch(() => {}); },
     // A field's plain value as last shared from this tab (frame and key), or undefined.

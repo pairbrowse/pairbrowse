@@ -12,6 +12,13 @@ body { font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; colo
 #status.hidden { opacity: 0; pointer-events: none; }
 #status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
+/* The pictures stopped while the connection to the host moves to another address: a spinner over
+   the last picture, dimmed a little, until the next one comes. Takes no click, ever. */
+#hold { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20, 22, 43, .35); pointer-events: none; }
+#hold[hidden] { display: none; }
+#hold .box { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px; background: var(--pill); color: var(--ink); box-shadow: 0 6px 24px rgba(0, 0, 0, .3); }
+#hold .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(169, 173, 201, .35); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 /* Whose tab it is and its real address, top left; they fade after a few seconds and come back
    when the pointer goes near them. Never take a click: everything under them is the host's page. */
 #top { position: fixed; left: 12px; top: 12px; display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 24px); opacity: 0; transition: opacity .4s; pointer-events: none; }
@@ -34,4 +41,4 @@ body { font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; colo
 #pick .row { display: flex; gap: 8px; justify-content: flex-end; }
 #pick button { padding: 8px 14px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font: 600 13px/1 system-ui, -apple-system, "Segoe UI", sans-serif; cursor: pointer; }
 #pick button.ghost { background: transparent; color: var(--muted); }
-@media (prefers-reduced-motion: reduce) { #status .dot { animation: none; } .p, #top, #status { transition: none; } }
+@media (prefers-reduced-motion: reduce) { #status .dot, #hold .spin { animation: none; } .p, #top, #status { transition: none; } }

@@ -439,7 +439,7 @@ const cobrowse = createCobrowse({
 hud.onCursor((page, at) => { liveView()?.agentPointed?.(page, at); presence.agentPointed(page, at); });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels,
+  secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {

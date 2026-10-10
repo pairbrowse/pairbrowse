@@ -13,7 +13,7 @@ const OFFLINE_LONG_MS = 120_000; // offline this long: say so in more words
 const REACHING_MS = 45_000; // a fresh tunnel's name may take this long to reach the joiner's resolver: keep asking, quietly
 // In, and the connection dropped: the other addresses are tried for this long before anything
 // shows (phase stays "in"). A tunnel going down with a standby up is a non-event for the joiner.
-const FAILOVER_MS = Number(process.env.PAIRBROWSE_TEST_FAILOVER_MS) || 20_000;
+export const FAILOVER_MS = Number(process.env.PAIRBROWSE_TEST_FAILOVER_MS) || 20_000;
 const REQUEST_TIMEOUT_MS = { send: 30_000, leave: 5000, pointer: 5000, connect: 20_000 };
 const WAIT_MS = { idle: 3000, offline: 2000, again: 300, switch: 500 };
 const SILENT_MS = 40_000; // silence this long means the channel is gone (a host sending heartbeats 15 s apart: before 0.14.15)
@@ -118,6 +118,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
       try {
         const c = await connect(`${base()}/events`, { headers });
         conn = c;
+        const connectedAt = Date.now();
         answered = true;
         offlineSince = 0;
         lostAt = 0;
@@ -156,7 +157,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
         replies.clear();
         // Dropped while in: straight on to the next address (a standby tunnel), no pause first,
         // and nothing shows unless every address stays down for FAILOVER_MS.
-        if (!stopped) { lostAt ||= Date.now(); nextRelay(); set("offline", "The connection to the host's session dropped. Reconnecting."); dropped = true; }
+        if (!stopped) { lostAt ||= Date.now(); nextRelay(); log("shared tabs", `the channel dropped after ${Math.round((Date.now() - connectedAt) / 1000)} s; trying address ${at + 1} of ${urls.length}`); set("offline", "The connection to the host's session dropped. Reconnecting."); dropped = true; }
       } catch (e) {
         if (stopped) break;
         if (e.status) {
@@ -174,6 +175,9 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     host: code.label,
     get phase() { return phase; },
     get message() { return message; },
+    // In, but the channel dropped and another address is being tried: the picture stands still
+    // meanwhile, and the person here is told so (never an agent: nothing in results or notes).
+    get switching() { return !!switching(); },
     // A drive joiner's changes to the shared tabs. Resolves to the host's answer ({ opened }), or null.
     async send(ops) {
       if (code.role !== "drive" || phase !== "in" || !ops.length) return null;

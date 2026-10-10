@@ -57,3 +57,37 @@ test("a joiner that stopped reading gets no pictures, then is cut", async () => 
     push.close();
   }
 });
+
+// The host's agents hold their tab work while a joiner's channel is down but not gone (serve.mjs
+// asks reconnecting()): only for a joiner still in, never for one who left or was taken out, and
+// never counted against that joiner's own forwarded calls.
+test("reconnecting() names a joiner whose channel dropped while in, not one who left, not to themselves", async () => {
+  const joiners = new Set(["a", "b"]);
+  const connFor = () => { let closed = () => {}; return { send() {}, onClose(cb) { closed = cb; }, close() { closed(); } }; };
+  const push = createPush({
+    getContext: async () => ({ pages: () => [] }), idOf: () => "t1", joinerKey: (j) => j.key, secretDomains: () => [], shared: { showPointers() {} }, tabMeta: () => ({}),
+    tabsFor: async () => ({ tabs: [] }), isIn: (key) => joiners.has(key),
+  });
+  try {
+    const alice = connFor(), bob = connFor();
+    await push.open({ name: "Alice", key: "a" }, alice);
+    await push.open({ name: "Bob", key: "b" }, bob);
+    assert.equal(push.reconnecting(), null, "both channels up");
+    alice.close();
+    assert.equal(push.reconnecting(), "Alice", "Alice's channel dropped while she is in");
+    assert.equal(push.reconnecting("a"), null, "not for Alice's own calls");
+    assert.equal(push.reconnecting("b"), "Alice");
+    const again = connFor();
+    await push.open({ name: "Alice", key: "a" }, again);
+    assert.equal(push.reconnecting(), null, "back: nothing to wait for");
+    again.close();
+    joiners.delete("a"); // left just then
+    assert.equal(push.reconnecting(), null, "a joiner who left is gone, not reconnecting");
+    bob.close();
+    joiners.delete("b");
+    assert.equal(push.reconnecting(), null);
+    push.end("b");
+  } finally {
+    push.close();
+  }
+});

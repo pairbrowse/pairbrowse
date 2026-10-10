@@ -5,6 +5,11 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.36 (2026-10-10)
+
+- When the connection carrying a shared session goes down and a joiner's browser moves to the host's second address, the few seconds it takes are no longer a silent freeze. In shared browser mode the last picture stays, dimmed a little, with a spinner and "Reconnecting to Bob…" over it until the next picture comes (after half a minute: "Still reconnecting to Bob…"); in a shared tab's bottom bar the who-line says the same instead of who is driving. Only the person sees this: tool results, `pairbrowse_join status` and agents' notes don't change.
+- While the connection switches, agents on both sides wait a moment instead of acting blind: a joiner's agent holds its call until the host can be reached again, and the host's agents hold their tab work while a joiner's connection is away. A wait of a few seconds passes without a word; a longer one is mentioned in one plain line in that result ("Waited 6 s for Alice's connection to come back."). Never for a joiner who has left, and never a joiner's own call because of their own reconnect.
+
 ## 0.15.35 (2026-10-10)
 
 - When the connection carrying a shared session goes down, the people in it stay in: PairBrowse keeps a second connection ready, every joiner knows both addresses, and theirs switches over by itself with the same code, so nothing changes for them and nothing is said to anyone. The host waits long enough for that switch before counting a joiner as gone. Only if every connection is lost for over a minute does the host hear, once and in plain words, that sharing lost its connection; join codes made earlier are never declared dead while sharing is up, and `pairbrowse_invite list` shows each code with a working address.

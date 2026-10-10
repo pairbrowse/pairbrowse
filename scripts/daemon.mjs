@@ -24,7 +24,7 @@
 import net from "node:net";
 import { createRequire } from "node:module";
 import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve as resolvePath, sep } from "node:path";
 import { homedir } from "node:os";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./secrets.mjs";
@@ -460,8 +460,11 @@ const serve = createServe({
   testTools: {
     // Tests only (PAIRBROWSE_TEST_MEMORY=1): how many listeners the browser has for its own end,
     // which grows with every session that came and went if their servers' listeners are kept.
-    ...(process.env.PAIRBROWSE_TEST_MEMORY === "1" ? { pairbrowse_test_memory: async () => {
+    ...(process.env.PAIRBROWSE_TEST_MEMORY === "1" ? { pairbrowse_test_memory: async (args = {}) => {
       const ctx = await context.current();
+      globalThis.gc?.(); // with --expose-gc (the bench): what's reachable, not what's waiting to be collected
+      // heap: a file path under the helper's home: a V8 heap snapshot is written there (leak hunts).
+      if (typeof args.heap === "string" && args.heap && resolvePath(args.heap).startsWith(paths.home + sep)) (await import("node:v8")).writeHeapSnapshot(resolvePath(args.heap));
       const m = process.memoryUsage();
       return { text: JSON.stringify({ close: ctx?.listenerCount("close") ?? -1, disconnected: ctx?.browser?.()?.listenerCount("disconnected") ?? -1, contexts: ctx ? contextCount(ctx) : -1, screenshots: screenshots.held().size, clients: clients.size, rss: m.rss, heapUsed: m.heapUsed, heapTotal: m.heapTotal, external: m.external, arrayBuffers: m.arrayBuffers }) };
     } } : {}),

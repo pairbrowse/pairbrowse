@@ -72,6 +72,26 @@ per tab), so the remaining serialization is the helper's single thread and the b
 
 Soak with viewers (`--soak 100 --viewers N`, two watch-link event streams open): see item 23.
 
+Long runs (helpers started with `--expose-gc`; the memory probe collects garbage first):
+
+- `--soak 1000` (about 4,000 calls, 22 minutes): helper RSS 207 → 205 MB, tree 1.30 → 1.38 GB,
+  heap 82 → 101 MB, a straight line of about 20 KB per round. Heap snapshots before and after
+  300 rounds (`scratchpad/leak-hunt.mjs`, `pairbrowse_test_memory { heap }`) name it: one
+  navigation's Playwright `Request`, `Response` and (with Patchright) `Route` objects with their
+  dispatchers, 11 promises and 18 Maps stay reachable per round. They are scoped to the page in
+  Playwright's own server (`RequestDispatcher` under `PageDispatcher`), the same on plain
+  Playwright, and Playwright disposes the oldest 10% of a kind once 10,000 exist
+  (`maybeDisposeStaleDispatchers`): bounded at roughly 100–200 MB for a tab navigated ten
+  thousand times, released when the tab closes. The limit setter is a test-only export that
+  would also cap element handles, so it is left alone; the helper's own per-tab request trim
+  (200 entries) stays.
+- `--joiner 300` (300 rounds, 5.7 minutes, both agents active): 300 of 300 verified, 0 joiner
+  errors, connection "connected" at every probe; host heap 83 → 90 MB, RSS 228 → 195; joiner
+  heap 81 → 78, RSS 221 → 182; host tree CPU 55%, joiner 34%; host click p50 520 ms, p99 583;
+  joiner snapshot p50 734 ms, p99 766.
+- `--agents 8`: 8.7 calls/s (3.3× one agent), 80 of 80 verified, helper RSS 252 MB, heap 90 MB,
+  tree 2.98 GB (eight renderers); per-agent click p50 665–1211 ms.
+
 Soak (`--soak 200`: 200 rounds of navigate + snapshot + click + type, about 800 calls): helper
 heap 83 → 108 MB (GC not forced; the bench's own memory probe shows no monotonic climb), helper
 RSS 220 → 189 MB, tree RSS 1.32 → 1.36 GB, driver execution contexts 1 → 2. No leak signal.
@@ -216,8 +236,8 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
 4. Popup looks (two evaluates per result, plus late checks at 3 s and 8 s) on big pages: cache
    per page revision, or skip the second look when the first found nothing. Measure on a heavy
    page first (the bench's long page shows little).
-6. The joiner soak is `test/bench.mjs --joiner R` now; a soak with `--expose-gc` and thousands
-   of rounds remains.
+6. Done: `--joiner R` in the bench, a 1000-round soak and a 300-round joiner soak with forced
+   GC (above). The one growth found is Playwright's bounded request bookkeeping per page.
 8. Decided against sharing one screencast between the live view and the slow route: they
    differ in size, session (the live view's carries the input replayer and the fit emulation)
    and lifetime, and the combination (a joiner on the slow route while the host watches the
@@ -235,7 +255,7 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
 - One flake seen once in six full runs under the suite's load (eleven browsers at once):
   form-patterns' "a value a script rewrites 300 ms after the field is left" read the field
   mid-rewrite. It passes alone (2 of 2) and in the other full runs.
-- Committed on branch `perf/screenshots-presence-lifecycle` (four commits; not pushed, no
+- Committed on branch `perf/screenshots-presence-lifecycle` (five commits; not pushed, no
   version bump: the repo's rules leave merge, push and bump to the user). Scratchpad scripts used for the one-off measurements (`realsites.mjs`,
   `scroll-exp.mjs`, `heavy-popups.mjs`, `joiner-soak.mjs`, `idle-exp.mjs`) are described
   above; `test/bench.mjs` holds the repeatable ones.

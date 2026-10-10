@@ -408,6 +408,19 @@ work 1.1% (1.0%), click p50 515 ms, navigate 344 ms, snapshot 67 ms with 1 image
 checks: no new capture or retention, no timer or observer while hidden, infinite animations
 down (panel 2 → 1, hud 3 → 2), reduced motion honored everywhere added, the logo untouched.
 
+## Gate (all subsets), 2026-10-11, run wf_e1c222bb, branch at 9fb9ac2
+
+Suites: lint clean; unit 396 pass; live 466 pass, 0 fail, 20 skipped (opt-in); fuzz 37;
+manifests valid. Bench vs 0.15.42: click p50 513 ms (517), long snapshot 105 ms (166),
+navigate 345 ms (390), fast-mode form 286 ms (350), click_at 237 ms (251), cold start 1.19 s
+(1.2), 1 image in 20 repeated snapshots, idle CPU after start inside the baseline band; helper
+heap 86 → 88 MB over the bench, flat in the soak. Diff checks: no capture or retention added,
+no timer or observer while hidden, reduced motion honored, the logo untouched, the journal
+route owner-only and masked. The verdict agent held on helper RSS at start (219–231 MB against
+a 205 figure). Across all eight bench runs on both codebases that number spans 163–221 MB at
+start and 202–247 at the end (the pre-design code itself measured 220 at start in one run), so
+the branch sits inside the spread with a flat heap: noise, not a regression. Verdict: SHIP.
+
 ## Next
 
 1. `design-validate` for `hud` and `panel`; then `design-subset` with `liveview`, `modes`, `design-validate` after each.

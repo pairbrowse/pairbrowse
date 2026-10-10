@@ -4,17 +4,53 @@ html, body { margin: 0; }
 body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1.45 var(--sans); -webkit-font-smoothing: antialiased; padding: 0 14px 20px; }
 .top { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 9px; padding: 14px 0 12px; background: var(--bg); border-bottom: 1px solid var(--edge); }
 .top img { border-radius: var(--r-1); }
-.top h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; flex: 1; }
-.where { font-size: var(--fs-2); color: var(--ink-2); white-space: nowrap; }
+.top h1 { margin: 0 auto 0 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; flex: none; white-space: nowrap; }
+
+/* The session pill: "● Live session" while someone is joined, else where and which session. */
+.pill { display: block; flex: 0 1 auto; min-width: 0; height: 24px; padding: 0 10px; line-height: 22px; border: 1px solid var(--edge); border-radius: 999px; background: var(--elevated); font-size: var(--fs-2); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill[hidden] { display: none; }
+.pill i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--ok); vertical-align: 0; }
+.pill[data-live="true"] { flex: none; color: var(--ink); font-weight: var(--fw-name); }
+/* A narrow panel: the wordmark gives way before the session state (the logo stays the mark). */
+@media (max-width: 339px) { .top h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .top img { margin-right: auto; } }
 .where b { color: var(--ink); font-weight: var(--fw-name); }
 .where[data-clean="true"] b { color: var(--accent-ink); }
-h2 { margin: 20px 0 6px; font-size: var(--fs-2); font-weight: 650; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Who is in the session: initials in their colors, overlapping, then "+N". */
+.avatars { display: flex; flex: none; margin: 0; padding: 0 0 0 4px; list-style: none; }
+.avatars:empty { display: none; }
+.avatars li { margin-left: -4px; }
+.avatar { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--spark); color: var(--bg); font-size: var(--fs-1); font-weight: var(--fw-name); line-height: 1; }
+.avatars .avatar { box-shadow: 0 0 0 2px var(--bg); }
+.avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input); }
+.avatars .avatar.plain { box-shadow: inset 0 0 0 1px var(--edge-input), 0 0 0 2px var(--bg); }
+.avatar.more { background: var(--hover); color: var(--ink-2); }
+
 section.status { margin-top: 14px; }
-.driver { display: flex; align-items: center; gap: 9px; padding: 11px 12px; border-radius: var(--r-3); background: var(--elevated); color: var(--ink-2); font-weight: var(--fw-name); }
-.driver .spark { width: 15px; height: 15px; color: var(--spark); flex: none; }
+
+/* The active agent: who, what it says it is doing, where, and Pause agents. */
+.agent { display: grid; grid-template-columns: 24px 1fr; gap: 4px 10px; align-items: center; padding: 12px; border-radius: var(--r-3); background: var(--elevated); }
+.agent .avatar { width: 24px; height: 24px; font-size: var(--fs-2); }
+.agent-name { min-width: 0; font-size: var(--fs-3); font-weight: var(--fw-name); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent > .driver, .agent > .agent-status, .agent > .agent-tab { grid-column: 2; }
+.agent > .pause { grid-column: 1 / -1; }
+.driver { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink-2); font-size: var(--fs-2); }
+.driver .spark { width: 14px; height: 14px; color: var(--spark); flex: none; }
 body[data-s="closed"] .driver .spark, body[data-s="connecting"] .driver .spark { color: var(--muted); }
-body[data-driving="true"] .driver .spark { animation: turn 2.4s linear infinite; }
-@keyframes turn { to { transform: rotate(360deg); } }
+.agent-status { margin: 2px 0 0; font-size: var(--fs-2); color: var(--ink); overflow-wrap: anywhere; }
+.agent-status .k { margin-right: 4px; font-size: var(--fs-1); font-weight: var(--fw-name); color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.agent-tab { margin: 0; font-size: var(--fs-2); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-status[hidden], .agent-tab[hidden] { display: none; }
+
+/* Sections that fold: a heading button with a chevron. */
+h2 { margin: 16px 0 4px; font-size: var(--fs-2); }
+.disclose { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 0; border: 0; background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; cursor: pointer; transition: color var(--t); }
+.disclose::before { content: ""; flex: none; width: 6px; height: 6px; margin: 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--t); }
+.disclose[aria-expanded="true"]::before { transform: rotate(45deg); }
+.disclose:hover { color: var(--ink); }
+.body[hidden] { display: none; }
+.body { padding-top: 4px; }
+
 .turn { display: none; align-items: center; gap: 11px; margin-bottom: 8px; padding: 12px; border-radius: var(--r-3); background: var(--elevated); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); }
 body[data-turn="true"] .turn { display: flex; animation: drop 220ms cubic-bezier(0.22, 1, 0.36, 1); }
 .turn i { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: pulse 1.4s ease-in-out infinite; flex: none; }
@@ -38,7 +74,7 @@ body[data-turn="true"] .turn { display: flex; animation: drop 220ms cubic-bezier
 .row .sites { font-size: var(--fs-2); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty-row { font-size: var(--fs-2); color: var(--muted); margin: 4px 0; }
 .field { width: 100%; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); transition: border-color var(--t); }
-.field:focus { outline: none; border-color: var(--accent); }
+.field:focus { border-color: var(--accent); }
 .field::placeholder { color: var(--muted); opacity: 1; }
 .add { display: grid; gap: 6px; margin-top: 10px; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -55,8 +91,11 @@ button { font: inherit; }
 
 /* People asking to join: the host decides with a click. */
 .joins:empty { display: none; }
-.join { display: grid; gap: 8px; margin-bottom: 8px; padding: 10px 12px; border-radius: var(--r-3); background: var(--elevated); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); animation: drop 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.join { display: grid; gap: 8px; margin-bottom: 8px; padding: 10px 12px 10px 14px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); animation: drop 220ms cubic-bezier(0.22, 1, 0.36, 1); }
 .join strong { font-size: var(--fs-3); font-weight: 650; overflow-wrap: anywhere; }
+.join strong::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--accent); vertical-align: 1px; }
+.join.host strong::before { background: var(--warn); }
+.join.in strong::before { background: var(--ok); }
 .join span { display: flex; gap: 6px; }
 .join .mini { color: var(--ink-2); }
 .join button:disabled { opacity: 0.5; cursor: default; }
@@ -65,26 +104,25 @@ button { font: inherit; }
 
 /* Session: who is in a shared session (people and agents, both browsers) and their messages. */
 .people { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.people li { display: grid; grid-template-columns: 10px 1fr; gap: 2px 9px; align-items: baseline; padding: 8px 10px; border-radius: var(--r-3); background: var(--elevated); }
+.people li { display: grid; grid-template-columns: 20px 1fr; gap: 1px 9px; align-items: center; padding: 7px 10px; border-radius: var(--r-3); background: var(--elevated); }
 .people li.idle { display: block; background: none; padding: 2px 10px; }
-.people i { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
+.people .avatar { grid-row: span 2; align-self: start; }
 .people strong { font-weight: var(--fw-name); color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people .app { font-weight: 400; color: var(--ink-2); }
 .people small { grid-column: 2; color: var(--ink-2); font-size: var(--fs-2); min-width: 0; overflow-wrap: anywhere; }
 .people .state { color: var(--muted); font-weight: 500; }
-.people .state[data-s="you"] { color: var(--accent-ink); }
-.people .state[data-s="working"] { color: var(--ok); }
 .messages { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
 .messages:empty { display: none; }
 .messages li { font-size: var(--fs-2); color: var(--ink-2); overflow-wrap: anywhere; }
 .messages strong { color: var(--ink); font-weight: var(--fw-name); }
 
 /* "Pause agents": stops every agent in the session until a person resumes. */
-.pause { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: 8px; padding: 9px 12px; border-radius: var(--r-3); background: var(--elevated); color: var(--ink-2); font-size: var(--fs-2); }
+.pause { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: 6px; padding: 8px 10px; border-radius: var(--r-2); background: var(--bg); color: var(--ink-2); font-size: var(--fs-2); }
 .pause[hidden] { display: none; }
 .pause b { color: var(--ink); font-weight: var(--fw-name); }
 .pause button { flex: none; border: 0; border-radius: var(--r-1); padding: 5px 11px; background: var(--ink); color: var(--bg); font-weight: var(--fw-name); cursor: pointer; }
 .pause button[hidden] { display: none; }
-body[data-paused="true"] .pause { background: var(--elevated); color: var(--ink); box-shadow: inset 3px 0 0 var(--warn); }
+body[data-paused="true"] .pause { color: var(--ink); box-shadow: inset 3px 0 0 var(--warn); }
 body[data-paused="true"] .pause button { background: var(--warn); color: var(--bg); }
 
 .switch { margin: 8px 0 0; display: flex; gap: 6px; }

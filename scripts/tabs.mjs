@@ -86,26 +86,25 @@ const host = (url) => { try { return new URL(url).host; } catch { return url; } 
 export function loadingHtml(tabs) {
   const rows = tabs.map((t, i) => `<li data-i="${i}" data-s="waiting"><span class="dot"></span><span class="t">${esc(t.title || host(t.url))}</span><span class="h">${esc(host(t.url))}</span></li>`).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><title>Opening tabs</title><style>
-  :root{--ink:oklch(0.985 0.004 265);--ink-2:oklch(0.90 0.02 265);--muted:oklch(0.80 0.03 265);--glass:oklch(1 0 0 / 0.09);--edge:oklch(1 0 0 / 0.16);--cyan:oklch(0.84 0.12 215);--ok:oklch(0.82 0.16 155);--bad:oklch(0.74 0.17 25)}
+  :root{--bg:#0B1421;--card:#111E2D;--edge:#293B50;--ink:#F1F5FA;--ink-2:#A2B2C6;--muted:#8699B1;--accent:#3285F6;--ok:#20C997;--bad:#EF6468}
   *{box-sizing:border-box}html,body{margin:0;height:100%}
-  body{display:grid;place-items:center;padding:24px;color:var(--ink);font:14px/1.45 "Segoe UI Variable",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;
-    background:radial-gradient(60% 55% at 12% 8%,oklch(0.60 0.17 240 / 0.85),transparent 70%),radial-gradient(55% 60% at 92% 22%,oklch(0.52 0.22 300 / 0.8),transparent 70%),radial-gradient(70% 60% at 50% 110%,oklch(0.62 0.14 215 / 0.7),transparent 70%),oklch(0.26 0.10 268)}
-  main{width:min(460px,100%);padding:28px 28px 18px;border-radius:16px;background:var(--glass);border:1px solid var(--edge);box-shadow:inset 0 1px 0 oklch(1 0 0 / 0.16);-webkit-backdrop-filter:blur(22px) saturate(150%);backdrop-filter:blur(22px) saturate(150%)}
-  h1{font-size:20px;font-weight:650;margin:0 0 4px;letter-spacing:-0.01em}
-  p{margin:0 0 18px;color:var(--muted)}
-  .bar{height:4px;border-radius:4px;background:oklch(1 0 0 / 0.12);overflow:hidden;margin-bottom:12px}
-  .bar i{display:block;height:100%;width:0;border-radius:4px;background:var(--cyan);transition:width 200ms cubic-bezier(0.22,1,0.36,1)}
+  body{display:grid;place-items:center;padding:24px;color:var(--ink);background:var(--bg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  main{width:min(460px,100%);padding:28px 28px 18px;border-radius:10px;background:var(--card);border:1px solid var(--edge)}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px;letter-spacing:-0.01em}
+  p{margin:0 0 18px;color:var(--ink-2)}
+  .bar{height:4px;border-radius:4px;background:var(--edge);overflow:hidden;margin-bottom:12px}
+  .bar i{display:block;height:100%;width:0;border-radius:4px;background:var(--accent);transition:width 160ms cubic-bezier(0.22,1,0.36,1)}
   ol{list-style:none;margin:0;padding:0}
-  li{display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid oklch(1 0 0 / 0.08)}
+  li{display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--edge)}
   li:first-child{border-top:0}
-  .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);transition:color 180ms}
+  .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);transition:color 160ms}
   li[data-s=waiting] .t{color:var(--muted)}
-  .h{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
-  .dot{width:8px;height:8px;border-radius:50%;background:oklch(1 0 0 / 0.22);justify-self:center;transition:background 180ms}
-  li[data-s=opening] .dot{background:var(--cyan);box-shadow:0 0 0 3px oklch(0.84 0.12 215 / 0.25);animation:p .9s ease-in-out infinite}
+  .h{font:12px ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--edge);justify-self:center;transition:background 160ms}
+  li[data-s=opening] .dot{background:var(--accent)}
   li[data-s=open] .dot{background:var(--ok)}
   li[data-s=failed] .dot{background:var(--bad)}
-  @keyframes p{50%{opacity:.4}}
+  li[data-s=failed] .h::before{content:"failed · ";color:var(--bad)}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   </style></head><body><main>
   <h1>Opening tabs</h1><p id="sub">0 of ${tabs.length}, in the order you left them</p>

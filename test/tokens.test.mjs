@@ -68,6 +68,10 @@ test("text colors meet WCAG AA on every surface, in both schemes", () => {
     }
     const r = contrast(t.bg, t.accent);
     assert.ok(r >= 4.5, `${scheme}: primary button text (--bg on --accent) is ${r.toFixed(2)}:1`);
+    for (const bg of ["bg", "chrome", "sidebar"]) {
+      const r = contrast(t.spark, t[bg]);
+      assert.ok(r >= 3, `${scheme}: the spark on the tab Claude works in (--spark on --${bg}) is ${r.toFixed(2)}:1`);
+    }
   }
 });
 
@@ -81,7 +85,7 @@ test("every literal color in the styled files is a sheet value, a participant co
   const allowed = new Set(["#ffffff", "#000000", ...SPARK_COLORS.map(norm)]);
   for (const t of [dark, light]) for (const v of Object.values(t)) { const n = norm(v); if (n) allowed.add(n); }
   assert.equal(norm(dark.spark), norm(SPARK_COLORS[0]), "--spark is Claude's own spark color");
-  const files = [PANEL + "panel.css", PANEL + "picker.css", PANEL + "newtab.css", PANEL + "screen.css", "scripts/liveview.css", "scripts/hud.js", PANEL + "record.js"];
+  const files = [PANEL + "panel.css", PANEL + "picker.css", PANEL + "newtab.css", PANEL + "screen.css", "scripts/liveview.css", "scripts/hud.js", PANEL + "record.js", "scripts/tabs.mjs"];
   for (const f of files) {
     const text = read(f).replace(/%23([0-9a-fA-F]{3,8})\b/g, "#$1");
     const found = [...text.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|oklch\((?:[^()]|\([^()]*\))*\)/g)].map(([m]) => m);
@@ -101,6 +105,21 @@ test("every token in the sheet is read by a page", () => {
   for (const f of PAGES) assert.doesNotMatch(read(f), /font(-size)?:[^;]*\b1[123]px/, `${f}: type sizes come from --fs-1..3`);
 });
 
+test("a joiner's picture page keeps its muted text at AA on the pill, even over a white page", () => {
+  const css = read(PANEL + "screen.css");
+  const m = css.match(/--pill:\s*rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)/);
+  assert.ok(m, "--pill is rgb(r g b / a)");
+  const [r, g, b, a] = m.slice(1).map(Number);
+  assert.equal(norm(`rgb(${r} ${g} ${b})`), norm(dark.bg), "--pill is the sheet's --bg");
+  for (const under of [255, 0]) {
+    const over = "#" + [r, g, b].map((c) => Math.round(c * a + under * (1 - a)).toString(16).padStart(2, "0")).join("");
+    for (const fg of ["muted", "ink-2", "ink"]) {
+      const c = contrast(dark[fg], over);
+      assert.ok(c >= 4.5, `--${fg} on the pill over ${under ? "white" : "black"} is ${c.toFixed(2)}:1`);
+    }
+  }
+});
+
 test("no blur, no glass and no background picture", () => {
   for (const f of ["panel.css", "picker.css", "newtab.css", "screen.css"].map((x) => PANEL + x).concat("scripts/liveview.css")) {
     const css = read(f);
@@ -109,6 +128,8 @@ test("no blur, no glass and no background picture", () => {
     assert.doesNotMatch(css, /^\s*:root\s*\{[^}]*--(?!pill)[a-z-]+\s*:/m, `${f} has no tokens of its own (screen.css keeps --pill)`);
   }
   assert.equal(existsSync(root + PANEL + "ntp.png"), false);
+  const opening = read("scripts/tabs.mjs");
+  for (const re of [/backdrop-filter/, /gradient\(/, /@keyframes/, /inset 0/]) assert.doesNotMatch(opening, re, "the Opening tabs page is flat");
 });
 
 test("every page links the sheet before its own", () => {

@@ -168,10 +168,10 @@ tab page and joiner's picture page and served to the live view as `assets/tokens
 for WCAG AA: muted `#8699B1` (was `#71869F`: 3.9:1 on elevated); accent `#3285F6` stays for
 fills, rings and borders, and as text it is `--accent-ink` `#6AA6F9`; primary buttons put `--bg`
 text on `--accent` (white on accent is 3.6:1); the border token is named `--edge`; `--spark` is
-`SPARK_COLORS[0]`. Type 11/12/13 px, radii 6/8/10 px (`--r-1..3`), spacing 4/8/12/16 px. A light
+`SPARK_COLORS[0]`. Type 11/12/13 px, radii 6/8/10 px (`--r-1..3`); no spacing tokens yet (nothing read them, and the test fails on an unused token); `--edge-input` `#647891` is a text field's border at 3:1 or more. A light
 block under `:root[data-scheme="system"]` (live view only): bg `#F4F7FB`, chrome/sidebar
 `#FFFFFF`, elevated `#E8EEF5`, hover `#DCE5EF`, ink `#0F1B2A` / `#3A4B60` / muted `#53667D`, edge
-`#CBD6E2`, accent `#2468D0` (so `--bg` text on it passes), accent-ink `#1F63C7`, ok `#11735A`,
+`#CBD6E2`, accent `#2468D0` (so `--bg` text on it passes; accent-soft is its channels at .14), accent-ink `#1F63C7`, spark `#C4521B` (3:1 on the light tab strip), ok `#11735A`,
 warn `#8A5A00`, bad `#C0343A`. `hud.js` and `record.js` carry the values inline (closed shadow
 roots and a canvas take no variables); `test/tokens.test.mjs` keeps them equal and checks the
 contrast. `THEME_COLOR` is the chrome navy `0xff101d2d`. `ntp.png` is gone (flat `--bg`).
@@ -258,7 +258,7 @@ color and checks the contrast matrix. The theme seed is the sheet's chrome navy 
 0xff101d2d; hue 254°, as the accent's 257°); profiles still on PairBrowse's old seed move to it
 at the next start, a color the user picked stays (`scripts/browser.mjs`, `test/browser.test.mjs`).
 The new tab page is flat navy, the 2.5 MB `ntp.png` and its blur are gone, the logo unchanged.
-`docs/development.md` describes the sheet. Not verified by eye: the window frame's tint from the
+A joiner's picture page's pill is `--bg` at .9 (muted text over a white page 4.89:1). The "Opening tabs" restore page (`scripts/tabs.mjs`) carries the sheet's values inline: flat card, no blur or pulse, a failed tab says so in text; the literal-color test covers it. `docs/development.md` describes the sheet. Not verified by eye: the window frame's tint from the
 new seed (screen capture isn't permitted for the helper's session here; one glance at the next
 browser start); Chromium's tonal palette takes the seed's hue, so navy is expected.
 

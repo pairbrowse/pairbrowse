@@ -99,8 +99,9 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
   // markOwn: right after Claude's click, mark the overlays on screen as Claude's (never closed as offers).
   // clicking(): called just before PairBrowse clicks a dismiss button; returns done(). Only that
   // click is PairBrowse's own input: looking for a popup clicks nothing, so a person's click
-  // meanwhile stays theirs.
-  async function dismissOverlay(page, { closeOffers = false, markOwn = false, clicking = null } = {}) {
+  // meanwhile stays theirs. declare(page, button): told which button PairBrowse is about to
+  // press, before it does (the page then knows the press as PairBrowse's own, not a person's).
+  async function dismissOverlay(page, { closeOffers = false, markOwn = false, clicking = null, declare = null } = {}) {
     if (markOwn && page && !page.isClosed()) {
       await settle(800, page.evaluate(() => document.querySelectorAll('[role="dialog"], [aria-modal="true"], [role="alertdialog"], body > *, body > * > *, body > * > * > *').forEach((el) => {
         if (!el.matches('[role="dialog"], [aria-modal="true"], [role="alertdialog"]') && getComputedStyle(el).position !== "fixed") return;
@@ -115,10 +116,10 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     const deadline = Date.now() + 2500;
     for (const frame of frames) {
       if (Date.now() > deadline) return;
-      if (await settle(1000, dismissIn(frame, closeOffers, clicking))) return;
+      if (await settle(1000, dismissIn(frame, closeOffers, clicking, declare))) return;
     }
   }
-  async function dismissIn(frame, closeOffers, clicking) {
+  async function dismissIn(frame, closeOffers, clicking, declare = null) {
     const found = await frame.evaluate(([acceptFirst, inConsentFrame, closeOffers]) => {
       const COOKIE = /cookie|consent|privacy|gdpr/i;
       const INTERRUPTION = /cookie|consent|privacy (settings|choices)|gdpr|newsletter|subscribe to|sign up for (our|updates)|get \d+% off|discount|special offer|download (our|the) app|get the app|turn on notifications|allow notifications/i;
@@ -213,6 +214,9 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     }
     if (!found) return false;
     const button = frame.locator("[data-pairbrowse-dismiss]").first();
+    // Declared before the press, so the page knows this click as PairBrowse's own (bounded: a
+    // page slow to answer doesn't keep the popup up).
+    if (declare) await settle(2500, Promise.resolve().then(() => declare(frame.page(), button)));
     const done = clicking?.() || (() => {});
     const ok = await button.click({ timeout: 3000 }).then(() => true, () => false).finally(done);
     if (ok) note(`Closed a ${found.what} on the page (pressed "${found.label}").`, frame.page());

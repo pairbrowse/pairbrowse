@@ -32,6 +32,12 @@
   your Tailscale name. Plain host names only. It still listens on `127.0.0.1` only.
 - `inviteBaseUrl`: where invite links point, such as `https://myhost.tail1234.ts.net`. Its host
   must be in `liveViewHosts`. See [Invite someone to watch or co-drive](sharing.md#invite-someone-to-watch-or-co-drive).
+- `joinHosts`: https host names, besides `*.trycloudflare.com`, you accept in join codes (a host's
+  own tunnel address, say).
+- `sharing.tunnel`: how join codes reach your computer: `{ "kind": "quick" }` (default, a
+  Cloudflare Quick Tunnel), or your own `cloudflare` (token, hostname), `ngrok` (authtoken, domain),
+  `tailscale` or `command` (run, url, env). `sharing.guestPort` pins the port join codes are served
+  on, for a tunnel routed on the provider's side. See [Using your own tunnel](sharing.md#using-your-own-tunnel).
 
 Passwords go in `~/.pairbrowse/secrets.env` (kept at `chmod 600`; PairBrowse refuses to use it otherwise):
 

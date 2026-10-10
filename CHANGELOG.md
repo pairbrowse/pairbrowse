@@ -5,6 +5,11 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.37 (2026-10-10)
+
+- Join codes can go through a tunnel of your own instead of Cloudflare's free one: set `sharing.tunnel` in `~/.pairbrowse/config.json` to a named Cloudflare tunnel (`cloudflare`, with its token and host name), `ngrok` (authtoken, and a reserved domain to keep the address), `tailscale` (Funnel) or any `command` that prints an https address. One connection runs on your address and is started again on that same address when its program ends, so codes keep working, also through a restart of PairBrowse; the pool of two connections stays for Quick Tunnels, whose address is new each time. `pairbrowse_invite list` says which is in use ("Join codes go through your own ngrok address share.example.com"), the create result tells joiners to add the host to their `joinHosts`, and `sharing.guestPort` pins the port join codes are served on for a tunnel routed on the provider's side. Tokens stay in `config.json`, reach the provider's program through its environment only, and show in no log or result; a missing program or a refused token is said in plain words ("Sharing couldn't start: ngrok isn't installed"). See "Using your own tunnel" in docs/sharing.md.
+- `pairbrowse_invite list` shows each join code whole again (its key was left out).
+
 ## 0.15.35 (2026-10-10)
 
 - When the connection carrying a shared session goes down, the people in it stay in: PairBrowse keeps a second connection ready, every joiner knows both addresses, and theirs switches over by itself with the same code, so nothing changes for them and nothing is said to anyone. The host waits long enough for that switch before counting a joiner as gone. Only if every connection is lost for over a minute does the host hear, once and in plain words, that sharing lost its connection; join codes made earlier are never declared dead while sharing is up, and `pairbrowse_invite list` shows each code with a working address.

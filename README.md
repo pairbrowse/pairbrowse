@@ -50,6 +50,22 @@ session). Codex: see [docs/codex.md](docs/codex.md). Update, uninstall and a loc
 The first run downloads the browser (about 150 MB) and opens it. Sign into the sites you need
 once; they stay signed in.
 
+## Work together, through your own tunnel if you like
+
+Invite a colleague to watch or co-drive, or share one browser between two computers with a join
+code (`pairbrowse_invite`, `pairbrowse_join`). Out of the box the connection goes through a free
+Cloudflare Quick Tunnel: no account, a random address each time. If you would rather use your own
+address and account, set it once in `~/.pairbrowse/config.json` and everything else stays the same:
+
+```json
+"sharing": { "tunnel": { "kind": "ngrok", "authtoken": "...", "domain": "share.example.com" } }
+```
+
+`kind` can be `quick` (the default), `cloudflare` (a named tunnel with your token and hostname),
+`ngrok`, `tailscale` (Funnel) or `command` (any program that prints a public URL). Your token stays
+in that file and goes only to the provider's own program. Setup for each is in
+[Working together](docs/sharing.md#using-your-own-tunnel).
+
 ## Compared with the built-in browsers
 
 | | Claude Code + Chrome | Codex browser | PairBrowse |
@@ -100,7 +116,7 @@ Chromium elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse
 - [Install](docs/install.md) and [Codex](docs/codex.md)
 - [The browser](docs/browser.md): where you see it, the desktop app pane, the native build
 - [Using PairBrowse](docs/using.md): remembered details, passwords, sessions, fast mode, popups, uploads
-- [Working together](docs/sharing.md): invites, join codes, several agents on one browser
+- [Working together](docs/sharing.md): invites, join codes, several agents on one browser, your own tunnel
 - [Skills](docs/skills.md)
 - [Configuration](docs/configuration.md)
 - [Security](docs/security.md), the [assurance case](docs/assurance-case.md) and [reporting a vulnerability](SECURITY.md)

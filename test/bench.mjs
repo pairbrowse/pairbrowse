@@ -61,7 +61,8 @@ async function startHelper({ screenshots }) {
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", ...(screenshots ? {} : { screenshots: false }) }));
   const out = openSync(join(h, "daemon.stderr.log"), "a");
   const t0 = Date.now();
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_MEMORY: "1", PAIRBROWSE_TRACE: "1" }, stdio: ["ignore", out, out] });
+  // --expose-gc: the memory probe collects garbage first, so heap figures are what's reachable.
+  const daemon = spawn(process.execPath, ["--expose-gc", join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_MEMORY: "1", PAIRBROWSE_TRACE: "1" }, stdio: ["ignore", out, out] });
   const socketPath = join(h, "run", "browser.sock");
   for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
   const socketAt = Date.now() - t0;
@@ -207,7 +208,7 @@ async function soak(rounds, viewers = 0) {
       if (ref) { await s.tool("browser_click", { element: "it", target: ref }); }
       const field = snap.match(/textbox[^\n]*\[ref=([^\]]+)\]/)?.[1];
       if (field) await s.tool("browser_type", { element: "field", target: field, text: `r${i}` });
-      if (i % 50 === 0) await probe(i);
+      if (i % (rounds > 300 ? 100 : 50) === 0) await probe(i);
     }
     const secs = (Date.now() - t0) / 1000;
     const cpu1 = tree(daemon.pid);
@@ -294,7 +295,7 @@ async function joinerSoak(rounds) {
   const daemons = [];
   const connect = async (h) => {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
-    const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] });
+    const daemon = spawn(process.execPath, ["--expose-gc", join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] });
     daemons.push(daemon);
     const socketPath = join(h, "run", "browser.sock");
     for (let i = 0; i < 200 && !existsSync(socketPath); i++) await sleep(50);
@@ -345,7 +346,7 @@ async function joinerSoak(rounds) {
       lat.hostClick.push(clickMs); lat.joinerSnapshot.push(snapMs);
       if (cr && !cr.result?.isError && /\b1\b/.test(text(cr))) verified++; else wrong++;
       if (js.result?.isError) joinerErrors++;
-      if (r % 20 === 0) await probe(r);
+      if (r % (rounds > 100 ? 50 : 20) === 0) await probe(r);
     }
     const secs = (Date.now() - t0) / 1000;
     const pct = (a, b) => Math.round(((sumCpu(b) - sumCpu(a)) / secs) * 1000) / 10;

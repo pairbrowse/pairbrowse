@@ -82,7 +82,10 @@ test("sessions that took pictures and left leave no screenshot maps behind", { s
       const a = await session(socketPath, `s${i}x`);
       assert.ok(!(await a.tool("browser_tabs", { action: "new" })).result?.isError);
       assert.ok(!(await a.tool("browser_navigate", { url: `http://127.0.0.1:${server.address().port}/s${i}` })).result?.isError);
-      assert.ok((await a.tool("browser_snapshot", {})).result?.content?.some((c) => c.type === "image"), "a picture went to the session");
+      // The navigate's result already carried the page's picture; the snapshot's either carries one
+      // or says the page looks the same (the picture is then this session's map all the same).
+      const snap = (await a.tool("browser_snapshot", {})).result?.content || [];
+      assert.ok(snap.some((c) => c.type === "image" || /looks exactly as in your last screenshot/.test(c.text || "")), "a picture (or the same-picture note) went to the session");
       gone.push(a);
     }
     assert.equal((await count()).screenshots, 5, "a map per session that got a picture");

@@ -180,6 +180,57 @@ join card), `panel` (agent cards, session card, sections, collapsed state), `liv
 expanded workspace: sidebar sections, timeline from the goal log), `modes` (persisted
 presentation preferences; nothing restarts).
 
+## Subset briefs
+
+**hud** (`scripts/hud.js`, `scripts/daemon/hud.mjs`; tests `test/hud.test.mjs`,
+`test/hud-*.integration`, `native-check.mjs` pins the bar payload shape). The bottom bar
+becomes the reference's: at the left an avatar dot in the driver's color and "Claude is
+driving" / "Paused by Sam" / "Reconnecting to Bob…"; then the last actions as chips, each with a
+state glyph (done ✓ for actions already in the bar's `items`; the chip text is the bar's own
+one-line description, never invented), the Pause agents button at the right; the join request
+as an anchored card above the bar's right end (avatar, "Sam wants to join · drive", Allow
+primary, Deny, ×; the same arming, visibility and trusted-click gating as today, unchanged
+lines). The badge: same box, navy elevated surface, the agent's color as a 3 px left edge, "Your
+turn" variant keeps its animation only when motion is allowed. The agent cursor: a refined
+pointer path, the label pill in the participant's color with white text, a 1 px darker outline,
+no glow or trail; the field the agent types in gets a 2 px outline in its color while the
+"targets"/"press" declaration holds (drawn inside the cursor's shadow root with a positioned
+box, never by touching the page's DOM). Peers' pointers the same pill style. No new timer:
+everything keyed to the existing calls and the existing rAF loops; `prefers-reduced-motion`
+turns the cursor glide into a jump and the ring into a static dot.
+
+**panel** (`scripts/browser/panel/panel.html`, `panel.css`, `panel.js`, `common.js`;
+`test/panel-*.integration`, `test/join-prompt.integration`, `docs/using.md` screenshots of the
+panel mentioned?). The side panel becomes the agent panel: header with the logo (unchanged),
+"PairBrowse", the session pill ("● Live session" when sharing, else the session's name) and an
+avatar stack of the participants (colors from the board, initials, "+N"). Then the active
+agent card: avatar, name, its status (the `pairbrowse_status` text, named "Status", or
+"Working…" from the driver line), the tab it holds, Pause/Resume. Other participants as compact
+rows (name, app, what the board says: observing / in tab N / paused). Requests (join, dev
+share, host asks) as cards at the top in the approval style. Sections below, collapsible,
+collapsed by default except Activity: Session (people, messages), Dev servers, Join addresses,
+Activity, Remembered details, Passwords (forms unchanged). Switch session… and Record stay as
+buttons in a compact row. All existing ids, event handlers and text the tests assert stay; the
+collapsed state of sections persists in `chrome.storage.local` under one key. No new polling:
+the panel already listens to the live view's SSE.
+
+**liveview** (`scripts/liveview.html/.css/.js`, `scripts/liveview.mjs` events;
+`test/liveview.test.mjs`, `test/shared-liveview.test.mjs`). The Inspect workspace: a left
+column (collapsible to a rail, hidden with a key, remembered in `localStorage` like `pb-fit`)
+with Browser (open tabs, who is in each, from `tabs`), Agents (from `collaboration` and
+`board`), Shared with (guests), Session (name, where); the stage in the middle as today; a
+right drawer for Activity (as today) and a Timeline entry that opens the goal log's lines (a
+new owner-only read route `journal` on the live view server returning the current run's `done`,
+`yourTurn`, `left`, `updatedAt`; nothing is captured for it, no images). Reduced motion honored;
+hidden columns stop drawing (no listeners doing DOM work for a hidden column).
+
+**modes**. Focus = side panel closed and no live view open (nothing to build beyond making the
+badge appear only with a status and the bar fade as today); Collaborate = side panel open;
+Inspect = live view with the column open. One shared preference object per viewer
+(`chrome.storage.local` in the panel, `localStorage` in the live view) remembering sidebar
+state and collapsed sections; no mode switch restarts, reloads, reconnects or captures anything.
+Docs: `docs/using.md` gets a short "Three ways to look at it" paragraph.
+
 ## Done
 
 (nothing yet)

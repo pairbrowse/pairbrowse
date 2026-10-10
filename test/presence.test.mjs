@@ -145,6 +145,36 @@ test("during an agent's action, a person's press away from its target and their 
   }
 });
 
+test("a press the page calls far is still the agent's inside a box PairBrowse declared it would press (for longer than a cursor), a person's elsewhere", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 3_500_000 });
+  try {
+    const presence = createPresence({ host: "Bob", readEvents: async () => [], pages: () => [], paused: () => true,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {}, onPauseButton() {} });
+    const page = {};
+    // The popup closer declares its button (hud.onPress -> agentPointed, press: true), 300 by 40 at (500, 300).
+    presence.agentPointed(page, { x: 650, y: 320, w: 300, h: 40, t: Date.now(), press: true });
+    let done = presence.busyStart("popup");
+    mock.timers.tick(5000); // a humanized press takes its time
+    presence.userDid([{ kind: "click", t: Date.now(), what: "Accept", far: true, x: 790, y: 335 }], page);
+    assert.equal(presence.actingIn(page), null, "the press landed in the declared box: PairBrowse's own");
+    assert.equal(presence.userNote(page), "");
+    presence.userDid([{ kind: "click", t: Date.now(), what: "Menu", far: true, x: 100, y: 900 }], page);
+    assert.equal(presence.actingIn(page), "Bob", "a press away from every declared box is the person's");
+    assert.match(presence.userNote(page), /clicked "Menu"/);
+    done();
+    mock.timers.tick(5000);
+    // A cursor's own point (no declaration) counts for a shorter while.
+    presence.agentPointed(page, { x: 650, y: 320, w: 300, h: 40, t: Date.now() });
+    done = presence.busyStart();
+    mock.timers.tick(5000);
+    presence.userDid([{ kind: "click", t: Date.now(), what: "Accept", far: true, x: 790, y: 335 }], page);
+    assert.equal(presence.actingIn(page), "Bob", "a cursor sent 5 s ago says nothing about this press");
+    done();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test("a saved tab coming back (restoring) is nobody going there; a load by hand is the user's", () => {
   mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 4_000_000 });
   try {

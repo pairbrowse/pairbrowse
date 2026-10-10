@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { startLiveView } from "../scripts/liveview.mjs";
+import { startLiveView, createInvites } from "../scripts/liveview.mjs";
 
 const context = { pages: () => [] };
 
@@ -15,7 +15,8 @@ async function live(options = {}) {
 }
 
 test("live view exposes collaboration state in initial events and state.json", async () => {
-  const { view, base } = await live();
+  const invites = createInvites();
+  const { view, base } = await live({ invites, journal: () => ({ name: "r", status: "in progress", done: ["secret line"], yourTurn: [], left: [], updatedAt: "" }) });
   try {
     view.setCollaboration({ participants: [{ id: "a", label: "Alice" }], owner: { id: "a", label: "Alice" }, active: null, humanUntil: 123 });
     const events = await fetch(`${base}events?panel`);
@@ -31,6 +32,13 @@ test("live view exposes collaboration state in initial events and state.json", a
     assert.match(text, /event: collaboration\ndata: .*Alice/);
     const state = await fetch(`${base}state.json`).then((r) => r.json());
     assert.equal(state.collaboration.owner.label, "Alice");
+    assert.equal("journal" in state, false, "the goal log never rides on state.json");
+    // A guest gets the state as before, and never the goal log.
+    const d = invites.create({ role: "drive", label: "D" });
+    const guestBase = `http://127.0.0.1:${new URL(base).port}/${d.key}/`;
+    const guestState = await fetch(`${guestBase}state.json`).then((r) => r.json());
+    assert.equal("journal" in guestState, false);
+    assert.equal((await fetch(`${guestBase}journal.json`)).status, 403);
   } finally { view.close(); }
 });
 

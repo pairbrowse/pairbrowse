@@ -2,7 +2,7 @@
 // typing sent back. Served by liveview.mjs under the page's key, with no inline code allowed.
 // body data-role is "owner" (your own link), "drive" or "watch" (invite links): the server
 // enforces it; this only keeps refused controls out of sight.
-import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose } from "./common.js";
+import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose, avatar, splitLabel, stateWord, ago } from "./common.js";
 
 const base = location.pathname.replace(/\/?$/, "/");
 const img = $("screen"), stage = $("stage");
@@ -96,6 +96,20 @@ fitBtn.addEventListener("click", () => {
   try { localStorage.setItem("pb-fit", fitOn ? "on" : "off"); } catch {}
   sendViewport();
 });
+
+// ---- the workspace column: open, a rail of icons, or hidden; each section folds ----
+// Remembered per viewer (pb-view). Drawn only while seen: a hidden column or a folded section
+// skips each event's redraw and is drawn from the last payloads when shown again.
+const VIEW_KEY = "pb-view";
+const SECTIONS = ["tabs", "agents", "guests", "session"];
+const view = { sidebar: "open", sections: { tabs: true, agents: true, guests: true, session: true } };
+try {
+  const v = JSON.parse(localStorage.getItem("pb-view") || "null");
+  if (["open", "rail", "hidden"].includes(v?.sidebar)) view.sidebar = v.sidebar;
+  for (const s of SECTIONS) if (typeof v?.sections?.[s] === "boolean") view.sections[s] = v.sections[s];
+} catch {}
+let lastShown = view.sidebar === "hidden" ? "open" : view.sidebar; // what the column button brings back
+const saveView = () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)); } catch {} };
 
 // The event stream (frames and state). Closed while this page has been out of sight for a few
 // seconds (a hidden pane, a background tab: nobody sees the frames, and with no viewer left the
@@ -205,6 +219,7 @@ on("tabs", (tabs) => {
   drawOverview();
   $("tabs").replaceChildren(...lastTabs.map(tabChip));
   $("tabs").querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  side.tabs();
 });
 
 on("status", (s) => {
@@ -223,6 +238,8 @@ on("session", (s) => {
   where.dataset.clean = String(!!s.temporary);
   $("where-text").replaceChildren(document.createTextNode(`${s.where} · `), el("b", { textContent: s.name }));
   where.title = `${s.where} browser session: ${s.name}`;
+  lastSession = s;
+  side.session();
 });
 
 // ---- who is here: a count chip, with everyone named in its tooltip ----
@@ -256,6 +273,110 @@ function renderCollaboration(next) {
 on("collaboration", renderCollaboration);
 // The countdowns tick.
 setInterval(() => { if (collaborationState.humanUntil || collaborationState.owner) renderCollaboration(collaborationState); }, 1000);
+
+// ---- the workspace column's sections, from what the stream said last ----
+let lastBoard = { people: [] };
+let lastSession = null;
+const agentsNow = () => {
+  const board = lastBoard.people.filter((p) => p?.kind === "agent");
+  const onBoard = new Set(board.map((p) => p.who));
+  const here = (Array.isArray(collaborationState.participants) ? collaborationState.participants : [])
+    .map((p) => p?.label || p?.id).filter((who) => who && !onBoard.has(who)).map((who) => ({ who, status: "", here: true }));
+  return [...board, ...here];
+};
+const guestsNow = () => (Array.isArray(collaborationState.guests) ? collaborationState.guests : []).filter((g) => g?.label);
+// In the rail: the counts only.
+function railCounts() {
+  $("side-n-tabs").textContent = lastTabs.length ? String(lastTabs.length) : "";
+  const a = agentsNow().length, g = guestsNow().length;
+  $("side-n-agents").textContent = a ? String(a) : "";
+  $("side-n-guests").textContent = g ? String(g) : "";
+}
+const empty = (text) => el("li", { className: "empty", textContent: text });
+const side = {
+  tabs() {
+    if (view.sidebar === "rail") return railCounts();
+    if (view.sidebar !== "open") return;
+    $("side-count-tabs").textContent = lastTabs.length ? String(lastTabs.length) : "";
+    if (!view.sections.tabs) return;
+    $("side-tabs").replaceChildren(...(lastTabs.length ? lastTabs.map((t) => {
+      const row = el("button", { type: "button", disabled: !canDrive, title: t.url || "" });
+      if (t.shown) row.setAttribute("aria-current", "true");
+      const who = el("span", { className: "who" });
+      const color = t.agent ? dotColor(t.agent.color) : "";
+      if (color) who.style.setProperty("--agent", color);
+      const words = t.waiting && t.person ? `Paused: ${t.person} is using this tab`
+        : t.agent ? `${t.agent.label || "An agent"}${t.person ? ` · ${t.person} is here too` : ""}`
+        : t.person ? `${t.person} is using this tab` : "No agent";
+      if (t.waiting && t.person) who.dataset.waiting = "true";
+      who.append(el("i"), el("span", { textContent: words, title: words }));
+      row.append(el("span", { className: "t", textContent: tabName(t) }));
+      if (t.claude) row.append(sparkIcon("claude", "Claude is working in this tab"));
+      row.append(who);
+      row.addEventListener("click", () => { if (canDrive) post("tab", { i: t.i }); });
+      return el("li", {}, row);
+    }) : [empty("No tabs open.")]));
+  },
+  agents() {
+    if (view.sidebar === "rail") return railCounts();
+    if (view.sidebar !== "open") return;
+    const list = agentsNow();
+    $("side-count-agents").textContent = list.length ? String(list.length) : "";
+    if (!view.sections.agents) return;
+    $("side-agents").replaceChildren(...(list.length ? list.map((p) => {
+      const { name, app } = splitLabel(p.who);
+      const where = p.here ? "connected" : [p.where ? `${p.where}'s browser` : "", p.tab].filter(Boolean).join(" · ") || "this browser";
+      return el("li", { className: "person" }, avatar(name, p.color),
+        el("strong", { textContent: name, title: p.who }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])),
+        el("small", { title: where }, ...(p.here ? [] : [el("span", { className: "st", textContent: stateWord(p.status) }), " · "]), where),
+        ...(p.task || p.last ? [el("small", { textContent: p.task || p.last, title: p.task || p.last })] : []));
+    }) : [empty("No agent connected.")]));
+  },
+  guests() {
+    if (view.sidebar === "rail") return railCounts();
+    if (view.sidebar !== "open") return;
+    const list = guestsNow();
+    $("side-count-guests").textContent = list.length ? String(list.length) : "";
+    if (!view.sections.guests) return;
+    $("side-guests").replaceChildren(...(list.length ? list.map((g) => el("li", { className: "guest" }, el("i"),
+      el("span", { textContent: g.label, title: g.label }), el("small", { textContent: g.role === "drive" ? "(can drive)" : "(watching)" })))
+      : [empty("Nobody invited.")]));
+  },
+  session() {
+    if (view.sidebar !== "open" || !view.sections.session) return;
+    const s = lastSession;
+    $("side-session").replaceChildren(...(s?.name ? [
+      el("dt", { textContent: "Name" }), el("dd", { title: s.name }, el("b", { textContent: s.name }), ...(s.temporary ? [" · temporary"] : [])),
+      el("dt", { textContent: "Where" }), el("dd", { textContent: s.where || "", title: s.where || "" }),
+    ] : [el("div", { className: "empty", textContent: "No session yet." })]));
+  },
+};
+function applyView() {
+  $("side").dataset.state = view.sidebar;
+  $("side-btn").setAttribute("aria-expanded", String(view.sidebar !== "hidden"));
+  const collapse = $("side-collapse");
+  collapse.setAttribute("aria-expanded", String(view.sidebar === "open"));
+  collapse.setAttribute("aria-label", view.sidebar === "open" ? "Collapse to a rail" : "Expand the column");
+  collapse.title = collapse.getAttribute("aria-label");
+  for (const s of SECTIONS) {
+    $("side-h-" + s).setAttribute("aria-expanded", String(view.sections[s]));
+    $("side-" + s).hidden = !view.sections[s];
+  }
+  side.tabs(); side.agents(); side.guests(); side.session();
+}
+const setView = (fn) => { fn(); saveView(); applyView(); };
+$("side-btn").addEventListener("click", () => setView(() => {
+  if (view.sidebar === "hidden") view.sidebar = lastShown;
+  else { lastShown = view.sidebar; view.sidebar = "hidden"; }
+}));
+$("side-collapse").addEventListener("click", () => setView(() => { view.sidebar = view.sidebar === "open" ? "rail" : "open"; lastShown = view.sidebar; }));
+for (const s of SECTIONS) {
+  $("rail-" + s).addEventListener("click", () => { setView(() => { view.sidebar = "open"; lastShown = "open"; view.sections[s] = true; }); $("side-h-" + s).focus(); });
+  $("side-h-" + s).addEventListener("click", () => setView(() => { view.sections[s] = !view.sections[s]; }));
+}
+on("collaboration", () => { side.agents(); side.guests(); });
+on("board", (b) => { lastBoard = { people: Array.isArray(b?.people) ? b.people : [] }; side.agents(); });
+applyView();
 
 // ---- activity, with who did it and in which tab (the filter is kept in memory only) ----
 let allActivity = [];
@@ -291,20 +412,100 @@ if (role === "owner") on("join", joinBanners($("joins"), () => base));
 
 // ---- Profile: remembered details and passwords (your own link only) ----
 if (role === "owner") {
-  const drawerEl = $("drawer"), profileBtn = $("profile-btn");
+  const drawerEl = $("drawer"), profileBtn = $("profile-btn"), timelineBtn = $("timeline-btn");
   const profile = profilePanel(() => base);
+  // Profile | Timeline: one panel, two tabs; only the tab shown is drawn or fetched.
+  let drawerTab = "profile";
+  const isOpen = () => drawerEl.dataset.open === "true";
+  function showTab(t) {
+    drawerTab = t;
+    for (const x of ["profile", "timeline"]) {
+      const tab = $("drawer-tab-" + x);
+      tab.setAttribute("aria-selected", String(x === t));
+      tab.tabIndex = x === t ? 0 : -1;
+      $(x + "-body").hidden = x !== t;
+    }
+    profileBtn.setAttribute("aria-expanded", String(isOpen() && t === "profile"));
+    timelineBtn.setAttribute("aria-expanded", String(isOpen() && t === "timeline"));
+  }
+  function closeDrawer() {
+    drawerEl.dataset.open = "false";
+    showTab(drawerTab);
+  }
   async function openProfile(open) {
-    drawerEl.dataset.open = String(open);
-    profileBtn.setAttribute("aria-expanded", String(open));
-    if (!open) return;
+    if (!open) return closeDrawer();
+    drawerEl.dataset.open = "true";
+    showTab("profile");
     if (!await profile.load()) profile.say("Couldn't reach PairBrowse.", "error");
     // Don't pull the cursor away from a field the person already clicked into.
-    if (!drawerEl.contains(document.activeElement)) drawerEl.querySelector("input")?.focus({ preventScroll: true });
+    if (!drawerEl.contains(document.activeElement)) drawerEl.querySelector("#profile-body input")?.focus({ preventScroll: true });
   }
-  profileBtn.addEventListener("click", () => openProfile(drawerEl.dataset.open !== "true"));
+  function openTimeline(open) {
+    if (!open) return closeDrawer();
+    drawerEl.dataset.open = "true";
+    showTab("timeline");
+    loadJournal();
+  }
+  // The goal log: fetched when the Timeline opens and on Refresh, never polled.
+  const jmsg = (text, kind = "") => { $("journal-msg").textContent = text; $("journal-msg").dataset.kind = kind; };
+  let journalBusy = false;
+  async function loadJournal() {
+    if (journalBusy) return;
+    journalBusy = true;
+    jmsg("");
+    const r = await fetch(base + "journal.json", { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.json() : Promise.reject(x.status))).catch(() => undefined);
+    journalBusy = false;
+    if (r === undefined) return jmsg("Couldn't reach PairBrowse.", "error");
+    drawJournal(r);
+  }
+  // A done line, as the log writes it: "Title <url>: act; act", or "url: act; act".
+  function doneLine(line) {
+    const s = String(line);
+    let head = s, url, rest = "";
+    const m = s.match(/^(.*?) <([^>]*)>(?:: (.*))?$/s);
+    if (m) { head = m[1]; url = m[2]; rest = m[3] || ""; }
+    else { const i = s.indexOf(": "); if (i > 0) { head = s.slice(0, i); rest = s.slice(i + 2); } url = /^https?:\/\//.test(head) ? head : ""; }
+    const li = el("li", {}, el("span", { className: "page", textContent: head, title: url }));
+    if (rest) {
+      const acts = el("span", { className: "acts" });
+      rest.split("; ").forEach((a, i) => { if (i) acts.append(" · "); acts.append(rich(a)); });
+      li.append(acts);
+    }
+    return li;
+  }
+  function drawJournal(run) {
+    const list = (id, items, none, draw = (x) => el("li", { textContent: x })) => $(id).replaceChildren(...(items.length ? items.map(draw) : [el("li", { className: "empty", textContent: none })]));
+    const meta = $("journal-meta");
+    if (!run) {
+      meta.textContent = ""; meta.title = "";
+      list("journal-done", [], "No goal log yet: it starts with the first browser action.");
+      list("journal-turn", [], "Nothing handed to you.");
+      list("journal-left", [], "Nothing left empty.");
+      return;
+    }
+    const saved = ago(run.updatedAt);
+    meta.textContent = [run.name, run.status, saved && `Saved ${saved}`].filter(Boolean).join(" · ");
+    meta.title = run.updatedAt && saved ? `Saved ${new Date(run.updatedAt).toLocaleString()}` : "";
+    list("journal-done", [...(run.done || [])].reverse(), "Nothing done yet.", doneLine);
+    list("journal-turn", run.yourTurn || [], "Nothing handed to you.");
+    list("journal-left", run.left || [], "Nothing left empty.");
+  }
+  profileBtn.addEventListener("click", () => openProfile(!(isOpen() && drawerTab === "profile")));
+  timelineBtn.addEventListener("click", () => openTimeline(!(isOpen() && drawerTab === "timeline")));
+  $("drawer-tab-profile").addEventListener("click", () => { if (drawerTab !== "profile") { showTab("profile"); profile.load(); } });
+  $("drawer-tab-timeline").addEventListener("click", () => { if (drawerTab !== "timeline") { showTab("timeline"); loadJournal(); } });
+  for (const x of ["profile", "timeline"]) $("drawer-tab-" + x).addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const other = x === "profile" ? "timeline" : "profile";
+    $("drawer-tab-" + other).click();
+    $("drawer-tab-" + other).focus();
+  });
+  $("journal-refresh").addEventListener("click", loadJournal);
   $("drawer-close").addEventListener("click", () => openProfile(false));
-  drawerEl.addEventListener("keydown", (e) => { if (e.key === "Escape") openProfile(false); });
-  on("profile", (p) => { if (drawerEl.dataset.open === "true") profile.draw(p); });
+  // Escape closes it and gives focus back to the toolbar button of the tab that was shown.
+  drawerEl.addEventListener("keydown", (e) => { if (e.key === "Escape") { openProfile(false); (drawerTab === "timeline" ? timelineBtn : profileBtn).focus(); } });
+  on("profile", (p) => { if (drawerEl.dataset.open === "true" && drawerTab === "profile") profile.draw(p); });
 }
 
 // ---- toolbar ----
@@ -334,8 +535,15 @@ urlInput.addEventListener("blur", endEdit);
 $("newtab").addEventListener("click", () => { youDrive(); post("tab", { new: true }); editUrl(""); });
 // Browser shortcuts: Cmd/Ctrl+L (address), Cmd/Ctrl+T (new tab).
 document.addEventListener("keydown", (e) => {
-  if (!canDrive || !(e.metaKey || e.ctrlKey) || e.altKey) return;
+  // Escape in the narrow overlay column folds it to the rail (it covers the toolbar there).
+  if (e.key === "Escape" && view.sidebar === "open" && matchMedia("(max-width: 640px)").matches && $("side").contains(document.activeElement)) {
+    e.preventDefault(); setView(() => { view.sidebar = "rail"; lastShown = "rail"; }); $("side-collapse").focus(); return;
+  }
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
   const k = e.key.toLowerCase();
+  // Cmd/Ctrl+B: the workspace column, on every link (it only shows).
+  if (k === "b" && !e.shiftKey) { e.preventDefault(); $("side-btn").click(); return; }
+  if (!canDrive) return;
   if (k === "l") { e.preventDefault(); editUrl(); }
   else if (k === "t") { e.preventDefault(); $("newtab").click(); }
 });

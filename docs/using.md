@@ -16,6 +16,20 @@ The person icon in the live view's toolbar opens the **Profile** panel:
 Details and passwords live on the machine the browser runs on. In a cloud session that's the
 cloud container, which is reset when the session ends, so keep long-lived ones on your own computer.
 
+## The workspace
+
+The live view's left column shows the workspace: **Browser** (the open tabs, who holds each, Claude's spark on the tab it works in), **Agents** (who is connected, their status in words and the tab they are in), **Shared with** (the people you invited, and whether they can drive or only watch) and **Session** (its name and where it runs). Each section folds; the arrow at the top shrinks the column to a rail of icons with counts, and the column button in the toolbar (Ctrl/Cmd+B) hides it and brings it back. How you left it is remembered in that browser. The **Timeline** button (your own link only, next to Profile) opens the goal log PairBrowse keeps of the task: the pages done with what was done there, what was handed to you, what was left empty, and when it was saved. It is read when you open it and when you press Refresh.
+
+## Three ways to look at it
+
+**Focus**: the page, Claude's spark on its tab, the small badge only while a status is set, the
+bottom bar fading when nothing happens; the side panel closed. **Collaborate**: the side panel
+open (the toolbar button or Cmd/Ctrl+Shift+Y): the agent card, who else is in, requests, the
+bar's chips and the colored cursors in the page. **Inspect**: the live view in the Claude
+desktop workspace with its left column and the Timeline (the goal log). Each is only what is
+open; switching restarts nothing, reloads nothing and takes no picture. The panel remembers
+which sections you folded, the live view which column state you chose.
+
 ## Sessions
 
 When the browser starts, its first tab is the session picker: your three most recently used

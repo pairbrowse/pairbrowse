@@ -307,6 +307,22 @@ aria-expanded, remembered in `chrome.storage.local` under `pb-panel`. No new sta
 timer (the two existing timers stay); `test/panel.test.mjs` pins the markup, the logo hash, the
 timer count and, with the runtime, renders the panel over a fake SSE feed.
 
+**liveview + modes** (2026-10-11, `design-subset` run wf_3a381cca: review pass in round three;
+396 unit pass, the liveview, journal, shared-liveview and invites live suites green). The
+live view is the Inspect workspace: a left column (open 240 px, a 44 px rail, hidden; a toolbar
+toggle with Ctrl/Cmd+B; remembered per viewer in `localStorage` `pb-view` beside `pb-fit`)
+with Browser (the open tabs, who holds each, the spark), Agents (board and collaboration, state
+in words), Shared with (guests) and Session; the stage unchanged; the right drawer gains a
+Timeline tab (owner only) that reads the goal log through one new owner-only route
+`journal.json` (masked again on read, no images, read once on open and on an explicit refresh;
+`docs/security.md` row added). Hidden or folded parts skip their DOM work. Fixed in the rounds:
+the column toggle on watch links, avatar ink in the light scheme (dark ink on every participant
+color, as the hud pills). Modes are what is open: Focus (panel closed), Collaborate (panel),
+Inspect (live view with the column); the panel's `pb-panel` and the live view's `pb-view` keep
+each viewer's choice; nothing restarts, reloads or captures on a switch (`docs/using.md`,
+"Three ways to look at it"). Left as a minor: on a watch link the tab rows are disabled buttons
+(unreachable by keyboard); render them as plain rows there.
+
 **hud** (2026-10-11, `design-subset`, built by Opus; the lead commits). `scripts/hud.js`: the
 bottom bar has a driver dot in the tab's spark color (orange until set, muted while
 reconnecting) in front of the unchanged who-lines, and the last three actions as chips, oldest

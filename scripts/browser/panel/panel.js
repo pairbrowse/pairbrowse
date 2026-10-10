@@ -1,6 +1,6 @@
 // The PairBrowse side panel. Connects to the live view server (status, activity, profile) at the
 // address the daemon handed to background.js; it never asks for the page stream itself.
-import { $, el, rich, clock, whose, activityHead, sparkIcon, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar } from "./common.js";
+import { $, el, rich, clock, whose, activityHead, sparkIcon, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES } from "./common.js";
 
 const DRIVING_MS = 8000; // "is driving" for this long after Claude's last action
 const ACTIVITY_SHOWN = 12;
@@ -16,7 +16,6 @@ let lastBoard = { people: [], messages: [] };
 let lastCollab = null;
 let lastSession = null;
 let lastTab = "";
-const STATES = { working: "working", you: "waiting for their person", done: "done", idle: "idle" };
 // Idle agents here with no tab of their own (other Claude Code and Codex windows connected,
 // doing nothing): one line, not a card each.
 const quiet = (p) => p.kind === "agent" && !p.where && !p.tab && !p.task && (!p.status || p.status === "idle");

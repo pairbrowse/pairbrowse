@@ -17,6 +17,18 @@ export function rich(text) {
   return frag;
 }
 export const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+// How long ago, worked out once when drawn (nothing ticks): "just now", "N min ago", else the date and time.
+export function ago(iso, now = Date.now()) {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "";
+  const s = (now - t) / 1000;
+  if (s < 45) return "just now";
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
+  return new Date(t).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+}
+// An agent's status (pairbrowse_status kinds) in words, so it never shows by color alone.
+export const STATE_WORDS = { working: "working", you: "waiting for their person", done: "done", idle: "idle" };
+export const stateWord = (s) => (Object.hasOwn(STATE_WORDS, s) ? STATE_WORDS[s] : "idle");
 // "Alice" -> "Alice's Claude". Unnamed ("Claude 3fed") and app-labelled ("Alice · Codex") stay as they are.
 export const whose = (who) => !who ? "Claude" : /^Claude\b| · /.test(who) ? who : `${who}'s Claude`;
 // The activity line's head: who did it, and in which tab.

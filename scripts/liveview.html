@@ -9,6 +9,33 @@
 <link rel="stylesheet" href="assets/liveview.css">
 </head>
 <body class="pane" data-s="connecting" data-turn="false">
+  <aside class="side" id="side" data-state="open" aria-label="Workspace">
+    <header><h2>Workspace</h2><button class="mini collapse" id="side-collapse" type="button" aria-label="Collapse to a rail" title="Collapse to a rail" aria-expanded="true" aria-controls="side-body"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M10.2 3.3a1 1 0 0 1 0 1.4L6.9 8l3.3 3.3a1 1 0 1 1-1.4 1.4l-4-4a1 1 0 0 1 0-1.4l4-4a1 1 0 0 1 1.4 0Z"/></svg></button></header>
+    <nav class="rail" id="side-rail" aria-label="Workspace sections">
+      <button class="rail-btn" id="rail-tabs" type="button" title="Tabs"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M3 2.5h4.5a1 1 0 0 1 1 1V5H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 14H3a1.5 1.5 0 0 1-1.5-1.5V4A1.5 1.5 0 0 1 3 2.5Zm0 4v6h10v-6H3Z"/></svg><b class="n" id="side-n-tabs"></b><span class="sr">Tabs</span></button>
+      <button class="rail-btn" id="rail-agents" type="button" title="Agents"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1a1 1 0 0 1 1 1v1h2.5A2.5 2.5 0 0 1 14 5.5v5a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 2 10.5v-5A2.5 2.5 0 0 1 4.5 3H7V2a1 1 0 0 1 1-1ZM4.5 5a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5v-5a.5.5 0 0 0-.5-.5h-7Zm1.5 1.5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm4 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg><b class="n" id="side-n-agents"></b><span class="sr">Agents</span></button>
+      <button class="rail-btn" id="rail-guests" type="button" title="Shared with"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6 7.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Zm0 1.25c-2.5 0-4.5 1.4-4.5 3.2V13.5h9v-1.55c0-1.8-2-3.2-4.5-3.2Zm5.25-1.5a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Zm.5 1.3c-.4 0-.78.04-1.14.11.9.75 1.39 1.7 1.39 2.79v2.05h2.5v-1.3c0-2.03-1.2-3.65-2.75-3.65Z"/></svg><b class="n" id="side-n-guests"></b><span class="sr">Shared with</span></button>
+      <button class="rail-btn" id="rail-session" type="button" title="Session"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M3 2h10a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 11H9v1.5h2a.75.75 0 0 1 0 1.5H5a.75.75 0 0 1 0-1.5h2V11H3a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 3 2Zm0 1.5v6h10v-6H3Z"/></svg><span class="sr">Session</span></button>
+    </nav>
+    <div class="body" id="side-body">
+      <section class="sec" data-key="tabs">
+        <h2><button class="disclose" type="button" id="side-h-tabs" aria-expanded="true" aria-controls="side-tabs">Browser <span class="count" id="side-count-tabs"></span></button></h2>
+        <ol class="rows" id="side-tabs" aria-label="Open tabs"></ol>
+      </section>
+      <section class="sec" data-key="agents">
+        <h2><button class="disclose" type="button" id="side-h-agents" aria-expanded="true" aria-controls="side-agents">Agents <span class="count" id="side-count-agents"></span></button></h2>
+        <ul class="rows" id="side-agents" aria-label="Agents"></ul>
+      </section>
+      <section class="sec" data-key="guests">
+        <h2><button class="disclose" type="button" id="side-h-guests" aria-expanded="true" aria-controls="side-guests">Shared with <span class="count" id="side-count-guests"></span></button></h2>
+        <ul class="rows" id="side-guests" aria-label="Shared with"></ul>
+      </section>
+      <section class="sec" data-key="session">
+        <h2><button class="disclose" type="button" id="side-h-session" aria-expanded="true" aria-controls="side-session">Session <span class="count" id="side-count-session"></span></button></h2>
+        <dl class="facts" id="side-session"></dl>
+      </section>
+    </div>
+  </aside>
   <div class="window">
     <div class="strip">
       <nav class="tabs" id="tabs" role="tablist" aria-label="Open tabs"></nav>
@@ -16,6 +43,7 @@
       <span class="state" id="state" data-s="connecting" role="status" aria-live="polite"><i aria-hidden="true"></i><span id="state-text">Connecting</span></span>
     </div>
     <div class="toolbar">
+      <button class="nav side-btn" id="side-btn" type="button" aria-label="Workspace column" title="Workspace column (Ctrl+B or Cmd+B)" aria-expanded="true" aria-controls="side"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M3 2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm0 1.5a.5.5 0 0 0-.5.5v8a.5.5 0 0 0 .5.5h2.5v-9H3Zm4 0v9h6a.5.5 0 0 0 .5-.5V4a.5.5 0 0 0-.5-.5H7Z"/></svg></button>
       <button class="nav" id="back" type="button" aria-label="Back" title="Back"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M7.3 2.3a1 1 0 0 1 0 1.4L4.4 6.6H13a1 1 0 1 1 0 2H4.4l2.9 2.9a1 1 0 1 1-1.4 1.4L1.3 8.3a1 1 0 0 1 0-1.4l4.6-4.6a1 1 0 0 1 1.4 0Z"/></svg></button>
       <button class="nav" id="forward" type="button" aria-label="Forward" title="Forward"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8.7 2.3a1 1 0 0 0 0 1.4l2.9 2.9H3a1 1 0 1 0 0 2h8.6l-2.9 2.9a1 1 0 1 0 1.4 1.4l4.6-4.6a1 1 0 0 0 0-1.4L10.1 2.3a1 1 0 0 0-1.4 0Z"/></svg></button>
       <button class="nav" id="reload" type="button" aria-label="Reload" title="Reload"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 2.5a5.5 5.5 0 1 0 5.3 7 1 1 0 1 1 1.9.6A7.5 7.5 0 1 1 13 3.1V2a1 1 0 1 1 2 0v3.5a1 1 0 0 1-1 1h-3.5a1 1 0 1 1 0-2h1.2A5.5 5.5 0 0 0 8 2.5Z"/></svg></button>
@@ -29,13 +57,14 @@
       <button class="nav overview-btn" id="overview-btn" type="button" aria-label="Tab overview: who is in each tab" title="Tab overview" aria-expanded="false" aria-controls="overview"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 3.5a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2H3a1 1 0 0 1-1-1Zm4 0a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H7a1 1 0 0 1-1-1ZM2 8a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2H3a1 1 0 0 1-1-1Zm4 0a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H7a1 1 0 0 1-1-1Zm-4 4.5a1 1 0 0 1 1-1h1a1 1 0 1 1 0 2H3a1 1 0 0 1-1-1Zm4 0a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H7a1 1 0 0 1-1-1Z"/></svg></button>
       <ol class="overview" id="overview" hidden aria-label="Tab overview"></ol>
       <button class="nav profile-btn" id="profile-btn" type="button" aria-label="Profile: remembered details and passwords" title="Profile" aria-expanded="false" aria-controls="drawer"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 1.5c-2.8 0-5 1.6-5 3.6V14h10v-.9c0-2-2.2-3.6-5-3.6Z"/></svg></button>
+      <button class="nav timeline-btn" id="timeline-btn" type="button" aria-label="Timeline: the goal log" title="Timeline" aria-expanded="false" aria-controls="drawer"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2.3 3.3a1 1 0 0 1 1.4 0l.3.3 1.3-1.3a1 1 0 1 1 1.4 1.4l-2 2a1 1 0 0 1-1.4 0l-1-1a1 1 0 0 1 0-1.4ZM8 3.5a1 1 0 0 1 1-1h4a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1ZM2.3 9.3a1 1 0 0 1 1.4 0l.3.3 1.3-1.3a1 1 0 1 1 1.4 1.4l-2 2a1 1 0 0 1-1.4 0l-1-1a1 1 0 0 1 0-1.4ZM8 9.5a1 1 0 0 1 1-1h4a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Z"/></svg></button>
       <button class="fit" id="fit" type="button" aria-pressed="true" aria-label="Fit page to pane" title="Fit page to pane"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 2h4.5v1.5h-3v3H2V2Zm7.5 0H14v4.5h-1.5v-3h-3V2ZM2 9.5h1.5v3h3V14H2V9.5Zm10.5 0H14V14H9.5v-1.5h3v-3Z"/></svg></button>
     </div>
     <div class="turn" id="turn" data-open="false" role="alert"><i aria-hidden="true"></i><strong id="turn-text">Your turn</strong><small>Claude continues when the page moves on</small></div>
     <div class="joins" id="joins" role="region" aria-label="Join requests" aria-live="assertive"></div>
-    <aside class="drawer" id="drawer" data-open="false" aria-label="Profile">
-      <header><h2>Profile</h2><button class="mini" id="drawer-close" type="button" aria-label="Close profile">Close</button></header>
-      <div class="body">
+    <aside class="drawer" id="drawer" data-open="false" aria-label="Profile and timeline">
+      <header><div class="dtabs" role="tablist" aria-label="Panel"><button role="tab" id="drawer-tab-profile" aria-selected="true" aria-controls="profile-body" type="button">Profile</button><button role="tab" id="drawer-tab-timeline" aria-selected="false" aria-controls="timeline-body" type="button" tabindex="-1">Timeline</button></div><button class="mini" id="drawer-close" type="button" aria-label="Close panel">Close</button></header>
+      <div class="body" id="profile-body" role="tabpanel" aria-labelledby="drawer-tab-profile">
         <h3>Remembered details</h3>
         <p class="note">Used to fill forms. Claude adds what you tell it, and what gets filled in forms is kept here too. Passwords never are.</p>
         <div id="details"></div>
@@ -52,6 +81,14 @@
           <button class="primary" type="submit">Save password</button>
         </form>
         <p class="msg" id="profile-msg" role="status" aria-live="polite"></p>
+      </div>
+      <div class="body" id="timeline-body" role="tabpanel" aria-labelledby="drawer-tab-timeline" hidden>
+        <div class="jhead"><span id="journal-meta" class="note"></span><button class="mini" id="journal-refresh" type="button" aria-label="Refresh the timeline">Refresh</button></div>
+        <p class="note">The goal log PairBrowse keeps of this task: the pages acted on, what was handed to you, what was left empty.</p>
+        <h3>Done</h3><ol class="journal" id="journal-done"></ol>
+        <h3>Your turn</h3><ul class="journal" id="journal-turn"></ul>
+        <h3>Left empty</h3><ul class="journal" id="journal-left"></ul>
+        <p class="msg" id="journal-msg" role="status" aria-live="polite"></p>
       </div>
     </aside>
     <main class="stage" id="stage" tabindex="0" aria-label="Live view of the PairBrowse browser. Click the page, then type.">

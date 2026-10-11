@@ -1,0 +1,119 @@
+/* The PairBrowse left dock (DESIGN.md B3): colors and type from tokens.css. Three states,
+   reflected from the browser's layout: open (200 px), rail (44 px, icons only) and hidden. */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { display: grid; grid-template-rows: 44px minmax(0, 1fr) auto; height: 100vh; background: var(--sidebar); color: var(--ink); font: var(--fs-3)/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; }
+button { font: inherit; }
+/* The icon sheet: symbols only, never laid out (an <svg hidden> still takes a grid row). */
+body > svg[hidden] { display: none; }
+
+/* Header: the workspace square, its name and the chevron (the session picker for now). */
+.head { height: 44px; display: flex; align-items: center; padding: 0 8px; min-width: 0; }
+.workspace { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 36px; padding: 0 4px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); text-align: left; cursor: pointer; transition: background 120ms ease-out; }
+.workspace:hover { background: var(--hover); }
+.ws-icon { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: var(--r-2); background: var(--elevated); }
+.ws-icon svg { width: 20px; height: 20px; color: var(--ink); }
+.ws-label { min-width: 0; font-size: 14px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chev { flex: none; width: 12px; height: 12px; margin-left: auto; color: var(--ink-2); }
+
+.body { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 4px 8px 8px; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+
+/* Nav rows: 36 px, 8 px radius, a 16 px icon and a 13 px/500 label. */
+.nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.row { display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 12px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); font: 500 var(--fs-3) var(--sans); text-align: left; cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+.row .ic { flex: none; width: 16px; height: 16px; color: var(--ink-2); }
+.row:hover { background: var(--hover); color: var(--ink); }
+.row:disabled, .gear:disabled { color: var(--muted); cursor: default; }
+.row:disabled .ic { color: inherit; }
+.row:disabled:hover, .gear:disabled:hover { background: transparent; }
+.row[aria-current="page"] { background: var(--accent-soft); color: var(--ink); }
+.row[aria-current="page"] .ic { color: var(--accent-ink); }
+.row .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { display: inline-grid; place-items: center; flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font: 600 var(--fs-1)/1 var(--sans); }
+.badge:empty { display: none; }
+#nav-activity::after { content: ""; flex: none; width: 5px; height: 5px; margin-right: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform 160ms ease-out; }
+#nav-activity[aria-expanded="true"]::after { transform: translateY(1px) rotate(-135deg); }
+
+/* The activity list, under its row (the helper's own lines, newest first). */
+.activity { list-style: none; margin: 2px 0 4px; padding: 0 0 0 12px; }
+.activity[hidden] { display: none; }
+.activity li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--edge); font-size: var(--fs-2); color: var(--ink-2); overflow-wrap: anywhere; }
+.activity li:first-child { color: var(--ink); }
+.activity time { font-family: var(--mono); font-size: var(--fs-1); color: var(--muted); padding-top: 1px; }
+.activity strong { font-weight: var(--fw-name); color: var(--ink); }
+.activity code { font-family: var(--mono); font-size: var(--fs-1); padding: 0 4px; border-radius: var(--r-1); background: var(--hover); }
+.activity li.empty { display: block; color: var(--muted); }
+
+/* Sections: Agents (with the + hint) and Shared with. */
+.sec { margin-top: 14px; }
+.sec[hidden] { display: none; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 4px 0 12px; }
+h2 { margin: 0; font: 600 var(--fs-2) var(--sans); color: var(--ink-2); }
+#shared h2 { padding: 0 12px; line-height: 28px; }
+.add { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+.add svg { width: 14px; height: 14px; }
+.add:hover, .add[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+.hint { margin: 4px 0 8px; padding: 10px 12px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); font-size: var(--fs-2); color: var(--ink-2); }
+.hint[hidden] { display: none; }
+.hint p { margin: 0 0 6px; }
+.hint p:last-child { margin: 0; }
+.hint code { display: inline-block; padding: 1px 5px; border-radius: var(--r-1); background: var(--bg); color: var(--ink); font: var(--fs-1)/1.4 var(--mono); overflow-wrap: anywhere; }
+.conn { margin: 0 12px 6px; font-size: var(--fs-2); color: var(--muted); }
+.conn[hidden] { display: none; }
+
+/* People rows: 44 px, a 32 px avatar with a 10 px state dot, the name and the state in words. */
+.people { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.people li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 0 10px; align-items: center; align-content: center; height: 44px; padding: 0 12px; border-radius: var(--r-2); }
+.people li.empty { display: block; height: auto; padding: 4px 12px; font-size: var(--fs-2); color: var(--muted); }
+.people .avatar { position: relative; grid-row: span 2; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--spark); color: var(--bg); font: 700 var(--fs-3)/1 var(--sans); }
+.people .avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input); }
+.people .avatar svg { width: 16px; height: 16px; color: var(--ink-2); }
+.dot { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2px var(--sidebar); }
+li[data-state="working"] .dot, li[data-state="active"] .dot, li[data-state="online"] .dot { background: var(--ok); }
+li[data-state="waiting"] .dot { background: var(--warn); }
+li[data-state="failed"] .dot { background: var(--bad); }
+li[data-state="idle"] .dot { background: var(--muted); }
+.people strong { min-width: 0; font: 600 var(--fs-3)/1.2 var(--sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people strong .app { font-weight: 400; color: var(--ink-2); }
+.people small { grid-column: 2; min-width: 0; font-size: var(--fs-2); line-height: 1.2; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Bottom: the profile's size on disk (only when the helper reports it) and the settings gear. */
+.foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 8px 8px 10px; border-top: 1px solid var(--edge); }
+.storage { display: grid; gap: 6px; min-width: 0; padding: 0 4px; }
+.storage[hidden] { display: none; }
+.storage-line { display: flex; justify-content: space-between; gap: 6px; font-size: var(--fs-2); color: var(--ink-2); white-space: nowrap; }
+.storage-v { color: var(--ink); }
+.bar { height: 4px; border-radius: 2px; background: var(--edge); overflow: hidden; }
+.bar i { display: block; width: 0; height: 100%; border-radius: 2px; background: var(--accent); transition: width 160ms ease-out; }
+.bar[data-over="true"] i { background: var(--warn); }
+.gear { grid-column: 2; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+.gear svg { width: 20px; height: 20px; }
+.gear:hover { background: var(--hover); color: var(--ink); }
+
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Rail: 44 px, icons, avatars with their dots and the gear; every word moves to a tooltip. */
+body[data-dock="rail"] .head { padding: 0 4px; }
+body[data-dock="rail"] .workspace { justify-content: center; width: 36px; padding: 0; margin: 0 auto; }
+body[data-dock="rail"] .ws-label, body[data-dock="rail"] .chev, body[data-dock="rail"] .head .sr,
+body[data-dock="rail"] .row .label, body[data-dock="rail"] .badge, body[data-dock="rail"] #tab-count-words,
+body[data-dock="rail"] #nav-activity::after, body[data-dock="rail"] .sec-head h2, body[data-dock="rail"] .add,
+body[data-dock="rail"] .hint, body[data-dock="rail"] .conn, body[data-dock="rail"] .activity,
+body[data-dock="rail"] .people li.empty,
+body[data-dock="rail"] .storage, body[data-dock="rail"] #shared h2 { display: none; }
+/* The agents' names and states leave the eye but stay in the accessibility tree (the .sr recipe). */
+body[data-dock="rail"] .people strong, body[data-dock="rail"] .people small { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+body[data-dock="rail"] .body { padding: 4px 4px 8px; }
+body[data-dock="rail"] .row { justify-content: center; width: 36px; padding: 0; margin: 0 auto; }
+body[data-dock="rail"] .sec { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--edge); }
+body[data-dock="rail"] .sec-head { display: none; }
+body[data-dock="rail"] .people li { grid-template-columns: 28px; justify-content: center; height: 40px; padding: 0; }
+body[data-dock="rail"] .people .avatar { width: 28px; height: 28px; font-size: var(--fs-2); }
+body[data-dock="rail"] .foot { grid-template-columns: auto; justify-content: center; padding: 8px 4px; }
+body[data-dock="rail"] .gear { grid-column: 1; }
+
+/* Hidden: nothing shows and nothing takes focus (left.js makes it inert too). */
+body[data-dock="hidden"] > * { visibility: hidden; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

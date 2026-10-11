@@ -300,7 +300,8 @@ const side = {
     $("side-count-tabs").textContent = lastTabs.length ? String(lastTabs.length) : "";
     if (!view.sections.tabs) return;
     $("side-tabs").replaceChildren(...(lastTabs.length ? lastTabs.map((t) => {
-      const row = el("button", { type: "button", disabled: !canDrive, title: t.url || "" });
+      // Watching only: a plain row (a disabled button would be skipped by the keyboard and readers).
+      const row = canDrive ? el("button", { type: "button", title: t.url || "" }) : el("div", { className: "row-static", title: t.url || "", tabIndex: 0 });
       if (t.shown) row.setAttribute("aria-current", "true");
       const who = el("span", { className: "who" });
       const color = t.agent ? dotColor(t.agent.color) : "";

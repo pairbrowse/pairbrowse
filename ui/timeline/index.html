@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Timeline</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="timeline.css">
+</head>
+<body data-s="connecting" data-state="loading" data-driving="false" data-held="0">
+<main class="strip" id="strip" aria-label="Timeline">
+  <p class="line" id="line" role="status" aria-live="polite" hidden><span id="line-text"></span><small id="line-more"></small></p>
+  <ol class="cards" id="cards" role="list" aria-label="Pictures sent to the agent">
+    <li class="card add" id="add" hidden>
+      <button id="add-btn" type="button">Add note</button>
+      <form id="note-form" hidden>
+        <input class="field" id="note" maxlength="200" aria-label="Note" aria-describedby="note-hint" placeholder="A note for the goal log" autocomplete="off">
+        <small class="hint" id="note-hint">Enter to add · Esc to cancel</small>
+      </form>
+    </li>
+  </ol>
+</main>
+<div class="menu" id="menu" role="menu" aria-label="Card menu" hidden></div>
+<p class="sr" id="said" role="status" aria-live="polite"></p>
+<script type="module" src="timeline.js"></script>
+</body>
+</html>

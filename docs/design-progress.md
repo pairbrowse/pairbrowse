@@ -480,6 +480,18 @@ a 205 figure). Across all eight bench runs on both codebases that number spans 1
 start and 202–247 at the end (the pre-design code itself measured 220 at start in one run), so
 the branch sits inside the spread with a flat heap: noise, not a regression. Verdict: SHIP.
 
+## Gate (picker, picture page, share, checklist), 2026-10-11, run wf_80d6a344, branch at 8ca5d4d
+
+Suites: lint clean; unit 403 pass; live 476 pass, 0 fail, 20 skipped; fuzz 37; manifests
+valid. Bench vs 0.15.42: click p50 501 ms (517), long snapshot 102 ms (166), navigate 342 ms
+(390), fast-mode form 291 ms (350), click_at 249 ms (251), cold start 1.21 s (1.2), 1 image in
+20 repeated snapshots, helper idle 0.2–0.5%; soak flat (heap 82 → 84 MB, RSS 227 → 218). One
+blip: helper RSS 254 MB at the end of one screenshots-on run (flat in the other run and the
+soak: GC timing). Diff checks: the new `invite` route owner-only, answered once, nothing
+logged; no timer while folded; reduced motion everywhere added; keyboard and names on every
+new control; the logo untouched. Verdict: SHIP. Minor left: the watch-link row has a pointer
+cursor and no role; the checklist's live region re-renders every 5 s while driving.
+
 ## Next
 
 1. `design-validate` for `hud` and `panel`; then `design-subset` with `liveview`, `modes`, `design-validate` after each.

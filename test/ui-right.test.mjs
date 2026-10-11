@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { pageTest, runtime } from "./helpers/ui-page.mjs";
 import { patchright } from "./live.mjs";
-import { startFakeHelper, UNMARKED, CONFIRM_PROGRAM } from "./helpers/fake-helper.mjs";
+import { startFakeHelper, UNMARKED, CONFIRM_PROGRAM, CONFIRM_WEB, FILE_CHANGED, NO_APP } from "./helpers/fake-helper.mjs";
 import { startUiServer } from "./helpers/ui-server.mjs";
 import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";
 
@@ -691,6 +691,106 @@ describe("downloads: the helper's confirm and refusal in the row", () => pageTes
 
   assert.equal(await inPage(() => window.__asked), undefined, "no window.confirm");
   assert.equal(confirm, "function");
+  assert.deepEqual(errors, []);
+}));
+
+// The helper's Open answers say where it opened ({ opened }); Word-type names get Open in Word.
+const OPENS = [
+  { id: "t1", name: "statement.pdf", state: "done", at: NOW - 60_000, size: 1000, from: { host: "bank.example" }, opens: "tab" },
+  { id: "w1", name: "contract.docx", state: "done", at: NOW - 50_000, size: 1000, from: { host: "mail.example" }, opens: "preview" },
+  { id: "x1", name: "sheet.xlsx", state: "done", at: NOW - 40_000, size: 1000, from: { host: "data.example" }, opens: "app" },
+  { id: "o1", name: "notes.txt", state: "done", at: NOW - 30_000, size: 10, from: { host: "docs.example" } },
+  { id: "n1", name: "Minutes.ODT", state: "done", at: NOW - 20_000, size: 1000, from: { host: "team.example" }, app: false },
+  { id: "g1", name: "gone.rtf", state: "done", at: NOW - 15_000, size: 1000, from: { host: "team.example" }, gone: true },
+  { id: "m1", name: "report.docx.pdf", state: "done", at: NOW - 12_000, size: 1000, from: { host: "team.example" } },
+  { id: "v1", name: "mail.html", state: "done", at: NOW - 10_000, size: 1000, from: { host: "mail.example" }, program: true, confirm: CONFIRM_WEB },
+];
+describe("downloads: where Open opened it, and Open in Word", () => pageTest("right", opts({ downloads: { items: OPENS } }), async ({ page, helper, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await until("the rows", () => document.querySelectorAll("#downloads li").length === 8);
+  const rowOf = (name) => `#downloads li:has(button[aria-label="Open ${name}"])`;
+  const saids = () => inPage(() => [...document.querySelectorAll("#downloads .said")].map((p) => p.textContent).filter(Boolean));
+  const saidIn = (name) => inPage((s) => document.querySelector(`${s} .said`).textContent, rowOf(name));
+  const dl = () => helper.posts.filter((p) => p.route === "downloads");
+
+  // (1) Open in Word on Word-type names only, between Open and Show in Finder.
+  const words = await inPage(() => [...document.querySelectorAll("#downloads button")].filter((b) => b.textContent === "Open in Word").map((b) => b.getAttribute("aria-label")));
+  assert.deepEqual(words.sort(), ["Open Minutes.ODT in Word", "Open contract.docx in Word", "Open gone.rtf in Word"]);
+  const reveal = await inPage(() => (/mac/i.test(navigator.userAgentData?.platform || navigator.platform) ? "Show in Finder" : "Show in folder"));
+  assert.deepEqual(await inPage((s) => [...document.querySelectorAll(`${s} button`)].map((b) => b.textContent), rowOf("contract.docx")), ["Open", "Open in Word", reveal]);
+  // (2) Open's title, only for types the page can name.
+  const mac = reveal === "Show in Finder";
+  const titles = await inPage(() => Object.fromEntries([...document.querySelectorAll("#downloads li")].map((li) => {
+    const b = li.querySelector("button");
+    return [li.querySelector(".name").textContent, b.hasAttribute("title") ? b.title : null];
+  })));
+  assert.deepEqual(titles, {
+    "statement.pdf": "Opens in a new tab", "contract.docx": mac ? "Opens as a read-only preview in a new tab" : "Opens in its app",
+    "sheet.xlsx": null, "notes.txt": "Opens in a new tab", "Minutes.ODT": mac ? "Opens as a read-only preview in a new tab" : "Opens in its app",
+    "gone.rtf": mac ? "Opens as a read-only preview in a new tab" : "Opens in its app", "report.docx.pdf": "Opens in a new tab", "mail.html": null,
+  });
+  assert.equal(await inPage(() => document.querySelector('button[aria-label="Open contract.docx in Word"]').title), "Opens the original in its default app, for editing");
+  // (3) A synthetic click on Open in Word sends nothing.
+  await inPage(synthetic, 'button[aria-label="Open contract.docx in Word"]');
+  await sleep(300);
+  assert.equal(dl().length, 0, "a synthetic Open in Word opens nothing");
+  // (4)-(7) The row says where the helper opened it, only as it answered; one status at a time.
+  await page.click('button[aria-label="Open statement.pdf"]');
+  await until("t1 said", () => document.querySelector('#downloads li:has(button[aria-label="Open statement.pdf"]) .said').textContent === "Opened in a new tab");
+  assert.deepEqual(await inPage((s) => { const p = document.querySelector(`${s} .said`); return [p.getAttribute("role"), p.getAttribute("aria-live"), p.parentElement.classList.contains("acts")]; }, rowOf("statement.pdf")), ["status", "polite", true]);
+  assert.deepEqual(dl().at(-1), { route: "downloads", rest: ["t1", "open"], body: null });
+  await page.click('button[aria-label="Open contract.docx"]');
+  await until("w1 said", () => document.querySelector('#downloads li:has(button[aria-label="Open contract.docx"]) .said').textContent === "Opened as a read-only preview");
+  assert.equal(await saidIn("statement.pdf"), "", "the earlier status goes");
+  await page.click('button[aria-label="Open sheet.xlsx"]');
+  await until("x1 said", () => document.querySelector('#downloads li:has(button[aria-label="Open sheet.xlsx"]) .said').textContent === "Opened in its app");
+  assert.deepEqual(await saids(), ["Opened in its app"]);
+  await page.click('button[aria-label="Open notes.txt"]');
+  await waitFor("o1 open", () => dl().some((p) => p.rest[0] === "o1"));
+  await sleep(200);
+  assert.deepEqual(await saids(), [], "an answer without `opened` says nothing");
+  assert.equal(await inPage(() => document.getElementById("downloads-msg").textContent), "");
+  // (8) Open in Word by keyboard: Tab from Open, Enter.
+  await page.focus('button[aria-label="Open contract.docx"]');
+  await page.keyboard.press("Tab");
+  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Open contract.docx in Word");
+  await page.keyboard.press("Enter");
+  await waitFor("open-app", () => dl().some((p) => p.rest[1] === "open-app"));
+  assert.deepEqual(dl().at(-1), { route: "downloads", rest: ["w1", "open-app"], body: null });
+  await until("w1 app", () => document.querySelector('#downloads li:has(button[aria-label="Open contract.docx"]) .said').textContent === "Opened in its app");
+  await sleep(1500);
+  assert.deepEqual(await saids(), ["Opened in its app"], "no timer clears it");
+  const c = await inPage(textContrast, "#downloads .said:not(:empty)");
+  assert.ok(c >= 4.5, `the row status keeps AA: ${c.toFixed(2)}:1`);
+  // (9) Show in Finder empties it.
+  await page.click(`${rowOf("contract.docx")} button:nth-of-type(3)`);
+  await waitFor("w1 reveal", () => dl().some((p) => p.rest[0] === "w1" && p.rest[1] === "reveal"));
+  assert.deepEqual(await saids(), []);
+  // (10) open-app refused: the helper's sentence in the row, no Open anyway.
+  await page.click('button[aria-label="Open Minutes.ODT in Word"]');
+  await until("n1 refusal", () => document.getElementById("dl-confirm-n1")?.hidden === false);
+  assert.deepEqual(await inPage(() => { const b = document.getElementById("dl-confirm-n1"); return [b.querySelector("p").textContent, b.querySelector(".confirm-row").hidden]; }), [NO_APP, true]);
+  // (11) 410: the helper's sentence under the list.
+  await page.click('button[aria-label="Open gone.rtf in Word"]');
+  await until("g1 gone", () => document.getElementById("downloads-msg").dataset.kind === "error");
+  assert.equal(await inPage(() => document.getElementById("downloads-msg").textContent), FILE_CHANGED);
+  // (12) A web page's confirm, verbatim from the helper.
+  await page.click('button[aria-label="Open mail.html"]');
+  await until("v1 asks", () => document.getElementById("dl-confirm-v1")?.hidden === false);
+  assert.equal(await inPage(() => document.querySelector("#dl-confirm-v1 p").textContent), CONFIRM_WEB);
+  await page.click('button[aria-label="Don\'t open mail.html"]');
+  await until("v1 cancelled", () => document.getElementById("dl-confirm-v1").hidden);
+  // (13) open-app asks first: Open anyway repeats open-app, the focus back on Open in Word.
+  helper.replies.downloads = (body, rest) => (rest[1] === "open-app" && body?.confirm !== true ? { status: 428, body: { confirm: "Ask first." } } : { status: 200, body: { ok: true, opened: "app" } });
+  await page.click('button[aria-label="Open contract.docx in Word"]');
+  await until("w1 asks", () => document.getElementById("dl-confirm-w1")?.hidden === false && document.querySelector("#dl-confirm-w1 p").textContent === "Ask first.");
+  const n = dl().length;
+  await page.click("#dl-confirm-w1 .confirm-row button");
+  await waitFor("the confirmed open-app", () => dl().length === n + 1);
+  assert.deepEqual(dl().at(-1), { route: "downloads", rest: ["w1", "open-app"], body: { confirm: true } });
+  await until("w1 box goes", () => document.getElementById("dl-confirm-w1").hidden);
+  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Open contract.docx in Word");
+  assert.equal(await saidIn("contract.docx"), "Opened in its app");
   assert.deepEqual(errors, []);
 }));
 

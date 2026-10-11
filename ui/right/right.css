@@ -264,6 +264,7 @@ body[data-recording="true"] #record-btn::before { border-radius: 2px; background
 .tool[data-state="done"] .sd { background: var(--ok); }
 .tool[data-state="failed"] .sd { background: var(--bad); }
 .tool .acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tool .acts .said { margin: 0; align-self: center; min-width: 0; font-size: var(--fs-2); line-height: 17px; color: var(--ink-2); overflow-wrap: anywhere; }
 .tool .text { grid-column: 1 / -1; margin: 4px 0 0; font-size: var(--fs-3); color: var(--ink); overflow-wrap: anywhere; }
 .handoff { box-shadow: inset 3px 0 0 var(--warn), inset 0 1px 0 var(--edge-light), var(--shadow-raised); }
 .handoff .acts { grid-column: -2; grid-row: 1; margin-top: 0; }

@@ -7,8 +7,12 @@
 // events keep them current after that, and an event that comes before its list has loaded is
 // dropped (the read brings the whole list). diagnostics.json when Diagnostics is opened, on
 // Refresh, and again whenever the Tools tab comes back into view (or the stream reconnects) with
-// Diagnostics open; never while it is folded or the tab is not shown. Rows are patched in place by id, never rebuilt. Open, Show in Finder,
-// Show (a hand-off's tab) and a confirmed Delete count only for a person's click or key press.
+// Diagnostics open; never while it is folded or the tab is not shown. Rows are patched in place by id, never rebuilt. Open, Open in Word,
+// Show in Finder, Show (a hand-off's tab) and a confirmed Delete count only for a person's click or key press.
+// A download's Open (POST downloads/<id>/open) and Open in Word (Word-type names only, POST
+// downloads/<id>/open-app: the original in its default app) are answered { ok, opened: tab |
+// preview | app }; the row's status line says where only as the helper answered (nothing for an
+// answer without `opened`), one line across the list, emptied when the next Downloads action starts.
 // Nothing is sent anywhere: Prepare report shows the helper's text, Copy uses the clipboard and
 // Save is a download made in the page. No timer, observer or frame loop here; no markup strings.
 import { $, el, avatar, splitLabel, shortClock } from "../common.js";
@@ -16,6 +20,12 @@ import { $, el, avatar, splitLabel, shortClock } from "../common.js";
 const MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
 const REVEAL = MAC ? "Show in Finder" : "Show in folder";
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
+// Names the page can hint about: Word-type documents (Open in Word) and the types Chromium shows in
+// a tab. Titles only: what really opens, asks first or is refused is the helper's answer.
+const WORD = /\.(docx?|rtf|odt)$/i;
+const IN_TAB = /\.(pdf|png|jpe?g|gif|webp|avif|bmp|mp4|m4v|webm|ogv|mp3|wav|ogg|oga|m4a|aac|flac|opus|txt)$/i;
+const OPENED = { tab: "Opened in a new tab", preview: "Opened as a read-only preview", app: "Opened in its app" };
+const openHint = (name) => (IN_TAB.test(name) ? "Opens in a new tab" : WORD.test(name) ? (MAC ? "Opens as a read-only preview in a new tab" : "Opens in its app") : "");
 const idOf = (x) => ((typeof x === "string" || typeof x === "number") && ID.test(String(x)) ? String(x) : null);
 const str = (v) => (typeof v === "string" ? v : typeof v === "number" && Number.isFinite(v) ? String(v) : "");
 // at: epoch ms, or an ISO string; null when it is neither.
@@ -79,6 +89,9 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     busy.add(btn);
     try { await fn(); } finally { busy.delete(btn); }
   }
+  // The one download row status showing (p.said), or null; emptied when the next Downloads action starts.
+  let said = null;
+  const unsay = () => { if (said) said.textContent = ""; said = null; };
   // Only a person's click or key press reaches outside the page.
   const real = (fn) => (ev) => { if (ev.isTrusted) once(ev.currentTarget, fn); };
   const button = (text, label, className = "act") => {
@@ -193,11 +206,20 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     return [open, reveal];
   }
 
-  // A download's Open and Show in Finder, plus the helper's answers in the row: 428 { confirm }
-  // (a program, script or web page) asks there, and Open anyway repeats the POST with
-  // { confirm: true }; 409 (e.g. the download mark is gone) says why, with Show in Finder still there.
+  // A download's Open, Open in Word (Word-type names) and Show in Finder, plus the helper's answers
+  // in the row: 200 { opened } in the row's status line; 428 { confirm } (a program, script or web
+  // page) asks there, and Open anyway repeats the POST that asked with { confirm: true }; 409 (e.g.
+  // the download mark is gone, or no app) says why, with Show in Finder still there.
   function downloadActs(id, name) {
     const open = button("Open", `Open ${name}`);
+    const hint = openHint(name);
+    if (hint) open.title = hint;
+    const word = WORD.test(name) ? button("Open in Word", `Open ${name} in Word`) : null;
+    if (word) word.title = "Opens the original in its default app, for editing";
+    const status = el("p", { className: "said" });
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    let asked = "open", from = open; // the route that answered 428 and the button that asked
     const reveal = button(REVEAL, MAC ? `Show ${name} in Finder` : `Show ${name} in its folder`);
     const q = el("p", { id: `dl-q-${id}` });
     const yes = button("Open anyway", `Open ${name} anyway`);
@@ -206,12 +228,19 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     const box = el("div", { className: "confirm", id: `dl-confirm-${id}`, hidden: true }, q, choice);
     box.setAttribute("role", "group");
     box.setAttribute("aria-labelledby", q.id);
-    const shut = (refocus) => { const had = box.contains(document.activeElement); box.hidden = true; q.textContent = ""; if (refocus || had) open.focus(); };
+    const shut = (refocus) => { const had = box.contains(document.activeElement); box.hidden = true; q.textContent = ""; if (refocus || had) from.focus(); };
     // The box joins the row only once the helper has something to say there.
     const place = () => { if (!box.isConnected) open.closest("li")?.append(box); };
-    const answer = (r) => {
-      if (ok(r)) return shut(false);
+    const answer = (r, btn, what) => {
+      if (ok(r)) {
+        shut(false);
+        const words = typeof r.body?.opened === "string" && Object.hasOwn(OPENED, r.body.opened) ? OPENED[r.body.opened] : "";
+        if (words) { unsay(); status.textContent = words; said = status; }
+        return;
+      }
       if (r.status === 428 && typeof r.body?.confirm === "string" && r.body.confirm) {
+        asked = what;
+        from = btn;
         place();
         q.textContent = r.body.confirm;
         choice.hidden = false;
@@ -231,16 +260,18 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
       say("downloads-msg", r.body?.error || "Couldn't open it.", "error");
     };
     const route = (what) => `downloads/${encodeURIComponent(id)}/${what}`;
-    open.addEventListener("click", real(async () => { say("downloads-msg", ""); answer(await send(route("open"))); }));
-    yes.addEventListener("click", real(async () => { say("downloads-msg", ""); answer(await send(route("open"), "POST", { confirm: true })); }));
-    no.addEventListener("click", real(async () => shut(true)));
-    box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !choice.hidden) { e.preventDefault(); shut(true); } });
+    open.addEventListener("click", real(async () => { unsay(); say("downloads-msg", ""); answer(await send(route("open")), open, "open"); }));
+    word?.addEventListener("click", real(async () => { unsay(); say("downloads-msg", ""); answer(await send(route("open-app")), word, "open-app"); }));
+    yes.addEventListener("click", real(async () => { unsay(); say("downloads-msg", ""); answer(await send(route(asked), "POST", { confirm: true }), from, asked); }));
+    no.addEventListener("click", real(async () => { unsay(); shut(true); }));
+    box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !choice.hidden) { e.preventDefault(); unsay(); shut(true); } });
     reveal.addEventListener("click", real(async () => {
+      unsay();
       say("downloads-msg", "");
       const r = await send(route("reveal"));
       if (!ok(r)) say("downloads-msg", r.body?.error || "Couldn't show it.", "error");
     }));
-    return el("span", { className: "acts" }, open, reveal);
+    return el("span", { className: "acts" }, open, ...(word ? [word] : []), reveal, status);
   }
 
   // ---- Downloads ----
@@ -257,7 +288,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     li.querySelector(".state .word").textContent = STATE[it.state];
     const acts = li.querySelector(".acts");
     if (it.state === "done" && !acts) li.append(downloadActs(id, it.name));
-    else if (it.state !== "done" && acts) { acts.remove(); li.querySelector(".confirm")?.remove(); }
+    else if (it.state !== "done" && acts) { if (said && acts.contains(said)) said = null; acts.remove(); li.querySelector(".confirm")?.remove(); }
   }
   const downloads = makeList({
     ul: $("downloads"),
@@ -487,6 +518,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
   // Another helper: nothing of the last one's stays on screen as if current.
   function forget() {
     gen++;
+    said = null;
     stale = true;
     for (const s of LISTS) s.L.clear();
     $("sec-handoffs").hidden = true;

@@ -17,10 +17,13 @@
 // never kept in fx.layout or layout.json.
 // The Tools tab's routes (TOOLS-CONTRACT.md): GET handoffs.json, downloads.json, recordings.json
 // and diagnostics.json (a null fixture: 404, a helper without the route); POST
-// downloads/<id>/open|reveal, recordings/<id>/open|reveal and handoffs/<id>/show (404 { ok: false }
-// for an id not in the fixture's items, another path shape plain 404, else 200 { ok: true });
-// (a download's open: 409 { error } for an item with `marked: false`, 428 { confirm } for one with
-// `program: true` until the body is { confirm: true }, as the helper answers);
+// downloads/<id>/open|open-app|reveal, recordings/<id>/open|reveal and handoffs/<id>/show (404
+// { ok: false } for an id not in the fixture's items, another path shape plain 404, else 200
+// { ok: true }); a download's open and open-app, in this order: 409 { error: UNMARKED } for an
+// item with `marked: false`, 410 { error: FILE_CHANGED } for one with `gone: true`; then open: 428
+// { confirm: item.confirm || CONFIRM_PROGRAM } for one with `program: true` until the body is
+// { confirm: true }, else 200 { ok: true } plus `opened: item.opens` when the fixture sets `opens`;
+// open-app: 409 { error: NO_APP } for one with `app: false`, else 200 { ok: true, opened: "app" };
 // POST diagnostics/report answers the `report` fixture ({ text }); DELETE recordings/<id> drops
 // the item and is recorded in `deletes` ({ route, rest }), 404 once it is gone; no event for it
 // (the contract has none). The `downloads` and `handoffs` events are deltas the test pushes; none
@@ -44,7 +47,12 @@ const DOCK_TABS = new Set(["agent", "page", "pictures", "tools"]);
 // The helper's own sentences for a download's Open (scripts/liveview.mjs).
 export const UNMARKED = "This file lost the download mark macOS uses to protect you; show it in Finder instead.";
 export const CONFIRM_PROGRAM = "This is a program or script. Open it anyway?";
-const TOOL_ACTS = { downloads: new Set(["open", "reveal"]), recordings: new Set(["open", "reveal"]), handoffs: new Set(["show"]) };
+// To reconcile with lane H's wording at G2: a web page's confirm and open-app's refusal.
+export const CONFIRM_WEB = "This is a web page saved to your computer. It can run scripts when opened. Open it anyway?";
+export const NO_APP = "No app on this computer opens this file.";
+// As the helper's scripts/liveview.mjs says it (410).
+export const FILE_CHANGED = "That file was moved, replaced or deleted since it was saved.";
+const TOOL_ACTS = { downloads: new Set(["open", "open-app", "reveal"]), recordings: new Set(["open", "reveal"]), handoffs: new Set(["show"]) };
 
 export const defaultFixtures = () => ({
   status: { text: "", kind: "clear" },
@@ -170,12 +178,19 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   // The answer to a POST without a reply of the test's own.
   function defaultPost(route, body, rest = []) {
     if (route === "input" || route === "tab") return { status: 204 };
-    if (route === "downloads" && rest[1] === "open" && hasItem(route, rest[0])) {
-      // The helper's Open: a download without macOS's mark answers 409 { error }; a program, script
-      // or web page (`program: true` in the fixture) 428 { confirm } until the body is { confirm: true }.
+    if (route === "downloads" && (rest[1] === "open" || rest[1] === "open-app") && rest.length === 2 && hasItem(route, rest[0])) {
+      // The helper's Open and Open in Word: a download without macOS's mark answers 409 { error };
+      // a file changed since it was saved 410; a program, script or web page (`program: true`) 428
+      // { confirm } until the body is { confirm: true }; open-app with no app (`app: false`) 409.
       const item = fx.downloads.items.find((it) => it && String(it.id) === rest[0]);
       if (item.marked === false) return { status: 409, body: { error: UNMARKED } };
-      if (item.program === true && body?.confirm !== true) return { status: 428, body: { confirm: CONFIRM_PROGRAM } };
+      if (item.gone === true) return { status: 410, body: { error: FILE_CHANGED } };
+      if (rest[1] === "open") {
+        if (item.program === true && body?.confirm !== true) return { status: 428, body: { confirm: typeof item.confirm === "string" && item.confirm ? item.confirm : CONFIRM_PROGRAM } };
+        return { status: 200, body: typeof item.opens === "string" ? { ok: true, opened: item.opens } : { ok: true } };
+      }
+      if (item.app === false) return { status: 409, body: { error: NO_APP } };
+      return { status: 200, body: { ok: true, opened: "app" } };
     }
     if (TOOL_ACTS[route]) return hasItem(route, rest[0]) ? { status: 200, body: { ok: true } } : { status: 404, body: { ok: false } };
     if (route === "diagnostics") return fx.report === null ? { status: 404, body: { ok: false } } : { status: 200, body: fx.report };

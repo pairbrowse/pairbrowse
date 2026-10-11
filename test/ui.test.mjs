@@ -421,7 +421,8 @@ test("the fake helper serves the tools routes to the contract", async () => {
   const pageOrigin = "http://127.0.0.1:1";
   const fixtures = {
     handoffs: { items: [{ id: "h1", kind: "2fa", text: "Enter the code", tab: { id: 1, host: "shop.example", title: "Shop" }, by: { label: "Claude", color: "#e9763f" }, at: 1 }] },
-    downloads: { items: [{ id: "d1", name: "a.pdf", size: 10, at: 1, from: { host: "shop.example", title: "Shop" }, state: "done", by: { label: "Claude", color: "#e9763f" } }] },
+    downloads: { items: [{ id: "d1", name: "a.pdf", size: 10, at: 1, from: { host: "shop.example", title: "Shop" }, state: "done", by: { label: "Claude", color: "#e9763f" } },
+      { id: "d2", name: "b.pdf", state: "done", opens: "tab" }] },
     recordings: { items: [{ id: "r1", name: "a.webm", size: 10, at: 1, duration: 3 }] },
   };
   const helper = await startFakeHelper({ pageOrigin, fixtures });
@@ -447,9 +448,19 @@ test("the fake helper serves the tools routes to the contract", async () => {
     const unknown = await send("downloads/zz/open");
     assert.equal(unknown.status, 404);
     assert.deepEqual(JSON.parse(unknown.text), { ok: false });
+    const app = await send("downloads/d1/open-app");
+    assert.equal(app.status, 200);
+    assert.deepEqual(JSON.parse(app.text), { ok: true, opened: "app" });
+    assert.deepEqual(helper.posts.at(-1), { route: "downloads", rest: ["d1", "open-app"], body: null });
+    const appUnknown = await send("downloads/zz/open-app");
+    assert.equal(appUnknown.status, 404);
+    assert.deepEqual(JSON.parse(appUnknown.text), { ok: false });
+    assert.deepEqual(JSON.parse((await send("downloads/d1/open")).text), { ok: true }, "no `opened` unless the fixture says");
+    assert.deepEqual(JSON.parse((await send("downloads/d2/open")).text), { ok: true, opened: "tab" });
     assert.equal((await send("downloads/d1/delete")).status, 404, "another action: no route");
     assert.equal((await send("downloads/d1")).status, 404);
     assert.equal((await send("recordings/r1/reveal")).status, 200);
+    assert.equal((await send("recordings/r1/open-app")).status, 404, "recordings have no open-app");
     assert.equal((await send("handoffs/h1/show")).status, 200);
     assert.equal((await send("handoffs/h1/open")).status, 404);
     assert.equal((await send("handoffs/h1/show", { origin: "http://evil.example" })).status, 403, "a foreign Origin");

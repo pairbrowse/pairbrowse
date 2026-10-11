@@ -205,6 +205,19 @@ function showWho() {
   if (link.href !== href) link.href = href;
 }
 
+// The same, in words on the picture beside whose tab it is: a dot in the person's color (else
+// the agent's). Shown with the tag when it changes; it fades with it (the tag's own timer).
+function showWhoPill() {
+  const { person, agent } = inTab;
+  const text = person && agent ? `${person} · ${agent} (agent) working` : person ? `${person} is in this tab` : agent ? `${agent} (agent) is working in it` : "";
+  const box = $("who"), changed = $("who-text").textContent !== text;
+  $("who-text").textContent = text;
+  box.hidden = !text;
+  const color = person && COLOR.test(inTab.personColor) ? inTab.personColor : agent && COLOR.test(inTab.agentColor) ? inTab.agentColor : "";
+  box.style.setProperty("--c", color);
+  if (text && changed && live()) showLive(true);
+}
+
 // ---- the connection ----
 async function offer({ sdp, peer: id, noDirect = false, doc = "" }) {
   if (doc !== DOC) return null;
@@ -327,9 +340,12 @@ window.pbScreen = {
   who(w = {}) {
     inTab = { person: String(w.person || "").slice(0, 40), personColor: String(w.personColor || ""), agent: String(w.agent || "").slice(0, 40), agentColor: String(w.agentColor || "") };
     showWho();
+    showWhoPill();
     return true;
   },
   inTab: () => ({ ...inTab, title: document.title, icon: !!document.querySelector('link[rel="icon"]') }),
+  // Tests only: who works in the tab, in words on the picture, as the person reads it.
+  whoPill: () => ({ shown: !$("who").hidden, text: $("who-text").textContent }),
   // The address shown on the picture (as the person reads it), and whether a lock is there.
   address: () => ({ shown: !$("addr").hidden, text: $("addr-text").textContent, lock: $("addr-state").innerHTML === LOCK, warn: $("addr-state").classList.contains("warn") }),
   // Tests only: how long without a picture before the wait shows, and before it says "Still".

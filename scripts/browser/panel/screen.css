@@ -8,25 +8,33 @@ body { font: 500 var(--fs-3)/1.4 system-ui, -apple-system, "Segoe UI", sans-seri
 #pointers { position: fixed; inset: 0; pointer-events: none; }
 .p { position: absolute; left: 0; top: 0; will-change: transform; transition: opacity .3s; }
 .p svg { display: block; width: 18px; height: 18px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
-.p span { position: absolute; left: 14px; top: 16px; padding: 2px 8px; border-radius: 999px; font: var(--fw-name) var(--fs-1)/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: #fff; white-space: nowrap; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
-#status { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px; background: var(--pill); color: var(--muted); box-shadow: 0 6px 24px rgba(0, 0, 0, .3); transition: opacity .35s; }
+/* A pointer's name: dark ink on the participant's color, as the hud's pills (white fails AA on most of them). */
+.p span { position: absolute; left: 14px; top: 16px; padding: 2px 8px; border-radius: 999px; font: var(--fw-name) var(--fs-1)/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--bg); white-space: nowrap; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25); }
+/* Every word over the picture is a compact navy pill: 28 px, a 1 px edge, a 7 px dot, no halo. */
+#status, #hold .box, #tag, #addr, #who { display: flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; background: var(--pill); border: 1px solid var(--edge); font-size: var(--fs-2); box-shadow: 0 2px 10px rgba(0, 0, 0, .25); }
+#status { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); gap: 8px; color: var(--muted); transition: opacity .35s; }
 #status.hidden { opacity: 0; pointer-events: none; }
-#status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+#status .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
 /* The pictures stopped while the connection to the host moves to another address: a spinner over
    the last picture, dimmed a little, until the next one comes. Takes no click, ever. */
 #hold { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgb(11 20 33 / 0.35); pointer-events: none; }
 #hold[hidden] { display: none; }
-#hold .box { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px; background: var(--pill); color: var(--ink); box-shadow: 0 6px 24px rgba(0, 0, 0, .3); }
-#hold .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgb(134 153 177 / 0.35); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+#hold .box { gap: 8px; color: var(--ink); }
+#hold .spin { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgb(134 153 177 / 0.35); border-top-color: var(--accent); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 /* Whose tab it is and its real address, top left; they fade after a few seconds and come back
    when the pointer goes near them. Never take a click: everything under them is the host's page. */
 #top { position: fixed; left: 12px; top: 12px; display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 24px); opacity: 0; transition: opacity .4s; pointer-events: none; }
 #top.on { opacity: 1; }
-#tag { flex: none; display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px 0 8px; border-radius: 999px; background: var(--pill); color: var(--ink); font-size: var(--fs-2); box-shadow: 0 2px 10px rgba(0, 0, 0, .25); }
-#tag .live { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgb(32 201 151 / 0.25); }
-#addr { min-width: 0; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px 0 9px; border-radius: 999px; background: var(--pill); font-size: var(--fs-2); font-weight: 400; box-shadow: 0 2px 10px rgba(0, 0, 0, .25); }
+#tag { flex: none; gap: 7px; color: var(--ink); font-weight: var(--fw-name); }
+#tag .live { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+/* Who works in the host's tab, in words, with a dot in the color the helper sends. */
+#who { flex: none; gap: 7px; max-width: 40vw; color: var(--ink); }
+#who[hidden] { display: none; }
+#who .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--ink-2)); }
+#who-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#addr { min-width: 0; gap: 6px; font-weight: 400; }
 #addr[hidden] { display: none; }
 #addr-state { flex: none; display: flex; align-items: center; gap: 4px; color: var(--muted); }
 #addr-state:empty { display: none; }
@@ -37,9 +45,10 @@ body { font: 500 var(--fs-3)/1.4 system-ui, -apple-system, "Segoe UI", sans-seri
 #addr-host { color: var(--ink); }
 #addr-rest { color: var(--muted); }
 #sound { position: fixed; right: 14px; bottom: 14px; padding: 8px 14px; border: 0; border-radius: 999px; background: var(--accent); color: var(--bg); font: var(--fw-name) var(--fs-3)/1 var(--sans); cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, .3); }
-#pick { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); padding: 18px; border-radius: var(--r-3); background: var(--pill); box-shadow: 0 10px 40px rgba(0, 0, 0, .4); }
+#pick { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); padding: 16px 18px; border-radius: var(--r-3); background: var(--pill); border: 1px solid var(--edge); box-shadow: inset 3px 0 0 var(--accent), 0 10px 40px rgba(0, 0, 0, .4); }
 #pick p { margin: 0 0 14px; color: var(--ink); }
 #pick .row { display: flex; gap: 8px; justify-content: flex-end; }
 #pick button { padding: 8px 14px; border: 0; border-radius: 999px; background: var(--accent); color: var(--bg); font: var(--fw-name) var(--fs-3)/1 var(--sans); cursor: pointer; }
 #pick button.ghost { background: transparent; color: var(--muted); }
-@media (prefers-reduced-motion: reduce) { #status .dot, #hold .spin { animation: none; } .p, #top, #status { transition: none; } }
+#pick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { #status .dot, #hold .spin { animation: none; } .p, #top, #status, #who { transition: none; } }

@@ -61,3 +61,65 @@ test("pictures that stop coming show a spinner and 'Reconnecting to Bob…' over
     await browser.close();
   }
 });
+
+test("the picture page keeps its ids, its words, its timers and a flat sheet", () => {
+  const html = readFileSync(join(panel, "screen.html"), "utf8"), css = readFileSync(join(panel, "screen.css"), "utf8"), js = readFileSync(join(panel, "screen.js"), "utf8");
+  for (const id of ["v", "still", "pointers", "status", "status-text", "hold", "hold-text", "top", "tag", "tag-text", "who", "who-text", "addr", "addr-state", "addr-text", "addr-host", "addr-rest", "sound", "pick", "pick-text", "pick-go", "pick-no", "pick-input"]) {
+    assert.equal(html.split(`id="${id}"`).length - 1, 1, `#${id}`);
+  }
+  for (const text of ["Connecting to the shared tab…", "Turn on sound", "The page asks for a file.", "Choose files", "Cancel"]) assert.ok(html.includes(text), text);
+  const hold = css.match(/#hold \{([^}]*)\}/)[1];
+  assert.ok(hold.includes("rgb(11 20 33 / 0.35)") && hold.includes("pointer-events: none"), "the hold scrim never takes a click");
+  for (const text of ["`Reconnecting to ${who}…`", "`Still reconnecting to ${who}…`", "`${host}'s tab · live`", '"Shared tab · live"', "`Connecting to ${host || \"the host\"}'s tab…`"]) assert.ok(js.includes(text), text);
+  const n = (w) => js.split(w).length - 1;
+  assert.deepEqual([n("setTimeout("), n("setInterval("), n("requestAnimationFrame("), n("Observer")], [2, 1, 1, 0], "no new timer");
+  assert.doesNotMatch(css, /backdrop-filter|gradient\(/);
+  assert.equal(css.split("@keyframes").length - 1, 2, "the status pulse and the hold spinner only");
+  assert.doesNotMatch(css, /box-shadow: 0 0 0 3px/, "no halo rings");
+});
+
+test("who works in the host's tab shows in words on the picture, with a dot in their color", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route("http://pairbrowse.test/**", (route) => {
+      const name = new URL(route.request().url()).pathname.slice(1);
+      route.fulfill({ contentType: TYPES[name.split(".").pop()], body: readFileSync(join(panel, name)) });
+    });
+    await page.goto("http://pairbrowse.test/screen.html");
+    await inPage(page, () => {
+      window.pbScreen.info({ title: "Shop", url: "https://shop.example/cart", who: "Bob" });
+      const c = document.createElement("canvas"); c.width = 320; c.height = 200;
+      c.getContext("2d").fillRect(0, 0, 320, 200);
+      window.pbScreen.frame(c.toDataURL("image/jpeg").split(",")[1]);
+    });
+    for (let i = 0; i < 60 && !(await inPage(page, () => window.pbScreen.state().view === "frames")); i++) await page.waitForTimeout(50);
+    const pill = () => inPage(page, () => window.pbScreen.whoPill());
+    const dot = () => page.evaluate(() => getComputedStyle(document.querySelector("#who .dot")).backgroundColor);
+    assert.deepEqual(await pill(), { shown: false, text: "" }, "nobody yet");
+    await inPage(page, () => window.pbScreen.who({ person: "Sam", personColor: "#2fb6d9" }));
+    assert.deepEqual(await pill(), { shown: true, text: "Sam is in this tab" });
+    assert.equal(await dot(), "rgb(47, 182, 217)");
+    assert.equal(await page.evaluate(() => document.getElementById("top").classList.contains("on")), true, "shown with whose tab it is");
+    assert.match((await inPage(page, () => window.pbScreen.inTab())).title, /^Sam · Shop$/);
+    const box = await page.evaluate(() => { const s = getComputedStyle(document.getElementById("who")); return { h: document.getElementById("who").getBoundingClientRect().height, shadow: s.boxShadow, blur: s.backdropFilter }; });
+    assert.equal(box.h, 28, "a 28 px pill");
+    assert.doesNotMatch(box.shadow, /0px 0px 0px 3px/, "no halo");
+    await inPage(page, () => window.pbScreen.who({ agent: "Claude", agentColor: "#e9763f" }));
+    assert.deepEqual(await pill(), { shown: true, text: "Claude (agent) is working in it" });
+    assert.equal(await dot(), "rgb(233, 118, 63)");
+    await inPage(page, () => window.pbScreen.who({ person: "Sam", personColor: "nope", agent: "Claude", agentColor: "#e9763f" }));
+    assert.deepEqual(await pill(), { shown: true, text: "Sam · Claude (agent) working" });
+    assert.equal(await dot(), "rgb(233, 118, 63)", "the agent's color when the person's is not a color");
+    await inPage(page, () => window.pbScreen.who({}));
+    assert.deepEqual(await pill(), { shown: false, text: "" }, "nobody: gone");
+    await inPage(page, () => window.pbScreen.pointers([{ k: "sam", who: "Sam", color: "#2fb6d9", nx: 0.5, ny: 0.5 }]));
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".p span")).color), "rgb(11, 20, 33)", "dark ink on a pointer's name");
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});

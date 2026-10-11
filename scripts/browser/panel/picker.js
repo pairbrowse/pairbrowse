@@ -2,7 +2,7 @@
 // An extension page, so web pages can't open, frame or script it. It talks to the helper through
 // the live view with the owner's key, which the side panel's worker holds in memory; the live view
 // takes these requests only from this extension's origin.
-import { $, el } from "./common.js";
+import { $, el, avatar, initialOf } from "./common.js";
 
 let base = null;
 let busy = false;
@@ -44,9 +44,21 @@ function chipText(p) {
 // A steady color per name, from the side panel's palette.
 const HUES = [215, 155, 45, 300, 25, 260];
 const hue = (name) => HUES[[...String(name)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % HUES.length];
+// The name a person goes by on a chip or an avatar: "You", the app for a generic agent, else theirs.
+const shownName = (p) => (p.kind === "you" ? "You" : GENERIC.test(p.who) ? p.app || p.who : p.who);
+// The row's mark: whoever is in the session now, else who used it last, in their steady color;
+// a session nobody used yet shows its own initial.
+function rowAvatar(people, name) {
+  if (!people.length) return avatar(name);
+  const a = avatar(shownName(people[0]));
+  a.classList.replace("plain", "hued");
+  a.style.setProperty("--h", hue(people[0].who));
+  return a;
+}
 function chip(p, live = false) {
   const text = chipText(p);
-  const dot = el("i", { textContent: (p.kind === "you" ? "Y" : (GENERIC.test(p.who) ? p.app || p.who : p.who)).slice(0, 1).toUpperCase() });
+  const dot = el("i", { className: "avatar", textContent: initialOf(shownName(p)) });
+  dot.setAttribute("aria-hidden", "true");
   dot.style.setProperty("--h", hue(p.who));
   return el("span", { className: live ? "chip live" : "chip", title: live ? `${text}, in this session now` : text }, dot, el("span", { textContent: text }));
 }
@@ -58,7 +70,9 @@ function sessionRow(s) {
   if (s.current) badges.push(el("em", { textContent: "Last used" }));
   if (live.length) {
     const names = live.map((p) => [p.who, p.computer || p.app].filter(Boolean).join(" on ")).join(", ");
-    badges.push(el("em", { className: "live", textContent: `Live · ${live.length} ${live.length === 1 ? "other" : "others"}`, title: names }));
+    const pill = el("em", { className: "live", textContent: `Live · ${live.length} ${live.length === 1 ? "other" : "others"}`, title: names });
+    pill.dataset.live = "true";
+    badges.push(pill);
   }
   // The people in it now first, then who used it before; at most CHIPS, then "+N".
   const seen = new Set(live.map(chipText));
@@ -66,7 +80,7 @@ function sessionRow(s) {
   const chips = people.slice(0, CHIPS).map((p) => chip(p, p.live));
   if (people.length > CHIPS) chips.push(el("span", { className: "chip more-chip", textContent: `+${people.length - CHIPS}`, title: people.slice(CHIPS).map(chipText).join(", ") }));
   const button = el("button", { className: "choice", type: "button" },
-    el("span", { className: "icon session", textContent: name.slice(0, 1).toUpperCase(), ariaHidden: "true" }),
+    rowAvatar(people, name),
     el("span", { className: "text" }, el("strong", {}, el("span", { className: "name", textContent: name }), ...badges), el("small", { textContent: meta }),
       ...(chips.length ? [el("span", { className: "chips" }, ...chips)] : [])));
   button.addEventListener("click", (ev) => { if (real(ev)) send({ action: "use", name: s.name }, `Opening ${name}...`); });

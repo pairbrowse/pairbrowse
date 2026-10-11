@@ -7,12 +7,12 @@
 //
 // Once in, the joiner's own browser follows the host's tabs (tabsync.mjs).
 //
-// This file has no side effects on import: codes, the approval list, names and addresses as others
+// This file has no side effects on import of its own (paths.mjs, for saveConfig, sets the private
+// umask every helper process runs with): codes, the approval list, names and addresses as others
 // see them, and the joiner's allowed addresses (saveJoinHosts is the one thing here that writes:
-// config.json, on the person's "Always allow" or "Remove").
+// config.json through saveConfig, on the person's "Always allow" or "Remove").
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { saveConfig } from "./paths.mjs";
 
 const JOIN_PREFIX = "pb-join:";
 const KEY = /^[0-9a-f]{64}$/;
@@ -110,10 +110,7 @@ export function parseJoinCode(code, { hosts = [], allowLocal = false } = {}) {
 export function saveJoinHosts(config, hosts, file) {
   const list = [...new Set((Array.isArray(hosts) ? hosts : []).map(cleanHost).filter(Boolean))];
   config.joinHosts = list;
-  let saved = {};
-  try { const read = JSON.parse(readFileSync(file, "utf8")); if (read && typeof read === "object" && !Array.isArray(read)) saved = read; } catch {}
-  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  writeFileSync(file, JSON.stringify({ ...saved, joinHosts: list }, null, 2) + "\n");
+  saveConfig({ joinHosts: list }, file);
   return list;
 }
 

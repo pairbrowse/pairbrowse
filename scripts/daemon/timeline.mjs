@@ -3,7 +3,8 @@
 // with an index of cards. Nothing is captured or encoded for it: serve.mjs hands over a picture
 // after the result went out. At most `cap` unpinned cards, the oldest dropped first, plus at
 // most `pinMax` pinned ones. Notes are cards without a picture. Deleted with the session; `timeline: false`
-// in config keeps none. Read only by the owner's live view routes (liveview.mjs).
+// in config keeps none. Read only by the owner's live view routes (liveview.mjs). `enabled` and `cap`
+// may be functions, read at each call: a change in Settings takes effect at once.
 import { mkdir, writeFile, rename, readFile, rm } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -37,6 +38,8 @@ function cardFrom(c) {
 // goal log's current page ({ url, title }) or null. onNote(text): a note was added (the bar); text is the masked, trimmed note, never the raw one.
 export function createTimeline({ dir, enabled = true, mask = (t) => t, step = () => null, onNote = () => {}, log = () => {}, now = () => Date.now(), cap = 200, pinMax = 50 } = {}) {
   const dirOf = typeof dir === "function" ? dir : () => dir;
+  const isOn = () => (typeof enabled === "function" ? !!enabled() : enabled !== false);
+  const capNow = () => Math.min(200, Math.max(1, Number(typeof cap === "function" ? cap() : cap) || 200)); // 1 to 200, whatever config.json says
   const queue = serially(); // every write, in order
   const listeners = new Set();
   let loadedFor = null;
@@ -74,17 +77,17 @@ export function createTimeline({ dir, enabled = true, mask = (t) => t, step = ()
   // Oldest unpinned first, until `cap` unpinned cards are left (pinned ones come on top of that,
   // at most pinMax of them).
   async function trim(d) {
-    while (cards.filter((c) => !c.pinned).length > cap) {
+    while (cards.filter((c) => !c.pinned).length > capNow()) {
       const [gone] = cards.splice(cards.findIndex((c) => !c.pinned), 1);
       if (!gone.note) await rm(join(d, `${gone.id}.jpg`), { force: true });
     }
   }
 
   return {
-    enabled,
+    get enabled() { return isOn(); },
     // A picture already sent (base64 JPEG): its file and card. Never throws.
     record({ data, caption = "", who = "" } = {}) {
-      if (!enabled || !data) return Promise.resolve();
+      if (!isOn() || !data) return Promise.resolve();
       return queue(async () => {
         const d = load();
         const card = { id: newId(), t: now(), caption: text(mask(String(caption)), CAPTION_MAX), step: stepNow(), who: text(who, 60), pinned: false, note: false };
@@ -97,20 +100,20 @@ export function createTimeline({ dir, enabled = true, mask = (t) => t, step = ()
       }).catch((e) => log("timeline", e?.message || e));
     },
     cards() {
-      if (!enabled) return null;
+      if (!isOn()) return null;
       load();
       return cards.map((c) => ({ ...c, step: c.step ? { ...c.step } : null }));
     },
     // The picture's bytes, or null (unknown id, a note, timeline off).
     async picture(id) {
-      if (!enabled || !ID.test(String(id))) return null;
+      if (!isOn() || !ID.test(String(id))) return null;
       const d = load();
       const card = cards.find((c) => c.id === id);
       if (!card || card.note) return null;
       try { return await readFile(join(d, `${id}.jpg`)); } catch { return null; }
     },
     remove(id) {
-      if (!enabled) return Promise.resolve({ ...OFF });
+      if (!isOn()) return Promise.resolve({ ...OFF });
       if (!ID.test(String(id))) return Promise.resolve(false);
       return queue(async () => {
         const d = load();
@@ -124,7 +127,7 @@ export function createTimeline({ dir, enabled = true, mask = (t) => t, step = ()
       });
     },
     pin(id, on = true) {
-      if (!enabled) return Promise.resolve({ ...OFF });
+      if (!isOn()) return Promise.resolve({ ...OFF });
       if (!ID.test(String(id))) return Promise.resolve({ error: "No such picture." });
       return queue(async () => {
         const d = load();
@@ -138,7 +141,7 @@ export function createTimeline({ dir, enabled = true, mask = (t) => t, step = ()
       });
     },
     note(given) {
-      if (!enabled) return Promise.resolve({ ...OFF });
+      if (!isOn()) return Promise.resolve({ ...OFF });
       const said = String(given ?? "").trim();
       if (!said || said.length > NOTE_MAX) return Promise.resolve({ error: `A note is 1 to ${NOTE_MAX} characters.` });
       return queue(async () => {

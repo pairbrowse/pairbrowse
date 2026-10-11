@@ -110,12 +110,16 @@ test("every route needs its right; routes that aren't listed are refused", async
       assert.equal((await request(view.port, "POST", `/${k}/invite`, { body: { share: "code" } })).status, 403, "inviting is the owner's");
       // The browser's own pages' routes: the owner's only.
       for (const [method, path, body] of [["GET", "layout.json"], ["POST", "layout", { left: "rail" }], ["GET", "tabs.json"], ["GET", "agent-tabs.json"], ["GET", "timeline.json"],
-        ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note", { text: "x" }], ["POST", "timeline/0123456789ab/pin", { on: true }]]) {
+        ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note", { text: "x" }], ["POST", "timeline/0123456789ab/pin", { on: true }],
+        ["GET", "config.json"], ["POST", "config", { browser: "chromium" }]]) {
         assert.equal((await request(view.port, method, `/${k}/${path}`, { body })).status, 403, `${method} /${path} is the owner's`);
       }
     }
     for (const [method, path] of [["GET", "timeline.json"], ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note"]]) {
       assert.equal((await request(view.port, method, `/${key}/${path}`, { body: method === "POST" ? { text: "x" } : undefined })).status, 404, `no timeline given: ${method} /${path}`);
+    }
+    for (const [method, path] of [["GET", "config.json"], ["POST", "config"]]) {
+      assert.equal((await request(view.port, method, `/${key}/${path}`, { body: method === "POST" ? { browser: "chromium" } : undefined })).status, 404, `no settings given: ${method} /${path}`);
     }
     assert.equal((await request(view.port, "GET", `/${key}/layout.json`)).status, 200);
     assert.equal((await request(view.port, "GET", `/${key}/journal.json`)).status, 404, "no journal given");
@@ -527,6 +531,23 @@ test("layout is the owner's, validated, per session, broadcast to owner streams 
   } finally { owner.close(); guest.close(); view.close(); }
 });
 
+test("layoutDefaults given as a function is read live: a session that starts later starts from the new defaults", async () => {
+  let defaults = { left: "rail", right: "open", strip: 88 };
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", layoutDefaults: () => defaults });
+  const key = view.url.split("/").at(-2);
+  try {
+    view.setSession({ name: "a", where: "Local" });
+    assert.deepEqual(JSON.parse((await request(view.port, "GET", `/${key}/layout.json`)).text), { left: "rail", right: "open", strip: 88 });
+    defaults = { left: "hidden", right: "rail", strip: 120 };
+    view.setSession({ name: "b", where: "Local" });
+    assert.deepEqual(JSON.parse((await request(view.port, "GET", `/${key}/layout.json`)).text), { left: "hidden", right: "rail", strip: 120 }, "the changed defaults");
+    view.setSession({ name: "a", where: "Local" });
+    assert.deepEqual(JSON.parse((await request(view.port, "GET", `/${key}/layout.json`)).text), { left: "hidden", right: "rail", strip: 120 }, "a session with no layout of its own follows them too");
+    defaults = { strip: 9999 };
+    assert.deepEqual(JSON.parse((await request(view.port, "GET", `/${key}/layout.json`)).text), { left: "open", right: "open", strip: 88 }, "an invalid default is the fallback");
+  } finally { view.close(); }
+});
+
 test("the events stream records a page kind for the owner only", async () => {
   const invites = createInvites();
   const { ctx, sessions } = fakeTabs(1);
@@ -673,7 +694,7 @@ test("the timeline routes serve the owner the store and nobody else", async () =
       }
     }
     const c = invites.create({ role: "drive", label: "C", share: "code" });
-    for (const k of [c.key, key]) for (const path of ["timeline.json", "timeline/0123456789ab.jpg", "layout.json", "tabs.json", "agent-tabs.json"]) {
+    for (const k of [c.key, key]) for (const path of ["timeline.json", "timeline/0123456789ab.jpg", "layout.json", "tabs.json", "agent-tabs.json", "config.json"]) {
       assert.notEqual((await request(view.guestPort, "GET", `/${k}/${path}`)).status, 200, `the join-code port never serves ${path}`);
     }
     const before = calls.length;

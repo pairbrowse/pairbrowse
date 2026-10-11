@@ -7,20 +7,24 @@
 // (the previous one stays as PairBrowse-previous[.app]), sets up the profile, then passes the launch
 // self-check (native-check.mjs). If any check fails, the previous build and settings come back.
 // The same command installs an engine pack (pairbrowse-engine-<version>.tgz).
+// Only while "browser" in config.json is "pairbrowse" (or unset on a computer a build is pinned
+// for): with "chromium" or a path to a browser of your own, nothing is downloaded or installed.
+// Run by hand in a terminal with no choice recorded yet, it asks once which browser to use
+// (askBrowserChoice) and records the answer. An install writes nothing else into config.json.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, renameSync, readdirSync, realpathSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { paths, loadConfig } from "./paths.mjs";
-import { prepareProfile } from "./browser.mjs";
+import { paths, loadConfig, saveConfig } from "./paths.mjs";
+import { prepareProfile, browserChoice } from "./browser.mjs";
 import { engineProfile } from "./engine.mjs";
 import { nativeManifest, chromePages } from "./native-engine.mjs";
 import { selfCheck } from "./native-check.mjs";
 import { NATIVE, installHint, pinnedArchive, ensureEngine, installEngine } from "./native-pack.mjs";
 import { BRANDING, brandNativeApp, registerApp, verifySignature } from "./macos-app.mjs";
 import { currentSession, profileDir } from "./sessions.mjs";
-import { readJson, sha256File } from "./util.mjs";
+import { readJson, sha256File, within } from "./util.mjs";
 
 const run = promisify(execFile);
 const UNPACK_TIMEOUT_MS = 600_000;
@@ -41,6 +45,14 @@ export function nativeLayout(platform = process.platform, arch = process.arch) {
 
 // The pinned archive for this platform and chip, or null while there's no build for it.
 export const pinnedAsset = (layout = nativeLayout()) => (layout?.pin?.sha256 ? layout.pin : null);
+
+// With "browser" set to "chromium" or a path of your own: why nothing is downloaded or installed
+// (null: the PairBrowse browser is the one in use, or nobody chose and a build is pinned here).
+export function notChosen(config, native) {
+  const c = browserChoice(config, { native });
+  if (!c.set || c.browser === "pairbrowse") return null;
+  return `browser is ${c.browser === "chromium" ? "chromium" : "a browser of your own"} in ~/.pairbrowse/config.json: nothing to download or install`;
+}
 
 export const nativeDirs = (layout = nativeLayout() || nativeLayout("darwin")) => {
   const dir = join(paths.home, "browser");
@@ -177,7 +189,11 @@ async function unpackChecked(archive, staging, layout, log) {
 // Installs a native build archive (macOS .zip from package.py, Linux .tar.xz or Windows .zip from
 // linuxwin.py). Returns the installed executable. check: the launch check (tests pass a stand-in);
 // register: tell macOS about the new app; layout: this platform's (tests pass another one).
-export async function installNative(archive, { sha256, log = () => {}, check = selfCheck, register = true, layout = nativeLayout() } = {}) {
+// config: the settings (default: config.json); with "browser" set to "chromium" or a path, it
+// installs nothing and returns null.
+export async function installNative(archive, { sha256, log = () => {}, check = selfCheck, register = true, layout = nativeLayout(), config = loadConfig() } = {}) {
+  const skip = notChosen(config, !!layout);
+  if (skip) { log(skip); return null; }
   archive = resolve(archive);
   const want = expectedSha256(archive, sha256);
   const got = await sha256File(archive);
@@ -197,13 +213,12 @@ export async function installNative(archive, { sha256, log = () => {}, check = s
       swapped = true;
       if (register && layout.platform === "macos") await registerApp(d.app);
 
-      // Settings: use it (keeping the driver and everything else), and set up the profile.
-      writeFileSync(paths.config, JSON.stringify({ ...readJson(paths.config, {}), browserEngine: "pairbrowse", executablePath: d.exec }, null, 2) + "\n");
-      const config = loadConfig();
-      try { prepareProfile(engineProfile(config, profileDir(currentSession())), undefined, { chromePages: chromePages(manifest), layout: config.layout }); } catch {}
+      // The profile, set up for it (config.json isn't written: "browser" picks the browser).
+      const using = { ...config, browserEngine: "pairbrowse", executablePath: d.exec };
+      try { prepareProfile(engineProfile(using, profileDir(currentSession())), undefined, { chromePages: chromePages(manifest), layout: using.layout }); } catch {}
 
       log("checking the new browser");
-      const passed = await check(d.exec, { config, log });
+      const passed = await check(d.exec, { config: using, log });
       // Passed: from here on the new app stays, whatever happens to the bookkeeping below.
       writeRecord(d, { version: manifest.version, sha256: got, archive: basename(archive), installedAt: new Date().toISOString(), checks: passed, branding: BRANDING, chrome: chromePages(manifest) });
       rmSync(d.pending, { force: true });
@@ -266,13 +281,17 @@ async function rebrandInstalled(d, record, log) {
 // The pinned native build for this platform and chip, installed (and checked) when the installed
 // one isn't it. Returns its executable, or null when there's no pinned build. Whenever the pinned
 // build can't be had or doesn't pass, a working installed app (of any version) is kept.
-async function ensureNativeBrowser(log, { pinned, asset }) {
+async function ensureNativeBrowser(log, { pinned, asset, config }) {
   const layout = nativeLayout();
   const d = nativeDirs();
   if (existsSync(d.pending)) {
     // An install was cut short: undo it before using whatever app is there.
     try { await withLock(d.dir, () => recoverInterrupted(log, d)); } catch (e) { log(`couldn't finish undoing an earlier install (${e.message})`); }
   }
+  // (Read after that undo: it may have put the settings back.)
+  const settings = config ?? loadConfig();
+  const skip = notChosen(settings, !!asset);
+  if (skip) { log(skip); return null; }
   if (!asset) return null;
   const record = readJson(d.record);
   if (record?.sha256 === asset.sha256 && existsSync(d.exec)) {
@@ -283,7 +302,7 @@ async function ensureNativeBrowser(log, { pinned, asset }) {
   try { installed = nativeManifest(d.exec).version; } catch {}
   try {
     const archive = await pinned(asset, log);
-    const exec = await installNative(archive, { sha256: asset.sha256, log });
+    const exec = await installNative(archive, { sha256: asset.sha256, log, config: settings });
     rmSync(archive, { force: true }); // installed and checked: the download isn't needed any more
     return exec;
   } catch (e) {
@@ -296,11 +315,52 @@ async function ensureNativeBrowser(log, { pinned, asset }) {
 // On start: the native build and its engine pack (the browser can't launch without it). Returns
 // the executable to use, or null when this platform and chip have no native build.
 // pinned / engine / asset: how the archive and engine pack are fetched, and which build is pinned
-// (tests pass stand-ins).
-export async function ensureNative(log = () => {}, { pinned = pinnedArchive, engine = ensureEngine, asset = pinnedAsset() } = {}) {
-  const exec = await ensureNativeBrowser(log, { pinned, asset });
+// (tests pass stand-ins). config: the settings (default: config.json, read after an earlier
+// install cut short is undone); with "browser" set to "chromium" or a path, null and nothing done.
+export async function ensureNative(log = () => {}, { pinned = pinnedArchive, engine = ensureEngine, asset = pinnedAsset(), config = undefined } = {}) {
+  const exec = await ensureNativeBrowser(log, { pinned, asset, config });
   if (exec) await engine(log);
   return exec;
+}
+
+export const BROWSER_QUESTION = "Which browser should PairBrowse use?\n" +
+  "  1. PairBrowse (recommended): its own Chromium build; free for personal use (BINARY-LICENSE.md)\n" +
+  "  2. Chromium: the open-source browser with the PairBrowse side panel\n" +
+  "Choice [1]: ";
+
+// The first-setup question, in the by-hand install step's terminal (the helper never asks: it has
+// no terminal, and uses the default until a person chooses in Settings). Returns the choice:
+// the recorded one without asking; "chromium" without asking or recording on a computer with no
+// pinned build; otherwise asked once (ask(question) in tests; a terminal on input and output by
+// default, timeoutMs to answer): "2" or "chromium" is Chromium, anything else (Enter, no answer in
+// time, no terminal) is PairBrowse. The answer is recorded in config.json ("browser").
+export async function askBrowserChoice({ config = loadConfig(), native = !!pinnedAsset(), input = process.stdin, output = process.stderr, ask = null, timeoutMs = 60_000, log = () => {} } = {}) {
+  const recorded = browserChoice(config, { native });
+  if (recorded.set) return recorded.browser;
+  if (!native) return "chromium";
+  let answer = "";
+  if (ask) answer = await ask(BROWSER_QUESTION);
+  else if (input?.isTTY && output?.isTTY) {
+    const { createInterface } = await import("node:readline/promises");
+    const ac = new AbortController();
+    const rl = createInterface({ input, output });
+    try {
+      answer = await within(timeoutMs, rl.question(BROWSER_QUESTION, { signal: ac.signal }).catch(() => ""));
+      if (answer === null) output.write("\n");
+    } finally { ac.abort(); rl.close(); }
+  }
+  const browser = /^\s*(2|chromium)\s*$/i.test(String(answer ?? "")) ? "chromium" : "pairbrowse";
+  saveConfig({ browser });
+  log(`browser: ${browser} (recorded in ~/.pairbrowse/config.json)`);
+  return browser;
+}
+
+// The by-hand install step's line when it installs nothing: a recorded chromium or path names
+// config.json; with nothing recorded (no build pinned for this computer) it names the missing pin.
+export function skipMessage(config = loadConfig(), native = !!pinnedAsset()) {
+  const recorded = browserChoice(config, { native });
+  if (!recorded.set) return 'pairbrowse: no PairBrowse build is pinned for this computer; nothing downloaded or installed. Set "browser": "pairbrowse" in ~/.pairbrowse/config.json to install this file by hand.';
+  return `pairbrowse: browser is ${recorded.browser} in ~/.pairbrowse/config.json: nothing downloaded or installed. Set it to "pairbrowse" to install the PairBrowse browser.`;
 }
 
 const isMain = () => { try { return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url); } catch { return false; } };
@@ -321,6 +381,13 @@ if (process.argv[1] && isMain()) {
   const archive = resolve(args[0]);
   const enginePack = /^pairbrowse-engine-.*\.tgz$/.test(basename(archive));
   Promise.resolve()
-    .then(() => enginePack ? installEngine(archive, { sha256: expectedSha256(archive, sha256), log }) : installNative(archive, { sha256, log }))
-    .then((installed) => { console.log(installed); process.exit(0); }, (e) => { console.error(`pairbrowse: ${e.message}`); process.exit(1); });
+    .then(async () => {
+      const choice = await askBrowserChoice({ log });
+      if (choice !== "pairbrowse") { console.log(skipMessage()); return process.exit(0); }
+      const installed = enginePack ? await installEngine(archive, { sha256: expectedSha256(archive, sha256), log }) : await installNative(archive, { sha256, log });
+      if (installed === null) { console.log(skipMessage()); return process.exit(0); }
+      console.log(installed);
+      process.exit(0);
+    })
+    .catch((e) => { console.error(`pairbrowse: ${e.message}`); process.exit(1); });
 }

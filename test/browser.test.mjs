@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { panelExtensionId } from "../scripts/browser.mjs";
+import { panelExtensionId, browserChoice } from "../scripts/browser.mjs";
 import { rebrandPak } from "../scripts/macos-app.mjs";
 
 // A minimal version 5 pak: two strings and one alias.
@@ -359,4 +359,41 @@ test("before a launch, a profile's stored workers go when the side panel's build
     forgetPanelBuild(profile); // the running worker turned out old
     assert.equal(resetPanelWorker(profile, "b2"), true);
   } finally { rmSync(profile, { recursive: true, force: true }); }
+});
+
+test("the browser setting: pairbrowse, chromium, a path of your own, and the fallback", () => {
+  const calls = { exists: 0, executable: 0 };
+  const files = new Map([["/opt/brave/brave", true], ["/opt/notes.txt", false]]); // path -> executable
+  const deps = (native = true) => ({
+    native,
+    exists: (p) => { calls.exists++; return files.has(p); },
+    executable: (p) => { calls.executable++; return files.get(p) === true; },
+  });
+  const pick = (config, native) => browserChoice(config, deps(native));
+  assert.deepEqual(pick({ browser: "pairbrowse" }), { browser: "pairbrowse", set: true, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browser: "chromium" }), { browser: "chromium", set: true, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browser: "/opt/brave/brave" }), { browser: "/opt/brave/brave", set: true, executablePath: "/opt/brave/brave", problem: null });
+  // A missing or non-executable path, a relative path or another word: Chromium, with a line for the log.
+  for (const [given, line] of [["/nowhere/chromium", "browser: /nowhere/chromium isn't an executable file; using Chromium instead"],
+    ["/opt/notes.txt", "browser: /opt/notes.txt isn't an executable file; using Chromium instead"],
+    ["brave", 'browser must be "pairbrowse", "chromium" or an absolute path; using Chromium'],
+    ["../x", 'browser must be "pairbrowse", "chromium" or an absolute path; using Chromium'],
+    ["Chromium", 'browser must be "pairbrowse", "chromium" or an absolute path; using Chromium']]) {
+    assert.deepEqual(pick({ browser: given }), { browser: "chromium", set: true, executablePath: null, problem: line }, given);
+  }
+  // Unset: PairBrowse where a build is pinned, Chromium elsewhere; nobody chose.
+  assert.deepEqual(pick({}, true), { browser: "pairbrowse", set: false, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browser: null }, false), { browser: "chromium", set: false, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browserEngine: "auto" }, false), { browser: "chromium", set: false, executablePath: null, problem: null });
+  // The older names map as before, and their paths aren't checked (the stubs aren't called).
+  const before = { ...calls };
+  assert.deepEqual(pick({ browserEngine: "pairbrowse" }, false), { browser: "pairbrowse", set: true, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browserEngine: "pairbrowse", executablePath: "/my/native/pairbrowse" }), { browser: "pairbrowse", set: true, executablePath: "/my/native/pairbrowse", problem: null });
+  assert.deepEqual(pick({ browserEngine: "chromium" }), { browser: "chromium", set: true, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browserEngine: "chromium", executablePath: "/fake/chrome" }), { browser: "/fake/chrome", set: true, executablePath: "/fake/chrome", problem: null });
+  assert.deepEqual(pick({ browserEngine: "auto", executablePath: "/fake/chrome" }), { browser: "/fake/chrome", set: true, executablePath: "/fake/chrome", problem: null });
+  assert.deepEqual(pick({ executablePath: "/fake/chrome" }), { browser: "/fake/chrome", set: true, executablePath: "/fake/chrome", problem: null });
+  assert.deepEqual(calls, before, "legacy paths are never checked on disk");
+  // "browser" wins over the older names.
+  assert.equal(pick({ browser: "chromium", browserEngine: "pairbrowse", executablePath: "/fake/chrome" }).browser, "chromium");
 });

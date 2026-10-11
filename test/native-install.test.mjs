@@ -120,17 +120,22 @@ test("the SHA-256 comes from the side file, for that archive only", () => {
 });
 
 test("installs, keeps the previous app, and rolls back when the check fails", { skip: !mac }, async () => {
-  const ok = async () => ["fake check"];
+  const checked = [];
+  const ok = async (exec, { config }) => { checked.push(config); return ["fake check"]; };
   const opts = { check: ok, register: false };
+  const configFile = join(home, "config.json");
+  const before = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
   await installNative(fakeArchive("150.0.0.1"), opts);
   assert.equal(installedVersion(), "150.0.0.1");
   assert.deepEqual(installedPak(), pak(["Customize PairBrowse", "About PairBrowse", "Settings"]), "interface text says PairBrowse");
   assertAlertsBranded();
   assert.ok(verifies(nativeDirs().app), "signature still verifies");
   assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).branding, BRANDING);
-  const config = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
-  assert.equal(config.browserEngine, "pairbrowse");
-  assert.equal(config.executablePath, nativeDirs().exec);
+  // An install writes nothing into config.json ("browser" picks the browser); the check runs the
+  // new build as the native engine all the same.
+  assert.equal(existsSync(configFile) ? readFileSync(configFile, "utf8") : null, before, "config.json untouched");
+  assert.equal(checked[0].browserEngine, "pairbrowse");
+  assert.equal(checked[0].executablePath, nativeDirs().exec);
   assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).version, "150.0.0.1");
   assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).chrome, false, "today's builds have no pages of their own");
 
@@ -270,9 +275,11 @@ test("Linux layout: installs a tar.xz, keeps the previous build, rolls back, ref
   const d = nativeDirs(layout);
   const version = () => JSON.parse(readFileSync(join(d.app, "PairBrowse-build.json"), "utf8")).version;
   const opts = { check: async () => ["fake check"], register: false, layout };
+  const configFile = join(home, "config.json");
+  const before = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
   await installNative(fakeLinuxArchive("150.0.1.1"), opts);
   assert.equal(version(), "150.0.1.1");
-  assert.equal(JSON.parse(readFileSync(join(home, "config.json"), "utf8")).executablePath, d.exec);
+  assert.equal(existsSync(configFile) ? readFileSync(configFile, "utf8") : null, before, "an install writes nothing into config.json");
   await installNative(fakeLinuxArchive("150.0.1.2"), opts);
   assert.ok(existsSync(join(d.previous, "chrome")), "previous build kept");
   await assert.rejects(installNative(fakeLinuxArchive("150.0.1.3"), { ...opts, check: async () => { throw new Error("no side panel"); } }), /no side panel/);
@@ -282,6 +289,75 @@ test("Linux layout: installs a tar.xz, keeps the previous build, rolls back, ref
   rmSync(d.app, { recursive: true, force: true });
   rmSync(d.previous, { recursive: true, force: true });
   rmSync(d.record, { force: true });
+});
+
+test("with browser: chromium (or a path) nothing is downloaded or installed", async () => {
+  let fetched = 0;
+  const counting = async () => { fetched++; throw new Error("offline"); };
+  const logs = [];
+  assert.equal(await ensureNative((m) => logs.push(m), { ...offline, pinned: counting, config: { browser: "chromium" } }), null);
+  assert.equal(fetched, 0, "nothing fetched");
+  assert.match(logs.join("\n"), /browser is chromium in ~\/\.pairbrowse\/config\.json: nothing to download or install/);
+  logs.length = 0;
+  assert.equal(await ensureNative((m) => logs.push(m), { ...offline, pinned: counting, config: { browserEngine: "chromium", executablePath: "/fake/chrome" } }), null);
+  assert.match(logs.join("\n"), /browser is a browser of your own/);
+  assert.equal(fetched, 0);
+  // installNative: refused before the archive is even read (this one doesn't exist).
+  logs.length = 0;
+  const unread = join(temp("pb-noarchive-"), "pairbrowse-150.0.0.0.zip");
+  assert.equal(await installNative(unread, { log: (m) => logs.push(m), register: false, check: async () => { throw new Error("never"); }, config: { browser: "/bin/sh" } }), null);
+  assert.match(logs.join("\n"), /browser is a browser of your own in ~\/\.pairbrowse\/config\.json: nothing to download or install/);
+  // A path that isn't a program is Chromium (the fallback): nothing installed either.
+  logs.length = 0;
+  assert.equal(await installNative(unread, { log: (m) => logs.push(m), register: false, config: { browser: "/some/chromium" } }), null);
+  assert.match(logs.join("\n"), /browser is chromium in/);
+  // "pairbrowse" and unset still go on to fetch the pinned build (here: offline, nothing installed).
+  for (const config of [{ browser: "pairbrowse" }, {}]) {
+    const before = fetched;
+    const d = nativeDirs();
+    const had = existsSync(d.exec);
+    if (had) { await ensureNative(() => {}, { ...offline, pinned: counting, config }).catch(() => {}); }
+    else await assert.rejects(ensureNative(() => {}, { ...offline, pinned: counting, config }), /isn't installed/);
+    assert.equal(fetched, before + 1, JSON.stringify(config));
+  }
+  await assert.rejects(installNative(unread, { register: false, config: { browser: "pairbrowse" } }), /no SHA-256/);
+  await assert.rejects(installNative(unread, { register: false, config: {} }), /no SHA-256/);
+});
+
+test("the first-setup question: asked once, Enter is PairBrowse, 2 is Chromium, recorded in config.json", async () => {
+  const { askBrowserChoice, BROWSER_QUESTION, skipMessage } = await import("../scripts/native-install.mjs");
+  const configFile = join(home, "config.json");
+  const saved = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
+  try {
+    const never = async () => { throw new Error("asked"); };
+    // Already chosen (or the older names): no question.
+    assert.equal(await askBrowserChoice({ config: { browser: "chromium" }, native: true, ask: never }), "chromium");
+    assert.equal(await askBrowserChoice({ config: { browserEngine: "pairbrowse" }, native: true, ask: never }), "pairbrowse");
+    // No build for this computer: Chromium, nothing asked or written.
+    rmSync(configFile, { force: true });
+    assert.equal(await askBrowserChoice({ config: {}, native: false, ask: never }), "chromium");
+    assert.equal(existsSync(configFile), false, "nothing recorded");
+    // The by-hand step's line then names the missing pin, not a config.json state that isn't there.
+    assert.match(skipMessage({}, false), /no PairBrowse build is pinned for this computer; nothing downloaded or installed/);
+    assert.doesNotMatch(skipMessage({}, false), /browser is chromium in/);
+    assert.match(skipMessage({ browser: "chromium" }, false), /browser is chromium in ~\/\.pairbrowse\/config\.json/);
+    // Answers, recorded with the file's other keys kept.
+    writeFileSync(configFile, JSON.stringify({ browserDriver: "patchright", participantName: "Ann" }));
+    let asked = "";
+    assert.equal(await askBrowserChoice({ config: {}, native: true, ask: async (q) => { asked = q; return "2"; } }), "chromium");
+    assert.equal(asked, BROWSER_QUESTION);
+    assert.match(asked, /1\. PairBrowse \(recommended\)/);
+    assert.deepEqual(JSON.parse(readFileSync(configFile, "utf8")), { browserDriver: "patchright", participantName: "Ann", browser: "chromium" });
+    assert.equal(await askBrowserChoice({ config: {}, native: true, ask: async () => "" }), "pairbrowse");
+    assert.deepEqual(JSON.parse(readFileSync(configFile, "utf8")), { browserDriver: "patchright", participantName: "Ann", browser: "pairbrowse" });
+    assert.equal(await askBrowserChoice({ config: {}, native: true, ask: async () => " Chromium " }), "chromium");
+    // No terminal and no stand-in: PairBrowse, recorded.
+    rmSync(configFile, { force: true });
+    assert.equal(await askBrowserChoice({ config: {}, native: true, input: { isTTY: false }, output: { isTTY: false } }), "pairbrowse");
+    assert.deepEqual(JSON.parse(readFileSync(configFile, "utf8")), { browser: "pairbrowse" });
+  } finally {
+    if (saved === null) rmSync(configFile, { force: true }); else writeFileSync(configFile, saved);
+  }
 });
 
 test.after(() => { for (const d of [home, ...temps]) rmSync(d, { recursive: true, force: true }); });

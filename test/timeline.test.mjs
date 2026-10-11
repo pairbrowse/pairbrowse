@@ -164,3 +164,40 @@ test("a burst of records lands in order, each with its file", async () => {
   assert.deepEqual(index(dir).cards.map((c) => c.caption), tl.cards().map((c) => c.caption));
   assert.equal(jpgs(dir).length, 20);
 });
+
+test("enabled and cap read live from getters: off and on at once, a smaller cap trims at the next add", async () => {
+  const dir = folder();
+  const settings = { on: true, cap: 200 };
+  const tl = createTimeline({ dir: () => dir, enabled: () => settings.on, cap: () => settings.cap });
+  assert.equal(tl.enabled, true);
+  for (let i = 0; i < 8; i++) await tl.record({ data: jpeg(i), caption: `c${i}` });
+  assert.equal(tl.cards().length, 8);
+  settings.on = false;
+  assert.equal(tl.enabled, false, "off at once");
+  assert.equal(tl.cards(), null);
+  assert.match((await tl.note("hello")).error, /timeline is off/);
+  await tl.record({ data: jpeg(99), caption: "while off" });
+  settings.on = true;
+  assert.equal(tl.enabled, true);
+  assert.equal(tl.cards().length, 8, "nothing kept while off");
+  settings.cap = 5;
+  assert.equal(tl.cards().length, 8, "a smaller cap waits for the next write");
+  await tl.record({ data: jpeg(100), caption: "next" });
+  const left = tl.cards();
+  assert.equal(left.length, 5);
+  assert.deepEqual(left.map((c) => c.caption), ["c4", "c5", "c6", "c7", "next"]);
+  assert.equal(jpgs(dir).length, 5);
+  // An unset cap (config without timelineCap) is the default 200.
+  settings.cap = undefined;
+  await tl.record({ data: jpeg(101), caption: "more" });
+  assert.equal(tl.cards().length, 6);
+  // A hand-written cap past the bounds is held to 1..200: 5000 keeps 200, a negative one keeps 1 (0 counts as unset: 200).
+  settings.cap = 5000;
+  for (let i = 0; i < 205; i++) await tl.record({ data: jpeg(200 + i), caption: `big${i}` });
+  assert.equal(tl.cards().filter((c) => !c.pinned).length, 200, "a cap of 5000 keeps 200");
+  assert.equal(jpgs(dir).length, 200);
+  settings.cap = -3;
+  await tl.record({ data: jpeg(500), caption: "one" });
+  assert.deepEqual(tl.cards().map((c) => c.caption), ["one"], "a cap below 1 keeps 1");
+  assert.equal(jpgs(dir).length, 1);
+});

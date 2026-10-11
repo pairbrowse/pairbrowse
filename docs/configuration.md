@@ -4,13 +4,25 @@
 
 ```json
 {
-  "executablePath": null,
+  "browser": "pairbrowse",
   "chromeArgs": ["--lang=en-US"]
 }
 ```
 
-- `executablePath`: use Brave, Arc, Vivaldi or another Chromium build instead of the PairBrowse browser.
-- `browserEngine`: `"auto"` (default: the native PairBrowse browser where a build is pinned for your computer (macOS, Linux x64, Windows x64), else `"chromium"`), `"pairbrowse"` or `"chromium"`.
+- `browser`: which browser PairBrowse runs. `"pairbrowse"`: the native PairBrowse browser;
+  `"chromium"`: ungoogled-chromium on macOS, Playwright's Chromium elsewhere, with the PairBrowse
+  side panel; or an absolute path to Brave, Arc, Vivaldi or another Chromium-based browser of your
+  own, launched like `"chromium"`. Unset: `"pairbrowse"` where a build is pinned for your computer,
+  else `"chromium"`; the helper uses that default without writing it, and says so once in its log.
+  A path must be an existing, executable file: otherwise the helper logs
+  `browser: <path> isn't an executable file; using Chromium instead` and starts Chromium. With
+  `"chromium"` or a path, nothing is downloaded or installed for the native browser. You're asked
+  once: in the terminal of the by-hand install step (`node scripts/native-install.mjs <file>`; Enter
+  is PairBrowse), and in the browser's Settings page. Switching takes effect when the browser next
+  starts on the same session profile: close the PairBrowse window or switch session. Sessions,
+  secrets and remembered details are unchanged; the native build keeps its own logins as before.
+- `browserEngine` and `executablePath`: older names, still read (as before, unchecked) while
+  `browser` is unset, and never written.
 - `browserDriver`: `"patchright"` (default and recommended, needs Node.js 20+) or `"playwright"`
   (optional opt-in: plain Playwright, easier for sites to detect). On a Node.js too old for
   Patchright, PairBrowse uses Playwright by itself and says so once (see [Install](install.md)); the
@@ -29,6 +41,7 @@
   agents are also kept in the browser session's timeline folder under `~/.pairbrowse`, at most 200
   plus the ones you pinned (up to 50), deleted with the session. Nothing is captured for it; see
   the Security table.
+- `timelineCap`: how many unpinned pictures the timeline keeps per session, 1 to 200 (default 200).
 - `layout`: where the browser's own pages start, `{ "left": "open", "right": "open", "strip": 88 }`
   by default: each dock `"open"`, `"rail"` or `"hidden"`, and the tab strip's height in pixels (44
   to 176). Changes made in the browser last for the session while the helper runs. Written into the
@@ -54,6 +67,10 @@
   Cloudflare Quick Tunnel), or your own `cloudflare` (token, hostname), `ngrok` (authtoken, domain),
   `tailscale` or `command` (run, url, env). `sharing.guestPort` pins the port join codes are served
   on, for a tunnel routed on the provider's side. See [Using your own tunnel](sharing.md#using-your-own-tunnel).
+
+The browser's own Settings page reads and changes `browser`, `timeline` with `timelineCap`, and
+`layout` (nothing else) through the live view's owner-only `config.json` route; a change to the
+timeline or the layout applies at once, a change of browser at its next start.
 
 Passwords go in `~/.pairbrowse/secrets.env` (kept at `chmod 600`; PairBrowse refuses to use it otherwise):
 

@@ -44,7 +44,7 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config"]); // events only the owner's streams get
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
 const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture"]);
@@ -104,8 +104,10 @@ async function release(cdp) {
 // shared: the rest of what shared tabs carry (see sharedDefaults): form values, their agents'
 // sparks, tab order and pointers.
 // mask(text): as results are masked (saved passwords), for the tab strip's titles and the timeline.
-// timeline: the session's pictures (daemon/timeline.mjs), or null. layoutDefaults: config.layout.
-export async function startLiveView({ mask = (t) => t, timeline = null, layoutDefaults = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// timeline: the session's pictures (daemon/timeline.mjs), or null. layoutDefaults: config.layout,
+// or a function returning it (read whenever a session's layout starts). settings: the browser's
+// own Settings page's three fields ({ read(), write(given) }, liveview/settings.mjs), or null.
+export async function startLiveView({ mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
@@ -136,9 +138,9 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
   const kinds = new Map(); // event stream -> the browser page's kind (?page=), owner streams only
   const loading = new WeakSet(); // tabs whose main frame is loading (watched from watchPages on)
   // The docks' layout, per browser session, in memory (the browser keeps its own in its profile).
-  const layoutStart = layoutFrom(layoutDefaults);
+  const layoutStart = () => layoutFrom(typeof layoutDefaults === "function" ? layoutDefaults() : layoutDefaults);
   const layouts = new Map(); // session name -> { left, right, strip }
-  const layoutNow = () => ({ ...(layouts.get(sessionInfo.name) || layoutStart) });
+  const layoutNow = () => ({ ...(layouts.get(sessionInfo.name) || layoutStart()) });
 
   const watching = () => viewers.size > 0;
   // People in the session the user joined (shared tabs), shown with everyone else here.
@@ -681,6 +683,25 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
       layouts.set(sessionInfo.name, next);
       broadcast("layout", next);
       json(res, 200, next);
+    } },
+    // The browser's Settings page (the owner only): which browser runs, the timeline on/off and
+    // cap, the docks' default layout, and nothing else (liveview/settings.mjs has the body shape).
+    // GET: { browser: "pairbrowse" | "chromium" | "<absolute path>", timeline: { on, cap },
+    // layout: { left, right, strip }, native: boolean (a build is pinned for this computer),
+    // chosen: boolean (a person recorded the choice) }. POST: any subset of browser / timeline /
+    // layout; answers the GET body plus restart: true while "browser" differs from the browser in
+    // use (it takes effect at the next start); written into config.json, broadcast as "config".
+    { method: "GET", path: "config.json", right: "config", handler: ({ res }) => (settings ? json(res, 200, settings.read()) : plain(res, 404)) },
+    { method: "POST", path: "config", right: "config", handler: async ({ req, res }) => {
+      if (!settings) return plain(res, 404);
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const given = parsed(body);
+      if (given === undefined) return json(res, 400, { error: NOT_JSON });
+      const r = await settings.write(given);
+      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
+      broadcast("config", r);
+      json(res, 200, r);
     } },
     { method: "GET", path: "tabs.json", right: "strip", handler: async ({ res }) => { watchPages(); json(res, 200, await tabsStrip()); } },
     { method: "GET", path: "agent-tabs.json", right: "strip", handler: async ({ res }) => json(res, 200, await agentTabs()) },

@@ -1,7 +1,8 @@
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
+import { readFileSync, mkdirSync, chmodSync } from "node:fs";
+import { writeJsonAtomic } from "./util.mjs";
 
 // Everything PairBrowse writes is private to your user account.
 process.umask(0o077);
@@ -29,16 +30,17 @@ export const paths = {
 };
 
 export const DEFAULT_CONFIG = {
-  // "auto": on a Mac, the native PairBrowse build when there's one for this chip (installed, or
-  // downloadable from its pinned release), otherwise "chromium" (ungoogled-chromium on macOS,
-  // Playwright's Chromium elsewhere). Set "chromium" or "pairbrowse" to choose.
-  browserEngine: "auto",
+  // Which browser PairBrowse runs: "pairbrowse" (the native PairBrowse build), "chromium"
+  // (ungoogled-chromium on macOS, Playwright's Chromium elsewhere, with the PairBrowse side panel),
+  // or an absolute path to your own Chromium-based browser (Brave, Arc, Vivaldi). Unset:
+  // "pairbrowse" where a build is pinned for this computer, else "chromium" (browserChoice in
+  // browser.mjs). The older names browserEngine and executablePath are still read while this is
+  // unset, and never written.
+  browser: null,
   // Browser automation driver. Patchright is the default and recommended one; "playwright" is an
   // optional opt-in. On a Node.js too old for Patchright the helper falls back to Playwright
   // and says so once (scripts/driver.mjs).
   browserDriver: "patchright",
-  // Path to another Chromium-based browser (Brave, Arc, Vivaldi) instead of the PairBrowse browser.
-  executablePath: null,
   // Label this Claude connection in a shared browser (or set PAIRBROWSE_PARTICIPANT).
   participantName: null,
   // Origins ("https://intranet.example.com") where a plain form submit goes without asking (your
@@ -78,6 +80,8 @@ export const DEFAULT_CONFIG = {
   // The session's timeline: the pictures the helper already sent to agents, kept per browser
   // session under ~/.pairbrowse (at most 200, pinned ones past that). false keeps none.
   timeline: true,
+  // How many unpinned pictures the timeline keeps per session (1 to 200).
+  timelineCap: 200,
   // Where the browser's own pages start: each dock "open", "rail" or "hidden", and the tab
   // strip's height in pixels (44 to 176).
   layout: { left: "open", right: "open", strip: 88 },
@@ -96,10 +100,18 @@ export function loadConfig() {
 export const savedName = (config) => String(config?.participantName || process.env.PAIRBROWSE_PARTICIPANT || "").trim();
 export function saveParticipantName(config, name) {
   config.participantName = name;
-  let file = {};
-  try { file = JSON.parse(readFileSync(paths.config, "utf8")); } catch {}
-  mkdirSync(paths.home, { recursive: true });
-  writeFileSync(paths.config, JSON.stringify({ ...file, participantName: name }, null, 2) + "\n");
+  saveConfig({ participantName: name });
+}
+
+// Merges fields into config.json (the file's own keys, not the defaults), keeping everything else
+// it holds; undefined values are skipped. Written through a temp file and a rename, so a write cut
+// short leaves the old file. Returns what the file holds now.
+export function saveConfig(fields, file = paths.config) {
+  let saved = {};
+  try { const read = JSON.parse(readFileSync(file, "utf8")); if (read && typeof read === "object" && !Array.isArray(read)) saved = read; } catch {}
+  for (const [k, v] of Object.entries(fields || {})) if (v !== undefined) saved[k] = v;
+  writeJsonAtomic(file, saved);
+  return saved;
 }
 
 export function ensureDirs() {

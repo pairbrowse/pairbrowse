@@ -103,10 +103,10 @@ use it on your own accounts and accept each site's terms.
 
 ## Open source, honestly
 
-The plugin and helper are MIT ([LICENSE](LICENSE)). On macOS and Linux x64 the default
-`"browserEngine": "auto"` downloads the native PairBrowse browser, a closed Chromium build that's
+The plugin and helper are MIT ([LICENSE](LICENSE)). On macOS and Linux x64 the default `browser`
+setting (`"pairbrowse"`) downloads the native PairBrowse browser, a closed Chromium build that's
 free for personal, non-commercial use ([BINARY-LICENSE.md](BINARY-LICENSE.md)). For commercial
-use, either get a PairBrowse Pro license or set `"browserEngine": "chromium"` in
+use, either get a PairBrowse Pro license or set `"browser": "chromium"` in
 `~/.pairbrowse/config.json` for a fully open setup (ungoogled-chromium on macOS, Playwright's
 Chromium elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse-browser).
 

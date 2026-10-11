@@ -45,8 +45,8 @@ There's no headless mode.
   With a native build that declares its own pages, no extension is loaded: the helper passes the
   live view's origin and a key of their own in `--pairbrowse-helper`, the session picker is
   `chrome://pairbrowse/picker`, and agents never see or drive `chrome://pairbrowse` pages.
-- Set `"executablePath"` in `~/.pairbrowse/config.json` to use Brave, Arc, Vivaldi or another
-  Chromium build instead.
+- Set `"browser": "/path/to/chromium"` in `~/.pairbrowse/config.json` to use Brave, Arc, Vivaldi
+  or another Chromium build instead (an absolute path to its program).
 
 ## See it inside the Claude desktop app
 
@@ -74,12 +74,19 @@ them an invite link instead (see [Working together](sharing.md)).
 
 ## The native PairBrowse browser
 
-On a Mac (Apple Silicon or Intel) and on Linux x64, `"browserEngine": "auto"` (the default) uses
-the native PairBrowse browser: a hardened Chromium build made for PairBrowse that looks like an
+Which browser runs is one setting, `"browser"` in `~/.pairbrowse/config.json`: `"pairbrowse"`
+(the native PairBrowse browser), `"chromium"` (the open-source browser with the PairBrowse side
+panel) or an absolute path to a Chromium-based browser of your own. Unset, it's `"pairbrowse"` where
+a build is pinned for your computer (a Mac, Apple Silicon or Intel, and Linux x64), else
+`"chromium"`. You're asked once, in the terminal of the by-hand install step below and in the
+browser's Settings page; a change takes effect when the browser next starts. With `"chromium"` or a
+path, nothing is downloaded or installed for the native browser and it is never launched.
+
+The native PairBrowse browser is a hardened Chromium build made for PairBrowse that looks like an
 everyday browser to sites, so you see fewer CAPTCHAs. It never switches to another browser on its
 own: if the build can't be installed, or there's none for your platform yet (Windows x64 follows),
-the browser doesn't start and says why. To use Playwright's Chromium instead, set
-`"browserEngine": "chromium"`. While it installs (the first start, or a new version), a
+the browser doesn't start and says why. To use Chromium instead, set `"browser": "chromium"`.
+While it installs (the first start, or a new version), a
 notification says so, and agents answer "installing" right away instead of waiting.
 
 PairBrowse picks the build for your platform and chip, downloads it once from its
@@ -88,7 +95,8 @@ PairBrowse picks the build for your platform and chip, downloads it once from it
 the previous version for rollback. With it comes the small engine pack the native browser launches
 with (fingerprint switches and humanized input), checked the same way. It installs at
 `~/.pairbrowse/browser/PairBrowse.app` on macOS and `~/.pairbrowse/browser/PairBrowse` on Linux and
-Windows. To install a file by hand:
+Windows. To install a file by hand (it installs nothing while `browser` is `"chromium"` or a path,
+and asks which browser to use when nobody chose yet):
 
 ```bash
 node scripts/native-install.mjs /path/to/pairbrowse-<version>-macos-arm64.zip   # or -macos-x86_64.zip, -linux-x64.tar.xz, pairbrowse-engine-<version>.tgz
@@ -175,7 +183,7 @@ field takes about 0.45 s instead of 0.9. `"classic"` uses the engine's own shape
 { "pairbrowse": { "motion": "quick" } }
 ```
 
-For a fully open-source setup, set `"browserEngine": "chromium"` in `~/.pairbrowse/config.json`:
+For a fully open-source setup, set `"browser": "chromium"` in `~/.pairbrowse/config.json`:
 ungoogled-chromium on macOS, Playwright's Chromium elsewhere, both under their own open licenses.
 With it, PairBrowse removes Playwright's automation flag and disables
 Chromium's AutomationControlled feature. That stops basic `navigator.webdriver` checks, nothing

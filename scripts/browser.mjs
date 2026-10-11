@@ -11,8 +11,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash, randomBytes, randomInt } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSync, statSync, accessSync, constants as fsConstants } from "node:fs";
+import { dirname, join, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
 import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
@@ -95,6 +95,39 @@ const isPanelPath = (p) => typeof p === "string" && /[/\\]scripts[/\\]browser[/\
 // The IDs of earlier side panel copies recorded in a profile's Secure Preferences (parsed).
 export const oldPanelIds = (secure, panelId = panelExtensionId()) => Object.entries(secure?.extensions?.settings || {})
   .filter(([id, entry]) => id !== panelId && (id === pathPanelId() || isPanelPath(entry?.path))).map(([id]) => id);
+
+// Which browser PairBrowse runs (config "browser"): "pairbrowse" (the native build), "chromium"
+// (ensureBrowser below: ungoogled-chromium on macOS, Playwright's Chromium elsewhere, with the
+// side panel), or an absolute path to a Chromium-based browser of your own (launched like
+// "chromium", with the side panel). A path that isn't an executable file, or any other value, is
+// "chromium" with a problem line for the helper's log. Unset: the older names (browserEngine,
+// executablePath), read as before and not checked; else "pairbrowse" where a build is pinned for
+// this computer (native), "chromium" otherwise, with set false (nobody chose yet).
+// Returns { browser, set, executablePath (the program to launch, null: the one PairBrowse
+// provides), problem }. exists / executable: file checks (tests pass stand-ins).
+const isFile = (p) => { try { return statSync(p).isFile(); } catch { return false; } };
+const isExecutable = (p) => { try { accessSync(p, fsConstants.X_OK); return true; } catch { return false; } };
+export function browserChoice(config = {}, { native = false, exists = isFile, executable = isExecutable } = {}) {
+  const given = config?.browser;
+  const chromium = (problem) => ({ browser: "chromium", set: true, executablePath: null, problem });
+  if (typeof given === "string") {
+    if (given === "pairbrowse") return { browser: "pairbrowse", set: true, executablePath: null, problem: null };
+    if (given === "chromium") return chromium(null);
+    if (isAbsolute(given)) {
+      let ok = false;
+      try { ok = !!exists(given) && !!executable(given); } catch {}
+      return ok ? { browser: given, set: true, executablePath: given, problem: null } : chromium(`browser: ${given} isn't an executable file; using Chromium instead`);
+    }
+    return chromium('browser must be "pairbrowse", "chromium" or an absolute path; using Chromium');
+  }
+  // The older names, as they were read before "browser" existed.
+  const path = typeof config?.executablePath === "string" && config.executablePath ? config.executablePath : null;
+  // (pairbrowse with a path: a native build of your own, used as it is.)
+  if (config?.browserEngine === "pairbrowse") return { browser: "pairbrowse", set: true, executablePath: path, problem: null };
+  if (path && (config?.browserEngine === "chromium" || config?.browserEngine === "auto" || config?.browserEngine == null)) return { browser: path, set: true, executablePath: path, problem: null };
+  if (config?.browserEngine === "chromium") return chromium(null);
+  return { browser: native ? "pairbrowse" : "chromium", set: false, executablePath: null, problem: null };
+}
 
 // The ungoogled-chromium build PairBrowse uses on macOS. Pinned: a new version is a deliberate
 // change here, with the SHA-256 from its GitHub release. Builds are notarized by the project.
@@ -361,7 +394,7 @@ export async function ensureBrowser(chromium, log = () => {}) {
   }
   const sourceApp = await ungoogledApp(log);
   // The native PairBrowse build (scripts/native-install.mjs) lives at the usual place; this one
-  // then goes next to it, so switching browserEngine back never overwrites the native app.
+  // then goes next to it, so switching "browser" to chromium never overwrites the native app.
   const target = existsSync(join(nativeTarget, "Contents", "Resources", "PairBrowse-build.json")) ? join(dirname(nativeTarget), "PairBrowse Chromium.app") : nativeTarget;
   const exec = join(target, "Contents", "MacOS", "pairbrowse");
   const stamp = createHash("sha256").update(`branding v6 ${sourceApp} ${target}` + readFileSync(ICON).toString("base64")).digest("hex");

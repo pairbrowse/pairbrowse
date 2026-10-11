@@ -54,6 +54,8 @@ import { createScreenshots } from "./daemon/screenshot.mjs";
 import { createServe } from "./daemon/serve.mjs";
 import { createJournal } from "./daemon/journal.mjs";
 import { createTimeline } from "./daemon/timeline.mjs";
+import { createSettings } from "./liveview/settings.mjs";
+import { pinnedAsset } from "./native-install.mjs";
 import { timelineDir } from "./sessions.mjs";
 import { readFields, applyFields } from "./daemon/forms.mjs";
 import { createTabOrder } from "./daemon/taborder.mjs";
@@ -331,7 +333,10 @@ const sharing = createSharing({
     // The session's timeline of pictures, and the masking and docks' layout the browser's own pages
     // get (owner only). `timeline` is declared further down too: read when the live view starts.
     get timeline() { return timeline; },
-    mask: output.mask, layoutDefaults: config.layout,
+    mask: output.mask, layoutDefaults: () => config.layout,
+    // The browser's Settings page: which browser runs, the timeline, the docks' default layout
+    // (liveview/settings.mjs; written into config.json and the running config).
+    settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), browserInUse: () => context.browserInUse() }),
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
     // their pointer alone, or just being in the tab, leaves the page as it was.
     // Their mark (a dot in their pointer's color) shows on the tab's icon here while they're in it.
@@ -474,7 +479,7 @@ hud.onCursor((page, at) => { liveView()?.agentPointed?.(page, at); presence.agen
 // The goal log the helper keeps by itself (a run file per session; daemon/journal.mjs).
 const journal = createJournal({ session: () => context.sessionName(), openPages: () => context.openPages(), mask: output.mask, strip: (t) => tabLabels.strip(`Page Title: ${t}`).replace(/^Page Title: /, ""), onActivity: (fn) => hud.onActivity(fn), log });
 // The session's timeline: the pictures already sent to agents, kept per session (daemon/timeline.mjs).
-const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: config.timeline !== false, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
+const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
   secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline,

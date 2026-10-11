@@ -5,9 +5,9 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync, rmSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { paths } from "../paths.mjs";
-import { ensureBrowser, launchArgs, prepareProfile, panelExtensionId, resetPanelWorker } from "../browser.mjs";
+import { ensureBrowser, launchArgs, prepareProfile, panelExtensionId, resetPanelWorker, browserChoice } from "../browser.mjs";
 import { engineProfile, launchEngine, validateEngine } from "../engine.mjs";
-import { ensureNative, nativeDirs, nativeLayout } from "../native-install.mjs";
+import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../native-install.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "../display.mjs";
 import { readSavedTabs, trackTabs, restoreTabs } from "../tabs.mjs";
 import { computerName } from "../join.mjs";
@@ -63,6 +63,15 @@ export function createContext({ config, log, chromium, driver = "patchright", hu
   // the user hears of it, and actions say so at once rather than waiting for minutes.
   let installing = false;
   let launching = false;
+  // Which browser runs ("browser" in config.json, browserChoice in browser.mjs). The launch sets
+  // config.browserEngine and config.executablePath from it (in memory only), so the older names a
+  // person wrote are kept aside here: every launch reads the choice anew (a change in Settings
+  // takes effect at the next start).
+  const legacy = { browserEngine: config.browserEngine, executablePath: config.executablePath };
+  const choiceConfig = () => ({ ...config, ...legacy });
+  let inUse = null; // the browser the last launch chose
+  const said = new Set(); // lines about the choice, logged once per helper run
+  const once = (line) => { if (!said.has(line)) { said.add(line); log(line); } };
   const installWaiters = new Set();
   let session = currentSession(); // which browser session (Chrome profile) is in use
   let switching = false;
@@ -176,14 +185,23 @@ let switched = Promise.resolve();
     if (r.status !== 0) log(`couldn't clear temporary downloads: ${(r.stderr || r.error?.message || "").trim()}`);
   }
 
-  // The native PairBrowse browser: the pinned build, installed and checked when it's missing or
-  // a new version is pinned (scripts/native-install.mjs). A browser of your own stays as it is.
-  // Never a quiet switch to the standard engine: only "browserEngine": "chromium" picks that.
+  // The browser the person chose ("browser"): the native PairBrowse browser (the pinned build,
+  // installed and checked when it's missing or a new version is pinned, scripts/native-install.mjs),
+  // "chromium" (ensureBrowser at launch) or a browser of their own. Unset: the native build where
+  // one is pinned for this computer, else chromium; the helper never records that default. Never a
+  // quiet switch from the native build to Chromium: only "browser": "chromium" picks that.
   async function chooseEngine() {
-    const auto = config.browserEngine === "auto";
-    if (auto && config.executablePath) config.browserEngine = "chromium"; // a browser of your own
-    else if (auto || (config.browserEngine === "pairbrowse" && (!config.executablePath || resolve(config.executablePath) === nativeDirs().exec))) {
-      const optOut = 'To use the standard Chromium instead, set "browserEngine": "chromium" in ~/.pairbrowse/config.json.';
+    const asset = pinnedAsset();
+    const choice = browserChoice(choiceConfig(), { native: !!asset });
+    if (choice.problem) once(choice.problem);
+    if (!choice.set) once(`browser: no choice recorded yet; using ${choice.browser} (Settings, or "browser" in ~/.pairbrowse/config.json)`);
+    inUse = choice.browser;
+    if (choice.browser === "pairbrowse" && choice.executablePath && resolve(choice.executablePath) !== nativeDirs().exec) {
+      // (The older names: a native build of your own, used as it is.)
+      config.browserEngine = "pairbrowse";
+      config.executablePath = choice.executablePath;
+    } else if (choice.browser === "pairbrowse") {
+      const optOut = 'To use Chromium instead, set "browser": "chromium" in ~/.pairbrowse/config.json.';
       const installLog = (m) => {
         log(m);
         if (installing || !/^(downloading|unpacking)/.test(m)) return;
@@ -193,7 +211,7 @@ let switched = Promise.resolve();
       };
       let native = null;
       try {
-        native = nativeLayout() ? await ensureNative(installLog) : null;
+        native = nativeLayout() ? await ensureNative(installLog, { asset, config: choiceConfig() }) : null;
       } catch (e) {
         if (installing) notify("The PairBrowse browser couldn't be installed. Ask Claude what happened.");
         throw new Error(`The PairBrowse browser couldn't be installed: ${e.message} ${optOut}`);
@@ -204,6 +222,12 @@ let switched = Promise.resolve();
       if (!native) throw new Error(`There's no PairBrowse browser build for ${process.platform} ${process.arch} yet. ${optOut}`);
       config.browserEngine = "pairbrowse";
       config.executablePath = native;
+    } else {
+      // A recorded chromium or path of your own: the log says why nothing is installed, once.
+      const why = choice.set && !choice.problem ? notChosen(choiceConfig(), !!asset) : null;
+      if (why) once(why);
+      config.browserEngine = "chromium";
+      config.executablePath = choice.executablePath; // null: the PairBrowse Chromium (ensureBrowser)
     }
     validateEngine(config);
   }
@@ -558,6 +582,10 @@ let switched = Promise.resolve();
 
   return {
     chromePages: () => chrome,
+    // The browser of the window open now ("pairbrowse", "chromium" or a path), null when none is.
+    browserInUse: () => (contextPromise ? inUse : null),
+    // The settings the choice is read from (config with the older names as the person wrote them).
+    choiceConfig,
     getContext, watchClose, current: () => contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
     isRestoring: () => restoring !== null, isSwitching: () => switching,
     currentUrl: () => lastCurrentUrl, setCurrentUrl: (url) => { lastCurrentUrl = url; },

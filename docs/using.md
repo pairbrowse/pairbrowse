@@ -59,6 +59,15 @@ Tabs: PairBrowse remembers each session's tabs, in order. When Chrome restarts, 
 Logins with "remember me" survive restarts; session-only logins last while the PairBrowse Chrome
 stays open (it keeps running between Claude Code sessions), and end when Chrome itself quits.
 
+## Settings
+
+Which browser PairBrowse runs (the native PairBrowse browser, Chromium, or a Chromium-based
+browser of your own) is asked once, and changed in the browser's Settings page or as `"browser"`
+in `~/.pairbrowse/config.json`. A change takes effect when the browser next starts on the same
+session profile: close the PairBrowse window or switch session. The timeline (on or off, and how
+many pictures it keeps, 1 to 200) is changed there too, and applies at once. See
+[Configuration](configuration.md).
+
 ## Fast mode and playbooks
 
 Claude can send a whole page, or a whole flow, as one `pairbrowse_run` call: go, fill, tick, choose,

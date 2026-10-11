@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>PairBrowse settings</title>
+<link rel="icon" href="../logo.svg">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="settings.css">
+</head>
+<body data-s="connecting" data-host="">
+  <header class="top">
+    <img src="../logo.svg" alt="" width="24" height="24">
+    <h1>Settings</h1>
+    <p id="conn" role="status" aria-live="polite">Connecting to PairBrowse…</p>
+  </header>
+
+  <div class="layout">
+    <nav class="nav" aria-label="Settings sections">
+      <a href="#browser">Browser</a>
+      <a href="#sessions">Sessions</a>
+      <a href="#sharing">Sharing</a>
+      <a href="#passwords">Passwords</a>
+      <a href="#remembered">Remembered details</a>
+      <a href="#timeline">Timeline</a>
+      <a href="#appearance">Appearance</a>
+      <a href="#about">About</a>
+    </nav>
+
+    <main>
+      <section class="sec" id="browser" aria-labelledby="browser-h">
+        <h2 class="sec-h" id="browser-h">Browser</h2>
+        <div class="sheet">
+          <div class="kv"><span class="k">Running now</span><span class="v" id="browser-now"></span></div>
+          <p class="note" id="browser-note">The browser setting can't be read or changed from this page yet: PairBrowse has no settings route. Edit ~/.pairbrowse/config.json; the change takes effect on the browser's next start, on the same profile.</p>
+          <div class="kv cfg"><div><code class="line" id="line-pairbrowse">"browserEngine": "pairbrowse"</code><small>The PairBrowse browser (downloads the pinned build once)</small></div><button class="mini copy" type="button" data-for="line-pairbrowse" aria-label="Copy the pairbrowse line">Copy</button></div>
+          <div class="kv cfg"><div><code class="line" id="line-chromium">"browserEngine": "chromium"</code><small>Playwright's Chromium with the PairBrowse extension</small></div><button class="mini copy" type="button" data-for="line-chromium" aria-label="Copy the chromium line">Copy</button></div>
+          <div class="kv cfg"><div><code class="line" id="line-path">"executablePath": "/path/to/your/Chromium"</code><small>A browser of your own, with browserEngine chromium</small></div><button class="mini copy" type="button" data-for="line-path" aria-label="Copy the executablePath line">Copy</button></div>
+          <p class="msg" id="browser-msg" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="sec" id="sessions" aria-labelledby="sessions-h">
+        <h2 class="sec-h" id="sessions-h">Sessions</h2>
+        <div class="sheet">
+          <ul class="rows" id="session-list" aria-label="Sessions"></ul>
+          <p class="note">Switching, renaming and deleting happen in the session picker and through Claude (pairbrowse_session); this page lists them.</p>
+          <button class="action" id="switch-btn" type="button">Switch session…</button>
+          <p class="msg" id="sessions-msg" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="sec" id="sharing" aria-labelledby="sharing-h">
+        <h2 class="sec-h" id="sharing-h">Sharing</h2>
+        <div class="sheet">
+          <div class="sub" id="hosts" hidden>
+            <h3>Join addresses</h3>
+            <p class="note">Addresses you allowed in join codes besides PairBrowse's own (*.trycloudflare.com): a host's own tunnel. "Always" ones are kept in your config.</p>
+            <ul class="devs" id="host-list"></ul>
+          </div>
+          <p class="empty" id="hosts-empty" hidden>No join addresses allowed besides PairBrowse's own.</p>
+          <div class="joins" id="host-asks" role="region" aria-label="Join codes with another address" aria-live="assertive"></div>
+          <div class="sub" id="dev" hidden>
+            <h3>Dev servers</h3>
+            <p class="note">Show a dev server on this computer to the people in your session, at an address only their PairBrowse opens. Watchers can only look.</p>
+            <ul class="devs" id="devs"></ul>
+          </div>
+          <p class="empty" id="dev-empty" hidden>No dev server open in a tab or shared.</p>
+          <div class="joins" id="dev-asks" role="region" aria-label="Requests to share a dev server" aria-live="assertive"></div>
+        </div>
+      </section>
+
+      <section class="sec" id="passwords" aria-labelledby="passwords-h">
+        <h2 class="sec-h" id="passwords-h">Passwords</h2>
+        <div class="sheet">
+          <p class="note">Saved on this computer, readable only by you. Claude sees the name, never the password, and it's only filled in on the sites you list.</p>
+          <div id="secrets"></div>
+          <form class="add" id="add-secret" autocomplete="off">
+            <div class="pair">
+              <label class="lab" for="secret-label">Name<input class="field" id="secret-label" name="label" placeholder="Name, e.g. Shopify" maxlength="60"></label>
+              <label class="lab" for="secret-value">Password<input class="field" id="secret-value" name="value" type="password" placeholder="Password" autocomplete="new-password" maxlength="4096"></label>
+            </div>
+            <label class="lab" for="secret-domains">Sites<input class="field" id="secret-domains" name="domains" placeholder="Sites, e.g. accounts.shopify.com" maxlength="400"></label>
+            <button class="primary" type="submit">Save password</button>
+          </form>
+          <p class="msg" id="profile-msg" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="sec" id="remembered" aria-labelledby="remembered-h">
+        <h2 class="sec-h" id="remembered-h">Remembered details</h2>
+        <div class="sheet">
+          <p class="note">Used to fill forms. Claude adds what you tell it, and what gets filled in forms is kept here too. Passwords never are.</p>
+          <div id="details"></div>
+          <form class="add" id="add-detail" autocomplete="off">
+            <div class="pair">
+              <label class="lab" for="detail-label">Label<input class="field" id="detail-label" name="label" placeholder="Label, e.g. VAT number" maxlength="80"></label>
+              <label class="lab" for="detail-value">Value<input class="field" id="detail-value" name="value" placeholder="Value" maxlength="2000"></label>
+            </div>
+            <button class="primary" type="submit">Add detail</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="sec" id="timeline" aria-labelledby="timeline-h">
+        <h2 class="sec-h" id="timeline-h">Timeline</h2>
+        <div class="sheet">
+          <div class="kv"><span class="k">Pictures kept for this session</span><span class="v" id="timeline-state">Checking…</span></div>
+          <p class="note">With the timeline on, the pictures already sent to agents are kept for this browser session (at most 200, plus up to 50 pinned), deleted with it, never shown to joiners.</p>
+          <div class="kv cfg"><div><code class="line" id="line-timeline">"timeline": false</code><small>Keeps no timeline</small></div><button class="mini copy" type="button" data-for="line-timeline" aria-label="Copy the timeline line">Copy</button></div>
+          <p class="msg" id="timeline-msg" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="sec" id="appearance" aria-labelledby="appearance-h">
+        <h2 class="sec-h" id="appearance-h">Appearance</h2>
+        <div class="sheet">
+          <div class="kv"><span class="k">Scheme</span><span class="v">Dark</span></div>
+          <p class="note">A light scheme comes later.</p>
+        </div>
+      </section>
+
+      <section class="sec" id="about" aria-labelledby="about-h">
+        <h2 class="sec-h" id="about-h">About</h2>
+        <div class="sheet">
+          <div class="kv"><span class="k">PairBrowse</span><span class="v" id="about-host"></span></div>
+          <div class="kv"><span class="k">Chromium's own settings</span><button class="action" id="chromium-settings" type="button">Open chrome://settings</button></div>
+          <p class="msg" id="about-msg" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="settings.js"></script>
+</body>
+</html>

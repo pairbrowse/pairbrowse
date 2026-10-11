@@ -5,11 +5,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, mkdirSync, writeFileSync, renameSync, rmSync, unlinkSync, symlinkSync, existsSync, readFileSync, statSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, renameSync, rmSync, unlinkSync, symlinkSync, existsSync, readFileSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, dirname } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { startLiveView, createInvites } from "../scripts/liveview.mjs";
-import { createDownloads, createRecordings, createHandoffs, openFile, downloadMarked, fileStill, handoffKind } from "../scripts/daemon/tools.mjs";
+import { createDownloads, createRecordings, createHandoffs, openFile, downloadMarked, fileStill, handoffKind, createPersonTabs } from "../scripts/daemon/tools.mjs";
+import { createPreviews } from "../scripts/daemon/preview.mjs";
 import { createDiagnostics } from "../scripts/daemon/diagnostics.mjs";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -63,7 +65,26 @@ async function setup() {
   // macOS's download mark, stood in: every file has it unless unmark()ed.
   const unmarked = new Set();
   const xattr = async (p) => (unmarked.has(p) ? null : "0081;68a1b2c3;Chromium;");
-  const tools = { downloads, recordings, handoffs, diagnostics, open: (p, how) => openFile(p, how, { platform, spawn }), marked: (p) => downloadMarked(p, { platform, xattr }) };
+  // The person's tab, stood in: each openTab call recorded as [url, onClose]; fail() makes the next ones fail.
+  const tabs = [];
+  let tabFails = false;
+  let engine = null;
+  const personTabs = createPersonTabs();
+  // textutil, stood in: it writes docHtml to its -output path (null: writes nothing; "hang": never answers).
+  const execs = [];
+  let docHtml = "<html><head><style>p.p1 {margin: 0}</style></head><body><p class=\"p1\">Hello</p></body></html>";
+  const execFile = (cmd, args, opts, cb) => {
+    execs.push({ cmd, args, opts });
+    if (docHtml === "hang") return {};
+    if (docHtml !== null) writeFileSync(args[args.indexOf("-output") + 1], docHtml);
+    setImmediate(() => cb(null, "", ""));
+    return {};
+  };
+  const previewDir = join(dir, "previews");
+  const previews = createPreviews({ dir: previewDir, execFile, textutilMs: 300 });
+  const tools = { downloads, recordings, handoffs, diagnostics, open: (p, how) => openFile(p, how, { platform, spawn }), marked: (p) => downloadMarked(p, { platform, xattr }),
+    openTab: async (url, onClose) => { tabs.push([url, onClose]); return tabFails ? { error: "The file couldn't be shown in a tab." } : { ok: true }; },
+    preview: (e, kind) => previews.make(e, kind), engine: () => engine, get platform() { return platform; }, personTab: (p) => personTabs.has(p) };
   const pageA = fakePage("https://shop.example/checkout?step=2&token=abc", `Checkout ${SECRET}`);
   const pageB = fakePage("https://bank.example/login", "Bank login");
   const pages = [pageA, pageB];
@@ -90,13 +111,14 @@ async function setup() {
     return id;
   };
   return {
-    dir, dl, view, key, invites, tools, downloads, recordings, handoffs, spawned, pageA, pageB, pages, logFile, file, download,
+    dir, dl, view, key, invites, tools, downloads, recordings, handoffs, spawned, pageA, pageB, pages, logFile, file, download, tabs, execs, previewDir, previews, personTabs,
+    failTabs: (on = true) => { tabFails = on; }, setEngine: (e) => { engine = e; }, setDocHtml: (h) => { docHtml = h; },
     unmark: (p) => unmarked.add(p), setPlatform: (p) => { platform = p; }, setSession: (s) => { session = s; }, saveAs: (p) => { saveNext = p; },
     done: () => { view.close(); rmSync(dir, { recursive: true, force: true }); },
   };
 }
 
-const TOOL_ROUTES = [["GET", "downloads.json"], ["POST", "downloads/0123456789ab/open"], ["POST", "downloads/0123456789ab/reveal"], ["GET", "recordings.json"],
+const TOOL_ROUTES = [["GET", "downloads.json"], ["POST", "downloads/0123456789ab/open"], ["POST", "downloads/0123456789ab/reveal"], ["POST", "downloads/0123456789ab/open-app"], ["GET", "recordings.json"],
   ["POST", "recordings/0123456789ab/open"], ["POST", "recordings/0123456789ab/reveal"], ["DELETE", "recordings/0123456789ab"], ["GET", "handoffs.json"],
   ["POST", "handoffs/0123456789ab/show"], ["GET", "diagnostics.json"], ["POST", "diagnostics/report"]];
 
@@ -153,12 +175,17 @@ test("downloads: the contract's fields, this session only, masked titles, hosts 
 test("open and reveal: ids only, the stored file's path, cross-site refused, the opener per platform", async () => {
   const t = await setup();
   try {
-    const id = t.download("statement.pdf");
-    const p = join(t.dl, "statement.pdf");
+    // A file the browser doesn't render (a .pdf opens in a tab: see the tests below).
+    const id = t.download("statement.zip");
+    const p = join(t.dl, "statement.zip");
     // The body is ignored: never a path from the page.
-    assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: { path: "/etc/passwd" } })).status, 200);
+    const opened = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: { path: "/etc/passwd" } });
+    assert.equal(opened.status, 200);
+    assert.deepEqual(JSON.parse(opened.text), { ok: true, opened: "app" });
     assert.deepEqual(t.spawned.at(-1), ["open", p]);
-    assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/reveal`, { body: {} })).status, 200);
+    const revealed = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/reveal`, { body: {} });
+    assert.equal(revealed.status, 200);
+    assert.deepEqual(JSON.parse(revealed.text), { ok: true }, "Reveal says only ok");
     assert.deepEqual(t.spawned.at(-1), ["open", "-R", p]);
     const before = t.spawned.length;
     for (const bad of ["..%2Fx/open", "zz/open", "0123456789abc/open", `${id}/open/extra`, `${id}/run`, `${id}`, "0123456789ab/open"]) {
@@ -187,20 +214,32 @@ test("open and reveal: ids only, the stored file's path, cross-site refused, the
 test("open: any download; programs and scripts only with a confirm (428); not before a download is done", async () => {
   const t = await setup();
   try {
-    for (const name of ["x.zip", "x.bin", "x.pdf"]) {
+    for (const name of ["x.zip", "x.bin"]) {
       const id = t.download(name);
       assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, name);
       assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)], name);
     }
-    const programs = ["x.command", "x.sh", "x.pkg", "x.dmg", "x.exe", "x.py", "x.js", "x.jar", "x.ps1", "x.scpt", "x.tool", "X.COMMAND",
-      "x.html", "x.htm", "x.svg", "x.svgz", "x.xhtml", "x.mhtml", "x.webarchive", "x.url", "x.webloc", "X.HTML"];
-    for (const name of programs) {
+    // A pdf opens in the person's tab: nothing spawned, the file's own file:// URL.
+    {
+      const id = t.download("x.pdf");
+      const before = t.spawned.length;
+      const r = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} });
+      assert.equal(r.status, 200);
+      assert.deepEqual(JSON.parse(r.text), { opened: "tab" });
+      assert.equal(t.spawned.length, before, "x.pdf: nothing spawned");
+      assert.equal(t.tabs.at(-1)[0], pathToFileURL(join(t.dl, "x.pdf")).href);
+    }
+    const PROGRAM = "This is a program or script. Open it anyway?";
+    const WEB = "This is a web page saved to your computer. It opens in your web browser and can run its own scripts. Open it anyway?";
+    const programs = [["x.command", PROGRAM], ["x.sh", PROGRAM], ["x.pkg", PROGRAM], ["x.dmg", PROGRAM], ["x.exe", PROGRAM], ["x.py", PROGRAM], ["x.js", PROGRAM], ["x.jar", PROGRAM], ["x.ps1", PROGRAM], ["x.scpt", PROGRAM], ["x.tool", PROGRAM], ["X.COMMAND", PROGRAM],
+      ["x.html", WEB], ["x.htm", WEB], ["x.svg", WEB], ["x.svgz", WEB], ["x.xhtml", WEB], ["x.mhtml", WEB], ["x.webarchive", WEB], ["x.url", WEB], ["x.webloc", WEB], ["X.HTML", WEB]];
+    for (const [name, sentence] of programs) {
       const id = t.download(name);
       const before = t.spawned.length;
       for (const body of [undefined, {}, { confirm: "yes" }, { confirm: 1 }]) {
         const r = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, body === undefined ? {} : { body });
         assert.equal(r.status, 428, `${name} ${JSON.stringify(body)}`);
-        assert.deepEqual(JSON.parse(r.text), { confirm: "This is a program or script. Open it anyway?" });
+        assert.deepEqual(JSON.parse(r.text), { confirm: sentence }, name);
       }
       assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { raw: "not json" })).status, 428, name);
       assert.equal(t.spawned.length, before, `${name}: nothing opened before the confirm`);
@@ -249,6 +288,7 @@ test("a file replaced or turned into a symlink answers 410, untouched, nothing s
     assert.equal((await request(t.view.port, "DELETE", `/${t.key}/recordings/${sid}`, { body: {} })).status, 410);
     assert.ok(existsSync(rp) && existsSync(sp));
     assert.equal(t.spawned.length, 0);
+    assert.equal(t.tabs.length, 0, "no tab opened");
   } finally { t.done(); }
 });
 
@@ -265,7 +305,9 @@ test("recordings: only the helper's own, deleted by id; the index stays 0600; ow
     assert.deepEqual(r.recording, { on: false, since: 0 });
     assert.equal(r.items.length, 1, "a file the helper didn't record isn't listed");
     assert.deepEqual(r.items[0], { id: item.id, name: "PairBrowse recording 1.webm", size: 5, at: 1000, duration: 4000 });
-    assert.equal((await request(t.view.port, "POST", `/${t.key}/recordings/${item.id}/open`, { body: {} })).status, 200);
+    const recOpen = await request(t.view.port, "POST", `/${t.key}/recordings/${item.id}/open`, { body: {} });
+    assert.equal(recOpen.status, 200);
+    assert.deepEqual(JSON.parse(recOpen.text), { ok: true }, "a recording's open stays { ok: true }");
     assert.deepEqual(t.spawned.at(-1), ["open", mine]);
     assert.equal((await request(t.view.port, "DELETE", `/${t.key}/recordings/0123456789ab`, { body: {} })).status, 404, "no such recording");
     assert.equal((await request(t.view.port, "DELETE", `/${t.key}/recordings/${item.id}`, { body: { path: other } })).status, 200);
@@ -458,20 +500,36 @@ test("close() lets go of the three stores", async () => {
 test("open: office formats open with their default app; recordings keep their list; pdf, images, media and text open", async () => {
   const t = await setup();
   try {
+    // Word-type documents become a preview on macOS (see below); elsewhere, and every other office
+    // format anywhere, open with their default app.
     const office = ["x.doc", "x.docx", "x.xls", "x.xlsx", "x.ppt", "x.pptx", "x.odt", "x.ods", "x.odp", "x.rtf", "x.pages", "x.numbers", "x.key", "X.DOCX"];
-    for (const name of office) {
-      const id = t.download(name);
-      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, name);
-      assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)], name);
+    for (const platform of ["darwin", "linux"]) {
+      t.setPlatform(platform);
+      for (const name of office) {
+        const id = t.download(name);
+        const r = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} });
+        assert.equal(r.status, 200, name);
+        const opener = platform === "darwin" ? ["open", join(t.dl, name)] : ["xdg-open", join(t.dl, name)];
+        if (platform === "darwin" && /\.(docx?|rtf|odt)$/i.test(name)) assert.deepEqual(JSON.parse(r.text), { opened: "preview" }, name);
+        else assert.deepEqual(t.spawned.at(-1), opener, `${platform} ${name}`);
+      }
     }
+    t.setPlatform("darwin");
     const before = t.spawned.length;
     const rid = t.recordings.add({ path: t.file("notes.docx", "doc"), at: 1, ms: 2, size: 3 }).id;
     assert.equal((await request(t.view.port, "POST", `/${t.key}/recordings/${rid}/open`, { body: { confirm: true } })).status, 409, "a recording's id keeps its list");
     assert.equal(t.spawned.length, before);
-    for (const name of ["a.pdf", "a.png", "a.jpg", "a.jpeg", "a.gif", "a.webp", "a.heic", "a.txt", "a.csv", "a.json", "a.md", "a.mp4", "a.mov", "a.webm", "a.m4v", "a.mp3", "a.wav", "a.m4a"]) {
+    // Each opens: in the person's tab, as a preview there, or with its app (Playwright's Chromium
+    // here: the codec types go to their app).
+    const way = { "a.pdf": "tab", "a.png": "tab", "a.jpg": "tab", "a.jpeg": "tab", "a.gif": "tab", "a.webp": "tab", "a.heic": "app", "a.txt": "tab", "a.csv": "preview", "a.json": "tab", "a.md": "tab",
+      "a.mp4": "app", "a.mov": "app", "a.webm": "tab", "a.m4v": "app", "a.mp3": "tab", "a.wav": "tab", "a.m4a": "app" };
+    for (const [name, how] of Object.entries(way)) {
       const id = t.download(name);
-      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, name);
-      assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)], name);
+      const tabsBefore = t.tabs.length;
+      const r = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} });
+      assert.equal(r.status, 200, name);
+      if (how === "app") { assert.deepEqual(JSON.parse(r.text), { ok: true, opened: "app" }, name); assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)], name); assert.equal(t.tabs.length, tabsBefore, name); }
+      else { assert.deepEqual(JSON.parse(r.text), { opened: how }, name); assert.equal(t.tabs.length, tabsBefore + 1, name); }
     }
   } finally { t.done(); }
 });
@@ -550,4 +608,276 @@ test("open: on macOS a download without the quarantine mark is refused (409, Fin
     // The real reader on this Mac: a file written here has no quarantine mark.
     if (process.platform === "darwin") assert.equal(await downloadMarked(p), false);
   } finally { t.done(); }
+});
+
+const post = (t, id, verb = "open", body = {}) => request(t.view.port, "POST", `/${t.key}/downloads/${id}/${verb}`, { body });
+
+test("open: renderable types open in a person's tab; the codec types only in the macOS PairBrowse build", async () => {
+  const t = await setup();
+  const owner = await readStream(t.view.port, `/${t.key}/events?page=right`);
+  try {
+    await wait(50);
+    const names = ["pdf", "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "webm", "ogv", "mp3", "wav", "ogg", "oga", "opus", "flac", "txt", "md", "json"].flatMap((x) => [`a.${x}`, `B.${x.toUpperCase()}`]);
+    for (const name of names) {
+      const id = t.download(name);
+      const before = t.spawned.length;
+      const r = await post(t, id);
+      assert.equal(r.status, 200, name);
+      assert.deepEqual(JSON.parse(r.text), { opened: "tab" }, name);
+      assert.equal(t.spawned.length, before, `${name}: nothing spawned`);
+      assert.equal(t.tabs.at(-1)[0], pathToFileURL(join(t.dl, name)).href, name);
+      assert.ok(!r.text.includes(t.dir), "no path in the answer");
+    }
+    // mp4, m4v, m4a: a tab only with the PairBrowse build on macOS.
+    for (const [platform, engine, tab] of [["darwin", "pairbrowse", true], ["darwin", "chromium", false], ["darwin", null, false], ["linux", "pairbrowse", false], ["win32", "pairbrowse", false]]) {
+      t.setPlatform(platform);
+      t.setEngine(engine);
+      for (const name of ["a.mp4", "a.m4v", "A.M4A"]) {
+        const id = t.download(name);
+        const tabs = t.tabs.length, spawned = t.spawned.length;
+        const r = await post(t, id);
+        assert.equal(r.status, 200, `${platform} ${engine} ${name}`);
+        if (tab) { assert.deepEqual(JSON.parse(r.text), { opened: "tab" }); assert.equal(t.spawned.length, spawned); }
+        else { assert.deepEqual(JSON.parse(r.text), { ok: true, opened: "app" }); assert.equal(t.tabs.length, tabs, `${platform} ${engine} ${name}: no tab`); assert.equal(t.spawned.length, spawned + 1); }
+      }
+    }
+    t.setPlatform("darwin");
+    t.setEngine("pairbrowse");
+    // mov and aac: always their app.
+    for (const name of ["a.mov", "a.aac"]) {
+      const id = t.download(name);
+      const tabs = t.tabs.length;
+      assert.deepEqual(JSON.parse((await post(t, id)).text), { ok: true, opened: "app" }, name);
+      assert.equal(t.tabs.length, tabs, name);
+      assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)]);
+    }
+    // The checks come before any tab: the mark (409), a replaced file (410), a download in progress (409).
+    const tabsNow = t.tabs.length;
+    const unmarked = t.download("u.pdf");
+    t.unmark(join(t.dl, "u.pdf"));
+    assert.equal((await post(t, unmarked)).status, 409, "no mark");
+    const replaced = t.download("r.pdf");
+    writeFileSync(join(t.dl, "r.pdf.new"), "data");
+    renameSync(join(t.dl, "r.pdf.new"), join(t.dl, "r.pdf"));
+    assert.equal((await post(t, replaced)).status, 410, "replaced");
+    const going = t.downloads.add({ name: "g.pdf", host: "shop.example" });
+    assert.equal((await post(t, going)).status, 409, "in progress");
+    assert.equal(t.tabs.length, tabsNow, "no tab before the checks pass");
+    // A tab that can't open: 409 with its sentence, nothing spawned instead.
+    t.failTabs();
+    const spawned = t.spawned.length;
+    const f = await post(t, t.download("f.pdf"));
+    assert.equal(f.status, 409);
+    assert.equal(JSON.parse(f.text).error, "The file couldn't be shown in a tab.");
+    assert.equal(t.spawned.length, spawned);
+    await wait(80);
+    const events = rawEvents(owner.text(), ["downloads"]);
+    assert.ok(events.length > 0 && !events.includes(t.dir) && !events.includes("file:"), "no path in the downloads events");
+  } finally { owner.close(); t.done(); }
+});
+
+test("open: csv and log as an escaped text preview in the person's tab", async () => {
+  const t = await setup();
+  try {
+    for (const name of ["a.csv", "b.log", "C.CSV"]) {
+      const p = t.file(name, "x,<script>alert(1)</script>,&amp;\n2,3");
+      const id = t.downloads.add({ name, host: "shop.example" });
+      t.downloads.done(id, p);
+      const r = await post(t, id);
+      assert.equal(r.status, 200, name);
+      assert.deepEqual(JSON.parse(r.text), { opened: "preview" });
+      const [url, onClose] = t.tabs.at(-1);
+      const out = fileURLToPath(url);
+      assert.equal(dirname(out), t.previewDir);
+      assert.match(out.slice(t.previewDir.length + 1), new RegExp(`^${id}-[0-9a-f]{8}\\.html$`), "the download's id and a random suffix: one file per tab");
+      const html = readFileSync(out, "utf8");
+      assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;") && !html.includes("<script"), "escaped");
+      assert.ok(html.includes("&amp;amp;"), "an entity in the file shows as written");
+      assert.match(html, /^<!doctype html><html><head><meta http-equiv="Content-Security-Policy"/);
+      assert.equal(statSync(out).mode & 0o777, 0o600);
+      assert.equal(statSync(t.previewDir).mode & 0o777, 0o700);
+      onClose();
+      assert.ok(!existsSync(out), "closing the tab removes it");
+    }
+    assert.equal(t.spawned.length, 0);
+    assert.equal(t.execs.length, 0, "no textutil for text");
+  } finally { t.done(); }
+});
+
+test("open: documents on macOS become a sanitized textutil preview; elsewhere their app", async () => {
+  const t = await setup();
+  try {
+    t.setDocHtml(`<html><head><meta http-equiv="refresh" content="0;url=https://evil.example"><base href="https://evil.example/"><link rel=stylesheet href="https://evil.example/x.css">
+<style>p.p1 {margin: 0; font: 12px Helvetica}</style></head><body onload="x()"><p class="p1" onclick="x()">Hi <a href="javascript:alert(1)">link</a></p>
+<script>alert(1)</script><iframe src="https://evil.example"></iframe><object data=x></object><form action="https://evil.example"><input name=q>Text</form><img src=x onerror=alert(1)><embed src=x></body></html>`);
+    for (const name of ["a.docx", "b.doc", "c.rtf", "d.odt", "E.DOCX"]) {
+      const id = t.download(name);
+      const execs = t.execs.length;
+      const r = await post(t, id);
+      assert.equal(r.status, 200, name);
+      assert.deepEqual(JSON.parse(r.text), { opened: "preview" }, name);
+      assert.equal(t.execs.length, execs + 1, "textutil once");
+      const { cmd, args, opts } = t.execs.at(-1);
+      assert.equal(cmd, "/usr/bin/textutil");
+      const raw = args[args.indexOf("-output") + 1];
+      assert.deepEqual(args, ["-convert", "html", "-format", name.split(".").pop().toLowerCase(), "-noload", "-nostore", "-strip", "-output", raw, "--", join(t.dl, name)]);
+      assert.equal(opts.shell, undefined, "no shell");
+      assert.equal(opts.timeout, 300);
+      assert.ok(raw.startsWith(t.previewDir) && raw.endsWith(".textutil.html"));
+      assert.ok(!existsSync(raw), "the temporary output is gone");
+      const out = fileURLToPath(t.tabs.at(-1)[0]);
+      assert.equal(dirname(out), t.previewDir);
+      assert.match(out.slice(t.previewDir.length + 1), new RegExp(`^${id}-[0-9a-f]{8}\\.html$`));
+      const html = readFileSync(out, "utf8");
+      assert.match(html, /^<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">/);
+      for (const bad of [/<script/i, /\son\w+=/i, /href/i, /javascript:/i, /<form/i, /<iframe/i, /<object/i, /<embed/i, /<base/i, /<link/i, /http-equiv="refresh"/i]) assert.doesNotMatch(html, bad, `${name}: ${bad}`);
+      assert.ok(html.includes(`<strong>${name}</strong>`) && html.includes("Read-only preview. To edit, use Open in Word in PairBrowse's Downloads."));
+      assert.ok(html.includes("<a>link</a>") && html.includes("Text"), "text kept");
+      assert.ok(!html.includes(t.key) && !html.includes(t.view.pagesKey), "no key in the file");
+      assert.equal(statSync(out).mode & 0o777, 0o600);
+      assert.equal(statSync(t.previewDir).mode & 0o777, 0o700);
+      t.tabs.at(-1)[1]();
+      assert.ok(!existsSync(out), "closing the tab removes it");
+    }
+    // textutil wrote nothing, or never answered: 409 with the sentence, no tab, nothing left.
+    for (const html of [null, "hang"]) {
+      t.setDocHtml(html);
+      const id = t.download(`z${html}.docx`);
+      const tabs = t.tabs.length;
+      const r = await post(t, id);
+      assert.equal(r.status, 409, String(html));
+      assert.equal(JSON.parse(r.text).error, "PairBrowse couldn't make a preview of this document. Use Open in Word to open it in its app.");
+      assert.equal(t.tabs.length, tabs, "no tab");
+      assert.deepEqual(readdirSync(t.previewDir), [], "nothing left in previews/");
+    }
+    // A tab that can't open: the preview goes too.
+    t.setDocHtml("<p>x</p>");
+    t.failTabs();
+    assert.equal((await post(t, t.download("y.docx"))).status, 409);
+    assert.deepEqual(readdirSync(t.previewDir), []);
+    t.failTabs(false);
+    // Linux and Windows: their app, no textutil.
+    for (const platform of ["linux", "win32"]) {
+      t.setPlatform(platform);
+      const execs = t.execs.length;
+      const id = t.download(`w-${platform}.docx`);
+      assert.deepEqual(JSON.parse((await post(t, id)).text), { ok: true, opened: "app" }, platform);
+      assert.equal(t.execs.length, execs);
+    }
+    // clear(): the folder stays, emptied.
+    writeFileSync(join(t.previewDir, "left.html"), "x");
+    t.previews.clear();
+    assert.ok(existsSync(t.previewDir));
+    assert.deepEqual(readdirSync(t.previewDir), []);
+  } finally { t.done(); }
+});
+
+test("open-app: documents only, with their app, after the same checks", async () => {
+  const t = await setup();
+  try {
+    const id = t.download("plan.docx");
+    const r = await post(t, id, "open-app");
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text), { ok: true, opened: "app" });
+    assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, "plan.docx")]);
+    for (const name of ["a.doc", "a.rtf", "a.odt", "A.DOCX"]) assert.equal((await post(t, t.download(name), "open-app")).status, 200, name);
+    const spawned = t.spawned.length;
+    const pdf = await post(t, t.download("a.pdf"), "open-app");
+    assert.equal(pdf.status, 409);
+    assert.equal(JSON.parse(pdf.text).error, "Open in Word is for documents (.doc, .docx, .rtf, .odt). Use Open.");
+    const unmarked = t.download("u.docx");
+    t.unmark(join(t.dl, "u.docx"));
+    assert.equal((await post(t, unmarked, "open-app")).status, 409, "no mark");
+    const replaced = t.download("r.docx");
+    writeFileSync(join(t.dl, "r.docx.new"), "data");
+    renameSync(join(t.dl, "r.docx.new"), join(t.dl, "r.docx"));
+    assert.equal((await post(t, replaced, "open-app")).status, 410, "replaced");
+    assert.equal((await post(t, "0123456789ab", "open-app")).status, 404, "unknown id");
+    const rid = t.recordings.add({ path: t.file("rec.docx", "d"), at: 1, ms: 1, size: 1 }).id;
+    assert.equal((await request(t.view.port, "POST", `/${t.key}/recordings/${rid}/open-app`, { body: {} })).status, 404, "recordings have no open-app");
+    assert.equal(t.spawned.length, spawned);
+    assert.equal(t.tabs.length, 0);
+  } finally { t.done(); }
+});
+
+test("confirm wording by kind; openWay's choices", async () => {
+  const { confirmFor, openWay, PROGRAMS, WEB_FILES } = await import("../scripts/daemon/tools.mjs");
+  for (const x of ["html", "htm", "xhtml", "svg", "svgz", "shtml", "mht", "mhtml", "webarchive", "url", "webloc", "inetloc"]) {
+    assert.equal(confirmFor(`a.${x}`), "This is a web page saved to your computer. It opens in your web browser and can run its own scripts. Open it anyway?", x);
+    assert.ok(PROGRAMS.has(x) && WEB_FILES.has(x));
+  }
+  for (const x of ["sh", "pkg", "app", "command", "exe", "ps1"]) assert.equal(confirmFor(`a.${x}`), "This is a program or script. Open it anyway?", x);
+  for (const x of ["pdf", "docx", "zip", "csv"]) assert.equal(confirmFor(`a.${x}`), null, x);
+  const all = { tab: true, preview: true, platform: "darwin", engine: "pairbrowse", size: 10 };
+  assert.equal(openWay("a.pdf", all), "tab");
+  assert.equal(openWay("a.pdf", { ...all, tab: false }), "app");
+  assert.equal(openWay("a.csv", { ...all, size: 10 * 1024 * 1024 + 1 }), "app", "too big for a text preview");
+  assert.equal(openWay("a.docx", { ...all, size: 50 * 1024 * 1024 + 1 }), "app", "too big for a document preview");
+  assert.equal(openWay("a.docx", { ...all, preview: false }), "app");
+  assert.equal(openWay("a.docx", all), "document");
+  assert.equal(openWay("a.log", all), "text");
+  assert.equal(openWay("a.html", all), "app");
+});
+
+test("the person's tab: the owner's lists mark it personal; guests never list, pick, close or type into it", async () => {
+  const t = await setup();
+  const person = Object.assign(fakePage("file:///Users/x/Downloads/note.txt", "note.txt PB-PERSON-ONLY"), { async close() { this.closed = true; } });
+  t.pages.push(person);
+  t.personTabs.add(person);
+  const w = t.invites.create({ role: "watch", label: "W" });
+  const d = t.invites.create({ role: "drive", label: "D" });
+  const guest = await readStream(t.view.port, `/${w.key}/events`);
+  try {
+    const owner = JSON.parse((await request(t.view.port, "GET", `/${t.key}/state.json`)).text).tabs;
+    assert.deepEqual(owner.map((x) => !!x.personal), [false, false, true]);
+    assert.ok(!("personal" in owner[0]), "only set when true");
+    const strip = JSON.parse((await request(t.view.port, "GET", `/${t.key}/tabs.json`)).text);
+    assert.equal(strip.find((x) => x.i === 2)?.personal, true);
+    for (const k of [w.key, d.key]) {
+      const tabs = JSON.parse((await request(t.view.port, "GET", `/${k}/state.json`)).text).tabs;
+      assert.deepEqual(tabs.map((x) => x.i), [0, 1], "a guest's list leaves it out");
+    }
+    await wait(80);
+    const streamed = eventsIn(guest.text(), "tabs");
+    assert.ok(streamed.length && streamed.every((list) => list.every((x) => x.i !== 2)), "the invite stream's tabs leave it out");
+    assert.ok(!guest.text().includes("PB-PERSON-ONLY") && !guest.text().includes("file:"));
+    // A drive guest picking or closing it: nothing happens.
+    for (const ev of [{ i: 2 }, { close: 2 }]) assert.equal((await request(t.view.port, "POST", `/${d.key}/tab`, { body: ev })).status, 204, JSON.stringify(ev));
+    await wait(50);
+    assert.equal(person.closed, false, "not closed");
+    assert.equal(person.fronted, 0, "not brought forward");
+    const after = JSON.parse((await request(t.view.port, "GET", `/${t.key}/state.json`)).text).tabs;
+    assert.equal(after.find((x) => x.i === 2).shown, false, "not shown");
+  } finally { guest.close(); t.done(); }
+});
+
+test("a document preview's tab tells the owner which download it shows (preview), never guests; a text preview's doesn't", async () => {
+  const t = await setup();
+  const opened = [];
+  const real = t.tools.openTab;
+  t.tools.openTab = async (url, onClose) => {
+    await real(url, onClose);
+    const page = Object.assign(fakePage(url, "preview"), { async close() { this.closed = true; } });
+    t.pages.push(page);
+    t.personTabs.add(page);
+    opened.push(page);
+    return { ok: true, page };
+  };
+  const w = t.invites.create({ role: "watch", label: "W" });
+  try {
+    const doc = t.download("plan.docx");
+    assert.deepEqual(JSON.parse((await post(t, doc)).text), { opened: "preview" });
+    const p = t.file("a.csv", "a,b");
+    const csv = t.downloads.add({ name: "a.csv", host: "shop.example" });
+    t.downloads.done(csv, p);
+    assert.deepEqual(JSON.parse((await post(t, csv)).text), { opened: "preview" });
+    const strip = JSON.parse((await request(t.view.port, "GET", `/${t.key}/tabs.json`)).text);
+    assert.deepEqual(strip.find((x) => x.i === 2)?.preview, { id: doc, kind: "document" }, "the document's tab");
+    assert.equal(strip.find((x) => x.i === 3)?.personal, true);
+    assert.ok(!("preview" in strip.find((x) => x.i === 3)), "a text preview has no Open in Word");
+    const owner = JSON.parse((await request(t.view.port, "GET", `/${t.key}/state.json`)).text).tabs;
+    assert.deepEqual(owner.find((x) => x.i === 2)?.preview, { id: doc, kind: "document" });
+    const guest = (await request(t.view.port, "GET", `/${w.key}/state.json`)).text;
+    assert.ok(!guest.includes(doc) && !guest.includes("preview\""), "guests never get it");
+  } finally { for (const p of opened) p.closed = true; t.done(); }
 });

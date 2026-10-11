@@ -85,7 +85,7 @@ test("every literal color in the styled files is a sheet value, a participant co
   const allowed = new Set(["#ffffff", "#000000", ...SPARK_COLORS.map(norm)]);
   for (const t of [dark, light]) for (const v of Object.values(t)) { const n = norm(v); if (n) allowed.add(n); }
   assert.equal(norm(dark.spark), norm(SPARK_COLORS[0]), "--spark is Claude's own spark color");
-  const files = [PANEL + "panel.css", PANEL + "picker.css", PANEL + "newtab.css", PANEL + "screen.css", "scripts/liveview.css", "scripts/hud.js", PANEL + "record.js", "scripts/tabs.mjs"];
+  const files = [PANEL + "panel.css", PANEL + "picker.css", PANEL + "newtab.css", PANEL + "screen.css", "scripts/liveview.css", "scripts/hud.js", PANEL + "record.js", "scripts/tabs.mjs", "scripts/daemon/preview.mjs"];
   for (const f of files) {
     const text = read(f).replace(/%23([0-9a-fA-F]{3,8})\b/g, "#$1");
     const found = [...text.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|oklch\((?:[^()]|\([^()]*\))*\)/g)].map(([m]) => m);

@@ -26,7 +26,7 @@ import { buttonLabel, settle } from "./page.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 import { dragBetween, reason as dragReason } from "./drag.mjs";
-import { createRefNames, plainError, hideChromeTabs } from "./output.mjs";
+import { createRefNames, plainError, hideChromeTabs, hidePersonTabs, PERSON_TAB_RULE } from "./output.mjs";
 import { humanFill, humanType, fillSettings } from "../native-engine.mjs";
 
 const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
@@ -208,14 +208,36 @@ export function pathsIn(name, args = {}) {
   return [];
 }
 
+// Whether a tool call may go on in the tab it would act in. here: the tab the call acts in (or
+// null); pages: the open tabs, for browser_tabs select or close by index; personTab(page): a
+// person's own tab (a file they opened from Downloads; any file: tab counts). Returns the refusal's
+// text, or null. Pure. The browser's own pages (chrome://pairbrowse) and the person's tabs are
+// never a tab an agent acts in, selects or closes.
+const isFileTab = (page) => { try { return /^file:/i.test(String(page?.url?.() ?? "")); } catch { return false; } };
+export function tabRefusal(name, args = {}, { here = null, pages = [], personTab = () => false } = {}) {
+  const person = (page) => !!page && (!!personTab(page) || isFileTab(page));
+  if ((name.startsWith("browser_") && name !== "browser_tabs" && name !== "browser_close") || CHROME_GUARDED.has(name)) {
+    if (here && isChromePage(here.url())) return `${CHROME_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
+    if (person(here)) return `${PERSON_TAB_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
+  }
+  if (name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined) {
+    const page = pages[Number(args.index)];
+    if (page && isChromePage(page.url())) return `Tab ${args.index} is the browser's own page. ${CHROME_PAGE_RULE} Use browser_tabs list.`;
+    if (person(page)) return `Tab ${args.index} is the person's own tab (a downloaded file they opened). ${PERSON_TAB_RULE} Use browser_tabs list.`;
+  }
+  return null;
+}
+
 // deps: the helper's parts (see daemon.mjs). Returns serve(sock, { remote }): runs one participant
 // on a socket until it closes. remote ({ name, key, files, startPage }): a joiner's agent working
 // in this browser (shared browser mode): no OK it gives counts as the host's, no saved passwords,
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {}, clickApprovals = null, outlines = null, onRunStatus = () => {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {}, clickApprovals = null, outlines = null, onRunStatus = () => {}, personTabs = { has: () => false } }) {
   const secretNames = () => Object.keys(secrets.get().values);
+  // The person's own tabs (a file they opened from Downloads): no agent's tab, ever.
+  const personTab = (p) => !!p && (!!personTabs.has(p) || isFileTab(p));
   // What PairBrowse declares it is about to press (an agent's click, a fast-mode step, the popup
   // closer's dismiss button) counts as where an agent pointed: a press there is never a person's.
   hud.onPress?.((page, at) => presence.agentPointed(page, at));
@@ -461,13 +483,24 @@ export function createServe({ config, log, host, createConnection, clients, coll
         trace.mark("notes");
         if (text && msg.result) (msg.result.content ||= []).push({ type: "text", text });
       }
-      for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text))); if (tool === "browser_tabs") part.text = hideChromeTabs(part.text); if (remote) part.text = forJoiner(part.text); }
+      // The person's own tabs: their lines say only that (indices from the open tabs, read once).
+      let personIdx = null;
+      for (const part of content()) if (part.type === "text") {
+        output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text)));
+        if (tool === "browser_tabs") part.text = hideChromeTabs(part.text);
+        if (/^- \d+: |file:/m.test(part.text)) {
+          personIdx ??= await context.openPages().then((pages) => pages.flatMap((p, i) => (personTab(p) ? [i] : []))).catch(() => []);
+          part.text = hidePersonTabs(part.text, personIdx);
+        }
+        if (remote) part.text = forJoiner(part.text);
+      }
       // The cut's note names the whole snapshot's file on this computer: for a joiner, its name only.
       if (tool === "browser_snapshot" || inlined) for (const part of content()) if (part.type === "text") { part.text = output.capSnapshot(part.text); if (remote) part.text = forJoiner(part.text); }
       // A picture also with a failed action (a stopped run, a covered click): the message says to look at it.
       if (tool !== undefined && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
         const shotPage = ownPage || await context.pageAt(shotUrl || context.currentUrl());
-        const shot = await screenshots.take(shotPage, participant);
+        // Never a picture of the person's own tab.
+        const shot = personTab(shotPage) ? null : await screenshots.take(shotPage, participant);
         if (shot?.data) { msg.result.content.push(image(shot.data)); rememberPicture(shot, shotPage, tool, args); }
         else if (shot?.same) msg.result.content.push({ type: "text", text: SAME_PICTURE });
         else if (shot?.skipped) msg.result.content.push({ type: "text", text: `\n### PairBrowse\n- ${shot.skipped}` });
@@ -577,8 +610,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // of a shared session.
     const takenByOther = (page) => othersTab(page) || !!remoteHolder(page);
     async function freeTab() {
-      for (const page of [...used].reverse()) if (!page.isClosed() && !othersTab(page) && !isChromePage(page.url())) return page;
-      return (await openTabs()).find((page) => !page.isClosed() && !othersTab(page) && !isChromePage(page.url())) || null;
+      for (const page of [...used].reverse()) if (!page.isClosed() && !othersTab(page) && !isChromePage(page.url()) && !personTab(page)) return page;
+      return (await openTabs()).find((page) => !page.isClosed() && !othersTab(page) && !isChromePage(page.url()) && !personTab(page)) || null;
     }
     // Moves this participant's browser server to its own tab, by that tab's number right now.
     async function syncServer() {
@@ -1035,14 +1068,13 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const d = here && popups.waitingDialog(here);
         if (d) return reply(msg.id, `The page is waiting on its ${d.type} dialog ("${String(d.message).slice(0, 120)}"): answer it with browser_handle_dialog (accept, or dismiss) before anything else.`, true);
       }
-      // The browser's own pages (chrome://pairbrowse...) are never a tab an agent acts in.
-      if ((name.startsWith("browser_") && name !== "browser_tabs" && name !== "browser_close") || CHROME_GUARDED.has(name)) {
-        const here = actingIn || (mine && !mine.isClosed() ? mine : null);
-        if (here && isChromePage(here.url())) return reply(msg.id, `${CHROME_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`, true);
-      }
-      if (name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined) {
-        const page = (await openTabs())[Number(args.index)];
-        if (page && isChromePage(page.url())) return reply(msg.id, `Tab ${args.index} is the browser's own page. ${CHROME_PAGE_RULE} Use browser_tabs list.`, true);
+      // The browser's own pages (chrome://pairbrowse...) and the person's own tabs are never a
+      // tab an agent acts in, selects or closes (tabRefusal).
+      {
+        const here = actingIn || (mine && !mine.isClosed() ? mine : null) || (serverAt && !serverAt.isClosed() ? serverAt : null);
+        const byIndex = name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined;
+        const tabNo = tabRefusal(name, args, { here, pages: byIndex ? await openTabs() : [], personTab });
+        if (tabNo) return reply(msg.id, tabNo, true);
       }
       // Another agent's tab is theirs to close.
       if (name === "browser_tabs" && args.action === "close") {
@@ -1197,7 +1229,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // The tab this participant acts in: its own (see mine). Closed by someone else: the one it
     // used before or a free one. None yet: the tab its browser server starts on.
     async function myTab() {
-      if (mine && !mine.isClosed()) return mine;
+      if (mine && !mine.isClosed() && !personTab(mine)) return mine;
       if (lostTab) return null;
       if (mine) {
         const next = await freeTab();
@@ -1213,8 +1245,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // one, a tab no other agent is in, else one no agent holds now; never its browser server's
       // tab by chance. None: it asks again on its next call.
       if (remote) {
-        const start = remote.startPage && !remote.startPage.isClosed() ? remote.startPage : null;
-        const unheld = (page) => !page.isClosed() && !isChromePage(page.url()) && !(tabClaims.holder(page) && tabClaims.holder(page).id !== participant);
+        const start = remote.startPage && !remote.startPage.isClosed() && !personTab(remote.startPage) ? remote.startPage : null;
+        const unheld = (page) => !page.isClosed() && !isChromePage(page.url()) && !personTab(page) && !(tabClaims.holder(page) && tabClaims.holder(page).id !== participant);
         const page = start || await freeTab() || (await openTabs()).findLast(unheld);
         if (page) { remote.startPage = null; remote.started = true; setMine(page); }
         else noTabWhy = "every tab here is in use by another agent";
@@ -1224,7 +1256,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // in it; else its browser server's tab when free, else any free tab. Every tab taken: its
       // browser server's, where it hears "in use".
       const looked = await within(FRONT_WAIT_MS, front().catch(() => null));
-      const start = [looked, serverAt].find((p) => p && !p.isClosed() && !takenByOther(p) && !isChromePage(p.url())) || (await openTabs()).find((p) => !p.isClosed() && !takenByOther(p) && !isChromePage(p.url())) || serverAt;
+      const start = [looked, serverAt].find((p) => p && !p.isClosed() && !takenByOther(p) && !isChromePage(p.url()) && !personTab(p))
+        || (await openTabs()).find((p) => !p.isClosed() && !takenByOther(p) && !isChromePage(p.url()) && !personTab(p)) || (serverAt && !personTab(serverAt) ? serverAt : null);
       if (start) setMine(start);
       return mine;
     }
@@ -1332,6 +1365,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           const n = msg.params.arguments?.tab;
           const page = Number.isInteger(n) ? (await openTabs())[n] : null;
           if (!page || page.isClosed()) return reply(msg.id, `There's no tab ${n}. List them with browser_tabs.`, true);
+          if (personTab(page)) return reply(msg.id, `Tab ${n} is the person's own tab (a downloaded file they opened). ${PERSON_TAB_RULE} Use browser_tabs list.`, true);
           // Follow mode: that agent acts in its own copy of the tab on its computer, so there are no turns to share.
           if (remoteHolder(page)) return reply(msg.id, "An agent on another computer works in its own copy of that tab (follow mode): it can't be shared. In a shared browser session it can.", true);
           const s = tabClaims.share(page, participant, myLabel());

@@ -125,6 +125,26 @@ export function hideChromeTabs(text) {
   }).join("\n");
 }
 
+// The person's own tabs (a file they opened from Downloads; daemon/tools.mjs createPersonTabs):
+// no agent reads their address, title or content. hidePersonTabs(text, indices): a result's text
+// with each such tab's line said as the person's tab (by its number in indices, or a file: link),
+// and a page block about one (its file: URL) without its address and title. Other lines unchanged.
+export const PERSON_TAB_RULE = "The person's own tabs (a file they opened from PairBrowse's Downloads) are theirs alone: no agent reads or acts in them.";
+export const PERSON_TAB_LINE = "the person's tab (a downloaded file)";
+export function hidePersonTabs(text, indices = []) {
+  const set = new Set([...(indices || [])].map(Number));
+  const out = [];
+  let dropTitle = false;
+  for (const line of String(text).split("\n")) {
+    if (dropTitle) { dropTitle = false; if (/^- Page Title:/.test(line)) continue; }
+    const m = /^- (\d+):( \(current\))? \[/.exec(line);
+    if (m && (set.has(Number(m[1])) || line.includes("](file:"))) { out.push(`- ${m[1]}: ${PERSON_TAB_LINE}`); continue; }
+    if (/^- Page URL: file:/i.test(line)) { out.push(`- Page URL: (${PERSON_TAB_LINE})`); dropTitle = true; continue; }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 export function plainError(tool, text) {
   const t = String(text ?? "").replace(/\x1b\[[0-9;]*m/g, "");
   const first = t.replace(/^### Error\s*/i, "").split("\n")[0].replace(/^(Error: )+/, "");

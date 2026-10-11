@@ -24,7 +24,8 @@
 //   approvals.mjs a named final click asked in the browser as well (the card, the hook's line)
 //   timeline.mjs  the pictures already sent to agents, kept per session
 //   outline.mjs   the last whole-page snapshot an agent got per tab, in memory (the Page tab)
-//   tools.mjs     the Tools tab: downloads, recordings, hand-offs, the OS opener (files by id)
+//   tools.mjs     the Tools tab: downloads, recordings, hand-offs, the OS opener (files by id), the person's own tabs
+//   preview.mjs   read-only previews of downloads (text; Word-type documents on macOS) for the person's tab
 //   diagnostics.mjs  the Tools tab's diagnostics and its scrubbed report (nothing is sent)
 import net from "node:net";
 import { createRequire } from "node:module";
@@ -71,7 +72,8 @@ import { shareFields, shareableUrl, crossingText, onSecretDomain, personColor } 
 import { createSession, readEntries, readMessage } from "./daemon/session.mjs";
 import { createJoinPrompt } from "./daemon/joinprompt.mjs";
 import { createClickApprovals, routeConnection } from "./daemon/approvals.mjs";
-import { createDownloads, createRecordings, createHandoffs, openFile } from "./daemon/tools.mjs";
+import { createDownloads, createRecordings, createHandoffs, openFile, createPersonTabs } from "./daemon/tools.mjs";
+import { createPreviews } from "./daemon/preview.mjs";
 import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mjs";
 import { engineDir } from "./native-pack.mjs";
 
@@ -137,6 +139,12 @@ const hostOfUrl = (url) => { try { return new URL(url).host; } catch { return ""
 const downloads = createDownloads({ session: () => context.sessionName() });
 const recordings = createRecordings();
 const handoffs = createHandoffs();
+// A file the person opens from Downloads shows in a tab that is theirs alone (context.mjs
+// openForPerson; serve.mjs and the live view keep agents and guests out of it). Previews left by
+// an earlier run go now.
+const personTabs = createPersonTabs();
+const previews = createPreviews();
+previews.clear();
 const HELPER_VERSION = readJson(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"))?.version || "";
 const diagnostics = createDiagnostics({
   version: HELPER_VERSION, mask: (t) => output.mask(t), agents: () => clients.size,
@@ -232,6 +240,7 @@ const popups = createPopups({
   onCleared: () => { if (hud.badge().text === CHALLENGE_TURN) hud.setBadge("", "clear").catch(() => {}); handoffs.clear("check"); },
 });
 const context = createContext({
+  personTabs,
   config, log, chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   // A person renamed the session: the timeline's last writes land first, then the goal log follows.
   beforeRename: () => timeline.settled(), onRenamed: (from, to) => journal.renamed(from, to),
@@ -262,6 +271,7 @@ const context = createContext({
     // The host closed the window: sharing ends with it (codes, yeses, tunnels). A restart of the
     // helper closes it too, but keeps them.
     if (!shuttingDown) sharing.endAll();
+    previews.clear(); // their tabs went with the browser
     recorder.browserClosed();
     sharing.closeLiveView();
     // The agents' connections end a moment later: each session's browser server was bound to the
@@ -272,7 +282,7 @@ const context = createContext({
   },
 });
 // the grace-timeout exit too: the browser's key file never outlives the helper
-process.on("exit", () => context.dropHelperKey());
+process.on("exit", () => { context.dropHelperKey(); previews.clear(); });
 const output = createOutput({ dir: paths.files, secretValues: () => secrets.get().values });
 const screenshots = createScreenshots({ secrets: () => secrets.get(), log, hidePeers: (page, hidden) => hud.call(page, hidden ? "1" : "", "peers-hidden").catch(() => {}) });
 const facts = createFacts({ secrets, log, onChange: () => liveView()?.setProfile(facts.summary()) });
@@ -473,7 +483,11 @@ const sharing = createSharing({
     // A join code's address the person hasn't allowed: their answer from the side panel or picker.
     joinHost: { state: () => follow.hostState(), act: (op) => hostDecision(op) },
     // The Tools tab (owner only): files by id; Open and Reveal through the OS opener, on a click.
-    tools: { downloads, recordings, handoffs, diagnostics, open: (p, how) => openFile(p, how) },
+    // A download opens in the person's own tab where the browser renders it, as a preview there,
+    // or with its app (liveview.mjs fileAction).
+    tools: { downloads, recordings, handoffs, diagnostics, open: (p, how) => openFile(p, how),
+      personTab: (p) => personTabs.has(p), engine: () => context.browserInUse(), platform: process.platform,
+      openTab: (url, onClose) => context.openForPerson(url, { onClose }), preview: (e, kind) => previews.make(e, kind) },
   },
 });
 // Sessions joined from here: their tabs, followed in this browser.
@@ -580,7 +594,7 @@ const serve = createServe({
   // A fast-mode run's hand-off step (runner "handoff"): a hand-off for that tab until the step ends.
   onRunStatus: (p, text, kind, page, label) => { if (kind === "you") handoffs.set(`run:${p}`, { text, page: page || null, by: { label: label || "Agent", color: hud.sparkColor(p) } }); else handoffs.clear(`run:${p}`); },
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals, outlines,
+  secrets, facts, sharing, follow, pause, remoteHolder, personTabs, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals, outlines,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {

@@ -1044,3 +1044,94 @@ test("the pause route: the owner pauses and resumes one agent by name, a drive g
     }
   } finally { owner.close(); driver.close(); watcher.close(); view.close(); }
 });
+
+// ---- a person's own tab (a file opened from Downloads): its picture never reaches guests ----
+test("a person's tab's picture never reaches guests: not in flight after a switch, not kept after it closes", async () => {
+  const { ctx, pages, sessions } = fakeTabs(3);
+  const person = new Set([pages[1], pages[2]]);
+  const invites = createInvites();
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => pages[0].url(), invites, tools: { personTab: (p) => person.has(p) } });
+  const key = view.url.split("/").at(-2);
+  const w = invites.create({ role: "watch", label: "W" });
+  const tab = (i) => request(view.port, "POST", `/${key}/tab`, { body: { i } });
+  const sessionOf = (page) => sessions.filter((s) => s.page === page).at(-1);
+  const frame = (cdp, img) => cdp.emit("Page.screencastFrame", { data: img, metadata: { deviceWidth: 800, deviceHeight: 600 }, sessionId: 1 });
+  const frames = (s) => eventsIn(s.text(), "frame").map((f) => f.img);
+  const owner = await readStream(view.port, `/${key}/events`);
+  const guest = await readStream(view.port, `/${w.key}/events`);
+  const streams = [owner, guest];
+  try {
+    for (let i = 0; i < 100 && !sessionOf(pages[0]); i++) await wait(20);
+    // The owner shows a person's tab: the owner sees it, the guest doesn't.
+    await tab(1);
+    const personCdp = sessionOf(pages[1]);
+    frame(personCdp, "PERSON-1");
+    await wait(50);
+    assert.ok(frames(owner).includes("PERSON-1"), "the owner sees their own tab");
+    assert.deepEqual(frames(guest), [], "never to the guest");
+    // Switched to a web tab: a frame still in flight from the person's tab is dropped for everyone.
+    await tab(0);
+    frame(personCdp, "PERSON-LATE");
+    await wait(50);
+    assert.ok(!owner.text().includes("PERSON-LATE") && !guest.text().includes("PERSON-LATE"), "a released session's frame is dropped");
+    // A guest connecting now (the web tab hasn't drawn yet): no frame of the person's tab.
+    const early = await readStream(view.port, `/${w.key}/events`);
+    streams.push(early);
+    await wait(50);
+    assert.deepEqual(frames(early), [], "the last picture went with the switch");
+    // The other person's tab, shown, then closed while on screen: its picture goes with it.
+    await tab(2);
+    frame(sessionOf(pages[2]), "PERSON-2");
+    await wait(50);
+    const closing = pages[2];
+    pages.splice(2, 1);
+    closing.emit("close");
+    person.delete(closing); // the helper forgets it as it closes (its set is a WeakSet)
+    const late = await readStream(view.port, `/${w.key}/events`);
+    streams.push(late);
+    await wait(80);
+    assert.deepEqual(frames(late), [], "a guest connecting right after the close gets no frame until the web tab draws");
+    for (let i = 0; i < 100 && (!sessionOf(pages[0]) || sessionOf(pages[0]).detached); i++) await wait(20); // the follow back to the web tab
+    frame(sessionOf(pages[0]), "WEB-1");
+    await wait(50);
+    for (const s of [guest, early, late]) {
+      assert.ok(!/PERSON/.test(s.text()), "no person's frame, ever");
+      assert.equal(frames(s)[0], "WEB-1", "the web tab's first frame is the first a guest gets");
+    }
+  } finally {
+    for (const s of streams) s.close();
+    view.close();
+  }
+});
+
+test("a person's tab never crosses to joiners, even at a web address; screen requests for it are refused", async () => {
+  const { ctx, pages } = fakeTabs(2);
+  pages[0].url = () => "https://shop.example/";
+  pages[1].url = () => "https://docs.example/from-a-pdf-link"; // the person's tab, gone on to a web page
+  pages.forEach((p) => { p.isClosed = () => false; });
+  const person = new Set([pages[1]]);
+  const invites = createInvites();
+  const requests = [];
+  const screens = { offer: async () => ({ sdp: "x" }), frames: async () => {}, input: async () => {}, stop: async () => {}, answer: async () => true };
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => pages[0].url(), invites, screens, onJoinRequest: (e) => requests.push(e), tools: { personTab: (p) => person.has(p) } });
+  const code = invites.create({ role: "drive", label: "D", share: "code", mode: "shared" });
+  const headers = { "x-pairbrowse-joiner": "a".repeat(32), "x-pairbrowse-name": "Dee", "x-pairbrowse-app": "Claude Code" };
+  try {
+    assert.equal((await request(view.guestPort, "GET", `/${code.key}/tabs`, { headers })).status, 403, "waiting for the host");
+    view.approvals.approve(requests[0].id);
+    const r = await request(view.guestPort, "GET", `/${code.key}/tabs`, { headers });
+    assert.equal(r.status, 200, r.text);
+    const tabs = JSON.parse(r.text).tabs;
+    assert.ok(tabs.some((t) => /shop\.example/.test(t.url)), "the web tab crosses");
+    assert.ok(!r.text.includes("docs.example"), "the person's tab doesn't");
+    // Its id, as an owner's strip would know it: screening into it is refused.
+    const strip = JSON.parse((await request(view.port, "GET", `/${view.url.split("/").at(-2)}/tabs.json`)).text);
+    const id = strip.find((t) => t.personal)?.id;
+    assert.ok(id, "the owner's strip lists it, personal");
+    for (const op of ["want", "frames", "input"]) {
+      const s = await request(view.guestPort, "POST", `/${code.key}/screen`, { headers, body: { op, id, on: true, events: [] } });
+      assert.equal(s.status, 400, op);
+      assert.equal(JSON.parse(s.text).error, "That tab isn't shared.", op);
+    }
+  } finally { view.close(); }
+});

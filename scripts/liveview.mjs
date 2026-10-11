@@ -13,6 +13,7 @@
 // reaches: shared tabs for joiners, never frames) and tabs.
 import { ownTitle } from "./daemon/tablabels.mjs";
 import { resolve, sep, basename } from "node:path";
+import { pathToFileURL } from "node:url";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { keepFocus } from "./focus.mjs";
@@ -27,7 +28,7 @@ import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/
 import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
 import { isChromePage, CHROME_PAGE_ORIGINS } from "./policy.mjs";
 import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
-import { fileStill, openable, isProgram, downloadMarked } from "./daemon/tools.mjs";
+import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } from "./daemon/tools.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";
 import { within } from "./util.mjs";
 
@@ -116,8 +117,11 @@ async function release(cdp) {
 // own Settings page's three fields ({ read(), write(given) }, liveview/settings.mjs), or null.
 // sessionOps: the session card ({ state() -> { canRename, canSave, savedAt }, rename(name),
 // save() }), or null. outlines: the Page tab's outlines (daemon/outline.mjs), or null.
-// tools: the Tools tab ({ downloads, recordings, handoffs, diagnostics, open(path, how), marked(path)? },
-// daemon/tools.mjs and daemon/diagnostics.mjs), or null: files by id only, opened by the helper.
+// tools: the Tools tab ({ downloads, recordings, handoffs, diagnostics, open(path, how), marked(path)?,
+// openTab(url, onClose)?, preview(entry, kind)?, personTab(page)?, engine()?, platform? },
+// daemon/tools.mjs, daemon/preview.mjs and daemon/diagnostics.mjs), or null: files by id only,
+// opened by the helper. personTab(page): a person's own tab (a file they opened from Downloads):
+// the owner sees it (personal: true); guests never list, pick, close or type into it.
 // onPagesKey(): called on every request authenticated with the browser's own pages' key under a
 // loopback host; the receiver makes it idempotent (the helper deletes the key file).
 export async function startLiveView({ tools = null, onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
@@ -137,6 +141,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
   const joiners = new Map(); // `${inviteId}:${joinerId}` -> { invite, joinerId, name, app, seen, inflight, ops }
   let shown = null; // the tab on screen: { page, cdp }
   let lastFrame = null;
+  let lastFrameFrom = null; // the tab lastFrame came from (guests never get a person's tab's)
   let devState = null; // dev servers, for the owner's side panel
   let status = { text: "", kind: "clear" };
   let sessionInfo = { name: "", where: "" };
@@ -165,6 +170,15 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
   const tabIds = new WeakMap();
   const idOf = (page) => { let id = tabIds.get(page); if (!id) tabIds.set(page, (id = randomBytes(4).toString("hex"))); return id; };
 
+  const personTab = (p) => { try { return !!tools?.personTab?.(p); } catch { return false; } };
+  // A person's tab showing a document preview -> its download's id (the owner's lists carry it, so
+  // the shell can offer Open in Word beside that tab).
+  const previewOf = new WeakMap();
+  const personal = (p) => {
+    if (!personTab(p)) return {};
+    const id = previewOf.get(p);
+    return id ? { personal: true, preview: { id, kind: "document" } } : { personal: true };
+  };
   // Each tab with its number, without the browser's own pages (chrome://pairbrowse...).
   const webPages = (pages) => pages.map((p, i) => [p, i]).filter(([p]) => !isChromePage(p.url()));
   // Every tab, with who is in it (the agent holding it, with its spark color; a person using it
@@ -176,9 +190,11 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       let meta = {};
       try { meta = tabMeta(p) || {}; } catch {}
       return { i, title: (await ownTitle(p)) || p.url(), url: p.url(), icon: await iconFor(p), shown: p === shown?.page, claude: p === followedPage,
-        agent: meta.agent || null, person: meta.person || null, waiting: !!meta.waiting, last: meta.last || null };
+        agent: meta.agent || null, person: meta.person || null, waiting: !!meta.waiting, last: meta.last || null, ...personal(p) };
     }));
   };
+  // Guests' tab list: never a person's own tab.
+  const guestList = (tabs) => guestTabs(tabs.filter((t) => !t.personal));
 
   // The tab strip's list (the browser's strip page, the owner only): each tab with its id, the
   // title masked as the goal log masks it, whether it loads, and who is in it.
@@ -193,7 +209,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       const meta = metaOf(p);
       const url = p.url();
       return { id: idOf(p), i, title: mask((await ownTitle(p)) || url), host: hostOf(url), url: mask(url), icon: await iconFor(p), active: p === active, loading: loading.has(p),
-        agent: agentOf(meta), person: meta.person || null, waiting: !!meta.waiting };
+        agent: agentOf(meta), person: meta.person || null, waiting: !!meta.waiting, ...personal(p) };
     }));
   };
   // Who holds which tab, from the tabs' addresses and the helper's own records (no page asked).
@@ -221,8 +237,9 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       // otherwise collect every frame in memory: frames wait for it, and one far behind is cut.
       if (res.writableLength > STALLED_BYTES) { res.destroy(); continue; }
       if (event === "frame" && res.writableLength > FRAME_SKIP_BYTES) continue;
+      if (event === "frame" && linkGuests.has(res) && personTab(lastFrameFrom)) continue; // a person's own tab: never to guests
       // Link guests get addresses without query strings, like joiners.
-      if (linkGuests.has(res) && event === "tabs") res.write(sse(event, guestTabs(data)));
+      if (linkGuests.has(res) && event === "tabs") res.write(sse(event, guestList(data)));
       else if (linkGuests.has(res) && event === "activity") res.write(sse(event, guestActivity(data)));
       else if (linkGuests.has(res) && event === "session") res.write(sse(event, sessionInfo)); // never the owner's fields
       else if (linkGuests.has(res) && event === "pause") res.write(sse(event, guestPause(data))); // "Pause this agent" is the owner's
@@ -258,7 +275,8 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     readStrip(ctx.pages());
     const rank = new Map(strip.map((p, i) => [p, i]));
     const inStrip = ctx.pages().map((p, i) => [p, rank.has(p) ? rank.get(p) : strip.length + i]).sort((a, b) => a[1] - b[1]).map(([p]) => p);
-    const tabs = await Promise.all(inStrip.map(async (p) => {
+    // A person's own tab never crosses, wherever it has gone since.
+    const tabs = await Promise.all(inStrip.filter((p) => !personTab(p)).map(async (p) => {
       let meta = {};
       try { meta = tabMeta(p) || {}; } catch {}
       // A joiner's own agent isn't sent back to them; another joiner's is (their agents wait for it).
@@ -325,7 +343,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     const peerOk = (peer) => typeof peer === "string" && peer.startsWith(`${key}|`) && peer.length < 200;
     if (op === "want") {
       const page = await pageById(String(body?.id || ""));
-      if (!page || !crossesWhole(page)) return { problem: "That tab isn't shared." };
+      if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared." };
       const id = idOf(page);
       const peer = `${key}|${id}|${randomBytes(4).toString("hex")}`;
       const r = await screens.offer(page, peer, {
@@ -339,7 +357,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     // The slower route: pictures of the tab through the channel, and input back.
     if (op === "frames") {
       const page = await pageById(String(body?.id || ""));
-      if (!page || !crossesWhole(page)) return { problem: "That tab isn't shared." };
+      if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared." };
       const id = idOf(page);
       if (body.on) await screens.frames(page, key, (img) => push.broadcast("screen", { op: "frame", id, img }, { to: key }));
       else await screens.frames(page, key, null);
@@ -347,7 +365,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     }
     if (op === "input") {
       const page = await pageById(String(body?.id || ""));
-      if (!page || !crossesWhole(page)) return { problem: "That tab isn't shared." };
+      if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared." };
       if (j.invite.role !== "drive") return { problem: "This code is for watching only." };
       await screens.input(page, (Array.isArray(body.events) ? body.events : []).slice(0, 200), onScreenInput(page, j, idOf(page)), j.name, onScreenPick(page, j, idOf(page)));
       return { ok: true };
@@ -392,7 +410,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     if (j.invite.role !== "drive") return { problem: "This code is for watching only: your agent can't act in the host's browser." };
     const key = joinerKey(j);
     // The tab they look at: only one whose picture goes to joiners.
-    const start = typeof body?.tab === "string" ? (await getContext()).pages().find((p) => idOf(p) === body.tab && crossesWhole(p)) || null : null;
+    const start = typeof body?.tab === "string" ? (await getContext()).pages().find((p) => idOf(p) === body.tab && crossesWhole(p) && !personTab(p)) || null : null;
     const ok = remoteAgents.line({ name: j.name, app: j.app, key }, String(body?.a || ""), body?.line, (line) => toJoinerAgent(key, { a: String(body.a), line }), start);
     return ok ? { ok: true } : { problem: "Bad message." };
   }
@@ -504,15 +522,20 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
   // Switches in progress: while one runs no tab is shown for a moment, which isn't "nothing shown"
   // (follow() would otherwise pull the viewer back to Claude's tab mid-switch).
   let switching = 0;
+  let casting = null; // the CDP session whose frames are taken (set before its cast starts)
   const show = (page) => { switching++; return showQueue(() => showNow(page)).finally(() => { switching--; }); };
   async function showNow(page) {
     if (closed || shown?.page === page || isChromePage(page.url())) return;
     if (shown) {
       const old = shown.cdp;
+      // Switching away from a person's own tab: its last picture goes with it.
+      if (personTab(shown.page)) { lastFrame = null; lastFrameFrom = null; }
       shown = null;
+      casting = null;
       await release(old);
     }
     const cdp = await page.context().newCDPSession(page);
+    casting = cdp;
     try {
       let lastAt = 0;
       cdp.on("Page.screencastFrame", ({ data, metadata, sessionId }) => {
@@ -521,8 +544,11 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
         lastAt = Date.now() + wait;
         const ack = () => cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
         if (wait) setTimeout(ack, wait).unref(); else ack();
+        // A frame still in flight from a session already released (a switch away): dropped.
+        if (casting !== cdp) return;
         frameSeq++;
         lastFrame = { img: data, w: metadata.deviceWidth, h: metadata.deviceHeight };
+        lastFrameFrom = page;
         broadcast("frame", lastFrame);
         sharpenSoon(cdp);
       });
@@ -532,14 +558,15 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       await replayer.attach(cdp);
       await replayer.startCast(cdp);
     } catch (e) {
+      if (casting === cdp) casting = null;
       await release(cdp);
       throw e;
     }
-    if (closed) return release(cdp);
+    if (closed) { casting = null; return release(cdp); }
     shown = { page, cdp };
     if (!wired.has(page)) {
       wired.add(page);
-      page.once("close", () => { if (shown?.page === page) shown = null; if (watching()) follow(); });
+      page.once("close", () => { if (lastFrameFrom === page) { lastFrame = null; lastFrameFrom = null; } if (shown?.page === page) { shown = null; casting = null; } if (watching()) follow(); });
     }
     broadcast("tabs", await tabsInfo());
   }
@@ -555,7 +582,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       // The browser's own pages are never shown; followedPage stays the agents' page (a chrome
       // page is never listed, so no tab is marked as Claude's).
       const at = ctx.pages().find((p) => p.url() === url);
-      const page = (at && !isChromePage(at.url()) ? at : null) || shown?.page || ctx.pages().filter((p) => !isChromePage(p.url())).at(-1);
+      const page = (at && !isChromePage(at.url()) ? at : null) || shown?.page || ctx.pages().filter((p) => !isChromePage(p.url()) && !personTab(p)).at(-1);
       if (url) followedPage = at || page;
       if (page) await show(page);
     } catch (e) {
@@ -570,6 +597,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       if (watching() || !shown) return;
       const { cdp } = shown;
       shown = null;
+      casting = null;
       followed = undefined;
       replayer.resetFit();
       await release(cdp);
@@ -582,6 +610,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     if (route === "input") {
       const batch = (Array.isArray(ev) ? ev : [ev]).slice(0, INPUT_BATCH_MAX).filter((one) => role === "owner" || one?.type !== "viewport");
       return humanQueue(async () => {
+        if (role !== "owner" && personTab(shown?.page)) return; // a person's own tab: never a guest's input
         // Only moving the pointer (or the wheel) changes nothing an agent's refs point at.
         if (batch.some((one) => one?.type !== "viewport")) await onHumanInput(shown?.page || null, who, batch.some((one) => !["viewport", "wheel"].includes(one?.type) && !(one?.type === "mouse" && one.action === "mouseMoved")));
         const done = onReplay();
@@ -594,7 +623,8 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       if (ev.new) await show(await keepFocus(() => ctx.newPage()));
       else if (ev.close !== undefined) {
         const found = ctx.pages()[Number(ev.close)];
-        const page = found && !isChromePage(found.url()) ? found : null; // never the browser's own pages
+        // never the browser's own pages, and never a guest closing a person's own tab
+        const page = found && !isChromePage(found.url()) && !(role !== "owner" && personTab(found)) ? found : null;
         // The last tab is emptied instead of closed, so the browser window stays open.
         if (page && ctx.pages().length > 1) await page.close().catch(() => {});
         else if (page) await page.goto("about:blank").catch(() => {});
@@ -605,7 +635,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
         await shared.arrange(ev.order.slice(0, 100).map((id) => known.get(String(id))).filter((p) => p && !p.isClosed()));
       } else {
         const page = ctx.pages()[Number(ev.i)];
-        if (page && !isChromePage(page.url())) await show(page);
+        if (page && !isChromePage(page.url()) && !(role !== "owner" && personTab(page))) await show(page);
       }
     });
   }
@@ -622,7 +652,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     { method: "GET", path: "state.json", right: "state", handler: async ({ res, invite }) => {
       const tabs = withoutIcons(await tabsInfo());
       const recent = activity.slice(-STATE_ACTIVITY);
-      json(res, 200, { status, session: sessionInfo, collaboration: collaborationNow(), tabs: invite ? guestTabs(tabs) : tabs, activity: invite ? guestActivity(recent) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
+      json(res, 200, { status, session: sessionInfo, collaboration: collaborationNow(), tabs: invite ? guestList(tabs) : tabs, activity: invite ? guestActivity(recent) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
     } },
     // People asking to join with a code, for the owner to let in or not.
     { method: "GET", path: "joins.json", right: "approve", handler: ({ res }) => json(res, 200, approvals.pending()) },
@@ -924,7 +954,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     });
     if (viewer) await follow();
     const tabs = await tabsInfo();
-    res.write(sse("tabs", invite ? guestTabs(tabs) : tabs));
+    res.write(sse("tabs", invite ? guestList(tabs) : tabs));
     res.write(sse("status", status));
     res.write(sse("session", invite ? sessionInfo : ownerSession()));
     res.write(sse("collaboration", collaborationNow()));
@@ -939,25 +969,26 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     const paused = pauseState();
     if (paused) res.write(sse("pause", invite ? guestPause(paused) : paused));
     if (!invite && recordState()) res.write(sse("record", recordState()));
-    if (viewer && lastFrame) res.write(sse("frame", lastFrame));
+    if (viewer && lastFrame && !(invite && personTab(lastFrameFrom))) res.write(sse("frame", lastFrame));
   }
 
   // A still of the tab on screen. With viewers it comes from the shown tab's session; without,
   // from a session of its own, let go at once: a thumbnail polled by a pane never starts (or
   // leaves running) the screencast that only viewers need.
-  async function thumb({ req, res }) {
+  async function thumb({ req, res, invite }) {
     const q = Number(new URL(req.url, "http://x").searchParams.get("q")) || THUMB_QUALITY.default;
     const quality = Math.min(THUMB_QUALITY.max, Math.max(THUMB_QUALITY.min, q));
     // What's on screen, unscaled: a clip or scale makes Chromium re-lay out the page (it flickers).
     const still = (cdp) => cdp.send("Page.captureScreenshot", { format: "jpeg", quality, optimizeForSpeed: true, captureBeyondViewport: false });
     let data;
+    if (invite && personTab(shown?.page)) return plain(res, 404); // a person's own tab: never to guests
     if (shown) ({ data } = await still(shown.cdp));
     else {
       const ctx = await getContext();
       const url = await currentUrl();
       if (isChromePage(url)) return plain(res, 404); // never the browser's own pages
       const web = ctx.pages().filter((p) => !isChromePage(p.url()));
-      const page = web.find((p) => p.url() === url) || web.at(-1);
+      const page = web.find((p) => p.url() === url && !(invite && personTab(p))) || web.filter((p) => !personTab(p)).at(-1);
       if (!page) return plain(res, 404);
       const cdp = await page.context().newCDPSession(page);
       try { ({ data } = await still(cdp)); } finally { cdp.detach().catch(() => {}); }
@@ -998,10 +1029,14 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     const page = h.page && !h.page.isClosed() ? h.page : null;
     return { id: h.id, kind: h.kind, text: mask(h.text), tab: page ? { id: idOf(page), host: hostOf(page.url()), title: await tabTitle(page) } : null, by: h.by, at: h.at };
   };
-  // POST downloads|recordings/<id>/open|reveal: the stored file, checked, through the OS opener.
+  // POST downloads|recordings/<id>/open|reveal (and downloads/<id>/open-app): the stored file,
+  // checked. A download opens in a person's own tab where the browser renders it (daemon/tools.mjs
+  // openWay), as a read-only preview there (daemon/preview.mjs), or with the OS opener; open-app
+  // opens a document with its app. Recordings: the OS opener only.
   async function fileAction({ req, res, rest }, store, isDownload) {
     if (toolsOff(res)) return;
-    if (rest.length !== 2 || !TOOL_ID.test(rest[0]) || (rest[1] !== "open" && rest[1] !== "reveal")) return plain(res, 404);
+    const verbs = isDownload ? ["open", "reveal", "open-app"] : ["open", "reveal"];
+    if (rest.length !== 2 || !TOOL_ID.test(rest[0]) || !verbs.includes(rest[1])) return plain(res, 404);
     const body = await readBody(req, BODY_MAX.approve);
     if (body === null) return plain(res, 413);
     const e = store.entry(rest[0]);
@@ -1009,14 +1044,36 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     if (isDownload && e.state !== "done") return json(res, 409, { error: e.state === "failed" ? "That download failed; there is no file to show." : "That download hasn't finished yet." });
     if (!fileStill(e)) return json(res, 410, { error: FILE_CHANGED });
     if (rest[1] === "open" && !isDownload && !openable(e.path)) return json(res, 409, { error: "This kind of file isn't opened from here: it could run as a program. Use Reveal to show it in its folder." });
-    if (rest[1] === "open" && isDownload) {
-      // Any download opens with its default app, while macOS's download mark is still on it;
-      // a program or script only after the person confirms ({ confirm: true }, the only field read).
+    if (isDownload && rest[1] !== "reveal") {
+      // A download opens only while macOS's download mark is still on it.
       if (!(await (tools.marked || downloadMarked)(e.path))) return json(res, 409, { error: "This file lost the download mark macOS uses to protect you; show it in Finder instead." });
-      if (isProgram(e.path) && parsed(body)?.confirm !== true) return json(res, 428, { confirm: "This is a program or script. Open it anyway?" });
+      if (rest[1] === "open-app") {
+        if (!isDocument(e.path)) return json(res, 409, { error: "Open in Word is for documents (.doc, .docx, .rtf, .odt). Use Open." });
+        const r = await tools.open(e.path, "open");
+        return r?.ok ? json(res, 200, { ok: true, opened: "app" }) : json(res, 409, { error: "The file couldn't be shown: the system's opener didn't start." });
+      }
+      const way = openWay(e.path, { platform: tools.platform ?? process.platform, engine: tools.engine?.() ?? null, size: e.size,
+        tab: typeof tools.openTab === "function", preview: typeof tools.preview === "function" });
+      if (way === "tab") {
+        const r = await tools.openTab(pathToFileURL(e.path).href);
+        return r?.ok ? json(res, 200, { opened: "tab" }) : json(res, 409, { error: r?.error || "The file couldn't be shown in a tab." });
+      }
+      if (way === "text" || way === "document") {
+        const p = await tools.preview(e, way);
+        if (!p || p.error) return json(res, 409, { error: p?.error || "PairBrowse couldn't make a preview of this file." });
+        const r = await tools.openTab(pathToFileURL(p.path).href, p.drop);
+        if (!r?.ok) { try { p.drop(); } catch {} return json(res, 409, { error: r?.error || "The file couldn't be shown in a tab." }); }
+        if (way === "document" && r.page && typeof r.page === "object") previewOf.set(r.page, e.id);
+        return json(res, 200, { opened: "preview" });
+      }
+      // With its app: a program, script or web page only after the person confirms ({ confirm: true },
+      // the only field read).
+      const confirm = confirmFor(e.path);
+      if (confirm && parsed(body)?.confirm !== true) return json(res, 428, { confirm });
     }
+    // A download opened with its app says so ({ ok: true, opened: "app" }); Reveal and recordings: { ok: true }.
     const r = await tools.open(e.path, rest[1]);
-    return r?.ok ? json(res, 200, { ok: true }) : json(res, 409, { error: "The file couldn't be shown: the system's opener didn't start." });
+    return r?.ok ? json(res, 200, isDownload && rest[1] === "open" ? { ok: true, opened: "app" } : { ok: true }) : json(res, 409, { error: "The file couldn't be shown: the system's opener didn't start." });
   }
   // What diagnostics.json answers: the helper's parts plus who is connected here.
   async function diagnosticsNow() {

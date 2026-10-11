@@ -1,7 +1,9 @@
 // The Tools tab's data (the browser's own pages, the owner only): this session's downloads, the
-// recordings this helper saved, the hand-offs waiting for the person, and opening or revealing a
-// file with the OS opener. Every file is named by a random 12-hex id; its path stays here, never in
-// an answer or an event. Node's standard library only; nothing here runs on a timer.
+// recordings this helper saved, the hand-offs waiting for the person, how a download opens (in a
+// person-owned tab, as a read-only preview there, or with the OS opener; openWay) and the person's
+// own tabs (createPersonTabs), and opening or revealing a file with the OS opener. Every file is
+// named by a random 12-hex id; its path stays here, never in an answer or an event. Node's
+// standard library only; nothing here runs on a timer.
 import { randomBytes } from "node:crypto";
 import { spawn as nodeSpawn, execFile as nodeExecFile } from "node:child_process";
 import { lstatSync, unlinkSync, chmodSync } from "node:fs";
@@ -13,20 +15,71 @@ const DOWNLOADS_KEPT = 100;
 const RECORDINGS_KEPT = 500;
 const newId = () => randomBytes(6).toString("hex");
 
-// Downloads open like a browser's: any file, with the system's default app (see downloadMarked and
-// PROGRAMS below). Recordings, files the helper made itself, open only as these types.
+// Downloads open like a browser's: in a person's tab where Chromium renders them, else with the
+// system's default app (see openWay, downloadMarked and PROGRAMS below). Recordings, files the
+// helper made itself, open with the OS opener and only as these types.
 // (Not .svg: its usual opener is a web browser, where an SVG runs script under file://.)
 export const OPENABLE = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp", "heic", "txt", "csv", "json", "md",
   "mp4", "mov", "webm", "m4v", "mp3", "wav", "m4a"]);
 const ext = (path) => extname(String(path || "")).slice(1).toLowerCase();
 export const openable = (path) => OPENABLE.has(ext(path));
 
-// Programs and scripts: a download of one of these opens only after the person confirms. Web pages
-// and web shortcuts count: they open in a web browser under file:// (or send it to a page) and can run script.
+// Web pages and web shortcuts: they open in a web browser under file:// (or send it to a page)
+// and can run script, so they count as programs below.
+export const WEB_FILES = new Set(["html", "htm", "xhtml", "svg", "svgz", "shtml", "mht", "mhtml", "webarchive", "url", "webloc", "inetloc"]);
+// Programs and scripts: a download of one of these opens only after the person confirms.
 export const PROGRAMS = new Set(["app", "pkg", "mpkg", "dmg", "command", "sh", "bash", "zsh", "py", "rb", "pl", "js", "jar",
-  "exe", "msi", "bat", "cmd", "ps1", "scpt", "workflow", "terminal", "tool",
-  "html", "htm", "xhtml", "svg", "svgz", "shtml", "mht", "mhtml", "webarchive", "url", "webloc", "inetloc"]);
+  "exe", "msi", "bat", "cmd", "ps1", "scpt", "workflow", "terminal", "tool", ...WEB_FILES]);
 export const isProgram = (path) => PROGRAMS.has(ext(path));
+
+// Downloads Chromium renders itself open in a new tab that belongs to the person (no agent reads
+// or acts in it). Not .csv (Chromium's MIME table maps it to text/csv, a type blink downloads
+// rather than shows) or .log (no MIME entry): those come as an escaped text preview. Not .mov
+// (video/quicktime, which Chromium doesn't play) or .aac (no entry in Chromium's own table): those
+// open with their app.
+export const TAB_TYPES = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "webm", "ogv", "mp3", "wav", "ogg", "oga", "opus", "flac", "txt", "md", "json"]);
+// Proprietary codecs: only the macOS PairBrowse build plays them (proprietary_codecs in its build).
+export const CODEC_TYPES = new Set(["mp4", "m4v", "m4a"]);
+export const TEXT_TYPES = new Set(["csv", "log"]);
+// Word-type documents: on macOS a read-only preview made by textutil (daemon/preview.mjs).
+export const DOCUMENT_TYPES = new Set(["doc", "docx", "rtf", "odt"]);
+export const TEXT_PREVIEW_MAX = 10 * 1024 * 1024;
+export const DOCUMENT_PREVIEW_MAX = 50 * 1024 * 1024;
+export const isDocument = (path) => DOCUMENT_TYPES.has(ext(path));
+
+// How a download opens: "tab" (the file in a person's tab), "text" or "document" (a preview in
+// one), or "app" (the OS opener). tab / preview: whether the helper can open a tab / make a preview.
+export function openWay(path, { platform = process.platform, engine = null, size = 0, tab = false, preview = false } = {}) {
+  const x = ext(path);
+  if (tab && TAB_TYPES.has(x)) return "tab";
+  if (tab && CODEC_TYPES.has(x) && engine === "pairbrowse" && platform === "darwin") return "tab";
+  if (tab && preview && TEXT_TYPES.has(x) && size <= TEXT_PREVIEW_MAX) return "text";
+  if (tab && preview && DOCUMENT_TYPES.has(x) && platform === "darwin" && size <= DOCUMENT_PREVIEW_MAX) return "document";
+  return "app";
+}
+
+// The confirm a download needs before it opens with its app, worded for what it is; null: none.
+export function confirmFor(path) {
+  const x = ext(path);
+  if (WEB_FILES.has(x)) return "This is a web page saved to your computer. It opens in your web browser and can run its own scripts. Open it anyway?";
+  if (PROGRAMS.has(x)) return "This is a program or script. Open it anyway?";
+  return null;
+}
+
+// The person's own tabs: a file they opened from Downloads. Theirs for the tab's whole life (the
+// entry goes when it closes); any file: tab counts too, however it came to show a file.
+export function createPersonTabs() {
+  const set = new WeakSet();
+  return {
+    add(page) { if (page) set.add(page); },
+    delete(page) { if (page) set.delete(page); },
+    has(page) {
+      if (!page) return false;
+      if (set.has(page)) return true;
+      try { return String(page.url?.() ?? "").toLowerCase().startsWith("file:"); } catch { return false; }
+    },
+  };
+}
 
 // On macOS a download opens only while it still carries com.apple.quarantine, the mark Gatekeeper
 // and Office's Protected View act on; the helper never adds or removes it. Elsewhere true (Windows

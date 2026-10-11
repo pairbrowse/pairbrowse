@@ -33,3 +33,13 @@ test("browser_tabs lists without the browser's own pages, every other tab keepin
   const plain = "### Result\n- 0: (current) [A](http://a/)\n- 1: [B](https://b/)\n\n### Page\n- Page URL: https://b/\n";
   assert.equal(hideChromeTabs(plain), plain);
 });
+
+// A downloaded file shows in the person's own tab only through the Downloads list; agents' file:
+// navigation stays refused.
+test("agents never open file: addresses, a downloaded file's included", () => {
+  for (const url of ["file:///Users/x/Downloads/a.pdf", "FILE:///etc/passwd"]) {
+    const problem = navigationProblem(url);
+    assert.notEqual(problem, null, url);
+    assert.match(problem, /only opens web pages/, url);
+  }
+});

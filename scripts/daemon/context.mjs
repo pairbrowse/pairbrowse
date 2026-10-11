@@ -14,10 +14,11 @@ import { computerName } from "../join.mjs";
 import { validName, isTemporary, profileDir, tabsFile, currentSession, rememberSession, listSessions, createSession, deleteSession, renameSession, sessionFilesExist, sweepTemporary, readPeople, recordPerson } from "../sessions.mjs";
 import { renameRunsSession } from "../runs.mjs";
 import { keepFocus } from "../focus.mjs";
-import { sleep, readJson } from "../util.mjs";
+import { sleep, readJson, within } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
 import { chromePages, nativeManifest } from "../native-engine.mjs";
 import { isChromePage } from "../policy.mjs";
+import { createPersonTabs } from "./tools.mjs";
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
@@ -61,7 +62,9 @@ export function stopRequestMirroring(page) {
 // onRenamed(from, to): the session was renamed (the goal log follows).
 // onDownload({ op: "start", name, page }) -> id, then { op: "done", id, path } or { op: "failed", id }:
 // the Tools tab's Downloads (daemon/tools.mjs), in memory only.
-export function createContext({ config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, helperFor = async () => null,
+// personTabs: the person's own tabs (daemon/tools.mjs createPersonTabs), shared with serve.mjs:
+// openForPerson opens one, and no agent's fallback tab is ever one.
+export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, helperFor = async () => null,
   beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null }) {
   let contextPromise = null;
   let chrome = false; // the browser in use has its own pages (no side panel extension)
@@ -117,7 +120,7 @@ let switched = Promise.resolve();
   async function pageAt(url) {
     if (!contextPromise) return null;
     const ctx = await getContext();
-    return findPage(ctx, url) || ctx.pages().findLast((p) => !isChromePage(p.url())) || null;
+    return findPage(ctx, url) || ctx.pages().findLast((p) => !isChromePage(p.url()) && !personTabs.has(p)) || null;
   }
 
   // Playwright MCP keeps every network request and page event of each tab until it navigates or
@@ -164,6 +167,8 @@ let switched = Promise.resolve();
   // browser; Playwright would otherwise keep them under a random name and delete them on close.
   function keepDownloads(page) {
     page.on("download", async (download) => {
+      // A download started in the person's own tab is theirs: no note for the agents.
+      const personal = personTabs.has(page);
       const dir = config.downloadsDir || join(homedir(), "Downloads");
       // The site picks the name: keep it to a plain file name.
       const name = basename(download.suggestedFilename() || "download").replace(/[\u0000-\u001f\u007f/\\:]/g, "_").replace(/^\.+/, "_").slice(0, 120) || "download";
@@ -180,12 +185,12 @@ let switched = Promise.resolve();
           catch (e) { if (e.code !== "EEXIST" || i > 500) throw e; }
         }
         try { onDownload({ op: "done", id, path: dest }); } catch {}
-        hostNote(`Downloaded ${name} to ${dest}`);
+        if (!personal) hostNote(`Downloaded ${name} to ${dest}`);
         log(`downloaded ${dest}`);
       } catch (e) {
         try { onDownload({ op: "failed", id }); } catch {}
         const why = await download.failure().catch(() => null);
-        hostNote(`Download of ${name} failed: ${why || e?.message || e}`);
+        if (!personal) hostNote(`Download of ${name} failed: ${why || e?.message || e}`);
         log(`download of ${name} failed: ${why || e?.message || e}`);
       }
     });
@@ -639,6 +644,29 @@ let switched = Promise.resolve();
     return fail('Use action "list", "use", "new" or "delete".');
   }
 
+  // A file the person opened from Downloads, in a new active tab that is theirs for its whole
+  // life (personTabs): no agent reads or acts in it. onClose(): called once the tab closes.
+  // Resolves { ok: true, page } or { error }; never throws.
+  const NO_TAB = "The file couldn't be shown in a tab.";
+  async function openForPerson(url, { onClose } = {}) {
+    if (!contextPromise || switching || pick.state === "showing") return { error: "The browser isn't open, so the file can't be shown in a tab." };
+    const ctx = await within(5000, getContext().catch(() => null));
+    const page = ctx ? await within(5000, keepFocus(() => ctx.newPage()).catch(() => null)) : null;
+    if (!page) return { error: NO_TAB };
+    personTabs.add(page);
+    page.once("close", () => {
+      personTabs.delete(page);
+      try { onClose?.(); } catch {}
+    });
+    const ok = await within(10_000, page.goto(url, { waitUntil: "commit" }).then(() => true, () => false));
+    if (ok !== true) {
+      await within(3000, page.close({ runBeforeUnload: false }).catch(() => {}));
+      return { error: NO_TAB };
+    }
+    await within(3000, keepFocus(() => page.bringToFront()).catch(() => {}));
+    return { ok: true, page };
+  }
+
   // At startup: throwaway sessions a crash left behind, and the note that a clean one ended.
   function startUp() {
     try { sweepTemporary(); } catch {}
@@ -662,6 +690,7 @@ let switched = Promise.resolve();
 
   return {
     chromePages: () => chrome,
+    openForPerson, isPersonTab: (p) => personTabs.has(p),
     // The browser of the window open now ("pairbrowse", "chromium" or a path), null when none is.
     browserInUse: () => (contextPromise ? inUse : null),
     // The settings the choice is read from (config with the older names as the person wrote them).

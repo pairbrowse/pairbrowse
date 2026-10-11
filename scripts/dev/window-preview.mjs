@@ -45,7 +45,7 @@ export const REGIONS = ["strip", "nav", "left", "right", "timeline", "approval"]
 export const MOCKUP = {
   window: { x: 22, y: 83, w: 1492, h: 842 },
   strip: { x: 22, y: 83, w: 1492, h: 55 },
-  nav: { x: 22, y: 138, w: 1492, h: 42 },
+  nav: { x: 228, y: 138, w: 950, h: 42 },
   left: { x: 22, y: 138, w: 206, h: 787 },
   right: { x: 1178, y: 138, w: 336, h: 787 },
   timeline: { x: 228, y: 795, w: 950, h: 130 },
@@ -53,28 +53,31 @@ export const MOCKUP = {
 };
 const BAD_KINDS = new Set(["error", "pageerror", "rejection", "csp"]);
 
-// The window's rects at the hybrid 500-shell geometry (DESIGN.md B1). The CSS gives the same.
+// The window's rects at the hybrid 500-shell geometry (DESIGN.md B1). The CSS gives the same: the
+// docks run from under the tab row to the bottom; the nav row, the card (inset 8 px on all four
+// sides) and the timeline share the contents column between them.
 export function geometry({ rail = false } = {}) {
   const W = 1536, H = 1024, row = 44, nav = 44, tl = 130, inset = 8;
   const left = rail ? 44 : 200, right = rail ? 44 : 330, top = row + nav;
   return {
     window: { w: W, h: H },
     strip: { x: 0, y: 0, w: W, h: row },
-    nav: { x: 0, y: row, w: W, h: nav },
-    left: { x: 0, y: top, w: left, h: H - top },
-    right: { x: W - right, y: top, w: right, h: H - top },
-    card: { x: left + inset, y: top, w: W - left - right - 2 * inset, h: H - top - tl - inset },
+    nav: { x: left, y: row, w: W - left - right, h: nav },
+    left: { x: 0, y: row, w: left, h: H - row },
+    right: { x: W - right, y: row, w: right, h: H - row },
+    card: { x: left + inset, y: top + inset, w: W - left - right - 2 * inset, h: H - top - tl - 2 * inset },
     timeline: { x: left, y: H - tl, w: W - left - right, h: tl },
   };
 }
 
-// A deep copy; a negative number under t or at becomes now + it, under updatedAt an ISO string.
+// A deep copy; a negative number under t or at becomes now + it, under updatedAt or savedAt an ISO
+// string.
 export function resolveTimes(value, now, key = "") {
   if (Array.isArray(value)) return value.map((v) => resolveTimes(v, now));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveTimes(v, now, k)]));
   if (typeof value === "number" && value < 0) {
     if (key === "t" || key === "at") return now + value;
-    if (key === "updatedAt") return new Date(now + value).toISOString();
+    if (key === "updatedAt" || key === "savedAt") return new Date(now + value).toISOString();
   }
   return value;
 }

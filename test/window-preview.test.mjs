@@ -15,10 +15,12 @@ const BAD = new Set(["error", "pageerror", "rejection", "csp"]);
 
 test("window preview: geometry, regions and the scene", () => {
   const g = geometry();
-  assert.deepEqual(g.card, { x: 208, y: 88, w: 990, h: 798 });
+  assert.deepEqual(g.card, { x: 208, y: 96, w: 990, h: 790 });
+  assert.deepEqual(g.nav, { x: 200, y: 44, w: 1006, h: 44 });
+  assert.deepEqual(g.left, { x: 0, y: 44, w: 200, h: 980 });
   const r = geometry({ rail: true });
   assert.equal(r.card.w, 1432);
-  assert.equal(r.card.h, 798);
+  assert.equal(r.card.h, 790);
   assert.equal(r.left.w, 44);
   assert.equal(r.right.w, 44);
 

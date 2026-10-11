@@ -3,7 +3,10 @@
     "session": {
       "name": "Notion Setup",
       "where": "Local",
-      "temporary": false
+      "temporary": false,
+      "canRename": true,
+      "canSave": true,
+      "savedAt": -120000
     },
     "collaboration": {
       "participants": [

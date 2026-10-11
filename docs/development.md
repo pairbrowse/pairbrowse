@@ -51,6 +51,9 @@ same change; new pages get none.
 
 For reviews, `node scripts/dev/ui-look.mjs <page> [--width 360 --height 900] [--fixtures f.json]`
 renders a page to a PNG (fixtures: `{ helper, replies, shim, push }`) and prints its harness log.
+`--framed` renders it inside a same-origin frame, as the browser strip frames the session switcher,
+through `scripts/dev/frame-proxy.mjs` (the harness serves pages with `frame-ancestors 'none'`;
+the proxy turns that into `'self'` and serves the stand-in parent, which keeps the frame's notices).
 
 ### The live tests
 

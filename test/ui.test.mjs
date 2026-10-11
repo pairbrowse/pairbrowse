@@ -31,9 +31,6 @@ const DEBT = {
     "hidden-timer": "screen.js's 250 ms hold check runs while hidden; the screen subset ties it to visibilitychange",
     motion: "screen.css pulses the connecting dot and spins the hold spinner forever, and fades #top/#status/.p over 300-400 ms; the screen subset keeps the Live dot as the one pulse and moves fades to --t",
   },
-  picker: {
-    "hidden-timer": "picker.js refreshes sessions every 4 s while hidden (the callback checks document.hidden, the interval does not stop); the picker subset clears it on visibilitychange",
-  },
   panel: {
     motion: "panel.css pulses the Your turn dot forever (.turn i, @keyframes pulse); the right-dock subset drops the pulse",
   },

@@ -1,5 +1,7 @@
-/* The session picker: a compact navy card, colors and type from tokens.css. Rows as the side
-   panel's (avatar, name, meta, who used it), the join address question as its approval card. */
+/* The session picker (DESIGN B9): a compact navy card, colors and type from tokens.css. 44 px
+   rows (avatar, name with its pills, meta, the people as a stack at the right end), the join
+   address question as an approval card (B6). Framed (the browser strip's session switcher), the
+   card is the whole frame and the strip's logo and wordmark are not repeated. */
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body {
@@ -18,61 +20,71 @@ main {
 header { flex: none; display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .logo { flex: none; }
 .brand { margin: 0 0 2px; font-size: var(--fs-3); font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
-h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; }
-.sub { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-3); }
+h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.25; }
+.sub { margin: 2px 0 0; color: var(--ink-2); font-size: var(--fs-3); }
 h2 { margin: 16px 0 8px; font-size: var(--fs-1); font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .choices { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px; margin: -4px; }
 .sessions[hidden] { display: none; }
 .choices > * { flex: none; }
 .sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 
-/* A row: avatar, then the name with its badges, the meta line and the chips. */
+/* A row: avatar, then the name with its badges over the meta line; secondary rows the same. */
 .choice {
-  display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 2px 10px;
-  width: 100%; padding: 8px 10px; border-radius: var(--r-3);
+  display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 0 10px;
+  width: 100%; min-height: 44px; padding: 3px 10px; border-radius: var(--r-3);
   border: 1px solid transparent; background: var(--elevated); color: inherit; font: inherit; text-align: left;
-  cursor: pointer; transition: background var(--t), border-color var(--t);
+  cursor: pointer; transition: background 120ms ease-out, border-color 120ms ease-out;
 }
+/* A session row is 44 px: the text's parts are the row's grid items, so the people sit in a
+   third column at the right end (the same elements and order: Tab and names unchanged). */
+.sessions .choice { grid-template-columns: 24px minmax(0, 1fr) auto; grid-template-rows: 20px 16px; align-content: center; height: 44px; padding: 0 10px; }
+.sessions .choice > .avatar { grid-row: 1 / span 2; }
+.sessions .choice > .text { display: contents; }
+.sessions .text strong { grid-column: 2; grid-row: 1; }
+.sessions .text small { grid-column: 2; grid-row: 2; }
 .choice:hover, details.choice[open] { background: var(--hover); border-color: var(--edge); }
 .choice:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .choice + .choice { margin-top: 6px; }
 
 .avatar {
-  display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 50%;
+  display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%;
   font: 700 var(--fs-1)/1 var(--sans); font-style: normal; color: var(--bg);
   background: oklch(0.80 0.12 var(--h, 215));
 }
 .avatar.plain { background: var(--accent-soft); color: var(--accent-ink); }
 .icon.avatar { font-size: var(--fs-3); }
 .text { display: grid; min-width: 0; }
-.text strong { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: var(--fw-name); line-height: 24px; }
+.text strong { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-3); font-weight: var(--fw-name); line-height: 20px; }
 .text em {
-  flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 999px;
+  flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 999px;
   font-style: normal; font-size: var(--fs-1); font-weight: var(--fw-name); line-height: 1;
   border: 1px solid var(--edge); color: var(--ink-2);
 }
-.text small { color: var(--muted); font-size: var(--fs-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.text .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* "Live · N others": the panel's live pill, a dot and the edge ring, the state in its words. */
+.text small { min-width: 0; color: var(--ink-2); font-size: var(--fs-2); line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.text .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sessions .text strong { overflow: hidden; }
+/* "Live · N others": the panel's live pill, a steady dot and the edge ring, the state in its words. */
 .text em.live { gap: 5px; background: var(--elevated); color: var(--ink); }
 .text em.live::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 
-/* Who used a session: compact chips, at most three and "+N". */
-.chips { display: flex; flex-wrap: nowrap; gap: 5px; margin-top: 5px; min-width: 0; overflow: hidden; }
-.chip { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 150px; height: 22px; padding: 0 8px 0 3px; border-radius: 999px;
-  background: var(--sidebar); color: var(--ink-2); font-size: var(--fs-1); white-space: nowrap; }
-.chip > span { overflow: hidden; text-overflow: ellipsis; }
-.chip i, .chip .avatar { display: grid; place-items: center; flex: none; width: 16px; height: 16px; margin: 0; border-radius: 50%; font: 700 9.5px/1 var(--sans); font-style: normal;
+/* Who used a session: an initial stack at the row's right end, at most three and "+N"; the one
+   in it now ringed in --accent. Each name stays in the chip's title and the row's text. */
+.chips { grid-column: 3; grid-row: 1 / span 2; display: flex; align-items: center; margin: 0; padding-left: 2px; }
+.chip { position: relative; display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; padding: 0; margin-left: -4px; border-radius: 50%;
+  background: var(--elevated); box-shadow: 0 0 0 1px var(--sidebar); color: var(--ink-2); white-space: nowrap; }
+.chip:first-child { margin-left: 0; }
+.chip i, .chip .avatar { display: grid; place-items: center; flex: none; width: 18px; height: 18px; margin: 0; border-radius: 50%; font: 700 var(--fs-1)/1 var(--sans); font-style: normal;
   background: oklch(0.80 0.12 var(--h, 215) / 0.28); color: oklch(0.92 0.08 var(--h, 215)); }
-.chip.live { box-shadow: inset 0 0 0 1px var(--accent); color: var(--ink); }
-.chip.more-chip { padding: 0 8px; color: var(--muted); }
+.chip.live { box-shadow: 0 0 0 1px var(--sidebar), 0 0 0 2px var(--accent); }
+.chip.more-chip { width: auto; padding: 0 6px; border-radius: 999px; font-size: var(--fs-1); line-height: 18px; color: var(--ink-2); }
+.chip-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* "More sessions": the panel's disclosure, a scrolling list with a filter. */
 .choices > .more { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; margin-top: 6px; }
 .more[hidden] { display: none; }
 /* Closed, it keeps its own height (only the open list gives way to the window). */
 .choices > .more:not([data-open="true"]) { flex: none; }
-.more-row { flex: none; display: flex; align-items: center; justify-content: space-between; width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: var(--r-2); background: none; color: var(--ink-2); font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; transition: background var(--t); }
+.more-row { flex: none; display: flex; align-items: center; justify-content: space-between; width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: var(--r-2); background: none; color: var(--ink-2); font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; transition: background 120ms ease-out; }
 .more-row:hover { background: var(--hover); }
 .more-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .more-body { display: none; flex-direction: column; min-height: 0; flex: 0 1 auto; }
@@ -81,13 +93,13 @@ h2 { margin: 16px 0 8px; font-size: var(--fs-1); font-weight: 650; color: var(--
 .more[data-open="true"] .chev { transform: rotate(-135deg); margin-bottom: -3px; }
 .filter { flex: none; display: block; width: 100%; margin: 4px 0 6px; font-family: var(--sans); }
 .more-list { flex: 0 1 auto; min-height: 96px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
-.none { margin: 4px 10px; color: var(--muted); font-size: var(--fs-2); }
+.none { margin: 4px 10px; color: var(--ink-2); font-size: var(--fs-2); }
 
-/* Start fresh and join: two compact secondary rows. */
+/* Start fresh and join: two 44 px secondary rows. */
 #fresh, details.choice { background: transparent; border-color: var(--edge); }
 #fresh:hover, details.choice:hover, details.choice[open] { background: var(--hover); }
 details.choice { display: block; cursor: default; }
-summary { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 2px 10px; list-style: none; cursor: pointer; border-radius: var(--r-2); }
+summary { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 0 10px; min-height: 36px; list-style: none; cursor: pointer; border-radius: var(--r-2); }
 summary::-webkit-details-marker { display: none; }
 form { display: flex; gap: 8px; margin: 10px 0 2px 34px; }
 input {
@@ -101,7 +113,7 @@ input:focus { border-color: var(--accent); }
 input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .primary { height: 34px; padding: 0 16px; border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font: 650 var(--fs-3) var(--sans); cursor: pointer; }
 .primary:hover { filter: brightness(1.06); }
-.secondary { height: 34px; padding: 0 12px; border-radius: var(--r-2); border: 1px solid var(--edge); background: transparent; color: inherit; font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; }
+.secondary { height: 34px; padding: 0 12px; border-radius: var(--r-2); border: 1px solid var(--edge); background: transparent; color: inherit; font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; transition: background 120ms ease-out; }
 .secondary:hover { background: var(--hover); }
 .primary:focus-visible, .secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -117,11 +129,23 @@ body[data-s="picking"] .choices { opacity: 0.55; pointer-events: none; }
 #join-form { flex-wrap: wrap; }
 #join-form #code { flex: 2 1 200px; }
 #join-form #join-name { flex: 1 1 150px; }
-/* The join address question: an approval card, a warn edge and a warn dot before the question. */
-.host-ask { display: grid; gap: 10px; margin: 10px 0 2px 34px; padding: 12px 14px; border-radius: var(--r-3); border: 1px solid var(--edge); background: var(--elevated); }
-.host-ask.card { box-shadow: inset 3px 0 0 var(--warn); }
+/* The join address question: an approval card (B6), a warn edge and a warn dot before the
+   question, the address in the card's 1 px target box. */
+.host-ask { display: grid; gap: 10px; margin: 10px 0 2px 34px; padding: 16px; border-radius: 12px; border: 1px solid var(--edge); background: var(--elevated); box-shadow: 0 12px 32px rgb(0 0 0 / 0.4); }
+.host-ask.card { box-shadow: inset 3px 0 0 var(--warn), 0 12px 32px rgb(0 0 0 / 0.4); }
 .host-ask[hidden] { display: none; }
 .host-ask strong { font-size: var(--fs-3); font-weight: 650; overflow-wrap: anywhere; }
 .host-ask strong::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--warn); vertical-align: 1px; }
+.host-ask code.host { font: var(--fs-3) var(--mono); padding: 1px 6px; border: 1px solid var(--edge); border-radius: var(--r-1); }
 .host-ask .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .host-ask button:disabled { opacity: 0.5; cursor: default; }
+
+/* Framed: the session switcher under the strip's own logo and wordmark. The card is the frame. */
+html[data-host="frame"] body { display: block; min-height: 0; padding: 0; background: var(--sidebar); }
+html[data-host="frame"] main { width: 100%; max-height: 100vh; padding: 16px 16px 12px; border: 0; border-radius: 0; box-shadow: none; }
+html[data-host="frame"] .logo, html[data-host="frame"] .brand { display: none; }
+html[data-host="frame"] header { margin-bottom: 10px; }
+html[data-host="frame"] h1 { font-size: 17px; }
+/* The 360 px popover is too narrow for the secondary rows' copy on one line (the fresh row's
+   deletion warning among it): they wrap to two lines; the session rows keep their fixed 44 px. */
+html[data-host="frame"] #fresh small, html[data-host="frame"] details.choice > summary small { white-space: normal; overflow: visible; text-overflow: clip; }

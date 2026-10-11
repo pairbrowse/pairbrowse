@@ -1,11 +1,21 @@
-// The session picker: the browser's first tab when it starts and nobody chose a session yet.
-// An extension page, so web pages can't open, frame or script it. It talks to the helper through
-// the live view with the owner's key, which the side panel's worker holds in memory; the live view
-// takes these requests only from this extension's origin.
+// The session picker: the browser's first tab when it starts and nobody chose a session yet, and
+// in the browser build also the session switcher (the same page in a same-origin frame of the
+// browser's own strip). Web pages can't open, frame or script it. It talks to the helper through
+// the live view with the owner's key: in the build from the browser's Session API
+// (window.pairbrowse), in the extension from the side panel's worker (chrome.storage.session).
+// The live view takes these requests only from the page's own origin.
 import { $, el, avatar, initialOf } from "../common.js";
+
+// Framed: the switcher popover. No page chrome of its own, the list even when a session is open,
+// and the parent told (same origin only) when to close; the pick itself goes only to the helper.
+const framed = window.top !== window;
+document.documentElement.dataset.host = framed ? "frame" : "page";
+const notify = (op) => { if (framed) window.parent.postMessage({ source: "pairbrowse-picker", op }, location.origin); };
 
 let base = null;
 let busy = false;
+// The open address question's Cancel path (set while the card shows), for Escape.
+let askCancel = null;
 
 const say = (text, kind = "") => { $("msg").textContent = text; $("msg").dataset.kind = kind; };
 // A person's click or key press only, never a script's synthetic event.
@@ -30,6 +40,7 @@ async function send(op, label) {
   // Switching sessions closes this window; joining keeps this tab with what happens next.
   document.body.dataset.s = "done";
   say(r.text || "Done.", "ok");
+  notify("picked");
 }
 
 const TOP = 3; // sessions shown at once; the rest are under "More sessions"
@@ -60,14 +71,18 @@ function chip(p, live = false) {
   const dot = el("i", { className: "avatar", textContent: initialOf(shownName(p)) });
   dot.setAttribute("aria-hidden", "true");
   dot.style.setProperty("--h", hue(p.who));
-  return el("span", { className: live ? "chip live" : "chip", title: live ? `${text}, in this session now` : text }, dot, el("span", { textContent: text }));
+  // The words stay in the row's accessible text and the tooltip; the row shows the initial.
+  return el("span", { className: live ? "chip live" : "chip", title: live ? `${text}, in this session now` : text }, dot, el("span", { className: "chip-text", textContent: text }));
 }
 function sessionRow(s) {
   const name = s.name === "default" ? "Default" : s.name;
-  const meta = s.tabs ? `${s.tabs} ${s.tabs === 1 ? "tab" : "tabs"}${s.sites.length ? ` · ${s.sites.join(", ")}` : ""}` : "No saved tabs";
   const live = Array.isArray(s.live) ? s.live : [];
+  // Framed (the 360 px switcher), a row both Last used and Live has no room for two whole pills
+  // and a readable name: Last used moves to the start of the meta line, Live keeps its pill.
+  const foldLast = framed && s.current && live.length > 0;
+  const meta = (foldLast ? "Last used · " : "") + (s.tabs ? `${s.tabs} ${s.tabs === 1 ? "tab" : "tabs"}${s.sites.length ? ` · ${s.sites.join(", ")}` : ""}` : "No saved tabs");
   const badges = [];
-  if (s.current) badges.push(el("em", { textContent: "Last used" }));
+  if (s.current && !foldLast) badges.push(el("em", { textContent: "Last used" }));
   if (live.length) {
     const names = live.map((p) => [p.who, p.computer || p.app].filter(Boolean).join(" on ")).join(", ");
     const pill = el("em", { className: "live", textContent: `Live · ${live.length} ${live.length === 1 ? "other" : "others"}`, title: names });
@@ -77,8 +92,11 @@ function sessionRow(s) {
   // The people in it now first, then who used it before; at most CHIPS, then "+N".
   const seen = new Set(live.map(chipText));
   const people = [...live.map((p) => ({ ...p, live: true })), ...(s.people || []).filter((p) => !seen.has(chipText(p)))];
-  const chips = people.slice(0, CHIPS).map((p) => chip(p, p.live));
-  if (people.length > CHIPS) chips.push(el("span", { className: "chip more-chip", textContent: `+${people.length - CHIPS}`, title: people.slice(CHIPS).map(chipText).join(", ") }));
+  // Framed (the 360 px switcher), a Live row shows only the people in it now and "+N", so the
+  // name keeps its room beside the pills.
+  const max = framed && live.length ? Math.min(live.length, CHIPS) : CHIPS;
+  const chips = people.slice(0, max).map((p) => chip(p, p.live));
+  if (people.length > max) chips.push(el("span", { className: "chip more-chip", textContent: `+${people.length - max}`, title: people.slice(max).map(chipText).join(", ") }));
   const button = el("button", { className: "choice", type: "button" },
     rowAvatar(people, name),
     el("span", { className: "text" }, el("strong", {}, el("span", { className: "name", textContent: name }), ...badges), el("small", { textContent: meta }),
@@ -94,10 +112,15 @@ async function load() {
   const state = await fetch(base + "sessions.json").then((r) => (r.ok ? r.json() : null), () => null);
   if (busy || document.body.dataset.s === "done" || document.body.dataset.s === "picking") return;
   if (!state) { document.body.dataset.s = "connecting"; say("Couldn't reach PairBrowse.", "error"); return; }
-  if (!state.picking) {
+  // A session is open: the first tab is done; the switcher still lists them to switch to.
+  if (!state.picking && !framed) {
     document.body.dataset.s = "done";
     if (!$("msg").textContent) say("A session is already open. You can close this tab.", "ok");
     return;
+  }
+  if (framed) {
+    const sub = state.picking ? "Your agent waits until you pick one." : "Switch to another session, or start one.";
+    if ($("sub").textContent !== sub) $("sub").textContent = sub;
   }
   // Redrawn only when something changed (someone joined or left), keeping the filter.
   const sig = JSON.stringify(state.sessions);
@@ -145,17 +168,21 @@ function showHostAsk({ id, host }) {
       .then((x) => x.json(), () => ({ error: "Couldn't reach PairBrowse. Try again." }))
       .catch(() => ({ error: "Couldn't reach PairBrowse. Try again." }));
     busy = false;
+    askCancel = null;
     box.hidden = true;
     box.replaceChildren();
     if (r.error || (op.op === "allow" && !r.joined)) { document.body.dataset.s = "ready"; say(r.error || r.text || "That didn't work.", "error"); return; }
     if (op.op === "cancel") { document.body.dataset.s = "ready"; say("Not joined.", ""); return; }
     document.body.dataset.s = "done";
     say(r.text || "Done.", "ok");
+    notify("picked");
   }
   once.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: false }, "Asking to join..."); });
   always.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: true }, "Asking to join..."); });
   cancel.addEventListener("click", (ev) => { if (real(ev)) answer({ op: "cancel", id }, ""); });
-  box.replaceChildren(el("strong", { textContent: `This code leads to ${String(host)}, not a PairBrowse address. Join through it?` }), el("span", { className: "buttons" }, ...buttons));
+  askCancel = () => answer({ op: "cancel", id }, "");
+  const question = el("strong", {}, "This code leads to ", el("code", { className: "host", textContent: String(host) }), ", not a PairBrowse address. Join through it?");
+  box.replaceChildren(question, el("span", { className: "buttons" }, ...buttons));
   box.hidden = false;
   once.focus();
 }
@@ -178,12 +205,37 @@ $("filter").addEventListener("input", () => {
   $("none").hidden = shown > 0;
 });
 
+// Escape closes the switcher; the first Escape in a filled search clears it, as the field does,
+// and Escape on the address question cancels it.
+document.addEventListener("keydown", (ev) => {
+  if (!framed || !ev.isTrusted || ev.key !== "Escape") return;
+  if (ev.target === $("filter") && $("filter").value) return;
+  // A pick in flight finishes first; Escape on the address question is its Cancel, not a close.
+  if (document.body.dataset.s === "picking") return;
+  if (!$("host-ask").hidden && askCancel) { askCancel(); return; }
+  notify("close");
+});
+
+// Who is in the open session can change while the picker shows: a refresh every 4 s while the
+// page is visible, none while hidden, and one at once on return.
+let timer = null;
+function start() { if (timer === null) timer = setInterval(() => { if (base) load(); }, 4000); }
+function stop() { if (timer !== null) { clearInterval(timer); timer = null; } }
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stop();
+  else if (base) { load(); start(); }
+});
 function connect(url) {
   if (!url || url === base) return;
   base = url;
   load();
+  if (!document.hidden) start();
 }
-// Who is in the open session can change while the picker shows.
-setInterval(() => { if (base && !document.hidden) load(); }, 4000);
-chrome.storage.session.get("view").then(({ view }) => connect(view));
-chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); });
+// The helper's address and key: the browser's Session API in the build, else the extension's.
+if (window.pairbrowse) {
+  const lost = () => say("Couldn't reach PairBrowse.", "error");
+  window.pairbrowse.session.helper().then((r) => { const { origin, key } = r || {}; if (origin && key) connect(`${origin}/${key}/`); else lost(); }, lost);
+} else {
+  chrome.storage.session.get("view").then(({ view }) => connect(view));
+  chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); });
+}

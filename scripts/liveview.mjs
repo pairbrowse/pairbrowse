@@ -12,7 +12,7 @@
 // invites, input (replaying a viewer's input), joiner-server (the port the sharing tunnel
 // reaches: shared tabs for joiners, never frames) and tabs.
 import { ownTitle } from "./daemon/tablabels.mjs";
-import { resolve, sep } from "node:path";
+import { resolve, sep, basename } from "node:path";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { keepFocus } from "./focus.mjs";
@@ -27,6 +27,9 @@ import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/
 import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
 import { isChromePage, CHROME_PAGE_ORIGINS } from "./policy.mjs";
 import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
+import { fileStill, openable } from "./daemon/tools.mjs";
+import { scrub } from "./daemon/diagnostics.mjs";
+import { within } from "./util.mjs";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
@@ -45,11 +48,12 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs"]); // events only the owner's streams get
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
 const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture", "timeline"]);
 const TIMELINE_ID = /^[0-9a-f]{12}$/;
+const TOOL_ID = /^[0-9a-f]{12}$/; // a download, recording or hand-off (daemon/tools.mjs): never a path
 const TIMELINE_OFF = "The timeline is off (timeline: false in ~/.pairbrowse/config.json).";
 const SESSION_OP = 'A session change is { op: "rename", name } or { op: "save" }.';
 const SESSION_FIELDS = ["canRename", "canSave", "savedAt"]; // the owner's streams only
@@ -112,9 +116,11 @@ async function release(cdp) {
 // own Settings page's three fields ({ read(), write(given) }, liveview/settings.mjs), or null.
 // sessionOps: the session card ({ state() -> { canRename, canSave, savedAt }, rename(name),
 // save() }), or null. outlines: the Page tab's outlines (daemon/outline.mjs), or null.
+// tools: the Tools tab ({ downloads, recordings, handoffs, diagnostics, open(path, how) },
+// daemon/tools.mjs and daemon/diagnostics.mjs), or null: files by id only, opened by the helper.
 // onPagesKey(): called on every request authenticated with the browser's own pages' key under a
 // loopback host; the receiver makes it idempotent (the helper deletes the key file).
-export async function startLiveView({ onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+export async function startLiveView({ tools = null, onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null }) {
@@ -818,6 +824,46 @@ export async function startLiveView({ onPagesKey = () => {}, sessionOps = null, 
       if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
       json(res, 200, maskedCard(r));
     } },
+    // The Tools tab (the owner only): this session's downloads, the recordings this helper saved,
+    // the hand-offs waiting for the person, and diagnostics. Files go by id (daemon/tools.mjs);
+    // request bodies are capped and otherwise ignored, so nothing in them names a file.
+    { method: "GET", path: "downloads.json", right: "tools", handler: ({ res }) => (toolsOff(res) ? null : json(res, 200, { items: tools.downloads.list().map(maskedDownload) })) },
+    { method: "POST", path: "downloads", right: "tools", handler: (ctx) => fileAction(ctx, tools?.downloads, true) },
+    { method: "GET", path: "recordings.json", right: "tools", handler: ({ res }) => {
+      if (toolsOff(res)) return;
+      const st = recordState() || {};
+      json(res, 200, { recording: { on: !!st.recording, since: st.since || 0 }, items: tools.recordings.list() });
+    } },
+    { method: "POST", path: "recordings", right: "tools", handler: (ctx) => fileAction(ctx, tools?.recordings, false) },
+    { method: "DELETE", path: "recordings", right: "tools", handler: async ({ req, res, rest }) => {
+      if (toolsOff(res)) return;
+      if (rest.length !== 1 || !TOOL_ID.test(rest[0])) return plain(res, 404);
+      if ((await readBody(req, BODY_MAX.approve)) === null) return plain(res, 413);
+      const r = tools.recordings.remove(rest[0]);
+      if (r?.ok) return json(res, 200, { ok: true });
+      return r?.status === 410 ? json(res, 410, { error: FILE_CHANGED }) : plain(res, 404);
+    } },
+    { method: "GET", path: "handoffs.json", right: "tools", handler: async ({ res }) => {
+      if (toolsOff(res)) return;
+      json(res, 200, { items: await Promise.all(tools.handoffs.list().map(handoffItem)) });
+    } },
+    { method: "POST", path: "handoffs", right: "tools", handler: async ({ req, res, rest }) => {
+      if (toolsOff(res)) return;
+      if (rest.length !== 2 || !TOOL_ID.test(rest[0]) || rest[1] !== "show") return plain(res, 404);
+      if ((await readBody(req, BODY_MAX.approve)) === null) return plain(res, 413);
+      const h = tools.handoffs.entry(rest[0]);
+      if (!h) return plain(res, 404);
+      if (!h.page || h.page.isClosed()) return json(res, 409, { error: "That tab is closed." });
+      await within(3000, bringTabForward(h.page));
+      json(res, 200, { ok: true });
+    } },
+    { method: "GET", path: "diagnostics.json", right: "tools", handler: async ({ res }) => (toolsOff(res) ? null : json(res, 200, await diagnosticsNow())) },
+    { method: "POST", path: "diagnostics", right: "tools", handler: async ({ req, res, rest }) => {
+      if (toolsOff(res)) return;
+      if (rest.length !== 1 || rest[0] !== "report") return plain(res, 404);
+      if ((await readBody(req, BODY_MAX.approve)) === null) return plain(res, 413);
+      json(res, 200, { text: tools.diagnostics.reportText(await diagnosticsNow()) });
+    } },
     { method: "POST", path: "input", right: "input", handler: human },
     { method: "POST", path: "tab", right: "tab", handler: human },
     // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
@@ -828,7 +874,10 @@ export async function startLiveView({ onPagesKey = () => {}, sessionOps = null, 
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
       const r = await onRecord(JSON.parse(body)?.on === true);
-      json(res, r?.error ? 409 : 200, { ...recordState(), text: r?.text || "", path: r?.path || "" });
+      // The file's name, never its folder or path (the Recordings list opens it by id).
+      const item = r?.path ? tools?.recordings?.itemFor?.(r.path) || null : null;
+      const text = r?.error ? scrub(r?.text || "", { mask }) : r?.path ? `Saved the recording as "${basename(r.path)}" in your downloads folder.` : "Recording the browser.";
+      json(res, r?.error ? 409 : 200, { ...recordState(), text, ...(item ? { item } : {}) });
     } },
     { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite, role }) => {
       const body = await readBody(req, BODY_MAX.approve);
@@ -937,6 +986,35 @@ export async function startLiveView({ onPagesKey = () => {}, sessionOps = null, 
     return false;
   }
   const maskedCard = (c) => ({ ...c, caption: mask(String(c.caption || "")) });
+  // The Tools tab's routes: 404 without the helper's tools.
+  function toolsOff(res) { if (!tools) { plain(res, 404); return true; } return false; }
+  const FILE_CHANGED = "That file was moved, replaced or deleted since it was saved.";
+  const maskedDownload = (d) => ({ ...d, from: { host: d.from?.host || "", title: mask(String(d.from?.title || "")) } });
+  const tabTitle = async (page) => mask(String((await within(1000, Promise.resolve(ownTitle(page)).catch(() => ""))) ?? ""));
+  const handoffItem = async (h) => {
+    const page = h.page && !h.page.isClosed() ? h.page : null;
+    return { id: h.id, kind: h.kind, text: mask(h.text), tab: page ? { id: idOf(page), host: hostOf(page.url()), title: await tabTitle(page) } : null, by: h.by, at: h.at };
+  };
+  // POST downloads|recordings/<id>/open|reveal: the stored file, checked, through the OS opener.
+  async function fileAction({ req, res, rest }, store, isDownload) {
+    if (toolsOff(res)) return;
+    if (rest.length !== 2 || !TOOL_ID.test(rest[0]) || (rest[1] !== "open" && rest[1] !== "reveal")) return plain(res, 404);
+    if ((await readBody(req, BODY_MAX.approve)) === null) return plain(res, 413);
+    const e = store.entry(rest[0]);
+    if (!e) return plain(res, 404);
+    if (isDownload && e.state !== "done") return json(res, 409, { error: e.state === "failed" ? "That download failed; there is no file to show." : "That download hasn't finished yet." });
+    if (!fileStill(e)) return json(res, 410, { error: FILE_CHANGED });
+    if (rest[1] === "open" && !openable(e.path)) return json(res, 409, { error: "This kind of file isn't opened from here: it could run as a program. Use Reveal to show it in its folder." });
+    const r = await tools.open(e.path, rest[1]);
+    return r?.ok ? json(res, 200, { ok: true }) : json(res, 409, { error: "The file couldn't be shown: the system's opener didn't start." });
+  }
+  // What diagnostics.json answers: the helper's parts plus who is connected here.
+  async function diagnosticsNow() {
+    const { agents, ...d } = await tools.diagnostics.read();
+    return { helper: d.helper, browser: d.browser, connections: { agents: agents || 0, viewers: viewers.size, joiners: joinersNow().length, streams: clients.size },
+      joined: guests().map(({ label, role }) => ({ label, role })), errors: d.errors };
+  }
+
   // A body that isn't JSON: undefined, so the chrome pages' routes answer 400 without logging it.
   const parsed = (body) => { try { return JSON.parse(body); } catch { return undefined; } };
   const NOT_JSON = "The body is not JSON.";
@@ -1033,6 +1111,15 @@ export async function startLiveView({ onPagesKey = () => {}, sessionOps = null, 
     broadcast("outline", { op: c.op, tab: idOf(c.page), ...(c.op === "set" ? { host: hostOf(c.page.url()), who: c.who, at: c.at, cut: c.cut } : {}) });
   }) : () => {};
 
+  // The Tools tab's lists changed: the owner's streams hear it (downloads and hand-offs are
+  // owner-only events; a recording saved or deleted goes on "record", to the owner's streams only).
+  const toolEvents = serially(); // in order: a hand-off's title is read before its removal goes out
+  const stopTools = tools ? [
+    tools.downloads?.onChange?.((c) => broadcast("downloads", { op: c.op, item: maskedDownload(c.item) })),
+    tools.handoffs?.onChange?.((c) => toolEvents(async () => broadcast("handoffs", c.op === "remove" ? { op: "remove", id: c.id, item: { id: c.id } } : { op: c.op, item: await handoffItem(c.item) })).catch(() => {})),
+    tools.recordings?.onChange?.((c) => { const msg = sse("record", { ...(recordState() || {}), op: c.op, ...(c.op === "removed" ? { id: c.id } : { item: c.item }) }); for (const r of owners) r.write(msg); }),
+  ].filter((f) => typeof f === "function") : [];
+
   async function tick() {
     invites.sweep();
     if (watching()) { await follow(); broadcast("tabs", await tabsInfo()); }
@@ -1127,6 +1214,7 @@ export async function startLiveView({ onPagesKey = () => {}, sessionOps = null, 
       clearInterval(timer);
       clearTimeout(settleTimer);
       stopEnded(); stopApprovals(); stopTimeline(); stopOutlines(); stopClickApprovals();
+      for (const stop of stopTools) stop();
       server.close();
       for (const r of clients) r.end();
       joinerServer.close();

@@ -59,8 +59,10 @@ export function stopRequestMirroring(page) {
 // the key in an owner-only file named by the other switch, deleted on first use (dropHelperKey).
 // beforeRename(): awaited before a rename moves the session's files (the timeline's last writes).
 // onRenamed(from, to): the session was renamed (the goal log follows).
+// onDownload({ op: "start", name, page }) -> id, then { op: "done", id, path } or { op: "failed", id }:
+// the Tools tab's Downloads (daemon/tools.mjs), in memory only.
 export function createContext({ config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, helperFor = async () => null,
-  beforeRename = async () => {}, onRenamed = () => {} }) {
+  beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null }) {
   let contextPromise = null;
   let chrome = false; // the browser in use has its own pages (no side panel extension)
   let helperKeyPath = null; // the key file of the browser launched last, until used or closed
@@ -166,6 +168,8 @@ let switched = Promise.resolve();
       // The site picks the name: keep it to a plain file name.
       const name = basename(download.suggestedFilename() || "download").replace(/[\u0000-\u001f\u007f/\\:]/g, "_").replace(/^\.+/, "_").slice(0, 120) || "download";
       const dot = name.lastIndexOf(".") > 0 ? name.lastIndexOf(".") : name.length;
+      let id = null;
+      try { id = onDownload({ op: "start", name, page }); } catch {}
       try {
         mkdirSync(dir, { recursive: true });
         const from = await download.path(); // finished, in Playwright's temporary folder
@@ -175,9 +179,11 @@ let switched = Promise.resolve();
           try { copyFileSync(from, dest, fsConstants.COPYFILE_EXCL); break; } // never over an existing file
           catch (e) { if (e.code !== "EEXIST" || i > 500) throw e; }
         }
+        try { onDownload({ op: "done", id, path: dest }); } catch {}
         hostNote(`Downloaded ${name} to ${dest}`);
         log(`downloaded ${dest}`);
       } catch (e) {
+        try { onDownload({ op: "failed", id }); } catch {}
         const why = await download.failure().catch(() => null);
         hostNote(`Download of ${name} failed: ${why || e?.message || e}`);
         log(`download of ${name} failed: ${why || e?.message || e}`);

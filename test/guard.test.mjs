@@ -228,14 +228,15 @@ test("the PermissionRequest hook in a real process: the browser's answer, or not
   });
   await new Promise((r) => server.listen(sockPath, r));
   const pr = (tool, tool_input, extra = {}) => JSON.stringify({ hook_event_name: "PermissionRequest", session_id: "s", tool_name: `mcp__plugin_pairbrowse_browser__${tool}`, tool_input, permission_mode: "default", ...extra });
-  const runHook = (input, env = {}, { killAfter = 0 } = {}) => new Promise((resolve) => {
+  let current = null;
+  const runHook = (input, env = {}) => new Promise((resolve) => {
     const started = Date.now();
     const child = spawn(process.execPath, [hookFile], { env: { ...process.env, PAIRBROWSE_HOME: home, ...env } });
     let out = "";
     child.stdout.on("data", (d) => (out += d));
     child.on("exit", (code, signal) => resolve({ out, code, signal, ms: Date.now() - started }));
+    current = child;
     child.stdin.end(input);
-    if (killAfter) setTimeout(() => child.kill("SIGTERM"), killAfter);
   });
   const pay = pr("browser_click", { element: "Pay: Place order", target: "e5" });
   try {
@@ -259,15 +260,17 @@ test("the PermissionRequest hook in a real process: the browser's answer, or not
     }
 
     // The terminal answered no: Claude Code stops the hook, and the helper sees its socket close.
-    respond = () => {};
+    // The stop comes once the hook has asked (not after a fixed delay, which a loaded machine outlasts).
+    respond = () => { setTimeout(() => current?.kill("SIGTERM"), 50); };
     const before = conns.length;
-    r = await runHook(pay, {}, { killAfter: 400 });
+    r = await runHook(pay);
     assert.equal(r.out, "");
     await new Promise((res) => setTimeout(res, 100));
     assert.equal(conns.length, before + 1);
     assert.ok(conns.at(-1).closed, "the socket closed with the hook");
 
     // Nobody answers: nothing printed once the wait (and its margin) is up.
+    respond = () => {};
     r = await runHook(pay, { PAIRBROWSE_APPROVAL_WAIT_MS: "300" });
     assert.equal(r.out, "");
     assert.equal(r.code, 0);

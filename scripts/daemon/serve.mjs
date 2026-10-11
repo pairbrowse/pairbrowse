@@ -214,7 +214,7 @@ export function pathsIn(name, args = {}) {
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {}, clickApprovals = null, outlines = null }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {}, clickApprovals = null, outlines = null, onRunStatus = () => {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // What PairBrowse declares it is about to press (an agent's click, a fast-mode step, the popup
   // closer's dismiss button) counts as where an agent pointed: a press there is never a person's.
@@ -839,7 +839,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           const who = presence.actingIn(page);
           return who ? `${who === host ? "The user" : who} took over this tab mid-step (${presence.didIn(page) || "clicked"}): stopped there. Take a snapshot, then go on.` : "";
         },
-        status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); },
+        status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); try { onRunStatus(participant, text, kind, page, myLabel()); } catch {} },
         activity: (text) => hud.addActivity(text, myLabel(), page),
         cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
         remember: facts.seenInForm,

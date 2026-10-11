@@ -26,7 +26,8 @@ const PERSON_MARK_MS = 8000; // a person from the other browser stays marked thi
 // they joined. waiting(page): the person an agent waits for there. liveView(): the live view, if
 // up. notify(text): tells the user it's their turn. pause(): { by, can }: who paused agents (by
 // empty: nobody) and whether the person here may pause and resume (daemon/pause.mjs).
-export function createHud({ pages, participants, waiting, liveView, notify, pause = () => ({ by: "", can: true }) }) {
+// onStatus(participant, status | null): an agent's status set or taken down (the Tools tab's hand-offs).
+export function createHud({ pages, participants, waiting, liveView, notify, pause = () => ({ by: "", can: true }), onStatus = () => {} }) {
   // The page script, with names and a key that are new each time the helper starts.
   const { source, name: HUD_NAME, token: HUD_TOKEN } = hudScript();
   let badge = { text: "", kind: "clear", color: "" };
@@ -131,6 +132,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
       const other = kind === "claude" && app && !/^Claude/i.test(app);
       statuses.set(participant, { text: other ? `${app}: ${text}` : String(text), kind: other ? "agent" : kind, t: Date.now(), color: sparkColor(participant) });
     }
+    try { onStatus(participant, statuses.get(participant) || null); } catch {} // the Tools tab's hand-offs
     if (badge.kind === "you" && badge.text === CHALLENGE_TURN) return; // PairBrowse's own hand-off stands
     const all = [...statuses.values()].sort((a, b) => b.t - a.t);
     const shown = all.find((s) => s.kind === "you") || all[0];

@@ -37,15 +37,18 @@ test("a recording is saved whole, in pieces, beside an earlier one with the same
     const bytes = Buffer.alloc(9 * 1024 * 1024 + 123, 7); // more than two pieces
     const { call, calls } = fakeBrowser(bytes);
     const states = [];
-    const rec = createRecorder({ call, dir: () => dir, changed: (s) => states.push(s.recording) });
+    const savedCalls = [];
+    const rec = createRecorder({ call, dir: () => dir, changed: (s) => states.push(s.recording), onSaved: (x) => savedCalls.push(x) });
     const started = await rec.start();
     assert.match(started.text, /Recording the browser \(1280x840\)/);
     assert.equal(rec.state().recording, true);
     assert.match((await rec.start()).text, /Already recording/);
     // The same second's name already taken: the new one goes beside it.
     writeFileSync(join(dir, recordingName(rec.state().since, "video/mp4")), "older");
+    const since = rec.state().since;
     const saved = await rec.stop();
     assert.match(saved.text, /Saved the recording \(1 min 5 s, 9\.4 MB\)/);
+    assert.deepEqual(savedCalls, [{ path: saved.path, at: since, ms: 65000, size: bytes.length }], "the Tools tab hears of it once");
     assert.match(saved.path, / \(1\)\.mp4$/);
     assert.deepEqual(readFileSync(saved.path), bytes);
     assert.equal((statSync(saved.path).mode & 0o777).toString(8), "600");
@@ -54,6 +57,24 @@ test("a recording is saved whole, in pieces, beside an earlier one with the same
     assert.equal(calls.at(-1).op, "clear");
     assert.deepEqual(states, [true, false]);
     assert.equal((await rec.stop()).error, true, "nothing left to stop");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("onSaved is not called when the browser's stop fails, and its throw never fails a save", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rec-"));
+  try {
+    const { call } = fakeBrowser(Buffer.from("abc"));
+    let calls = 0;
+    const failing = async (fn, arg, ms) => (arg?.op === "stop" ? { error: "boom" } : call(fn, arg, ms));
+    const rec = createRecorder({ call: failing, dir: () => dir, onSaved: () => { calls++; } });
+    await rec.start();
+    assert.equal((await rec.stop()).error, true);
+    assert.equal(calls, 0, "nothing saved, nothing told");
+    const rec2 = createRecorder({ call, dir: () => dir, onSaved: () => { throw new Error("index full"); } });
+    await rec2.start();
+    const saved = await rec2.stop();
+    assert.ok(saved.path && !saved.error, "the save still answers with its file");
+    assert.deepEqual(readFileSync(saved.path), Buffer.from("abc"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

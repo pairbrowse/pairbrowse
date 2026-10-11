@@ -109,8 +109,10 @@ export function createInvites({ now = () => Date.now() } = {}) {
 // own pages: the docks' layout, the tab strip's list, the session's timeline of pictures, the
 // Settings page, the Page tab's outline: the last whole-page snapshot an agent got for a tab).
 // "session" also covers renaming and saving the session (POST session), the owner's alone.
+// "tools" (the Tools tab: this session's downloads, the helper's recordings, hand-offs and
+// diagnostics, with Open, Reveal and Delete by id) is the owner's alone too.
 const RIGHTS = {
-  owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline", "config", "outline"]),
+  owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline", "config", "outline", "tools"]),
   drive: new Set(["page", "events", "thumb", "state", "input", "tab"]),
   watch: new Set(["page", "events", "thumb", "state"]),
 };

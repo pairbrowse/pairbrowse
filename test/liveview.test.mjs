@@ -118,6 +118,16 @@ test("every route needs its right; routes that aren't listed are refused", async
         assert.equal((await request(view.port, method, `/${k}/${path}`, { body })).status, 403, `${method} /${path} is the owner's`);
       }
     }
+    // The Tools tab's routes (the owner only): every one refused to guests, 404 with no tools given.
+    const TOOL_ROUTES = [["GET", "downloads.json"], ["POST", "downloads/0123456789ab/open"], ["POST", "downloads/0123456789ab/reveal"], ["GET", "recordings.json"],
+      ["POST", "recordings/0123456789ab/open"], ["POST", "recordings/0123456789ab/reveal"], ["DELETE", "recordings/0123456789ab"], ["GET", "handoffs.json"],
+      ["POST", "handoffs/0123456789ab/show"], ["GET", "diagnostics.json"], ["POST", "diagnostics/report"]];
+    for (const k of [w.key, d.key]) for (const [method, path] of TOOL_ROUTES) {
+      assert.equal((await request(view.port, method, `/${k}/${path}`, { body: method === "POST" ? {} : undefined })).status, 403, `${method} /${path} is the owner's`);
+    }
+    for (const [method, path] of TOOL_ROUTES) {
+      assert.equal((await request(view.port, method, `/${key}/${path}`, { body: method === "POST" ? {} : undefined })).status, 404, `no tools given: ${method} /${path}`);
+    }
     for (const [method, path, body] of [["POST", "session", { op: "save" }], ["GET", "outline.json"], ["POST", "timeline/0123456789ab/show", {}]]) {
       assert.equal((await request(view.port, method, `/${key}/${path}`, { body })).status, 404, `nothing given: ${method} /${path}`);
     }
@@ -750,7 +760,7 @@ test("the timeline routes serve the owner the store and nobody else", async () =
       }
     }
     const c = invites.create({ role: "drive", label: "C", share: "code" });
-    for (const k of [c.key, key]) for (const path of ["timeline.json", "timeline/0123456789ab.jpg", "layout.json", "tabs.json", "agent-tabs.json", "config.json"]) {
+    for (const k of [c.key, key]) for (const path of ["timeline.json", "timeline/0123456789ab.jpg", "layout.json", "tabs.json", "agent-tabs.json", "config.json", "downloads.json", "recordings.json", "handoffs.json", "diagnostics.json"]) {
       assert.notEqual((await request(view.guestPort, "GET", `/${k}/${path}`)).status, 200, `the join-code port never serves ${path}`);
     }
     const before = calls.length;

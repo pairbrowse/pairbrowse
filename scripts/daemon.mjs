@@ -24,10 +24,13 @@
 //   approvals.mjs a named final click asked in the browser as well (the card, the hook's line)
 //   timeline.mjs  the pictures already sent to agents, kept per session
 //   outline.mjs   the last whole-page snapshot an agent got per tab, in memory (the Page tab)
+//   tools.mjs     the Tools tab: downloads, recordings, hand-offs, the OS opener (files by id)
+//   diagnostics.mjs  the Tools tab's diagnostics and its scrubbed report (nothing is sent)
 import net from "node:net";
 import { createRequire } from "node:module";
 import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve as resolvePath, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./secrets.mjs";
@@ -35,7 +38,7 @@ import { createFollow } from "./daemon/follow.mjs";
 import { createFacts } from "./facts.mjs";
 import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
 import { cleanName, displayName } from "./join.mjs";
-import { currentAccount, within } from "./util.mjs";
+import { currentAccount, within, readJson } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
@@ -46,7 +49,7 @@ import { createPause, pressPause as pressPauseIn } from "./daemon/pause.mjs";
 import { fieldOwner } from "./daemon/fields.mjs";
 import { createPanel } from "./daemon/panel.mjs";
 import { CHROME_PAGE_ORIGINS } from "./policy.mjs";
-import { forgetPanelBuild } from "./browser.mjs";
+import { forgetPanelBuild, UNGOOGLED } from "./browser.mjs";
 import { createScreenShare } from "./daemon/screenshare.mjs";
 import { createRecorder } from "./daemon/recorder.mjs";
 import { createTabLabels } from "./daemon/tablabels.mjs";
@@ -59,7 +62,7 @@ import { createJournal } from "./daemon/journal.mjs";
 import { createTimeline } from "./daemon/timeline.mjs";
 import { createOutlines } from "./daemon/outline.mjs";
 import { createSettings } from "./liveview/settings.mjs";
-import { pinnedAsset } from "./native-install.mjs";
+import { nativeDirs, pinnedAsset } from "./native-install.mjs";
 import { timelineDir, isTemporary } from "./sessions.mjs";
 import { readFields, applyFields } from "./daemon/forms.mjs";
 import { createTabOrder } from "./daemon/taborder.mjs";
@@ -68,6 +71,9 @@ import { shareFields, shareableUrl, crossingText, onSecretDomain, personColor } 
 import { createSession, readEntries, readMessage } from "./daemon/session.mjs";
 import { createJoinPrompt } from "./daemon/joinprompt.mjs";
 import { createClickApprovals, routeConnection } from "./daemon/approvals.mjs";
+import { createDownloads, createRecordings, createHandoffs, openFile } from "./daemon/tools.mjs";
+import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mjs";
+import { engineDir } from "./native-pack.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
 const { createConnection } = require("@playwright/mcp");
@@ -124,6 +130,46 @@ const hostNote = (text) => { hostNotes.push(text); if (hostNotes.length > 50) ho
 hostNote.drop = (keep) => { const left = hostNotes.filter((n) => keep(n)); hostNotes.splice(0, hostNotes.length, ...left); };
 const clients = new Map(); // participant -> socket
 
+// The Tools tab (the browser's own pages, the owner only; daemon/tools.mjs): this session's
+// downloads (in memory), the recordings this helper saved (an owner-only index), the hand-offs
+// waiting for the person, and diagnostics. Fed from what the helper already sees.
+const hostOfUrl = (url) => { try { return new URL(url).host; } catch { return ""; } };
+const downloads = createDownloads({ session: () => context.sessionName() });
+const recordings = createRecordings();
+const handoffs = createHandoffs();
+const HELPER_VERSION = readJson(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"))?.version || "";
+const diagnostics = createDiagnostics({
+  version: HELPER_VERSION, mask: (t) => output.mask(t), agents: () => clients.size,
+  // Never a path, and never a launch for it: the browser open now, if any.
+  browser: async () => {
+    const inUse = context.browserInUse();
+    const engine = inUse === "pairbrowse" || inUse === "chromium" ? inUse : inUse ? "path" : null;
+    const version = pinnedBrowserVersion({
+      engine,
+      nativeRecord: engine === "pairbrowse" ? readJson(nativeDirs().record) : null,
+      ungoogled: process.platform === "darwin" ? UNGOOGLED.version : null,
+      browsersJson: engine === "chromium" ? readJson(join(paths.runtime, "node_modules", driverChoice.driver === "playwright" ? "playwright-core" : "patchright-core", "browsers.json")) : null,
+    });
+    const build = inUse === "pairbrowse" ? readJson(join(engineDir(), "installed.json"))?.version ?? null : null;
+    return { engine, version, build };
+  },
+});
+const agentBy = (p, color = "") => ({ label: collaboration.participants.get(p)?.label || "Agent", color: color || hud.sparkColor(p) });
+// A download started, finished or failed (context.mjs keepDownloads).
+function onDownload({ op, name, page, id, path }) {
+  if (op === "start") {
+    let by = null;
+    try { const a = tabMeta(page)?.agent; if (a) by = { label: a.label, color: a.color }; } catch {}
+    const newId = downloads.add({ name, host: hostOfUrl(page?.url?.() || ""), title: "", by });
+    within(1000, Promise.resolve(page?.title?.()).catch(() => "")).then((t) => { if (t) downloads.setTitle(newId, t); }).catch(() => {});
+    return newId;
+  }
+  if (!id) return null;
+  if (op === "done") downloads.done(id, path);
+  else if (op === "failed") downloads.failed(id);
+  return id;
+}
+
 // The parts below reach each other through these (each is called only once all exist).
 const liveView = () => sharing.liveView();
 const refreshTabs = () => liveView()?.refreshTabs().catch(() => {});
@@ -167,6 +213,8 @@ const hud = createHud({
   pages: () => context.openPages(), participants: () => [...collaboration.participants.keys()],
   waiting: (page) => presence.waiting(page), liveView, notify: panel.notify,
   pause: () => ({ by: pause.view().by, can: canPause() }),
+  // An agent handed a step to the person (pairbrowse_status "you"): a hand-off until it moves on.
+  onStatus: (p, st) => { if (st?.kind === "you") handoffs.set(`status:${p}`, { text: st.text, page: hud.sparkPage(p) || null, by: agentBy(p, st.color) }); else handoffs.clear(`status:${p}`); },
 });
 const presence = createPresence({
   host: HOST, readEvents: (frame, waitMs) => hud.call(frame, String(waitMs), "user-wait"), pages: () => context.openPages(), paused: () => context.isSwitching(),
@@ -179,17 +227,18 @@ const popups = createPopups({
   quiet: () => context.isRestoring(), // tabs reopened at startup aren't new
   cookieChoice: config.cookieChoice, // "accept" (default) or "reject"
   agentActing: () => presence.agentActing(), // a tab an agent closes itself needs no note
-  onYourTurn: (text) => hud.setBadge(text, "you").catch(() => {}),
+  onYourTurn: (text, page) => { hud.setBadge(text, "you").catch(() => {}); handoffs.set("check", { text, page: page || null, kind: "captcha", by: { label: "PairBrowse", color: "" } }); },
   // The check is done: take "Your turn" down again if it was this one.
-  onCleared: () => { if (hud.badge().text === CHALLENGE_TURN) hud.setBadge("", "clear").catch(() => {}); },
+  onCleared: () => { if (hud.badge().text === CHALLENGE_TURN) hud.setBadge("", "clear").catch(() => {}); handoffs.clear("check"); },
 });
 const context = createContext({
   config, log, chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   // A person renamed the session: the timeline's last writes land first, then the goal log follows.
   beforeRename: () => timeline.settled(), onRenamed: (from, to) => journal.renamed(from, to),
   liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
-  onTabClosed: (page) => { tabClaims.drop(page); screenshots.forgetPage(page); hud.forgetPage(page); }, // a closed tab's turn ends with it, with the maps onto its pictures and the sparks on it
+  onTabClosed: (page) => { tabClaims.drop(page); screenshots.forgetPage(page); hud.forgetPage(page); handoffs.forgetPage(page); }, // a closed tab's turn ends with it, with the maps onto its pictures and the sparks on it
   status: (badge) => liveView()?.setStatus(badge),
+  onDownload,
   shuttingDown: () => shuttingDown,
   // A build with its own pages: their origins are let in before the browser starts (their first
   // requests pass), and they get the live view's address in its switch and their own key in an
@@ -329,6 +378,7 @@ const recorder = createRecorder({
   dir: () => config.downloadsDir || join(homedir(), "Downloads"),
   scale: async () => (await Promise.resolve(context.openPages()))[0]?.evaluate(() => devicePixelRatio) ?? 1,
   changed: () => { const s = recorder.state(); liveView()?.setRecord(s); hud.setRecording(s.recording); },
+  onSaved: (saved) => recordings.add(saved), // the Tools tab's Recordings (an owner-only index)
   onActivity: (fn) => hud.onActivity((text, who, page, from) => { if (who && page) fn(text, who, page, from); }),
 });
 // Who works in which tab, named on the tab strip (the agent's name in front of the tab's title).
@@ -422,6 +472,8 @@ const sharing = createSharing({
     onPagesKey: () => context.dropHelperKey(),
     // A join code's address the person hasn't allowed: their answer from the side panel or picker.
     joinHost: { state: () => follow.hostState(), act: (op) => hostDecision(op) },
+    // The Tools tab (owner only): files by id; Open and Reveal through the OS opener, on a click.
+    tools: { downloads, recordings, handoffs, diagnostics, open: (p, how) => openFile(p, how) },
   },
 });
 // Sessions joined from here: their tabs, followed in this browser.
@@ -525,6 +577,8 @@ const journal = createJournal({ session: () => context.sessionName(), openPages:
 const outlines = createOutlines({ mask: output.mask });
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
+  // A fast-mode run's hand-off step (runner "handoff"): a hand-off for that tab until the step ends.
+  onRunStatus: (p, text, kind, page, label) => { if (kind === "you") handoffs.set(`run:${p}`, { text, page: page || null, by: { label: label || "Agent", color: hud.sparkColor(p) } }); else handoffs.clear(`run:${p}`); },
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
   secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals, outlines,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would

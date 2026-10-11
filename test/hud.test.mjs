@@ -612,6 +612,22 @@ test("the helper sends the participant's spark color with its status", async () 
   assert.equal(calls.at(-1)[3], "you");
 });
 
+test("an agent's status set or taken down is told to onStatus (the Tools tab's hand-offs)", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async () => {} };
+  const seen = [];
+  const hud = createHud({ pages: async () => [page], participants: () => ["p"], waiting: () => null, liveView: () => null, notify: () => {}, onStatus: (p, st) => seen.push([p, st]) });
+  await hud.setBadgeFor("p", "Sign in please", "you");
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0][0], "p");
+  assert.equal(seen[0][1].kind, "you");
+  assert.equal(seen[0][1].text, "Sign in please");
+  await hud.setBadgeFor("p", "", "clear");
+  assert.deepEqual(seen.at(-1), ["p", null]);
+  await hud.setBadgeFor("p", "", "clear");
+  assert.equal(seen.length, 2, "nothing to take down: nothing told");
+});
+
 test("the field the agent acts on is outlined in its color inside the cursor's shadow root, follows scrolling and goes when the agent is done", { skip: !runtime, timeout: 60_000 }, async () => {
   const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const hud = (await import("../scripts/browser.mjs")).hudScript();

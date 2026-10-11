@@ -244,7 +244,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
       onPause: view.onPause, pauseState: view.pauseState, onRecord: view.onRecord, recordState: view.recordState, picker: view.picker, joinHost: view.joinHost, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel, journal: view.journal, makeInvite: inviteFromPanel,
       timeline: view.timeline, mask: view.mask, layoutDefaults: view.layoutDefaults, settings: view.settings, clickApprovals: view.clickApprovals || null,
-      sessionOps: view.sessionOps || null, outlines: view.outlines || null,
+      sessionOps: view.sessionOps || null, outlines: view.outlines || null, tools: view.tools || null,
       onPagesKey: view.onPagesKey || (() => {}),
     });
     await restoring;

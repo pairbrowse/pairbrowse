@@ -7,7 +7,7 @@
 // - Overlays inside the page that interrupt (cookie banners, newsletter, discount and app
 //   popups): closed with the page's own dismiss button. Only interruptions, never a dialog Claude
 //   opened, and only dismiss buttons, never subscribe, sign up, buy or a final action.
-// - CAPTCHAs and bot checks are the user's: the user is told right away (onYourTurn).
+// - CAPTCHAs and bot checks are the user's: the user is told right away (onYourTurn(text, page)).
 // What happened is collected as notes and added to the next tool result.
 import { within } from "./util.mjs";
 
@@ -85,7 +85,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     if (found && challengeOn !== page) {
       challengeOn = page;
       note("This page shows a CAPTCHA or bot check. PairBrowse told the user. Wait for it to clear (browser_wait_for), don't try to solve it.", page);
-      onYourTurn(CHALLENGE_TURN);
+      onYourTurn(CHALLENGE_TURN, page);
     } else if (!found && challengeOn === page) {
       challengeOn = null;
       note("The CAPTCHA or bot check is gone; carry on.", page);

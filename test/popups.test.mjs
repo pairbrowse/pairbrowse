@@ -13,8 +13,8 @@ test("dialogs, popup windows and CAPTCHAs are handled or handed over", { skip: !
   const browser = await chromium.launch();
   try {
     const ctx = await browser.newContext();
-    let turn = null, cleared = false;
-    const popups = createPopups({ onYourTurn: (t) => { turn = t; }, onCleared: () => { cleared = true; } });
+    let turn = null, turnPage = null, cleared = false;
+    const popups = createPopups({ onYourTurn: (t, p) => { turn = t; turnPage = p; }, onCleared: () => { cleared = true; } });
     ctx.on("page", (p) => popups.watchPage(p, ctx));
     const page = await ctx.newPage();
     await page.setContent(`<button id="a" onclick="alert('Saved!')">a</button>
@@ -44,6 +44,7 @@ test("dialogs, popup windows and CAPTCHAs are handled or handed over", { skip: !
     await wait(300);
     await popups.checkChallenge(page);
     assert.match(turn, /Solve the check/);
+    assert.equal(turnPage, page, "the tab where the check was found comes with it");
     assert.match(popups.drain(), /CAPTCHA/);
     await page.setContent(`<p>done</p>`);
     await popups.checkChallenge(page);

@@ -28,8 +28,9 @@ const minutes = (ms) => {
 // call(fn, arg, ms): runs fn(arg) in the extension's worker (daemon/panel.mjs). owners(): the agents
 // at work, [{ page, who, color }]. dir(): where recordings go. scale(): the screen's pixel ratio.
 // changed(state): the side panels show it. onActivity(fn): fn(text, who, page) for each thing an
-// agent does (follow "agents").
-export function createRecorder({ call, owners = () => [], dir, scale = async () => 1, log = () => {}, changed = () => {}, onActivity = () => () => {} }) {
+// agent does (follow "agents"). onSaved({ path, at, ms, size }): a recording was saved (the Tools
+// tab's Recordings index, daemon/tools.mjs); a throw there never fails the save.
+export function createRecorder({ onSaved = () => {}, call, owners = () => [], dir, scale = async () => 1, log = () => {}, changed = () => {}, onActivity = () => () => {} }) {
   let on = null; // { since, timer, follow, shown, shownAt, next }
   let saving = null;
   const tabIds = new WeakMap(); // page -> the browser's tab id
@@ -134,6 +135,7 @@ export function createRecorder({ call, owners = () => [], dir, scale = async () 
           writeSync(fd, Buffer.from(b64, "base64"));
         }
       } finally { closeSync(fd); }
+      try { onSaved({ path, at: since, ms: r.ms, size: r.size }); } catch {}
       await ext({ op: "clear" }).catch(() => {});
       log(`recording saved: ${path} (${(r.size / 1e6).toFixed(1)} MB, ${minutes(r.ms)})${why ? `, stopped because ${why}` : ""}`);
       return { text: `Saved the recording (${minutes(r.ms)}, ${(r.size / 1e6).toFixed(1)} MB) to ${path}.`, path };

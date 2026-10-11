@@ -74,7 +74,9 @@ test("the picture page keeps its ids, its words, its timers and a flat sheet", (
   const n = (w) => js.split(w).length - 1;
   assert.deepEqual([n("setTimeout("), n("setInterval("), n("requestAnimationFrame("), n("Observer")], [2, 1, 1, 0], "no new timer");
   assert.doesNotMatch(css, /backdrop-filter|gradient\(/);
-  assert.equal(css.split("@keyframes").length - 1, 2, "the status pulse and the hold spinner only");
+  // B11 allows one endless animation, the Live dot's 2 s pulse; the connecting dot is static and
+  // the hold spinner became a warn dot with the words (ui-screen subset).
+  assert.equal(css.split("@keyframes").length - 1, 1, "the Live dot's pulse only");
   assert.doesNotMatch(css, /box-shadow: 0 0 0 3px/, "no halo rings");
 });
 

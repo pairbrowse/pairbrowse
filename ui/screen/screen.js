@@ -7,6 +7,16 @@
 const ICE = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const MOD = (e) => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
 const $ = (id) => document.getElementById(id);
+// The host this page runs in: the PairBrowse build (window.pairbrowse) or the extension. In the
+// build it asks once for the helper's address and key, and keeps them; every picture and word
+// still arrives through window.pbScreen, so it opens no stream and calls no route.
+const native = !!window.pairbrowse;
+let helper = null;
+if (native) {
+  try {
+    Promise.resolve(window.pairbrowse.session?.helper?.()).then((r) => { helper = r && typeof r === "object" ? { origin: String(r.origin || ""), key: String(r.key || "") } : null; }).catch(() => {});
+  } catch {}
+}
 const video = $("v"), still = $("still"), statusBox = $("status"), statusText = $("status-text"), bar = $("top"), tagText = $("tag-text"), soundButton = $("sound");
 
 let pc = null, dc = null, peer = "", host = "", view = "video"; // view: "video" or "frames"
@@ -25,9 +35,12 @@ let tagTimer = null;
 function showLive(on) {
   // Says whose tab it is and where it is, then gets out of the way (it comes back when the
   // pointer goes near it, and when the host's tab goes somewhere else).
-  bar.classList.toggle("on", on);
+  // Not while the page is hidden (no timer then): it shows when the page comes back.
+  const shownNow = on && document.visibilityState !== "hidden";
+  bar.classList.toggle("on", shownNow);
   clearTimeout(tagTimer);
-  if (on) tagTimer = setTimeout(() => bar.classList.remove("on"), 4000);
+  tagTimer = null;
+  if (shownNow) tagTimer = setTimeout(() => bar.classList.remove("on"), 4000);
   setStatus(on ? "" : statusText.textContent);
 }
 const live = () => state === "connected" || view === "frames";
@@ -36,8 +49,27 @@ const live = () => state === "connected" || view === "frames";
 // This page's own address can't be the host's (an extension page), and the site is never loaded
 // here (that would be you, with your cookies, on their page). So the address shows on the
 // picture: the site in full, the rest dimmed, a lock for a secure page.
-const LOCK = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M6 1a2.6 2.6 0 0 0-2.6 2.6V5H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-.4V3.6A2.6 2.6 0 0 0 6 1Zm-1.4 4V3.6a1.4 1.4 0 0 1 2.8 0V5Z"/></svg>';
-const INFO = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="4.6"/><path d="M6 5.4v3M6 3.6v.1" stroke-linecap="round"/></svg>';
+// The glyphs are built as nodes (no markup strings: the page runs under Trusted Types).
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(viewBox, attrs = {}, ...children) {
+  const el = document.createElementNS(SVG_NS, "svg");
+  el.setAttribute("viewBox", viewBox);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  el.append(...children);
+  return el;
+}
+function pathEl(d, attrs = {}) {
+  const el = document.createElementNS(SVG_NS, "path");
+  el.setAttribute("d", d);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+const lockIcon = () => svgEl("0 0 12 12", { fill: "currentColor" }, pathEl("M6 1a2.6 2.6 0 0 0-2.6 2.6V5H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-.4V3.6A2.6 2.6 0 0 0 6 1Zm-1.4 4V3.6a1.4 1.4 0 0 1 2.8 0V5Z"));
+function infoIcon() {
+  const circle = document.createElementNS(SVG_NS, "circle");
+  circle.setAttribute("cx", "6"); circle.setAttribute("cy", "6"); circle.setAttribute("r", "4.6");
+  return svgEl("0 0 12 12", { fill: "none", stroke: "currentColor", "stroke-width": "1.3" }, circle, pathEl("M6 5.4v3M6 3.6v.1", { "stroke-linecap": "round" }));
+}
 const LOCAL = /^(localhost|127(\.\d+){3}|\[::1\])$/;
 // { host, rest, secure: true | false | null (no web address) } for a tab address; null: none.
 function readAddress(raw) {
@@ -47,7 +79,7 @@ function readAddress(raw) {
   const rest = (u.pathname === "/" && !u.search && !u.hash ? "" : u.pathname) + u.search + u.hash;
   return { host: u.host, rest, secure: u.protocol === "https:" ? true : LOCAL.test(u.hostname) ? null : false };
 }
-let shownAddress = "";
+let shownAddress = "", addrKind = ""; // addrKind: "lock", "warn", "info" or "" (no glyph)
 function showAddress(raw) {
   const a = readAddress(raw), box = $("addr"), st = $("addr-state");
   box.hidden = !a;
@@ -55,7 +87,15 @@ function showAddress(raw) {
   $("addr-host").textContent = a.host;
   $("addr-rest").textContent = a.rest;
   st.className = a.secure === false ? "warn" : "";
-  st.innerHTML = a.secure === true ? LOCK : a.secure === false ? `${INFO}<span class="note">Not secure</span>` : a.host ? INFO : "";
+  addrKind = a.secure === true ? "lock" : a.secure === false ? "warn" : a.host ? "info" : "";
+  if (addrKind === "lock") st.replaceChildren(lockIcon());
+  else if (addrKind === "warn") {
+    const note = document.createElement("span");
+    note.className = "note";
+    note.textContent = "Not secure";
+    st.replaceChildren(infoIcon(), note);
+  } else if (addrKind === "info") st.replaceChildren(infoIcon());
+  else st.replaceChildren();
   const changed = shownAddress !== "" && shownAddress !== raw;
   shownAddress = String(raw);
   return changed;
@@ -122,7 +162,14 @@ addEventListener("wheel", (e) => {
 const CLIPBOARD = new Set(["c", "x", "v"]);
 const KEEP = new Set(["t", "w", "n", "l", "r", "q", "tab"]); // your own browser's shortcuts (new tab, close, address bar...)
 function key(e, a) {
-  if (!$("pick").hidden || ours(e)) return;
+  // While the file card is up no key reaches the host's page; Escape cancels it and Tab stays
+  // inside it (between Choose files and Cancel).
+  if (!$("pick").hidden) {
+    if (a === "down" && e.key === "Escape") { e.preventDefault(); $("pick-no").click(); }
+    if (a === "down" && e.key === "Tab") { e.preventDefault(); (document.activeElement === $("pick-go") ? $("pick-no") : $("pick-go")).focus(); }
+    return;
+  }
+  if (ours(e)) return;
   const k = e.key.toLowerCase();
   if ((e.metaKey || e.ctrlKey) && (CLIPBOARD.has(k) || KEEP.has(k))) return;
   e.preventDefault();
@@ -148,7 +195,7 @@ function pointers(list) {
     if (!el) {
       el = document.createElement("div");
       el.className = "p";
-      el.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 2.5l6.8 18.2 2.5-7.4 7.4-2.5z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><span></span>';
+      el.append(svgEl("0 0 24 24", {}, pathEl("M4 2.5l6.8 18.2 2.5-7.4 7.4-2.5z", { stroke: "#fff", "stroke-width": "1.6", "stroke-linejoin": "round" })), document.createElement("span"));
       $("pointers").appendChild(el);
       drawn.set(k, el);
     }
@@ -197,7 +244,8 @@ function whoIcon() {
 }
 function showWho() {
   const names = [inTab.person, inTab.agent ? `\u2726 ${inTab.agent}` : ""].filter(Boolean);
-  document.title = (names.length ? `${names.join(" ")} \u00b7 ` : "") + baseTitle;
+  // In the build the strip shows this title as the tab's name, so it says whose tab it is too.
+  document.title = [names.join(" "), native && host ? `${host}'s tab` : "", baseTitle].filter(Boolean).join(" \u00b7 ");
   let link = document.querySelector('link[rel="icon"]');
   const href = whoIcon();
   if (!href) { link?.remove(); return; }
@@ -238,7 +286,7 @@ async function offer({ sdp, peer: id, noDirect = false, doc = "" }) {
   };
   pc.onconnectionstatechange = () => {
     state = pc.connectionState;
-    if (state === "connected") { view = "video"; still.hidden = true; video.hidden = false; hold(false); showLive(true); }
+    if (state === "connected") { view = "video"; still.hidden = true; video.hidden = false; watchHold(false); hold(false); showLive(true); }
     else if (state === "disconnected") { showLive(false); setStatus("Reconnecting…"); }
     else if (state === "failed") { showLive(false); setStatus("No direct connection: switching to the slower route…"); }
   };
@@ -268,6 +316,7 @@ function frame(b64) {
     lastFrameAt = Date.now();
     hold(false);
     showLive(true);
+    watchHold(true);
   };
   frameImage.src = "data:image/jpeg;base64," + b64;
 }
@@ -284,10 +333,30 @@ function hold(on) {
   $("hold-text").textContent = Date.now() - holdSince >= HOLD.long ? `Still reconnecting to ${who}…` : `Reconnecting to ${who}…`;
   if (box.hidden) { box.hidden = false; still.style.filter = "brightness(.75)"; }
 }
-setInterval(() => {
+// The watch for a stop runs only while frames are shown and the page is visible: started by the
+// first frame, stopped when the page is hidden or the video takes over, resumed on return.
+let holdTimer = null;
+function checkHold() {
   if (view !== "frames" || !lastFrameAt) return;
   if (Date.now() - lastFrameAt >= HOLD.after) hold(true);
-}, 250);
+}
+function watchHold(on) {
+  if (!on || document.visibilityState === "hidden" || view !== "frames") { clearInterval(holdTimer); holdTimer = null; return; }
+  if (!holdTimer) holdTimer = setInterval(checkHold, 250);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    watchHold(false);
+    clearTimeout(tagTimer);
+    tagTimer = null;
+    bar.classList.remove("on");
+  } else {
+    // A lapse while hidden is the helper resting a tab out of sight: the count starts anew.
+    lastFrameAt = Date.now();
+    watchHold(true);
+    if (live()) showLive(true);
+  }
+});
 
 soundButton.addEventListener("click", () => { video.muted = false; video.play().catch(() => {}); soundButton.hidden = true; });
 
@@ -302,6 +371,8 @@ function pick({ multiple = false } = {}) {
   return new Promise((resolve) => {
     const finish = async (list) => {
       box.hidden = true;
+      if (!soundButton.hidden) soundButton.focus();
+      else document.activeElement?.blur?.();
       const out = [];
       for (const f of list.slice(0, 20)) {
         if (f.size > FILE_MAX) continue;
@@ -318,6 +389,7 @@ function pick({ multiple = false } = {}) {
     $("pick-no").onclick = () => finish([]);
     box.hidden = false;
     try { input.click(); } catch {} // right away while your click still counts; else the button
+    $("pick-go").focus();
   });
 }
 
@@ -347,13 +419,13 @@ window.pbScreen = {
   // Tests only: who works in the tab, in words on the picture, as the person reads it.
   whoPill: () => ({ shown: !$("who").hidden, text: $("who-text").textContent }),
   // The address shown on the picture (as the person reads it), and whether a lock is there.
-  address: () => ({ shown: !$("addr").hidden, text: $("addr-text").textContent, lock: $("addr-state").innerHTML === LOCK, warn: $("addr-state").classList.contains("warn") }),
+  address: () => ({ shown: !$("addr").hidden, text: $("addr-text").textContent, lock: addrKind === "lock", warn: $("addr-state").classList.contains("warn") }),
   // Tests only: how long without a picture before the wait shows, and before it says "Still".
   holdAfter(after, long) { HOLD.after = Math.max(50, Number(after) || HOLD.after); HOLD.long = Math.max(HOLD.after, Number(long) || HOLD.long); return true; },
   // The wait over a stilled picture, as the person sees it: { shown, text, dimmed }.
   hold: () => ({ shown: !$("hold").hidden, text: $("hold-text").textContent, dimmed: still.style.filter !== "" }),
   // What the helper needs to know each round, and the input waiting for it (no direct connection).
-  state: () => ({ visible: document.visibilityState === "visible", conn: state, peer, view, direct: !!(dc && dc.readyState === "open"), doc: DOC, offers }),
+  state: () => ({ visible: document.visibilityState === "visible", conn: state, peer, view, direct: !!(dc && dc.readyState === "open"), doc: DOC, offers, host: native ? "pairbrowse" : "extension", helper: !!helper }),
   takeInput: () => outbox.splice(0, 200),
   // How the picture and sound arrive: frames a second, sound received, whether it plays, and the
   // route (direct between the two computers, or found through STUN).

@@ -1,6 +1,8 @@
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -63,4 +65,66 @@ test("saved tabs keep their order and only web pages", () => {
   assert.deepEqual(tabs.map((t) => t.url), ["https://a.test/", "http://b.test/"]);
   assert.equal(active, 1, "active index is clamped");
   assert.deepEqual(readSavedTabs(join(process.env.PAIRBROWSE_HOME, "missing.json")).tabs, []);
+});
+
+test("renaming a session moves its profile, tabs, people and timeline; refusals move nothing", () => {
+  s.createSession("ren-a");
+  writeFileSync(s.tabsFile("ren-a"), JSON.stringify({ tabs: [{ url: "https://a.test/" }] }));
+  s.recordPerson("ren-a", { who: "You", kind: "you" });
+  mkdirSync(s.timelineDir("ren-a"), { recursive: true });
+  writeFileSync(join(s.timelineDir("ren-a"), "index.json"), "{\"cards\":[]}");
+  s.rememberSession("ren-a");
+  s.renameSession("ren-a", "ren-b");
+  for (const of of [s.profileDir, s.tabsFile, s.peopleFile, s.timelineDir]) {
+    assert.equal(existsSync(of("ren-a")), false, `${of.name} left the old name`);
+    assert.equal(existsSync(of("ren-b")), true, `${of.name} has the new name`);
+  }
+  assert.equal(readFileSync(join(process.env.PAIRBROWSE_HOME, "session"), "utf8"), "ren-b", "the remembered session follows");
+  assert.equal(s.listSessions().find((x) => x.name === "ren-b").tabs, 1);
+  s.createSession("ren-c");
+  for (const [from, to, why] of [["default", "x1", /default session keeps its name/], ["clean-77", "x2", /clean session/], ["ren-b", "../x", /letters, numbers/], ["ren-b", "a b", /letters, numbers/],
+    ["ren-b", "clean-5", /keeps for itself/], ["ren-b", "default", /keeps for itself/], ["ren-b", "ren-c", /already exists/], ["ren-b", "REN-C", /already exists/], ["nope-zz", "x3", /No session/]]) {
+    if (from === "clean-77") s.createSession(from);
+    assert.throws(() => s.renameSession(from, to), why, `${from} -> ${to}`);
+  }
+  assert.equal(existsSync(s.profileDir("ren-b")), true, "refusals moved nothing");
+  s.deleteSession("clean-77");
+  // A case-only rename of the same session works.
+  s.renameSession("ren-b", "Ren-B");
+  assert.ok(s.listSessions().some((x) => x.name === "Ren-B"));
+  assert.ok(!s.listSessions().some((x) => x.name === "ren-b"));
+});
+
+test("a rename never moves onto files of that name the session list doesn't show", () => {
+  s.createSession("orph-a");
+  writeFileSync(s.tabsFile("orph-a"), "{\"tabs\":[]}");
+  for (const of of [s.tabsFile, s.peopleFile]) {
+    writeFileSync(of("orph-b"), "{\"kept\":true}");
+    assert.throws(() => s.renameSession("orph-a", "orph-b"), /already exists/, of.name);
+    assert.equal(readFileSync(of("orph-b"), "utf8"), "{\"kept\":true}", `the orphan ${of.name} isn't overwritten`);
+    rmSync(of("orph-b"));
+  }
+  mkdirSync(s.timelineDir("orph-b"), { recursive: true });
+  assert.throws(() => s.renameSession("orph-a", "orph-b"), /already exists/, "an orphan timeline");
+  rmSync(s.timelineDir("orph-b"), { recursive: true });
+  assert.equal(existsSync(s.profileDir("orph-a")), true, "refusals moved nothing");
+  s.renameSession("orph-a", "orph-b");
+  assert.equal(existsSync(s.profileDir("orph-b")), true);
+});
+
+test("a rename whose move fails puts back what it moved", () => {
+  s.createSession("rb-x");
+  writeFileSync(s.tabsFile("rb-x"), "{\"tabs\":[]}");
+  mkdirSync(s.timelineDir("rb-x"), { recursive: true });
+  // The timeline's move fails after the others (a stray folder of the new name is refused before
+  // any move now, so the failure is made here).
+  const real = fs.renameSync;
+  const failing = mock.method(fs, "renameSync", (from, to) => { if (String(to) === s.timelineDir("rb-y")) throw new Error("EBUSY: in use"); return real(from, to); });
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => s.renameSession("rb-x", "rb-y"), /Couldn't rename/);
+  } finally { failing.mock.restore(); syncBuiltinESMExports(); }
+  for (const of of [s.profileDir, s.tabsFile, s.timelineDir]) assert.equal(existsSync(of("rb-x")), true, `${of.name} put back`);
+  assert.equal(existsSync(s.profileDir("rb-y")), false);
+  assert.equal(existsSync(s.tabsFile("rb-y")), false);
 });

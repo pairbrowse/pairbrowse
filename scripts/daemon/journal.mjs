@@ -198,6 +198,10 @@ export function createJournal({ session = () => "default", openPages = async () 
     if (left !== null) { run.left = left; left = null; }
     run.tabs = await tabs();
     run.updatedAt = isoNow(now());
+    // Read again right before the write: a session rename meanwhile (runs.mjs renameRunsSession)
+    // keeps the run's new session name.
+    const onDisk = readJson(file);
+    if (typeof onDisk?.session === "string") run.session = onDisk.session;
     writeJsonAtomic(file, run);
   }
 
@@ -211,13 +215,17 @@ export function createJournal({ session = () => "default", openPages = async () 
   // The run as the Timeline shows it: the file being kept (following a run_save's takeover, read
   // only: nothing here changes what the log keeps), or the auto run still going after a helper
   // restart; null when there is none.
-  function read() {
+  function shown() {
     let run;
     if (file) {
       run = readJson(file);
       for (let hops = 0; run?.mergedInto && hops < 3; hops++) run = readJson(runFile(run.mergedInto));
     } else run = liveAutoRun(now());
-    if (!run || typeof run !== "object") return null;
+    return run && typeof run === "object" ? run : null;
+  }
+  function read() {
+    const run = shown();
+    if (!run) return null;
     const list = (a) => (Array.isArray(a) ? a : []);
     return {
       name: clean(run.name).slice(0, 120),
@@ -229,7 +237,16 @@ export function createJournal({ session = () => "default", openPages = async () 
     };
   }
 
+  // When the run read() shows was last written ("Saved N min ago" on the session card), only
+  // when that run is this session's; else "".
+  function savedAt() {
+    const run = shown();
+    return run && run.session === session() && typeof run.updatedAt === "string" ? run.updatedAt.slice(0, 40) : "";
+  }
+  // The browser session was renamed (context.mjs renameCurrent): the log goes on under its new name.
+  function renamed(from, to) { if (openedFor === from) openedFor = to; }
+
   onActivity(activity);
   // The page the log is on now ({ url, title }, the title masked), or null: a timeline card's step.
-  return { activity, status, ranLeft, flushNow, read, file: () => file, step: () => (current ? { url: current.url, title: current.title } : null) };
+  return { activity, status, ranLeft, flushNow, read, savedAt, renamed, file: () => file, step: () => (current ? { url: current.url, title: current.title } : null) };
 }

@@ -266,3 +266,29 @@ test("step(): the page the log is on, null before the first action and once the 
   await j.flushNow();
   assert.equal(j.step(), null, "a finished run has no current page");
 });
+
+test("savedAt(): the shown run's updatedAt, only for this session's run, and it follows a rename", async () => {
+  const t = start + 300 * 24 * 3600_000;
+  let name = "saved-a";
+  const page = tab("https://saved.example/form", "Saved form");
+  const j = createJournal({ session: () => name, openPages: async () => [page], now: () => t, delayMs: 10 });
+  assert.equal(j.savedAt(), "", "no run yet");
+  j.activity("Clicked **Next**", "Claude", page);
+  await j.flushNow();
+  const run = JSON.parse(readFileSync(j.file(), "utf8"));
+  assert.equal(run.session, "saved-a");
+  assert.equal(j.savedAt(), run.updatedAt);
+  name = "elsewhere";
+  assert.equal(j.savedAt(), "", "another session's run says nothing");
+  // A rename: the run file says the new name (runs.mjs renameRunsSession), the log follows.
+  const { renameRunsSession } = await import("../scripts/runs.mjs");
+  renameRunsSession("saved-a", "saved-b");
+  j.renamed("saved-a", "saved-b");
+  name = "saved-b";
+  assert.equal(j.savedAt(), run.updatedAt);
+  const file = j.file();
+  j.activity("Clicked **Done**", "Claude", page);
+  await j.flushNow();
+  assert.equal(j.file(), file, "the same run goes on under the new name");
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).session, "saved-b");
+});

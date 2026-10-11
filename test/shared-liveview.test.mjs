@@ -16,8 +16,11 @@ async function live(options = {}) {
 
 test("live view exposes collaboration state in initial events and state.json", async () => {
   const invites = createInvites();
-  const { view, base } = await live({ invites, journal: () => ({ name: "r", status: "in progress", done: ["secret line"], yourTurn: [], left: [], updatedAt: "" }) });
+  const sessionOps = { state: () => ({ canRename: true, canSave: true, savedAt: "2026-10-11T10:00:00.000Z" }), rename: async () => ({ error: "no" }), save: async () => ({ error: "no" }) };
+  const outlines = { latest: () => null, get: () => null, onChange: () => () => {} };
+  const { view, base } = await live({ invites, sessionOps, outlines, journal: () => ({ name: "r", status: "in progress", done: ["secret line"], yourTurn: [], left: [], updatedAt: "" }) });
   try {
+    view.setSession({ name: "client-x", where: "Local" });
     view.setCollaboration({ participants: [{ id: "a", label: "Alice" }], owner: { id: "a", label: "Alice" }, active: null, humanUntil: 123 });
     const events = await fetch(`${base}events?panel`);
     const reader = events.body.getReader();
@@ -35,6 +38,8 @@ test("live view exposes collaboration state in initial events and state.json", a
     assert.equal("journal" in state, false, "the goal log never rides on state.json");
     assert.equal("timeline" in state, false, "nor the timeline");
     assert.equal("layout" in state, false, "nor the docks' layout");
+    assert.equal("outline" in state, false, "nor the Page tab's outline");
+    assert.deepEqual(state.session, { name: "client-x", where: "Local" }, "the session card's fields are for the owner's streams only");
     // A guest gets the state as before, and never the goal log.
     const d = invites.create({ role: "drive", label: "D" });
     const guestBase = `http://127.0.0.1:${new URL(base).port}/${d.key}/`;
@@ -42,6 +47,8 @@ test("live view exposes collaboration state in initial events and state.json", a
     assert.equal("journal" in guestState, false);
     assert.equal("timeline" in guestState, false);
     assert.equal("layout" in guestState, false);
+    assert.equal("outline" in guestState, false);
+    assert.deepEqual(guestState.session, { name: "client-x", where: "Local" });
     assert.equal((await fetch(`${guestBase}journal.json`)).status, 403);
   } finally { view.close(); }
 });

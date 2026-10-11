@@ -105,10 +105,12 @@ export function createInvites({ now = () => Date.now() } = {}) {
 
 // What each kind of link may do. The owner's own link (and the side panel) may do everything.
 // "journal" (the live view's Timeline: the goal log) and "invite" (the Share card makes an invite)
-// are the owner's only, as are "layout", "strip", "timeline" and "config" (the browser's own pages:
-// the docks' layout, the tab strip's list, the session's timeline of pictures, the Settings page).
+// are the owner's only, as are "layout", "strip", "timeline", "config" and "outline" (the browser's
+// own pages: the docks' layout, the tab strip's list, the session's timeline of pictures, the
+// Settings page, the Page tab's outline: the last whole-page snapshot an agent got for a tab).
+// "session" also covers renaming and saving the session (POST session), the owner's alone.
 const RIGHTS = {
-  owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline", "config"]),
+  owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline", "config", "outline"]),
   drive: new Set(["page", "events", "thumb", "state", "input", "tab"]),
   watch: new Set(["page", "events", "thumb", "state"]),
 };

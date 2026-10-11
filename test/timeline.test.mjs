@@ -201,3 +201,13 @@ test("enabled and cap read live from getters: off and on at once, a smaller cap 
   assert.deepEqual(tl.cards().map((c) => c.caption), ["one"], "a cap below 1 keeps 1");
   assert.equal(jpgs(dir).length, 1);
 });
+
+test("settled() resolves once the writes queued before it ran", async () => {
+  const dir = folder();
+  const tl = createTimeline({ dir: () => dir });
+  tl.record({ data: jpeg(7), caption: "Clicked" });
+  assert.equal(existsSync(join(dir, "index.json")), false, "queued, not written yet");
+  await tl.settled();
+  assert.equal(index(dir).cards.length, 1, "the index is written by then");
+  assert.equal(jpgs(dir).length, 1);
+});

@@ -156,5 +156,7 @@ export function createTimeline({ dir, enabled = true, mask = (t) => t, step = ()
       });
     },
     onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    // Resolves once every write queued so far ran (a session rename moves the folder after them).
+    settled: () => queue(() => {}),
   };
 }

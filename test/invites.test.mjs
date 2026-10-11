@@ -51,7 +51,7 @@ test("rights per role: watch only watches, drive also drives, neither reaches th
   for (const role of ["watch", "drive"]) assert.equal(roleMay(role, "profile"), false, role);
   assert.equal(roleMay("owner", "profile"), true);
   assert.equal(roleMay("nobody", "page"), false);
-  for (const r of ["layout", "strip", "timeline", "config"]) { assert.equal(roleMay("owner", r), true, r); for (const role of ["watch", "drive"]) assert.equal(roleMay(role, r), false, `${role} ${r}`); }
+  for (const r of ["layout", "strip", "timeline", "config", "outline"]) { assert.equal(roleMay("owner", r), true, r); for (const role of ["watch", "drive"]) assert.equal(roleMay(role, r), false, `${role} ${r}`); }
 });
 
 test("invite store: roles, labels, expiry and limits", () => {

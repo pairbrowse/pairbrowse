@@ -1,7 +1,7 @@
 // Browser sessions: separate Chrome profiles, each with its own logins, cookies and tabs.
 // "default" is the original ~/.pairbrowse/profile. Clean sessions start empty and, unless
 // they're given a name to keep, are deleted when you switch away or the browser shuts down.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { readJson } from "./util.mjs";
@@ -69,6 +69,36 @@ export function deleteSession(name) {
   rmSync(tabsFile(name), { force: true });
   rmSync(peopleFile(name), { force: true });
   rmSync(timelineDir(name), { recursive: true, force: true });
+}
+
+// A kept session's new name (the person's rename on the session card; the browser is closed
+// meanwhile): its profile folder, tabs, people and timeline move. Throws with a plain sentence.
+// A move that fails puts back the ones already made.
+// Whether anything of a session by this name is on disk (its profile, tabs, people or timeline),
+// listed or not: a rename never moves onto it.
+export const sessionFilesExist = (name) => [profileDir, tabsFile, peopleFile, timelineDir].some((of) => existsSync(of(name)));
+export function renameSession(from, to) {
+  if (from === "default") throw new Error("The default session keeps its name; start a named session to name it.");
+  if (isTemporary(from)) throw new Error("A clean session can't be renamed: it is deleted when you switch away.");
+  if (!validName(from) || !existsSync(profileDir(from))) throw new Error(`No session "${from}".`);
+  if (!validName(to)) throw new Error("Session names use letters, numbers, - and _ (up to 40).");
+  if (to === "default" || isTemporary(to)) throw new Error(`"${to}" is a name PairBrowse keeps for itself; choose another.`);
+  const caseOnly = to !== from && to.toLowerCase() === from.toLowerCase();
+  if (to === from) return;
+  if (!caseOnly && listSessions().some((s) => s.name.toLowerCase() === to.toLowerCase())) throw new Error(`Session "${to}" already exists; choose another name.`);
+  if (!caseOnly && sessionFilesExist(to)) throw new Error(`Session "${to}" already exists; choose another name.`);
+  const moved = [];
+  try {
+    for (const of of [profileDir, tabsFile, peopleFile, timelineDir]) {
+      if (!existsSync(of(from))) continue;
+      renameSync(of(from), of(to));
+      moved.push(of);
+    }
+  } catch (e) {
+    for (const of of moved.reverse()) { try { renameSync(of(to), of(from)); } catch {} }
+    throw new Error(`Couldn't rename session "${from}": ${e?.message || e}`);
+  }
+  try { if (readFileSync(CURRENT, "utf8").trim() === from) rememberSession(to); } catch {}
 }
 
 const PEOPLE_MAX = 12;

@@ -22,6 +22,8 @@
 //   screenshot.mjs  the screenshots in results, and clicking on them
 //   serve.mjs     one connected agent: the rules before each call, the notes after
 //   approvals.mjs a named final click asked in the browser as well (the card, the hook's line)
+//   timeline.mjs  the pictures already sent to agents, kept per session
+//   outline.mjs   the last whole-page snapshot an agent got per tab, in memory (the Page tab)
 import net from "node:net";
 import { createRequire } from "node:module";
 import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
@@ -55,9 +57,10 @@ import { createScreenshots } from "./daemon/screenshot.mjs";
 import { createServe } from "./daemon/serve.mjs";
 import { createJournal } from "./daemon/journal.mjs";
 import { createTimeline } from "./daemon/timeline.mjs";
+import { createOutlines } from "./daemon/outline.mjs";
 import { createSettings } from "./liveview/settings.mjs";
 import { pinnedAsset } from "./native-install.mjs";
-import { timelineDir } from "./sessions.mjs";
+import { timelineDir, isTemporary } from "./sessions.mjs";
 import { readFields, applyFields } from "./daemon/forms.mjs";
 import { createTabOrder } from "./daemon/taborder.mjs";
 import { createCobrowse } from "./daemon/cobrowse.mjs";
@@ -145,10 +148,22 @@ const pause = createPause({
     refreshTabs(); // on to the joiners, with the session
   },
 });
-const pauseState = () => ({ ...pause.view(), can: canPause() });
+// perAgent: "Pause this agent" works here (not in a session joined from here); agents: the ones
+// paused on their own, by name as the session list shows them.
+const pauseState = () => ({ ...pause.view(), can: canPause(), perAgent: !follow.joined(),
+  agents: pause.agents().map((a) => ({ who: collaboration.participants.get(a.id)?.label || "Agent", by: a.by, at: a.at })) });
 // A person pressed "Pause agents" or "Resume" here (the bar in a page, the side panel, a drive
 // guest's viewer). In a session joined from here the host decides, and its state comes back.
-function pressPause(paused, who = HOST) {
+// agent: "Pause this agent" (the owner's pages only): every agent here with that name, by its
+// connection. Resuming one is always possible; pausing one isn't in a session joined from here.
+function pressPause(paused, who = HOST, agent = null) {
+  if (agent !== null) {
+    if (paused && follow.joined()) return { problem: "In a session joined from here, Pause agents pauses everyone; one agent can't be paused on its own." };
+    const ids = [...collaboration.participants].filter(([, p]) => p?.label === agent).map(([id]) => id);
+    if (!ids.length) return { problem: `No agent named "${agent}" works in this browser.` };
+    for (const id of ids) if (paused) pause.pauseOne(id, who); else pause.resumeOne(id, who);
+    return { ok: true };
+  }
   if (follow.joined()) {
     if (!canPause()) return { problem: "You joined to watch: only drive participants can pause agents." };
     follow.say({ op: "pause", paused });
@@ -179,6 +194,8 @@ const popups = createPopups({
 });
 const context = createContext({
   config, log, chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
+  // A person renamed the session: the timeline's last writes land first, then the goal log follows.
+  beforeRename: () => timeline.settled(), onRenamed: (from, to) => journal.renamed(from, to),
   liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
   onTabClosed: (page) => { tabClaims.drop(page); screenshots.forgetPage(page); hud.forgetPage(page); }, // a closed tab's turn ends with it, with the maps onto its pictures and the sparks on it
   status: (badge) => liveView()?.setStatus(badge),
@@ -336,6 +353,22 @@ const sharing = createSharing({
     // The session's timeline of pictures, and the masking and docks' layout the browser's own pages
     // get (owner only). `timeline` is declared further down too: read when the live view starts.
     get timeline() { return timeline; },
+    // The Page tab's outline (owner only); declared further down too.
+    get outlines() { return outlines; },
+    // The session card (owner only): rename and Save, and whether each is possible now. Rename
+    // restarts the browser on the renamed session; Save writes its tabs now (tabs.mjs saveNow,
+    // the write a person's session switch makes; run_save is the agent's tool and would merge
+    // its goal log) and brings the goal log's pending write forward.
+    sessionOps: {
+      state: () => { const name = context.sessionName(); return { canRename: name !== "default" && !isTemporary(name) && !follow.joined(), canSave: !isTemporary(name), savedAt: journal.savedAt() }; },
+      rename: (name) => (follow.joined() ? { error: "You joined another session from here; rename this one once you have left it." } : context.renameCurrent(name)),
+      save: async () => {
+        const r = await context.saveTabs();
+        if (r.error) return r;
+        await journal.flushNow().catch(() => {});
+        return { ok: true, savedAt: journal.savedAt() };
+      },
+    },
     mask: output.mask, layoutDefaults: () => config.layout,
     // The browser's Settings page: which browser runs, the timeline, the docks' default layout
     // (liveview/settings.mjs; written into config.json and the running config).
@@ -344,7 +377,7 @@ const sharing = createSharing({
     // their pointer alone, or just being in the tab, leaves the page as it was.
     // Their mark (a dot in their pointer's color) shows on the tab's icon here while they're in it.
     onJoinerPerson: (page, who, did, acting, changed = false, ago = 0) => { presence.elsewhere(page, who, did, acting, ago); hud.setPersonMark(page, personColor(who)); if (changed) bumpRevision(page); },
-    onPause: (paused, who) => pressPause(paused, who || HOST), pauseState,
+    onPause: (paused, who, agent) => pressPause(paused, who || HOST, agent || null), pauseState,
     onRecord: (on) => (on ? recorder.start() : recorder.stop()), recordState: () => recorder.state(),
     // A joiner's agent at work in their copy of a tab: in use, so the tab cap here keeps it (closing
     // it would close their copy too).
@@ -492,10 +525,12 @@ hud.onCursor((page, at) => { liveView()?.agentPointed?.(page, at); presence.agen
 // The goal log the helper keeps by itself (a run file per session; daemon/journal.mjs).
 const journal = createJournal({ session: () => context.sessionName(), openPages: () => context.openPages(), mask: output.mask, strip: (t) => tabLabels.strip(`Page Title: ${t}`).replace(/^Page Title: /, ""), onActivity: (fn) => hud.onActivity(fn), log });
 // The session's timeline: the pictures already sent to agents, kept per session (daemon/timeline.mjs).
+// The Page tab's outline: the last whole-page snapshot a local agent got per tab (daemon/outline.mjs).
+const outlines = createOutlines({ mask: output.mask });
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals,
+  secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals, outlines,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {

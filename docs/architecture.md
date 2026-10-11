@@ -39,7 +39,8 @@ what each boundary protects against, see [security.md](security.md) and the
   `serve` (refusal checks, then a handler table), `context` (browser, sessions, downloads, tabs),
   `presence` (people using the browser), `hud` (badge, bar, cursor), `screenshot`, `output`
   (masking what the agent reads), `panel` (side panel), `sharing` (invites, join codes, tunnel),
-  `timeline` (the session's pictures already sent to agents: local, capped, off by config).
+  `timeline` (the session's pictures already sent to agents: local, capped, off by config),
+  `outline` (the last whole-page snapshot an agent got per tab, in memory, dropped with the tab).
   With a native build that has its own pages, those `chrome://pairbrowse` pages are live view
   clients with a key of their own from the launch switch; the picker's pick comes over `POST pick`.
 - **Policy and secrets** (`scripts/policy.mjs`, `scripts/secrets.mjs`): which tools exist, which

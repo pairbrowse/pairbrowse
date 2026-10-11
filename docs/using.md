@@ -45,6 +45,8 @@ fresh session", "use the client-x session", "join this session: pb-join:...") an
 shows. It doesn't show the very first time either (there's nothing to go back to), nor in cloud
 sessions. Set `"sessionPicker": false` to turn it off: Claude then asks you in the chat.
 
+In a build with its own pages, renaming the session from the session card restarts the browser on the renamed session (its tabs reopen); **Save** keeps its tabs now.
+
 To switch later, click **Switch session…** in the side panel: the picker opens in a new tab.
 Keeping the open session just closes it; another one switches the browser, whoever else is
 connected (agents' next actions wait for your pick, then carry on in the new session). Claude or
@@ -132,7 +134,7 @@ You and Claude can work in the same tab. When you click or type in the PairBrows
 next action in that tab waits (the bottom bar says "waiting… you're using the browser") and
 continues when you've stopped for two seconds; moving the mouse or scrolling holds nothing up. Fields you fill are yours for 5 seconds after your last keystroke (10 while you stay in them): Claude
 leaves them as you wrote them. Claude is then told what you did, which button or field, never what
-you typed. "Pause agents" in the bottom bar or side panel stops all agents until you press Resume. A visible CAPTCHA or bot check, or Claude handing over for a
+you typed. "Pause agents" in the bottom bar or side panel stops all agents until you press Resume. "Pause this agent" pauses one agent until a person resumes it or presses Resume. A visible CAPTCHA or bot check, or Claude handing over for a
 sign-in, 2FA or approval, shows "Your turn" and sends you a PairBrowse notification.
 
 ## Uploads without a file picker

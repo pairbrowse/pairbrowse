@@ -113,9 +113,13 @@ test("every route needs its right; routes that aren't listed are refused", async
       // The browser's own pages' routes: the owner's only.
       for (const [method, path, body] of [["GET", "layout.json"], ["POST", "layout", { left: "rail" }], ["GET", "tabs.json"], ["GET", "agent-tabs.json"], ["GET", "timeline.json"],
         ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note", { text: "x" }], ["POST", "timeline/0123456789ab/pin", { on: true }],
-        ["GET", "config.json"], ["POST", "config", { browser: "chromium" }]]) {
+        ["GET", "config.json"], ["POST", "config", { browser: "chromium" }],
+        ["POST", "session", { op: "rename", name: "x" }], ["POST", "session", { op: "save" }], ["GET", "outline.json"], ["POST", "timeline/0123456789ab/show", {}], ["POST", "pause", { paused: true, who: "X" }]]) {
         assert.equal((await request(view.port, method, `/${k}/${path}`, { body })).status, 403, `${method} /${path} is the owner's`);
       }
+    }
+    for (const [method, path, body] of [["POST", "session", { op: "save" }], ["GET", "outline.json"], ["POST", "timeline/0123456789ab/show", {}]]) {
+      assert.equal((await request(view.port, method, `/${key}/${path}`, { body })).status, 404, `nothing given: ${method} /${path}`);
     }
     for (const [method, path] of [["GET", "timeline.json"], ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note"]]) {
       assert.equal((await request(view.port, method, `/${key}/${path}`, { body: method === "POST" ? { text: "x" } : undefined })).status, 404, `no timeline given: ${method} /${path}`);
@@ -525,6 +529,26 @@ test("layout is the owner's, validated, per session, broadcast to owner streams 
     const seen = eventsIn(owner.text(), "layout");
     assert.deepEqual(seen[0], { left: "rail", right: "open", strip: 88 }, "on open");
     assert.deepEqual(seen.at(-1), { left: "hidden", right: "open", strip: 88 }, "after the change");
+    // The right dock's tab: relayed in the answer and its event, never kept.
+    r = await request(view.port, "POST", `/${key}/layout`, { body: { right: "open", tab: "tools" } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text), { left: "hidden", right: "open", strip: 88, tab: "tools" });
+    assert.deepEqual(JSON.parse((await request(view.port, "GET", `/${key}/layout.json`)).text), { left: "hidden", right: "open", strip: 88 }, "layout.json never has it");
+    assert.deepEqual(view.layout(), { left: "hidden", right: "open", strip: 88 });
+    r = await request(view.port, "POST", `/${key}/layout`, { body: { tab: "nope" } });
+    assert.equal(r.status, 409);
+    assert.match(JSON.parse(r.text).error, /agent, page, pictures or tools/);
+    r = await request(view.port, "POST", `/${key}/layout`, { body: { tab: "page" } });
+    assert.equal(r.status, 200, "a tab alone changes nothing else");
+    assert.deepEqual(JSON.parse(r.text), { left: "hidden", right: "open", strip: 88, tab: "page" });
+    r = await request(view.port, "POST", `/${key}/layout`, { body: { left: "big", tab: "page" } });
+    assert.equal(r.status, 409, "a bad layout with a good tab is still refused");
+    await wait(50);
+    assert.deepEqual(eventsIn(owner.text(), "layout").at(-1), { left: "hidden", right: "open", strip: 88, tab: "page" }, "the tab rides on its event");
+    const late = await readStream(view.port, `/${key}/events?panel=1`);
+    await wait(50);
+    assert.deepEqual(eventsIn(late.text(), "layout")[0], { left: "hidden", right: "open", strip: 88 }, "never in the first event");
+    late.close();
     assert.equal(eventsIn(guest.text(), "layout").length, 0, "a guest's stream never gets it");
     view.setSession({ name: "other", where: "Local" });
     assert.deepEqual(JSON.parse((await request(view.port, "GET", `/${key}/layout.json`)).text), { left: "rail", right: "open", strip: 88 }, "another session starts from the defaults");
@@ -565,6 +589,15 @@ test("the events stream records a page kind for the owner only", async () => {
     assert.equal(eventsIn(strip.text(), "frame").length, 0);
     assert.equal(eventsIn(strip.text(), "agent-tabs").length, 1, "the strip gets who holds which tab on open");
     strip.close();
+    await wait(30);
+    assert.deepEqual(view.pageClients(), {});
+    // The timeline page and the docks: page streams too (no screencast, no frame), counted.
+    const own = [];
+    for (const kind of ["timeline", "left", "right"]) own.push(await readStream(view.port, `/${key}/events?page=${kind}`));
+    await wait(50);
+    assert.deepEqual(view.pageClients(), { timeline: 1, left: 1, right: 1 });
+    assert.equal(sessions.length, 0, "none of them starts a screencast");
+    for (const o of own) { assert.equal(eventsIn(o.text(), "frame").length, 0); o.close(); }
     await wait(30);
     assert.deepEqual(view.pageClients(), {});
     const nope = await readStream(view.port, `/${key}/events?page=nope&panel=1`);
@@ -648,9 +681,10 @@ test("the timeline routes serve the owner the store and nobody else", async () =
   const card = { id: "0123456789ab", t: 1, caption: "Typed hunter2", step: null, who: "Ada", pinned: false, note: false };
   const calls = [];
   let fire = null;
+  let noteCard = false;
   const timeline = {
     enabled: true,
-    cards: () => [card],
+    cards: () => [{ ...card, note: noteCard }],
     picture: (id) => (id === "0123456789ab" ? Buffer.from([0xff, 0xd8, 0xff]) : null),
     remove: async (id) => { calls.push(["remove", id]); return id === "0123456789ab"; },
     pin: async (id, on) => { calls.push(["pin", id, on]); return { ...card, pinned: on }; },
@@ -688,12 +722,30 @@ test("the timeline routes serve the owner the store and nobody else", async () =
     assert.equal(r.status, 200);
     assert.deepEqual(calls.at(-1), ["pin", "0123456789ab", true]);
     assert.equal((await request(view.port, "POST", `/${key}/timeline/0123456789ab/nope`, { body: {} })).status, 404);
+    // Show: the Pictures tab shows that card; the owner's streams hear it with the card.
+    const callsBeforeShow = calls.length;
+    r = await request(view.port, "POST", `/${key}/timeline/0123456789ab/show`, { body: {} });
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text), { ok: true });
+    assert.equal(calls.length, callsBeforeShow, "nothing kept or changed for it");
+    assert.equal((await request(view.port, "POST", `/${key}/timeline/ffffffffffff/show`, { body: {} })).status, 404, "an unknown id");
+    noteCard = true;
+    r = await request(view.port, "POST", `/${key}/timeline/0123456789ab/show`, { body: {} });
+    assert.equal(r.status, 409, "a note has no picture");
+    assert.match(JSON.parse(r.text).error, /note/);
+    noteCard = false;
+    assert.equal((await request(view.port, "POST", `/${key}/timeline/0123456789ab/show`, { raw: "{" })).status, 400);
+    await wait(50);
+    const shown = eventsIn(owner.text(), "timeline").filter((e) => e.op === "show");
+    assert.equal(shown.length, 1);
+    assert.deepEqual(shown[0], { op: "show", id: "0123456789ab", card: { ...card, caption: "Typed ••••" } });
+    assert.equal(eventsIn(guest.text(), "timeline").length, 0, "a guest's stream never hears it");
     const callsBefore = calls.length;
     assert.equal((await request(view.port, "POST", `/${key}/timeline/note`, { raw: "{" })).status, 400, "a note body that isn't JSON");
     assert.equal((await request(view.port, "POST", `/${key}/timeline/0123456789ab/pin`, { raw: "{" })).status, 400, "a pin body that isn't JSON");
     assert.equal(calls.length, callsBefore, "and reaches nothing");
     for (const k of [invites.create({ role: "watch", label: "W" }).key, d.key]) {
-      for (const [method, path] of [["GET", "timeline.json"], ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note"], ["POST", "timeline/0123456789ab/pin"]]) {
+      for (const [method, path] of [["GET", "timeline.json"], ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note"], ["POST", "timeline/0123456789ab/pin"], ["POST", "timeline/0123456789ab/show"]]) {
         assert.equal((await request(view.port, method, `/${k}/${path}`, { body: method === "POST" ? { text: "x" } : undefined })).status, 403, `${method} /${path}`);
       }
     }
@@ -705,7 +757,7 @@ test("the timeline routes serve the owner the store and nobody else", async () =
     assert.equal(before, 3);
     fire({ op: "add", card: { ...card, id: "aaaaaaaaaaaa" } });
     await wait(50);
-    const got = eventsIn(owner.text(), "timeline");
+    const got = eventsIn(owner.text(), "timeline").filter((e) => e.op !== "show");
     assert.equal(got.length, 1);
     assert.equal(got[0].card.caption, "Typed ••••", "masked on the way out");
     assert.equal(eventsIn(guest.text(), "timeline").length, 0, "a guest's stream never gets it");
@@ -718,7 +770,7 @@ test("timeline: false answers 404 with a clear body", async () => {
   const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", timeline: { enabled: false, onChange: () => () => {} } });
   const key = view.url.split("/").at(-2);
   try {
-    for (const [method, path] of [["GET", "timeline.json"], ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note"], ["POST", "timeline/0123456789ab/pin"]]) {
+    for (const [method, path] of [["GET", "timeline.json"], ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note"], ["POST", "timeline/0123456789ab/pin"], ["POST", "timeline/0123456789ab/show"]]) {
       const r = await request(view.port, method, `/${key}/${path}`, { body: method === "POST" ? { text: "x" } : undefined });
       assert.equal(r.status, 404, `${method} /${path}`);
       assert.match(r.text, /timeline: false/);
@@ -734,7 +786,10 @@ test("the browser's own pages' key: owner rights, never echoed, CORS for their o
   const { ctx } = fakeTabs(1);
   const plainView = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", picker });
   const CHROME = ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"];
-  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", picker, extraOrigins: [...CHROME, "chrome-extension://aaaa"] });
+  const sessionOps = { state: () => ({ canRename: true, canSave: true, savedAt: "" }), rename: async (name) => ({ ok: true, name, from: "a", restarting: true }), save: async () => ({ ok: true, savedAt: "2026-10-11T10:00:00.000Z" }) };
+  const outlines = { latest: () => null, get: () => null, onChange: () => () => {} };
+  const timeline = { enabled: true, cards: () => [{ id: "0123456789ab", t: 1, caption: "c", step: null, who: "", pinned: false, note: false }], onChange: () => () => {} };
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", picker, extraOrigins: [...CHROME, "chrome-extension://aaaa"], sessionOps, outlines, timeline });
   try {
     for (const v of [plainView, view]) {
       assert.match(v.pagesKey, /^[A-Za-z0-9_-]{43}$/);
@@ -759,6 +814,26 @@ test("the browser's own pages' key: owner rights, never echoed, CORS for their o
     assert.match(r.headers["access-control-allow-methods"], /POST/);
     assert.match(r.headers["access-control-allow-headers"], /content-type/);
     assert.equal(r.headers["access-control-allow-origin"], "chrome://pairbrowse.top-chrome");
+    // The newer routes take the pages' key as they take the owner's.
+    const o = { headers: { origin: "chrome://pairbrowse" } };
+    r = await request(view.port, "POST", `/${k}/session`, { body: { op: "save" }, ...o });
+    assert.deepEqual([r.status, JSON.parse(r.text)], [200, { ok: true, savedAt: "2026-10-11T10:00:00.000Z" }]);
+    assert.equal(r.headers["access-control-allow-origin"], "chrome://pairbrowse");
+    r = await request(view.port, "POST", `/${k}/session`, { body: { op: "rename", name: "b" }, ...o });
+    assert.deepEqual([r.status, JSON.parse(r.text)], [200, { ok: true, name: "b", restarting: true }]);
+    r = await request(view.port, "GET", `/${k}/outline.json`, o);
+    assert.deepEqual([r.status, JSON.parse(r.text)], [200, { outline: null }]);
+    assert.equal(r.headers["access-control-allow-origin"], "chrome://pairbrowse");
+    r = await request(view.port, "POST", `/${k}/timeline/0123456789ab/show`, { body: {}, ...o });
+    assert.equal(r.status, 200);
+    r = await request(view.port, "POST", `/${k}/layout`, { body: { tab: "pictures" }, ...o });
+    assert.equal(JSON.parse(r.text).tab, "pictures");
+    r = await request(view.port, "OPTIONS", `/${k}/session`, { headers: { origin: "chrome://pairbrowse.top-chrome" } });
+    assert.equal(r.status, 204, "the preflight for POST session");
+    assert.match(r.headers["access-control-allow-methods"], /POST/);
+    assert.equal(r.headers["access-control-allow-origin"], "chrome://pairbrowse.top-chrome");
+    r = await request(view.port, "POST", `/${k}/session`, { body: { op: "save" }, headers: { origin: "https://evil.example" } });
+    assert.equal(r.status, 403, "a web origin's POST is refused");
     r = await request(view.port, "OPTIONS", `/${k}/pick`, { headers: { origin: "https://evil.example" } });
     assert.equal(r.status, 404);
     assert.equal(r.headers["access-control-allow-origin"], undefined);
@@ -888,4 +963,62 @@ test("click approvals: owner-only list and answers, events to owner streams only
     assert.equal(view.guestViewers(), 1, "the invite link's viewer counts");
   } finally { owner.close(); guest.close(); view.close(); }
   assert.equal(listeners.size, 0, "unsubscribed on close");
+});
+
+test("the pause route: the owner pauses and resumes one agent by name, a drive guest pauses everyone, guests never see who is paused on their own", async () => {
+  const invites = createInvites();
+  const calls = [];
+  let answer = { ok: true };
+  const agents = [{ who: "Claude ab12", by: "Bob", at: 1 }];
+  const state = { paused: false, by: "", at: 0, resumedBy: "", can: true, perAgent: true, agents };
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites,
+    onPause: (...args) => { calls.push(args); return answer; }, pauseState: () => state });
+  const key = view.url.split("/").at(-2);
+  const d = invites.create({ role: "drive", label: "D" });
+  const w = invites.create({ role: "watch", label: "W" });
+  const read = (k) => new Promise((resolve) => {
+    let text = "";
+    const req = http.get({ host: "127.0.0.1", port: view.port, path: `/${k}/events?panel=1` }, (res) => { res.setEncoding("utf8"); res.on("data", (c) => (text += c)); resolve({ text: () => text, close: () => req.destroy() }); });
+    req.on("error", () => {});
+  });
+  const pauses = (text) => text.split("\n\n").filter((b) => b.startsWith("event: pause\n")).map((b) => JSON.parse(b.slice(b.indexOf("data: ") + 6)));
+  const owner = await read(key), driver = await read(d.key), watcher = await read(w.key);
+  try {
+    let r = await request(view.port, "POST", `/${key}/pause`, { body: { paused: true, who: "Claude ab12" } });
+    assert.deepEqual([r.status, JSON.parse(r.text)], [200, { ok: true }]);
+    assert.deepEqual(calls.at(-1), [true, null, "Claude ab12"]);
+    r = await request(view.port, "POST", `/${key}/pause`, { body: { paused: false, who: "Claude ab12" } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(calls.at(-1), [false, null, "Claude ab12"], "resumed by name");
+    const n = calls.length;
+    for (const who of ["", "  ", 5, null, "x".repeat(81)]) {
+      r = await request(view.port, "POST", `/${key}/pause`, { body: { paused: true, who } });
+      assert.equal(r.status, 409, JSON.stringify(who));
+      assert.match(JSON.parse(r.text).error, /agent's name/);
+    }
+    assert.equal(calls.length, n, "a bad name never reaches the helper");
+    answer = { problem: "No agent named \"Ghost\" works in this browser." };
+    r = await request(view.port, "POST", `/${key}/pause`, { body: { paused: true, who: "Ghost" } });
+    assert.deepEqual([r.status, JSON.parse(r.text).problem], [409, answer.problem]);
+    answer = { ok: true };
+    // A drive guest's plain pause still works, under the guest's name; with `who` it's refused.
+    r = await request(view.port, "POST", `/${d.key}/pause`, { body: { paused: true } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(calls.at(-1), [true, "D"]);
+    assert.equal((await request(view.port, "POST", `/${d.key}/pause`, { body: { paused: true, who: "Claude ab12" } })).status, 403);
+    assert.equal((await request(view.port, "POST", `/${w.key}/pause`, { body: { paused: true } })).status, 403, "a watcher can't pause");
+    r = await request(view.port, "POST", `/${key}/pause`, { body: { paused: false } });
+    assert.deepEqual(calls.at(-1), [false, null], "the owner's plain Resume");
+    // The pause event: the owner's carries perAgent and the agents; guests' the old shape.
+    view.setPause();
+    await wait(50);
+    const own = pauses(owner.text());
+    assert.equal(own.length, 2, "on connecting and on the change");
+    for (const e of own) { assert.equal(e.perAgent, true); assert.deepEqual(e.agents, agents); }
+    for (const s of [driver, watcher]) {
+      const got = pauses(s.text());
+      assert.equal(got.length, 2);
+      for (const e of got) assert.deepEqual(Object.keys(e).sort(), ["at", "by", "can", "paused", "resumedBy"]);
+    }
+  } finally { owner.close(); driver.close(); watcher.close(); view.close(); }
 });

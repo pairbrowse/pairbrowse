@@ -214,7 +214,7 @@ export function pathsIn(name, args = {}) {
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {}, clickApprovals = null }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {}, clickApprovals = null, outlines = null }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // What PairBrowse declares it is about to press (an agent's click, a fast-mode step, the popup
   // closer's dismiss button) counts as where an agent pointed: a press there is never a person's.
@@ -280,6 +280,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       follow.ownerGone(participant);
       follow.agentGone?.(participant);
       clickApprovals?.gone(participant);
+      pause.forget(participant); // "Pause this agent" ends with its connection
     });
     collaboration.register(participant, `Claude ${participant.slice(0, 4)}`);
     let actingIn = null; // the tab this participant's current call acts in
@@ -393,7 +394,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const handled = popups.drain(actingIn || (mine && !mine.isClosed() ? mine : null));
       // Messages from other participants, and one line on what the other side's agents are
       // doing when it changed: coordination information only, marked as from someone else.
-      const paused = pause.noteAfter(pauseSeen);
+      const paused = pause.noteAfter(pauseSeen, participant);
       pauseSeen = paused.n;
       // The host's notes (join requests, downloads) are for the host's own agents, never a joiner's.
       const lines = [...(remote ? [] : drainHostNotes()).map((n) => `- ${n}`), paused.text, ...fieldNotes.splice(0).map((n) => `- ${n}`), presence.userNote(actingIn || hud.sparkPage(participant), remote?.name), sharedNote(), session.messagesNote(participant), session.note(participant)].filter(Boolean).join("\n");
@@ -472,9 +473,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
         else if (shot?.skipped) msg.result.content.push({ type: "text", text: `\n### PairBrowse\n- ${shot.skipped}` });
         trace.mark("shot");
       }
+      // The Page tab's outline: a whole-page snapshot this agent got for its own tab, as it got it
+      // (masked, cut), kept once the result went out (daemon/outline.mjs): nothing on its way.
+      const outlineText = outlines && !remote && ownPage && msg.result && !msg.result.isError && ((tool === "browser_snapshot" && fullSnapshot) || inlined)
+        ? content().filter((part) => part.type === "text").map((part) => part.text).join("\n") : null;
       trace.done(tool);
       toClient(msg);
       finish(msg.id);
+      if (outlineText) setImmediate(() => { try { outlines.record(ownPage, { text: outlineText, who: myLabel() || "" }); } catch (e) { log("outline", e?.message || e); } });
     }
 
     // Enter after typing (browser_type with submit): on the field that has the focus now. Returns
@@ -810,7 +816,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         beforeStep: async () => {
           if (sock.destroyed) throw new Error("Participant disconnected. Refresh the browser before continuing.");
           // Paused by a person: stop here (never waiting inside the shared queue).
-          const held = pause.view();
+          const held = pause.heldFor(participant);
           if (held.paused) throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`);
           // A person clicking or typing in this tab: every step waits until they're idle, then
           // stops so Claude looks at the page again before the remaining steps.
@@ -822,13 +828,13 @@ export function createServe({ config, log, host, createConnection, clients, coll
         owner: (el) => ownerOf(el, hud.key, { host, log, byAgent: presence.typedByAgent, byRemote: presence.byRemote }),
         // Between two fields: paused agents stop; a person using the tab is waited for.
         holdForPeople: async () => {
-          const held = pause.view();
+          const held = pause.heldFor(participant);
           if (held.paused) throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`);
           if (presence.actingIn(page)) await presence.waitForUser(page);
         },
         // Mid-step (a long stroke): a person acting in this tab or pausing agents stops it at once.
         interrupted: () => {
-          const held = pause.view();
+          const held = pause.heldFor(participant);
           if (held.paused) return `Paused by ${held.by} mid-step: stopped there. Run the remaining steps once someone resumes.`;
           const who = presence.actingIn(page);
           return who ? `${who === host ? "The user" : who} took over this tab mid-step (${presence.didIn(page) || "clicked"}): stopped there. Take a snapshot, then go on.` : "";
@@ -914,7 +920,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         try {
           await dragBetween(page, from, to, {
             cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
-            interrupted: () => { const held = pause.view(); if (held.paused) return `Paused by ${held.by} mid-drag: let go where it was.`; const who = presence.actingIn(page); return who ? `${who === host ? "The user" : who} took over this tab mid-drag: let go where it was.` : ""; },
+            interrupted: () => { const held = pause.heldFor(participant); if (held.paused) return `Paused by ${held.by} mid-drag: let go where it was.`; const who = presence.actingIn(page); return who ? `${who === host ? "The user" : who} took over this tab mid-drag: let go where it was.` : ""; },
           });
         } catch (e) {
           const why = dragReason(e);
@@ -1441,7 +1447,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // Paused by a person: wait before the shared queue (it never holds other work up), and
       // after a while say so, so the agent isn't stuck. Only people resume (no tool does).
       if (acting) {
-        const held = await pause.wait(disconnected.signal);
+        const held = await pause.wait(disconnected.signal, participant);
         if (held) return reply(msg.id, `Paused by ${held.by}. Waiting until someone resumes; nothing was done.`, true);
       }
       // Codex and other apps (not Claude Code, never a joiner's agent): a named final action asks

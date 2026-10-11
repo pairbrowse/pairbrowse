@@ -50,3 +50,180 @@ test("a field a person edited is theirs for a while; an agent's own typing never
   assert.deepEqual(remote, { who: "Alice", local: false, name: "Delivery instructions" }, "latest edit wins");
   assert.equal(leftAlone(remote), "Alice is filling Delivery instructions; left it as they wrote it.");
 });
+
+test("pause this agent: one connection held, the others go on, people resume it, the global Resume too", async () => {
+  const changes = [];
+  const pause = createPause({ onChange: (v) => changes.push(v), replyMs: 300 });
+  const start = pause.seq();
+  assert.ok(pause.pauseOne("a1", "Alice<b>"));
+  assert.equal(pause.pauseOne("a1", "Bob"), false, "a second pause of the same agent changes nothing");
+  assert.deepEqual(pause.heldFor("a1"), { paused: true, by: "Aliceb" }, "names are cleaned");
+  assert.deepEqual(pause.heldFor("a2"), { paused: false, by: "" });
+  assert.equal(pause.view().paused, false, "the global pause stays off");
+  assert.deepEqual(pause.agents().map(({ id, by }) => ({ id, by })), [{ id: "a1", by: "Aliceb" }]);
+  assert.equal(typeof pause.agents()[0].at, "number");
+  assert.deepEqual(await pause.wait(null, "a1"), { by: "Aliceb" }, "its action waits, then says by whom");
+  const t = Date.now();
+  assert.equal(await pause.wait(null, "a2"), null, "another agent waits for nothing");
+  assert.ok(Date.now() - t < 100);
+  assert.match(pause.noteAfter(start, "a1").text, /You were paused by Aliceb \(this agent only\)/);
+  assert.equal(pause.noteAfter(start, "a2").text, "", "another agent hears nothing of it");
+  assert.equal(pause.noteAfter(start).text, "");
+  const waiting = pause.wait(null, "a1");
+  setTimeout(() => pause.resumeOne("a1", "Bob"), 50);
+  assert.equal(await waiting, null, "a person resumed it");
+  assert.equal(pause.resumeOne("a1", "Bob"), false, "nothing left to resume");
+  assert.match(pause.noteAfter(start, "a1").text, /You were paused by Aliceb, then resumed by Bob/);
+  assert.equal(changes.length, 2);
+  // The global Resume lets every agent paused on its own go too.
+  pause.pauseOne("a1", "Alice");
+  pause.pauseOne("a2", "Alice");
+  const seen = pause.seq();
+  assert.equal(pause.resume("Carol"), true, "resume() with only agents of their own held: true");
+  assert.deepEqual(pause.agents(), []);
+  assert.equal(pause.view().paused, false);
+  assert.match(pause.noteAfter(seen, "a2").text, /then resumed by Carol/);
+  assert.equal(pause.resume("Carol"), false, "nothing held: false");
+  pause.pauseOne("a1", "Alice");
+  pause.pause("Dee");
+  assert.deepEqual(pause.heldFor("a2"), { paused: true, by: "Dee" }, "the global pause holds everyone");
+  assert.deepEqual(pause.heldFor("a1"), { paused: true, by: "Dee" }, "global first");
+  assert.ok(pause.resume("Dee"));
+  assert.deepEqual(pause.agents(), [], "the global Resume clears every agent's own pause");
+  assert.match(pause.noteAfter(seen).text, /^- Agents were paused by Dee, then resumed by Dee\./, "the global wording as before");
+  // A connection that ends takes its pause with it.
+  pause.pauseOne("a3", "Alice");
+  const n = changes.length;
+  pause.forget("a3");
+  assert.equal(changes.length, n + 1, "forget calls onChange");
+  assert.deepEqual(pause.heldFor("a3"), { paused: false, by: "" });
+  pause.forget("a3");
+  assert.equal(changes.length, n + 1, "and only when it held something");
+});
+
+test("pause this agent: many clicks on one agent never push a shared pause out before an idle agent reads it", () => {
+  const pause = createPause();
+  const idle = pause.seq();
+  pause.pause("Alice");
+  pause.resume("Alice");
+  for (let i = 0; i < 30; i++) { pause.pauseOne("a1", "Bob"); pause.resumeOne("a1", "Bob"); pause.pauseOne(`x${i}`, "Bob"); }
+  pause.resume("Carol"); // one "resumed" per agent paused on its own
+  assert.match(pause.noteAfter(idle, "a2").text, /^- Agents were paused by Alice, then resumed by Alice\./, "the idle agent still hears the shared pause");
+  assert.doesNotMatch(pause.noteAfter(idle, "a2").text, /You were paused/, "and nothing of the others' own");
+  const a1 = pause.noteAfter(idle, "a1").text;
+  assert.match(a1, /Agents were paused by Alice/);
+  assert.match(a1, /You were paused by Bob, then resumed by Bob/, "its own, kept apart");
+  pause.forget("a1");
+  assert.equal(pause.noteAfter(pause.noteAfter(idle).n, "a1").text, "", "its own go with its connection");
+});
+
+// ---- "Pause this agent" end to end: the live view's route, the helper matching the name to the
+// agent's connection, and serve holding that agent's acting calls only. Live: a real helper and a
+// headless browser in a temporary home (PAIRBROWSE_TEST_RUNTIME).
+import net from "node:net";
+import { createRequire } from "node:module";
+import { createInterface } from "node:readline";
+import { spawn } from "node:child_process";
+import { mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const textOf = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
+
+async function agent(sockPath, name) {
+  let sock;
+  for (const end = Date.now() + 90_000; ; await sleep(100)) {
+    sock = net.createConnection(sockPath);
+    if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
+    sock.destroy();
+    if (Date.now() > end) throw new Error(`couldn't connect to ${sockPath}`);
+  }
+  sock.on("error", () => {});
+  const waiting = new Map();
+  createInterface({ input: sock }).on("line", (line) => {
+    let m;
+    try { m = JSON.parse(line); } catch { return; }
+    if (m?.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
+  });
+  let seq = 0;
+  const call = (method, params = {}) => new Promise((resolve) => {
+    const id = `${name}${++seq}`;
+    waiting.set(id, resolve);
+    sock.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+  });
+  await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1", pairbrowseParticipant: name } });
+  sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+  return { sock, tool: (tool, args = {}) => call("tools/call", { name: tool, arguments: args }) };
+}
+
+test("pause this agent through the live view: only that agent's next acting call waits, the global Resume lets it go", { skip: !runtime, timeout: 180_000 }, async () => {
+  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
+  const home = mkdtempSync(join(tmpdir(), "pb-pa-"));
+  symlinkSync(runtime, join(home, "runtime"), "dir");
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
+  const out = openSync(join(home, "daemon.stderr.log"), "a");
+  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home }, stdio: ["ignore", out, out] });
+  const agents = [];
+  try {
+    const a = await agent(join(home, "run", "browser.sock"), "Ann");
+    const b = await agent(join(home, "run", "browser.sock"), "Ben");
+    agents.push(a, b);
+    assert.ok(!(await a.tool("browser_press_key", { key: "Shift" })).result?.isError, "Ann acts before the pause");
+    const own = await b.tool("browser_tabs", { action: "new" }); // Ben works in a tab of his own
+    assert.ok(!own.result?.isError, textOf(own));
+    const live = textOf(await a.tool("pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)?.[0];
+    assert.ok(live, "the live view's address");
+    const post = async (body) => { const r = await fetch(`${live}pause`, { method: "POST", body: JSON.stringify(body) }); return { status: r.status, body: await r.json().catch(() => null) }; };
+    // The owner pauses Ann by the name the session list shows.
+    let r = await post({ paused: true, who: "Ann · Claude Code" });
+    assert.deepEqual([r.status, r.body], [200, { ok: true }]);
+    r = await post({ paused: true, who: "Nobody · Claude Code" });
+    assert.equal(r.status, 409);
+    assert.match(r.body.problem, /No agent named "Nobody · Claude Code" works in this browser/);
+    // The owner's stream says who is paused on their own, and by whom.
+    const ac = new AbortController();
+    let stream = "";
+    const reading = fetch(`${live}events?panel=1`, { signal: ac.signal }).then(async (res) => { for await (const c of res.body) stream += Buffer.from(c).toString("utf8"); }).catch(() => {});
+    for (const end = Date.now() + 5000; !/event: pause\n/.test(stream) && Date.now() < end; ) await sleep(50);
+    ac.abort();
+    await reading;
+    const block = stream.split("\n\n").find((x) => x.startsWith("event: pause\n"));
+    assert.ok(block, "a pause event on the owner's stream");
+    const ev = JSON.parse(block.slice(block.indexOf("data: ") + 6));
+    assert.equal(ev.perAgent, true);
+    assert.equal(ev.paused, false, "the global pause stays off");
+    assert.deepEqual(ev.agents.map((x) => x.who), ["Ann · Claude Code"]);
+    assert.equal(typeof ev.agents[0].by, "string");
+    assert.equal(typeof ev.agents[0].at, "number");
+    // Ann's acting call waits; Ben's goes through at once.
+    const annWaits = (async () => { const t = Date.now(); const res = await a.tool("browser_press_key", { key: "Shift" }); return { ms: Date.now() - t, res }; })();
+    await sleep(300);
+    const t = Date.now();
+    const ben = await b.tool("browser_press_key", { key: "Shift" });
+    assert.ok(!ben.result?.isError, textOf(ben));
+    assert.ok(Date.now() - t < 3000, `Ben wasn't held (${Date.now() - t} ms)`);
+    await sleep(2500);
+    // The global Resume releases every agent paused on its own too.
+    r = await post({ paused: false });
+    assert.equal(r.status, 200);
+    const ann = await annWaits;
+    assert.ok(ann.ms >= 2500, `Ann waited (${ann.ms} ms)`);
+    assert.ok(!ann.res.result?.isError, textOf(ann.res));
+    assert.match(textOf(ann.res), /You were paused by [^\n]*, then resumed by/);
+    assert.doesNotMatch(textOf(ben), /You were paused/, "Ben heard nothing of Ann's pause");
+    // Paused and resumed by name: resuming one is the owner's too.
+    assert.equal((await post({ paused: true, who: "Ann · Claude Code" })).status, 200);
+    assert.equal((await post({ paused: false, who: "Ann · Claude Code" })).status, 200);
+    const again = Date.now();
+    assert.ok(!(await a.tool("browser_press_key", { key: "Shift" })).result?.isError);
+    assert.ok(Date.now() - again < 3000, "resumed by name: Ann goes on at once");
+  } finally {
+    for (const s of agents) s.sock.destroy();
+    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    rmSync(home, { recursive: true, force: true });
+  }
+});

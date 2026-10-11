@@ -24,7 +24,7 @@ import { createInvites, roleMay } from "./liveview/invites.mjs";
 import { createInputReplayer } from "./liveview/input.mjs";
 import { createJoinerServer, recentlySeen } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/tabs.mjs";
-import { readLayout, layoutFrom } from "./liveview/layout.mjs";
+import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
 import { isChromePage, CHROME_PAGE_ORIGINS } from "./policy.mjs";
 import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
 
@@ -45,12 +45,14 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline"]); // events only the owner's streams get
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
-const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture"]);
+const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture", "timeline"]);
 const TIMELINE_ID = /^[0-9a-f]{12}$/;
 const TIMELINE_OFF = "The timeline is off (timeline: false in ~/.pairbrowse/config.json).";
+const SESSION_OP = 'A session change is { op: "rename", name } or { op: "save" }.';
+const SESSION_FIELDS = ["canRename", "canSave", "savedAt"]; // the owner's streams only
 
 const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
@@ -108,7 +110,9 @@ async function release(cdp) {
 // timeline: the session's pictures (daemon/timeline.mjs), or null. layoutDefaults: config.layout,
 // or a function returning it (read whenever a session's layout starts). settings: the browser's
 // own Settings page's three fields ({ read(), write(given) }, liveview/settings.mjs), or null.
-export async function startLiveView({ mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// sessionOps: the session card ({ state() -> { canRename, canSave, savedAt }, rename(name),
+// save() }), or null. outlines: the Page tab's outlines (daemon/outline.mjs), or null.
+export async function startLiveView({ sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null }) {
@@ -199,6 +203,8 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
   // Joiners connected right now (name, app, computer), for the session picker's "Live" badge.
   const joinersNow = () => [...joiners.values()].filter(recentlySeen).map((j) => ({ who: j.name, app: j.app || "", computer: j.computer || "" }));
 
+  // The pause as guests get it: without who is paused on their own (the owner's only).
+  const guestPause = (p) => { if (!p || typeof p !== "object") return p; const { perAgent, agents, ...rest } = p; return rest; };
   const broadcast = (event, data) => {
     const msg = sse(event, data);
     for (const res of event === "frame" ? viewers : OWNER_ONLY.has(event) ? owners : clients) {
@@ -209,10 +215,21 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
       // Link guests get addresses without query strings, like joiners.
       if (linkGuests.has(res) && event === "tabs") res.write(sse(event, guestTabs(data)));
       else if (linkGuests.has(res) && event === "activity") res.write(sse(event, guestActivity(data)));
+      else if (linkGuests.has(res) && event === "session") res.write(sse(event, sessionInfo)); // never the owner's fields
+      else if (linkGuests.has(res) && event === "pause") res.write(sse(event, guestPause(data))); // "Pause this agent" is the owner's
       else res.write(msg);
     }
   };
   const collaborationChanged = () => { broadcast("collaboration", collaborationNow()); agentTabsChanged(); };
+  // The session as the owner's streams get it: with whether it can be renamed and saved now, and
+  // when it was last saved (sessionOps). Guests and state.json get sessionInfo alone.
+  const ownerSession = () => {
+    if (!sessionOps) return sessionInfo;
+    try {
+      const st = sessionOps.state() || {};
+      return { ...sessionInfo, ...Object.fromEntries(SESSION_FIELDS.filter((f) => st[f] !== undefined).map((f) => [f, st[f]])) };
+    } catch { return sessionInfo; }
+  };
 
   // The tab strip's order (a move by hand or by a drive joiner), read in the background: a slow
   // answer from the side panel's worker never holds up what joiners get. A new order goes out
@@ -691,11 +708,16 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
       if (body === null) return plain(res, 413);
       const given = parsed(body);
       if (given === undefined) return json(res, 400, { error: NOT_JSON });
-      const next = readLayout(given, layoutNow());
+      // tab: the right dock's tab to open on, relayed in this answer and its event only (never kept).
+      const t = readDockTab(given);
+      if (t.error) return json(res, 409, { error: t.error });
+      const plainObject = given && typeof given === "object" && !Array.isArray(given);
+      const next = readLayout(plainObject ? Object.fromEntries(Object.entries(given).filter(([k]) => k !== "tab")) : given, layoutNow());
       if (next.error) return json(res, 409, { error: next.error });
       layouts.set(sessionInfo.name, next);
-      broadcast("layout", next);
-      json(res, 200, next);
+      const out = t.tab ? { ...next, tab: t.tab } : next;
+      broadcast("layout", out);
+      json(res, 200, out);
     } },
     // The browser's Settings page (the owner only): which browser runs, the timeline on/off and
     // cap, the docks' default layout, and nothing else (liveview/settings.mjs has the body shape).
@@ -716,6 +738,41 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
       broadcast("config", r);
       json(res, 200, r);
     } },
+    // The session card (the owner only): { op: "rename", name } restarts the browser on the renamed
+    // session, { op: "save" } writes its tabs now. sessionOps from the helper (daemon.mjs).
+    { method: "POST", path: "session", right: "session", handler: async ({ req, res }) => {
+      if (!sessionOps) return plain(res, 404);
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const op = parsed(body);
+      if (op === undefined) return json(res, 400, { error: NOT_JSON });
+      if (!op || typeof op !== "object" || Array.isArray(op) || (op.op !== "rename" && op.op !== "save")) return json(res, 409, { error: SESSION_OP });
+      if (op.op === "save") {
+        const r = await sessionOps.save();
+        if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
+        json(res, 200, { ok: true, savedAt: r.savedAt || "" });
+        broadcast("session", ownerSession());
+        return;
+      }
+      if (linkGuests.size || joinersNow().length) return json(res, 409, { error: "People are in this session; rename it once they have left." });
+      if (recordState()?.recording) return json(res, 409, { error: "Stop the recording first." });
+      if (clickApprovals?.pending().length) return json(res, 409, { error: "An approval is waiting; answer it first." });
+      const r = await sessionOps.rename(String(op.name ?? "").trim());
+      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
+      if (r.restarting && r.from && r.from !== r.name && layouts.has(r.from)) { layouts.set(r.name, layouts.get(r.from)); layouts.delete(r.from); }
+      // Answered before the browser restarts: the dock that asked closes with the window.
+      json(res, 200, { ok: true, name: r.name, restarting: !!r.restarting });
+      broadcast("session", ownerSession());
+    } },
+    // The Page tab: the whole-page snapshot an agent last got for a tab (?tab=<id>, else the
+    // latest), its text masked again here; { outline: null } when there is none.
+    { method: "GET", path: "outline.json", right: "outline", handler: async ({ req, res }) => {
+      if (!outlines) return plain(res, 404);
+      const want = new URL(req.url, "http://x").searchParams.get("tab");
+      const page = want ? webPages((await getContext()).pages()).map(([p]) => p).find((p) => !p.isClosed() && idOf(p) === want) || null : outlines.latest();
+      const o = page ? outlines.get(page) : null;
+      json(res, 200, { outline: o ? { tab: idOf(page), host: hostOf(page.url()), who: o.who, at: o.at, cut: o.cut, text: mask(o.text) } : null });
+    } },
     { method: "GET", path: "tabs.json", right: "strip", handler: async ({ res }) => { watchPages(); json(res, 200, await tabsStrip()); } },
     { method: "GET", path: "agent-tabs.json", right: "strip", handler: async ({ res }) => json(res, 200, await agentTabs()) },
     { method: "GET", path: "timeline.json", right: "timeline", handler: ({ res }) => {
@@ -735,15 +792,25 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
       if (rest.length !== 1 || !TIMELINE_ID.test(rest[0])) return plain(res, 404);
       return (await timeline.remove(rest[0])) === true ? json(res, 200, { ok: true }) : plain(res, 404);
     } },
+    // note, <id>/pin, and <id>/show: the Pictures tab shows that card (an event to the owner's
+    // streams with the card; nothing new kept).
     { method: "POST", path: "timeline", right: "timeline", handler: async ({ req, res, rest }) => {
       if (timelineOff(res)) return;
       const isNote = rest.length === 1 && rest[0] === "note";
       const isPin = rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "pin";
-      if (!isNote && !isPin) return plain(res, 404);
+      const isShow = rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "show";
+      if (!isNote && !isPin && !isShow) return plain(res, 404);
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
       const op = parsed(body);
       if (op === undefined) return json(res, 400, { error: NOT_JSON });
+      if (isShow) {
+        const card = (timeline.cards() || []).find((c) => c.id === rest[0]);
+        if (!card) return plain(res, 404);
+        if (card.note === true) return json(res, 409, { error: "That card is a note; it has no picture to show." });
+        broadcast("timeline", { op: "show", id: card.id, card: maskedCard(card) });
+        return json(res, 200, { ok: true });
+      }
       const r = isNote ? await timeline.note(typeof op?.text === "string" ? op.text : "") : await timeline.pin(rest[0], op?.on !== false);
       if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
       json(res, 200, maskedCard(r));
@@ -751,7 +818,8 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     { method: "POST", path: "input", right: "input", handler: human },
     { method: "POST", path: "tab", right: "tab", handler: human },
     // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
-    // who may drive. who: the guest's name (null: the owner).
+    // who may drive. who: the guest's name (null: the owner). With `who` in the body: "Pause this
+    // agent" / "Resume this agent" for the agent of that name, the owner's only.
     // Record (the side panel): the browser as a video, saved in Downloads. The owner only.
     { method: "POST", path: "record", right: "record", handler: async ({ req, res }) => {
       const body = await readBody(req, BODY_MAX.approve);
@@ -759,10 +827,18 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
       const r = await onRecord(JSON.parse(body)?.on === true);
       json(res, r?.error ? 409 : 200, { ...recordState(), text: r?.text || "", path: r?.path || "" });
     } },
-    { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite }) => {
+    { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite, role }) => {
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
-      const r = onPause(JSON.parse(body)?.paused === true, invite ? invite.label : null) || {};
+      const op = parsed(body);
+      if (op === undefined) return json(res, 400, { error: NOT_JSON });
+      if (op && typeof op === "object" && op.who !== undefined) {
+        if (role !== "owner") return plain(res, 403);
+        if (typeof op.who !== "string" || !op.who.trim() || op.who.length > 80) return json(res, 409, { error: "who is an agent's name as the session list shows it." });
+        const r = onPause(op.paused === true, null, op.who) || {};
+        return json(res, r.problem ? 409 : 200, r);
+      }
+      const r = onPause(op?.paused === true, invite ? invite.label : null) || {};
       json(res, r.problem ? 409 : 200, r);
     } },
   ];
@@ -795,7 +871,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     const tabs = await tabsInfo();
     res.write(sse("tabs", invite ? guestTabs(tabs) : tabs));
     res.write(sse("status", status));
-    res.write(sse("session", sessionInfo));
+    res.write(sse("session", invite ? sessionInfo : ownerSession()));
     res.write(sse("collaboration", collaborationNow()));
     res.write(sse("activity", invite ? guestActivity(activity) : activity));
     if (!invite) res.write(sse("join", approvals.open()));
@@ -806,7 +882,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     if (kind) { watchPages(); res.write(sse("agent-tabs", await agentTabs())); }
     if (!invite && clickApprovals?.pending().length) res.write(sse("driving", { on: driving }));
     const paused = pauseState();
-    if (paused) res.write(sse("pause", paused));
+    if (paused) res.write(sse("pause", invite ? guestPause(paused) : paused));
     if (!invite && recordState()) res.write(sse("record", recordState()));
     if (viewer && lastFrame) res.write(sse("frame", lastFrame));
   }
@@ -944,6 +1020,11 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
   }) : () => {};
   // The timeline changed (a picture kept, a card removed or pinned, a note): the owner's pages.
   const stopTimeline = timeline?.onChange ? timeline.onChange((change) => broadcast("timeline", { op: change.op, card: maskedCard(change.card) })) : () => {};
+  // An outline kept or dropped (daemon/outline.mjs): the owner's pages hear which tab, never the text.
+  const stopOutlines = outlines?.onChange ? outlines.onChange((c) => {
+    if (!c?.page) return;
+    broadcast("outline", { op: c.op, tab: idOf(c.page), ...(c.op === "set" ? { host: hostOf(c.page.url()), who: c.who, at: c.at, cut: c.cut } : {}) });
+  }) : () => {};
 
   async function tick() {
     invites.sweep();
@@ -973,7 +1054,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     // Which browser session is shown, and where it runs (Local or Server).
     setSession(info) {
       sessionInfo = info;
-      broadcast("session", info);
+      broadcast("session", ownerSession()); // guests get sessionInfo alone (broadcast)
       broadcast("layout", layoutNow());
     },
     setCollaboration(next) {
@@ -1037,7 +1118,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
       closed = true;
       clearInterval(timer);
       clearTimeout(settleTimer);
-      stopEnded(); stopApprovals(); stopTimeline(); stopClickApprovals();
+      stopEnded(); stopApprovals(); stopTimeline(); stopOutlines(); stopClickApprovals();
       server.close();
       for (const r of clients) r.end();
       joinerServer.close();

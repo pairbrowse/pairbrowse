@@ -18,7 +18,8 @@ const formatTime = (t) => new Date(t).toLocaleString("en-GB", { dateStyle: "medi
 
 // host: the host's name. view: what a new live view starts with ({ getContext, currentUrl,
 // profile, tabMeta, onHumanInput, extraOrigins, status(), session(), collaboration(),
-// secretDomains() }). notify(text), hostNote(text): tell the user, and the host's agent in its
+// secretDomains(), and the owner's pages' parts: timeline, outlines (the Page tab's outline),
+// sessionOps ({ state(), rename(name), save() }: the session card), settings, picker }). notify(text), hostNote(text): tell the user, and the host's agent in its
 // next result. joinAlert(entry): tells the user someone asks to join (the bottom bar in their tab
 // or a notification, one at a time: daemon/joinprompt.mjs).
 // startLive: starts the live view (tests pass a stand-in).
@@ -243,6 +244,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
       onPause: view.onPause, pauseState: view.pauseState, onRecord: view.onRecord, recordState: view.recordState, picker: view.picker, joinHost: view.joinHost, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel, journal: view.journal, makeInvite: inviteFromPanel,
       timeline: view.timeline, mask: view.mask, layoutDefaults: view.layoutDefaults, settings: view.settings, clickApprovals: view.clickApprovals || null,
+      sessionOps: view.sessionOps || null, outlines: view.outlines || null,
     });
     await restoring;
     // Keep the sharing tunnel's port when the live view restarts with the browser.

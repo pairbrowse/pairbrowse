@@ -23,3 +23,13 @@ export function readLayout(given, base) {
 
 // config.layout as a valid layout: an invalid or missing one is the fallback.
 export const layoutFrom = (given) => { const r = readLayout(given, LAYOUT_FALLBACK); return r.error ? { ...LAYOUT_FALLBACK } : r; };
+
+// The right dock's tab a POST layout may ask for (the left dock's Tools button opens it on
+// "tools"): relayed in that answer and its layout event only, never kept, never in layout.json.
+export const DOCK_TABS = new Set(["agent", "page", "pictures", "tools"]);
+// given.tab checked: { tab } (one of DOCK_TABS), { tab: null } (none asked for) or { error }.
+export function readDockTab(given) {
+  const tab = given && typeof given === "object" && !Array.isArray(given) ? given.tab : undefined;
+  if (tab === undefined) return { tab: null };
+  return DOCK_TABS.has(tab) ? { tab } : { error: "tab is agent, page, pictures or tools." };
+}

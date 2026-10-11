@@ -11,7 +11,8 @@ import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "
 import { needsVirtualDisplay, startVirtualDisplay } from "../display.mjs";
 import { readSavedTabs, trackTabs, restoreTabs } from "../tabs.mjs";
 import { computerName } from "../join.mjs";
-import { validName, isTemporary, profileDir, tabsFile, currentSession, rememberSession, listSessions, createSession, deleteSession, sweepTemporary, readPeople, recordPerson } from "../sessions.mjs";
+import { validName, isTemporary, profileDir, tabsFile, currentSession, rememberSession, listSessions, createSession, deleteSession, renameSession, sessionFilesExist, sweepTemporary, readPeople, recordPerson } from "../sessions.mjs";
+import { renameRunsSession } from "../runs.mjs";
 import { keepFocus } from "../focus.mjs";
 import { sleep, readJson } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
@@ -55,7 +56,10 @@ export function stopRequestMirroring(page) {
 // liveOthers(): who else is in this browser's session right now ({ who, app, computer }).
 // chromePagesOf(config): whether the browser it launches has its own pages. helperFor(): the live view's
 // { origin, key } for those pages' launch switch (started then), or null.
-export function createContext({ config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, helperFor = async () => null }) {
+// beforeRename(): awaited before a rename moves the session's files (the timeline's last writes).
+// onRenamed(from, to): the session was renamed (the goal log follows).
+export function createContext({ config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, helperFor = async () => null,
+  beforeRename = async () => {}, onRenamed = () => {} }) {
   let contextPromise = null;
   let chrome = false; // the browser in use has its own pages (no side panel extension)
   const pickerUrl = () => (chrome ? CHROME_PICKER : `chrome-extension://${panelExtensionId()}/picker.html`);
@@ -488,8 +492,10 @@ let switched = Promise.resolve();
 
   const sessionInfo = () => ({ name: isTemporary(session) ? "Clean session" : session, where: where(), temporary: isTemporary(session) });
 
-  async function switchTo(name) {
-    if (name === session && contextPromise) {
+  // renameFrom: a person's rename of the open session (renameCurrent): the browser closes, the
+  // session's files move to the new name, and the same session reopens with its tabs.
+  async function switchTo(name, { renameFrom = null } = {}) {
+    if (!renameFrom && name === session && contextPromise) {
       // The open session, chosen by an agent while the picker is up: the picker goes, its tabs come back.
       if (pick.state === "showing") {
         const ctx = await contextPromise;
@@ -503,28 +509,81 @@ let switched = Promise.resolve();
     let done;
     switched = new Promise((r) => { done = r; });
     switching = true;
+    let renamed = false;
     try {
+      // Another switch ran first: this rename is over (nothing closed, nothing moved).
+      if (renameFrom && session !== renameFrom) { log(`rename of session ${renameFrom} dropped: the browser is on session ${session} now`); return; }
       const ctx = contextPromise && (await contextPromise);
       if (ctx) {
         await tabTracker?.saveNow();
         tabTracker?.stop();
         await ctx.close().catch(() => {});
       }
+      if (renameFrom) {
+        // Only once the browser is closed: a running Chromium keeps writing into its profile folder.
+        await beforeRename().catch(() => {});
+        try {
+          renameSession(renameFrom, name);
+          try { renameRunsSession(renameFrom, name); } catch (e) { log(`rename: runs: ${e?.message || e}`); }
+          try { onRenamed(renameFrom, name); } catch {}
+          renamed = true;
+        } catch (e) {
+          log(`rename of session ${renameFrom} failed: ${e?.message || e}`);
+          hostNote(`Renaming the browser session "${renameFrom}" to "${name}" didn't work (${e?.message || e}); the browser reopened on "${renameFrom}".`);
+          notify(`Renaming the session to "${name}" didn't work; it reopened as "${renameFrom}".`);
+          name = renameFrom;
+        }
+      }
       const previous = session;
       session = name;
       rememberSession(name);
       if (isTemporary(name)) writeFileSync(CLEAN_MARKER, name);
       else rmSync(CLEAN_MARKER, { force: true });
-      if (isTemporary(previous) && previous !== name) deleteSession(previous);
+      if (!renameFrom && isTemporary(previous) && previous !== name) deleteSession(previous);
       contextPromise = null;
     } finally {
       switching = false;
       done();
     }
+    if (renameFrom && session !== name) return; // dropped above
     // An agent switching is a choice too: no picker in the next browser.
-    picked(`Session "${isTemporary(name) ? "clean" : name}" was chosen by an agent.`);
+    if (!renameFrom) picked(`Session "${isTemporary(name) ? "clean" : name}" was chosen by an agent.`);
+    if (renamed) hostNote(`The person renamed this browser session "${renameFrom}" to "${name}"; the browser restarted on it and its tabs are reopening (pairbrowse_session use ${name}).`);
     await getContext();
-    log(`switched to session ${name}`);
+    log(renameFrom ? `session ${renameFrom} renamed to ${name}` : `switched to session ${name}`);
+  }
+
+  // A person renames the open session (the session card's pencil, POST session): checked here
+  // at once, then the browser restarts on the renamed session (switchTo's rename mode) after the
+  // answer went out. Returns { ok, name, from, restarting } or { error }.
+  function renameCurrent(given) {
+    const from = session;
+    const to = String(given ?? "").trim();
+    if (!contextPromise) return { error: "The browser isn't open; open it first, then rename its session." };
+    if (switching) return { error: "The browser is switching sessions; try again in a moment." };
+    if (restoring) return { error: "Tabs are still reopening; rename the session once they're back." };
+    if (pick.state === "showing") return { error: "The session picker is open; pick a session first." };
+    if (from === "default") return { error: "The default session keeps its name; start a named session to name it." };
+    if (isTemporary(from)) return { error: "A clean session can't be renamed: it is deleted when you switch away." };
+    if (to === from) return { ok: true, name: from, from, restarting: false };
+    if (!validName(to)) return { error: "Session names use letters, numbers, - and _ (up to 40)." };
+    if (to === "default" || isTemporary(to)) return { error: `"${to}" is a name PairBrowse keeps for itself; choose another.` };
+    const caseOnly = to.toLowerCase() === from.toLowerCase();
+    if (!caseOnly && (listSessions().some((s) => s.name.toLowerCase() === to.toLowerCase()) || sessionFilesExist(to))) return { error: `Session "${to}" already exists; choose another name.` };
+    setImmediate(() => switchTo(to, { renameFrom: from }).catch((e) => log("rename", e?.message || e)));
+    return { ok: true, name: to, from, restarting: true };
+  }
+
+  // A person's Save on the session card: the open session's tabs written now (the same write a
+  // person's session switch and the shutdown make). Returns { ok } or { error }.
+  async function saveTabs() {
+    if (!contextPromise) return { error: "The browser isn't open." };
+    if (switching) return { error: "The browser is switching sessions; try again in a moment." };
+    if (restoring) return { error: "Tabs are still reopening; save once they're back." };
+    if (isTemporary(session)) return { error: "A clean session isn't kept: there is nothing to save." };
+    if (!tabTracker) return { error: "Pick a session first." };
+    await tabTracker.saveNow();
+    return { ok: true };
   }
 
   // pairbrowse_session. Returns { text, error }.
@@ -589,7 +648,7 @@ let switched = Promise.resolve();
     getContext, watchClose, current: () => contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
     isRestoring: () => restoring !== null, isSwitching: () => switching,
     currentUrl: () => lastCurrentUrl, setCurrentUrl: (url) => { lastCurrentUrl = url; },
-    sessionInfo, sessionCommand, startUp, close, sessionName: () => session,
+    sessionInfo, sessionCommand, startUp, close, sessionName: () => session, renameCurrent, saveTabs,
     waitForPick, pickerState, pickSession, pickedJoin, // In the session being opened, when the person just picked another.
     recordPerson: async (person) => { while (pickSwitch) await pickSwitch; recordPerson(session, person); }, picking: () => pick.state === "showing", reopenPicker,
     // An agent chose (pairbrowse_join): the picker goes, the saved tabs come back.

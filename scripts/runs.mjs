@@ -84,6 +84,22 @@ export function liveAutoRun(now = Date.now()) {
   return r?.source === "auto" && r.status === "in progress" && !r.mergedInto && now - Date.parse(r.updatedAt) <= STALE_MS ? r : null;
 }
 
+// A browser session renamed (sessions.mjs renameSession): the runs that were in it say its new
+// name, so a resuming agent picks the right one. Returns how many changed.
+export function renameRunsSession(from, to) {
+  mkdirSync(paths.runs, { recursive: true });
+  let n = 0;
+  for (const f of readdirSync(paths.runs)) {
+    if (!f.endsWith(".json") || f.startsWith(".")) continue;
+    const file = join(paths.runs, f);
+    const run = readJson(file);
+    if (!run || run.session !== from) continue;
+    writeJsonAtomic(file, { ...run, session: to });
+    n++;
+  }
+  return n;
+}
+
 export function saveRun(a) {
   mkdirSync(paths.runs, { recursive: true });
   const file = runFile(a.name);

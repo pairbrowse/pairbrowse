@@ -163,3 +163,20 @@ test("run_get says when the browser restarted since the run was written", async 
   assert.match(RESTARTED_NOTE, /^The browser restarted since this was saved: take a browser_snapshot of each tab before trusting Done/);
   assert.doesNotMatch(summarize({ name: "r", status: "open", updatedAt: "x" }), /restarted/);
 });
+
+test("renaming a session rewrites only the runs that were in it", async () => {
+  const { readdirSync, readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { renameRunsSession, runFile } = await import("../scripts/runs.mjs");
+  const dir = join(process.env.PAIRBROWSE_HOME, "runs");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(runFile("ren one"), JSON.stringify({ name: "ren one", session: "old-s", done: ["a"] }));
+  writeFileSync(runFile("ren two"), JSON.stringify({ name: "ren two", session: "old-s", status: "finished" }));
+  writeFileSync(runFile("ren other"), JSON.stringify({ name: "ren other", session: "other-s" }, null, 1));
+  const before = Object.fromEntries(readdirSync(dir).filter((f) => !f.startsWith("ren-one") && !f.startsWith("ren-two")).map((f) => [f, readFileSync(join(dir, f))]));
+  assert.equal(renameRunsSession("old-s", "new-s"), 2);
+  assert.equal(JSON.parse(readFileSync(runFile("ren one"), "utf8")).session, "new-s");
+  assert.deepEqual(JSON.parse(readFileSync(runFile("ren one"), "utf8")).done, ["a"], "nothing else changes");
+  assert.equal(JSON.parse(readFileSync(runFile("ren two"), "utf8")).session, "new-s");
+  for (const [f, bytes] of Object.entries(before)) assert.deepEqual(readFileSync(join(dir, f)), bytes, `${f} byte-identical`);
+  assert.equal(renameRunsSession("old-s", "new-s"), 0);
+});

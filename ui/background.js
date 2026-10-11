@@ -5,7 +5,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 // file after an update; the helper compares this with the file on disk and reloads the extension
 // when they differ (daemon/panel.mjs). A hash of this file with the value blanked (browser.mjs
 // panelBuildOf).
-const PB_BUILD = "245e80db46b3b706";
+const PB_BUILD = "c88f7833e0acce25";
 globalThis.pbBuild = PB_BUILD;
 // In a new profile on macOS the browser starts without a window (--no-startup-window, see
 // browserArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
@@ -109,7 +109,7 @@ globalThis.pbArrange = async (ids) => {
   }
   return true;
 };
-// Shared browser mode (share.js, the offscreen document that captures a tab and sends it peer to
+// Shared browser mode (capture.js, the offscreen document that captures a tab and sends it peer to
 // peer). Asked only by the helper. A tab's DevTools target id is how the helper names it; here
 // it becomes the tab id the capture needs (listing targets attaches to nothing).
 // The tab in front (the active tab of the window last focused), by its tab id (pbTabs names the
@@ -118,7 +118,7 @@ globalThis.pbFront = async () => (await chrome.tabs.query({ active: true, lastFo
 globalThis.pbTabId = async (targetId) => (await chrome.debugger.getTargets()).find((t) => t.id === targetId)?.tabId ?? null;
 async function shareDocument() {
   if (await chrome.offscreen.hasDocument()) return;
-  await chrome.offscreen.createDocument({ url: "share.html", reasons: ["USER_MEDIA"], justification: "Show a shared tab live to the people the user let in, and record the browser when asked." }).catch((e) => {
+  await chrome.offscreen.createDocument({ url: "capture/index.html", reasons: ["USER_MEDIA"], justification: "Show a shared tab live to the people the user let in, and record the browser when asked." }).catch((e) => {
     if (!/single offscreen/i.test(String(e?.message))) throw e; // made at the same moment by another call
   });
 }

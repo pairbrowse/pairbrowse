@@ -1,4 +1,4 @@
-// The session picker (scripts/browser/panel/picker.*): the browser's first tab when nobody chose a
+// The session picker (ui/picker/: index.html, picker.css, picker.js): the browser's first tab when nobody chose a
 // session. The markup keeps every id, text and the logo the helper and the integration tests
 // rely on, the script keeps its one timer; with the runtime, the page is rendered as the
 // extension serves it over a fake chrome.storage and a fake sessions.json, and checked for its
@@ -13,11 +13,11 @@ import { fileURLToPath } from "node:url";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const panel = join(root, "scripts", "browser", "panel");
-const read = (name) => readFileSync(join(panel, name), "utf8");
-const html = read("picker.html");
-const js = read("picker.js");
-const css = read("picker.css");
+const ui = join(root, "ui");
+const read = (name) => readFileSync(join(ui, name), "utf8");
+const html = read("picker/index.html");
+const js = read("picker/picker.js");
+const css = read("picker/picker.css");
 const TYPES = { html: "text/html", css: "text/css", js: "text/javascript", svg: "image/svg+xml" };
 const count = (text, word) => text.split(word).length - 1;
 
@@ -33,13 +33,13 @@ test("the picker's markup keeps every id once, its texts and the sheet before it
   }
   assert.match(html, /<p class="brand">PairBrowse<\/p>\s*<h1>Which session\?<\/h1>/, "the wordmark over the question");
   assert.match(html, /class="host-ask card" id="host-ask" role="group" aria-label="This code's address" hidden/);
-  const a = html.indexOf('<link rel="stylesheet" href="tokens.css">'), b = html.indexOf('<link rel="stylesheet" href="picker.css">');
+  const a = html.indexOf('<link rel="stylesheet" href="../tokens.css">'), b = html.indexOf('<link rel="stylesheet" href="picker.css">');
   assert.ok(a >= 0 && b > a, "tokens.css before picker.css");
 });
 
 test("the logo is untouched: the same img line and the same file", () => {
-  assert.ok(html.includes('<img class="logo" src="logo.svg" alt="" width="56" height="56">'));
-  assert.equal(createHash("sha256").update(readFileSync(join(panel, "logo.svg"))).digest("hex"), "415a3f8e100338210d7ffc070dd1d7ced24297bb682af9a4153a9f49d1bffd8a");
+  assert.ok(html.includes('<img class="logo" src="../logo.svg" alt="" width="56" height="56">'));
+  assert.equal(createHash("sha256").update(readFileSync(join(ui, "logo.svg"))).digest("hex"), "415a3f8e100338210d7ffc070dd1d7ced24297bb682af9a4153a9f49d1bffd8a");
 });
 
 test("the picker script keeps its one timer and its words", () => {
@@ -90,11 +90,11 @@ async function openPicker(browser, { reducedMotion = "no-preference" } = {}) {
     if (name === "v/sessions.json") return route.fulfill({ contentType: "application/json", body: JSON.stringify(STATE) });
     if (name === "v/pick") { picks.push(JSON.parse(route.request().postData() || "{}")); return route.fulfill({ contentType: "application/json", body: JSON.stringify({ error: true, hostAsk: { id: "a1", host: "share.example" } }) }); }
     if (name === "fake-chrome.js") return route.fulfill({ contentType: TYPES.js, body: fakeChrome });
-    let body = readFileSync(join(panel, name));
-    if (name === "picker.html") body = String(body).replace('<script type="module" src="picker.js">', '<script src="fake-chrome.js"></script><script type="module" src="picker.js">');
+    let body = readFileSync(join(ui, name));
+    if (name === "picker/index.html") body = String(body).replace('<script type="module" src="picker.js">', '<script src="../fake-chrome.js"></script><script type="module" src="picker.js">');
     return route.fulfill({ contentType: TYPES[name.split(".").pop()], body });
   });
-  await page.goto("http://pairbrowse.test/picker.html");
+  await page.goto("http://pairbrowse.test/picker/index.html");
   for (let i = 0; i < 100 && (await page.evaluate(() => document.body.dataset.s)) !== "ready"; i++) await page.waitForTimeout(50);
   assert.equal(await page.evaluate(() => document.body.dataset.s), "ready", "the picker is ready");
   return { page, errors, picks };

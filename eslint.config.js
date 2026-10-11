@@ -31,8 +31,8 @@ export default [
       "no-unused-vars": ["error", { args: "after-used", ignoreRestSiblings: true, caughtErrors: "none", varsIgnorePattern: "^_", argsIgnorePattern: "^_" }],
     },
   },
-  // The extension and live view pages use Chrome's extension API.
-  { files: ["scripts/browser/**"], languageOptions: { globals: { chrome: "readonly" } } },
+  // The extension's pages (ui/) use Chrome's extension API.
+  { files: ["ui/**"], languageOptions: { globals: { chrome: "readonly" } } },
   // macOS JavaScript for Automation (osascript -l JavaScript).
   // osascript calls its top-level run(); helpers live beside it.
   { files: ["scripts/dock/*-mac.js"], languageOptions: { sourceType: "script", globals: { ObjC: "readonly", Application: "readonly", $: "readonly", Path: "readonly", delay: "readonly" } }, rules: { "no-implicit-globals": "off" } },

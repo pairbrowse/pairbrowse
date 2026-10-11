@@ -258,7 +258,7 @@ test("the side panel extension arranges tabs into the places they hold, per wind
     },
   };
   const g = { chrome, setInterval: () => 0, console };
-  new Function("globalThis", "chrome", "setInterval", readFileSync(new URL("../scripts/browser/panel/background.js", import.meta.url), "utf8"))(g, chrome, () => 0);
+  new Function("globalThis", "chrome", "setInterval", readFileSync(new URL("../ui/background.js", import.meta.url), "utf8"))(g, chrome, () => 0);
   reindex();
   // Tabs 1, 3 and 4 are shared (2 is not): put them in the order 4, 1, 3 in the places they hold.
   await g.pbArrange([4, 1, 3]);

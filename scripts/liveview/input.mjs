@@ -3,7 +3,7 @@
 import { navigationProblem } from "../policy.mjs";
 import { isLocalNetwork } from "../guard.mjs";
 // The one address bar rule, shared with the new tab page and the viewer.
-import { addressToUrl } from "../browser/panel/common.js";
+import { addressToUrl } from "../../ui/common.js";
 
 export { addressToUrl };
 

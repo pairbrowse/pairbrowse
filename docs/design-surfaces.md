@@ -1,5 +1,7 @@
 # Design surfaces: the map behind docs/design-progress.md
 
+2026-10-11: the files this maps moved to `ui/` (`scripts/browser/panel/x.html` is now `ui/x/index.html` with its css/js beside it, `share.*` is `ui/capture/`, `common.js`, `tokens.css`, the manifest and worker sit at `ui/`); the file:line references below are as of their date.
+
 Written by the `design-understand` workflow on 2026-10-11 (one reader per surface, synthesized). Line numbers are as of commit da3fb9f.
 
 ## Surfaces (Phase 1 map)

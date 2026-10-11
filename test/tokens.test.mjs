@@ -1,4 +1,4 @@
-// The design tokens (scripts/browser/panel/tokens.css): one sheet for every surface PairBrowse
+// The design tokens (ui/tokens.css): one sheet for every surface PairBrowse
 // styles itself. hud.js and record.js carry the same values inline; this keeps every literal color
 // in those files and the page sheets equal to a sheet value or a participant color, and checks
 // WCAG AA contrast for the text colors in both schemes.
@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (p) => readFileSync(root + p, "utf8");
-const PANEL = "scripts/browser/panel/";
-const sheet = read(PANEL + "tokens.css");
+const UI = "ui/";
+const sheet = read(UI + "tokens.css");
 
 // Custom properties in a block: { name: value }.
 const props = (block) => Object.fromEntries([...block.matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);/g)].map(([, k, v]) => [k, v.trim()]));
@@ -40,7 +40,7 @@ const contrast = (a, b) => { const [x, y] = [lum(norm(a)), lum(norm(b))].sort((p
 
 const REQUIRED = ["bg", "chrome", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "accent", "accent-ink", "accent-soft",
   "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t"];
-const PAGES = ["panel.css", "picker.css", "newtab.css", "screen.css"].map((x) => PANEL + x).concat("scripts/liveview.css");
+const PAGES = ["panel/panel.css", "picker/picker.css", "newtab/newtab.css", "screen/screen.css"].map((x) => UI + x).concat("scripts/liveview.css");
 
 test("the sheet has every token, dark by default and light only for the live view", () => {
   for (const k of REQUIRED) assert.ok(dark[k], `--${k}`);
@@ -85,7 +85,7 @@ test("every literal color in the styled files is a sheet value, a participant co
   const allowed = new Set(["#ffffff", "#000000", ...SPARK_COLORS.map(norm)]);
   for (const t of [dark, light]) for (const v of Object.values(t)) { const n = norm(v); if (n) allowed.add(n); }
   assert.equal(norm(dark.spark), norm(SPARK_COLORS[0]), "--spark is Claude's own spark color");
-  const files = [PANEL + "panel.css", PANEL + "picker.css", PANEL + "newtab.css", PANEL + "screen.css", "scripts/liveview.css", "scripts/hud.js", PANEL + "record.js", "scripts/tabs.mjs"];
+  const files = [UI + "panel/panel.css", UI + "picker/picker.css", UI + "newtab/newtab.css", UI + "screen/screen.css", "scripts/liveview.css", "scripts/hud.js", UI + "capture/record.js", "scripts/tabs.mjs"];
   for (const f of files) {
     const text = read(f).replace(/%23([0-9a-fA-F]{3,8})\b/g, "#$1");
     const found = [...text.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|oklch\((?:[^()]|\([^()]*\))*\)/g)].map(([m]) => m);
@@ -106,7 +106,7 @@ test("every token in the sheet is read by a page", () => {
 });
 
 test("a joiner's picture page keeps its muted text at AA on the pill, even over a white page", () => {
-  const css = read(PANEL + "screen.css");
+  const css = read(UI + "screen/screen.css");
   const m = css.match(/--pill:\s*rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)/);
   assert.ok(m, "--pill is rgb(r g b / a)");
   const [r, g, b, a] = m.slice(1).map(Number);
@@ -121,21 +121,22 @@ test("a joiner's picture page keeps its muted text at AA on the pill, even over 
 });
 
 test("no blur, no glass and no background picture", () => {
-  for (const f of ["panel.css", "picker.css", "newtab.css", "screen.css"].map((x) => PANEL + x).concat("scripts/liveview.css")) {
+  for (const f of ["panel/panel.css", "picker/picker.css", "newtab/newtab.css", "screen/screen.css"].map((x) => UI + x).concat("scripts/liveview.css")) {
     const css = read(f);
     assert.doesNotMatch(css, /backdrop-filter/, f);
     assert.doesNotMatch(css, /ntp\.png/, f);
     assert.doesNotMatch(css, /^\s*:root\s*\{[^}]*--(?!pill)[a-z-]+\s*:/m, `${f} has no tokens of its own (screen.css keeps --pill)`);
   }
-  assert.equal(existsSync(root + PANEL + "ntp.png"), false);
+  assert.equal(existsSync(root + UI + "ntp.png"), false);
+  assert.equal(existsSync(root + UI + "newtab/ntp.png"), false);
   const opening = read("scripts/tabs.mjs");
   for (const re of [/backdrop-filter/, /gradient\(/, /@keyframes/, /inset 0/]) assert.doesNotMatch(opening, re, "the Opening tabs page is flat");
 });
 
 test("every page links the sheet before its own", () => {
   for (const page of ["panel", "picker", "newtab", "screen"]) {
-    const html = read(`${PANEL}${page}.html`);
-    const a = html.indexOf('<link rel="stylesheet" href="tokens.css">'), b = html.indexOf(`href="${page}.css"`);
+    const html = read(`${UI}${page}/index.html`);
+    const a = html.indexOf('<link rel="stylesheet" href="../tokens.css">'), b = html.indexOf(`href="${page}.css"`);
     assert.ok(a >= 0 && b > a, `${page}.html`);
   }
   const lv = read("scripts/liveview.html");

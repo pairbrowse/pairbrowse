@@ -347,7 +347,7 @@ test("a joiner's link to the host drops, stalls or the host's helper crashes: ba
     await tool(host, "pairbrowse_collaboration", { action: "release" });
     proxy.set("pass");
     const during = text(await meanwhile);
-    assert.ok(/button "Tap (one|two)"|nothing was done/.test(during) && !/screen\.html|Choose a session/.test(during), `the joiner's agent acted in the host's browser, not its own: ${during.slice(0, 300)}`);
+    assert.ok(/button "Tap (one|two)"|nothing was done/.test(during) && !/screen\/index\.html|Choose a session/.test(during), `the joiner's agent acted in the host's browser, not its own: ${during.slice(0, 300)}`);
     await backIn("after the cut");
     await until("the tab opened meanwhile shows here", async () => /Page two/.test(await titles(joiner)), 30_000);
 

@@ -30,7 +30,7 @@ const NETWORK_EVENTS = ["request", "response", "requestfailed", "requestfinished
 // says what it waits for, so the agent tells them in chat instead of hanging silently.
 const PICK_WAIT_MS = Number(process.env.PAIRBROWSE_TEST_PICK_WAIT_MS) || 15_000;
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
-const pickerUrl = () => `chrome-extension://${panelExtensionId()}/picker.html`;
+const pickerUrl = () => `chrome-extension://${panelExtensionId()}/picker/index.html`;
 
 // Started in an SSH session (say, the desktop app's SSH sessions) means the browser runs on that
 // machine, not the user's: its live view needs an SSH tunnel.

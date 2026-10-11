@@ -69,12 +69,12 @@ const scripts = new URL("../", import.meta.url);
 const viewerHtml = readFileSync(new URL("liveview.html", scripts), "utf8");
 // The page's files, read once at start from a fixed list (never a path taken from a URL). The
 // side panel shares common.js and tokens.css, and an extension loads only its own files, so they
-// live there.
+// live in ui/, the extension's root, and are served to the live view from there.
 const ASSETS = new Map(Object.entries({
   "liveview.css": ["liveview.css", "text/css; charset=utf-8"],
   "liveview.js": ["liveview.js", "text/javascript; charset=utf-8"],
-  "tokens.css": ["browser/panel/tokens.css", "text/css; charset=utf-8"],
-  "common.js": ["browser/panel/common.js", "text/javascript; charset=utf-8"],
+  "tokens.css": ["../ui/tokens.css", "text/css; charset=utf-8"],
+  "common.js": ["../ui/common.js", "text/javascript; charset=utf-8"],
 }).map(([name, [file, type]]) => [name, { body: readFileSync(new URL(file, scripts)), type }]));
 
 const attr = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

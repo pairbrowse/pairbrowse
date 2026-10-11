@@ -38,8 +38,8 @@ There's no headless mode.
   Signing into Google or any other site works as usual.
 - **The bottom bar** in each page shows who's driving and Claude's last actions. It never takes
   clicks, fades out when your pointer nears the bottom of the page, and is hidden from Claude's view.
-- It loads one extension of its own and no others: `scripts/browser/panel` (the side panel,
-  which talks only to the key-protected live view on 127.0.0.1). Its navy colors are Chromium's
+- It loads one extension of its own and no others: `ui/` (the side panel, new tab, picker, picture and capture pages,
+  which talk only to the key-protected live view on 127.0.0.1). Its navy colors are Chromium's
   built-in color theme, set in the profile (no theme extension, no "Installed theme" bar); pick
   another in Settings > Appearance and PairBrowse keeps it.
 - Set `"executablePath"` in `~/.pairbrowse/config.json` to use Brave, Arc, Vivaldi or another

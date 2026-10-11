@@ -26,7 +26,7 @@ function serially() {
   return (task) => { const run = last.then(task); last = run.catch(() => {}); return run; };
 }
 
-// The shared browser's picture page (screen.html, PairBrowse's own extension page) is called in its
+// The shared browser's picture page (screen/index.html, PairBrowse's own extension page) is called in its
 // own script world, where its script put window.pbScreen: Patchright's page.evaluate otherwise runs
 // in a hidden world of its own (the extra arguments are Patchright's; Playwright ignores them).
 const inScreen = (page, fn, arg) => page.evaluate(fn, arg, undefined, false);
@@ -48,8 +48,8 @@ const FORM_COALESCE_MS = 30; // keystrokes that come together go as one
 const SCREEN_KEEP_MS = 60_000; // a tab out of sight stays connected this long (switching back is instant)
 const SCREEN_CONNECT_MS = process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" ? 3000 : 12_000; // no direct connection by then: try again, then the slower route
 const SCREEN_INPUT_MS = 30; // on the slower route, input goes to the host this often
-const screenBase = () => `chrome-extension://${panelExtensionId()}/screen.html`;
-// The tab id after # keeps the address short (screen.html#a1b2c3d4); the page itself shows the
+const screenBase = () => `chrome-extension://${panelExtensionId()}/screen/index.html`;
+// The tab id after # keeps the address short (screen/index.html#a1b2c3d4); the page itself shows the
 // host tab's real address and title (screen.js).
 const screenUrl = (id) => `${screenBase()}#${encodeURIComponent(id)}`;
 const isScreen = (page) => page.url().startsWith(screenBase());

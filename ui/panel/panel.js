@@ -1,6 +1,6 @@
 // The PairBrowse side panel. Connects to the live view server (status, activity, profile) at the
 // address the daemon handed to background.js; it never asks for the page stream itself.
-import { $, el, rich, clock, whose, activityHead, sparkIcon, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState } from "./common.js";
+import { $, el, rich, clock, whose, activityHead, sparkIcon, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState } from "../common.js";
 
 const DRIVING_MS = 8000; // "is driving" for this long after Claude's last action
 const ACTIVITY_SHOWN = 12;

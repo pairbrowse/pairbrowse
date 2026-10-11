@@ -1,4 +1,4 @@
-// The joiner's picture page (shared browser mode, scripts/browser/panel/screen.*): what the
+// The joiner's picture page (shared browser mode, ui/screen/): what the
 // person sees while the pictures stop coming because the connection to the host is moving to
 // another address.
 import { test } from "node:test";
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { inPage } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const panel = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "browser", "panel");
+const ui = join(dirname(fileURLToPath(import.meta.url)), "..", "ui");
 const TYPES = { html: "text/html", css: "text/css", js: "text/javascript" };
 
 test("pictures that stop coming show a spinner and 'Reconnecting to Bob…' over the last one, gone with the next picture", { skip: !runtime, timeout: 60_000 }, async () => {
@@ -21,9 +21,9 @@ test("pictures that stop coming show a spinner and 'Reconnecting to Bob…' over
     // The page as the extension serves it, from its own files.
     await page.route("http://pairbrowse.test/**", (route) => {
       const name = new URL(route.request().url()).pathname.slice(1);
-      route.fulfill({ contentType: TYPES[name.split(".").pop()], body: readFileSync(join(panel, name)) });
+      route.fulfill({ contentType: TYPES[name.split(".").pop()], body: readFileSync(join(ui, name)) });
     });
-    await page.goto("http://pairbrowse.test/screen.html");
+    await page.goto("http://pairbrowse.test/screen/index.html");
     // The page's own script world (window.pbScreen lives there), as the helper reaches it.
     const hold = () => inPage(page, () => window.pbScreen.hold());
     // Short waits, but with room: on a busy machine (the suite runs many browsers at once) a
@@ -63,7 +63,7 @@ test("pictures that stop coming show a spinner and 'Reconnecting to Bob…' over
 });
 
 test("the picture page keeps its ids, its words, its timers and a flat sheet", () => {
-  const html = readFileSync(join(panel, "screen.html"), "utf8"), css = readFileSync(join(panel, "screen.css"), "utf8"), js = readFileSync(join(panel, "screen.js"), "utf8");
+  const html = readFileSync(join(ui, "screen/index.html"), "utf8"), css = readFileSync(join(ui, "screen/screen.css"), "utf8"), js = readFileSync(join(ui, "screen/screen.js"), "utf8");
   for (const id of ["v", "still", "pointers", "status", "status-text", "hold", "hold-text", "top", "tag", "tag-text", "who", "who-text", "addr", "addr-state", "addr-text", "addr-host", "addr-rest", "sound", "pick", "pick-text", "pick-go", "pick-no", "pick-input"]) {
     assert.equal(html.split(`id="${id}"`).length - 1, 1, `#${id}`);
   }
@@ -87,9 +87,9 @@ test("who works in the host's tab shows in words on the picture, with a dot in t
     page.on("pageerror", (e) => errors.push(String(e)));
     await page.route("http://pairbrowse.test/**", (route) => {
       const name = new URL(route.request().url()).pathname.slice(1);
-      route.fulfill({ contentType: TYPES[name.split(".").pop()], body: readFileSync(join(panel, name)) });
+      route.fulfill({ contentType: TYPES[name.split(".").pop()], body: readFileSync(join(ui, name)) });
     });
-    await page.goto("http://pairbrowse.test/screen.html");
+    await page.goto("http://pairbrowse.test/screen/index.html");
     await inPage(page, () => {
       window.pbScreen.info({ title: "Shop", url: "https://shop.example/cart", who: "Bob" });
       const c = document.createElement("canvas"); c.width = 320; c.height = 200;

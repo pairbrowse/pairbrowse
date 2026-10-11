@@ -1,5 +1,5 @@
 // The search field: a web address opens, anything else searches Google (the live view's rule).
-import { addressToUrl } from "./common.js";
+import { addressToUrl } from "../common.js";
 
 document.getElementById("search").addEventListener("submit", (e) => {
   e.preventDefault();

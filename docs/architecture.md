@@ -52,7 +52,7 @@ what each boundary protects against, see [security.md](security.md) and the
 - **Live view and sharing** (`scripts/liveview.mjs`, `scripts/liveview/`, `scripts/tunnel.mjs`,
   `scripts/devshare.mjs`): a key-protected page on loopback, and, only when the user invites
   someone, a Cloudflare Quick Tunnel that joiners reach with a key and the user's Allow.
-- **Side panel and page script** (`scripts/browser/`, `scripts/hud.js`): the extension and in-page
+- **Side panel and page script** (`ui/`, the extension; `scripts/browser/` keeps the icon files; `scripts/hud.js`): the extension and in-page
   bar that show people what agents are doing; names and keys are random per run.
 
 ## Data and state

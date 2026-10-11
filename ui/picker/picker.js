@@ -2,7 +2,7 @@
 // An extension page, so web pages can't open, frame or script it. It talks to the helper through
 // the live view with the owner's key, which the side panel's worker holds in memory; the live view
 // takes these requests only from this extension's origin.
-import { $, el, avatar, initialOf } from "./common.js";
+import { $, el, avatar, initialOf } from "../common.js";
 
 let base = null;
 let busy = false;

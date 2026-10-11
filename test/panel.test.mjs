@@ -1,4 +1,4 @@
-// The side panel (scripts/browser/panel/panel.*): the agent panel. The markup keeps every id the
+// The side panel (ui/panel/: index.html, panel.css, panel.js): the agent panel. The markup keeps every id the
 // scripts and the helper look up, the sections fold, the logo is untouched; with the runtime, the
 // page is rendered as the extension serves it, fed by a fake owner event stream, and checked for
 // what it shows, what a click sends and that a synthetic click sends nothing.
@@ -14,11 +14,11 @@ import { inPage } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const panel = join(root, "scripts", "browser", "panel");
-const read = (name) => readFileSync(join(panel, name), "utf8");
-const html = read("panel.html");
-const js = read("panel.js");
-const css = read("panel.css");
+const ui = join(root, "ui");
+const read = (name) => readFileSync(join(ui, name), "utf8");
+const html = read("panel/index.html");
+const js = read("panel/panel.js");
+const css = read("panel/panel.css");
 const sha = (p) => createHash("sha256").update(readFileSync(join(root, p))).digest("hex");
 
 const IDS = ["where", "turn", "turn-text", "joins", "dev-asks", "host-asks", "driver", "driver-text", "pause", "pause-text", "pause-btn",
@@ -44,7 +44,7 @@ test("the panel's markup keeps every id once, and each section folds with a name
   const status = html.match(/<section class="status"[^>]*>\s*<div class="joins" id="joins"[^>]*><\/div>\s*<div class="joins" id="dev-asks"[^>]*><\/div>\s*<div class="joins" id="host-asks"/);
   assert.ok(status, "requests come first in the status section");
   for (const id of ["collaboration", "profile-msg"]) assert.match(html, new RegExp(`id="${id}" role="status" aria-live="polite"`), id);
-  assert.match(html, /<link rel="stylesheet" href="tokens.css">\n<link rel="stylesheet" href="panel.css">/);
+  assert.match(html, /<link rel="stylesheet" href="\.\.\/tokens.css">\n<link rel="stylesheet" href="panel.css">/);
   assert.match(html, /<meta name="color-scheme" content="dark">/);
   for (const name of ["label", "value", "domains"]) assert.match(html, new RegExp(`name="${name}"`), name);
   // Share and the Checklist: buttons that say what they open and whether it is open.
@@ -64,8 +64,8 @@ test("the panel's markup keeps every id once, and each section folds with a name
 });
 
 test("the logo is untouched: the same img line and the same files", () => {
-  assert.ok(html.includes('    <img src="logo.svg" alt="" width="22" height="22">\n'), "the header's logo line");
-  assert.equal(sha("scripts/browser/panel/logo.svg"), "415a3f8e100338210d7ffc070dd1d7ced24297bb682af9a4153a9f49d1bffd8a");
+  assert.ok(html.includes('    <img src="../logo.svg" alt="" width="22" height="22">\n'), "the header's logo line");
+  assert.equal(sha("ui/logo.svg"), "415a3f8e100338210d7ffc070dd1d7ced24297bb682af9a4153a9f49d1bffd8a");
   assert.equal(sha("scripts/browser/icon.svg"), "d99eda89468eb2a84c2c04f52d54b5b0d028180a9d748023efb0982a79c84495");
   assert.equal(sha("scripts/browser/product-icon.svg"), "4d13634e72f51e15b8f3e2af6ff8a7423892e2480ffc6dc70e3a55534fdabf41");
 });
@@ -177,12 +177,12 @@ async function openPanel(browser, { base = null, reducedMotion = "no-preference"
   await page.route((url) => url.origin === origin && !url.pathname.startsWith("/k/"), (route) => {
     const name = new URL(route.request().url()).pathname.slice(1);
     if (name === "fake-chrome.js") return route.fulfill({ contentType: TYPES.js, body: fakeChrome(base) });
-    let body = readFileSync(join(panel, name));
+    let body = readFileSync(join(ui, name));
     // The extension's API before the panel's script, as the side panel has it.
-    if (name === "panel.html" && base) body = String(body).replace('<script type="module" src="panel.js">', '<script src="fake-chrome.js"></script><script type="module" src="panel.js">');
+    if (name === "panel/index.html" && base) body = String(body).replace('<script type="module" src="panel.js">', '<script src="../fake-chrome.js"></script><script type="module" src="panel.js">');
     return route.fulfill({ contentType: TYPES[name.split(".").pop()], body });
   });
-  await page.goto(`${origin}/panel.html`);
+  await page.goto(`${origin}/panel/index.html`);
   return { page, errors };
 }
 

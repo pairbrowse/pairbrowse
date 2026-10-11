@@ -8,7 +8,7 @@ import fc from "fast-check";
 import { hostAllowed, redact } from "../../scripts/secrets.mjs";
 import { navigationProblem } from "../../scripts/policy.mjs";
 import { hostOk, originOk, keyOk } from "../../scripts/liveview/http.mjs";
-import { addressToUrl } from "../../scripts/browser/panel/common.js";
+import { addressToUrl } from "../../ui/common.js";
 
 const RUNS = Number(process.env.PAIRBROWSE_FUZZ_RUNS) || 5000;
 const check = (property) => fc.assert(property, { numRuns: RUNS });

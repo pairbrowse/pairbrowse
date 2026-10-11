@@ -31,8 +31,8 @@
       "Fill in this form in the PairBrowse browser"
     ],
     "brandColor": "#4E6498",
-    "composerIcon": "./scripts/browser/panel/logo.svg",
-    "logo": "./scripts/browser/panel/logo.svg",
-    "logoDark": "./scripts/browser/panel/logo.svg"
+    "composerIcon": "./ui/logo.svg",
+    "logo": "./ui/logo.svg",
+    "logoDark": "./ui/logo.svg"
   }
 }

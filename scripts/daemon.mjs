@@ -500,7 +500,7 @@ const serve = createServe({
     ...(process.env.PAIRBROWSE_TEST_SCREEN === "1" ? { pairbrowse_test_screen: async (args = {}) => { const { expr, type, choose } = args;
       // at: a picture page by its place among the tabs (list gives them); else the first one.
       const all = (await context.getContext()).pages();
-      const page = follow.pages().find((p) => !p.isClosed() && p.url().includes("/screen.html") && (!Number.isInteger(args.at) || all.indexOf(p) === args.at));
+      const page = follow.pages().find((p) => !p.isClosed() && p.url().includes("/screen/index.html") && (!Number.isInteger(args.at) || all.indexOf(p) === args.at));
       if (!page) return { text: "no picture page", error: true };
       if (Array.isArray(choose)) { page.once("filechooser", (fc) => fc.setFiles(choose.map(String)).catch(() => {})); return { text: "will choose" }; }
       if (args.shot) { await page.screenshot({ path: String(args.shot) }); return { text: "saved" }; }

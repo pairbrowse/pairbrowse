@@ -162,7 +162,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
 
     stage = "the picture shows the host tab's real address; its own address is short";
     const own = (await onScreen({ url: true }))?.url || "";
-    assert.match(own, /^chrome-extension:\/\/[a-p]{32}\/screen\.html#[0-9a-f]{8}$/, own);
+    assert.match(own, /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html#[0-9a-f]{8}$/, own);
     const shownAt = async (want) => until(`the address ${want} on the picture`, async () => { const a = (await onScreen({ expr: "window.pbScreen.address()" }))?.value; return a?.shown && a.text === want && a; }, 15_000);
     const addr = await shownAt("one.pbtest.example/app");
     assert.equal(addr.lock, false, "no lock on a plain http page");
@@ -174,7 +174,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     await onScreen({ goto: "http://one.pbtest.example/typed" });
     await until("the host's tab at the typed address", async () => (await hostUrl()) === "http://one.pbtest.example/typed", 15_000);
     await shownAt("one.pbtest.example/typed"); // and the tab here is the picture again
-    await until("the picture tab's own address again", async () => /\/screen\.html#[0-9a-f]{8}$/.test((await onScreen({ url: true }))?.url || ""), 10_000);
+    await until("the picture tab's own address again", async () => /\/screen\/index\.html#[0-9a-f]{8}$/.test((await onScreen({ url: true }))?.url || ""), 10_000);
     await onScreen({ goto: "http://one.pbtest.example/app" });
     await until("the host's tab back at the app", async () => (await hostUrl()) === "http://one.pbtest.example/app", 15_000);
     await shownAt("one.pbtest.example/app");

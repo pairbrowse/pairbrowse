@@ -732,8 +732,11 @@ const DIAG = { joined: [{ label: "Sam", role: "drive" }], connections: { agents:
   errors: [{ at: NOW - 60_000, where: "serve.mjs", text: "older error" }, { at: NOW - 1000, where: "tunnel.mjs", text: "newer error" }] };
 describe("diagnostics", () => pageTest("right", opts({ diagnostics: DIAG }), async ({ page, helper, inPage, until, errors }) => {
   await page.click("#tab-tools");
+  // Before its first answer the section shows no values (no placeholders).
+  assert.equal(await inPage(visible, "#diag"), false);
+  assert.equal(await inPage(visible, "#diag-errors-empty"), false);
   await page.click("#sec-diag .disclose");
-  await until("the helper line", () => document.getElementById("diag-helper").textContent !== "Not reported");
+  await until("the helper line", () => document.getElementById("diag").checkVisibility() && document.getElementById("diag-helper").textContent !== "");
   assert.equal(await inPage(text, "diag-helper"), "0.15.45 · Node 22.11.0 · up 2 h 5 min");
   assert.equal(await inPage(text, "diag-browser"), "PairBrowse browser 142.0.7444.59 (build 3)");
   assert.equal(await inPage(text, "diag-conn"), "1 agent · 2 viewers · 1 joiner · 3 streams");
@@ -781,6 +784,16 @@ describe("diagnostics without the route", () => pageTest("right", opts({ diagnos
   assert.equal(await inPage(visible, "#diag-prepare"), false);
   assert.equal(await inPage(visible, "#diag"), false);
   assert.equal(await inPage(text, "diag-msg"), "");
+  assert.deepEqual(errors, []);
+}));
+
+describe("diagnostics read fails", () => pageTest("right", opts({ diagnostics: "not an object" }), async ({ page, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await page.click("#sec-diag .disclose");
+  await until("the failure", () => document.getElementById("diag-msg").textContent !== "");
+  assert.equal(await inPage(text, "diag-msg"), "Couldn't read diagnostics from PairBrowse. Try Refresh.");
+  assert.equal(await inPage(visible, "#diag"), false, "no placeholder values");
+  assert.equal(await inPage(visible, "#diag-errors-empty"), false);
   assert.deepEqual(errors, []);
 }));
 

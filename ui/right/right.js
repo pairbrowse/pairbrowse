@@ -596,7 +596,9 @@ function connect(url) {
   });
   on("record", (r) => {
     // A recording saved: its row first in Recordings; a state in the same event still applies.
-    if (r?.op === "saved") { tools.saved(r.item); if (typeof r.recording !== "boolean") return; }
+    if (r?.op === "saved") tools.saved(r.item);
+    // Only an event that says the state moves it: an op notice without `recording` leaves it.
+    if (typeof r?.recording !== "boolean") return;
     const was = !!recording;
     recording = r?.recording ? { since: r.since || Date.now() } : null;
     if (was !== !!recording || recording) drawRecord();

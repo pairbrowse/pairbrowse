@@ -195,20 +195,21 @@
           </div>
         </section>
 
-        <!-- Diagnostics: read only while open (and on Refresh); always starts folded. The report
-             is copied or saved here; nothing is sent from this page. -->
+        <!-- Diagnostics: read only while open and shown (and on Refresh); always starts folded and
+             shows no values until its first answer. The report is copied or saved here; nothing
+             is sent from this page. -->
         <section class="sec" id="sec-diag" data-key="diagnostics">
           <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="diag-body">Diagnostics</button></h2>
           <div class="body" id="diag-body" hidden>
-            <dl class="diag" id="diag">
-              <dt>Helper</dt><dd id="diag-helper">Not reported</dd>
-              <dt>Browser</dt><dd id="diag-browser">Not reported</dd>
-              <dt>Connections</dt><dd id="diag-conn">Not reported</dd>
-              <dt>Joined</dt><dd id="diag-joined">Not reported</dd>
+            <dl class="diag" id="diag" hidden>
+              <dt>Helper</dt><dd id="diag-helper"></dd>
+              <dt>Browser</dt><dd id="diag-browser"></dd>
+              <dt>Connections</dt><dd id="diag-conn"></dd>
+              <dt>Joined</dt><dd id="diag-joined"></dd>
             </dl>
-            <h3 class="k" id="diag-errors-head">Last errors</h3>
-            <ol class="diag-errors" id="diag-errors" aria-labelledby="diag-errors-head"></ol>
-            <p class="empty-row" id="diag-errors-empty">No errors logged.</p>
+            <h3 class="k" id="diag-errors-head" hidden>Last errors</h3>
+            <ol class="diag-errors" id="diag-errors" aria-labelledby="diag-errors-head" hidden></ol>
+            <p class="empty-row" id="diag-errors-empty" hidden>No errors logged.</p>
             <p class="empty-row" id="diag-none" hidden>This PairBrowse doesn't offer diagnostics yet.</p>
             <div class="diag-acts"><button class="act" id="diag-refresh" type="button">Refresh</button><button class="act go" id="diag-prepare" type="button">Prepare report</button></div>
             <div class="diag-report" id="diag-report-box" hidden>

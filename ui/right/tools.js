@@ -5,8 +5,9 @@
 // When it reads: the three lists once per connection, only while the Tools tab is shown in the
 // open dock and the page is visible (show()); the `downloads`, `handoffs` and `record` (saved)
 // events keep them current after that, and an event that comes before its list has loaded is
-// dropped (the read brings the whole list). diagnostics.json only while Diagnostics is open and
-// shown, and on Refresh. Rows are patched in place by id, never rebuilt. Open, Show in Finder,
+// dropped (the read brings the whole list). diagnostics.json when Diagnostics is opened, on
+// Refresh, and again whenever the Tools tab comes back into view (or the stream reconnects) with
+// Diagnostics open; never while it is folded or the tab is not shown. Rows are patched in place by id, never rebuilt. Open, Show in Finder,
 // Show (a hand-off's tab) and a confirmed Delete count only for a person's click or key press.
 // Nothing is sent anywhere: Prepare report shows the helper's text, Copy uses the clipboard and
 // Save is a download made in the page. No timer, observer or frame loop here; no markup strings.
@@ -340,6 +341,8 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
   // ---- Diagnostics ----
   let diagBusy = false;
   let reportUrl = null;
+  // The values, the errors list and its empty line start hidden (index.html): nothing shows
+  // before the first answer, and a failed read says so in #diag-msg.
   function diagNone(on) {
     $("diag-none").hidden = !on;
     for (const id of ["diag", "diag-errors-head", "diag-errors", "diag-prepare"]) $(id).hidden = on;
@@ -383,7 +386,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     diagBusy = false;
     if (base() !== from || g !== gen) return;
     if (r.status === 404) return diagNone(true);
-    if (r.status !== 200 || !r.body || typeof r.body !== "object") return say("diag-msg", "Couldn't reach PairBrowse.", "error");
+    if (r.status !== 200 || !r.body || typeof r.body !== "object") return say("diag-msg", "Couldn't read diagnostics from PairBrowse. Try Refresh.", "error");
     diagNone(false);
     say("diag-msg", "");
     drawDiagnostics(r.body);

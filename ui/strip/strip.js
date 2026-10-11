@@ -402,7 +402,9 @@ function connect(url) {
   on("session", (s) => { lastSession = s && typeof s === "object" ? s : null; drawPill(); });
   on("collaboration", (c) => { lastCollab = c && typeof c === "object" ? c : null; drawPill(); drawAvatars(); });
   on("board", (b) => { lastBoard = { people: Array.isArray(b?.people) ? b.people : [] }; drawAvatars(); });
-  on("record", (r) => drawRecord(r?.recording));
+  // Only an event that says the state moves the indicator: an op notice ({ op: "saved", item }
+  // or { op: "removed", id }) without a `recording` field leaves it as it is.
+  on("record", (r) => { if (typeof r?.recording === "boolean") drawRecord(r.recording); });
   if (!pb) {
     on("tabs", renderFallback);
     on("layout", (l) => drawSparkle(l?.right === "open"));

@@ -429,6 +429,13 @@ describe("menu: Record, Settings, Zoom, keyboard", () => pageTest("strip", { vie
   assert.deepEqual(helper.posts.filter((p) => p.route === "record").map((p) => p.body), [{ on: true }]);
   helper.push("record", { recording: true, since: Date.now() });
   await until("Stop recording", () => document.getElementById("record-text").textContent === "Stop recording");
+  // Op notices carry no `recording`: a saved or removed recording leaves the indicator on.
+  helper.push("record", { op: "saved", item: { id: "r1", name: "Recording 1" } });
+  helper.push("record", { op: "removed", id: "r0" });
+  await page.waitForTimeout(150);
+  assert.equal(await inPage(() => document.getElementById("record-text").textContent), "Stop recording", "a saved notice keeps REC on");
+  helper.push("record", { recording: false });
+  await until("Record again", () => document.getElementById("record-text").textContent === "Record");
   await page.click("#menu-btn");
   await page.click("#settings");
   await page.click("#menu-btn");

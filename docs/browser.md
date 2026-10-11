@@ -27,7 +27,7 @@ There's no headless mode.
 - **The PairBrowse side panel**: click the pinned PairBrowse button in the toolbar, or press
   **Cmd+Shift+Y** (Ctrl+Shift+Y on Windows and Linux). It shows what Claude is doing, "Your turn" when Claude
   needs you, the activity list, and the Profile (remembered details and passwords).
-- **New tabs** open the PairBrowse new tab page: the logo, a search field, the PairBrowse icon.
+- **New tabs** open the PairBrowse new tab page: the logo, a search field, and chips for your other recent sessions (one press switches, the same as the session picker's rows; none are shown when PairBrowse is not running).
 - **Claude's tab** carries the orange spark as its tab icon, and the spark moves with Claude.
 - **Claude's cursor**: a white pointer glides to where Claude clicks, types or chooses, with a
   ring on clicks. It never takes clicks and is hidden from Claude's view.

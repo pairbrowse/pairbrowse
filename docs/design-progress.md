@@ -504,6 +504,9 @@ when they change.
 
 ## Next
 
-1. Nothing open. The window frame's tint rests on Chromium's palette algorithm (the seed's hue
-   254°, fixed chromas); one glance at a start confirms it. New subsets run through
-   `design-subset` with a brief; `design-validate` before a release.
+1. Nothing open. The window frame's tint is verified from Chromium's own computed theme sheet
+   (`chrome://theme/colors.css?sets=ui,chrome` opened in a profile prepared by `prepareProfile`
+   with the new seed, headed Playwright Chromium): frame `#15202F`, toolbar and active tab
+   `#313C4C`, inactive tabs `#15202F`, new tab page `#313C4C`: the dark navy and blue-grey of
+   the sheet's family. New subsets run through `design-subset` with a brief; `design-validate`
+   before a release.

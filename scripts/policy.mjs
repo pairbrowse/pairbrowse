@@ -108,6 +108,12 @@ export function looksLikeSecretName(tool, args) {
   return typedValues(tool, args).some((v) => SECRET_NAME.test(String(v ?? "")));
 }
 
+// The PairBrowse browser's own pages (a native build's tab strip, docks, session picker, new tab
+// and settings): never an agent's to open, read or act in.
+export const CHROME_PAGE_ORIGINS = ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"];
+export const isChromePage = (url) => /^chrome:\/\/pairbrowse(\.top-chrome)?([/?#]|$)/i.test(String(url ?? "").trim());
+export const CHROME_PAGE_RULE = "chrome://pairbrowse pages are the PairBrowse browser's own (its tab strip, docks, session picker, new tab and settings): no agent opens, reads or acts in them.";
+
 export function navigationProblem(url) {
   let u;
   try {
@@ -115,6 +121,7 @@ export function navigationProblem(url) {
   } catch {
     return `Not a valid URL: ${url}`;
   }
+  if (isChromePage(u.href)) return CHROME_PAGE_RULE;
   if (u.protocol === "http:" || u.protocol === "https:" || u.href === "about:blank") return null;
   return `pairbrowse only opens web pages (http/https), not ${u.protocol} URLs.`;
 }

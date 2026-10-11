@@ -63,8 +63,8 @@ function fakeTabs(n = 1) {
   const pages = Array.from({ length: n }, (_, i) => Object.assign(new EventEmitter(), {
     url: () => `about:blank#${i}`, title: async () => `Tab ${i}`, context: () => ctx, bringToFront: async () => {}, evaluate: async () => null,
   }));
-  ctx.newCDPSession = async () => {
-    const cdp = Object.assign(new EventEmitter(), { calls: [], detached: false });
+  ctx.newCDPSession = async (page) => {
+    const cdp = Object.assign(new EventEmitter(), { calls: [], detached: false, page });
     cdp.send = async (method) => { cdp.calls.push(method); await new Promise((r) => setTimeout(r, 5)); return { data: "" }; };
     cdp.detach = async () => { cdp.detached = true; };
     sessions.push(cdp);
@@ -698,5 +698,91 @@ test("timeline: false answers 404 with a clear body", async () => {
       assert.equal(r.status, 404, `${method} /${path}`);
       assert.match(r.text, /timeline: false/);
     }
+  } finally { view.close(); }
+});
+
+// ---- the browser's own pages (a native build's chrome://pairbrowse pages) ----
+
+test("the browser's own pages' key: owner rights, never echoed, CORS for their origins alone", async () => {
+  const picks = [];
+  const picker = { state: () => ({ picking: true, sessions: [] }), pick: async (op) => { picks.push(op); return { text: "ok" }; }, open: async () => ({ text: "x" }) };
+  const { ctx } = fakeTabs(1);
+  const plainView = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", picker });
+  const CHROME = ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"];
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", picker, extraOrigins: [...CHROME, "chrome-extension://aaaa"] });
+  try {
+    for (const v of [plainView, view]) {
+      assert.match(v.pagesKey, /^[A-Za-z0-9_-]{43}$/);
+      assert.ok(!v.url.includes(v.pagesKey), "never in the owner's link");
+    }
+    // Without the chrome origins allowed (today's builds), their POST is refused.
+    assert.equal((await request(plainView.port, "POST", `/${plainView.pagesKey}/pick`, { body: { action: "new" }, headers: { origin: "chrome://pairbrowse" } })).status, 403);
+    const k = view.pagesKey;
+    let r = await request(view.port, "GET", `/${k}/state.json`);
+    assert.equal(r.status, 200);
+    assert.ok(!r.text.includes(k), "state.json never carries it");
+    r = await request(view.port, "GET", `/${k}/sessions.json`, { headers: { origin: "chrome://pairbrowse" } });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers["access-control-allow-origin"], "chrome://pairbrowse");
+    r = await request(view.port, "POST", `/${k}/pick`, { body: { action: "new" }, headers: { origin: "chrome://pairbrowse" } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(picks, [{ action: "new" }]);
+    assert.equal(r.headers["access-control-allow-origin"], "chrome://pairbrowse");
+    assert.equal(r.headers.vary, "origin");
+    r = await request(view.port, "OPTIONS", `/${k}/pick`, { headers: { origin: "chrome://pairbrowse.top-chrome" } });
+    assert.equal(r.status, 204);
+    assert.match(r.headers["access-control-allow-methods"], /POST/);
+    assert.match(r.headers["access-control-allow-headers"], /content-type/);
+    assert.equal(r.headers["access-control-allow-origin"], "chrome://pairbrowse.top-chrome");
+    r = await request(view.port, "OPTIONS", `/${k}/pick`, { headers: { origin: "https://evil.example" } });
+    assert.equal(r.status, 404);
+    assert.equal(r.headers["access-control-allow-origin"], undefined);
+    r = await request(view.port, "GET", `/${k}/state.json`, { headers: { origin: "https://evil.example" } });
+    assert.equal(r.status, 200, "GETs never checked the origin");
+    assert.equal(r.headers["access-control-allow-origin"], undefined, "but no web origin may read the answer");
+    r = await request(view.port, "GET", `/${k}/state.json`, { headers: { origin: "chrome-extension://aaaa" } });
+    assert.equal(r.headers["access-control-allow-origin"], undefined, "CORS is for the browser's own pages only");
+    assert.equal((await request(view.port, "OPTIONS", `/${"x".repeat(43)}/pick`, { headers: { origin: "chrome://pairbrowse" } })).status, 404, "a wrong key: an unknown route");
+    assert.equal((await request(view.port, "GET", `/${"x".repeat(43)}/state.json`)).status, 404);
+    // Under another host name the pages' key is no key at all (as the owner's).
+    assert.equal((await request(view.port, "GET", `/${k}/state.json`, { host: "evil.example" })).status, 403);
+    const stream = await readStream(view.port, `/${k}/events?page=picker`);
+    for (let i = 0; i < 50 && !view.pageClients().picker; i++) await wait(20);
+    assert.equal(view.pageClients().picker, 1);
+    await wait(50);
+    assert.ok(!stream.text().includes(k), "the event stream never carries it");
+    stream.close();
+    assert.notEqual((await request(view.guestPort, "GET", `/${k}/state.json`)).status, 200, "the join-code port never takes it");
+  } finally { plainView.close(); view.close(); }
+});
+
+test("the browser's own pages are never tabs on the live view, nor on its stage", async () => {
+  const { ctx, pages, sessions } = fakeTabs(4);
+  const own = { 1: "chrome://pairbrowse/picker", 2: "chrome://pairbrowse.top-chrome/strip" };
+  const frames = pages.map(() => ({}));
+  pages.forEach((p, i) => { if (own[i]) p.url = () => own[i]; p.mainFrame = () => frames[i]; p.isClosed = () => false; });
+  let current = "about:blank#0";
+  const view = await startLiveView({ getContext: async () => ({ ...ctx, on: () => {} }), currentUrl: async () => current });
+  const key = view.url.split("/").at(-2);
+  try {
+    const state = JSON.parse((await request(view.port, "GET", `/${key}/state.json`)).text);
+    assert.deepEqual(state.tabs.map((t) => t.i), [0, 3], "the others keep their numbers");
+    const strip = JSON.parse((await request(view.port, "GET", `/${key}/tabs.json`)).text);
+    assert.deepEqual(strip.map((t) => t.i), [0, 3]);
+    const held = JSON.parse((await request(view.port, "GET", `/${key}/agent-tabs.json`)).text);
+    assert.deepEqual(held.map((t) => t.i), [0, 3]);
+    assert.deepEqual(held.map((t) => t.id), strip.map((t) => t.id));
+    assert.equal((await request(view.port, "POST", `/${key}/tab`, { body: { i: 1 } })).status, 204);
+    await wait(30);
+    assert.equal(sessions.length, 0, "clicking one shows nothing");
+    // Agents' current tab is the browser's own page: the stage shows a web page instead.
+    current = "chrome://pairbrowse/picker";
+    const viewer = await openStream(view.port, `/${key}/events`);
+    await wait(1700);
+    const following = JSON.parse((await request(view.port, "GET", `/${key}/state.json`)).text);
+    viewer.close();
+    assert.ok(sessions.length >= 1, "the stage shows a tab");
+    for (const s of sessions) assert.ok(!own[pages.indexOf(s.page)], "never one of the browser's own pages");
+    assert.ok(!following.tabs.some((t) => t.claude === true), "no web tab is marked as Claude's when Claude is on the browser's own page");
   } finally { view.close(); }
 });

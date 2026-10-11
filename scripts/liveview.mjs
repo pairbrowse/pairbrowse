@@ -24,6 +24,8 @@ import { createInvites, roleMay } from "./liveview/invites.mjs";
 import { createInputReplayer } from "./liveview/input.mjs";
 import { createJoinerServer, recentlySeen } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/tabs.mjs";
+import { readLayout, layoutFrom } from "./liveview/layout.mjs";
+import { isChromePage, CHROME_PAGE_ORIGINS } from "./policy.mjs";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
@@ -46,29 +48,9 @@ const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layo
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
 const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture"]);
-// The docks' layout the browser's pages start from: each dock open, a rail or hidden; the tab
-// strip's height in pixels.
-const LAYOUT_STATES = new Set(["open", "rail", "hidden"]);
-const LAYOUT_FALLBACK = { left: "open", right: "open", strip: 88 };
-const STRIP_MIN = 44, STRIP_MAX = 176;
 const TIMELINE_ID = /^[0-9a-f]{12}$/;
 const TIMELINE_OFF = "The timeline is off (timeline: false in ~/.pairbrowse/config.json).";
 
-// given merged over base: a valid { left, right, strip }, or { error }.
-function readLayout(given, base) {
-  if (!given || typeof given !== "object" || Array.isArray(given)) return { error: "A layout is { left, right, strip }." };
-  const next = { ...base };
-  for (const side of ["left", "right"]) {
-    if (given[side] === undefined) continue;
-    if (!LAYOUT_STATES.has(given[side])) return { error: `${side} is "open", "rail" or "hidden".` };
-    next[side] = given[side];
-  }
-  if (given.strip !== undefined) {
-    if (!Number.isInteger(given.strip) || given.strip < STRIP_MIN || given.strip > STRIP_MAX) return { error: `strip is a whole number of pixels from ${STRIP_MIN} to ${STRIP_MAX}.` };
-    next.strip = given.strip;
-  }
-  return next;
-}
 const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
 // readForm(page): { url, fields } as they may cross, or null. applyForm(page, fields, who).
@@ -128,6 +110,9 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
+  // A second owner key, for the browser's own pages (a native build's chrome://pairbrowse pages,
+  // handed to them in its launch switch): never in the owner's link, the log or any event.
+  const pagesKey = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
   const linkGuests = new Map(); // event stream -> the invite link it was opened with
   const owners = new Set(); // event streams opened with the owner's key (the Profile panel's updates go only there)
@@ -151,7 +136,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
   const kinds = new Map(); // event stream -> the browser page's kind (?page=), owner streams only
   const loading = new WeakSet(); // tabs whose main frame is loading (watched from watchPages on)
   // The docks' layout, per browser session, in memory (the browser keeps its own in its profile).
-  const layoutStart = (() => { const r = readLayout(layoutDefaults, LAYOUT_FALLBACK); return r.error ? { ...LAYOUT_FALLBACK } : r; })();
+  const layoutStart = layoutFrom(layoutDefaults);
   const layouts = new Map(); // session name -> { left, right, strip }
   const layoutNow = () => ({ ...(layouts.get(sessionInfo.name) || layoutStart) });
 
@@ -162,11 +147,14 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
   const tabIds = new WeakMap();
   const idOf = (page) => { let id = tabIds.get(page); if (!id) tabIds.set(page, (id = randomBytes(4).toString("hex"))); return id; };
 
+  // Each tab with its number, without the browser's own pages (chrome://pairbrowse...).
+  const webPages = (pages) => pages.map((p, i) => [p, i]).filter(([p]) => !isChromePage(p.url()));
   // Every tab, with who is in it (the agent holding it, with its spark color; a person using it
   // by hand) and the last thing done there: the tab overview.
   const tabsInfo = async () => {
     const ctx = await getContext();
-    return Promise.all(ctx.pages().map(async (p, i) => {
+    // The browser's own pages are never tabs here; the others keep their numbers in ctx.pages().
+    return Promise.all(webPages(ctx.pages()).map(async ([p, i]) => {
       let meta = {};
       try { meta = tabMeta(p) || {}; } catch {}
       return { i, title: (await ownTitle(p)) || p.url(), url: p.url(), icon: await iconFor(p), shown: p === shown?.page, claude: p === followedPage,
@@ -183,7 +171,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     const working = await currentUrl();
     const pages = ctx.pages();
     const active = pages.find((p) => p.url() === working) || null;
-    return Promise.all(pages.map(async (p, i) => {
+    return Promise.all(webPages(pages).map(async ([p, i]) => {
       const meta = metaOf(p);
       const url = p.url();
       return { id: idOf(p), i, title: mask((await ownTitle(p)) || url), host: hostOf(url), url: mask(url), icon: await iconFor(p), active: p === active, loading: loading.has(p),
@@ -191,7 +179,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     }));
   };
   // Who holds which tab, from the tabs' addresses and the helper's own records (no page asked).
-  const agentTabs = async () => (await getContext()).pages().map((p, i) => { const meta = metaOf(p); return { id: idOf(p), i, host: hostOf(p.url()), agent: agentOf(meta), person: meta.person || null }; });
+  const agentTabs = async () => webPages((await getContext()).pages()).map(([p, i]) => { const meta = metaOf(p); return { id: idOf(p), i, host: hostOf(p.url()), agent: agentOf(meta), person: meta.person || null }; });
   const agentTabsChanged = () => { if (kinds.size) agentTabs().then((list) => broadcast("agent-tabs", list)).catch(() => {}); };
 
   // Invited people who have the live view open, by name, as the participant list shows them.
@@ -487,7 +475,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
   let switching = 0;
   const show = (page) => { switching++; return showQueue(() => showNow(page)).finally(() => { switching--; }); };
   async function showNow(page) {
-    if (closed || shown?.page === page) return;
+    if (closed || shown?.page === page || isChromePage(page.url())) return;
     if (shown) {
       const old = shown.cdp;
       shown = null;
@@ -533,8 +521,11 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
       const url = await currentUrl();
       if ((shown || switching) && url === followed) return;
       followed = url;
-      const page = ctx.pages().find((p) => p.url() === url) || shown?.page || ctx.pages().at(-1);
-      if (url) followedPage = page;
+      // The browser's own pages are never shown; followedPage stays the agents' page (a chrome
+      // page is never listed, so no tab is marked as Claude's).
+      const at = ctx.pages().find((p) => p.url() === url);
+      const page = (at && !isChromePage(at.url()) ? at : null) || shown?.page || ctx.pages().filter((p) => !isChromePage(p.url())).at(-1);
+      if (url) followedPage = at || page;
       if (page) await show(page);
     } catch (e) {
       log("liveview follow", e?.message || e);
@@ -571,7 +562,8 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
       const ctx = await getContext();
       if (ev.new) await show(await keepFocus(() => ctx.newPage()));
       else if (ev.close !== undefined) {
-        const page = ctx.pages()[Number(ev.close)];
+        const found = ctx.pages()[Number(ev.close)];
+        const page = found && !isChromePage(found.url()) ? found : null; // never the browser's own pages
         // The last tab is emptied instead of closed, so the browser window stays open.
         if (page && ctx.pages().length > 1) await page.close().catch(() => {});
         else if (page) await page.goto("about:blank").catch(() => {});
@@ -582,7 +574,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
         await shared.arrange(ev.order.slice(0, 100).map((id) => known.get(String(id))).filter((p) => p && !p.isClosed()));
       } else {
         const page = ctx.pages()[Number(ev.i)];
-        if (page) await show(page);
+        if (page && !isChromePage(page.url())) await show(page);
       }
     });
   }
@@ -795,7 +787,9 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     else {
       const ctx = await getContext();
       const url = await currentUrl();
-      const page = ctx.pages().find((p) => p.url() === url) || ctx.pages().at(-1);
+      if (isChromePage(url)) return plain(res, 404); // never the browser's own pages
+      const web = ctx.pages().filter((p) => !isChromePage(p.url()));
+      const page = web.find((p) => p.url() === url) || web.at(-1);
       if (!page) return plain(res, 404);
       const cdp = await page.context().newCDPSession(page);
       try { ({ data } = await still(cdp)); } finally { cdp.detach().catch(() => {}); }
@@ -842,18 +836,27 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     res.end();
   }
 
+  const chromeOrigin = (o) => !!o && CHROME_PAGE_ORIGINS.includes(o) && extraOrigins.includes(o);
   const server = http.createServer(async (req, res) => {
     if (!hostOk(req.headers.host, hosts)) return plain(res, 403); // blocks DNS-rebinding
     const { key: given, route, rest } = pathParts(req);
     // The owner's key works only under a loopback name (this computer, or an SSH tunnel); the
     // extra host names take invite links only. Unknown, expired and revoked keys look the same.
-    const ownerKey = keyOk(given, key);
+    const ownerKey = keyOk(given, key) || keyOk(given, pagesKey);
     // Join code keys work only through the sharing tunnel's port (joiner-server.mjs), after approval.
     const matched = ownerKey ? null : invites.match(given);
     const invite = matched?.share === "code" ? null : matched;
     const role = ownerKey ? (hostOk(req.headers.host) ? "owner" : null) : invite?.role || null;
     if (!role) return plain(res, 404);
     const origin = req.headers.origin;
+    // CORS for the browser's own pages alone (chrome://pairbrowse, allowed only when the daemon
+    // runs a build that has them): never "*", never a web or extension origin.
+    if (role === "owner" && chromeOrigin(origin)) { res.setHeader("access-control-allow-origin", origin); res.setHeader("vary", "origin"); }
+    if (req.method === "OPTIONS") {
+      if (role !== "owner" || !chromeOrigin(origin)) return plain(res, 404);
+      res.writeHead(204, { ...SECURITY_HEADERS, "access-control-allow-methods": "GET, POST, DELETE", "access-control-allow-headers": "content-type", "access-control-max-age": "600" });
+      return res.end();
+    }
     if (req.method !== "GET" && !originOk(origin) && !(role === "owner" && extraOrigins.includes(origin)) && !(role === "drive" && inviteOrigin && origin === inviteOrigin)) return plain(res, 403);
     const r = ROUTES.find((x) => x.method === req.method && x.path === route);
     if (!r) return plain(res, 404);
@@ -908,6 +911,8 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
   log("live view started");
   return {
     url: `http://127.0.0.1:${server.address().port}/${key}/`,
+    // The browser's own pages' key (the launch switch): never printed, logged or sent in an event.
+    pagesKey,
     follow,
     reconnecting: (except) => push.reconnecting(except),
     // The badge state, mirrored in the viewer's own chrome (pages can't fake it there).

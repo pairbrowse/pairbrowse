@@ -22,7 +22,9 @@ export function workerFreshness({ running, expected }) {
 // context(): the browser context's promise, or null while it's closed. liveViewUrl(): starts the
 // live view if needed and returns its address. expectedBuild(): the worker build on disk.
 // onStale(): the browser runs an old worker (its record is dropped, see checkBuild).
-export function createPanel({ context, liveViewUrl, log, expectedBuild = () => panelBuild(), onStale = () => {} }) {
+// available(): false when the browser has no side panel (a build with its own pages): calls fail
+// at once, so notifications go to the system's without waiting out the retries.
+export function createPanel({ context, liveViewUrl, log, expectedBuild = () => panelBuild(), onStale = () => {}, available = () => true }) {
   let panelId = null; // the side panel's extension id as the browser runs it
   const origins = []; // its origin once connected (the live view lets it in)
   const checked = new WeakMap(); // browser context -> what checkBuild found
@@ -80,6 +82,7 @@ export function createPanel({ context, liveViewUrl, log, expectedBuild = () => p
   // Calls fn(arg) in the side panel's worker. It can take a while to answer after the browser
   // starts (and a stopped worker never answers), so ask the current worker again until timeoutMs.
   async function call(fn, arg, timeoutMs = 15_000) {
+    if (!available()) throw new Error("no side panel in this browser (its own pages take its place)");
     const until = Date.now() + timeoutMs;
     let last = "timed out";
     for (let tries = 0; tries === 0 || Date.now() < until; tries++) {

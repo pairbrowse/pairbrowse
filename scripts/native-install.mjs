@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
 import { prepareProfile } from "./browser.mjs";
 import { engineProfile } from "./engine.mjs";
-import { nativeManifest } from "./native-engine.mjs";
+import { nativeManifest, chromePages } from "./native-engine.mjs";
 import { selfCheck } from "./native-check.mjs";
 import { NATIVE, installHint, pinnedArchive, ensureEngine, installEngine } from "./native-pack.mjs";
 import { BRANDING, brandNativeApp, registerApp, verifySignature } from "./macos-app.mjs";
@@ -200,12 +200,12 @@ export async function installNative(archive, { sha256, log = () => {}, check = s
       // Settings: use it (keeping the driver and everything else), and set up the profile.
       writeFileSync(paths.config, JSON.stringify({ ...readJson(paths.config, {}), browserEngine: "pairbrowse", executablePath: d.exec }, null, 2) + "\n");
       const config = loadConfig();
-      try { prepareProfile(engineProfile(config, profileDir(currentSession()))); } catch {}
+      try { prepareProfile(engineProfile(config, profileDir(currentSession())), undefined, { chromePages: chromePages(manifest), layout: config.layout }); } catch {}
 
       log("checking the new browser");
       const passed = await check(d.exec, { config, log });
       // Passed: from here on the new app stays, whatever happens to the bookkeeping below.
-      writeRecord(d, { version: manifest.version, sha256: got, archive: basename(archive), installedAt: new Date().toISOString(), checks: passed, branding: BRANDING });
+      writeRecord(d, { version: manifest.version, sha256: got, archive: basename(archive), installedAt: new Date().toISOString(), checks: passed, branding: BRANDING, chrome: chromePages(manifest) });
       rmSync(d.pending, { force: true });
       committed = true;
       await keepPrevious(d, layout, log);

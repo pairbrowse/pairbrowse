@@ -31,7 +31,9 @@
   the Security table.
 - `layout`: where the browser's own pages start, `{ "left": "open", "right": "open", "strip": 88 }`
   by default: each dock `"open"`, `"rail"` or `"hidden"`, and the tab strip's height in pixels (44
-  to 176). Changes made in the browser last for the session while the helper runs.
+  to 176). Changes made in the browser last for the session while the helper runs. Written into the
+  profile as `pairbrowse.layout` the first time a browser with its own pages starts; the browser
+  keeps it after.
 - `settleMs`: the browser server's fixed pause after each action before it answers (default 200;
   Playwright MCP's own default is 500, and twice that when the action made requests). PairBrowse
   waits for the page itself after that (until its document is quiet, popups closed) before the

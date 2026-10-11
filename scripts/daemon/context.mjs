@@ -15,6 +15,8 @@ import { validName, isTemporary, profileDir, tabsFile, currentSession, rememberS
 import { keepFocus } from "../focus.mjs";
 import { sleep, readJson } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
+import { chromePages, nativeManifest } from "../native-engine.mjs";
+import { isChromePage } from "../policy.mjs";
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
@@ -30,7 +32,11 @@ const NETWORK_EVENTS = ["request", "response", "requestfailed", "requestfinished
 // says what it waits for, so the agent tells them in chat instead of hanging silently.
 const PICK_WAIT_MS = Number(process.env.PAIRBROWSE_TEST_PICK_WAIT_MS) || 15_000;
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
-const pickerUrl = () => `chrome-extension://${panelExtensionId()}/picker.html`;
+// A build with its own pages shows its own picker instead (chrome://pairbrowse/picker).
+const CHROME_PICKER = "chrome://pairbrowse/picker";
+// Whether the browser config launches is a native build that declares its own pages (its
+// manifest's `chrome` field).
+const chromePagesIn = (config) => { try { return config.browserEngine === "pairbrowse" && chromePages(nativeManifest(config.executablePath)); } catch { return false; } };
 
 // Started in an SSH session (say, the desktop app's SSH sessions) means the browser runs on that
 // machine, not the user's: its live view needs an SSH tunnel.
@@ -47,8 +53,12 @@ export function stopRequestMirroring(page) {
 // shuttingDown(): no new browser then. onStarted(ctx) / onClosed(): the browser came up / went
 // away by itself (not for a session switch).
 // liveOthers(): who else is in this browser's session right now ({ who, app, computer }).
-export function createContext({ config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {} }) {
+// chromePagesOf(config): whether the browser it launches has its own pages. helperFor(): the live view's
+// { origin, key } for those pages' launch switch (started then), or null.
+export function createContext({ config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, helperFor = async () => null }) {
   let contextPromise = null;
+  let chrome = false; // the browser in use has its own pages (no side panel extension)
+  const pickerUrl = () => (chrome ? CHROME_PICKER : `chrome-extension://${panelExtensionId()}/picker.html`);
   // The PairBrowse browser is being downloaded and installed (first start, or a new version):
   // the user hears of it, and actions say so at once rather than waiting for minutes.
   let installing = false;
@@ -83,7 +93,7 @@ let switched = Promise.resolve();
   async function pageAt(url) {
     if (!contextPromise) return null;
     const ctx = await getContext();
-    return findPage(ctx, url) || ctx.pages().at(-1) || null;
+    return findPage(ctx, url) || ctx.pages().findLast((p) => !isChromePage(p.url())) || null;
   }
 
   // Playwright MCP keeps every network request and page event of each tab until it navigates or
@@ -200,7 +210,8 @@ let switched = Promise.resolve();
 
   // Everything that watches a page, for the tabs there at launch and each new one.
   function adopt(page, ctx) {
-    page.on("domcontentloaded", () => hud.onPageLoad(page));
+    // No badge or bar is drawn into the browser's own pages.
+    page.on("domcontentloaded", () => { if (!isChromePage(page.url())) hud.onPageLoad(page); });
     popups.watchPage(page, ctx);
     keepDownloads(page);
     presence.watchUser(page);
@@ -231,12 +242,17 @@ let switched = Promise.resolve();
 
   async function launch() {
     await chooseEngine();
+    chrome = !!chromePagesOf(config);
     // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
     // colors; see prepareProfile in browser.mjs), written before each launch.
-    const firstRun = prepareProfile(profile());
+    const firstRun = prepareProfile(profile(), undefined, { chromePages: chrome, layout: config.layout });
     // A side panel worker from another build (an update): the browser would keep running its
     // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
-    try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
+    if (!chrome) try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
+    // The browser's own pages reach the live view with the address and key in their launch switch
+    // (the args are never logged).
+    const helper = chrome ? await helperFor().catch((e) => { log("live view", e?.message || e); return null; }) : null;
+    if (chrome && !helper) log("the browser's own pages have no helper address");
     forgetTemporaryDownloads();
     if (!screen && needsVirtualDisplay(config)) screen = await startVirtualDisplay(log);
     createSession(session);
@@ -253,14 +269,14 @@ let switched = Promise.resolve();
       viewport: null,
       // Its own side panel is the only extension it loads.
       ignoreDefaultArgs: ["--disable-extensions"],
-      args: launchArgs(config, { firstRun }),
+      args: launchArgs(config, { firstRun, chromePages: chrome, helper: helper ? `${helper.origin}#${helper.key}` : null }),
     }, log);
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
     await ctx.addInitScript({ content: hud.source });
     for (const p of ctx.pages()) { adopt(p, ctx); hud.ensure(p); }
     // A tab can arrive already loaded (one the side panel opened at its address): its page
     // script comes now, since under Patchright it isn't there until ensure adds it.
-    ctx.on("page", (p) => { adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => hud.onPageLoad(p), () => {}); setTimeout(() => capTabs(ctx, p).catch(() => {}), 300); });
+    ctx.on("page", (p) => { adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => { if (!isChromePage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => capTabs(ctx, p).catch(() => {}), 300); });
     if (pick.state === "pending") showPicker(ctx);
     else restore(ctx);
     const mine = contextPromise;
@@ -541,6 +557,7 @@ let switched = Promise.resolve();
   }
 
   return {
+    chromePages: () => chrome,
     getContext, watchClose, current: () => contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
     isRestoring: () => restoring !== null, isSwitching: () => switching,
     currentUrl: () => lastCurrentUrl, setCurrentUrl: (url) => { lastCurrentUrl = url; },

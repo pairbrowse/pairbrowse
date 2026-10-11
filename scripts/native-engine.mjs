@@ -32,6 +32,11 @@ export function nativeManifest(executablePath) {
   return metadata;
 }
 
+// The build manifest's `chrome` field: the protocol level of the browser's own pages (1 =
+// chrome://pairbrowse and chrome://pairbrowse.top-chrome pages reading --pairbrowse-helper).
+// Absent in today's builds: then the side panel extension takes their place.
+export const chromePages = (manifest) => Number.isInteger(manifest?.chrome) && manifest.chrome >= 1;
+
 // The primary display as Chromium reports it, so the hidden capture sees the real screen, not
 // headless's 800x600. Chromium on macOS reports 30-bit color on EDR (XDR) displays.
 function macScreen() {
@@ -508,7 +513,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const { agent, rest: launchOptions } = pack.splitAgentOptions(personaRest);
   const merged = { ...launchOptions, ...options };
   const givenArgs = merged.args ?? [];
-  pack.emitCoherenceWarnings?.({ ...fingerprint, proxy: merged.proxy, geoip: settings.geoip, headless: merged.headless, userAgent: merged.userAgent, _userArgs: givenArgs },
+  pack.emitCoherenceWarnings?.({ ...fingerprint, proxy: merged.proxy, geoip: settings.geoip, headless: merged.headless, userAgent: merged.userAgent, _userArgs: givenArgs.filter((a) => !String(a).startsWith("--pairbrowse-helper=")) },
     false, process.platform, CHROMIUM_MAJOR);
   const { args: proxyArgs, proxy } = pack.resolveProxy(merged.proxy, pack.engineSupportsSwitch(options.executablePath, "proxy-auth"));
   const { extensionPaths, userArgs } = splitExtensionArgs(givenArgs, extensions);

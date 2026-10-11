@@ -42,6 +42,7 @@ import { createPresence } from "./daemon/presence.mjs";
 import { createPause } from "./daemon/pause.mjs";
 import { fieldOwner } from "./daemon/fields.mjs";
 import { createPanel } from "./daemon/panel.mjs";
+import { CHROME_PAGE_ORIGINS } from "./policy.mjs";
 import { forgetPanelBuild } from "./browser.mjs";
 import { createScreenShare } from "./daemon/screenshare.mjs";
 import { createRecorder } from "./daemon/recorder.mjs";
@@ -129,7 +130,7 @@ function labelsChanged() { try { tabLabels.changed(); } catch {} }
 // Per-tab turns (the default); the whole-browser lease above stays for pairbrowse_collaboration.
 const tabClaims = new TabClaims({ onChange: refreshTabs });
 
-const panel = createPanel({ context: () => context.current(), liveViewUrl: async () => (await sharing.ensureLiveView()).url, log, onStale: () => forgetPanelBuild(context.profile()) });
+const panel = createPanel({ context: () => context.current(), liveViewUrl: async () => (await sharing.ensureLiveView()).url, log, onStale: () => forgetPanelBuild(context.profile()), available: () => !context.chromePages() });
 // "Pause agents", session-wide: held here, or mirrored from the host of a session joined from
 // here (only a drive participant may press it there; a watcher sees it but can't).
 const canPause = () => !follow.joined() || follow.role() === "drive";
@@ -177,9 +178,20 @@ const context = createContext({
   onTabClosed: (page) => { tabClaims.drop(page); screenshots.forgetPage(page); hud.forgetPage(page); }, // a closed tab's turn ends with it, with the maps onto its pictures and the sparks on it
   status: (badge) => liveView()?.setStatus(badge),
   shuttingDown: () => shuttingDown,
+  // A build with its own pages: their origins are let in before the browser starts (their first
+  // requests pass), and they get the live view's address and their own key in the launch switch.
+  helperFor: async () => {
+    for (const o of CHROME_PAGE_ORIGINS) if (!panel.origins.includes(o)) panel.origins.push(o);
+    try {
+      const v = await sharing.ensureLiveView();
+      return { origin: new URL(v.url).origin, key: v.pagesKey };
+    } catch (e) { log("live view", e?.message || e); return null; }
+  },
   onStarted: () => {
     liveView()?.setSession(context.sessionInfo());
-    setTimeout(() => panel.connect().catch((e) => log("side panel", e?.message || e)), 0);
+    // The side panel extension gets the live view's address through its worker; the browser's own
+    // pages already have it from the launch switch.
+    if (!context.chromePages()) setTimeout(() => panel.connect().catch((e) => log("side panel", e?.message || e)), 0);
   },
   // The window is gone: end the sessions (the bridge reconnects and reopens Chrome on the next
   // action), or shut down if nobody is connected.

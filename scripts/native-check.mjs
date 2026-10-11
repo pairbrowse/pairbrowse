@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { paths, loadConfig } from "./paths.mjs";
 import { launchArgs, prepareProfile, panelExtensionId, THEME_COLOR, hudScript } from "./browser.mjs";
 import { launchEngine } from "./engine.mjs";
-import { nativeManifest } from "./native-engine.mjs";
+import { nativeManifest, chromePages } from "./native-engine.mjs";
 import { ensureRuntime } from "./runtime.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "./display.mjs";
 import { loadBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
@@ -42,9 +42,16 @@ async function checkServer() {
   return { origin: `http://127.0.0.1:${server.address().port}`, download, sent, close: () => server.close() };
 }
 
-// The side panel's worker runs, and no other extension does.
-async function checkExtensions(ctx, page) {
+// The side panel's worker runs, and no other extension does. chrome (a build with its own pages):
+// no extension runs at all.
+async function checkExtensions(ctx, page, { chrome = false } = {}) {
   const cdp = await ctx.newCDPSession(page);
+  if (chrome) {
+    const { targetInfos } = await cdp.send("Target.getTargets");
+    const any = targetInfos.filter((t) => t.url.startsWith("chrome-extension://"));
+    if (any.length) throw new Error(`extensions are running: ${any.map((t) => t.url).join(", ")}`);
+    return;
+  }
   const panel = `chrome-extension://${panelExtensionId()}/`;
   let workers = [];
   for (let i = 0; i < PANEL_WAIT_TRIES && !workers.length; i++) {
@@ -67,13 +74,15 @@ async function checkBottomBar(page) {
 }
 
 // After the browser closed: the PairBrowse colors stuck (Chromium's own color theme, no theme
-// extension and so no "Installed theme" bar), and only the side panel is installed.
-function checkProfile(profile) {
+// extension and so no "Installed theme" bar), and only the side panel is installed. chrome (a build
+// with its own pages, which draws its own colors): no unpacked extension at all.
+function checkProfile(profile, { chrome = false } = {}) {
   const prefs = readJson(join(profile, "Default", "Preferences"), {});
-  if (prefs.extensions?.theme?.id !== "user_color_theme_id" || prefs.browser?.theme?.user_color2 !== THEME_COLOR) throw new Error("the PairBrowse colors didn't stick");
+  if (!chrome && (prefs.extensions?.theme?.id !== "user_color_theme_id" || prefs.browser?.theme?.user_color2 !== THEME_COLOR)) throw new Error("the PairBrowse colors didn't stick");
   const secure = readJson(join(profile, "Default", "Secure Preferences"), {});
   const loaded = Object.entries(secure.extensions?.settings || {}).filter(([, e]) => e?.location === UNPACKED_LOCATION).map(([id]) => id);
-  if (loaded.some((id) => id !== panelExtensionId())) throw new Error(`unexpected extensions installed: ${loaded.join(", ")}`);
+  const allowed = chrome ? [] : [panelExtensionId()];
+  if (loaded.some((id) => !allowed.includes(id))) throw new Error(`unexpected extensions installed: ${loaded.join(", ")}`);
 }
 
 // Returns what passed; throws on the first failure. On a Linux machine without a screen the check
@@ -85,7 +94,9 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
   mkdirSync(browserDir, { recursive: true });
   const scratch = mkdtempSync(join(browserDir, ".selfcheck-"));
   const profile = join(scratch, "profile");
-  prepareProfile(profile);
+  let chrome = false; // a manifest that doesn't read fails the version check below
+  try { chrome = chromePages(nativeManifest(exec)); } catch {}
+  prepareProfile(profile, undefined, { chromePages: chrome, layout: config.layout });
   const site = await checkServer();
   const passed = [];
   let screen = null;
@@ -93,13 +104,13 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
   const work = (async () => {
     if (needsVirtualDisplay(config, env)) screen = await startVirtualDisplay(log, { name: "Xauthority-check" });
     ctx = await launchEngine(chromium, { ...config, browserEngine: "pairbrowse", executablePath: exec }, profile,
-      { headless: false, env: { ...env, ...(screen?.env || {}) }, executablePath: exec, viewport: null, ignoreDefaultArgs: ["--disable-extensions"], args: launchArgs(config) }, log);
+      { headless: false, env: { ...env, ...(screen?.env || {}) }, executablePath: exec, viewport: null, ignoreDefaultArgs: ["--disable-extensions"], args: launchArgs(config, { chromePages: chrome }) }, log);
     const version = ctx.browser()?.version() || "";
     if (!version.includes(nativeManifest(exec).version)) throw new Error(`the browser reports version ${version || "(none)"}`);
     passed.push(`launches (${version})`);
     const page = ctx.pages()[0] || await ctx.newPage();
-    await checkExtensions(ctx, page);
-    passed.push("side panel running, no other extensions");
+    await checkExtensions(ctx, page, { chrome });
+    passed.push(chrome ? "no extensions (the browser's own pages)" : "side panel running, no other extensions");
     await page.goto(site.origin, { waitUntil: "domcontentloaded" });
     await checkBottomBar(page);
     passed.push("bottom bar shows");
@@ -121,8 +132,8 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
     passed.push("download");
     await ctx.close();
     ctx = null;
-    checkProfile(profile);
-    passed.push("color theme, no theme extension");
+    checkProfile(profile, { chrome });
+    passed.push(chrome ? "no unpacked extensions installed" : "color theme, no theme extension");
     return passed;
   })();
   try {

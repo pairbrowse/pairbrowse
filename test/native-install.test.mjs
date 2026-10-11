@@ -31,7 +31,8 @@ const temp = (prefix) => { const d = mkdtempSync(join(tmpdir(), prefix)); temps.
 const mac = process.platform === "darwin";
 
 // A tiny stand-in for a PairBrowse build: the right names, manifest and icon, ad-hoc signed.
-function fakeArchive(version, dir = temp("pb-build-")) {
+// chrome: the manifest's `chrome` field (a build with its own pages), absent when not given.
+function fakeArchive(version, dir = temp("pb-build-"), { chrome = undefined } = {}) {
   const app = join(dir, "PairBrowse.app");
   mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
   mkdirSync(join(app, "Contents", "Resources"), { recursive: true });
@@ -53,7 +54,7 @@ function fakeArchive(version, dir = temp("pb-build-")) {
   writeFileSync(join(alerts, "Resources", "base.lproj", "InfoPlist.strings"), '"CFBundleDisplayName" = "Chromium";\n');
   copyFileSync("/usr/bin/true", join(app, "Contents", "MacOS", "pairbrowse"));
   writeFileSync(join(app, "Contents", "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleName</key><string>PairBrowse</string><key>CFBundleExecutable</key><string>pairbrowse</string><key>CFBundleIdentifier</key><string>app.pairbrowse.test</string></dict></plist>`);
-  writeFileSync(join(app, "Contents", "Resources", "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version, arch: process.arch === "arm64" ? "arm64" : "x86_64" }));
+  writeFileSync(join(app, "Contents", "Resources", "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version, arch: process.arch === "arm64" ? "arm64" : "x86_64", ...(chrome === undefined ? {} : { chrome }) }));
   copyFileSync(new URL("../scripts/browser/pairbrowse.icns", import.meta.url), join(app, "Contents", "Resources", "app.icns"));
   execFileSync("codesign", ["--force", "--deep", "--sign", "-", app]);
   const zip = join(dir, `pairbrowse-${version}.zip`);
@@ -131,9 +132,12 @@ test("installs, keeps the previous app, and rolls back when the check fails", { 
   assert.equal(config.browserEngine, "pairbrowse");
   assert.equal(config.executablePath, nativeDirs().exec);
   assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).version, "150.0.0.1");
+  assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).chrome, false, "today's builds have no pages of their own");
 
-  await installNative(fakeArchive("150.0.0.2"), opts);
+  // A build whose manifest declares its own pages: the record says so.
+  await installNative(fakeArchive("150.0.0.2", undefined, { chrome: 1 }), opts);
   assert.equal(installedVersion(), "150.0.0.2");
+  assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).chrome, true);
   assert.ok(existsSync(join(nativeDirs().previous, "Contents", "MacOS", "pairbrowse")), "previous app kept");
 
   writeFileSync(join(home, "config.json"), JSON.stringify({ browserDriver: "patchright", mine: 1 }));

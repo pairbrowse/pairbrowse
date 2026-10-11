@@ -6,7 +6,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
 import { hostAllowed, redact } from "../../scripts/secrets.mjs";
-import { navigationProblem } from "../../scripts/policy.mjs";
+import { navigationProblem, isChromePage } from "../../scripts/policy.mjs";
+import { hideChromeTabs } from "../../scripts/daemon/output.mjs";
 import { hostOk, originOk, keyOk } from "../../scripts/liveview/http.mjs";
 import { addressToUrl } from "../../scripts/browser/panel/common.js";
 
@@ -57,6 +58,30 @@ test("the browser opens only web pages", () => {
   const scheme = fc.constantFrom("javascript", "JaVaScRiPt", "file", "data", "chrome", "chrome-extension", "blob", "view-source", "devtools");
   check(fc.property(fc.constantFrom("", " ", "\t", "\n"), scheme, junk, (lead, s, rest) => {
     assert.notEqual(navigationProblem(`${lead}${s}:${rest}`), null, `${s}:${rest}`);
+  }));
+  // The browser's own pages: refused with the sentence naming their rule, in any case and form.
+  const own = fc.constantFrom("pairbrowse", "PairBrowse", "pairbrowse.top-chrome", "PAIRBROWSE.TOP-CHROME");
+  check(fc.property(fc.constantFrom("", " ", "\t"), own, fc.constantFrom("", "/", "/picker", "/strip?x=1", "#frag"), junk, (lead, host, sep, rest) => {
+    const url = `${lead}chrome://${host}${sep}${sep ? rest : ""}`;
+    if (isChromePage(url)) assert.match(navigationProblem(url), /browser's own/, url);
+  }));
+  check(fc.property(fc.oneof(junk, fc.tuple(own, junk).map(([h, r]) => `chrome://${h}${r}`)), (url) => {
+    if (isChromePage(url)) assert.match(navigationProblem(url), /browser's own/, url);
+  }));
+});
+
+test("browser_tabs never lists the browser's own pages and keeps every other tab's number", () => {
+  const url = fc.oneof(
+    domain.map((d) => `https://${d}/`),
+    domain.map((d) => `http://${d}/x`),
+    fc.constantFrom("/picker", "/", "/settings?x=1").map((p) => `chrome://pairbrowse${p}`),
+    fc.constantFrom("/strip", "/dock").map((p) => `chrome://pairbrowse.top-chrome${p}`),
+  );
+  check(fc.property(fc.array(fc.tuple(url, fc.stringMatching(/^[A-Za-z ]{0,12}$/)), { maxLength: 8 }), (tabs) => {
+    const lines = tabs.map(([u, t], i) => `- ${i}: [${t}](${u})`);
+    const out = hideChromeTabs(`### Result\n${lines.map((l) => `${l}\n`).join("")}`);
+    const kept = lines.filter((_, i) => !isChromePage(tabs[i][0]));
+    assert.equal(out, `### Result\n${kept.map((l) => `${l}\n`).join("")}`);
   }));
 });
 

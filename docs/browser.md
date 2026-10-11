@@ -42,6 +42,9 @@ There's no headless mode.
   which talks only to the key-protected live view on 127.0.0.1). Its navy colors are Chromium's
   built-in color theme, set in the profile (no theme extension, no "Installed theme" bar); pick
   another in Settings > Appearance and PairBrowse keeps it.
+  With a native build that declares its own pages, no extension is loaded: the helper passes the
+  live view's origin and a key of their own in `--pairbrowse-helper`, the session picker is
+  `chrome://pairbrowse/picker`, and agents never see or drive `chrome://pairbrowse` pages.
 - Set `"executablePath"` in `~/.pairbrowse/config.json` to use Brave, Arc, Vivaldi or another
   Chromium build instead.
 

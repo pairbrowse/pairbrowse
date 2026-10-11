@@ -111,6 +111,62 @@ test("the browser loads only the side panel extension", async () => {
   assert.ok(args.includes(`--disable-extensions-except=${PANEL_DIR}`));
 });
 
+test("a build with its own pages: no extension, no theme seed, one helper switch", async () => {
+  const { launchArgs, browserArgs } = await import("../scripts/browser.mjs");
+  const noExtension = (args) => !args.some((a) => /^--(load-extension|disable-extensions-except|allowlisted-extension-id)=/.test(a));
+  const chrome = launchArgs({}, { chromePages: true, helper: "http://127.0.0.1:4321#k" });
+  const helpers = chrome.filter((a) => a.startsWith("--pairbrowse-helper="));
+  assert.deepEqual(helpers, ["--pairbrowse-helper=http://127.0.0.1:4321#k"]);
+  assert.ok(noExtension(chrome));
+  const first = launchArgs({}, { chromePages: true, firstRun: true });
+  assert.ok(!first.includes("--no-startup-window"), "the browser opens its own window");
+  assert.ok(!first.some((a) => a.startsWith("--pairbrowse-helper=")), "no helper given: no switch");
+  assert.deepEqual(browserArgs({ chromePages: true, firstRun: true }), process.platform === "darwin" ? ["--show-avatar-button=never"] : []);
+  // Today's builds: the extension as before, never the switch.
+  for (const args of [launchArgs({}), launchArgs({}, { firstRun: true }), launchArgs({}, { helper: "http://127.0.0.1:1#k" })]) {
+    assert.ok(!args.some((a) => a.startsWith("--pairbrowse-helper=")));
+    assert.ok(!noExtension(args));
+  }
+  // The --enable-features merge and the headless notifications rule hold in this mode too.
+  const merged = launchArgs({ chromeArgs: ["--headless=new", "--enable-features=Foo"] }, { chromePages: true, helper: "h#k" });
+  const enable = merged.filter((a) => a.startsWith("--enable-features="));
+  assert.equal(enable.length, 1);
+  assert.ok(enable[0].includes("ForceForegroundPriorityForAllTabs") && enable[0].includes("Foo"));
+  assert.ok(merged.includes("--disable-notifications"));
+  assert.ok(!launchArgs({}, { chromePages: true }).includes("--disable-notifications"));
+});
+
+test("a build with its own pages: the profile gets the docks' layout, no extension or theme settings", async () => {
+  const { profilePreferences, prepareProfile } = await import("../scripts/browser.mjs");
+  const { mkdtempSync, writeFileSync, readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const given = { left: "rail", right: "open", strip: 100 };
+  const out = profilePreferences({ autofill: { last_version_deduped: 1 } }, undefined, [], { chromePages: true, layout: given });
+  assert.deepEqual(out.pairbrowse.layout, given);
+  assert.equal(out.extensions, undefined, "no pinned button, no theme");
+  assert.equal(out.browser.theme, undefined);
+  assert.equal(out.ntp_footer, undefined);
+  assert.equal(out.signin.allowed, false);
+  assert.equal(out.profile.content_settings.enable_quiet_permission_ui.notifications, true);
+  assert.equal(out.session.restore_on_startup, 5);
+  assert.equal(out.autofill.last_version_deduped, 1);
+  const kept = { left: "hidden", right: "rail", strip: 44 };
+  assert.deepEqual(profilePreferences({ pairbrowse: { layout: kept } }, undefined, [], { chromePages: true, layout: given }).pairbrowse.layout, kept, "the browser's own layout stays");
+  assert.deepEqual(profilePreferences({}, undefined, [], { chromePages: true, layout: { left: "wide" } }).pairbrowse.layout, { left: "open", right: "open", strip: 88 });
+  assert.equal(profilePreferences({}).pairbrowse, undefined, "with the extension: no layout pref");
+  const dir = mkdtempSync(join(tmpdir(), "pb-chrome-prof-"));
+  assert.equal(prepareProfile(dir, undefined, { chromePages: true, layout: null }), true, "a new profile");
+  const prefs = JSON.parse(readFileSync(join(dir, "Default", "Preferences"), "utf8"));
+  assert.deepEqual(prefs.pairbrowse.layout, { left: "open", right: "open", strip: 88 });
+  assert.equal("ack_existing_ntp_extensions" in prefs, false);
+  const secureFile = join(dir, "Default", "Secure Preferences");
+  const secure = JSON.stringify({ extensions: { settings: { [panelExtensionId()]: { disable_reasons: [1] } } } });
+  writeFileSync(secureFile, secure);
+  assert.equal(prepareProfile(dir, undefined, { chromePages: true }), false);
+  assert.equal(readFileSync(secureFile, "utf8"), secure, "Secure Preferences untouched");
+});
+
 test("a disabled side panel record is dropped so Chromium loads it enabled again", async () => {
   const { profileSecurePreferences } = await import("../scripts/browser.mjs");
   const id = panelExtensionId();
@@ -266,6 +322,14 @@ test("an old side panel worker: what the helper makes of the build the running w
   assert.equal(workerFreshness({ running: "old", expected: "abc" }), "stale");
   assert.equal(workerFreshness({ running: undefined, expected: "abc" }), "unknown", "no answer: asked again later");
   assert.equal(workerFreshness({ running: null, expected: null }), "current", "nothing on disk to compare with");
+});
+
+test("without a side panel (a build with its own pages), a call to it fails at once", async () => {
+  const { createPanel } = await import("../scripts/daemon/panel.mjs");
+  const panel = createPanel({ context: async () => null, liveViewUrl: async () => "x", log: () => {}, available: () => false });
+  const started = Date.now();
+  await assert.rejects(panel.call(() => 1, null, 15000), /no side panel/);
+  assert.ok(Date.now() - started < 200, "no retries");
 });
 
 test("before a launch, a profile's stored workers go when the side panel's build changed, once", async () => {

@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync, rmSync, existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { redact } from "../secrets.mjs";
+import { isChromePage } from "../policy.mjs";
 
 // Playwright's own snapshot and console files in the files folder; never your own files there.
 const PLAYWRIGHT_OUTPUT = /^(page|console|network)-[\dT:.Z-]+\.(ya?ml|log|md|txt)$/;
@@ -115,6 +116,15 @@ export function createOutput({ dir, secretValues }) {
 // Playwright's error for a browser tool, said plainly (its call logs, selectors and escape codes
 // are for developers). Returns the plain text, or null when the error isn't one of the known
 // kinds (it then goes as it is, without escape codes).
+// A browser_tabs result without the browser's own pages (chrome://pairbrowse...): their lines go,
+// every other line keeps its number and its "(current)" mark.
+export function hideChromeTabs(text) {
+  return String(text).split("\n").filter((line) => {
+    const m = /^- \d+: .*\]\(([^)\s]+)\)\s*$/.exec(line);
+    return !(m && isChromePage(m[1]));
+  }).join("\n");
+}
+
 export function plainError(tool, text) {
   const t = String(text ?? "").replace(/\x1b\[[0-9;]*m/g, "");
   const first = t.replace(/^### Error\s*/i, "").split("\n")[0].replace(/^(Error: )+/, "");

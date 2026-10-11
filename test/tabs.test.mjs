@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { trackTabs, restoreTabs, loadingHtml, readSavedTabs } from "../scripts/tabs.mjs";
@@ -35,8 +35,9 @@ const tmpFile = () => join(mkdtempSync(join(tmpdir(), "pb-tabs-")), "tabs.json")
 test("saving tabs keeps web pages in order, with the active one's position", async () => {
   const a = fakePage("https://a.test/", "A");
   const settings = fakePage("chrome://settings", "Settings");
+  const picker = fakePage("chrome://pairbrowse/picker", "Choose a session"); // the browser's own page
   const b = fakePage("http://b.test/x", "B".repeat(200));
-  const ctx = fakeContext([a, settings, b]);
+  const ctx = fakeContext([a, settings, picker, b]);
   const file = tmpFile();
   const t = trackTabs(ctx, { file, activePage: () => b });
   await t.saveNow();
@@ -46,6 +47,12 @@ test("saving tabs keeps web pages in order, with the active one's position", asy
   assert.equal(saved.active, 1);
   assert.deepEqual(readSavedTabs(file).tabs.map((x) => x.url), ["https://a.test/", "http://b.test/x"], "what's saved reads back");
   t.stop();
+  // A file holding one of the browser's own pages never brings it back.
+  const own = tmpFile();
+  writeFileSync(own, JSON.stringify({ tabs: [{ url: "chrome://pairbrowse/picker" }, { url: "https://a.test/" }], active: 1 }));
+  const read = readSavedTabs(own);
+  assert.deepEqual(read.tabs.map((x) => x.url), ["https://a.test/"]);
+  assert.equal(read.active, 0);
 });
 
 test("tab changes are saved once, after things settle", async (t) => {

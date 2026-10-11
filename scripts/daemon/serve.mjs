@@ -7,7 +7,7 @@ import { waitForLink, waitedLine } from "./linkwait.mjs";
 import { createInterface } from "node:readline";
 import { paths } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
-import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, sensitiveLabel } from "../policy.mjs";
+import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, sensitiveLabel, isChromePage, CHROME_PAGE_RULE } from "../policy.mjs";
 import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
@@ -26,7 +26,7 @@ import { buttonLabel, settle } from "./page.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 import { dragBetween, reason as dragReason } from "./drag.mjs";
-import { createRefNames, plainError } from "./output.mjs";
+import { createRefNames, plainError, hideChromeTabs } from "./output.mjs";
 import { humanFill, humanType, fillSettings } from "../native-engine.mjs";
 
 const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
@@ -62,6 +62,8 @@ const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for th
 // browser tools'. browser_drag is the helper's own too (daemon/drag.mjs): a drag as a hand does
 // it, where Playwright's makes one move and most boards put the card back.
 const DECORATED = new Set(["pairbrowse_run", "pairbrowse_upload", "browser_drag", "browser_wait_for"]);
+// Helper tools that act in the agent's tab, refused there when it is one of the browser's own pages.
+const CHROME_GUARDED = new Set(["pairbrowse_click_at", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_run"]);
 const WAIT_FOR_MS = 8000; // browser_wait_for: how long text gets to appear or go
 const RUN_MAX_MS = 120_000; // a fast-mode run stops between steps past this
 // Calls after which other participants' refs may be stale.
@@ -450,7 +452,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         trace.mark("notes");
         if (text && msg.result) (msg.result.content ||= []).push({ type: "text", text });
       }
-      for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text))); if (remote) part.text = forJoiner(part.text); }
+      for (const part of content()) if (part.type === "text") { output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text))); if (tool === "browser_tabs") part.text = hideChromeTabs(part.text); if (remote) part.text = forJoiner(part.text); }
       // The cut's note names the whole snapshot's file on this computer: for a joiner, its name only.
       if (tool === "browser_snapshot" || inlined) for (const part of content()) if (part.type === "text") { part.text = output.capSnapshot(part.text); if (remote) part.text = forJoiner(part.text); }
       // A picture also with a failed action (a stopped run, a covered click): the message says to look at it.
@@ -561,8 +563,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // of a shared session.
     const takenByOther = (page) => othersTab(page) || !!remoteHolder(page);
     async function freeTab() {
-      for (const page of [...used].reverse()) if (!page.isClosed() && !othersTab(page)) return page;
-      return (await openTabs()).find((page) => !page.isClosed() && !othersTab(page)) || null;
+      for (const page of [...used].reverse()) if (!page.isClosed() && !othersTab(page) && !isChromePage(page.url())) return page;
+      return (await openTabs()).find((page) => !page.isClosed() && !othersTab(page) && !isChromePage(page.url())) || null;
     }
     // Moves this participant's browser server to its own tab, by that tab's number right now.
     async function syncServer() {
@@ -1013,6 +1015,15 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const d = here && popups.waitingDialog(here);
         if (d) return reply(msg.id, `The page is waiting on its ${d.type} dialog ("${String(d.message).slice(0, 120)}"): answer it with browser_handle_dialog (accept, or dismiss) before anything else.`, true);
       }
+      // The browser's own pages (chrome://pairbrowse...) are never a tab an agent acts in.
+      if ((name.startsWith("browser_") && name !== "browser_tabs" && name !== "browser_close") || CHROME_GUARDED.has(name)) {
+        const here = actingIn || (mine && !mine.isClosed() ? mine : null);
+        if (here && isChromePage(here.url())) return reply(msg.id, `${CHROME_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`, true);
+      }
+      if (name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined) {
+        const page = (await openTabs())[Number(args.index)];
+        if (page && isChromePage(page.url())) return reply(msg.id, `Tab ${args.index} is the browser's own page. ${CHROME_PAGE_RULE} Use browser_tabs list.`, true);
+      }
       // Another agent's tab is theirs to close.
       if (name === "browser_tabs" && args.action === "close") {
         const tabs = await openTabs();
@@ -1183,7 +1194,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // tab by chance. None: it asks again on its next call.
       if (remote) {
         const start = remote.startPage && !remote.startPage.isClosed() ? remote.startPage : null;
-        const unheld = (page) => !page.isClosed() && !(tabClaims.holder(page) && tabClaims.holder(page).id !== participant);
+        const unheld = (page) => !page.isClosed() && !isChromePage(page.url()) && !(tabClaims.holder(page) && tabClaims.holder(page).id !== participant);
         const page = start || await freeTab() || (await openTabs()).findLast(unheld);
         if (page) { remote.startPage = null; remote.started = true; setMine(page); }
         else noTabWhy = "every tab here is in use by another agent";
@@ -1193,7 +1204,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // in it; else its browser server's tab when free, else any free tab. Every tab taken: its
       // browser server's, where it hears "in use".
       const looked = await within(FRONT_WAIT_MS, front().catch(() => null));
-      const start = [looked, serverAt].find((p) => p && !p.isClosed() && !takenByOther(p)) || (await openTabs()).find((p) => !p.isClosed() && !takenByOther(p)) || serverAt;
+      const start = [looked, serverAt].find((p) => p && !p.isClosed() && !takenByOther(p) && !isChromePage(p.url())) || (await openTabs()).find((p) => !p.isClosed() && !takenByOther(p) && !isChromePage(p.url())) || serverAt;
       if (start) setMine(start);
       return mine;
     }

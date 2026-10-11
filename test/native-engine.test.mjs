@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, nativeManifest, macHostProfile, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
+import { launchNative, nativeManifest, chromePages, macHostProfile, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native-pack.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
@@ -79,6 +79,16 @@ test("the hidden capture is told the real screen in physical pixels", () => {
   assert.equal(screenInfoArg({ width: 1728, height: 1117, top: 34, bottom: 77, scale: 2, edr: 16 }),
     "--screen-info={0,0 3456x2234 colorDepth=30 devicePixelRatio=2 workAreaTop=68 workAreaBottom=154}");
   assert.match(screenInfoArg({ width: 1920, height: 1080, top: 25, bottom: 0, scale: 1, edr: 1 }), /colorDepth=24 devicePixelRatio=1 /);
+});
+
+test("a build's own pages are read from its manifest's chrome field", () => {
+  const base = { product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" };
+  assert.equal(chromePages(nativeManifest(appFixture({ ...base, chrome: 1 }).executablePath)), true);
+  assert.equal(chromePages(nativeManifest(appFixture({ ...base, chrome: 2 }).executablePath)), true);
+  for (const chrome of [undefined, 0, "1", true, 1.5, -1, null]) {
+    assert.equal(chromePages(nativeManifest(appFixture(chrome === undefined ? base : { ...base, chrome }).executablePath)), false, String(chrome));
+  }
+  assert.equal(chromePages(null), false);
 });
 
 test("native app metadata requires a PairBrowse Chromium 150 bundle", () => {

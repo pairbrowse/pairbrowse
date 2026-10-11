@@ -1,0 +1,133 @@
+/* The browser build's top strip (DESIGN.md B2): the 44 px tab row, the nav fragments beside the
+   native address bar, and the popovers alone for the shell's bubbles. Colors from tokens.css only;
+   participant and agent colors arrive as inline backgrounds from strip.js. */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; margin: 0; }
+svg { flex: none; }
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ---- the tab row ---- */
+.row { position: relative; display: flex; align-items: stretch; gap: 8px; height: 44px; padding: 0 12px; -webkit-app-region: drag; }
+body[data-platform="mac"] .row { padding-left: 80px; } /* the traffic lights */
+.row button, .row a, .row input, .row label, #tabs li, .pop, .nav, .nav button { -webkit-app-region: no-drag; }
+
+#switch { display: flex; align-items: center; gap: 6px; align-self: center; height: 28px; padding: 0 6px 0 2px; border: 0; border-radius: var(--r-2); background: transparent; cursor: default; flex: none; transition: background-color 120ms; }
+#switch img { display: block; flex: none; }
+#switch .wordmark { font-size: 17px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+#switch .chevron { width: 12px; height: 12px; color: var(--ink-2); }
+#switch:hover, #switch[aria-expanded="true"] { background: var(--hover); }
+
+#tabs { display: flex; flex: 1 1 auto; gap: 8px; min-width: 0; margin: 0; padding: 0; list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#tabs li { display: flex; align-items: center; gap: 8px; flex: 1 1 240px; min-width: 160px; max-width: 240px; height: 44px; padding: 0 10px 0 12px; border-radius: 10px 10px 0 0; color: var(--ink-2); cursor: default; user-select: none; transition: background-color 120ms, color 120ms; }
+#tabs li[aria-selected="true"] { background: var(--chrome); color: var(--ink); border: 1px solid var(--edge); border-bottom: 0; }
+#tabs li:not([aria-selected="true"]):hover { background: var(--hover); }
+#tabs li.pinned { flex: 0 0 40px; min-width: 40px; max-width: 40px; padding: 0; justify-content: center; }
+#tabs .icon { display: grid; place-items: center; width: 16px; height: 16px; flex: none; }
+#tabs .icon img { display: block; width: 16px; height: 16px; }
+#tabs .icon .generic { width: 16px; height: 16px; color: var(--ink-2); }
+#tabs .ring { display: block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; }
+#tabs .title { flex: 1; min-width: 0; font-size: var(--fs-3); font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#tabs li.pinned .title { display: none; }
+#tabs .agent { flex: none; width: 7px; height: 7px; margin-right: -4px; border-radius: 50%; } /* 8 px gap - 4 = 4 px left of the close */
+#tabs .close { display: none; place-items: center; flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
+#tabs .close svg { width: 12px; height: 12px; }
+#tabs .close:hover { background: var(--hover); color: var(--ink); }
+#tabs li[aria-selected="true"] .close, #tabs li:hover .close, #tabs li:focus-within .close { display: grid; }
+#tabs li.pinned .close { display: none; }
+/* Drag to reorder: the siblings slide in 160 ms; the dragged tab follows the pointer. */
+body[data-dragging] #tabs li { transition: background-color 120ms, color 120ms, transform var(--t); }
+body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: none; }
+
+#new { display: grid; place-items: center; flex: none; align-self: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
+#new svg { width: 16px; height: 16px; }
+#new:hover { background: var(--hover); color: var(--ink); }
+
+/* ---- the right end ---- */
+#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; }
+#pill { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--edge); border-radius: 999px; background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; }
+#pill .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+#pill[data-state="local"] .dot { background: var(--muted); }
+#pill[data-state="live"] .dot { background: var(--ok); }
+#pill[data-state="live"] .live { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+#avatars { display: flex; margin: 0; padding: 0; list-style: none; }
+#avatars:empty { display: none; }
+#avatars li { display: flex; }
+#avatars li + li { margin-left: -8px; }
+.avatar { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--spark); color: var(--bg); font-size: var(--fs-2); font-weight: 700; line-height: 1; box-shadow: 0 0 0 1.5px var(--bg); }
+.avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input), 0 0 0 1.5px var(--bg); }
+.avatar.more { background: var(--elevated); color: var(--ink-2); }
+
+#share-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--edge); border-radius: var(--r-2); background: transparent; color: var(--ink); font-size: var(--fs-3); font-weight: 500; cursor: default; transition: background-color 120ms; }
+#share-btn svg { width: 14px; height: 14px; }
+#share-btn:hover, #share-btn[aria-expanded="true"] { background: var(--hover); }
+#menu-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
+#menu-btn svg { width: 16px; height: 16px; }
+#menu-btn:hover, #menu-btn[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+
+/* ---- popovers: under the row (a taller host), or alone in a bubble (#switcher, #share, #menu) ---- */
+.pop { animation: fade var(--t); }
+@keyframes fade { from { opacity: 0; } }
+#switcher { position: absolute; top: 44px; left: 12px; z-index: 3; width: 360px; height: 560px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); overflow: hidden; }
+body[data-platform="mac"] #switcher { left: 80px; }
+#picker { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+
+/* The Share card (DESIGN.md B8, the side panel's markup and styles). */
+.share-card { position: absolute; top: 44px; right: 12px; z-index: 3; width: 320px; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); color: var(--ink); line-height: 1.45; }
+.share-card h2 { margin: 0; font-size: 14px; font-weight: var(--fw-name); }
+.share-choice { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.share-choice legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-1); font-weight: var(--fw-name); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.share-opt { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 6px 8px; border-radius: var(--r-2); font-size: var(--fs-3); transition: background-color 120ms; }
+.share-opt:hover { background: var(--hover); }
+.share-opt input { margin: 2px 0 0; accent-color: var(--accent); }
+.share-opt small { display: block; font-size: var(--fs-2); color: var(--ink-2); }
+.share-name { display: grid; gap: 4px; font-size: var(--fs-2); color: var(--ink-2); }
+.share-line { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
+.field { width: 100%; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
+.field:focus { border-color: var(--accent); }
+.share-card .share-code { font-family: var(--mono); }
+.primary { justify-self: start; height: 30px; padding: 0 14px; border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font-weight: 650; cursor: default; }
+.primary:hover { background: var(--accent-ink); }
+.primary:disabled { opacity: 0.6; }
+.mini { height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: var(--fw-name); cursor: default; transition: background-color 120ms, color 120ms; }
+.mini:hover { background: var(--hover); color: var(--ink); }
+.share-card .note { margin: 6px 0 0; font-size: var(--fs-2); color: var(--ink-2); }
+#share-rights { font-size: var(--fs-2); color: var(--ink-2); }
+.msg { margin: 0; font-size: var(--fs-2); color: var(--muted); }
+.msg:empty { display: none; }
+.msg[data-kind="error"] { color: var(--bad); }
+.msg[data-kind="ok"] { color: var(--ok); }
+
+#menu { position: absolute; top: 44px; right: 12px; z-index: 3; min-width: 200px; display: grid; padding: 6px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); }
+#menu .item { display: flex; align-items: center; gap: 12px; width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); font-size: var(--fs-3); text-align: left; cursor: default; transition: background-color 120ms; }
+#menu .item:hover:not(:disabled), #menu .item:focus { background: var(--hover); }
+#menu .item:disabled { color: var(--muted); }
+#menu kbd { margin-left: auto; font: var(--fs-2) var(--sans); color: var(--ink-2); }
+
+/* ---- the nav fragments beside the native address bar ---- */
+.nav { display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 8px; }
+.nav button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
+.nav button svg { width: 16px; height: 16px; }
+.nav button:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.nav button:disabled { color: var(--muted); }
+#sparkle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+
+/* ---- modes: the bubbles show their popover alone ---- */
+body[data-mode="switcher"] .row, body[data-mode="share"] .row, body[data-mode="menu"] .row { display: block; height: auto; padding: 0; -webkit-app-region: no-drag; }
+body[data-mode="switcher"] .row > :not(#switcher), body[data-mode="share"] .row > :not(#right), body[data-mode="menu"] .row > :not(#right) { display: none; }
+body[data-mode="share"] #right > :not(#share-card), body[data-mode="menu"] #right > :not(#menu) { display: none; }
+body[data-mode="share"] #right, body[data-mode="menu"] #right { display: block; }
+body[data-mode="switcher"] #switcher, body[data-mode="share"] #share-card, body[data-mode="menu"] #menu { position: static; width: 100%; }
+body[data-mode="switcher"] #switcher { height: 100vh; }
+/* A host wider than the card never stretches it (B8: 320 px), left-aligned at the page edge. */
+body[data-mode="share"] #share-card { max-width: 320px; }
+body[data-mode="menu"] #menu { max-width: 280px; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#tabs li:focus-visible, #menu .item:focus-visible { outline-offset: -2px; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

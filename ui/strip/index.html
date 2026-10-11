@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>PairBrowse</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="strip.css">
+</head>
+<!-- The browser build's top strip: the tab row (no hash), the two nav fragments beside the native
+     address bar (#nav-left, #nav-right) and the popovers alone (#switcher, #share, #menu) for the
+     shell's bubbles. One document; the hash picks what shows. -->
+<body data-s="connecting" data-mode="row">
+  <header id="row" class="row">
+    <button id="switch" type="button" aria-expanded="false" aria-controls="switcher" aria-label="PairBrowse: switch session">
+      <img src="../logo.svg" alt="" width="24" height="24">
+      <span class="wordmark">PairBrowse</span>
+      <svg class="chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div id="switcher" class="pop" role="dialog" aria-label="Switch session" tabindex="-1" hidden>
+      <iframe id="picker" title="Session picker"></iframe>
+    </div>
+
+    <ul id="tabs" role="tablist" aria-label="Tabs"></ul>
+    <button id="new" type="button" aria-label="New tab">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+
+    <div id="right">
+      <span id="pill" role="status" aria-live="polite" data-state="connecting"><i class="dot live" aria-hidden="true"></i><span id="pill-text">Connecting to PairBrowse</span></span>
+      <ul id="avatars" aria-label="In this session"></ul>
+      <button id="share-btn" type="button" aria-expanded="false" aria-controls="share-card">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10V2.5M5 5.2 8 2.2l3 3M3.5 8.5v4.5h9V8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Share
+      </button>
+      <div class="share-card pop" id="share-card" role="dialog" aria-labelledby="share-title" hidden>
+        <h2 id="share-title">Share this session</h2>
+        <fieldset class="share-choice"><legend>Invite</legend>
+          <label class="share-opt"><input type="radio" name="share" value="code" checked><span>Join code<small>Shared browser, can drive</small></span></label>
+          <label class="share-opt"><input type="radio" name="share" value="link"><span>Watch link<small>View only</small></span></label>
+        </fieldset>
+        <label class="share-name" id="share-name-row" hidden>Your first name <input class="field" id="share-name" maxlength="40" autocomplete="given-name"></label>
+        <button class="primary" id="share-make" type="button">Make invite</button>
+        <div class="share-result" id="share-result" hidden><div class="share-line"><input class="field share-code" id="share-code" readonly aria-label="The invite"><button class="mini" id="share-copy" type="button">Copy</button></div><p class="note" id="share-rights"></p></div>
+        <p class="msg" id="share-msg" role="status" aria-live="polite"></p>
+      </div>
+      <button id="menu-btn" type="button" aria-label="More" aria-haspopup="menu" aria-expanded="false" aria-controls="menu">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></svg>
+      </button>
+      <div id="menu" class="pop" role="menu" aria-label="PairBrowse" hidden>
+        <button class="item" id="new-window" type="button" role="menuitem" tabindex="-1" disabled title="Not available yet: use the shortcut"><span>New window</span><kbd id="new-window-key">⌘N</kbd></button>
+        <button class="item" id="zoom" type="button" role="menuitem" tabindex="-1"><span>Zoom</span></button>
+        <button class="item" id="record" type="button" role="menuitem" tabindex="-1"><span id="record-text">Record</span></button>
+        <button class="item" id="settings" type="button" role="menuitem" tabindex="-1"><span>Settings</span></button>
+        <button class="item" id="about" type="button" role="menuitem" tabindex="-1"><span>About PairBrowse</span></button>
+      </div>
+    </div>
+  </header>
+
+  <nav id="nav-left" class="nav" aria-label="Navigation" hidden>
+    <button id="back" type="button" disabled aria-label="Back (⌘[)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3.5M7.5 4 3.5 8l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="forward" type="button" disabled aria-label="Forward (⌘])">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9.5M8.5 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="reload" type="button" aria-label="Reload (⌘R)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </nav>
+
+  <nav id="nav-right" class="nav" aria-label="Page tools" hidden>
+    <button id="star" type="button" disabled aria-label="Bookmark this page (⌘D)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m8 2 1.8 3.8 4.2.5-3.1 2.9.8 4.1L8 11.3l-3.7 2 .8-4.1L2 6.3l4.2-.5Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="find" type="button" disabled aria-label="Find in page (⌘F)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.2 10.2 3.3 3.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <button id="sparkle" type="button" aria-pressed="false" aria-label="Agent panel">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5c.4 3.3 1.9 5 5.5 6.5-3.6 1.5-5.1 3.2-5.5 6.5-.4-3.3-1.9-5-5.5-6.5 3.6-1.5 5.1-3.2 5.5-6.5Z" fill="currentColor"/></svg>
+    </button>
+  </nav>
+  <script type="module" src="strip.js"></script>
+</body>
+</html>

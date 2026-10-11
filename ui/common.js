@@ -312,7 +312,8 @@ export function checklistItems(run, { driving = false } = {}) {
 // when the card closes. Asks the owner's first name once (the helper says when). card holds
 // the ids share-name-row, share-name, share-make, share-result, share-code, share-copy,
 // share-rights and share-msg. base(): the live view address (null: not connected yet).
-export function shareCard({ btn, card, base, onCopy = () => {} }) {
+// dismissable(): false while a host owns dismissal (the strip's #share bubble): no outside click or Escape closes it.
+export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = () => true }) {
   const q = (id) => card.querySelector(`#${id}`);
   const nameRow = q("share-name-row"), name = q("share-name"), make = q("share-make"), result = q("share-result");
   const code = q("share-code"), copy = q("share-copy"), rights = q("share-rights"), msg = q("share-msg");
@@ -322,7 +323,7 @@ export function shareCard({ btn, card, base, onCopy = () => {} }) {
   function open() {
     card.hidden = false;
     btn.setAttribute("aria-expanded", "true");
-    document.addEventListener("pointerdown", outside, true);
+    if (dismissable()) document.addEventListener("pointerdown", outside, true);
     (radios().find((r) => r.checked) || radios()[0])?.focus();
   }
   function close(refocus = true) {
@@ -333,7 +334,7 @@ export function shareCard({ btn, card, base, onCopy = () => {} }) {
     if (refocus) btn.focus();
   }
   btn.addEventListener("click", () => (card.hidden ? open() : close()));
-  const onEscape = (e) => { if (e.key === "Escape" && !card.hidden) { e.preventDefault(); close(); } };
+  const onEscape = (e) => { if (e.key === "Escape" && !card.hidden && dismissable()) { e.preventDefault(); close(); } };
   card.addEventListener("keydown", onEscape);
   btn.addEventListener("keydown", onEscape);
   // A non-modal card: Tab out of it (not onto its button) closes it, so it never lingers.

@@ -1,0 +1,26 @@
+{
+  "helper": {
+    "session": { "name": "Checkout test", "where": "Local" },
+    "collaboration": { "participants": [], "owner": { "label": "You" }, "active": null, "guests": [{ "label": "Ana", "role": "drive" }] },
+    "board": {
+      "people": [
+        { "who": "Claude", "kind": "agent", "color": "#e9763f" },
+        { "who": "Codex", "kind": "agent", "color": "#a78bfa" },
+        { "who": "Ana", "kind": "person", "color": "#4fd1e8" },
+        { "who": "Ben", "kind": "person", "color": "#4ade80" },
+        { "who": "Dana", "kind": "person" },
+        { "who": "Eli", "kind": "person" }
+      ]
+    }
+  },
+  "shim": {
+    "tabs": [
+      { "id": 10, "index": 0, "window": 1, "title": "Mail", "url": "https://mail.example/", "favicon": null, "defaultFavicon": true, "networkState": 0, "muted": false, "audible": false, "pinned": true, "group": null, "groupTitle": null, "groupColor": null, "active": false, "selected": false, "blocked": false, "width": 1280, "height": 800, "targetId": "T10" },
+      { "id": 11, "index": 1, "window": 1, "title": "Checkout · Shop", "url": "https://shop.example/checkout", "favicon": null, "defaultFavicon": true, "networkState": 0, "muted": false, "audible": false, "pinned": false, "group": null, "groupTitle": null, "groupColor": null, "active": false, "selected": false, "blocked": false, "width": 1280, "height": 800, "targetId": "T11" },
+      { "id": 12, "index": 2, "window": 1, "title": "Stripe Docs: Payment Intents", "url": "https://docs.example/", "favicon": null, "defaultFavicon": true, "networkState": 0, "muted": false, "audible": false, "pinned": false, "group": null, "groupTitle": null, "groupColor": null, "active": true, "selected": true, "blocked": false, "width": 1280, "height": 800, "targetId": "T12" },
+      { "id": 13, "index": 3, "window": 1, "title": "Loading the dashboard", "url": "https://app.example/", "favicon": null, "defaultFavicon": true, "networkState": 2, "muted": false, "audible": false, "pinned": false, "group": null, "groupTitle": null, "groupColor": null, "active": false, "selected": false, "blocked": false, "width": 1280, "height": 800, "targetId": "T13" },
+      { "id": 14, "index": 4, "window": 1, "title": "New Tab", "url": "chrome://pairbrowse/newtab", "favicon": null, "defaultFavicon": true, "networkState": 0, "muted": false, "audible": false, "pinned": false, "group": null, "groupTitle": null, "groupColor": null, "active": false, "selected": false, "blocked": false, "width": 1280, "height": 800, "targetId": "T14" }
+    ],
+    "owners": { "agents": { "11": "Claude", "12": "Codex" }, "colors": { "11": "#e9763f", "12": "#a78bfa" } }
+  }
+}

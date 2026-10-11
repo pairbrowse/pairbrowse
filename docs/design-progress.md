@@ -502,6 +502,15 @@ new control; the logo untouched. Verdict: SHIP. The two minors are fixed since: 
 checklist list is no live region any more, a visually hidden status line says the counts only
 when they change.
 
+## The browser track (decided 2026-10-11)
+
+PairBrowse stops being an extension: its chrome (strip with tabs and the agent dot, the Live
+pill, avatars and Share; a left workspace dock; a right agent dock; new tab, picker, picture,
+approval and settings pages) becomes the browser's own WebUI pages, built from a new `ui/`
+directory here into the native build, talking to the browser over `pairbrowse.mojom` and to
+the helper over the live view's channel. The exact plan for both repos, patch by patch, page by
+page, with phases and exit criteria, is `../pairbrowse-native/DESIGN.md` (private).
+
 ## Next
 
 1. Nothing open. The window frame's tint is verified from Chromium's own computed theme sheet

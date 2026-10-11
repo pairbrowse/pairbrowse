@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>PairBrowse</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="right.css">
+</head>
+<body data-turn="false" data-s="connecting" data-tab="agent">
+  <!-- The header renders in the extension host only (plain Chromium's side panel); in the
+       browser build the strip owns the logo, the session pill and the avatar stack. -->
+  <header class="top">
+    <img src="../logo.svg" alt="" width="22" height="22">
+    <h1>PairBrowse</h1>
+    <span class="where pill" id="where" hidden></span>
+    <ul class="avatars" id="avatars" aria-label="In this session"></ul>
+  </header>
+
+  <div class="tabs">
+    <div class="tabset" role="tablist" aria-label="Dock">
+      <div class="tab" role="tab" id="tab-agent" aria-selected="true" aria-controls="pane-agent" tabindex="0">Agent<span class="count" id="agent-count" hidden></span></div>
+      <div class="tab" role="tab" id="tab-page" aria-selected="false" aria-controls="pane-page" tabindex="-1">Page</div>
+      <div class="tab" role="tab" id="tab-pictures" aria-selected="false" aria-controls="pane-pictures" tabindex="-1">Pictures</div>
+      <div class="tab" role="tab" id="tab-tools" aria-selected="false" aria-controls="pane-tools" tabindex="-1">Tools</div>
+    </div>
+    <button class="expand" id="dock-expand" type="button" aria-label="Open the dock as a sheet" hidden><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9 2h5v5h-1.5V4.6L9.6 7.5 8.5 6.4l2.9-2.9H9zM2 9h1.5v2.4l2.9-2.9 1.1 1.1-2.9 2.9H7V14H2z"/></svg></button>
+  </div>
+
+  <div class="rail" id="rail" hidden>
+    <button type="button" class="rail-btn" id="rail-agent" data-tab="agent" aria-label="Agent" title="Agent" aria-current="true"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="5" r="3"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5z"/></svg><span class="count" id="rail-count" aria-hidden="true" hidden></span></button>
+    <button type="button" class="rail-btn" data-tab="page" aria-label="Page" title="Page"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 1.5h6.5L13 5v9.5H3zm1.5 1.5v10h7V6H8.5V3zM6 8h4v1.2H6zm0 2.4h4v1.2H6z"/></svg></button>
+    <button type="button" class="rail-btn" data-tab="pictures" aria-label="Pictures" title="Pictures"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 2.5h13v11h-13zM3 4v6.4l3-3 3 3 1.5-1.5L13 11.4V4zm8 1a1.3 1.3 0 1 1 0 2.6A1.3 1.3 0 0 1 11 5z"/></svg></button>
+    <button type="button" class="rail-btn" data-tab="tools" aria-label="Tools" title="Tools"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3.5h7.1a2 2 0 0 1 3.8 0H14V5h-1.1a2 2 0 0 1-3.8 0H2zm0 7.5h1.1a2 2 0 0 1 3.8 0H14v1.5H6.9a2 2 0 0 1-3.8 0H2z"/></svg></button>
+  </div>
+
+  <main>
+    <section class="pane" id="pane-agent" role="tabpanel" aria-labelledby="tab-agent">
+      <div class="scroll">
+        <section class="status" aria-live="polite">
+          <div class="joins" id="joins" role="region" aria-label="Join requests" aria-live="assertive"></div>
+          <div class="joins" id="dev-asks" role="region" aria-label="Requests to share a dev server" aria-live="assertive"></div>
+          <div class="joins" id="host-asks" role="region" aria-label="Join codes with another address" aria-live="assertive"></div>
+          <article class="agent" id="agent" aria-labelledby="agent-name">
+            <span class="avatar" id="agent-avatar" aria-hidden="true">C</span>
+            <strong class="agent-name" id="agent-name">Claude</strong>
+            <div class="driver" id="driver" data-state="connecting"><i class="dot" aria-hidden="true"></i><span id="driver-text">Waiting for PairBrowse</span></div>
+            <button class="fold" id="agent-fold" type="button" aria-expanded="true" aria-controls="agent-body" aria-label="Collapse the agent card"></button>
+            <div class="turn" id="turn"><strong id="turn-text">Your turn</strong><small>Claude continues when the page moves on</small></div>
+            <div id="agent-body">
+              <div class="pause" id="pause" hidden><span id="pause-text">Agents can act in the browser</span><button id="pause-btn" type="button">Pause agents</button></div>
+              <p class="agent-tab" id="agent-tab" hidden></p>
+              <div class="task" id="task" hidden><span class="k">Current task</span><div class="box" id="task-name"></div></div>
+              <button class="more" id="agent-more" type="button" aria-expanded="false" aria-controls="checklist">Checklist</button>
+              <div class="checklist" id="checklist" hidden><p class="sr" id="checklist-said" role="status" aria-live="polite"></p><ol id="checklist-items" aria-label="Checklist from the goal log"></ol></div>
+              <section class="statusbox" id="agent-status" aria-labelledby="status-head"><div class="head"><span class="k" id="status-head">Status</span><span class="pill live-pill" id="status-live" hidden><i class="live" aria-hidden="true"></i>Live</span></div><p id="agent-status-text">No status from the agent yet.</p></section>
+            </div>
+          </article>
+        </section>
+        <ul class="people" id="people" aria-label="Others in this session"></ul>
+
+        <section class="sec" id="session" data-key="session" hidden>
+          <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="session-body">Messages</button></h2>
+          <div class="body" id="session-body" hidden>
+            <ol class="messages" id="messages"></ol>
+          </div>
+        </section>
+
+        <section class="sec" id="sec-activity" data-key="activity">
+          <h2><button class="disclose" type="button" aria-expanded="true" aria-controls="activity-body">Activity</button></h2>
+          <div class="body" id="activity-body">
+            <p class="note" id="collaboration" role="status" aria-live="polite"></p>
+            <ol class="activity" id="activity"><li class="empty">Claude's actions show up here.</li></ol>
+          </div>
+        </section>
+      </div>
+
+      <footer class="session-card" id="session-card">
+        <span class="sicon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 3h13v10h-13zM3 6v5.5h10V6zm0-1.5h1.2V4H3zm2 0h1.2V4H5z"/></svg></span>
+        <strong class="sname" id="session-line" hidden>Session: <b id="session-name"></b></strong>
+        <small class="saved" id="session-saved" hidden></small>
+        <!-- #switch-btn keeps its id: its duty, opening the session picker, is the same. -->
+        <div class="row3"><button class="mini share-btn" id="share-btn" type="button" aria-expanded="false" aria-controls="share-card">Share</button><button class="end" id="switch-btn" type="button" aria-expanded="false" aria-controls="end-confirm" title="End this session and pick another: the picker opens, nothing is deleted">End session</button></div>
+        <div class="end-confirm" id="end-confirm" role="group" aria-labelledby="end-q" hidden><p id="end-q">End this session and pick another? Nothing is deleted; the picker opens.</p><div class="end-row"><button class="end" id="end-yes" type="button">End session</button><button id="end-no" type="button">Keep</button></div></div>
+        <div class="share-card" id="share-card" role="dialog" aria-labelledby="share-title" hidden>
+          <h2 id="share-title">Share this session</h2>
+          <fieldset class="share-choice"><legend>Invite</legend>
+            <label class="share-opt"><input type="radio" name="share" value="code" checked><span>Join code<small>Shared browser, can drive</small></span></label>
+            <label class="share-opt"><input type="radio" name="share" value="link"><span>Watch link<small>View only</small></span></label>
+          </fieldset>
+          <label class="share-name" id="share-name-row" hidden>Your first name <input class="field" id="share-name" maxlength="40" autocomplete="given-name"></label>
+          <button class="primary" id="share-make" type="button">Make invite</button>
+          <div class="share-result" id="share-result" hidden><div class="share-line"><input class="field share-code" id="share-code" readonly aria-label="The invite"><button class="mini" id="share-copy" type="button">Copy</button></div><p class="note" id="share-rights"></p></div>
+          <p class="msg" id="share-msg" role="status" aria-live="polite"></p>
+        </div>
+      </footer>
+    </section>
+
+    <section class="pane" id="pane-page" role="tabpanel" aria-labelledby="tab-page" hidden>
+      <p class="empty" id="outline-empty">No outline yet.</p>
+      <pre class="outline" id="outline" hidden></pre>
+    </section>
+
+    <section class="pane" id="pane-pictures" role="tabpanel" aria-labelledby="tab-pictures" hidden>
+      <p class="empty" id="pictures-empty">Nothing sent yet.</p>
+      <figure class="picture" id="picture" hidden><img id="picture-img" alt=""><figcaption><time id="picture-time"></time> <span id="picture-caption"></span></figcaption></figure>
+    </section>
+
+    <section class="pane" id="pane-tools" role="tabpanel" aria-labelledby="tab-tools" hidden>
+      <div class="scroll">
+        <section class="sec" id="dev" data-key="dev" hidden>
+          <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="dev-body">Dev servers</button></h2>
+          <div class="body" id="dev-body" hidden>
+            <p class="note">Show a dev server on this computer to the people in your session, at an address only their PairBrowse opens. Watchers can only look.</p>
+            <ul class="devs" id="devs"></ul>
+          </div>
+        </section>
+
+        <section class="sec" id="hosts" data-key="hosts" hidden>
+          <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="hosts-body">Join addresses</button></h2>
+          <div class="body" id="hosts-body" hidden>
+            <p class="note">Addresses you allowed in join codes besides PairBrowse's own (*.trycloudflare.com): a host's own tunnel. "Always" ones are kept in your config.</p>
+            <ul class="devs" id="host-list"></ul>
+          </div>
+        </section>
+
+        <section class="sec" id="sec-details" data-key="details">
+          <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="details-body">Remembered details</button></h2>
+          <div class="body" id="details-body" hidden>
+            <p class="note">Used to fill forms. Claude adds what you tell it, and what gets filled in forms is kept here too. Passwords never are.</p>
+            <div id="details"></div>
+            <form class="add" id="add-detail" autocomplete="off">
+              <div class="pair"><input class="field" name="label" placeholder="Label, e.g. VAT number" maxlength="80"><input class="field" name="value" placeholder="Value" maxlength="2000"></div>
+              <button class="primary" type="submit">Add detail</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="sec" id="sec-secrets" data-key="secrets">
+          <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="secrets-body">Passwords</button></h2>
+          <div class="body" id="secrets-body" hidden>
+            <p class="note">Saved on this computer, readable only by you. Claude sees the name, never the password, and it's only filled in on the sites you list.</p>
+            <div id="secrets"></div>
+            <form class="add" id="add-secret" autocomplete="off">
+              <div class="pair"><input class="field" name="label" placeholder="Name, e.g. Shopify" maxlength="60"><input class="field" name="value" type="password" placeholder="Password" autocomplete="new-password" maxlength="4096"></div>
+              <input class="field" name="domains" placeholder="Sites, e.g. accounts.shopify.com" maxlength="400">
+              <button class="primary" type="submit">Save password</button>
+            </form>
+            <p class="msg" id="profile-msg" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <section class="record">
+          <h2 class="k">Recording</h2>
+          <button id="record-btn" type="button" title="Record the browser as a video: the tab in front, following tab switches. Saved in your Downloads folder.">Record</button>
+          <p class="note record-note" id="record-note" role="status" aria-live="polite" hidden></p>
+        </section>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="right.js"></script>
+</body>
+</html>

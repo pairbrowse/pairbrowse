@@ -338,7 +338,7 @@ test("an idle session doesn't block a switch, an active one does, and the person
     assert.ok(!(await bob2.tool("browser_tabs", { action: "list" })).result.isError);
     const refused = await alice.tool("pairbrowse_session", { action: "use", name: "work" });
     assert.ok(refused.result.isError, text(refused));
-    assert.match(text(refused), /Another session is using the browser .*Switch session/, text(refused));
+    assert.match(text(refused), /Another session is using the browser .*End session/, text(refused));
     void bob;
 
     stage = "the side panel reopens the picker";

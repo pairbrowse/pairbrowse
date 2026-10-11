@@ -5,6 +5,16 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.43 (2026-10-11)
+
+The collaborative browser's look, on the dark navy design: every surface PairBrowse draws itself, without a measured cost (the gate in `docs/design-progress.md`: 466 live tests green, click, snapshot, navigate, cold start and idle CPU within noise or better than 0.15.42, the helper's heap flat, no new picture, timer or process). The logo is unchanged.
+
+- One token sheet (`scripts/browser/panel/tokens.css`: navy backgrounds and surfaces, ink, edges, the accent and the state colors, compact type, radii, spacing; WCAG AA checked by `test/tokens.test.mjs`) styles the side panel, the session picker, the new tab page, the "Opening tabs" page, a joiner's picture page and the live view; the in-page script and the recorder carry the same values inline, pinned by the test. The window's color theme seed is the sheet's navy (a color you picked yourself stays). The new tab page is flat navy without its 2.5 MB photo.
+- In the pages: the bottom bar shows a dot in the driver's color, the last actions as chips (done ✓, under way, failed) and Pause agents; a join request is a card above the bar's right end with its gating unchanged; the badge sits on the elevated navy with the agent's color as its left edge; the agent cursor is a refined pointer with a label pill in the participant's color, the control it acts on outlined in that color while it acts; reduced motion turns the glide into a jump. The bar's spinning spark and backdrop blur are gone.
+- The side panel is the agent panel: the session pill and an avatar stack in the header, requests (join, dev server, join addresses) as approval cards, the active agent's card with its status and tab and Pause/Resume, other participants as compact rows, and the sections as disclosures remembered per viewer (`pb-panel`).
+- The live view is the Inspect workspace: a left column (open, a rail, or hidden with Ctrl/Cmd+B, remembered as `pb-view`) with the open tabs and who holds them, the agents and their state, the guests and the session; a Timeline tab in the right drawer reads the goal log through one new owner-only route (`journal.json`: the current run's lines, masked again, read on open and on Refresh; 403 on invite keys, never on the join-code port; `docs/security.md`). Hidden parts skip their drawing. `docs/using.md`: "Three ways to look at it" (Focus, Collaborate, Inspect are what is open; a switch restarts, reloads and captures nothing).
+- The design work runs as workflows in `.claude/workflows/` (`design-understand`, `design-subset`, `design-validate`): a surface map (`docs/design-surfaces.md`), a plan-build-test-review loop per subset, and a zero-regression gate.
+
 ## 0.15.42 (2026-10-11)
 
 A lighter, faster helper, measured against 0.15.41 on the same machine with the new `test/bench.mjs` (its own helper on a temporary home, headless Chromium, a local site; `docs/engineering-progress.md` has every number and how each was taken).

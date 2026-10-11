@@ -37,10 +37,6 @@ const DEBT = {
   panel: {
     motion: "panel.css pulses the Your turn dot forever (.turn i, @keyframes pulse); the right-dock subset drops the pulse",
   },
-  newtab: {
-    motion: "newtab.css has a transition and no prefers-reduced-motion block; the new tab subset adds it",
-    "focus-ring": "newtab.css sets outline: none on the search field (no 2 px --accent ring); the new tab subset gives it the sheet's ring",
-  },
 };
 const debt = (page, kind) => DEBT[page]?.[kind];
 const fixed = (page, kind) => `${page}: fixed? remove DEBT.${page}["${kind}"] (${debt(page, kind)})`;

@@ -1,0 +1,89 @@
+// The window preview (scripts/dev/window-preview.mjs), a dev tool: its geometry and scene always;
+// with PAIRBROWSE_TEST_RUNTIME, two real runs (default; --rail --reduced-motion) and their outputs.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { geometry, loadFixtures, resolveTimes, REGIONS, MOCKUP, HOST_GROUPS, FRAMES } from "../scripts/dev/window-preview.mjs";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
+const BAD = new Set(["error", "pageerror", "rejection", "csp"]);
+
+test("window preview: geometry, regions and the scene", () => {
+  const g = geometry();
+  assert.deepEqual(g.card, { x: 208, y: 88, w: 990, h: 798 });
+  const r = geometry({ rail: true });
+  assert.equal(r.card.w, 1432);
+  assert.equal(r.card.h, 798);
+  assert.equal(r.left.w, 44);
+  assert.equal(r.right.w, 44);
+
+  assert.deepEqual(REGIONS, ["strip", "nav", "left", "right", "timeline", "approval"]);
+  for (const name of REGIONS) {
+    const m = MOCKUP[name];
+    assert.ok(m && m.x >= 0 && m.y >= 0 && m.x + m.w <= 1536 && m.y + m.h <= 1024, name);
+  }
+
+  const fx = loadFixtures();
+  assert.equal(fx.shim.tabs.length, 3);
+  assert.equal(fx.shim.tabs.filter((t) => t.active).length, 1);
+  const cards = fx.helper.timeline.cards;
+  assert.equal(cards.length, 6);
+  for (const c of cards) {
+    assert.match(c.id, /^[0-9a-f]{12}$/);
+    assert.equal(fx.sample.steps.filter((s) => s.card === c.id).length, 1);
+  }
+  assert.equal(fx.helper.journal.done.length, 3);
+  assert.equal(fx.helper.journal.left.length, 2);
+  const people = fx.helper.board.people;
+  assert.equal(people.length, 4);
+  assert.ok(people.some((p) => p.who === "Claude Code" && p.color === "#E9763F"));
+  assert.ok(people.some((p) => p.who === "Codex" && p.color === "#7088F0"));
+  assert.equal(fx.helper.approvals.pending.length, 1);
+  assert.match(fx.helper.approvals.pending[0].reason, /: a final action \((pay|publish|delete|send|submit)\)$/);
+  assert.deepEqual(HOST_GROUPS.localhost, ["nav-left", "nav-right", "timeline"]);
+  assert.equal(HOST_GROUPS["127.0.0.1"].length, 4);
+  assert.deepEqual([...HOST_GROUPS["127.0.0.1"], ...HOST_GROUPS.localhost].sort(), [...FRAMES].sort());
+
+  const t = resolveTimes({ a: { t: -5, at: -2, updatedAt: -1000, n: -3 }, list: [{ t: -1 }] }, 10_000);
+  assert.deepEqual(t, { a: { t: 9995, at: 9998, updatedAt: new Date(9000).toISOString(), n: -3 }, list: [{ t: 9999 }] });
+});
+
+// width and height from a PNG's IHDR.
+function png(file) {
+  const b = readFileSync(file);
+  assert.equal(b.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", file);
+  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+}
+
+function run(extra, geo) {
+  const dir = mkdtempSync(join(tmpdir(), "pb-wp-"));
+  try {
+    const r = spawnSync(process.execPath, ["scripts/dev/window-preview.mjs", "--out", dir, "--mockup", "ui/icon128.png", ...extra], { cwd: root, encoding: "utf8", timeout: 220_000 });
+    assert.equal(r.status, 0, `stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+    assert.deepEqual(png(join(dir, "window.png")), { w: 1536, h: 1024 });
+    assert.deepEqual(png(join(dir, "window@2x.png")), { w: 3072, h: 2048 });
+    for (const f of ["contents.png", "contents@2x.png", "side-by-side.png", ...REGIONS.map((n) => join("regions", `${n}.png`))]) {
+      const { w, h } = png(join(dir, f));
+      assert.ok(w > 0 && h > 0, f);
+    }
+    for (const c of loadFixtures().helper.timeline.cards) assert.ok(existsSync(join(dir, "pictures", `${c.id}.jpg`)), c.id);
+    const log = JSON.parse(readFileSync(join(dir, "harness-log.json"), "utf8"));
+    assert.deepEqual(log.filter((e) => BAD.has(e.kind)), []);
+    const frames = JSON.parse(readFileSync(join(dir, "frames.json"), "utf8"));
+    assert.deepEqual(frames.frames.map((f) => f.name).sort(), [...FRAMES].sort());
+    for (const f of frames.frames) assert.notEqual(f.s, "connecting", f.name);
+    assert.ok(frames.streams.byHost["127.0.0.1"] <= 4);
+    assert.ok(frames.streams.byHost.localhost <= 3);
+    for (const k of ["strip", "nav", "left", "right", "timeline", "card"]) assert.deepEqual(frames.rects[k], geo[k], k);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("window preview: the default run", { skip: !runtime, timeout: 240_000 }, () => run([], geometry()));
+test("window preview: rails and reduced motion", { skip: !runtime, timeout: 240_000 }, () => run(["--rail", "--reduced-motion"], geometry({ rail: true })));

@@ -1,0 +1,407 @@
+{
+  "helper": {
+    "session": {
+      "name": "Notion Setup",
+      "where": "Local",
+      "temporary": false
+    },
+    "collaboration": {
+      "participants": [
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "owner": {
+        "label": "You"
+      },
+      "active": null,
+      "guests": [
+        {
+          "label": "Team",
+          "role": "drive"
+        },
+        {
+          "label": "Team",
+          "role": "drive"
+        },
+        {
+          "label": "Team",
+          "role": "drive"
+        },
+        {
+          "label": "Client",
+          "role": "watch"
+        }
+      ]
+    },
+    "board": {
+      "people": [
+        {
+          "who": "Claude Code",
+          "kind": "agent",
+          "color": "#E9763F",
+          "status": "working",
+          "tab": "notion.so/new-workspace",
+          "task": "Filling in the workspace name and email.",
+          "last": "Filled Workspace name"
+        },
+        {
+          "who": "Codex",
+          "kind": "agent",
+          "color": "#7088F0",
+          "status": "idle",
+          "tab": "notion.so/new-workspace",
+          "task": "",
+          "last": "Read the page"
+        },
+        {
+          "who": "Gemini",
+          "kind": "agent",
+          "color": "#4FD1E8",
+          "status": "working",
+          "tab": "notion.so/new-workspace",
+          "task": "Suggesting inputs",
+          "last": "Read the form"
+        },
+        {
+          "who": "You",
+          "kind": "person",
+          "color": "#4ADE80",
+          "status": "idle"
+        }
+      ],
+      "messages": []
+    },
+    "activity": [
+      {
+        "t": -60000,
+        "who": "Claude Code",
+        "tab": "Notion – New workspace",
+        "text": "Opened **notion.so/new-workspace**"
+      },
+      {
+        "t": -20000,
+        "who": "Claude Code",
+        "tab": "Notion – New workspace",
+        "text": "Filled **Workspace name**"
+      },
+      {
+        "t": -2000,
+        "who": "Claude Code",
+        "tab": "Notion – New workspace",
+        "text": "Now: asking to click **Continue**"
+      }
+    ],
+    "journal": {
+      "name": "Create a new Notion workspace for the team and configure basic settings.",
+      "status": "in progress",
+      "done": [
+        "Open Notion",
+        "Navigate to create workspace",
+        "Fill in workspace details"
+      ],
+      "yourTurn": [],
+      "left": [
+        "Complete setup",
+        "Confirm and verify"
+      ],
+      "updatedAt": -120000
+    },
+    "status": {
+      "text": "Filling in the workspace name and email.",
+      "kind": "claude"
+    },
+    "pause": {
+      "paused": false,
+      "can": true
+    },
+    "timeline": {
+      "cards": [
+        {
+          "id": "a1b2c3d40001",
+          "t": -330000,
+          "caption": "Opened Notion",
+          "step": {
+            "url": "https://www.notion.so/new-workspace",
+            "title": "Notion – New workspace"
+          },
+          "who": "Claude Code",
+          "pinned": false,
+          "note": false
+        },
+        {
+          "id": "a1b2c3d40002",
+          "t": -270000,
+          "caption": "Filled workspace name",
+          "step": {
+            "url": "https://www.notion.so/new-workspace",
+            "title": "Notion – New workspace"
+          },
+          "who": "Claude Code",
+          "pinned": false,
+          "note": false
+        },
+        {
+          "id": "a1b2c3d40003",
+          "t": -210000,
+          "caption": "Filled email",
+          "step": {
+            "url": "https://www.notion.so/new-workspace",
+            "title": "Notion – New workspace"
+          },
+          "who": "Claude Code",
+          "pinned": false,
+          "note": false
+        },
+        {
+          "id": "a1b2c3d40004",
+          "t": -150000,
+          "caption": "Selected use case",
+          "step": {
+            "url": "https://www.notion.so/new-workspace",
+            "title": "Notion – New workspace"
+          },
+          "who": "Claude Code",
+          "pinned": false,
+          "note": false
+        },
+        {
+          "id": "a1b2c3d40005",
+          "t": -90000,
+          "caption": "Ready to continue",
+          "step": {
+            "url": "https://www.notion.so/new-workspace",
+            "title": "Notion – New workspace"
+          },
+          "who": "Claude Code",
+          "pinned": false,
+          "note": false
+        },
+        {
+          "id": "a1b2c3d40006",
+          "t": -30000,
+          "caption": "Checked the form",
+          "step": {
+            "url": "https://www.notion.so/new-workspace",
+            "title": "Notion – New workspace"
+          },
+          "who": "Claude Code",
+          "pinned": false,
+          "note": false
+        }
+      ]
+    },
+    "approvals": {
+      "pending": [
+        {
+          "id": "ap-0c0ffee01234",
+          "agent": {
+            "label": "Claude Code",
+            "color": "#E9763F"
+          },
+          "kind": "click",
+          "target": "Continue →",
+          "reason": "\"Continue\" sends or submits something: a final action (submit)",
+          "tab": {
+            "id": 21,
+            "host": "notion.so"
+          },
+          "at": -3000
+        }
+      ]
+    }
+  },
+  "shim": {
+    "tabs": [
+      {
+        "id": 21,
+        "index": 0,
+        "window": 1,
+        "title": "Notion – New workspace",
+        "url": "https://www.notion.so/new-workspace",
+        "favicon": null,
+        "defaultFavicon": true,
+        "networkState": 0,
+        "muted": false,
+        "audible": false,
+        "pinned": false,
+        "group": null,
+        "groupTitle": null,
+        "groupColor": null,
+        "active": true,
+        "selected": true,
+        "blocked": false,
+        "width": 1280,
+        "height": 800,
+        "targetId": "T21"
+      },
+      {
+        "id": 22,
+        "index": 1,
+        "window": 1,
+        "title": "GitHub – pairbrowse",
+        "url": "https://github.com/pairbrowse",
+        "favicon": null,
+        "defaultFavicon": true,
+        "networkState": 0,
+        "muted": false,
+        "audible": false,
+        "pinned": false,
+        "group": null,
+        "groupTitle": null,
+        "groupColor": null,
+        "active": false,
+        "selected": false,
+        "blocked": false,
+        "width": 1280,
+        "height": 800,
+        "targetId": "T22"
+      },
+      {
+        "id": 23,
+        "index": 2,
+        "window": 1,
+        "title": "Calendar",
+        "url": "https://calendar.google.com/",
+        "favicon": null,
+        "defaultFavicon": true,
+        "networkState": 0,
+        "muted": false,
+        "audible": false,
+        "pinned": false,
+        "group": null,
+        "groupTitle": null,
+        "groupColor": null,
+        "active": false,
+        "selected": false,
+        "blocked": false,
+        "width": 1280,
+        "height": 800,
+        "targetId": "T23"
+      }
+    ],
+    "owners": {
+      "agents": {
+        "21": "Claude Code",
+        "22": "Claude Code"
+      },
+      "colors": {
+        "21": "#E9763F",
+        "22": "#E9763F"
+      }
+    },
+    "omnibox": {
+      "securityLevel": 1,
+      "displayUrl": "notion.so/new-workspace",
+      "fullUrl": "https://www.notion.so/new-workspace",
+      "securityText": "",
+      "shouldDisplayUrl": true,
+      "focused": false,
+      "userInputInProgress": false,
+      "popupOpen": false,
+      "bounds": {
+        "x": 108,
+        "y": 50,
+        "width": 1320,
+        "height": 32
+      },
+      "popupBounds": null
+    }
+  },
+  "sample": {
+    "steps": [
+      {
+        "card": "a1b2c3d40001",
+        "fill": {}
+      },
+      {
+        "card": "a1b2c3d40002",
+        "fill": {
+          "#ws-name": "Acme Studio"
+        }
+      },
+      {
+        "card": "a1b2c3d40003",
+        "fill": {
+          "#ws-name": "Acme Studio",
+          "#ws-email": "team@acmestudio.com"
+        }
+      },
+      {
+        "card": "a1b2c3d40004",
+        "fill": {
+          "#ws-name": "Acme Studio",
+          "#ws-email": "team@acmestudio.com",
+          "#ws-use": "Product development"
+        }
+      },
+      {
+        "card": "a1b2c3d40005",
+        "fill": {
+          "#ws-name": "Acme Studio",
+          "#ws-email": "team@acmestudio.com",
+          "#ws-use": "Product development"
+        }
+      },
+      {
+        "card": "a1b2c3d40006",
+        "fill": {
+          "#ws-name": "Acme Studio",
+          "#ws-email": "team@acmestudio.com",
+          "#ws-use": "Product development"
+        }
+      }
+    ],
+    "final": {
+      "#ws-name": "Acme Studio",
+      "#ws-email": "team@acmestudio.com",
+      "#ws-use": "Product development"
+    }
+  },
+  "hud": {
+    "cursor": {
+      "field": "#ws-name",
+      "who": "Claude Code",
+      "color": "#E9763F",
+      "act": "type"
+    },
+    "peers": [
+      {
+        "k": "codex",
+        "field": "#ws-email",
+        "fx": 0.62,
+        "fy": 0.5,
+        "who": "Codex",
+        "color": "#7088F0"
+      },
+      {
+        "k": "gemini",
+        "field": "#art",
+        "fx": 0.45,
+        "fy": 0.32,
+        "who": "Gemini",
+        "color": "#4FD1E8"
+      }
+    ],
+    "bar": {
+      "items": [
+        {
+          "t": -40000,
+          "who": "Claude Code",
+          "text": "Opened **notion.so/new-workspace**"
+        },
+        {
+          "t": -9000,
+          "who": "Claude Code",
+          "text": "Filled **Workspace name**"
+        },
+        {
+          "t": -1000,
+          "who": "Claude Code",
+          "text": "Now: asking to click **Continue**"
+        }
+      ],
+      "canPause": true
+    }
+  }
+}

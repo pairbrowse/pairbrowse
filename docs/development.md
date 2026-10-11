@@ -59,6 +59,20 @@ shot with its count of error and CSP entries; it exits 1 when a shot logged one.
 serves the picker frameable by same-origin pages only, as the native build will, so the strip's
 switcher and the left dock's popover show the real framed picker; every other page refuses any frame.
 
+`node scripts/dev/window-preview.mjs --out <dir> [--rail] [--reduced-motion] [--mockup <png>] [--one-host]`
+renders the whole window before the native build exists. The real pages sit in iframes at the
+hybrid 500-shell geometry (tab row 44, nav row 44 with the two nav fragments around a stand-in of
+the native address bar, docks 200 and 330 or 44 as rails, the contents card inset 8 with radius
+10, the timeline 130). The contents is the stand-in page in `scripts/dev/preview/` with
+`scripts/hud.js` added the way the helper adds it, rendered as its own top-level page as the
+build's contents is. The scene is `scripts/dev/preview/fixtures.json`. Outputs: `window.png` and
+`window@2x.png`, `side-by-side.png` against the mockup's window area, and `regions/*.png` crop
+pairs, plus `harness-log.json` and `frames.json`; it exits 1 on any error, CSP or page-error
+entry. For the composition only, a loopback proxy lifts `frame-ancestors` to `'self'` and splits
+the frames over `127.0.0.1` and `localhost`, because Chromium opens at most 6 connections per host
+and the window's pages open 7 event streams. `--one-host` shows what the build will do. The
+mockup is read in place and never committed.
+
 ### The live tests
 
 Each live test file starts its own helper and browser (two or three for joining), and

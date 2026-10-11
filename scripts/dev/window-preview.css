@@ -1,0 +1,28 @@
+/* The window preview's layout (scripts/dev/window-preview.mjs geometry() gives the same rects). */
+:root { --left: 200px; --right: 330px; --tl: 130px; }
+html.rail { --left: 44px; --right: 44px; }
+html, body { margin: 0; }
+body { background: #05080D; }
+iframe { display: block; border: 0; }
+.window { position: relative; width: 1536px; height: 1024px; border-radius: 12px; overflow: hidden; background: var(--bg); }
+#strip { position: absolute; left: 0; top: 0; width: 100%; height: 44px; }
+.lights { position: absolute; left: 14px; top: 16px; display: flex; gap: 8px; pointer-events: none; }
+.lights i { display: block; width: 12px; height: 12px; border-radius: 50%; }
+.lights i:nth-child(1) { background: #FF5F57; }
+.lights i:nth-child(2) { background: #FEBC2E; }
+.lights i:nth-child(3) { background: #28C840; }
+.nav { position: absolute; left: 0; top: 44px; width: 100%; height: 44px; display: flex; align-items: center; background: var(--chrome); }
+.nav iframe { flex: none; width: 108px; height: 44px; }
+.omni { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 14px; border: 1px solid var(--edge); border-radius: 16px; background: var(--chrome); font: 13px var(--sans); }
+.lock { flex: none; width: 14px; height: 14px; color: var(--ok); }
+.host { color: var(--ink); }
+.path { color: var(--ink-2); }
+#left { position: absolute; left: 0; top: 88px; bottom: 0; width: var(--left); height: calc(100% - 88px); }
+#right { position: absolute; right: 0; top: 88px; bottom: 0; width: var(--right); height: calc(100% - 88px); }
+.column { position: absolute; left: var(--left); right: var(--right); top: 88px; bottom: 0; background: var(--chrome); }
+.card { position: absolute; left: 8px; right: 8px; top: 0; bottom: calc(var(--tl) + 8px); border-radius: 10px; overflow: hidden; background: #fff; }
+#contents { display: block; width: 100%; height: 100%; }
+#approval { position: absolute; right: 16px; bottom: 48px; width: 360px; height: 300px; border-radius: 12px; overflow: hidden; }
+#approval[hidden] { display: none; }
+#approve { position: absolute; left: 0; top: 0; width: 360px; height: 300px; }
+#timeline { position: absolute; left: 0; bottom: 0; width: 100%; height: var(--tl); }

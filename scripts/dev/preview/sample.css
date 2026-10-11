@@ -1,0 +1,24 @@
+/* The window preview's stand-in page: a light sign-up page laid out for a 990 x 798 card. */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: #fff; color: #191919; font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.top { display: flex; align-items: center; gap: 28px; height: 68px; padding: 0 28px 0 30px; }
+.mark { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+.links { display: flex; gap: 24px; flex: 1; }
+.links a, .login { color: #37352f; text-decoration: none; font-size: 14px; }
+.cta { background: #191919; color: #fff; text-decoration: none; font-size: 14px; font-weight: 600; padding: 9px 14px; border-radius: 8px; }
+.main { display: flex; gap: 44px; padding: 32px 30px 0 53px; }
+.form { width: 372px; flex: none; }
+h1 { font-size: 56px; line-height: 1.02; font-weight: 800; letter-spacing: -0.03em; margin: 34px 0 18px; }
+.sub { font-size: 17px; margin: 0 0 26px; }
+form { display: flex; flex-direction: column; }
+label { font-size: 13px; color: #37352f; margin: 0 0 6px; }
+input, select { font: inherit; font-size: 15px; height: 40px; border: 1px solid #d9d9d6; border-radius: 6px; padding: 0 12px; margin: 0 0 18px; background: #fff; color: #191919; }
+.go { font: inherit; font-weight: 600; height: 42px; margin-top: 8px; border: 0; border-radius: 6px; background: #191919; color: #fff; }
+.terms { font-size: 12px; color: #6b6b6b; margin: 16px 0 0; }
+#art { position: relative; flex: 1; min-width: 0; height: 520px; margin: 10px 0 0; border-radius: 18px; background: #f1f1ef; overflow: hidden; }
+#art i { position: absolute; display: block; }
+#art .s1 { left: 18%; top: 22%; width: 180px; height: 180px; border-radius: 50%; background: #dcdcd8; }
+#art .s2 { left: 48%; top: 14%; width: 130px; height: 240px; border-radius: 14px; background: #2f2f2f; }
+#art .s3 { left: 28%; top: 62%; width: 220px; height: 84px; border-radius: 40px; background: #c9c9c4; }
+#art .s4 { left: 62%; top: 60%; width: 90px; height: 90px; border-radius: 50%; border: 6px solid #2f2f2f; }

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notion – New workspace</title>
+<!-- The window preview's stand-in page for the contents card (scripts/dev/window-preview.mjs): a
+     local sign-up form, no script, no external resources, no third-party logos or artwork. -->
+<link rel="stylesheet" href="sample.css">
+</head>
+<body>
+<header class="top">
+  <b class="mark">Notion</b>
+  <nav class="links" aria-label="Site"><a href="#product">Product</a><a href="#teams">Teams</a><a href="#individuals">Individuals</a><a href="#download">Download</a><a href="#pricing">Pricing</a></nav>
+  <a class="login" href="#login">Log in</a>
+  <a class="cta" href="#start">Get started</a>
+</header>
+<main class="main">
+  <section class="form">
+    <h1>Create your workspace</h1>
+    <p class="sub">Set up your team's workspace in seconds.</p>
+    <form action="#">
+      <label for="ws-name">Workspace name</label>
+      <input id="ws-name" name="name" autocomplete="organization">
+      <label for="ws-email">Work email</label>
+      <input id="ws-email" name="email" type="email" autocomplete="email">
+      <label for="ws-use">Use case</label>
+      <select id="ws-use" name="use">
+        <option value="">Choose a use case</option>
+        <option>Product development</option>
+        <option>Marketing</option>
+        <option>Engineering</option>
+      </select>
+      <button type="button" class="go">Continue →</button>
+    </form>
+    <p class="terms">By continuing, you agree to the Terms and Privacy Policy.</p>
+  </section>
+  <div id="art" aria-hidden="true"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i></div>
+</main>
+</body>
+</html>

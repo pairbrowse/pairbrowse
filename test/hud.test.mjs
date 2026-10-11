@@ -631,7 +631,7 @@ test("the field the agent acts on is outlined in its color inside the cursor's s
         if (!f) continue;
         const r = f.getBoundingClientRect(), cs = getComputedStyle(f);
         const span = el.shadowRoot.querySelector(".c span");
-        return { on: f.classList.contains("on"), x: r.x, y: r.y, w: r.width, h: r.height, border: cs.borderTopColor, ink: getComputedStyle(span).color, fill: el.shadowRoot.querySelector(".c path").getAttribute("fill") };
+        return { on: f.classList.contains("on"), x: r.x, y: r.y, w: r.width, h: r.height, border: cs.borderTopColor, ink: getComputedStyle(span).color, fill: el.shadowRoot.querySelector(".c path").getAttribute("fill"), edge: el.shadowRoot.querySelector(".c path").getAttribute("stroke") };
       }
       return null;
     }, hud.tags.cursor);
@@ -641,7 +641,7 @@ test("the field the agent acts on is outlined in its color inside the cursor's s
     assert.ok(o.on && near(o.x, 100) && near(o.y, 300) && near(o.w, 240) && near(o.h, 40), `around the field: ${JSON.stringify(o)}`);
     assert.equal(o.border, "rgb(167, 139, 250)");
     assert.equal(o.ink, "rgb(11, 20, 33)", "dark ink on the pill");
-    assert.equal(o.fill, "#a78bfa");
+    assert.equal(o.fill, "#fff", "a white pointer"); assert.equal(o.edge, "#a78bfa", "edged in the agent's color");
     await page.evaluate(() => scrollTo(0, 200));
     await page.waitForTimeout(100);
     o = await outline();

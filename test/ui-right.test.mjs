@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { pageTest, runtime } from "./helpers/ui-page.mjs";
 import { patchright } from "./live.mjs";
-import { startFakeHelper } from "./helpers/fake-helper.mjs";
+import { startFakeHelper, UNMARKED, CONFIRM_PROGRAM } from "./helpers/fake-helper.mjs";
 import { startUiServer } from "./helpers/ui-server.mjs";
 import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";
 
@@ -624,6 +624,73 @@ describe("downloads", () => pageTest("right", opts({ downloads: { items: DOWNLOA
   helper.replies.downloads = () => ({ status: 404, body: { error: "That file is no longer in Downloads." } });
   await page.click('#downloads li[data-state="done"]:last-child button');
   await until("the helper's words", () => document.getElementById("downloads-msg").textContent === "That file is no longer in Downloads.");
+  assert.deepEqual(errors, []);
+}));
+
+const ASKED = [
+  { id: "p1", name: "run.command", size: 900, at: NOW - 30_000, from: { host: "tools.example" }, state: "done", program: true },
+  { id: "h1", name: "page.html", size: 4_000, at: NOW - 20_000, from: { host: "mail.example" }, state: "done", program: true },
+  { id: "u1", name: "old.pdf", size: 1_000, at: NOW - 10_000, from: { host: "shop.example" }, state: "done", marked: false },
+];
+describe("downloads: the helper's confirm and refusal in the row", () => pageTest("right", opts({ downloads: { items: ASKED } }), async ({ page, helper, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await until("the rows", () => document.querySelectorAll("#downloads li").length === 3);
+  const opens = () => helper.posts.filter((p) => p.route === "downloads" && p.rest[1] === "open");
+  const box = (id) => inPage((i) => {
+    const b = document.getElementById(`dl-confirm-${i}`);
+    return b && { hidden: b.hidden, text: b.querySelector("p").textContent, choice: !b.querySelector(".confirm-row").hidden,
+      buttons: [...b.querySelectorAll(".confirm-row button")].map((x) => x.textContent), focus: document.activeElement?.textContent };
+  }, id);
+  const confirm = await inPage(() => typeof window.confirm);
+  await inPage(() => { window.confirm = () => { window.__asked = true; return true; }; });
+
+  // 428: the sentence in the row, Open anyway and Cancel; nothing opened yet.
+  await page.click('button[aria-label="Open run.command"]');
+  await until("the question", () => document.getElementById("dl-confirm-p1")?.hidden === false);
+  assert.deepEqual(await box("p1"), { hidden: false, text: CONFIRM_PROGRAM, choice: true, buttons: ["Open anyway", "Cancel"], focus: "Cancel" });
+  assert.deepEqual(opens().map((p) => p.body), [null], "the first Open carries no body");
+  // A synthetic click on Open anyway sends nothing.
+  await inPage(synthetic, "#dl-confirm-p1 .confirm-row button");
+  await sleep(300);
+  assert.equal(opens().length, 1, "a synthetic Open anyway opens nothing");
+  // Open anyway repeats the POST with { confirm: true }; the box goes, the focus back on Open.
+  await page.click("#dl-confirm-p1 .confirm-row button");
+  await waitFor("the confirmed open", () => opens().length === 2);
+  assert.deepEqual(opens()[1], { route: "downloads", rest: ["p1", "open"], body: { confirm: true } });
+  await until("the box goes", () => document.getElementById("dl-confirm-p1").hidden);
+  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Open run.command");
+  assert.equal(await inPage(() => document.getElementById("downloads-msg").textContent), "");
+
+  // Cancel posts nothing and puts the focus back on Open; Escape cancels too.
+  await page.click('button[aria-label="Open page.html"]');
+  await until("the question", () => document.getElementById("dl-confirm-h1")?.hidden === false);
+  assert.equal((await box("h1")).text, CONFIRM_PROGRAM);
+  const before = helper.posts.length;
+  await page.click('button[aria-label="Don\'t open page.html"]');
+  await until("cancelled", () => document.getElementById("dl-confirm-h1").hidden);
+  await sleep(300);
+  assert.equal(helper.posts.length, before, "Cancel posts nothing");
+  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Open page.html");
+  await page.click('button[aria-label="Open page.html"]');
+  await until("asked again", () => document.getElementById("dl-confirm-h1")?.hidden === false);
+  await page.keyboard.press("Escape");
+  await until("Escape cancels", () => document.getElementById("dl-confirm-h1").hidden);
+  assert.equal(opens().filter((p) => p.body?.confirm === true).length, 1, "only the one confirmed open");
+
+  // 409: the helper's sentence in the row, no Open anyway, Show in Finder still there.
+  await page.click('button[aria-label="Open old.pdf"]');
+  await until("the refusal", () => document.getElementById("dl-confirm-u1")?.hidden === false);
+  const u = await box("u1");
+  assert.equal(u.text, UNMARKED);
+  assert.equal(u.choice, false, "no Open anyway for a refusal");
+  const reveal = await inPage(() => !!document.querySelector('#downloads button[aria-label^="Show old.pdf"]'));
+  assert.equal(reveal, true, "Show in Finder still there");
+  await page.click('#downloads button[aria-label^="Show old.pdf"]');
+  await waitFor("the reveal", () => helper.posts.some((p) => p.route === "downloads" && p.rest[0] === "u1" && p.rest[1] === "reveal"));
+  assert.equal(opens().filter((p) => p.rest[0] === "u1").length, 1);
+
+  assert.equal(await inPage(() => window.__asked), undefined, "no window.confirm");
+  assert.equal(confirm, "function");
   assert.deepEqual(errors, []);
 }));
 

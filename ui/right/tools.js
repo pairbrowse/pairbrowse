@@ -63,11 +63,13 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
   const ok = (r) => r.status >= 200 && r.status < 300 && r.body?.ok !== false;
   const getJson = (from, route) => fetch(from + route, { signal: AbortSignal.timeout(8000) })
     .then(async (x) => ({ status: x.status, body: x.ok ? await x.json().catch(() => null) : null }), () => ({ status: 0, body: null }));
-  // A POST (no body) or DELETE to the helper: { status, body } (status 0 when not reached).
-  const send = (route, method = "POST") => {
+  // A POST (no body, or a JSON one) or DELETE to the helper: { status, body } (status 0 when not reached).
+  const send = (route, method = "POST", json) => {
     const from = base();
     if (!from) return Promise.resolve({ status: 0, body: null });
-    return fetch(from + route, { method, signal: AbortSignal.timeout(8000) })
+    const init = { method, signal: AbortSignal.timeout(8000) };
+    if (json !== undefined) { init.headers = { "content-type": "application/json" }; init.body = JSON.stringify(json); }
+    return fetch(from + route, init)
       .then(async (x) => ({ status: x.status, body: await x.json().catch(() => null) }), () => ({ status: 0, body: null }));
   };
   // One request per button at a time (a disabled button would drop the focus).
@@ -191,6 +193,56 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     return [open, reveal];
   }
 
+  // A download's Open and Show in Finder, plus the helper's answers in the row: 428 { confirm }
+  // (a program, script or web page) asks there, and Open anyway repeats the POST with
+  // { confirm: true }; 409 (e.g. the download mark is gone) says why, with Show in Finder still there.
+  function downloadActs(id, name) {
+    const open = button("Open", `Open ${name}`);
+    const reveal = button(REVEAL, MAC ? `Show ${name} in Finder` : `Show ${name} in its folder`);
+    const q = el("p", { id: `dl-q-${id}` });
+    const yes = button("Open anyway", `Open ${name} anyway`);
+    const no = button("Cancel", `Don't open ${name}`);
+    const choice = el("div", { className: "confirm-row" }, yes, no);
+    const box = el("div", { className: "confirm", id: `dl-confirm-${id}`, hidden: true }, q, choice);
+    box.setAttribute("role", "group");
+    box.setAttribute("aria-labelledby", q.id);
+    const shut = (refocus) => { const had = box.contains(document.activeElement); box.hidden = true; q.textContent = ""; if (refocus || had) open.focus(); };
+    // The box joins the row only once the helper has something to say there.
+    const place = () => { if (!box.isConnected) open.closest("li")?.append(box); };
+    const answer = (r) => {
+      if (ok(r)) return shut(false);
+      if (r.status === 428 && typeof r.body?.confirm === "string" && r.body.confirm) {
+        place();
+        q.textContent = r.body.confirm;
+        choice.hidden = false;
+        box.hidden = false;
+        return no.focus();
+      }
+      if (r.status === 409 && typeof r.body?.error === "string" && r.body.error) {
+        const had = box.contains(document.activeElement);
+        place();
+        q.textContent = r.body.error;
+        choice.hidden = true;
+        box.hidden = false;
+        if (had) reveal.focus();
+        return;
+      }
+      shut(false);
+      say("downloads-msg", r.body?.error || "Couldn't open it.", "error");
+    };
+    const route = (what) => `downloads/${encodeURIComponent(id)}/${what}`;
+    open.addEventListener("click", real(async () => { say("downloads-msg", ""); answer(await send(route("open"))); }));
+    yes.addEventListener("click", real(async () => { say("downloads-msg", ""); answer(await send(route("open"), "POST", { confirm: true })); }));
+    no.addEventListener("click", real(async () => shut(true)));
+    box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !choice.hidden) { e.preventDefault(); shut(true); } });
+    reveal.addEventListener("click", real(async () => {
+      say("downloads-msg", "");
+      const r = await send(route("reveal"));
+      if (!ok(r)) say("downloads-msg", r.body?.error || "Couldn't show it.", "error");
+    }));
+    return el("span", { className: "acts" }, open, reveal);
+  }
+
   // ---- Downloads ----
   const downloadMeta = (it) => [sizeWords(it.size), str(it.from?.host), str(it.by?.label)].filter(Boolean).join(" · ");
   function drawDownload(row, it, id) {
@@ -204,8 +256,8 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     meta.title = str(it.from?.title);
     li.querySelector(".state .word").textContent = STATE[it.state];
     const acts = li.querySelector(".acts");
-    if (it.state === "done" && !acts) li.append(el("span", { className: "acts" }, ...fileActs("downloads", id, it.name, "downloads-msg")));
-    else if (it.state !== "done" && acts) acts.remove();
+    if (it.state === "done" && !acts) li.append(downloadActs(id, it.name));
+    else if (it.state !== "done" && acts) { acts.remove(); li.querySelector(".confirm")?.remove(); }
   }
   const downloads = makeList({
     ul: $("downloads"),

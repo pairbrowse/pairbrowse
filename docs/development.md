@@ -50,7 +50,9 @@ asserts each entry is still true, so the subset that fixes the page removes its 
 same change; new pages get none.
 
 For reviews, `node scripts/dev/ui-look.mjs <page> [--width 360 --height 900] [--fixtures f.json]`
-renders a page to a PNG (fixtures: `{ helper, replies, shim, push }`) and prints its harness log.
+renders a page to a PNG (fixtures: `{ helper, replies, shim, push }`) and prints its harness log. `--hash nav-left`
+renders a hash mode of a page (the strip's nav fragments and bubbles); `scripts/dev/strip-look.json` is
+the strip's review fixture.
 
 ### The live tests
 
@@ -98,7 +100,7 @@ The plugin is small:
 | `scripts/liveview/push.mjs`, `scripts/liveview/joiner-server.mjs`, `scripts/ws.mjs` | The host's push channel (one WebSocket per approved joiner: tabs, form values, pointers, session, messages), the guest port with its limits, and the small standard-library WebSocket both sides use |
 | `scripts/daemon/forms.mjs`, `scripts/daemon/cobrowse.mjs`, `scripts/daemon/taborder.mjs`, `scripts/daemon/session.mjs` | Reading and filling shared form fields; watching shared tabs for pointer moves and field changes; tab order through the side panel extension; who is doing what and messages between participants |
 | `scripts/tunnel.mjs` | The pinned Cloudflare Quick Tunnel |
-| `ui/` | The browser's own pages (side panel, new tab, session picker, picture page, capture), loaded as the side panel extension: manifest, worker, logo, icons, one directory per page; `test/ui.test.mjs` checks every page |
+| `ui/` | The browser's own pages (side panel, new tab, session picker, picture page, capture), loaded as the side panel extension: manifest, worker, logo, icons, one directory per page; the browser build's top strip (`ui/strip`: the tab row and the nav fragments by hash, not loaded in the extension); `test/ui.test.mjs` checks every page |
 | `scripts/browser.mjs`, `scripts/browser/`, `scripts/macos-app.mjs` | The PairBrowse browser: pinned ungoogled-chromium on macOS, Playwright Chromium elsewhere; icon files, color theme (the extension's pages are in ui/); the PairBrowse name and icon in macOS apps |
 | `scripts/native-pack.mjs`, `scripts/native-install.mjs`, `scripts/native-check.mjs`, `scripts/native-engine.mjs`, `BINARY-LICENSE.md` | The native PairBrowse build: pinned downloads and the engine pack, install step with rollback, launch self-check, launch adapter, binary license (the build pipeline is in the private PairBrowse Pro repository) |
 | `scripts/util.mjs` | Small shared helpers: JSON files, SHA-256, pinned downloads, timeouts |

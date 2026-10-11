@@ -2,7 +2,9 @@
 // A dev tool, not plugin code: renders ui/<page> over the pages' harness (the fake helper and the
 // ui server from test/helpers) to a PNG, for reviews.
 //   node scripts/dev/ui-look.mjs <page> [--width 360] [--height 900] [--fixtures file.json]
-//                                [--reduced-motion] [--no-bridge] [--out file.png]
+//                                [--reduced-motion] [--no-bridge] [--hash name] [--out file.png]
+// --hash renders one of a page's hash modes (the strip's nav fragments and bubbles: nav-left,
+// nav-right, switcher, share, menu): set once the page has loaded, then 200 ms before the PNG.
 // The fixtures file is { helper: {...fake-helper fixtures}, replies: {...}, shim: {...shim fixture
 // overrides}, push: [[event, data], ...] } (push goes out once the stream is open, 200 ms apart).
 // Prints the PNG's path, then the page's harness log and live() counts. Exit 1 when the page
@@ -20,12 +22,12 @@ const flag = (name) => args.includes(name);
 const value = (name, fallback) => { const i = args.indexOf(name); return i >= 0 && args[i + 1] ? args[i + 1] : fallback; };
 const page = args[0];
 if (!page || page.startsWith("--") || !pages().includes(page)) {
-  console.error(`usage: node scripts/dev/ui-look.mjs <${pages().join("|")}> [--width 360] [--height 900] [--fixtures file.json] [--reduced-motion] [--no-bridge] [--out file.png]`);
+  console.error(`usage: node scripts/dev/ui-look.mjs <${pages().join("|")}> [--width 360] [--height 900] [--fixtures file.json] [--reduced-motion] [--no-bridge] [--hash name] [--out file.png]`);
   process.exit(1);
 }
 const width = Number(value("--width", 360)), height = Number(value("--height", 900));
 const given = flag("--fixtures") ? JSON.parse(readFileSync(value("--fixtures"), "utf8")) : {};
-const out = value("--out", join(tmpdir(), `ui-look-${page}-${width}x${height}.png`));
+const out = value("--out", join(tmpdir(), `ui-look-${page}${flag("--hash") ? `-${value("--hash", "")}` : ""}-${width}x${height}.png`));
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME || join(homedir(), ".pairbrowse", "runtime");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -38,6 +40,10 @@ try {
     viewport: { width, height }, reducedMotion: flag("--reduced-motion") ? "reduce" : "no-preference",
   });
   for (const [event, data] of given.push || []) { helper.push(event, data); await sleep(200); }
+  if (flag("--hash")) {
+    await ctx.page.evaluate((h) => { location.hash = h; }, "#" + value("--hash", ""));
+    await sleep(200);
+  }
   await ctx.page.screenshot({ path: out, fullPage: true });
   console.log(out);
   const log = await ctx.harness.log();

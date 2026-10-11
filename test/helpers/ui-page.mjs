@@ -1,0 +1,97 @@
+// The pages' harness, for test files: openPage renders one ui/<name>/index.html over a fake helper
+// (fake-helper.mjs) and the ui server (ui-server.mjs); pageTest wraps it in a node:test test with
+// a browser of its own. Without PAIRBROWSE_TEST_RUNTIME the test is skipped.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { patchright, inPage } from "../live.mjs";
+import { startFakeHelper, merge } from "./fake-helper.mjs";
+import { startUiServer, UI_ROOT } from "./ui-server.mjs";
+import { defaultFixture } from "./pairbrowse-shim.mjs";
+
+export const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
+
+// The pages: every ui/<name>/ with an index.html, sorted.
+export const pages = () => readdirSync(UI_ROOT, { withFileTypes: true })
+  .filter((d) => d.isDirectory() && existsSync(join(UI_ROOT, d.name, "index.html")))
+  .map((d) => d.name).sort();
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export async function openPage(browser, name, { helper, fixture = defaultFixture(), bridge = true, viewport = { width: 360, height: 900 }, reducedMotion = "no-preference" } = {}) {
+  const ui = await startUiServer({ helper, fixture, bridge });
+  helper.setPageOrigin(ui.origin);
+  const page = await browser.newPage({ viewport, reducedMotion });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.goto(ui.url(name), { waitUntil: "load" });
+  // A page that says it connects (body[data-s]) gets up to 3 s to leave "connecting"; not a failure.
+  for (let i = 0; i < 60; i++) {
+    const s = await page.evaluate(() => document.body?.dataset.s);
+    if (s === undefined || s !== "connecting") break;
+    await sleep(50);
+  }
+  await sleep(300);
+  const shim = (path, ...args) => inPage(page, ([p, a]) => {
+    let target = window.__pairbrowse, owner = null;
+    for (const k of p.split(".")) { owner = target; target = target[k]; }
+    return typeof target === "function" ? target.apply(owner, a) : target;
+  }, [path, args]);
+  const harness = {
+    log: () => inPage(page, () => window.__harness.log),
+    live: () => inPage(page, () => window.__harness.live()),
+    setHidden: (on) => inPage(page, (v) => window.__harness.setHidden(v), on),
+    animations: () => inPage(page, () => window.__harness.animations()),
+    hiddenFires: () => inPage(page, () => window.__harness.hiddenFires),
+  };
+  const until = async (what, fn, arg) => {
+    for (let i = 0; i < 100; i++) { if (await inPage(page, fn, arg)) return; await page.waitForTimeout(50); }
+    assert.fail(`timed out waiting for ${what}`);
+  };
+  return {
+    page, ui, errors, harness, until,
+    inPage: (fn, arg) => inPage(page, fn, arg),
+    shim: {
+      calls: () => shim("calls"),
+      fixture: () => shim("fixture"),
+      call: shim,
+      change: (partial) => shim("tabs.change", partial),
+      createTab: (t) => shim("tabs.create", t),
+      removeTab: (id) => shim("tabs.remove", id),
+      moveTab: (id, index, window) => shim("tabs.move", id, index, window),
+      activate: (id) => shim("tabs.activate", id),
+      setWindow: (w) => shim("windows.set", w),
+      focusWindow: (id) => shim("windows.focus", id),
+      removeWindow: (id) => shim("windows.remove", id),
+      layout: (partial) => shim("layout.set", partial),
+      omnibox: (partial) => shim("omnibox.set", partial),
+      setOwner: (id, agent, color) => shim("agent.setOwner", id, agent, color),
+      clearOwner: (id) => shim("agent.clear", id),
+      notificationAction: (id, button) => shim("agent.notificationAction", id, button),
+      reply: (name, value) => shim("reply", name, value),
+    },
+    close: async () => { await page.close().catch(() => {}); await ui.close(); },
+  };
+}
+
+// pageTest(name, [opts], fn): opts { fixtures, replies (fake-helper), shim (over defaultFixture()),
+// bridge, viewport, reducedMotion, timeout }; fn gets { page, helper, ui, shim, harness, errors,
+// until, inPage }.
+export function pageTest(name, opts, fn) {
+  if (typeof opts === "function") { fn = opts; opts = {}; }
+  const o = opts || {};
+  test(`${name} page`, { skip: !runtime, timeout: o.timeout ?? 60_000 }, async () => {
+    const browser = await patchright(runtime).chromium.launch();
+    let helper = null, ctx = null;
+    try {
+      helper = await startFakeHelper({ pageOrigin: null, fixtures: o.fixtures, replies: o.replies });
+      ctx = await openPage(browser, name, { helper, fixture: merge(defaultFixture(), o.shim || {}), bridge: o.bridge ?? true, viewport: o.viewport, reducedMotion: o.reducedMotion });
+      await fn({ ...ctx, helper });
+    } finally {
+      await ctx?.close();
+      await helper?.close();
+      await browser.close();
+    }
+  });
+}

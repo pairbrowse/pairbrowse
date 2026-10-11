@@ -21,6 +21,37 @@ sheet value or a `SPARK_COLORS` entry and checks WCAG AA contrast in both scheme
 colors are `SPARK_COLORS` in `scripts/daemon/hud.mjs`. The window frame follows `THEME_COLOR` in
 `scripts/browser.mjs` (the sheet's chrome navy) unless the user picked a theme.
 
+### The pages' harness (ui/)
+
+`test/ui.test.mjs` runs over every `ui/*/index.html`. On every machine it checks each page's
+files: no inline script, handler or `style` attribute; `../tokens.css` linked before the page's
+own sheet and no token redefined; the logo taken from `ui/` (hash pinned) and never inlined; css
+colors that are sheet values; no markup sink (`innerHTML` and the like: Trusted Types); a
+reduced-motion block, no transition over 200 ms, no blur, no endless animation but the Live dot.
+With `PAIRBROWSE_TEST_RUNTIME` it renders each page and checks: no error, CSP or Trusted Types
+entry; an accessible name on every visible control; Tab reaches each one with the 2 px `--accent`
+ring; no timer, frame or observer while hidden; no running animation under reduced motion.
+
+Three fakes in `test/helpers/` stand in for the browser build: `pairbrowse-shim.mjs` is
+`window.pairbrowse` over the draft `native/mojom/pairbrowse.mojom` (its header is the page
+contract), `fake-helper.mjs` answers the live view's owner routes and event stream with the real
+key, Host and Origin checks, and `ui-server.mjs` serves `ui/` under the chrome pages' CSP
+(`script-src 'self'`, Trusted Types enforced), inserting the harness scripts as same-origin
+`<script src>` tags. Pages are served from another origin than the helper, as
+`chrome://pairbrowse` will be. Patchright has no console API and its init scripts are inline
+(refused by that CSP), so `ui-prelude.js` captures errors, timers and violations in the page.
+
+A page subset copies `test/ui-panel.test.mjs` as `test/ui-<page>.test.mjs`: `pageTest(name,
+{ fixtures, shim, replies }, fn)` gives it the page, the helper (`push`, `set`, `posts`) and the
+shim's controls; the common checks stay in `ui.test.mjs`.
+
+The `DEBT` table at the top of `ui.test.mjs` lists today's known gaps by page and check. The suite
+asserts each entry is still true, so the subset that fixes the page removes its entry in the
+same change; new pages get none.
+
+For reviews, `node scripts/dev/ui-look.mjs <page> [--width 360 --height 900] [--fixtures f.json]`
+renders a page to a PNG (fixtures: `{ helper, replies, shim, push }`) and prints its harness log.
+
 ### The live tests
 
 Each live test file starts its own helper and browser (two or three for joining), and
@@ -67,7 +98,7 @@ The plugin is small:
 | `scripts/liveview/push.mjs`, `scripts/liveview/joiner-server.mjs`, `scripts/ws.mjs` | The host's push channel (one WebSocket per approved joiner: tabs, form values, pointers, session, messages), the guest port with its limits, and the small standard-library WebSocket both sides use |
 | `scripts/daemon/forms.mjs`, `scripts/daemon/cobrowse.mjs`, `scripts/daemon/taborder.mjs`, `scripts/daemon/session.mjs` | Reading and filling shared form fields; watching shared tabs for pointer moves and field changes; tab order through the side panel extension; who is doing what and messages between participants |
 | `scripts/tunnel.mjs` | The pinned Cloudflare Quick Tunnel |
-| `ui/` | The browser's own pages (side panel, new tab, session picker, picture page, capture), loaded as the side panel extension: manifest, worker, logo, icons, one directory per page |
+| `ui/` | The browser's own pages (side panel, new tab, session picker, picture page, capture), loaded as the side panel extension: manifest, worker, logo, icons, one directory per page; `test/ui.test.mjs` checks every page |
 | `scripts/browser.mjs`, `scripts/browser/`, `scripts/macos-app.mjs` | The PairBrowse browser: pinned ungoogled-chromium on macOS, Playwright Chromium elsewhere; icon files, color theme (the extension's pages are in ui/); the PairBrowse name and icon in macOS apps |
 | `scripts/native-pack.mjs`, `scripts/native-install.mjs`, `scripts/native-check.mjs`, `scripts/native-engine.mjs`, `BINARY-LICENSE.md` | The native PairBrowse build: pinned downloads and the engine pack, install step with rollback, launch self-check, launch adapter, binary license (the build pipeline is in the private PairBrowse Pro repository) |
 | `scripts/util.mjs` | Small shared helpers: JSON files, SHA-256, pinned downloads, timeouts |

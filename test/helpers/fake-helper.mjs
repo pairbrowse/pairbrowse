@@ -1,0 +1,221 @@
+// The pages' harness fake helper: the live view's owner routes and event stream, answered the way
+// scripts/liveview.mjs answers them (its request dispatch, liveview.mjs 718-734 on this branch,
+// and the browser pages' routes from the helper lane: layout, tabs, agent-tabs, timeline,
+// ?page=<kind>), with the real checks from scripts/liveview/http.mjs: a Host that is not a
+// loopback name is 403, an unknown key 404, a non-GET from a foreign Origin 403, an unknown route
+// 404. It adds the CORS headers the helper gives the browser's own pages' origin (pageOrigin)
+// and records every POST. Only the owner's key exists here, so no right is ever missing.
+// No timers.
+import http from "node:http";
+import { randomBytes } from "node:crypto";
+import { hostOk, originOk, keyOk, pathParts, readBody, BODY_MAX, SECURITY_HEADERS, plain, listen } from "../../scripts/liveview/http.mjs";
+
+const NOT_JSON = "The body is not JSON.";
+const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture"]);
+const LAYOUT_STATES = new Set(["open", "rail", "hidden"]);
+const STRIP_MIN = 44, STRIP_MAX = 176;
+const TIMELINE_ID = /^[0-9a-f]{12}$/;
+
+export const defaultFixtures = () => ({
+  status: { text: "", kind: "clear" },
+  session: { name: "", where: "Local" },
+  collaboration: { participants: [], owner: null, active: null, guests: [] },
+  activity: [],
+  join: [],
+  tabs: [],
+  layout: { left: "open", right: "open", strip: 88 },
+  agentTabs: [],
+  journal: null,
+  profile: { details: [], secrets: [] },
+  sessions: { picking: true, sessions: [] },
+  joins: [],
+  timeline: { cards: [] },
+  pictures: {},
+  dev: null,
+  joinhost: null,
+  board: null,
+  pause: null,
+  record: null,
+});
+
+// The event each fixture goes out as (the names liveview.mjs broadcasts); null: none.
+const EVENT = { status: "status", session: "session", collaboration: "collaboration", activity: "activity", join: "join", tabs: "tabs", layout: "layout",
+  agentTabs: "agent-tabs", profile: "profile", dev: "dev", joinhost: "joinhost", board: "board", pause: "pause", record: "record", timeline: "timeline" };
+
+const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+export function merge(base, over) {
+  if (!plainObject(base) || !plainObject(over)) return over === undefined ? base : over;
+  const out = { ...base };
+  for (const [k, v] of Object.entries(over)) out[k] = merge(base[k], v);
+  return out;
+}
+
+// given merged over base: a valid { left, right, strip }, or { error } (liveview.mjs readLayout).
+function readLayout(given, base) {
+  if (!plainObject(given)) return { error: "A layout is { left, right, strip }." };
+  const next = { ...base };
+  for (const side of ["left", "right"]) {
+    if (given[side] === undefined) continue;
+    if (!LAYOUT_STATES.has(given[side])) return { error: `${side} is "open", "rail" or "hidden".` };
+    next[side] = given[side];
+  }
+  if (given.strip !== undefined) {
+    if (!Number.isInteger(given.strip) || given.strip < STRIP_MIN || given.strip > STRIP_MAX) return { error: `strip is a whole number of pixels from ${STRIP_MIN} to ${STRIP_MAX}.` };
+    next.strip = given.strip;
+  }
+  return next;
+}
+
+const sse = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+const json = (res, code, body) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
+// undefined when the body is not JSON; an empty body is null (a route that takes none).
+const parsed = (body) => { if (!body) return null; try { return JSON.parse(body); } catch { return undefined; } };
+
+export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replies = {} } = {}) {
+  const key = randomBytes(32).toString("base64url");
+  const fx = merge(defaultFixtures(), fixtures || {});
+  const streams = new Set();
+  const posts = [];
+  const allReplies = { ...replies };
+  let origin = pageOrigin;
+
+  const state = () => ({ status: fx.status, session: fx.session, collaboration: fx.collaboration, tabs: fx.tabs, activity: fx.activity.slice(-4), frame: null });
+  const push = (event, data) => { for (const s of streams) s.res.write(sse(event, data)); };
+  function set(name, data) {
+    fx[name] = merge(fx[name], data);
+    if (EVENT[name] && fx[name] !== null) push(EVENT[name], fx[name]);
+    return fx[name];
+  }
+
+  function events(req, res) {
+    res.writeHead(200, { "content-type": "text/event-stream", connection: "keep-alive" });
+    const q = new URL(req.url, "http://x").searchParams;
+    const kind = PAGE_KINDS.has(q.get("page")) ? q.get("page") : null;
+    const stream = { res, panel: q.has("panel"), kind };
+    streams.add(stream);
+    req.on("close", () => streams.delete(stream));
+    res.write(": hi\n\n");
+    res.write(sse("tabs", fx.tabs));
+    res.write(sse("status", fx.status));
+    res.write(sse("session", fx.session));
+    res.write(sse("collaboration", fx.collaboration));
+    res.write(sse("activity", fx.activity));
+    res.write(sse("join", fx.join));
+    if (fx.dev !== null) res.write(sse("dev", fx.dev));
+    if (fx.joinhost !== null) res.write(sse("joinhost", fx.joinhost));
+    if (fx.board !== null) res.write(sse("board", fx.board));
+    res.write(sse("layout", fx.layout));
+    if (kind) res.write(sse("agent-tabs", fx.agentTabs));
+    if (fx.pause !== null) res.write(sse("pause", fx.pause));
+    if (fx.record !== null) res.write(sse("record", fx.record));
+  }
+
+  const GETS = {
+    "state.json": () => state(), "journal.json": () => fx.journal ?? null, "profile.json": () => fx.profile, "sessions.json": () => fx.sessions,
+    "joins.json": () => fx.joins, "tabs.json": () => fx.tabs, "agent-tabs.json": () => fx.agentTabs, "timeline.json": () => fx.timeline, "layout.json": () => fx.layout,
+  };
+  const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline"]);
+
+  // The answer to a POST without a reply of the test's own.
+  function defaultPost(route, body) {
+    if (route === "input" || route === "tab") return { status: 204 };
+    if (route === "invite") {
+      if (typeof body?.name !== "string" || !body.name) return { status: 409, body: { error: "Not yet: ask the user what name the people they invite should see.", needName: true } };
+      return { status: 200, body: { ok: true, id: "abcd1234", share: body.share, role: body.role, mode: "shared", code: "pb-join:FAKE", rights: "Shared browser: they can drive.", hint: "The person pastes it into their own PairBrowse." } };
+    }
+    if (route === "layout") {
+      const next = readLayout(body, fx.layout);
+      if (next.error) return { status: 409, body: { error: next.error } };
+      fx.layout = next;
+      push("layout", next);
+      return { status: 200, body: next };
+    }
+    if (route === "pause") return { status: 200, body: { paused: !!body?.paused, can: true } };
+    if (route === "record") return { status: 200, body: { recording: body?.on === true, since: Date.now() } };
+    if (route === "approve") return { status: 200, body: { ok: true } };
+    return { status: 200, body: {} };
+  }
+
+  async function post(req, res, route, rest) {
+    const max = route === "profile" ? BODY_MAX.profile : route === "input" || route === "tab" ? BODY_MAX.input : BODY_MAX.approve;
+    const raw = await readBody(req, max);
+    if (raw === null) return plain(res, 413);
+    const body = parsed(raw);
+    if (body === undefined) return json(res, 400, { error: NOT_JSON });
+    posts.push({ route, rest, body });
+    const reply = Object.prototype.hasOwnProperty.call(allReplies, route) ? allReplies[route] : undefined;
+    const r = typeof reply === "function" ? (await reply(body, rest)) || { status: 200, body: {} } : reply !== undefined ? { status: 200, body: reply } : defaultPost(route, body);
+    if (r.status === 204 || r.body === undefined) { res.writeHead(r.status || 204); return res.end(); }
+    json(res, r.status || 200, r.body);
+  }
+
+  const server = http.createServer(async (req, res) => {
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+    if (origin) {
+      res.setHeader("access-control-allow-origin", origin);
+      res.setHeader("vary", "origin");
+      res.setHeader("access-control-allow-headers", "content-type");
+      res.setHeader("access-control-allow-methods", "GET, POST, DELETE");
+    }
+    if (!hostOk(req.headers.host)) return plain(res, 403);
+    const { key: given, route, rest } = pathParts(req);
+    if (!keyOk(given, key)) return plain(res, 404);
+    const from = req.headers.origin;
+    if (req.method !== "GET" && !originOk(from) && !(origin && from === origin)) return plain(res, 403);
+    if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+    try {
+      if (req.method === "GET") {
+        if (route === "events") return events(req, res);
+        if (Object.prototype.hasOwnProperty.call(GETS, route) && !rest.length) {
+          const value = GETS[route]();
+          if (value === null && route !== "journal.json") return plain(res, 404);
+          return json(res, 200, value);
+        }
+        if (route === "timeline") {
+          const m = rest.length === 1 ? /^([0-9a-f]{12})\.jpg$/.exec(rest[0]) : null;
+          const picture = m ? fx.pictures[m[1]] : null;
+          if (!picture) return plain(res, 404);
+          res.writeHead(200, { "content-type": "image/jpeg" });
+          return res.end(Buffer.isBuffer(picture) ? picture : Buffer.from(String(picture), "base64"));
+        }
+        return plain(res, 404);
+      }
+      if (req.method === "POST" && POSTS.has(route)) {
+        if (route === "timeline" && !(rest.length === 1 && rest[0] === "note") && !(rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "pin")) return plain(res, 404);
+        return await post(req, res, route, rest);
+      }
+      if (req.method === "DELETE" && route === "timeline") {
+        const cards = fx.timeline?.cards || [];
+        const card = rest.length === 1 ? cards.find((c) => c.id === rest[0]) : null;
+        if (!card) return plain(res, 404);
+        fx.timeline = { ...fx.timeline, cards: cards.filter((c) => c !== card) };
+        push("timeline", { op: "remove", card });
+        return json(res, 200, { ok: true });
+      }
+      return plain(res, 404);
+    } catch {
+      if (!res.headersSent) plain(res, 500);
+    }
+  });
+  await listen(server, 0);
+  const helperOrigin = `http://127.0.0.1:${server.address().port}`;
+  return {
+    origin: helperOrigin,
+    key,
+    base: `${helperOrigin}/${key}/`,
+    fixtures: fx,
+    push,
+    set,
+    posts,
+    streams,
+    replies: allReplies,
+    setPageOrigin: (o) => { origin = o; },
+    get pageOrigin() { return origin; },
+    close: () => new Promise((resolve) => {
+      for (const s of streams) s.res.destroy();
+      streams.clear();
+      server.closeAllConnections?.();
+      server.close(() => resolve());
+    }),
+  };
+}

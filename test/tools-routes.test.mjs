@@ -187,12 +187,13 @@ test("open and reveal: ids only, the stored file's path, cross-site refused, the
 test("open: any download; programs and scripts only with a confirm (428); not before a download is done", async () => {
   const t = await setup();
   try {
-    for (const name of ["x.zip", "x.svg", "x.html", "x.bin"]) {
+    for (const name of ["x.zip", "x.bin", "x.pdf"]) {
       const id = t.download(name);
       assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, name);
       assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)], name);
     }
-    const programs = ["x.command", "x.sh", "x.pkg", "x.dmg", "x.exe", "x.py", "x.js", "x.jar", "x.ps1", "x.scpt", "x.tool", "X.COMMAND"];
+    const programs = ["x.command", "x.sh", "x.pkg", "x.dmg", "x.exe", "x.py", "x.js", "x.jar", "x.ps1", "x.scpt", "x.tool", "X.COMMAND",
+      "x.html", "x.htm", "x.svg", "x.svgz", "x.xhtml", "x.mhtml", "x.webarchive", "x.url", "x.webloc", "X.HTML"];
     for (const name of programs) {
       const id = t.download(name);
       const before = t.spawned.length;

@@ -21,9 +21,11 @@ export const OPENABLE = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp", "he
 const ext = (path) => extname(String(path || "")).slice(1).toLowerCase();
 export const openable = (path) => OPENABLE.has(ext(path));
 
-// Programs and scripts: a download of one of these opens only after the person confirms.
+// Programs and scripts: a download of one of these opens only after the person confirms. Web pages
+// and web shortcuts count: they open in a web browser under file:// (or send it to a page) and can run script.
 export const PROGRAMS = new Set(["app", "pkg", "mpkg", "dmg", "command", "sh", "bash", "zsh", "py", "rb", "pl", "js", "jar",
-  "exe", "msi", "bat", "cmd", "ps1", "scpt", "workflow", "terminal", "tool"]);
+  "exe", "msi", "bat", "cmd", "ps1", "scpt", "workflow", "terminal", "tool",
+  "html", "htm", "xhtml", "svg", "svgz", "shtml", "mht", "mhtml", "webarchive", "url", "webloc", "inetloc"]);
 export const isProgram = (path) => PROGRAMS.has(ext(path));
 
 // On macOS a download opens only while it still carries com.apple.quarantine, the mark Gatekeeper

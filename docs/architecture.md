@@ -47,7 +47,13 @@ what each boundary protects against, see [security.md](security.md) and the
 - **Hooks** (`scripts/guard.mjs`, `scripts/log.mjs`, `scripts/session-start.mjs`): the PreToolUse
   hook asks the user before final actions; the PostToolUse hook writes the run log; session start
   adds the PairBrowse core instructions. Apps that can't ask (Codex) get the same decisions applied
-  by the helper itself.
+  by the helper itself. The same `guard.mjs` is Claude Code's PermissionRequest hook too: for a
+  named final click it sends one line on the private socket (it starts with `{"pairbrowse":"hook"`,
+  which no MCP client's first message does) and waits for the browser's answer while the terminal
+  asks; `scripts/daemon/approvals.mjs` routes that line, shows the approval card (the in-page card
+  on the agent's tab in front, or the browser's own pages through `approvals.json` and the
+  owner-only `approval` events) and answers the first Allow or Deny. For Codex the helper shows the
+  card and waits itself, before the call takes its turn.
 - **Runs server** (`scripts/runs.mjs`): saved runs and pre-submit reviews, no network.
 - **Browser** (`scripts/browser.mjs`, `scripts/native-*.mjs`): a Chromium of its own with its own
   profile under `~/.pairbrowse`, always visible. Builds are pinned by SHA-256 and checked before

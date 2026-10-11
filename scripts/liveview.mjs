@@ -26,6 +26,7 @@ import { createJoinerServer, recentlySeen } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/tabs.mjs";
 import { readLayout, layoutFrom } from "./liveview/layout.mjs";
 import { isChromePage, CHROME_PAGE_ORIGINS } from "./policy.mjs";
+import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
@@ -44,7 +45,7 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving"]); // events only the owner's streams get
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
 const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture"]);
@@ -109,7 +110,8 @@ async function release(cdp) {
 // own Settings page's three fields ({ read(), write(given) }, liveview/settings.mjs), or null.
 export async function startLiveView({ mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null }) {
+  onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
+  clickApprovals = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   // A second owner key, for the browser's own pages (a native build's chrome://pairbrowse pages,
@@ -131,6 +133,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
   let collaboration = { participants: [], owner: null, active: null, humanUntil: 0 };
   let closed = false;
   let board = null; // who is doing what across a shared session, and its messages
+  let driving = false; // an agent is acting (presence onActing), for the owner's pages while an approval waits
   const humanQueue = serially(); // people's input, in order
   const showQueue = serially(); // switching the shown tab: one CDP session at a time
   const replayer = createInputReplayer();
@@ -597,9 +600,19 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     } },
     // People asking to join with a code, for the owner to let in or not.
     { method: "GET", path: "joins.json", right: "approve", handler: ({ res }) => json(res, 200, approvals.pending()) },
+    // Named final clicks waiting for an answer (daemon/approvals.mjs), for the owner only: the
+    // browser's own pages list them and answer with POST approve { id, answer }.
+    { method: "GET", path: "approvals.json", right: "approve", handler: ({ res }) => (clickApprovals ? json(res, 200, { pending: clickApprovals.pending() }) : plain(res, 404)) },
     { method: "POST", path: "approve", right: "approve", handler: async ({ req, res }) => {
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
+      const given = parsed(body);
+      if (given && typeof given === "object" && typeof given.answer === "string") {
+        if (!(typeof given.id === "string" && APPROVAL_ID.test(given.id) && ANSWERS.has(given.answer))) return json(res, 400, { error: "An approval answer is { id, answer: allow, deny, terminal or site }." });
+        if (!clickApprovals) return plain(res, 404);
+        const ok = clickApprovals.answer(given.id, given.answer, "the live view");
+        return json(res, ok ? 200 : 404, { ok });
+      }
       const op = JSON.parse(body);
       if (op.remove === true) {
         // Remove, after a yes: out at once (their channel, pictures and agent), and not back in.
@@ -765,8 +778,10 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     clients.add(res);
     if (viewer) viewers.add(res);
     if (kind) kinds.set(res, kind);
-    if (invite) linkGuests.set(res, invite);
-    else owners.add(res);
+    if (invite) {
+      linkGuests.set(res, invite);
+      clickApprovals?.cover?.(); // an approval card in the page comes down at once
+    } else owners.add(res);
     if (invite) collaborationChanged();
     req.on("close", () => {
       clients.delete(res);
@@ -789,6 +804,7 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     if (!invite && board) res.write(sse("board", board));
     if (!invite) res.write(sse("layout", layoutNow()));
     if (kind) { watchPages(); res.write(sse("agent-tabs", await agentTabs())); }
+    if (!invite && clickApprovals?.pending().length) res.write(sse("driving", { on: driving }));
     const paused = pauseState();
     if (paused) res.write(sse("pause", paused));
     if (!invite && recordState()) res.write(sse("record", recordState()));
@@ -920,6 +936,12 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     throw e;
   }
 
+  // Named final clicks asked in the browser (daemon/approvals.mjs): the owner's streams only. While
+  // one waits, they also hear whether an agent is acting (driving), so a card can say so.
+  const stopClickApprovals = clickApprovals?.onChange ? clickApprovals.onChange((change) => {
+    broadcast("approval", change);
+    if (change?.op === "add" && clickApprovals.pending().length === 1) broadcast("driving", { on: driving });
+  }) : () => {};
   // The timeline changed (a picture kept, a card removed or pinned, a note): the owner's pages.
   const stopTimeline = timeline?.onChange ? timeline.onChange((change) => broadcast("timeline", { op: change.op, card: maskedCard(change.card) })) : () => {};
 
@@ -1001,12 +1023,21 @@ export async function startLiveView({ mask = (t) => t, timeline = null, layoutDe
     setBoard: (next) => { board = next; broadcast("board", board); },
     // The browser's pages with a stream open, counted by kind; the docks' layout now (tests).
     pageClients: () => Object.fromEntries([...kinds.values()].reduce((m, k) => m.set(k, (m.get(k) || 0) + 1), new Map())),
+    // An agent is acting, or the last one stopped (presence onActing): said only while an approval waits.
+    setDriving(on) {
+      driving = !!on;
+      if (clickApprovals?.pending().length) broadcast("driving", { on: driving });
+    },
+    // People watching through an invite link right now (an approval card isn't drawn in the page then).
+    guestViewers: () => linkGuests.size,
+    // A tab's number, as the browser's own pages and browser_tabs count them.
+    tabIndex: async (page) => (await getContext()).pages().indexOf(page),
     layout: layoutNow,
     close: () => {
       closed = true;
       clearInterval(timer);
       clearTimeout(settleTimer);
-      stopEnded(); stopApprovals(); stopTimeline();
+      stopEnded(); stopApprovals(); stopTimeline(); stopClickApprovals();
       server.close();
       for (const r of clients) r.end();
       joinerServer.close();

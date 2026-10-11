@@ -11,6 +11,12 @@
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"" }]
       }
     ],
+    "PermissionRequest": [
+      {
+        "matcher": "mcp__plugin_pairbrowse_browser__.*",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs\"", "timeout": 150 }]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "mcp__plugin_pairbrowse_browser__.*|mcp__pairbrowse_browser__.*",

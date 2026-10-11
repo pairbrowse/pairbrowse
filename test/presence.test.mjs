@@ -236,3 +236,18 @@ test("one wait per frame, a frame without the page script backs off, a late answ
     mock.timers.reset();
   }
 });
+
+test("onActing says when agents start acting and when the last action ends, once each", () => {
+  const seen = [];
+  const presence = createPresence({ host: "You", readEvents: async () => [], pages: () => [], paused: () => true,
+    onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {}, onActing: (on) => seen.push(on) });
+  const a = presence.busyStart();
+  const b = presence.busyStart("no-keys");
+  assert.deepEqual(seen, [true], "the second span opens nothing new");
+  a();
+  assert.deepEqual(seen, [true], "one span still runs");
+  b();
+  assert.deepEqual(seen, [true, false]);
+  b();
+  assert.deepEqual(seen, [true, false], "ending twice says nothing more");
+});

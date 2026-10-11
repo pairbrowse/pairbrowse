@@ -93,7 +93,7 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
   writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false }));
   const out = openSync(join(home, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home }, stdio: ["ignore", out, out] });
+  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home, PAIRBROWSE_APPROVAL_WAIT_MS: "1500" }, stdio: ["ignore", out, out] });
   const socketPath = join(home, "run", "browser.sock");
   const site = "http://shop.pbtest.example";
   let stage = "start", claude, codex;
@@ -191,7 +191,7 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
     const send = await click("button", "Send", "Send: Send reply");
     assert.ok(!send.result.isError, text(send));
 
-    stage = "Codex: named final actions are handed to the user";
+    stage = "Codex: named final actions are asked in the browser, then handed to the user when nobody answers";
     codex = await connect(socketPath, "codex-mcp-client");
     const opened = await codex.call("tools/call", { name: "browser_tabs", arguments: { action: "new", url: `${site}/inbox` } });
     assert.ok(!opened.result?.isError, text(opened));

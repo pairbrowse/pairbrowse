@@ -13,7 +13,7 @@ import { appName, personLabel, computerName } from "../join.mjs";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { describe } from "../log.mjs";
-import { decide, clickClass } from "../guard.mjs";
+import { decide, clickClass, approvalAsk } from "../guard.mjs";
 import { clickRule, dialogRule, strongSignal } from "../clickrule.mjs";
 import { keepFocus } from "../focus.mjs";
 import { SESSION_TOOL } from "../sessions.mjs";
@@ -214,7 +214,7 @@ export function pathsIn(name, args = {}) {
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {}, clickApprovals = null }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // What PairBrowse declares it is about to press (an agent's click, a fast-mode step, the popup
   // closer's dismiss button) counts as where an agent pointed: a press there is never a person's.
@@ -279,6 +279,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       screenshots.forget(participant);
       follow.ownerGone(participant);
       follow.agentGone?.(participant);
+      clickApprovals?.gone(participant);
     });
     collaboration.register(participant, `Claude ${participant.slice(0, 4)}`);
     let actingIn = null; // the tab this participant's current call acts in
@@ -299,6 +300,13 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const noTab = () => `You have no tab of your own: ${noTabWhy}. Open one with browser_tabs new.`;
     const used = []; // tabs it worked in before, latest last: where it goes back to
     const myLabel = () => collaboration.participants.get(participant)?.label;
+    // Calls whose named final action the user allowed in the browser (Codex and other apps: the
+    // approval card, daemon/approvals.mjs): the hand-off below doesn't apply to them.
+    const approvedArgs = new WeakSet();
+    // What needs the user's OK in an app that can't ask for it: handed to the user. denied: the
+    // user said Deny in the browser.
+    const handOff = (reason, denied = false) => `${denied ? "Denied in the PairBrowse browser. " : ""}${reason} This needs the user's OK, which this app can't ask for. ` +
+      "Set pairbrowse_status to \"you\" and ask the user to do this step themselves in the PairBrowse window, then continue from what they did.";
     // A picture this result carried, kept in the session's timeline (daemon/timeline.mjs) once the
     // result went out: the same bytes, nothing captured or encoded again, nothing on the result's way.
     const rememberPicture = (shot, page, tool, args) => {
@@ -649,10 +657,16 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const verdict = decide({ tool_name: `mcp__plugin_pairbrowse_browser__${name}`, tool_input: args }).hookSpecificOutput;
       const reason = verdict.permissionDecisionReason?.replace(/\.?$/, ".");
       if (verdict.permissionDecision === "deny") return verdict.permissionDecisionReason;
-      if (verdict.permissionDecision === "ask" && clientName !== "claude-code") {
+      if (verdict.permissionDecision === "ask" && clientName !== "claude-code" && !approvedArgs.has(args)) {
         log(`handed to the user (${clientName || "unknown app"}): ${name}`);
-        return `${reason} This needs the user's OK, which this app can't ask for. ` +
-          "Set pairbrowse_status to \"you\" and ask the user to do this step themselves in the PairBrowse window, then continue from what they did.";
+        return handOff(reason);
+      }
+      // Claude Code: the same ask was answered Deny in the browser (its hook passed that on, so this
+      // call came some other way): refused. A call that arrives while the browser still asks is the
+      // terminal's yes, and takes the card down there.
+      if (verdict.permissionDecision === "ask" && clientName === "claude-code" && clickApprovals) {
+        const ask = approvalAsk(name, args);
+        if (ask && clickApprovals.arrived(name, args) === "denied") return `Denied in the PairBrowse browser: ${ask.reason.replace(/\.$/, "")}. Nothing was done; ask the user what to do.`;
       }
       // While the session picker is up nobody has tabs to lose: an agent may choose for everyone.
       if ((name === "browser_close" || (name === "pairbrowse_session" && args.action !== "list")) && !context.picking() && inUse().length) {
@@ -1277,6 +1291,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           // A joiner's agent: its app's OK (its own user's) never counts as the host's.
           if (remote) { collaboration.register(participant, personLabel(remote.name, appName(clientName))); clientName = `remote:${clientName}`; }
           log(`participant ${participant} is ${clientName || "an unnamed app"}`);
+          clickApprovals?.participant(participant, { client: clientName, remote: !!remote, tab: () => (mine && !mine.isClosed() ? mine : null) });
         }
         // "<person> · Claude Code", "<person> · Codex".
         const label = msg.params?.clientInfo?.pairbrowseParticipant;
@@ -1428,6 +1443,30 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (acting) {
         const held = await pause.wait(disconnected.signal);
         if (held) return reply(msg.id, `Paused by ${held.by}. Waiting until someone resumes; nothing was done.`, true);
+      }
+      // Codex and other apps (not Claude Code, never a joiner's agent): a named final action asks
+      // in the browser and waits for the answer, before the turn (no tab or busy span held while
+      // it waits, so the person's click is never taken for the agent's). Allow lets it go on;
+      // anything else is the hand-off, as when the browser can't ask (nothing waits then).
+      if (msg.method === "tools/call" && !remote && clientName !== "claude-code" && clickApprovals) {
+        const args = msg.params?.arguments;
+        const ask = args && typeof args === "object" && !Array.isArray(args) && !argProblem(tool, args) ? approvalAsk(tool, args) : null;
+        const r = ask ? await clickApprovals.open({ tool, input: args, ask, participant, client: clientName }) : null;
+        if (r?.shown) {
+          let onAbort = () => {};
+          const left = new Promise((resolve) => {
+            onAbort = () => { clickApprovals.withdraw(r.item.id, "the agent disconnected"); resolve("withdrawn"); };
+            if (disconnected.signal.aborted) onAbort(); else disconnected.signal.addEventListener("abort", onAbort, { once: true });
+          });
+          const a = await Promise.race([r.answer, left]);
+          disconnected.signal.removeEventListener("abort", onAbort);
+          if (a === "allow" || a === "site") approvedArgs.add(args);
+          else {
+            log(`handed to the user (${clientName || "unknown app"}): ${tool}, after the browser's ${a}`);
+            const reason = String(decide({ tool_name: `mcp__plugin_pairbrowse_browser__${tool}`, tool_input: args }).hookSpecificOutput.permissionDecisionReason || "").replace(/\.?$/, ".");
+            return reply(msg.id, handOff(reason, a === "deny"), true);
+          }
+        }
       }
       if (msg.method === "tools/call" && TAB_TOOLS.has(tool)) return takeTurn(dispatch, msg.id, tool, msg.params?.arguments || {});
       // An agent without a tab of its own reads nothing: it would be reading another agent's tab.

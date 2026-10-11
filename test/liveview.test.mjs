@@ -106,6 +106,8 @@ test("every route needs its right; routes that aren't listed are refused", async
     for (const k of [w.key, d.key]) {
       assert.equal((await request(view.port, "GET", `/${k}/joins.json`)).status, 403, "join requests are the owner's");
       assert.equal((await request(view.port, "POST", `/${k}/approve`, { body: { id: "r1", allow: true } })).status, 403);
+      assert.equal((await request(view.port, "GET", `/${k}/approvals.json`)).status, 403, "approvals are the owner's");
+      assert.equal((await request(view.port, "POST", `/${k}/approve`, { body: { id: `ap-${"0".repeat(32)}`, answer: "allow" } })).status, 403, "and answering them");
       assert.equal((await request(view.port, "GET", `/${k}/journal.json`)).status, 403, "the goal log is the owner's");
       assert.equal((await request(view.port, "POST", `/${k}/invite`, { body: { share: "code" } })).status, 403, "inviting is the owner's");
       // The browser's own pages' routes: the owner's only.
@@ -129,6 +131,8 @@ test("every route needs its right; routes that aren't listed are refused", async
       assert.equal((await request(view.port, method, `/${key}/${path}`)).status, 404, `${method} /${path}`);
     }
     assert.equal((await request(view.port, "POST", `/${key}/approve`, { body: { id: "r1", allow: true } })).status, 404, "no such request");
+    assert.equal((await request(view.port, "GET", `/${key}/approvals.json`)).status, 404, "no click approvals given: none pending");
+    assert.equal((await request(view.port, "POST", `/${key}/approve`, { body: { id: `ap-${"0".repeat(32)}`, answer: "allow" } })).status, 404, "no click approvals given");
   } finally { view.close(); }
 });
 
@@ -806,4 +810,82 @@ test("the browser's own pages are never tabs on the live view, nor on its stage"
     for (const s of sessions) assert.ok(!own[pages.indexOf(s.page)], "never one of the browser's own pages");
     assert.ok(!following.tabs.some((t) => t.claude === true), "no web tab is marked as Claude's when Claude is on the browser's own page");
   } finally { view.close(); }
+});
+
+test("click approvals: owner-only list and answers, events to owner streams only", async () => {
+  const invites = createInvites();
+  const listeners = new Set();
+  const items = new Map();
+  const answers = [];
+  const ID = `ap-${"a".repeat(32)}`, ID2 = `ap-${"b".repeat(32)}`;
+  const item = (id) => ({ id, agent: { label: "Alice · Codex", color: "#20c997" }, kind: "click", target: "Place order", reason: '"Pay: Place order" pays: a final action (pay)', tab: { id: 0, host: "shop.example" }, at: 1 });
+  const clickApprovals = {
+    pending: () => [...items.values()],
+    answer: (id, a, from) => { if (!items.has(id)) return false; items.delete(id); answers.push([id, a, from]); for (const fn of listeners) fn({ op: "withdraw", item: { id } }); return true; },
+    onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+  };
+  const add = (id) => { items.set(id, item(id)); for (const fn of listeners) fn({ op: "add", item: item(id) }); };
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites, clickApprovals });
+  const key = view.url.split("/").at(-2);
+  const w = invites.create({ role: "watch", label: "W" });
+  const d = invites.create({ role: "drive", label: "D" });
+  const owner = await readStream(view.port, `/${key}/events?page=right`);
+  const guest = await readStream(view.port, `/${d.key}/events?panel=1`);
+  try {
+    let r = await request(view.port, "GET", `/${key}/approvals.json`);
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text), { pending: [] });
+    view.setDriving(true);
+    await wait(50);
+    assert.deepEqual(eventsIn(owner.text(), "driving"), [], "driving only while something is pending");
+    add(ID);
+    await wait(50);
+    assert.deepEqual(JSON.parse((await request(view.port, "GET", `/${key}/approvals.json`)).text), { pending: [item(ID)] });
+    assert.deepEqual(eventsIn(owner.text(), "approval"), [{ op: "add", item: item(ID) }]);
+    assert.deepEqual(eventsIn(owner.text(), "driving"), [{ on: true }], "said once when the first approval came");
+    view.setDriving(false);
+    await wait(50);
+    assert.deepEqual(eventsIn(owner.text(), "driving"), [{ on: true }, { on: false }]);
+    // A new owner stream, while one waits, hears the driving state at once.
+    const late = await readStream(view.port, `/${key}/events?page=strip`);
+    await wait(50);
+    assert.deepEqual(eventsIn(late.text(), "driving"), [{ on: false }]);
+    late.close();
+
+    for (const k of [w.key, d.key]) {
+      assert.equal((await request(view.port, "GET", `/${k}/approvals.json`)).status, 403);
+      assert.equal((await request(view.port, "POST", `/${k}/approve`, { body: { id: ID, answer: "allow" } })).status, 403);
+    }
+    const c = invites.create({ role: "drive", label: "C", share: "code" });
+    for (const k of [c.key, key]) {
+      assert.notEqual((await request(view.guestPort, "GET", `/${k}/approvals.json`)).status, 200, "the join-code port never serves it");
+      assert.notEqual((await request(view.guestPort, "POST", `/${k}/approve`, { body: { id: ID, answer: "allow" } })).status, 200, "nor answers");
+    }
+    for (const bad of [{ id: ID, answer: "maybe" }, { id: "r1", answer: "allow" }, { id: `ap-${"A".repeat(32)}`, answer: "deny" }, { id: 5, answer: "allow" }]) {
+      r = await request(view.port, "POST", `/${key}/approve`, { body: bad });
+      assert.equal(r.status, 400, JSON.stringify(bad));
+      assert.ok(JSON.parse(r.text).error);
+    }
+    assert.equal(items.size, 1, "nothing answered by a bad body or a guest");
+    r = await request(view.port, "POST", `/${key}/approve`, { body: { id: ID, answer: "allow" } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text), { ok: true });
+    r = await request(view.port, "POST", `/${key}/approve`, { body: { id: ID, answer: "allow" } });
+    assert.equal(r.status, 404);
+    assert.deepEqual(JSON.parse(r.text), { ok: false });
+    // The browser's own pages' key answers like the owner's.
+    add(ID2);
+    r = await request(view.port, "POST", `/${view.pagesKey}/approve`, { body: { id: ID2, answer: "deny" } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(answers, [[ID, "allow", "the live view"], [ID2, "deny", "the live view"]]);
+    // A join answer still goes the join way.
+    assert.equal((await request(view.port, "POST", `/${key}/approve`, { body: { id: "r1", allow: true } })).status, 404, "no such request");
+    await wait(50);
+    assert.deepEqual(eventsIn(owner.text(), "approval").map((e) => e.op), ["add", "withdraw", "add", "withdraw"]);
+    assert.deepEqual(eventsIn(owner.text(), "approval")[1], { op: "withdraw", item: { id: ID } });
+    assert.deepEqual(eventsIn(guest.text(), "approval"), [], "an invite link's stream gets none");
+    assert.deepEqual(eventsIn(guest.text(), "driving"), []);
+    assert.equal(view.guestViewers(), 1, "the invite link's viewer counts");
+  } finally { owner.close(); guest.close(); view.close(); }
+  assert.equal(listeners.size, 0, "unsubscribed on close");
 });

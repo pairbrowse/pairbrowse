@@ -391,11 +391,39 @@
       .jq button:disabled{cursor:default;filter:saturate(.4)}
       .jq .x{position:absolute;right:8px;top:6px;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:4px}
       .jq .x:hover{color:#F1F5FA}
+      .jb{display:contents}
+      .jb[hidden],.ab[hidden]{display:none}
+      .jq.ap{width:360px;max-width:min(360px,92vw);padding:16px;border:1px solid #293B50;border-radius:12px;background:#192A3D;box-shadow:0 12px 32px rgb(0 0 0/.4)}
+      .jq.ap.ph{display:none}
+      .ab{display:flex;flex-direction:column;gap:10px;min-width:0;font:500 13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#A2B2C6}
+      .ab .ah{display:flex;align-items:center;gap:10px;min-width:0;padding-right:22px}
+      .ab .ai{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#e9763f;color:#0B1421;font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif}
+      .ab .aw{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .ab .aw b{color:#F1F5FA;font-weight:600}
+      .ab .ac{margin-bottom:-6px;font-size:12px;color:#A2B2C6}
+      .ab .ag{padding:8px 10px;border:1px solid #293B50;border-radius:8px;color:#F1F5FA;font:600 13px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
+      .ab .ar{color:#A2B2C6;overflow-wrap:anywhere}
+      .ab .ar[hidden],.ab .am[hidden],.ab .an[hidden]{display:none}
+      .ab .aact{display:flex;align-items:center;gap:8px}
+      .jq .ab button{font-weight:500;font-size:13px}
+      .jq .ab button{transition:background-color 120ms ease-out,color 120ms ease-out,filter 120ms ease-out}
+      .jq .ab .aok{background:#3285F6;color:#0B1421}
+      .jq .ab .aok:enabled:hover{filter:brightness(1.08)}
+      .jq .ab button:disabled{filter:saturate(.4)}
+      .jq .ab .ano{background:#192A3D;color:#F1F5FA;box-shadow:inset 0 0 0 1px #293B50}
+      .jq .ab .ano:enabled:hover{background:#243750}
+      .jq .ab .atm{margin-left:auto;padding:6px 4px;background:none;color:#A2B2C6;font-weight:500}
+      .jq .ab .atm:enabled:hover{color:#F1F5FA}
+      .ab .am,.ab .an{font-size:12px;color:#A2B2C6}
+      .ab .ax{position:absolute;right:8px;top:18px;box-sizing:border-box;width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer}
+      .ab .ax:hover{color:#F1F5FA}
       @media (prefers-reduced-motion:reduce){.bar,.bar *{animation:none!important;transition:none!important}}
-    </style><div class="bar" aria-hidden="true"><span class="who"><i class="dot"></i><span></span><span class="rec" hidden><i></i>REC</span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><div class="jq" hidden><div class="hd"><i class="av"></i><span class="t"><b></b> wants to join · <span class="r"></span><span class="h"></span></span></div><span class="m" hidden></span><div class="act"><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button></div><b class="x" title="Dismiss (it stays in the side panel)">×</b></div></div>`);
+    </style><div class="bar" aria-hidden="true"><span class="who"><i class="dot"></i><span></span><span class="rec" hidden><i></i>REC</span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><div class="jq" hidden><div class="jb"><div class="hd"><i class="av"></i><span class="t"><b></b> wants to join · <span class="r"></span><span class="h"></span></span></div><span class="m" hidden></span><div class="act"><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button></div><b class="x" title="Dismiss (it stays in the side panel)">×</b></div><div class="ab" hidden><div class="ah"><i class="ai"></i><span class="aw"><b></b> wants to click</span></div><span class="ac">Described by the agent as</span><div class="ag"></div><div class="ar"></div><div class="aact"><button class="aok" tabindex="-1">Allow</button><button class="ano" tabindex="-1">Deny</button><button class="atm" tabindex="-1">Ask in the terminal</button></div><span class="am" hidden></span><span class="an" hidden></span><b class="ax" title="Hide here (the terminal still asks)">×</b></div></div></div>`);
     bar = shadow.querySelector(".bar");
     joinWire(shadow); // a new bar: a join request it shows is drawn anew
+    apWire(shadow); // and an approval
     joinShown = "";
+    apShown = "";
     joinDraw();
     // Pressed by a person only (trusted); it never takes focus from the page's fields.
     const pz = shadow.querySelector(".pz");
@@ -412,7 +440,7 @@
         return e.clientX >= r.left - 40 && e.clientX <= r.right + 40;
       };
       // Never while it asks someone in: its buttons stay put and fully visible.
-      document.addEventListener("mousemove", (e) => bar?.classList.toggle("away", !joins.size && e.clientY > innerHeight - 56 && !nearButton(e)), { passive: true });
+      document.addEventListener("mousemove", (e) => bar?.classList.toggle("away", !joins.size && !aps.size && e.clientY > innerHeight - 56 && !nearButton(e)), { passive: true });
     }
   }
   const GLYPH = {
@@ -474,7 +502,7 @@
     // Above the join card while one shows, so it never covers it (one layout read per change); its
     // drop shadow goes meanwhile, since the browser counts a shadow over the card as covering it
     // (and a click on Allow then wouldn't count).
-    const card = joins.size ? bar?.querySelector(".jq") : null;
+    const card = joins.size || aps.size ? bar?.querySelector(".jq") : null;
     const lift = card && !card.hidden ? card.offsetHeight + 8 : 0;
     hostPlace.textContent = barHost?.isConnected ? `:host{bottom:${42 + lift}px !important}${lift ? ".b{box-shadow:0 0 0 1px #293B50 !important}" : ""}` : "";
   }
@@ -508,18 +536,18 @@
       if (now() - joinAt < JOIN_ARM_MS) return;
       if (!joinVisible) return joinHint("covered: answer in the side panel");
       if (answeredCount < 5) { answered = { t: now(), kind, what: id, next: answered }; answeredCount++; }
-      for (const b of jq.querySelectorAll("button")) b.disabled = true;
+      for (const b of jq.querySelectorAll(".jb button")) b.disabled = true;
       joinHint(kind === "join-allow" ? "letting them in…" : "");
       // Not answered after a moment (the helper didn't take the click): back to the buttons.
-      setTimeout(() => { if (joinShown === id && joins.has(id)) { for (const b of jq.querySelectorAll("button")) b.disabled = false; joinHint("didn't go through: use the side panel"); } }, 3000);
+      setTimeout(() => { if (joinShown === id && joins.has(id)) { for (const b of jq.querySelectorAll(".jb button")) b.disabled = false; joinHint("didn't go through: use the side panel"); } }, 3000);
     };
-    for (const b of jq.querySelectorAll("button, .x")) b.addEventListener("mousedown", (e) => e.preventDefault()); // never takes focus from the page
+    for (const b of jq.querySelectorAll(".jb button, .jb .x")) b.addEventListener("mousedown", (e) => e.preventDefault()); // never takes focus from the page
     jq.querySelector(".ok").addEventListener("click", answer("join-allow"));
     jq.querySelector(".no").addEventListener("click", answer("join-deny"));
     jq.querySelector(".x").addEventListener("click", (e) => { if (e.isTrusted && joinShown) { dismissed = `${dismissed},${joinShown}`.slice(-200); joinOff(joinShown); } });
     // Not while the pointer is on it: someone reaching for Allow doesn't see it vanish.
     jq.addEventListener("pointerenter", () => { for (const j of joins.values()) clearTimeout(j.timer); });
-    jq.addEventListener("pointerleave", () => { for (const id of joins.keys()) joinLater(id, 3000); });
+    jq.addEventListener("pointerleave", () => { if (!aps.size) for (const id of joins.keys()) joinLater(id, 3000); });
     joinSeen?.disconnect();
     joinSeen = null;
     joinVisible = false;
@@ -538,29 +566,46 @@
     } catch { joinVisible = true; }
   }
   function joinHint(text) { const h = bar?.querySelector(".jq .h"); if (h) h.textContent = text ? ` · ${text}` : ""; }
+  // Not while an approval covers the card: a request isn't hidden before it was ever seen. Its
+  // timer starts anew when the last approval goes (joinDraw).
   function joinLater(id, ms) {
     const j = joins.get(id);
     if (!j) return;
     clearTimeout(j.timer);
+    if (aps.size) return;
     j.timer = setTimeout(() => { if (joins.has(id)) { gone = `${gone},${id}`.slice(-200); joinOff(id); } }, ms);
   }
-  // The bar shows the newest request, or none.
+  // The bar shows the newest approval (an agent waiting for the person's OK), else the newest
+  // request, or none.
   function joinDraw() {
     if (!bar) return;
     const jq = bar.querySelector(".jq");
     const ids = [...joins.keys()];
-    const id = ids.at(-1) || "";
-    bar.classList.toggle("asking", !!id);
-    if (id) bar.classList.remove("away");
-    jq.hidden = !id;
-    joinWatch(!!id);
-    if (!id) placeBadge();
+    const apId = [...aps.keys()].at(-1) || "";
+    const id = apId ? "" : ids.at(-1) || "";
+    const any = !!(apId || id);
+    bar.classList.toggle("asking", any);
+    if (any) bar.classList.remove("away");
+    jq.hidden = !any;
+    jq.classList.toggle("ap", !!apId);
+    jq.querySelector(".jb").hidden = !id;
+    jq.querySelector(".ab").hidden = !apId;
+    joinWatch(any);
+    if (!any) placeBadge();
     if (id !== joinShown) {
       joinShown = id;
       joinAt = now(); // what a click lands on just changed: no click counts for a moment
-      for (const b of jq.querySelectorAll("button")) b.disabled = false;
+      for (const b of jq.querySelectorAll(".jb button")) b.disabled = false;
       joinHint("");
     }
+    if (apId !== apShown) {
+      if (!apId) for (const jid of ids) joinLater(jid, JOIN_SHOWN_MS); // the requests show again: their time starts now
+      apShown = apId;
+      apAt = now(); // the same for an approval: armed anew whenever what it shows changes
+      for (const b of jq.querySelectorAll(".ab button")) b.disabled = false;
+      apHint("");
+    }
+    if (apId) { apFill(jq, apId); placeBadge(); return; }
     if (!id) return;
     const j = joins.get(id);
     jq.querySelector(".t b").textContent = j.who;
@@ -600,6 +645,91 @@
     if (!joinShown || !jq || jq.hidden || !barHost?.isConnected) return [];
     const at = (sel) => { const b = jq.querySelector(sel).getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; };
     return [{ id: joinShown, who: joins.get(joinShown).who, more: joins.size - 1, visible: !!joinVisible, allow: at(".ok"), deny: at(".no"), close: at(".x") }];
+  };
+
+  // An agent waits for the person's OK on a named final click (pay, delete, publish, send,
+  // submit): the same card, on the same rules as a join request (a trusted pointer click, armed
+  // AP_ARM_MS after what it shows changed, fully visible), shows "<agent> wants to click", the
+  // target (as the agent described it), the rule's reason, Allow, Deny, "Ask in the terminal" and
+  // × (for Codex and other apps, which have no prompt of their own: "I'll do it myself", the
+  // step handed to the person). Claude Code's terminal asks at the same time; the card stays
+  // until it's answered somewhere (no timer here: the helper takes it down), × only hides it here. Answers are recorded in their own chain (kind
+  // "approval-answers"), checked again by the helper (daemon/approvals.mjs). Hidden while an agent
+  // takes a screenshot (peers-hidden). Its text comes as an object, never through JSON.parse.
+  const AP_ARM_MS = 600, AP_KEEP = 5, AP_ID = /^ap-[0-9a-f]{32}$/;
+  const aps = new Map(); // id -> { who, color, target, reason, terminal }, oldest first
+  let apShown = "", apAt = 0, apHidden = false;
+  let apAnswered = null, apCount = 0, apDismissed = "";
+  function apHint(text) { const h = bar?.querySelector(".ab .an"); if (h) { h.textContent = text; h.hidden = !text; } }
+  function apWire(shadow) {
+    const jq = shadow.querySelector(".jq");
+    const answer = (kind) => (e) => {
+      const id = apShown;
+      if (!e.isTrusted || !(e.detail > 0) || !id || !aps.has(id)) return;
+      if (now() - apAt < AP_ARM_MS) return;
+      const terminal = aps.get(id).terminal;
+      const elsewhere = terminal ? "answer in the terminal." : "move what is over it, or do it yourself in the page.";
+      if (!joinVisible || apHidden) return apHint(`Covered: ${elsewhere}`);
+      if (apCount < 5) { apAnswered = { t: now(), kind, what: id, next: apAnswered }; apCount++; }
+      // Recorded: the helper answers and takes the card down. A click it doesn't take (not a
+      // person's own, as it checks again) gives the buttons back after a moment.
+      for (const b of jq.querySelectorAll(".ab button")) b.disabled = true;
+      apHint(kind === "approval-allow" ? "Allowing…" : kind === "approval-deny" ? "Denying…" : terminal ? "Passing to the terminal…" : "Handing it to you…");
+      setTimeout(() => { if (apShown === id && aps.has(id)) { for (const b of jq.querySelectorAll(".ab button")) b.disabled = false; apHint(`Didn't go through: ${elsewhere}`); } }, 3000);
+    };
+    for (const b of jq.querySelectorAll(".ab button, .ab .ax")) b.addEventListener("mousedown", (e) => e.preventDefault()); // never takes focus from the page
+    jq.querySelector(".aok").addEventListener("click", answer("approval-allow"));
+    jq.querySelector(".ano").addEventListener("click", answer("approval-deny"));
+    jq.querySelector(".atm").addEventListener("click", answer("approval-terminal"));
+    jq.querySelector(".ax").addEventListener("click", (e) => { if (e.isTrusted && apShown) { apDismissed = `${apDismissed},${apShown}`.slice(-400); apOff(apShown); } });
+  }
+  function apFill(jq, id) {
+    const a = aps.get(id);
+    jq.classList.toggle("ph", apHidden);
+    const ai = jq.querySelector(".ai");
+    ai.style.background = a.color;
+    ai.textContent = (a.who.trim().charAt(0) || "A").toUpperCase();
+    jq.querySelector(".aw b").textContent = a.who;
+    jq.querySelector(".ag").textContent = a.target;
+    // Codex and other apps have no prompt of their own: the third button hands the step over.
+    jq.querySelector(".atm").textContent = a.terminal ? "Ask in the terminal" : "I'll do it myself";
+    jq.querySelector(".ax").title = a.terminal ? "Hide here (the terminal still asks)" : "Hide here (the agent waits, then hands this step to you)";
+    const r = jq.querySelector(".ar");
+    r.textContent = a.reason;
+    r.hidden = !a.reason;
+    const more = aps.size - 1;
+    const m = jq.querySelector(".am");
+    m.hidden = !more;
+    m.textContent = more ? `+${more} more waiting` : "";
+  }
+  function apOff(id) {
+    if (!aps.delete(id)) return false;
+    joinDraw();
+    return true;
+  }
+  // v: { id, who, color, target, reason, terminal } (terminal: the agent's app asks too).
+  function apOn(v) {
+    if (!/^https?:$/.test(location.protocol) || !v || typeof v !== "object") return false; // web pages only, like the bar
+    const id = String(v.id || "");
+    if (!AP_ID.test(id)) return false;
+    if (aps.has(id)) return true;
+    const wasBar = !!barHost?.isConnected;
+    ensureBar();
+    if (!wasBar) { drawBar(); placeBadge(); }
+    for (const j of joins.values()) clearTimeout(j.timer); // the join requests wait unseen: no time runs out (joinLater)
+    while (aps.size >= AP_KEEP) { const old = aps.keys().next().value; apDismissed = `${apDismissed},${old}`.slice(-400); aps.delete(old); }
+    const color = /^#[0-9a-fA-F]{6}$/.test(String(v.color || "")) ? String(v.color) : "#e9763f";
+    aps.set(id, { who: String(v.who || "Agent").slice(0, 60), color, target: String(v.target || "").slice(0, 120), reason: String(v.reason || "").slice(0, 300), terminal: typeof v.terminal === "boolean" ? v.terminal : true });
+    joinDraw();
+    return true;
+  }
+  // For the helper's tests: the approval the card shows and where its buttons are (geometry only).
+  const apState = () => {
+    const jq = bar?.querySelector(".jq");
+    if (!apShown || !jq || jq.hidden || !barHost?.isConnected) return [];
+    const a = aps.get(apShown);
+    const at = (sel) => { const b = jq.querySelector(sel).getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; };
+    return [{ id: apShown, who: a.who, target: a.target, reason: a.reason, terminalLabel: jq.querySelector(".atm").textContent, closeTitle: jq.querySelector(".ax").title, more: aps.size - 1, visible: !!joinVisible && !apHidden, allow: at(".aok"), deny: at(".ano"), terminal: at(".atm"), close: at(".ax") }];
   };
 
   // Claude's cursor: moves to where Claude clicks or types the way a hand moves a mouse (a quick
@@ -824,7 +954,14 @@
     if (kind === "tick") return { me: ptr, agent: agentPtr, view, dirty: tickFrame() };
     if (kind === "cursors") { if (document.documentElement) setPeers(String(text || "[]")); return true; }
     // Agents' screenshots never show other people's pointers: hidden while one is taken.
-    if (kind === "peers-hidden") { if (peersBox) peersBox.style.display = text ? "none" : ""; return true; }
+    if (kind === "peers-hidden") {
+      if (peersBox) peersBox.style.display = text ? "none" : "";
+      // The approval card too: an agent's screenshot never shows it.
+      apHidden = !!text;
+      const jq = bar?.querySelector(".jq");
+      if (jq) { jq.classList.toggle("ph", apHidden); const ab = jq.querySelector(".ab"); if (ab) ab.style.display = apHidden ? "none" : ""; }
+      return true;
+    }
     if (!document.documentElement) return false;
     // The agent is done here (its status says so, or it went away): its cursor goes now.
     if (kind === "cursor-off") {
@@ -877,6 +1014,10 @@
     if (kind === "join") return joinOn(text);
     if (kind === "join-off") return joinOff(String(text || ""));
     if (kind === "join-state") return joinState();
+    if (kind === "approval") return apOn(text);
+    if (kind === "approval-off") return apOff(String(text || ""));
+    if (kind === "approval-state") return apState();
+    if (kind === "approval-answers") { const a = apAnswered, d = apDismissed; apAnswered = null; apCount = 0; apDismissed = ""; return { a, ids: [...aps.keys()].join(","), dismissed: d }; }
     if (kind === "join-answers") { const a = answered, g = gone, d = dismissed; answered = null; answeredCount = 0; gone = ""; dismissed = ""; return { a, open: joins.size, ids: [...joins.keys()].join(","), gone: g, dismissed: d }; }
     if (kind === "tab-name") {
       setTabName(text);

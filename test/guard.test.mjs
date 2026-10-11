@@ -182,3 +182,119 @@ test("in bypass-permissions mode an ask becomes an allow; a deny stays", () => {
   assert.equal(forMode({ permission_mode: "default" }, ask).hookSpecificOutput.permissionDecision, "ask");
   assert.equal(forMode({}, ask).hookSpecificOutput.permissionDecision, "ask");
 });
+
+test("approvalAsk: what the browser's card says for a named click or dialog OK, else null", async () => {
+  const { approvalAsk } = await import("../scripts/guard.mjs");
+  assert.deepEqual(approvalAsk("browser_click", { element: "Pay: Place order", target: "e5" }, null, NOW), { reason: '"Pay: Place order" pays: a final action (pay)', target: "Place order" });
+  assert.equal(approvalAsk("browser_drag", { startElement: "Invoice row", endElement: "Delete: Trash", startTarget: "e1", endTarget: "e2" }, null, NOW).target, "Trash", "a drag: its classed end");
+  assert.equal(approvalAsk("browser_handle_dialog", { accept: true, element: "Delete: OK" }, null, NOW).target, "OK");
+  assert.equal(approvalAsk("mcp__plugin_pairbrowse_browser__browser_click", { element: "Send: Reply", target: "e1" }, null, NOW).target, "Reply", "the full name works too");
+  assert.equal(approvalAsk("browser_click", { element: "Pay now", target: "e1" }, null, NOW), null, "unnamed");
+  assert.equal(approvalAsk("browser_evaluate", { function: "() => 1" }, null, NOW), null);
+  assert.equal(approvalAsk("browser_file_upload", { paths: ["/etc/passwd"] }, null, NOW), null);
+  assert.equal(approvalAsk("browser_navigate", { url: "http://192.168.1.1/" }, null, NOW), null);
+  assert.equal(approvalAsk("browser_click", { element: "Publish: Submit for review", target: "e1" }, null, NOW), null, "a publish without a review is refused, not asked");
+  assert.ok(approvalAsk("browser_click", { element: "Publish: Submit for review", target: "e1" }, review(5), NOW), "with a passing review it asks");
+  assert.equal(approvalAsk("browser_handle_dialog", { accept: false, element: "Delete: OK" }, null, NOW), null);
+});
+
+test("approvalKey: the same call whatever its keys' order, another call another key", async () => {
+  const { approvalKey } = await import("../scripts/guard.mjs");
+  assert.equal(approvalKey("browser_click", { element: "Pay: x", target: "e1", modifiers: [{ b: 1, a: 2 }] }), approvalKey("mcp__plugin_pairbrowse_browser__browser_click", { modifiers: [{ a: 2, b: 1 }], target: "e1", element: "Pay: x" }));
+  assert.notEqual(approvalKey("browser_click", { element: "Pay: x", target: "e1" }), approvalKey("browser_click", { element: "Pay: x", target: "e2" }));
+  assert.notEqual(approvalKey("browser_click", { element: "Pay: x", target: "e1" }), approvalKey("browser_drop", { element: "Pay: x", target: "e1" }));
+});
+
+test("the PermissionRequest hook in a real process: the browser's answer, or nothing", async () => {
+  const { spawn } = await import("node:child_process");
+  const { mkdtempSync, mkdirSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const net = await import("node:net");
+  const { HOOK_MARK } = await import("../scripts/guard.mjs");
+  const home = mkdtempSync(join(tmpdir(), "pb-ap-"));
+  mkdirSync(join(home, "run"), { recursive: true });
+  const sockPath = join(home, "run", "browser.sock");
+  const hookFile = new URL("../scripts/guard.mjs", import.meta.url).pathname;
+  let respond = () => {};
+  const conns = [];
+  const server = net.createServer((s) => {
+    const c = { line: "", closed: false, sock: s };
+    conns.push(c);
+    s.setEncoding("utf8");
+    s.on("data", (d) => { c.line += d; if (c.line.includes("\n")) respond(s, c); });
+    s.on("close", () => { c.closed = true; });
+    s.on("error", () => {});
+  });
+  await new Promise((r) => server.listen(sockPath, r));
+  const pr = (tool, tool_input, extra = {}) => JSON.stringify({ hook_event_name: "PermissionRequest", session_id: "s", tool_name: `mcp__plugin_pairbrowse_browser__${tool}`, tool_input, permission_mode: "default", ...extra });
+  const runHook = (input, env = {}, { killAfter = 0 } = {}) => new Promise((resolve) => {
+    const started = Date.now();
+    const child = spawn(process.execPath, [hookFile], { env: { ...process.env, PAIRBROWSE_HOME: home, ...env } });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.on("exit", (code, signal) => resolve({ out, code, signal, ms: Date.now() - started }));
+    child.stdin.end(input);
+    if (killAfter) setTimeout(() => child.kill("SIGTERM"), killAfter);
+  });
+  const pay = pr("browser_click", { element: "Pay: Place order", target: "e5" });
+  try {
+    respond = (s) => s.end('{"answer":"allow"}\n');
+    let r = await runHook(pay);
+    assert.equal(r.out, '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}');
+    assert.equal(r.code, 0);
+    assert.ok(conns[0].line.startsWith(HOOK_MARK), "the hook's line starts with the mark");
+    const sent = JSON.parse(conns[0].line.trim());
+    assert.deepEqual([sent.op, sent.v, sent.tool, sent.input], ["approval", 1, "browser_click", { element: "Pay: Place order", target: "e5" }]);
+
+    respond = (s) => s.end('{"answer":"deny"}\n');
+    r = await runHook(pay);
+    assert.deepEqual(JSON.parse(r.out), { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "pairbrowse: Denied in the PairBrowse browser." } } });
+
+    for (const a of ["terminal", "withdrawn", "expired", "none", "site?"]) {
+      respond = (s) => s.end(`{"answer":"${a}"}\n`);
+      r = await runHook(pay);
+      assert.equal(r.out, "", a);
+      assert.equal(r.code, 0);
+    }
+
+    // The terminal answered no: Claude Code stops the hook, and the helper sees its socket close.
+    respond = () => {};
+    const before = conns.length;
+    r = await runHook(pay, {}, { killAfter: 400 });
+    assert.equal(r.out, "");
+    await new Promise((res) => setTimeout(res, 100));
+    assert.equal(conns.length, before + 1);
+    assert.ok(conns.at(-1).closed, "the socket closed with the hook");
+
+    // Nobody answers: nothing printed once the wait (and its margin) is up.
+    r = await runHook(pay, { PAIRBROWSE_APPROVAL_WAIT_MS: "300" });
+    assert.equal(r.out, "");
+    assert.equal(r.code, 0);
+    assert.ok(r.ms < 7000, `${r.ms} ms`);
+
+    // Asked nothing at all: no connection made.
+    const quiet = conns.length;
+    for (const input of [
+      pr("browser_click", { element: "Pay: Place order", target: "e5" }, { permission_mode: "bypassPermissions" }),
+      pr("browser_click", { element: "Pay: Place order", target: "e5" }, { agent_id: "a1", agent_type: "general-purpose" }),
+      JSON.stringify({ hook_event_name: "PermissionRequest", tool_name: "mcp__pairbrowse_browser__browser_click", tool_input: { element: "Pay: x", target: "e1" } }),
+      pr("browser_evaluate", { function: "() => 1" }),
+      pr("browser_click", { element: "Pay now", target: "e1" }),
+      '{"hook_event_name":"PermissionRequest", "tool_name": broken',
+    ]) {
+      r = await runHook(input);
+      assert.equal(r.out, "", input);
+      assert.equal(r.code, 0);
+    }
+    assert.equal(conns.length, quiet, "no socket was opened");
+  } finally {
+    await new Promise((r) => server.close(r));
+    for (const c of conns) c.sock.destroy();
+  }
+  // The helper isn't running: nothing, at once.
+  const r = await runHook(pay);
+  assert.equal(r.out, "");
+  assert.ok(r.ms < 3000, `${r.ms} ms`);
+  rmSync(home, { recursive: true, force: true });
+});

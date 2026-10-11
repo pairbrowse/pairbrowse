@@ -160,10 +160,101 @@ export function forMode(input, verdict) {
   return out("allow", `allowed without asking (bypass-permissions mode): ${String(given.permissionDecisionReason || "").replace(/^pairbrowse: /, "")}`);
 }
 
+// Approvals in two places at once (Claude Code). Claude Code shows its own prompt only after the
+// PreToolUse hook has exited, so that hook can't also wait for the browser. The same script runs as
+// its PermissionRequest hook too (hooks/hooks.json), which Claude Code starts alongside its prompt:
+// for a named click (and a named OK on a page's dialog) it asks the helper over the private socket
+// to show the ask in the browser and waits. Whichever answer comes first wins: an Allow or Deny in
+// the browser ends the prompt; a yes in the terminal sends the call, and the helper takes the card
+// down; a no in the terminal stops this hook, and the helper takes the card down when its socket
+// closes. Nothing here ever allows by mistake: any error, timeout or other answer prints nothing, and
+// the terminal's prompt stays as the only one.
+
+// The class an element starts with, as clickClass reads it, with what follows it.
+export const CLICK_PREFIX = /^[\s"'“‘([]*[A-Za-z]+\s*:\s*/;
+// The tools whose named final action can be answered in the browser as well.
+export const APPROVAL_TOOLS = new Set(["browser_click", "browser_drag", "browser_drop", "pairbrowse_click_at", "browser_handle_dialog"]);
+
+// What the browser's card says for this call ({ reason, target }), or null when it isn't a named
+// click or dialog OK the rules ask about. The reason is the rule's own (decide()), never the agent's.
+export function approvalAsk(tool, input, review = latestReview(), now = Date.now()) {
+  const name = String(tool || "").replace(BROWSER_PREFIX, "");
+  if (!APPROVAL_TOOLS.has(name) || !input || typeof input !== "object" || Array.isArray(input)) return null;
+  const verdict = decide({ tool_name: `mcp__plugin_pairbrowse_browser__${name}`, tool_input: input }, undefined, review, now).hookSpecificOutput;
+  if (verdict.permissionDecision !== "ask") return null;
+  const ends = (name === "browser_handle_dialog" ? [input.element] : [input.element, input.startElement, input.endElement]).map((e) => String(e || ""));
+  const raw = ends.find(clickClass);
+  if (!raw) return null;
+  const target = raw.replace(CLICK_PREFIX, "").trim().slice(0, 120) || raw.slice(0, 120);
+  return { reason: String(verdict.permissionDecisionReason || "").replace(/^pairbrowse: /, ""), target };
+}
+
+// The same call, however its keys are ordered: what the browser's card and the call that arrives
+// are matched by.
+export function approvalKey(tool, input) {
+  const canon = (v) => (Array.isArray(v) ? v.map(canon) : v && typeof v === "object"
+    ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
+  return JSON.stringify([String(tool || "").replace(BROWSER_PREFIX, ""), canon(input ?? null)]);
+}
+
+// The first bytes of a hook's line on the private socket (an MCP client's never start so).
+export const HOOK_MARK = '{"pairbrowse":"hook"';
+// How long an ask waits in the browser before the terminal is the only place left.
+const waitEnv = Number(process.env.PAIRBROWSE_APPROVAL_WAIT_MS);
+export const APPROVAL_WAIT_MS = Number.isFinite(waitEnv) && process.env.PAIRBROWSE_APPROVAL_WAIT_MS !== "" ? Math.min(600_000, Math.max(100, waitEnv)) : 120_000;
+
+// The PermissionRequest hook: what it prints ("" leaves the terminal's prompt to answer).
+export async function permissionRequest(input, { socketPath = paths.socket, waitMs = APPROVAL_WAIT_MS } = {}) {
+  let sock = null;
+  try {
+    const tool = String(input?.tool_name || "");
+    if (isCodexTool(tool) || !tool.startsWith("mcp__plugin_pairbrowse_browser__")) return "";
+    // Bypass mode asks nothing; a subagent's prompt waits for this hook, so it isn't asked here.
+    if (input.permission_mode === "bypassPermissions" || input.agent_id) return "";
+    const ti = input.tool_input;
+    const name = tool.replace(BROWSER_PREFIX, "");
+    if (!approvalAsk(name, ti)) return "";
+    const net = await import("node:net");
+    const { within } = await import("./util.mjs");
+    sock = net.connect(socketPath);
+    const s = sock;
+    const line = await within(waitMs + 5000, new Promise((resolve) => {
+      let buf = "";
+      s.setEncoding("utf8");
+      s.on("connect", () => s.write(`${HOOK_MARK},${JSON.stringify({ op: "approval", v: 1, tool: name, input: ti }).slice(1)}\n`));
+      s.on("data", (d) => {
+        buf += d;
+        const i = buf.indexOf("\n");
+        if (i >= 0) resolve(buf.slice(0, i));
+        else if (buf.length > 4096) resolve("");
+      });
+      s.on("error", () => resolve(""));
+      s.on("close", () => resolve(buf));
+    }));
+    let answer = "";
+    try { answer = JSON.parse(line || "null")?.answer; } catch {}
+    if (answer === "allow" || answer === "site") return JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } });
+    if (answer === "deny") return JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "pairbrowse: Denied in the PairBrowse browser." } } });
+    return "";
+  } catch {
+    return "";
+  } finally {
+    sock?.destroy();
+  }
+}
+
 if (process.argv[1]?.endsWith("guard.mjs")) {
   let raw = "";
   process.stdin.on("data", (d) => (raw += d));
   process.stdin.on("end", () => {
+    // The PermissionRequest hook: prints the browser's answer, or nothing. Never an allow on error.
+    let peek = null;
+    try { peek = JSON.parse(raw); } catch {}
+    if (peek?.hook_event_name === "PermissionRequest" || (!peek && /"hook_event_name"\s*:\s*"PermissionRequest"/.test(raw))) {
+      const done = () => process.exit(0); // within()'s timer must not keep the hook alive
+      (peek ? permissionRequest(peek) : Promise.resolve("")).catch(() => "").then((text) => (text ? process.stdout.write(text, done) : done()));
+      return;
+    }
     let input = {};
     try {
       input = JSON.parse(raw) || {};

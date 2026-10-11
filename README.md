@@ -82,7 +82,8 @@ client accounts kept apart.
 ## Safety
 
 - No debugging port: the browser is driven over a private pipe, reachable only by your user.
-- Pay, publish, delete, send and submit-for-review clicks ask you first. Payments, danger buttons
+- Pay, publish, delete, send and submit-for-review clicks ask you first; you can answer in the
+  PairBrowse window or the terminal. Payments, danger buttons
   and deletions are found from the page's structure (card fields, payment frames, danger styling,
   HTTP DELETE), not its words; Claude or Codex names the other final actions from its task.
   Ordinary steps (Continue, Save, Next) don't interrupt you, and nothing is sent to another model

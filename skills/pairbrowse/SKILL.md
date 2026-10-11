@@ -177,7 +177,8 @@ Open only the verification message: select the inbox tab, `browser_find` with a 
 - `browser_handle_dialog` with accept takes `element` the same way: "Delete: OK" right after a
   delete click (required); any other OK goes, or name its class if it commits something.
   `browser_evaluate` isn't offered. Final actions are never run in fast mode.
-- In Codex those clicks are refused with a note: badge "you", name the button and what it does,
+- In Codex those clicks wait for the user's answer in the PairBrowse window when it can ask there;
+  otherwise, or on Deny, they are refused with a note: badge "you", name the button and what it does,
   wait, and carry on from the result. Record the passing review first for submit or publish.
 
 ## CLI as the fallback

@@ -22,7 +22,9 @@ const USER_KINDS = new Set(["click", "type", "key", "wheel", "scroll", "move", "
 // restoring(): saved tabs are being reopened (their loads are nobody's). applyBar(page),
 // refreshTabs(): show who is waiting where. onPauseButton(kind): a person pressed
 // "Pause agents" or "Resume" in the page's bar ("pause" or "resume"; never page input).
-export function createPresence({ host, readEvents, pages, paused, onUsed, onStale, applyBar, refreshTabs, onPauseButton = () => {}, restoring = () => false }) {
+// onActing(on): an agent's action started with none running (true), or the last one running ended
+// (false): the live view tells the browser's own pages, so an approval card there can say so.
+export function createPresence({ host, readEvents, pages, paused, onUsed, onStale, applyBar, refreshTabs, onPauseButton = () => {}, restoring = () => false, onActing = () => {} }) {
   const humanAt = new WeakMap(); // tab -> { t, who }: the last time a person used it, and who
   // Where agents' cursors went in each tab lately ([{ x, y, w, h, t, press }], document pixels,
   // x and y the center): a press far from the agent's last target is still the agent's when its
@@ -87,13 +89,21 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
 
   // Marks an agent's action as running; call the returned function when it's done. tag "popup":
   // PairBrowse closing a late popup (it clicks, but never types in a field).
+  let actingNow = false;
+  const acting = () => {
+    const on = busy.some(([, end]) => end === Infinity);
+    if (on === actingNow) return;
+    actingNow = on;
+    try { onActing(on); } catch {}
+  };
   function busyStart(tag = "") {
     const span = [Date.now() - 50, Infinity];
     span.tag = tag;
     busy.push(span);
     if (busy.length > 50) busy.shift();
+    acting();
     // A popup's close button clicked by PairBrowse: a person's click right after it is theirs.
-    return () => { span[1] = Date.now() + (tag === "popup" ? 100 : 700); };
+    return () => { span[1] = Date.now() + (tag === "popup" ? 100 : 700); acting(); };
   }
   const byAgent = (t, after = 0) => busy.some(([start, end]) => t >= start && t <= end + after);
   // Keys at time t could be an agent's: one of its actions then types (fills, presses keys).

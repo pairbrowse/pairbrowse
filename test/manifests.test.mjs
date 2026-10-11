@@ -32,3 +32,16 @@ test("the Codex plugin's files exist and its servers are the ones the hooks and 
   assert.ok(isCodexTool("mcp__pairbrowse_browser__browser_click"));
   assert.ok(!isCodexTool("mcp__plugin_pairbrowse_browser__browser_click"));
 });
+
+test("the PermissionRequest hook (asking in the browser and the terminal at once) is Claude Code's only", () => {
+  const entry = json("hooks/hooks.json").hooks.PermissionRequest?.[0];
+  assert.ok(entry, "a PermissionRequest entry");
+  const matcher = new RegExp(`^(${entry.matcher})$`);
+  assert.ok(matcher.test("mcp__plugin_pairbrowse_browser__browser_click"));
+  assert.ok(!matcher.test("mcp__pairbrowse_browser__browser_click"), "Codex's names never run it");
+  assert.ok(!matcher.test("mcp__browser__browser_click"), "another app's browser server isn't PairBrowse's");
+  assert.ok(!matcher.test("mcp__plugin_pairbrowse_runs__run_save"), "the runs server asks nothing");
+  const hook = entry.hooks[0];
+  assert.match(hook.command, /scripts\/guard\.mjs/);
+  assert.ok(Number(hook.timeout) > 120, "its timeout outlasts the browser's wait");
+});

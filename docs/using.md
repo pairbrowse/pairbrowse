@@ -68,6 +68,23 @@ session profile: close the PairBrowse window or switch session. The timeline (on
 many pictures it keeps, 1 to 200) is changed there too, and applies at once. See
 [Configuration](configuration.md).
 
+## Approvals in the browser and the terminal
+
+A named final click (pay, delete, publish, send, submit, or a named OK on a page's dialog) asks you
+in two places at once in Claude Code: the terminal's usual prompt, and a card in the PairBrowse
+window: "Claude Code wants to click", the button as the agent described it, the rule's reason,
+**Allow**, **Deny** and **Ask in the terminal**. Answer either one; the other goes away. The card
+shows on the agent's own tab when that tab is in front (never while other people are in the
+session or watching through a link, and never in an agent's screenshot), or in the browser's
+approval page. × hides it in the page; the terminal still asks. With no answer in the browser in
+2 minutes, the terminal's prompt is the only one left. Subagents and bypass-permissions mode work
+as before. In Codex there is no terminal prompt, so the card's third button is **I'll do it
+myself**: the click waits for the card, Allow lets it go on, and Deny, I'll do it myself or no
+answer in 2 minutes hands the step to you, as before. If the card goes (× or the page moves on)
+and the browser's approval page isn't open, the step is handed to you at once. The card in the
+page takes mouse clicks only; answer from the keyboard in the terminal (Claude Code) or the
+browser's approval page.
+
 ## Fast mode and playbooks
 
 Claude can send a whole page, or a whole flow, as one `pairbrowse_run` call: go, fill, tick, choose,

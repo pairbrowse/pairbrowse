@@ -21,6 +21,7 @@
 //   output.mjs    password masking and long snapshots in results
 //   screenshot.mjs  the screenshots in results, and clicking on them
 //   serve.mjs     one connected agent: the rules before each call, the notes after
+//   approvals.mjs a named final click asked in the browser as well (the card, the hook's line)
 import net from "node:net";
 import { createRequire } from "node:module";
 import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
@@ -32,7 +33,7 @@ import { createFollow } from "./daemon/follow.mjs";
 import { createFacts } from "./facts.mjs";
 import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
 import { cleanName, displayName } from "./join.mjs";
-import { currentAccount } from "./util.mjs";
+import { currentAccount, within } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
@@ -63,6 +64,7 @@ import { createCobrowse } from "./daemon/cobrowse.mjs";
 import { shareFields, shareableUrl, crossingText, onSecretDomain, personColor } from "./tabsync.mjs";
 import { createSession, readEntries, readMessage } from "./daemon/session.mjs";
 import { createJoinPrompt } from "./daemon/joinprompt.mjs";
+import { createClickApprovals, routeConnection } from "./daemon/approvals.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
 const { createConnection } = require("@playwright/mcp");
@@ -164,6 +166,7 @@ const presence = createPresence({
   host: HOST, readEvents: (frame, waitMs) => hud.call(frame, String(waitMs), "user-wait"), pages: () => context.openPages(), paused: () => context.isSwitching(),
   onUsed: (page) => context.touch(page), onStale: bumpRevision, applyBar: hud.applyBar, refreshTabs, restoring: () => context.isRestoring(),
   onPauseButton: (kind) => pressPause(kind === "pause"),
+  onActing: (on) => liveView()?.setDriving?.(on),
 });
 const popups = createPopups({
   log,
@@ -384,6 +387,9 @@ const sharing = createSharing({
       },
     },
     status: () => hud.badge(), session: () => context.sessionInfo(), collaboration: () => collaboration.state(),
+    // Named final clicks asked in the browser (owner only). Declared further down: read when the
+    // live view starts, after startup.
+    get clickApprovals() { return clickApprovals; },
     picker: { state: () => context.pickerState(), pick: (op) => pickFromBrowser(op), open: () => context.reopenPicker() },
     // A join code's address the person hasn't allowed: their answer from the side panel or picker.
     joinHost: { state: () => follow.hostState(), act: (op) => hostDecision(op) },
@@ -412,20 +418,27 @@ async function hostDecision(op) {
 // A join request: the bottom bar in the host's tab in front asks (Allow / Deny) while the browser
 // has the focus, else a notification with Allow / Deny (daemon/joinprompt.mjs).
 let testFocus = null; // tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): true or false in place of the browser's own
+// The tab in front in the host's browser, or null when it can't be told.
+async function frontPage() {
+  const page = await tabOrder.front().catch(() => null);
+  if (page) return page;
+  const pages = (await context.openPages()).filter((p) => !p.isClosed());
+  return pages.length === 1 ? pages[0] : null; // the side panel couldn't say: only when there's no doubt
+}
 const joinPrompt = createJoinPrompt({
   approvals: sharing.approvals, log, show: hud.call, byPerson: presence.byPerson,
   notify: panel.notifyJoin, clear: panel.clearJoin,
   focused: async () => (testFocus !== null ? testFocus : tabOrder.focused()),
-  front: async () => {
-    const page = await tabOrder.front().catch(() => null);
-    if (page) return page;
-    const pages = (await context.openPages()).filter((p) => !p.isClosed());
-    return pages.length === 1 ? pages[0] : null; // the side panel couldn't say: only when there's no doubt
-  },
+  front: frontPage,
 });
-// Who used each session, for the session picker: joiners the host let in.
+// A named final click asked in the browser as well as in the agent's app (daemon/approvals.mjs).
+const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, mask: output.mask, log });
+// Who used each session, for the session picker: joiners the host let in. A joiner let in also
+// takes any approval card in the page down at once (approvals.mjs cover).
 sharing.approvals.onChange(() => {
-  for (const e of sharing.approvals.list()) if (e.state === "approved") context.recordPerson({ who: e.name, app: e.app, computer: e.computer, kind: "guest" });
+  let approved = false;
+  for (const e of sharing.approvals.list()) if (e.state === "approved") { approved = true; context.recordPerson({ who: e.name, app: e.app, computer: e.computer, kind: "guest" }); }
+  if (approved) clickApprovals.cover();
 });
 // The person's pick in the session picker (the browser's first tab, see context.mjs). Joining
 // takes the same code checks as pairbrowse_join, and the host still has to let them in.
@@ -482,7 +495,7 @@ const journal = createJournal({ session: () => context.sessionName(), openPages:
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline,
+  secrets, facts, sharing, follow, pause, remoteHolder, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals,
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {
@@ -522,6 +535,38 @@ const serve = createServe({
     } } : {}),
     // Tests only (PAIRBROWSE_TEST_SCREEN=1): the shared browser picture page here, as a person
     // would use it (its state, its place among the tabs, keys typed on it, its address bar).
+    // Tests only (PAIRBROWSE_TEST_APPROVAL=1): the approval card in each tab, clicks on it as a
+    // person, an agent, a joiner, the live view or a page script would make them, the pointer moved
+    // away, and the approvals waiting.
+    ...(process.env.PAIRBROWSE_TEST_APPROVAL === "1" ? { pairbrowse_test_approval: async (args = {}) => {
+      // Every await on a page is bounded (a page whose scripts never pause answers nothing): no
+      // answer in time is said as such rather than holding the call.
+      const silent = { text: "no answer from the page", error: true };
+      const state = (p) => within(2000, Promise.resolve(hud.call(p, "", "approval-state")).catch(() => []));
+      const pages = (await context.openPages()).filter((p) => !p.isClosed());
+      if (args.pending) return { text: JSON.stringify(clickApprovals.pending()) };
+      if (args.move) {
+        const p = await within(3000, frontPage().catch(() => null));
+        if (p && (await within(2000, p.mouse.move(5, 5).then(() => true, () => true))) === null) return silent;
+        return { text: "moved" };
+      }
+      if (!args.click) return { text: JSON.stringify(await Promise.all(pages.map(async (p) => ({ url: p.url(), rows: (await state(p)) || [] })))) };
+      const page = await within(3000, frontPage().catch(() => null));
+      if (!page) return { text: "no card", error: true };
+      const rows = await state(page);
+      if (rows === null) return silent;
+      const row = (rows || [])[0];
+      if (!row || !row[args.click]) return { text: "no card", error: true };
+      const { x, y } = row[args.click];
+      if (args.as === "page") {
+        const ok = await within(2000, page.evaluate(([cx, cy]) => { const el = document.elementFromPoint(cx, cy); for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) el?.dispatchEvent(new MouseEvent(type, { bubbles: true, composed: true, detail: 1, clientX: cx, clientY: cy })); }, [x, y]).then(() => true, () => true));
+        return ok === null ? silent : { text: "page clicked" };
+      }
+      const done = args.as === "agent" ? presence.busyStart() : args.as === "joiner" ? presence.remoteStart("Eve") : args.as === "liveview" ? presence.replayStart() : () => {};
+      let ok;
+      try { ok = await within(3000, page.mouse.click(x, y).then(() => true, () => true)); } finally { done(); }
+      return ok === null ? silent : { text: "clicked" };
+    } } : {}),
     ...(process.env.PAIRBROWSE_TEST_SCREEN === "1" ? { pairbrowse_test_screen: async (args = {}) => { const { expr, type, choose } = args;
       // at: a picture page by its place among the tabs (list gives them); else the first one.
       const all = (await context.getContext()).pages();
@@ -592,7 +637,11 @@ async function main() {
     rmSync(paths.socket, { force: true });
   }
   context.startUp();
-  socketServer = net.createServer((sock) => shuttingDown ? sock.destroy() : serve(sock).catch((e) => { log("session error", e?.stack || e); sock.destroy(); }));
+  // An agent's connection, or a PairBrowse hook's single line (an approval asked in the browser).
+  socketServer = net.createServer((sock) => shuttingDown ? sock.destroy() : routeConnection(sock, {
+    onHook: (s, line) => clickApprovals.hook(s, line).catch((e) => { log("approval hook", e?.message || e); s.destroy(); }),
+    onOther: (s) => serve(s).catch((e) => { log("session error", e?.stack || e); s.destroy(); }),
+  }));
   socketServer.listen(paths.socket, () => log(`listening on ${paths.socket}`));
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => shutdown(0));
   // A promise nobody caught (a page that closed under a background read, a joiner's channel

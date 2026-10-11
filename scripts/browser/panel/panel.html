@@ -12,7 +12,19 @@
     <img src="logo.svg" alt="" width="22" height="22">
     <h1>PairBrowse</h1>
     <span class="where pill" id="where" hidden></span>
+    <button class="mini share-btn" id="share-btn" type="button" aria-expanded="false" aria-controls="share-card">Share</button>
     <ul class="avatars" id="avatars" aria-label="In this session"></ul>
+    <div class="share-card" id="share-card" role="dialog" aria-labelledby="share-title" hidden>
+      <h2 id="share-title">Share this session</h2>
+      <fieldset class="share-choice"><legend>Invite</legend>
+        <label class="share-opt"><input type="radio" name="share" value="code" checked><span>Join code<small>Shared browser, can drive</small></span></label>
+        <label class="share-opt"><input type="radio" name="share" value="link"><span>Watch link<small>View only</small></span></label>
+      </fieldset>
+      <label class="share-name" id="share-name-row" hidden>Your first name <input class="field" id="share-name" maxlength="40" autocomplete="given-name"></label>
+      <button class="primary" id="share-make" type="button">Make invite</button>
+      <div class="share-result" id="share-result" hidden><div class="share-line"><input class="field share-code" id="share-code" readonly aria-label="The invite"><button class="mini" id="share-copy" type="button">Copy</button></div><p class="note" id="share-rights"></p></div>
+      <p class="msg" id="share-msg" role="status" aria-live="polite"></p>
+    </div>
   </header>
 
   <section class="status" aria-live="polite">
@@ -26,6 +38,8 @@
       <div class="driver" id="driver"><span id="driver-text">Waiting for PairBrowse</span></div>
       <p class="agent-status" id="agent-status" hidden><span class="k">Status</span> <span id="agent-status-text"></span></p>
       <p class="agent-tab" id="agent-tab" hidden></p>
+      <button class="more" id="agent-more" type="button" aria-expanded="false" aria-controls="checklist">Checklist</button>
+      <div class="checklist" id="checklist" hidden><ol id="checklist-items" aria-live="polite" aria-label="Checklist from the goal log"></ol></div>
       <div class="pause" id="pause" hidden><span id="pause-text">Agents can act in the browser</span><button id="pause-btn" type="button">Pause agents</button></div>
     </article>
   </section>

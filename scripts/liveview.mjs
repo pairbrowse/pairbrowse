@@ -91,11 +91,12 @@ async function release(cdp) {
 // hand (agents here wait, as for a person here; changed: they navigated, opened or closed it).
 // onJoinerActivity(page, text, who, from): their agent acted there.
 // journal(): the goal log for the Timeline (journal.mjs read), or null.
+// makeInvite(choice): the Share card's invite (sharing.mjs createInvite), or null.
 // shared: the rest of what shared tabs carry (see sharedDefaults): form values, their agents'
 // sparks, tab order and pointers.
 export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
-  onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null }) {
+  onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
@@ -588,6 +589,19 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     // The Timeline: the goal log's lines (journal.mjs read, masked again there), read when the
     // owner opens it or presses Refresh; null while no run is open.
     { method: "GET", path: "journal.json", right: "journal", handler: ({ res }) => journal ? json(res, 200, journal() ?? null) : plain(res, 404) },
+    // The Share card (the side panel, the live view toolbar): the owner makes a join code or a
+    // watch link with a real click, through the helper's own invite code. The code or link is in
+    // this answer only: never broadcast, logged or kept in state.json.
+    { method: "POST", path: "invite", right: "invite", handler: async ({ req, res }) => {
+      if (!makeInvite) return plain(res, 404);
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const op = JSON.parse(body);
+      if (!op || typeof op !== "object" || Array.isArray(op)) return json(res, 409, { error: "Choose a join code or a watch link." });
+      const { share, role, name, label, hours } = op;
+      const r = await makeInvite({ share, role, name, label, hours });
+      json(res, r?.error ? 409 : 200, r);
+    } },
     // The session picker (an extension page, with the owner's key from the side panel's memory):
     // the saved sessions, and the person's pick. picker: { state(), pick(op) } from the helper.
     { method: "GET", path: "sessions.json", right: "session", handler: ({ res }) => picker ? json(res, 200, picker.state()) : plain(res, 404) },

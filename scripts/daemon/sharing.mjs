@@ -241,7 +241,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       tunnelHost: () => pool.map((t) => new URL(t.url).hostname),
       relays: () => pool.map((t) => t.url),
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
-      onPause: view.onPause, pauseState: view.pauseState, onRecord: view.onRecord, recordState: view.recordState, picker: view.picker, joinHost: view.joinHost, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel, journal: view.journal,
+      onPause: view.onPause, pauseState: view.pauseState, onRecord: view.onRecord, recordState: view.recordState, picker: view.picker, joinHost: view.joinHost, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel, journal: view.journal, makeInvite: inviteFromPanel,
     });
     await restoring;
     // Keep the sharing tunnel's port when the live view restarts with the browser.
@@ -321,8 +321,18 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       return stopped ? { text: `Stopped sharing localhost:${args.port}. Joiners' tabs on it stop loading.` } : fail(`localhost:${args.port} isn't shared. Use list to see what is.`);
     }
     if (action !== "create") return fail("Use create, list, approve, deny, revoke, revoke_all, share_port or unshare_port.");
+    const r = await createInvite(args, who);
+    return r.error ? fail(r.text) : { text: r.text };
+  }
+
+  // pairbrowse_invite create, and the Share card (the side panel, the live view): one way to make
+  // an invite. Returns { error: true, text, needName? } when refused, or { text, invite, code |
+  // link, rights, hint } (text: what the tool says; hint: the line after the code or link).
+  // _who: who asks (the tool's app or "the side panel"; nothing it says depends on it yet).
+  async function createInvite(args, _who) {
+    const fail = (text) => ({ text, error: true });
     // Your name, as joiners see it (in the join code): asked once, then remembered.
-    if (!cleanName(args.name, "") && !savedName(config)) return fail("Not yet: ask the user what name the people they invite should see (their first name, say), then call create again with name. It's remembered for next time.");
+    if (!cleanName(args.name, "") && !savedName(config)) return { ...fail("Not yet: ask the user what name the people they invite should see (their first name, say), then call create again with name. It's remembered for next time."), needName: true };
     if (cleanName(args.name, "") && !savedName(config)) { try { saveParticipantName(config, cleanName(args.name)); } catch {} }
     const hostName = cleanName(args.name, "") || codeLabel(true);
     const share = args.share || (inviteBase ? "link" : "code");
@@ -342,6 +352,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       : invite.role === "drive"
         ? "They can watch, click, type and switch tabs in the browser, but not see remembered details or passwords."
         : "They can watch the page, tabs and activity, but not click, type or see remembered details or passwords.";
+    let code = "", link = "";
     const lines = [`Invite ${invite.id} for ${invite.label} (${invite.role}), until ${formatTime(invite.expiresAt)}. ${rights}`];
     if (share === "code") {
       // A pinned guest port taken by another program: the user's tunnel would reach the wrong
@@ -355,24 +366,39 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
         invites.revoke(invite.id);
         return fail(`Sharing couldn't start: ${e?.message || e}. Nothing was shared.`);
       }
-      lines.push(`Join code: ${encodeJoinCode({ url: t.url, key: invite.key, role: invite.role, mode: invite.mode, label: hostName === "The host" ? "" : hostName })}`);
+      code = encodeJoinCode({ url: t.url, key: invite.key, role: invite.role, mode: invite.mode, label: hostName === "The host" ? "" : hostName });
+      lines.push(`Join code: ${code}`);
       lines.push(`The person pastes it into their own PairBrowse ("join this session: <code>"). You approve them when they ask: "<their name> wants to join" shows in the side panel, and in the bar at the bottom of your tab or a notification (Allow / Deny), and here.` +
         (own
           ? ` It goes through ${via()}; their PairBrowse shows them ${t.host} and asks before joining through it (Allow once or Always allow, in their side panel or session picker). ${tunnelSpec.stable ? "It keeps working through a restart of PairBrowse (the connection comes back on the same address and they reconnect by themselves)" : "The address changes when the connection restarts (give ngrok a reserved domain to keep it): then list shows the new code"} and ends when you close the browser window, revoke it, or it expires.`
           : " It goes through a free relay (no account, no uptime guarantee); it keeps working through a restart of PairBrowse (they reconnect by themselves) and ends when you close the browser window, revoke it, or it expires."));
     } else if (inviteBase) {
-      lines.push(`Link: ${inviteBase}/${invite.key}/`);
+      link = `${inviteBase}/${invite.key}/`;
+      lines.push(`Link: ${link}`);
       lines.push(`It works for people who can reach ${new URL(inviteBase).host} (for example, on the user's tailnet), once that name forwards to 127.0.0.1:${port}.`);
       if (!config.liveViewPort) lines.push(`Note: the live view port (${port}) changes when the browser restarts. Set a fixed liveViewPort in ~/.pairbrowse/config.json so the forwarding keeps working.`);
     } else {
-      lines.push(`Link: http://127.0.0.1:${port}/${invite.key}/`);
+      link = `http://127.0.0.1:${port}/${invite.key}/`;
+      lines.push(`Link: ${link}`);
       lines.push(`It is a local address. The person first runs, on their own computer: ssh -N -L ${port}:127.0.0.1:${port} <their usual ssh login to this computer>`);
       lines.push("Then they open the link in their browser.");
       if (!config.liveViewPort) lines.push(`Note: the port (${port}) changes when the browser restarts. Set a fixed liveViewPort in ~/.pairbrowse/config.json so the tunnel command stays the same.`);
     }
     if (inviteProblems.length) lines.push(`Config problems: ${inviteProblems.join(" ")}`);
     lines.push(`Give the ${share === "code" ? "code" : "link"} to the user to send; don't paste it into any web page. Revoke it with pairbrowse_invite revoke when they're done.`);
-    return { text: lines.join("\n") };
+    const text = lines.join("\n");
+    const { id, label, role, mode, expiresAt } = invite;
+    return { text, invite: { id, label, role, share, mode, expiresAt }, ...(code ? { code } : { link }), rights, hint: lines[2] || "" };
+  }
+
+  // The Share card's two choices: a join code (shared browser, can drive) or a watch link. The
+  // click in the owner's own panel is the OK a drive invite needs. Nothing of the answer is logged.
+  async function inviteFromPanel(body = {}) {
+    const choice = body.share === "link" ? { share: "link", role: "watch" } : body.share === "code" ? { share: "code", role: "drive", mode: "shared" } : null;
+    if (!choice) return { error: "Choose a join code or a watch link." };
+    const r = await createInvite({ action: "create", ...choice, ...(typeof body.name === "string" && body.name ? { name: body.name } : {}) }, "the side panel");
+    if (r.error) return { error: r.text, ...(r.needName ? { needName: true } : {}) };
+    return { ok: true, ...r.invite, ...(r.code ? { code: r.code } : { link: r.link }), rights: r.rights, hint: r.hint };
   }
 
   // Dev servers in the owner's side panel: agents' questions (Yes / No), what's shared, and the

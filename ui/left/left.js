@@ -3,15 +3,15 @@
 // the helper's layout, tabs and agent-tabs events do. Both read the helper's stream for the
 // agents (board), the activity, who it is shared with and the session. The page only reflects
 // the dock's state: it sets it only from Tools (the right dock opens), from Activity in the rail
-// and from the collapse and expand buttons. Nothing here is invented: every row and figure is what the helper or
-// the browser reported.
-import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock } from "../common.js";
+// and from the collapse and expand buttons. Nothing here is invented: every row is what the helper or
+// the browser reported. Storage is PairBrowse Pro's (its cloud storage): no row until then (see
+// the comment in index.html), whatever the session event carries.
+import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock, shareCard } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
 const DOCK = ["hidden", "rail", "open"]; // DockState order
 const DRIVING_MS = 8000; // "working" for this long after an agent's last action (the panel's)
 const ACTIVITY_SHOWN = 12;
-const GUIDE = 10 * 1024 ** 3; // the soft 10 GB guide for the profile's size on disk
 const SVG = "http://www.w3.org/2000/svg";
 
 let layout = null; // the last LayoutState (native) or { left, right, strip } (served)
@@ -169,22 +169,8 @@ function drawGuests() {
     li.dataset.state = "online";
     return li;
   }));
-  $("shared").hidden = byName.size === 0;
-}
-
-// ---- storage: the profile's size on disk, only when the helper reports it ----
-const fmt = (b) => (b < 1024 ** 3 ? `${Math.round(b / 1024 ** 2)} MB` : `${(b / 1024 ** 3).toFixed(1)} GB`);
-function drawStorage() {
-  const bytes = Number(session?.diskBytes);
-  const row = $("storage");
-  if (session?.diskBytes == null || !Number.isInteger(bytes) || bytes < 0) { row.hidden = true; return; }
-  $("storage-text").textContent = `${fmt(bytes)} / 10 GB`;
-  $("storage-fill").style.width = `${Math.round(Math.min(100, (bytes / GUIDE) * 100) * 100) / 100}%`;
-  const bar = $("storage-bar");
-  bar.setAttribute("aria-valuenow", String(Math.min(bytes, GUIDE)));
-  bar.setAttribute("aria-valuetext", bytes > GUIDE ? `${fmt(bytes)}, over the 10 GB guide` : `${fmt(bytes)} of a 10 GB guide`);
-  bar.dataset.over = String(bytes > GUIDE);
-  row.hidden = false;
+  // The section stays (its "+" is how you share): a line says so while nobody has joined.
+  $("guests-empty").hidden = byName.size > 0;
 }
 
 // ---- actions ----
@@ -307,7 +293,7 @@ function connect(url) {
     $("conn").hidden = false;
     $("conn").textContent = closed ? "PairBrowse is closed" : "Reconnecting to PairBrowse…";
   };
-  on("session", (s) => { session = s && typeof s === "object" ? s : null; railTitles(); drawStorage(); });
+  on("session", (s) => { session = s && typeof s === "object" ? s : null; railTitles(); });
   on("collaboration", (c) => { guests = Array.isArray(c?.guests) ? c.guests : []; drawGuests(); });
   on("activity", (list) => {
     activity = Array.isArray(list) ? list.filter((a) => a && Number.isFinite(a.t)) : [];
@@ -345,6 +331,8 @@ $("nav-history").addEventListener("click", openHistory);
 $("nav-activity").addEventListener("click", toggleActivity);
 $("nav-tools").addEventListener("click", openTools);
 $("add-agent").addEventListener("click", toggleHint);
+// Share: a join code or a watch link, made here with a person's click (the helper's own invite).
+shareCard({ btn: $("share-add"), card: $("share-card"), base: () => base });
 $("settings").addEventListener("click", openSettings);
 const askLeft = (state) => { focusAfter = state; if (!askDock({ pb, layout, base, side: "left", state, onFail: () => { focusAfter = ""; } })) focusAfter = ""; };
 $("dock-collapse").addEventListener("click", () => askLeft("rail"));
@@ -358,4 +346,3 @@ drawCount();
 drawNav();
 drawAgents();
 drawGuests();
-drawStorage();

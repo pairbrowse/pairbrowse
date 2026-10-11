@@ -10,6 +10,8 @@ import { inPage as inFrame } from "./live.mjs";
 const ROW = { width: 1536, height: 44 };
 const TALL = { width: 1536, height: 480 };
 const ACCENT = "rgb(50, 133, 246)";
+// A 1x1 PNG, a favicon the page may show under its CSP.
+const FAVICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 // Three of the picker's sessions (test/ui-picker.test.mjs STATE), a session already open.
 const SWITCHER_SESSIONS = { picking: false, sessions: [
   { name: "work", tabs: 3, sites: ["shop.example", "docs.example"], current: true,
@@ -43,7 +45,8 @@ const tabInfo = (id) => {
   const cs = getComputedStyle(close);
   return {
     left: r.left, right: r.right, width: r.width, height: r.height, selected: li.getAttribute("aria-selected"), tabindex: li.getAttribute("tabindex"),
-    label: li.getAttribute("aria-label"), bg: s.backgroundColor, color: s.color, rtl: s.borderTopLeftRadius, rtr: s.borderTopRightRadius,
+    label: li.getAttribute("aria-label"), bg: s.backgroundColor, image: s.backgroundImage, color: s.color, rtl: s.borderTopLeftRadius, rtr: s.borderTopRightRadius,
+    top: r.top, bottom: r.bottom, borderTop: s.borderTopWidth,
     closeShown: cs.display !== "none", closeTabindex: close.getAttribute("tabindex"), closeLeft: close.getBoundingClientRect().left,
   };
 };
@@ -59,7 +62,8 @@ describe("renders the tab list, its states and the drag region", () => pageTest(
   assert.deepEqual(await inPage(order), [11, 12, 13]);
   const [a, b, c] = [await inPage(tabInfo, 11), await inPage(tabInfo, 12), await inPage(tabInfo, 13)];
   for (const t of [a, b, c]) {
-    assert.equal(t.height, 44);
+    assert.equal(t.height, 40, "40 px tall");
+    assert.equal(t.bottom, 44, "on the row's bottom edge");
     assert.ok(t.width >= 160 && t.width <= 240, `width ${t.width}`);
   }
   assert.equal(Math.round(b.left - a.right), 8);
@@ -67,12 +71,26 @@ describe("renders the tab list, its states and the drag region", () => pageTest(
   assert.equal(a.selected, "true");
   assert.equal(a.tabindex, "0");
   assert.equal(a.bg, "rgb(16, 29, 45)");
+  assert.match(a.image, /linear-gradient/, "the active tab's light");
   assert.equal(a.rtl, "10px");
   assert.equal(a.rtr, "10px");
-  for (const t of [b, c]) { assert.equal(t.tabindex, "-1"); assert.equal(t.color, "rgb(162, 178, 198)"); assert.equal(t.selected, "false"); }
+  for (const t of [b, c]) {
+    assert.equal(t.tabindex, "-1"); assert.equal(t.color, "rgb(162, 178, 198)"); assert.equal(t.selected, "false");
+    assert.equal(t.bg, "rgb(14, 24, 38)", "an inactive tab's own surface (--tab-idle)");
+    assert.equal(t.rtl, "10px"); assert.equal(t.rtr, "10px");
+    assert.equal(t.borderTop, "1px");
+  }
   await page.hover('#tabs li[data-id="12"]');
   await page.waitForTimeout(250);
-  assert.equal((await inPage(tabInfo, 12)).bg, "rgb(36, 55, 80)");
+  const hovered = (await inPage(tabInfo, 12)).bg;
+  assert.equal(hovered, "rgb(25, 42, 61)", "hover is --elevated");
+  assert.notEqual(hovered, "rgb(36, 55, 80)");
+  // the active tab's feet: 10 px curves carrying its edge into the row's bottom line
+  const feet = await inPage(() => {
+    const li = document.querySelector('#tabs li[aria-selected="true"]');
+    return ["::before", "::after"].map((p) => { const s = getComputedStyle(li, p); return { w: s.width, image: s.backgroundImage }; });
+  });
+  for (const f of feet) { assert.equal(f.w, "10px"); assert.match(f.image, /radial-gradient/); }
   // the drag region
   const regions = await inPage(() => {
     const r = (el) => getComputedStyle(el).getPropertyValue("-webkit-app-region");
@@ -121,8 +139,8 @@ describe("agent dot, loading ring, close buttons and the pinned tab", () => page
   const a = await inPage(tabInfo, 11), b = await inPage(tabInfo, 12);
   assert.equal(a.closeShown, true);
   assert.equal(a.closeTabindex, "0");
-  assert.equal(b.closeShown, false);
-  assert.equal(b.closeTabindex, "-1");
+  assert.equal(b.closeShown, true, "the close shows on every unpinned tab");
+  assert.equal(b.closeTabindex, "-1", "Tab still reaches only the active tab's close");
   await shim.change({ id: 13, pinned: true });
   await until("tab 13 pinned", () => document.querySelector('#tabs li[data-id="13"]').classList.contains("pinned"));
   const p = await inPage(tabInfo, 13);
@@ -130,6 +148,19 @@ describe("agent dot, loading ring, close buttons and the pinned tab", () => page
   assert.equal(p.closeShown, false);
   assert.match(p.label, /, pinned$/);
   assert.equal(await inPage(() => getComputedStyle(document.querySelector('#tabs li[data-id="13"] .title')).display), "none");
+
+  // the icon tile: a favicon on a white 22 px tile, the globe on --elevated
+  await shim.change({ id: 12, favicon: FAVICON, defaultFavicon: false });
+  await until("tab 12's favicon", () => !!document.querySelector('#tabs li[data-id="12"] .icon img'));
+  const tile = (id) => {
+    const icon = document.querySelector(`#tabs li[data-id="${id}"] .icon`);
+    const r = icon.getBoundingClientRect(), img = icon.querySelector("img");
+    return { w: r.width, h: r.height, bg: getComputedStyle(icon).backgroundColor, radius: getComputedStyle(icon).borderTopLeftRadius, img: img ? [img.getBoundingClientRect().width, img.getBoundingClientRect().height] : null };
+  };
+  assert.deepEqual(await inPage(tile, 12), { w: 22, h: 22, bg: "rgb(255, 255, 255)", radius: "6px", img: [16, 16] });
+  const generic = await inPage(tile, 11);
+  assert.equal(generic.bg, "rgb(25, 42, 61)", "the globe sits on --elevated");
+  assert.equal(generic.img, null);
 }));
 
 describe("close and new tab", () => pageTest("strip", { viewport: ROW }, async ({ page, shim, inPage, until }) => {
@@ -248,6 +279,18 @@ describe("the pill: Local, Live session, Reconnecting", () => pageTest("strip", 
   assert.equal(p.text, "Live session");
   assert.equal(p.dot, "rgb(32, 201, 151)");
   assert.deepEqual(p.anims, [["dot live", 2000]]);
+  // the live pill's static light: a green-tinted edge and a soft halo on the dot
+  const lit = await inPage(() => {
+    const probe = document.createElement("i");
+    probe.style.borderColor = "var(--ok-edge)";
+    document.body.append(probe);
+    const want = getComputedStyle(probe).borderTopColor;
+    probe.remove();
+    const pill = document.getElementById("pill");
+    return { border: getComputedStyle(pill).borderTopColor, want, dotShadow: getComputedStyle(pill.querySelector(".dot")).boxShadow };
+  });
+  assert.equal(lit.border, lit.want, "the pill's border is --ok-edge");
+  assert.match(lit.dotShadow, /rgba?\(32, 201, 151/);
   for (const s of helper.streams) s.res.destroy();
   await until("reconnecting", () => document.getElementById("pill-text").textContent === "Reconnecting to PairBrowse");
   p = await inPage(pill);

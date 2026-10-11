@@ -50,16 +50,25 @@
     <p class="conn" id="conn" role="status" aria-live="polite">Connecting to PairBrowse…</p>
     <ul class="people" id="agents" role="list"></ul>
   </section>
-  <section class="sec" id="shared" aria-labelledby="shared-h" hidden>
-    <h2 id="shared-h">Shared with</h2>
+  <section class="sec" id="shared" aria-labelledby="shared-h">
+    <div class="sec-head"><h2 id="shared-h">Shared with</h2><button class="add" id="share-add" type="button" aria-label="Share this session" aria-expanded="false" aria-controls="share-card"><svg aria-hidden="true"><use href="#i-plus"/></svg></button></div>
+    <div class="share-card" id="share-card" role="dialog" aria-labelledby="share-title" hidden>
+      <h2 id="share-title">Share this session</h2>
+      <fieldset class="share-choice"><legend>Invite</legend>
+        <label class="share-opt"><input type="radio" name="share" value="code" checked><span>Join code<small>Shared browser, can drive</small></span></label>
+        <label class="share-opt"><input type="radio" name="share" value="link"><span>Watch link<small>View only</small></span></label>
+      </fieldset>
+      <label class="share-name" id="share-name-row" hidden>Your first name <input class="field" id="share-name" maxlength="40" autocomplete="given-name"></label>
+      <button class="primary" id="share-make" type="button">Make invite</button>
+      <div class="share-result" id="share-result" hidden><div class="share-line"><input class="field share-code" id="share-code" readonly aria-label="The invite"><button class="mini" id="share-copy" type="button">Copy</button></div><p class="note" id="share-rights"></p></div>
+      <p class="msg" id="share-msg" role="status" aria-live="polite"></p>
+    </div>
+    <p class="empty-note" id="guests-empty">Not shared yet</p>
     <ul class="people" id="guests" role="list"></ul>
   </section>
 </main>
 <footer class="foot">
-  <div class="storage" id="storage" hidden>
-    <div class="storage-line"><span class="storage-k" id="storage-k">Storage</span><span class="storage-v" id="storage-text"></span></div>
-    <div class="bar" id="storage-bar" role="meter" aria-labelledby="storage-k" aria-valuemin="0" aria-valuemax="10737418240"><i id="storage-fill"></i></div>
-  </div>
+  <!-- Storage returns with PairBrowse Pro (its cloud storage, api.pairbrowse.com); until then the helper sends no figure and nothing shows here. -->
   <button class="gear" id="settings" type="button" aria-label="Settings" title="Settings"><svg aria-hidden="true"><use href="#i-gear"/></svg></button>
 </footer>
 <script type="module" src="left.js"></script>

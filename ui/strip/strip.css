@@ -1,6 +1,7 @@
 /* The browser build's top strip (DESIGN.md B2): the 44 px tab row, the nav fragments beside the
    native address bar, and the popovers alone for the shell's bubbles. Colors from tokens.css only;
-   participant and agent colors arrive as inline backgrounds from strip.js. */
+   participant and agent colors arrive as inline backgrounds from strip.js. The light is static (the
+   sheet's gradient, edge and glow tokens): never animated, never a backdrop-filter. */
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; }
@@ -20,22 +21,32 @@ body[data-platform="mac"] .row { padding-left: 80px; } /* the traffic lights */
 #switch .chevron { width: 12px; height: 12px; color: var(--ink-2); }
 #switch:hover, #switch[aria-expanded="true"] { background: var(--hover); }
 
-#tabs { display: flex; flex: 1 1 auto; gap: 8px; min-width: 0; margin: 0; padding: 0; list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-#tabs li { display: flex; align-items: center; gap: 8px; flex: 1 1 240px; min-width: 160px; max-width: 240px; height: 44px; padding: 0 10px 0 12px; border-radius: 10px 10px 0 0; color: var(--ink-2); cursor: default; user-select: none; transition: background-color 120ms, color 120ms; }
-#tabs li[aria-selected="true"] { background: var(--chrome); color: var(--ink); border: 1px solid var(--edge); border-bottom: 0; }
-#tabs li:not([aria-selected="true"]):hover { background: var(--hover); }
+/* The tabs sit on the row's bottom edge, 40 px tall; the padding keeps the active tab's feet unclipped. */
+#tabs { display: flex; align-items: flex-end; flex: 1 1 auto; gap: 8px; min-width: 0; margin: 0 -10px; padding: 0 10px; list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#tabs li { position: relative; display: flex; align-items: center; gap: 8px; flex: 1 1 240px; min-width: 160px; max-width: 240px; height: 40px; padding: 0 10px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color 120ms, color 120ms; }
+#tabs li:not([aria-selected="true"]):hover { background-color: var(--elevated); }
+/* The active tab: lit at the top, fading into the nav row's --chrome, an accent top edge with a soft
+   glow above it, and two curved feet that carry its edge into the row's bottom line. */
+#tabs li[aria-selected="true"] { z-index: 1; background-color: var(--chrome); background-image: linear-gradient(180deg, var(--tab-top), var(--chrome)); color: var(--ink); border-color: var(--edge-lit); border-top-color: var(--edge-accent); box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-top); }
+#tabs li[aria-selected="true"]::before, #tabs li[aria-selected="true"]::after { content: ""; position: absolute; bottom: 0; width: 10px; height: 10px; pointer-events: none; }
+#tabs li[aria-selected="true"]::before { left: -11px; background: radial-gradient(circle at 0 0, transparent 9.5px, var(--edge-lit) 10px, var(--chrome) 11px); }
+#tabs li[aria-selected="true"]::after { right: -11px; background: radial-gradient(circle at 100% 0, transparent 9.5px, var(--edge-lit) 10px, var(--chrome) 11px); }
 #tabs li.pinned { flex: 0 0 40px; min-width: 40px; max-width: 40px; padding: 0; justify-content: center; }
-#tabs .icon { display: grid; place-items: center; width: 16px; height: 16px; flex: none; }
+/* The icon tile: a favicon on white (as the site drew it), the globe on --elevated, the ring bare. */
+#tabs .icon { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 6px; }
+#tabs .icon[data-key^="img:"] { background: #fff; }
+#tabs .icon[data-key="generic"] { background: var(--elevated); }
+#tabs .icon[data-key="ring"] { background: none; }
 #tabs .icon img { display: block; width: 16px; height: 16px; }
 #tabs .icon .generic { width: 16px; height: 16px; color: var(--ink-2); }
 #tabs .ring { display: block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; }
 #tabs .title { flex: 1; min-width: 0; font-size: var(--fs-3); font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #tabs li.pinned .title { display: none; }
 #tabs .agent { flex: none; width: 7px; height: 7px; margin-right: -4px; border-radius: 50%; } /* 8 px gap - 4 = 4 px left of the close */
-#tabs .close { display: none; place-items: center; flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
+/* The close shows on every tab but a pinned one; Tab reaches the active tab's alone. */
+#tabs .close { display: grid; place-items: center; flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
 #tabs .close svg { width: 12px; height: 12px; }
 #tabs .close:hover { background: var(--hover); color: var(--ink); }
-#tabs li[aria-selected="true"] .close, #tabs li:hover .close, #tabs li:focus-within .close { display: grid; }
 #tabs li.pinned .close { display: none; }
 /* Drag to reorder: the siblings slide in 160 ms; the dragged tab follows the pointer. */
 body[data-dragging] #tabs li { transition: background-color 120ms, color 120ms, transform var(--t); }
@@ -50,7 +61,8 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 #pill { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--edge); border-radius: 999px; background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; }
 #pill .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
 #pill[data-state="local"] .dot { background: var(--muted); }
-#pill[data-state="live"] .dot { background: var(--ok); }
+#pill[data-state="live"] { background-color: var(--ok-soft); border-color: var(--ok-edge); }
+#pill[data-state="live"] .dot { background: var(--ok); box-shadow: var(--glow-ok); }
 #pill[data-state="live"] .live { animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.35; } }
 
@@ -62,7 +74,7 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 .avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input), 0 0 0 1.5px var(--bg); }
 .avatar.more { background: var(--elevated); color: var(--ink-2); }
 
-#share-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--edge); border-radius: var(--r-2); background: transparent; color: var(--ink); font-size: var(--fs-3); font-weight: 500; cursor: default; transition: background-color 120ms; }
+#share-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--edge-lit); border-radius: var(--r-2); background: transparent; box-shadow: inset 0 1px 0 var(--edge-light); color: var(--ink); font-size: var(--fs-3); font-weight: 500; cursor: default; transition: background-color 120ms; }
 #share-btn svg { width: 14px; height: 14px; }
 #share-btn:hover, #share-btn[aria-expanded="true"] { background: var(--hover); }
 #menu-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
@@ -72,12 +84,12 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 /* ---- popovers: under the row (a taller host), or alone in a bubble (#switcher, #share, #menu) ---- */
 .pop { animation: fade var(--t); }
 @keyframes fade { from { opacity: 0; } }
-#switcher { position: absolute; top: 44px; left: 12px; z-index: 3; width: 360px; height: 560px; border-radius: var(--r-3); background: var(--elevated); box-shadow: 0 0 0 1px var(--edge); overflow: hidden; }
+#switcher { position: absolute; top: 44px; left: 12px; z-index: 3; width: 360px; height: 560px; border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); overflow: hidden; }
 body[data-platform="mac"] #switcher { left: 80px; }
 #picker { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
 
 /* The Share card (DESIGN.md B8, the side panel's markup and styles). */
-.share-card { position: absolute; top: 44px; right: 12px; z-index: 3; width: 320px; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); color: var(--ink); line-height: 1.45; }
+.share-card { position: absolute; top: 44px; right: 12px; z-index: 3; width: 320px; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); line-height: 1.45; }
 .share-card h2 { margin: 0; font-size: 14px; font-weight: var(--fw-name); }
 .share-choice { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .share-choice legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-1); font-weight: var(--fw-name); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -90,7 +102,7 @@ body[data-platform="mac"] #switcher { left: 80px; }
 .field { width: 100%; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
 .field:focus { border-color: var(--accent); }
 .share-card .share-code { font-family: var(--mono); }
-.primary { justify-self: start; height: 30px; padding: 0 14px; border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font-weight: 650; cursor: default; }
+.primary { justify-self: start; height: 30px; padding: 0 14px; border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font-weight: 650; cursor: default; box-shadow: var(--glow-accent); }
 .primary:hover { background: var(--accent-ink); }
 .primary:disabled { opacity: 0.6; }
 .mini { height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: var(--fw-name); cursor: default; transition: background-color 120ms, color 120ms; }
@@ -102,7 +114,7 @@ body[data-platform="mac"] #switcher { left: 80px; }
 .msg[data-kind="error"] { color: var(--bad); }
 .msg[data-kind="ok"] { color: var(--ok); }
 
-#menu { position: absolute; top: 44px; right: 12px; z-index: 3; min-width: 200px; display: grid; padding: 6px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); }
+#menu { position: absolute; top: 44px; right: 12px; z-index: 3; min-width: 200px; display: grid; padding: 6px; border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); }
 #menu .item { display: flex; align-items: center; gap: 12px; width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); font-size: var(--fs-3); text-align: left; cursor: default; transition: background-color 120ms; }
 #menu .item:hover:not(:disabled), #menu .item:focus { background: var(--hover); }
 #menu .item:disabled { color: var(--muted); }
@@ -127,7 +139,10 @@ body[data-mode="switcher"] #switcher { height: 100vh; }
 body[data-mode="share"] #share-card { max-width: 320px; }
 body[data-mode="menu"] #menu { max-width: 280px; }
 
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-#tabs li:focus-visible, #menu .item:focus-visible { outline-offset: -2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+#tabs li:focus-visible, #menu .item:focus-visible { outline-offset: -2px; box-shadow: var(--glow-focus); }
+/* Focus keeps an element's own light first, then the halo. */
+#tabs li[aria-selected="true"]:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-top), var(--glow-focus); }
+#share-btn:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-focus); }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

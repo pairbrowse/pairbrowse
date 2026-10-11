@@ -30,6 +30,8 @@ const quiet = (p) => p.kind === "agent" && !p.where && !p.tab && !p.task && (!p.
 const asleep = () => document.hidden || document.documentElement.dataset.dock === "hidden";
 // The checklist's re-read and the recording clock draw only in a pane: a rail shows none.
 const unseen = () => asleep() || document.documentElement.dataset.dock === "rail";
+// The agent card is on screen: the page and the dock shown, open (not a rail), on the Agent tab.
+const agentShown = () => !unseen() && document.body.dataset.tab === "agent";
 const post = (route, body) => fetch(base + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 // ---- tabs: Agent, Page, Pictures, Tools (roving tabindex; arrows, Home and End move it) ----
@@ -48,6 +50,9 @@ function selectTab(name) {
     if (btn.dataset.tab === name) btn.setAttribute("aria-current", "true"); else btn.removeAttribute("aria-current");
   }
   countRequests();
+  // The goal log is read only while the Agent tab is in front: another tab drops its pending read.
+  if (name === "agent") { if (checklistStale) scheduleChecklist(); }
+  else { clearTimeout(checklistTimer); checklistTimer = 0; checklistPending = false; }
   if (name === "pictures") showPictures();
 }
 for (const t of TABS) $(`tab-${t}`).addEventListener("click", () => selectTab(t));
@@ -180,11 +185,13 @@ $("agent-fold").addEventListener("click", () => {
 });
 
 // The agent card's Checklist: the goal log (the same journal.json as the live view's Timeline),
-// read when opened and again while actions come in, at most once per CHECKLIST_MS through one
-// pending timeout; nothing at all while folded. The same read gives the current task (the run's
-// name) and when the run was last saved.
+// read once when the Agent tab is shown and again while actions come in, at most once per
+// CHECKLIST_MS through one pending timeout; nothing at all while another tab is in front, the
+// page or the dock is hidden, or the dock is a rail. The same read gives the current task (the
+// run's name) and when the run was last saved. Shown again (the tab, the page or the dock), it
+// reads only when actions came in since the last read (stale). The chevron only folds the steps.
 const CHECKLIST_MS = 5000;
-let checklistOpen = false, checklistBusy = false, checklistPending = false, checklistAt = 0, checklistTimer = 0;
+let checklistOpen = true, checklistBusy = false, checklistPending = false, checklistAt = 0, checklistTimer = 0, checklistStale = true;
 // The list itself isn't a live region (it is rebuilt on every refresh while the agent drives):
 // readers hear one line with the counts, only when the counts change.
 let checklistSaid = "";
@@ -195,14 +202,16 @@ const drawChecklist = (items) => {
   if (line !== checklistSaid) { checklistSaid = line; $("checklist-said").textContent = line; }
 };
 async function loadChecklist() {
-  if (!checklistOpen) return;
+  if (!agentShown()) return;
   if (!base) return drawChecklist([el("li", { className: "empty", textContent: "Waiting for PairBrowse." })]);
   if (checklistBusy) { checklistPending = true; return; }
   checklistBusy = true;
+  checklistStale = false;
   checklistAt = Date.now();
   const r = await fetch(base + "journal.json", { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.json() : Promise.reject(x.status))).catch(() => undefined);
   checklistBusy = false;
-  if (!checklistOpen) return;
+  // Not reached: the next show of the Agent tab, page or dock reads once more.
+  if (r === undefined) checklistStale = true;
   drawChecklist(r === undefined ? [el("li", { className: "empty", textContent: "Couldn't reach PairBrowse." })] : checklistItems(r, { driving: document.body.dataset.driving === "true" }));
   if (r && typeof r === "object") {
     $("task").hidden = !r.name;
@@ -214,12 +223,11 @@ async function loadChecklist() {
   if (checklistPending) { checklistPending = false; scheduleChecklist(); }
 }
 function scheduleChecklist() {
-  if (!checklistOpen || checklistTimer || unseen()) return;
+  if (checklistTimer || !agentShown()) return;
   checklistTimer = setTimeout(() => { checklistTimer = 0; loadChecklist(); }, Math.max(0, checklistAt + CHECKLIST_MS - Date.now()));
 }
 // The newest done row is "current" only while the agent drives: re-marked here, no fetch.
 function markCurrent() {
-  if (!checklistOpen) return;
   const rows = $("checklist-items").querySelectorAll('li[data-state="done"], li[data-state="current"]');
   if (rows.length) checkState(rows[rows.length - 1], document.body.dataset.driving === "true" ? "current" : "done");
 }
@@ -227,10 +235,78 @@ $("agent-more").addEventListener("click", () => {
   checklistOpen = !checklistOpen;
   $("agent-more").setAttribute("aria-expanded", String(checklistOpen));
   $("checklist").hidden = !checklistOpen;
-  if (checklistOpen) return loadChecklist();
-  clearTimeout(checklistTimer);
-  checklistTimer = 0;
-  checklistPending = false;
+});
+
+// The session card's Save and rename: shown only when the helper's session event says canSave or
+// canRename; a 404 from the route hides the button again for this helper. A person's click or
+// key press only: a synthetic event saves and renames nothing.
+let canSave = false, canRename = false, editing = false, renaming = false;
+const sessionSay = (text, kind = "") => { $("session-msg").textContent = text; $("session-msg").dataset.kind = kind; };
+function drawSessionTools() {
+  $("session-save").hidden = !canSave;
+  $("session-rename").hidden = !canRename || editing;
+}
+function editName(open, refocus = false) {
+  editing = open;
+  const input = $("session-name-input");
+  input.hidden = !open;
+  $("session-line").hidden = open || !lastSession?.name;
+  drawSessionTools();
+  if (open) { input.value = $("session-name").textContent; input.focus(); input.select(); }
+  else if (refocus && !$("session-rename").hidden) $("session-rename").focus();
+}
+function forgetSessionTools() {
+  canSave = false; canRename = false;
+  if (editing) editName(false);
+  drawSessionTools();
+  sessionSay("");
+}
+$("session-save").addEventListener("click", async (ev) => {
+  if (!ev.isTrusted || !base || !canSave) return;
+  sessionSay("");
+  const res = await post("session", { op: "save" }).catch(() => null);
+  if (res?.status === 404) {
+    const had = document.activeElement === $("session-save");
+    canSave = false;
+    drawSessionTools();
+    if (had) $("share-btn").focus();
+    return;
+  }
+  const r = res ? await res.json().catch(() => null) : null;
+  if (!r?.ok) return sessionSay(r?.error || "Couldn't reach PairBrowse.", "error");
+  const when = typeof r.savedAt === "string" ? ago(r.savedAt) : "";
+  if (when) { $("session-saved").hidden = false; $("session-saved").textContent = `Saved ${when}`; } else sessionSay("Saved.", "ok");
+});
+$("session-rename").addEventListener("click", () => { if (canRename) editName(true); });
+$("session-name-input").addEventListener("keydown", async (ev) => {
+  if (ev.key === "Escape") { ev.preventDefault(); return editName(false, true); }
+  if (ev.key !== "Enter" || !ev.isTrusted || renaming) return;
+  ev.preventDefault();
+  const name = ev.target.value.trim();
+  if (!name || !base) return editName(false, true);
+  renaming = true;
+  sessionSay("");
+  const res = await post("session", { op: "rename", name }).catch(() => null);
+  renaming = false;
+  if (res?.status === 404) {
+    const had = [$("session-name-input"), $("session-rename")].includes(document.activeElement);
+    canRename = false;
+    editName(false);
+    if (had) $("share-btn").focus();
+    return;
+  }
+  const r = res ? await res.json().catch(() => null) : null;
+  if (!r?.ok) return sessionSay(r?.error || "Couldn't reach PairBrowse.", "error");
+  if (typeof r.name === "string") $("session-name").textContent = r.name;
+  editName(false, true);
+});
+$("session-name-input").addEventListener("blur", () => { if (editing && !renaming) editName(false); });
+$("session-fold").addEventListener("click", () => {
+  const fold = !$("session-actions").hidden;
+  $("session-actions").hidden = fold;
+  if (fold) endAsk(false, false);
+  $("session-fold").setAttribute("aria-expanded", String(!fold));
+  $("session-fold").setAttribute("aria-label", fold ? "Show the session buttons" : "Hide the session buttons");
 });
 
 // The state line, in words and a dot: only what the stream said.
@@ -242,7 +318,7 @@ function setDriver() {
   const [text, state] = s === "closed" ? ["The browser is closed. It reopens on Claude's next action.", "closed"]
     : s === "connecting" ? ["Waiting for PairBrowse", "connecting"]
     : turn ? ["Waiting for you", "you"]
-    : paused ? ["Paused", "paused"]
+    : paused ? [pauseInfo?.by ? `Paused by ${pauseInfo.by}` : "Paused", "paused"]
     : driving ? ["Working…", "working"]
     : ["Idle", "idle"];
   $("driver-text").textContent = text;
@@ -325,12 +401,20 @@ function drawPeople() {
     face.removeAttribute("role");
     face.removeAttribute("aria-label");
     face.setAttribute("aria-hidden", "true");
-    const where = [p.where ? `${p.where}'s browser` : "this browser", p.tab].filter(Boolean).join(" · ");
+    // Two lines: the name, then the state in words with what it does, its tab and whose browser.
+    const word = STATES[p.status] || "idle";
+    const rest = [p.task, p.tab, p.where ? `${p.where}'s browser` : ""].filter(Boolean).join(" · ");
+    const st = el("small", { className: "st", title: rest ? `${word} · ${rest}` : word }, el("span", { className: "state", textContent: word }), ...(rest ? [document.createTextNode(` · ${rest}`)] : []));
     const lines = [p.task, p.last].filter(Boolean);
     const acts = el("div", { className: "acts", id: `acts-${i}` }, ...lines.map((t) => el("small", { textContent: t })));
     acts.hidden = !openRows.has(p.who);
-    const kids = [face, el("strong", { textContent: name, title: p.who }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])),
-      el("small", {}, el("span", { className: "state", textContent: STATES[p.status] || "idle" }), document.createTextNode(` · ${where}`)), acts];
+    const kids = [face, el("strong", { className: "name", textContent: name, title: p.who }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])), st];
+    if (p.kind === "agent" && perAgent) {
+      const stop = el("button", { className: "pause-one", type: "button", textContent: "Pause this agent" });
+      // A person's click or key press: a synthetic event pauses nothing.
+      stop.addEventListener("click", (ev) => { if (ev.isTrusted && base) post("pause", { paused: true, who: p.who }).catch(() => {}); });
+      kids.push(stop);
+    }
     if (lines.length) {
       const chev = el("button", { className: "chev", type: "button" });
       chev.setAttribute("aria-expanded", String(!acts.hidden));
@@ -343,13 +427,10 @@ function drawPeople() {
       });
       kids.push(chev);
     }
-    if (p.kind === "agent" && perAgent) {
-      const stop = el("button", { className: "pause-one", type: "button", textContent: "Pause this agent" });
-      // A person's click or key press: a synthetic event pauses nothing.
-      stop.addEventListener("click", (ev) => { if (ev.isTrusted && base) post("pause", { paused: true, who: p.who }).catch(() => {}); });
-      kids.push(stop);
-    }
-    return el("li", {}, ...kids);
+    kids.push(acts);
+    const li = el("li", {}, ...kids);
+    li.dataset.state = p.status || "idle";
+    return li;
   }), ...(idle ? [el("li", { className: "idle" }, el("small", { textContent: `+ ${idle} idle agent${idle === 1 ? "" : "s"} in this browser` }))] : []));
 }
 
@@ -423,12 +504,12 @@ function forgetPictures() {
 
 function connect(url) {
   if (!url || url === base) return;
-  if (base) forgetPictures();
+  if (base) { forgetPictures(); forgetSessionTools(); }
   base = url;
   es?.close();
   es = new EventSource(base + (pb ? "events?panel=1&page=right" : "events?panel=1"));
   const on = (event, fn) => es.addEventListener(event, (e) => fn(JSON.parse(e.data)));
-  es.onopen = () => { document.body.dataset.s = "live"; setDriver(); profile.load(); if (document.body.dataset.tab === "pictures") showPictures(); };
+  es.onopen = () => { document.body.dataset.s = "live"; setDriver(); profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); };
   es.onerror = () => { document.body.dataset.s = es.readyState === EventSource.CLOSED ? "closed" : "connecting"; setDriver(); };
   on("status", (s) => {
     document.body.dataset.turn = String(s.kind === "you" && !!s.text);
@@ -436,10 +517,14 @@ function connect(url) {
     setDriver();
   });
   on("session", (s) => {
+    // Save and rename only when this helper says it has them (lane H's routes); never probed.
+    canSave = s?.canSave === true;
+    canRename = s?.canRename === true;
+    drawSessionTools();
     if (!s.name) return;
     lastSession = s;
     $("session-name").textContent = s.name;
-    $("session-line").hidden = false;
+    $("session-line").hidden = editing;
     $("session-card").dataset.clean = String(!!s.temporary);
     $("session-card").title = `${s.where} · ${s.name}`;
     drawHeader();
@@ -464,7 +549,8 @@ function connect(url) {
     drawAgent();
     // The list changes only when the active agent does.
     if (activeEntry() !== was) drawPeople();
-    if (checklistOpen) scheduleChecklist();
+    checklistStale = true;
+    scheduleChecklist();
   });
   // A shared session: everyone in it, both browsers, and what they said to each other (shown
   // only; a message is information, never something the page acts on).
@@ -485,7 +571,8 @@ function connect(url) {
     document.body.dataset.paused = String(paused);
     $("pause").hidden = false;
     $("pause-btn").hidden = !p?.can;
-    $("pause-btn").textContent = paused ? "Resume" : "Pause agents";
+    $("pause-btn").textContent = paused ? "Resume" : "Pause";
+    $("pause-btn").setAttribute("aria-label", paused ? "Resume agents" : "Pause agents");
     $("pause-text").replaceChildren(...(paused ? [document.createTextNode("Paused by "), el("b", { textContent: p.by || "someone" })] : [document.createTextNode("Agents can act in the browser")]));
     setDriver();
     drawPeople();
@@ -537,7 +624,7 @@ function wakeTimers() {
   if (unseen()) return;
   setDriver();
   if (Date.now() - lastActivity < DRIVING_MS) armDrive();
-  if (checklistOpen) scheduleChecklist();
+  if (checklistStale) scheduleChecklist();
   if (recording) drawRecord();
   if (document.body.dataset.tab === "pictures") showPictures();
 }

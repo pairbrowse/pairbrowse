@@ -4,7 +4,7 @@
 // WCAG AA contrast for the text colors in both schemes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -39,8 +39,13 @@ const lum = (hex) => {
 const contrast = (a, b) => { const [x, y] = [lum(norm(a)), lum(norm(b))].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
 
 const REQUIRED = ["bg", "chrome", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "accent", "accent-ink", "accent-soft",
-  "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t"];
+  "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t",
+  "tab-idle", "tab-top", "edge-light", "edge-lit", "edge-accent", "surface-grad", "shadow-raised", "glow-soft", "glow-accent", "glow-top",
+  "glow-ok", "glow-bad", "glow-focus", "ok-soft", "ok-edge", "bad-soft"];
 const PAGES = ["right/right.css", "picker/picker.css", "newtab/newtab.css", "screen/screen.css", "settings/settings.css"].map((x) => UI + x).concat("scripts/liveview.css");
+// Every page sheet under ui/ (strip, docks, timeline, approve and the rest) plus the live view's.
+const ALL_CSS = readdirSync(root + UI, { withFileTypes: true }).filter((d) => d.isDirectory())
+  .flatMap((d) => readdirSync(root + UI + d.name).filter((f) => f.endsWith(".css")).map((f) => `${UI}${d.name}/${f}`)).concat("scripts/liveview.css");
 
 test("the sheet has every token, dark by default and light only for the live view", () => {
   for (const k of REQUIRED) assert.ok(dark[k], `--${k}`);
@@ -100,9 +105,41 @@ test("every literal color in the styled files is a sheet value, a participant co
 });
 
 test("every token in the sheet is read by a page", () => {
-  const css = PAGES.map(read).join("\n");
+  const css = ALL_CSS.map(read).join("\n");
   for (const k of Object.keys(dark)) assert.match(css, new RegExp(`var\\(--${k}\\b`), `--${k} is used`);
   for (const f of PAGES) assert.doesNotMatch(read(f), /font(-size)?:[^;]*\b1[123]px/, `${f}: type sizes come from --fs-1..3`);
+});
+
+// rgb(r g b / a) over an opaque "#rrggbb" -> "#rrggbb".
+function over(fg, alpha, bg) {
+  const f = norm(fg), b = norm(bg);
+  return "#" + [1, 3, 5].map((i) => Math.round(parseInt(f.slice(i, i + 2), 16) * alpha + parseInt(b.slice(i, i + 2), 16) * (1 - alpha)).toString(16).padStart(2, "0")).join("");
+}
+const alphaOf = (c) => { const m = String(c).match(/\/\s*([\d.]+)\s*\)$/); return m ? Number(m[1]) : 1; };
+const colorsIn = (v) => [...String(v).matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g)].map(([m]) => m);
+
+test("the static light keeps text at AA", () => {
+  const t = dark;
+  const stops = colorsIn(t["surface-grad"]);
+  assert.ok(stops.length >= 2, "--surface-grad has stops");
+  for (const c of stops) assert.match(c, /^rgb\(0 0 0 \/ [\d.]+\)$/, `--surface-grad stop ${c} only darkens`);
+  for (const bg of ["tab-idle", "tab-top"]) for (const fg of ["ink", "ink-2"]) {
+    const r = contrast(t[fg], t[bg]);
+    assert.ok(r >= 4.5, `--${fg} on --${bg} is ${r.toFixed(2)}:1`);
+  }
+  const pairs = [["bad", "bad-soft", "chrome"], ["ink", "ok-soft", "bg"], ["ink", "accent-soft", "sidebar"], ["accent-ink", "accent-soft", "sidebar"]];
+  for (const [fg, tint, bg] of pairs) {
+    const c = colorsIn(t[tint])[0];
+    const r = contrast(t[fg], over(c, alphaOf(c), t[bg]));
+    assert.ok(r >= 4.5, `--${fg} on --${tint} over --${bg} is ${r.toFixed(2)}:1`);
+  }
+  const sheetColors = new Set(["#ffffff", "#000000"]);
+  for (const v of Object.values(t)) { const n = norm(v); if (n) sheetColors.add(n); }
+  for (const k of Object.keys(t).filter((k) => /^(glow|shadow|edge)-/.test(k) && k !== "edge-input")) {
+    const cs = colorsIn(t[k]);
+    assert.ok(cs.length > 0, `--${k} has a color`);
+    for (const c of cs) assert.ok(sheetColors.has(norm(c)), `--${k}: ${c} is a sheet color, white or black`);
+  }
 });
 
 test("a joiner's picture page keeps its muted text at AA on the pill, even over a white page", () => {

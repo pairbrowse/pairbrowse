@@ -74,7 +74,9 @@
     "session": {
       "name": "Checkout test",
       "where": "Local",
-      "temporary": false
+      "temporary": false,
+      "canSave": true,
+      "canRename": true
     },
     "pause": {
       "paused": false,

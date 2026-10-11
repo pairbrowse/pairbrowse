@@ -55,5 +55,6 @@ body { font: 500 var(--fs-3)/1.4 system-ui, -apple-system, "Segoe UI", sans-seri
 #sound, #pick button { transition: background-color 120ms ease-out, color 120ms ease-out; }
 #sound:hover, #pick button:hover { background: var(--accent-ink); }
 #pick button.ghost:hover { background: var(--hover); color: var(--ink); }
-#sound:focus-visible, #pick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#sound:focus-visible, #pick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+#sound:focus-visible { box-shadow: 0 4px 16px rgba(0, 0, 0, .3), var(--glow-focus); } /* its own shadow first */
 @media (prefers-reduced-motion: reduce) { #top.on .live { animation: none; } .p, #top, #status, #who, #sound, #pick button { transition: none; } }

@@ -1,13 +1,16 @@
-/* The session timeline (DESIGN.md B7): a 130 px strip of the pictures sent to the agent, oldest
-   left, newest right, then the Add note card. Colors are the sheet's tokens only. */
+/* The session timeline (DESIGN.md B7): a 130 px strip of the pictures sent to the agent, the
+   current picture first, then the history oldest to newest, then the Add note card. Colors are the
+   sheet's tokens only; the light is static (gradient, edge, glow), never animated. */
 body { margin: 0; height: 130px; overflow: hidden; background: var(--bg); color: var(--ink); font: var(--fs-3)/1.3 var(--sans); }
 .strip { box-sizing: border-box; height: 130px; padding: 20px 16px; display: flex; gap: 12px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scroll-behavior: auto; }
 .cards { display: flex; gap: 12px; margin: 0; padding: 0; list-style: none; }
 .cards[hidden] { display: none; }
 
-.card { position: relative; flex: none; width: 120px; height: 90px; box-sizing: border-box; padding: 0; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--chrome); color: var(--ink); cursor: pointer; transition: background 120ms, border-color 120ms; }
-.card:hover { background: var(--hover); }
-.card:has(.face[aria-current="true"]) { box-shadow: 0 0 0 2px var(--accent); }
+.card { position: relative; flex: none; width: 120px; height: 90px; box-sizing: border-box; padding: 0; border: 1px solid var(--edge-lit); border-radius: var(--r-2); background-color: var(--chrome); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light); color: var(--ink); cursor: pointer; transition: background-color 120ms, border-color 120ms; }
+.card:hover { background-color: var(--hover); }
+/* The current picture: a 2 px ring, always; a soft accent glow while the agent drives. */
+.card:has(.face[aria-current="true"]) { box-shadow: inset 0 1px 0 var(--edge-light), 0 0 0 2px var(--accent); }
+body[data-driving="true"] .card:has(.face[aria-current="true"]) { box-shadow: inset 0 1px 0 var(--edge-light), 0 0 0 2px var(--accent), var(--glow-accent); }
 /* The card's face is the button that shows the picture; the More button sits beside it. */
 .face { display: block; box-sizing: border-box; width: 100%; height: 100%; margin: 0; padding: 2px 7px 1px; border: 0; border-radius: 7px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .thumb { display: block; box-sizing: border-box; width: 104px; height: 60px; margin: 0; border-radius: var(--r-1); background: var(--elevated); object-fit: cover; }
@@ -16,19 +19,20 @@ body { margin: 0; height: 130px; overflow: hidden; background: var(--bg); color:
 .note-text { padding: 0; border: 6px solid transparent; overflow: hidden; font-size: 11px; line-height: 12px; color: var(--ink); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow-wrap: anywhere; }
 .time { display: block; margin-top: 1px; font-size: var(--fs-1); line-height: 12px; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cap { display: block; font-size: var(--fs-1); line-height: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pin-chip { position: absolute; top: 8px; left: 12px; height: 16px; box-sizing: border-box; padding: 0 5px; border: 1px solid var(--edge); border-radius: 999px; background: var(--elevated); font-size: var(--fs-1); line-height: 14px; color: var(--ink-2); }
+.pin-chip { position: absolute; top: 7px; right: 12px; height: 16px; box-sizing: border-box; padding: 0 5px; border: 1px solid var(--edge); border-radius: 999px; background: var(--elevated); font-size: var(--fs-1); line-height: 14px; color: var(--ink-2); transition: right 120ms; }
 .pin-chip[hidden] { display: none; }
-.live-pill { position: absolute; top: 8px; right: 12px; height: 18px; box-sizing: border-box; padding: 0 7px; border: 1px solid var(--edge); border-radius: 999px; background: var(--elevated); font-size: var(--fs-1); line-height: 16px; font-weight: 500; color: var(--ink); transition: right 120ms; }
+/* "● Live" at the thumbnail's top-left while the agent drives (red: a live picture). */
+.live-pill { position: absolute; top: 7px; left: 12px; right: auto; height: 18px; box-sizing: border-box; padding: 0 7px; border: 1px solid var(--edge); border-radius: 999px; background-color: var(--bg); font-size: var(--fs-1); line-height: 16px; font-weight: 500; color: var(--ink); }
 .live-pill[hidden] { display: none; }
-.live { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: var(--ok); vertical-align: 1px; animation: pulse 2s ease-in-out infinite; }
+.live { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: var(--bad); vertical-align: 1px; animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
 .more { position: absolute; top: 6px; right: 8px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--r-1); background: var(--elevated); color: var(--ink); font: var(--fs-3)/20px var(--sans); cursor: pointer; opacity: 0; transition: opacity 120ms; }
 .card:hover .more, .card:focus-within .more, .card:has(.more[aria-expanded="true"]) .more { opacity: 1; }
-/* While the More button shows, the Live pill steps left of it. */
-.card:hover .live-pill, .card:focus-within .live-pill, .card:has(.more[aria-expanded="true"]) .live-pill { right: 32px; }
+/* While the More button shows, the Pinned chip steps left of it. */
+.card:hover .pin-chip, .card:focus-within .pin-chip, .card:has(.more[aria-expanded="true"]) .pin-chip { right: 32px; }
 
 .card.add[hidden] { display: none; }
-.card.add { display: flex; align-items: center; justify-content: center; padding: 0; border: 1px dashed var(--edge-input); background: none; cursor: default; }
+.card.add { display: flex; align-items: center; justify-content: center; padding: 0; border: 1px dashed var(--edge-input); background: none; box-shadow: none; cursor: default; }
 .card.add button { width: 100%; height: 100%; border: 0; border-radius: var(--r-2); background: none; color: var(--ink-2); font: 500 var(--fs-2)/1.2 var(--sans); cursor: pointer; }
 .card.add button:hover { color: var(--ink); }
 .card.add button[hidden] { display: none; }
@@ -42,7 +46,7 @@ body { margin: 0; height: 130px; overflow: hidden; background: var(--bg); color:
 .field::placeholder { color: var(--muted); }
 .hint { display: block; margin-top: 4px; font-size: var(--fs-1); line-height: 13px; color: var(--ink-2); }
 
-.menu { position: absolute; z-index: 2; box-sizing: border-box; min-width: 140px; padding: 4px; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); box-shadow: 0 12px 32px rgb(0 0 0 / .4); opacity: 1; transition: opacity var(--t), display var(--t) allow-discrete; }
+.menu { position: absolute; z-index: 2; box-sizing: border-box; min-width: 140px; padding: 4px; border: 1px solid var(--edge); border-radius: var(--r-2); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); opacity: 1; transition: opacity var(--t), display var(--t) allow-discrete; }
 .menu[hidden] { opacity: 0; display: none; }
 @starting-style { .menu:not([hidden]) { opacity: 0; } }
 .menu button { display: block; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-1); background: none; color: var(--ink); font: var(--fs-3) var(--sans); text-align: left; cursor: pointer; }
@@ -59,7 +63,7 @@ body { margin: 0; height: 130px; overflow: hidden; background: var(--bg); color:
 .line small:empty { display: none; }
 .sr { position: absolute; top: 0; left: 0; margin: 0; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 .card:has(.face:focus-visible) { box-shadow: none; }
 
 @media (prefers-reduced-motion: reduce) {

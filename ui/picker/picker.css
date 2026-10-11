@@ -43,7 +43,7 @@ h2 { margin: 16px 0 8px; font-size: var(--fs-1); font-weight: 650; color: var(--
 .sessions .text strong { grid-column: 2; grid-row: 1; }
 .sessions .text small { grid-column: 2; grid-row: 2; }
 .choice:hover, details.choice[open] { background: var(--hover); border-color: var(--edge); }
-.choice:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.choice:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 .choice + .choice { margin-top: 6px; }
 
 .avatar {
@@ -86,7 +86,7 @@ h2 { margin: 16px 0 8px; font-size: var(--fs-1); font-weight: 650; color: var(--
 .choices > .more:not([data-open="true"]) { flex: none; }
 .more-row { flex: none; display: flex; align-items: center; justify-content: space-between; width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: var(--r-2); background: none; color: var(--ink-2); font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; transition: background 120ms ease-out; }
 .more-row:hover { background: var(--hover); }
-.more-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.more-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 .more-body { display: none; flex-direction: column; min-height: 0; flex: 0 1 auto; }
 .more[data-open="true"] .more-body { display: flex; }
 .chev { width: 7px; height: 7px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: rotate(45deg); transition: transform var(--t); margin: 0 4px 3px 0; }
@@ -110,12 +110,12 @@ input {
 #code { font-family: var(--mono); }
 input::placeholder { color: var(--muted); opacity: 0.8; }
 input:focus { border-color: var(--accent); }
-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; box-shadow: var(--glow-focus); }
 .primary { height: 34px; padding: 0 16px; border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font: 650 var(--fs-3) var(--sans); cursor: pointer; }
 .primary:hover { filter: brightness(1.06); }
 .secondary { height: 34px; padding: 0 12px; border-radius: var(--r-2); border: 1px solid var(--edge); background: transparent; color: inherit; font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; transition: background 120ms ease-out; }
 .secondary:hover { background: var(--hover); }
-.primary:focus-visible, .secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.primary:focus-visible, .secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 
 .msg { margin: 12px 0 0; font-size: var(--fs-3); color: var(--muted); }
 .msg:empty { display: none; }

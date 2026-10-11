@@ -1,7 +1,7 @@
 // The left dock (ui/left, DESIGN.md B3) over the pages' harness: the dock state reflected from the
 // layout, the nav rows and what they open, the tab count, the agents and who it is shared with,
-// the activity list, the storage figure (only when the helper reports one), the collapse and expand
-// buttons (native and over the helper's route) and the keyboard.
+// the activity list, no Storage row (PairBrowse Pro's), the Shared-with "+" and its Share card, the
+// collapse and expand buttons (native and over the helper's route) and the keyboard.
 // The common checks are in test/ui.test.mjs.
 import { describe } from "node:test";
 import assert from "node:assert/strict";
@@ -192,32 +192,65 @@ scenario("left: the Activity list", { viewport: OPEN, fixtures: { board: { peopl
 
 scenario("left: shared with", { viewport: OPEN, fixtures: { collaboration: { guests: [{ label: "Dana", role: "drive" }, { label: "Dana", role: "drive" }, { label: "Eve", role: "watch" }] } } }, async (ctx) => {
   const { until, inPage } = ctx;
-  await until("shared", () => !document.getElementById("shared").hidden);
+  await until("guests", () => document.querySelectorAll("#guests li").length === 2);
+  assert.equal(await inPage(() => document.getElementById("shared").checkVisibility()), true);
+  assert.equal(await inPage(() => document.getElementById("guests-empty").hidden), true, "no empty line with guests");
   const got = await inPage(() => [...document.querySelectorAll("#guests li")].map((li) => ({
     text: `${li.querySelector("strong").textContent} · ${li.querySelector("small").textContent}`, icon: !!li.querySelector(".avatar.plain svg use"),
     size: li.querySelector(".avatar").getBoundingClientRect().width,
   })));
   assert.deepEqual(got, [{ text: "Dana · 2 online · can drive", icon: true, size: 32 }, { text: "Eve · 1 online · watching", icon: true, size: 32 }]);
   ctx.helper.set("collaboration", { guests: [] });
-  await until("not shared", () => document.getElementById("shared").hidden);
+  await until("not shared", () => document.querySelectorAll("#guests li").length === 0 && !document.getElementById("guests-empty").hidden);
+  assert.equal(await inPage(() => document.getElementById("shared").checkVisibility()), true, "the section stays, with its +");
+  assert.equal(await inPage(() => document.getElementById("guests-empty").textContent), "Not shared yet");
   await clean(ctx);
 });
 
-scenario("left: storage row only with a figure", { viewport: OPEN }, async (ctx) => {
-  const { until, inPage } = ctx;
-  assert.equal(await inPage(() => document.getElementById("storage").hidden), true);
+scenario("left: no Storage row (Pro only), even when the session event carries diskBytes", { viewport: OPEN }, async (ctx) => {
+  const { inPage } = ctx;
+  const none = () => ["storage", "storage-bar", "storage-text"].every((id) => !document.getElementById(id));
+  assert.equal(await inPage(none), true);
   ctx.helper.push("session", { name: "default", where: "Local", diskBytes: 2576980378 });
-  await until("storage", () => !document.getElementById("storage").hidden);
-  const read = () => { const b = document.getElementById("storage-bar"); return { text: document.getElementById("storage-text").textContent, now: b.getAttribute("aria-valuenow"), said: b.getAttribute("aria-valuetext"), width: document.getElementById("storage-fill").style.width, over: b.dataset.over }; };
-  assert.deepEqual(await inPage(read), { text: "2.4 GB / 10 GB", now: "2576980378", said: "2.4 GB of a 10 GB guide", width: "24%", over: "false" });
-  ctx.helper.push("session", { name: "default", where: "Local", diskBytes: 16106127360 });
-  await until("over", () => document.getElementById("storage-bar").dataset.over === "true");
-  assert.deepEqual(await inPage(read), { text: "15.0 GB / 10 GB", now: "10737418240", said: "15.0 GB, over the 10 GB guide", width: "100%", over: "true" });
-  ctx.helper.push("session", { name: "default", where: "Local", diskBytes: 0 });
-  await until("zero", () => document.getElementById("storage-text").textContent === "0 MB / 10 GB");
-  assert.equal(await inPage(() => document.getElementById("storage-fill").style.width), "0%");
-  ctx.helper.push("session", { name: "default", where: "Local" });
-  await until("hidden again", () => document.getElementById("storage").hidden);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(await inPage(none), true, "still none");
+  assert.equal(await inPage(() => [...document.querySelectorAll("body *")].some((n) => n.children.length === 0 && /GB/.test(n.textContent))), false, "no figure anywhere");
+  await clean(ctx);
+});
+
+scenario("left: Shared with +", { viewport: OPEN }, async (ctx) => {
+  const { until, inPage, page, helper } = ctx;
+  const add = await inPage(() => { const b = document.getElementById("share-add"), r = b.getBoundingClientRect(); return { w: r.width, h: r.height, expanded: b.getAttribute("aria-expanded"), label: b.getAttribute("aria-label") }; });
+  assert.deepEqual(add, { w: 24, h: 24, expanded: "false", label: "Share this session" });
+  await page.focus("#share-add");
+  await page.keyboard.press("Enter");
+  await until("the share card", () => !document.getElementById("share-card").hidden && document.activeElement?.name === "share" && document.activeElement.value === "code");
+  assert.equal(await page.getAttribute("#share-add", "aria-expanded"), "true");
+  const inside = await inPage(() => { const c = document.getElementById("share-card").getBoundingClientRect(); return c.left >= 0 && c.right <= innerWidth && c.top > document.getElementById("share-add").getBoundingClientRect().top; });
+  assert.equal(inside, true, "under the + inside the dock");
+  // A synthetic click makes nothing; a person's click asks the helper.
+  await inPage(() => document.getElementById("share-make").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(helper.posts.filter((p) => p.route === "invite").length, 0, "a synthetic click invites nobody");
+  await page.click("#share-make");
+  for (let i = 0; i < 40 && !helper.posts.some((p) => p.route === "invite"); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(helper.posts.filter((p) => p.route === "invite").map((p) => p.body), [{ share: "code" }]);
+  // The helper asks for a name first; with it, the code and Copy fit the open dock's 200 px.
+  await until("the name field", () => document.activeElement?.id === "share-name");
+  await page.keyboard.type("Sam");
+  await page.keyboard.press("Enter");
+  await until("the code", () => !document.getElementById("share-result").hidden && document.getElementById("share-code").value === "pb-join:FAKE");
+  const fit = await inPage(() => {
+    const card = document.getElementById("share-card").getBoundingClientRect(), copy = document.getElementById("share-copy").getBoundingClientRect(), code = document.getElementById("share-code").getBoundingClientRect();
+    return { right: card.right, vw: innerWidth, copyIn: copy.left >= card.left && copy.right <= card.right && copy.left >= 0 && copy.right <= innerWidth && copy.width > 0, code: code.width };
+  });
+  assert.ok(fit.right <= fit.vw, `the card inside the dock: ${fit.right} <= ${fit.vw}`);
+  assert.equal(fit.copyIn, true, "Copy fully visible");
+  assert.ok(fit.code > 80, `the code field readable: ${fit.code}px`);
+  await page.focus("#share-make");
+  await page.keyboard.press("Escape");
+  await until("closed, focus back on +", () => document.getElementById("share-card").hidden && document.activeElement?.id === "share-add");
+  assert.equal(await page.getAttribute("#share-add", "aria-expanded"), "false");
   await clean(ctx);
 });
 
@@ -226,8 +259,8 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   await inPage(() => { document.activeElement?.blur?.(); document.body.tabIndex = -1; document.body.focus(); document.body.removeAttribute("tabindex"); });
   const order = [];
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
-  for (let i = 0; i < 9; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
-  assert.deepEqual(order, ["workspace", "dock-collapse", "nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools", "add-agent", "settings"]);
+  for (let i = 0; i < 10; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
+  assert.deepEqual(order, ["workspace", "dock-collapse", "nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools", "add-agent", "share-add", "settings"]);
   await ctx.page.focus("#nav-sessions");
   await ctx.page.keyboard.press("Enter");
   // The Sessions row opens the switcher: the picker in a same-origin frame, no picker route.
@@ -318,7 +351,7 @@ scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { 
   await until("the rail", () => document.body.dataset.dock === "rail");
   await until("the agents", () => document.querySelectorAll("#agents li[data-state]").length === 3);
   const seen = await inPage(() => ({
-    labels: [...document.querySelectorAll(".label, .ws-label, .badge, h2, .add, .hint, .conn, .activity, #storage")].filter((n) => n.checkVisibility()).length,
+    labels: [...document.querySelectorAll(".label, .ws-label, .badge, h2, .add, .hint, .conn, .activity, #storage, #share-add, .empty-note, .share-card")].filter((n) => n.checkVisibility()).length,
     clipped: [...document.querySelectorAll(".people strong, .people small")].map((n) => n.getBoundingClientRect().width <= 1),
     width: document.documentElement.scrollWidth,
     gear: document.getElementById("settings").checkVisibility(),

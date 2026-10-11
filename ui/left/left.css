@@ -31,7 +31,7 @@ body > svg[hidden] { display: none; }
 .row:disabled, .gear:disabled { color: var(--muted); cursor: default; }
 .row:disabled .ic { color: inherit; }
 .row:disabled:hover, .gear:disabled:hover { background: transparent; }
-.row[aria-current="page"] { background: var(--accent-soft); color: var(--ink); }
+.row[aria-current="page"] { background-color: var(--accent-soft); background-image: var(--surface-grad); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-lit), inset 0 1px 0 var(--edge-light), var(--glow-soft); }
 .row[aria-current="page"] .ic { color: var(--accent-ink); }
 .row .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { display: inline-grid; place-items: center; flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font: 600 var(--fs-1)/1 var(--sans); }
@@ -54,8 +54,12 @@ body > svg[hidden] { display: none; }
 .sec[hidden] { display: none; }
 .sec-head { display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 4px 0 12px; }
 h2 { margin: 0; font: 600 var(--fs-2) var(--sans); color: var(--ink-2); }
-#shared h2 { padding: 0 12px; line-height: 28px; }
-.add { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+/* Shared with: always shown, with its own "+" (the Share card, a popover under it) and a line
+   while nobody has joined. */
+#shared { position: relative; }
+.empty-note { margin: 0 12px 6px; font-size: var(--fs-2); color: var(--ink-2); }
+.empty-note[hidden] { display: none; }
+.add { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: var(--elevated); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
 .add svg { width: 14px; height: 14px; }
 .add:hover, .add[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
 .hint { margin: 4px 0 8px; padding: 10px 12px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); font-size: var(--fs-2); color: var(--ink-2); }
@@ -82,21 +86,45 @@ li[data-state="idle"] .dot { background: var(--muted); }
 .people strong .app { font-weight: 400; color: var(--ink-2); }
 .people small { grid-column: 2; min-width: 0; font-size: var(--fs-2); line-height: 1.2; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Bottom: the profile's size on disk (only when the helper reports it) and the settings gear. */
-.foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 8px 8px 10px; border-top: 1px solid var(--edge); }
-.storage { display: grid; gap: 6px; min-width: 0; padding: 0 4px; }
-.storage[hidden] { display: none; }
-.storage-line { display: flex; justify-content: space-between; gap: 6px; font-size: var(--fs-2); color: var(--ink-2); white-space: nowrap; }
-.storage-v { color: var(--ink); }
-.bar { height: 4px; border-radius: 2px; background: var(--edge); overflow: hidden; }
-.bar i { display: block; width: 0; height: 100%; border-radius: 2px; background: var(--accent); transition: width 160ms ease-out; }
-.bar[data-over="true"] i { background: var(--warn); }
-.gear { grid-column: 2; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+/* Bottom: the settings gear, at the left (Storage returns with PairBrowse Pro; see the markup). */
+.foot { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 8px 10px; border-top: 1px solid var(--edge); }
+.gear { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
 .gear svg { width: 20px; height: 20px; }
 .gear:hover { background: var(--hover); color: var(--ink); }
 
 .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+.add:focus-visible { box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--glow-focus); }
+/* Focus keeps the active row's own edge and light first, then the halo. */
+.row[aria-current="page"]:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-lit), inset 0 1px 0 var(--edge-light), var(--glow-soft), var(--glow-focus); }
+.share-card .primary:focus-visible { box-shadow: var(--glow-accent), var(--glow-focus); }
+
+/* The Share card (DESIGN.md B8, the strip's markup and styles): a popover under "Shared with". */
+.share-card { position: absolute; top: 34px; left: 0; right: 0; max-width: 320px; z-index: 3; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); line-height: 1.45; }
+.share-card[hidden] { display: none; }
+.share-card h2 { margin: 0; font-size: 14px; font-weight: var(--fw-name); color: var(--ink); }
+.share-card .share-choice { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.share-card .share-choice legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-1); font-weight: var(--fw-name); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.share-card .share-opt { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 6px 8px; border-radius: var(--r-2); font-size: var(--fs-3); cursor: pointer; transition: background-color 120ms ease-out; }
+.share-card .share-opt:hover { background: var(--hover); }
+.share-card .share-opt input { margin: 2px 0 0; accent-color: var(--accent); }
+.share-card .share-opt small { display: block; font-size: var(--fs-2); color: var(--ink-2); }
+.share-card .share-name { display: grid; gap: 4px; font-size: var(--fs-2); color: var(--ink-2); }
+.share-card .share-name[hidden], .share-card .share-result[hidden] { display: none; }
+.share-card .share-line { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
+.share-card .field { width: 100%; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
+.share-card .field:focus { border-color: var(--accent); }
+.share-card .share-code { font-family: var(--mono); }
+.share-card .primary { justify-self: start; height: 30px; padding: 0 14px; border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font-weight: 650; cursor: pointer; box-shadow: var(--glow-accent); }
+.share-card .primary:hover { background: var(--accent-ink); }
+.share-card .primary:disabled { opacity: 0.6; }
+.share-card .mini { height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: var(--fw-name); cursor: pointer; transition: background-color 120ms ease-out, color 120ms ease-out; }
+.share-card .mini:hover { background: var(--hover); color: var(--ink); }
+.share-card .note { margin: 6px 0 0; font-size: var(--fs-2); color: var(--ink-2); }
+.share-card .msg { margin: 0; font-size: var(--fs-2); color: var(--muted); }
+.share-card .msg:empty { display: none; }
+.share-card .msg[data-kind="error"] { color: var(--bad); }
+.share-card .msg[data-kind="ok"] { color: var(--ok); }
 
 /* Rail: 44 px, icons, avatars with their dots and the gear; every word moves to a tooltip. */
 /* The rail's top: the expand button centered in the 44 px band, the workspace square under it. */
@@ -108,7 +136,7 @@ body[data-dock="rail"] .row .label, body[data-dock="rail"] .badge, body[data-doc
 body[data-dock="rail"] #nav-activity::after, body[data-dock="rail"] .sec-head h2, body[data-dock="rail"] .add,
 body[data-dock="rail"] .hint, body[data-dock="rail"] .conn, body[data-dock="rail"] .activity,
 body[data-dock="rail"] .people li.empty,
-body[data-dock="rail"] .storage, body[data-dock="rail"] #shared h2 { display: none; }
+body[data-dock="rail"] #shared h2, body[data-dock="rail"] #share-add, body[data-dock="rail"] .empty-note, body[data-dock="rail"] .share-card { display: none; }
 /* The agents' names and states leave the eye but stay in the accessibility tree (the .sr recipe). */
 body[data-dock="rail"] .people strong, body[data-dock="rail"] .people small { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 body[data-dock="rail"] .body { padding: 4px 4px 8px; }
@@ -121,7 +149,7 @@ body[data-dock="rail"] .foot { grid-template-columns: auto; justify-content: cen
 body[data-dock="rail"] .gear { grid-column: 1; }
 
 /* The session switcher: the picker in a same-origin frame, under the header (the B2 switcher size: 360 px wide, 560 tall). */
-.switcher { position: fixed; top: 44px; left: 8px; z-index: 3; width: 360px; height: min(560px, calc(100vh - 52px)); border-radius: var(--r-3); background: var(--elevated); box-shadow: 0 0 0 1px var(--edge); overflow: hidden; animation: fade var(--t); }
+.switcher { position: fixed; top: 44px; left: 8px; z-index: 3; width: 360px; height: min(560px, calc(100vh - 52px)); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); overflow: hidden; animation: fade var(--t); }
 .switcher iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
 @keyframes fade { from { opacity: 0; } }
 

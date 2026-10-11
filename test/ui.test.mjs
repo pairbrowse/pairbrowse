@@ -1,7 +1,7 @@
 // The pages' common suite: every ui/<page>/index.html, checked the same way.
 // Part 1, static (every machine): no inline script, handler or style; the sheet linked first and
 // not copied; the logo untouched and never inlined; css colors are sheet values; no markup sinks
-// (Trusted Types); reduced motion honoured, no blur or glow.
+// (Trusted Types); reduced motion honoured, no blur, no animated glow (static light is the sheet's tokens).
 // Part 2, the harness's own fakes (every machine): the window.pairbrowse shim in node:vm, the
 // fake helper's refusals, CORS, burst order and routes.
 // Part 3, rendered (PAIRBROWSE_TEST_RUNTIME): each page over the fake helper and the ui server,
@@ -434,9 +434,15 @@ function controls(selector) {
     if (img && img.alt.trim()) return img.alt.trim();
     return (el.getAttribute("title") || el.getAttribute("placeholder") || "").trim();
   };
+  // A roving composite's member out of the Tab order: the close inside an inactive tab (role=tab,
+  // tabindex -1) is reached by the arrows on its tab and closed with Delete (test/ui-strip.test.mjs).
+  // Every visible control stays in the list (the name check reads all of them); the flag only lets
+  // the Tab check skip these, and inTablist proves the exception covers nothing else.
+  const roving = (el) => el.getAttribute("tabindex") === "-1" && !!el.closest('[role=tab][tabindex="-1"]');
   return [...document.querySelectorAll(selector)].filter((el) => el.checkVisibility() && !el.disabled).map((el, i) => {
     el.dataset.harnessId = String(i);
-    return { id: String(i), tag: el.tagName.toLowerCase(), elId: el.id, name: label(el) };
+    const r = roving(el);
+    return { id: String(i), tag: el.tagName.toLowerCase(), elId: el.id, name: label(el), roving: r, inTablist: r && !!el.closest("[role=tab]").closest("[role=tablist]") };
   });
 }
 
@@ -473,8 +479,11 @@ test("every page renders cleanly over the fake helper", { skip: !runtime, timeou
               document.body.removeAttribute("tabindex");
               return c;
             });
+            const tabbable = list.filter((c) => !c.roving);
+            const stray = list.filter((c) => c.roving && !c.inTablist).map((c) => `${c.tag}#${c.elId}`);
+            assert.deepEqual(stray, [], `${page}: out of the Tab order outside a tablist's tab`);
             const reached = new Map();
-            for (let i = 0; i < list.length + 5; i++) {
+            for (let i = 0; i < tabbable.length + 5; i++) {
               await ctx.page.keyboard.press("Tab");
               const at = await ctx.inPage(() => {
                 const el = document.activeElement;
@@ -484,7 +493,7 @@ test("every page renders cleanly over the fake helper", { skip: !runtime, timeou
               });
               if (at?.id != null && !reached.has(at.id)) reached.set(at.id, at);
             }
-            const missing = list.filter((c) => !reached.has(c.id)).map((c) => `${c.tag}#${c.elId}`);
+            const missing = tabbable.filter((c) => !reached.has(c.id)).map((c) => `${c.tag}#${c.elId}`);
             assert.deepEqual(missing, [], `${page}: not reached with Tab`);
             const unringed = [...reached.values()].filter((s) => s.style !== "solid" || s.width !== "2px" || s.color !== ring).map((s) => `${s.tag}#${s.elId} (${s.style} ${s.width} ${s.color})`);
             if (debt(page, "focus-ring")) assert.ok(unringed.length > 0, fixed(page, "focus-ring"));

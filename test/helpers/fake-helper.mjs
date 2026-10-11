@@ -9,6 +9,9 @@
 // pending list (null fixture: 404, none pending), kept in step with the `approval` events pushed;
 // POST approve { id, answer } is 400 for a malformed answer, 404 once the id is gone, else
 // 200 { ok: true } and a withdraw event, as lane H's approvals.mjs end() sends. No timers.
+// POST session { op: "save" | "rename", name } mirrors the contract the lead fixed for lane H (not
+// yet in liveview.mjs): save is 200 { ok, savedAt }, rename 200 { ok, name } and a session event,
+// anything else 400 { error }. Every GET route is recorded in `gets`, in order.
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { hostOk, originOk, keyOk, pathParts, readBody, BODY_MAX, SECURITY_HEADERS, plain, listen } from "../../scripts/liveview/http.mjs";
@@ -82,6 +85,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   const fx = merge(defaultFixtures(), fixtures || {});
   const streams = new Set();
   const posts = [];
+  const gets = [];
   const allReplies = { ...replies };
   let origin = pageOrigin;
 
@@ -129,7 +133,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     "joins.json": () => fx.joins, "tabs.json": () => fx.tabs, "agent-tabs.json": () => fx.agentTabs, "timeline.json": () => fx.timeline, "layout.json": () => fx.layout,
     "approvals.json": () => fx.approvals,
   };
-  const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline"]);
+  const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session"]);
 
   // The answer to a POST without a reply of the test's own.
   function defaultPost(route, body) {
@@ -146,6 +150,15 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
       return { status: 200, body: next };
     }
     if (route === "pause") return { status: 200, body: { paused: !!body?.paused, can: true } };
+    if (route === "session") {
+      if (body?.op === "save") return { status: 200, body: { ok: true, savedAt: new Date().toISOString() } };
+      if (body?.op === "rename" && typeof body.name === "string" && body.name.trim() && body.name.length <= 60) {
+        fx.session = { ...fx.session, name: body.name };
+        push("session", fx.session);
+        return { status: 200, body: { ok: true, name: body.name } };
+      }
+      return { status: 400, body: { error: "A session request is { op: save } or { op: rename, name }." } };
+    }
     if (route === "record") return { status: 200, body: { recording: body?.on === true, since: Date.now() } };
     if (route === "approve" && typeof body?.answer === "string") {
       // A click approval (approve.js's contract); bodies without `answer` (join, removal) as before.
@@ -187,6 +200,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
     try {
       if (req.method === "GET") {
+        gets.push(route);
         if (route === "events") return events(req, res);
         if (Object.prototype.hasOwnProperty.call(GETS, route) && !rest.length) {
           const value = GETS[route]();
@@ -229,6 +243,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     push,
     set,
     posts,
+    gets,
     streams,
     replies: allReplies,
     setPageOrigin: (o) => { origin = o; },

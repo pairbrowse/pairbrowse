@@ -7,7 +7,10 @@
 // here (native: false) and by test/right.test.mjs (fake chrome).
 import { describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { pageTest } from "./helpers/ui-page.mjs";
+
+const SERVED = readFileSync(new URL("../ui/right/index.html", import.meta.url), "utf8");
 
 const VIEWPORT = { width: 330, height: 936 };
 const PEOPLE = [
@@ -26,7 +29,24 @@ const opts = (fixtures = {}, more = {}) => ({ viewport: VIEWPORT, fixtures, ...m
 const visible = (sel) => { const e = document.querySelector(sel); return !!e && e.checkVisibility(); };
 const text = (id) => document.getElementById(id).textContent;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const journalReads = (helper) => helper.gets.filter((r) => r === "journal.json").length;
 const posted = async (helper, route, n = 1) => { for (let i = 0; i < 40 && helper.posts.filter((p) => p.route === route).length < n; i++) await sleep(50); return helper.posts.filter((p) => p.route === route); };
+// WCAG contrast of an element's text on its composited background (its own and its ancestors'
+// background colors, layered from the first opaque one down).
+const textContrast = (sel) => {
+  const rgba = (c) => { const m = c.match(/[\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+  const el = document.querySelector(sel);
+  const layers = [];
+  for (let e = el; e; e = e.parentElement) { const c = rgba(getComputedStyle(e).backgroundColor); if (c.a > 0) layers.push(c); if (c.a >= 1) break; }
+  let bg = { r: 255, g: 255, b: 255 };
+  if (layers.length && layers[layers.length - 1].a >= 1) bg = layers.pop();
+  for (const c of layers.reverse()) bg = { r: c.r * c.a + bg.r * (1 - c.a), g: c.g * c.a + bg.g * (1 - c.a), b: c.b * c.a + bg.b * (1 - c.a) };
+  const fg0 = rgba(getComputedStyle(el).color);
+  const fg = { r: fg0.r * fg0.a + bg.r * (1 - fg0.a), g: fg0.g * fg0.a + bg.g * (1 - fg0.a), b: fg0.b * fg0.a + bg.b * (1 - fg0.a) };
+  const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+  const [x, y] = [lum(fg), lum(bg)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+};
 // The page's own value of a token, as the computed style of a probe.
 const token = (name, prop = "color") => {
   const probe = document.createElement("span");
@@ -88,7 +108,7 @@ describe("agent states in words", () => pageTest("right", opts(), async ({ page,
   assert.equal(await inPage(visible, "#status-live"), false, "not driving while it waits for you");
   helper.push("status", { kind: "clear", text: "" });
   helper.push("pause", { paused: true, can: true, by: "Sam" });
-  await until("paused", () => document.getElementById("driver-text").textContent === "Paused");
+  await until("paused", () => document.getElementById("driver-text").textContent === "Paused by Sam");
   assert.equal(await inPage(() => getComputedStyle(document.getElementById("driver")).color), await inPage(token, "muted"), "paused in --muted, words and dot");
   assert.equal(await inPage(visible, "#turn"), false);
   await page.click("#agent-fold");
@@ -102,7 +122,20 @@ describe("agent states in words", () => pageTest("right", opts(), async ({ page,
 
 describe("pause and resume", () => pageTest("right", opts({ pause: { paused: false, can: true } }), async ({ page, helper, inPage, until, errors }) => {
   await until("the pause row", () => !document.getElementById("pause").hidden);
-  assert.equal(await inPage(text, "pause-btn"), "Pause agents");
+  assert.equal(await inPage(text, "pause-btn"), "Pause");
+  assert.equal(await page.getAttribute("#pause-btn", "aria-label"), "Pause agents");
+  // On the name row: between the name and the fold, and nothing else in the card's header.
+  const head = await inPage(() => {
+    const r = (id) => document.getElementById(id).getBoundingClientRect();
+    const btn = r("pause-btn"), name = r("agent-name"), driver = r("driver"), fold = r("agent-fold");
+    const shown = [...document.getElementById("agent").children].filter((c) => c.id !== "agent-body" && c.checkVisibility()).map((c) => c.id);
+    return { mid: btn.top + btn.height / 2, top: name.top, bottom: driver.bottom, right: btn.right, foldLeft: fold.left, shown };
+  });
+  assert.ok(head.mid >= head.top && head.mid <= head.bottom, `Pause centered on the name and state lines (${head.mid} in ${head.top}..${head.bottom})`);
+  assert.ok(head.right <= head.foldLeft, "Pause sits left of the fold");
+  assert.deepEqual(head.shown, ["agent-avatar", "agent-name", "driver", "pause", "agent-fold"], "the header holds avatar, name, state, Pause and the fold only");
+  assert.equal(await inPage(() => document.getElementById("agent-tab").closest("#agent-status") !== null), true, "the tab line is in the Status box");
+  assert.deepEqual(await inPage(() => { const e = document.getElementById("pause-text"); return [e.className, e.getBoundingClientRect().width <= 1]; }), ["sr", true], "the description is for readers only");
   const box = await inPage(() => { const b = document.getElementById("pause-btn"); const s = getComputedStyle(b); return { h: b.getBoundingClientRect().height, bg: s.backgroundColor, border: s.borderTopWidth }; });
   assert.equal(box.h, 32);
   assert.equal(box.bg, await inPage(token, "elevated"));
@@ -111,17 +144,21 @@ describe("pause and resume", () => pageTest("right", opts({ pause: { paused: fal
   assert.deepEqual((await posted(helper, "pause"))[0]?.body, { paused: true });
   helper.push("pause", { paused: true, can: true, by: "Sam" });
   await until("resume", () => document.getElementById("pause-btn").textContent === "Resume");
+  assert.equal(await page.getAttribute("#pause-btn", "aria-label"), "Resume agents");
   assert.equal(await inPage(text, "pause-text"), "Paused by Sam");
+  assert.equal(await inPage(text, "driver-text"), "Paused by Sam", "who paused, in the state line");
   assert.deepEqual(errors, []);
 }));
 
 describe("checklist marks, task and saved", () => pageTest("right", opts({ journal: JOURNAL }), async ({ page, helper, inPage, until, errors }) => {
+  // No task before the goal log is read: the served markup starts with it hidden, the steps open.
+  assert.match(SERVED, /<div class="task" id="task" hidden>/, "no task before the goal log is read");
+  assert.match(SERVED, /<small class="saved" id="session-saved" hidden>/, "no Saved line before the goal log is read");
+  assert.match(SERVED, /<button class="more" id="agent-more"[^>]*aria-expanded="true"/);
+  assert.equal(await inPage(visible, "#checklist"), true, "the checklist is open on load");
   helper.push("activity", [{ t: Date.now(), text: "Filled **Name**", who: "Claude", tab: "Details" }]);
   await until("working", () => document.getElementById("driver-text").textContent === "Working…");
-  assert.equal(await inPage(() => document.getElementById("task").hidden), true, "no task before the goal log is read");
-  assert.equal(await inPage(() => document.getElementById("session-saved").hidden), true);
-  await page.click("#agent-more");
-  await until("the checklist", () => document.querySelectorAll("#checklist-items li[data-state]").length === 4);
+  await until("the checklist, no click needed", () => document.querySelectorAll("#checklist-items li[data-state]").length === 4);
   const rows = await inPage(() => [...document.querySelectorAll("#checklist-items li")].map((li) => {
     const m = getComputedStyle(li.querySelector(".mark"));
     const r = li.querySelector(".mark").getBoundingClientRect();
@@ -138,6 +175,48 @@ describe("checklist marks, task and saved", () => pageTest("right", opts({ journ
   assert.equal(await inPage(text, "task-name"), JOURNAL.name);
   assert.equal(await inPage(visible, "#task"), true);
   assert.match(await inPage(text, "session-saved"), /^Saved /);
+  // The chevron folds the steps only, and reads nothing.
+  const reads = journalReads(helper);
+  await page.click("#agent-more");
+  assert.equal(await inPage(() => document.getElementById("checklist").hidden), true);
+  assert.equal(await page.getAttribute("#agent-more", "aria-expanded"), "false");
+  assert.equal(await inPage(visible, "#task"), true, "the task stays");
+  await sleep(300);
+  assert.equal(journalReads(helper), reads, "folding reads nothing");
+  assert.deepEqual(errors, []);
+}));
+
+describe("journal read follows the Agent tab", () => pageTest("right", opts({ journal: JOURNAL }, { timeout: 90_000 }), async ({ page, helper, harness, shim, until, errors }) => {
+  const act = (text) => helper.push("activity", [{ t: Date.now(), text, who: "Claude", tab: "Details" }]);
+  const reads = async (n, what) => { for (let i = 0; i < 80 && journalReads(helper) < n; i++) await sleep(50); assert.equal(journalReads(helper), n, what); };
+  await reads(1, "one read when the panel connects with Agent in front");
+  await sleep(500);
+  assert.equal(journalReads(helper), 1, "exactly one");
+  // A burst of actions: one more read, at most once per 5 s.
+  for (let i = 0; i < 3; i++) { act(`Act ${i}`); await sleep(150); }
+  await sleep(5600);
+  assert.equal(journalReads(helper), 2, "a burst is one read");
+  // Another tab in front: nothing.
+  await page.click("#tab-tools");
+  act("On Tools");
+  await sleep(6000);
+  assert.equal(journalReads(helper), 2, "no read while Tools is in front");
+  await page.click("#tab-agent");
+  await reads(3, "back on Agent: one read");
+  // Hidden: nothing, and no timer pending.
+  await harness.setHidden(true);
+  act("Hidden");
+  await sleep(6000);
+  assert.equal(journalReads(helper), 3, "no read while hidden");
+  assert.equal((await harness.live()).timeouts, 0, "no timer while hidden");
+  await harness.setHidden(false);
+  await reads(4, "shown again: one read");
+  // The rail shows no pane: nothing.
+  await shim.layout({ right: 1 });
+  await until("the rail", () => document.documentElement.dataset.dock === "rail");
+  act("Railed");
+  await sleep(6000);
+  assert.equal(journalReads(helper), 4, "no read while the dock is a rail");
   assert.deepEqual(errors, []);
 }));
 
@@ -152,10 +231,18 @@ describe("status box", () => pageTest("right", opts({ board: { people: [PEOPLE[0
 
 describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE, messages: [] }, activity: [{ t: Date.now(), text: "Typed into **Email**", who: "Claude", tab: "Checkout" }] }), async ({ page, helper, inPage, until, errors }) => {
   await until("the rows", () => document.querySelectorAll("#people li").length === 5);
-  const rows = await inPage(() => [...document.querySelectorAll("#people li")].map((li) => ({ h: li.getBoundingClientRect().height, text: li.textContent })));
-  for (const r of rows) assert.ok(r.h >= 56, `${r.text}: ${r.h}px`);
+  const rows = await inPage(() => [...document.querySelectorAll("#people li")].map((li) => {
+    const line = (el) => ({ h: el.getBoundingClientRect().height, ws: getComputedStyle(el).whiteSpace });
+    const st = li.querySelector(".st");
+    return { h: li.getBoundingClientRect().height, text: li.textContent, name: line(li.querySelector(".name")), st: line(st), stText: st.textContent, first: getComputedStyle(st, "::first-letter").textTransform };
+  }));
+  for (const r of rows) {
+    assert.ok(r.h >= 56, `${r.text}: ${r.h}px`);
+    for (const k of ["name", "st"]) { assert.ok(r[k].h <= 18, `${r.text}: .${k} is one line (${r[k].h}px)`); assert.equal(r[k].ws, "nowrap"); }
+  }
   const alice = rows.findIndex((r) => r.text.includes("Alice"));
-  assert.ok(alice >= 0 && rows[alice].text.includes("waiting for their person") && rows[alice].text.includes("shop.example/cart"), rows[alice]?.text);
+  assert.ok(alice >= 0 && rows[alice].stText.includes("waiting for their person") && rows[alice].stText.includes("shop.example/cart"), rows[alice]?.stText);
+  assert.equal(rows[alice].first, "uppercase", "the state line starts with a capital");
   const sel = `#people li:nth-child(${alice + 1})`;
   assert.equal(await page.getAttribute(`${sel} .chev`, "aria-expanded"), "false");
   assert.equal(await inPage(visible, `${sel} .acts`), false);
@@ -165,6 +252,12 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
   assert.equal(await inPage(() => document.querySelectorAll(".pause-one").length), 0, "no per-agent pause from today's helper");
   helper.push("pause", { paused: false, can: true, perAgent: true });
   await until("per-agent pause", () => document.querySelectorAll(".pause-one").length === 4);
+  const place = await inPage((s) => {
+    const li = document.querySelector(s), p = li.querySelector(".pause-one"), c = li.querySelector(".chev");
+    return { col: getComputedStyle(p).gridColumnStart, right: p.getBoundingClientRect().right, chev: c.getBoundingClientRect().left };
+  }, sel);
+  assert.equal(place.col, "3", "Pause this agent in column 3");
+  assert.ok(place.right <= place.chev, "left of the chevron");
   assert.equal(await inPage(() => [...document.querySelectorAll("#people li")].filter((li) => li.textContent.startsWith("Sam (by hand)") && li.querySelector(".pause-one")).length), 0, "agents only");
   await inPage((s) => document.querySelector(s).dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })), `${sel} .pause-one`);
   await sleep(300);
@@ -178,13 +271,36 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
   assert.deepEqual(errors, []);
 }));
 
+describe("checklist read retried on return", () => pageTest("right", opts({ journal: JOURNAL }), async ({ page, helper, inPage, until, errors }) => {
+  await until("the first read", () => document.querySelectorAll("#checklist-items li[data-state]").length === 4);
+  // The goal log not reached once: the next show of the Agent tab reads again, no timer meanwhile.
+  await page.route("**/journal.json", (r) => r.abort());
+  helper.push("activity", [{ t: Date.now(), text: "Filled **Name**", who: "Claude", tab: "Details" }]);
+  for (let i = 0; i < 160 && !(await inPage(() => document.getElementById("checklist-items").textContent.includes("Couldn't reach PairBrowse."))); i++) await sleep(50);
+  assert.match(await inPage(text, "checklist-items"), /Couldn't reach PairBrowse\./);
+  await page.unroute("**/journal.json");
+  await page.click("#tab-tools");
+  const reads = journalReads(helper);
+  await sleep(300);
+  assert.equal(journalReads(helper), reads, "nothing read while another tab is in front");
+  await page.click("#tab-agent");
+  for (let i = 0; i < 160 && journalReads(helper) === reads; i++) await sleep(50);
+  assert.equal(journalReads(helper), reads + 1, "read once more on return");
+  await until("the steps back", () => document.querySelectorAll("#checklist-items li[data-state]").length === 4);
+  assert.deepEqual(errors, []);
+}));
+
 describe("session card", () => pageTest("right", opts({ session: { name: "Checkout test", where: "Local", temporary: false } }), async ({ page, helper, inPage, until, errors }) => {
   await until("the session name", () => document.getElementById("session-name").textContent === "Checkout test");
   assert.equal(await inPage(visible, "#session-line"), true);
   const card = await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(); return { bottom: c.bottom, vh: innerHeight }; });
-  assert.ok(Math.abs(card.bottom - card.vh) < 1, "pinned to the bottom, visible without scrolling");
-  assert.equal(await inPage(() => getComputedStyle(document.getElementById("switch-btn")).color), await inPage(token, "bad"));
-  assert.equal(await inPage(() => document.querySelectorAll("#session-card .row3 button").length), 2, "Share and End session; no Save, no rename without a helper route");
+  assert.ok(card.vh - card.bottom >= 0 && card.vh - card.bottom <= 12, `a raised card just above the bottom (its 10 px margin): ${card.vh - card.bottom}`);
+  const end = await inPage(() => { const s = getComputedStyle(document.getElementById("switch-btn")); return { color: s.color, bg: s.backgroundColor, shadow: s.boxShadow }; });
+  assert.equal(end.color, await inPage(token, "bad"));
+  assert.equal(end.bg, await inPage(token, "bad-soft", "backgroundColor"), "a red-tinted fill");
+  assert.match(end.shadow, /rgba?\(239, 100, 104/, "a soft red halo");
+  assert.equal(await inPage(() => [...document.querySelectorAll("#session-card .row3 button")].filter((b) => b.checkVisibility()).length), 2, "Share and End session; no Save, no rename without a helper route");
+  assert.equal(await inPage(() => document.getElementById("session-save").hidden && document.getElementById("session-rename").hidden), true);
   // The confirm sits in the card (a dock slot has no JavaScript dialogs): no dialog may open.
   let dialogs = 0;
   page.on("dialog", (d) => { dialogs++; d.dismiss(); });
@@ -193,6 +309,8 @@ describe("session card", () => pageTest("right", opts({ session: { name: "Checko
   await until("the in-card confirm", () => !document.getElementById("end-confirm").hidden);
   assert.equal(await inPage(() => document.getElementById("switch-btn").getAttribute("aria-expanded")), "true");
   assert.equal(await inPage(() => document.activeElement?.id), "end-no", "focus moves to Keep, so a second Enter ends nothing");
+  const yes = await inPage(textContrast, "#end-yes");
+  assert.ok(yes >= 4.5, `End session in the confirm keeps AA on its box: ${yes.toFixed(2)}:1`);
   await sleep(300);
   assert.equal(picks(), 0, "the first click only asks");
   await page.click("#end-no");
@@ -226,6 +344,49 @@ describe("session card", () => pageTest("right", opts({ session: { name: "Checko
   await until("the share card", () => !document.getElementById("share-card").hidden);
   const at = await inPage(() => ({ card: document.getElementById("share-card").getBoundingClientRect().bottom, btn: document.getElementById("share-btn").getBoundingClientRect().top }));
   assert.ok(at.card <= at.btn, "the card opens above the session card");
+  assert.deepEqual(errors, []);
+}));
+
+describe("session card with the helper's routes", () => pageTest("right", opts({ session: { name: "Checkout test", where: "Local", canSave: true, canRename: true } }), async ({ page, helper, inPage, until, errors }) => {
+  await until("Save and the pencil", () => document.getElementById("session-save").checkVisibility() && document.getElementById("session-rename").checkVisibility());
+  const sessions = () => helper.posts.filter((p) => p.route === "session");
+  // Save: a synthetic click posts nothing; a person's click saves.
+  await inPage(() => document.getElementById("session-save").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+  await sleep(300);
+  assert.equal(sessions().length, 0, "a synthetic click saves nothing");
+  await page.click("#session-save");
+  assert.deepEqual((await posted(helper, "session"))[0]?.body, { op: "save" });
+  await until("saved just now", () => document.getElementById("session-saved").textContent === "Saved just now");
+  // Rename: the pencil opens the field; Enter posts the trimmed name.
+  await page.click("#session-rename");
+  await until("the field", () => document.activeElement?.id === "session-name-input");
+  assert.equal(await inPage(visible, "#session-line"), false);
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.type("Renamed");
+  await page.keyboard.press("Enter");
+  assert.deepEqual((await posted(helper, "session", 2))[1]?.body, { op: "rename", name: "Renamed" });
+  await until("the new name", () => document.getElementById("session-name").textContent === "Renamed" && document.getElementById("session-line").checkVisibility());
+  assert.equal(await inPage(() => document.activeElement?.id), "session-rename", "focus back on the pencil");
+  // Escape cancels with no post.
+  await page.click("#session-rename");
+  await until("the field again", () => document.activeElement?.id === "session-name-input");
+  await page.keyboard.type(" more");
+  await page.keyboard.press("Escape");
+  await until("closed", () => document.getElementById("session-name-input").hidden);
+  await sleep(200);
+  assert.equal(sessions().length, 2, "Escape posts nothing");
+  assert.equal(await inPage(text, "session-name"), "Renamed");
+  // A helper without the route (404): Save goes away.
+  helper.replies.session = () => ({ status: 404, body: { error: "Not found" } });
+  await page.click("#session-save");
+  await until("Save hidden", () => document.getElementById("session-save").hidden);
+  assert.equal(await inPage(() => document.activeElement?.id), "share-btn", "focus moves to Share, not lost to the body");
+  // The fold hides the buttons.
+  await page.click("#session-fold");
+  assert.equal(await inPage(visible, "#session-actions"), false);
+  assert.equal(await page.getAttribute("#session-fold", "aria-expanded"), "false");
+  await page.click("#session-fold");
+  assert.equal(await inPage(visible, "#session-actions"), true);
   assert.deepEqual(errors, []);
 }));
 

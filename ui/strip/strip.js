@@ -163,6 +163,9 @@ const faviconOk = (u) => typeof u === "string" && /^(data:image\/|chrome:\/\/)/.
 const loadingState = (t) => pb && (t.networkState === pb.NetworkState.kWaiting || t.networkState === pb.NetworkState.kLoading);
 const titleOf = (t) => String(t.title || t.url || "New Tab");
 
+// One tab: the icon slot (its data-key, "img:", "generic" or "ring", picks the tile in strip.css), the
+// title, the agent dot and a close button. Every unpinned tab shows its close; Tab still reaches only
+// the active tab's close (roving below), and Delete closes the focused tab.
 function drawTab(t) {
   let li = lis.get(t.id);
   if (!li) {

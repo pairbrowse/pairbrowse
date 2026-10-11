@@ -24,8 +24,7 @@
     },
     "session": {
       "name": "Checkout test",
-      "where": "Local",
-      "diskBytes": 2576980378
+      "where": "Local"
     },
     "collaboration": {
       "guests": [

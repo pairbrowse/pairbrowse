@@ -1,5 +1,5 @@
-// The session timeline (DESIGN.md B7): the pictures the helper sent to agents, oldest left, newest
-// right, from the helper's owner routes (timeline.json, timeline/<id>.jpg, DELETE timeline/<id>,
+// The session timeline (DESIGN.md B7): the pictures the helper sent to agents, the current picture
+// first, then the history oldest to newest, then Add note, from the helper's owner routes (timeline.json, timeline/<id>.jpg, DELETE timeline/<id>,
 // POST timeline/note and timeline/<id>/pin) and the owner stream's `timeline` event. The page only
 // renders: it never writes layout or toggles itself. Nothing runs before the page is first
 // visible; while hidden it fetches nothing and holds no picture.
@@ -73,7 +73,7 @@ async function load() {
   addLi.hidden = false; // Add note only where a note can land: the list state
   list.hidden = false;
   draw();
-  strip.scrollLeft = strip.scrollWidth;
+  strip.scrollLeft = 0; // the current picture is first
   frame();
 }
 
@@ -98,10 +98,14 @@ function apply(ev) {
 function add(card) {
   missing.delete(card.id);
   if (cards.some((c) => c.id === card.id)) return replace(card);
+  // A picture becomes the first card: kept in view when the strip is at its start. A note joins the
+  // history's end, kept in view when the strip is at its end.
+  const atStart = strip.scrollLeft <= PITCH;
   const atEnd = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - PITCH;
   cards.push(card);
   draw();
-  if (atEnd) strip.scrollLeft = strip.scrollWidth;
+  if (!card.note) { if (atStart) strip.scrollLeft = 0; }
+  else if (atEnd) strip.scrollLeft = strip.scrollWidth;
   frame();
 }
 function remove(id) {
@@ -162,10 +166,17 @@ function fill(li, c, now = current()) {
 
 // The newest picture card (a note is not something the agent saw).
 const current = () => { for (let i = cards.length - 1; i >= 0; i--) if (!cards[i].note) return cards[i].id; return null; };
+// The display order: the current picture first, then every other card in the helper's order
+// (oldest to newest, notes included).
+function ordered() {
+  const now = current();
+  const first = now ? cards.find((c) => c.id === now) : null;
+  return first ? [first, ...cards.filter((c) => c !== first)] : cards;
+}
 
 function draw() {
   const now = current();
-  const items = cards.map((c) => {
+  const items = ordered().map((c) => {
     let li = nodes.get(c.id);
     if (!li) { li = node(c); nodes.set(c.id, li); }
     fill(li, c, now);
@@ -185,24 +196,28 @@ function draw() {
     li.querySelector(".face").tabIndex = on ? 0 : -1;
     li.querySelector(".more").tabIndex = on ? 0 : -1;
   }
-  // In place, Add note kept last: a node moved loses focus, so only what changed moves.
+  // In place, Add note kept last: a node moved loses focus, so only what changed moves, and the
+  // focus is put back where it was.
+  const had = list.contains(document.activeElement) ? document.activeElement : null;
   for (const li of [...list.children]) if (li !== addLi && !items.includes(li)) li.remove();
   items.forEach((li, i) => { const at = list.children[i]; if (at !== li) list.insertBefore(li, at); });
+  if (had?.isConnected && document.activeElement !== had) had.focus({ preventScroll: true });
   if (document.body.dataset.state === "list") showLine(cards.length ? "" : "Nothing yet. Pictures sent to the agent appear here.");
   setDriver();
 }
 
-// ---- pictures: the visible cards and a few more, by index (no observer) ----
+// ---- pictures: the visible cards and a few more, by display index (no observer) ----
 
-function range() {
+function range(order = ordered()) {
   const first = Math.max(0, Math.floor((strip.scrollLeft - PAD) / PITCH));
-  const last = Math.min(cards.length - 1, Math.floor((strip.scrollLeft + strip.clientWidth - PAD) / PITCH));
+  const last = Math.min(order.length - 1, Math.floor((strip.scrollLeft + strip.clientWidth - PAD) / PITCH));
   return [first, last];
 }
 function frame() {
   if (!visible() || !cards.length) return countHeld();
-  const [first, last] = range();
-  cards.forEach((c, i) => {
+  const order = ordered();
+  const [first, last] = range(order);
+  order.forEach((c, i) => {
     if (i < first - RELEASE_MARGIN || i > last + RELEASE_MARGIN) release(c.id);
     else if (i >= first - FETCH_MARGIN && i <= last + FETCH_MARGIN) want(c);
   });
@@ -222,8 +237,9 @@ async function want(c) {
   loading.delete(c.id);
   const li = nodes.get(c.id);
   if (!blob || !li || !visible() || held.has(c.id)) return;
-  const [first, last] = range();
-  const i = cards.findIndex((x) => x.id === c.id);
+  const order = ordered();
+  const [first, last] = range(order);
+  const i = order.findIndex((x) => x.id === c.id);
   if (i < first - RELEASE_MARGIN || i > last + RELEASE_MARGIN) return;
   const url = URL.createObjectURL(blob);
   held.set(c.id, url);
@@ -453,7 +469,7 @@ async function pin(card) {
 }
 
 async function del(card) {
-  const i = cards.findIndex((c) => c.id === card.id);
+  const i = items().indexOf(faceOf(nodes.get(card.id))); // its place on screen
   const r = await fetch(base + `timeline/${card.id}`, { method: "DELETE" }).catch(() => null);
   closeMenu(false);
   if (!r?.ok) {

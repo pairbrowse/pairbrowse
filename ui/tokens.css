@@ -1,7 +1,7 @@
 /* The PairBrowse design tokens: one sheet for every surface PairBrowse styles itself (side panel,
    session picker, new tab page, a joiner's picture page and the live view). scripts/hud.js and
    record.js carry the same values inline (closed shadow roots and a canvas take no variables);
-   test/tokens.test.mjs keeps them equal and checks the contrast. Flat navy; color is for state. */
+   test/tokens.test.mjs keeps them equal and checks the contrast. Navy surfaces with a static light (no motion, no blur); color is for state. */
 :root {
   --bg: #0B1421; --chrome: #101D2D; --sidebar: #111E2D; --elevated: #192A3D; --hover: #243750;
   --ink: #F1F5FA; --ink-2: #A2B2C6; --muted: #8699B1; --edge: #293B50;
@@ -14,6 +14,19 @@
   --fs-1: 11px; --fs-2: 12px; --fs-3: 13px; --fw-name: 600;
   --r-1: 6px; --r-2: 8px; --r-3: 10px;
   --t: 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* Static light: never animated, never backdrop-filter; every color is a sheet color with alpha.
+     The gradient only darkens, so text keeps the contrast it has on the flat surface. */
+  --tab-idle: #0E1826; --tab-top: #1B2C42;
+  --edge-light: rgb(255 255 255 / 0.08); --edge-lit: rgb(106 166 249 / 0.22); --edge-accent: rgb(106 166 249 / 0.6);
+  --surface-grad: linear-gradient(180deg, rgb(0 0 0 / 0), rgb(0 0 0 / 0.16));
+  --shadow-raised: 0 8px 24px rgb(0 0 0 / 0.35), 0 0 20px rgb(50 133 246 / 0.08);
+  --glow-soft: 0 0 16px rgb(50 133 246 / 0.14);
+  --glow-accent: 0 0 0 1px rgb(50 133 246 / 0.45), 0 4px 16px rgb(50 133 246 / 0.35);
+  --glow-top: 0 -2px 10px -2px rgb(50 133 246 / 0.5);
+  --glow-ok: 0 0 6px rgb(32 201 151 / 0.8);
+  --glow-bad: 0 0 0 1px rgb(239 100 104 / 0.5), 0 4px 18px rgb(239 100 104 / 0.28);
+  --glow-focus: 0 0 0 4px rgb(50 133 246 / 0.18), 0 0 14px rgb(50 133 246 / 0.35);
+  --ok-soft: rgb(32 201 151 / 0.12); --ok-edge: rgb(32 201 151 / 0.45); --bad-soft: rgb(239 100 104 / 0.14);
 }
 /* The live view alone follows the system's light scheme (liveview.html sets data-scheme); the
    extension pages stay dark. */

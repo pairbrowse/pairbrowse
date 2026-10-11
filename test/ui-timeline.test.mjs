@@ -1,5 +1,5 @@
-// The timeline page (ui/timeline, DESIGN.md B7) over the fake helper's timeline routes: cards in
-// order with the newest picture ringed, the Live pill only while the agent drives, pictures
+// The timeline page (ui/timeline, DESIGN.md B7) over the fake helper's timeline routes: the current
+// (newest) picture first and ringed, then the history oldest to newest, the Live pill only while the agent drives, pictures
 // fetched with the owner key for the visible cards and released when scrolled away or hidden,
 // notes, the card menu (pin, delete in words), the keyboard, and the off state. The common checks
 // stay in test/ui.test.mjs.
@@ -29,8 +29,8 @@ const card = (id) => `li.card[data-id="${id}"]`;
 pageTest("timeline", opts(), async ({ until, inPage, helper, harness }) => {
   await until("30 cards", drawn, 30);
   const order = await inPage(() => [...document.querySelectorAll("li.card:not(.add)")].map((li) => li.dataset.id));
-  assert.deepEqual(order, CARDS.map((c) => c.id), "oldest left, newest right");
   const last = CARDS.at(-1).id;
+  assert.deepEqual(order, [last, ...CARDS.slice(0, -1).map((c) => c.id)], "current first, then oldest to newest");
   assert.deepEqual(await inPage(() => [...document.querySelectorAll('[aria-current="true"]')].map((face) => face.closest("li").dataset.id)), [last], "the newest picture is current");
   assert.equal(await inPage((s) => document.querySelector(`${s} .face`).tagName, card(last)), "BUTTON", "the card's face is a button");
   assert.equal(await inPage((s) => !!document.querySelector(`${s} .face .more`), card(last)), false, "More sits beside the face, not in it");
@@ -45,9 +45,18 @@ pageTest("timeline", opts(), async ({ until, inPage, helper, harness }) => {
   assert.equal(await inPage((s) => document.querySelector(`${s} .more`).getAttribute("aria-controls"), card(last)), "menu", "More points at the menu it opens");
   assert.equal(await inPage((s) => document.querySelector(`${s} .live-pill`).hidden, card(last)), true, "no Live pill while idle");
   assert.equal(await inPage(() => document.body.dataset.driving), "false");
+  const accents = (sel) => (getComputedStyle(document.querySelector(sel)).boxShadow.match(/50, 133, 246/g) || []).length;
+  assert.equal(await inPage(accents, card(last)), 1, "the 2 px --accent ring, always on the current card");
   helper.push("activity", [{ t: Date.now(), who: "Claude", text: "Clicked **Continue**" }]);
   await until("the Live pill", (s) => !document.querySelector(`${s} .live-pill`).hidden && document.body.dataset.driving === "true", card(last));
   assert.equal(await inPage(() => document.querySelectorAll(".live-pill:not([hidden])").length), 1, "on the current card only");
+  assert.ok(await inPage(accents, card(last)) >= 3, "the ring gains the accent glow while driving");
+  const pill = await inPage((s) => {
+    const li = document.querySelector(s), p = li.querySelector(".live-pill");
+    return { left: p.getBoundingClientRect().left - li.getBoundingClientRect().left, dot: getComputedStyle(p.querySelector(".live")).backgroundColor };
+  }, card(last));
+  assert.ok(Math.abs(pill.left - 12) <= 1, `the Live pill at the top-left (${pill.left})`);
+  assert.equal(pill.dot, "rgb(239, 100, 104)", "a red Live dot");
   const live = await harness.live();
   assert.equal(live.eventSources, 1);
   assert.equal(live.timeouts, 1, "the one drive timeout");
@@ -64,13 +73,14 @@ pageTest("timeline", opts({ fixtures: { timeline: { cards: CARDS }, pictures, ac
 pageTest("timeline", opts(), async ({ until, inPage, helper }) => {
   const blob = (ids) => ids.every((id) => { const img = document.querySelector(`li.card[data-id="${id}"] img`); return img.src.startsWith("blob:") && img.complete && img.naturalWidth > 0; });
   const none = (ids) => ids.every((id) => !document.querySelector(`li.card[data-id="${id}"] img`).src);
-  await until("the end cards' pictures", blob, CARDS.slice(20).map((c) => c.id));
-  assert.equal(await inPage(none, CARDS.slice(0, 6).map((c) => c.id)), true, "far cards have no picture");
+  // At the start: the current card and the oldest ones; the newest of the history is far away.
+  await until("the first cards' pictures", blob, [CARDS.at(-1).id, ...CARDS.slice(0, 8).map((c) => c.id)]);
+  assert.equal(await inPage(none, CARDS.slice(20, 29).map((c) => c.id)), true, "far cards have no picture");
   assert.ok(Number(await inPage(() => document.body.dataset.held)) <= 16);
   await inPage(logFetches);
-  await inPage(() => { document.getElementById("strip").scrollLeft = 0; });
-  await until("the first cards' pictures", blob, CARDS.slice(0, 9).map((c) => c.id));
-  await until("the end cards released", none, CARDS.slice(22).map((c) => c.id));
+  await inPage(() => { const s = document.getElementById("strip"); s.scrollLeft = s.scrollWidth; });
+  await until("the end cards' pictures", blob, CARDS.slice(22, 29).map((c) => c.id));
+  await until("the first cards released", none, CARDS.slice(0, 6).map((c) => c.id));
   const held = Number(await inPage(() => document.body.dataset.held));
   assert.ok(held > 0 && held <= 16, `held ${held}`);
   const fetches = await inPage(() => window.__fetches);
@@ -148,6 +158,10 @@ pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
 pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
   await until("30 cards", drawn, 30);
   const id = CARDS.at(-2).id;
+  // The newest of the history sits at the end (the current picture is first): scrolled there first,
+  // since a scroll closes the menu.
+  await inPage(() => { const s = document.getElementById("strip"); s.scrollLeft = s.scrollWidth; });
+  await page.waitForTimeout(100);
   await page.click(`${card(id)} .more`);
   await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
   assert.match(await inPage(() => document.getElementById("menu").textContent), /Delete this picture\?/);
@@ -194,7 +208,7 @@ pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
   await until("30 cards", drawn, 30);
   const ids = CARDS.map((c) => c.id);
   const active = () => inPage(() => (document.activeElement.classList.contains("face") ? document.activeElement.closest("li").dataset.id : document.activeElement.id));
-  assert.equal(await inPage((s) => document.querySelector(`${s} .face`).tabIndex, card(ids.at(-1))), 0, "the newest card takes Tab");
+  assert.equal(await inPage((s) => document.querySelector(`${s} .face`).tabIndex, card(ids.at(-1))), 0, "the current (first) card takes Tab");
   await page.focus(`${card(ids.at(-1))} .face`);
   assert.equal(await inPage(() => document.querySelectorAll('.more[tabindex="0"]').length), 1, "only the focused card's More is a Tab stop");
   await page.keyboard.press("Tab");
@@ -213,18 +227,20 @@ pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
   await page.keyboard.press("Tab");
   assert.equal(await active(), "add-btn", "Tab again: Add note");
   await page.focus(`${card(ids.at(-1))} .face`);
-  await page.keyboard.press("ArrowLeft");
-  assert.equal(await active(), ids.at(-2));
-  assert.equal(await inPage((s) => document.querySelector(`${s} .more`).tabIndex, card(ids.at(-2))), 0, "More roves with the face");
-  assert.equal(await inPage(() => document.querySelectorAll('.more[tabindex="0"]').length), 1);
   await page.keyboard.press("ArrowRight");
-  assert.equal(await active(), ids.at(-1));
+  assert.equal(await active(), ids[0], "after the current card: the oldest");
+  assert.equal(await inPage((s) => document.querySelector(`${s} .more`).tabIndex, card(ids[0])), 0, "More roves with the face");
+  assert.equal(await inPage(() => document.querySelectorAll('.more[tabindex="0"]').length), 1);
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(await active(), ids.at(-1), "back to the current card");
   await page.keyboard.press("End");
   assert.equal(await active(), "add-btn");
   await page.keyboard.press("Home");
-  assert.equal(await active(), ids[0]);
+  assert.equal(await active(), ids.at(-1), "Home: the current card");
   await page.keyboard.press("End");
   await page.keyboard.press("ArrowLeft");
+  assert.equal(await active(), ids.at(-2), "the newest of the history, before Add note");
+  await page.keyboard.press("Home");
   assert.equal(await active(), ids.at(-1));
   await inPage(logFetches);
   await page.keyboard.press("Enter");
@@ -254,6 +270,7 @@ pageTest("timeline", opts({ reducedMotion: "reduce" }), async ({ until, helper, 
 
 pageTest("timeline", opts({ replies: { timeline: (body, rest) => (rest[0] === "note" ? { status: 409, body: { error: "Too long." } } : replies.timeline(body, rest)) } }), async ({ until, inPage, page }) => {
   await until("30 cards", drawn, 30);
+  await inPage(() => { const s = document.getElementById("strip"); s.scrollLeft = s.scrollWidth; });
   await until("scrolled to the end", () => { const s = document.getElementById("strip"); return s.scrollLeft > 0 && s.scrollLeft + s.clientWidth >= s.scrollWidth - 1; });
   const before = await inPage(() => document.querySelector("li.card:not(.add)").getBoundingClientRect().left);
   await page.click("#add-btn");
@@ -268,16 +285,48 @@ pageTest("timeline", opts({ replies: { timeline: (body, rest) => (rest[0] === "n
   assert.equal(await inPage(() => document.querySelectorAll("li.card:not(.add)").length), 30, "no card added");
 });
 
-pageTest("timeline", opts(), async ({ until, inPage, page }) => {
+const PINNED = [...CARDS.slice(0, -1), { ...CARDS.at(-1), pinned: true }];
+pageTest("timeline", opts({ fixtures: { timeline: { cards: PINNED }, pictures } }), async ({ until, inPage, page, helper }) => {
   await until("30 cards", drawn, 30);
   const id = CARDS.at(-1).id;
+  helper.push("activity", [{ t: Date.now(), who: "Claude", text: "Clicked" }]);
+  await until("the Live pill", (s) => !document.querySelector(`${s} .live-pill`).hidden, card(id));
+  const chip = (s) => getComputedStyle(document.querySelector(`${s} .pin-chip`)).right;
+  await page.mouse.move(5, 125);
+  await page.waitForTimeout(250);
+  assert.equal(await inPage(chip, card(id)), "12px", "Pinned at the top-right while More is away");
   await page.focus(`${card(id)} .face`);
   await page.keyboard.press("Shift+F10");
   await page.mouse.move(5, 5);
   await page.waitForTimeout(250);
   assert.equal(await inPage(() => document.activeElement.getAttribute("role")), "menuitem", "focus is in the menu, not the card");
-  const pill = await inPage((s) => getComputedStyle(document.querySelector(`${s} .live-pill`)).right, card(id));
-  assert.equal(pill, "32px", "the Live pill steps aside while the menu is open");
+  const at = await inPage((s) => {
+    const li = document.querySelector(s), p = li.querySelector(".live-pill"), m = li.querySelector(".more");
+    return { left: getComputedStyle(p).left, right: p.getBoundingClientRect().right, more: m.getBoundingClientRect().left };
+  }, card(id));
+  assert.equal(at.left, "12px", "the Live pill stays at the top-left");
+  assert.ok(at.right <= at.more, "clear of the More button");
+  assert.equal(await inPage(chip, card(id)), "32px", "the Pinned chip steps aside while the menu is open");
+  await page.keyboard.press("Escape");
+  await page.mouse.move(5, 125);
+  await inPage(() => document.activeElement?.blur?.());
+  await page.waitForTimeout(250);
+  assert.equal(await inPage(chip, card(id)), "12px", "back once the menu is closed");
+});
+
+pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
+  await until("30 cards", drawn, 30);
+  assert.equal(await inPage(() => document.getElementById("strip").scrollLeft), 0, "the strip opens at the current picture");
+  // Focus on a card that moves when a new picture arrives stays on it.
+  const keep = CARDS[0].id;
+  await page.focus(`${card(keep)} .face`);
+  const added = cardFx(30);
+  helper.push("timeline", { op: "add", card: added });
+  await until("the new picture first", (id) => document.querySelector("li.card:not(.add)").dataset.id === id, added.id);
+  assert.equal(await inPage(() => document.getElementById("strip").scrollLeft), 0, "kept at the start");
+  assert.equal(await inPage((s) => document.activeElement === document.querySelector(`${s} .face`), card(keep)), true, "the focus stays on its card");
+  assert.equal(await inPage(() => document.querySelectorAll('[aria-current="true"]').length), 1);
+  assert.equal(await inPage((s) => document.querySelector(`${s} .face`).getAttribute("aria-current"), card(added.id)), "true");
 });
 
 pageTest("timeline", opts({ fixtures: { timeline: { cards: CARDS }, pictures: { ...pictures } } }), async ({ until, inPage, helper, harness }) => {

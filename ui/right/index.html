@@ -46,15 +46,15 @@
             <span class="avatar" id="agent-avatar" aria-hidden="true">C</span>
             <strong class="agent-name" id="agent-name">Claude</strong>
             <div class="driver" id="driver" data-state="connecting"><i class="dot" aria-hidden="true"></i><span id="driver-text">Waiting for PairBrowse</span></div>
+            <!-- "Pause agents" on the name row: who paused is in the state line; #pause-text describes the button. -->
+            <div class="pause" id="pause" hidden><span class="sr" id="pause-text">Agents can act in the browser</span><button id="pause-btn" type="button" aria-describedby="pause-text" aria-label="Pause agents">Pause</button></div>
             <button class="fold" id="agent-fold" type="button" aria-expanded="true" aria-controls="agent-body" aria-label="Collapse the agent card"></button>
             <div class="turn" id="turn"><strong id="turn-text">Your turn</strong><small>Claude continues when the page moves on</small></div>
             <div id="agent-body">
-              <div class="pause" id="pause" hidden><span id="pause-text">Agents can act in the browser</span><button id="pause-btn" type="button">Pause agents</button></div>
-              <p class="agent-tab" id="agent-tab" hidden></p>
-              <div class="task" id="task" hidden><span class="k">Current task</span><div class="box" id="task-name"></div></div>
-              <button class="more" id="agent-more" type="button" aria-expanded="false" aria-controls="checklist">Checklist</button>
-              <div class="checklist" id="checklist" hidden><p class="sr" id="checklist-said" role="status" aria-live="polite"></p><ol id="checklist-items" aria-label="Checklist from the goal log"></ol></div>
-              <section class="statusbox" id="agent-status" aria-labelledby="status-head"><div class="head"><span class="k" id="status-head">Status</span><span class="pill live-pill" id="status-live" hidden><i class="live" aria-hidden="true"></i>Live</span></div><p id="agent-status-text">No status from the agent yet.</p></section>
+              <div class="task-head"><span class="k">Current task</span><button class="more" id="agent-more" type="button" aria-expanded="true" aria-controls="checklist" aria-label="Checklist" title="Show or hide the checklist"></button></div>
+              <div class="task" id="task" hidden><div class="box" id="task-name"></div></div>
+              <div class="checklist" id="checklist"><p class="sr" id="checklist-said" role="status" aria-live="polite"></p><ol id="checklist-items" aria-label="Checklist from the goal log"><li class="empty">Waiting for PairBrowse.</li></ol></div>
+              <section class="statusbox" id="agent-status" aria-labelledby="status-head"><div class="head"><span class="k" id="status-head">Status</span><span class="pill live-pill" id="status-live" hidden><i class="live" aria-hidden="true"></i>Live</span></div><div class="sbox"><p id="agent-status-text">No status from the agent yet.</p></div><p class="agent-tab" id="agent-tab" hidden></p></section>
             </div>
           </article>
         </section>
@@ -78,10 +78,17 @@
 
       <footer class="session-card" id="session-card">
         <span class="sicon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 3h13v10h-13zM3 6v5.5h10V6zm0-1.5h1.2V4H3zm2 0h1.2V4H5z"/></svg></span>
-        <strong class="sname" id="session-line" hidden>Session: <b id="session-name"></b></strong>
+        <div class="shead">
+          <strong class="sname" id="session-line" hidden>Session: <b id="session-name"></b></strong>
+          <input class="field sname-input" id="session-name-input" maxlength="60" aria-label="Session name" autocomplete="off" hidden>
+          <!-- Save and the pencil show only when the helper's session event says canSave / canRename. -->
+          <button class="pencil" id="session-rename" type="button" aria-label="Rename this session" title="Rename this session" hidden><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 2.5l3 3L6 13H3v-3z"/><path d="M9 4l3 3"/></svg></button>
+        </div>
         <small class="saved" id="session-saved" hidden></small>
+        <button class="fold" id="session-fold" type="button" aria-expanded="true" aria-controls="session-actions" aria-label="Hide the session buttons"></button>
         <!-- #switch-btn keeps its id: its duty, opening the session picker, is the same. -->
-        <div class="row3"><button class="mini share-btn" id="share-btn" type="button" aria-expanded="false" aria-controls="share-card">Share</button><button class="end" id="switch-btn" type="button" aria-expanded="false" aria-controls="end-confirm" title="End this session and pick another: the picker opens, nothing is deleted">End session</button></div>
+        <div class="row3" id="session-actions"><button class="save" id="session-save" type="button" hidden><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 2.5h9l2 2v9h-11z"/><path d="M5 2.5v3.5h5V2.5M5 13.5v-4h6v4"/></svg>Save</button><button class="mini share-btn" id="share-btn" type="button" aria-expanded="false" aria-controls="share-card"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10V2.5M5 5.2 8 2.2l3 3M3.5 8.5v4.5h9V8.5"/></svg>Share</button><button class="end" id="switch-btn" type="button" aria-expanded="false" aria-controls="end-confirm" title="End this session and pick another: the picker opens, nothing is deleted"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 2v6"/><path d="M4.5 4.2a5 5 0 1 0 7 0"/></svg>End session</button></div>
+        <p class="msg" id="session-msg" role="status" aria-live="polite"></p>
         <div class="end-confirm" id="end-confirm" role="group" aria-labelledby="end-q" hidden><p id="end-q">End this session and pick another? Nothing is deleted; the picker opens.</p><div class="end-row"><button class="end" id="end-yes" type="button">End session</button><button id="end-no" type="button">Keep</button></div></div>
         <div class="share-card" id="share-card" role="dialog" aria-labelledby="share-title" hidden>
           <h2 id="share-title">Share this session</h2>

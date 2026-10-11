@@ -104,7 +104,7 @@ You and Claude can work in the same tab. When you click or type in the PairBrows
 next action in that tab waits (the bottom bar says "waiting… you're using the browser") and
 continues when you've stopped for two seconds; moving the mouse or scrolling holds nothing up. Fields you fill are yours for 5 seconds after your last keystroke (10 while you stay in them): Claude
 leaves them as you wrote them. Claude is then told what you did, which button or field, never what
-you typed. "Pause agents" in the bottom bar or side panel stops all agents until you press Resume. A visible CAPTCHA or bot check, or Claude handing over for a
+you typed. "Pause agents" in the bottom bar, or Pause on the side panel's agent card, stops all agents until you press Resume. A visible CAPTCHA or bot check, or Claude handing over for a
 sign-in, 2FA or approval, shows "Your turn" and sends you a PairBrowse notification.
 
 ## Uploads without a file picker

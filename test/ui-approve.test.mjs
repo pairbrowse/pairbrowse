@@ -75,15 +75,22 @@ named("renders the oldest pending click and counts the rest", async (ctx) => {
       width: cs("#card").width, padding: cs("#card").paddingTop, radius: cs("#card").borderTopLeftRadius, border: `${cs("#card").borderTopWidth} ${cs("#card").borderTopStyle} ${cs("#card").borderTopColor}`,
       bg: cs("#card").backgroundColor, shadow: cs("#card").boxShadow,
       target: `${cs("#target").borderTopWidth} ${cs("#target").borderTopColor}`, reason: cs("#reason").color,
+      allowShadow: cs("#allow").boxShadow,
+      raised: (() => { const p = document.createElement("i"); p.style.boxShadow = "inset 0 1px 0 var(--edge-light), var(--shadow-raised)"; document.body.append(p); const v = getComputedStyle(p).boxShadow; p.remove(); return v; })(),
       allow: [cs("#allow").backgroundColor, cs("#allow").color], deny: [cs("#deny").backgroundColor, cs("#deny").borderTopWidth, cs("#deny").borderTopColor], more: cs("#more").color,
     };
   });
   const [edge, elevated, ink2, accent, bg] = await Promise.all(["edge", "elevated", "ink-2", "accent", "bg"].map((n) => token(ctx, n)));
+  assert.match(m.allowShadow, /rgba?\(50, 133, 246/, "Allow glows accent");
+  assert.ok(m.raised.length > 0);
+  m.shadow = m.shadow === m.raised ? "raised" : m.shadow;
+  delete m.allowShadow;
+  delete m.raised;
   assert.deepEqual(m, {
     pending: "2", focus: "card", countLabel: "1 more waiting",
     whoWeight: "600", avRole: "img", avLabel: "Claude", avBg: "rgb(233, 118, 63)", avText: "C",
     width: "360px", padding: "16px", radius: "12px", border: `1px solid ${edge}`,
-    bg: elevated, shadow: "rgba(0, 0, 0, 0.4) 0px 12px 32px 0px",
+    bg: elevated, shadow: "raised", // the sheet's raised light: a 1 px top highlight and --shadow-raised
     target: `1px ${edge}`, reason: ink2,
     allow: [accent, bg], deny: [elevated, "1px", edge], more: ink2,
   });

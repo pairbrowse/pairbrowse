@@ -48,12 +48,13 @@ test("the panel's markup keeps every id once, and each section folds with a name
   assert.match(html, /<meta name="color-scheme" content="dark">/);
   for (const name of ["label", "value", "domains"]) assert.match(html, new RegExp(`name="${name}"`), name);
   // Share and the Checklist: buttons that say what they open and whether it is open.
-  for (const [id, target] of [["share-btn", "share-card"], ["agent-more", "checklist"]]) {
+  for (const [id, target, open] of [["share-btn", "share-card", false], ["agent-more", "checklist", true]]) {
     const tag = html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))?.[0];
     assert.ok(tag, id);
-    assert.match(tag, /aria-expanded="false"/, id);
+    assert.match(tag, new RegExp(`aria-expanded="${open}"`), id);
     assert.match(tag, new RegExp(`aria-controls="${target}"`), id);
-    assert.match(html, new RegExp(`id="${target}"[^>]*hidden`), `#${target} starts hidden`);
+    if (open) assert.doesNotMatch(html, new RegExp(`id="${target}"[^>]*hidden`), `#${target} starts open`);
+    else assert.match(html, new RegExp(`id="${target}"[^>]*hidden`), `#${target} starts hidden`);
   }
   assert.match(html, /<div class="share-card" id="share-card" role="dialog" aria-labelledby="share-title" hidden>/);
   assert.deepEqual([...html.matchAll(/<input type="radio" name="share" value="(\w+)"/g)].map(([, v]) => v), ["code", "link"]);
@@ -258,7 +259,9 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.ok(v.people.some((p) => p.startsWith("Gemini · Gemini CLI") && p.includes("Checking prices")));
     assert.equal(await page.evaluate(() => document.querySelector("#people .app")?.textContent), " · Codex", "the app, apart from the name");
 
-    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("pause")).gridColumnStart), "1", "the pause block spans the card");
+    const pause = await page.evaluate(() => ({ row: getComputedStyle(document.getElementById("pause")).gridRowStart, left: document.getElementById("pause").getBoundingClientRect().left, name: document.getElementById("agent-name").getBoundingClientRect().right }));
+    assert.equal(pause.row, "1", "Pause on the name row");
+    assert.ok(pause.left > pause.name, "right of the name");
 
     // A second action by the same agent: the people list is left as it is (same nodes).
     await inPage(page, () => { window.__people = [...document.getElementById("people").children]; });
@@ -287,7 +290,7 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     lv.push("pause", { paused: true, can: true, by: "Sam" });
     await until(page, "paused", () => document.getElementById("pause-btn").textContent === "Resume");
     assert.equal(await page.evaluate(() => document.getElementById("pause-text").textContent), "Paused by Sam");
-    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("pause")).boxShadow.includes("inset")), true, "the warn edge");
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("pause-btn")).borderTopColor), "rgb(244, 180, 93)", "the warn edge");
     await page.click("#pause-btn");
     for (let i = 0; i < 40 && !lv.posts.some((p) => p.route === "pause"); i++) await page.waitForTimeout(50);
     assert.deepEqual(lv.posts.find((p) => p.route === "pause")?.body, { paused: false });
@@ -361,6 +364,9 @@ test("Share makes an invite from the panel by keyboard, and the Checklist reads 
     const { page, errors } = await openPanel(browser, { base: lv.base });
     await until(page, "the stream", () => document.body.dataset.s === "live");
     for (let i = 0; i < 50 && !lv.streams.size; i++) await page.waitForTimeout(50);
+    // The Agent tab is in front: the goal log is read once when the stream opens.
+    for (let i = 0; i < 60 && lv.counts.journal < 1; i++) await page.waitForTimeout(50);
+    assert.equal(lv.counts.journal, 1, "read once with the Agent tab in front");
     lv.push("session", { name: "Checkout test", where: "Local", temporary: false });
     lv.push("board", { people: [PEOPLE[0]], messages: [] });
     const active = () => page.evaluate(() => document.activeElement?.id || document.activeElement?.getAttribute("name") || document.activeElement?.tagName);
@@ -412,15 +418,15 @@ test("Share makes an invite from the panel by keyboard, and the Checklist reads 
     await page.click("#share-btn");
     assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), true, "the button closes it again");
 
-    // Checklist: folded, nothing read; opened, one read, rows in glyph and words.
-    lv.push("activity", [{ t: Date.now(), text: "Filled **Name**", who: "Claude", tab: "Details" }]);
-    await page.waitForTimeout(300);
-    assert.equal(lv.counts.journal, 0, "nothing read while folded");
-    assert.equal(await page.getAttribute("#agent-more", "aria-expanded"), "false");
-    await page.click("#agent-more");
-    await until(page, "the checklist", () => document.querySelectorAll("#checklist-items li[data-state]").length === 4);
-    assert.equal(lv.counts.journal, 1, "read once when opened");
+    // Checklist: open by default; an action reads it again (the last read was over 5 s ago),
+    // rows in glyph and words.
     assert.equal(await page.getAttribute("#agent-more", "aria-expanded"), "true");
+    await page.waitForTimeout(5200);
+    const before = lv.counts.journal;
+    lv.push("activity", [{ t: Date.now(), text: "Filled **Name**", who: "Claude", tab: "Details" }]);
+    await until(page, "the checklist", () => document.querySelectorAll("#checklist-items li[data-state]").length === 4 && document.querySelector("#checklist-items li[data-state=current]"));
+    for (let i = 0; i < 60 && lv.counts.journal < before + 1; i++) await page.waitForTimeout(50);
+    assert.equal(lv.counts.journal, before + 1, "an action reads once");
     const rows = () => page.evaluate(() => [...document.querySelectorAll("#checklist-items li")].map((li) => ({ state: li.dataset.state, mark: li.querySelector(".mark").textContent, text: li.querySelector(".text").textContent })));
     const r = await rows();
     assert.deepEqual(r.map((x) => x.state), ["done", "current", "waiting", "pending"], "the newest done row is current while Claude drives");
@@ -434,13 +440,21 @@ test("Share makes an invite from the panel by keyboard, and the Checklist reads 
     const t = Date.now();
     for (let i = 0; i < 3; i++) { lv.push("activity", [{ t: t + i, text: `Act ${i}`, who: "Claude", tab: "Details" }]); await page.waitForTimeout(150); }
     await page.waitForTimeout(6000);
-    assert.equal(lv.counts.journal, 2, "a burst is one read");
-    // Folded: no read, no pending timer.
-    await page.click("#agent-more");
+    assert.equal(lv.counts.journal, before + 2, "a burst is one read");
+    // Another tab in front: no read.
+    await page.click("#tab-tools");
     lv.push("activity", [{ t: Date.now(), text: "Act 9", who: "Claude", tab: "Details" }]);
     await page.waitForTimeout(6000);
-    assert.equal(lv.counts.journal, 2, "nothing while folded");
+    assert.equal(lv.counts.journal, before + 2, "nothing while Tools is in front");
+    await page.click("#tab-agent");
+    for (let i = 0; i < 60 && lv.counts.journal < before + 3; i++) await page.waitForTimeout(50);
+    assert.equal(lv.counts.journal, before + 3, "back on Agent: one read");
+    // The chevron folds the steps and reads nothing.
+    await page.click("#agent-more");
     assert.equal(await page.evaluate(() => document.getElementById("checklist").hidden), true);
+    assert.equal(await page.getAttribute("#agent-more", "aria-expanded"), "false");
+    await page.waitForTimeout(300);
+    assert.equal(lv.counts.journal, before + 3, "folding reads nothing");
     assert.deepEqual(errors, []);
   } finally {
     lv.close();

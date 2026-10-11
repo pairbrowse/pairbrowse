@@ -16,6 +16,7 @@ const BOARD = { people: [
   { who: "Claude", kind: "agent", color: "#e9763f", status: "working", tab: "Shop" },
   { who: "Alice · Codex", kind: "agent", color: "#4fd1e8", status: "you" },
   { who: "Bob", kind: "person", status: "idle" },
+  { who: "You", kind: "person", status: "idle" },
 ] };
 const TWO_TABS = { owners: { agents: { 11: "Claude", 12: "Claude" }, colors: { 11: "#e9763f", 12: "#e9763f" } } };
 
@@ -135,13 +136,15 @@ scenario("left: tab count", { viewport: OPEN }, async (ctx) => {
 
 scenario("left: agents rows with their state in words", { viewport: OPEN, fixtures: { board: BOARD }, shim: TWO_TABS }, async (ctx) => {
   const { until, inPage } = ctx;
-  await until("three rows", () => document.querySelectorAll("#agents li[data-state]").length === 3);
-  const [claude, alice, bob] = await inPage(rows);
+  await until("two rows", () => document.querySelectorAll("#agents li[data-state]").length === 2);
+  const all = await inPage(rows);
+  assert.deepEqual(all.map((r) => r.name), ["Claude", "Alice · Codex"], "agents only: no person row, You absent");
+  assert.equal(all.some((r) => r.state === "online"), false);
+  const [claude, alice] = all;
   assert.deepEqual([claude.state, claude.name, claude.line, claude.bg], ["working", "Claude", "Working · 2 tabs", "rgb(233, 118, 63)"]);
   assert.deepEqual([alice.state, alice.name, alice.line], ["waiting", "Alice · Codex", "Waiting for you"]);
   assert.equal(await inPage(() => document.querySelector("#agents li:nth-child(2) strong .app").textContent), " · Codex");
   assert.equal(await inPage(() => getComputedStyle(document.querySelector("#agents li:nth-child(2) strong .app")).color === getComputedStyle(document.querySelector("#nav-tools")).color), true, "the app in --ink-2");
-  assert.deepEqual([bob.state, bob.line], ["online", "Online"]);
   assert.equal(await inPage(() => document.querySelector("#agents li").getBoundingClientRect().height), 44);
   const dot = (state) => getComputedStyle(document.querySelector(`#agents li[data-state="${state}"] .dot`)).backgroundColor;
   const token = (name) => { const s = document.createElement("span"); s.style.color = `var(${name})`; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; };
@@ -149,6 +152,7 @@ scenario("left: agents rows with their state in words", { viewport: OPEN, fixtur
   assert.equal(await inPage(dot, "waiting"), await inPage(token, "--warn"));
   ctx.helper.set("board", { people: [{ who: "Claude", kind: "agent", status: "idle" }] });
   await until("Active", () => document.querySelector("#agents li small")?.textContent === "Active · 2 tabs");
+  assert.deepEqual((await inPage(rows)).map((r) => r.name), ["Claude"], "an agent-only board renders its row");
   assert.equal((await inPage(rows))[0].bg, "rgb(233, 118, 63)", "the owner's color");
   await ctx.shim.removeTab(12);
   await until("one tab", () => document.querySelector("#agents li small")?.textContent === "Active · 1 tab");
@@ -354,7 +358,7 @@ scenario("left: the session switcher under reduced motion", { viewport: { width:
 scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { layout: { left: 1 } }, fixtures: { board: BOARD } }, async (ctx) => {
   const { until, inPage } = ctx;
   await until("the rail", () => document.body.dataset.dock === "rail");
-  await until("the agents", () => document.querySelectorAll("#agents li[data-state]").length === 3);
+  await until("the agents", () => document.querySelectorAll("#agents li[data-state]").length === 2);
   const seen = await inPage(() => ({
     labels: [...document.querySelectorAll(".label, .ws-label, .badge, h2, .add, .hint, .conn, .activity, #storage, #share-add, .empty-note, .share-card")].filter((n) => n.checkVisibility()).length,
     clipped: [...document.querySelectorAll(".people strong, .people small")].map((n) => n.getBoundingClientRect().width <= 1),
@@ -374,8 +378,8 @@ scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { 
   assert.ok(seen.clipped.length > 0 && seen.clipped.every(Boolean), "names and states clipped, not removed");
   assert.ok(seen.width <= 44, `scrollWidth ${seen.width}`);
   assert.equal(seen.gear, true);
-  assert.deepEqual(seen.avatars, [[true, true, 28], [true, true, 28], [true, true, 28]]);
-  assert.deepEqual(seen.titles, ["Claude · Working · 1 tab", "Alice · Codex · Waiting for you", "Bob · Online"]);
+  assert.deepEqual(seen.avatars, [[true, true, 28], [true, true, 28]]);
+  assert.deepEqual(seen.titles, ["Claude · Working · 1 tab", "Alice · Codex · Waiting for you"]);
   assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions", "History", "Activity", "Tools"]);
   await clean(ctx);
 });

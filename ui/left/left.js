@@ -91,7 +91,9 @@ function drawNav() {
   setCurrent($("nav-browser"), !history);
 }
 
-// ---- agents: the board's people, then every agent that owns a tab and is not on it ----
+// ---- agents: the board's agents, then every agent that owns a tab and is not on it ----
+// Only agents: people (the owner, anyone who joined) are never rows here; joiners are under
+// Shared with, and the owner is in the strip's avatars and the right dock.
 function drawAgents() {
   // The native host keys owners and tabs by the browser's tab id, so a closed tab never counts;
   // the served host's agent-tabs list replaces owners whole and its tabs are keyed by index.
@@ -100,21 +102,17 @@ function drawAgents() {
   const seen = new Set();
   const rows = [];
   for (const p of board.people) {
-    if (!p?.who || seen.has(p.who) || (p.kind !== "agent" && p.kind !== "person")) continue;
+    if (!p?.who || seen.has(p.who) || p.kind !== "agent") continue;
     seen.add(p.who);
     rows.push(p);
   }
   for (const o of owners.values()) if (o.agent && !seen.has(o.agent)) { seen.add(o.agent); rows.push({ who: o.agent, kind: "agent" }); }
   const newest = activity.at(-1);
   const items = rows.map((p) => {
-    let state, words;
-    if (p.kind === "person") { state = "online"; words = "Online"; }
-    else {
-      const n = tabCount(p.who);
-      const driving = !!newest && newest.who === p.who && Date.now() - newest.t < DRIVING_MS;
-      state = p.status === "you" ? "waiting" : p.status === "working" || driving ? "working" : n > 0 ? "active" : "idle";
-      words = { waiting: "Waiting for you", working: n ? `Working · ${plural(n, "tab")}` : "Working", active: `Active · ${plural(n, "tab")}`, idle: "Idle" }[state];
-    }
+    const n = tabCount(p.who);
+    const driving = !!newest && newest.who === p.who && Date.now() - newest.t < DRIVING_MS;
+    const state = p.status === "you" ? "waiting" : p.status === "working" || driving ? "working" : n > 0 ? "active" : "idle";
+    const words = { waiting: "Waiting for you", working: n ? `Working · ${plural(n, "tab")}` : "Working", active: `Active · ${plural(n, "tab")}`, idle: "Idle" }[state];
     const { name, app } = splitLabel(p.who);
     const color = isColor(p.color) ? p.color : colorOf(p.who);
     const face = el("span", { className: "avatar", textContent: initialOf(name) });

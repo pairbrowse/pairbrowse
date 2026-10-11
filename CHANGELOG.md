@@ -5,6 +5,15 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.45 (2026-10-11)
+
+The design mission's finishing touches, gated as before (478 live tests green, lint clean; `docs/design-progress.md` has nothing open). The logo is unchanged.
+
+- The "Opening tabs" page a session shows while its tabs come back lists them as the workspace's rows: an initial avatar, the title, the host, and a state mark (the waiting, opening and failed words stay, so state is never color alone).
+- While this browser's recorder runs, the bottom bar shows a small REC pill with a red dot at the end of the who-line, on this browser's own pages only (one optional boolean on the bar's payload, set by the recorder itself; nothing crosses to joiners).
+- The live view's stage toolbar sits on the sheet's compact sizes, and the workspace column's header shares the tab labels' baseline.
+- The side panel's checklist no longer re-announces its whole list to readers: one hidden status line says the counts, only when they change. On a watch link the live view's tab rows have a default cursor.
+
 ## 0.15.44 (2026-10-11)
 
 The second round of the collaborative browser's look, gated as before (476 live tests green, every bench measure within noise or faster than 0.15.42, the helper's heap flat; `docs/design-progress.md`). The logo is unchanged.

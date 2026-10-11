@@ -43,7 +43,9 @@ There's no headless mode.
   built-in color theme, set in the profile (no theme extension, no "Installed theme" bar); pick
   another in Settings > Appearance and PairBrowse keeps it.
   With a native build that declares its own pages, no extension is loaded: the helper passes the
-  live view's origin and a key of their own in `--pairbrowse-helper`, the session picker is
+  live view's origin in `--pairbrowse-helper` and a key of their own in an owner-only file named
+  by `--pairbrowse-helper-key-file` (deleted once used; the key is never on the command line), the
+  session picker is
   `chrome://pairbrowse/picker`, and agents never see or drive `chrome://pairbrowse` pages.
 - Set `"browser": "/path/to/chromium"` in `~/.pairbrowse/config.json` to use Brave, Arc, Vivaldi
   or another Chromium build instead (an absolute path to its program).

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync, rmSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { paths } from "../paths.mjs";
-import { ensureBrowser, launchArgs, prepareProfile, panelExtensionId, resetPanelWorker, browserChoice } from "../browser.mjs";
+import { ensureBrowser, launchArgs, prepareProfile, panelExtensionId, resetPanelWorker, browserChoice, writeHelperKeyFile, dropHelperKeyFile } from "../browser.mjs";
 import { engineProfile, launchEngine, validateEngine } from "../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../native-install.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "../display.mjs";
@@ -55,13 +55,22 @@ export function stopRequestMirroring(page) {
 // away by itself (not for a session switch).
 // liveOthers(): who else is in this browser's session right now ({ who, app, computer }).
 // chromePagesOf(config): whether the browser it launches has its own pages. helperFor(): the live view's
-// { origin, key } for those pages' launch switch (started then), or null.
+// { origin, key } for those pages (started then), or null: the address goes in its launch switch,
+// the key in an owner-only file named by the other switch, deleted on first use (dropHelperKey).
 // beforeRename(): awaited before a rename moves the session's files (the timeline's last writes).
 // onRenamed(from, to): the session was renamed (the goal log follows).
 export function createContext({ config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, helperFor = async () => null,
   beforeRename = async () => {}, onRenamed = () => {} }) {
   let contextPromise = null;
   let chrome = false; // the browser in use has its own pages (no side panel extension)
+  let helperKeyPath = null; // the key file of the browser launched last, until used or closed
+
+  // Sync and idempotent: a path given is one launch's own file (its close drops only that one).
+  function dropHelperKey(path = helperKeyPath) {
+    if (!path) return;
+    dropHelperKeyFile(path);
+    if (path === helperKeyPath) helperKeyPath = null;
+  }
   const pickerUrl = () => (chrome ? CHROME_PICKER : `chrome-extension://${panelExtensionId()}/picker.html`);
   // The PairBrowse browser is being downloaded and installed (first start, or a new version):
   // the user hears of it, and actions say so at once rather than waiting for minutes.
@@ -277,28 +286,33 @@ let switched = Promise.resolve();
     // A side panel worker from another build (an update): the browser would keep running its
     // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
     if (!chrome) try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
-    // The browser's own pages reach the live view with the address and key in their launch switch
-    // (the args are never logged).
+    // The browser's own pages reach the live view with the address in their launch switch and the
+    // key in an owner-only file the other switch names (neither the key nor the path is logged).
     const helper = chrome ? await helperFor().catch((e) => { log("live view", e?.message || e); return null; }) : null;
     if (chrome && !helper) log("the browser's own pages have no helper address");
     forgetTemporaryDownloads();
     if (!screen && needsVirtualDisplay(config)) screen = await startVirtualDisplay(log);
     createSession(session);
     // The PairBrowse browser (scripts/browser.mjs), or another Chromium browser from config.
-    const ctx = await launchEngine(chromium, config, profile(), {
-      headless: false,
-      // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
-      // Playwright's signal handlers would start a close of their own on the same SIGTERM, and
-      // then treat the helper's close as a second one: a SIGKILL of Chromium inside 50 ms, before
-      // it wrote its cookies (it writes them every ~30 s and on a clean exit): logins lost.
-      handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
-      env: { ...process.env, ...(screen?.env || {}) },
-      executablePath: config.executablePath || await ensureBrowser(chromium, log),
-      viewport: null,
-      // Its own side panel is the only extension it loads.
-      ignoreDefaultArgs: ["--disable-extensions"],
-      args: launchArgs(config, { firstRun, chromePages: chrome, helper: helper ? `${helper.origin}#${helper.key}` : null }),
-    }, log);
+    let keyFile = null;
+    if (helper) try { keyFile = helperKeyPath = writeHelperKeyFile(helper.key); } catch (e) { log(`the browser's own pages have no helper address (key file: ${e?.code || "refused"})`); }
+    let ctx;
+    try {
+      ctx = await launchEngine(chromium, config, profile(), {
+        headless: false,
+        // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
+        // Playwright's signal handlers would start a close of their own on the same SIGTERM, and
+        // then treat the helper's close as a second one: a SIGKILL of Chromium inside 50 ms, before
+        // it wrote its cookies (it writes them every ~30 s and on a clean exit): logins lost.
+        handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
+        env: { ...process.env, ...(screen?.env || {}) },
+        executablePath: config.executablePath || await ensureBrowser(chromium, log),
+        viewport: null,
+        // Its own side panel is the only extension it loads.
+        ignoreDefaultArgs: ["--disable-extensions"],
+        args: launchArgs(config, { firstRun, chromePages: chrome, helper: helper && keyFile ? { origin: helper.origin, keyFile } : null }),
+      }, log);
+    } catch (e) { dropHelperKey(keyFile); throw e; } // a failed launch leaves no key file
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
     await ctx.addInitScript({ content: hud.source });
     for (const p of ctx.pages()) { adopt(p, ctx); hud.ensure(p); }
@@ -309,6 +323,7 @@ let switched = Promise.resolve();
     else restore(ctx);
     const mine = contextPromise;
     ctx.on("close", () => {
+      dropHelperKey(keyFile); // this launch's own file: an older browser closing late keeps the next one's
       log("browser closed");
       // Closed for good (by hand, a crash, the turn cap), not on the way to another session: the
       // calls in flight hear of it.
@@ -545,7 +560,6 @@ let switched = Promise.resolve();
       switching = false;
       done();
     }
-    if (renameFrom && session !== name) return; // dropped above
     // An agent switching is a choice too: no picker in the next browser.
     if (!renameFrom) picked(`Session "${isTemporary(name) ? "clean" : name}" was chosen by an agent.`);
     if (renamed) hostNote(`The person renamed this browser session "${renameFrom}" to "${name}"; the browser restarted on it and its tabs are reopening (pairbrowse_session use ${name}).`);
@@ -635,6 +649,7 @@ let switched = Promise.resolve();
       tabTracker?.stop();
       await ctx?.close();
     } catch {}
+    dropHelperKey();
     try { sweepTemporary(); } catch {}
     screen?.stop();
   }
@@ -649,6 +664,8 @@ let switched = Promise.resolve();
     isRestoring: () => restoring !== null, isSwitching: () => switching,
     currentUrl: () => lastCurrentUrl, setCurrentUrl: (url) => { lastCurrentUrl = url; },
     sessionInfo, sessionCommand, startUp, close, sessionName: () => session, renameCurrent, saveTabs,
+    // The browser's pages used their key (or the helper stops): its file has done its job.
+    dropHelperKey: () => dropHelperKey(),
     waitForPick, pickerState, pickSession, pickedJoin, // In the session being opened, when the person just picked another.
     recordPerson: async (person) => { while (pickSwitch) await pickSwitch; recordPerson(session, person); }, picking: () => pick.state === "showing", reopenPicker,
     // An agent chose (pairbrowse_join): the picker goes, the saved tabs come back.

@@ -42,7 +42,7 @@ import { createContext } from "./daemon/context.mjs";
 import { contextCount } from "./daemon/contexts.mjs";
 import { createHud } from "./daemon/hud.mjs";
 import { createPresence } from "./daemon/presence.mjs";
-import { createPause } from "./daemon/pause.mjs";
+import { createPause, pressPause as pressPauseIn } from "./daemon/pause.mjs";
 import { fieldOwner } from "./daemon/fields.mjs";
 import { createPanel } from "./daemon/panel.mjs";
 import { CHROME_PAGE_ORIGINS } from "./policy.mjs";
@@ -156,21 +156,12 @@ const pauseState = () => ({ ...pause.view(), can: canPause(), perAgent: !follow.
 // guest's viewer). In a session joined from here the host decides, and its state comes back.
 // agent: "Pause this agent" (the owner's pages only): every agent here with that name, by its
 // connection. Resuming one is always possible; pausing one isn't in a session joined from here.
+// In a session joined from here, the global Resume also lets this helper's own per-agent pauses go.
 function pressPause(paused, who = HOST, agent = null) {
-  if (agent !== null) {
-    if (paused && follow.joined()) return { problem: "In a session joined from here, Pause agents pauses everyone; one agent can't be paused on its own." };
-    const ids = [...collaboration.participants].filter(([, p]) => p?.label === agent).map(([id]) => id);
-    if (!ids.length) return { problem: `No agent named "${agent}" works in this browser.` };
-    for (const id of ids) if (paused) pause.pauseOne(id, who); else pause.resumeOne(id, who);
-    return { ok: true };
-  }
-  if (follow.joined()) {
-    if (!canPause()) return { problem: "You joined to watch: only drive participants can pause agents." };
-    follow.say({ op: "pause", paused });
-    return { ok: true };
-  }
-  if (paused) pause.pause(who); else pause.resume(who);
-  return { ok: true };
+  return pressPauseIn(pause, {
+    paused, who, agent, joined: follow.joined(), canPause, say: (op) => follow.say(op),
+    agentIds: (name) => [...collaboration.participants].filter(([, p]) => p?.label === name).map(([id]) => id),
+  });
 }
 const hud = createHud({
   pages: () => context.openPages(), participants: () => [...collaboration.participants.keys()],
@@ -201,7 +192,8 @@ const context = createContext({
   status: (badge) => liveView()?.setStatus(badge),
   shuttingDown: () => shuttingDown,
   // A build with its own pages: their origins are let in before the browser starts (their first
-  // requests pass), and they get the live view's address and their own key in the launch switch.
+  // requests pass), and they get the live view's address in its switch and their own key in an
+  // owner-only file (context.mjs writes it and deletes it once used).
   helperFor: async () => {
     for (const o of CHROME_PAGE_ORIGINS) if (!panel.origins.includes(o)) panel.origins.push(o);
     try {
@@ -212,7 +204,7 @@ const context = createContext({
   onStarted: () => {
     liveView()?.setSession(context.sessionInfo());
     // The side panel extension gets the live view's address through its worker; the browser's own
-    // pages already have it from the launch switch.
+    // pages already have the address in its switch and their own key in an owner-only file.
     if (!context.chromePages()) setTimeout(() => panel.connect().catch((e) => log("side panel", e?.message || e)), 0);
   },
   // The window is gone: end the sessions (the bridge reconnects and reopens Chrome on the next
@@ -230,6 +222,8 @@ const context = createContext({
     else shutdown(0);
   },
 });
+// the grace-timeout exit too: the browser's key file never outlives the helper
+process.on("exit", () => context.dropHelperKey());
 const output = createOutput({ dir: paths.files, secretValues: () => secrets.get().values });
 const screenshots = createScreenshots({ secrets: () => secrets.get(), log, hidePeers: (page, hidden) => hud.call(page, hidden ? "1" : "", "peers-hidden").catch(() => {}) });
 const facts = createFacts({ secrets, log, onChange: () => liveView()?.setProfile(facts.summary()) });
@@ -424,6 +418,8 @@ const sharing = createSharing({
     // live view starts, after startup.
     get clickApprovals() { return clickApprovals; },
     picker: { state: () => context.pickerState(), pick: (op) => pickFromBrowser(op), open: () => context.reopenPicker() },
+    // the first request a browser page makes with its key: the key file has done its job
+    onPagesKey: () => context.dropHelperKey(),
     // A join code's address the person hasn't allowed: their answer from the side panel or picker.
     joinHost: { state: () => follow.hostState(), act: (op) => hostDecision(op) },
   },

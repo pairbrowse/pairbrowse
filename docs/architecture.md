@@ -42,7 +42,7 @@ what each boundary protects against, see [security.md](security.md) and the
   `timeline` (the session's pictures already sent to agents: local, capped, off by config),
   `outline` (the last whole-page snapshot an agent got per tab, in memory, dropped with the tab).
   With a native build that has its own pages, those `chrome://pairbrowse` pages are live view
-  clients with a key of their own from the launch switch; the picker's pick comes over `POST pick`.
+  clients with a key of their own from an owner-only key file named in the launch switches; the picker's pick comes over `POST pick`.
 - **Policy and secrets** (`scripts/policy.mjs`, `scripts/secrets.mjs`): which tools exist, which
   addresses open, which clicks need the user, where a password may be typed and how it is masked.
 - **Hooks** (`scripts/guard.mjs`, `scripts/log.mjs`, `scripts/session-start.mjs`): the PreToolUse

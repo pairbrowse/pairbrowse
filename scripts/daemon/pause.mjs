@@ -4,8 +4,9 @@
 // changes nothing. The host's helper holds the state; a joined helper mirrors it.
 // "Pause this agent" (the owner's pages only): the same for one agent, keyed by its connection
 // (an agent renaming itself doesn't get out of it), dropped when that connection ends. A person
-// resumes it, or presses the global Resume, which resumes every agent paused this way too; an
-// agent never resumes itself.
+// resumes it, or presses the global Resume, which resumes every agent paused this way too, pressed
+// here or in a session joined from here (where the host decides the shared pause); an agent never
+// resumes itself.
 import { cleanName } from "../join.mjs";
 
 export const PAUSE_REPLY_MS = 60_000; // a paused agent hears back after this, so it isn't stuck
@@ -60,6 +61,13 @@ export function createPause({ onChange = () => {}, now = () => Date.now(), reply
       const was = set(false, who);
       if (hadOwn && !was) changed();
       return was || hadOwn;
+    },
+    // Every agent paused on its own goes on; the shared (or mirrored) pause stays as it is. True
+    // when there was one.
+    resumeAgents(who) {
+      const had = resumeOwn(cleanName(who) || "Someone");
+      if (had) changed();
+      return had;
     },
     // A joined helper: the host's state, as it came (who paused, who resumed).
     mirror(remote) {
@@ -129,4 +137,29 @@ export function createPause({ onChange = () => {}, now = () => Date.now(), reply
       return { text: lines.join("\n"), n: fresh.at(-1).n };
     },
   };
+}
+
+// A person pressed "Pause agents" or "Resume" (the bar in a page, the side panel, a drive guest's
+// viewer). joined: in a session joined from here, where the host decides the shared pause and its
+// state comes back (say forwards the press); a Resume pressed here still lets this helper's own
+// paused agents go at once, since the host can't see them. canPause(): this person may drive.
+// agent: "Pause this agent" (the owner's pages only): every agent here with that name
+// (agentIds(name) -> connection ids). Resuming one is always possible; pausing one isn't in a
+// session joined from here. Returns { ok } or { problem }.
+export function pressPause(pause, { paused, who, agent = null, joined = false, canPause = () => true, say = () => {}, agentIds = () => [] }) {
+  if (agent !== null) {
+    if (paused && joined) return { problem: "In a session joined from here, Pause agents pauses everyone; one agent can't be paused on its own." };
+    const ids = agentIds(agent);
+    if (!ids.length) return { problem: `No agent named "${agent}" works in this browser.` };
+    for (const id of ids) if (paused) pause.pauseOne(id, who); else pause.resumeOne(id, who);
+    return { ok: true };
+  }
+  if (joined) {
+    const hadOwn = !paused && pause.resumeAgents(who);
+    if (!canPause()) return hadOwn && !pause.view().paused ? { ok: true } : { problem: "You joined to watch: only drive participants can pause agents." };
+    say({ op: "pause", paused });
+    return { ok: true };
+  }
+  if (paused) pause.pause(who); else pause.resume(who);
+  return { ok: true };
 }

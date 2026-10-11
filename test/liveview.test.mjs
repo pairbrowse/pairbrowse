@@ -789,8 +789,10 @@ test("the browser's own pages' key: owner rights, never echoed, CORS for their o
   const sessionOps = { state: () => ({ canRename: true, canSave: true, savedAt: "" }), rename: async (name) => ({ ok: true, name, from: "a", restarting: true }), save: async () => ({ ok: true, savedAt: "2026-10-11T10:00:00.000Z" }) };
   const outlines = { latest: () => null, get: () => null, onChange: () => () => {} };
   const timeline = { enabled: true, cards: () => [{ id: "0123456789ab", t: 1, caption: "c", step: null, who: "", pinned: false, note: false }], onChange: () => () => {} };
-  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", picker, extraOrigins: [...CHROME, "chrome-extension://aaaa"], sessionOps, outlines, timeline });
+  let used = 0; // onPagesKey: the helper deletes the key file on the first one
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", picker, extraOrigins: [...CHROME, "chrome-extension://aaaa"], sessionOps, outlines, timeline, onPagesKey: () => used++ });
   try {
+    assert.equal(used, 0, "nothing used the pages' key yet");
     for (const v of [plainView, view]) {
       assert.match(v.pagesKey, /^[A-Za-z0-9_-]{43}$/);
       assert.ok(!v.url.includes(v.pagesKey), "never in the owner's link");
@@ -801,6 +803,10 @@ test("the browser's own pages' key: owner rights, never echoed, CORS for their o
     let r = await request(view.port, "GET", `/${k}/state.json`);
     assert.equal(r.status, 200);
     assert.ok(!r.text.includes(k), "state.json never carries it");
+    assert.equal(used, 1, "the first request with the pages' key is heard");
+    const ownerKey = new URL(view.url).pathname.split("/")[1];
+    assert.equal((await request(view.port, "GET", `/${ownerKey}/state.json`)).status, 200);
+    assert.equal(used, 1, "the owner's key is not the pages' key");
     r = await request(view.port, "GET", `/${k}/sessions.json`, { headers: { origin: "chrome://pairbrowse" } });
     assert.equal(r.status, 200);
     assert.equal(r.headers["access-control-allow-origin"], "chrome://pairbrowse");
@@ -842,10 +848,14 @@ test("the browser's own pages' key: owner rights, never echoed, CORS for their o
     assert.equal(r.headers["access-control-allow-origin"], undefined, "but no web origin may read the answer");
     r = await request(view.port, "GET", `/${k}/state.json`, { headers: { origin: "chrome-extension://aaaa" } });
     assert.equal(r.headers["access-control-allow-origin"], undefined, "CORS is for the browser's own pages only");
+    const before = used;
     assert.equal((await request(view.port, "OPTIONS", `/${"x".repeat(43)}/pick`, { headers: { origin: "chrome://pairbrowse" } })).status, 404, "a wrong key: an unknown route");
     assert.equal((await request(view.port, "GET", `/${"x".repeat(43)}/state.json`)).status, 404);
+    assert.equal(used, before, "a wrong key is not the pages' key");
     // Under another host name the pages' key is no key at all (as the owner's).
     assert.equal((await request(view.port, "GET", `/${k}/state.json`, { host: "evil.example" })).status, 403);
+    assert.equal((await request(view.port, "GET", `/${k}/state.json`, { headers: { host: "evil.example" } })).status, 403);
+    assert.equal(used, before, "nor under a foreign host");
     const stream = await readStream(view.port, `/${k}/events?page=picker`);
     for (let i = 0; i < 50 && !view.pageClients().picker; i++) await wait(20);
     assert.equal(view.pageClients().picker, 1);
@@ -853,6 +863,8 @@ test("the browser's own pages' key: owner rights, never echoed, CORS for their o
     assert.ok(!stream.text().includes(k), "the event stream never carries it");
     stream.close();
     assert.notEqual((await request(view.guestPort, "GET", `/${k}/state.json`)).status, 200, "the join-code port never takes it");
+    // Every request made with the pages' key under a loopback host on the owner's port, and no other.
+    assert.equal(used, 15);
   } finally { plainView.close(); view.close(); }
 });
 

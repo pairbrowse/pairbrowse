@@ -513,7 +513,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const { agent, rest: launchOptions } = pack.splitAgentOptions(personaRest);
   const merged = { ...launchOptions, ...options };
   const givenArgs = merged.args ?? [];
-  pack.emitCoherenceWarnings?.({ ...fingerprint, proxy: merged.proxy, geoip: settings.geoip, headless: merged.headless, userAgent: merged.userAgent, _userArgs: givenArgs.filter((a) => !String(a).startsWith("--pairbrowse-helper=")) },
+  pack.emitCoherenceWarnings?.({ ...fingerprint, proxy: merged.proxy, geoip: settings.geoip, headless: merged.headless, userAgent: merged.userAgent, _userArgs: givenArgs.filter((a) => !/^--pairbrowse-helper(-key-file)?=/.test(String(a))) },
     false, process.platform, CHROMIUM_MAJOR);
   const { args: proxyArgs, proxy } = pack.resolveProxy(merged.proxy, pack.engineSupportsSwitch(options.executablePath, "proxy-auth"));
   const { extensionPaths, userArgs } = splitExtensionArgs(givenArgs, extensions);

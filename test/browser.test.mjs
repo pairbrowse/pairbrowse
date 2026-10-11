@@ -111,29 +111,66 @@ test("the browser loads only the side panel extension", async () => {
   assert.ok(args.includes(`--disable-extensions-except=${PANEL_DIR}`));
 });
 
-test("a build with its own pages: no extension, no theme seed, one helper switch", async () => {
+test("a build with its own pages: no extension, no theme seed, two helper switches, never the key", async () => {
   const { launchArgs, browserArgs } = await import("../scripts/browser.mjs");
   const noExtension = (args) => !args.some((a) => /^--(load-extension|disable-extensions-except|allowlisted-extension-id)=/.test(a));
-  const chrome = launchArgs({}, { chromePages: true, helper: "http://127.0.0.1:4321#k" });
-  const helpers = chrome.filter((a) => a.startsWith("--pairbrowse-helper="));
-  assert.deepEqual(helpers, ["--pairbrowse-helper=http://127.0.0.1:4321#k"]);
+  const helperSwitches = (args) => args.filter((a) => /^--pairbrowse-helper/.test(a));
+  const chrome = launchArgs({}, { chromePages: true, helper: { origin: "http://127.0.0.1:4321", keyFile: "/k/helper-key-ab" } });
+  assert.deepEqual(helperSwitches(chrome), ["--pairbrowse-helper=http://127.0.0.1:4321", "--pairbrowse-helper-key-file=/k/helper-key-ab"]);
   assert.ok(noExtension(chrome));
+  // The old "<origin>#<key>" string form is never passed through: the key never rides the command line.
+  assert.deepEqual(helperSwitches(launchArgs({}, { chromePages: true, helper: "http://127.0.0.1:4321#k" })), [], "a string helper: no switch");
+  assert.deepEqual(helperSwitches(launchArgs({}, { chromePages: true, helper: { origin: "http://127.0.0.1:4321" } })), [], "no key file: no switch");
   const first = launchArgs({}, { chromePages: true, firstRun: true });
   assert.ok(!first.includes("--no-startup-window"), "the browser opens its own window");
-  assert.ok(!first.some((a) => a.startsWith("--pairbrowse-helper=")), "no helper given: no switch");
+  assert.deepEqual(helperSwitches(first), [], "no helper given: no switch");
   assert.deepEqual(browserArgs({ chromePages: true, firstRun: true }), process.platform === "darwin" ? ["--show-avatar-button=never"] : []);
   // Today's builds: the extension as before, never the switch.
-  for (const args of [launchArgs({}), launchArgs({}, { firstRun: true }), launchArgs({}, { helper: "http://127.0.0.1:1#k" })]) {
-    assert.ok(!args.some((a) => a.startsWith("--pairbrowse-helper=")));
+  for (const args of [launchArgs({}), launchArgs({}, { firstRun: true }), launchArgs({}, { helper: { origin: "http://127.0.0.1:1", keyFile: "/k/f" } }), launchArgs({}, { helper: "http://127.0.0.1:1#k" })]) {
+    assert.deepEqual(helperSwitches(args), []);
     assert.ok(!noExtension(args));
   }
   // The --enable-features merge and the headless notifications rule hold in this mode too.
-  const merged = launchArgs({ chromeArgs: ["--headless=new", "--enable-features=Foo"] }, { chromePages: true, helper: "h#k" });
+  const merged = launchArgs({ chromeArgs: ["--headless=new", "--enable-features=Foo"] }, { chromePages: true, helper: { origin: "h", keyFile: "f" } });
   const enable = merged.filter((a) => a.startsWith("--enable-features="));
   assert.equal(enable.length, 1);
   assert.ok(enable[0].includes("ForceForegroundPriorityForAllTabs") && enable[0].includes("Foo"));
   assert.ok(merged.includes("--disable-notifications"));
   assert.ok(!launchArgs({}, { chromePages: true }).includes("--disable-notifications"));
+});
+
+test("the helper key file: 0600, the key alone, a fresh name per start, swept and dropped", async () => {
+  const { launchArgs, writeHelperKeyFile, dropHelperKeyFile } = await import("../scripts/browser.mjs");
+  const { mkdtempSync, readFileSync, statSync, existsSync, readdirSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join, dirname } = await import("node:path");
+  const { randomBytes } = await import("node:crypto");
+  const dir = mkdtempSync(join(tmpdir(), "pb-key-"));
+  try {
+    const key = randomBytes(32).toString("base64url");
+    const p1 = writeHelperKeyFile(key, dir);
+    assert.match(p1, /helper-key-[0-9a-f]{32}$/);
+    assert.equal(dirname(p1), dir);
+    // The key alone, no newline, no origin: patch 510's ParseHelperKey accepts exactly this.
+    assert.equal(readFileSync(p1, "utf8"), key);
+    assert.match(readFileSync(p1, "utf8"), /^[A-Za-z0-9_-]{1,256}$/);
+    if (process.platform !== "win32") assert.equal(statSync(p1).mode & 0o777, 0o600);
+    const p2 = writeHelperKeyFile(key, dir);
+    assert.notEqual(p2, p1, "a fresh name per start");
+    assert.ok(!existsSync(p1), "the earlier file is swept");
+    assert.ok(existsSync(p2));
+    for (const bad of ["a:b", "x".repeat(257)]) {
+      const before = readdirSync(dir).sort();
+      assert.throws(() => writeHelperKeyFile(bad, dir), (e) => !e.message.includes(bad));
+      assert.deepEqual(readdirSync(dir).sort(), before, "a refused key leaves no new file");
+    }
+    dropHelperKeyFile(p2);
+    assert.ok(!existsSync(p2));
+    assert.doesNotThrow(() => dropHelperKeyFile(p2));
+    assert.doesNotThrow(() => dropHelperKeyFile(null));
+    const args = launchArgs({}, { chromePages: true, helper: { origin: "http://127.0.0.1:4321", keyFile: p1 } });
+    assert.ok(!args.some((a) => a.includes(key)), "the key is never a launch argument");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("a build with its own pages: the profile gets the docks' layout, no extension or theme settings", async () => {

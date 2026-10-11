@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createPause } from "../scripts/daemon/pause.mjs";
+import { createPause, pressPause } from "../scripts/daemon/pause.mjs";
 import { fieldOwner, leftAlone, OWN_MS } from "../scripts/daemon/fields.mjs";
 
 test("pause agents: people pause and resume, agents hear who, and a long pause answers instead of hanging", async () => {
@@ -115,6 +115,95 @@ test("pause this agent: many clicks on one agent never push a shared pause out b
   assert.match(a1, /You were paused by Bob, then resumed by Bob/, "its own, kept apart");
   pause.forget("a1");
   assert.equal(pause.noteAfter(pause.noteAfter(idle).n, "a1").text, "", "its own go with its connection");
+});
+
+test("resumeAgents lets every agent paused on its own go and leaves the shared pause alone", () => {
+  let changes = 0;
+  const pause = createPause({ onChange: () => changes++ });
+  const seen = pause.seq();
+  pause.pauseOne("a1", "Alice");
+  pause.pauseOne("a2", "Alice");
+  pause.mirror({ paused: true, by: "Host" });
+  changes = 0;
+  assert.equal(pause.resumeAgents("Me"), true);
+  assert.deepEqual(pause.agents(), []);
+  assert.deepEqual([pause.view().paused, pause.view().by], [true, "Host"], "the shared pause stays");
+  assert.equal(changes, 1);
+  assert.match(pause.noteAfter(seen, "a1").text, /then resumed by Me/);
+  assert.equal(pause.resumeAgents("Me"), false, "nothing held: nothing changes");
+  assert.equal(changes, 1);
+});
+
+test("in a session joined from here, the global Resume also clears this helper's own per-agent pauses (a pause always has a visible way back)", () => {
+  const press = (pause, opts) => { const said = []; const r = pressPause(pause, { say: (op) => said.push(op), ...opts }); return { r, said }; };
+  const ids = (names) => (name) => names[name] || [];
+
+  // A drive joiner: an agent paused here before joining, the host's pause mirrored.
+  let pause = createPause();
+  let seen = pause.seq();
+  pause.pauseOne("a1", "Alice");
+  pause.mirror({ paused: true, by: "Host" });
+  let { r, said } = press(pause, { paused: false, who: "Me", joined: true, canPause: () => true });
+  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(said, [{ op: "pause", paused: false }], "the Resume still goes to the host");
+  assert.deepEqual(pause.agents(), [], "this helper's own paused agent goes at once");
+  assert.equal(pause.view().paused, true, "the host decides the shared pause");
+  assert.match(pause.noteAfter(seen, "a1").text, /then resumed by Me/);
+
+  // Pause pressed while joined: forwarded, this helper's own pauses left alone.
+  pause = createPause();
+  pause.pauseOne("a1", "Alice");
+  ({ r, said } = press(pause, { paused: true, who: "Me", joined: true, canPause: () => true }));
+  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(said, [{ op: "pause", paused: true }]);
+  assert.equal(pause.agents().length, 1);
+
+  // A watcher, nothing shared paused: their Resume lets their own agents go, nothing is forwarded.
+  pause = createPause();
+  pause.pauseOne("a1", "Alice");
+  ({ r, said } = press(pause, { paused: false, who: "Me", joined: true, canPause: () => false }));
+  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(pause.agents(), []);
+  assert.deepEqual(said, []);
+
+  // A watcher while the host's pause holds: they can't resume it, their own agents still go.
+  pause = createPause();
+  pause.pauseOne("a1", "Alice");
+  pause.mirror({ paused: true, by: "Host" });
+  ({ r, said } = press(pause, { paused: false, who: "Me", joined: true, canPause: () => false }));
+  assert.match(r.problem, /only drive participants/);
+  assert.deepEqual(pause.agents(), []);
+  assert.deepEqual(said, []);
+  assert.equal(pause.view().paused, true);
+  // A watcher's Pause: refused as before.
+  ({ r, said } = press(createPause(), { paused: true, who: "Me", joined: true, canPause: () => false }));
+  assert.match(r.problem, /only drive participants/);
+  assert.deepEqual(said, []);
+
+  // One agent by name while joined: never paused on its own, always resumable.
+  pause = createPause();
+  ({ r } = press(pause, { paused: true, who: "Me", agent: "Ann", joined: true, agentIds: ids({ Ann: ["a1"] }) }));
+  assert.match(r.problem, /one agent can't be paused on its own/);
+  assert.deepEqual(pause.agents(), []);
+  pause.pauseOne("a1", "Alice");
+  ({ r } = press(pause, { paused: false, who: "Me", agent: "Ann", joined: true, agentIds: ids({ Ann: ["a1"] }) }));
+  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(pause.agents(), []);
+
+  // Not joined: the global Resume clears the global pause and every own one; an unknown name is said.
+  pause = createPause();
+  seen = pause.seq();
+  ({ r } = press(pause, { paused: true, who: "Me", agent: "Ann", agentIds: ids({ Ann: ["a1", "a2"] }) }));
+  assert.deepEqual(r, { ok: true });
+  assert.equal(pause.agents().length, 2);
+  ({ r, said } = press(pause, { paused: true, who: "Me" }));
+  assert.deepEqual([r, pause.view().paused, said], [{ ok: true }, true, []]);
+  ({ r } = press(pause, { paused: false, who: "Me" }));
+  assert.deepEqual(r, { ok: true });
+  assert.deepEqual([pause.view().paused, pause.agents()], [false, []]);
+  assert.match(pause.noteAfter(seen, "a1").text, /then resumed by Me/);
+  ({ r } = press(pause, { paused: true, who: "Me", agent: "Nobody", agentIds: ids({}) }));
+  assert.equal(r.problem, 'No agent named "Nobody" works in this browser.');
 });
 
 // ---- "Pause this agent" end to end: the live view's route, the helper matching the name to the

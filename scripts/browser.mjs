@@ -6,12 +6,13 @@
 // talks only to the key-protected live view on 127.0.0.1). Its colors come from Chromium's own
 // color theme, set in the profile (profilePreferences), so there's no "Installed theme" bar.
 // A native build that declares its own pages (chrome://pairbrowse, its manifest's `chrome` field)
-// loads no extension: those pages take the side panel's place, with the live view's address and
-// key in one launch switch (--pairbrowse-helper), and the build draws its own colors.
+// loads no extension: those pages take the side panel's place, with the live view's address in
+// --pairbrowse-helper and their key in an owner-only file named by --pairbrowse-helper-key-file
+// (never on the command line), and the build draws its own colors.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash, randomBytes, randomInt } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSync, statSync, accessSync, constants as fsConstants } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, readdirSync, chmodSync, copyFileSync, statSync, accessSync, constants as fsConstants } from "node:fs";
 import { dirname, join, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
@@ -302,9 +303,34 @@ export function prepareProfile(profile, panelId = panelExtensionId(), { chromePa
 const FEATURES = ["ForceForegroundPriorityForAllTabs", ...(process.env.PLAYWRIGHT_LEGACY_SCREENSHOT ? [] : ["CDPScreenshotNewSurface"])];
 const ENABLE = "--enable-features=";
 
+const helperGiven = (h) => !!h && typeof h === "object" && typeof h.origin === "string" && !!h.origin && typeof h.keyFile === "string" && !!h.keyFile;
+
+// The pages' key reaches a build with its own pages through a file, never the command line (where
+// ps, /proc/<pid>/cmdline, chrome://version and crash dumps would show it): the key alone, in a
+// file only this account can read, under ~/.pairbrowse/run with a fresh name at each browser start.
+// The browser (patch 510's ParseHelperKey) takes only 1-256 characters of [A-Za-z0-9_-] and refuses
+// a file group or others could read. The daemon deletes it once used, and with its browser.
+export const HELPER_KEY_PREFIX = "helper-key-";
+export function writeHelperKeyFile(key, dir = join(paths.home, "run")) {
+  if (typeof key !== "string" || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw new Error("the helper key has a form the browser refuses");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // One helper per home, and the previous browser is closed when a launch starts: anything left
+  // is from a helper that was killed.
+  for (const f of readdirSync(dir)) if (f.startsWith(HELPER_KEY_PREFIX)) rmSync(join(dir, f), { force: true });
+  const path = join(dir, HELPER_KEY_PREFIX + randomBytes(16).toString("hex"));
+  writeFileSync(path, key, { mode: 0o600, flag: "wx" });
+  if (process.platform !== "win32") chmodSync(path, 0o600); // a umask can strip owner bits
+  return path;
+}
+export function dropHelperKeyFile(path) {
+  if (!path) return;
+  try { rmSync(path, { force: true }); } catch { /* gone or unreachable: nothing to do */ }
+}
+
 // Every flag the daemon launches the PairBrowse browser with (the install self-check uses the same).
-// chromePages (a build with its own pages): no extension switches; helper ("<origin>#<key>", the
-// live view's address and the pages' key) goes in one --pairbrowse-helper switch, never logged.
+// chromePages (a build with its own pages): no extension switches; helper ({ origin, keyFile }):
+// the live view's address goes in --pairbrowse-helper and the path of the owner-only file holding
+// the pages' key in --pairbrowse-helper-key-file. The key itself is never on the command line.
 export function launchArgs(config = {}, { firstRun = false, chromePages = false, helper = null } = {}) {
   const extra = config.chromeArgs || [];
   const features = [...FEATURES, ...extra.filter((a) => a.startsWith(ENABLE)).flatMap((a) => a.slice(ENABLE.length).split(","))];
@@ -320,7 +346,7 @@ export function launchArgs(config = {}, { firstRun = false, chromePages = false,
     ...(chromePages ? [] : [`--allowlisted-extension-id=${panelExtensionId()}`]),
     ENABLE + [...new Set(features.filter(Boolean))].join(","),
     ...browserArgs({ firstRun, chromePages }),
-    ...(chromePages && typeof helper === "string" ? [`--pairbrowse-helper=${helper}`] : []),
+    ...(chromePages && helperGiven(helper) ? [`--pairbrowse-helper=${helper.origin}`, `--pairbrowse-helper-key-file=${helper.keyFile}`] : []),
     // Only test runs are headless, and nobody is there to see a notification: without this the
     // first one starts the test browser's notification helper and macOS asks to allow it.
     ...(extra.some((a) => a.startsWith("--headless")) ? ["--disable-notifications"] : []),

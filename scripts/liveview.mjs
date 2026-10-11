@@ -112,14 +112,17 @@ async function release(cdp) {
 // own Settings page's three fields ({ read(), write(given) }, liveview/settings.mjs), or null.
 // sessionOps: the session card ({ state() -> { canRename, canSave, savedAt }, rename(name),
 // save() }), or null. outlines: the Page tab's outlines (daemon/outline.mjs), or null.
-export async function startLiveView({ sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// onPagesKey(): called on every request authenticated with the browser's own pages' key under a
+// loopback host; the receiver makes it idempotent (the helper deletes the key file).
+export async function startLiveView({ onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   // A second owner key, for the browser's own pages (a native build's chrome://pairbrowse pages,
-  // handed to them in its launch switch): never in the owner's link, the log or any event.
+  // handed to them in an owner-only key file, never the command line): never in the owner's link,
+  // the log or any event.
   const pagesKey = randomBytes(32).toString("base64url");
   const clients = new Set(); // every open event stream
   const linkGuests = new Map(); // event stream -> the invite link it was opened with
@@ -955,12 +958,16 @@ export async function startLiveView({ sessionOps = null, outlines = null, mask =
     const { key: given, route, rest } = pathParts(req);
     // The owner's key works only under a loopback name (this computer, or an SSH tunnel); the
     // extra host names take invite links only. Unknown, expired and revoked keys look the same.
-    const ownerKey = keyOk(given, key) || keyOk(given, pagesKey);
+    const mine = keyOk(given, key);
+    const byPages = !mine && keyOk(given, pagesKey);
+    const ownerKey = mine || byPages;
     // Join code keys work only through the sharing tunnel's port (joiner-server.mjs), after approval.
     const matched = ownerKey ? null : invites.match(given);
     const invite = matched?.share === "code" ? null : matched;
     const role = ownerKey ? (hostOk(req.headers.host) ? "owner" : null) : invite?.role || null;
     if (!role) return plain(res, 404);
+    // The browser's pages used their key: its file has done its job (the browser read it at start).
+    if (byPages && role === "owner") try { onPagesKey(); } catch {}
     const origin = req.headers.origin;
     // CORS for the browser's own pages alone (chrome://pairbrowse, allowed only when the daemon
     // runs a build that has them): never "*", never a web or extension origin.
@@ -1035,7 +1042,8 @@ export async function startLiveView({ sessionOps = null, outlines = null, mask =
   log("live view started");
   return {
     url: `http://127.0.0.1:${server.address().port}/${key}/`,
-    // The browser's own pages' key (the launch switch): never printed, logged or sent in an event.
+    // The browser's own pages' key (written to an owner-only key file, never the command line):
+    // never printed, logged or sent in an event.
     pagesKey,
     follow,
     reconnecting: (except) => push.reconnecting(except),

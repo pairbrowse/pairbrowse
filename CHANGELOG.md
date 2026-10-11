@@ -5,6 +5,15 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.44 (2026-10-11)
+
+The second round of the collaborative browser's look, gated as before (476 live tests green, every bench measure within noise or faster than 0.15.42, the helper's heap flat; `docs/design-progress.md`). The logo is unchanged.
+
+- Share, from the side panel's header and the live view's toolbar (the owner only): a small card offers a join code (shared browser, can drive) or a watch link, asks your first name once if none is known, shows the invite once with Copy, and closes on Escape or when focus leaves it. It posts to one new owner-only route (`invite`) that runs the same code as `pairbrowse_invite create`; invite links get 403, the join-code port never serves it, keys never reach logs, `state.json` or the event stream (`docs/security.md`). Revoking stays in the panel's lists.
+- The active agent's card in the side panel has a Checklist: the goal log's lines as done, current, waiting for you and pending (the state in words for readers too), read from the owner-only journal route once when opened and again on activity at most every 5 s; nothing while folded.
+- The session picker is a compact navy card: the recent sessions as rows with avatars in the people's colors and a Live pill, More sessions as a disclosure, the host-ask as an approval card; every id, text and keyboard path as before. The joiner's picture page's overlays are compact pills, with a "who is in this tab" pill in words and the person's color.
+- On a watch link the live view's tab rows are plain, keyboard-reachable rows (they were disabled buttons).
+
 ## 0.15.43 (2026-10-11)
 
 The collaborative browser's look, on the dark navy design: every surface PairBrowse draws itself, without a measured cost (the gate in `docs/design-progress.md`: 466 live tests green, click, snapshot, navigate, cold start and idle CPU within noise or better than 0.15.42, the helper's heap flat, no new picture, timer or process). The logo is unchanged.

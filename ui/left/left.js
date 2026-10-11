@@ -6,7 +6,7 @@
 // and from the collapse and expand buttons. Nothing here is invented: every row is what the helper or
 // the browser reported. Storage is PairBrowse Pro's (its cloud storage): no row until then (see
 // the comment in index.html), whatever the session event carries.
-import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock, shareCard } from "../common.js";
+import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
 const DOCK = ["hidden", "rail", "open"]; // DockState order
@@ -23,7 +23,8 @@ let guests = [];
 let session = null;
 let lastWebTab = -1; // the last active tab that is not History
 let base = null;
-let es = null;
+let stream = null; // the shared helper stream (common.js helperStream)
+let everLive = false;
 let driveTimer = 0;
 let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
 
@@ -162,10 +163,11 @@ function drawGuests() {
     byName.set(g.label, e);
   }
   $("guests").replaceChildren(...[...byName].map(([label, { n, drive }]) => {
-    const words = `${n} online · ${drive ? "can drive" : "watching"}`;
+    // "N online" on screen; the role stays in the row's title and, for readers, in words.
+    const role = drive ? "can drive" : "watching";
     const face = el("span", { className: "avatar plain" }, icon("i-people"));
     face.setAttribute("aria-hidden", "true");
-    const li = el("li", { title: `${label} · ${words}` }, face, el("strong", { textContent: label }), el("small", { textContent: words }));
+    const li = el("li", { title: `${label} · ${n} online · ${role}` }, face, el("strong", { textContent: label }), el("small", { textContent: `${n} online` }), el("span", { className: "sr", textContent: `, ${role}` }));
     li.dataset.state = "online";
     return li;
   }));
@@ -282,17 +284,19 @@ if (pb) {
 function connect(url) {
   if (!url || url === base) return;
   base = url;
-  es?.close();
-  // panel=1: today's helper never counts the dock as a viewer (no screencast for it).
-  es = new EventSource(base + "events?page=left&panel=1");
-  const on = (event, fn) => es.addEventListener(event, (e) => { let data; try { data = JSON.parse(e.data); } catch { return; } fn(data); });
-  es.onopen = () => { document.body.dataset.s = "live"; $("conn").hidden = true; };
-  es.onerror = () => {
-    const closed = es.readyState === EventSource.CLOSED;
-    document.body.dataset.s = closed ? "closed" : "connecting";
-    $("conn").hidden = false;
-    $("conn").textContent = closed ? "PairBrowse is closed" : "Reconnecting to PairBrowse…";
-  };
+  stream?.close();
+  // panel=1 always (common.js): today's helper never counts the dock as a viewer (no screencast for it).
+  stream = helperStream(base, {
+    kind: "left",
+    onState: (s) => {
+      document.body.dataset.s = s;
+      $("conn").hidden = s === "live";
+      if (s === "live") everLive = true;
+      // Before the first open the line keeps saying it is connecting.
+      else if (s === "closed" || everLive) $("conn").textContent = s === "closed" ? "PairBrowse is closed" : "Reconnecting to PairBrowse…";
+    },
+  });
+  const on = stream.on;
   on("session", (s) => { session = s && typeof s === "object" ? s : null; railTitles(); });
   on("collaboration", (c) => { guests = Array.isArray(c?.guests) ? c.guests : []; drawGuests(); });
   on("activity", (list) => {

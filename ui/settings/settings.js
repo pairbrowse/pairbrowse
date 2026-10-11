@@ -2,8 +2,8 @@
 // settings/index.html in Chromium). It shows only what the helper reports today: sessions,
 // passwords by name, remembered details, sharing and the timeline, through the live view's owner
 // routes with the owner's key. The browser and timeline settings have no route yet, so the page
-// says so and shows the config.json line. Nothing ticks: no timer, no observer, one event stream.
-import { $, el, ago, initialOf, devPanel, hostPanel, profilePanel } from "../common.js";
+// says so and shows the config.json line. Nothing ticks: no timer, no observer, the one shared event stream (common.js).
+import { $, el, ago, initialOf, devPanel, hostPanel, profilePanel, helperStream } from "../common.js";
 
 // The host, a fact of the page (not a reading of the config): window.pairbrowse exists only in
 // the PairBrowse browser.
@@ -14,7 +14,7 @@ $("browser-now").textContent = HOST;
 $("about-host").textContent = HOST;
 
 let base = null;
-let es = null;
+let stream = null; // the shared helper stream (common.js helperStream)
 
 const say = (node, text, kind = "") => { node.textContent = text; node.dataset.kind = kind; };
 function setConn(state, text) {
@@ -84,15 +84,17 @@ async function loadTimeline() {
 function connect(url) {
   if (!url || url === base) return;
   base = url;
-  es?.close();
-  // panel=1: the owner's stream without the page screencast, as the side panel opens it.
-  es = new EventSource(base + "events?panel=1");
-  const on = (event, fn) => es.addEventListener(event, (e) => { try { fn(JSON.parse(e.data)); } catch {} });
-  es.onopen = () => { setConn("live", ""); loadSessions(); profile.load(); loadTimeline(); };
-  es.onerror = () => {
-    if (es.readyState === EventSource.CLOSED) setConn("closed", "Not connected to PairBrowse.");
-    else setConn("connecting", "Connecting to PairBrowse…");
-  };
+  stream?.close();
+  // The owner's stream without the page screencast (panel=1, no page kind), shared with the other pages (common.js).
+  stream = helperStream(base, {
+    onState: (s) => {
+      if (s === "live") setConn("live", "");
+      else if (s === "closed") setConn("closed", "Not connected to PairBrowse.");
+      else setConn("connecting", "Connecting to PairBrowse…");
+    },
+    onOpen: () => { loadSessions(); profile.load(); loadTimeline(); },
+  });
+  const on = stream.on;
   on("profile", profile.draw);
   on("dev", (s) => { drawDev(s); $("dev-empty").hidden = !$("dev").hidden; });
   on("joinhost", (s) => { drawHosts(s); $("hosts-empty").hidden = !$("hosts").hidden; });

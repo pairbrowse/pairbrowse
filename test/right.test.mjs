@@ -78,7 +78,8 @@ test("the panel script keeps its three timers, writes no markup and stores one k
   assert.equal([...js.matchAll(/fetch\(base \+ "journal\.json"/g)].length, 1, "one place reads the goal log");
   assert.doesNotMatch(js, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
   assert.doesNotMatch(js, /MutationObserver|IntersectionObserver|ResizeObserver|requestAnimationFrame/);
-  assert.equal([...js.matchAll(/new EventSource\(/g)].length, 1, "one event stream");
+  assert.equal([...js.matchAll(/new EventSource\(/g)].length, 0, "no stream of its own: the shared one (common.js)");
+  assert.equal([...js.matchAll(/\bhelperStream\(/g)].length, 1, "one event stream, the shared one");
   assert.equal(new Set([...js.matchAll(/"(pb-[a-z-]+)"/g)].map(([, k]) => k)).size, 1, "one storage key");
   assert.match(js, /"pb-panel"/);
   assert.doesNotMatch(js, /(^|[^.?])chrome\.storage/m, "every chrome.* access is guarded");
@@ -195,7 +196,7 @@ const until = async (page, what, fn, arg) => {
 
 const PEOPLE = [
   { who: "Claude", kind: "agent", color: "#e9763f", tab: "shop.example/checkout", task: "Filling the shipping form", status: "working", last: "Typed into Email" },
-  { who: "Alice · Codex", kind: "agent", color: "#a78bfa", tab: "shop.example/cart", task: "", status: "you", last: "Clicked Cart" },
+  { who: "Alice · Codex", kind: "agent", color: "#7088f0", tab: "shop.example/cart", task: "", status: "you", last: "Clicked Cart" },
   { who: "Sam · Claude Code", kind: "agent", color: "#22d3ee", where: "Sam", tab: "docs.example", task: "", status: "done", last: "Read the docs" },
   { who: "Sam (by hand)", kind: "person", color: "", where: "Sam", status: "idle" },
   { who: "Gemini · Gemini CLI", kind: "agent", color: "#20c997", tab: "shop.example/prices", task: "Checking prices", status: "working" },
@@ -228,7 +229,7 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
         where: $("where").textContent, whereHidden: $("where").hidden, whereTitle: $("where").title,
         avatars: [...$("avatars").querySelectorAll(".avatar")].map((a) => ({ text: a.textContent, role: a.getAttribute("role"), label: a.getAttribute("aria-label"), bg: a.style.background })),
         name: $("agent-name").textContent, statusHidden: $("agent-status").hidden, status: $("agent-status-text").textContent,
-        tab: $("agent-tab").textContent, tabHidden: $("agent-tab").hidden, avatarBg: $("agent-avatar").style.background,
+        tab: $("agent-tab").textContent, tabHidden: $("agent-tab").hidden, nameTitle: $("agent-name").title, avatarBg: $("agent-avatar").style.background,
         driver: $("driver-text").textContent,
         people: [...$("people").children].map((li) => [...li.children].filter((c) => !c.classList.contains("avatar")).map((c) => c.textContent).join(" | ")),
         sessionHidden: $("session").hidden,
@@ -246,8 +247,9 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.equal(v.name, "Claude", "the newest action's agent");
     assert.equal(v.statusHidden, false);
     assert.equal(v.status, "Filling the shipping form", "its pairbrowse_status text, as it is");
-    assert.equal(v.tabHidden, false);
-    assert.equal(v.tab, "In shop.example/checkout", "the tab the board says it is in");
+    assert.equal(v.tabHidden, true, "#agent-tab stays (pinned id) but is never shown");
+    assert.equal(v.tab, "");
+    assert.equal(v.nameTitle, "In shop.example/checkout", "the tab the board says it is in, as the name's title");
     assert.equal(v.avatarBg, "rgb(233, 118, 63)");
     assert.equal(v.driver, "Working…", "B4's words; the name is beside it");
     assert.equal(await page.evaluate(() => document.getElementById("driver").dataset.state), "working");

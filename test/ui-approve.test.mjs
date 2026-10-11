@@ -62,7 +62,16 @@ named("renders the oldest pending click and counts the rest", async (ctx) => {
   await sleep(300);
   assert.equal(await text(ctx, "who"), "Claude");
   assert.equal(await text(ctx, "verb"), "wants to click");
-  assert.equal(await text(ctx, "where"), "In the tab on shop.example");
+  assert.equal(await inPage(() => document.getElementById("where")), null, "no line of its own for the host");
+  assert.equal(await inPage(() => document.getElementById("target").title), "In the tab on shop.example", "the host is the target's title");
+  // And for everyone without hover: a visually hidden line the card's description names.
+  const host = await inPage(() => {
+    const h = document.getElementById("host"), r = h.getBoundingClientRect();
+    return { text: h.textContent, described: document.getElementById("card").getAttribute("aria-describedby").split(/\s+/), box: [r.width, r.height] };
+  });
+  assert.equal(host.text, "In the tab on shop.example");
+  assert.ok(host.described.includes("host"), "the card is described by the host line");
+  assert.deepEqual(host.box, [1, 1], "the host line is visually hidden");
   assert.equal(await text(ctx, "reason"), "\"Place order\" pays: a final action (pay)");
   assert.equal(await text(ctx, "count"), "1 more");
   const m = await inPage(() => {
@@ -95,6 +104,27 @@ named("renders the oldest pending click and counts the rest", async (ctx) => {
     allow: [accent, bg], deny: [elevated, "1px", edge], more: ink2,
   });
   assert.deepEqual(helper.posts, []);
+  // The compact header: the name at 600, "wants to click" at 400 in --ink-2; an empty hint takes no
+  // space (the reason-to-actions gap is the grid's 10 px) but stays a live region; the card stays compact.
+  const hd = await inPage(() => {
+    const cs = (q) => getComputedStyle(document.querySelector(q));
+    const r = (q) => document.querySelector(q).getBoundingClientRect();
+    const hint = document.getElementById("hint");
+    return { who: cs("#who").fontWeight, verb: cs("#verb").fontWeight, verbColor: cs("#verb").color, hintBox: [r("#hint").width, r("#hint").height], hintLive: hint.getAttribute("aria-live"),
+      hintEmpty: hint.textContent === "", gap: Math.round(r(".act").top - r("#reason").bottom), height: r("#card").height };
+  });
+  assert.deepEqual([hd.who, hd.verb, hd.verbColor], ["600", "400", ink2]);
+  assert.deepEqual(hd.hintBox, [1, 1], "an empty hint is a 1 px box out of the grid");
+  assert.equal(hd.hintLive, "polite");
+  assert.equal(hd.hintEmpty, true);
+  assert.equal(hd.gap, 10, "the card's own gap between the reason and the buttons");
+  assert.ok(hd.height <= 205, `the card is compact: ${hd.height} px`);
+});
+
+named("the approval stream is the owner stream (panel=1), never a viewer", async (ctx) => {
+  const { helper } = ctx;
+  await ctx.until("live", () => document.body.dataset.s === "live");
+  assert.deepEqual([...helper.streams].map((s) => [s.kind, s.panel]), [["approve", true]]);
 });
 
 named("only a trusted pointer click answers, and only once armed", async (ctx) => {
@@ -212,7 +242,7 @@ named("More actions: site by a click, terminal by a key", async (ctx) => {
     expanded: document.getElementById("more").getAttribute("aria-expanded"), hidden: document.getElementById("menu").hidden,
     items: [...document.querySelectorAll("#menu button")].map((b) => [b.textContent, b.dataset.answer]), focus: document.activeElement.dataset.answer,
   }));
-  assert.deepEqual(opened, { expanded: "true", hidden: false, items: [["Allow for this site", "site"], ["Ask in the terminal only", "terminal"]], focus: "site" });
+  assert.deepEqual(opened, { expanded: "true", hidden: false, items: [["Allow for shop.example", "site"], ["Ask in the terminal only", "terminal"]], focus: "site" });
   await page.keyboard.press("Enter");
   await sleep(200);
   assert.deepEqual(helper.posts, [], "a key press on site posts nothing");
@@ -242,12 +272,15 @@ named("nothing counts while an agent is driving", async (ctx) => {
   add(helper, OLDER);
   await shown(ctx, "Place order");
   await sleep(SETTLE);
+  const tops = () => ctx.inPage(() => ["allow", "deny", "more"].map((id) => document.getElementById(id).getBoundingClientRect().top));
+  const before = await tops();
   helper.push("driving", { on: true });
   await ctx.until("driving", () => document.body.dataset.driving === "true");
   await realClick(page, "#allow");
   await sleep(200);
   assert.deepEqual(helper.posts, []);
   assert.equal(await text(ctx, "hint"), "An agent is acting in the browser: wait, then click again.");
+  assert.deepEqual(await tops(), before, "a hint appearing never moves the buttons");
   helper.push("driving", { on: false });
   await ctx.until("not driving", () => document.body.dataset.driving === "false");
   await realClick(page, "#allow");

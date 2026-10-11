@@ -4,8 +4,9 @@
 // cannot draw outside a 44 px slot. Tabs, owners and the dock layout come from window.pairbrowse
 // (the browser's own API); people, sharing and recording from the helper's event stream. Without
 // window.pairbrowse the row shows the helper's tabs event, read only. Nothing here starts a timer,
-// a frame loop or a DOM observer: observers of the browser API and one EventSource only.
-import { $, el, avatar, shareCard, isColor, pickerPopover } from "../common.js";
+// a frame loop or a DOM observer: observers of the browser API and the one shared helper stream
+// (common.js helperStream) only. The nav fragments read no stream at all.
+import { $, el, avatar, shareCard, isColor, pickerPopover, helperStream } from "../common.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
@@ -36,6 +37,10 @@ const MODES = new Set(["row", "nav-left", "nav-right", "switcher", "share", "men
 const BUBBLES = new Set(["switcher", "share", "menu"]);
 let mode = "";
 const bubble = () => BUBBLES.has(mode);
+// The nav fragments open no stream: a page per window, and nothing on them reads the helper.
+const navMode = () => mode === "nav-left" || mode === "nav-right";
+let stream = null; // the shared helper stream (common.js), once start() has run outside a nav mode
+let started = false, streamAsked = false;
 
 // ---- the switcher: the session picker in a same-origin iframe, loaded only while open
 // (common.js pickerPopover); in the #switcher bubble the host owns dismissal ----
@@ -118,6 +123,7 @@ function applyMode() {
   $("nav-left").hidden = mode !== "nav-left";
   $("nav-right").hidden = mode !== "nav-right";
   if (BUBBLES.has(mode)) openBubble(mode);
+  ensureStream();
 }
 // In a bubble the host owns dismissal: no outside-click listener is registered and Escape
 // closes nothing (the switcher, the menu, the share card and their Escape paths check bubble()).
@@ -181,6 +187,9 @@ function drawTab(t) {
   const color = owners.colors?.[String(t.id)] || "";
   li.setAttribute("aria-selected", String(!!t.active));
   li.classList.toggle("pinned", !!t.pinned);
+  // An owned tab glows in its owner's color (strip.css [data-owned]), only a plain #rrggbb.
+  if (agent && isColor(color)) { li.dataset.owned = "true"; li.style.setProperty("--owner", color); }
+  else { delete li.dataset.owned; li.style.removeProperty("--owner"); }
   li.title = title;
   li.setAttribute("aria-label", `${title}${agent ? `, ${agent} is in this tab` : ""}${loading ? ", loading" : ""}${t.pinned ? ", pinned" : ""}`);
   // The icon slot: a loading ring, the favicon, or a generic globe; redrawn only when it changes.
@@ -197,7 +206,7 @@ function drawTab(t) {
     else icon.replaceChildren(el("img", { src: t.favicon, alt: "", width: 16, height: 16 }));
   }
   li.querySelector(".title").textContent = title;
-  // The agent dot: the owning agent's color, 4 px left of the close, named in words too.
+  // The agent dot: the owning agent's color, right after the title (strip.css), named in words too.
   let dot = li.querySelector(".agent");
   if (agent) {
     if (!dot) { dot = el("span", { className: "agent" }, el("span", { className: "sr" })); li.querySelector(".close").before(dot); }
@@ -380,13 +389,16 @@ function drawAvatars() {
 }
 
 function connect(url) {
-  if (!url) { document.body.dataset.s = "closed"; drawPill(); return; }
+  if (!url) { stream?.close(); stream = null; base = null; document.body.dataset.s = "closed"; drawPill(); return; }
+  if (url === base && stream) return;
+  stream?.close();
   base = url;
-  // panel: the helper's "no page stream" flag (liveview.mjs events): the strip is never a viewer, so it never starts the screencast.
-  const es = new EventSource(base + "events?page=strip&panel=1");
-  const on = (event, fn) => es.addEventListener(event, (e) => { let v; try { v = JSON.parse(e.data); } catch { return; } fn(v); });
-  es.onopen = () => { everOpen = true; document.body.dataset.s = "live"; drawPill(); };
-  es.onerror = () => { document.body.dataset.s = es.readyState === EventSource.CLOSED ? "closed" : "connecting"; drawPill(); };
+  // panel=1 always (common.js): the strip is never a viewer, so it never starts the screencast.
+  stream = helperStream(base, {
+    kind: "strip",
+    onState: (s) => { if (s === "live") everOpen = true; document.body.dataset.s = s; drawPill(); },
+  });
+  const on = stream.on;
   on("session", (s) => { lastSession = s && typeof s === "object" ? s : null; drawPill(); });
   on("collaboration", (c) => { lastCollab = c && typeof c === "object" ? c : null; drawPill(); drawAvatars(); });
   on("board", (b) => { lastBoard = { people: Array.isArray(b?.people) ? b.people : [] }; drawAvatars(); });
@@ -395,6 +407,19 @@ function connect(url) {
     on("tabs", renderFallback);
     on("layout", (l) => drawSparkle(l?.right === "open"));
   }
+}
+// Connects once, outside the nav modes; a nav mode reads no stream and keeps no state attribute.
+async function ensureStream() {
+  if (navMode()) {
+    if (stream) { stream.close(); stream = null; base = null; streamAsked = false; }
+    delete document.body.dataset.s;
+    return;
+  }
+  if (streamAsked || !started) return;
+  streamAsked = true;
+  const url = await helperBase();
+  if (navMode()) { streamAsked = false; return; }
+  connect(url);
 }
 async function helperBase() {
   if (pb) {
@@ -440,6 +465,7 @@ async function start() {
       render();
     } catch {}
   }
-  connect(await helperBase());
+  started = true;
+  ensureStream();
 }
 start();

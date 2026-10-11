@@ -144,6 +144,17 @@ screenTest("the lock, the note and the pointers are DOM nodes (Trusted Types cle
   await ctx.inPage(() => window.pbScreen.pointers([{ k: "sam", who: "Sam", color: "#2fb6d9", nx: 0.75, ny: 0.3 }]));
   const p = await ctx.page.evaluate(() => { const el = document.querySelector(".p"); return { fill: el.querySelector("svg path").getAttribute("fill"), stroke: el.querySelector("svg path").getAttribute("stroke"), name: el.querySelector("span").textContent, ink: getComputedStyle(el.querySelector("span")).color }; });
   assert.deepEqual(p, { fill: "#2fb6d9", stroke: "#fff", name: "Sam", ink: "rgb(11, 20, 33)" });
+  // An agent's pointer (host-agent:<id>, <joiner>:a<n>): white, a 1.4 px edge in its color, 22 px; a person's stays filled.
+  await ctx.inPage(() => window.pbScreen.pointers([{ k: "sam", who: "Sam", color: "#2fb6d9", nx: 0.75, ny: 0.3 }, { k: "host-agent:3", who: "Codex", color: "#7088f0", nx: 0.25, ny: 0.3 }, { k: "j1:a0", who: "Gemini", color: "#4fd1e8", nx: 0.5, ny: 0.6 }]));
+  const ps = await ctx.page.evaluate(() => [...document.querySelectorAll(".p")].map((el) => { const path = el.querySelector("svg path"); return { cls: el.className, fill: path.getAttribute("fill"), stroke: path.getAttribute("stroke"), sw: path.getAttribute("stroke-width"), w: el.querySelector("svg").getBoundingClientRect().width, vb: el.querySelector("svg").viewBox.baseVal.width, pill: getComputedStyle(el.querySelector("span")).backgroundColor }; }));
+  // The rendered edge, not the attribute: stroke-width times the svg's scale is 1.4 px for an agent.
+  for (const q of ps.filter((x) => x.cls === "p a")) assert.ok(Math.abs(Number(q.sw) * q.w / q.vb - 1.4) < 0.02, `a 1.4 px edge: ${Number(q.sw) * q.w / q.vb}`);
+  for (const q of ps) delete q.vb;
+  assert.deepEqual(ps, [
+    { cls: "p", fill: "#2fb6d9", stroke: "#fff", sw: "1.6", w: 18, pill: "rgb(47, 182, 217)" },
+    { cls: "p a", fill: "#fff", stroke: "#7088f0", sw: "1.53", w: 22, pill: "rgb(112, 136, 240)" },
+    { cls: "p a", fill: "#fff", stroke: "#4fd1e8", sw: "1.53", w: 22, pill: "rgb(79, 209, 232)" },
+  ]);
   await ctx.inPage(() => window.pbScreen.who({ person: "Sam", personColor: "#2fb6d9" }));
   assert.match(await ctx.page.evaluate(() => document.querySelector('link[rel="icon"]')?.href || ""), /^data:image\/png;base64,/);
   assert.deepEqual(await bad(ctx), [], "no CSP or Trusted Types entry");

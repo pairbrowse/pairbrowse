@@ -22,15 +22,22 @@ body[data-platform="mac"] .row { padding-left: 80px; } /* the traffic lights */
 #switch:hover, #switch[aria-expanded="true"] { background: var(--hover); }
 
 /* The tabs sit on the row's bottom edge, 40 px tall; the padding keeps the active tab's feet unclipped. */
-#tabs { display: flex; align-items: flex-end; flex: 1 1 auto; gap: 8px; min-width: 0; margin: 0 -10px; padding: 0 10px; list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#tabs { display: flex; align-items: flex-end; flex: 0 1 auto; gap: 8px; min-width: 0; margin: 0 -10px; padding: 0 10px; list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 #tabs li { position: relative; display: flex; align-items: center; gap: 8px; flex: 1 1 240px; min-width: 160px; max-width: 240px; height: 40px; padding: 0 10px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color 120ms, color 120ms; }
 #tabs li:not([aria-selected="true"]):hover { background-color: var(--elevated); }
-/* The active tab: lit at the top, fading into the nav row's --chrome, an accent top edge with a soft
-   glow above it, and two curved feet that carry its edge into the row's bottom line. */
-#tabs li[aria-selected="true"] { z-index: 1; background-color: var(--chrome); background-image: linear-gradient(180deg, var(--tab-top), var(--chrome)); color: var(--ink); border-color: var(--edge-lit); border-top-color: var(--edge-accent); box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-top); }
-#tabs li[aria-selected="true"]::before, #tabs li[aria-selected="true"]::after { content: ""; position: absolute; bottom: 0; width: 10px; height: 10px; pointer-events: none; }
-#tabs li[aria-selected="true"]::before { left: -11px; background: radial-gradient(circle at 0 0, transparent 9.5px, var(--edge-lit) 10px, var(--chrome) 11px); }
-#tabs li[aria-selected="true"]::after { right: -11px; background: radial-gradient(circle at 100% 0, transparent 9.5px, var(--edge-lit) 10px, var(--chrome) 11px); }
+/* The active tab: lit at the top, fading into the nav row's --chrome, a neutral lit top edge with a
+   soft static halo above it (--halo), and two curved feet that carry its edge into the row's bottom
+   line: 9 px wide, so they cover the border column and end at the neighbour's edge. */
+#tabs li { --halo: var(--glow-top); }
+#tabs li[aria-selected="true"] { z-index: 1; background-color: var(--chrome); background-image: linear-gradient(180deg, var(--tab-top), var(--chrome)); color: var(--ink); border-color: var(--edge); border-top-color: var(--edge-top); box-shadow: inset 0 1px 0 var(--edge-light), var(--halo); }
+#tabs li[aria-selected="true"]::before, #tabs li[aria-selected="true"]::after { content: ""; position: absolute; bottom: 0; width: 9px; height: 9px; pointer-events: none; }
+#tabs li[aria-selected="true"]::before { left: -9px; background: radial-gradient(circle at 0 0, transparent 7.5px, var(--edge) 8px, var(--chrome) 9px); }
+#tabs li[aria-selected="true"]::after { right: -9px; background: radial-gradient(circle at 100% 0, transparent 7.5px, var(--edge) 8px, var(--chrome) 9px); }
+/* A tab an agent is in glows in its owner's color (--owner, set by strip.js from the browser's owner
+   color): the top edge at 60% and a weak halo when not active, the full color and the halo when
+   active. A tab nobody drives keeps the neutral edges. Static: never animated, never blurred. */
+#tabs li[data-owned] { border-top-color: color-mix(in srgb, var(--owner) 60%, transparent); box-shadow: var(--tab-halo-idle) color-mix(in srgb, var(--owner) 30%, transparent); }
+#tabs li[data-owned][aria-selected="true"] { --halo: var(--tab-halo) color-mix(in srgb, var(--owner) 50%, transparent); border-top-color: var(--owner); box-shadow: inset 0 1px 0 var(--edge-light), var(--halo); }
 #tabs li.pinned { flex: 0 0 40px; min-width: 40px; max-width: 40px; padding: 0; justify-content: center; }
 /* The icon tile: a favicon on white (as the site drew it), the globe on --elevated, the ring bare. */
 #tabs .icon { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 6px; }
@@ -40,11 +47,11 @@ body[data-platform="mac"] .row { padding-left: 80px; } /* the traffic lights */
 #tabs .icon img { display: block; width: 16px; height: 16px; }
 #tabs .icon .generic { width: 16px; height: 16px; color: var(--ink-2); }
 #tabs .ring { display: block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; }
-#tabs .title { flex: 1; min-width: 0; font-size: var(--fs-3); font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#tabs .title { flex: 0 1 auto; min-width: 0; font-size: var(--fs-3); font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #tabs li.pinned .title { display: none; }
-#tabs .agent { flex: none; width: 7px; height: 7px; margin-right: -4px; border-radius: 50%; } /* 8 px gap - 4 = 4 px left of the close */
+#tabs .agent { flex: none; width: 7px; height: 7px; margin-left: -2px; margin-right: 0; border-radius: 50%; } /* 8 px gap - 2 = 6 px after the title */
 /* The close shows on every tab but a pinned one; Tab reaches the active tab's alone. */
-#tabs .close { display: grid; place-items: center; flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
+#tabs .close { display: grid; place-items: center; flex: none; margin-left: auto; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
 #tabs .close svg { width: 12px; height: 12px; }
 #tabs .close:hover { background: var(--hover); color: var(--ink); }
 #tabs li.pinned .close { display: none; }
@@ -142,7 +149,7 @@ body[data-mode="menu"] #menu { max-width: 280px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 #tabs li:focus-visible, #menu .item:focus-visible { outline-offset: -2px; box-shadow: var(--glow-focus); }
 /* Focus keeps an element's own light first, then the halo. */
-#tabs li[aria-selected="true"]:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-top), var(--glow-focus); }
+#tabs li[aria-selected="true"]:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--halo), var(--glow-focus); }
 #share-btn:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-focus); }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

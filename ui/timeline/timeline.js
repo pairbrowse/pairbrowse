@@ -3,7 +3,7 @@
 // POST timeline/note and timeline/<id>/pin) and the owner stream's `timeline` event. The page only
 // renders: it never writes layout or toggles itself. Nothing runs before the page is first
 // visible; while hidden it fetches nothing and holds no picture.
-import { $, el, clock } from "../common.js";
+import { $, el, shortClock, helperStream } from "../common.js";
 
 const PITCH = 132; // a card (120 px) and its gap (12 px)
 const PAD = 16; // the strip's left padding
@@ -14,7 +14,7 @@ const ID = /^[0-9a-f]{12}$/;
 const OFF_LINE = "The timeline is off";
 
 let base = null;
-let es = null;
+let stream = null; // the shared helper stream (common.js helperStream)
 let cards = []; // newest last, only what timeline.json, the stream and the route replies said
 const nodes = new Map(); // id -> <li>
 const held = new Map(); // id -> blob: URL
@@ -130,7 +130,7 @@ function replace(card) {
 
 // ---- drawing ----
 
-const label = (c) => `${clock(c.t)}, ${c.caption || (c.note ? "Note" : "Picture")}${c.pinned ? ", pinned" : ""}${c.note ? ", note" : ""}`;
+const label = (c) => `${shortClock(c.t)}, ${c.caption || (c.note ? "Note" : "Picture")}${c.pinned ? ", pinned" : ""}${c.note ? ", note" : ""}`;
 
 function node(card) {
   const thumb = card.note ? el("span", { className: "thumb note-text" }) : el("img", { className: "thumb", alt: "" });
@@ -156,12 +156,12 @@ function fill(li, c, now = current()) {
   li.querySelector(".face").setAttribute("aria-label", label(c) + (c.id === now ? ", current" : ""));
   li.dataset.note = String(c.note);
   li.querySelector(".pin-chip").hidden = !c.pinned;
-  li.querySelector(".time").textContent = clock(c.t);
+  li.querySelector(".time").textContent = shortClock(c.t);
   const cap = li.querySelector(".cap");
   cap.textContent = c.note ? "Note" : c.caption;
   cap.title = [c.caption, c.step?.title].filter(Boolean).join(" · ");
   if (c.note) li.querySelector(".note-text").textContent = c.caption;
-  li.querySelector(".more").setAttribute("aria-label", `More for ${c.caption || clock(c.t)}`);
+  li.querySelector(".more").setAttribute("aria-label", `More for ${c.caption || shortClock(c.t)}`);
 }
 
 // The newest picture card (a note is not something the agent saw).
@@ -279,18 +279,23 @@ function scheduleDriver() {
 
 function start() {
   started = true;
-  es = new EventSource(base + "events?panel=1"); // the owner stream; never ?page=, which the helper serves as a viewer
-  const on = (event, fn) => es.addEventListener(event, (e) => { try { fn(JSON.parse(e.data)); } catch {} });
-  es.onopen = () => {
-    document.body.dataset.s = "live";
-    setDriver();
-    if (stale && visible()) { stale = false; load(); }
-  };
-  es.onerror = () => {
-    document.body.dataset.s = es.readyState === EventSource.CLOSED ? "closed" : "connecting";
-    stale = true;
-    setDriver();
-  };
+  // The owner stream (panel=1 always, never a viewer), shared with the other pages (common.js).
+  stream = helperStream(base, {
+    kind: "timeline",
+    onState: (s) => {
+      if (s === "live") {
+        document.body.dataset.s = "live";
+        setDriver();
+        if (stale && visible()) { stale = false; load(); }
+        return;
+      }
+      // A drop (or a closed stream) makes the cards stale; the first "connecting" does not.
+      if (document.body.dataset.s === "live" || s === "closed") stale = true;
+      document.body.dataset.s = s;
+      setDriver();
+    },
+  });
+  const on = stream.on;
   on("timeline", apply);
   on("activity", (items) => {
     if (!Array.isArray(items)) return;
@@ -306,7 +311,7 @@ function start() {
 function connect(url) {
   if (!url || url === base) return;
   base = url;
-  if (started) { es?.close(); started = false; }
+  if (started) { stream?.close(); stream = null; started = false; }
   showLine("");
   if (visible()) start();
 }

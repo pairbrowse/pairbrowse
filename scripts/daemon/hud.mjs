@@ -6,9 +6,40 @@ import { isRef } from "../policy.mjs";
 import { within } from "../util.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 
-// Each connected agent's tab carries the spark on its icon, in that participant's color (in the
-// order they joined: orange, cyan, purple, green). It moves when that agent works in another tab.
-export const SPARK_COLORS = ["#e9763f", "#4fd1e8", "#a78bfa", "#4ade80"];
+// Each connected agent's tab carries the spark on its icon, in that participant's color. It moves
+// when that agent works in another tab. Colors go by app, not by join order: Claude Code is orange,
+// Codex #7088f0; everyone else (other agents, a second Claude or Codex, people) takes the rest in
+// join order. The cursor's edge and pill, the avatars, the owner dots and the tab glow all read
+// this one value. Dark ink (#0B1421) on each is AA (test/tokens.test.mjs).
+export const SPARK_COLORS = ["#e9763f", "#7088f0", "#4fd1e8", "#4ade80", "#a78bfa", "#f472b6"];
+const APP_COLORS = { claude: "#e9763f", codex: "#7088f0" };
+const OTHER_COLORS = SPARK_COLORS.filter((c) => !Object.values(APP_COLORS).includes(c));
+
+// The app a participant's label names: "claude", "codex" or "" (another agent, or a person). A
+// person's label ends in "(by hand)"; "Name · App" names its app after the dot, else the first word
+// does ("Claude 3fed", "Codex").
+export function appOf(label) {
+  const s = String(label || "").trim();
+  if (/\(by hand\)$/i.test(s)) return "";
+  const i = s.lastIndexOf(" · ");
+  const app = i >= 0 ? s.slice(i + 3).trim() : s;
+  if (/^claude\b/i.test(app)) return "claude";
+  if (/^codex\b/i.test(app)) return "codex";
+  return "";
+}
+// Colors for labels in join order: an app's own color while it is free, else the first free other
+// color; with every color taken, the others again in turn.
+export function assignColors(labels) {
+  const taken = new Set();
+  let n = 0;
+  return labels.map((label) => {
+    const own = APP_COLORS[appOf(label)];
+    let c = own && !taken.has(own) ? own : OTHER_COLORS.find((x) => !taken.has(x));
+    if (!c) c = OTHER_COLORS[n++ % OTHER_COLORS.length];
+    taken.add(c);
+    return c;
+  });
+}
 // Claude's cursor: before a click, typing or a choice, show where in the page it happens.
 const CURSOR_TOOLS = { browser_click: "click", browser_type: "type", browser_hover: "hover", browser_select_option: "click", browser_fill_form: "type", pairbrowse_upload: "click" };
 const CURSOR_WAIT_MS = 300; // never holds an action up for longer finding its element
@@ -23,10 +54,10 @@ const SHARED_SPARK_MS = 30_000;
 const PERSON_MARK_MS = 8000; // a person from the other browser stays marked this long after their last input
 
 // pages(): the open tabs (none while the browser is closed). participants(): ids in the order
-// they joined. waiting(page): the person an agent waits for there. liveView(): the live view, if
+// they joined. labelOf(id): a participant's label ("" when unknown), for its color by app. waiting(page): the person an agent waits for there. liveView(): the live view, if
 // up. notify(text): tells the user it's their turn. pause(): { by, can }: who paused agents (by
 // empty: nobody) and whether the person here may pause and resume (daemon/pause.mjs).
-export function createHud({ pages, participants, waiting, liveView, notify, pause = () => ({ by: "", can: true }) }) {
+export function createHud({ pages, participants, labelOf = () => "", waiting, liveView, notify, pause = () => ({ by: "", can: true }) }) {
   // The page script, with names and a key that are new each time the helper starts.
   const { source, name: HUD_NAME, token: HUD_TOKEN } = hudScript();
   let badge = { text: "", kind: "clear", color: "" };
@@ -147,9 +178,13 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     await Promise.all((await pages()).map(applyBadge));
   }
 
+  // The participants colored in join order (an id not listed comes last); an unlisted
+  // "joined:<label>" id is labelled from its own label.
   function sparkColor(participant) {
-    const order = participants();
-    return SPARK_COLORS[Math.max(0, order.indexOf(participant)) % SPARK_COLORS.length];
+    const ids = [...participants()];
+    if (!ids.includes(participant)) ids.push(participant);
+    const labelFor = (id) => labelOf(id) || (typeof id === "string" && id.startsWith("joined:") ? id.slice(7) : "");
+    return assignColors(ids.map(labelFor))[ids.indexOf(participant)];
   }
   // Moves a participant's spark to a tab: the page itself, else the tab showing url (none: takes
   // it away). A page is exact; two tabs can show the same URL.

@@ -77,7 +77,6 @@ html[data-dock="hidden"] .top, html[data-dock="hidden"] .tabs, html[data-dock="h
 .agent[data-folded="true"] .fold::before, .session-card .fold[aria-expanded="false"]::before { transform: translateY(-2px) rotate(45deg); }
 #agent-body, .turn { grid-column: 1 / -1; min-width: 0; }
 .agent[data-folded="true"] #agent-body { display: none; }
-.agent-tab { margin: 6px 0 0; font-size: var(--fs-2); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-tab[hidden] { display: none; }
 
 /* Your turn: the helper's own words under the state line; no motion. */

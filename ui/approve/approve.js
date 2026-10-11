@@ -7,7 +7,7 @@
 // test/fixtures/ui-approve.json and test/ui-approve.test.mjs pin it):
 //   GET <base>approvals.json -> { pending: Item[] } (owner key; 404 or a failure = none pending,
 //     the stream then carries everything).
-//   SSE <base>events?page=approve:
+//   SSE <base>events?panel=1&page=approve (the shared stream, common.js helperStream):
 //     event "approval" { op: "add", item: Item } | { op: "withdraw", item: { id } };
 //     event "driving" { on: boolean } (an agent's input is under way: no answer counts while on);
 //     events "join" (Request[] as joins.json), "dev" ({ asks: [{ id, who, port }] }) and
@@ -30,7 +30,7 @@
 // IntersectionObserver v2 reports the card fully visible. The observer lives only while a card
 // shows and the page is visible. No timer: arming is a timestamp compared at click time. The
 // helper checks the answer again.
-import { $, el, avatar, splitLabel } from "../common.js";
+import { $, el, avatar, splitLabel, helperStream } from "../common.js";
 
 const ARM_MS = 600;
 const POINTER = new Set(["allow", "site", "always"]);
@@ -69,32 +69,31 @@ async function findBase() {
   try { return (await globalThis.chrome?.storage?.session?.get("view"))?.view || null; } catch { return null; }
 }
 
-const parse = (e) => { try { return JSON.parse(e.data); } catch { return undefined; } };
-
+let stream = null; // the shared helper stream (common.js helperStream)
 function connect(url) {
+  if (!url || url === base) return;
+  stream?.close();
   base = url;
-  const es = new EventSource(base + "events?page=approve");
-  es.addEventListener("open", () => { document.body.dataset.s = "live"; load(); });
-  es.addEventListener("error", () => { document.body.dataset.s = es.readyState === EventSource.CLOSED ? "closed" : "connecting"; });
-  es.addEventListener("approval", (e) => {
-    const d = parse(e);
+  // panel=1 always (common.js): the bubble is never a viewer. approvals.json is the snapshot on each open.
+  stream = helperStream(base, { kind: "approve", onState: (s) => { document.body.dataset.s = s; }, onOpen: () => load() });
+  const on = stream.on;
+  on("approval", (d) => {
     const id = d?.item?.id;
     if (typeof id !== "string" || !id) return;
     if (d.op === "add") upsert(normalize("click", d.item));
     else if (d.op === "withdraw") { items = items.filter((it) => it.key !== `click:${id}`); prune(); }
     draw();
   });
-  es.addEventListener("driving", (e) => {
-    driving = !!parse(e)?.on;
+  on("driving", (d) => {
+    driving = !!d?.on;
     document.body.dataset.driving = String(driving);
     hint(driving ? SAY.driving : "");
   });
-  es.addEventListener("join", (e) => {
-    const d = parse(e);
+  on("join", (d) => {
     replace("join", (Array.isArray(d) ? d : []).filter((r) => r && r.id && (!r.state || r.state === "pending")));
   });
-  es.addEventListener("dev", (e) => replace("dev", parse(e)?.asks));
-  es.addEventListener("joinhost", (e) => replace("host", parse(e)?.asks));
+  on("dev", (d) => replace("dev", d?.asks));
+  on("joinhost", (d) => replace("host", d?.asks));
 }
 
 // The pending clicks from approvals.json; a 404 or a failure leaves the list as the stream made it.
@@ -112,12 +111,12 @@ async function load() {
 function normalize(kind, raw) {
   const key = `${kind}:${raw.id}`;
   if (!ats.has(key)) ats.set(key, Date.now());
-  const it = { key, kind, id: raw.id, who: "", color: "", verb: "", target: "", where: "", reason: "", labels: {}, menu: [], at: ats.get(key) };
+  const it = { key, kind, id: raw.id, who: "", color: "", verb: "", target: "", host: "", reason: "", labels: {}, menu: [], at: ats.get(key) };
   if (kind === "click") {
     Object.assign(it, {
       who: String(raw.agent?.label || "Claude"), color: raw.agent?.color || "", verb: "wants to click",
-      target: String(raw.target || ""), where: raw.tab?.host ? `In the tab on ${raw.tab.host}` : "", reason: String(raw.reason || ""),
-      menu: [{ answer: "site", label: "Allow for this site" }, { answer: "terminal", label: "Ask in the terminal only" }],
+      target: String(raw.target || ""), host: raw.tab?.host ? String(raw.tab.host) : "", reason: String(raw.reason || ""),
+      menu: [{ answer: "site", label: raw.tab?.host ? `Allow for ${raw.tab.host}` : "Allow for this site" }, { answer: "terminal", label: "Ask in the terminal only" }],
       at: Number(raw.at) || it.at,
     });
   } else if (kind === "join") {
@@ -184,7 +183,12 @@ function draw() {
   $("who").textContent = it.who;
   $("verb").textContent = it.verb;
   $("target").textContent = it.target;
-  for (const id of ["where", "reason"]) { $(id).textContent = it[id]; $(id).hidden = !it[id]; }
+  // The tab's host is the target's title, not a visible line (the compact header); #host, visually
+  // hidden, gives it to readers through the card's description.
+  $("target").title = it.host ? `In the tab on ${it.host}` : "";
+  $("host").textContent = it.host ? `In the tab on ${it.host}` : "";
+  $("reason").textContent = it.reason;
+  $("reason").hidden = !it.reason;
   $("allow").textContent = it.labels.allow || "Allow";
   $("deny").textContent = it.labels.deny || "Deny";
   more.hidden = !it.menu.length;

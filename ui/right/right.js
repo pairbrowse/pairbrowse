@@ -1,8 +1,9 @@
 // The PairBrowse right dock: one page for two hosts. In the browser build (window.pairbrowse) it
 // takes the helper's address and the dock state from the browser; as plain Chromium's side panel
-// it reads the address the daemon handed to background.js. Either way it connects to the live
-// view server (status, activity, profile) and never asks for the page stream itself.
-import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState, askDock } from "../common.js";
+// it reads the address the daemon handed to background.js. Either way it reads the live view
+// server's owner stream (status, activity, profile) through the one shared stream per origin
+// (common.js helperStream) and never asks for the page stream itself.
+import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState, askDock, helperStream } from "../common.js";
 
 const pb = globalThis.pairbrowse || null;
 document.documentElement.dataset.host = pb ? "native" : "extension";
@@ -11,7 +12,7 @@ const DRIVING_MS = 8000; // "Working…" for this long after the agent's last ac
 const ACTIVITY_SHOWN = 12;
 const PICTURE_ID = /^[0-9a-f]{12}$/;
 let base = null;
-let es = null;
+let stream = null; // the shared helper stream (common.js helperStream)
 let lastActivity = 0;
 let lastWho = "";
 let driveTimer = 0;
@@ -370,7 +371,7 @@ function activeEntry() {
 const agentName = (entry) => whose(lastWho || entry?.who || "");
 
 // The active agent's card: avatar in its color, name, its own status text (pairbrowse_status,
-// in the Status box) and the tab it is in.
+// in the Status box) and the tab it is in (the name's title).
 function drawAgent() {
   const entry = activeEntry();
   const name = agentName(entry);
@@ -379,10 +380,13 @@ function drawAgent() {
   a.textContent = initialOf(splitLabel(lastWho || entry?.who || "Claude").name);
   a.style.background = isColor(entry?.color) ? entry.color : "var(--spark)";
   $("agent-status-text").textContent = entry?.task || "No status from the agent yet.";
+  // The tab it is in: the name's tooltip, not a line of the Status box (#agent-tab stays, hidden
+  // and empty: the side panel's ids are pinned).
   const tab = entry?.tab || (!entry || entry.who === lastWho ? lastTab : "");
-  $("agent-tab").hidden = !tab;
-  $("agent-tab").textContent = tab ? `In ${tab}` : "";
-  $("agent-tab").title = tab;
+  $("agent-name").title = tab ? `In ${tab}` : "";
+  $("agent-tab").hidden = true;
+  $("agent-tab").textContent = "";
+  $("agent-tab").title = "";
 }
 
 // Everyone else in a shared session (both browsers), the active agent not repeated: one row
@@ -506,11 +510,13 @@ function connect(url) {
   if (!url || url === base) return;
   if (base) { forgetPictures(); forgetSessionTools(); }
   base = url;
-  es?.close();
-  es = new EventSource(base + (pb ? "events?panel=1&page=right" : "events?panel=1"));
-  const on = (event, fn) => es.addEventListener(event, (e) => fn(JSON.parse(e.data)));
-  es.onopen = () => { document.body.dataset.s = "live"; setDriver(); profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); };
-  es.onerror = () => { document.body.dataset.s = es.readyState === EventSource.CLOSED ? "closed" : "connecting"; setDriver(); };
+  stream?.close();
+  stream = helperStream(base, {
+    kind: pb ? "right" : "",
+    onState: (s) => { document.body.dataset.s = s; setDriver(); },
+    onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); },
+  });
+  const on = stream.on;
   on("status", (s) => {
     document.body.dataset.turn = String(s.kind === "you" && !!s.text);
     $("turn-text").textContent = s.text || "Your turn";

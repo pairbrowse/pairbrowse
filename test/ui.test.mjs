@@ -16,7 +16,7 @@ import http from "node:http";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative, dirname } from "node:path";
-import { patchright } from "./live.mjs";
+import { patchright, inPage } from "./live.mjs";
 import { pages, openPage, runtime } from "./helpers/ui-page.mjs";
 import { startFakeHelper } from "./helpers/fake-helper.mjs";
 import { startUiServer, UI_ROOT, PAGE_CSP, FRAMEABLE } from "./helpers/ui-server.mjs";
@@ -221,6 +221,46 @@ test("every visible page has a review fixture and a shot", () => {
     assert.ok(Number.isInteger(shot.width) && shot.width > 0 && Number.isInteger(shot.height) && shot.height > 0, `${shot.name}: a size`);
     if (shot.hash !== undefined) assert.ok(["nav-left", "nav-right", "switcher", "share", "menu"].includes(shot.hash), `${shot.name}: one of the strip's modes`);
   }
+});
+
+// ---- one event stream per origin (common.js helperStream) ----
+const uiScripts = () => readdirSync(UI_ROOT, { withFileTypes: true }).filter((d) => d.isDirectory())
+  .flatMap((d) => readdirSync(join(UI_ROOT, d.name)).filter((f) => f.endsWith(".js")).map((f) => join(UI_ROOT, d.name, f)))
+  .concat(readdirSync(UI_ROOT).filter((f) => f.endsWith(".js") && f !== "common.js").map((f) => join(UI_ROOT, f)));
+
+test("only ui/common.js opens an event stream to the helper", () => {
+  const common = read(join(UI_ROOT, "common.js"));
+  assert.match(common, /new EventSource\(/, "common.js holds the one stream");
+  for (const f of uiScripts()) {
+    // The code only: a comment may name the route the shared stream opens.
+    const js = read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+    assert.ok(!/new EventSource\b/.test(js), `${relative(root, f)} opens no stream of its own`);
+    assert.ok(!/events\?/.test(js), `${relative(root, f)} names no stream route`);
+  }
+});
+
+test("every event a page listens to on the shared stream is in STREAM_EVENTS", async () => {
+  const { STREAM_EVENTS } = await import(join(UI_ROOT, "common.js"));
+  let checked = 0;
+  for (const f of uiScripts()) {
+    const js = read(f);
+    if (!/\bhelperStream\b/.test(js)) continue;
+    for (const [, name] of js.matchAll(/\bon\(\s*["']([^"']+)["']/g)) {
+      assert.ok(STREAM_EVENTS.includes(name), `${relative(root, f)}: on("${name}") is not in STREAM_EVENTS`);
+      checked++;
+    }
+  }
+  assert.ok(checked > 20, `the pages' handlers were found (${checked})`);
+});
+
+test("the strip's nav fragments never connect", () => {
+  const js = read(join(UI_ROOT, "strip", "strip.js"));
+  const ensure = js.match(/async function ensureStream\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(ensure, "ensureStream guards the stream");
+  assert.match(ensure[1], /^\s*if \(navMode\(\)\) \{/, "the nav check comes first");
+  assert.match(js, /const navMode = \(\) => mode === "nav-left" \|\| mode === "nav-right";/);
+  assert.equal([...js.matchAll(/\bconnect\(/g)].length, 2, "connect is defined once and called only from ensureStream");
+  assert.match(ensure[1], /connect\(url\)/);
 });
 
 // ---- Part 2: the harness's own fakes ----
@@ -595,6 +635,99 @@ test("only same-origin pages frame the picker, and no other page can be framed",
   } finally {
     await foreign?.close();
     await ctx.close();
+    await helper.close();
+    await browser.close();
+  }
+});
+
+test("seven pages on one origin share one event stream, which passes on when its page closes", { skip: !runtime, timeout: 120_000 }, async () => {
+  const browser = await patchright(runtime).chromium.launch();
+  const helper = await startFakeHelper({ pageOrigin: null });
+  const ui = await startUiServer({ helper, fixture: defaultFixture() });
+  helper.setPageOrigin(ui.origin);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    const context = await browser.newContext({ viewport: { width: 1536, height: 900 } });
+    const NAMES = ["strip", "strip#nav-left", "strip#nav-right", "left", "right", "timeline", "approve"];
+    const open = {};
+    for (const n of NAMES) {
+      const [page, hash] = n.split("#");
+      const p = await context.newPage();
+      await p.goto(ui.url(page) + (hash ? `#${hash}` : ""), { waitUntil: "load" });
+      open[n] = p;
+    }
+    const ev = (n, fn, arg) => inPage(open[n], fn, arg);
+    const until = async (what, fn) => { for (let i = 0; i < 120; i++) { if (await fn()) return; await sleep(50); } assert.fail(`timed out waiting for ${what}`); };
+    const STREAM_PAGES = ["strip", "left", "right", "timeline", "approve"];
+    const NAV = ["strip#nav-left", "strip#nav-right"];
+    for (const n of STREAM_PAGES) await until(`${n} live`, () => ev(n, () => document.body.dataset.s === "live"));
+    for (const n of NAV) assert.equal(await ev(n, () => document.body.dataset.s), undefined, `${n} has no state attribute`);
+    await sleep(300);
+    const live = async () => Object.fromEntries(await Promise.all(NAMES.filter((n) => open[n]).map(async (n) => [n, await ev(n, () => window.__harness.live())])));
+    const before = await live();
+    assert.equal(helper.streams.size, 1, "one stream to the helper");
+    assert.equal(helper.gets.filter((r) => r === "events").length, 1, "one events request");
+    assert.equal(Object.values(before).reduce((n, l) => n + l.eventSources, 0), 1, "one EventSource across the seven pages");
+    for (const n of NAV) assert.equal(before[n].eventSources, 0, `${n} opens no stream`);
+    assert.deepEqual([...helper.streams].map((s) => s.panel), [true], "never a viewer stream");
+
+    const rightText = () => ev("right", () => document.getElementById("collaboration").textContent);
+    const collab0 = await rightText();
+    helper.set("collaboration", { participants: [{ id: "p1", label: "Ana" }], guests: [{ label: "Ana", role: "drive" }] });
+    await until("the strip's pill", () => ev("strip", () => document.getElementById("pill").dataset.state === "live"));
+    await until("left's guests", () => ev("left", () => document.querySelectorAll("#guests li").length === 1));
+    await until("right's collaboration line", async () => (await rightText()) !== collab0);
+    helper.set("activity", [{ t: Date.now(), who: "Claude", text: "typed" }]);
+    await until("the timeline driving", () => ev("timeline", () => document.body.dataset.driving === "true"));
+    helper.push("join", [{ id: "j1", name: "Bo", role: "drive", state: "pending" }]);
+    await until("approve's pending", () => ev("approve", () => document.body.dataset.pending === "1"));
+    await until("right's join banner", () => ev("right", () => !!document.querySelector("#joins .join")));
+
+    // The page holding the stream closes: the lock passes and another page opens it.
+    const holder = Object.entries(await live()).find(([, l]) => l.eventSources === 1)?.[0];
+    assert.equal(holder, "strip", "the first page holds the stream");
+    const logs = {};
+    logs.strip = await ev("strip", () => window.__harness.log);
+    await open.strip.close();
+    delete open.strip;
+    await until("a second events request", async () => helper.gets.filter((r) => r === "events").length === 2 && helper.streams.size === 1);
+    const collab1 = await rightText();
+    helper.set("collaboration", { participants: [], guests: [] });
+    await until("left's empty line", () => ev("left", () => !document.getElementById("guests-empty").hidden && document.querySelectorAll("#guests li").length === 0));
+    await until("right's collaboration line again", async () => (await rightText()) !== collab1);
+    assert.equal(helper.streams.size, 1, "still one stream");
+    await sleep(300);
+    const after = await live();
+    assert.equal(Object.values(after).reduce((n, l) => n + l.eventSources, 0), 1, "one EventSource after the handover");
+
+    // A page still on an older address (a dead key, learned before the holder's) says hello: the
+    // stream stays where it is.
+    const gets = helper.gets.filter((r) => r === "events").length;
+    await ev("left", (origin) => {
+      const ch = new BroadcastChannel("pairbrowse-stream " + origin);
+      ch.postMessage({ t: "hello", id: "stale", base: origin + "/dead-key/", kind: "", since: 1 });
+      ch.close();
+    }, helper.origin);
+    await sleep(400);
+    assert.equal(helper.gets.filter((r) => r === "events").length, gets, "no new events request");
+    assert.equal(helper.streams.size, 1, "the stream did not move");
+    const collab2 = await rightText();
+    helper.set("collaboration", { participants: [{ id: "p2", label: "Bea" }], guests: [] });
+    await until("right still follows the stream", async () => (await rightText()) !== collab2);
+
+    for (const n of Object.keys(open)) logs[n] = await ev(n, () => window.__harness.log);
+    for (const [n, log] of Object.entries(logs)) {
+      const bad = log.filter((e) => ["error", "pageerror", "rejection", "csp"].includes(e.kind));
+      assert.deepEqual(bad, [], `${n}: no error, rejection or CSP entry`);
+    }
+    for (const n of Object.keys(after)) {
+      assert.equal(after[n].intervals, before[n].intervals, `${n}: no new interval`);
+      assert.equal(after[n].frames, before[n].frames, `${n}: no new frame loop`);
+      assert.ok(after[n].timeouts <= before[n].timeouts + 2, `${n}: only the drive and checklist timeouts (${before[n].timeouts} -> ${after[n].timeouts})`);
+    }
+    await context.close();
+  } finally {
+    await ui.close();
     await helper.close();
     await browser.close();
   }

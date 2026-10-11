@@ -629,7 +629,7 @@
   // A name on a tag: at most 40 characters, cut between words.
   // The pointer's shape (its tip at 0,0 in a "1 1 22 22" view box: exactly at the point) and the
   // name pill, shared by the agent's cursor and other people's pointers: dark ink on the
-  // participant's color (AA on all four), a 1 px darker outline, no glow.
+  // participant's color, AA on every palette color (test/tokens.test.mjs), a 1 px darker outline, no glow.
   const POINTER = "M1 1v16.6l4.3-3.8 2.7 6.1 2.8-1.3-2.7-6 5.6-.6z";
   const PILL = "padding:2px 8px;border-radius:999px;font:600 11px/1.45 system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0B1421;white-space:nowrap;box-shadow:0 0 0 1px rgba(0,0,0,.28);-webkit-font-smoothing:antialiased";
   const shortWho = (who) => { const t = String(who || "Claude"); return t.length > 40 ? `${t.slice(0, 40).replace(/\s+\S*$/, "")}…` : t; };
@@ -743,6 +743,7 @@
     if (moving) peersFrame = requestAnimationFrame(drawPeers);
   }
   const kickPeers = () => { if (!peersFrame) peersFrame = requestAnimationFrame(drawPeers); };
+  const agentKey = (k) => /^host-agent:|:a\d+$/.test(k);
   function setPeers(json) {
     let list;
     try { list = JSON.parse(json); } catch { return; }
@@ -756,6 +757,8 @@
         .p.on{opacity:1}
         svg{display:block;width:18px;height:18px;overflow:visible;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.35))}
         span{position:absolute;left:14px;top:16px;${PILL}}
+        .p.a svg{width:22px;height:22px}
+        .p.a span{left:16px;top:18px}
         .v{position:fixed;right:0;top:0;display:flex;align-items:flex-start;gap:4px;opacity:.8;pointer-events:none}
         .v i{display:block;width:4px;border-radius:2px 0 0 2px;box-shadow:0 0 0 1px rgba(255,255,255,.7)}
         .v b{order:-1;${PILL};padding:1px 6px;font-size:10px;opacity:0;transition:opacity .35s ease}
@@ -794,15 +797,20 @@
       keep.add(c.k);
       const x = Number(c.x) || 0, y = Number(c.y) || 0;
       let p = peers.get(c.k);
+      // An agent's pointer (host-agent:<id>, <joiner>:a<n>) is drawn as the agent cursor: white,
+      // edged in its color, at its size; a person's is filled with their color, edged in white.
+      const agent = agentKey(c.k);
       if (!p) {
         const el = document.createElement("div");
-        el.className = "p";
-        el.innerHTML = html(`<svg viewBox="1 1 22 22"><path d="${POINTER}" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span>`);
+        el.className = agent ? "p a" : "p";
+        el.innerHTML = html(agent
+          ? `<svg viewBox="1 1 22 22"><path d="${POINTER}" fill="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span>`
+          : `<svg viewBox="1 1 22 22"><path d="${POINTER}" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span>`);
         peersBox.appendChild(el);
         p = { el, x, y, tx: x, ty: y, t: now(), on: false, color: "", who: null };
         peers.set(c.k, p);
       }
-      if (p.color !== color) { p.color = color; p.el.querySelector("path").setAttribute("fill", color); p.el.querySelector("span").style.background = color; }
+      if (p.color !== color) { p.color = color; p.el.querySelector("path").setAttribute(agent ? "stroke" : "fill", color); p.el.querySelector("span").style.background = color; }
       const who = c.who ? shortWho(c.who) : "";
       if (p.who !== who) { p.who = who; p.el.querySelector("span").textContent = who; }
       if (x !== p.tx || y !== p.ty) { p.tx = x; p.ty = y; p.t = now(); }

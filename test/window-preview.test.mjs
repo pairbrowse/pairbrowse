@@ -79,6 +79,10 @@ function run(extra, geo) {
     for (const f of frames.frames) assert.notEqual(f.s, "connecting", f.name);
     assert.ok(frames.streams.byHost["127.0.0.1"] <= 4);
     assert.ok(frames.streams.byHost.localhost <= 3);
+    // One shared stream per helper host (ui/common.js helperStream); the nav fragments open none.
+    assert.equal(frames.streams.total, extra.includes("--one-host") ? 1 : 2, "one event stream per helper host");
+    for (const f of frames.frames.filter((x) => x.name.startsWith("nav-"))) assert.equal(f.live?.eventSources, 0, `${f.name} opens no stream`);
+    assert.equal(frames.thumbs.loaded, frames.thumbs.cards, "every timeline picture loaded");
     for (const k of ["strip", "nav", "left", "right", "timeline", "card"]) assert.deepEqual(frames.rects[k], geo[k], k);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -87,3 +91,4 @@ function run(extra, geo) {
 
 test("window preview: the default run", { skip: !runtime, timeout: 240_000 }, () => run([], geometry()));
 test("window preview: rails and reduced motion", { skip: !runtime, timeout: 240_000 }, () => run(["--rail", "--reduced-motion"], geometry({ rail: true })));
+test("window preview: one helper host, one event stream", { skip: !runtime, timeout: 240_000 }, () => run(["--one-host"], geometry()));

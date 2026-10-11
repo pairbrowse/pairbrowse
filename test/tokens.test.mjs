@@ -40,7 +40,7 @@ const contrast = (a, b) => { const [x, y] = [lum(norm(a)), lum(norm(b))].sort((p
 
 const REQUIRED = ["bg", "chrome", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "accent", "accent-ink", "accent-soft",
   "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t",
-  "tab-idle", "tab-top", "edge-light", "edge-lit", "edge-accent", "surface-grad", "shadow-raised", "glow-soft", "glow-accent", "glow-top",
+  "tab-idle", "tab-top", "tab-halo", "tab-halo-idle", "edge-light", "edge-lit", "edge-top", "surface-grad", "shadow-raised", "glow-soft", "glow-accent", "glow-top",
   "glow-ok", "glow-bad", "glow-focus", "ok-soft", "ok-edge", "bad-soft"];
 const PAGES = ["right/right.css", "picker/picker.css", "newtab/newtab.css", "screen/screen.css", "settings/settings.css"].map((x) => UI + x).concat("scripts/liveview.css");
 // Every page sheet under ui/ (strip, docks, timeline, approve and the rest) plus the live view's.
@@ -78,6 +78,17 @@ test("text colors meet WCAG AA on every surface, in both schemes", () => {
       assert.ok(r >= 3, `${scheme}: the spark on the tab Claude works in (--spark on --${bg}) is ${r.toFixed(2)}:1`);
     }
   }
+});
+
+test("dark ink on every participant color is AA (the cursor and avatar pills)", async () => {
+  const { SPARK_COLORS } = await import("../scripts/daemon/hud.mjs");
+  for (const c of SPARK_COLORS) {
+    const r = contrast(dark.bg, c);
+    assert.ok(r >= 4.5, `--bg on ${c} is ${r.toFixed(2)}:1`);
+  }
+  assert.ok(SPARK_COLORS.includes("#7088f0"), "Codex's color is in the palette");
+  const codex = contrast(dark.bg, "#7088f0");
+  assert.ok(codex >= 4.5, `--bg on Codex's #7088f0 is ${codex.toFixed(2)}:1`);
 });
 
 // oklch() literals allowed in the sheets: white or black with alpha (shadows, a scrim), the participant chip

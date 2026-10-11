@@ -11,7 +11,7 @@
 <body data-s="connecting" data-pending="0" data-driving="false">
 <main id="main">
   <p class="empty" id="empty">Nothing is waiting for your OK.</p>
-  <article class="card" id="card" tabindex="-1" aria-labelledby="title" aria-describedby="reason" hidden>
+  <article class="card" id="card" tabindex="-1" aria-labelledby="title" aria-describedby="host reason" hidden>
     <header class="hd">
       <span id="avatar-slot"></span>
       <h1 class="title" id="title"><b id="who"></b> <span id="verb"></span></h1>
@@ -19,14 +19,14 @@
       <button class="x" id="dismiss" type="button" aria-label="Dismiss; it stays in the terminal">×</button>
     </header>
     <p class="target" id="target"></p>
-    <p class="where" id="where" hidden></p>
+    <p class="sr" id="host"></p>
     <p class="reason" id="reason" hidden></p>
-    <p class="hint" id="hint" role="status" aria-live="polite"></p>
     <div class="act">
       <button class="allow" id="allow" type="button">Allow</button>
       <button class="deny" id="deny" type="button">Deny</button>
       <button class="more" id="more" type="button" aria-expanded="false" aria-controls="menu">More actions <span aria-hidden="true">⌄</span></button>
     </div>
+    <p class="hint" id="hint" role="status" aria-live="polite"></p>
     <div class="menu" id="menu" role="group" aria-label="More actions" hidden></div>
   </article>
 </main>

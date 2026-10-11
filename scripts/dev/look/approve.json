@@ -2,6 +2,6 @@
   "helper": {},
   "push": [
     ["approval", { "op": "add", "item": { "id": "ap-1a2b3c4d", "agent": { "label": "Claude", "color": "#e9763f" }, "kind": "click", "target": "Place order", "reason": "\"Place order\" pays: a final action (pay)", "tab": { "id": 11, "host": "shop.example" }, "at": 1760000000000 } }],
-    ["approval", { "op": "add", "item": { "id": "ap-5e6f7a8b", "agent": { "label": "Alice · Codex", "color": "#4fd1e8" }, "kind": "click", "target": "Publish", "reason": "\"Publish\" publishes or submits for review: a final action (publish)", "tab": { "id": 12, "host": "docs.example" }, "at": 1760000005000 } }]
+    ["approval", { "op": "add", "item": { "id": "ap-5e6f7a8b", "agent": { "label": "Alice · Codex", "color": "#7088f0" }, "kind": "click", "target": "Publish", "reason": "\"Publish\" publishes or submits for review: a final action (publish)", "tab": { "id": 12, "host": "docs.example" }, "at": 1760000005000 } }]
   ]
 }

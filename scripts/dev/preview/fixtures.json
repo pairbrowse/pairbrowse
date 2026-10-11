@@ -367,7 +367,7 @@
     },
     "peers": [
       {
-        "k": "codex",
+        "k": "j1:a0",
         "field": "#ws-email",
         "fx": 0.62,
         "fy": 0.5,
@@ -375,7 +375,7 @@
         "color": "#7088F0"
       },
       {
-        "k": "gemini",
+        "k": "j1:a1",
         "field": "#art",
         "fx": 0.45,
         "fy": 0.32,

@@ -17,7 +17,7 @@ import { randomBytes } from "node:crypto";
 import { hostOk, originOk, keyOk, pathParts, readBody, BODY_MAX, SECURITY_HEADERS, plain, listen } from "../../scripts/liveview/http.mjs";
 
 const NOT_JSON = "The body is not JSON.";
-const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture"]);
+const PAGE_KINDS = new Set(["strip", "left", "right", "timeline", "picker", "approve", "screen", "capture"]);
 const LAYOUT_STATES = new Set(["open", "rail", "hidden"]);
 const STRIP_MIN = 44, STRIP_MAX = 176;
 const TIMELINE_ID = /^[0-9a-f]{12}$/;

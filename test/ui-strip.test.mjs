@@ -85,12 +85,18 @@ describe("renders the tab list, its states and the drag region", () => pageTest(
   const hovered = (await inPage(tabInfo, 12)).bg;
   assert.equal(hovered, "rgb(25, 42, 61)", "hover is --elevated");
   assert.notEqual(hovered, "rgb(36, 55, 80)");
-  // the active tab's feet: 10 px curves carrying its edge into the row's bottom line
+  // the active tab's feet: 9 px curves at -9px, the ring at 8px, carrying its edge into the row's
+  // bottom line: they cover the border column and end at the neighbour's edge
   const feet = await inPage(() => {
     const li = document.querySelector('#tabs li[aria-selected="true"]');
-    return ["::before", "::after"].map((p) => { const s = getComputedStyle(li, p); return { w: s.width, image: s.backgroundImage }; });
+    return ["::before", "::after"].map((p) => { const s = getComputedStyle(li, p); return { w: s.width, h: s.height, left: s.left, right: s.right, image: s.backgroundImage }; });
   });
-  for (const f of feet) { assert.equal(f.w, "10px"); assert.match(f.image, /radial-gradient/); }
+  for (const f of feet) { assert.equal(f.w, "9px"); assert.equal(f.h, "9px"); assert.match(f.image, /radial-gradient/); assert.match(f.image, /7\.5px/); assert.match(f.image, / 8px/); assert.match(f.image, / 9px/); }
+  assert.equal(feet[0].left, "-9px");
+  assert.equal(feet[1].right, "-9px");
+  // the new tab "+" sits 8 px after the last tab, not at the far right
+  const plus = await inPage(() => { const last = [...document.querySelectorAll("#tabs li")].at(-1).getBoundingClientRect(); return Math.round(document.getElementById("new").getBoundingClientRect().left - last.right); });
+  assert.equal(plus, 8, "the + right after the last tab");
   // the drag region
   const regions = await inPage(() => {
     const r = (el) => getComputedStyle(el).getPropertyValue("-webkit-app-region");
@@ -109,14 +115,22 @@ describe("agent dot, loading ring, close buttons and the pinned tab", () => page
     if (!d) return null;
     const r = d.getBoundingClientRect();
     const close = d.parentElement.querySelector(".close").getBoundingClientRect();
-    return { w: r.width, h: r.height, bg: getComputedStyle(d).backgroundColor, title: d.title, gap: Math.round(close.left - r.right) };
+    const title = d.parentElement.querySelector(".title");
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    const text = range.getBoundingClientRect();
+    const li = d.parentElement.getBoundingClientRect();
+    return { w: r.width, h: r.height, bg: getComputedStyle(d).backgroundColor, title: d.title, afterTitle: Math.round(r.left - Math.min(text.right, title.getBoundingClientRect().right)),
+      closeEnd: Math.round(li.right - close.right), padRight: Math.round(parseFloat(getComputedStyle(d.parentElement).paddingRight) + parseFloat(getComputedStyle(d.parentElement).borderRightWidth)) };
   };
   const d11 = await inPage(dot, 11);
-  assert.deepEqual(d11, { w: 7, h: 7, bg: "rgb(233, 118, 63)", title: "Claude is in this tab", gap: 4 });
+  const { closeEnd, padRight, ...d11rest } = d11;
+  assert.deepEqual(d11rest, { w: 7, h: 7, bg: "rgb(233, 118, 63)", title: "Claude is in this tab", afterTitle: 6 }, "the owner dot 6 px after the title");
+  assert.equal(closeEnd, padRight, "the close at the tab's right end");
   assert.match((await inPage(tabInfo, 11)).label, /Claude is in this tab/);
-  await shim.setOwner(12, "Codex", "#a78bfa");
+  await shim.setOwner(12, "Codex", "#7088f0");
   await until("tab 12's dot", (id) => !!document.querySelector(`#tabs li[data-id="${id}"] .agent`), 12);
-  assert.equal((await inPage(dot, 12)).bg, "rgb(167, 139, 250)");
+  assert.equal((await inPage(dot, 12)).bg, "rgb(112, 136, 240)");
   assert.match((await inPage(tabInfo, 12)).label, /Codex is in this tab/);
   await shim.clearOwner(12);
   await until("tab 12's dot gone", (id) => !document.querySelector(`#tabs li[data-id="${id}"] .agent`), 12);
@@ -161,6 +175,47 @@ describe("agent dot, loading ring, close buttons and the pinned tab", () => page
   const generic = await inPage(tile, 11);
   assert.equal(generic.bg, "rgb(25, 42, 61)", "the globe sits on --elevated");
   assert.equal(generic.img, null);
+}));
+
+describe("owned tabs glow in the owner's color, undriven tabs stay neutral", () => pageTest("strip", { viewport: ROW }, async ({ shim, inPage, until }) => {
+  const edges = (id) => {
+    const li = document.querySelector(`#tabs li[data-id="${id}"]`);
+    const s = getComputedStyle(li);
+    return { owned: li.dataset.owned || "", owner: li.style.getPropertyValue("--owner"), top: s.borderTopColor, shadow: s.boxShadow };
+  };
+  // A probe of the same color expression, resolved by the page's own engine.
+  const probe = (expr) => { const p = document.createElement("i"); p.style.color = expr; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; };
+  const ACCENTS = /50, 133, 246|106, 166, 249/;
+  // the active tab, Claude's: the full owner color on top, a halo carrying it
+  const a = await inPage(edges, 11);
+  assert.deepEqual([a.owned, a.owner], ["true", "#e9763f"]);
+  assert.equal(a.top, "rgb(233, 118, 63)");
+  const halo = await inPage(probe, "color-mix(in srgb, #e9763f 50%, transparent)");
+  assert.ok(a.shadow.includes(halo), `the halo carries the owner color: ${a.shadow}`);
+  assert.doesNotMatch(a.top + a.shadow, ACCENTS);
+  // an inactive owned tab: the top edge at 60%, a weaker halo
+  await shim.setOwner(12, "Codex", "#7088f0");
+  await until("tab 12 owned", () => document.querySelector('#tabs li[data-id="12"]').dataset.owned === "true");
+  const b = await inPage(edges, 12);
+  assert.equal(b.owner, "#7088f0");
+  assert.equal(b.top, await inPage(probe, "color-mix(in srgb, #7088f0 60%, transparent)"));
+  const weak = await inPage(probe, "color-mix(in srgb, #7088f0 30%, transparent)");
+  assert.ok(b.shadow.includes(weak), `a weaker halo in the owner color: ${b.shadow}`);
+  // an undriven tab: no owner, neutral edges, no accent channels
+  const c = await inPage(edges, 13);
+  assert.deepEqual([c.owned, c.owner], ["", ""]);
+  assert.doesNotMatch(c.top + c.shadow, ACCENTS);
+  // the active tab undriven: the neutral lit top edge and halo
+  await shim.clearOwner(11);
+  await until("tab 11 undriven", () => !document.querySelector('#tabs li[data-id="11"]').dataset.owned);
+  const d = await inPage(edges, 11);
+  assert.equal(d.owner, "");
+  assert.equal(d.top, await inPage(probe, "rgb(255 255 255 / 0.24)"));
+  assert.doesNotMatch(d.top + d.shadow, ACCENTS);
+  // a color that is not a plain #rrggbb never reaches --owner
+  await shim.setOwner(13, "Odd", "red");
+  await until("tab 13's dot", () => !!document.querySelector('#tabs li[data-id="13"] .agent'));
+  assert.deepEqual(await inPage(edges, 13).then((e) => [e.owned, e.owner]), ["", ""]);
 }));
 
 describe("close and new tab", () => pageTest("strip", { viewport: ROW }, async ({ page, shim, inPage, until }) => {
@@ -301,7 +356,7 @@ describe("the pill: Local, Live session, Reconnecting", () => pageTest("strip", 
 describe("avatar stack with +N", () => pageTest("strip", {
   viewport: ROW,
   fixtures: {
-    board: { people: [{ who: "Claude", color: "#e9763f" }, { who: "Codex", color: "#a78bfa" }, { who: "Ben", color: "#4ade80" }, { who: "Dana" }, { who: "Eli", color: "#4fd1e8" }, { who: "Fay" }] },
+    board: { people: [{ who: "Claude", color: "#e9763f" }, { who: "Codex", color: "#7088f0" }, { who: "Ben", color: "#4ade80" }, { who: "Dana" }, { who: "Eli", color: "#4fd1e8" }, { who: "Fay" }] },
     collaboration: { guests: [{ label: "Ana", role: "drive" }] },
   },
 }, async ({ inPage, until }) => {

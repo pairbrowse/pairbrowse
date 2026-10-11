@@ -15,7 +15,7 @@ const SERVED = readFileSync(new URL("../ui/right/index.html", import.meta.url), 
 const VIEWPORT = { width: 330, height: 936 };
 const PEOPLE = [
   { who: "Claude", kind: "agent", color: "#e9763f", tab: "shop.example/checkout", task: "Filling the shipping form", status: "working", last: "Typed into Email" },
-  { who: "Alice · Codex", kind: "agent", color: "#a78bfa", tab: "shop.example/cart", task: "", status: "you", last: "Clicked Cart" },
+  { who: "Alice · Codex", kind: "agent", color: "#7088f0", tab: "shop.example/cart", task: "", status: "you", last: "Clicked Cart" },
   { who: "Sam · Claude Code", kind: "agent", color: "#22d3ee", where: "Sam", tab: "docs.example", task: "", status: "done", last: "Read the docs" },
   { who: "Sam (by hand)", kind: "person", color: "", where: "Sam", status: "idle" },
   { who: "Gemini · Gemini CLI", kind: "agent", color: "#20c997", tab: "shop.example/prices", task: "Checking prices", status: "working" },
@@ -134,7 +134,10 @@ describe("pause and resume", () => pageTest("right", opts({ pause: { paused: fal
   assert.ok(head.mid >= head.top && head.mid <= head.bottom, `Pause centered on the name and state lines (${head.mid} in ${head.top}..${head.bottom})`);
   assert.ok(head.right <= head.foldLeft, "Pause sits left of the fold");
   assert.deepEqual(head.shown, ["agent-avatar", "agent-name", "driver", "pause", "agent-fold"], "the header holds avatar, name, state, Pause and the fold only");
-  assert.equal(await inPage(() => document.getElementById("agent-tab").closest("#agent-status") !== null), true, "the tab line is in the Status box");
+  const tabLine = await inPage(() => { const t = document.getElementById("agent-tab"); return { inBox: t.closest("#agent-status") !== null, hidden: t.hidden, shown: t.checkVisibility(), text: t.textContent, nameTitle: document.getElementById("agent-name").title }; });
+  assert.equal(tabLine.inBox, true, "the tab line stays in the Status box (pinned id)");
+  assert.deepEqual([tabLine.hidden, tabLine.shown, tabLine.text], [true, false, ""], "hidden and empty");
+  assert.match(tabLine.nameTitle, /^(In \S.*)?$/, "the tab is in #agent-name's title");
   assert.deepEqual(await inPage(() => { const e = document.getElementById("pause-text"); return [e.className, e.getBoundingClientRect().width <= 1]; }), ["sr", true], "the description is for readers only");
   const box = await inPage(() => { const b = document.getElementById("pause-btn"); const s = getComputedStyle(b); return { h: b.getBoundingClientRect().height, bg: s.backgroundColor, border: s.borderTopWidth }; });
   assert.equal(box.h, 32);

@@ -184,6 +184,7 @@ addEventListener("paste", (e) => {
 
 // ---- pointers: the host's, and other people's, over the picture ----
 const drawn = new Map(); // key -> element
+const AGENT_KEY = /^host-agent:|:a\d+$/;
 function pointers(list) {
   const r = shown();
   const keep = new Set();
@@ -191,16 +192,22 @@ function pointers(list) {
     if (!r || typeof p?.nx !== "number" || typeof p?.ny !== "number") continue;
     const k = String(p.k || p.who || "");
     keep.add(k);
+    // An agent's pointer (host-agent:<id>, <joiner>:a<n>) is white, edged in its color, at the agent
+    // cursor's size (as scripts/hud.js draws it); a person's is filled with their color. The agent's
+    // edge is 1.53 units of a 24-unit box drawn at 22 px: the 1.4 px edge hud.js draws (B5).
+    const agent = AGENT_KEY.test(k);
     let el = drawn.get(k);
     if (!el) {
       el = document.createElement("div");
-      el.className = "p";
-      el.append(svgEl("0 0 24 24", {}, pathEl("M4 2.5l6.8 18.2 2.5-7.4 7.4-2.5z", { stroke: "#fff", "stroke-width": "1.6", "stroke-linejoin": "round" })), document.createElement("span"));
+      el.className = agent ? "p a" : "p";
+      el.append(svgEl("0 0 24 24", {}, pathEl("M4 2.5l6.8 18.2 2.5-7.4 7.4-2.5z", agent
+        ? { fill: "#fff", "stroke-width": "1.53", "stroke-linejoin": "round" }
+        : { stroke: "#fff", "stroke-width": "1.6", "stroke-linejoin": "round" })), document.createElement("span"));
       $("pointers").appendChild(el);
       drawn.set(k, el);
     }
     const color = /^#[0-9a-f]{6}$/i.test(p.color || "") ? p.color : "#e9763f";
-    el.querySelector("path").setAttribute("fill", color);
+    el.querySelector("path").setAttribute(agent ? "stroke" : "fill", color);
     const label = el.querySelector("span");
     label.style.background = color;
     label.textContent = String(p.who || "").slice(0, 40);

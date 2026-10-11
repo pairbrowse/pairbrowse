@@ -10,13 +10,14 @@
 // Writes window.png, window@2x.png, contents.png, contents@2x.png, pictures/<card>.jpg (the
 // timeline's pictures: real renders of the sample page at each step), side-by-side.png and
 // regions/<name>.png (crop pairs against the mockup's window area), harness-log.json and
-// frames.json. Exit 1 on any error, page error, rejection or CSP entry, on a render failure, or
-// (without --one-host) on a frame still connecting.
+// frames.json. Exit 1 on any error, page error, rejection or CSP entry, on a render failure, on a
+// frame still connecting, or on a timeline picture that did not load.
 // For the composition only, a loopback proxy in front of the ui server lifts the pages'
-// frame-ancestors to 'self' (X-Frame-Options SAMEORIGIN) and nothing else, and splits the frames
-// over two host names for the helper (127.0.0.1 and localhost): Chromium opens at most 6
-// connections per host and the window's pages open 7 event streams. --one-host shows what the
-// build will do with one host. The mockup is read in place, never copied.
+// frame-ancestors to 'self' (X-Frame-Options SAMEORIGIN) and nothing else, and by default splits
+// the frames over two host names for the helper (127.0.0.1 and localhost). The pages share one
+// event stream per helper host (ui/common.js helperStream: a Web Lock and a BroadcastChannel per
+// helper origin), so the default run opens two streams and --one-host, what the build does, one.
+// The mockup is read in place, never copied.
 import http from "node:http";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname, posix } from "node:path";
@@ -35,7 +36,8 @@ const PREVIEW_DIR = join(here, "preview");
 export const FIXTURES = join(PREVIEW_DIR, "fixtures.json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// The frames each helper host name serves, by default; --one-host puts them all on 127.0.0.1.
+// The frames each helper host name serves, by default; --one-host puts them all on 127.0.0.1. The
+// shared stream means one event stream per helper host (the nav fragments open none).
 export const HOST_GROUPS = { "127.0.0.1": ["strip", "left", "right", "approve"], localhost: ["nav-left", "nav-right", "timeline"] };
 export const FRAMES = ["strip", "nav-left", "nav-right", "left", "right", "timeline", "approve"];
 export const REGIONS = ["strip", "nav", "left", "right", "timeline", "approval"];
@@ -263,7 +265,10 @@ export async function renderWindow(browser, { proxy, helper, geo, raw, scale, re
       }, r);
     }
     const tl = named.get("timeline");
-    if (tl) await until(tl, (n) => { const imgs = [...document.querySelectorAll("img.thumb")]; return imgs.filter((i) => i.getAttribute("src")).length >= n && imgs.every((i) => i.complete); }, 3000, raw.helper.timeline.cards.length);
+    const pictureCards = raw.helper.timeline.cards.filter((c) => !c.note).length;
+    if (tl) await until(tl, (n) => { const imgs = [...document.querySelectorAll("img.thumb")]; return imgs.filter((i) => i.getAttribute("src")).length >= n && imgs.every((i) => i.complete); }, 3000, pictureCards);
+    // Every picture card's thumbnail has really loaded (decoded, not a broken image).
+    const thumbs = tl ? await inPage(tl, () => [...document.querySelectorAll("img.thumb")].filter((i) => i.complete && i.naturalWidth > 0).length).catch(() => 0) : 0;
     // The agent drives right now (the pages' 8 s window), so the capture shows it driving.
     const now = Date.now();
     const activity = resolveTimes(raw.helper.activity, now);
@@ -292,7 +297,7 @@ export async function renderWindow(browser, { proxy, helper, geo, raw, scale, re
     for (const k of Object.keys(rects)) rects[k] = rectOf(rects[k]);
     const byHost = { "127.0.0.1": 0, localhost: 0 };
     for (const f of frames) byHost[f.host] += f.live?.eventSources || 0;
-    return { file, frames, rects, streams: { total: byHost["127.0.0.1"] + byHost.localhost, byHost } };
+    return { file, frames, rects, streams: { total: byHost["127.0.0.1"] + byHost.localhost, byHost }, thumbs: { loaded: thumbs, cards: pictureCards } };
   } finally {
     await page.close().catch(() => {});
   }
@@ -382,18 +387,22 @@ export async function main(args) {
 
     const files = { log: join(out, "harness-log.json"), frames: join(out, "frames.json") };
     writeFileSync(files.log, JSON.stringify(log, null, 2) + "\n");
-    writeFileSync(files.frames, JSON.stringify({ geometry: geo, rects: first.rects, frames: first.frames, streams: first.streams }, null, 2) + "\n");
+    writeFileSync(files.frames, JSON.stringify({ geometry: geo, rects: first.rects, frames: first.frames, streams: first.streams, thumbs: first.thumbs }, null, 2) + "\n");
     written.push(files.log, files.frames);
 
     for (const f of written) console.log(f);
-    for (const f of first.frames) console.log(`  ${f.name} ${f.host} ${f.s} eventSources=${f.live?.eventSources ?? "?"}`);
+    for (const f of first.frames) console.log(`  ${f.name} ${f.host} ${f.s ?? "no stream"} eventSources=${f.live?.eventSources ?? "?"}`);
     const { total, byHost } = first.streams;
-    console.log(`event streams to the helper: ${total} (127.0.0.1: ${byHost["127.0.0.1"]}, localhost: ${byHost.localhost}); Chromium opens at most 6 per host and the build puts them all on one`);
+    console.log(`event streams to the helper: ${total}`);
+    for (const h of Object.keys(byHost)) if (byHost[h] || !oneHost) console.log(`  ${h}: ${byHost[h]}`);
+    const { loaded, cards } = first.thumbs;
+    console.log(`timeline pictures loaded: ${loaded} of ${cards}`);
+    if (loaded < cards) failed = true;
     const bad = log.filter((e) => BAD_KINDS.has(e.kind));
     for (const e of bad) console.log(`  ${e.frame} ${e.kind}: ${e.text}`);
     const stalled = first.frames.filter((f) => f.s === "connecting").map((f) => f.name);
-    if (oneHost) console.log(`stalled (connection cap): ${stalled.length ? stalled.join(", ") : "none"}`);
-    else if (stalled.length) { console.log(`still connecting: ${stalled.join(", ")}`); failed = true; }
+    if (stalled.length) { console.log(`still connecting: ${stalled.join(", ")}`); failed = true; }
+    else console.log("every frame live or with no stream");
     if (bad.length) failed = true;
   } catch (e) {
     console.error(`could not render the window: ${e?.stack || e}`);

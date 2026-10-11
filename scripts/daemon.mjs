@@ -152,6 +152,7 @@ function pressPause(paused, who = HOST) {
 }
 const hud = createHud({
   pages: () => context.openPages(), participants: () => [...collaboration.participants.keys()],
+  labelOf: (id) => collaboration.participants.get(id)?.label || "",
   waiting: (page) => presence.waiting(page), liveView, notify: panel.notify,
   pause: () => ({ by: pause.view().by, can: canPause() }),
 });

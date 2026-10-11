@@ -115,6 +115,25 @@ pageTest("timeline", opts({ fixtures: { timeline: { cards: [cardFx(0), cardFx(1,
   assert.equal(n.img, false);
   assert.match(n.label, /note/);
   assert.ok(n.time.length > 0);
+  // Hours and minutes only (common.js shortClock), the locale's own clock, no seconds.
+  const want = await inPage((t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), cardFx(1).t);
+  assert.equal(n.time, want, "HH:MM");
+  assert.doesNotMatch(n.time, /\d+:\d+:\d+/, "no seconds");
+  assert.ok(n.label.startsWith(want), "the card's name starts with the same time");
+  // Captions in --ink-2 at 400; Add note shows a 16 px "+" above its label and keeps its name.
+  const look = await inPage(() => {
+    const probe = document.createElement("i"); probe.style.color = "var(--ink-2)"; document.body.append(probe); const ink2 = getComputedStyle(probe).color; probe.remove();
+    const cap = getComputedStyle(document.querySelector(".card:not(.add) .cap"));
+    const btn = document.getElementById("add-btn"), plus = btn.querySelector("svg.plus"), label = btn.querySelector("span");
+    const pr = plus.getBoundingClientRect(), lr = label.getBoundingClientRect();
+    return { capColor: cap.color, ink2, capWeight: cap.fontWeight, plus: [pr.width, pr.height], above: pr.bottom <= lr.top, hidden: plus.getAttribute("aria-hidden"), name: btn.textContent.trim() };
+  });
+  assert.equal(look.capColor, look.ink2, "captions are --ink-2");
+  assert.equal(look.capWeight, "400");
+  assert.deepEqual(look.plus, [16, 16]);
+  assert.equal(look.above, true, "the + sits above the label");
+  assert.equal(look.hidden, "true");
+  assert.equal(look.name, "Add note", "the accessible name stays Add note");
   assert.equal(n.current, null, "a note is never current");
   assert.equal(await inPage((s) => document.querySelector(`${s} .face`).getAttribute("aria-current"), card(hex(0))), "true");
 });

@@ -504,7 +504,6 @@ when they change.
 
 ## Next
 
-1. `design-validate` for `hud` and `panel`; then `design-subset` with `liveview`, `modes`, `design-validate` after each.
-2. Look into `memory.integration` "leave no screenshot maps behind" ("a picture went to the session"), failing before the panel change too.
-3. Rerun the 3000-round soak (`test/bench.mjs --soak 3000`) in a quiet window; the earlier run
-   died with an interrupt.
+1. Nothing open. The window frame's tint rests on Chromium's palette algorithm (the seed's hue
+   254°, fixed chromas); one glance at a start confirms it. New subsets run through
+   `design-subset` with a brief; `design-validate` before a release.

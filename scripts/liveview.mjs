@@ -27,7 +27,7 @@ import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/
 import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
 import { isChromePage, CHROME_PAGE_ORIGINS } from "./policy.mjs";
 import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
-import { fileStill, openable } from "./daemon/tools.mjs";
+import { fileStill, openable, isProgram, downloadMarked } from "./daemon/tools.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";
 import { within } from "./util.mjs";
 
@@ -116,7 +116,7 @@ async function release(cdp) {
 // own Settings page's three fields ({ read(), write(given) }, liveview/settings.mjs), or null.
 // sessionOps: the session card ({ state() -> { canRename, canSave, savedAt }, rename(name),
 // save() }), or null. outlines: the Page tab's outlines (daemon/outline.mjs), or null.
-// tools: the Tools tab ({ downloads, recordings, handoffs, diagnostics, open(path, how) },
+// tools: the Tools tab ({ downloads, recordings, handoffs, diagnostics, open(path, how), marked(path)? },
 // daemon/tools.mjs and daemon/diagnostics.mjs), or null: files by id only, opened by the helper.
 // onPagesKey(): called on every request authenticated with the browser's own pages' key under a
 // loopback host; the receiver makes it idempotent (the helper deletes the key file).
@@ -826,7 +826,8 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     } },
     // The Tools tab (the owner only): this session's downloads, the recordings this helper saved,
     // the hand-offs waiting for the person, and diagnostics. Files go by id (daemon/tools.mjs);
-    // request bodies are capped and otherwise ignored, so nothing in them names a file.
+    // request bodies are capped and otherwise ignored (but a download's Open reads { confirm: true }),
+    // so nothing in them names a file.
     { method: "GET", path: "downloads.json", right: "tools", handler: ({ res }) => (toolsOff(res) ? null : json(res, 200, { items: tools.downloads.list().map(maskedDownload) })) },
     { method: "POST", path: "downloads", right: "tools", handler: (ctx) => fileAction(ctx, tools?.downloads, true) },
     { method: "GET", path: "recordings.json", right: "tools", handler: ({ res }) => {
@@ -1001,12 +1002,19 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
   async function fileAction({ req, res, rest }, store, isDownload) {
     if (toolsOff(res)) return;
     if (rest.length !== 2 || !TOOL_ID.test(rest[0]) || (rest[1] !== "open" && rest[1] !== "reveal")) return plain(res, 404);
-    if ((await readBody(req, BODY_MAX.approve)) === null) return plain(res, 413);
+    const body = await readBody(req, BODY_MAX.approve);
+    if (body === null) return plain(res, 413);
     const e = store.entry(rest[0]);
     if (!e) return plain(res, 404);
     if (isDownload && e.state !== "done") return json(res, 409, { error: e.state === "failed" ? "That download failed; there is no file to show." : "That download hasn't finished yet." });
     if (!fileStill(e)) return json(res, 410, { error: FILE_CHANGED });
-    if (rest[1] === "open" && !openable(e.path)) return json(res, 409, { error: "This kind of file isn't opened from here: it could run as a program. Use Reveal to show it in its folder." });
+    if (rest[1] === "open" && !isDownload && !openable(e.path)) return json(res, 409, { error: "This kind of file isn't opened from here: it could run as a program. Use Reveal to show it in its folder." });
+    if (rest[1] === "open" && isDownload) {
+      // Any download opens with its default app, while macOS's download mark is still on it;
+      // a program or script only after the person confirms ({ confirm: true }, the only field read).
+      if (!(await (tools.marked || downloadMarked)(e.path))) return json(res, 409, { error: "This file lost the download mark macOS uses to protect you; show it in Finder instead." });
+      if (isProgram(e.path) && parsed(body)?.confirm !== true) return json(res, 428, { confirm: "This is a program or script. Open it anyway?" });
+    }
     const r = await tools.open(e.path, rest[1]);
     return r?.ok ? json(res, 200, { ok: true }) : json(res, 409, { error: "The file couldn't be shown: the system's opener didn't start." });
   }

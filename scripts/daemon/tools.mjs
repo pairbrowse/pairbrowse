@@ -3,24 +3,43 @@
 // file with the OS opener. Every file is named by a random 12-hex id; its path stays here, never in
 // an answer or an event. Node's standard library only; nothing here runs on a timer.
 import { randomBytes } from "node:crypto";
-import { spawn as nodeSpawn } from "node:child_process";
+import { spawn as nodeSpawn, execFile as nodeExecFile } from "node:child_process";
 import { lstatSync, unlinkSync, chmodSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { paths } from "../paths.mjs";
-import { readJson, writeJsonAtomic } from "../util.mjs";
+import { readJson, writeJsonAtomic, within } from "../util.mjs";
 
 const DOWNLOADS_KEPT = 100;
 const RECORDINGS_KEPT = 500;
 const newId = () => randomBytes(6).toString("hex");
 
-// File types Open hands to the OS opener: PDFs, images, plain media and plain text. Anything else
-// (a .command, .app, .sh or .exe a site sent) would run, so it is only revealed in its folder; so
-// are office documents (.doc/.docx, .xls/.xlsx, .ppt/.pptx, .odt/.ods/.odp, .rtf, .pages/.numbers/
-// .key): their openers run macros or embedded objects a site could have put in them.
-// (Not .svg: its usual opener is a web browser, where a site's SVG runs script under file://.)
+// Downloads open like a browser's: any file, with the system's default app (see downloadMarked and
+// PROGRAMS below). Recordings, files the helper made itself, open only as these types.
+// (Not .svg: its usual opener is a web browser, where an SVG runs script under file://.)
 export const OPENABLE = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp", "heic", "txt", "csv", "json", "md",
   "mp4", "mov", "webm", "m4v", "mp3", "wav", "m4a"]);
-export const openable = (path) => OPENABLE.has(extname(String(path || "")).slice(1).toLowerCase());
+const ext = (path) => extname(String(path || "")).slice(1).toLowerCase();
+export const openable = (path) => OPENABLE.has(ext(path));
+
+// Programs and scripts: a download of one of these opens only after the person confirms.
+export const PROGRAMS = new Set(["app", "pkg", "mpkg", "dmg", "command", "sh", "bash", "zsh", "py", "rb", "pl", "js", "jar",
+  "exe", "msi", "bat", "cmd", "ps1", "scpt", "workflow", "terminal", "tool"]);
+export const isProgram = (path) => PROGRAMS.has(ext(path));
+
+// On macOS a download opens only while it still carries com.apple.quarantine, the mark Gatekeeper
+// and Office's Protected View act on; the helper never adds or removes it. Elsewhere true (Windows
+// keeps its own Mark of the Web, untouched). xattr(path): resolves the attribute's value or null.
+const XATTR_MS = 3000;
+const readQuarantine = (path, execFile = nodeExecFile) => new Promise((resolve) => {
+  try {
+    execFile("/usr/bin/xattr", ["-p", "com.apple.quarantine", path], { timeout: XATTR_MS }, (err, out) => resolve(err ? null : String(out || "")));
+  } catch { resolve(null); }
+});
+export async function downloadMarked(path, { platform = process.platform, xattr = readQuarantine } = {}) {
+  if (platform !== "darwin") return true;
+  const v = await within(XATTR_MS, Promise.resolve().then(() => xattr(String(path))).catch(() => null));
+  return typeof v === "string" && v.trim() !== "";
+}
 
 // The file the helper saved is still that file: a regular file (not a symlink), same inode and size.
 export function fileStill(entry) {

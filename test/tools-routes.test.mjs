@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, renameSync, rmSync, unlinkSync, 
 import { tmpdir, homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { startLiveView, createInvites } from "../scripts/liveview.mjs";
-import { createDownloads, createRecordings, createHandoffs, openFile, fileStill, handoffKind } from "../scripts/daemon/tools.mjs";
+import { createDownloads, createRecordings, createHandoffs, openFile, downloadMarked, fileStill, handoffKind } from "../scripts/daemon/tools.mjs";
 import { createDiagnostics } from "../scripts/daemon/diagnostics.mjs";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -60,7 +60,10 @@ async function setup() {
   const logFile = join(dir, "daemon.log");
   writeFileSync(logFile, "");
   const diagnostics = createDiagnostics({ version: "9.9.9", browser: async () => ({ engine: "chromium", version: "142.0.0.0", build: null }), agents: () => 1, logFile, home: "/Users/x", mask });
-  const tools = { downloads, recordings, handoffs, diagnostics, open: (p, how) => openFile(p, how, { platform, spawn }) };
+  // macOS's download mark, stood in: every file has it unless unmark()ed.
+  const unmarked = new Set();
+  const xattr = async (p) => (unmarked.has(p) ? null : "0081;68a1b2c3;Chromium;");
+  const tools = { downloads, recordings, handoffs, diagnostics, open: (p, how) => openFile(p, how, { platform, spawn }), marked: (p) => downloadMarked(p, { platform, xattr }) };
   const pageA = fakePage("https://shop.example/checkout?step=2&token=abc", `Checkout ${SECRET}`);
   const pageB = fakePage("https://bank.example/login", "Bank login");
   const pages = [pageA, pageB];
@@ -88,7 +91,7 @@ async function setup() {
   };
   return {
     dir, dl, view, key, invites, tools, downloads, recordings, handoffs, spawned, pageA, pageB, pages, logFile, file, download,
-    setPlatform: (p) => { platform = p; }, setSession: (s) => { session = s; }, saveAs: (p) => { saveNext = p; },
+    unmark: (p) => unmarked.add(p), setPlatform: (p) => { platform = p; }, setSession: (s) => { session = s; }, saveAs: (p) => { saveNext = p; },
     done: () => { view.close(); rmSync(dir, { recursive: true, force: true }); },
   };
 }
@@ -181,22 +184,36 @@ test("open and reveal: ids only, the stored file's path, cross-site refused, the
   } finally { t.done(); }
 });
 
-test("open only for documents, images and media; reveal for the rest; not before a download is done", async () => {
+test("open: any download; programs and scripts only with a confirm (428); not before a download is done", async () => {
   const t = await setup();
   try {
-    for (const name of ["x.command", "x.sh", "x.app", "x.exe", "x.zip", "x.svg"]) {
+    for (const name of ["x.zip", "x.svg", "x.html", "x.bin"]) {
       const id = t.download(name);
-      const r = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} });
-      assert.equal(r.status, 409, name);
-      assert.match(JSON.parse(r.text).error, /Reveal/);
-      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/reveal`, { body: {} })).status, 200, name);
+      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, name);
+      assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)], name);
     }
-    assert.equal(t.spawned.length, 6, "only the reveals ran");
+    const programs = ["x.command", "x.sh", "x.pkg", "x.dmg", "x.exe", "x.py", "x.js", "x.jar", "x.ps1", "x.scpt", "x.tool", "X.COMMAND"];
+    for (const name of programs) {
+      const id = t.download(name);
+      const before = t.spawned.length;
+      for (const body of [undefined, {}, { confirm: "yes" }, { confirm: 1 }]) {
+        const r = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, body === undefined ? {} : { body });
+        assert.equal(r.status, 428, `${name} ${JSON.stringify(body)}`);
+        assert.deepEqual(JSON.parse(r.text), { confirm: "This is a program or script. Open it anyway?" });
+      }
+      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { raw: "not json" })).status, 428, name);
+      assert.equal(t.spawned.length, before, `${name}: nothing opened before the confirm`);
+      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/reveal`, { body: {} })).status, 200, name);
+      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: { confirm: true, path: "/etc/passwd" } })).status, 200, name);
+      assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)], `${name}: the stored file, with the confirm`);
+    }
     const going = t.downloads.add({ name: "big.pdf", host: "shop.example" });
     assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${going}/open`, { body: {} })).status, 409, "in progress");
     t.downloads.failed(going);
     assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${going}/reveal`, { body: {} })).status, 409, "failed");
-    assert.equal(t.spawned.length, 6, "nothing more spawned");
+    const spawnedNow = t.spawned.length;
+    assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${going}/open`, { body: { confirm: true } })).status, 409, "failed, confirmed");
+    assert.equal(t.spawned.length, spawnedNow, "nothing more spawned");
   } finally { t.done(); }
 });
 
@@ -437,21 +454,19 @@ test("close() lets go of the three stores", async () => {
   assert.equal(t.handoffs.listeners(), 0);
 });
 
-test("open: office formats are never handed to the opener (409, reveal only); pdf, images, plain media and text still open", async () => {
+test("open: office formats open with their default app; recordings keep their list; pdf, images, media and text open", async () => {
   const t = await setup();
   try {
     const office = ["x.doc", "x.docx", "x.xls", "x.xlsx", "x.ppt", "x.pptx", "x.odt", "x.ods", "x.odp", "x.rtf", "x.pages", "x.numbers", "x.key", "X.DOCX"];
     for (const name of office) {
       const id = t.download(name);
-      const r = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} });
-      assert.equal(r.status, 409, name);
-      assert.match(JSON.parse(r.text).error, /Reveal/);
-      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/reveal`, { body: {} })).status, 200, name);
-      assert.equal(t.spawned.at(-1)[1], "-R", `${name}: revealed, not opened`);
+      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, name);
+      assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)], name);
     }
+    const before = t.spawned.length;
     const rid = t.recordings.add({ path: t.file("notes.docx", "doc"), at: 1, ms: 2, size: 3 }).id;
-    assert.equal((await request(t.view.port, "POST", `/${t.key}/recordings/${rid}/open`, { body: {} })).status, 409, "a recording's id is held to the same list");
-    assert.equal(t.spawned.length, office.length, "only the reveals ran");
+    assert.equal((await request(t.view.port, "POST", `/${t.key}/recordings/${rid}/open`, { body: { confirm: true } })).status, 409, "a recording's id keeps its list");
+    assert.equal(t.spawned.length, before);
     for (const name of ["a.pdf", "a.png", "a.jpg", "a.jpeg", "a.gif", "a.webp", "a.heic", "a.txt", "a.csv", "a.json", "a.md", "a.mp4", "a.mov", "a.webm", "a.m4v", "a.mp3", "a.wav", "a.m4a"]) {
       const id = t.download(name);
       assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, name);
@@ -502,4 +517,36 @@ test("record: a failed answer keeps the recorder's own quoted words readable, ma
     assert.ok(!text.includes(SECRET) && text.includes("••••"), "masked");
     assert.ok(!text.includes(homedir()), "no folder");
   } finally { fail.close(); t.done(); }
+});
+
+test("open: on macOS a download without the quarantine mark is refused (409, Finder only); other systems skip the check", async () => {
+  const t = await setup();
+  try {
+    const id = t.download("report.docx");
+    const p = join(t.dl, "report.docx");
+    t.unmark(p);
+    const before = t.spawned.length;
+    for (const body of [{}, { confirm: true }]) {
+      const r = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body });
+      assert.equal(r.status, 409);
+      assert.equal(JSON.parse(r.text).error, "This file lost the download mark macOS uses to protect you; show it in Finder instead.");
+    }
+    const prog = t.download("run.command");
+    t.unmark(join(t.dl, "run.command"));
+    assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${prog}/open`, { body: {} })).status, 409, "the mark first, then the confirm");
+    assert.equal(t.spawned.length, before, "nothing opened");
+    assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/reveal`, { body: {} })).status, 200, "Show in Finder still works");
+    assert.deepEqual(t.spawned.at(-1), ["open", "-R", p]);
+    for (const platform of ["linux", "win32"]) {
+      t.setPlatform(platform);
+      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, platform);
+    }
+    // The reader: an empty value, a throw or a reader that never answers is no mark.
+    assert.equal(await downloadMarked(p, { platform: "darwin", xattr: async () => "" }), false);
+    assert.equal(await downloadMarked(p, { platform: "darwin", xattr: () => { throw new Error("x"); } }), false);
+    assert.equal(await downloadMarked(p, { platform: "darwin", xattr: async () => "0081;1;Chromium;" }), true);
+    assert.equal(await downloadMarked(p, { platform: "linux", xattr: async () => null }), true);
+    // The real reader on this Mac: a file written here has no quarantine mark.
+    if (process.platform === "darwin") assert.equal(await downloadMarked(p), false);
+  } finally { t.done(); }
 });

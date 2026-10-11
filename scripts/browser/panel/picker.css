@@ -1,4 +1,5 @@
-/* The session picker: flat navy, colors and type from tokens.css. */
+/* The session picker: a compact navy card, colors and type from tokens.css. Rows as the side
+   panel's (avatar, name, meta, who used it), the join address question as its approval card. */
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body {
@@ -10,80 +11,101 @@ body {
    fresh and joining always stay in view. */
 main {
   display: flex; flex-direction: column; max-height: calc(100vh - 64px);
-  width: min(520px, 100%); padding: 28px 28px 20px; border-radius: var(--r-3);
+  width: min(480px, 100%); padding: 24px 24px 18px; border-radius: var(--r-3);
   background: var(--sidebar); border: 1px solid var(--edge);
   box-shadow: 0 24px 60px rgb(0 0 0 / 0.35);
 }
-header { flex: none; display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+header { flex: none; display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .logo { flex: none; }
-h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
-.sub { margin: 2px 0 0; color: var(--muted); }
-h2 { margin: 18px 0 8px; font-size: var(--fs-1); font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
-.choices { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.brand { margin: 0 0 2px; font-size: var(--fs-3); font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: var(--fs-3); }
+h2 { margin: 16px 0 8px; font-size: var(--fs-1); font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.choices { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px; margin: -4px; }
 .sessions[hidden] { display: none; }
 .choices > * { flex: none; }
 .sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 
+/* A row: avatar, then the name with its badges, the meta line and the chips. */
 .choice {
-  display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 12px; border-radius: var(--r-3);
+  display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 2px 10px;
+  width: 100%; padding: 8px 10px; border-radius: var(--r-3);
   border: 1px solid transparent; background: var(--elevated); color: inherit; font: inherit; text-align: left;
   cursor: pointer; transition: background var(--t), border-color var(--t);
 }
 .choice:hover, details.choice[open] { background: var(--hover); border-color: var(--edge); }
 .choice:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .choice + .choice { margin-top: 6px; }
-.icon {
-  flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--r-3);
-  background: var(--hover); color: var(--ink-2); font-size: 18px; font-weight: var(--fw-name);
+
+.avatar {
+  display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 50%;
+  font: 700 var(--fs-1)/1 var(--sans); font-style: normal; color: var(--bg);
+  background: oklch(0.80 0.12 var(--h, 215));
 }
-.icon.session { background: var(--accent-soft); color: var(--accent-ink); font-size: 15px; }
+.avatar.plain { background: var(--accent-soft); color: var(--accent-ink); }
+.icon.avatar { font-size: var(--fs-3); }
 .text { display: grid; min-width: 0; }
-.text strong { display: flex; align-items: center; gap: 8px; font-weight: var(--fw-name); }
-.text em { font-style: normal; font-size: var(--fs-1); font-weight: var(--fw-name); padding: 1px 7px; border-radius: 999px; background: rgb(32 201 151 / 0.18); color: var(--ok); }
+.text strong { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: var(--fw-name); line-height: 24px; }
+.text em {
+  flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 999px;
+  font-style: normal; font-size: var(--fs-1); font-weight: var(--fw-name); line-height: 1;
+  border: 1px solid var(--edge); color: var(--ink-2);
+}
 .text small { color: var(--muted); font-size: var(--fs-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .text .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.text em.live { background: var(--accent-soft); color: var(--accent-ink); display: inline-flex; align-items: center; gap: 5px; }
-.text em.live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px rgb(50 133 246 / 0.25); }
+/* "Live · N others": the panel's live pill, a dot and the edge ring, the state in its words. */
+.text em.live { gap: 5px; background: var(--elevated); color: var(--ink); }
+.text em.live::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 
 /* Who used a session: compact chips, at most three and "+N". */
-.chips { display: flex; flex-wrap: nowrap; gap: 5px; margin-top: 6px; min-width: 0; overflow: hidden; }
+.chips { display: flex; flex-wrap: nowrap; gap: 5px; margin-top: 5px; min-width: 0; overflow: hidden; }
 .chip { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 150px; height: 22px; padding: 0 8px 0 3px; border-radius: 999px;
-  background: var(--elevated); color: var(--ink-2); font-size: var(--fs-1); white-space: nowrap; }
+  background: var(--sidebar); color: var(--ink-2); font-size: var(--fs-1); white-space: nowrap; }
 .chip > span { overflow: hidden; text-overflow: ellipsis; }
-.chip i { display: grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 50%; font: 700 9.5px var(--sans); font-style: normal;
+.chip i, .chip .avatar { display: grid; place-items: center; flex: none; width: 16px; height: 16px; margin: 0; border-radius: 50%; font: 700 9.5px/1 var(--sans); font-style: normal;
   background: oklch(0.80 0.12 var(--h, 215) / 0.28); color: oklch(0.92 0.08 var(--h, 215)); }
 .chip.live { box-shadow: inset 0 0 0 1px var(--accent); color: var(--ink); }
 .chip.more-chip { padding: 0 8px; color: var(--muted); }
 
-/* "More sessions": a scrolling list with a filter, so the card stays within the window. */
+/* "More sessions": the panel's disclosure, a scrolling list with a filter. */
 .choices > .more { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; margin-top: 6px; }
 .more[hidden] { display: none; }
-.more-row { flex: none; display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 9px 12px; border: 0; border-radius: var(--r-3); background: none; color: var(--ink-2); font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; }
+/* Closed, it keeps its own height (only the open list gives way to the window). */
+.choices > .more:not([data-open="true"]) { flex: none; }
+.more-row { flex: none; display: flex; align-items: center; justify-content: space-between; width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: var(--r-2); background: none; color: var(--ink-2); font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; transition: background var(--t); }
+.more-row:hover { background: var(--hover); }
 .more-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .more-body { display: none; flex-direction: column; min-height: 0; flex: 0 1 auto; }
 .more[data-open="true"] .more-body { display: flex; }
-.more-row:hover { background: var(--hover); }
-.chev { width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform var(--t); margin-right: 4px; }
-.more[data-open="true"] .chev { transform: rotate(-135deg); }
-.filter { flex: none; display: block; width: 100%; height: 34px; margin: 4px 0 6px; padding: 0 12px; font-family: var(--sans); }
-.more-list { flex: 0 1 auto; min-height: 96px; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
-.none { margin: 4px 12px; color: var(--muted); font-size: var(--fs-2); }
+.chev { width: 7px; height: 7px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: rotate(45deg); transition: transform var(--t); margin: 0 4px 3px 0; }
+.more[data-open="true"] .chev { transform: rotate(-135deg); margin-bottom: -3px; }
+.filter { flex: none; display: block; width: 100%; margin: 4px 0 6px; font-family: var(--sans); }
+.more-list { flex: 0 1 auto; min-height: 96px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+.none { margin: 4px 10px; color: var(--muted); font-size: var(--fs-2); }
 
+/* Start fresh and join: two compact secondary rows. */
+#fresh, details.choice { background: transparent; border-color: var(--edge); }
+#fresh:hover, details.choice:hover, details.choice[open] { background: var(--hover); }
 details.choice { display: block; cursor: default; }
-summary { display: flex; align-items: center; gap: 12px; list-style: none; cursor: pointer; border-radius: var(--r-2); }
+summary { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 2px 10px; list-style: none; cursor: pointer; border-radius: var(--r-2); }
 summary::-webkit-details-marker { display: none; }
-form { display: flex; gap: 8px; margin: 12px 0 2px 46px; }
+form { display: flex; gap: 8px; margin: 10px 0 2px 34px; }
 input {
-  flex: 1; min-width: 0; height: 38px; padding: 0 12px; border-radius: var(--r-3);
-  border: 1px solid var(--edge-input); background: var(--bg); color: inherit; font-family: var(--mono); font-size: var(--fs-3);
+  flex: 1; min-width: 0; height: 34px; padding: 0 10px; border-radius: var(--r-2);
+  border: 1px solid var(--edge-input); background: var(--bg); color: inherit; font-family: var(--sans); font-size: var(--fs-3);
   outline: none; transition: border-color var(--t);
 }
+#code { font-family: var(--mono); }
 input::placeholder { color: var(--muted); opacity: 0.8; }
 input:focus { border-color: var(--accent); }
-.primary { height: 38px; padding: 0 18px; border: 0; border-radius: var(--r-3); background: var(--accent); color: var(--bg); font: 650 var(--fs-3) var(--sans); cursor: pointer; }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.primary { height: 34px; padding: 0 16px; border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font: 650 var(--fs-3) var(--sans); cursor: pointer; }
 .primary:hover { filter: brightness(1.06); }
+.secondary { height: 34px; padding: 0 12px; border-radius: var(--r-2); border: 1px solid var(--edge); background: transparent; color: inherit; font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; }
+.secondary:hover { background: var(--hover); }
+.primary:focus-visible, .secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.msg { margin: 14px 0 0; font-size: var(--fs-3); color: var(--muted); }
+.msg { margin: 12px 0 0; font-size: var(--fs-3); color: var(--muted); }
 .msg:empty { display: none; }
 .msg[data-kind="error"] { color: var(--bad); }
 .msg[data-kind="ok"] { color: var(--ok); }
@@ -93,12 +115,13 @@ body[data-s="connecting"] .msg:empty::before { content: "Connecting to PairBrows
 body[data-s="picking"] .choices { opacity: 0.55; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 #join-form { flex-wrap: wrap; }
-#join-form #code { flex: 2 1 220px; }
-#join-form #join-name { flex: 1 1 160px; }
-.host-ask { display: grid; gap: 10px; margin: 12px 0 2px 46px; padding: 12px 14px; border-radius: var(--r-3); border: 1px solid var(--edge); background: var(--bg); }
+#join-form #code { flex: 2 1 200px; }
+#join-form #join-name { flex: 1 1 150px; }
+/* The join address question: an approval card, a warn edge and a warn dot before the question. */
+.host-ask { display: grid; gap: 10px; margin: 10px 0 2px 34px; padding: 12px 14px; border-radius: var(--r-3); border: 1px solid var(--edge); background: var(--elevated); }
+.host-ask.card { box-shadow: inset 3px 0 0 var(--warn); }
 .host-ask[hidden] { display: none; }
 .host-ask strong { font-size: var(--fs-3); font-weight: 650; overflow-wrap: anywhere; }
+.host-ask strong::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--warn); vertical-align: 1px; }
 .host-ask .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .host-ask button:disabled { opacity: 0.5; cursor: default; }
-.secondary { height: 38px; padding: 0 14px; border-radius: var(--r-3); border: 1px solid var(--edge); background: transparent; color: inherit; font: var(--fw-name) var(--fs-3) var(--sans); cursor: pointer; }
-.secondary:hover { background: var(--hover); }

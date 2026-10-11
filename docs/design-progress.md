@@ -323,6 +323,17 @@ each viewer's choice; nothing restarts, reloads or captures on a switch (`docs/u
 "Three ways to look at it"). Left as a minor: on a watch link the tab rows are disabled buttons
 (unreachable by keyboard); render them as plain rows there.
 
+**picker + picture page** (2026-10-11, `design-subset` run wf_ed3a2cb5: review pass in one
+round; 401 unit pass, the picker, screen and tokens suites green). The session picker is a
+compact navy card with the unchanged logo, the recent sessions as rows (avatar initial in the
+person's color, name, tabs, who used it, a Live pill), More sessions as a disclosure, the two
+secondary actions, the join-code form unchanged, the host-ask as an approval card; the one
+4 s timer stays the only timer; every id, text and keyboard path kept (`test/picker.test.mjs`
+pins them and the logo hash). The joiner's picture page overlays are compact navy pills, with a
+"who is in this tab" pill in words and the person's color (neutral when none); the pinned hold
+scrim and texts byte for byte; nothing per frame, no new timer. The watch-link tab rows in the
+live view's column are plain focusable rows now.
+
 **hud** (2026-10-11, `design-subset`, built by Opus; the lead commits). `scripts/hud.js`: the
 bottom bar has a driver dot in the tab's spark color (orange until set, muted while
 reconnecting) in front of the unchanged who-lines, and the last three actions as chips, oldest
@@ -395,6 +406,41 @@ old bar's spinning spark made two pictures in a row differ, the static driver do
 snapshot right after a navigate byte-identical to the navigate's picture (the intended dedupe),
 and the test demanded an image. The test now accepts the same-picture note (gate run
 wf_8b5157bb bisected it to fdab983).
+
+**picker** (2026-10-11, `design-subset`, built by Opus; the lead commits). The session picker
+(`scripts/browser/panel/picker.*`) is a compact card (min(480px, 100%), `--sidebar`, 1 px edge)
+on flat `--bg`: the unchanged 56 px logo, a "PairBrowse" wordmark over the kept "Which session?"
+and its line. The three recent sessions are the panel's rows: a 24 px round avatar (`avatar()`
+from `common.js`, `role=img`, named) with the initial of the person in it now, else who used it
+last, in their steady hue; a session nobody used shows its own initial on the soft accent; the
+name bold, "N tabs · sites" muted, who-used-it chips (16 px marks, `aria-hidden`), "Last used"
+and "Live · N other(s)" as edge-ring pills in words (the live dot without its halo,
+`data-live="true"`). "More sessions (N)" is the panel's disclosure (chevron, filter); closed,
+it keeps its height (before, a tall join card could squeeze it over the "Or" heading). Start
+fresh and Join are two outlined secondary rows; the join form's ids, placeholders and texts are
+unchanged; the address question is an approval card (elevated, 1 px edge, 3 px warn left edge,
+a warn dot, Allow once focused / Always allow / Cancel). Every focusable shows the 2 px accent
+ring; reduced motion stops every transition. No id, text, handler, route or timer changed (one
+4 s `setInterval`). A joiner's picture page (`screen.*`): status, hold, tag and address are
+28 px navy pills with a 1 px edge and 7 px dots, no halo; a new `#who` pill beside the tag says
+who works in the tab in words ("Sam is in this tab", "Claude (agent) is working in it",
+"Sam · Claude (agent) working") with a dot in the color the helper already sends through
+`pbScreen.who()` (the person's, else the agent's, else `--spark`); it shows with the tag when it
+changes and fades on the tag's own timer (no new timer; counts 2/1/1 unchanged, the same two
+keyframes). Pointer names carry dark ink (`--bg`) on the participant color, as the hud's; the
+file request is a card with an accent edge; the hold scrim `rgb(11 20 33 / 0.35)`, its
+`pointer-events: none` and every wording are byte for byte. Looked at (scratch
+`render-pages.mjs`, 1200x760 and 1100x700 @2x, with and without reduced motion): ready (focus
+ring on the first row, Live pill, chips, "+1"), More open with a filter, Join open, the address
+card with the warn edge; the picture page with the three top pills and two pointers, the hold
+over the dimmed frame, the connecting pill. Logo files unchanged (sha256 415a3f8e…bffd8a).
+Deviations: the row grid has two columns (the brief's third "auto" column had nothing to hold;
+the badges stay beside the name); "Last used" is an edge pill in `--ok` text instead of a tinted
+fill (no literal colors). `docs/security.md` needs no change: no route, gating, capture or
+input path changed. Tests: new `test/picker.test.mjs` (markup, texts, logo, one timer, no new
+route, sheet rules; live over a fake chrome and sessions.json: rows, avatars, disclosure,
+filter, keyboard paths, the bad-code message, the address card, reduced motion);
+`test/screen.test.mjs` gains a markup/timer test and a live who-pill test.
 
 ## Gate (hud + panel), 2026-10-11, run wf_8b5157bb
 

@@ -106,8 +106,11 @@ test("every route needs its right; routes that aren't listed are refused", async
       assert.equal((await request(view.port, "GET", `/${k}/joins.json`)).status, 403, "join requests are the owner's");
       assert.equal((await request(view.port, "POST", `/${k}/approve`, { body: { id: "r1", allow: true } })).status, 403);
       assert.equal((await request(view.port, "GET", `/${k}/journal.json`)).status, 403, "the goal log is the owner's");
+      assert.equal((await request(view.port, "POST", `/${k}/invite`, { body: { share: "code" } })).status, 403, "inviting is the owner's");
     }
     assert.equal((await request(view.port, "GET", `/${key}/journal.json`)).status, 404, "no journal given");
+    assert.equal((await request(view.port, "POST", `/${key}/invite`, { body: { share: "code" } })).status, 404, "no makeInvite given");
+    assert.equal((await request(view.port, "GET", `/${key}/invite`)).status, 404, "GET invite isn't a route");
     for (const [method, path] of [["GET", "nope"], ["DELETE", ""], ["GET", "input"], ["PUT", "profile"], ["GET", "approve"]]) {
       assert.equal((await request(view.port, method, `/${key}/${path}`)).status, 404, `${method} /${path}`);
     }
@@ -143,6 +146,51 @@ test("the timeline route serves the owner the goal log and nobody else", async (
     const state = JSON.parse((await request(view.port, "GET", `/${key}/state.json`)).text);
     assert.equal("journal" in state, false, "state.json stays without the goal log");
   } finally { view.close(); }
+});
+
+test("the invite route makes the owner's invite through the helper's own path and never shows the key elsewhere", async () => {
+  const invites = createInvites();
+  const SECRET = "pb-join:FAKEKEY0123456789abcdef";
+  const calls = [];
+  let answer = { ok: true, id: "abcd1234", label: "Guest", role: "drive", share: "code", mode: "shared", expiresAt: 1, code: SECRET, rights: "Shared browser.", hint: "The person pastes it." };
+  const logs = [];
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites, log: (l) => logs.push(l), makeInvite: async (op) => { calls.push(op); return answer; } });
+  const key = view.url.split("/").at(-2);
+  const events = [];
+  const stream = await new Promise((resolve) => {
+    const req = http.get({ host: "127.0.0.1", port: view.port, path: `/${key}/events?panel=1` }, (res) => { res.on("data", (d) => events.push(String(d))); resolve({ close: () => req.destroy() }); });
+    req.on("error", () => {});
+  });
+  try {
+    const r = await request(view.port, "POST", `/${key}/invite`, { body: { share: "code", name: "Bob", extra: "dropped" } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text), answer, "the helper's answer, as it is");
+    assert.equal(calls.length, 1);
+    assert.deepEqual(Object.keys(calls[0]).sort(), ["hours", "label", "name", "role", "share"], "only the invite's own fields reach the helper");
+    assert.equal(calls[0].share, "code"); assert.equal(calls[0].name, "Bob");
+    for (const role of ["watch", "drive"]) {
+      const i = invites.create({ role, label: role });
+      assert.equal((await request(view.port, "POST", `/${i.key}/invite`, { body: { share: "code" } })).status, 403, role);
+    }
+    const c = invites.create({ role: "drive", label: "C", share: "code" });
+    assert.notEqual((await request(view.guestPort, "POST", `/${c.key}/invite`, { body: { share: "code" } })).status, 200, "the join-code port never serves it");
+    assert.notEqual((await request(view.guestPort, "POST", `/${key}/invite`, { body: { share: "code" } })).status, 200, "not even with the owner's key");
+    assert.equal(calls.length, 1, "refused requests never reach the helper");
+    assert.equal((await request(view.port, "POST", `/${key}/invite`, { body: [] })).status, 409, "a body that isn't an object");
+    assert.equal((await request(view.port, "POST", `/${key}/invite`, { body: null })).status, 409);
+    answer = { error: "Not yet: ask the user what name the people they invite should see.", needName: true };
+    const no = await request(view.port, "POST", `/${key}/invite`, { body: { share: "code" } });
+    assert.equal(no.status, 409);
+    assert.equal(JSON.parse(no.text).needName, true);
+    const state = await request(view.port, "GET", `/${key}/state.json`);
+    const parsed = JSON.parse(state.text);
+    for (const k of ["invite", "code", "link"]) assert.equal(k in parsed, false, k);
+    assert.equal(state.text.includes(SECRET), false);
+    await wait(100);
+    assert.ok(events.join("").length > 0, "the stream was open");
+    assert.equal(events.join("").includes(SECRET), false, "never in the event stream");
+    assert.equal(logs.some((l) => String(l).includes(SECRET)), false, "never in the log");
+  } finally { stream.close(); view.close(); }
 });
 
 test("the viewer runs only its own files, served from a fixed list behind the key", async () => {
@@ -231,7 +279,7 @@ const count = (text, needle) => text.split(needle).length - 1;
 test("the live view keeps every control's id once, and the workspace column's are named", () => {
   const html = pageFile("liveview.html");
   const ids = ["tabs", "newtab", "state", "back", "forward", "reload", "url", "url-input", "where", "collaboration-status", "overview-btn", "overview", "profile-btn", "fit", "turn", "joins", "drawer", "drawer-close", "details", "add-detail", "secrets", "add-secret", "profile-msg", "stage", "frame", "screen", "skeleton", "hint", "driver", "who-filter", "activity",
-    "side", "side-btn", "side-collapse", "side-rail", "side-body", "side-tabs", "side-agents", "side-guests", "side-session", "timeline-btn", "drawer-tab-profile", "drawer-tab-timeline", "profile-body", "timeline-body", "journal-refresh", "journal-done", "journal-turn", "journal-left", "journal-msg"];
+    "side", "side-btn", "side-collapse", "side-rail", "side-body", "side-tabs", "side-agents", "side-guests", "side-session", "timeline-btn", "drawer-tab-profile", "drawer-tab-timeline", "profile-body", "timeline-body", "journal-refresh", "journal-done", "journal-turn", "journal-left", "journal-msg", "share-btn", "share-card", "share-name", "share-make", "share-code", "share-copy", "share-msg"];
   for (const id of ids) assert.equal(count(html, `id="${id}"`), 1, id);
   for (const s of ["tabs", "agents", "guests", "session"]) {
     const tag = html.match(new RegExp(`<button[^>]*id="side-h-${s}"[^>]*>`))?.[0];
@@ -241,7 +289,11 @@ test("the live view keeps every control's id once, and the workspace column's ar
     assert.equal(count(html, `id="${target}"`), 1, `${s} controls an element there`);
     assert.match(html, new RegExp(`id="rail-${s}"[^>]*>[\\s\\S]*?<span class="sr">[^<]+</span>`), `rail-${s} has a name`);
   }
-  for (const id of ["side-btn", "timeline-btn", "side-collapse"]) assert.match(html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))[0], /aria-label="[^"]+"/, id);
+  const share = html.match(/<button[^>]*id="share-btn"[^>]*>/)[0];
+  assert.match(share, /aria-expanded="false"/);
+  assert.match(share, /aria-controls="share-card"/);
+  assert.match(html, /<div class="share-card" id="share-card" role="dialog" aria-labelledby="share-title" hidden>/);
+  for (const id of ["side-btn", "timeline-btn", "side-collapse", "share-btn"]) assert.match(html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))[0], /aria-label="[^"]+"/, id);
   assert.doesNotMatch(html, /<script>|<style|\sstyle=|\son[a-z]+=/i);
 });
 
@@ -343,11 +395,21 @@ test("the workspace column draws only what is seen; the Timeline reads the log o
     for (let i = 0; i < 40 && !reached; i++) { await page.keyboard.press("Tab"); reached = await page.evaluate(() => document.activeElement?.id === "side-btn"); }
     assert.ok(reached, "Tab reaches the column button");
     assert.notEqual(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), "none");
+    // Share (the owner only): the button opens the card with focus on the first choice; Escape
+    // closes it and gives focus back.
+    assert.equal(await page.isVisible("#share-btn"), true, "the owner has Share");
+    await page.click("#share-btn");
+    assert.equal(await page.isVisible("#share-card"), true);
+    assert.equal(await page.evaluate(() => document.activeElement.value), "code");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.isVisible("#share-card"), false);
+    assert.equal(await page.evaluate(() => document.activeElement.id), "share-btn");
     // A watch link keeps the column button (Cmd/Ctrl+B hides the column there too, so it must come back).
     const watchPage = await context.newPage();
     watchPage.on("pageerror", (e) => errors.push(e.message));
     await watchPage.goto(`http://127.0.0.1:${view.port}/${watcher.key}/`);
     await watchPage.waitForSelector('body[data-role="watch"]');
+    assert.equal(await watchPage.evaluate(() => getComputedStyle(document.getElementById("share-btn")).display), "none", "no Share on an invite link");
     await watchPage.waitForSelector("#side-btn", { state: "visible" });
     assert.notEqual(await watchPage.evaluate(() => getComputedStyle(document.getElementById("side-btn")).display), "none");
     await watchPage.waitForSelector('#side:not([data-state="hidden"])');

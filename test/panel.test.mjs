@@ -24,7 +24,8 @@ const sha = (p) => createHash("sha256").update(readFileSync(join(root, p))).dige
 const IDS = ["where", "turn", "turn-text", "joins", "dev-asks", "host-asks", "driver", "driver-text", "pause", "pause-text", "pause-btn",
   "switch-btn", "record-btn", "record-note", "session", "people", "messages", "hosts", "host-list", "dev", "devs", "collaboration",
   "activity", "details", "add-detail", "secrets", "add-secret", "profile-msg", "avatars", "agent", "agent-name", "agent-avatar",
-  "agent-status", "agent-status-text", "agent-tab"];
+  "agent-status", "agent-status-text", "agent-tab", "share-btn", "share-card", "share-name", "share-make", "share-code", "share-copy",
+  "share-msg", "agent-more", "checklist", "checklist-items"];
 const KEYS = ["session", "dev", "hosts", "activity", "details", "secrets"];
 
 test("the panel's markup keeps every id once, and each section folds with a named button", () => {
@@ -46,6 +47,20 @@ test("the panel's markup keeps every id once, and each section folds with a name
   assert.match(html, /<link rel="stylesheet" href="tokens.css">\n<link rel="stylesheet" href="panel.css">/);
   assert.match(html, /<meta name="color-scheme" content="dark">/);
   for (const name of ["label", "value", "domains"]) assert.match(html, new RegExp(`name="${name}"`), name);
+  // Share and the Checklist: buttons that say what they open and whether it is open.
+  for (const [id, target] of [["share-btn", "share-card"], ["agent-more", "checklist"]]) {
+    const tag = html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))?.[0];
+    assert.ok(tag, id);
+    assert.match(tag, /aria-expanded="false"/, id);
+    assert.match(tag, new RegExp(`aria-controls="${target}"`), id);
+    assert.match(html, new RegExp(`id="${target}"[^>]*hidden`), `#${target} starts hidden`);
+  }
+  assert.match(html, /<div class="share-card" id="share-card" role="dialog" aria-labelledby="share-title" hidden>/);
+  assert.deepEqual([...html.matchAll(/<input type="radio" name="share" value="(\w+)"/g)].map(([, v]) => v), ["code", "link"]);
+  assert.match(html, /id="share-code" readonly aria-label="[^"]+"/);
+  assert.match(html, /id="share-msg" role="status" aria-live="polite"/);
+  assert.match(html, /<ol id="checklist-items" aria-live="polite" aria-label="[^"]+">/);
+  assert.match(html, /<header class="top">[\s\S]*id="where"[^>]*><\/span>\s*<button class="mini share-btn" id="share-btn"/, "Share comes after the session pill");
 });
 
 test("the logo is untouched: the same img line and the same files", () => {
@@ -55,8 +70,11 @@ test("the logo is untouched: the same img line and the same files", () => {
   assert.equal(sha("scripts/browser/product-icon.svg"), "4d13634e72f51e15b8f3e2af6ff8a7423892e2480ffc6dc70e3a55534fdabf41");
 });
 
-test("the panel script keeps its two timers, writes no markup and stores one key", () => {
-  assert.equal([...js.matchAll(/\bset(Interval|Timeout)\(/g)].length, 2, "the driver re-check and the recording clock");
+test("the panel script keeps its three timers, writes no markup and stores one key", () => {
+  assert.equal([...js.matchAll(/\bset(Interval|Timeout)\(/g)].length, 3, "the driver re-check, the recording clock and the checklist's debounce");
+  assert.equal([...js.matchAll(/\bsetInterval\(/g)].length, 1, "the recording clock is the only interval");
+  assert.match(js, /checklistTimer = setTimeout\(/, "the checklist's one pending timeout");
+  assert.equal([...js.matchAll(/fetch\(base \+ "journal\.json"/g)].length, 1, "one place reads the goal log");
   assert.doesNotMatch(js, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
   assert.doesNotMatch(js, /MutationObserver|IntersectionObserver|ResizeObserver|requestAnimationFrame/);
   assert.equal([...js.matchAll(/new EventSource\(/g)].length, 1, "one event stream");
@@ -84,9 +102,11 @@ const TYPES = { html: "text/html", css: "text/css", js: "text/javascript", svg: 
 
 // The live view's side: events?panel=1 as an event stream the test pushes into, profile.json,
 // and the POST routes the panel calls, recorded.
+const JOURNAL = { name: "shop.example 2026-10-11 10:00", status: "in progress", done: ["Sign up <https://shop.example/signup>: Filled **Email**", "Details <https://shop.example/details>: Filled **Name**"], yourTurn: ["Enter the code"], left: ["VAT number"], updatedAt: "2026-10-11T10:00:00.000Z" };
 async function fakeLiveView() {
   const streams = new Set();
   const posts = [];
+  const counts = { journal: 0 };
   const server = createServer((req, res) => {
     const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
@@ -98,6 +118,7 @@ async function fakeLiveView() {
       req.on("close", () => streams.delete(res));
       return;
     }
+    if (path === "/k/journal.json") { counts.journal++; res.writeHead(200, { ...cors, "content-type": "application/json" }); return res.end(JSON.stringify(JOURNAL)); }
     if (path === "/k/profile.json") { res.writeHead(200, { ...cors, "content-type": "application/json" }); return res.end(JSON.stringify({ details: [], secrets: [] })); }
     if (req.method === "POST" && path.startsWith("/k/")) {
       let body = "";
@@ -106,6 +127,12 @@ async function fakeLiveView() {
         let parsed = null;
         try { parsed = JSON.parse(body || "null"); } catch {}
         posts.push({ route: path.slice(3), body: parsed });
+        // The Share card's invite: the helper's refusal while no name is known, then a code.
+        if (path === "/k/invite") {
+          const named = typeof parsed?.name === "string" && parsed.name;
+          res.writeHead(named ? 200 : 409, { ...cors, "content-type": "application/json" });
+          return res.end(JSON.stringify(named ? { ok: true, id: "abcd1234", share: "code", role: "drive", mode: "shared", code: "pb-join:FAKE", rights: "Shared browser: they can drive.", hint: "The person pastes it into their own PairBrowse." } : { error: "Not yet: ask the user what name the people they invite should see.", needName: true }));
+        }
         res.writeHead(200, { ...cors, "content-type": "application/json" });
         res.end("{}");
       });
@@ -118,7 +145,7 @@ async function fakeLiveView() {
   const base = `http://127.0.0.1:${server.address().port}/k/`;
   const push = (event, data) => { for (const res of streams) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
   const close = () => { for (const res of streams) res.destroy(); server.close(); };
-  return { base, posts, push, close, streams };
+  return { base, posts, push, close, streams, counts };
 }
 
 // chrome.storage as the side panel has it: session holds the live view address; local is kept
@@ -135,6 +162,8 @@ const fakeChrome = (base) => `(() => {
     },
     onChanged: { addListener() {} },
   } };
+  window.__copied = null;
+  try { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__copied = t; } } }); } catch {}
 })();`;
 
 // The panel's files are served by page.route as the extension serves them. With a live view
@@ -311,6 +340,102 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.deepEqual(f, { session: true, dev: true, hosts: true, activity: false, details: true, secrets: true });
     assert.equal(await plain.page.evaluate(() => document.getElementById("driver-text").textContent), "Waiting for PairBrowse");
     await plain.page.close();
+  } finally {
+    lv.close();
+    await browser.close();
+  }
+});
+
+test("Share makes an invite from the panel by keyboard, and the Checklist reads the goal log at most every 5 s", { skip: !runtime, timeout: 90_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const browser = await chromium.launch();
+  const lv = await fakeLiveView();
+  const shots = process.env.PAIRBROWSE_TEST_SHOTS;
+  try {
+    const { page, errors } = await openPanel(browser, { base: lv.base });
+    await until(page, "the stream", () => document.body.dataset.s === "live");
+    for (let i = 0; i < 50 && !lv.streams.size; i++) await page.waitForTimeout(50);
+    lv.push("session", { name: "Checkout test", where: "Local", temporary: false });
+    lv.push("board", { people: [PEOPLE[0]], messages: [] });
+    const active = () => page.evaluate(() => document.activeElement?.id || document.activeElement?.getAttribute("name") || document.activeElement?.tagName);
+
+    // Keyboard: Tab to Share, Enter opens the card with focus on the first choice.
+    await page.evaluate(() => document.body.focus());
+    for (let i = 0; i < 10 && (await active()) !== "share-btn"; i++) await page.keyboard.press("Tab");
+    assert.equal(await active(), "share-btn", "Share is reachable with Tab");
+    await page.keyboard.press("Enter");
+    assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), false);
+    assert.equal(await page.getAttribute("#share-btn", "aria-expanded"), "true");
+    assert.equal(await page.evaluate(() => document.activeElement.value), "code", "focus on the first choice");
+    assert.equal(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), "solid", "visible focus on the radio");
+    assert.equal(await page.evaluate(() => document.getElementById("share-result").hidden), true, "nothing more until a result");
+
+    // A synthetic click makes nothing; the first real Make asks for a first name.
+    await inPage(page, () => document.getElementById("share-make").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+    await page.waitForTimeout(200);
+    assert.equal(lv.posts.filter((p) => p.route === "invite").length, 0, "a synthetic click invites nobody");
+    await page.click("#share-make");
+    await until(page, "the name field", () => !document.getElementById("share-name-row").hidden);
+    assert.equal(await active(), "share-name", "the name field takes focus");
+    assert.match(await page.evaluate(() => document.getElementById("share-msg").textContent), /^Not yet: /, "the helper's own words");
+    await page.keyboard.type("Bob");
+    await page.click("#share-make");
+    await until(page, "the code", () => document.getElementById("share-code").value === "pb-join:FAKE");
+    assert.deepEqual(lv.posts.filter((p) => p.route === "invite").map((p) => p.body), [{ share: "code" }, { share: "code", name: "Bob" }]);
+    assert.equal(await page.evaluate(() => document.getElementById("share-code").readOnly), true);
+    assert.match(await page.evaluate(() => document.getElementById("share-rights").textContent), /Shared browser: they can drive\. The person pastes it/);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("share-code")).fontFamily.includes("monospace")), true, "the code in mono");
+    if (shots) await page.screenshot({ path: join(shots, "panel-share-card.png") });
+    await page.click("#share-copy");
+    for (let i = 0; i < 40 && (await inPage(page, () => window.__copied)) !== "pb-join:FAKE"; i++) await page.waitForTimeout(50);
+    assert.equal(await inPage(page, () => window.__copied), "pb-join:FAKE", "the clipboard got the code");
+    assert.equal(await page.evaluate(() => document.getElementById("share-msg").textContent), "Copied.");
+    // Escape closes it, focus goes back to Share, and the code leaves the page.
+    await page.focus("#share-copy");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), true);
+    assert.equal(await active(), "share-btn", "focus back on Share");
+    assert.equal(await page.getAttribute("#share-btn", "aria-expanded"), "false");
+    assert.equal(await page.evaluate(() => document.getElementById("share-code").value), "", "the code is not kept in the page");
+    // An outside click closes it too; the button toggles it.
+    await page.click("#share-btn");
+    assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), false);
+    await page.mouse.click(180, 700);
+    assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), true, "outside click closes");
+    await page.click("#share-btn");
+    await page.click("#share-btn");
+    assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), true, "the button closes it again");
+
+    // Checklist: folded, nothing read; opened, one read, rows in glyph and words.
+    lv.push("activity", [{ t: Date.now(), text: "Filled **Name**", who: "Claude", tab: "Details" }]);
+    await page.waitForTimeout(300);
+    assert.equal(lv.counts.journal, 0, "nothing read while folded");
+    assert.equal(await page.getAttribute("#agent-more", "aria-expanded"), "false");
+    await page.click("#agent-more");
+    await until(page, "the checklist", () => document.querySelectorAll("#checklist-items li[data-state]").length === 4);
+    assert.equal(lv.counts.journal, 1, "read once when opened");
+    assert.equal(await page.getAttribute("#agent-more", "aria-expanded"), "true");
+    const rows = () => page.evaluate(() => [...document.querySelectorAll("#checklist-items li")].map((li) => ({ state: li.dataset.state, mark: li.querySelector(".mark").textContent, text: li.querySelector(".text").textContent })));
+    const r = await rows();
+    assert.deepEqual(r.map((x) => x.state), ["done", "current", "waiting", "pending"], "the newest done row is current while Claude drives");
+    assert.deepEqual(r.map((x) => x.mark), ["✓", "◉", "●", "○"]);
+    assert.match(r[0].text, /^Done: Sign up/);
+    assert.match(r[1].text, /^Current: Details/);
+    assert.equal(r[2].text, "Waiting for you: Enter the code");
+    assert.equal(r[3].text, "Pending: VAT number");
+    if (shots) await page.locator("#agent").screenshot({ path: join(shots, "panel-checklist.png") });
+    // A burst of actions: one more read, five seconds after the last.
+    const t = Date.now();
+    for (let i = 0; i < 3; i++) { lv.push("activity", [{ t: t + i, text: `Act ${i}`, who: "Claude", tab: "Details" }]); await page.waitForTimeout(150); }
+    await page.waitForTimeout(6000);
+    assert.equal(lv.counts.journal, 2, "a burst is one read");
+    // Folded: no read, no pending timer.
+    await page.click("#agent-more");
+    lv.push("activity", [{ t: Date.now(), text: "Act 9", who: "Claude", tab: "Details" }]);
+    await page.waitForTimeout(6000);
+    assert.equal(lv.counts.journal, 2, "nothing while folded");
+    assert.equal(await page.evaluate(() => document.getElementById("checklist").hidden), true);
+    assert.deepEqual(errors, []);
   } finally {
     lv.close();
     await browser.close();

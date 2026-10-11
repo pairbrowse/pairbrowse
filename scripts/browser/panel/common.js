@@ -260,3 +260,116 @@ export function avatar(name, color, tag = "span") {
   else a.classList.add("plain");
   return a;
 }
+
+// A done line of the goal log, as the log writes it: "Title <url>: act; act", or "url: act; act".
+export function doneLine(line) {
+  const s = String(line);
+  let head = s, url, rest = "";
+  const m = s.match(/^(.*?) <([^>]*)>(?:: (.*))?$/s);
+  if (m) { head = m[1]; url = m[2]; rest = m[3] || ""; }
+  else { const i = s.indexOf(": "); if (i > 0) { head = s.slice(0, i); rest = s.slice(i + 2); } url = /^https?:\/\//.test(head) ? head : ""; }
+  const li = el("li", {}, el("span", { className: "page", textContent: head, title: url }));
+  if (rest) {
+    const acts = el("span", { className: "acts" });
+    rest.split("; ").forEach((a, i) => { if (i) acts.append(" · "); acts.append(rich(a)); });
+    li.append(acts);
+  }
+  return li;
+}
+
+// The goal log as a checklist (the side panel's agent card): what was done, oldest first, the
+// newest done line marked current while the agent is driving, then what was handed to you and
+// what is left. Only the log's own lines; each row says its state in a glyph and in words.
+const CHECK = { done: ["✓", "Done:"], current: ["◉", "Current:"], waiting: ["●", "Waiting for you:"], pending: ["○", "Pending:"] };
+export function checkState(li, state) {
+  const [glyph, words] = CHECK[state];
+  li.dataset.state = state;
+  li.querySelector(".mark").textContent = glyph;
+  li.querySelector(".sr").textContent = `${words} `;
+}
+export function checklistItems(run, { driving = false } = {}) {
+  const empty = (text) => [el("li", { className: "empty", textContent: text })];
+  if (!run || typeof run !== "object") return empty("No goal log yet: it starts with the first browser action.");
+  const row = (state, ...kids) => {
+    const mark = el("span", { className: "mark" });
+    mark.setAttribute("aria-hidden", "true");
+    const li = el("li", {}, mark, el("span", { className: "text" }, el("span", { className: "sr" }), ...kids));
+    checkState(li, state);
+    return li;
+  };
+  const done = Array.isArray(run.done) ? run.done : [];
+  const items = [
+    ...done.map((d, i) => row(driving && i === done.length - 1 ? "current" : "done", ...[...doneLine(d).childNodes])),
+    ...(Array.isArray(run.yourTurn) ? run.yourTurn : []).map((x) => row("waiting", String(x))),
+    ...(Array.isArray(run.left) ? run.left : []).map((x) => row("pending", String(x))),
+  ];
+  return items.length ? items : empty("Nothing done yet.");
+}
+
+// Share (the side panel's header, the live view's toolbar): a card under btn that makes a join
+// code (shared browser, can drive) or a watch link with the owner's own key, through the
+// helper's own invite code. The code or link is shown once, in a read-only field, and cleared
+// when the card closes. Asks the owner's first name once (the helper says when). card holds
+// the ids share-name-row, share-name, share-make, share-result, share-code, share-copy,
+// share-rights and share-msg. base(): the live view address (null: not connected yet).
+export function shareCard({ btn, card, base, onCopy = () => {} }) {
+  const q = (id) => card.querySelector(`#${id}`);
+  const nameRow = q("share-name-row"), name = q("share-name"), make = q("share-make"), result = q("share-result");
+  const code = q("share-code"), copy = q("share-copy"), rights = q("share-rights"), msg = q("share-msg");
+  const say = (text, kind = "") => { msg.textContent = text; msg.dataset.kind = kind; };
+  const radios = () => [...card.querySelectorAll('input[name="share"]')];
+  const outside = (e) => { if (!card.contains(e.target) && !btn.contains(e.target)) close(false); };
+  function open() {
+    card.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", outside, true);
+    (radios().find((r) => r.checked) || radios()[0])?.focus();
+  }
+  function close(refocus = true) {
+    card.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outside, true);
+    code.value = ""; rights.textContent = ""; result.hidden = true; nameRow.hidden = true; say("");
+    if (refocus) btn.focus();
+  }
+  btn.addEventListener("click", () => (card.hidden ? open() : close()));
+  const onEscape = (e) => { if (e.key === "Escape" && !card.hidden) { e.preventDefault(); close(); } };
+  card.addEventListener("keydown", onEscape);
+  btn.addEventListener("keydown", onEscape);
+  // A non-modal card: Tab out of it (not onto its button) closes it, so it never lingers.
+  card.addEventListener("focusout", (e) => { if (!card.hidden && e.relatedTarget && !card.contains(e.relatedTarget) && e.relatedTarget !== btn) close(); });
+  // A person's click or key press only: a synthetic event makes nothing.
+  async function makeInvite() {
+    if (make.disabled) return;
+    if (!base()) return say("Not connected to PairBrowse yet.", "error");
+    const share = radios().find((r) => r.checked)?.value === "link" ? "link" : "code";
+    const given = name.value.trim();
+    make.disabled = true;
+    say("");
+    const r = await postJson(base() + "invite", { share, ...(given ? { name: given } : {}) }).then((x) => x.json()).catch(() => ({ error: "Couldn't reach PairBrowse." }));
+    make.disabled = false;
+    if (r?.needName) { nameRow.hidden = false; name.focus(); return say(r.error || "Your first name, please.", "error"); }
+    if (!r?.ok) return say(r?.error || "Couldn't make the invite.", "error");
+    nameRow.hidden = true;
+    code.value = r.code || r.link || "";
+    rights.textContent = [r.rights, r.hint].filter(Boolean).join(" ");
+    result.hidden = false;
+    say(share === "code" ? "Join code made. Send it yourself; it's shown here only now." : "Watch link made. Send it yourself; it's shown here only now.", "ok");
+    code.focus();
+    code.select();
+  }
+  make.addEventListener("click", (ev) => { if (ev.isTrusted) makeInvite(); });
+  name.addEventListener("keydown", (e) => { if (e.isTrusted && e.key === "Enter") { e.preventDefault(); makeInvite(); } });
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(code.value);
+      say("Copied.", "ok");
+      onCopy(code.value);
+    } catch {
+      code.focus();
+      code.select();
+      say("Select and press Ctrl/Cmd+C to copy.", "error");
+    }
+  });
+  return { open, close };
+}

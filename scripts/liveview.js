@@ -2,7 +2,7 @@
 // typing sent back. Served by liveview.mjs under the page's key, with no inline code allowed.
 // body data-role is "owner" (your own link), "drive" or "watch" (invite links): the server
 // enforces it; this only keeps refused controls out of sight.
-import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose, avatar, splitLabel, stateWord, ago } from "./common.js";
+import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose, avatar, splitLabel, stateWord, ago, doneLine, shareCard } from "./common.js";
 
 const base = location.pathname.replace(/\/?$/, "/");
 const img = $("screen"), stage = $("stage");
@@ -415,6 +415,8 @@ if (role === "owner") on("join", joinBanners($("joins"), () => base));
 if (role === "owner") {
   const drawerEl = $("drawer"), profileBtn = $("profile-btn"), timelineBtn = $("timeline-btn");
   const profile = profilePanel(() => base);
+  // Share: a join code or a watch link, made here with a click (the helper's own invite code).
+  shareCard({ btn: $("share-btn"), card: $("share-card"), base: () => base });
   // Profile | Timeline: one panel, two tabs; only the tab shown is drawn or fetched.
   let drawerTab = "profile";
   const isOpen = () => drawerEl.dataset.open === "true";
@@ -458,21 +460,6 @@ if (role === "owner") {
     journalBusy = false;
     if (r === undefined) return jmsg("Couldn't reach PairBrowse.", "error");
     drawJournal(r);
-  }
-  // A done line, as the log writes it: "Title <url>: act; act", or "url: act; act".
-  function doneLine(line) {
-    const s = String(line);
-    let head = s, url, rest = "";
-    const m = s.match(/^(.*?) <([^>]*)>(?:: (.*))?$/s);
-    if (m) { head = m[1]; url = m[2]; rest = m[3] || ""; }
-    else { const i = s.indexOf(": "); if (i > 0) { head = s.slice(0, i); rest = s.slice(i + 2); } url = /^https?:\/\//.test(head) ? head : ""; }
-    const li = el("li", {}, el("span", { className: "page", textContent: head, title: url }));
-    if (rest) {
-      const acts = el("span", { className: "acts" });
-      rest.split("; ").forEach((a, i) => { if (i) acts.append(" · "); acts.append(rich(a)); });
-      li.append(acts);
-    }
-    return li;
   }
   function drawJournal(run) {
     const list = (id, items, none, draw = (x) => el("li", { textContent: x })) => $(id).replaceChildren(...(items.length ? items.map(draw) : [el("li", { className: "empty", textContent: none })]));

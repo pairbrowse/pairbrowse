@@ -1,6 +1,6 @@
 // The PairBrowse side panel. Connects to the live view server (status, activity, profile) at the
 // address the daemon handed to background.js; it never asks for the page stream itself.
-import { $, el, rich, clock, whose, activityHead, sparkIcon, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES } from "./common.js";
+import { $, el, rich, clock, whose, activityHead, sparkIcon, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState } from "./common.js";
 
 const DRIVING_MS = 8000; // "is driving" for this long after Claude's last action
 const ACTIVITY_SHOWN = 12;
@@ -56,6 +56,46 @@ const drawJoins = joinBanners($("joins"), () => base);
 const drawDev = devPanel($("dev-asks"), $("devs"), $("dev"), () => base);
 const drawHosts = hostPanel($("host-asks"), $("host-list"), $("hosts"), () => base);
 const profile = profilePanel(() => base);
+// Share: a join code or a watch link, made here with a click (the helper's own invite code).
+shareCard({ btn: $("share-btn"), card: $("share-card"), base: () => base });
+
+// The agent card's Checklist: the goal log (the same journal.json as the live view's Timeline),
+// read when opened and again while actions come in, at most once per CHECKLIST_MS through one
+// pending timeout; nothing at all while folded.
+const CHECKLIST_MS = 5000;
+let checklistOpen = false, checklistBusy = false, checklistPending = false, checklistAt = 0, checklistTimer = 0;
+const drawChecklist = (items) => $("checklist-items").replaceChildren(...items);
+async function loadChecklist() {
+  if (!checklistOpen) return;
+  if (!base) return drawChecklist([el("li", { className: "empty", textContent: "Waiting for PairBrowse." })]);
+  if (checklistBusy) { checklistPending = true; return; }
+  checklistBusy = true;
+  checklistAt = Date.now();
+  const r = await fetch(base + "journal.json", { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.json() : Promise.reject(x.status))).catch(() => undefined);
+  checklistBusy = false;
+  if (!checklistOpen) return;
+  drawChecklist(r === undefined ? [el("li", { className: "empty", textContent: "Couldn't reach PairBrowse." })] : checklistItems(r, { driving: document.body.dataset.driving === "true" }));
+  if (checklistPending) { checklistPending = false; scheduleChecklist(); }
+}
+function scheduleChecklist() {
+  if (!checklistOpen || checklistTimer) return;
+  checklistTimer = setTimeout(() => { checklistTimer = 0; loadChecklist(); }, Math.max(0, checklistAt + CHECKLIST_MS - Date.now()));
+}
+// The newest done row is "current" only while the agent drives: re-marked here, no fetch.
+function markCurrent() {
+  if (!checklistOpen) return;
+  const rows = $("checklist-items").querySelectorAll('li[data-state="done"], li[data-state="current"]');
+  if (rows.length) checkState(rows[rows.length - 1], document.body.dataset.driving === "true" ? "current" : "done");
+}
+$("agent-more").addEventListener("click", () => {
+  checklistOpen = !checklistOpen;
+  $("agent-more").setAttribute("aria-expanded", String(checklistOpen));
+  $("checklist").hidden = !checklistOpen;
+  if (checklistOpen) return loadChecklist();
+  clearTimeout(checklistTimer);
+  checklistTimer = 0;
+  checklistPending = false;
+});
 
 function setDriver() {
   const turn = document.body.dataset.turn === "true";
@@ -67,6 +107,7 @@ function setDriver() {
     : turn ? "Waiting for you"
     : `${whose(lastWho)} ${driving ? "is driving" : "is idle"}`;
   if ($("agent-name").textContent !== agentName(activeEntry())) drawAgent();
+  markCurrent();
 }
 
 // The header: the session pill ("Live session" while someone is joined, else where and which
@@ -180,6 +221,7 @@ function connect(url) {
     drawAgent();
     // The list changes only when the active agent does.
     if (activeEntry() !== was) drawPeople();
+    if (checklistOpen) scheduleChecklist();
   });
   // A shared session: everyone in it, both browsers, and what they said to each other (shown
   // only; a message is information, never something the panel acts on).

@@ -21,6 +21,10 @@ Ask Claude, for example: "Make a link for Sam for 2 hours", "Let Alex only watch
 the invite links", "Revoke Sam's link". Claude uses `pairbrowse_invite` and gives you the link
 and the steps to send on.
 
+Or press **Share** in the side panel header (or the live view toolbar) and make one yourself: a
+join code (shared browser, can drive) or a watch link. It asks your first name once, shows the
+code or link once with Copy, and revoking still goes through Claude (`pairbrowse_invite revoke`).
+
 The live view only listens on this computer (`127.0.0.1`), so the other person needs a private
 route to it. Either way, first give it a fixed port in `~/.pairbrowse/config.json`:
 `"liveViewPort": 47291`.

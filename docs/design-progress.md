@@ -334,6 +334,19 @@ pins them and the logo hash). The joiner's picture page overlays are compact nav
 scrim and texts byte for byte; nothing per frame, no new timer. The watch-link tab rows in the
 live view's column are plain focusable rows now.
 
+**share + checklist** (2026-10-11, `design-subset` run wf_fd1ecf9e: review pass in one round;
+403 unit pass, the share subset's live suites green). A Share button in the side panel header
+and the live view toolbar (owner only) opens an anchored, non-modal card: Join code (shared
+browser, can drive) or Watch link, a first-name field when none is known, Make invite, the
+result shown once with Copy; it posts to one new owner-only route `invite` that runs the same
+`createInvite` as `pairbrowse_invite create` (lifted out of `inviteCommand`, tool output
+unchanged); keys never reach logs, `state.json` or the event stream; 403 on invite keys, not
+served on the join-code port (`docs/security.md` row). The active agent card gains a Checklist
+disclosure: the goal log's lines (done ✓, current ◉, waiting for you ●, pending ○; state in a
+visually hidden prefix too) from the existing `journal.json`, read once when opened and again on
+an activity event at most every 5 s through one cleared debounce; nothing while folded. Escape
+and focus leaving the card close it.
+
 **hud** (2026-10-11, `design-subset`, built by Opus; the lead commits). `scripts/hud.js`: the
 bottom bar has a driver dot in the tab's spark color (orange until set, muted while
 reconnecting) in front of the unchanged who-lines, and the last three actions as chips, oldest

@@ -15,8 +15,9 @@ const WHERE = /^[a-z][a-z-]{1,23}:?$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// A line safe to show and to leave the computer later.
-export function scrub(text, { home = homedir(), mask = (t) => t } = {}) {
+// A line safe to show and to leave the computer later. quotes: false keeps quoted text, for a
+// sentence of the helper's own that holds no page text (its folders and addresses still go).
+export function scrub(text, { home = homedir(), mask = (t) => t, quotes = true } = {}) {
   let s = String(text ?? "");
   try { s = String(mask(s)); } catch {}
   // Addresses: the host alone (no user info, path or query); file:// says only that it was a file.
@@ -36,7 +37,7 @@ export function scrub(text, { home = homedir(), mask = (t) => t } = {}) {
   s = s.replace(/\b[A-Za-z]:\\[^\s"'<>]*/g, "[path]");
   s = s.replace(/\b(key|token|secret|password|passwd|authorization)(?:\s*[=:]\s*(?:bearer\s+|basic\s+)?|\s+(?:bearer|basic)\s+)\S+/gi, "$1=[hidden]");
   s = s.replace(/[A-Za-z0-9_-]{32,}/g, "[key]");
-  s = s.replace(/"[^"\n]*"/g, "\"…\"");
+  if (quotes) s = s.replace(/"[^"\n]*"/g, "\"…\"");
   return s.length > LINE_MAX ? `${s.slice(0, LINE_MAX - 1)}…` : s;
 }
 

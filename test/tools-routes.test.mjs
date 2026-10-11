@@ -436,3 +436,70 @@ test("close() lets go of the three stores", async () => {
   assert.equal(t.recordings.listeners(), 0);
   assert.equal(t.handoffs.listeners(), 0);
 });
+
+test("open: office formats are never handed to the opener (409, reveal only); pdf, images, plain media and text still open", async () => {
+  const t = await setup();
+  try {
+    const office = ["x.doc", "x.docx", "x.xls", "x.xlsx", "x.ppt", "x.pptx", "x.odt", "x.ods", "x.odp", "x.rtf", "x.pages", "x.numbers", "x.key", "X.DOCX"];
+    for (const name of office) {
+      const id = t.download(name);
+      const r = await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} });
+      assert.equal(r.status, 409, name);
+      assert.match(JSON.parse(r.text).error, /Reveal/);
+      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/reveal`, { body: {} })).status, 200, name);
+      assert.equal(t.spawned.at(-1)[1], "-R", `${name}: revealed, not opened`);
+    }
+    const rid = t.recordings.add({ path: t.file("notes.docx", "doc"), at: 1, ms: 2, size: 3 }).id;
+    assert.equal((await request(t.view.port, "POST", `/${t.key}/recordings/${rid}/open`, { body: {} })).status, 409, "a recording's id is held to the same list");
+    assert.equal(t.spawned.length, office.length, "only the reveals ran");
+    for (const name of ["a.pdf", "a.png", "a.jpg", "a.jpeg", "a.gif", "a.webp", "a.heic", "a.txt", "a.csv", "a.json", "a.md", "a.mp4", "a.mov", "a.webm", "a.m4v", "a.mp3", "a.wav", "a.m4a"]) {
+      const id = t.download(name);
+      assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, name);
+      assert.deepEqual(t.spawned.at(-1), ["open", join(t.dl, name)], name);
+    }
+  } finally { t.done(); }
+});
+
+test("downloads: an id from an earlier browser session answers 404 for open and reveal, nothing spawned", async () => {
+  const t = await setup();
+  try {
+    t.setSession("work");
+    const id = t.download("old.pdf");
+    assert.ok(t.downloads.entry(id), "known in its own session");
+    t.setSession("default");
+    assert.equal(t.downloads.entry(id), null);
+    for (const how of ["open", "reveal"]) assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/${how}`, { body: {} })).status, 404, how);
+    assert.equal(t.spawned.length, 0);
+    t.setSession("work");
+    assert.equal((await request(t.view.port, "POST", `/${t.key}/downloads/${id}/open`, { body: {} })).status, 200, "back in that session it opens again");
+  } finally { t.done(); }
+});
+
+test("hand-offs: show for a hand-off with no tab answers 409 with a sentence", async () => {
+  const t = await setup();
+  try {
+    const id = t.handoffs.set("run:step", { text: "Check your email for the code", page: null });
+    const items = JSON.parse((await request(t.view.port, "GET", `/${t.key}/handoffs.json`)).text).items;
+    assert.equal(items.find((h) => h.id === id).tab, null);
+    const r = await request(t.view.port, "POST", `/${t.key}/handoffs/${id}/show`, { body: {} });
+    assert.equal(r.status, 409);
+    assert.match(JSON.parse(r.text).error, /nothing to show/);
+    assert.equal(t.pageA.fronted + t.pageB.fronted, 0);
+  } finally { t.done(); }
+});
+
+test("record: a failed answer keeps the recorder's own quoted words readable, masked, folders still hidden", async () => {
+  const t = await setup();
+  const fail = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", tools: t.tools, mask,
+    onRecord: async () => ({ text: `Not recording. Start with pairbrowse_record action "start" (${SECRET}, ${homedir()}/Downloads/x.webm).`, error: true }) });
+  try {
+    const k = fail.url.split("/").at(-2);
+    const f = await request(fail.port, "POST", `/${k}/record`, { body: { on: false } });
+    assert.equal(f.status, 409);
+    const text = JSON.parse(f.text).text;
+    assert.match(text, /action "start"/, "the quoted word is kept");
+    assert.ok(!text.includes("…"), text);
+    assert.ok(!text.includes(SECRET) && text.includes("••••"), "masked");
+    assert.ok(!text.includes(homedir()), "no folder");
+  } finally { fail.close(); t.done(); }
+});

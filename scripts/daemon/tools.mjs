@@ -13,12 +13,13 @@ const DOWNLOADS_KEPT = 100;
 const RECORDINGS_KEPT = 500;
 const newId = () => randomBytes(6).toString("hex");
 
-// File types Open hands to the OS opener: documents, images and media. Anything else (a .command,
-// .app, .sh or .exe a site sent) would run, so it is only revealed in its folder.
-// (Not .svg: its usual opener is a web browser, where a site's SVG runs script under file://. Not
-// .pages/.numbers/.key: those are folders on macOS, never a regular file.)
-export const OPENABLE = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp", "heic", "txt", "csv", "json", "md", "rtf", "doc", "docx", "xls", "xlsx",
-  "ppt", "pptx", "odt", "ods", "odp", "mp4", "mov", "webm", "m4v", "mp3", "wav", "m4a"]);
+// File types Open hands to the OS opener: PDFs, images, plain media and plain text. Anything else
+// (a .command, .app, .sh or .exe a site sent) would run, so it is only revealed in its folder; so
+// are office documents (.doc/.docx, .xls/.xlsx, .ppt/.pptx, .odt/.ods/.odp, .rtf, .pages/.numbers/
+// .key): their openers run macros or embedded objects a site could have put in them.
+// (Not .svg: its usual opener is a web browser, where a site's SVG runs script under file://.)
+export const OPENABLE = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp", "heic", "txt", "csv", "json", "md",
+  "mp4", "mov", "webm", "m4v", "mp3", "wav", "m4a"]);
 export const openable = (path) => OPENABLE.has(extname(String(path || "")).slice(1).toLowerCase());
 
 // The file the helper saved is still that file: a regular file (not a symlink), same inode and size.
@@ -67,7 +68,8 @@ export function createDownloads({ session = () => "" } = {}) {
     failed(id) { const e = all.get(id); if (e) { e.state = "failed"; changed("update", e); } },
     setTitle(id, title) { const e = all.get(id); if (e && title) { e.title = String(title); changed("update", e); } },
     list() { const s = session(); return [...all.values()].filter((e) => e.session === s).reverse().map(pub); },
-    entry: (id) => all.get(id) || null,
+    // Only this browser session's downloads, as list() shows them: an earlier session's id is unknown.
+    entry: (id) => { const e = all.get(id); return e && e.session === session() ? e : null; },
     onChange: (fn) => changes.on(fn),
     listeners: () => changes.size,
   };

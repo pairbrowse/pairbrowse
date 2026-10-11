@@ -853,7 +853,8 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       if ((await readBody(req, BODY_MAX.approve)) === null) return plain(res, 413);
       const h = tools.handoffs.entry(rest[0]);
       if (!h) return plain(res, 404);
-      if (!h.page || h.page.isClosed()) return json(res, 409, { error: "That tab is closed." });
+      if (!h.page) return json(res, 409, { error: "This hand-off isn't about a tab, so there is nothing to show." });
+      if (h.page.isClosed()) return json(res, 409, { error: "That tab is closed." });
       await within(3000, bringTabForward(h.page));
       json(res, 200, { ok: true });
     } },
@@ -876,7 +877,8 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       const r = await onRecord(JSON.parse(body)?.on === true);
       // The file's name, never its folder or path (the Recordings list opens it by id).
       const item = r?.path ? tools?.recordings?.itemFor?.(r.path) || null : null;
-      const text = r?.error ? scrub(r?.text || "", { mask }) : r?.path ? `Saved the recording as "${basename(r.path)}" in your downloads folder.` : "Recording the browser.";
+      // The recorder's own sentence (no page text in it): masked, its folders hidden, its quotes kept.
+      const text = r?.error ? scrub(r?.text || "", { mask, quotes: false }) : r?.path ? `Saved the recording as "${basename(r.path)}" in your downloads folder.` : "Recording the browser.";
       json(res, r?.error ? 409 : 200, { ...recordState(), text, ...(item ? { item } : {}) });
     } },
     { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite, role }) => {

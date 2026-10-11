@@ -5,10 +5,14 @@
 // rail and the hidden dock, the collapse and expand buttons, and the request count. The common
 // checks stay in test/ui.test.mjs; the extension host (no shim) is covered by its own scenario
 // here (native: false) and by test/right.test.mjs (fake chrome).
-import { describe } from "node:test";
+import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { pageTest } from "./helpers/ui-page.mjs";
+import { pageTest, runtime } from "./helpers/ui-page.mjs";
+import { patchright } from "./live.mjs";
+import { startFakeHelper } from "./helpers/fake-helper.mjs";
+import { startUiServer } from "./helpers/ui-server.mjs";
+import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";
 
 const SERVED = readFileSync(new URL("../ui/right/index.html", import.meta.url), "utf8");
 
@@ -462,8 +466,377 @@ describe("tools", () => pageTest("right", opts(), async ({ page, helper, inPage,
   await until("a detail", () => !!document.querySelector("#details .row"));
   assert.equal(await inPage(text, "record-btn"), "Record");
   assert.equal(await inPage(visible, "#record-btn"), true);
+  assert.equal(await inPage(() => document.getElementById("record-btn").closest("section")?.id), "sec-recordings", "Record sits in the Recordings section");
+  assert.equal(await inPage(() => document.getElementById("record-note").closest("section")?.id), "sec-recordings");
+  assert.equal(await inPage(() => document.querySelector("section.record")), null, "the old Recording block is gone");
   assert.deepEqual(errors, []);
 }));
+
+// ---- The Tools tab's sections (TOOLS-CONTRACT.md) ----
+const NOW = Date.now();
+const LIST_ROUTES = ["handoffs.json", "downloads.json", "recordings.json"];
+const reads = (helper, route) => helper.gets.filter((r) => r === route).length;
+const waitFor = async (what, fn) => { for (let i = 0; i < 100; i++) { if (await fn()) return; await sleep(50); } assert.fail(`timed out waiting for ${what}`); };
+const synthetic = (sel) => document.querySelector(sel).dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+const HANDOFFS = [
+  { id: "h2", kind: "captcha", text: "Solve the CAPTCHA on the cart page", tab: { id: 12, host: "cart.example", title: "Cart" }, by: { label: "Alice · Codex", color: "#7088f0" }, at: NOW - 60_000 },
+  { id: "h1", kind: "2fa", text: "Enter the code sent to your phone", tab: { id: 11, host: "shop.example", title: "Shop" }, by: { label: "Claude", color: "#e9763f" }, at: NOW - 120_000 },
+];
+const DOWNLOADS = [
+  { id: "d1", name: "invoice-2026-10.pdf", size: 2_400_000, at: NOW - 30_000, from: { host: "shop.example", title: "Invoices" }, state: "done", by: { label: "Claude", color: "#e9763f" } },
+  { id: "d2", name: "export.csv", size: 0, at: NOW - 20_000, from: { host: "data.example", title: "Export" }, state: "failed", by: { label: "Alice · Codex", color: "#7088f0" } },
+  { id: "d3", name: "big-video.mp4", size: 52_000_000, at: NOW - 10_000, from: { host: "media.example", title: "Media" }, state: "in-progress", by: { label: "Claude", color: "#e9763f" } },
+];
+const RECORDINGS = [
+  { id: "r1", name: "pairbrowse-0910.webm", size: 4_200_000, at: NOW - 3_600_000, duration: 83 },
+  { id: "r2", name: "pairbrowse-1015.webm", size: 52_000_000, at: NOW - 60_000, duration: 3700 },
+];
+
+describe("tools order and reads", () => pageTest("right", opts(), async ({ page, helper, inPage, until, errors }) => {
+  await sleep(300);
+  for (const r of LIST_ROUTES) assert.equal(reads(helper, r), 0, `no ${r} before the Tools tab is shown`);
+  await page.click("#tab-tools");
+  await waitFor("the three reads", () => LIST_ROUTES.every((r) => reads(helper, r) === 1));
+  const secs = await inPage(() => [...document.querySelectorAll("#pane-tools section.sec")].map((sec) => {
+    const b = sec.querySelector(".disclose");
+    return { id: sec.id, head: [...b.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(""), expanded: b.getAttribute("aria-expanded") };
+  }));
+  assert.deepEqual(secs.map((x) => x.id), ["sec-handoffs", "sec-downloads", "sec-recordings", "dev", "hosts", "sec-details", "sec-secrets", "sec-diag"]);
+  assert.deepEqual(secs.map((x) => x.head), ["Hand-offs", "Downloads", "Recordings", "Dev servers", "Join addresses", "Remembered details", "Passwords", "Diagnostics"]);
+  assert.deepEqual(secs.map((x) => x.expanded), ["true", "true", "true", "false", "false", "false", "false", "false"]);
+  await until("Hand-offs and Downloads shown", () => document.getElementById("sec-handoffs").checkVisibility() && document.getElementById("sec-downloads").checkVisibility());
+  assert.equal(await inPage(text, "handoffs-empty"), "Nothing waiting for you.");
+  assert.equal(await inPage(text, "downloads-empty"), "Nothing downloaded in this session.");
+  await until("No recordings yet", () => document.getElementById("recordings-empty").checkVisibility());
+  await page.click("#tab-agent");
+  await page.click("#tab-tools");
+  await sleep(300);
+  for (const r of LIST_ROUTES) assert.equal(reads(helper, r), 1, `${r}: once per connection`);
+  assert.equal(reads(helper, "diagnostics.json"), 0, "no diagnostics.json while folded");
+  await page.click("#sec-diag .disclose");
+  await waitFor("one diagnostics read", () => reads(helper, "diagnostics.json") === 1);
+  await sleep(200);
+  assert.equal(reads(helper, "diagnostics.json"), 1);
+  await page.click("#tab-agent");
+  await sleep(200);
+  assert.equal(reads(helper, "diagnostics.json"), 1, "nothing while another tab is in front");
+  await page.click("#tab-tools");
+  await waitFor("again on a show while open", () => reads(helper, "diagnostics.json") === 2);
+  await page.click("#sec-diag .disclose");
+  await page.click("#tab-agent");
+  await page.click("#tab-tools");
+  await sleep(300);
+  assert.equal(reads(helper, "diagnostics.json"), 2, "folded: not read on a show");
+  assert.deepEqual(errors, []);
+}));
+
+describe("hand-offs", () => pageTest("right", opts({ handoffs: { items: HANDOFFS } }), async ({ page, helper, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await until("the rows", () => document.querySelectorAll("#handoffs li").length === 2);
+  const rows = () => inPage(() => [...document.querySelectorAll("#handoffs li")].map((li) => {
+    const a = li.querySelector(".avatar");
+    return { kind: li.querySelector(".kind").textContent, label: a?.getAttribute("aria-label"), bg: a && getComputedStyle(a).backgroundColor, text: li.querySelector(".text").textContent,
+      meta: li.querySelector(".meta").textContent, show: li.querySelector("button").getAttribute("aria-label") };
+  }));
+  assert.deepEqual(await rows(), [
+    { kind: "Two-step code", label: "Claude", bg: "rgb(233, 118, 63)", text: "Enter the code sent to your phone", meta: "shop.example · Claude", show: "Show the tab on shop.example" },
+    { kind: "CAPTCHA", label: "Alice", bg: "rgb(112, 136, 240)", text: "Solve the CAPTCHA on the cart page", meta: "cart.example · Alice · Codex", show: "Show the tab on cart.example" },
+  ], "oldest first, the kind in words, who in their color");
+  assert.equal(await inPage(text, "handoffs-count"), "2");
+  assert.equal(await inPage(visible, "#handoffs-count"), true);
+  assert.equal(await inPage(text, "handoffs-said"), "2 steps waiting for you");
+  assert.equal(await inPage(visible, "#handoffs-empty"), false);
+  const shows = () => helper.posts.filter((p) => p.route === "handoffs");
+  await inPage(synthetic, "#handoffs li:first-child button");
+  await sleep(300);
+  assert.equal(shows().length, 0, "a synthetic click shows nothing");
+  await page.click("#handoffs li:first-child button");
+  assert.deepEqual((await posted(helper, "handoffs"))[0]?.rest, ["h1", "show"]);
+  const add = (id, kind) => helper.push("handoffs", { op: "add", item: { id, kind, text: `Step ${id}`, tab: { id: 13, host: "pay.example", title: "Pay" }, by: { label: "Claude", color: "#e9763f" }, at: Date.now() } });
+  add("h3", "login"); add("h4", "payment"); add("h5", "other");
+  await until("five rows", () => document.querySelectorAll("#handoffs li").length === 5);
+  assert.deepEqual((await rows()).map((r) => r.kind), ["Two-step code", "CAPTCHA", "Sign in", "Payment", "Your turn"]);
+  helper.push("handoffs", { op: "add", item: { id: "h9", kind: "nope", text: "Unknown kind", at: Date.now() } });
+  helper.push("handoffs", { op: "remove", item: { id: "h3" } });
+  await until("four rows", () => document.querySelectorAll("#handoffs li").length === 4);
+  assert.equal(await inPage(text, "handoffs-count"), "4", "an unknown kind is skipped");
+  assert.equal(await inPage(text, "handoffs-said"), "4 steps waiting for you");
+  // Gone meanwhile (404): the row goes, in words, and the focus moves to the next row's Show.
+  helper.replies.handoffs = () => ({ status: 404, body: { ok: false } });
+  await page.click("#handoffs li:first-child button");
+  await until("the row goes", () => document.querySelectorAll("#handoffs li").length === 3);
+  assert.equal(await inPage(text, "handoffs-msg"), "That step is no longer waiting.");
+  assert.equal(await inPage(() => document.activeElement?.closest("#handoffs") !== null && document.activeElement.tagName), "BUTTON", "focus stays in the list");
+  for (const id of ["h2", "h4", "h5"]) helper.push("handoffs", { op: "remove", item: { id } });
+  await until("none waiting", () => document.getElementById("handoffs-empty").checkVisibility());
+  assert.equal(await inPage(text, "handoffs-empty"), "Nothing waiting for you.");
+  assert.equal(await inPage(visible, "#handoffs-count"), false);
+  assert.equal(await inPage(text, "handoffs-said"), "Nothing waiting for you");
+  const meta = await inPage(textContrast, "#handoffs-empty");
+  assert.ok(meta >= 4.5, `the empty line keeps AA: ${meta.toFixed(2)}:1`);
+  assert.deepEqual(errors, []);
+}));
+
+describe("downloads", () => pageTest("right", opts({ downloads: { items: DOWNLOADS } }), async ({ page, helper, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await until("the rows", () => document.querySelectorAll("#downloads li").length === 3);
+  const rows = () => inPage(() => [...document.querySelectorAll("#downloads li")].map((li) => ({
+    name: li.querySelector(".name").textContent, meta: li.querySelector(".meta").textContent, state: li.querySelector(".state").textContent, data: li.dataset.state,
+    buttons: [...li.querySelectorAll("button")].map((b) => [b.textContent, b.getAttribute("aria-label")]),
+  })));
+  const reveal = await inPage(() => (/mac/i.test(navigator.userAgentData?.platform || navigator.platform) ? "Show in Finder" : "Show in folder"));
+  const revealLabel = reveal === "Show in Finder" ? "Show invoice-2026-10.pdf in Finder" : "Show invoice-2026-10.pdf in its folder";
+  const r = await rows();
+  assert.deepEqual(r.map((x) => x.name), ["big-video.mp4", "export.csv", "invoice-2026-10.pdf"], "newest first");
+  assert.deepEqual(r.map((x) => x.state), ["Downloading", "Failed", "Done"], "the state in words");
+  assert.deepEqual(r.map((x) => x.data), ["in-progress", "failed", "done"]);
+  assert.equal(r[2].meta, "2.4 MB · shop.example · Claude");
+  assert.equal(r[1].meta, "data.example · Alice · Codex", "no size when none is known");
+  assert.deepEqual(r.map((x) => x.buttons.length), [0, 0, 2], "actions on Done rows only");
+  assert.deepEqual(r[2].buttons, [["Open", "Open invoice-2026-10.pdf"], [reveal, revealLabel]]);
+  const dots = await inPage(() => [...document.querySelectorAll("#downloads li .sd")].map((d) => getComputedStyle(d).backgroundColor));
+  assert.deepEqual(dots, [await inPage(token, "muted"), await inPage(token, "bad"), await inPage(token, "ok")]);
+  const sel = '#downloads li[data-state="done"] button';
+  await inPage(synthetic, sel);
+  await sleep(300);
+  assert.equal(helper.posts.filter((p) => p.route === "downloads").length, 0, "a synthetic click opens nothing");
+  await page.click(sel);
+  assert.deepEqual((await posted(helper, "downloads"))[0]?.rest, ["d1", "open"]);
+  await page.click(`${sel}:nth-of-type(2)`);
+  assert.deepEqual((await posted(helper, "downloads", 2))[1]?.rest, ["d1", "reveal"]);
+  for (const s of ["#downloads .meta", "#downloads .state"]) {
+    const c = await inPage(textContrast, s);
+    assert.ok(c >= 4.5, `${s} keeps AA on the card: ${c.toFixed(2)}:1`);
+  }
+  // An update patches the same row in place, without taking the focus.
+  await inPage(() => { window.__d3 = document.querySelector("#downloads li:first-child"); });
+  await page.focus(sel);
+  helper.push("downloads", { op: "update", item: { ...DOWNLOADS[2], state: "done" } });
+  await until("d3 done", () => window.__d3.dataset.state === "done");
+  assert.equal(await inPage(() => document.querySelector("#downloads li:first-child") === window.__d3), true, "the same element");
+  assert.equal(await inPage(() => window.__d3.querySelector(".state").textContent), "Done");
+  assert.equal(await inPage(() => window.__d3.querySelectorAll("button").length), 2, "the buttons come with Done");
+  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Open invoice-2026-10.pdf", "the focus stays");
+  helper.push("downloads", { op: "add", item: { id: "d4", name: "receipt.pdf", size: 812, at: Date.now(), from: { host: "shop.example", title: "Receipt" }, state: "in-progress" } });
+  await until("d4 first", () => document.querySelector("#downloads li:first-child .name")?.textContent === "receipt.pdf");
+  assert.equal(await inPage(() => document.querySelector("#downloads li:first-child .meta").textContent), "812 bytes · shop.example");
+  assert.equal(await inPage(() => document.querySelector("#downloads li:first-child .avatar")), null, "no avatar without who");
+  helper.replies.downloads = () => ({ status: 404, body: { error: "That file is no longer in Downloads." } });
+  await page.click('#downloads li[data-state="done"]:last-child button');
+  await until("the helper's words", () => document.getElementById("downloads-msg").textContent === "That file is no longer in Downloads.");
+  assert.deepEqual(errors, []);
+}));
+
+describe("downloads without the route", () => pageTest("right", opts({ downloads: null }), async ({ page, helper, inPage, errors }) => {
+  await page.click("#tab-tools");
+  await waitFor("the read", () => reads(helper, "downloads.json") === 1);
+  await sleep(300);
+  assert.equal(await inPage(visible, "#sec-downloads"), false, "a helper without the route: no section");
+  assert.equal(await inPage(visible, "#sec-handoffs"), true);
+  assert.deepEqual(errors, []);
+}));
+
+describe("recordings", () => pageTest("right", opts({ recordings: { items: RECORDINGS } }), async ({ page, helper, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await until("the rows", () => document.querySelectorAll("#recordings li").length === 2);
+  const metas = await inPage(() => [...document.querySelectorAll("#recordings li")].map((li) => [li.querySelector(".name").textContent, li.querySelector(".meta").textContent]));
+  assert.deepEqual(metas.map(([n]) => n), ["pairbrowse-1015.webm", "pairbrowse-0910.webm"], "newest first");
+  assert.match(metas[0][1], /^1:01:40 · 52 MB · \S/);
+  assert.match(metas[1][1], /^1:23 · 4\.2 MB · \S/);
+  assert.equal(await inPage(visible, "#recordings-empty"), false);
+  const first = "#recordings li:first-child";
+  await inPage(synthetic, `${first} .acts button`);
+  await sleep(300);
+  assert.equal(helper.posts.filter((p) => p.route === "recordings").length, 0, "a synthetic click opens nothing");
+  await page.click(`${first} .acts button:nth-child(1)`);
+  assert.deepEqual((await posted(helper, "recordings"))[0]?.rest, ["r2", "open"]);
+  await page.click(`${first} .acts button:nth-child(2)`);
+  assert.deepEqual((await posted(helper, "recordings", 2))[1]?.rest, ["r2", "reveal"]);
+  // Delete asks in the row; focus on Keep, Escape closes it and returns to Delete.
+  let dialogs = 0;
+  page.on("dialog", (d) => { dialogs++; d.dismiss(); });
+  await page.click(`${first} .acts .bad`);
+  await until("the confirm", () => document.getElementById("rec-confirm-r2").checkVisibility());
+  assert.equal(await inPage(text, "rec-q-r2"), "Delete pairbrowse-1015.webm from your Downloads folder?");
+  assert.equal(await inPage(() => document.activeElement?.id), "rec-keep-r2", "focus on Keep: a second Enter keeps the file");
+  assert.equal(await page.getAttribute(`${first} .acts .bad`, "aria-expanded"), "true");
+  await page.keyboard.press("Escape");
+  await until("closed", () => document.getElementById("rec-confirm-r2").hidden);
+  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Delete pairbrowse-1015.webm", "focus back on Delete");
+  await page.click(`${first} .acts .bad`);
+  await until("the confirm again", () => !document.getElementById("rec-confirm-r2").hidden);
+  await page.click("#rec-keep-r2");
+  await until("Keep closes it", () => document.getElementById("rec-confirm-r2").hidden);
+  await page.click(`${first} .acts .bad`);
+  await until("the confirm once more", () => !document.getElementById("rec-confirm-r2").hidden);
+  await inPage(synthetic, "#rec-confirm-r2 .bad");
+  await sleep(300);
+  assert.equal(helper.deletes.length, 0, "a synthetic click deletes nothing");
+  const yes = await inPage(textContrast, "#rec-confirm-r2 .bad");
+  assert.ok(yes >= 4.5, `Delete keeps AA in the confirm: ${yes.toFixed(2)}:1`);
+  await page.click("#rec-confirm-r2 .bad");
+  await waitFor("the delete", () => helper.deletes.length === 1);
+  assert.deepEqual(helper.deletes.map((d) => d.rest), [["r2"]]);
+  await until("the row goes", () => document.querySelectorAll("#recordings li").length === 1);
+  assert.equal(await inPage(text, "recordings-msg"), "Deleted pairbrowse-1015.webm.");
+  assert.equal(dialogs, 0, "no JavaScript dialog");
+  assert.deepEqual(errors, []);
+}));
+
+describe("recordings: the Record button", () => pageTest("right", opts(), async ({ page, helper, harness, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await until("No recordings yet", () => document.getElementById("recordings-empty").checkVisibility());
+  await page.click("#record-btn");
+  assert.deepEqual((await posted(helper, "record"))[0]?.body, { on: true });
+  await until("recording", () => document.getElementById("record-btn").textContent === "Stop recording");
+  assert.match(await inPage(text, "record-note"), /^Recording 0:0\d$/);
+  assert.equal((await harness.live()).intervals, 1, "the clock while recording and shown");
+  await harness.setHidden(true);
+  assert.equal((await harness.live()).intervals, 0, "no clock while hidden");
+  const fires = await harness.hiddenFires();
+  await sleep(1500);
+  assert.equal((await harness.hiddenFires()) - fires, 0, "nothing ran while hidden");
+  await harness.setHidden(false);
+  assert.equal((await harness.live()).intervals, 1, "back with the page");
+  helper.push("record", { op: "saved", item: { id: "r3", name: "pairbrowse-1100.webm", size: 1_000_000, at: Date.now(), duration: 12 } });
+  await until("r3 first", () => document.querySelector("#recordings li:first-child .name")?.textContent === "pairbrowse-1100.webm");
+  assert.equal(await inPage(visible, "#recordings-empty"), false);
+  assert.equal(await inPage(text, "record-btn"), "Stop recording", "a saved notice alone keeps the state");
+  helper.push("record", { recording: false });
+  await until("stopped", () => document.getElementById("record-btn").textContent === "Record");
+  assert.equal((await harness.live()).intervals, 0);
+  assert.deepEqual(errors, []);
+}));
+
+describe("recordings: already recording", () => pageTest("right", opts({ recordings: { recording: { on: true, since: NOW - 5000 } } }), async ({ page, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await until("Stop recording", () => document.getElementById("record-btn").textContent === "Stop recording");
+  assert.match(await inPage(text, "record-note"), /^Recording \d+:\d\d$/);
+  assert.deepEqual(errors, []);
+}));
+
+describe("recordings without the route", () => pageTest("right", opts({ recordings: null }), async ({ page, helper, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await waitFor("the read", () => reads(helper, "recordings.json") === 1);
+  await sleep(300);
+  assert.equal(await inPage(visible, "#recordings"), false);
+  assert.equal(await inPage(visible, "#recordings-empty"), false);
+  assert.equal(await inPage(visible, "#record-btn"), true);
+  await page.click("#record-btn");
+  assert.deepEqual((await posted(helper, "record"))[0]?.body, { on: true });
+  await until("recording", () => document.getElementById("record-btn").textContent === "Stop recording");
+  assert.deepEqual(errors, []);
+}));
+
+const DIAG = { joined: [{ label: "Sam", role: "drive" }], connections: { agents: 1, viewers: 2, joiners: 1, streams: 3 },
+  errors: [{ at: NOW - 60_000, where: "serve.mjs", text: "older error" }, { at: NOW - 1000, where: "tunnel.mjs", text: "newer error" }] };
+describe("diagnostics", () => pageTest("right", opts({ diagnostics: DIAG }), async ({ page, helper, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await page.click("#sec-diag .disclose");
+  await until("the helper line", () => document.getElementById("diag-helper").textContent !== "Not reported");
+  assert.equal(await inPage(text, "diag-helper"), "0.15.45 · Node 22.11.0 · up 2 h 5 min");
+  assert.equal(await inPage(text, "diag-browser"), "PairBrowse browser 142.0.7444.59 (build 3)");
+  assert.equal(await inPage(text, "diag-conn"), "1 agent · 2 viewers · 1 joiner · 3 streams");
+  assert.equal(await inPage(text, "diag-joined"), "Sam (drive)");
+  const errs = await inPage(() => [...document.querySelectorAll("#diag-errors li")].map((li) => [li.querySelector("strong").textContent, li.querySelector("time").dateTime !== "", li.textContent]));
+  assert.deepEqual(errs.map(([w]) => w), ["tunnel.mjs", "serve.mjs"], "newest first");
+  assert.ok(errs.every(([, t, s]) => t && /error$/.test(s)));
+  assert.equal(await inPage(visible, "#diag-errors-empty"), false);
+  assert.equal(await inPage(text, "diag-send-note"), "Nothing leaves this computer from here. Sending reports to PairBrowse comes in a later version, and only when you choose it.");
+  assert.equal(await inPage(() => [...document.querySelectorAll("#sec-diag button")].some((b) => /send/i.test(b.textContent))), false, "no Send button");
+  const n = reads(helper, "diagnostics.json");
+  await page.click("#diag-refresh");
+  await waitFor("Refresh reads once", () => reads(helper, "diagnostics.json") === n + 1);
+  await page.click("#diag-prepare");
+  assert.deepEqual((await posted(helper, "diagnostics"))[0]?.rest, ["report"]);
+  await until("the report", () => document.getElementById("diag-report-box").checkVisibility());
+  const report = helper.fixtures.report.text;
+  assert.deepEqual(await inPage(() => { const t = document.getElementById("diag-report"); return [t.readOnly, t.value, document.activeElement === t]; }), [true, report, true]);
+  await inPage(() => { window.__copied = null; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__copied = t; } } }); });
+  await page.click("#diag-copy");
+  await until("copied", () => window.__copied !== null);
+  assert.equal(await inPage(() => window.__copied), report, "the clipboard got exactly the report");
+  assert.equal(await inPage(text, "diag-msg"), "Copied.");
+  // Save: a download of that text made in the page; no request to the helper or anywhere else.
+  const before = { gets: helper.gets.length, posts: helper.posts.length };
+  const requests = [];
+  page.on("request", (r) => requests.push(r.url()));
+  const download = page.waitForEvent("download");
+  await page.click("#diag-save");
+  const d = await download;
+  assert.match(d.suggestedFilename(), /^pairbrowse-diagnostics-\d{4}-\d{2}-\d{2}-\d{4}\.txt$/);
+  assert.equal(readFileSync(await d.path(), "utf8"), report, "the file holds exactly the report");
+  await sleep(200);
+  assert.deepEqual({ gets: helper.gets.length, posts: helper.posts.length }, before, "Save asks the helper nothing");
+  assert.deepEqual(requests.filter((u) => !u.startsWith("blob:")), [], "no network request");
+  assert.equal(await inPage(text, "diag-msg"), "Saved to your Downloads folder.");
+  assert.deepEqual(errors, []);
+}));
+
+describe("diagnostics without the route", () => pageTest("right", opts({ diagnostics: null }), async ({ page, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await page.click("#sec-diag .disclose");
+  await until("none", () => document.getElementById("diag-none").checkVisibility());
+  assert.equal(await inPage(text, "diag-none"), "This PairBrowse doesn't offer diagnostics yet.");
+  assert.equal(await inPage(visible, "#diag-prepare"), false);
+  assert.equal(await inPage(visible, "#diag"), false);
+  assert.equal(await inPage(text, "diag-msg"), "");
+  assert.deepEqual(errors, []);
+}));
+
+describe("layout tab", () => pageTest("right", opts(), async ({ page, helper, inPage, until, errors }) => {
+  const dock = await inPage(() => document.documentElement.dataset.dock);
+  helper.push("layout", { left: "open", right: "hidden", strip: 88, tab: "tools" });
+  await until("on Tools", () => document.body.dataset.tab === "tools" && document.getElementById("pane-tools").checkVisibility());
+  assert.equal(await page.getAttribute("#tab-tools", "aria-selected"), "true");
+  assert.equal(await inPage(() => document.documentElement.dataset.dock), dock, "the event's sides never change the dock");
+  await page.click("#tab-agent");
+  helper.push("layout", { left: "open", right: "open", strip: 88 });
+  await sleep(300);
+  assert.equal(await inPage(() => document.body.dataset.tab), "agent", "no tab: the tab stays");
+  assert.deepEqual(errors, []);
+}));
+
+// No replay: a right page that joins the shared stream late is neither sent to Tools by an old
+// layout event nor given a recording from an old saved notice (one context, two right pages).
+test("layout tab and saved recordings are not replayed to a late page", { skip: !runtime, timeout: 60_000 }, async () => {
+  const browser = await patchright(runtime).chromium.launch();
+  const helper = await startFakeHelper({ pageOrigin: null });
+  const ui = await startUiServer({ helper, fixture: defaultFixture() });
+  helper.setPageOrigin(ui.origin);
+  try {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const errors = [];
+    const open = async () => {
+      const p = await context.newPage();
+      p.on("pageerror", (e) => errors.push(String(e)));
+      await p.goto(ui.url("right"), { waitUntil: "load" });
+      await waitFor("live", async () => (await p.evaluate(() => document.body.dataset.s)) === "live");
+      return p;
+    };
+    const first = await open();
+    await sleep(300);
+    helper.push("layout", { left: "open", right: "open", strip: 88, tab: "tools" });
+    await waitFor("the first page on Tools", async () => (await first.evaluate(() => document.body.dataset.tab)) === "tools");
+    helper.push("record", { op: "saved", item: { id: "r9", name: "old.webm", size: 1000, at: Date.now(), duration: 3 } });
+    await first.click("#tab-agent");
+    await sleep(200);
+    const late = await open();
+    await sleep(400);
+    assert.equal(helper.streams.size, 1, "one shared stream");
+    assert.equal(await late.evaluate(() => document.body.dataset.tab), "agent", "the late page stays on Agent");
+    await late.click("#tab-tools");
+    await waitFor("its own read", () => reads(helper, "recordings.json") >= 1);
+    await sleep(300);
+    assert.equal(await late.evaluate(() => document.querySelectorAll("#recordings li").length), 0, "no row from the old saved notice");
+    assert.equal(await late.evaluate(() => document.getElementById("record-btn").textContent), "Record");
+    assert.deepEqual(errors, []);
+  } finally {
+    await helper.close();
+    await ui.close();
+    await browser.close();
+  }
+});
 
 describe("rail and hidden", () => pageTest("right", opts(), async ({ page, helper, shim, inPage, until, errors }) => {
   await shim.layout({ right: 1 });

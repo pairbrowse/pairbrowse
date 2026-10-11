@@ -236,16 +236,64 @@ h2 { margin: 16px 0 4px; font-size: var(--fs-2); }
 .dev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dev button:disabled { opacity: 0.5; cursor: default; }
 
-/* Recording (Tools): the browser as a video, saved in Downloads. */
-.record { margin-top: 16px; }
-.record .k { margin: 0 0 6px; font-size: var(--fs-2); font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; }
+/* Recording (Tools, the Recordings section): the browser as a video, saved in Downloads. */
+#sec-recordings .rec-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 #record-btn { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; cursor: pointer; transition: background-color 120ms ease-out; }
 #record-btn:hover { background: var(--hover); }
 #record-btn::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: var(--bad); }
 body[data-recording="true"] #record-btn { background: var(--bad); border-color: var(--bad); color: var(--bg); }
 body[data-recording="true"] #record-btn::before { border-radius: 2px; background: var(--bg); }
-.record-note { margin: 6px 2px 0; overflow-wrap: anywhere; }
+.record-note { margin: 0 2px; overflow-wrap: anywhere; }
 .record-note[hidden] { display: none; }
+
+/* The Tools tab's lists (Hand-offs, Downloads, Recordings): raised cards as the people rows,
+   state always in words (a dot repeats it), actions 28 px; the waiting-for-you edge on hand-offs. */
+.sec .disclose .count { margin-left: auto; }
+.tools-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tools-list[hidden], .empty-row[hidden], .diag[hidden], .diag-errors[hidden], .k[hidden], .diag-report[hidden], .act[hidden] { display: none; }
+.tools-list:empty { display: none; }
+.tool { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--edge-lit); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); }
+.tool.bare { grid-template-columns: minmax(0, 1fr) auto; }
+.tool > .avatar { grid-column: 1; grid-row: 1; width: 28px; height: 28px; font-size: var(--fs-2); }
+.tool .head { grid-column: 2; grid-row: 1; display: grid; min-width: 0; }
+.tool.bare .head { grid-column: 1; }
+.tool .name, .tool .kind { min-width: 0; font-size: var(--fs-3); line-height: 18px; font-weight: var(--fw-name); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool .meta { display: block; min-width: 0; font-size: var(--fs-2); line-height: 17px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool .state { grid-column: -2; grid-row: 1; display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-2); font-weight: 500; color: var(--ink); white-space: nowrap; }
+.tool .sd { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.tool[data-state="done"] .sd { background: var(--ok); }
+.tool[data-state="failed"] .sd { background: var(--bad); }
+.tool .acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tool .text { grid-column: 1 / -1; margin: 4px 0 0; font-size: var(--fs-3); color: var(--ink); overflow-wrap: anywhere; }
+.handoff { box-shadow: inset 3px 0 0 var(--warn), inset 0 1px 0 var(--edge-light), var(--shadow-raised); }
+.handoff .acts { grid-column: -2; grid-row: 1; margin-top: 0; }
+.act { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border: 1px solid var(--edge); border-radius: var(--r-2); background-color: var(--elevated); color: var(--ink); font-size: var(--fs-2); font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease-out; }
+.act:hover { background-color: var(--hover); }
+.act.go { border-color: var(--accent); background-color: var(--accent); color: var(--bg); }
+.act.go:hover { background-color: var(--accent); filter: brightness(1.06); }
+.act.bad { border-color: var(--bad); background-color: transparent; color: var(--bad); }
+.act.bad:hover { background-color: var(--bad); color: var(--bg); }
+.act:disabled { opacity: 0.5; cursor: default; }
+.act.go:focus-visible { box-shadow: var(--glow-focus); }
+.act.bad:focus-visible { box-shadow: var(--glow-focus); }
+/* Delete asks in the row (a dock slot has no JavaScript dialogs). */
+.confirm { grid-column: 1 / -1; margin-top: 8px; padding: 8px; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--chrome); font-size: var(--fs-2); color: var(--ink); }
+.confirm[hidden] { display: none; }
+.confirm p { margin: 0; overflow-wrap: anywhere; }
+.confirm-row { display: flex; gap: 6px; margin-top: 8px; }
+
+/* Diagnostics: what the helper reports, then a report to copy or save (nothing is sent). */
+.diag { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0 0 10px; font-size: var(--fs-2); }
+.diag dt { color: var(--ink-2); }
+.diag dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+#sec-diag h3.k { margin: 10px 0 4px; }
+.diag-errors { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font: var(--fs-1)/1.45 var(--mono); color: var(--ink-2); }
+.diag-errors li { overflow-wrap: anywhere; }
+.diag-errors strong { color: var(--ink); font-weight: var(--fw-name); }
+.diag-acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.diag-report { margin-top: 10px; }
+.field.report { display: block; height: auto; min-height: 160px; padding: 8px 9px; font: var(--fs-1)/1.45 var(--mono); resize: vertical; background: var(--chrome); }
+#diag-send-note { margin: 10px 0 0; }
 
 /* The session card, a raised card at the bottom of the Agent tab: the name (a pencil when the
    helper can rename), when it was saved, a fold, then Save (when the helper can), Share, End. */
@@ -314,3 +362,6 @@ figcaption { margin-top: 6px; font-size: var(--fs-2); color: var(--ink-2); overf
 figcaption time { font-family: var(--mono); font-size: var(--fs-1); color: var(--muted); }
 .pane > .empty { margin: 0; padding: 12px 14px; font-size: var(--fs-2); color: var(--muted); }
 .pane > .empty[hidden] { display: none; }
+
+/* The Tools tab's status lines take no room while they say nothing (they stay live regions). */
+#handoffs-msg:empty, #downloads-msg:empty, #recordings-msg:empty, #diag-msg:empty { min-height: 0; margin: 0; }

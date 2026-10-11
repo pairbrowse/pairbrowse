@@ -2,8 +2,12 @@
 // takes the helper's address and the dock state from the browser; as plain Chromium's side panel
 // it reads the address the daemon handed to background.js. Either way it reads the live view
 // server's owner stream (status, activity, profile) through the one shared stream per origin
-// (common.js helperStream) and never asks for the page stream itself.
+// (common.js helperStream) and never asks for the page stream itself. The Tools tab's Hand-offs,
+// Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
+// the Record button and its clock stay here. The dock state stays the browser's (native) or none
+// (served): a layout event only ever brings the tab to show (the left dock's Tools row).
 import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState, askDock, helperStream } from "../common.js";
+import { toolsPanel } from "./tools.js";
 
 const pb = globalThis.pairbrowse || null;
 document.documentElement.dataset.host = pb ? "native" : "extension";
@@ -55,6 +59,7 @@ function selectTab(name) {
   if (name === "agent") { if (checklistStale) scheduleChecklist(); }
   else { clearTimeout(checklistTimer); checklistTimer = 0; checklistPending = false; }
   if (name === "pictures") showPictures();
+  if (name === "tools") tools.show();
 }
 for (const t of TABS) $(`tab-${t}`).addEventListener("click", () => selectTab(t));
 document.querySelector(".tabset").addEventListener("keydown", (e) => {
@@ -141,6 +146,12 @@ $("end-confirm").addEventListener("keydown", (e) => { if (e.key === "Escape") { 
 // Record: the browser as a video (the helper saves it in Downloads and says where).
 let recording = null; // { since } while recording
 let recordTimer = 0;
+// The Tools tab's four sections (tools.js): read only while that tab is shown in the open dock.
+const tools = toolsPanel({
+  base: () => base,
+  shown: () => !unseen() && document.body.dataset.tab === "tools",
+  onRecording: (s) => { recording = s.on ? { since: s.since } : null; drawRecord(); },
+});
 function drawRecord() {
   const btn = $("record-btn");
   btn.textContent = recording ? "Stop recording" : "Record";
@@ -508,13 +519,13 @@ function forgetPictures() {
 
 function connect(url) {
   if (!url || url === base) return;
-  if (base) { forgetPictures(); forgetSessionTools(); }
+  if (base) { forgetPictures(); forgetSessionTools(); tools.forget(); }
   base = url;
   stream?.close();
   stream = helperStream(base, {
     kind: pb ? "right" : "",
     onState: (s) => { document.body.dataset.s = s; setDriver(); },
-    onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); },
+    onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); tools.stale(); },
   });
   const on = stream.on;
   on("status", (s) => {
@@ -584,6 +595,8 @@ function connect(url) {
     drawPeople();
   });
   on("record", (r) => {
+    // A recording saved: its row first in Recordings; a state in the same event still applies.
+    if (r?.op === "saved") { tools.saved(r.item); if (typeof r.recording !== "boolean") return; }
     const was = !!recording;
     recording = r?.recording ? { since: r.since || Date.now() } : null;
     if (was !== !!recording || recording) drawRecord();
@@ -601,6 +614,11 @@ function connect(url) {
     }
     // "remove": the picture shown stays until the next replaces it.
   });
+  on("downloads", tools.downloads);
+  on("handoffs", tools.handoffs);
+  // The tab the left dock's Tools row asked for (POST layout's tab, relayed, never kept). The
+  // sides are the browser's (native) or not this page's to show (served): never read here.
+  on("layout", (l) => { if (typeof l?.tab === "string" && TABS.includes(l.tab)) selectTab(l.tab); });
   on("profile", profile.draw);
   on("join", drawJoins);
   on("dev", drawDev);
@@ -633,13 +651,17 @@ function wakeTimers() {
   if (checklistStale) scheduleChecklist();
   if (recording) drawRecord();
   if (document.body.dataset.tab === "pictures") showPictures();
+  if (document.body.dataset.tab === "tools") tools.show();
 }
 document.addEventListener("visibilitychange", () => (document.hidden ? sleepTimers() : wakeTimers()));
 
-// Sections that fold: Activity open, the rest folded, as this person left them (one key in the
-// extension's local storage: the folded sections' names). Folded content stays in the page.
-const KEYS = ["session", "dev", "hosts", "activity", "details", "secrets"];
-const DEFAULT_COLLAPSED = KEYS.filter((k) => k !== "activity");
+// Sections that fold: Activity, Hand-offs, Downloads and Recordings open, the rest folded, as this
+// person left them (one key in the extension's local storage: the folded sections' names).
+// Diagnostics reads the helper when it opens, so it always starts folded and is never stored.
+// Folded content stays in the page.
+const KEYS = ["session", "dev", "hosts", "activity", "details", "secrets", "handoffs", "downloads", "recordings", "diagnostics"];
+const OPEN = new Set(["activity", "handoffs", "downloads", "recordings"]);
+const DEFAULT_COLLAPSED = KEYS.filter((k) => !OPEN.has(k));
 let collapsed = DEFAULT_COLLAPSED;
 function applyCollapsed(list) {
   collapsed = list;
@@ -654,9 +676,10 @@ for (const btn of document.querySelectorAll("section.sec[data-key] .disclose")) 
   btn.addEventListener("click", () => {
     const key = btn.closest("section").dataset.key;
     applyCollapsed(collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]);
-    try { store("local")?.set({ "pb-panel": { collapsed } }).catch(() => {}); } catch {}
+    if (key === "diagnostics" && !collapsed.includes(key)) tools.diagnostics();
+    try { store("local")?.set({ "pb-panel": { collapsed: collapsed.filter((k) => k !== "diagnostics") } }).catch(() => {}); } catch {}
   });
 }
 const local = store("local");
-if (local) local.get("pb-panel").then(({ "pb-panel": p }) => applyCollapsed(Array.isArray(p?.collapsed) ? p.collapsed.filter((k) => KEYS.includes(k)) : DEFAULT_COLLAPSED)).catch(() => {});
+if (local) local.get("pb-panel").then(({ "pb-panel": p }) => applyCollapsed(Array.isArray(p?.collapsed) ? [...p.collapsed.filter((k) => KEYS.includes(k) && k !== "diagnostics"), "diagnostics"] : DEFAULT_COLLAPSED)).catch(() => {});
 else applyCollapsed(DEFAULT_COLLAPSED);

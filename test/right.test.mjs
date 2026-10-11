@@ -18,6 +18,7 @@ const ui = join(root, "ui");
 const read = (name) => readFileSync(join(ui, name), "utf8");
 const html = read("right/index.html");
 const js = read("right/right.js");
+const toolsJs = read("right/tools.js");
 const css = read("right/right.css");
 const sha = (p) => createHash("sha256").update(readFileSync(join(root, p))).digest("hex");
 
@@ -25,25 +26,30 @@ const IDS = ["where", "turn", "turn-text", "joins", "dev-asks", "host-asks", "dr
   "switch-btn", "record-btn", "record-note", "session", "session-line", "people", "messages", "hosts", "host-list", "dev", "devs", "collaboration",
   "activity", "details", "add-detail", "secrets", "add-secret", "profile-msg", "avatars", "agent", "agent-name", "agent-avatar",
   "agent-status", "agent-status-text", "agent-tab", "share-btn", "share-card", "share-name", "share-make", "share-code", "share-copy",
-  "share-msg", "agent-more", "checklist", "checklist-items"];
-const KEYS = ["session", "dev", "hosts", "activity", "details", "secrets"];
+  "share-msg", "agent-more", "checklist", "checklist-items",
+  "sec-handoffs", "handoffs", "handoffs-empty", "handoffs-msg", "handoffs-said", "sec-downloads", "downloads", "downloads-msg", "sec-recordings", "recordings",
+  "recordings-msg", "sec-diag", "diag", "diag-report", "diag-copy", "diag-save", "diag-prepare", "diag-refresh"];
+const KEYS = ["session", "dev", "hosts", "activity", "details", "secrets", "handoffs", "downloads", "recordings", "diagnostics"];
+// Open by default; every other section starts folded.
+const OPEN = new Set(["activity", "handoffs", "downloads", "recordings"]);
 
 test("the panel's markup keeps every id once, and each section folds with a named button", () => {
   const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(([, id]) => id);
   for (const id of IDS) assert.equal(ids.filter((x) => x === id).length, 1, `#${id} once`);
   assert.equal(new Set(ids).size, ids.length, "no id twice");
   for (const key of KEYS) {
-    const sec = html.match(new RegExp(`<section class="sec"[^>]*data-key="${key}"[^>]*>\\s*<h2><button class="disclose" type="button" aria-expanded="(true|false)" aria-controls="([^"]+)">`));
+    // (A count's live line may describe the button: aria-describedby after aria-controls.)
+    const sec = html.match(new RegExp(`<section class="sec"[^>]*data-key="${key}"[^>]*>\\s*<h2><button class="disclose" type="button" aria-expanded="(true|false)" aria-controls="([^"]+)"(?: aria-describedby="[^"]+")?>`));
     assert.ok(sec, `${key}: an h2 disclosure button`);
-    assert.equal(sec[1], key === "activity" ? "true" : "false", `${key}: ${key === "activity" ? "open" : "folded"} by default`);
+    assert.equal(sec[1], OPEN.has(key) ? "true" : "false", `${key}: ${OPEN.has(key) ? "open" : "folded"} by default`);
     const body = html.match(new RegExp(`<div class="body" id="${sec[2]}"( hidden)?>`));
     assert.ok(body, `${key}: its body #${sec[2]} exists`);
-    assert.equal(!!body[1], key !== "activity", `${key}: body hidden matches aria-expanded`);
+    assert.equal(!!body[1], !OPEN.has(key), `${key}: body hidden matches aria-expanded`);
   }
   for (const id of ["joins", "dev-asks", "host-asks"]) assert.match(html, new RegExp(`id="${id}" role="region" aria-label="[^"]+" aria-live="assertive"`), id);
   const status = html.match(/<section class="status"[^>]*>\s*<div class="joins" id="joins"[^>]*><\/div>\s*<div class="joins" id="dev-asks"[^>]*><\/div>\s*<div class="joins" id="host-asks"/);
   assert.ok(status, "requests come first in the status section");
-  for (const id of ["collaboration", "profile-msg"]) assert.match(html, new RegExp(`id="${id}" role="status" aria-live="polite"`), id);
+  for (const id of ["collaboration", "profile-msg", "handoffs-said", "handoffs-msg", "downloads-msg", "recordings-msg", "diag-msg"]) assert.match(html, new RegExp(`id="${id}" role="status" aria-live="polite"`), id);
   assert.match(html, /<link rel="stylesheet" href="\.\.\/tokens.css">\n<link rel="stylesheet" href="right.css">/);
   assert.match(html, /<meta name="color-scheme" content="dark">/);
   for (const name of ["label", "value", "domains"]) assert.match(html, new RegExp(`name="${name}"`), name);
@@ -84,6 +90,13 @@ test("the panel script keeps its three timers, writes no markup and stores one k
   assert.match(js, /"pb-panel"/);
   assert.doesNotMatch(js, /(^|[^.?])chrome\.storage/m, "every chrome.* access is guarded");
   assert.doesNotMatch(js, /kSheet/, "the sheet button is gone");
+  // The Tools tab's sections (tools.js): no timer, no observer, no frame loop, no markup.
+  assert.equal([...toolsJs.matchAll(/\bset(Interval|Timeout)\(/g)].length, 0, "tools.js runs no timer");
+  assert.doesNotMatch(toolsJs, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
+  assert.doesNotMatch(toolsJs, /MutationObserver|IntersectionObserver|ResizeObserver|PerformanceObserver|requestAnimationFrame/);
+  assert.equal([...toolsJs.matchAll(/new EventSource\(|\bhelperStream\(/g)].length, 0, "no stream of its own");
+  assert.doesNotMatch(toolsJs, /chrome\.|localStorage|sessionStorage/, "stores nothing");
+  assert.match(js, /import \{ toolsPanel \} from "\.\/tools\.js";/);
 });
 
 test("the dock's sheet: no blur, no spin, motion only on the Live dot, request cards and new activity", () => {
@@ -331,6 +344,21 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.equal(await inPage(page, () => window.__intervals), 0, "no interval while not recording");
     assert.deepEqual(errors, []);
 
+    // The Tools tab over a live view without the Tools routes (all 404): Hand-offs and Downloads
+    // stay hidden, Recordings keeps its Record button, Diagnostics says there are none; no error.
+    // (The Tools tab is in front since the disclosure check above: its reads are answered.)
+    await page.waitForTimeout(300);
+    const tools = () => page.evaluate(() => Object.fromEntries(["sec-handoffs", "sec-downloads", "sec-recordings", "record-btn", "recordings", "sec-diag", "diag-none", "diag-prepare"].map((id) => [id, document.getElementById(id).checkVisibility()])));
+    assert.deepEqual(await tools(), { "sec-handoffs": false, "sec-downloads": false, "sec-recordings": true, "record-btn": true, recordings: false, "sec-diag": true, "diag-none": false, "diag-prepare": false });
+    await page.click("#sec-diag .disclose");
+    await until(page, "no diagnostics", () => document.getElementById("diag-none").checkVisibility());
+    assert.equal(await page.evaluate(() => document.getElementById("diag-prepare").checkVisibility()), false, "nothing to prepare");
+    assert.equal(await page.evaluate(() => document.getElementById("diag-msg").textContent), "", "a missing route is not an error");
+    assert.deepEqual(errors, []);
+    // Diagnostics is never stored as open.
+    await page.waitForTimeout(200);
+    assert.equal(JSON.parse(await inPage(page, () => localStorage.getItem("__store")))["pb-panel"].collapsed.includes("diagnostics"), false);
+
     // Reopened with Activity folded: as left.
     await inPage(page, () => localStorage.setItem("__store", JSON.stringify({ "pb-panel": { collapsed: ["activity", "bogus"] } })));
     await page.reload();
@@ -348,7 +376,7 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.deepEqual(plain.errors, []);
     assert.ok(await plain.page.evaluate((ids) => ids.every((id) => document.getElementById(id)), IDS));
     f = await plain.page.evaluate(() => Object.fromEntries([...document.querySelectorAll("section.sec")].map((s) => [s.dataset.key, s.querySelector(".body").hidden])));
-    assert.deepEqual(f, { session: true, dev: true, hosts: true, activity: false, details: true, secrets: true });
+    assert.deepEqual(f, { session: true, dev: true, hosts: true, activity: false, details: true, secrets: true, handoffs: false, downloads: false, recordings: false, diagnostics: true });
     assert.equal(await plain.page.evaluate(() => document.getElementById("driver-text").textContent), "Waiting for PairBrowse");
     await plain.page.close();
   } finally {

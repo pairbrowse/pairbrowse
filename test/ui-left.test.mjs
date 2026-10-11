@@ -284,6 +284,10 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   await ctx.page.keyboard.press("Enter");
   await until("a layout.set", () => window.__pairbrowse.calls.some((c) => c.iface === "layout" && c.method === "set"));
   assert.deepEqual((await calls(ctx, "layout", "set"))[0].args[0], { ...fixture, right: 2 });
+  // The right dock lands on its Tools tab: the helper relays POST layout's tab to it.
+  const layouts = () => ctx.helper.posts.filter((p) => p.route === "layout");
+  for (let i = 0; i < 60 && !layouts().length; i++) await ctx.page.waitForTimeout(50);
+  assert.deepEqual(layouts().map((p) => p.body), [{ tab: "tools" }], "the tab only: the dock opens through the mojom");
   await ctx.page.focus("#add-agent");
   await ctx.page.keyboard.press("Enter");
   await until("the hint", () => !document.getElementById("hint").hidden && document.getElementById("add-agent").getAttribute("aria-expanded") === "true");
@@ -447,6 +451,17 @@ scenario("left: collapse and expand over the helper's route", { viewport: OPEN, 
   await page.click("#dock-expand");
   await until("open, focus on collapse", () => document.body.dataset.dock === "open" && document.activeElement?.id === "dock-collapse");
   assert.deepEqual(helper.posts.filter((p) => p.route === "layout").map((p) => p.body), [{ left: "rail" }, { left: "open" }]);
+  await clean(ctx);
+});
+
+scenario("left: Tools over the helper's route", { viewport: OPEN, native: false }, async (ctx) => {
+  const { until, page, helper } = ctx;
+  await until("live", () => document.body.dataset.s === "live");
+  await page.click("#nav-tools");
+  for (let i = 0; i < 60 && !helper.posts.some((p) => p.route === "layout"); i++) await page.waitForTimeout(50);
+  await page.waitForTimeout(300);
+  assert.deepEqual(helper.posts.filter((p) => p.route === "layout").map((p) => p.body), [{ right: "open", tab: "tools" }], "one POST: the right dock open, on Tools");
+  assert.deepEqual(helper.fixtures.layout, { left: "open", right: "open", strip: 88 }, "the tab is never kept");
   await clean(ctx);
 });
 

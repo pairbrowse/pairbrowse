@@ -448,11 +448,26 @@ export function askDock({ pb, layout, base, side, state, onFail }) {
 // to the page's own origin, so a web page, another extension or the live view page can neither
 // take the lock nor hear the channel. Owner-only filtering stays the helper's: the same events
 // reach the same pages. A page that joins late gets the last value of each state event from the
-// page holding the stream; deltas (approval, timeline) are never replayed: pages fetch their
-// snapshot in onOpen. Without Web Locks or BroadcastChannel (or when the lock is refused) a page
+// page holding the stream; deltas (approval, timeline, downloads, handoffs) are never replayed:
+// pages fetch their snapshot in onOpen. One-shot fields are never replayed either: a layout
+// event's `tab` (the right dock opening on a tab) and a record event's `op` ("saved", with its
+// item), so a late page neither jumps to a tab nor adds a recording from an old event. Without Web Locks or BroadcastChannel (or when the lock is refused) a page
 // opens its own stream as before. No timer, frame or observer anywhere here.
-export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "status", "tabs", "timeline", "approval", "driving"];
-const STREAM_DELTAS = new Set(["approval", "timeline"]);
+export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs"];
+const STREAM_DELTAS = new Set(["approval", "timeline", "downloads", "handoffs"]);
+// What the holder keeps of a state event for a late page: no delta, and no one-shot field.
+function replayable(name, v) {
+  if (STREAM_DELTAS.has(name)) return undefined;
+  const obj = v && typeof v === "object" && !Array.isArray(v);
+  if (name === "layout" && obj && "tab" in v) { const { tab, ...rest } = v; return rest; }
+  if (name === "record" && obj && "op" in v) {
+    // A saved notice alone is never kept; one that also says the recording state keeps the state.
+    if (typeof v.recording !== "boolean") return undefined;
+    const { op, item, ...rest } = v;
+    return rest;
+  }
+  return v;
+}
 // The helper's page kinds: one of them on the stream gets the browser pages' initial burst
 // (agent-tabs); the helper sends the same burst to every kind, so one kind stands for all.
 const STREAM_KINDS = new Set(["strip", "left", "right", "timeline", "approve", "picker", "screen", "capture"]);
@@ -533,7 +548,8 @@ export function helperStream(base, { kind = "", onState = () => {}, onOpen = () 
     es = openStream(cur, streamKind, {
       event: (n, v) => {
         deliver(n, v);
-        if (!STREAM_DELTAS.has(n)) cache.set(n, v);
+        const kept = replayable(n, v);
+        if (kept !== undefined) cache.set(n, kept);
         post({ t: "event", base: cur, name: n, data: v });
       },
       state: shareState,

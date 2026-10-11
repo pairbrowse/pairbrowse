@@ -417,6 +417,89 @@ test("the fake helper serves approvals to approve.js's contract", async () => {
   }
 });
 
+test("the fake helper serves the tools routes to the contract", async () => {
+  const pageOrigin = "http://127.0.0.1:1";
+  const fixtures = {
+    handoffs: { items: [{ id: "h1", kind: "2fa", text: "Enter the code", tab: { id: 1, host: "shop.example", title: "Shop" }, by: { label: "Claude", color: "#e9763f" }, at: 1 }] },
+    downloads: { items: [{ id: "d1", name: "a.pdf", size: 10, at: 1, from: { host: "shop.example", title: "Shop" }, state: "done", by: { label: "Claude", color: "#e9763f" } }] },
+    recordings: { items: [{ id: "r1", name: "a.webm", size: 10, at: 1, duration: 3 }] },
+  };
+  const helper = await startFakeHelper({ pageOrigin, fixtures });
+  const get = async (h, route) => { const r = await request(`${h.base}${route}`); return { status: r.status, body: r.status === 200 ? JSON.parse(r.text) : null }; };
+  const send = (route, { method = "POST", origin = pageOrigin, body } = {}) => request(`${helper.base}${route}`, { method, headers: { origin, ...(body ? { "content-type": "application/json" } : {}) }, body });
+  try {
+    assert.deepEqual(await get(helper, "handoffs.json"), { status: 200, body: fixtures.handoffs });
+    assert.deepEqual(await get(helper, "downloads.json"), { status: 200, body: fixtures.downloads });
+    const recs = await get(helper, "recordings.json");
+    assert.equal(recs.status, 200);
+    assert.deepEqual(recs.body.recording, { on: false, since: 0 });
+    assert.deepEqual(recs.body.items, fixtures.recordings.items);
+    const diag = await get(helper, "diagnostics.json");
+    assert.equal(diag.status, 200);
+    assert.deepEqual(Object.keys(diag.body), ["helper", "browser", "connections", "joined", "errors"]);
+    assert.deepEqual(Object.keys(diag.body.helper), ["version", "node", "uptime"]);
+    assert.ok(["pairbrowse", "chromium", "path"].includes(diag.body.browser.engine));
+    assert.deepEqual(Object.keys(diag.body.connections), ["agents", "viewers", "joiners", "streams"]);
+
+    assert.equal((await send("downloads/d1/open")).status, 200);
+    assert.deepEqual(helper.posts.at(-1), { route: "downloads", rest: ["d1", "open"], body: null });
+    assert.equal((await send("downloads/d1/reveal")).status, 200);
+    const unknown = await send("downloads/zz/open");
+    assert.equal(unknown.status, 404);
+    assert.deepEqual(JSON.parse(unknown.text), { ok: false });
+    assert.equal((await send("downloads/d1/delete")).status, 404, "another action: no route");
+    assert.equal((await send("downloads/d1")).status, 404);
+    assert.equal((await send("recordings/r1/reveal")).status, 200);
+    assert.equal((await send("handoffs/h1/show")).status, 200);
+    assert.equal((await send("handoffs/h1/open")).status, 404);
+    assert.equal((await send("handoffs/h1/show", { origin: "http://evil.example" })).status, 403, "a foreign Origin");
+    const report = await send("diagnostics/report");
+    assert.equal(report.status, 200);
+    assert.equal(typeof JSON.parse(report.text).text, "string");
+    assert.equal((await send("diagnostics/send")).status, 404, "no send route");
+
+    assert.equal((await send("recordings/r1", { method: "DELETE", origin: "http://evil.example" })).status, 403, "DELETE from a foreign Origin");
+    assert.equal(helper.deletes.length, 0);
+    assert.equal((await send("recordings/r1", { method: "DELETE" })).status, 200);
+    assert.equal((await send("recordings/r1", { method: "DELETE" })).status, 404, "gone once deleted");
+    assert.deepEqual(helper.deletes, [{ route: "recordings", rest: ["r1"] }]);
+    assert.deepEqual((await get(helper, "recordings.json")).body.items, []);
+    assert.equal((await send("recordings/r1/open")).status, 404, "a deleted recording opens nothing");
+
+    // POST layout's tab: in the answer and the event, never in layout.json.
+    const evented = new Promise((resolveIt) => {
+      const req = http.get(`${helper.base}events?panel=1`, (res) => {
+        let text = "", sent = false;
+        res.on("data", (c) => {
+          text += c;
+          if (!sent && text.includes("event: layout\n")) { sent = true; send("layout", { body: JSON.stringify({ right: "open", tab: "tools" }) }).then((r) => { text += `\n#answer ${r.text}\n`; }); }
+          const m = [...text.matchAll(/event: layout\ndata: (.+)\n/g)];
+          if (m.length === 2) { req.destroy(); resolveIt(JSON.parse(m[1][1])); }
+        });
+      });
+      req.on("error", () => {});
+    });
+    assert.deepEqual(await evented, { left: "open", right: "open", strip: 88, tab: "tools" });
+    const answer = await send("layout", { body: '{"tab":"tools"}' });
+    assert.equal(answer.status, 200);
+    assert.deepEqual(JSON.parse(answer.text), { left: "open", right: "open", strip: 88, tab: "tools" }, "the answer carries the tab");
+    assert.deepEqual((await get(helper, "layout.json")).body, { left: "open", right: "open", strip: 88 }, "the tab is never kept");
+    const bad = await send("layout", { body: '{"tab":"nope"}' });
+    assert.equal(bad.status, 409);
+    assert.deepEqual(JSON.parse(bad.text), { error: "tab is agent, page, pictures or tools." });
+  } finally {
+    await helper.close();
+  }
+  const none = await startFakeHelper({ fixtures: { handoffs: null, downloads: null, recordings: null, diagnostics: null, report: null } });
+  try {
+    for (const route of ["handoffs.json", "downloads.json", "recordings.json", "diagnostics.json"]) assert.equal((await get(none, route)).status, 404, `${route}: null is 404`);
+    assert.equal((await request(`${none.base}diagnostics/report`, { method: "POST" })).status, 404);
+    assert.equal((await request(`${none.base}recordings/r1`, { method: "DELETE" })).status, 404);
+  } finally {
+    await none.close();
+  }
+});
+
 test("the ui server serves pages under the chrome pages' CSP, on an origin of their own", async () => {
   const helper = await startFakeHelper({});
   const ui = await startUiServer({ helper });

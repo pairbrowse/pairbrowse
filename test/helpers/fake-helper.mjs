@@ -12,6 +12,20 @@
 // POST session { op: "save" | "rename", name } mirrors the contract the lead fixed for lane H (not
 // yet in liveview.mjs): save is 200 { ok, savedAt }, rename 200 { ok, name } and a session event,
 // anything else 400 { error }. Every GET route is recorded in `gets`, in order.
+// POST layout relays `tab` as lane H's liveview/layout.mjs readDockTab does: a tab outside agent,
+// page, pictures and tools is 409; one asked for goes out in that answer and its layout event only,
+// never kept in fx.layout or layout.json.
+// The Tools tab's routes (TOOLS-CONTRACT.md): GET handoffs.json, downloads.json, recordings.json
+// and diagnostics.json (a null fixture: 404, a helper without the route); POST
+// downloads/<id>/open|reveal, recordings/<id>/open|reveal and handoffs/<id>/show (404 { ok: false }
+// for an id not in the fixture's items, another path shape plain 404, else 200 { ok: true });
+// POST diagnostics/report answers the `report` fixture ({ text }); DELETE recordings/<id> drops
+// the item and is recorded in `deletes` ({ route, rest }), 404 once it is gone; no event for it
+// (the contract has none). The `downloads` and `handoffs` events are deltas the test pushes; none
+// is in the initial burst. Readings of the contract's open points, for the lead to reconcile with
+// lane H: size is in bytes; at is epoch ms (an ISO string is accepted too); duration and uptime
+// are in seconds; an id is a string or number matching /^[A-Za-z0-9_-]{1,64}$/ (the page skips
+// other items, and items whose state or kind is outside the contract's set).
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { hostOk, originOk, keyOk, pathParts, readBody, BODY_MAX, SECURITY_HEADERS, plain, listen } from "../../scripts/liveview/http.mjs";
@@ -23,6 +37,9 @@ const STRIP_MIN = 44, STRIP_MAX = 176;
 const TIMELINE_ID = /^[0-9a-f]{12}$/;
 const ANSWERS = new Set(["allow", "deny", "site", "terminal"]);
 const BAD_ANSWER = "An approval answer is { id, answer: allow, deny, terminal or site }.";
+const DOCK_TABS = new Set(["agent", "page", "pictures", "tools"]);
+// The Tools tab's POST paths: route -> the actions after the item's id.
+const TOOL_ACTS = { downloads: new Set(["open", "reveal"]), recordings: new Set(["open", "reveal"]), handoffs: new Set(["show"]) };
 
 export const defaultFixtures = () => ({
   status: { text: "", kind: "clear" },
@@ -45,6 +62,12 @@ export const defaultFixtures = () => ({
   pause: null,
   record: null,
   approvals: { pending: [] },
+  handoffs: { items: [] },
+  downloads: { items: [] },
+  recordings: { recording: { on: false, since: 0 }, items: [] },
+  diagnostics: { helper: { version: "0.15.45", node: "22.11.0", uptime: 7500 }, browser: { engine: "pairbrowse", version: "142.0.7444.59", build: "3" },
+    connections: { agents: 1, viewers: 0, joiners: 0, streams: 2 }, joined: [], errors: [] },
+  report: { text: "PairBrowse diagnostics\nhelper 0.15.45\n" },
 });
 
 // The event each fixture goes out as (the names liveview.mjs broadcasts); null: none.
@@ -86,6 +109,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   const streams = new Set();
   const posts = [];
   const gets = [];
+  const deletes = [];
   const allReplies = { ...replies };
   let origin = pageOrigin;
 
@@ -132,22 +156,31 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     "state.json": () => state(), "journal.json": () => fx.journal ?? null, "profile.json": () => fx.profile, "sessions.json": () => fx.sessions,
     "joins.json": () => fx.joins, "tabs.json": () => fx.tabs, "agent-tabs.json": () => fx.agentTabs, "timeline.json": () => fx.timeline, "layout.json": () => fx.layout,
     "approvals.json": () => fx.approvals,
+    "handoffs.json": () => fx.handoffs, "downloads.json": () => fx.downloads, "recordings.json": () => fx.recordings, "diagnostics.json": () => fx.diagnostics,
   };
-  const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session"]);
+  const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session",
+    "handoffs", "downloads", "recordings", "diagnostics"]);
+  const hasItem = (name, id) => Array.isArray(fx[name]?.items) && fx[name].items.some((it) => it && String(it.id) === id);
 
   // The answer to a POST without a reply of the test's own.
-  function defaultPost(route, body) {
+  function defaultPost(route, body, rest = []) {
     if (route === "input" || route === "tab") return { status: 204 };
+    if (TOOL_ACTS[route]) return hasItem(route, rest[0]) ? { status: 200, body: { ok: true } } : { status: 404, body: { ok: false } };
+    if (route === "diagnostics") return fx.report === null ? { status: 404, body: { ok: false } } : { status: 200, body: fx.report };
     if (route === "invite") {
       if (typeof body?.name !== "string" || !body.name) return { status: 409, body: { error: "Not yet: ask the user what name the people they invite should see.", needName: true } };
       return { status: 200, body: { ok: true, id: "abcd1234", share: body.share, role: body.role, mode: "shared", code: "pb-join:FAKE", rights: "Shared browser: they can drive.", hint: "The person pastes it into their own PairBrowse." } };
     }
     if (route === "layout") {
-      const next = readLayout(body, fx.layout);
+      // tab: the right dock's tab to open on (liveview/layout.mjs readDockTab), relayed only.
+      const tab = plainObject(body) ? body.tab : undefined;
+      if (tab !== undefined && !DOCK_TABS.has(tab)) return { status: 409, body: { error: "tab is agent, page, pictures or tools." } };
+      const next = readLayout(plainObject(body) ? Object.fromEntries(Object.entries(body).filter(([k]) => k !== "tab")) : body, fx.layout);
       if (next.error) return { status: 409, body: { error: next.error } };
       fx.layout = next;
-      push("layout", next);
-      return { status: 200, body: next };
+      const out = tab ? { ...next, tab } : next;
+      push("layout", out);
+      return { status: 200, body: out };
     }
     if (route === "pause") return { status: 200, body: { paused: !!body?.paused, can: true } };
     if (route === "session") {
@@ -179,7 +212,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     if (body === undefined) return json(res, 400, { error: NOT_JSON });
     posts.push({ route, rest, body });
     const reply = Object.prototype.hasOwnProperty.call(allReplies, route) ? allReplies[route] : undefined;
-    const r = typeof reply === "function" ? (await reply(body, rest)) || { status: 200, body: {} } : reply !== undefined ? { status: 200, body: reply } : defaultPost(route, body);
+    const r = typeof reply === "function" ? (await reply(body, rest)) || { status: 200, body: {} } : reply !== undefined ? { status: 200, body: reply } : defaultPost(route, body, rest);
     if (r.status === 204 || r.body === undefined) { res.writeHead(r.status || 204); return res.end(); }
     json(res, r.status || 200, r.body);
   }
@@ -218,6 +251,8 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
       }
       if (req.method === "POST" && POSTS.has(route)) {
         if (route === "timeline" && !(rest.length === 1 && rest[0] === "note") && !(rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "pin")) return plain(res, 404);
+        if (TOOL_ACTS[route] && !(rest.length === 2 && rest[0] && TOOL_ACTS[route].has(rest[1]))) return plain(res, 404);
+        if (route === "diagnostics" && !(rest.length === 1 && rest[0] === "report")) return plain(res, 404);
         return await post(req, res, route, rest);
       }
       if (req.method === "DELETE" && route === "timeline") {
@@ -226,6 +261,14 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
         if (!card) return plain(res, 404);
         fx.timeline = { ...fx.timeline, cards: cards.filter((c) => c !== card) };
         push("timeline", { op: "remove", card });
+        return json(res, 200, { ok: true });
+      }
+      if (req.method === "DELETE" && route === "recordings") {
+        const items = Array.isArray(fx.recordings?.items) ? fx.recordings.items : null;
+        const item = items && rest.length === 1 ? items.find((it) => it && String(it.id) === rest[0]) : null;
+        if (!item) return plain(res, 404);
+        fx.recordings = { ...fx.recordings, items: items.filter((it) => it !== item) };
+        deletes.push({ route, rest });
         return json(res, 200, { ok: true });
       }
       return plain(res, 404);
@@ -244,6 +287,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     set,
     posts,
     gets,
+    deletes,
     streams,
     replies: allReplies,
     setPageOrigin: (o) => { origin = o; },

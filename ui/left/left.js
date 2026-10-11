@@ -2,9 +2,9 @@
 // window.pairbrowse (the mojom) gives the layout, the tabs and the tab owners; served without it,
 // the helper's layout, tabs and agent-tabs events do. Both read the helper's stream for the
 // agents (board), the activity, who it is shared with and the session. The page only reflects
-// the dock's state: it sets it only from Tools (the right dock opens), from Activity in the rail
-// and from the collapse and expand buttons. Nothing here is invented: every row is what the helper or
-// the browser reported. Storage is PairBrowse Pro's (its cloud storage): no row until then (see
+// the dock's state: it sets it only from Tools (the right dock opens, on its Tools tab through
+// the helper's POST layout tab), from Activity in the rail and from the collapse and expand
+// buttons. Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): no row until then (see
 // the comment in index.html), whatever the session event carries.
 import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream } from "../common.js";
 
@@ -197,9 +197,13 @@ const openSettings = () => findOrOpen(isSettings, "pairbrowse://settings");
 function openBrowser() {
   if (pb && lastWebTab >= 0 && tabs.has(lastWebTab) && !tabs.get(lastWebTab).active) pb.tabs.activate(lastWebTab).catch(() => {});
 }
-// Tools lives in the right dock: open it (no channel names the tab to show yet).
+// Tools lives in the right dock: open it on its Tools tab. The dock opens through the browser's
+// layout (native) or the helper's (served); the tab goes through the helper's POST layout, whose
+// `tab` it relays to the right dock in that answer and its layout event only (never kept).
 function openTools() {
-  askDock({ pb, layout, base, side: "right", state: "open" });
+  const ask = (body) => fetch(base + "layout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
+  if (pb) { askDock({ pb, layout, base: null, side: "right", state: "open" }); if (base) ask({ tab: "tools" }); }
+  else if (base) ask({ right: "open", tab: "tools" });
 }
 function setActivity(open) {
   $("nav-activity").setAttribute("aria-expanded", String(open));

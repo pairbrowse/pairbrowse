@@ -8,7 +8,7 @@
 // under the chrome pages' CSP: no error, CSP or Trusted Types entry; accessible names; Tab
 // reaches every control with the 2 px --accent ring; nothing ticks while hidden; nothing moves
 // under reduced motion.
-// A page subset adds its own test/ui-<page>.test.mjs (test/ui-panel.test.mjs is the template).
+// A page subset adds its own test/ui-<page>.test.mjs (test/ui-right.test.mjs is the template).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
@@ -26,9 +26,6 @@ import { defaultFixture, shimScript } from "./helpers/pairbrowse-shim.mjs";
 // a permanent allowance: the suite asserts each one is still true, so the fix fails here until
 // its entry goes. New pages get none.
 const DEBT = {
-  panel: {
-    motion: "panel.css pulses the Your turn dot forever (.turn i, @keyframes pulse); the right-dock subset drops the pulse",
-  },
 };
 const debt = (page, kind) => DEBT[page]?.[kind];
 const fixed = (page, kind) => `${page}: fixed? remove DEBT.${page}["${kind}"] (${debt(page, kind)})`;
@@ -316,15 +313,15 @@ test("the ui server serves pages under the chrome pages' CSP, on an origin of th
   const helper = await startFakeHelper({});
   const ui = await startUiServer({ helper });
   try {
-    const res = await request(ui.url("panel"));
+    const res = await request(ui.url("right"));
     assert.equal(res.status, 200);
     assert.equal(res.headers["content-security-policy"], PAGE_CSP(helper.origin));
     assert.match(res.headers["content-security-policy"], /script-src 'self';.*require-trusted-types-for 'script'; trusted-types static-types$/);
     assert.notEqual(ui.origin, helper.origin);
     const at = res.text.indexOf('<script src="/__harness/prelude.js">');
-    assert.ok(at >= 0 && at < res.text.indexOf('src="panel.js"'), "the harness scripts come first");
+    assert.ok(at >= 0 && at < res.text.indexOf('src="right.js"'), "the harness scripts come first");
     assert.equal((await request(`${ui.origin}/../package.json`)).status, 404);
-    assert.equal((await request(`${ui.origin}/panel/missing.js`)).status, 404);
+    assert.equal((await request(`${ui.origin}/right/missing.js`)).status, 404);
     assert.equal((await request(`${ui.origin}/__harness/pairbrowse-api.js`)).status, 200);
   } finally {
     await ui.close();

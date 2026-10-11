@@ -650,7 +650,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const who = inUse();
         return `${who.length === 1 ? "Another session is" : `${who.length} other sessions are`} using the browser (${who.join(", ")}): ` +
           `${name === "browser_close" ? "closing it" : "switching sessions"} would close their tabs. Wait until they're done (idle 10 minutes), ` +
-          "or ask the person to switch with \"Switch session\" in the PairBrowse side panel.";
+          "or ask the person to switch with \"End session\" in the PairBrowse side panel (the right dock in the browser).";
       }
       return null;
     }

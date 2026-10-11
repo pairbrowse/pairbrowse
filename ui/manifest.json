@@ -18,7 +18,7 @@
     }
   },
   "side_panel": {
-    "default_path": "panel/index.html"
+    "default_path": "right/index.html"
   },
   "background": {
     "service_worker": "background.js"

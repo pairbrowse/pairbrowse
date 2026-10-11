@@ -11,8 +11,8 @@ claude plugin validate .  # the Claude Code manifests
 
 ### The design tokens
 
-`ui/tokens.css` is the one sheet (colors, type, radii; `--edge-input` is a text field's border at 3:1 or more) for the side
-panel, the session picker, the new tab page, a joiner's picture page and the live view (served
+`ui/tokens.css` is the one sheet (colors, type, radii; `--edge-input` is a text field's border at 3:1 or more) for the right
+dock (the side panel in plain Chromium), the session picker, the new tab page, a joiner's picture page and the live view (served
 from the same file through the live view's fixed asset list). The live view alone opts into the
 light scheme with `data-scheme="system"`; the extension pages stay dark. `scripts/hud.js` (closed
 shadow roots), `ui/capture/record.js` (a canvas) and the "Opening tabs" page in `scripts/tabs.mjs` carry the same hex values inline, and
@@ -41,7 +41,7 @@ key, Host and Origin checks, and `ui-server.mjs` serves `ui/` under the chrome p
 `chrome://pairbrowse` will be. Patchright has no console API and its init scripts are inline
 (refused by that CSP), so `ui-prelude.js` captures errors, timers and violations in the page.
 
-A page subset copies `test/ui-panel.test.mjs` as `test/ui-<page>.test.mjs`: `pageTest(name,
+A page subset copies `test/ui-right.test.mjs` as `test/ui-<page>.test.mjs`: `pageTest(name,
 { fixtures, shim, replies }, fn)` gives it the page, the helper (`push`, `set`, `posts`) and the
 shim's controls; the common checks stay in `ui.test.mjs`.
 

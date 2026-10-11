@@ -336,7 +336,7 @@ let switched = Promise.resolve();
     })().catch((e) => log("session picker", e?.message || e));
   }
 
-  // The person asked to switch (the side panel's "Switch session..."): the picker opens again in a
+  // The person asked to switch (the side panel's "End session", the right dock in the browser): the picker opens again in a
   // new tab, and agents' next actions wait for the pick as at the start. Agents can't ask for it.
   async function reopenPicker() {
     if (pick.state === "showing") { await pick.page?.bringToFront().catch(() => {}); return { text: "The session picker is open." }; }

@@ -1,4 +1,4 @@
-// The side panel (ui/panel/: index.html, panel.css, panel.js): the agent panel. The markup keeps every id the
+// The right dock (ui/right/: index.html, right.css, right.js), the side panel in plain Chromium. The markup keeps every id the
 // scripts and the helper look up, the sections fold, the logo is untouched; with the runtime, the
 // page is rendered as the extension serves it, fed by a fake owner event stream, and checked for
 // what it shows, what a click sends and that a synthetic click sends nothing.
@@ -16,13 +16,13 @@ const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ui = join(root, "ui");
 const read = (name) => readFileSync(join(ui, name), "utf8");
-const html = read("panel/index.html");
-const js = read("panel/panel.js");
-const css = read("panel/panel.css");
+const html = read("right/index.html");
+const js = read("right/right.js");
+const css = read("right/right.css");
 const sha = (p) => createHash("sha256").update(readFileSync(join(root, p))).digest("hex");
 
 const IDS = ["where", "turn", "turn-text", "joins", "dev-asks", "host-asks", "driver", "driver-text", "pause", "pause-text", "pause-btn",
-  "switch-btn", "record-btn", "record-note", "session", "people", "messages", "hosts", "host-list", "dev", "devs", "collaboration",
+  "switch-btn", "record-btn", "record-note", "session", "session-line", "people", "messages", "hosts", "host-list", "dev", "devs", "collaboration",
   "activity", "details", "add-detail", "secrets", "add-secret", "profile-msg", "avatars", "agent", "agent-name", "agent-avatar",
   "agent-status", "agent-status-text", "agent-tab", "share-btn", "share-card", "share-name", "share-make", "share-code", "share-copy",
   "share-msg", "agent-more", "checklist", "checklist-items"];
@@ -44,7 +44,7 @@ test("the panel's markup keeps every id once, and each section folds with a name
   const status = html.match(/<section class="status"[^>]*>\s*<div class="joins" id="joins"[^>]*><\/div>\s*<div class="joins" id="dev-asks"[^>]*><\/div>\s*<div class="joins" id="host-asks"/);
   assert.ok(status, "requests come first in the status section");
   for (const id of ["collaboration", "profile-msg"]) assert.match(html, new RegExp(`id="${id}" role="status" aria-live="polite"`), id);
-  assert.match(html, /<link rel="stylesheet" href="\.\.\/tokens.css">\n<link rel="stylesheet" href="panel.css">/);
+  assert.match(html, /<link rel="stylesheet" href="\.\.\/tokens.css">\n<link rel="stylesheet" href="right.css">/);
   assert.match(html, /<meta name="color-scheme" content="dark">/);
   for (const name of ["label", "value", "domains"]) assert.match(html, new RegExp(`name="${name}"`), name);
   // Share and the Checklist: buttons that say what they open and whether it is open.
@@ -60,7 +60,7 @@ test("the panel's markup keeps every id once, and each section folds with a name
   assert.match(html, /id="share-code" readonly aria-label="[^"]+"/);
   assert.match(html, /id="share-msg" role="status" aria-live="polite"/);
   assert.match(html, /<p class="sr" id="checklist-said" role="status" aria-live="polite"><\/p><ol id="checklist-items" aria-label="[^"]+">/);
-  assert.match(html, /<header class="top">[\s\S]*id="where"[^>]*><\/span>\s*<button class="mini share-btn" id="share-btn"/, "Share comes after the session pill");
+  assert.match(html, /<footer class="session-card" id="session-card">[\s\S]*id="session-name"[\s\S]*<button class="mini share-btn" id="share-btn"/, "Share comes after the session's name (the session card)");
 });
 
 test("the logo is untouched: the same img line and the same files", () => {
@@ -83,7 +83,7 @@ test("the panel script keeps its three timers, writes no markup and stores one k
   assert.doesNotMatch(js, /(^|[^.?])chrome\.storage/m, "every chrome.* access is guarded");
 });
 
-test("the panel's sheet: no blur, no spin, motion only on the turn card, request cards and new activity", () => {
+test("the dock's sheet: no blur, no spin, motion only on the Live dot, request cards and new activity", () => {
   const plain = css.replace(/\/\*[\s\S]*?\*\//g, "");
   assert.doesNotMatch(plain, /backdrop-filter/);
   assert.doesNotMatch(plain, /@keyframes turn\b/);
@@ -91,7 +91,7 @@ test("the panel's sheet: no blur, no spin, motion only on the turn card, request
   assert.doesNotMatch(plain, /outline:\s*none/);
   for (const [, sel, body] of plain.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     if (!/\banimation\s*:/.test(body) || /animation:\s*none/.test(body)) continue;
-    assert.match(sel, /\.turn|\.join|\.activity li/, `${sel.trim()} animates`);
+    assert.match(sel, /\.live|\.join|\.activity li/, `${sel.trim()} animates`);
   }
   assert.match(plain, /@media \(prefers-reduced-motion: reduce\) \{ \*, \*::before, \*::after \{ animation: none !important; transition-duration: 1ms !important; \} \}/);
 });
@@ -179,10 +179,10 @@ async function openPanel(browser, { base = null, reducedMotion = "no-preference"
     if (name === "fake-chrome.js") return route.fulfill({ contentType: TYPES.js, body: fakeChrome(base) });
     let body = readFileSync(join(ui, name));
     // The extension's API before the panel's script, as the side panel has it.
-    if (name === "panel/index.html" && base) body = String(body).replace('<script type="module" src="panel.js">', '<script src="../fake-chrome.js"></script><script type="module" src="panel.js">');
+    if (name === "right/index.html" && base) body = String(body).replace('<script type="module" src="right.js">', '<script src="../fake-chrome.js"></script><script type="module" src="right.js">');
     return route.fulfill({ contentType: TYPES[name.split(".").pop()], body });
   });
-  await page.goto(`${origin}/panel/index.html`);
+  await page.goto(`${origin}/right/index.html`);
   return { page, errors };
 }
 
@@ -244,7 +244,8 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.equal(v.tabHidden, false);
     assert.equal(v.tab, "In shop.example/checkout", "the tab the board says it is in");
     assert.equal(v.avatarBg, "rgb(233, 118, 63)");
-    assert.equal(v.driver, "Claude is driving");
+    assert.equal(v.driver, "Working…", "B4's words; the name is beside it");
+    assert.equal(await page.evaluate(() => document.getElementById("driver").dataset.state), "working");
     assert.equal(v.sessionHidden, false);
     assert.equal(v.people.length, 5, "everyone else, the active agent not repeated");
     assert.ok(!v.people.some((p) => /^Claude/.test(p)), "the active agent is on the card only");
@@ -311,7 +312,8 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.deepEqual(f.session, { expanded: "true", hidden: false });
     for (let i = 0; i < 40 && !(await inPage(page, () => localStorage.getItem("__store"))); i++) await page.waitForTimeout(50);
     assert.deepEqual(JSON.parse(await inPage(page, () => localStorage.getItem("__store"))), { "pb-panel": { collapsed: ["dev", "hosts", "details", "secrets"] } });
-    // Keyboard: a disclosure takes focus and toggles with Enter.
+    // Keyboard: a disclosure takes focus and toggles with Enter (Remembered details is on the Tools tab).
+    await page.click("#tab-tools");
     await page.focus("#sec-details .disclose");
     await page.keyboard.press("Enter");
     assert.deepEqual((await fold()).details, { expanded: "true", hidden: false });
@@ -361,7 +363,7 @@ test("Share makes an invite from the panel by keyboard, and the Checklist reads 
 
     // Keyboard: Tab to Share, Enter opens the card with focus on the first choice.
     await page.evaluate(() => document.body.focus());
-    for (let i = 0; i < 10 && (await active()) !== "share-btn"; i++) await page.keyboard.press("Tab");
+    for (let i = 0; i < 40 && (await active()) !== "share-btn"; i++) await page.keyboard.press("Tab");
     assert.equal(await active(), "share-btn", "Share is reachable with Tab");
     await page.keyboard.press("Enter");
     assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), false);
@@ -400,7 +402,7 @@ test("Share makes an invite from the panel by keyboard, and the Checklist reads 
     // An outside click closes it too; the button toggles it.
     await page.click("#share-btn");
     assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), false);
-    await page.mouse.click(180, 700);
+    await page.click(".top h1"); // outside the card, on no control (the card now sits above the session card)
     assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), true, "outside click closes");
     await page.click("#share-btn");
     await page.click("#share-btn");
@@ -448,13 +450,13 @@ test("reduced motion: no pulse, no card drop, the chevron turns at once", { skip
   try {
     const { page, errors } = await openPanel(browser, { reducedMotion: "reduce" });
     const s = await page.evaluate(() => ({
-      pulse: getComputedStyle(document.querySelector(".turn i")).animationName,
+      pulse: getComputedStyle(document.querySelector("#status-live .live")).animationName,
       chevron: getComputedStyle(document.querySelector(".disclose"), "::before").transitionDuration,
     }));
     assert.equal(s.pulse, "none");
     assert.equal(s.chevron, "0.001s");
     assert.deepEqual(errors, []);
-    const moving = await (await openPanel(browser)).page.evaluate(() => getComputedStyle(document.querySelector(".turn i")).animationName);
+    const moving = await (await openPanel(browser)).page.evaluate(() => getComputedStyle(document.querySelector("#status-live .live")).animationName);
     assert.equal(moving, "pulse", "the pulse is there when motion is allowed");
   } finally {
     await browser.close();

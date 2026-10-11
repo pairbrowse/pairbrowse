@@ -89,6 +89,9 @@ test("dark ink on every participant color is AA (the cursor and avatar pills)", 
   assert.ok(SPARK_COLORS.includes("#7088f0"), "Codex's color is in the palette");
   const codex = contrast(dark.bg, "#7088f0");
   assert.ok(codex >= 4.5, `--bg on Codex's #7088f0 is ${codex.toFixed(2)}:1`);
+  // The left page's "Shared with" avatars pick from the same palette.
+  const guests = JSON.parse(read(UI + "left/left.js").match(/const GUEST_COLORS = (\[[^\]]*\])/)[1]);
+  assert.ok(guests.length > 1 && guests.every((c) => SPARK_COLORS.includes(c)), "GUEST_COLORS are participant colors");
 });
 
 // oklch() literals allowed in the sheets: white or black with alpha (shadows, a scrim), the participant chip

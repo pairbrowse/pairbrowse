@@ -153,20 +153,27 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // ---- shared with: the joined people, one row per name ----
+// A filled avatar per name: the helper's color when it sends one, else a participant color picked
+// from the name (scripts/daemon/hud.mjs SPARK_COLORS without Claude Code's spark; dark ink on each is
+// AA, test/tokens.test.mjs), so a name keeps its color across draws.
+const GUEST_COLORS = ["#7088f0", "#4fd1e8", "#4ade80", "#a78bfa", "#f472b6"];
+const guestColor = (label) => { let h = 0; for (const ch of label) h = (h * 31 + ch.codePointAt(0)) >>> 0; return GUEST_COLORS[h % GUEST_COLORS.length]; };
 function drawGuests() {
   const byName = new Map();
   for (const g of guests) {
     if (!g?.label) continue;
-    const e = byName.get(g.label) || { n: 0, drive: false };
+    const e = byName.get(g.label) || { n: 0, drive: false, color: "" };
     e.n++;
+    e.color ||= isColor(g.color) ? g.color : "";
     e.drive ||= g.role === "drive";
     byName.set(g.label, e);
   }
-  $("guests").replaceChildren(...[...byName].map(([label, { n, drive }]) => {
+  $("guests").replaceChildren(...[...byName].map(([label, { n, drive, color }]) => {
     // "N online" on screen; the role stays in the row's title and, for readers, in words.
     const role = drive ? "can drive" : "watching";
-    const face = el("span", { className: "avatar plain" }, icon("i-people"));
+    const face = el("span", { className: "avatar guest" }, icon("i-people"));
     face.setAttribute("aria-hidden", "true");
+    face.style.background = color || guestColor(label);
     const li = el("li", { title: `${label} · ${n} online · ${role}` }, face, el("strong", { textContent: label }), el("small", { textContent: `${n} online` }), el("span", { className: "sr", textContent: `, ${role}` }));
     li.dataset.state = "online";
     return li;

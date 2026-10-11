@@ -77,6 +77,7 @@ h2 { margin: 0; font: 600 var(--fs-2) var(--sans); color: var(--ink-2); }
 .people .avatar { position: relative; grid-row: span 2; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--spark); color: var(--bg); font: 700 var(--fs-3)/1 var(--sans); }
 .people .avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input); }
 .people .avatar svg { width: 16px; height: 16px; color: var(--ink-2); }
+.people .avatar.guest svg { color: var(--bg); } /* dark ink on the participant color: AA */
 .dot { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2px var(--sidebar); }
 li[data-state="working"] .dot, li[data-state="active"] .dot, li[data-state="online"] .dot { background: var(--ok); }
 li[data-state="waiting"] .dot { background: var(--warn); }

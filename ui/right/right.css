@@ -74,7 +74,10 @@ html[data-dock="hidden"] .top, html[data-dock="hidden"] .tabs, html[data-dock="h
 .fold { grid-column: 4; grid-row: 1 / span 2; display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: color 120ms ease-out, background-color 120ms ease-out; }
 .fold:hover { background: var(--hover); color: var(--ink); }
 .fold::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(2px) rotate(-135deg); transition: transform var(--t); }
-.agent[data-folded="true"] .fold::before, .session-card .fold[aria-expanded="false"]::before { transform: translateY(-2px) rotate(45deg); }
+.agent[data-folded="true"] .fold::before { transform: translateY(-2px) rotate(45deg); }
+/* The session card's chevron points down while its buttons show (the mockup), up when folded. */
+.session-card .fold::before { transform: translateY(-2px) rotate(45deg); }
+.session-card .fold[aria-expanded="false"]::before { transform: translateY(2px) rotate(-135deg); }
 #agent-body, .turn { grid-column: 1 / -1; min-width: 0; }
 .agent[data-folded="true"] #agent-body { display: none; }
 .agent-tab[hidden] { display: none; }

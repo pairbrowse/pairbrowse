@@ -196,12 +196,14 @@ scenario("left: shared with", { viewport: OPEN, fixtures: { collaboration: { gue
   assert.equal(await inPage(() => document.getElementById("shared").checkVisibility()), true);
   assert.equal(await inPage(() => document.getElementById("guests-empty").hidden), true, "no empty line with guests");
   const got = await inPage(() => [...document.querySelectorAll("#guests li")].map((li) => ({
-    text: `${li.querySelector("strong").textContent} · ${li.querySelector("small").textContent}`, icon: !!li.querySelector(".avatar.plain svg use"),
+    text: `${li.querySelector("strong").textContent} · ${li.querySelector("small").textContent}`, icon: !!li.querySelector(".avatar.guest svg use"),
+    filled: !li.querySelector(".avatar.plain") && !["rgba(0, 0, 0, 0)", "rgb(25, 42, 61)"].includes(getComputedStyle(li.querySelector(".avatar")).backgroundColor), // not clear, not --elevated
+    ink: getComputedStyle(li.querySelector(".avatar svg")).color, // --bg: dark ink
     size: li.querySelector(".avatar").getBoundingClientRect().width, title: li.title, sr: li.querySelector(".sr")?.textContent, srHidden: (li.querySelector(".sr")?.getBoundingClientRect().width ?? 9) <= 1,
   })));
   assert.deepEqual(got, [
-    { text: "Dana · 2 online", icon: true, size: 32, title: "Dana · 2 online · can drive", sr: ", can drive", srHidden: true },
-    { text: "Eve · 1 online", icon: true, size: 32, title: "Eve · 1 online · watching", sr: ", watching", srHidden: true },
+    { text: "Dana · 2 online", icon: true, filled: true, ink: "rgb(11, 20, 33)", size: 32, title: "Dana · 2 online · can drive", sr: ", can drive", srHidden: true },
+    { text: "Eve · 1 online", icon: true, filled: true, ink: "rgb(11, 20, 33)", size: 32, title: "Eve · 1 online · watching", sr: ", watching", srHidden: true },
   ], "'N online' on screen; the role in the title and, for readers, in words");
   ctx.helper.set("collaboration", { guests: [] });
   await until("not shared", () => document.querySelectorAll("#guests li").length === 0 && !document.getElementById("guests-empty").hidden);

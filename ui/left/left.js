@@ -5,7 +5,7 @@
 // the dock's state: it never sets it, except when Tools opens the right dock or Activity is
 // expanded from the rail. Nothing here is invented: every row and figure is what the helper or
 // the browser reported.
-import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf } from "../common.js";
+import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
 const DOCK = ["hidden", "rail", "open"]; // DockState order
@@ -59,6 +59,7 @@ function setDock(name) {
   const hidden = state === "hidden";
   for (const id of ["main", "workspace", "settings"]) $(id).inert = hidden;
   if (state !== "open") { closeHint(false); setActivity(false); }
+  if (hidden) switcher.close(false);
   // Nothing redraws rows nobody can see: the drive timer stops with the dock hidden.
   if (hidden) { clearTimeout(driveTimer); driveTimer = 0; } else armDrive();
   railTitles();
@@ -177,11 +178,9 @@ function drawStorage() {
 }
 
 // ---- actions ----
-// The session picker, through the helper's owner route (the panel's "Switch session…"). A
-// popover can replace this once the pages' CSP allows a same-origin frame.
-function openPicker() {
-  if (base) fetch(base + "picker", { method: "POST" }).catch(() => {});
-}
+// The session switcher: the picker in a same-origin frame under the header, opened by the
+// Workspace header and the Sessions row (common.js pickerPopover wires both).
+const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("workspace"), $("nav-sessions")] });
 // Find a tab whose address matches, else open one in the active tab's window.
 function findOrOpen(match, url) {
   if (!pb) return;
@@ -336,8 +335,6 @@ else {
 }
 
 // ---- wiring ----
-$("workspace").addEventListener("click", openPicker);
-$("nav-sessions").addEventListener("click", openPicker);
 $("nav-browser").addEventListener("click", openBrowser);
 $("nav-history").addEventListener("click", openHistory);
 $("nav-activity").addEventListener("click", toggleActivity);

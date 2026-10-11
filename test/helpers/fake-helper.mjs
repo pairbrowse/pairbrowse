@@ -5,7 +5,10 @@
 // loopback name is 403, an unknown key 404, a non-GET from a foreign Origin 403, an unknown route
 // 404. It adds the CORS headers the helper gives the browser's own pages' origin (pageOrigin)
 // and records every POST. Only the owner's key exists here, so no right is ever missing.
-// No timers.
+// Click approvals follow approve.js's data contract (its header): GET approvals.json gives the
+// pending list (null fixture: 404, none pending), kept in step with the `approval` events pushed;
+// POST approve { id, answer } is 400 for a malformed answer, 404 once the id is gone, else
+// 200 { ok: true } and a withdraw event, as lane H's approvals.mjs end() sends. No timers.
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { hostOk, originOk, keyOk, pathParts, readBody, BODY_MAX, SECURITY_HEADERS, plain, listen } from "../../scripts/liveview/http.mjs";
@@ -15,6 +18,8 @@ const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "scre
 const LAYOUT_STATES = new Set(["open", "rail", "hidden"]);
 const STRIP_MIN = 44, STRIP_MAX = 176;
 const TIMELINE_ID = /^[0-9a-f]{12}$/;
+const ANSWERS = new Set(["allow", "deny", "site", "terminal"]);
+const BAD_ANSWER = "An approval answer is { id, answer: allow, deny, terminal or site }.";
 
 export const defaultFixtures = () => ({
   status: { text: "", kind: "clear" },
@@ -36,6 +41,7 @@ export const defaultFixtures = () => ({
   board: null,
   pause: null,
   record: null,
+  approvals: { pending: [] },
 });
 
 // The event each fixture goes out as (the names liveview.mjs broadcasts); null: none.
@@ -80,7 +86,15 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   let origin = pageOrigin;
 
   const state = () => ({ status: fx.status, session: fx.session, collaboration: fx.collaboration, tabs: fx.tabs, activity: fx.activity.slice(-4), frame: null });
-  const push = (event, data) => { for (const s of streams) s.res.write(sse(event, data)); };
+  const push = (event, data) => {
+    // The pending click approvals follow what goes out on the stream.
+    if (event === "approval" && fx.approvals && Array.isArray(fx.approvals.pending)) {
+      const id = data?.item?.id;
+      if (data?.op === "add" && data.item) fx.approvals.pending = [...fx.approvals.pending.filter((it) => it?.id !== id), data.item];
+      else if (data?.op === "withdraw") fx.approvals.pending = fx.approvals.pending.filter((it) => it?.id !== id);
+    }
+    for (const s of streams) s.res.write(sse(event, data));
+  };
   function set(name, data) {
     fx[name] = merge(fx[name], data);
     if (EVENT[name] && fx[name] !== null) push(EVENT[name], fx[name]);
@@ -113,6 +127,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   const GETS = {
     "state.json": () => state(), "journal.json": () => fx.journal ?? null, "profile.json": () => fx.profile, "sessions.json": () => fx.sessions,
     "joins.json": () => fx.joins, "tabs.json": () => fx.tabs, "agent-tabs.json": () => fx.agentTabs, "timeline.json": () => fx.timeline, "layout.json": () => fx.layout,
+    "approvals.json": () => fx.approvals,
   };
   const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline"]);
 
@@ -132,6 +147,13 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     }
     if (route === "pause") return { status: 200, body: { paused: !!body?.paused, can: true } };
     if (route === "record") return { status: 200, body: { recording: body?.on === true, since: Date.now() } };
+    if (route === "approve" && typeof body?.answer === "string") {
+      // A click approval (approve.js's contract); bodies without `answer` (join, removal) as before.
+      if (typeof body.id !== "string" || !body.id || !ANSWERS.has(body.answer)) return { status: 400, body: { error: BAD_ANSWER } };
+      if (!fx.approvals?.pending?.some((it) => it?.id === body.id)) return { status: 404, body: { ok: false } };
+      push("approval", { op: "withdraw", item: { id: body.id } });
+      return { status: 200, body: { ok: true } };
+    }
     if (route === "approve") return { status: 200, body: { ok: true } };
     return { status: 200, body: {} };
   }

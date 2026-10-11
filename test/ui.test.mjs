@@ -19,7 +19,8 @@ import { join, resolve, relative, dirname } from "node:path";
 import { patchright } from "./live.mjs";
 import { pages, openPage, runtime } from "./helpers/ui-page.mjs";
 import { startFakeHelper } from "./helpers/fake-helper.mjs";
-import { startUiServer, UI_ROOT, PAGE_CSP } from "./helpers/ui-server.mjs";
+import { startUiServer, UI_ROOT, PAGE_CSP, FRAMEABLE } from "./helpers/ui-server.mjs";
+import { SHOTS } from "../scripts/dev/ui-look-all.mjs";
 import { defaultFixture, shimScript } from "./helpers/pairbrowse-shim.mjs";
 
 // Known debts of today's pages. An entry is a debt the named subset removes with its fix, never
@@ -202,6 +203,26 @@ for (const page of pages()) {
   });
 }
 
+// The review tool (scripts/dev/ui-look-all.mjs) keeps up with the pages: every visible page has a
+// review fixture and a shot, and the two copied fixtures stay equal to the tests' own.
+test("every visible page has a review fixture and a shot", () => {
+  const visible = pages().filter((p) => p !== "capture");
+  assert.deepEqual([...new Set(SHOTS.map((s) => s.page))].sort(), visible);
+  const look = join(root, "scripts", "dev", "look");
+  for (const page of visible) {
+    const fx = JSON.parse(read(join(look, `${page}.json`)));
+    assert.ok(fx && typeof fx === "object" && !Array.isArray(fx), `look/${page}.json is an object`);
+    for (const k of Object.keys(fx)) assert.ok(["helper", "replies", "shim", "push"].includes(k), `look/${page}.json: unknown key ${k}`);
+    for (const entry of fx.push || []) assert.ok(Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string", `look/${page}.json: a push entry is [event, data]`);
+  }
+  assert.deepEqual(JSON.parse(read(join(look, "approve.json"))), JSON.parse(read(join(root, "test", "fixtures", "ui-approve.json"))));
+  assert.deepEqual(JSON.parse(read(join(look, "settings.json"))), JSON.parse(read(join(root, "test", "fixtures", "ui-settings.json"))));
+  for (const shot of SHOTS) {
+    assert.ok(Number.isInteger(shot.width) && shot.width > 0 && Number.isInteger(shot.height) && shot.height > 0, `${shot.name}: a size`);
+    if (shot.hash !== undefined) assert.ok(["nav-left", "nav-right", "switcher", "share", "menu"].includes(shot.hash), `${shot.name}: one of the strip's modes`);
+  }
+});
+
 // ---- Part 2: the harness's own fakes ----
 
 test("the shim: window.pairbrowse as the page contract says", async () => {
@@ -309,6 +330,53 @@ test("the fake helper answers as the live view does", async () => {
   }
 });
 
+test("the fake helper serves approvals to approve.js's contract", async () => {
+  const pageOrigin = "http://127.0.0.1:1";
+  const OLDER = JSON.parse(read(join(root, "test", "fixtures", "ui-approve.json"))).push[0][1].item;
+  const helper = await startFakeHelper({ pageOrigin });
+  const approve = (body) => request(`${helper.base}approve`, { method: "POST", headers: { origin: pageOrigin, "content-type": "application/json" }, body: JSON.stringify(body) });
+  const pending = async () => { const r = await request(`${helper.base}approvals.json`); return { status: r.status, body: JSON.parse(r.text) }; };
+  try {
+    assert.deepEqual(await pending(), { status: 200, body: { pending: [] } });
+    helper.push("approval", { op: "add", item: OLDER });
+    assert.deepEqual(await pending(), { status: 200, body: { pending: [OLDER] } });
+    assert.equal((await approve({ id: OLDER.id, answer: "maybe" })).status, 400);
+    assert.equal((await approve({ id: "", answer: "allow" })).status, 400);
+    const unknown = await approve({ id: "ap-unknown", answer: "allow" });
+    assert.equal(unknown.status, 404);
+    assert.deepEqual(JSON.parse(unknown.text), { ok: false });
+    // An answer for a pending id: 200, a withdraw event on the stream, and the list empties.
+    const withdrawn = new Promise((resolveIt) => {
+      const req = http.get(`${helper.base}events?page=approve`, (res) => {
+        let text = "", sent = false;
+        res.on("data", (c) => {
+          text += c;
+          if (!sent && text.includes("event: layout\n")) { sent = true; approve({ id: OLDER.id, answer: "allow" }).then((r) => { text += `\n#answer ${r.status} ${r.text}\n`; }); }
+          const m = /event: approval\ndata: (.+)\n/.exec(text);
+          if (m) { req.destroy(); resolveIt({ event: JSON.parse(m[1]) }); }
+        });
+      });
+      req.on("error", () => {});
+    });
+    const { event } = await withdrawn;
+    assert.deepEqual(event, { op: "withdraw", item: { id: OLDER.id } });
+    assert.deepEqual(await pending(), { status: 200, body: { pending: [] } });
+    assert.equal((await approve({ id: OLDER.id, answer: "allow" })).status, 404, "gone once answered");
+    // A join answer ({ id, allow }) keeps today's default.
+    const join_ = await approve({ id: "j1", allow: true });
+    assert.equal(join_.status, 200);
+    assert.deepEqual(JSON.parse(join_.text), { ok: true });
+  } finally {
+    await helper.close();
+  }
+  const none = await startFakeHelper({ fixtures: { approvals: null } });
+  try {
+    assert.equal((await request(`${none.base}approvals.json`)).status, 404, "null: none pending");
+  } finally {
+    await none.close();
+  }
+});
+
 test("the ui server serves pages under the chrome pages' CSP, on an origin of their own", async () => {
   const helper = await startFakeHelper({});
   const ui = await startUiServer({ helper });
@@ -323,6 +391,23 @@ test("the ui server serves pages under the chrome pages' CSP, on an origin of th
     assert.equal((await request(`${ui.origin}/../package.json`)).status, 404);
     assert.equal((await request(`${ui.origin}/right/missing.js`)).status, 404);
     assert.equal((await request(`${ui.origin}/__harness/pairbrowse-api.js`)).status, 200);
+    // Framing, as the native 520 patch sets it: every page may frame its own origin; only the
+    // picker may be framed, by its own origin only; every other page refuses any frame.
+    assert.deepEqual([...FRAMEABLE], ["picker"]);
+    for (const page of pages()) {
+      const r = await request(ui.url(page));
+      const csp = r.headers["content-security-policy"];
+      assert.equal(csp, PAGE_CSP(helper.origin, page), page);
+      assert.match(csp, /; frame-src 'self';/, page);
+      if (page === "picker") {
+        assert.match(csp, /; frame-ancestors 'self';/);
+        assert.equal(r.headers["x-frame-options"], "SAMEORIGIN");
+      } else {
+        assert.match(csp, /; frame-ancestors 'none';/, page);
+        assert.equal(r.headers["x-frame-options"], "DENY", page);
+      }
+    }
+    assert.equal((await request(`${ui.origin}/picker/picker.css`)).headers["x-frame-options"], "DENY", "only the picker's page itself");
   } finally {
     await ui.close();
     await helper.close();
@@ -454,6 +539,46 @@ test("a string written to innerHTML under the page CSP is a Trusted Types entry 
     const entries = (await ctx.harness.log()).filter((e) => e.kind === "csp");
     assert.ok(entries.some((e) => /trusted-types/.test(e.violatedDirective)), JSON.stringify(entries));
   } finally {
+    await ctx.close();
+    await helper.close();
+    await browser.close();
+  }
+});
+
+test("only same-origin pages frame the picker, and no other page can be framed", { skip: !runtime, timeout: 60_000 }, async () => {
+  const browser = await patchright(runtime).chromium.launch();
+  const helper = await startFakeHelper({});
+  const ctx = await openPage(browser, "strip", { helper, viewport: { width: 1536, height: 640 } });
+  let foreign = null;
+  try {
+    await ctx.inPage(() => {
+      for (const [id, src] of [["t-picker", "../picker/index.html"], ["t-right", "../right/index.html"]]) {
+        const f = document.createElement("iframe");
+        f.id = id;
+        f.src = src;
+        document.body.append(f);
+      }
+    });
+    const probe = () => ctx.inPage(() => {
+      const read = (id, fn) => { try { return fn(document.getElementById(id).contentDocument); } catch { return false; } };
+      return {
+        picker: read("t-picker", (d) => d?.documentElement?.dataset.host === "frame"),
+        right: read("t-right", (d) => !!d?.querySelector('script[src="right.js"]')),
+      };
+    });
+    let seen = await probe();
+    for (let i = 0; i < 60 && !seen.picker; i++) { await ctx.page.waitForTimeout(50); seen = await probe(); }
+    assert.equal(seen.picker, true, "a same-origin page frames the picker");
+    assert.equal(seen.right, false, "a page other than the picker refuses the frame");
+    // Cross origin: an opaque origin (about:blank) framing the picker gets nothing.
+    foreign = await browser.newPage();
+    await foreign.setContent(`<iframe src="${ctx.ui.url("picker")}"></iframe>`);
+    await foreign.waitForTimeout(2000);
+    const framed = [];
+    for (const f of foreign.frames()) framed.push(await f.evaluate(() => document.documentElement?.dataset.host === "frame").catch(() => false));
+    assert.deepEqual(framed.filter(Boolean), [], "a foreign origin never renders the picker");
+  } finally {
+    await foreign?.close();
     await ctx.close();
     await helper.close();
     await browser.close();

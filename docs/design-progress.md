@@ -521,6 +521,7 @@ after their own review: the top strip (`ui/strip`), the left dock (`ui/left`), t
 (`ui/right`: the side panel on plain Chromium), the new tab page, the picker, the joiner's
 picture page, the approval card, settings and the timeline strip. Nothing a user sees on plain
 Chromium changed: the extension loads from `ui/` and its live suites stay green at every gate.
+Follow-ups landed: frame-src/frame-ancestors for the picker and the switcher popover in the strip and the left dock, approvals in the fake helper, and `scripts/dev/ui-look-all.mjs` with per-page review fixtures (`scripts/dev/look/`).
 
 ## Next
 

@@ -374,3 +374,47 @@ export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = ()
   });
   return { open, close };
 }
+
+// The session switcher (the strip's chevron, the left dock's Workspace header and Sessions row):
+// ui/picker in a same-origin iframe inside pop, loaded only while open and unloaded on close. It
+// closes on the picker's "picked" or "close" notice (from that frame and this origin only), on
+// Escape and on a click outside pop and every opener; focus goes back to the opener that opened
+// it, except after a click outside. The parent never posts to the frame. openers: the buttons
+// that toggle it (each gets aria-expanded). dismissable(): false while a host owns dismissal (the
+// strip's #switcher bubble): no notice, Escape or outside click closes it then.
+export function pickerPopover({ pop, frame, openers, dismissable = () => true }) {
+  let opener = null;
+  const isOpen = () => !pop.hidden;
+  const outside = (e) => { if (dismissable() && !pop.contains(e.target) && !openers.some((b) => b.contains(e.target))) close(false); };
+  const onMessage = (e) => {
+    if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
+    if (e.data?.source !== "pairbrowse-picker" || (e.data.op !== "picked" && e.data.op !== "close")) return;
+    if (dismissable()) close(true);
+  };
+  function open(by) {
+    if (isOpen()) return;
+    opener = by || openers[0];
+    frame.src = "../picker/index.html";
+    pop.hidden = false;
+    opener.setAttribute("aria-expanded", "true");
+    if (dismissable()) document.addEventListener("pointerdown", outside, true);
+    window.addEventListener("message", onMessage);
+    frame.focus();
+  }
+  function close(refocus = true) {
+    if (!isOpen()) return;
+    frame.removeAttribute("src");
+    pop.hidden = true;
+    opener?.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outside, true);
+    window.removeEventListener("message", onMessage);
+    if (refocus) opener?.focus();
+  }
+  const onEscape = (e) => { if (e.key === "Escape" && isOpen() && dismissable()) { e.preventDefault(); close(); } };
+  for (const b of openers) {
+    b.addEventListener("click", () => (isOpen() ? close() : open(b)));
+    b.addEventListener("keydown", onEscape);
+  }
+  pop.addEventListener("keydown", onEscape);
+  return { open, close, isOpen };
+}

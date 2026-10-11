@@ -1,0 +1,56 @@
+{
+  "helper": {
+    "sessions": {
+      "picking": false,
+      "where": "Local",
+      "sessions": [
+        {
+          "name": "default",
+          "tabs": 3,
+          "sites": [
+            "shop.example"
+          ],
+          "current": true,
+          "people": [],
+          "live": []
+        },
+        {
+          "name": "Shop",
+          "tabs": 2,
+          "sites": [
+            "shop.example"
+          ],
+          "current": false,
+          "people": [],
+          "live": []
+        },
+        {
+          "name": "Docs",
+          "tabs": 1,
+          "sites": [
+            "docs.example"
+          ],
+          "current": false,
+          "people": [],
+          "live": []
+        },
+        {
+          "name": "Scratch",
+          "tabs": 0,
+          "sites": [],
+          "current": false,
+          "people": [],
+          "live": []
+        },
+        {
+          "name": "Fifth",
+          "tabs": 4,
+          "sites": [],
+          "current": false,
+          "people": [],
+          "live": []
+        }
+      ]
+    }
+  }
+}

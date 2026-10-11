@@ -49,13 +49,15 @@ The `DEBT` table at the top of `ui.test.mjs` lists today's known gaps by page an
 asserts each entry is still true, so the subset that fixes the page removes its entry in the
 same change; new pages get none.
 
-For reviews, `node scripts/dev/ui-look.mjs <page> [--width 360 --height 900] [--fixtures f.json]`
-renders a page to a PNG (fixtures: `{ helper, replies, shim, push }`) and prints its harness log. `--hash nav-left`
-renders a hash mode of a page (the strip's nav fragments and bubbles); `scripts/dev/strip-look.json` is
-the strip's review fixture.
-`--framed` renders it inside a same-origin frame, as the browser strip frames the session switcher,
-through `scripts/dev/frame-proxy.mjs` (the harness serves pages with `frame-ancestors 'none'`;
-the proxy turns that into `'self'` and serves the stand-in parent, which keeps the frame's notices).
+For reviews, `node scripts/dev/ui-look.mjs <page> [--width 360 --height 900] [--hash name] [--fixtures f.json]`
+renders a page to a PNG and prints its harness log. Its fixtures (`{ helper, replies, shim, push }`)
+are `scripts/dev/look/<page>.json` by default, and `--fixtures` replaces them. `--hash nav-left`
+renders one of a page's hash modes (the strip's nav fragments and bubbles). `node scripts/dev/ui-look-all.mjs
+[--out dir] [--only a,b] [--reduced-motion]` renders every visible page (and the strip's hash modes
+and the left rail) at its Part B size into `<tmpdir>/pairbrowse-ui-look` by default, one line per
+shot with its count of error and CSP entries; it exits 1 when a shot logged one. The harness
+serves the picker frameable by same-origin pages only, as the native build will, so the strip's
+switcher and the left dock's popover show the real framed picker; every other page refuses any frame.
 
 ### The live tests
 

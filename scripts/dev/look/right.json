@@ -1,0 +1,103 @@
+{
+  "helper": {
+    "board": {
+      "people": [
+        {
+          "who": "Claude",
+          "kind": "agent",
+          "color": "#e9763f",
+          "tab": "shop.example/checkout",
+          "task": "Filling the shipping form",
+          "status": "working",
+          "last": "Typed into Email"
+        },
+        {
+          "who": "Alice · Codex",
+          "kind": "agent",
+          "color": "#a78bfa",
+          "tab": "shop.example/cart",
+          "task": "",
+          "status": "you",
+          "last": "Clicked Cart"
+        },
+        {
+          "who": "Sam · Claude Code",
+          "kind": "agent",
+          "color": "#22d3ee",
+          "where": "Sam",
+          "tab": "docs.example",
+          "task": "",
+          "status": "done",
+          "last": "Read the docs"
+        },
+        {
+          "who": "Sam (by hand)",
+          "kind": "person",
+          "color": "",
+          "where": "Sam",
+          "status": "idle"
+        },
+        {
+          "who": "Gemini · Gemini CLI",
+          "kind": "agent",
+          "color": "#20c997",
+          "tab": "shop.example/prices",
+          "task": "Checking prices",
+          "status": "working"
+        },
+        {
+          "who": "Bob · Codex",
+          "kind": "agent",
+          "color": "nope",
+          "tab": "bob.example",
+          "status": "idle",
+          "last": "Opened a tab"
+        }
+      ],
+      "messages": []
+    },
+    "journal": {
+      "name": "shop.example 2026-10-11 10:00",
+      "status": "in progress",
+      "done": [
+        "Sign up <https://shop.example/signup>: Filled **Email**",
+        "Details <https://shop.example/details>: Filled **Name**"
+      ],
+      "yourTurn": [
+        "Enter the code"
+      ],
+      "left": [
+        "VAT number"
+      ],
+      "updatedAt": "2026-10-11T10:00:00.000Z"
+    },
+    "session": {
+      "name": "Checkout test",
+      "where": "Local",
+      "temporary": false
+    },
+    "pause": {
+      "paused": false,
+      "can": true
+    },
+    "timeline": {
+      "cards": [
+        {
+          "id": "0123456789ab",
+          "t": 1760169600000,
+          "caption": "Checkout page",
+          "step": {
+            "url": "https://shop.example/checkout",
+            "title": "Checkout"
+          },
+          "who": "Claude",
+          "pinned": false,
+          "note": false
+        }
+      ]
+    },
+    "pictures": {
+      "0123456789ab": "/9j/4AAQSkZJRgABAQAASABIAAD/4QCARXhpZgAATU0AKgAAAAgABAEaAAUAAAABAAAAPgEbAAUAAAABAAAARgEoAAMAAAABAAIAAIdpAAQAAAABAAAATgAAAAAAAABIAAAAAQAAAEgAAAABAAOgAQADAAAAAQABAACgAgAEAAAAAQAAABCgAwAEAAAAAQAAAAoAAAAA/+0AOFBob3Rvc2hvcCAzLjAAOEJJTQQEAAAAAAAAOEJJTQQlAAAAAAAQ1B2M2Y8AsgTpgAmY7PhCfv/AABEIAAoAEAMBIgACEQEDEQH/xAAfAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgv/xAC1EAACAQMDAgQDBQUEBAAAAX0BAgMABBEFEiExQQYTUWEHInEUMoGRoQgjQrHBFVLR8CQzYnKCCQoWFxgZGiUmJygpKjQ1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4eLj5OXm5+jp6vHy8/T19vf4+fr/xAAfAQADAQEBAQEBAQEBAAAAAAAAAQIDBAUGBwgJCgv/xAC1EQACAQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXxFxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T19vf4+fr/2wBDAAQEBAQEBAYEBAYJBgYGCQwJCQkJDA8MDAwMDA8SDw8PDw8PEhISEhISEhIVFRUVFRUZGRkZGRwcHBwcHBwcHBz/2wBDAQQFBQcHBwwHBwwdFBAUHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR3/3QAEAAH/2gAMAwEAAhEDEQA/AMqyl6V19lL0rhLLtXXWPavQxmbVtT8hx9Nan//Z"
+    }
+  }
+}

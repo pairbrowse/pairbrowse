@@ -2,18 +2,16 @@
 // stack at the right end, More sessions and its search, start fresh, the join form and the
 // address question (B6 card), a pick in the browser build (window.pairbrowse, no chrome.*), the
 // refresh paused while hidden and run at once on return, the keyboard path, reduced motion, and
-// framed as the strip's session switcher (scripts/dev/frame-proxy.mjs: the harness forbids
-// framing), where the parent gets only a same-origin "picked" or "close" notice.
+// framed as the session switcher in the real strip (the harness lets same-origin pages frame the
+// picker only, as the native build will), where the parent gets only a same-origin "picked" or
+// "close" notice and closes the switcher on it.
 // The common checks (names, focus ring, nothing while hidden, CSP) stay in test/ui.test.mjs;
 // test/picker.test.mjs keeps pinning the markup, the sheet's rules and the extension host.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pageTest, runtime } from "./helpers/ui-page.mjs";
-import { startFakeHelper, merge } from "./helpers/fake-helper.mjs";
-import { startUiServer } from "./helpers/ui-server.mjs";
-import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";
+import { pageTest, runtime, openPage } from "./helpers/ui-page.mjs";
+import { startFakeHelper } from "./helpers/fake-helper.mjs";
 import { patchright, inPage } from "./live.mjs";
-import { startFrameProxy } from "../scripts/dev/frame-proxy.mjs";
 
 // The helper's picker data (as test/picker.test.mjs): five sessions, most recently used first.
 const STATE = {
@@ -208,25 +206,33 @@ pageTest("picker", { fixtures: { sessions: STATE }, reducedMotion: "reduce" }, a
   assert.deepEqual(await harness.animations(), []);
 });
 
-// Framed: the switcher in a same-origin frame of a stand-in parent, a session already open.
+// Framed: the switcher in the real strip's same-origin frame, a session already open. The
+// strip's main world records every same-origin notice it gets (window.__notes).
 test("picker framed as the session switcher", { skip: !runtime, timeout: 90_000 }, async () => {
   const browser = await patchright(runtime).chromium.launch();
   const helper = await startFakeHelper({ fixtures: { sessions: { ...STATE, picking: false } } });
-  const ui = await startUiServer({ helper, fixture: merge(defaultFixture(), {}) });
-  const proxy = await startFrameProxy({ ui });
-  helper.setPageOrigin(proxy.origin);
-  const open = async () => {
-    const page = await browser.newPage({ viewport: { width: 360, height: 520 } });
-    await page.goto(proxy.frameUrl("picker"), { waitUntil: "load" });
-    let frame = null;
-    for (let i = 0; i < 60 && !frame; i++) { frame = page.frames().find((f) => f.url().includes("/picker/index.html")) || null; if (!frame) await sleep(50); }
-    assert.ok(frame, "the frame loaded");
-    for (let i = 0; i < 100 && (await inPage(frame, () => document.body?.dataset.s)) !== "ready"; i++) await sleep(50);
-    assert.equal(await inPage(frame, () => document.body.dataset.s), "ready", "the list shows with a session open");
-    return { page, frame };
-  };
+  let ctx = null;
   try {
-    const { page, frame } = await open();
+    ctx = await openPage(browser, "strip", { helper, viewport: { width: 1536, height: 640 } });
+    const { page } = ctx;
+    await inPage(page, () => { window.__notes = []; addEventListener("message", (e) => { if (e.origin === location.origin) window.__notes.push(e.data); }); });
+    const notes = () => inPage(page, () => window.__notes);
+    const closed = () => inPage(page, () => ({ hidden: document.getElementById("switcher").hidden, src: document.getElementById("picker").getAttribute("src"), focus: document.activeElement?.id || "" }));
+    const openSwitcher = async () => {
+      if (await inPage(page, () => document.getElementById("switcher").hidden)) await page.click("#switch");
+      let frame = null;
+      for (let i = 0; i < 100; i++) {
+        frame = page.frames().find((f) => f.url().includes("/picker/index.html")) || null;
+        if (frame && (await inPage(frame, () => document.body?.dataset.s).catch(() => null)) === "ready") break;
+        await sleep(50);
+      }
+      assert.ok(frame, "the frame loaded");
+      assert.equal(await inPage(frame, () => document.body.dataset.s), "ready", "the list shows with a session open");
+      return frame;
+    };
+    const closeSwitcher = async () => { if (!(await inPage(page, () => document.getElementById("switcher").hidden))) await page.click("#switch"); };
+
+    const frame = await openSwitcher();
     const look = await inPage(frame, () => {
       const main = document.querySelector("main"), s = getComputedStyle(main);
       return {
@@ -240,49 +246,59 @@ test("picker framed as the session switcher", { skip: !runtime, timeout: 90_000 
     });
     assert.deepEqual(look, { host: "frame", padding: "0px", width: 360, border: "none", shadow: "none", logo: false, brand: false,
       sub: "Switch to another session, or start one.", rows: 3, scroll: 360, clipped: false });
-    await frame.click("#sessions > li:first-child button");
-    for (let i = 0; i < 60 && (await inPage(frame, () => document.body.dataset.s)) !== "done"; i++) await sleep(50);
-    assert.deepEqual(posted(helper, "pick"), [{ action: "use", name: "work" }]);
-    assert.deepEqual(await inPage(page, () => window.__notes), [{ source: "pairbrowse-picker", op: "picked" }], "the parent told, nothing more");
     assert.deepEqual(bad(await inPage(frame, () => window.__harness.log)), []);
-    await page.close();
+    await frame.click("#sessions > li:first-child button");
+    for (let i = 0; i < 60 && !posted(helper, "pick").length; i++) await sleep(50);
+    assert.deepEqual(posted(helper, "pick"), [{ action: "use", name: "work" }]);
+    for (let i = 0; i < 60 && !(await notes()).length; i++) await sleep(50);
+    assert.deepEqual(await notes(), [{ source: "pairbrowse-picker", op: "picked" }], "the parent told, nothing more");
+    for (let i = 0; i < 60 && !(await closed()).hidden; i++) await sleep(50);
+    assert.deepEqual(await closed(), { hidden: true, src: null, focus: "switch" }, "the strip closed the switcher");
 
-    const second = await open();
-    await second.frame.click("h1");
-    await second.page.keyboard.press("Escape");
-    for (let i = 0; i < 20 && !(await inPage(second.page, () => window.__notes.length)); i++) await sleep(50);
-    assert.deepEqual(await inPage(second.page, () => window.__notes), [{ source: "pairbrowse-picker", op: "close" }], "Escape closes the switcher");
-    await second.frame.click("#more-btn");
-    await second.page.keyboard.type("sho");
-    await second.page.keyboard.press("Escape");
-    assert.equal((await inPage(second.page, () => window.__notes)).length, 1, "the first Escape clears the search");
-    assert.deepEqual(bad(await inPage(second.frame, () => window.__harness.log)), []);
-    await second.page.close();
+    await inPage(page, () => { window.__notes = []; });
+    const second = await openSwitcher();
+    await second.click("h1");
+    await page.keyboard.press("Escape");
+    for (let i = 0; i < 20 && !(await notes()).length; i++) await sleep(50);
+    assert.deepEqual(await notes(), [{ source: "pairbrowse-picker", op: "close" }], "Escape closes the switcher");
+    for (let i = 0; i < 60 && !(await closed()).hidden; i++) await sleep(50);
+    assert.deepEqual(await closed(), { hidden: true, src: null, focus: "switch" });
+    const again = await openSwitcher();
+    await again.click("#more-btn");
+    await page.keyboard.type("sho");
+    await page.keyboard.press("Escape");
+    await sleep(100);
+    assert.equal((await notes()).length, 1, "the first Escape clears the search");
+    assert.equal((await closed()).hidden, false, "and the switcher stays open");
+    assert.deepEqual(bad(await inPage(again, () => window.__harness.log)), []);
 
     // Escape on the address question is its Cancel: the question answered, the switcher kept.
     helper.replies.pick = { error: true, hostAsk: { id: "a1", host: "share.example" } };
     helper.replies.joinhost = {};
-    const third = await open();
-    await third.frame.click("#join summary");
-    await third.frame.fill("#code", "pb-join:https://share.example/abc");
-    await third.frame.click("#join-form .primary");
-    for (let i = 0; i < 60 && (await inPage(third.frame, () => document.getElementById("host-ask").hidden)); i++) await sleep(50);
-    assert.equal(await inPage(third.frame, () => document.getElementById("host-ask").hidden), false, "the address question shows");
-    await third.page.keyboard.press("Escape");
+    await closeSwitcher();
+    await inPage(page, () => { window.__notes = []; });
+    const third = await openSwitcher();
+    await third.click("#join summary");
+    await third.fill("#code", "pb-join:https://share.example/abc");
+    await third.click("#join-form .primary");
+    for (let i = 0; i < 60 && (await inPage(third, () => document.getElementById("host-ask").hidden)); i++) await sleep(50);
+    assert.equal(await inPage(third, () => document.getElementById("host-ask").hidden), false, "the address question shows");
+    await page.keyboard.press("Escape");
     for (let i = 0; i < 60 && !posted(helper, "joinhost").length; i++) await sleep(50);
     assert.deepEqual(posted(helper, "joinhost"), [{ op: "cancel", id: "a1" }], "Escape cancels the question");
     await sleep(200);
-    assert.deepEqual(await inPage(third.page, () => window.__notes), [], "and does not close the switcher");
-    assert.deepEqual(bad(await inPage(third.frame, () => window.__harness.log)), []);
-    await third.page.close();
+    assert.deepEqual(await notes(), [], "and does not close the switcher");
+    assert.equal((await closed()).hidden, false);
+    assert.deepEqual(bad(await inPage(third, () => window.__harness.log)), []);
 
     // The tight row: Last used and Live with three people at 360 px. No pill fragments: Last used
     // moves to the start of the meta line, Live keeps its pill whole, the name keeps ten
     // characters and more, the stack shows the people in it now and "+N", and nothing reaches
     // into the stack's column.
     helper.fixtures.sessions = TIGHT;
-    const fourth = await open();
-    const tight = await inPage(fourth.frame, () => [...document.querySelectorAll("#sessions .choice")].map((b) => {
+    await closeSwitcher();
+    const fourth = await openSwitcher();
+    const tight = await inPage(fourth, () => [...document.querySelectorAll("#sessions .choice")].map((b) => {
       const name = b.querySelector(".name"), strong = b.querySelector("strong");
       const font = parseFloat(getComputedStyle(name).fontSize);
       return {
@@ -299,11 +315,10 @@ test("picker framed as the session switcher", { skip: !runtime, timeout: 90_000 
       { text: "research", whole: true, tenChars: true, badges: ["Live · 1 other"], pills: true, lastUsed: true, clear: true, chips: ["o", "+2"] },
       { text: "quarterly-planning-session", whole: false, tenChars: true, badges: ["Live · 1 other"], pills: true, lastUsed: true, clear: true, chips: ["o", "+3"] },
     ]);
-    assert.deepEqual(bad(await inPage(fourth.frame, () => window.__harness.log)), []);
-    await fourth.page.close();
+    assert.deepEqual(bad(await inPage(fourth, () => window.__harness.log)), []);
+    assert.deepEqual(ctx.errors, []);
   } finally {
-    await proxy.close();
-    await ui.close();
+    await ctx?.close();
     await helper.close();
     await browser.close();
   }

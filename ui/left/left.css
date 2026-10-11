@@ -7,7 +7,7 @@ button { font: inherit; }
 /* The icon sheet: symbols only, never laid out (an <svg hidden> still takes a grid row). */
 body > svg[hidden] { display: none; }
 
-/* Header: the workspace square, its name and the chevron (the session picker for now). */
+/* Header: the workspace square, its name and the chevron (the session switcher). */
 .head { height: 44px; display: flex; align-items: center; padding: 0 8px; min-width: 0; }
 .workspace { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 36px; padding: 0 4px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); text-align: left; cursor: pointer; transition: background 120ms ease-out; }
 .workspace:hover { background: var(--hover); }
@@ -112,6 +112,11 @@ body[data-dock="rail"] .people li { grid-template-columns: 28px; justify-content
 body[data-dock="rail"] .people .avatar { width: 28px; height: 28px; font-size: var(--fs-2); }
 body[data-dock="rail"] .foot { grid-template-columns: auto; justify-content: center; padding: 8px 4px; }
 body[data-dock="rail"] .gear { grid-column: 1; }
+
+/* The session switcher: the picker in a same-origin frame, under the header (B6 switcher size). */
+.switcher { position: fixed; top: 44px; left: 8px; z-index: 3; width: 360px; height: min(560px, calc(100vh - 52px)); border-radius: var(--r-3); background: var(--elevated); box-shadow: 0 0 0 1px var(--edge); overflow: hidden; animation: fade var(--t); }
+.switcher iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+@keyframes fade { from { opacity: 0; } }
 
 /* Hidden: nothing shows and nothing takes focus (left.js makes it inert too). */
 body[data-dock="hidden"] > * { visibility: hidden; }

@@ -5,10 +5,33 @@
 import assert from "node:assert/strict";
 import { describe } from "node:test";
 import { pageTest } from "./helpers/ui-page.mjs";
+import { inPage as inFrame } from "./live.mjs";
 
 const ROW = { width: 1536, height: 44 };
 const TALL = { width: 1536, height: 480 };
 const ACCENT = "rgb(50, 133, 246)";
+// Three of the picker's sessions (test/ui-picker.test.mjs STATE), a session already open.
+const SWITCHER_SESSIONS = { picking: false, sessions: [
+  { name: "work", tabs: 3, sites: ["shop.example", "docs.example"], current: true,
+    live: [{ who: "Sam", app: "Claude Code", kind: "guest" }],
+    people: [{ who: "You", kind: "you", computer: "Mac" }, { who: "Sam", app: "Claude Code", kind: "guest" }] },
+  { name: "shop", tabs: 1, sites: ["shop.example"],
+    people: [{ who: "You", kind: "you", computer: "Mac" }, { who: "Claude", app: "Claude Code", kind: "agent" }, { who: "Alice", computer: "Linux", kind: "guest" }] },
+  { name: "default", tabs: 0, sites: [], people: [] },
+] };
+
+// The framed picker once it knows it is framed (and, with s, once body[data-s] is s).
+async function framedPicker(page, s = null) {
+  for (let i = 0; i < 100; i++) {
+    const frame = page.frames().find((f) => f.url().includes("/picker/index.html"));
+    if (frame) {
+      const st = await inFrame(frame, () => ({ host: document.documentElement.dataset.host, s: document.body?.dataset.s })).catch(() => null);
+      if (st?.host === "frame" && (!s || st.s === s)) return frame;
+    }
+    await page.waitForTimeout(50);
+  }
+  return assert.fail("the framed picker did not load");
+}
 
 // In the page: a tab's box and state by id.
 const tabInfo = (id) => {
@@ -334,12 +357,46 @@ describe("switcher opens the picker in an iframe", () => pageTest("strip", { vie
   assert.ok(s.src.endsWith("/picker/index.html"), s.src);
   assert.equal(s.title, "Session picker");
   assert.equal(s.expanded, "true");
+  // The picker loads in the frame (same origin, frame-src 'self') and knows it is framed.
+  const frame = await framedPicker(page);
+  assert.equal(await inFrame(frame, () => window.innerWidth), 360);
   await page.focus("#switch");
   await page.keyboard.press("Escape");
   assert.deepEqual(await inPage(() => [document.getElementById("switcher").hidden, document.getElementById("picker").getAttribute("src"), document.activeElement.id]), [true, null, "switch"]);
-  // The harness CSP has no frame-src yet (the lead's shared addition): those entries only.
-  const bad = (await harness.log()).filter((e) => !(e.kind === "csp" && e.violatedDirective === "frame-src"));
-  assert.deepEqual(bad, []);
+  assert.equal(page.frames().some((f) => f.url().includes("/picker/index.html")), false, "the picker unloaded");
+  assert.deepEqual(await harness.log(), []);
+}));
+
+describe("the picker's notices close the switcher; the bubble keeps it", () => pageTest("strip", { viewport: TALL, fixtures: { sessions: SWITCHER_SESSIONS } }, async (ctx) => {
+  const { page, inPage, until, harness } = ctx;
+  const state = () => ({ hidden: document.getElementById("switcher").hidden, src: document.getElementById("picker").getAttribute("src"), focus: document.activeElement?.id || "" });
+  // (a) Escape in the framed picker: its "close" notice closes the switcher, focus on the chevron.
+  await page.click("#switch");
+  await framedPicker(page, "ready");
+  await page.keyboard.press("Escape");
+  await until("closed by the notice", () => document.getElementById("switcher").hidden);
+  assert.deepEqual(await inPage(state), { hidden: true, src: null, focus: "switch" });
+  // (b) A notice that is not from the frame (the strip itself posts it) does nothing.
+  await page.click("#switch");
+  await framedPicker(page, "ready");
+  await inPage(() => window.postMessage({ source: "pairbrowse-picker", op: "close" }, location.origin));
+  await page.waitForTimeout(100);
+  assert.equal((await inPage(state)).hidden, false, "a notice not from the frame does nothing");
+  // (c) In the #switcher bubble the host owns dismissal: Escape in the picker leaves it open.
+  await inPage(() => { location.hash = "#switcher"; });
+  await until("the bubble", () => document.body.dataset.mode === "switcher");
+  const frame = await framedPicker(page, "ready");
+  await frame.click("h1");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  assert.equal((await inPage(state)).hidden, false, "the host owns dismissal");
+  // (d) Leaving the mode unloads the picker.
+  await inPage(() => { location.hash = ""; });
+  await until("the row", () => document.body.dataset.mode === "row");
+  assert.equal((await inPage(state)).src, null);
+  // (e)
+  assert.deepEqual(await harness.log(), []);
+  assert.deepEqual(ctx.errors, []);
 }));
 
 describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ page, shim, inPage, until }) => {

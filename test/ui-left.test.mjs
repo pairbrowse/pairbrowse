@@ -5,6 +5,7 @@
 import { describe } from "node:test";
 import assert from "node:assert/strict";
 import { pageTest } from "./helpers/ui-page.mjs";
+import { inPage as inFrame } from "./live.mjs";
 
 // Each case its own pageTest under a suite that names it, so a failure says which.
 const scenario = (title, opts, fn) => describe(title, () => pageTest("left", opts, fn));
@@ -22,6 +23,35 @@ async function clean(ctx) {
   const bad = (await ctx.harness.log()).filter((e) => ["error", "pageerror", "rejection", "csp"].includes(e.kind));
   assert.deepEqual(bad, []);
 }
+// Three of the picker's sessions (test/ui-picker.test.mjs STATE), a session already open.
+const SWITCHER_SESSIONS = { picking: false, sessions: [
+  { name: "work", tabs: 3, sites: ["shop.example", "docs.example"], current: true,
+    live: [{ who: "Sam", app: "Claude Code", kind: "guest" }],
+    people: [{ who: "You", kind: "you", computer: "Mac" }, { who: "Sam", app: "Claude Code", kind: "guest" }] },
+  { name: "shop", tabs: 1, sites: ["shop.example"],
+    people: [{ who: "You", kind: "you", computer: "Mac" }, { who: "Claude", app: "Claude Code", kind: "agent" }, { who: "Alice", computer: "Linux", kind: "guest" }] },
+  { name: "default", tabs: 0, sites: [], people: [] },
+] };
+// The framed picker once it knows it is framed (and, with s, once body[data-s] is s).
+async function framedPicker(page, s = null) {
+  for (let i = 0; i < 100; i++) {
+    const frame = page.frames().find((f) => f.url().includes("/picker/index.html"));
+    if (frame) {
+      const st = await inFrame(frame, () => ({ host: document.documentElement.dataset.host, s: document.body?.dataset.s })).catch(() => null);
+      if (st?.host === "frame" && (!s || st.s === s)) return frame;
+    }
+    await page.waitForTimeout(50);
+  }
+  return assert.fail("the framed picker did not load");
+}
+// A click in the frame by the mouse at its place in the window: Patchright's frame.click leaves an
+// observer of its own in the parent page, which would blur the parent's live() counts.
+async function clickInFrame(page, frame, sel) {
+  const at = await inFrame(page, () => { const r = document.getElementById("picker").getBoundingClientRect(); return { x: r.left, y: r.top }; });
+  const r = await inFrame(frame, (q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
+  await page.mouse.click(at.x + r.x, at.y + r.y);
+}
+const pickerFrames = (page) => page.frames().filter((f) => f.url().includes("/picker/")).length;
 const calls = async (ctx, iface, method) => (await ctx.shim.calls()).filter((c) => c.iface === iface && c.method === method);
 const rows = () => [...document.querySelectorAll("#agents li")].map((li) => ({
   state: li.dataset.state || "", name: li.querySelector("strong")?.textContent || "", line: li.querySelector("small")?.textContent || li.textContent,
@@ -192,8 +222,13 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   assert.deepEqual(order, ["workspace", "nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools", "add-agent", "settings"]);
   await ctx.page.focus("#nav-sessions");
   await ctx.page.keyboard.press("Enter");
-  for (let i = 0; i < 40 && !ctx.helper.posts.some((p) => p.route === "picker"); i++) await ctx.page.waitForTimeout(50);
-  assert.ok(ctx.helper.posts.some((p) => p.route === "picker"), "the picker route");
+  // The Sessions row opens the switcher: the picker in a same-origin frame, no picker route.
+  assert.deepEqual(await inPage(() => ({ hidden: document.getElementById("switcher").hidden, expanded: document.getElementById("nav-sessions").getAttribute("aria-expanded"),
+    src: document.getElementById("picker").src.endsWith("/picker/index.html") })), { hidden: false, expanded: "true", src: true });
+  await framedPicker(ctx.page);
+  assert.equal(ctx.helper.posts.some((p) => p.route === "picker"), false, "no picker route");
+  await ctx.page.keyboard.press("Escape");
+  await until("the switcher closed", () => document.getElementById("switcher").hidden && document.activeElement?.id === "nav-sessions");
   const fixture = await inPage(() => ({ ...window.__pairbrowse.fixture.layout }));
   await ctx.page.focus("#nav-tools");
   await ctx.page.keyboard.press("Enter");
@@ -209,6 +244,64 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   await ctx.page.mouse.click(100, 20);
   await until("closed by a click outside", () => document.getElementById("hint").hidden);
   assert.equal(await inPage(() => document.querySelectorAll("#hint code").length), 4);
+  await clean(ctx);
+});
+
+scenario("left: the session switcher", { viewport: { width: 420, height: 936 }, fixtures: { sessions: SWITCHER_SESSIONS } }, async (ctx) => {
+  const { page, until, inPage, helper } = ctx;
+  const live = await ctx.harness.live();
+  const state = () => ({ hidden: document.getElementById("switcher").hidden, src: document.getElementById("picker").getAttribute("src"), focus: document.activeElement?.id || "" });
+  await page.click("#workspace");
+  const box = await inPage(() => {
+    const d = document.getElementById("switcher"), r = d.getBoundingClientRect();
+    return { role: d.getAttribute("role"), label: d.getAttribute("aria-label"), left: r.left, top: r.top, width: r.width, height: r.height,
+      shadow: getComputedStyle(d).boxShadow, expanded: document.getElementById("workspace").getAttribute("aria-expanded") };
+  });
+  assert.equal(box.role, "dialog");
+  assert.equal(box.label, "Switch session");
+  assert.deepEqual([box.left, box.top, box.width, box.height], [8, 44, 360, 560]);
+  assert.match(box.shadow, /rgb\(41, 59, 80\)/, "the 1 px edge ring");
+  assert.equal(box.expanded, "true");
+  const frame = await framedPicker(page, "ready");
+  assert.equal(await inFrame(frame, () => window.innerWidth), 360);
+  // A pick: the picker's "picked" notice closes the switcher, focus back on the header.
+  await clickInFrame(page, frame, "#sessions > li:first-child button");
+  for (let i = 0; i < 60 && !helper.posts.some((p) => p.route === "pick"); i++) await page.waitForTimeout(50);
+  assert.deepEqual(helper.posts.filter((p) => p.route === "pick").map((p) => p.body), [{ action: "use", name: "work" }]);
+  await until("closed after the pick", () => document.getElementById("switcher").hidden && document.activeElement?.id === "workspace");
+  assert.deepEqual(await inPage(state), { hidden: true, src: null, focus: "workspace" });
+  assert.equal(pickerFrames(page), 0, "the picker unloaded");
+  // The Sessions row opens the same popover; a click outside closes it without moving focus there.
+  await page.click("#nav-sessions");
+  assert.equal(await inPage(() => document.getElementById("nav-sessions").getAttribute("aria-expanded")), "true");
+  await framedPicker(page);
+  await page.mouse.click(100, 700);
+  await until("closed by a click outside", () => document.getElementById("switcher").hidden);
+  assert.notEqual((await inPage(state)).focus, "nav-sessions");
+  assert.equal(await inPage(() => document.getElementById("nav-sessions").getAttribute("aria-expanded")), "false");
+  // Hiding the dock closes and unloads it.
+  await page.click("#workspace");
+  await framedPicker(page);
+  await ctx.shim.layout({ left: 0 });
+  await until("hidden", () => document.body.dataset.dock === "hidden" && document.getElementById("switcher").hidden);
+  assert.equal((await inPage(state)).src, null);
+  assert.equal(pickerFrames(page), 0);
+  // The rail's Workspace button opens it too; Escape closes it.
+  await ctx.shim.layout({ left: 1 });
+  await until("the rail", () => document.body.dataset.dock === "rail");
+  await page.click("#workspace");
+  await framedPicker(page, "ready");
+  await page.keyboard.press("Escape");
+  await until("closed by Escape", () => document.getElementById("switcher").hidden && document.activeElement?.id === "workspace");
+  assert.equal(helper.posts.some((p) => p.route === "picker"), false, "no picker route at any point");
+  assert.deepEqual(await ctx.harness.live(), live, "nothing new runs once it is closed");
+  await clean(ctx);
+});
+
+scenario("left: the session switcher under reduced motion", { viewport: { width: 420, height: 936 }, reducedMotion: "reduce", fixtures: { sessions: SWITCHER_SESSIONS } }, async (ctx) => {
+  await ctx.page.click("#workspace");
+  await framedPicker(ctx.page);
+  assert.equal(await ctx.inPage(() => getComputedStyle(document.getElementById("switcher")).animationName), "none");
   await clean(ctx);
 });
 

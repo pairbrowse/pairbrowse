@@ -22,13 +22,14 @@
   <symbol id="i-chevron" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></g></symbol>
 </svg>
 <header class="head">
-  <button class="workspace" id="workspace" type="button" title="Switch session"><span class="ws-icon" aria-hidden="true"><svg><use href="#i-workspace"/></svg></span><span class="ws-label">Workspace</span><span class="sr">: switch session</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+  <button class="workspace" id="workspace" type="button" title="Switch session" aria-expanded="false" aria-controls="switcher"><span class="ws-icon" aria-hidden="true"><svg><use href="#i-workspace"/></svg></span><span class="ws-label">Workspace</span><span class="sr">: switch session</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
 </header>
+<div id="switcher" class="switcher" role="dialog" aria-label="Switch session" tabindex="-1" hidden><iframe id="picker" title="Session picker"></iframe></div>
 <main class="body" id="main">
   <nav aria-label="Workspace">
     <ul class="nav" role="list">
       <li><button class="row" id="nav-browser" type="button" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-browser"/></svg><span class="label">Browser</span><span class="badge" id="tab-count" aria-hidden="true"></span><span class="sr" id="tab-count-words"></span></button></li>
-      <li><button class="row" id="nav-sessions" type="button"><svg class="ic" aria-hidden="true"><use href="#i-sessions"/></svg><span class="label">Sessions</span></button></li>
+      <li><button class="row" id="nav-sessions" type="button" aria-expanded="false" aria-controls="switcher"><svg class="ic" aria-hidden="true"><use href="#i-sessions"/></svg><span class="label">Sessions</span></button></li>
       <li><button class="row" id="nav-history" type="button"><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg><span class="label">History</span></button></li>
       <li><button class="row" id="nav-activity" type="button" aria-expanded="false" aria-controls="activity-list"><svg class="ic" aria-hidden="true"><use href="#i-activity"/></svg><span class="label">Activity</span></button>
         <ol class="activity" id="activity-list" hidden aria-label="Activity"></ol></li>

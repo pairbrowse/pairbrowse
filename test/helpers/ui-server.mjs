@@ -19,8 +19,11 @@ const PRELUDE = readFileSync(join(here, "ui-prelude.js"), "utf8");
 // The live view's VIEWER_CSP (scripts/liveview/http.mjs) widened to a chrome page's own images,
 // media and its helper, plus Chromium WebUI's Trusted Types enforcement (ui/webui/webui_util.cc
 // EnableTrustedTypesCSP); `static-types` is one of its default policy names, the only one a
-// PairBrowse page may use.
-export const PAGE_CSP = (helperOrigin) => `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' ${helperOrigin}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types static-types`;
+// PairBrowse page may use. Framing mirrors what the native 520 patch sets: frame-src 'self' on
+// every chrome page; frame-ancestors 'self', with X-Frame-Options lifted to SAMEORIGIN, on /picker
+// only (the session switcher the strip and the left dock frame); every other page refuses any frame.
+export const FRAMEABLE = new Set(["picker"]);
+export const PAGE_CSP = (helperOrigin, page = "") => `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; frame-src 'self'; connect-src 'self' ${helperOrigin}; base-uri 'none'; form-action 'none'; frame-ancestors ${FRAMEABLE.has(page) ? "'self'" : "'none'"}; require-trusted-types-for 'script'; trusted-types static-types`;
 
 const TYPES = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8",
   svg: "image/svg+xml", png: "image/png", json: "application/json", woff2: "font/woff2" };
@@ -55,7 +58,8 @@ export async function startUiServer({ helper, fixture = defaultFixture(), bridge
     const type = TYPES[ext];
     if (!type) return plain(res, 404);
     if (ext === "html") {
-      res.writeHead(200, { ...SECURITY_HEADERS, "content-type": type, "content-security-policy": PAGE_CSP(helper.origin) });
+      const page = parts.length === 2 && parts[1] === "index.html" ? parts[0] : "";
+      res.writeHead(200, { ...SECURITY_HEADERS, ...(FRAMEABLE.has(page) ? { "x-frame-options": "SAMEORIGIN" } : {}), "content-type": type, "content-security-policy": PAGE_CSP(helper.origin, page) });
       return res.end(insertTags(readFileSync(file, "utf8"), tags));
     }
     res.writeHead(200, { ...SECURITY_HEADERS, "content-type": type });

@@ -5,7 +5,7 @@
 // (the browser's own API); people, sharing and recording from the helper's event stream. Without
 // window.pairbrowse the row shows the helper's tabs event, read only. Nothing here starts a timer,
 // a frame loop or a DOM observer: observers of the browser API and one EventSource only.
-import { $, el, avatar, shareCard, isColor } from "../common.js";
+import { $, el, avatar, shareCard, isColor, pickerPopover } from "../common.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
@@ -37,29 +37,9 @@ const BUBBLES = new Set(["switcher", "share", "menu"]);
 let mode = "";
 const bubble = () => BUBBLES.has(mode);
 
-// ---- the switcher: the session picker in an iframe, loaded only while open ----
-const switchBtn = $("switch"), switcher = $("switcher"), picker = $("picker");
-const outsideSwitcher = (e) => { if (!switcher.contains(e.target) && !switchBtn.contains(e.target)) closeSwitcher(false); };
-function openSwitcher() {
-  if (!switcher.hidden) return;
-  picker.src = "../picker/index.html";
-  switcher.hidden = false;
-  switchBtn.setAttribute("aria-expanded", "true");
-  if (!bubble()) document.addEventListener("pointerdown", outsideSwitcher, true);
-  picker.focus();
-}
-function closeSwitcher(refocus = true) {
-  if (switcher.hidden) return;
-  picker.removeAttribute("src");
-  switcher.hidden = true;
-  switchBtn.setAttribute("aria-expanded", "false");
-  document.removeEventListener("pointerdown", outsideSwitcher, true);
-  if (refocus) switchBtn.focus();
-}
-switchBtn.addEventListener("click", () => (switcher.hidden ? openSwitcher() : closeSwitcher()));
-const switcherEscape = (e) => { if (e.key === "Escape" && !switcher.hidden && !bubble()) { e.preventDefault(); closeSwitcher(); } };
-switchBtn.addEventListener("keydown", switcherEscape);
-switcher.addEventListener("keydown", switcherEscape);
+// ---- the switcher: the session picker in a same-origin iframe, loaded only while open
+// (common.js pickerPopover); in the #switcher bubble the host owns dismissal ----
+const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("switch")], dismissable: () => !bubble() });
 
 // ---- Share: the side panel's card (common.js) ----
 const share = shareCard({ btn: $("share-btn"), card: $("share-card"), base: () => base, dismissable: () => !bubble() });
@@ -117,12 +97,12 @@ if (!pb) for (const id of ["zoom", "settings", "about", "new-window"]) $(id).hid
 
 // ---- hash modes (no reload: the hash only picks what shows) ----
 function openBubble(m) {
-  if (m === "switcher") openSwitcher();
+  if (m === "switcher") switcher.open($("switch"));
   else if (m === "share") { if ($("share-card").hidden) share.open(); }
   else if (m === "menu") openMenu();
 }
 function closeBubble(m) {
-  if (m === "switcher") closeSwitcher(false);
+  if (m === "switcher") switcher.close(false);
   else if (m === "share") { if (!$("share-card").hidden) share.close(false); }
   else if (m === "menu") closeMenu(false, true);
 }
@@ -140,7 +120,7 @@ function applyMode() {
   if (BUBBLES.has(mode)) openBubble(mode);
 }
 // In a bubble the host owns dismissal: no outside-click listener is registered and Escape
-// closes nothing (openSwitcher/openMenu/the share card and their Escape paths check bubble()).
+// closes nothing (the switcher, the menu, the share card and their Escape paths check bubble()).
 window.addEventListener("hashchange", applyMode);
 applyMode();
 

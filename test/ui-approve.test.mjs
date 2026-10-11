@@ -1,7 +1,7 @@
 // The approval card page (ui/approve/, DESIGN.md B6): what it shows from the helper's stream, and
 // that only a person's armed click answers. The data contract is approve.js's header; the two
-// click items come from test/fixtures/ui-approve.json (scripts/dev/ui-look.mjs renders the same
-// file). The common checks stay in test/ui.test.mjs.
+// click items come from test/fixtures/ui-approve.json (its review copy is scripts/dev/look/approve.json,
+// kept equal by test/ui.test.mjs). The common checks stay in test/ui.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -372,12 +372,13 @@ named("reduced motion: the card appears without animation and still arms", { red
   assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "allow" }]);
 });
 
-test("approve page: the pending list loads from approvals.json on connect", { skip: !runtime, timeout: 60_000 }, async (t) => {
+test("approve page: the pending list loads from approvals.json on connect", { skip: !runtime, timeout: 60_000 }, async () => {
   const helper = await startFakeHelper({ fixtures: { approvals: { pending: [OLDER] } } });
   let browser = null, ctx = null;
   try {
     const r = await fetch(helper.base + "approvals.json");
-    if (r.status === 404) return t.skip("the fake helper has no approvals fixture yet");
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { pending: [OLDER] });
     browser = await patchright(runtime).chromium.launch();
     ctx = await openPage(browser, "approve", { helper });
     await shown(ctx, "Place order");

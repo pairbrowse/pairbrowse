@@ -298,7 +298,7 @@ const recorder = createRecorder({
   owners: () => hud.sparkList().map((s) => ({ page: s.page, who: collaboration.participants.get(s.id)?.label || "Agent", color: s.color })),
   dir: () => config.downloadsDir || join(homedir(), "Downloads"),
   scale: async () => (await Promise.resolve(context.openPages()))[0]?.evaluate(() => devicePixelRatio) ?? 1,
-  changed: () => liveView()?.setRecord(recorder.state()),
+  changed: () => { const s = recorder.state(); liveView()?.setRecord(s); hud.setRecording(s.recording); },
   onActivity: (fn) => hud.onActivity((text, who, page, from) => { if (who && page) fn(text, who, page, from); }),
 });
 // Who works in which tab, named on the tab strip (the agent's name in front of the tab's title).

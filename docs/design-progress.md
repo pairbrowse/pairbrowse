@@ -347,6 +347,15 @@ visually hidden prefix too) from the existing `journal.json`, read once when ope
 an activity event at most every 5 s through one cleared debounce; nothing while folded. Escape
 and focus leaving the card close it.
 
+**finish** (2026-10-11, `design-subset` run wf_b223fe6d: review pass in one round; 404 unit
+pass, tabs, tokens, hud, liveview and motion live suites green). The "Opening tabs" page's rows
+are the column's rows (initial avatar, title, host, a state mark with the words kept); the bar
+shows a REC pill with a red dot while this browser's recorder runs (one optional boolean on the
+bar payload, set by the recorder's own change callback, never crossed to joiners); the live
+view's stage toolbar sits on the compact sizes and the workspace header's label shares the tab
+labels' baseline (7 px measured, not the plan's 10). No open items remain in this mission; the
+next subsets, if any, are the user's to name.
+
 **hud** (2026-10-11, `design-subset`, built by Opus; the lead commits). `scripts/hud.js`: the
 bottom bar has a driver dot in the tab's spark color (orange until set, muted while
 reconnecting) in front of the unchanged who-lines, and the last three actions as chips, oldest

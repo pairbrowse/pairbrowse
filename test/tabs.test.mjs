@@ -116,6 +116,12 @@ test("the Opening tabs screen escapes page titles and addresses", () => {
   assert.match(html, /<span class="t">not a url<\/span>/, "no title: the address stands in");
   assert.match(html, /0 of 2, in the order you left them/);
   assert.equal((html.match(/<li /g) || []).length, 2);
+  // The side column's row: the site's initial on a plain avatar, the title, the host, a state mark.
+  assert.match(html, /<li data-i="0" data-s="waiting"><span class="av" aria-hidden="true">X<\/span><span class="t">/, "x.test: X");
+  assert.match(html, /<li data-i="1" data-s="waiting"><span class="av" aria-hidden="true">N<\/span><span class="t">not a url<\/span><span class="h">not a url<\/span><span class="m" aria-hidden="true"><\/span><\/li>/);
+  assert.equal((html.match(/<span class="m" aria-hidden="true"><\/span>/g) || []).length, 2);
+  assert.match(html, /--elevated:#192A3D/, "the avatar's surface is the sheet's --elevated");
+  assert.equal(loadingHtml([{ url: "", title: "" }]).includes('<span class="av" aria-hidden="true">?</span>'), true, "no host: a question mark");
 });
 
 test("saved tabs come back in order, a failed one is marked, and the active one ends in front", async () => {

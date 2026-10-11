@@ -409,6 +409,69 @@ test("the helper marks only the shared tabs as reconnecting, and clears them whe
   assert.equal("reconnecting" in bars.get("shared"), false, "cleared once the channel is up");
 });
 
+test("the helper puts recording on every page's bar only while the recorder runs", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const bars = new Map(); // page -> last bar state
+  let sent = 0;
+  const fake = (name) => ({ name, isClosed: () => false, url: () => `https://example.com/${name}`, evaluate: async (fn, args) => { if (args?.[3] === "bar") { sent++; bars.set(name, JSON.parse(args[2])); } } });
+  const a = fake("a"), b = fake("b");
+  const hud = createHud({ pages: async () => [a, b], participants: () => [], waiting: () => null, liveView: () => null, notify: () => {} });
+  await hud.setRecording(true);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(bars.get("a").recording, true);
+  assert.equal(bars.get("b").recording, true);
+  assert.equal(sent, 2, "one bar per page");
+  await hud.setRecording(true);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(sent, 2, "unchanged: nothing sent");
+  await hud.setRecording(false);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal("recording" in bars.get("a"), false, "off: the key is gone");
+  assert.equal("recording" in bars.get("b"), false);
+  assert.equal(sent, 4);
+  await hud.setRecording(false);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(sent, 4, "a repeated off sends nothing more");
+});
+
+test("the bar shows a REC pill while recording and takes it down after", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Shop</h1>" }));
+    await page.goto("http://pairbrowse.test/");
+    await page.evaluate(() => { const a = Element.prototype.attachShadow; Element.prototype.attachShadow = function (i) { return a.call(this, { ...i, mode: "open" }); }; });
+    await ensureHud(page, source, "__pbtest");
+    const read = () => page.evaluate((tag) => {
+      const root = document.querySelector(tag).shadowRoot, rec = root.querySelector(".who .rec");
+      return { who: root.querySelector(".who span").textContent, hidden: rec.hidden, text: rec.textContent, display: getComputedStyle(rec).display, dot: getComputedStyle(rec.querySelector("i")).backgroundColor, pz: root.querySelector(".pz").textContent };
+    }, hud.tags.bar);
+    const send = (v) => page.evaluate((v) => window.__pbtest("tok", JSON.stringify(v), "bar"), v);
+    const items = [{ t: Date.now(), text: "Clicked Next", who: "Bob" }];
+    await send({ items, recording: true });
+    let r = await read();
+    assert.equal(r.who, "Bob's Claude is driving", "the who-line is unchanged");
+    assert.equal(r.hidden, false);
+    assert.equal(r.text, "REC");
+    assert.equal(r.display, "flex", "shown (inline-flex, blockified as an item of the flex who-line)");
+    assert.equal(r.dot, "rgb(239, 100, 104)", "the dot is the sheet's --bad");
+    await send({ items });
+    r = await read();
+    assert.equal(r.hidden, true, "no recording: no pill");
+    assert.equal(r.display, "none");
+    await send({ items, recording: true, pause: { by: "Alice" }, canPause: true });
+    r = await read();
+    assert.match(r.who, /^Paused by Alice/);
+    assert.equal(r.pz, "Resume");
+    assert.equal(r.hidden, false, "a pause keeps the pill");
+  } finally {
+    await browser.close();
+  }
+});
+
 // The helper waits on the page for input ("user-wait") instead of asking twice a second: the wait
 // answers the moment a person does something, empty after its time, and never two at once.
 test("the page answers a wait for input at once when something happens, empty after its time", { skip: !runtime, timeout: 60_000 }, async () => {

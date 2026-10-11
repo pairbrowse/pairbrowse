@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workspace</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="left.css">
+</head>
+<body data-dock="open" data-s="connecting">
+<svg hidden aria-hidden="true">
+  <symbol id="i-workspace" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/><rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></g></symbol>
+  <symbol id="i-browser" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2 8h12"/><path d="M8 2c1.7 1.7 2.6 3.7 2.6 6S9.7 12.3 8 14C6.3 12.3 5.4 10.3 5.4 8S6.3 3.7 8 2z"/></g></symbol>
+  <symbol id="i-sessions" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l6 3-6 3-6-3z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/></g></symbol>
+  <symbol id="i-history" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.5"/></g></symbol>
+  <symbol id="i-activity" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8.5h3l1.6-4.5 3.3 8 1.6-3.5h3.5"/></g></symbol>
+  <symbol id="i-tools" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.4 2.2a3.3 3.3 0 0 0-3.5 4.4L2.5 11a1.4 1.4 0 0 0 2 2l4.4-4.4a3.3 3.3 0 0 0 4.4-3.5l-2 2-1.9-.5-.5-1.9z"/></g></symbol>
+  <symbol id="i-people" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5.5" r="2.3"/><path d="M1.8 13.2c0-2.3 1.9-3.9 4.2-3.9s4.2 1.6 4.2 3.9"/><circle cx="11.4" cy="5.9" r="1.8"/><path d="M11.6 9.4c1.6.2 2.8 1.6 2.8 3.5"/></g></symbol>
+  <symbol id="i-gear" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14.48 6.74L14.48 9.26L12.69 9.43L12.33 10.3L13.47 11.69L11.69 13.47L10.3 12.33L9.43 12.69L9.26 14.48L6.74 14.48L6.57 12.69L5.7 12.33L4.31 13.47L2.53 11.69L3.67 10.3L3.31 9.43L1.52 9.26L1.52 6.74L3.31 6.57L3.67 5.7L2.53 4.31L4.31 2.53L5.7 3.67L6.57 3.31L6.74 1.52L9.26 1.52L9.43 3.31L10.3 3.67L11.69 2.53L13.47 4.31L12.33 5.7L12.69 6.57Z"/><circle cx="8" cy="8" r="2"/></g></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></g></symbol>
+  <symbol id="i-chevron" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></g></symbol>
+</svg>
+<header class="head">
+  <button class="workspace" id="workspace" type="button" title="Switch session"><span class="ws-icon" aria-hidden="true"><svg><use href="#i-workspace"/></svg></span><span class="ws-label">Workspace</span><span class="sr">: switch session</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+</header>
+<main class="body" id="main">
+  <nav aria-label="Workspace">
+    <ul class="nav" role="list">
+      <li><button class="row" id="nav-browser" type="button" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-browser"/></svg><span class="label">Browser</span><span class="badge" id="tab-count" aria-hidden="true"></span><span class="sr" id="tab-count-words"></span></button></li>
+      <li><button class="row" id="nav-sessions" type="button"><svg class="ic" aria-hidden="true"><use href="#i-sessions"/></svg><span class="label">Sessions</span></button></li>
+      <li><button class="row" id="nav-history" type="button"><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg><span class="label">History</span></button></li>
+      <li><button class="row" id="nav-activity" type="button" aria-expanded="false" aria-controls="activity-list"><svg class="ic" aria-hidden="true"><use href="#i-activity"/></svg><span class="label">Activity</span></button>
+        <ol class="activity" id="activity-list" hidden aria-label="Activity"></ol></li>
+      <li><button class="row" id="nav-tools" type="button"><svg class="ic" aria-hidden="true"><use href="#i-tools"/></svg><span class="label">Tools</span></button></li>
+    </ul>
+  </nav>
+  <section class="sec" aria-labelledby="agents-h">
+    <div class="sec-head"><h2 id="agents-h">Agents</h2><button class="add" id="add-agent" type="button" aria-label="Add an agent" aria-expanded="false" aria-controls="hint"><svg aria-hidden="true"><use href="#i-plus"/></svg></button></div>
+    <div class="hint" id="hint" role="region" aria-label="How to add an agent" hidden>
+      <p>Any Claude Code or Codex session with the PairBrowse plugin shows up here once it acts in the browser.</p>
+      <p>Claude Code: <code>claude plugin marketplace add pairbrowse/pairbrowse</code> then <code>claude plugin install pairbrowse@pairbrowse</code>.</p>
+      <p>Codex: <code>codex plugin marketplace add pairbrowse/pairbrowse</code> then <code>codex plugin add pairbrowse@pairbrowse</code>.</p>
+    </div>
+    <p class="conn" id="conn" role="status" aria-live="polite">Connecting to PairBrowse…</p>
+    <ul class="people" id="agents" role="list"></ul>
+  </section>
+  <section class="sec" id="shared" aria-labelledby="shared-h" hidden>
+    <h2 id="shared-h">Shared with</h2>
+    <ul class="people" id="guests" role="list"></ul>
+  </section>
+</main>
+<footer class="foot">
+  <div class="storage" id="storage" hidden>
+    <div class="storage-line"><span class="storage-k" id="storage-k">Storage</span><span class="storage-v" id="storage-text"></span></div>
+    <div class="bar" id="storage-bar" role="meter" aria-labelledby="storage-k" aria-valuemin="0" aria-valuemax="10737418240"><i id="storage-fill"></i></div>
+  </div>
+  <button class="gear" id="settings" type="button" aria-label="Settings" title="Settings"><svg aria-hidden="true"><use href="#i-gear"/></svg></button>
+</footer>
+<script type="module" src="left.js"></script>
+</body>
+</html>

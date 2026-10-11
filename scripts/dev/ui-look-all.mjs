@@ -5,9 +5,10 @@
 // Each shot uses scripts/dev/look/<page>.json, a shot's shim merged over the file's. The default
 // folder is <tmpdir>/pairbrowse-ui-look. Prints one line per shot (name, size, path, the number of
 // error, pageerror, rejection and csp log entries); exit 1 when a shot failed to render or logged
-// one of those. Sizes: the strip's tab row is 44 px; the docks 200 and 330 wide by 936 (1024 - 88);
-// the contents area 1536 - 200 - 330 - 16 = 990 by 928; the timeline 130 tall; the approve card
-// 360; the nav fragments 3 x 28 + 2 x 4 + 16 = 108; the switcher, Share and the menu their B widths.
+// one of those. Sizes: the strip's tab row is 44 px; the docks 200 and 330 wide by 936 (1024 - 88),
+// both rails 44 by 936; the contents area 1536 - 200 - 330 - 16 = 990 by 928; the timeline 130 tall;
+// the approve card 360; the nav fragments 3 x 28 + 2 x 4 + 16 = 108; the switcher, Share and the
+// menu their B widths.
 // capture is left out: a hidden page with no UI.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -27,6 +28,7 @@ export const SHOTS = [
   { name: "left", page: "left", width: 200, height: 936 },
   { name: "left-rail", page: "left", width: 44, height: 936, shim: { layout: { left: 1 } } },
   { name: "right", page: "right", width: 330, height: 936 },
+  { name: "right-rail", page: "right", width: 44, height: 936, shim: { layout: { right: 1 } } },
   { name: "newtab", page: "newtab", width: 990, height: 928 },
   { name: "picker", page: "picker", width: 990, height: 928 },
   { name: "screen", page: "screen", width: 990, height: 928 },

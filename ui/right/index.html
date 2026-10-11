@@ -24,10 +24,11 @@
       <div class="tab" role="tab" id="tab-pictures" aria-selected="false" aria-controls="pane-pictures" tabindex="-1">Pictures</div>
       <div class="tab" role="tab" id="tab-tools" aria-selected="false" aria-controls="pane-tools" tabindex="-1">Tools</div>
     </div>
-    <button class="expand" id="dock-expand" type="button" aria-label="Open the dock as a sheet" hidden><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9 2h5v5h-1.5V4.6L9.6 7.5 8.5 6.4l2.9-2.9H9zM2 9h1.5v2.4l2.9-2.9 1.1 1.1-2.9 2.9H7V14H2z"/></svg></button>
+    <button class="dock-btn" id="dock-collapse" type="button" aria-label="Collapse the agent panel" title="Collapse the agent panel" aria-expanded="true" hidden><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></svg></button>
   </div>
 
   <div class="rail" id="rail" hidden>
+    <div class="rail-top"><button class="dock-btn" id="dock-expand" type="button" aria-label="Expand the agent panel" title="Expand the agent panel" aria-expanded="false" hidden><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4L6 8l4 4"/></svg></button></div>
     <button type="button" class="rail-btn" id="rail-agent" data-tab="agent" aria-label="Agent" title="Agent" aria-current="true"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="5" r="3"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5z"/></svg><span class="count" id="rail-count" aria-hidden="true" hidden></span></button>
     <button type="button" class="rail-btn" data-tab="page" aria-label="Page" title="Page"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 1.5h6.5L13 5v9.5H3zm1.5 1.5v10h7V6H8.5V3zM6 8h4v1.2H6zm0 2.4h4v1.2H6z"/></svg></button>
     <button type="button" class="rail-btn" data-tab="pictures" aria-label="Pictures" title="Pictures"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 2.5h13v11h-13zM3 4v6.4l3-3 3 3 1.5-1.5L13 11.4V4zm8 1a1.3 1.3 0 1 1 0 2.6A1.3 1.3 0 0 1 11 5z"/></svg></button>

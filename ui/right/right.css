@@ -42,12 +42,16 @@ html[data-host="native"] .top, html[data-host="native"] #sec-activity { display:
 .tab[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
 .count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent-soft); color: var(--accent-ink); font-size: var(--fs-1); font-weight: var(--fw-name); line-height: 1; }
 .count[hidden] { display: none; }
-.expand { margin-left: auto; width: 28px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer; }
-.expand[hidden] { display: none; }
+/* Collapse (open, at the tab bar's end) and expand (the rail's top): the dock's own state. */
+.dock-btn { align-self: center; display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin-left: auto; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: color 120ms ease-out, background-color 120ms ease-out; }
+.dock-btn:hover { background: var(--hover); color: var(--ink); }
+.dock-btn[hidden] { display: none; }
 
 /* Dock states (the browser build): the rail is a 44 px column of four buttons; hidden shows nothing. */
 #rail[hidden] { display: none; }
-#rail { width: 44px; display: grid; align-content: start; justify-items: center; gap: 4px; padding-top: 6px; }
+#rail { width: 44px; display: grid; align-content: start; justify-items: center; gap: 4px; padding-top: 0; }
+.rail-top { justify-self: stretch; display: grid; place-items: center; height: 44px; margin-bottom: 2px; border-bottom: 1px solid var(--edge); }
+.rail-top .dock-btn { margin-left: 0; }
 .rail-btn { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: pointer; transition: color 120ms ease-out, background-color 120ms ease-out; }
 .rail-btn:hover { background: var(--hover); color: var(--ink); }
 .rail-btn { position: relative; }

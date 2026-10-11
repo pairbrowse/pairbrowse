@@ -418,3 +418,17 @@ export function pickerPopover({ pop, frame, openers, dismissable = () => true })
   pop.addEventListener("keydown", onEscape);
   return { open, close, isOpen };
 }
+
+// Asks for one dock's state: the browser's Layout.Set in the build (the last state with one side
+// changed), else the helper's POST layout; false when neither channel is there (nothing asked).
+const DOCK_STATE = { hidden: "kHidden", rail: "kRail", open: "kOpen" };
+export function askDock({ pb, layout, base, side, state, onFail }) {
+  if (pb) {
+    if (!layout) return false;
+    pb.layout.set({ ...layout, [side]: pb.DockState[DOCK_STATE[state]] }).catch(() => onFail?.());
+    return true;
+  }
+  if (!base) return false;
+  fetch(base + "layout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ [side]: state }) }).then((r) => { if (!r.ok) onFail?.(); }, () => onFail?.());
+  return true;
+}

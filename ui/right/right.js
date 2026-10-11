@@ -2,7 +2,7 @@
 // takes the helper's address and the dock state from the browser; as plain Chromium's side panel
 // it reads the address the daemon handed to background.js. Either way it connects to the live
 // view server (status, activity, profile) and never asks for the page stream itself.
-import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState } from "../common.js";
+import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState, askDock } from "../common.js";
 
 const pb = globalThis.pairbrowse || null;
 document.documentElement.dataset.host = pb ? "native" : "extension";
@@ -77,13 +77,23 @@ function countRequests() {
 }
 
 // ---- the dock state (the browser build only): open, a rail of four buttons, or hidden ----
+// Collapse (in the open tab bar) asks for the rail and expand (the rail's top) for open; focus
+// moves to the other button once the browser applies it. Hidden is on the shortcut only.
 let lastLayout = null;
+let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
 function applyDock(s) {
   const name = ["hidden", "rail", "open"][s?.right] || "open";
   const was = document.documentElement.dataset.dock;
   document.documentElement.dataset.dock = name;
   $("rail").hidden = name !== "rail";
+  $("dock-collapse").hidden = name !== "open";
+  $("dock-expand").hidden = name !== "rail";
   if (name === was) return;
+  if (focusAfter) {
+    const wanted = focusAfter;
+    focusAfter = "";
+    if (wanted === name) $(name === "rail" ? "dock-expand" : "dock-collapse").focus();
+  }
   // A hidden dock or a rail runs no timer, whether or not its document reports hidden; open
   // again, each is re-armed from the state it left. Open on Pictures again: the newest picture.
   if (name === "hidden" || name === "rail") sleepTimers();
@@ -99,10 +109,9 @@ if (pb) {
       selectTab(btn.dataset.tab);
     });
   }
-  if ("kSheet" in pb.DockState) {
-    $("dock-expand").hidden = false;
-    $("dock-expand").addEventListener("click", () => { if (lastLayout) pb.layout.set({ ...lastLayout, right: pb.DockState.kSheet }).catch(() => {}); });
-  }
+  const ask = (state) => { focusAfter = state; if (!askDock({ pb, layout: lastLayout, base: null, side: "right", state, onFail: () => { focusAfter = ""; } })) focusAfter = ""; };
+  $("dock-collapse").addEventListener("click", () => ask("rail"));
+  $("dock-expand").addEventListener("click", () => ask("open"));
 }
 
 // End session: the session picker again, after a confirm in the card itself (a dock slot in the

@@ -54,7 +54,7 @@ renders a page to a PNG and prints its harness log. Its fixtures (`{ helper, rep
 are `scripts/dev/look/<page>.json` by default, and `--fixtures` replaces them. `--hash nav-left`
 renders one of a page's hash modes (the strip's nav fragments and bubbles). `node scripts/dev/ui-look-all.mjs
 [--out dir] [--only a,b] [--reduced-motion]` renders every visible page (and the strip's hash modes
-and the left rail) at its Part B size into `<tmpdir>/pairbrowse-ui-look` by default, one line per
+and both docks' rails) at its Part B size into `<tmpdir>/pairbrowse-ui-look` by default, one line per
 shot with its count of error and CSP entries; it exits 1 when a shot logged one. The harness
 serves the picker frameable by same-origin pages only, as the native build will, so the strip's
 switcher and the left dock's popover show the real framed picker; every other page refuses any frame.

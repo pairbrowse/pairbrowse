@@ -555,10 +555,16 @@ test("only same-origin pages frame the picker, and no other page can be framed",
       for (const [id, src] of [["t-picker", "../picker/index.html"], ["t-right", "../right/index.html"]]) {
         const f = document.createElement("iframe");
         f.id = id;
+        f.addEventListener("load", () => { f.dataset.loaded = "1"; });
         f.src = src;
         document.body.append(f);
       }
     });
+    // Both frames finish navigating first (a refused frame still fires load), so the right page's
+    // refusal is not just a frame that has not loaded yet.
+    const loaded = () => ctx.inPage(() => ["t-picker", "t-right"].every((id) => document.getElementById(id).dataset.loaded === "1"));
+    for (let i = 0; i < 100 && !(await loaded()); i++) await ctx.page.waitForTimeout(50);
+    assert.equal(await loaded(), true, "both frames finished navigating");
     const probe = () => ctx.inPage(() => {
       const read = (id, fn) => { try { return fn(document.getElementById(id).contentDocument); } catch { return false; } };
       return {

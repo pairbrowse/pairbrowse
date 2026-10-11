@@ -2,10 +2,10 @@
 // window.pairbrowse (the mojom) gives the layout, the tabs and the tab owners; served without it,
 // the helper's layout, tabs and agent-tabs events do. Both read the helper's stream for the
 // agents (board), the activity, who it is shared with and the session. The page only reflects
-// the dock's state: it never sets it, except when Tools opens the right dock or Activity is
-// expanded from the rail. Nothing here is invented: every row and figure is what the helper or
+// the dock's state: it sets it only from Tools (the right dock opens), from Activity in the rail
+// and from the collapse and expand buttons. Nothing here is invented: every row and figure is what the helper or
 // the browser reported.
-import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover } from "../common.js";
+import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
 const DOCK = ["hidden", "rail", "open"]; // DockState order
@@ -25,6 +25,7 @@ let lastWebTab = -1; // the last active tab that is not History
 let base = null;
 let es = null;
 let driveTimer = 0;
+let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
 
 const isHistory = (url) => /^chrome:\/\/history(\/|$)/.test(url || "");
 const isSettings = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)settings(\/|$)/.test(url || "");
@@ -55,13 +56,22 @@ function railTitles() {
 }
 function setDock(name) {
   const state = DOCK.includes(name) ? name : "open";
+  const was = dock();
   document.body.dataset.dock = state;
   const hidden = state === "hidden";
-  for (const id of ["main", "workspace", "settings"]) $(id).inert = hidden;
+  for (const id of ["main", "workspace", "settings", "dock-collapse", "dock-expand"]) $(id).inert = hidden;
+  // The buttons show only once the layout is known (a host that cannot set it shows none).
+  $("dock-collapse").hidden = !layout || state !== "open";
+  $("dock-expand").hidden = !layout || state !== "rail";
   if (state !== "open") { closeHint(false); setActivity(false); }
   if (hidden) switcher.close(false);
   // Nothing redraws rows nobody can see: the drive timer stops with the dock hidden.
   if (hidden) { clearTimeout(driveTimer); driveTimer = 0; } else armDrive();
+  if (focusAfter && state !== was) {
+    const wanted = focusAfter;
+    focusAfter = "";
+    if (wanted === state) $(state === "rail" ? "dock-expand" : "dock-collapse").focus();
+  }
   railTitles();
 }
 
@@ -196,8 +206,7 @@ function openBrowser() {
 }
 // Tools lives in the right dock: open it (no channel names the tab to show yet).
 function openTools() {
-  if (pb) { if (layout) pb.layout.set({ ...layout, right: pb.DockState.kOpen }).catch(() => {}); return; }
-  if (base) fetch(base + "layout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ right: "open" }) }).catch(() => {});
+  askDock({ pb, layout, base, side: "right", state: "open" });
 }
 function setActivity(open) {
   $("nav-activity").setAttribute("aria-expanded", String(open));
@@ -205,11 +214,7 @@ function setActivity(open) {
 }
 function toggleActivity() {
   const open = $("nav-activity").getAttribute("aria-expanded") !== "true";
-  if (open && dock() === "rail") {
-    if (pb) { if (!layout) return; pb.layout.set({ ...layout, left: pb.DockState.kOpen }).catch(() => {}); }
-    else if (base) fetch(base + "layout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ left: "open" }) }).catch(() => {});
-    else return;
-  }
+  if (open && dock() === "rail" && !askDock({ pb, layout, base, side: "left", state: "open" })) return;
   if (open) drawActivity();
   setActivity(open);
 }
@@ -341,6 +346,9 @@ $("nav-activity").addEventListener("click", toggleActivity);
 $("nav-tools").addEventListener("click", openTools);
 $("add-agent").addEventListener("click", toggleHint);
 $("settings").addEventListener("click", openSettings);
+const askLeft = (state) => { focusAfter = state; if (!askDock({ pb, layout, base, side: "left", state, onFail: () => { focusAfter = ""; } })) focusAfter = ""; };
+$("dock-collapse").addEventListener("click", () => askLeft("rail"));
+$("dock-expand").addEventListener("click", () => askLeft("open"));
 if (!pb) {
   $("nav-history").disabled = true;
   $("settings").disabled = true;

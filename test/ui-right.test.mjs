@@ -2,8 +2,9 @@
 // build's host), the fake helper's routes and stream. Tabs, the agent card's states in words,
 // pause, the Checklist with the task and the saved time, the Status box, the participant rows,
 // the session card, Pictures (with and without the timeline, never while hidden), Tools, the
-// rail and the hidden dock, and the request count. The common checks stay in test/ui.test.mjs;
-// the extension host (fake chrome, no shim) is test/right.test.mjs.
+// rail and the hidden dock, the collapse and expand buttons, and the request count. The common
+// checks stay in test/ui.test.mjs; the extension host (no shim) is covered by its own scenario
+// here (native: false) and by test/right.test.mjs (fake chrome).
 import { describe } from "node:test";
 import assert from "node:assert/strict";
 import { pageTest } from "./helpers/ui-page.mjs";
@@ -54,7 +55,19 @@ describe("tabs", () => pageTest("right", opts(), async ({ page, inPage, until, e
   assert.equal(await inPage(() => document.getElementById("tab-pictures").tabIndex), -1, "only the selected tab is in the Tab order");
   await page.keyboard.press("End");
   await until("Tools by End", () => document.body.dataset.tab === "tools");
-  assert.equal(await inPage(visible, "#dock-expand"), false, "no sheet state in the mojom: no expand button");
+  assert.equal(await inPage(() => document.querySelector('[aria-label="Open the dock as a sheet"]')), null, "no sheet state in the mojom: no sheet button");
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  const collapse = await inPage(() => {
+    const b = document.getElementById("dock-collapse"), r = b.getBoundingClientRect(), bar = document.querySelector(".tabs").getBoundingClientRect();
+    return { w: r.width, h: r.height, right: r.right, middle: r.top + r.height / 2 - (bar.top + (bar.height - 1) / 2), label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded") };
+  });
+  assert.equal(collapse.w, 24);
+  assert.equal(collapse.h, 24);
+  assert.ok(Math.abs(collapse.right - (330 - 6)) <= 1, `right edge ${collapse.right}`);
+  assert.ok(Math.abs(collapse.middle) <= 1, `vertically centered in the bar (${collapse.middle})`);
+  assert.equal(collapse.label, "Collapse the agent panel");
+  assert.equal(collapse.expanded, "true");
+  assert.equal(await inPage(visible, "#dock-expand"), false, "no expand button while open");
   assert.deepEqual(errors, []);
 }));
 
@@ -294,6 +307,8 @@ describe("rail and hidden", () => pageTest("right", opts(), async ({ page, helpe
   assert.equal(await inPage(visible, "#rail"), true);
   assert.equal(await inPage(visible, "main"), false);
   assert.equal(await inPage(() => document.getElementById("rail").getBoundingClientRect().width), 44);
+  assert.deepEqual(await inPage(() => { const b = document.getElementById("dock-expand"); return { shown: b.checkVisibility(), inTop: b.parentElement.classList.contains("rail-top"), h: b.parentElement.getBoundingClientRect().height }; }),
+    { shown: true, inTop: true, h: 44 });
   assert.deepEqual(await inPage(() => [...document.querySelectorAll(".rail-btn")].map((b) => b.getAttribute("aria-label"))), ["Agent", "Page", "Pictures", "Tools"]);
   assert.deepEqual(await inPage(() => [...document.querySelectorAll(".rail-btn")].map((b) => b.getAttribute("aria-current"))), ["true", null, null, null], "the rail says which tab opens");
   assert.equal(await inPage(() => getComputedStyle(document.querySelector(".rail-btn[aria-current]")).boxShadow.includes("inset")), true, "in a shape, not by color alone");
@@ -322,6 +337,8 @@ describe("rail and hidden", () => pageTest("right", opts(), async ({ page, helpe
   await until("hidden", () => document.documentElement.dataset.dock === "hidden");
   assert.equal(await inPage(visible, "main"), false);
   assert.equal(await inPage(visible, "#rail"), false);
+  assert.equal(await inPage(visible, "#dock-expand"), false);
+  assert.equal(await inPage(visible, "#dock-collapse"), false);
   assert.deepEqual(errors, []);
 }));
 
@@ -337,5 +354,61 @@ describe("requests count", () => pageTest("right", opts(), async ({ page, helper
   assert.equal(helper.posts.filter((p) => p.route === "approve").length, 0, "a synthetic click allows nothing");
   await page.click("#joins .join .primary");
   assert.deepEqual((await posted(helper, "approve"))[0]?.body, { id: "r1", allow: true });
+  assert.deepEqual(errors, []);
+}));
+
+describe("collapse and expand", () => pageTest("right", opts(), async ({ page, shim, harness, inPage, until, errors }) => {
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  const live = await harness.live();
+  const fixture = await inPage(() => ({ ...window.__pairbrowse.fixture.layout }));
+  const sets = async () => (await shim.calls()).filter((c) => c.iface === "layout" && c.method === "set");
+  await page.focus("#dock-collapse");
+  await page.keyboard.press("Enter");
+  await until("the rail, focus on expand", () => document.documentElement.dataset.dock === "rail" && document.activeElement?.id === "dock-expand");
+  assert.deepEqual((await sets()).map((c) => c.args[0]), [{ ...fixture, right: 1 }]);
+  const expand = await inPage(() => {
+    const b = document.getElementById("dock-expand"), r = b.getBoundingClientRect(), top = b.parentElement.getBoundingClientRect(), cs = getComputedStyle(b), ts = getComputedStyle(b.parentElement);
+    return { label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded"), cx: r.left + r.width / 2, cy: r.top + r.height / 2, topH: top.height,
+      line: [ts.borderBottomWidth, ts.borderBottomColor], ring: [cs.outlineStyle, cs.outlineWidth, cs.outlineOffset, cs.outlineColor] };
+  });
+  assert.equal(expand.label, "Expand the agent panel");
+  assert.equal(expand.expanded, "false");
+  assert.equal(expand.cx, 22);
+  assert.ok(Math.abs(expand.cy - 21.5) <= 1, `centered in the 44 px band (${expand.cy})`);
+  assert.equal(expand.topH, 44);
+  assert.deepEqual(expand.line, ["1px", await inPage(token, "edge")]);
+  assert.deepEqual(expand.ring, ["solid", "2px", "2px", await inPage(token, "accent")], "the 2 px accent focus ring");
+  await page.keyboard.press("Enter");
+  await until("open, focus on collapse", () => document.documentElement.dataset.dock === "open" && document.activeElement?.id === "dock-collapse");
+  const all = await sets();
+  assert.equal(all.length, 2);
+  assert.equal(all[1].args[0].right, 2);
+  assert.ok(all.every((c) => c.args[0].right !== 0 && c.args[0].left !== 0), "no button hides a dock");
+  // Hover: --hover under --ink, over the 120 ms transition.
+  assert.equal(await inPage(() => getComputedStyle(document.getElementById("dock-collapse")).transitionDuration), "0.12s, 0.12s");
+  await page.hover("#dock-collapse");
+  await until("the hover colors", () => { const cs = getComputedStyle(document.getElementById("dock-collapse")); const t = (n) => { const p = document.createElement("span"); p.style.color = `var(--${n})`; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; }; return cs.backgroundColor === t("hover") && cs.color === t("ink"); });
+  assert.deepEqual(await harness.live(), live, "nothing new runs after the round trip");
+  assert.deepEqual(errors, []);
+}));
+
+describe("extension host: no collapse or expand", () => pageTest("right", opts({}, { native: false }), async ({ helper, inPage, errors }) => {
+  assert.equal(await inPage(() => document.documentElement.dataset.host), "extension");
+  const state = () => ["dock-collapse", "dock-expand"].map((id) => { const b = document.getElementById(id); return [b.hidden, b.checkVisibility()]; });
+  assert.deepEqual(await inPage(state), [[true, false], [true, false]]);
+  helper.set("layout", { right: "rail" });
+  await sleep(300);
+  assert.deepEqual(await inPage(state), [[true, false], [true, false]]);
+  assert.equal(await inPage(() => document.getElementById("rail").hidden), true);
+  assert.equal(helper.posts.some((p) => p.route === "layout"), false, "no POST layout");
+  assert.deepEqual(errors, []);
+}));
+
+describe("collapse under reduced motion", () => pageTest("right", opts({}, { reducedMotion: "reduce" }), async ({ page, harness, inPage, until, errors }) => {
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  assert.equal(await inPage(() => getComputedStyle(document.getElementById("dock-collapse")).transitionDuration), "0.001s");
+  await page.hover("#dock-collapse");
+  await sleep(50);
+  assert.deepEqual(await harness.animations(), []);
   assert.deepEqual(errors, []);
 }));

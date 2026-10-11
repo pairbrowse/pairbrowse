@@ -19,8 +19,8 @@ export const pages = () => readdirSync(UI_ROOT, { withFileTypes: true })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function openPage(browser, name, { helper, fixture = defaultFixture(), bridge = true, viewport = { width: 360, height: 900 }, reducedMotion = "no-preference" } = {}) {
-  const ui = await startUiServer({ helper, fixture, bridge });
+export async function openPage(browser, name, { helper, fixture = defaultFixture(), bridge = true, native = true, viewport = { width: 360, height: 900 }, reducedMotion = "no-preference" } = {}) {
+  const ui = await startUiServer({ helper, fixture, bridge, native });
   helper.setPageOrigin(ui.origin);
   const page = await browser.newPage({ viewport, reducedMotion });
   const errors = [];
@@ -76,7 +76,8 @@ export async function openPage(browser, name, { helper, fixture = defaultFixture
 }
 
 // pageTest(name, [opts], fn): opts { fixtures, replies (fake-helper), shim (over defaultFixture()),
-// bridge, viewport, reducedMotion, timeout }; fn gets { page, helper, ui, shim, harness, errors,
+// bridge, native (false: no window.pairbrowse, the served or extension host), viewport,
+// reducedMotion, timeout }; fn gets { page, helper, ui, shim, harness, errors,
 // until, inPage }.
 export function pageTest(name, opts, fn) {
   if (typeof opts === "function") { fn = opts; opts = {}; }
@@ -86,7 +87,7 @@ export function pageTest(name, opts, fn) {
     let helper = null, ctx = null;
     try {
       helper = await startFakeHelper({ pageOrigin: null, fixtures: o.fixtures, replies: o.replies });
-      ctx = await openPage(browser, name, { helper, fixture: merge(defaultFixture(), o.shim || {}), bridge: o.bridge ?? true, viewport: o.viewport, reducedMotion: o.reducedMotion });
+      ctx = await openPage(browser, name, { helper, fixture: merge(defaultFixture(), o.shim || {}), bridge: o.bridge ?? true, native: o.native ?? true, viewport: o.viewport, reducedMotion: o.reducedMotion });
       await fn({ ...ctx, helper });
     } finally {
       await ctx?.close();

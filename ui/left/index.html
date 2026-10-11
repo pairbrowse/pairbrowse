@@ -20,9 +20,13 @@
   <symbol id="i-gear" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14.48 6.74L14.48 9.26L12.69 9.43L12.33 10.3L13.47 11.69L11.69 13.47L10.3 12.33L9.43 12.69L9.26 14.48L6.74 14.48L6.57 12.69L5.7 12.33L4.31 13.47L2.53 11.69L3.67 10.3L3.31 9.43L1.52 9.26L1.52 6.74L3.31 6.57L3.67 5.7L2.53 4.31L4.31 2.53L5.7 3.67L6.57 3.31L6.74 1.52L9.26 1.52L9.43 3.31L10.3 3.67L11.69 2.53L13.47 4.31L12.33 5.7L12.69 6.57Z"/><circle cx="8" cy="8" r="2"/></g></symbol>
   <symbol id="i-plus" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></g></symbol>
   <symbol id="i-chevron" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></g></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4L6 8l4 4"/></g></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></g></symbol>
 </svg>
 <header class="head">
+  <button class="dock-btn" id="dock-expand" type="button" aria-label="Expand the workspace" title="Expand the workspace" aria-expanded="false" hidden><svg aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
   <button class="workspace" id="workspace" type="button" title="Switch session" aria-expanded="false" aria-controls="switcher"><span class="ws-icon" aria-hidden="true"><svg><use href="#i-workspace"/></svg></span><span class="ws-label">Workspace</span><span class="sr">: switch session</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+  <button class="dock-btn" id="dock-collapse" type="button" aria-label="Collapse the workspace" title="Collapse the workspace" aria-expanded="true" hidden><svg aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
 </header>
 <div id="switcher" class="switcher" role="dialog" aria-label="Switch session" tabindex="-1" hidden><iframe id="picker" title="Session picker"></iframe></div>
 <main class="body" id="main">

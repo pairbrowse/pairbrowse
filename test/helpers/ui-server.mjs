@@ -38,9 +38,10 @@ export function insertTags(html, tags) {
   return html + tags;
 }
 
-export async function startUiServer({ helper, fixture = defaultFixture(), bridge = true, root = UI_ROOT } = {}) {
+// native: false leaves out the window.pairbrowse shim (the served or extension host).
+export async function startUiServer({ helper, fixture = defaultFixture(), bridge = true, native = true, root = UI_ROOT } = {}) {
   let current = fixture;
-  const tags = '<script src="/__harness/prelude.js"></script><script src="/__harness/pairbrowse-api.js"></script>' + (bridge ? '<script src="/__harness/chrome.js"></script>' : "");
+  const tags = '<script src="/__harness/prelude.js"></script>' + (native ? '<script src="/__harness/pairbrowse-api.js"></script>' : "") + (bridge ? '<script src="/__harness/chrome.js"></script>' : "");
   const js = (res, body) => { res.writeHead(200, { ...SECURITY_HEADERS, "content-type": TYPES.js }); res.end(body); };
   const server = http.createServer((req, res) => {
     if (req.method !== "GET") return plain(res, 405);

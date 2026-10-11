@@ -250,6 +250,8 @@ test("picker framed as the session switcher", { skip: !runtime, timeout: 90_000 
     await frame.click("#sessions > li:first-child button");
     for (let i = 0; i < 60 && !posted(helper, "pick").length; i++) await sleep(50);
     assert.deepEqual(posted(helper, "pick"), [{ action: "use", name: "work" }]);
+    const afterPick = await inPage(frame, () => window.__harness.log).catch(() => []);
+    assert.deepEqual(bad(afterPick), [], "the framed picker logged nothing on the pick");
     for (let i = 0; i < 60 && !(await notes()).length; i++) await sleep(50);
     assert.deepEqual(await notes(), [{ source: "pairbrowse-picker", op: "picked" }], "the parent told, nothing more");
     for (let i = 0; i < 60 && !(await closed()).hidden; i++) await sleep(50);

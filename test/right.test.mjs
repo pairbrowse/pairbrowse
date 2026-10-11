@@ -81,6 +81,7 @@ test("the panel script keeps its three timers, writes no markup and stores one k
   assert.equal(new Set([...js.matchAll(/"(pb-[a-z-]+)"/g)].map(([, k]) => k)).size, 1, "one storage key");
   assert.match(js, /"pb-panel"/);
   assert.doesNotMatch(js, /(^|[^.?])chrome\.storage/m, "every chrome.* access is guarded");
+  assert.doesNotMatch(js, /kSheet/, "the sheet button is gone");
 });
 
 test("the dock's sheet: no blur, no spin, motion only on the Live dot, request cards and new activity", () => {
@@ -216,6 +217,9 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     lv.push("activity", [{ t: t - 2000, text: "Opened **Cart**", who: "Alice · Codex", tab: "Cart" }, { t, text: "Typed into **Email**", who: "Claude", tab: "Checkout" }]);
     lv.push("pause", { paused: false, can: true });
     await until(page, "the board", () => document.getElementById("people").children.length > 0 && !document.getElementById("pause").hidden);
+    // No rail in the side panel: neither the collapse nor the expand button.
+    assert.deepEqual(await page.evaluate(() => ["dock-collapse", "dock-expand"].map((id) => { const b = document.getElementById(id); return [b.hidden, b.checkVisibility()]; })),
+      [[true, false], [true, false]]);
 
     const view = () => page.evaluate(() => {
       const $ = (id) => document.getElementById(id);

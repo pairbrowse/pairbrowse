@@ -1,6 +1,7 @@
 // The left dock (ui/left, DESIGN.md B3) over the pages' harness: the dock state reflected from the
 // layout, the nav rows and what they open, the tab count, the agents and who it is shared with,
-// the activity list, the storage figure (only when the helper reports one) and the keyboard.
+// the activity list, the storage figure (only when the helper reports one), the collapse and expand
+// buttons (native and over the helper's route) and the keyboard.
 // The common checks are in test/ui.test.mjs.
 import { describe } from "node:test";
 import assert from "node:assert/strict";
@@ -52,6 +53,8 @@ async function clickInFrame(page, frame, sel) {
   await page.mouse.click(at.x + r.x, at.y + r.y);
 }
 const pickerFrames = (page) => page.frames().filter((f) => f.url().includes("/picker/")).length;
+const shown = () => ({ collapse: document.getElementById("dock-collapse").checkVisibility(), expand: document.getElementById("dock-expand").checkVisibility() });
+const token = (name) => { const s = document.createElement("span"); s.style.color = `var(${name})`; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; };
 const calls = async (ctx, iface, method) => (await ctx.shim.calls()).filter((c) => c.iface === iface && c.method === method);
 const rows = () => [...document.querySelectorAll("#agents li")].map((li) => ({
   state: li.dataset.state || "", name: li.querySelector("strong")?.textContent || "", line: li.querySelector("small")?.textContent || li.textContent,
@@ -61,6 +64,8 @@ const rows = () => [...document.querySelectorAll("#agents li")].map((li) => ({
 scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   const { until, inPage } = ctx;
   assert.equal(await inPage(() => document.body.dataset.dock), "open");
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  assert.deepEqual(await inPage(shown), { collapse: true, expand: false });
   assert.equal((await calls(ctx, "layout", "get")).length, 1);
   assert.equal((await calls(ctx, "layout", "addObserver")).length, 1);
   await ctx.shim.layout({ left: 1 });
@@ -69,6 +74,7 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   assert.match(await inPage(() => document.getElementById("nav-browser").title), /^Browser · 3 open tabs$/);
   assert.equal(await inPage(() => document.getElementById("nav-tools").title), "Tools");
   assert.equal(await inPage(() => document.getElementById("workspace").title), "Workspace: switch session");
+  assert.deepEqual(await inPage(shown), { collapse: false, expand: true });
   // The dock's stream carries panel=1, so today's helper never counts it as a viewer (no screencast).
   assert.deepEqual([...ctx.helper.streams].map((st) => ({ kind: st.kind, panel: st.panel })), [{ kind: "left", panel: true }]);
   // A fresh activity line arms the one drive timer; hiding the dock stops it.
@@ -77,7 +83,8 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   assert.equal((await ctx.harness.live()).timeouts, 1);
   await ctx.shim.layout({ left: 0 });
   await until("hidden", () => document.body.dataset.dock === "hidden");
-  assert.deepEqual(await inPage(() => ["main", "workspace", "settings"].map((id) => document.getElementById(id).inert)), [true, true, true]);
+  assert.deepEqual(await inPage(() => ["main", "workspace", "settings", "dock-collapse", "dock-expand"].map((id) => document.getElementById(id).inert)), [true, true, true, true, true]);
+  assert.deepEqual(await inPage(shown), { collapse: false, expand: false });
   await ctx.page.keyboard.press("Tab");
   assert.equal(await inPage(() => document.activeElement === document.body || document.activeElement === null), true, "nothing focusable while hidden");
   const live = await ctx.harness.live();
@@ -218,8 +225,9 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   const { until, inPage } = ctx;
   await inPage(() => { document.activeElement?.blur?.(); document.body.tabIndex = -1; document.body.focus(); document.body.removeAttribute("tabindex"); });
   const order = [];
-  for (let i = 0; i < 8; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
-  assert.deepEqual(order, ["workspace", "nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools", "add-agent", "settings"]);
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  for (let i = 0; i < 9; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
+  assert.deepEqual(order, ["workspace", "dock-collapse", "nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools", "add-agent", "settings"]);
   await ctx.page.focus("#nav-sessions");
   await ctx.page.keyboard.press("Enter");
   // The Sessions row opens the switcher: the picker in a same-origin frame, no picker route.
@@ -317,7 +325,13 @@ scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { 
     avatars: [...document.querySelectorAll("#agents .avatar")].map((a) => [a.checkVisibility(), a.querySelector(".dot").checkVisibility(), a.getBoundingClientRect().width]),
     titles: [...document.querySelectorAll("#agents li")].map((li) => li.title),
     rows: [...document.querySelectorAll(".nav .row")].map((r) => r.title),
+    expand: (() => { const b = document.getElementById("dock-expand"), r = b.getBoundingClientRect(); return { shown: b.checkVisibility(), width: r.width, left: r.left, top: r.top }; })(),
+    collapse: document.getElementById("dock-collapse").checkVisibility(),
+    workspace: document.getElementById("workspace").checkVisibility(),
   }));
+  assert.deepEqual(seen.expand, { shown: true, width: 24, left: 10, top: 10 });
+  assert.equal(seen.collapse, false);
+  assert.equal(seen.workspace, true);
   assert.equal(seen.labels, 0);
   assert.ok(seen.clipped.length > 0 && seen.clipped.every(Boolean), "names and states clipped, not removed");
   assert.ok(seen.width <= 44, `scrollWidth ${seen.width}`);
@@ -334,5 +348,85 @@ scenario("left: reduced motion", { viewport: OPEN, reducedMotion: "reduce" }, as
   await ctx.page.hover("#nav-browser");
   await ctx.page.waitForTimeout(50);
   assert.deepEqual(await ctx.harness.animations(), []);
+  await ctx.until("the expand button", () => document.getElementById("dock-expand").checkVisibility());
+  await ctx.page.hover("#dock-expand");
+  await ctx.page.waitForTimeout(50);
+  assert.equal(await ctx.inPage(() => getComputedStyle(document.getElementById("dock-expand")).transitionDuration), "0s");
+  assert.deepEqual(await ctx.harness.animations(), []);
+  await clean(ctx);
+});
+
+scenario("left: collapse and expand", { viewport: OPEN }, async (ctx) => {
+  const { until, inPage, page } = ctx;
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  const box = await inPage(() => {
+    const b = document.getElementById("dock-collapse"), r = b.getBoundingClientRect();
+    return { width: r.width, height: r.height, right: r.right, label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded"), expand: document.getElementById("dock-expand").checkVisibility() };
+  });
+  assert.deepEqual(box, { width: 24, height: 24, right: 192, label: "Collapse the workspace", expanded: "true", expand: false });
+  // Hover: --hover under --ink, over the 120 ms transition.
+  assert.equal(await inPage(() => getComputedStyle(document.getElementById("dock-collapse")).transitionDuration), "0.12s, 0.12s");
+  await page.hover("#dock-collapse");
+  await until("the hover colors", () => { const cs = getComputedStyle(document.getElementById("dock-collapse")); const t = (n) => { const s = document.createElement("span"); s.style.color = `var(${n})`; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; }; return cs.backgroundColor === t("--hover") && cs.color === t("--ink"); });
+  await page.mouse.move(100, 600);
+  const live = await ctx.harness.live();
+  const fixture = await inPage(() => ({ ...window.__pairbrowse.fixture.layout }));
+  await page.focus("#dock-collapse");
+  await page.keyboard.press("Enter");
+  await until("the rail, focus on expand", () => document.body.dataset.dock === "rail" && document.activeElement?.id === "dock-expand");
+  const sets = await calls(ctx, "layout", "set");
+  assert.equal(sets.length, 1);
+  assert.deepEqual(sets[0].args[0], { ...fixture, left: 1 });
+  const expand = await inPage(() => {
+    const b = document.getElementById("dock-expand"), cs = getComputedStyle(b);
+    return { label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded"), top: b.getBoundingClientRect().top, collapse: document.getElementById("dock-collapse").checkVisibility(),
+      ring: [cs.outlineStyle, cs.outlineWidth, cs.outlineOffset, cs.outlineColor] };
+  });
+  assert.deepEqual(expand.ring, ["solid", "2px", "2px", await inPage(token, "--accent")], "the 2 px accent focus ring");
+  delete expand.ring;
+  assert.deepEqual(expand, { label: "Expand the workspace", expanded: "false", top: 10, collapse: false });
+  await page.keyboard.press("Enter");
+  await until("open, focus on collapse", () => document.body.dataset.dock === "open" && document.activeElement?.id === "dock-collapse");
+  const all = await calls(ctx, "layout", "set");
+  assert.equal(all.length, 2);
+  assert.equal(all[1].args[0].left, 2);
+  assert.ok(all.every((c) => c.args[0].left !== 0 && c.args[0].right !== 0), "no button hides a dock");
+  assert.deepEqual(await ctx.harness.live(), live, "nothing new runs after the round trip");
+  await clean(ctx);
+});
+
+scenario("left: collapse and expand over the helper's route", { viewport: OPEN, native: false }, async (ctx) => {
+  const { until, inPage, page, helper } = ctx;
+  assert.equal(await inPage(() => typeof window.pairbrowse), "undefined");
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  await page.click("#dock-collapse");
+  await until("the rail, focus on expand", () => document.body.dataset.dock === "rail" && document.activeElement?.id === "dock-expand");
+  assert.deepEqual(helper.posts.filter((p) => p.route === "layout").map((p) => p.body), [{ left: "rail" }]);
+  await page.click("#dock-expand");
+  await until("open, focus on collapse", () => document.body.dataset.dock === "open" && document.activeElement?.id === "dock-collapse");
+  assert.deepEqual(helper.posts.filter((p) => p.route === "layout").map((p) => p.body), [{ left: "rail" }, { left: "open" }]);
+  await clean(ctx);
+});
+
+scenario("left: a failed collapse takes no focus later", { viewport: OPEN, native: false, replies: { layout: () => ({ status: 500, body: { error: "no" } }) } }, async (ctx) => {
+  const { until, inPage, page, helper } = ctx;
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  const answered = page.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/layout"));
+  await page.click("#dock-collapse");
+  assert.equal((await answered).status(), 500);
+  assert.equal(await inPage(() => document.body.dataset.dock), "open", "a refused collapse leaves the dock open");
+  helper.set("layout", { left: "rail", right: "open", strip: 88 });
+  await until("the rail", () => document.body.dataset.dock === "rail");
+  assert.notEqual(await inPage(() => document.activeElement?.id), "dock-expand", "a later rail never pulls focus onto the expand button");
+  await clean(ctx);
+});
+
+scenario("left: no dock button before the layout is known", { viewport: OPEN, native: false, fixtures: { layout: null } }, async (ctx) => {
+  const { until, inPage, helper } = ctx;
+  await until("live", () => document.body.dataset.s === "live");
+  assert.deepEqual(await inPage(() => ["dock-collapse", "dock-expand"].map((id) => document.getElementById(id).hidden)), [true, true]);
+  helper.set("layout", { left: "open", right: "open", strip: 88 });
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  assert.equal(await inPage(() => document.getElementById("dock-expand").hidden), true);
   await clean(ctx);
 });

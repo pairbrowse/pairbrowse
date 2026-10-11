@@ -1,0 +1,309 @@
+// The timeline page (ui/timeline, DESIGN.md B7) over the fake helper's timeline routes: cards in
+// order with the newest picture ringed, the Live pill only while the agent drives, pictures
+// fetched with the owner key for the visible cards and released when scrolled away or hidden,
+// notes, the card menu (pin, delete in words), the keyboard, and the off state. The common checks
+// stay in test/ui.test.mjs.
+import assert from "node:assert/strict";
+import { pageTest } from "./helpers/ui-page.mjs";
+
+// An 8x8 JPEG from a Playwright screenshot (about:blank, quality 50).
+const JPEG = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAIAAgDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKAAD//Z";
+
+const hex = (i) => i.toString(16).padStart(12, "0");
+const cardFx = (i, over = {}) => ({ id: hex(i), t: 1_700_000_000_000 + i * 60_000, caption: `Step ${i}`, step: { url: `https://shop.example/${i}`, title: `Page ${i}` }, who: "Claude", pinned: false, note: false, ...over });
+const CARDS = Array.from({ length: 30 }, (_, i) => cardFx(i));
+const pictures = Object.fromEntries(Array.from({ length: 41 }, (_, i) => [hex(i), JPEG]));
+const noteCard = (text) => cardFx(40, { caption: text, step: null, note: true });
+const cardById = (id) => CARDS.find((c) => c.id === id) || cardFx(0, { id });
+const replies = {
+  timeline: (body, rest) => (rest[0] === "note" ? { status: 200, body: noteCard(body.text) } : { status: 200, body: { ...cardById(rest[0]), pinned: body.on !== false } }),
+};
+const opts = (over = {}) => ({ viewport: { width: 1300, height: 130 }, fixtures: { timeline: { cards: CARDS }, pictures }, replies, ...over });
+
+// In the page: every fetch from here on, as [url, method].
+const logFetches = () => { window.__fetches = []; const f = window.fetch; window.fetch = (u, o) => { window.__fetches.push([String(u), o?.method || "GET"]); return f(u, o); }; };
+// until(...) arguments: the page function is serialized, so the count goes in as its argument.
+const drawn = (n) => document.querySelectorAll("li.card:not(.add)").length === n && document.body.dataset.state === "list";
+const card = (id) => `li.card[data-id="${id}"]`;
+
+pageTest("timeline", opts(), async ({ until, inPage, helper, harness }) => {
+  await until("30 cards", drawn, 30);
+  const order = await inPage(() => [...document.querySelectorAll("li.card:not(.add)")].map((li) => li.dataset.id));
+  assert.deepEqual(order, CARDS.map((c) => c.id), "oldest left, newest right");
+  const last = CARDS.at(-1).id;
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll('[aria-current="true"]')].map((face) => face.closest("li").dataset.id)), [last], "the newest picture is current");
+  assert.equal(await inPage((s) => document.querySelector(`${s} .face`).tagName, card(last)), "BUTTON", "the card's face is a button");
+  assert.equal(await inPage((s) => !!document.querySelector(`${s} .face .more`), card(last)), false, "More sits beside the face, not in it");
+  assert.match(await inPage((s) => document.querySelector(`${s} .face`).getAttribute("aria-label"), card(last)), /, current$/, "current in words, in the face's name");
+  assert.deepEqual(await inPage((s) => [...document.querySelectorAll("li.card:not(.add) .face")].filter((f) => !f.closest(s) && f.getAttribute("aria-label").includes("current")).length, card(last)), 0, "no other card says current");
+  assert.equal(await inPage(() => document.getElementById("cards").lastElementChild.id), "add", "Add note last");
+  assert.equal(await inPage(() => document.getElementById("add").checkVisibility()), true, "Add note shows in the list state");
+  // Loading and "Waiting for PairBrowse" are the page as served: Add note starts hidden.
+  const served = await inPage(async () => (await fetch(location.href)).text());
+  assert.match(served, /<body [^>]*data-state="loading"/, "the page as served is loading");
+  assert.match(served, /<li class="card add" id="add" hidden>/, "no Add note before the list");
+  assert.equal(await inPage((s) => document.querySelector(`${s} .more`).getAttribute("aria-controls"), card(last)), "menu", "More points at the menu it opens");
+  assert.equal(await inPage((s) => document.querySelector(`${s} .live-pill`).hidden, card(last)), true, "no Live pill while idle");
+  assert.equal(await inPage(() => document.body.dataset.driving), "false");
+  helper.push("activity", [{ t: Date.now(), who: "Claude", text: "Clicked **Continue**" }]);
+  await until("the Live pill", (s) => !document.querySelector(`${s} .live-pill`).hidden && document.body.dataset.driving === "true", card(last));
+  assert.equal(await inPage(() => document.querySelectorAll(".live-pill:not([hidden])").length), 1, "on the current card only");
+  const live = await harness.live();
+  assert.equal(live.eventSources, 1);
+  assert.equal(live.timeouts, 1, "the one drive timeout");
+  assert.equal(live.intervals + live.frames + live.observers, 0);
+});
+
+pageTest("timeline", opts({ fixtures: { timeline: { cards: CARDS }, pictures, activity: [{ t: Date.now() - 20_000, who: "Claude", text: "Typed" }] } }), async ({ until, inPage, harness }) => {
+  await until("30 cards", drawn, 30);
+  assert.equal(await inPage(() => document.querySelectorAll(".live-pill:not([hidden])").length), 0, "an action 20 s old is not driving");
+  assert.equal(await inPage(() => document.body.dataset.driving), "false");
+  assert.equal((await harness.live()).timeouts, 0, "no timer for an old action");
+});
+
+pageTest("timeline", opts(), async ({ until, inPage, helper }) => {
+  const blob = (ids) => ids.every((id) => { const img = document.querySelector(`li.card[data-id="${id}"] img`); return img.src.startsWith("blob:") && img.complete && img.naturalWidth > 0; });
+  const none = (ids) => ids.every((id) => !document.querySelector(`li.card[data-id="${id}"] img`).src);
+  await until("the end cards' pictures", blob, CARDS.slice(20).map((c) => c.id));
+  assert.equal(await inPage(none, CARDS.slice(0, 6).map((c) => c.id)), true, "far cards have no picture");
+  assert.ok(Number(await inPage(() => document.body.dataset.held)) <= 16);
+  await inPage(logFetches);
+  await inPage(() => { document.getElementById("strip").scrollLeft = 0; });
+  await until("the first cards' pictures", blob, CARDS.slice(0, 9).map((c) => c.id));
+  await until("the end cards released", none, CARDS.slice(22).map((c) => c.id));
+  const held = Number(await inPage(() => document.body.dataset.held));
+  assert.ok(held > 0 && held <= 16, `held ${held}`);
+  const fetches = await inPage(() => window.__fetches);
+  assert.ok(fetches.length > 0);
+  for (const [url, method] of fetches) {
+    assert.equal(method, "GET");
+    assert.ok(url.startsWith(helper.base + "timeline/") && url.endsWith(".jpg"), url);
+  }
+});
+
+pageTest("timeline", opts(), async ({ until, inPage, helper, harness, page }) => {
+  await until("pictures", () => Number(document.body.dataset.held) > 0);
+  await harness.setHidden(true);
+  assert.equal(await inPage(() => document.body.dataset.held), "0", "nothing held while hidden");
+  assert.equal(await inPage(() => document.querySelectorAll('img.thumb[src^="blob:"]').length), 0);
+  await inPage(logFetches);
+  const added = cardFx(30);
+  helper.push("timeline", { op: "add", card: added });
+  await until("the added card", (s) => !!document.querySelector(s), card(added.id));
+  await page.waitForTimeout(300);
+  assert.deepEqual(await inPage(() => window.__fetches), [], "no fetch while hidden");
+  const live = await harness.live();
+  assert.equal(live.timeouts + live.intervals + live.frames + live.observers, 0, JSON.stringify(live));
+  await harness.setHidden(false);
+  await until("the new card's picture", (s) => document.querySelector(`${s} img`).src.startsWith("blob:") && window.__fetches.length > 0, card(added.id));
+});
+
+pageTest("timeline", opts({ fixtures: { timeline: { cards: [cardFx(0), cardFx(1, { caption: "Check the VAT field", step: null, note: true })] }, pictures } }), async ({ until, inPage }) => {
+  await until("2 cards", drawn, 2);
+  const n = await inPage((s) => { const li = document.querySelector(s); return { text: li.querySelector(".note-text")?.textContent, img: !!li.querySelector("img"), label: li.querySelector(".face").getAttribute("aria-label"), time: li.querySelector(".time").textContent, current: li.querySelector(".face").getAttribute("aria-current") }; }, card(hex(1)));
+  assert.equal(n.text, "Check the VAT field");
+  assert.equal(n.img, false);
+  assert.match(n.label, /note/);
+  assert.ok(n.time.length > 0);
+  assert.equal(n.current, null, "a note is never current");
+  assert.equal(await inPage((s) => document.querySelector(`${s} .face`).getAttribute("aria-current"), card(hex(0))), "true");
+});
+
+pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
+  await until("30 cards", drawn, 30);
+  await page.click("#add-btn");
+  assert.equal(await inPage(() => document.activeElement.id), "note");
+  assert.equal(await inPage(() => document.querySelector("#note-form .hint").textContent), "Enter to add · Esc to cancel");
+  assert.equal(await inPage(() => document.getElementById(document.getElementById("note").getAttribute("aria-describedby"))?.textContent), "Enter to add · Esc to cancel", "the field names its hint");
+  await page.keyboard.press("Escape");
+  assert.equal(await inPage(() => document.activeElement.id), "add-btn", "Escape cancels");
+  assert.equal(helper.posts.length, 0);
+  await page.click("#add-btn");
+  await page.keyboard.type("Call the bank");
+  await page.keyboard.press("Enter");
+  const note = noteCard("Call the bank");
+  await until("the note card", (s) => !!document.querySelector(s), card(note.id));
+  assert.deepEqual(helper.posts[0], { route: "timeline", rest: ["note"], body: { text: "Call the bank" } });
+  helper.push("timeline", { op: "add", card: note });
+  await page.waitForTimeout(200);
+  assert.equal(await inPage((s) => document.querySelectorAll(s).length, card(note.id)), 1, "added once");
+  assert.equal(await inPage(() => document.activeElement.id), "add-btn");
+  assert.equal(await inPage(() => document.getElementById("said").textContent), "Note added");
+});
+
+pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
+  await until("30 cards", drawn, 30);
+  const id = CARDS.at(-1).id;
+  await page.click(`${card(id)} .more`);
+  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+  await until("the Pinned chip", (s) => !document.querySelector(`${s} .pin-chip`).hidden, card(id));
+  assert.deepEqual(helper.posts[0], { route: "timeline", rest: [id, "pin"], body: { on: true } });
+  assert.match(await inPage((s) => document.querySelector(`${s} .face`).getAttribute("aria-label"), card(id)), /pinned/);
+  await page.click(`${card(id)} .more`);
+  await page.getByRole("menuitem", { name: "Unpin", exact: true }).click();
+  await until("the chip gone", (s) => document.querySelector(`${s} .pin-chip`).hidden, card(id));
+  assert.deepEqual(helper.posts[1], { route: "timeline", rest: [id, "pin"], body: { on: false } });
+});
+
+pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
+  await until("30 cards", drawn, 30);
+  const id = CARDS.at(-2).id;
+  await page.click(`${card(id)} .more`);
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+  assert.match(await inPage(() => document.getElementById("menu").textContent), /Delete this picture\?/);
+  assert.equal(await inPage(() => document.getElementById("menu").getAttribute("aria-label")), "Delete this picture?", "the menu is named by its question");
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll('#menu [role="menuitem"]')].map((b) => document.getElementById(b.getAttribute("aria-describedby"))?.textContent)), ["Delete this picture?", "Delete this picture?"], "both answers point at it");
+  await page.getByRole("menuitem", { name: "Keep", exact: true }).click();
+  assert.equal(await inPage(() => document.getElementById("menu").getAttribute("aria-label")), "Card menu");
+  assert.equal(await inPage(() => document.getElementById("menu").hidden), true);
+  assert.equal(helper.fixtures.timeline.cards.length, 30, "Keep sends nothing");
+  await page.click(`${card(id)} .more`);
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+  await until("the card gone", (s) => !document.querySelector(s), card(id));
+  assert.equal(helper.fixtures.timeline.cards.length, 29);
+  assert.equal(await inPage(() => document.querySelectorAll("li.card:not(.add)").length), 29);
+});
+
+pageTest("timeline", opts({ fixtures: { timeline: null, pictures } }), async ({ until, inPage }) => {
+  await until("the off state", () => document.body.dataset.state === "off");
+  assert.equal(await inPage(() => document.getElementById("line-text").textContent), "The timeline is off");
+  assert.equal(await inPage(() => document.getElementById("line-more").textContent), "", "a bare 404 claims no reason");
+  assert.equal(await inPage(() => document.querySelectorAll("li.card:not(.add)").length), 0);
+  assert.equal(await inPage(() => document.getElementById("add").checkVisibility()), false, "no Add note card");
+  assert.equal(await inPage(() => document.body.dataset.held), "0");
+});
+
+pageTest("timeline", opts(), async ({ until, inPage, helper, harness }) => {
+  await until("30 cards", drawn, 30);
+  await harness.setHidden(true);
+  await inPage(() => {
+    const f = window.fetch;
+    window.fetch = (u, o) => (String(u).endsWith("/timeline.json") ? Promise.resolve(new Response("The timeline is off (timeline: false in ~/.pairbrowse/config.json).", { status: 404 })) : f(u, o));
+  });
+  for (const s of helper.streams) s.res.destroy();
+  await until("the stream dropped", () => document.body.dataset.s !== "live");
+  await harness.setHidden(false);
+  await until("the off state", () => document.body.dataset.state === "off");
+  assert.equal(await inPage(() => document.getElementById("line-text").textContent), "The timeline is off");
+  assert.equal(await inPage(() => document.getElementById("line-more").textContent), "(timeline: false in ~/.pairbrowse/config.json)");
+  assert.equal(await inPage(() => document.querySelectorAll("li.card:not(.add)").length), 0);
+});
+
+pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
+  await until("30 cards", drawn, 30);
+  const ids = CARDS.map((c) => c.id);
+  const active = () => inPage(() => (document.activeElement.classList.contains("face") ? document.activeElement.closest("li").dataset.id : document.activeElement.id));
+  assert.equal(await inPage((s) => document.querySelector(`${s} .face`).tabIndex, card(ids.at(-1))), 0, "the newest card takes Tab");
+  await page.focus(`${card(ids.at(-1))} .face`);
+  assert.equal(await inPage(() => document.querySelectorAll('.more[tabindex="0"]').length), 1, "only the focused card's More is a Tab stop");
+  await page.keyboard.press("Tab");
+  assert.equal(await inPage((s) => document.activeElement === document.querySelector(`${s} .more`), card(ids.at(-1))), true, "Tab: the card's More");
+  await page.waitForTimeout(150);
+  const ring = await inPage(() => {
+    const cs = getComputedStyle(document.activeElement);
+    const probe = document.createElement("i");
+    probe.style.color = "var(--accent)";
+    document.body.append(probe);
+    const accent = getComputedStyle(probe).color;
+    probe.remove();
+    return { style: cs.outlineStyle, width: cs.outlineWidth, color: cs.outlineColor, accent, opacity: cs.opacity };
+  });
+  assert.deepEqual(ring, { style: "solid", width: "2px", color: ring.accent, accent: ring.accent, opacity: "1" }, "More shows with the ring");
+  await page.keyboard.press("Tab");
+  assert.equal(await active(), "add-btn", "Tab again: Add note");
+  await page.focus(`${card(ids.at(-1))} .face`);
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(await active(), ids.at(-2));
+  assert.equal(await inPage((s) => document.querySelector(`${s} .more`).tabIndex, card(ids.at(-2))), 0, "More roves with the face");
+  assert.equal(await inPage(() => document.querySelectorAll('.more[tabindex="0"]').length), 1);
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await active(), ids.at(-1));
+  await page.keyboard.press("End");
+  assert.equal(await active(), "add-btn");
+  await page.keyboard.press("Home");
+  assert.equal(await active(), ids[0]);
+  await page.keyboard.press("End");
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(await active(), ids.at(-1));
+  await inPage(logFetches);
+  await page.keyboard.press("Enter");
+  await until("the show post", (u) => window.__fetches.some(([url, m]) => url === u && m === "POST"), `${helper.base}timeline/${ids.at(-1)}/show`);
+  await page.waitForTimeout(200);
+  assert.equal(await inPage(() => document.querySelectorAll("[data-shown]").length), 0, "nothing marked shown");
+  await page.keyboard.press("Delete");
+  assert.match(await inPage(() => document.getElementById("menu").textContent), /Delete this picture\?/);
+  await page.keyboard.press("Escape");
+  assert.equal(await inPage(() => document.getElementById("menu").hidden), true);
+  assert.equal(await active(), ids.at(-1));
+  await page.keyboard.press("Shift+F10");
+  assert.equal(await inPage(() => document.activeElement.textContent), "Pin");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await inPage(() => document.activeElement.textContent), "Delete");
+  await page.keyboard.press("Escape");
+  assert.equal(await active(), ids.at(-1));
+  assert.equal(helper.fixtures.timeline.cards.length, 30);
+});
+
+pageTest("timeline", opts({ reducedMotion: "reduce" }), async ({ until, helper, harness }) => {
+  await until("30 cards", drawn, 30);
+  helper.push("activity", [{ t: Date.now(), who: "Claude", text: "Clicked" }]);
+  await until("the Live pill", () => document.querySelectorAll(".live-pill:not([hidden])").length === 1);
+  assert.deepEqual(await harness.animations(), []);
+});
+
+pageTest("timeline", opts({ replies: { timeline: (body, rest) => (rest[0] === "note" ? { status: 409, body: { error: "Too long." } } : replies.timeline(body, rest)) } }), async ({ until, inPage, page }) => {
+  await until("30 cards", drawn, 30);
+  await until("scrolled to the end", () => { const s = document.getElementById("strip"); return s.scrollLeft > 0 && s.scrollLeft + s.clientWidth >= s.scrollWidth - 1; });
+  const before = await inPage(() => document.querySelector("li.card:not(.add)").getBoundingClientRect().left);
+  await page.click("#add-btn");
+  await page.keyboard.type("A note");
+  await page.keyboard.press("Enter");
+  await until("the error line", () => !document.getElementById("line").hidden);
+  const line = await inPage(() => { const l = document.getElementById("line"); const r = l.getBoundingClientRect(); return { text: l.textContent, left: r.left, right: r.right, top: r.top, bottom: r.bottom, visible: l.checkVisibility() }; });
+  assert.equal(line.text, "Too long.");
+  assert.equal(line.visible, true);
+  assert.ok(line.left >= 0 && line.right <= 1300 && line.top >= 0 && line.bottom <= 130, `on screen: ${JSON.stringify(line)}`);
+  assert.equal(await inPage(() => document.querySelector("li.card:not(.add)").getBoundingClientRect().left), before, "no card moved");
+  assert.equal(await inPage(() => document.querySelectorAll("li.card:not(.add)").length), 30, "no card added");
+});
+
+pageTest("timeline", opts(), async ({ until, inPage, page }) => {
+  await until("30 cards", drawn, 30);
+  const id = CARDS.at(-1).id;
+  await page.focus(`${card(id)} .face`);
+  await page.keyboard.press("Shift+F10");
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(250);
+  assert.equal(await inPage(() => document.activeElement.getAttribute("role")), "menuitem", "focus is in the menu, not the card");
+  const pill = await inPage((s) => getComputedStyle(document.querySelector(`${s} .live-pill`)).right, card(id));
+  assert.equal(pill, "32px", "the Live pill steps aside while the menu is open");
+});
+
+pageTest("timeline", opts({ fixtures: { timeline: { cards: CARDS }, pictures: { ...pictures } } }), async ({ until, inPage, helper, harness }) => {
+  await until("pictures", () => Number(document.body.dataset.held) > 0);
+  await inPage(logFetches);
+  // Hidden releases every picture; the helper then has none, and showing the strip asks once.
+  await harness.setHidden(true);
+  for (const k of Object.keys(helper.fixtures.pictures)) delete helper.fixtures.pictures[k];
+  await harness.setHidden(false);
+  await until("the pictures asked once", () => window.__fetches.length > 0);
+  await inPage(() => new Promise((r) => setTimeout(r, 200)));
+  const first = await inPage(() => window.__fetches.length);
+  await inPage(() => { const s = document.getElementById("strip"); for (let i = 0; i < 5; i++) s.dispatchEvent(new Event("scroll")); window.dispatchEvent(new Event("resize")); });
+  await inPage(() => new Promise((r) => setTimeout(r, 200)));
+  assert.equal(await inPage(() => window.__fetches.length), first, "a picture the helper has not is not asked again on scroll");
+});
+
+pageTest("timeline", opts({ fixtures: { timeline: { cards: "not a list" }, pictures } }), async ({ until, inPage, helper, harness }) => {
+  await until("the error state", () => document.body.dataset.state === "error");
+  assert.equal(await inPage(() => document.getElementById("line-text").textContent), "Couldn't reach PairBrowse.");
+  assert.equal(await inPage(() => document.getElementById("add").checkVisibility()), false, "no Add note in the error state");
+  assert.equal(await inPage(() => document.body.dataset.s), "live", "the stream stayed up");
+  helper.fixtures.timeline = { cards: CARDS };
+  await harness.setHidden(true);
+  await harness.setHidden(false);
+  await until("30 cards after the strip shows again", drawn, 30);
+  assert.equal(await inPage(() => document.getElementById("line").hidden), true);
+  assert.equal(await inPage(() => document.getElementById("add").checkVisibility()), true, "Add note back with the list");
+});

@@ -26,9 +26,6 @@ import { defaultFixture, shimScript } from "./helpers/pairbrowse-shim.mjs";
 // a permanent allowance: the suite asserts each one is still true, so the fix fails here until
 // its entry goes. New pages get none.
 const DEBT = {
-  picker: {
-    "hidden-timer": "picker.js refreshes sessions every 4 s while hidden (the callback checks document.hidden, the interval does not stop); the picker subset clears it on visibilitychange",
-  },
   panel: {
     motion: "panel.css pulses the Your turn dot forever (.turn i, @keyframes pulse); the right-dock subset drops the pulse",
   },

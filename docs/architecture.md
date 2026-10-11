@@ -38,7 +38,8 @@ what each boundary protects against, see [security.md](security.md) and the
   owns the browser and serves every tool call. Each part is a `createX(deps)` factory:
   `serve` (refusal checks, then a handler table), `context` (browser, sessions, downloads, tabs),
   `presence` (people using the browser), `hud` (badge, bar, cursor), `screenshot`, `output`
-  (masking what the agent reads), `panel` (side panel), `sharing` (invites, join codes, tunnel).
+  (masking what the agent reads), `panel` (side panel), `sharing` (invites, join codes, tunnel),
+  `timeline` (the session's pictures already sent to agents: local, capped, off by config).
 - **Policy and secrets** (`scripts/policy.mjs`, `scripts/secrets.mjs`): which tools exist, which
   addresses open, which clicks need the user, where a password may be typed and how it is masked.
 - **Hooks** (`scripts/guard.mjs`, `scripts/log.mjs`, `scripts/session-start.mjs`): the PreToolUse
@@ -58,7 +59,9 @@ what each boundary protects against, see [security.md](security.md) and the
 ## Data and state
 
 Everything lives in `~/.pairbrowse`, created private to the user: the browser profile, saved
-details (facts), passwords (a separate file, readable only by the user), runs, logs, downloads.
+details (facts), passwords (a separate file, readable only by the user), runs, logs, downloads,
+and each session's timeline folder (`timeline/`, or `sessions/<name>.timeline/`: the pictures
+already sent to agents, deleted with the session).
 Nothing is sent to a PairBrowse server; there is none. Network traffic is the user's own browsing,
 the pinned downloads (GitHub, npm) and, while sharing, the tunnel.
 

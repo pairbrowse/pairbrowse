@@ -42,7 +42,34 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline"]); // events only the owner's streams get
+// The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
+// name for counting them, nothing more; they get no frame stream.
+const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture"]);
+// The docks' layout the browser's pages start from: each dock open, a rail or hidden; the tab
+// strip's height in pixels.
+const LAYOUT_STATES = new Set(["open", "rail", "hidden"]);
+const LAYOUT_FALLBACK = { left: "open", right: "open", strip: 88 };
+const STRIP_MIN = 44, STRIP_MAX = 176;
+const TIMELINE_ID = /^[0-9a-f]{12}$/;
+const TIMELINE_OFF = "The timeline is off (timeline: false in ~/.pairbrowse/config.json).";
+
+// given merged over base: a valid { left, right, strip }, or { error }.
+function readLayout(given, base) {
+  if (!given || typeof given !== "object" || Array.isArray(given)) return { error: "A layout is { left, right, strip }." };
+  const next = { ...base };
+  for (const side of ["left", "right"]) {
+    if (given[side] === undefined) continue;
+    if (!LAYOUT_STATES.has(given[side])) return { error: `${side} is "open", "rail" or "hidden".` };
+    next[side] = given[side];
+  }
+  if (given.strip !== undefined) {
+    if (!Number.isInteger(given.strip) || given.strip < STRIP_MIN || given.strip > STRIP_MAX) return { error: `strip is a whole number of pixels from ${STRIP_MIN} to ${STRIP_MAX}.` };
+    next.strip = given.strip;
+  }
+  return next;
+}
+const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
 // readForm(page): { url, fields } as they may cross, or null. applyForm(page, fields, who).
 // onJoinerAgent(page, who, color, left, from, where): a drive joiner's agent works in their copy
@@ -94,7 +121,9 @@ async function release(cdp) {
 // makeInvite(choice): the Share card's invite (sharing.mjs createInvite), or null.
 // shared: the rest of what shared tabs carry (see sharedDefaults): form values, their agents'
 // sparks, tab order and pointers.
-export async function startLiveView({ extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// mask(text): as results are masked (saved passwords), for the tab strip's titles and the timeline.
+// timeline: the session's pictures (daemon/timeline.mjs), or null. layoutDefaults: config.layout.
+export async function startLiveView({ mask = (t) => t, timeline = null, layoutDefaults = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
@@ -119,6 +148,12 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   const showQueue = serially(); // switching the shown tab: one CDP session at a time
   const replayer = createInputReplayer();
   const iconFor = createIcons();
+  const kinds = new Map(); // event stream -> the browser page's kind (?page=), owner streams only
+  const loading = new WeakSet(); // tabs whose main frame is loading (watched from watchPages on)
+  // The docks' layout, per browser session, in memory (the browser keeps its own in its profile).
+  const layoutStart = (() => { const r = readLayout(layoutDefaults, LAYOUT_FALLBACK); return r.error ? { ...LAYOUT_FALLBACK } : r; })();
+  const layouts = new Map(); // session name -> { left, right, strip }
+  const layoutNow = () => ({ ...(layouts.get(sessionInfo.name) || layoutStart) });
 
   const watching = () => viewers.size > 0;
   // People in the session the user joined (shared tabs), shown with everyone else here.
@@ -138,6 +173,26 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
         agent: meta.agent || null, person: meta.person || null, waiting: !!meta.waiting, last: meta.last || null };
     }));
   };
+
+  // The tab strip's list (the browser's strip page, the owner only): each tab with its id, the
+  // title masked as the goal log masks it, whether it loads, and who is in it.
+  const agentOf = (meta) => (meta.agent ? { label: String(meta.agent.label || ""), color: String(meta.agent.color || "") } : null);
+  const metaOf = (p) => { try { return tabMeta(p) || {}; } catch { return {}; } };
+  const tabsStrip = async () => {
+    const ctx = await getContext();
+    const working = await currentUrl();
+    const pages = ctx.pages();
+    const active = pages.find((p) => p.url() === working) || null;
+    return Promise.all(pages.map(async (p, i) => {
+      const meta = metaOf(p);
+      const url = p.url();
+      return { id: idOf(p), i, title: mask((await ownTitle(p)) || url), host: hostOf(url), url: mask(url), icon: await iconFor(p), active: p === active, loading: loading.has(p),
+        agent: agentOf(meta), person: meta.person || null, waiting: !!meta.waiting };
+    }));
+  };
+  // Who holds which tab, from the tabs' addresses and the helper's own records (no page asked).
+  const agentTabs = async () => (await getContext()).pages().map((p, i) => { const meta = metaOf(p); return { id: idOf(p), i, host: hostOf(p.url()), agent: agentOf(meta), person: meta.person || null }; });
+  const agentTabsChanged = () => { if (kinds.size) agentTabs().then((list) => broadcast("agent-tabs", list)).catch(() => {}); };
 
   // Invited people who have the live view open, by name, as the participant list shows them.
   const guests = () => {
@@ -164,7 +219,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       else res.write(msg);
     }
   };
-  const collaborationChanged = () => broadcast("collaboration", collaborationNow());
+  const collaborationChanged = () => { broadcast("collaboration", collaborationNow()); agentTabsChanged(); };
 
   // The tab strip's order (a move by hand or by a drive joiner), read in the background: a slow
   // answer from the side panel's worker never holds up what joiners get. A new order goes out
@@ -337,9 +392,9 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     pagesWatched = true;
     getContext().then((ctx) => {
       const watch = (p) => {
-        p.on("framenavigated", (f) => { if (f === p.mainFrame()) push.changed(); });
-        p.on("load", push.changed);
-        p.on("close", push.changed);
+        p.on("framenavigated", (f) => { if (f === p.mainFrame()) { loading.add(p); push.changed(); } });
+        p.on("load", () => { loading.delete(p); push.changed(); });
+        p.on("close", () => { loading.delete(p); push.changed(); });
       };
       ctx.pages().forEach(watch);
       ctx.on("page", (p) => { watch(p); push.changed(); });
@@ -521,6 +576,10 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
         if (page && ctx.pages().length > 1) await page.close().catch(() => {});
         else if (page) await page.goto("about:blank").catch(() => {});
         broadcast("tabs", await tabsInfo());
+      } else if (Array.isArray(ev.order)) {
+        // The strip's order (the owner's tab strip page): today's arrange, ids as tabs.json gives them.
+        const known = new Map(ctx.pages().map((p) => [idOf(p), p]));
+        await shared.arrange(ev.order.slice(0, 100).map((id) => known.get(String(id))).filter((p) => p && !p.isClosed()));
       } else {
         const page = ctx.pages()[Number(ev.i)];
         if (page) await show(page);
@@ -617,6 +676,52 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       if (!picker?.open) return plain(res, 404);
       json(res, 200, await picker.open());
     } },
+    // The browser's own pages (the owner only): the docks' layout, the tab strip's list, and the
+    // session's timeline of pictures already sent to agents (daemon/timeline.mjs).
+    { method: "GET", path: "layout.json", right: "layout", handler: ({ res }) => json(res, 200, layoutNow()) },
+    { method: "POST", path: "layout", right: "layout", handler: async ({ req, res }) => {
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const given = parsed(body);
+      if (given === undefined) return json(res, 400, { error: NOT_JSON });
+      const next = readLayout(given, layoutNow());
+      if (next.error) return json(res, 409, { error: next.error });
+      layouts.set(sessionInfo.name, next);
+      broadcast("layout", next);
+      json(res, 200, next);
+    } },
+    { method: "GET", path: "tabs.json", right: "strip", handler: async ({ res }) => { watchPages(); json(res, 200, await tabsStrip()); } },
+    { method: "GET", path: "agent-tabs.json", right: "strip", handler: async ({ res }) => json(res, 200, await agentTabs()) },
+    { method: "GET", path: "timeline.json", right: "timeline", handler: ({ res }) => {
+      if (timelineOff(res)) return;
+      json(res, 200, { cards: (timeline.cards() || []).map(maskedCard) });
+    } },
+    { method: "GET", path: "timeline", right: "timeline", handler: async ({ res, rest }) => {
+      if (timelineOff(res)) return;
+      const m = rest.length === 1 ? /^([0-9a-f]{12})\.jpg$/.exec(rest[0]) : null;
+      const bytes = m ? await timeline.picture(m[1]) : null;
+      if (!bytes) return plain(res, 404);
+      res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "image/jpeg" });
+      res.end(bytes);
+    } },
+    { method: "DELETE", path: "timeline", right: "timeline", handler: async ({ res, rest }) => {
+      if (timelineOff(res)) return;
+      if (rest.length !== 1 || !TIMELINE_ID.test(rest[0])) return plain(res, 404);
+      return (await timeline.remove(rest[0])) === true ? json(res, 200, { ok: true }) : plain(res, 404);
+    } },
+    { method: "POST", path: "timeline", right: "timeline", handler: async ({ req, res, rest }) => {
+      if (timelineOff(res)) return;
+      const isNote = rest.length === 1 && rest[0] === "note";
+      const isPin = rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "pin";
+      if (!isNote && !isPin) return plain(res, 404);
+      const body = await readBody(req, BODY_MAX.approve);
+      if (body === null) return plain(res, 413);
+      const op = parsed(body);
+      if (op === undefined) return json(res, 400, { error: NOT_JSON });
+      const r = isNote ? await timeline.note(typeof op?.text === "string" ? op.text : "") : await timeline.pin(rest[0], op?.on !== false);
+      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
+      json(res, 200, maskedCard(r));
+    } },
     { method: "POST", path: "input", right: "input", handler: human },
     { method: "POST", path: "tab", right: "tab", handler: human },
     // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
@@ -639,9 +744,14 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
   async function events({ req, res, invite }) {
     res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/event-stream", connection: "keep-alive" });
     // ?panel: status, activity and profile only (the PairBrowse side panel): no page stream.
-    const viewer = !new URL(req.url, "http://x").searchParams.has("panel");
+    // ?page=<kind>: one of the browser's own pages, with the owner's key (a guest's is ignored):
+    // no page stream either.
+    const q = new URL(req.url, "http://x").searchParams;
+    const kind = !invite && PAGE_KINDS.has(q.get("page")) ? q.get("page") : null;
+    const viewer = !q.has("panel") && !kind;
     clients.add(res);
     if (viewer) viewers.add(res);
+    if (kind) kinds.set(res, kind);
     if (invite) linkGuests.set(res, invite);
     else owners.add(res);
     if (invite) collaborationChanged();
@@ -649,6 +759,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
       clients.delete(res);
       viewers.delete(res);
       owners.delete(res);
+      kinds.delete(res);
       if (linkGuests.delete(res)) collaborationChanged();
       stopIfIdle();
     });
@@ -663,6 +774,8 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     if (!invite && devState) res.write(sse("dev", devState));
     if (!invite && joinHost) res.write(sse("joinhost", joinHost.state()));
     if (!invite && board) res.write(sse("board", board));
+    if (!invite) res.write(sse("layout", layoutNow()));
+    if (kind) { watchPages(); res.write(sse("agent-tabs", await agentTabs())); }
     const paused = pauseState();
     if (paused) res.write(sse("pause", paused));
     if (!invite && recordState()) res.write(sse("record", recordState()));
@@ -707,10 +820,24 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     json(res, 200, { error, profile: summary });
   }
 
+  // The timeline's routes: 404 without a store, 404 with a plain sentence when it's switched off.
+  function timelineOff(res) {
+    if (!timeline) { plain(res, 404); return true; }
+    if (!timeline.enabled) { plain(res, 404, TIMELINE_OFF); return true; }
+    return false;
+  }
+  const maskedCard = (c) => ({ ...c, caption: mask(String(c.caption || "")) });
+  // A body that isn't JSON: undefined, so the chrome pages' routes answer 400 without logging it.
+  const parsed = (body) => { try { return JSON.parse(body); } catch { return undefined; } };
+  const NOT_JSON = "The body is not JSON.";
+
   async function human({ req, res, route, role, invite }) {
     const body = await readBody(req, BODY_MAX.input);
     if (body === null) return plain(res, 413);
-    await humanPost(route, JSON.parse(body), role, invite ? `${invite.label} (by hand)` : null);
+    const ev = JSON.parse(body);
+    // Moving tabs around the strip is the owner's (a drive guest switches, opens and closes them).
+    if (route === "tab" && ev?.order !== undefined && role !== "owner") return plain(res, 403);
+    await humanPost(route, ev, role, invite ? `${invite.label} (by hand)` : null);
     res.writeHead(204, SECURITY_HEADERS);
     res.end();
   }
@@ -727,7 +854,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     const role = ownerKey ? (hostOk(req.headers.host) ? "owner" : null) : invite?.role || null;
     if (!role) return plain(res, 404);
     const origin = req.headers.origin;
-    if (req.method === "POST" && !originOk(origin) && !(role === "owner" && extraOrigins.includes(origin)) && !(role === "drive" && inviteOrigin && origin === inviteOrigin)) return plain(res, 403);
+    if (req.method !== "GET" && !originOk(origin) && !(role === "owner" && extraOrigins.includes(origin)) && !(role === "drive" && inviteOrigin && origin === inviteOrigin)) return plain(res, 403);
     const r = ROUTES.find((x) => x.method === req.method && x.path === route);
     if (!r) return plain(res, 404);
     if (!roleMay(role, r.right)) return plain(res, 403);
@@ -769,6 +896,9 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     throw e;
   }
 
+  // The timeline changed (a picture kept, a card removed or pinned, a note): the owner's pages.
+  const stopTimeline = timeline?.onChange ? timeline.onChange((change) => broadcast("timeline", { op: change.op, card: maskedCard(change.card) })) : () => {};
+
   async function tick() {
     invites.sweep();
     if (watching()) { await follow(); broadcast("tabs", await tabsInfo()); }
@@ -796,6 +926,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     setSession(info) {
       sessionInfo = info;
       broadcast("session", info);
+      broadcast("layout", layoutNow());
     },
     setCollaboration(next) {
       collaboration = {
@@ -828,7 +959,7 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     // Who is in the session the user joined (labels and roles), for the participant list.
     setRemote(list) { remote = Array.isArray(list) ? list.slice(0, 20) : []; collaborationChanged(); },
     // Tabs changed hands (claims, a person pausing an agent): show it now.
-    refreshTabs: async () => { push.changed(); if (watching()) broadcast("tabs", await tabsInfo()); },
+    refreshTabs: async () => { push.changed(); agentTabsChanged(); if (watching()) broadcast("tabs", await tabsInfo()); },
     // The page script says a field changed in a tab, or a pointer moved (daemon/cobrowse.mjs).
     fieldsChanged: (page) => push.dirty(page),
     pointed: (page, value) => push.pointed(page, value),
@@ -842,11 +973,14 @@ export async function startLiveView({ extraOrigins = [], getContext, currentUrl,
     setRecord: (state) => { for (const r of owners) r.write(sse("record", state)); },
     // Who is doing what across the session, and its messages: the side panel's Session section.
     setBoard: (next) => { board = next; broadcast("board", board); },
+    // The browser's pages with a stream open, counted by kind; the docks' layout now (tests).
+    pageClients: () => Object.fromEntries([...kinds.values()].reduce((m, k) => m.set(k, (m.get(k) || 0) + 1), new Map())),
+    layout: layoutNow,
     close: () => {
       closed = true;
       clearInterval(timer);
       clearTimeout(settleTimer);
-      stopEnded(); stopApprovals();
+      stopEnded(); stopApprovals(); stopTimeline();
       server.close();
       for (const r of clients) r.end();
       joinerServer.close();

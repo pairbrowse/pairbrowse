@@ -33,11 +33,15 @@ test("live view exposes collaboration state in initial events and state.json", a
     const state = await fetch(`${base}state.json`).then((r) => r.json());
     assert.equal(state.collaboration.owner.label, "Alice");
     assert.equal("journal" in state, false, "the goal log never rides on state.json");
+    assert.equal("timeline" in state, false, "nor the timeline");
+    assert.equal("layout" in state, false, "nor the docks' layout");
     // A guest gets the state as before, and never the goal log.
     const d = invites.create({ role: "drive", label: "D" });
     const guestBase = `http://127.0.0.1:${new URL(base).port}/${d.key}/`;
     const guestState = await fetch(`${guestBase}state.json`).then((r) => r.json());
     assert.equal("journal" in guestState, false);
+    assert.equal("timeline" in guestState, false);
+    assert.equal("layout" in guestState, false);
     assert.equal((await fetch(`${guestBase}journal.json`)).status, 403);
   } finally { view.close(); }
 });

@@ -25,6 +25,13 @@
   stay open), and Claude is told.
 - `screenshots`: `false` sends Claude text only, no screenshots. A result whose picture would be
   byte for byte the last one says so in a line instead of carrying the image again.
+- `timeline`: `false` keeps no timeline (default `true`). With it on, the pictures already sent to
+  agents are also kept in the browser session's timeline folder under `~/.pairbrowse`, at most 200
+  plus the ones you pinned (up to 50), deleted with the session. Nothing is captured for it; see
+  the Security table.
+- `layout`: where the browser's own pages start, `{ "left": "open", "right": "open", "strip": 88 }`
+  by default: each dock `"open"`, `"rail"` or `"hidden"`, and the tab strip's height in pixels (44
+  to 176). Changes made in the browser last for the session while the helper runs.
 - `settleMs`: the browser server's fixed pause after each action before it answers (default 200;
   Playwright MCP's own default is 500, and twice that when the action made requests). PairBrowse
   waits for the page itself after that (until its document is quiet, popups closed) before the

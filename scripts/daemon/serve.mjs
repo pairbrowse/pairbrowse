@@ -212,7 +212,7 @@ export function pathsIn(name, args = {}) {
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, testTools = {} }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // What PairBrowse declares it is about to press (an agent's click, a fast-mode step, the popup
   // closer's dismiss button) counts as where an agent pointed: a press there is never a person's.
@@ -297,6 +297,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const noTab = () => `You have no tab of your own: ${noTabWhy}. Open one with browser_tabs new.`;
     const used = []; // tabs it worked in before, latest last: where it goes back to
     const myLabel = () => collaboration.participants.get(participant)?.label;
+    // A picture this result carried, kept in the session's timeline (daemon/timeline.mjs) once the
+    // result went out: the same bytes, nothing captured or encoded again, nothing on the result's way.
+    const rememberPicture = (shot, page, tool, args) => {
+      if (!timeline?.enabled || !shot?.data || !page) return;
+      setImmediate(() => timeline.record({ data: shot.data, who: myLabel() || "", caption: hud.lastIn(page)?.text || describe(tool, args || {}) || "Looked at the page" }).catch((e) => log("timeline", e?.message || e)));
+    };
     let pauseSeen = pause.seq(); // pauses before it connected aren't news
     const fieldNotes = []; // fields left to the people filling them, for the next result
     const refNames = createRefNames(); // the main frame's refs plain for Claude (output.mjs)
@@ -386,7 +392,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
 
     // Every tool result on its way to the client. knownUrl: the tab it's about, when the text
     // doesn't say.
-    async function finishResult(msg, tool, knownUrl = null, fullSnapshot = false) {
+    async function finishResult(msg, tool, knownUrl = null, fullSnapshot = false, args = null) {
       const content = () => msg.result?.content || [];
       const trace = traces.get(msg.id) || phaseTrace(log);
       traces.delete(msg.id);
@@ -449,8 +455,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (tool === "browser_snapshot" || inlined) for (const part of content()) if (part.type === "text") { part.text = output.capSnapshot(part.text); if (remote) part.text = forJoiner(part.text); }
       // A picture also with a failed action (a stopped run, a covered click): the message says to look at it.
       if (tool !== undefined && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
-        const shot = await screenshots.take(ownPage || await context.pageAt(shotUrl || context.currentUrl()), participant);
-        if (shot?.data) msg.result.content.push(image(shot.data));
+        const shotPage = ownPage || await context.pageAt(shotUrl || context.currentUrl());
+        const shot = await screenshots.take(shotPage, participant);
+        if (shot?.data) { msg.result.content.push(image(shot.data)); rememberPicture(shot, shotPage, tool, args); }
         else if (shot?.same) msg.result.content.push({ type: "text", text: SAME_PICTURE });
         else if (shot?.skipped) msg.result.content.push({ type: "text", text: `\n### PairBrowse\n- ${shot.skipped}` });
         trace.mark("shot");
@@ -515,7 +522,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           const why = output.mask(String((msg.result.content || []).map((c) => c.text || "").join(" ").replace(/^### Error\s*/i, "").split("\n")[0]).slice(0, 100));
           hud.addActivity(`That didn't work: ${why}`, myLabel(), mine && !mine.isClosed() ? mine : null);
         }
-        await finishResult(msg, tool, null, tool === "browser_snapshot" && !args?.target);
+        await finishResult(msg, tool, null, tool === "browser_snapshot" && !args?.target, args);
       },
     };
     // A call of the helper's own to this participant's server (never shown to the client).
@@ -960,21 +967,21 @@ export function createServe({ config, log, host, createConnection, clients, coll
         await popups.dismissOverlay(r.page, { closeOffers: true, ...closing });
         const content = [{ type: "text", text: r.text + popups.drain(r.page) }];
         const shot = config.screenshots !== false ? await screenshots.take(r.page, participant) : null;
-        if (shot?.data) content.push(image(shot.data));
+        if (shot?.data) { content.push(image(shot.data)); rememberPicture(shot, r.page, "pairbrowse_click_at", args); }
         else if (shot?.same) content.push({ type: "text", text: SAME_PICTURE });
         return { content };
       },
       ...testTools, // only with a test switch set (daemon.mjs); empty otherwise
     };
 
-    async function respond(id, tool, r) {
+    async function respond(id, tool, r, args = null) {
       if (r.content) {
         toClient({ jsonrpc: "2.0", id, result: { content: r.content } });
         return finish(id);
       }
       if (!DECORATED.has(tool)) return reply(id, r.text, !!r.error);
       if (r.error) refused.add(id);
-      return finishResult({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: r.text }], ...(r.error ? { isError: true } : {}) } }, tool, r.url, tool === "browser_drag");
+      return finishResult({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: r.text }], ...(r.error ? { isError: true } : {}) } }, tool, r.url, tool === "browser_drag", args);
     }
 
     async function handle(msg) {
@@ -1016,11 +1023,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
         }
         if (target && target === mine) closedByMe = true;
       }
-      if (Object.hasOwn(ownTools, name) && name !== "browser_drag") return respond(msg.id, name, await ownTools[name](args));
+      if (Object.hasOwn(ownTools, name) && name !== "browser_drag") return respond(msg.id, name, await ownTools[name](args), args);
 
       const problem = await browserToolProblem(name, args);
       if (problem) return reply(msg.id, problem, true);
-      if (name === "browser_drag") return respond(msg.id, name, await ownTools.browser_drag(args));
+      if (name === "browser_drag") return respond(msg.id, name, await ownTools.browser_drag(args), args);
       if (name === "browser_handle_dialog" && Object.hasOwn(args, "element")) {
         msg = structuredClone(msg);
         delete msg.params.arguments.element;
@@ -1148,7 +1155,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         let text = line;
         if (args.submit && !failed) text = await enterAfterTyping(typingPage, args).catch((e) => { log("enter after typing", e?.message || e); return line; });
         else if (args.slowly === true && !failed) text += `\n${((await within(8000, internal("browser_snapshot", {})).catch(() => null))?.result?.content || []).map((c) => c.text || "").join("\n")}`;
-        return finishResult({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text }], ...(failed ? { isError: true } : {}) } }, name);
+        return finishResult({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text }], ...(failed ? { isError: true } : {}) } }, name, null, false, args);
       }
       calls.set(msg.id, name);
       callArgs.set(msg.id, args);

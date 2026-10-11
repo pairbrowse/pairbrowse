@@ -73,15 +73,16 @@ function fakeTabs(n = 1) {
   return { ctx, pages, sessions };
 }
 
-function request(port, method, path, { body, host = `127.0.0.1:${port}`, headers = {} } = {}) {
+function request(port, method, path, { body, raw, host = `127.0.0.1:${port}`, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: "127.0.0.1", port, method, path, headers: { host, ...headers, ...(body !== undefined ? { "content-type": "application/json" } : {}) } }, (res) => {
-      let text = "";
-      res.on("data", (d) => (text += d));
-      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, text }));
+    const req = http.request({ host: "127.0.0.1", port, method, path, headers: { host, ...headers, ...(body !== undefined || raw !== undefined ? { "content-type": "application/json" } : {}) } }, (res) => {
+      const chunks = [];
+      res.on("data", (d) => chunks.push(d));
+      res.on("end", () => { const bytes = Buffer.concat(chunks); resolve({ status: res.statusCode, headers: res.headers, text: bytes.toString("utf8"), bytes }); });
     });
     req.on("error", reject);
-    if (body !== undefined) req.write(JSON.stringify(body));
+    if (raw !== undefined) req.write(raw);
+    else if (body !== undefined) req.write(JSON.stringify(body));
     req.end();
   });
 }
@@ -107,7 +108,16 @@ test("every route needs its right; routes that aren't listed are refused", async
       assert.equal((await request(view.port, "POST", `/${k}/approve`, { body: { id: "r1", allow: true } })).status, 403);
       assert.equal((await request(view.port, "GET", `/${k}/journal.json`)).status, 403, "the goal log is the owner's");
       assert.equal((await request(view.port, "POST", `/${k}/invite`, { body: { share: "code" } })).status, 403, "inviting is the owner's");
+      // The browser's own pages' routes: the owner's only.
+      for (const [method, path, body] of [["GET", "layout.json"], ["POST", "layout", { left: "rail" }], ["GET", "tabs.json"], ["GET", "agent-tabs.json"], ["GET", "timeline.json"],
+        ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note", { text: "x" }], ["POST", "timeline/0123456789ab/pin", { on: true }]]) {
+        assert.equal((await request(view.port, method, `/${k}/${path}`, { body })).status, 403, `${method} /${path} is the owner's`);
+      }
     }
+    for (const [method, path] of [["GET", "timeline.json"], ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note"]]) {
+      assert.equal((await request(view.port, method, `/${key}/${path}`, { body: method === "POST" ? { text: "x" } : undefined })).status, 404, `no timeline given: ${method} /${path}`);
+    }
+    assert.equal((await request(view.port, "GET", `/${key}/layout.json`)).status, 200);
     assert.equal((await request(view.port, "GET", `/${key}/journal.json`)).status, 404, "no journal given");
     assert.equal((await request(view.port, "POST", `/${key}/invite`, { body: { share: "code" } })).status, 404, "no makeInvite given");
     assert.equal((await request(view.port, "GET", `/${key}/invite`)).status, 404, "GET invite isn't a route");
@@ -465,4 +475,228 @@ test("ago: minutes while fresh, the date once older than an hour (a run saved ye
   const day = new Date(now - 86_400_000);
   assert.ok(ago(day.toISOString(), now).includes(day.toLocaleDateString([], { dateStyle: "short" })));
   assert.equal(ago("not a date", now), "");
+});
+
+// ---- the browser's own pages: layout, page kinds, the tab strip's list, the timeline ----
+
+// An event stream whose text is kept, until close().
+function readStream(port, path) {
+  return new Promise((resolve) => {
+    let text = "";
+    const req = http.get({ host: "127.0.0.1", port, path }, (res) => { res.setEncoding("utf8"); res.on("data", (d) => (text += d)); resolve({ text: () => text, close: () => req.destroy() }); });
+    req.on("error", () => {});
+  });
+}
+const eventsIn = (text, name) => text.split("\n\n").filter((b) => b.startsWith(`event: ${name}\n`)).map((b) => JSON.parse(b.slice(b.indexOf("data: ") + 6)));
+
+test("layout is the owner's, validated, per session, broadcast to owner streams only", async () => {
+  const invites = createInvites();
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites, layoutDefaults: { left: "rail", right: "open", strip: 88 } });
+  const key = view.url.split("/").at(-2);
+  view.setSession({ name: "default", where: "Local" });
+  const owner = await readStream(view.port, `/${key}/events?panel=1`);
+  const w = invites.create({ role: "watch", label: "W" });
+  const guest = await readStream(view.port, `/${w.key}/events?panel=1`);
+  try {
+    let r = await request(view.port, "GET", `/${key}/layout.json`);
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text), { left: "rail", right: "open", strip: 88 });
+    r = await request(view.port, "POST", `/${key}/layout`, { body: { left: "hidden" } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text), { left: "hidden", right: "open", strip: 88 }, "merged");
+    for (const bad of [{ strip: 20 }, { strip: 88.5 }, { left: "big" }, []]) {
+      r = await request(view.port, "POST", `/${key}/layout`, { body: bad });
+      assert.equal(r.status, 409, JSON.stringify(bad));
+      assert.ok(JSON.parse(r.text).error);
+    }
+    r = await request(view.port, "POST", `/${key}/layout`, { raw: "{" });
+    assert.equal(r.status, 400, "a body that isn't JSON");
+    assert.ok(JSON.parse(r.text).error);
+    assert.deepEqual(view.layout(), { left: "hidden", right: "open", strip: 88 }, "a refused change changes nothing");
+    await wait(50);
+    const seen = eventsIn(owner.text(), "layout");
+    assert.deepEqual(seen[0], { left: "rail", right: "open", strip: 88 }, "on open");
+    assert.deepEqual(seen.at(-1), { left: "hidden", right: "open", strip: 88 }, "after the change");
+    assert.equal(eventsIn(guest.text(), "layout").length, 0, "a guest's stream never gets it");
+    view.setSession({ name: "other", where: "Local" });
+    assert.deepEqual(JSON.parse((await request(view.port, "GET", `/${key}/layout.json`)).text), { left: "rail", right: "open", strip: 88 }, "another session starts from the defaults");
+    view.setSession({ name: "default", where: "Local" });
+    assert.deepEqual(JSON.parse((await request(view.port, "GET", `/${key}/layout.json`)).text), { left: "hidden", right: "open", strip: 88 }, "and the first keeps its own");
+    await wait(50);
+    assert.equal(eventsIn(guest.text(), "layout").length, 0);
+  } finally { owner.close(); guest.close(); view.close(); }
+});
+
+test("the events stream records a page kind for the owner only", async () => {
+  const invites = createInvites();
+  const { ctx, sessions } = fakeTabs(1);
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", invites });
+  const key = view.url.split("/").at(-2);
+  try {
+    const strip = await readStream(view.port, `/${key}/events?page=strip`);
+    await wait(30);
+    assert.deepEqual(view.pageClients(), { strip: 1 });
+    assert.equal(sessions.length, 0, "a page stream starts no screencast");
+    assert.equal(eventsIn(strip.text(), "frame").length, 0);
+    assert.equal(eventsIn(strip.text(), "agent-tabs").length, 1, "the strip gets who holds which tab on open");
+    strip.close();
+    await wait(30);
+    assert.deepEqual(view.pageClients(), {});
+    const nope = await readStream(view.port, `/${key}/events?page=nope&panel=1`);
+    await wait(30);
+    assert.deepEqual(view.pageClients(), {}, "an unknown kind is ignored");
+    nope.close();
+    const d = invites.create({ role: "drive", label: "D" });
+    const guest = await readStream(view.port, `/${d.key}/events?page=strip`);
+    for (let i = 0; i < 100 && !eventsIn(guest.text(), "tabs").length; i++) await wait(20);
+    assert.deepEqual(view.pageClients(), {}, "a guest's flag counts for nothing");
+    assert.ok(eventsIn(guest.text(), "tabs").length >= 1, "it is a guest's stream as before");
+    assert.equal(eventsIn(guest.text(), "agent-tabs").length, 0);
+    assert.equal(eventsIn(guest.text(), "layout").length, 0);
+    guest.close();
+  } finally { view.close(); }
+});
+
+test("tabs.json is the strip's list, masked; agent-tabs.json says who holds which", async () => {
+  const invites = createInvites();
+  const { ctx, pages } = fakeTabs(2);
+  const frames = pages.map(() => ({}));
+  pages.forEach((p, i) => { p.mainFrame = () => frames[i]; p.title = async () => `Tab ${i} hunter2`; p.isClosed = () => false; });
+  const mask = (t) => t.replace(/hunter2/g, "••••");
+  const view = await startLiveView({ getContext: async () => ({ ...ctx, on: () => {} }), currentUrl: async () => "about:blank#0", invites, mask,
+    tabMeta: (p) => (p === pages[1] ? { agent: { label: "Ada", color: "#e9763f", until: 9, from: "x" }, person: "Bob" } : {}) });
+  const key = view.url.split("/").at(-2);
+  try {
+    let r = await request(view.port, "GET", `/${key}/tabs.json`);
+    assert.equal(r.status, 200);
+    let tabs = JSON.parse(r.text);
+    assert.equal(tabs.length, 2);
+    for (const t of tabs) assert.match(t.id, /^[0-9a-f]{8}$/);
+    assert.deepEqual(tabs.map((t) => t.title), ["Tab 0 ••••", "Tab 1 ••••"]);
+    assert.deepEqual(tabs.map((t) => t.host), ["", ""]);
+    assert.deepEqual(tabs.map((t) => t.active), [true, false]);
+    assert.deepEqual(tabs.map((t) => t.loading), [false, false]);
+    assert.deepEqual(tabs[1].agent, { label: "Ada", color: "#e9763f" }, "label and color only");
+    assert.equal(tabs[1].person, "Bob");
+    assert.equal(tabs[0].agent, null);
+    assert.doesNotMatch(r.text, /hunter2/);
+    assert.ok(!r.text.includes(key), "the key never rides in it");
+    await wait(20);
+    pages[1].emit("framenavigated", frames[1]);
+    tabs = JSON.parse((await request(view.port, "GET", `/${key}/tabs.json`)).text);
+    assert.equal(tabs[1].loading, true, "loading after a main-frame navigation");
+    pages[1].emit("load");
+    tabs = JSON.parse((await request(view.port, "GET", `/${key}/tabs.json`)).text);
+    assert.equal(tabs[1].loading, false, "and done once it loaded");
+    r = await request(view.port, "GET", `/${key}/agent-tabs.json`);
+    assert.equal(r.status, 200);
+    const held = JSON.parse(r.text);
+    assert.deepEqual(held.map((t) => t.id), tabs.map((t) => t.id));
+    assert.deepEqual(held.map((t) => t.agent), [null, { label: "Ada", color: "#e9763f" }]);
+    assert.ok(!r.text.includes(key) && !/hunter2/.test(r.text));
+  } finally { view.close(); }
+});
+
+test("POST tab order reaches the helper's arrange with the pages in that order; guests can't", async () => {
+  const invites = createInvites();
+  const { ctx, pages } = fakeTabs(3);
+  pages.forEach((p) => { p.isClosed = () => false; });
+  const calls = [];
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", invites, shared: { arrange: async (list) => { calls.push(list); } } });
+  const key = view.url.split("/").at(-2);
+  try {
+    const ids = JSON.parse((await request(view.port, "GET", `/${key}/tabs.json`)).text).map((t) => t.id);
+    assert.equal((await request(view.port, "POST", `/${key}/tab`, { body: { order: [...ids].reverse() } })).status, 204);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0], [...pages].reverse());
+    await request(view.port, "POST", `/${key}/tab`, { body: { order: [ids[1], "ffffffff", ids[0]] } });
+    assert.deepEqual(calls[1], [pages[1], pages[0]], "an unknown id is skipped");
+    const d = invites.create({ role: "drive", label: "D" });
+    assert.equal((await request(view.port, "POST", `/${d.key}/tab`, { body: { order: [] } })).status, 403, "moving tabs is the owner's");
+    assert.equal(calls.length, 2);
+    assert.equal((await request(view.port, "POST", `/${d.key}/tab`, { body: { i: 0 } })).status, 204, "a drive guest still switches tabs");
+  } finally { view.close(); }
+});
+
+test("the timeline routes serve the owner the store and nobody else", async () => {
+  const invites = createInvites();
+  const card = { id: "0123456789ab", t: 1, caption: "Typed hunter2", step: null, who: "Ada", pinned: false, note: false };
+  const calls = [];
+  let fire = null;
+  const timeline = {
+    enabled: true,
+    cards: () => [card],
+    picture: (id) => (id === "0123456789ab" ? Buffer.from([0xff, 0xd8, 0xff]) : null),
+    remove: async (id) => { calls.push(["remove", id]); return id === "0123456789ab"; },
+    pin: async (id, on) => { calls.push(["pin", id, on]); return { ...card, pinned: on }; },
+    note: async (text) => { calls.push(["note", text]); return { ...card, id: "ba9876543210", caption: text, note: true }; },
+    onChange: (fn) => { fire = fn; return () => { fire = null; }; },
+  };
+  const mask = (t) => t.replace(/hunter2/g, "••••");
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites, timeline, mask });
+  const key = view.url.split("/").at(-2);
+  const owner = await readStream(view.port, `/${key}/events?page=strip`);
+  const d = invites.create({ role: "drive", label: "D" });
+  const guest = await readStream(view.port, `/${d.key}/events`);
+  try {
+    let r = await request(view.port, "GET", `/${key}/timeline.json`);
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text), { cards: [{ ...card, caption: "Typed ••••" }] });
+    r = await request(view.port, "GET", `/${key}/timeline/0123456789ab.jpg`);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers["content-type"], "image/jpeg");
+    assert.equal(r.headers["x-content-type-options"], "nosniff");
+    assert.equal(r.headers["cache-control"], "no-store");
+    assert.deepEqual(r.bytes, Buffer.from([0xff, 0xd8, 0xff]));
+    for (const path of ["timeline/0123456789ab.jpg/x", "timeline/zz.jpg", "timeline/../index.json", "timeline/ffffffffffff.jpg", "timeline"]) {
+      assert.equal((await request(view.port, "GET", `/${key}/${path}`)).status, 404, path);
+    }
+    assert.equal((await request(view.port, "DELETE", `/${key}/timeline/0123456789ab`)).status, 200);
+    assert.deepEqual(calls.at(-1), ["remove", "0123456789ab"]);
+    assert.equal((await request(view.port, "DELETE", `/${key}/timeline/0123456789ab`, { headers: { origin: "https://evil.example" } })).status, 403, "a cross-site DELETE is refused");
+    assert.equal(calls.length, 1, "and reaches nothing");
+    assert.equal((await request(view.port, "DELETE", `/${key}/timeline/zz`)).status, 404);
+    r = await request(view.port, "POST", `/${key}/timeline/note`, { body: { text: "Check VAT" } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(calls.at(-1), ["note", "Check VAT"]);
+    r = await request(view.port, "POST", `/${key}/timeline/0123456789ab/pin`, { body: { on: true } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(calls.at(-1), ["pin", "0123456789ab", true]);
+    assert.equal((await request(view.port, "POST", `/${key}/timeline/0123456789ab/nope`, { body: {} })).status, 404);
+    const callsBefore = calls.length;
+    assert.equal((await request(view.port, "POST", `/${key}/timeline/note`, { raw: "{" })).status, 400, "a note body that isn't JSON");
+    assert.equal((await request(view.port, "POST", `/${key}/timeline/0123456789ab/pin`, { raw: "{" })).status, 400, "a pin body that isn't JSON");
+    assert.equal(calls.length, callsBefore, "and reaches nothing");
+    for (const k of [invites.create({ role: "watch", label: "W" }).key, d.key]) {
+      for (const [method, path] of [["GET", "timeline.json"], ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note"], ["POST", "timeline/0123456789ab/pin"]]) {
+        assert.equal((await request(view.port, method, `/${k}/${path}`, { body: method === "POST" ? { text: "x" } : undefined })).status, 403, `${method} /${path}`);
+      }
+    }
+    const c = invites.create({ role: "drive", label: "C", share: "code" });
+    for (const k of [c.key, key]) for (const path of ["timeline.json", "timeline/0123456789ab.jpg", "layout.json", "tabs.json", "agent-tabs.json"]) {
+      assert.notEqual((await request(view.guestPort, "GET", `/${k}/${path}`)).status, 200, `the join-code port never serves ${path}`);
+    }
+    const before = calls.length;
+    assert.equal(before, 3);
+    fire({ op: "add", card: { ...card, id: "aaaaaaaaaaaa" } });
+    await wait(50);
+    const got = eventsIn(owner.text(), "timeline");
+    assert.equal(got.length, 1);
+    assert.equal(got[0].card.caption, "Typed ••••", "masked on the way out");
+    assert.equal(eventsIn(guest.text(), "timeline").length, 0, "a guest's stream never gets it");
+    assert.ok(!guest.text().includes("Typed"));
+  } finally { owner.close(); guest.close(); view.close(); }
+  assert.equal(fire, null, "closing the live view lets go of the store");
+});
+
+test("timeline: false answers 404 with a clear body", async () => {
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", timeline: { enabled: false, onChange: () => () => {} } });
+  const key = view.url.split("/").at(-2);
+  try {
+    for (const [method, path] of [["GET", "timeline.json"], ["GET", "timeline/0123456789ab.jpg"], ["DELETE", "timeline/0123456789ab"], ["POST", "timeline/note"], ["POST", "timeline/0123456789ab/pin"]]) {
+      const r = await request(view.port, method, `/${key}/${path}`, { body: method === "POST" ? { text: "x" } : undefined });
+      assert.equal(r.status, 404, `${method} /${path}`);
+      assert.match(r.text, /timeline: false/);
+    }
+  } finally { view.close(); }
 });

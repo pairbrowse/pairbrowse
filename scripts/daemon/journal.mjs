@@ -175,7 +175,7 @@ export function createJournal({ session = () => "default", openPages = async () 
   async function flush() {
     if (!file) return;
     const run = follow();
-    if (!run) return;
+    if (!run || !file) return; // finished meanwhile: the log closed (follow), nothing to write
     await Promise.all(entries.map(entitle));
     const done = run.done || [];
     for (const e of entries) {
@@ -230,5 +230,6 @@ export function createJournal({ session = () => "default", openPages = async () 
   }
 
   onActivity(activity);
-  return { activity, status, ranLeft, flushNow, read, file: () => file };
+  // The page the log is on now ({ url, title }, the title masked), or null: a timeline card's step.
+  return { activity, status, ranLeft, flushNow, read, file: () => file, step: () => (current ? { url: current.url, title: current.title } : null) };
 }

@@ -63,7 +63,8 @@ export const listen = (server, port) => new Promise((resolve, reject) => {
   server.listen(port, "127.0.0.1", () => { server.off("error", reject); resolve(); });
 });
 
-export const plain = (res, code) => { res.writeHead(code, { "content-type": "text/plain" }); res.end(String(code)); };
+// text: a plain sentence for the answer instead of the bare code.
+export const plain = (res, code, text = String(code)) => { res.writeHead(code, { "content-type": "text/plain" }); res.end(text); };
 
 const scripts = new URL("../", import.meta.url);
 const viewerHtml = readFileSync(new URL("liveview.html", scripts), "utf8");

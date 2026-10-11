@@ -19,7 +19,10 @@ verified work below. Nothing here is claimed done without a test or a measuremen
   removed on close); every tool result is decorated (`finishResult`): popups closed, page settled,
   notes, then a screenshot (`screenshot.mjs`, one CDP screencast frame, JPEG q55 ≤820 px).
 - Screenshots were never kept: the result carries the bytes; per participant only the page and
-  the pixel-to-CSS scale stayed (for `pairbrowse_click_at`).
+  the pixel-to-CSS scale stayed (for `pairbrowse_click_at`). Since the timeline store
+  (`daemon/timeline.mjs`), a picture already sent is also written to the session's timeline folder
+  after the result went out (setImmediate, async fs; one small synchronous read of the session's
+  index.json on first use; every write is async and queued), off the result path, off with `timeline: false`.
 - Recurring work while idle (before this work): presence read every frame of every tab twice a
   second (`presence.mjs`); `cobrowse.mjs` woke 30 times a second even with nothing shared;
   `sharing.mjs` dev-server refresh every 3 s; live view `invites.sweep` 1.5 s; hud spark expiry 2 s;

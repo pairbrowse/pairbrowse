@@ -75,6 +75,12 @@ export const DEFAULT_CONFIG = {
   // (docs/sharing.md, "Using your own tunnel"). guestPort pins the port join codes are served
   // on (0: random), for a tunnel whose target is set on the provider's side.
   sharing: { tunnel: { kind: "quick" }, guestPort: 0 },
+  // The session's timeline: the pictures the helper already sent to agents, kept per browser
+  // session under ~/.pairbrowse (at most 200, pinned ones past that). false keeps none.
+  timeline: true,
+  // Where the browser's own pages start: each dock "open", "rail" or "hidden", and the tab
+  // strip's height in pixels (44 to 176).
+  layout: { left: "open", right: "open", strip: 88 },
 };
 
 export function loadConfig() {

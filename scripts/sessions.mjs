@@ -36,6 +36,8 @@ export const profileDir = (name) => (name === "default" ? paths.profile : join(S
 // Who used a session: people and agents, with their app and kind of computer (sessions picker).
 export const peopleFile = (name) => (name === "default" ? join(paths.home, "people.json") : join(SESSIONS, `${name}.people.json`));
 export const tabsFile = (name) => (name === "default" ? join(paths.home, "tabs.json") : join(SESSIONS, `${name}.tabs.json`));
+// The session's timeline (daemon/timeline.mjs): pictures already sent to agents, and their index.
+export const timelineDir = (name) => (name === "default" ? join(paths.home, "timeline") : join(SESSIONS, `${name}.timeline`));
 
 export function currentSession() {
   try {
@@ -66,6 +68,7 @@ export function deleteSession(name) {
   rmSync(profileDir(name), { recursive: true, force: true });
   rmSync(tabsFile(name), { force: true });
   rmSync(peopleFile(name), { force: true });
+  rmSync(timelineDir(name), { recursive: true, force: true });
 }
 
 const PEOPLE_MAX = 12;

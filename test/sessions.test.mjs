@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,8 +38,22 @@ test("who used a session: names and kinds only, newest first, deduplicated and c
   assert.equal(s.readPeople("people-x").length, 12);
   s.recordPerson("clean-9", { who: "You", kind: "you" });
   assert.deepEqual(s.readPeople("clean-9"), [], "throwaway sessions keep nothing");
+  mkdirSync(s.timelineDir("people-x"), { recursive: true });
+  writeFileSync(join(s.timelineDir("people-x"), "index.json"), "{\"cards\":[]}");
   s.deleteSession("people-x");
   assert.deepEqual(s.readPeople("people-x"), []);
+  assert.equal(existsSync(s.timelineDir("people-x")), false, "the timeline goes with the session");
+});
+
+test("a session's timeline folder sits beside its files, never listed as a session", () => {
+  assert.equal(s.timelineDir("default"), join(process.env.PAIRBROWSE_HOME, "timeline"));
+  assert.ok(s.timelineDir("x").endsWith(join("sessions", "x.timeline")));
+  s.createSession("tl-y");
+  mkdirSync(s.timelineDir("tl-y"), { recursive: true });
+  assert.ok(!s.listSessions().some((x) => x.name.includes("timeline")), "a <name>.timeline folder isn't a session");
+  assert.ok(s.listSessions().some((x) => x.name === "tl-y"));
+  s.deleteSession("tl-y");
+  assert.equal(existsSync(s.timelineDir("tl-y")), false);
 });
 
 test("saved tabs keep their order and only web pages", () => {

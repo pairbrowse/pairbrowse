@@ -105,9 +105,10 @@ export function createInvites({ now = () => Date.now() } = {}) {
 
 // What each kind of link may do. The owner's own link (and the side panel) may do everything.
 // "journal" (the live view's Timeline: the goal log) and "invite" (the Share card makes an invite)
-// are the owner's only.
+// are the owner's only, as are "layout", "strip" and "timeline" (the browser's own pages: the docks'
+// layout, the tab strip's list, the session's timeline of pictures).
 const RIGHTS = {
-  owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite"]),
+  owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline"]),
   drive: new Set(["page", "events", "thumb", "state", "input", "tab"]),
   watch: new Set(["page", "events", "thumb", "state"]),
 };

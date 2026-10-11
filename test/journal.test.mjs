@@ -62,8 +62,11 @@ test("the first action opens a run named after the site and time; each page is a
   assert.deepEqual(read(files()[0]).done, run.done);
 });
 
-test("run_save takes the auto log over; status finished closes it and the next action opens a new one", async () => {
+test("run_save takes the auto log over; status finished closes it and the next action opens a new one", async (ctx) => {
   let t = start + 3600_000;
+  // saveRun() asks liveAutoRun() with the wall clock: hold it at the test's clock, so the fixed
+  // 2026-10-10 run is not stale on the day the suite runs (restored after the test).
+  ctx.mock.method(Date, "now", () => t);
   const page = tab("https://partners.shopify.com/apps/new", "New app");
   const j = createJournal({ session: () => "listing", openPages: async () => [page], now: () => t, delayMs: 10 });
   j.activity("Opened https://partners.shopify.com/apps/new", "Claude", page);
@@ -248,4 +251,18 @@ test("read(): the Timeline's view of the log, masked again on read, capped, null
   assert.deepEqual(r.left, ["[PASSWORD] field"]);
   assert.equal(typeof r.updatedAt, "string");
   assert.deepEqual(Object.keys(r).sort(), ["done", "left", "name", "status", "updatedAt", "yourTurn"]);
+});
+
+test("step(): the page the log is on, null before the first action and once the run is finished", async () => {
+  let t = start + 200 * 24 * 3600_000;
+  const page = tab("https://step.example/form", "Step form");
+  const j = createJournal({ session: () => "step", openPages: async () => [page], mask: (s) => s.replaceAll("hunter2", "••••"), now: () => t, delayMs: 10 });
+  assert.equal(j.step(), null, "no action yet");
+  j.activity("Typed hunter2 into Notes", "Claude", page);
+  await j.flushNow();
+  assert.deepEqual(j.step(), { url: "https://step.example/form", title: "Step form" });
+  saveRun({ name: JSON.parse(readFileSync(j.file(), "utf8")).name, status: "finished" });
+  t += 1000;
+  await j.flushNow();
+  assert.equal(j.step(), null, "a finished run has no current page");
 });

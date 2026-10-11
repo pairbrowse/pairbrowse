@@ -84,13 +84,14 @@ export function liveAutoRun(now = Date.now()) {
   return r?.source === "auto" && r.status === "in progress" && !r.mergedInto && now - Date.parse(r.updatedAt) <= STALE_MS ? r : null;
 }
 
-export function saveRun(a) {
+// `now` is when the save happens (tests pass their clock); it decides whether the helper's log is still live.
+export function saveRun(a, now = Date.now()) {
   mkdirSync(paths.runs, { recursive: true });
   const file = runFile(a.name);
   const prev = readJson(file) || { name: a.name, status: "open", createdAt: new Date().toISOString(), done: [], left: [], yourTurn: [], drafted: [] };
   // The agent's own run takes over the log the helper kept for this task: its name wins, the
   // helper's lines go in under it (one run, not two), and the helper keeps writing there.
-  const auto = prev.source === "auto" ? null : liveAutoRun();
+  const auto = prev.source === "auto" ? null : liveAutoRun(now);
   if (auto && slug(auto.name) !== slug(a.name)) {
     prev.done = uniq([...auto.done, ...prev.done]);
     prev.left = prev.left.length ? prev.left : auto.left;

@@ -64,7 +64,15 @@ shareCard({ btn: $("share-btn"), card: $("share-card"), base: () => base });
 // pending timeout; nothing at all while folded.
 const CHECKLIST_MS = 5000;
 let checklistOpen = false, checklistBusy = false, checklistPending = false, checklistAt = 0, checklistTimer = 0;
-const drawChecklist = (items) => $("checklist-items").replaceChildren(...items);
+// The list itself isn't a live region (it is rebuilt on every refresh while the agent drives):
+// readers hear one line with the counts, only when the counts change.
+let checklistSaid = "";
+const drawChecklist = (items) => {
+  $("checklist-items").replaceChildren(...items);
+  const n = (state) => items.filter((li) => li.dataset?.state === state).length;
+  const line = items.some((li) => li.dataset?.state) ? `${n("done")} done, ${n("current")} under way, ${n("waiting")} waiting for you, ${n("pending")} pending` : "";
+  if (line !== checklistSaid) { checklistSaid = line; $("checklist-said").textContent = line; }
+};
 async function loadChecklist() {
   if (!checklistOpen) return;
   if (!base) return drawChecklist([el("li", { className: "empty", textContent: "Waiting for PairBrowse." })]);

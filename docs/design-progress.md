@@ -489,8 +489,9 @@ valid. Bench vs 0.15.42: click p50 501 ms (517), long snapshot 102 ms (166), nav
 blip: helper RSS 254 MB at the end of one screenshots-on run (flat in the other run and the
 soak: GC timing). Diff checks: the new `invite` route owner-only, answered once, nothing
 logged; no timer while folded; reduced motion everywhere added; keyboard and names on every
-new control; the logo untouched. Verdict: SHIP. Minor left: the watch-link row has a pointer
-cursor and no role; the checklist's live region re-renders every 5 s while driving.
+new control; the logo untouched. Verdict: SHIP. The two minors are fixed since: the watch-link row has a default cursor; the
+checklist list is no live region any more, a visually hidden status line says the counts only
+when they change.
 
 ## Next
 

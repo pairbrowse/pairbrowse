@@ -59,7 +59,7 @@ test("the panel's markup keeps every id once, and each section folds with a name
   assert.deepEqual([...html.matchAll(/<input type="radio" name="share" value="(\w+)"/g)].map(([, v]) => v), ["code", "link"]);
   assert.match(html, /id="share-code" readonly aria-label="[^"]+"/);
   assert.match(html, /id="share-msg" role="status" aria-live="polite"/);
-  assert.match(html, /<ol id="checklist-items" aria-live="polite" aria-label="[^"]+">/);
+  assert.match(html, /<p class="sr" id="checklist-said" role="status" aria-live="polite"><\/p><ol id="checklist-items" aria-label="[^"]+">/);
   assert.match(html, /<header class="top">[\s\S]*id="where"[^>]*><\/span>\s*<button class="mini share-btn" id="share-btn"/, "Share comes after the session pill");
 });
 

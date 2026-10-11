@@ -794,6 +794,25 @@ describe("downloads: where Open opened it, and Open in Word", () => pageTest("ri
   assert.deepEqual(errors, []);
 }));
 
+// Open's title matches the helper's openWay for what the name says: TAB_TYPES a tab, TEXT_TYPES a
+// preview, the codec types (build-dependent) and mov / aac (their app) no hint.
+const HINTS = {
+  "a.ico": "Opens in a new tab", "README.md": "Opens in a new tab", "data.JSON": "Opens in a new tab", "song.flac": "Opens in a new tab", "photo.jpeg": "Opens in a new tab",
+  "export.csv": "Opens as a read-only preview in a new tab", "server.LOG": "Opens as a read-only preview in a new tab",
+  "clip.mp4": null, "clip.m4v": null, "voice.m4a": null, "movie.mov": null, "tune.aac": null, "photo.heic": null, "deck.pptx": null,
+};
+const HINT_ROWS = Object.keys(HINTS).map((name, i) => ({ id: `h${i}`, name, state: "done", at: NOW - 1000 * (i + 1), size: 10, from: { host: "files.example" } }));
+describe("downloads: Open's title follows the helper's openWay", () => pageTest("right", opts({ downloads: { items: HINT_ROWS } }), async ({ page, inPage, until, errors }) => {
+  await page.click("#tab-tools");
+  await until("the rows", (n) => document.querySelectorAll("#downloads li").length === n, HINT_ROWS.length);
+  const titles = await inPage(() => Object.fromEntries([...document.querySelectorAll("#downloads li")].map((li) => {
+    const b = li.querySelector("button");
+    return [li.querySelector(".name").textContent, b.hasAttribute("title") ? b.title : null];
+  })));
+  assert.deepEqual(titles, HINTS);
+  assert.deepEqual(errors, []);
+}));
+
 describe("downloads without the route", () => pageTest("right", opts({ downloads: null }), async ({ page, helper, inPage, errors }) => {
   await page.click("#tab-tools");
   await waitFor("the read", () => reads(helper, "downloads.json") === 1);

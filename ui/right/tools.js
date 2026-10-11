@@ -20,12 +20,17 @@ import { $, el, avatar, splitLabel, shortClock } from "../common.js";
 const MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
 const REVEAL = MAC ? "Show in Finder" : "Show in folder";
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
-// Names the page can hint about: Word-type documents (Open in Word) and the types Chromium shows in
-// a tab. Titles only: what really opens, asks first or is refused is the helper's answer.
+// Names the page can hint about, as the helper's openWay (scripts/daemon/tools.mjs) decides from the
+// name alone: IN_TAB is its TAB_TYPES (always a tab), TEXT its TEXT_TYPES (an escaped preview in a
+// tab), WORD its DOCUMENT_TYPES (Open in Word; a preview on macOS). No hint for mp4, m4v and m4a
+// (a tab only in the macOS PairBrowse build) or mov and aac (their app). Titles only: what really
+// opens, asks first or is refused is the helper's answer.
 const WORD = /\.(docx?|rtf|odt)$/i;
-const IN_TAB = /\.(pdf|png|jpe?g|gif|webp|avif|bmp|mp4|m4v|webm|ogv|mp3|wav|ogg|oga|m4a|aac|flac|opus|txt)$/i;
+const IN_TAB = /\.(pdf|png|jpe?g|gif|webp|avif|bmp|ico|webm|ogv|mp3|wav|ogg|oga|opus|flac|txt|md|json)$/i;
+const TEXT = /\.(csv|log)$/i;
+const PREVIEW_HINT = "Opens as a read-only preview in a new tab";
 const OPENED = { tab: "Opened in a new tab", preview: "Opened as a read-only preview", app: "Opened in its app" };
-const openHint = (name) => (IN_TAB.test(name) ? "Opens in a new tab" : WORD.test(name) ? (MAC ? "Opens as a read-only preview in a new tab" : "Opens in its app") : "");
+const openHint = (name) => (IN_TAB.test(name) ? "Opens in a new tab" : TEXT.test(name) ? PREVIEW_HINT : WORD.test(name) ? (MAC ? PREVIEW_HINT : "Opens in its app") : "");
 const idOf = (x) => ((typeof x === "string" || typeof x === "number") && ID.test(String(x)) ? String(x) : null);
 const str = (v) => (typeof v === "string" ? v : typeof v === "number" && Number.isFinite(v) ? String(v) : "");
 // at: epoch ms, or an ISO string; null when it is neither.

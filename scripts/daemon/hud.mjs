@@ -94,11 +94,20 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
   // The shared tabs whose connection to the host is being moved to another address: their bars say
   // "Reconnecting to Bob…" meanwhile (for the person here only; agents hear nothing of it).
   let reconnecting = { to: "", pages: new Set() };
+  // Whether this browser's recorder runs (daemon.mjs sets it): the bars of this browser's own pages
+  // show a REC pill meanwhile. Never crossed to joiners.
+  let recording = false;
   function applyBar(page) {
     const person = waiting(page);
     const p = pause();
     const re = reconnecting.to && reconnecting.pages.has(page) ? reconnecting.to : "";
-    return quietly(page, JSON.stringify({ items: recentFor(page), waiting: !!person, person: person || "", pause: p.by ? { by: p.by } : null, canPause: !!p.can, ...(re ? { reconnecting: re } : {}) }), "bar");
+    return quietly(page, JSON.stringify({ items: recentFor(page), waiting: !!person, person: person || "", pause: p.by ? { by: p.by } : null, canPause: !!p.can, ...(re ? { reconnecting: re } : {}), ...(recording ? { recording: true } : {}) }), "bar");
+  }
+  function setRecording(on) {
+    on = !!on;
+    if (on === recording) return;
+    recording = on;
+    return pages().then((all) => all.forEach(applyBar)).catch(() => {});
   }
   // to: the host's name while the switch is on (empty: over); pages: the shared tabs here.
   function setReconnecting(to, pages = []) {
@@ -301,7 +310,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     // The page script's name and key: forms.mjs reads and claims fields through it.
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
-    source, call, ensure, onPageLoad, applyBar, setReconnecting, setBadge, setBadgeFor, statusOf, badge: () => badge,
+    source, call, ensure, onPageLoad, applyBar, setReconnecting, setRecording, setBadge, setBadgeFor, statusOf, badge: () => badge,
     moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, forgetPage, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor, markTargets,
     pressOn, declarePress, onPress: (fn) => { pressListeners.add(fn); return () => pressListeners.delete(fn); },

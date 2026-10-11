@@ -324,6 +324,7 @@
   let barWaiting = false; // Claude waits while you use the browser
   let barPerson = ""; // who is using this tab (empty: you)
   let barReconnecting = ""; // the host this shared tab is being reconnected to (empty: the channel is up)
+  let barRecording = false; // this browser's recorder runs (the helper sends it to its own pages only)
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const rich = (t) => esc(t).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/`([^`]*)`/g, "<code>$1</code>");
   // "Alice" -> "Alice's Claude". Unnamed ("Claude 3fed") and app-labelled ("Alice · Codex") stay as they are.
@@ -344,6 +345,9 @@
       .who{display:flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
       .who b{color:#F1F5FA;font-weight:600}
       .dot{flex:none;width:8px;height:8px;border-radius:50%;background:#e9763f}
+      .rec{display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 7px;border-radius:6px;background:#192A3D;color:#F1F5FA;font:600 11px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.06em}
+      .rec[hidden]{display:none}
+      .rec i{width:7px;height:7px;border-radius:50%;background:#EF6468}
       ol{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:0;padding:0;list-style:none;min-width:0;flex:1;overflow:hidden;
         -webkit-mask-image:linear-gradient(90deg,transparent,#000 40px);mask-image:linear-gradient(90deg,transparent,#000 40px)}
       li{display:flex;gap:6px;align-items:center;white-space:nowrap;flex:none}
@@ -388,7 +392,7 @@
       .jq .x{position:absolute;right:8px;top:6px;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:4px}
       .jq .x:hover{color:#F1F5FA}
       @media (prefers-reduced-motion:reduce){.bar,.bar *{animation:none!important;transition:none!important}}
-    </style><div class="bar" aria-hidden="true"><span class="who"><i class="dot"></i><span></span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><div class="jq" hidden><div class="hd"><i class="av"></i><span class="t"><b></b> wants to join · <span class="r"></span><span class="h"></span></span></div><span class="m" hidden></span><div class="act"><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button></div><b class="x" title="Dismiss (it stays in the side panel)">×</b></div></div>`);
+    </style><div class="bar" aria-hidden="true"><span class="who"><i class="dot"></i><span></span><span class="rec" hidden><i></i>REC</span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><div class="jq" hidden><div class="hd"><i class="av"></i><span class="t"><b></b> wants to join · <span class="r"></span><span class="h"></span></span></div><span class="m" hidden></span><div class="act"><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button></div><b class="x" title="Dismiss (it stays in the side panel)">×</b></div></div>`);
     bar = shadow.querySelector(".bar");
     joinWire(shadow); // a new bar: a join request it shows is drawn anew
     joinShown = "";
@@ -430,6 +434,7 @@
     pz.hidden = !barCanPause;
     pz.textContent = barPause ? "Resume" : "Pause agents";
     paintDot();
+    bar.querySelector(".rec").hidden = !barRecording;
     if (barPause) bar.querySelector(".who span").innerHTML = html(`Paused by <b>${esc(barPause.by)}</b>${barCanPause ? " \u00b7" : ""}`);
     else if (barReconnecting) bar.querySelector(".who span").innerHTML = html(`Reconnecting to <b>${esc(barReconnecting)}</b>…`);
     else bar.querySelector(".who span").innerHTML = html(barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`);
@@ -457,6 +462,7 @@
       barPause = !Array.isArray(v) && v.pause && typeof v.pause.by === "string" ? { by: v.pause.by.slice(0, 60) } : null;
       barCanPause = !Array.isArray(v) && !!v.canPause;
       barReconnecting = !Array.isArray(v) && typeof v.reconnecting === "string" ? v.reconnecting.slice(0, 60) : "";
+      barRecording = !Array.isArray(v) && v.recording === true;
     } catch { return; }
     ensureBar(); // always there, "idle" until the first action
     drawBar();

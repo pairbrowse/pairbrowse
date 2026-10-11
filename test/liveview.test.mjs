@@ -310,6 +310,20 @@ test("the live view adds no timer, observer or poll; storage keys and the journa
   assert.doesNotMatch(css, /backdrop-filter|blur\(/);
   assert.deepEqual(css.match(/font-size:\s*[\d.]+px/g), ["font-size: 15px"], "type sizes come from --fs-* (the overlay heading aside)");
   assert.equal(count(css, "infinite"), 3, "pulse x2 and the skeleton's sheen, nothing new");
+  // The stage toolbar on the sheet's compact sizes: 28 px controls on --r-2, the address in --fs-2.
+  const rule = (sel) => { const m = css.match(new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`)); assert.ok(m, sel); return m[1]; };
+  for (const sel of [".nav", ".fit", ".url"]) {
+    const r = rule(sel);
+    assert.match(r, /height: 28px/, `${sel} is 28 px`);
+    assert.doesNotMatch(r, /\b(30|32)px/, `${sel}: no 30/32 px`);
+  }
+  assert.match(rule(".url"), /border-radius: var\(--r-2\)/);
+  assert.match(rule(".url"), /font-size: var\(--fs-2\)/);
+  assert.match(rule(".mini"), /border-radius: var\(--r-2\)/);
+  assert.match(rule(".toolbar"), /padding: 5px 8px/, "28 px controls in a 38 px toolbar");
+  // The Workspace label on the tab labels' baseline (measured: 12 px label, 13 px tab labels): one shorthand, 7 px at the bottom.
+  assert.match(rule(".side > header"), /padding: 0 6px 7px 14px/);
+  assert.doesNotMatch(rule(".side > header"), /padding-bottom/, "no longhand the shorthand would override");
 });
 
 // ---- the workspace column and the Timeline, rendered (headless Patchright, the real server) ----

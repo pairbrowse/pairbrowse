@@ -20,7 +20,7 @@ svg { flex: none; display: block; }
 }
 .side[data-state="rail"] { width: 44px; }
 .side[data-state="hidden"] { display: none; }
-.side > header { display: flex; align-items: flex-end; gap: 6px; height: 42px; padding-bottom: 10px; box-sizing: border-box; padding: 0 6px 0 14px; flex: none; }
+.side > header { display: flex; align-items: flex-end; gap: 6px; height: 42px; box-sizing: border-box; padding: 0 6px 7px 14px; flex: none; }
 .side > header h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-2); font-weight: 650; color: var(--ink-2); white-space: nowrap; }
 .side .collapse { color: var(--ink-2); }
 .side .collapse svg { transition: transform var(--t); }
@@ -144,9 +144,9 @@ svg { flex: none; display: block; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgb(50 133 246 / 0); } }
 
 /* toolbar */
-.toolbar { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--chrome); }
+.toolbar { position: relative; display: flex; align-items: center; gap: 4px; padding: 5px 8px; background: var(--chrome); }
 .nav {
-  display: grid; place-items: center; width: 30px; height: 30px; flex: none;
+  display: grid; place-items: center; width: 28px; height: 28px; flex: none;
   border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: pointer;
   transition: background var(--t), color var(--t);
 }
@@ -155,9 +155,9 @@ svg { flex: none; display: block; }
 .nav:focus-visible, .fit:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .url {
   display: flex; align-items: center; gap: 8px; min-width: 120px; flex: 1 1 auto;
-  height: 32px; padding: 0 14px; margin: 0 4px;
-  border-radius: 999px; background: var(--elevated);
-  font-size: var(--fs-3); color: var(--muted); cursor: text;
+  height: 28px; padding: 0 12px; margin: 0 2px;
+  border-radius: var(--r-2); background: var(--elevated);
+  font-size: var(--fs-2); color: var(--muted); cursor: text;
 }
 .url .lock { color: var(--ink-2); }
 .url[data-secure="false"] .lock { color: var(--warn); }
@@ -174,8 +174,8 @@ svg { flex: none; display: block; }
 .tab[data-claude="true"] .close { display: none; }
 /* Session and people: small chips after the address, which keeps most of the width. */
 .where, .people {
-  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; min-width: 0;
-  border-radius: 999px; background: var(--hover); font-size: var(--fs-2); color: var(--ink-2); white-space: nowrap; cursor: default;
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; min-width: 0;
+  border-radius: var(--r-2); background: var(--hover); font-size: var(--fs-2); color: var(--ink-2); white-space: nowrap; cursor: default;
 }
 .where { flex: 0 0 auto; max-width: min(300px, 40%); }
 .where-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -186,7 +186,7 @@ svg { flex: none; display: block; }
 .people .hold { font-weight: var(--fw-name); color: var(--accent-ink); }
 .people[data-hold="true"] { background: var(--accent-soft); color: var(--ink); }
 .fit {
-  display: grid; place-items: center; width: 30px; height: 30px; flex: none;
+  display: grid; place-items: center; width: 28px; height: 28px; flex: none;
   border: 0; border-radius: var(--r-2); background: transparent; color: var(--muted); cursor: pointer;
   transition: background var(--t), color var(--t);
 }
@@ -261,8 +261,8 @@ body[data-s="reconnecting"] .overlay, body[data-s="closed"] .overlay { display: 
 /* Profile | Timeline */
 .dtabs { display: flex; gap: 4px; flex: 1; }
 .dtabs [role="tab"] {
-  height: 30px; padding: 0 8px; border: 0; border-radius: var(--r-1) var(--r-1) 0 0; background: transparent; cursor: pointer;
-  color: var(--ink-2); font-size: var(--fs-3); font-weight: 650; box-shadow: inset 0 -2px 0 transparent; transition: color var(--t), box-shadow var(--t);
+  height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-1) var(--r-1) 0 0; background: transparent; cursor: pointer;
+  color: var(--ink-2); font-size: var(--fs-2); font-weight: 650; box-shadow: inset 0 -2px 0 transparent; transition: color var(--t), box-shadow var(--t);
 }
 .dtabs [role="tab"]:hover { color: var(--ink); }
 .dtabs [role="tab"][aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
@@ -296,7 +296,7 @@ body[data-s="reconnecting"] .overlay, body[data-s="closed"] .overlay { display: 
 .field::placeholder { color: var(--muted); opacity: 1; }
 .mini {
   display: inline-grid; place-items: center; height: 28px; min-width: 28px; padding: 0 8px;
-  border: 0; border-radius: var(--r-1); background: transparent; color: var(--muted); cursor: pointer; font-size: var(--fs-2); font-weight: var(--fw-name);
+  border: 0; border-radius: var(--r-2); background: transparent; color: var(--muted); cursor: pointer; font-size: var(--fs-2); font-weight: var(--fw-name);
   transition: background var(--t), color var(--t);
 }
 .mini:hover { background: var(--hover); color: var(--ink); }

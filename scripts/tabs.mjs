@@ -83,10 +83,17 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const host = (url) => { try { return new URL(url).host; } catch { return url; } };
 
+// The side column's row: the site's initial on a plain avatar (the panel's .avatar.plain; no favicon
+// yet, the tabs have not loaded), the title over the host, a state mark at the right. The words
+// before the host ("waiting · " ...) keep the state readable without color.
+const initialOf = (h) => (String(h).trim()[0] || "?").toUpperCase();
+const CHECK = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6.3l2.2 2.2 4.6-4.9' fill='none' stroke='%2320C997' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`;
+const BAD = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6 2v4.8' stroke='%23EF6468' stroke-width='1.9' stroke-linecap='round'/%3E%3Ccircle cx='6' cy='9.6' r='1.15' fill='%23EF6468'/%3E%3C/svg%3E")`;
+
 export function loadingHtml(tabs) {
-  const rows = tabs.map((t, i) => `<li data-i="${i}" data-s="waiting"><span class="dot"></span><span class="t">${esc(t.title || host(t.url))}</span><span class="h">${esc(host(t.url))}</span></li>`).join("");
+  const rows = tabs.map((t, i) => { const h = host(t.url); return `<li data-i="${i}" data-s="waiting"><span class="av" aria-hidden="true">${esc(initialOf(h))}</span><span class="t">${esc(t.title || h)}</span><span class="h">${esc(h)}</span><span class="m" aria-hidden="true"></span></li>`; }).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><title>Opening tabs</title><style>
-  :root{--bg:#0B1421;--sidebar:#111E2D;--edge:#293B50;--ink:#F1F5FA;--ink-2:#A2B2C6;--muted:#8699B1;--accent:#3285F6;--ok:#20C997;--bad:#EF6468}
+  :root{--bg:#0B1421;--sidebar:#111E2D;--elevated:#192A3D;--edge:#293B50;--ink:#F1F5FA;--ink-2:#A2B2C6;--muted:#8699B1;--accent:#3285F6;--ok:#20C997;--bad:#EF6468}
   *{box-sizing:border-box}html,body{margin:0;height:100%}
   body{display:grid;place-items:center;padding:24px;color:var(--ink);background:var(--bg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
   main{width:min(460px,100%);padding:28px 28px 18px;border-radius:10px;background:var(--sidebar);border:1px solid var(--edge)}
@@ -95,15 +102,16 @@ export function loadingHtml(tabs) {
   .bar{height:4px;border-radius:4px;background:var(--edge);overflow:hidden;margin-bottom:12px}
   .bar i{display:block;height:100%;width:0;border-radius:4px;background:var(--accent);transition:width 160ms cubic-bezier(0.22,1,0.36,1)}
   ol{list-style:none;margin:0;padding:0}
-  li{display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--edge)}
+  li{display:grid;grid-template-columns:24px minmax(0,1fr) 16px;grid-template-rows:auto auto;gap:0 10px;align-items:center;padding:8px 0;border-top:1px solid var(--edge)}
   li:first-child{border-top:0}
-  .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);transition:color 160ms}
+  .av{grid-row:1/3;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--elevated);color:var(--ink);border:1px solid var(--edge);font-size:12px;font-weight:600;line-height:1}
+  .t{grid-column:2;grid-row:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-weight:600;transition:color 160ms}
   li[data-s=waiting] .t{color:var(--muted)}
-  .h{font:12px ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted)}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--edge);justify-self:center;transition:background 160ms}
-  li[data-s=opening] .dot{background:var(--accent)}
-  li[data-s=open] .dot{background:var(--ok)}
-  li[data-s=failed] .dot{background:var(--bad)}
+  .h{grid-column:2;grid-row:2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:12px/1.4 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--muted)}
+  .m{grid-column:3;grid-row:1/3;justify-self:center;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--muted)}
+  li[data-s=opening] .m{border:0;background:var(--accent)}
+  li[data-s=open] .m,li[data-s=failed] .m{width:12px;height:12px;border:0;border-radius:0;background:${CHECK} center/12px 12px no-repeat}
+  li[data-s=failed] .m{background-image:${BAD}}
   li[data-s=waiting] .h::before{content:"waiting · "}
   li[data-s=opening] .h::before{content:"opening · "}
   li[data-s=failed] .h::before{content:"failed · ";color:var(--bad)}

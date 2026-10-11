@@ -40,7 +40,7 @@ const contrast = (a, b) => { const [x, y] = [lum(norm(a)), lum(norm(b))].sort((p
 
 const REQUIRED = ["bg", "chrome", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "accent", "accent-ink", "accent-soft",
   "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t"];
-const PAGES = ["panel/panel.css", "picker/picker.css", "newtab/newtab.css", "screen/screen.css"].map((x) => UI + x).concat("scripts/liveview.css");
+const PAGES = ["panel/panel.css", "picker/picker.css", "newtab/newtab.css", "screen/screen.css", "settings/settings.css"].map((x) => UI + x).concat("scripts/liveview.css");
 
 test("the sheet has every token, dark by default and light only for the live view", () => {
   for (const k of REQUIRED) assert.ok(dark[k], `--${k}`);
@@ -85,11 +85,11 @@ test("every literal color in the styled files is a sheet value, a participant co
   const allowed = new Set(["#ffffff", "#000000", ...SPARK_COLORS.map(norm)]);
   for (const t of [dark, light]) for (const v of Object.values(t)) { const n = norm(v); if (n) allowed.add(n); }
   assert.equal(norm(dark.spark), norm(SPARK_COLORS[0]), "--spark is Claude's own spark color");
-  const files = [UI + "panel/panel.css", UI + "picker/picker.css", UI + "newtab/newtab.css", UI + "screen/screen.css", "scripts/liveview.css", "scripts/hud.js", UI + "capture/record.js", "scripts/tabs.mjs"];
+  const files = [UI + "panel/panel.css", UI + "picker/picker.css", UI + "newtab/newtab.css", UI + "screen/screen.css", UI + "settings/settings.css", "scripts/liveview.css", "scripts/hud.js", UI + "capture/record.js", "scripts/tabs.mjs"];
   for (const f of files) {
     const text = read(f).replace(/%23([0-9a-fA-F]{3,8})\b/g, "#$1");
     const found = [...text.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|oklch\((?:[^()]|\([^()]*\))*\)/g)].map(([m]) => m);
-    assert.ok(found.length > 0 || f.endsWith("newtab.css"), `${f} has colors`);
+    assert.ok(found.length > 0 || f.endsWith("newtab.css") || f.endsWith("settings.css"), `${f} has colors`);
     for (const c of found) {
       if (c.startsWith("oklch")) { assert.ok(oklchAllowed(c), `${f}: ${c} is not a token value`); continue; }
       if (/var\(/.test(c)) continue;

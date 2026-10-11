@@ -1,0 +1,22 @@
+{
+  "helper": {
+    "session": { "name": "default", "where": "Local", "temporary": false },
+    "sessions": {
+      "picking": false,
+      "where": "Local",
+      "sessions": [
+        { "name": "default", "tabs": 3, "sites": ["shop.example", "docs.example"], "current": true, "used": 1760000000000, "people": [{ "who": "Alice", "app": "Claude Code", "computer": "Mac", "kind": "you" }], "live": [] },
+        { "name": "checkout-test", "tabs": 1, "sites": ["shop.example"], "current": false, "used": 0, "people": [], "live": [{ "who": "Bob", "computer": "Linux" }] }
+      ]
+    },
+    "profile": {
+      "details": [{ "label": "VAT number", "value": "DE123456789", "source": "you" }, { "label": "Company", "value": "Acme GmbH", "source": "form", "site": "shop.example" }],
+      "secrets": [{ "name": "SHOPIFY_PASSWORD", "domains": ["accounts.shopify.com"] }]
+    },
+    "dev": { "asks": [], "shared": [{ "port": 3000 }], "open": [{ "port": 5173, "title": "Vite" }], "joiners": 1 },
+    "joinhost": { "asks": [], "hosts": [{ "host": "tunnel.example.com", "always": true }] },
+    "timeline": { "cards": [{ "id": "0123456789ab", "time": "2026-10-11T10:00:00Z", "caption": "Checkout", "step": 1 }] }
+  },
+  "shim": {},
+  "push": []
+}

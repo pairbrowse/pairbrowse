@@ -124,8 +124,11 @@ describe("agent states in words", () => pageTest("right", opts(), async ({ page,
   assert.deepEqual(errors, []);
 }));
 
-describe("pause and resume", () => pageTest("right", opts({ pause: { paused: false, can: true } }), async ({ page, helper, inPage, until, errors }) => {
-  await until("the pause row", () => !document.getElementById("pause").hidden);
+// The card is about an agent the helper named (here on the board): with none it is not drawn.
+const ONE_AGENT = { people: [{ ...PEOPLE[0], task: "" }], messages: [] };
+
+describe("pause and resume", () => pageTest("right", opts({ pause: { paused: false, can: true }, board: ONE_AGENT }), async ({ page, helper, inPage, until, errors }) => {
+  await until("the pause row", () => !document.getElementById("pause").hidden && !document.getElementById("agent").hidden);
   assert.equal(await inPage(text, "pause-btn"), "Pause");
   assert.equal(await page.getAttribute("#pause-btn", "aria-label"), "Pause agents");
   // On the name row: between the name and the fold, and nothing else in the card's header.
@@ -157,11 +160,12 @@ describe("pause and resume", () => pageTest("right", opts({ pause: { paused: fal
   assert.deepEqual(errors, []);
 }));
 
-describe("checklist marks, task and saved", () => pageTest("right", opts({ journal: JOURNAL }), async ({ page, helper, inPage, until, errors }) => {
+describe("checklist marks, task and saved", () => pageTest("right", opts({ journal: JOURNAL, board: ONE_AGENT }), async ({ page, helper, inPage, until, errors }) => {
   // No task before the goal log is read: the served markup starts with it hidden, the steps open.
   assert.match(SERVED, /<div class="task" id="task" hidden>/, "no task before the goal log is read");
   assert.match(SERVED, /<small class="saved" id="session-saved" hidden>/, "no Saved line before the goal log is read");
   assert.match(SERVED, /<button class="more" id="agent-more"[^>]*aria-expanded="true"/);
+  await until("the agent card", () => !document.getElementById("agent").hidden);
   assert.equal(await inPage(visible, "#checklist"), true, "the checklist is open on load");
   helper.push("activity", [{ t: Date.now(), text: "Filled **Name**", who: "Claude", tab: "Details" }]);
   await until("working", () => document.getElementById("driver-text").textContent === "Working…");
@@ -1125,6 +1129,59 @@ describe("collapse and expand", () => pageTest("right", opts(), async ({ page, s
   await page.hover("#dock-collapse");
   await until("the hover colors", () => { const cs = getComputedStyle(document.getElementById("dock-collapse")); const t = (n) => { const p = document.createElement("span"); p.style.color = `var(--${n})`; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; }; return cs.backgroundColor === t("hover") && cs.color === t("ink"); });
   assert.deepEqual(await harness.live(), live, "nothing new runs after the round trip");
+  assert.deepEqual(errors, []);
+}));
+
+// The dock's inner (left) side: 1 px --edge from the nav row to the bottom (DESIGN.md B4), open
+// and rail; none when hidden, so the columns stay apart on a dark page.
+describe("the dock's inner edge", () => pageTest("right", opts({}), async ({ shim, inPage, until, errors }) => {
+  const edge = () => { const p = document.createElement("i"); p.style.color = "var(--edge)"; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return { shadow: getComputedStyle(document.body).boxShadow, edge: c }; };
+  await until("open", () => document.documentElement.dataset.dock === "open");
+  let e = await inPage(edge);
+  assert.equal(e.shadow, `${e.edge} 1px 0px 0px 0px inset`);
+  await shim.layout({ right: 1 });
+  await until("the rail", () => document.documentElement.dataset.dock === "rail");
+  e = await inPage(edge);
+  assert.equal(e.shadow, `${e.edge} 1px 0px 0px 0px inset`);
+  await shim.layout({ right: 0 });
+  await until("hidden", () => document.documentElement.dataset.dock === "hidden");
+  assert.equal((await inPage(edge)).shadow, "none");
+  assert.deepEqual(errors, []);
+}));
+
+// No agent named by the helper: no card for an invented one, an empty state that says what to do.
+describe("no agent named: no card", () => pageTest("right", opts({}), async ({ helper, inPage, until, errors }) => {
+  await until("live", () => document.body.dataset.s === "live");
+  const state = () => ({ card: document.getElementById("agent").checkVisibility(), none: document.getElementById("agent-none").checkVisibility(), text: document.getElementById("agent-none-title").textContent, hint: document.querySelector("#agent-none p").textContent });
+  assert.deepEqual(await inPage(state), { card: false, none: true, text: "No agent in this session", hint: "Ask Claude Code or Codex to use PairBrowse. Its task, checklist and status show here." });
+  // an empty state, not a drop zone: no border, 16 px padding, the title in --ink at 14/600
+  const look = await inPage(() => { const n = getComputedStyle(document.getElementById("agent-none")); const t = getComputedStyle(document.getElementById("agent-none-title")); const probe = document.createElement("i"); probe.style.color = "var(--ink)"; document.body.append(probe); const ink = getComputedStyle(probe).color; probe.remove(); return { border: n.borderTopStyle, pad: n.paddingTop, size: t.fontSize, weight: t.fontWeight, color: t.color === ink }; });
+  assert.deepEqual(look, { border: "none", pad: "16px", size: "14px", weight: "600", color: true });
+  helper.push("board", ONE_AGENT);
+  await until("the card", () => document.getElementById("agent").checkVisibility());
+  assert.equal(await inPage(() => document.getElementById("agent-none").checkVisibility()), false);
+  assert.equal(await inPage(text, "agent-name"), "Claude");
+  assert.deepEqual(errors, []);
+}));
+
+// No browser API and no extension storage: no agent connected, no agent card, no wait.
+describe("no API and no storage: No agent connected", () => pageTest("right", opts({}, { native: false, bridge: false }), async ({ inPage, until, errors }) => {
+  await until("the line", () => document.getElementById("agent-none-title").textContent === "No agent connected");
+  assert.equal(await inPage(() => document.getElementById("agent-none").checkVisibility()), true);
+  assert.equal(await inPage(() => document.getElementById("agent").checkVisibility()), false, "no agent card");
+  assert.equal(await inPage(() => document.getElementById("session-card").checkVisibility()), false, "no session card: nothing to share or end");
+  assert.equal(await inPage(() => document.body.dataset.s), "none");
+  assert.deepEqual(errors, []);
+}));
+
+// The session card only for a session the helper named.
+describe("session card waits for the helper's session", () => pageTest("right", opts({}), async ({ helper, inPage, until, errors }) => {
+  assert.match(SERVED, /<footer class="session-card" id="session-card" hidden>/, "served hidden");
+  await until("live", () => document.body.dataset.s === "live");
+  assert.equal(await inPage(() => document.getElementById("session-card").checkVisibility()), false, "no name yet: no card");
+  helper.push("session", { name: "Checkout test", where: "Local", temporary: false });
+  await until("the card", () => document.getElementById("session-card").checkVisibility());
+  assert.equal(await inPage(text, "session-name"), "Checkout test");
   assert.deepEqual(errors, []);
 }));
 

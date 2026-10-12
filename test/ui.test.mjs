@@ -776,6 +776,9 @@ test("seven pages on one origin share one event stream, which passes on when its
     helper.push("join", [{ id: "j1", name: "Bo", role: "drive", state: "pending" }]);
     await until("approve's pending", () => ev("approve", () => document.body.dataset.pending === "1"));
     await until("right's join banner", () => ev("right", () => !!document.querySelector("#joins .join")));
+    // Both docks on one surface (the mockup's dock tone): neither reads as a separate panel.
+    const surface = () => getComputedStyle(document.body).backgroundColor;
+    assert.equal(await ev("right", surface), await ev("left", surface), "left and right docks share one background");
 
     // The page holding the stream closes: the lock passes and another page opens it.
     const holder = Object.entries(await live()).find(([, l]) => l.eventSources === 1)?.[0];

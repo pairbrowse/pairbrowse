@@ -6,9 +6,12 @@
 // the helper's POST layout tab), from Activity in the rail and from the collapse and expand
 // buttons. Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): no row until then (see
 // the comment in index.html), whatever the session event carries.
-import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream } from "../common.js";
+import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream, servedByBrowser } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
+// The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
+// API; anything else is a page in a plain browser.
+document.documentElement.dataset.host = pb || servedByBrowser() ? "native" : "extension";
 const DOCK = ["hidden", "rail", "open"]; // DockState order
 const DRIVING_MS = 8000; // "working" for this long after an agent's last action (the panel's)
 const ACTIVITY_SHOWN = 12;
@@ -27,6 +30,7 @@ let stream = null; // the shared helper stream (common.js helperStream)
 let everLive = false;
 let driveTimer = 0;
 let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
+let shareAsked = false; // the strip's Share asked for the card while this dock was not yet open
 
 const isHistory = (url) => /^chrome:\/\/history(\/|$)/.test(url || "");
 const isSettings = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)settings(\/|$)/.test(url || "");
@@ -65,6 +69,7 @@ function setDock(name) {
   $("dock-collapse").hidden = !layout || state !== "open";
   $("dock-expand").hidden = !layout || state !== "rail";
   if (state !== "open") { closeHint(false); setActivity(false); }
+  else if (shareAsked) { shareAsked = false; openAskedShare(); }
   if (hidden) switcher.close(false);
   // Nothing redraws rows nobody can see: the drive timer stops with the dock hidden.
   if (hidden) { clearTimeout(driveTimer); driveTimer = 0; } else armDrive();
@@ -331,10 +336,21 @@ function connect(url) {
     });
   }
 }
-if (pb) pb.session.helper().then(({ origin, key }) => { if (origin && key) connect(`${origin}/${key}/`); }).catch(() => {});
+// No helper to ask (no browser API and no extension storage, or the browser has no helper
+// address): no connection line (the strip's pill says Local, the right dock says what to do);
+// the Agents section keeps only its label and its + button.
+function noHelper() {
+  if (base) return;
+  document.body.dataset.s = "closed";
+  $("conn").hidden = true;
+}
+if (pb) pb.session.helper().then(({ origin, key }) => { if (origin && key) connect(`${origin}/${key}/`); else noHelper(); }).catch(noHelper);
 else {
   // The extension's storage (the bridge period); null on a page opened without it.
-  try { globalThis.chrome?.storage?.session?.get("view").then(({ view }) => connect(view)).catch(() => {}); } catch {}
+  let area = null;
+  try { area = globalThis.chrome?.storage?.session || null; } catch {}
+  if (!area) noHelper();
+  else area.get("view").then(({ view }) => (view ? connect(view) : null)).catch(() => {});
   try { globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
 }
 
@@ -345,7 +361,29 @@ $("nav-activity").addEventListener("click", toggleActivity);
 $("nav-tools").addEventListener("click", openTools);
 $("add-agent").addEventListener("click", toggleHint);
 // Share: a join code or a watch link, made here with a person's click (the helper's own invite).
-shareCard({ btn: $("share-add"), card: $("share-card"), base: () => base });
+const share = shareCard({ btn: $("share-add"), card: $("share-card"), base: () => base });
+// The strip's Share in the browser opens this card (its own popover has no room in the strip's
+// slot): one message per click, for this window only.
+let myWindow = -1;
+if (pb) pb.windows.list().then(({ windows }) => { myWindow = (windows.find((w) => w.current) || windows.find((w) => w.focused))?.id ?? -1; }).catch(() => {});
+let shareChannel = null;
+// The strip's Share asked for the card: open it, then tell the strip it did (its screen-reader
+// note says where the card is only once the card is there).
+function openAskedShare() {
+  if ($("share-card").hidden) share.open();
+  try { shareChannel?.postMessage({ opened: "share", window: myWindow }); } catch {}
+}
+try {
+  shareChannel = new BroadcastChannel("pairbrowse-share");
+  shareChannel.onmessage = (e) => {
+    const asked = e.data?.window;
+    // Only an ask for this window, once this dock knows which window it is in; and only into an
+    // open dock (the strip opens it first: the card waits for that layout if it has not come yet).
+    if (e.data?.open !== "share" || myWindow === -1 || asked !== myWindow) return;
+    if (dock() !== "open") { shareAsked = true; return; }
+    openAskedShare();
+  };
+} catch {}
 $("settings").addEventListener("click", openSettings);
 const askLeft = (state) => { focusAfter = state; if (!askDock({ pb, layout, base, side: "left", state, onFail: () => { focusAfter = ""; } })) focusAfter = ""; };
 $("dock-collapse").addEventListener("click", () => askLeft("rail"));

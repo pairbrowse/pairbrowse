@@ -531,17 +531,21 @@ note.addEventListener("keydown", async (e) => {
 
 // ---- where the helper is ----
 
+// No helper to ask (the browser has no helper address, or neither the browser API nor the
+// extension's storage is there): the right dock's words. The extension's storage before the
+// address arrives is a real wait.
+const NO_HELPER = "No agent connected";
 if (window.pairbrowse) {
   // The browser build: the helper's address from the browser itself.
   window.pairbrowse.session.helper().then(({ origin, key } = {}) => {
     if (origin && key) connect(`${origin}/${key}/`);
-    else showLine("Waiting for PairBrowse");
-  }).catch(() => showLine("Waiting for PairBrowse"));
+    else showLine(NO_HELPER);
+  }).catch(() => showLine(NO_HELPER));
 } else {
   // The extension: the address the daemon handed to background.js, as the side panel reads it.
   let area = null;
   try { area = globalThis.chrome?.storage?.session || null; } catch {}
-  if (!area) showLine("Waiting for PairBrowse");
+  if (!area) showLine(NO_HELPER);
   else area.get("view").then(({ view }) => (view ? connect(view) : showLine("Waiting for PairBrowse"))).catch(() => showLine("Waiting for PairBrowse"));
   try { globalThis.chrome?.storage?.onChanged?.addListener((changes, a) => { if (a === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
 }

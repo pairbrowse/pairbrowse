@@ -12,6 +12,8 @@ import { inPage as inFrame } from "./live.mjs";
 const scenario = (title, opts, fn) => describe(title, () => pageTest("left", opts, fn));
 
 const OPEN = { width: 200, height: 936 };
+// The dock's inner edge (DESIGN.md B3): the body's box-shadow and --edge as a computed color.
+const innerEdge = () => { const p = document.createElement("i"); p.style.color = "var(--edge)"; document.body.append(p); const edge = getComputedStyle(p).color; p.remove(); return { shadow: getComputedStyle(document.body).boxShadow, edge }; };
 const BOARD = { people: [
   { who: "Claude", kind: "agent", color: "#e9763f", status: "working", tab: "Shop" },
   { who: "Alice · Codex", kind: "agent", color: "#4fd1e8", status: "you" },
@@ -67,6 +69,8 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   assert.equal(await inPage(() => document.body.dataset.dock), "open");
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
   assert.deepEqual(await inPage(shown), { collapse: true, expand: false });
+  let e = await inPage(innerEdge);
+  assert.equal(e.shadow, `${e.edge} -1px 0px 0px 0px inset`, "open: 1 px --edge on the inner (right) side");
   assert.equal((await calls(ctx, "layout", "get")).length, 1);
   assert.equal((await calls(ctx, "layout", "addObserver")).length, 1);
   await ctx.shim.layout({ left: 1 });
@@ -76,6 +80,8 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   assert.equal(await inPage(() => document.getElementById("nav-tools").title), "Tools");
   assert.equal(await inPage(() => document.getElementById("workspace").title), "Workspace: switch session");
   assert.deepEqual(await inPage(shown), { collapse: false, expand: true });
+  e = await inPage(innerEdge);
+  assert.equal(e.shadow, `${e.edge} -1px 0px 0px 0px inset`, "rail: the same inner edge");
   // The dock's stream carries panel=1, so today's helper never counts it as a viewer (no screencast).
   assert.deepEqual([...ctx.helper.streams].map((st) => ({ kind: st.kind, panel: st.panel })), [{ kind: "left", panel: true }]);
   // A fresh activity line arms the one drive timer; hiding the dock stops it.
@@ -86,6 +92,7 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   await until("hidden", () => document.body.dataset.dock === "hidden");
   assert.deepEqual(await inPage(() => ["main", "workspace", "settings", "dock-collapse", "dock-expand"].map((id) => document.getElementById(id).inert)), [true, true, true, true, true]);
   assert.deepEqual(await inPage(shown), { collapse: false, expand: false });
+  assert.equal((await inPage(innerEdge)).shadow, "none", "hidden: no edge");
   await ctx.page.keyboard.press("Tab");
   assert.equal(await inPage(() => document.activeElement === document.body || document.activeElement === null), true, "nothing focusable while hidden");
   const live = await ctx.harness.live();
@@ -106,6 +113,9 @@ scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }
   const { until, inPage } = ctx;
   assert.deepEqual(await inPage(() => [...document.querySelectorAll(".nav .row")].map((b) => b.id)), ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools"]);
   assert.equal(await inPage(() => document.getElementById("nav-browser").getAttribute("aria-current")), "page");
+  // The active row (DESIGN.md B3, B11): a plain --accent-soft fill, no outline, no halo, no gradient.
+  const look = await inPage(() => { const p = document.createElement("i"); p.style.backgroundColor = "var(--accent-soft)"; document.body.append(p); const want = getComputedStyle(p).backgroundColor; p.remove(); const s = getComputedStyle(document.getElementById("nav-browser")); return { bg: s.backgroundColor === want, image: s.backgroundImage, shadow: s.boxShadow }; });
+  assert.deepEqual(look, { bg: true, image: "none", shadow: "none" });
   await ctx.page.click("#nav-history");
   await until("a history tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
   assert.deepEqual((await calls(ctx, "tabs", "create"))[0].args, ["chrome://history", true, 1]);
@@ -485,5 +495,62 @@ scenario("left: no dock button before the layout is known", { viewport: OPEN, na
   helper.set("layout", { left: "open", right: "open", strip: 88 });
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
   assert.equal(await inPage(() => document.getElementById("dock-expand").hidden), true);
+  await clean(ctx);
+});
+
+// No browser API and no extension storage: nobody to connect to. The state shows once (the
+// strip's pill says Local, the right dock says what to do), so no connection line here.
+scenario("left: no API and no storage shows no connection line", { viewport: OPEN, native: false, bridge: false }, async (ctx) => {
+  const { until, inPage } = ctx;
+  await until("closed", () => document.body.dataset.s === "closed");
+  assert.equal(await inPage(() => document.getElementById("conn").checkVisibility()), false, "no connection line");
+  assert.equal(await inPage(() => document.body.textContent.includes("Not connected")), false);
+  // The Agents section: only its label and its + button.
+  assert.deepEqual(await inPage(() => [...document.querySelector('section[aria-labelledby="agents-h"]').children].filter((e) => e.checkVisibility() && e.getBoundingClientRect().height > 0).map((e) => e.className)), ["sec-head"]);
+  assert.deepEqual(await inPage(() => ["agents-h", "add-agent"].map((id) => document.getElementById(id).checkVisibility())), [true, true]);
+  assert.equal(await inPage(() => document.documentElement.dataset.host), "extension");
+  // Nothing claimed about agents or sharing without a helper.
+  const shown = (t) => [...document.querySelectorAll("#agents li, #guests-empty")].some((e) => e.textContent === t && e.checkVisibility());
+  assert.equal(await inPage(shown, "No agent yet"), false);
+  assert.equal(await inPage(shown, "Not shared yet"), false);
+  assert.deepEqual(ctx.errors, []);
+});
+
+// The strip's Share in the browser (its own card has no room in the 44 px row) opens this dock's
+// Share card for the same window only.
+scenario("left: the strip's Share opens the Share card here", { viewport: OPEN }, async (ctx) => {
+  const { until, inPage } = ctx;
+  await until("live", () => document.body.dataset.s === "live");
+  await inPage(() => new Promise((r) => setTimeout(r, 100))); // windows.list has answered
+  await inPage(() => { const ch = new BroadcastChannel("pairbrowse-share"); ch.postMessage({ open: "share", window: 2 }); ch.close(); });
+  await inPage(() => new Promise((r) => setTimeout(r, 100)));
+  assert.equal(await inPage(() => document.getElementById("share-card").hidden), true, "another window's ask is not this dock's");
+  await inPage(() => { window.__heard = []; const ch = new BroadcastChannel("pairbrowse-share"); ch.onmessage = (e) => window.__heard.push(e.data); window.__strip = ch; ch.postMessage({ open: "share", window: 1 }); });
+  await until("the card", () => !document.getElementById("share-card").hidden);
+  assert.equal(await inPage(() => document.getElementById("share-add").getAttribute("aria-expanded")), "true");
+  // It tells the strip the card opened, for this window (the strip's note says so only then).
+  await until("the answer", () => window.__heard.length === 1);
+  assert.deepEqual(await inPage(() => (window.__strip.close(), window.__heard)), [{ opened: "share", window: 1 }]);
+  // Asked while the dock is a rail (the strip's open has not landed yet): the card waits for the
+  // open layout, then opens in the open dock.
+  await inPage(() => document.getElementById("share-add").click());
+  await until("the card closes", () => document.getElementById("share-card").hidden);
+  await ctx.shim.layout({ left: 1 });
+  await until("the rail", () => document.body.dataset.dock === "rail");
+  await inPage(() => { const ch = new BroadcastChannel("pairbrowse-share"); ch.postMessage({ open: "share", window: 1 }); ch.close(); });
+  await inPage(() => new Promise((r) => setTimeout(r, 100)));
+  assert.equal(await inPage(() => document.getElementById("share-card").hidden), true, "no card in a rail");
+  await ctx.shim.layout({ left: 2 });
+  await until("the card once open", () => document.body.dataset.dock === "open" && !document.getElementById("share-card").hidden);
+  await clean(ctx);
+});
+
+// Before the dock knows its window (the list has not answered): no ask is taken as this window's.
+scenario("left: no Share card before the window is known", { viewport: OPEN, shim: { windows: [] } }, async (ctx) => {
+  const { until, inPage } = ctx;
+  await until("live", () => document.body.dataset.s === "live");
+  await inPage(() => { const ch = new BroadcastChannel("pairbrowse-share"); ch.postMessage({ open: "share", window: 1 }); ch.close(); });
+  await inPage(() => new Promise((r) => setTimeout(r, 100)));
+  assert.equal(await inPage(() => document.getElementById("share-card").hidden), true);
   await clean(ctx);
 });

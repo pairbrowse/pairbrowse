@@ -23,6 +23,8 @@
 //       files.choose(...) -> { paths }             files.saveAs(name) -> { path }
 //       session.grantTabCapture(targetId, audio) -> { streamId }
 //       windows.startTabDrag(tabId, offset) -> { moved }
+//     The nav row's calls: tabs.goBack(id), tabs.goForward(id), tabs.stop(id), windows.bookmark(id),
+//     windows.find(id); a tab's history in canGoBack / canGoForward, a window's own slot in current.
 //     A method without a reply resolves to undefined once applied. Arguments are positional, in
 //     mojom order.
 // (3) Struct fields are lowerCamel: target_id -> targetId, default_favicon -> defaultFavicon,
@@ -58,6 +60,7 @@ const tab = (id, index, title, url, active) => ({
   id, index, window: 1, title, url, favicon: null, defaultFavicon: true, networkState: 0,
   muted: false, audible: false, pinned: false, group: null, groupTitle: null, groupColor: null,
   active, selected: active, blocked: false, width: 1280, height: 800, targetId: `T${id}`,
+  canGoBack: false, canGoForward: false,
 });
 
 export function defaultFixture() {
@@ -68,7 +71,7 @@ export function defaultFixture() {
       tab(12, 1, "Docs", "https://docs.example/", false),
       tab(13, 2, "New Tab", "chrome://pairbrowse/newtab", false),
     ],
-    windows: [{ id: 1, bounds: { x: 0, y: 0, width: 1536, height: 1024 }, focused: true, minimized: false, maximized: false, fullscreen: false, activeTab: 11, incognito: false }],
+    windows: [{ id: 1, bounds: { x: 0, y: 0, width: 1536, height: 1024 }, focused: true, minimized: false, maximized: false, fullscreen: false, activeTab: 11, incognito: false, current: true }],
     layout: { left: 2, right: 2, leftWidth: 200, rightWidth: 330, stripHeight: 44, timeline: false, timelineHeight: 130 },
     omnibox: { securityLevel: 1, displayUrl: "shop.example/checkout", fullUrl: "https://shop.example/checkout", securityText: "", shouldDisplayUrl: true, focused: false, userInputInProgress: false, popupOpen: false, bounds: { x: 120, y: 52, width: 900, height: 32 }, popupBounds: null },
     owners: { agents: { 11: "Claude" }, colors: { 11: "#e9763f" } },
@@ -125,7 +128,8 @@ function install(F, E) {
     const t = {
       index: inWindow(w).length, title: "New Tab", url: "chrome://pairbrowse/newtab", favicon: null, defaultFavicon: true,
       networkState: 0, muted: false, audible: false, pinned: false, group: null, groupTitle: null, groupColor: null,
-      active: false, selected: false, blocked: false, width: 1280, height: 800, targetId: `T${id}`, ...given, id, window: w,
+      active: false, selected: false, blocked: false, width: 1280, height: 800, targetId: `T${id}`,
+      canGoBack: false, canGoForward: false, ...given, id, window: w,
     };
     t.index = inWindow(w).length;
     t.active = false;
@@ -238,6 +242,10 @@ function install(F, E) {
     },
     removeFromGroup: (id) => { changeTab(id, { group: null, groupTitle: null, groupColor: null }); },
     setGroupVisuals: (group, title, color) => { for (const t of fx.tabs.filter((o) => o.group === group)) changeTab(t.id, { groupTitle: title, groupColor: color }); },
+    // The nav row (the mojom's GoBack, GoForward, Stop): recorded; the history is the fixture's.
+    goBack: () => {},
+    goForward: () => {},
+    stop: () => {},
   });
   const windows = iface("windows", "windows", {
     list: () => ({ windows: copy(fx.windows) }),
@@ -248,6 +256,9 @@ function install(F, E) {
     setFullscreen: (id, on) => { changeWindow(id, { fullscreen: !!on }); },
     setDragRegions: () => {},
     startTabDrag: () => ({ moved: false }),
+    // The nav row's star and the find bar (the mojom's Bookmark, Find): recorded.
+    bookmark: () => {},
+    find: () => {},
   });
   const layout = iface("layout", "layout", {
     get: () => ({ state: copy(fx.layout) }),
@@ -293,7 +304,7 @@ function install(F, E) {
     windows: {
       set: (w) => {
         if (winById(w.id)) return changeWindow(w.id, w);
-        fx.windows.push({ bounds: { x: 0, y: 0, width: 1280, height: 800 }, focused: false, minimized: false, maximized: false, fullscreen: false, activeTab: -1, incognito: false, ...w });
+        fx.windows.push({ bounds: { x: 0, y: 0, width: 1280, height: 800 }, focused: false, minimized: false, maximized: false, fullscreen: false, activeTab: -1, incognito: false, current: false, ...w });
         fire("windows", "onCreated", winById(w.id));
       },
       focus: (id) => focusWindow(id),

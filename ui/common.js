@@ -423,6 +423,11 @@ export function pickerPopover({ pop, frame, openers, dismissable = () => true })
   return { open, close, isOpen };
 }
 
+// The page is served by the PairBrowse browser itself, on its own hosts (the window's slots on
+// chrome://pairbrowse.top-chrome, the tab pages on chrome://pairbrowse), with or without
+// window.pairbrowse; anything else is a page in a plain browser (the extension, the harness).
+export const servedByBrowser = (loc = globalThis.location) => loc?.protocol === "chrome:" && (loc.host === "pairbrowse.top-chrome" || loc.host === "pairbrowse");
+
 // Asks for one dock's state: the browser's Layout.Set in the build (the last state with one side
 // changed), else the helper's POST layout; false when neither channel is there (nothing asked).
 const DOCK_STATE = { hidden: "kHidden", rail: "kRail", open: "kOpen" };

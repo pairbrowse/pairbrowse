@@ -67,7 +67,7 @@ test("the panel's markup keeps every id once, and each section folds with a name
   assert.match(html, /id="share-code" readonly aria-label="[^"]+"/);
   assert.match(html, /id="share-msg" role="status" aria-live="polite"/);
   assert.match(html, /<p class="sr" id="checklist-said" role="status" aria-live="polite"><\/p><ol id="checklist-items" aria-label="[^"]+">/);
-  assert.match(html, /<footer class="session-card" id="session-card">[\s\S]*id="session-name"[\s\S]*<button class="mini share-btn" id="share-btn"/, "Share comes after the session's name (the session card)");
+  assert.match(html, /<footer class="session-card" id="session-card" hidden>[\s\S]*id="session-name"[\s\S]*<button class="mini share-btn" id="share-btn"/, "Share comes after the session's name (the session card)");
 });
 
 test("the logo is untouched: the same img line and the same files", () => {
@@ -377,7 +377,9 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.ok(await plain.page.evaluate((ids) => ids.every((id) => document.getElementById(id)), IDS));
     f = await plain.page.evaluate(() => Object.fromEntries([...document.querySelectorAll("section.sec")].map((s) => [s.dataset.key, s.querySelector(".body").hidden])));
     assert.deepEqual(f, { session: true, dev: true, hosts: true, activity: false, details: true, secrets: true, handoffs: false, downloads: false, recordings: false, diagnostics: true });
-    assert.equal(await plain.page.evaluate(() => document.getElementById("driver-text").textContent), "Waiting for PairBrowse");
+    // Nobody to connect to: No agent connected, where the card would be (no agent is named).
+    assert.equal(await plain.page.evaluate(() => document.getElementById("driver-text").textContent), "No agent connected");
+    assert.deepEqual(await plain.page.evaluate(() => [document.getElementById("agent-none-title").textContent, document.getElementById("agent-none").checkVisibility(), document.getElementById("agent").checkVisibility()]), ["No agent connected", true, false]);
     await plain.page.close();
   } finally {
     lv.close();

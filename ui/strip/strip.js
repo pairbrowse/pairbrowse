@@ -6,15 +6,20 @@
 // window.pairbrowse the row shows the helper's tabs event, read only. Nothing here starts a timer,
 // a frame loop or a DOM observer: observers of the browser API and the one shared helper stream
 // (common.js helperStream) only. The nav fragments read no stream at all.
-import { $, el, avatar, shareCard, isColor, pickerPopover, helperStream } from "../common.js";
+import { $, el, avatar, shareCard, isColor, pickerPopover, helperStream, servedByBrowser } from "../common.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
 document.body.dataset.platform = mac ? "mac" : "other";
 document.body.dataset.native = String(!!pb);
+// Served by the browser itself (chrome://pairbrowse.top-chrome), with or without the API.
+const nativeHost = servedByBrowser();
+document.body.dataset.host = nativeHost ? "native" : "page";
 
-// Controls the browser API has no surface for yet (back, forward, bookmark, find, new window):
-// shown disabled, their shortcut in the name, never a state they don't have.
+// Back, forward and find come from the browser API when it has them (the active tab's history,
+// the window's find bar); without it they show disabled, their shortcut in the name, never a
+// state they don't have. The star is Chromium's own in the address bar beside the nav-right
+// fragment, so the fragment draws none in the browser.
 const KEYS = mac
   ? { back: "Back (⌘[)", forward: "Forward (⌘])", reload: "Reload (⌘R)", star: "Bookmark this page (⌘D)", find: "Find in page (⌘F)", newWindow: "⌘N" }
   : { back: "Back (Alt+Left)", forward: "Forward (Alt+Right)", reload: "Reload (Ctrl+R)", star: "Bookmark this page (Ctrl+D)", find: "Find in page (Ctrl+F)", newWindow: "Ctrl+N" };
@@ -100,6 +105,59 @@ function drawRecord(on) {
 // The browser API's items have nothing to call without it.
 if (!pb) for (const id of ["zoom", "settings", "about", "new-window"]) $(id).hidden = true;
 
+// ---- a page no taller than the row (the browser's 44 px tab-row slot, which clips the rest):
+// nothing can open under the row until the browser hosts the popovers as bubbles. The logo opens
+// the session picker as a tab, Share opens the Share card of the workspace dock (the left dock,
+// opened if it is not), and the menu, which has no surface there, is not shown. Each runs in the
+// capture phase, ahead of the popover's own click handler, so no popover opens unseen and no
+// focus moves into one. ----
+const ROW_ONLY = 60; // px: taller than the 44 px row, shorter than any popover
+const inSlot = () => !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
+const SHARE_CHANNEL = "pairbrowse-share";
+const SLOT_LABELS = { switch: "PairBrowse: switch session (opens the session picker in a new tab)", share: "Share this session (opens the Share card in the workspace)" };
+function slotControls() {
+  const slot = inSlot();
+  for (const [id, popover] of [["switch", "switcher"], ["share-btn", "share-card"]]) {
+    const b = $(id);
+    if (slot) { b.removeAttribute("aria-expanded"); b.removeAttribute("aria-controls"); }
+    else { b.setAttribute("aria-expanded", String(id === "switch" ? switcher.isOpen() : !$("share-card").hidden)); b.setAttribute("aria-controls", popover); }
+  }
+  if (slot) { $("switch").setAttribute("aria-label", SLOT_LABELS.switch); $("share-btn").title = SLOT_LABELS.share; }
+  else { $("switch").setAttribute("aria-label", "PairBrowse: switch session"); $("share-btn").removeAttribute("title"); }
+  menuBtn.hidden = slot;
+}
+$("switch").addEventListener("click", (e) => {
+  if (!inSlot()) return;
+  e.stopImmediatePropagation();
+  if (pb) pb.tabs.create("pairbrowse://picker", true, myWindow).catch(() => {});
+}, true);
+$("share-btn").addEventListener("click", async (e) => {
+  if (!inSlot()) return;
+  $("share-note").textContent = "";
+  e.stopImmediatePropagation();
+  if (pb) {
+    try {
+      const { state } = await pb.layout.get();
+      if (state.left !== pb.DockState.kOpen) await pb.layout.set({ ...state, left: pb.DockState.kOpen });
+    } catch {}
+  }
+  // The card opens in another part of the window: said only once the dock says it opened it (the
+  // focus stays here); with no answer, what to do instead.
+  clearTimeout(shareWait);
+  shareWait = setTimeout(() => { shareWait = 0; $("share-note").textContent = `Open the workspace dock to share (${mac ? "⌘⇧L" : "Ctrl+Shift+L"})`; }, pb ? SHARE_WAIT_MS : 0);
+  try { shareChannel?.postMessage({ open: "share", window: myWindow }); } catch {}
+}, true);
+let shareChannel = null, shareWait = 0;
+const SHARE_WAIT_MS = 1000;
+try {
+  shareChannel = new BroadcastChannel(SHARE_CHANNEL);
+  shareChannel.onmessage = (e) => {
+    if (e.data?.opened !== "share" || e.data.window !== myWindow || myWindow === -1) return;
+    clearTimeout(shareWait); shareWait = 0;
+    $("share-note").textContent = "Share card opened in the workspace dock (F6)";
+  };
+} catch {}
+
 // ---- hash modes (no reload: the hash only picks what shows) ----
 function openBubble(m) {
   if (m === "switcher") switcher.open($("switch"));
@@ -123,17 +181,31 @@ function applyMode() {
   $("nav-left").hidden = mode !== "nav-left";
   $("nav-right").hidden = mode !== "nav-right";
   if (BUBBLES.has(mode)) openBubble(mode);
+  slotControls();
   ensureStream();
 }
 // In a bubble the host owns dismissal: no outside-click listener is registered and Escape
 // closes nothing (the switcher, the menu, the share card and their Escape paths check bubble()).
 window.addEventListener("hashchange", applyMode);
+window.addEventListener("resize", () => { if (mode === "row") slotControls(); });
 applyMode();
 
 // ---- the nav fragments ----
 const activeId = () => { for (const t of tabs.values()) if (t.active) return t.id; return -1; };
+const can = (iface, method) => typeof pb?.[iface]?.[method] === "function";
 $("reload").disabled = !pb;
 $("reload").addEventListener("click", () => { const id = activeId(); if (pb && id !== -1) pb.tabs.reload(id).catch(() => {}); });
+$("back").addEventListener("click", () => { const id = activeId(); if (can("tabs", "goBack") && id !== -1) pb.tabs.goBack(id).catch(() => {}); });
+$("forward").addEventListener("click", () => { const id = activeId(); if (can("tabs", "goForward") && id !== -1) pb.tabs.goForward(id).catch(() => {}); });
+$("find").addEventListener("click", () => { if (can("windows", "find") && myWindow !== -1) pb.windows.find(myWindow).catch(() => {}); });
+$("star").hidden = nativeHost;
+// Back and forward follow the active tab's history as the browser reports it.
+function drawNav() {
+  const t = tabs.get(activeId());
+  $("back").disabled = !(can("tabs", "goBack") && t?.canGoBack === true);
+  $("forward").disabled = !(can("tabs", "goForward") && t?.canGoForward === true);
+  $("find").disabled = !(can("windows", "find") && myWindow !== -1);
+}
 const sparkle = $("sparkle");
 sparkle.addEventListener("click", async () => {
   if (pb) {
@@ -240,6 +312,7 @@ function render() {
   });
   if (rovingId !== null && !lis.has(rovingId)) rovingId = null;
   roving();
+  drawNav();
   // A tab moved in the DOM loses focus; a closed one hands it to the tab now active.
   if (hadFocus && !tabsEl.contains(document.activeElement)) (lis.get(focusedId) || lis.get(activeId()))?.focus();
 }
@@ -363,13 +436,17 @@ function renderFallback(list) {
 // ---- the helper's stream: the pill, the people, recording ----
 let lastSession = null, lastCollab = null, lastBoard = { people: [] }, everOpen = false;
 const pill = $("pill");
+// No helper (closed, or none to ask) is the normal resting state: "Local" with the muted dot, as
+// when not sharing; --warn is for reconnecting only.
 function drawPill() {
   const s = document.body.dataset.s;
-  const state = s === "live" ? ((lastCollab?.guests || []).length ? "live" : "local") : everOpen && s === "connecting" ? "reconnecting" : "connecting";
+  const offline = s === "closed" || s === "none";
+  const state = s === "live" ? ((lastCollab?.guests || []).length ? "live" : "local") : offline ? "local"
+    : everOpen && s === "connecting" ? "reconnecting" : "connecting";
   pill.dataset.state = state;
-  $("pill-text").textContent = state === "live" ? "Live session" : state === "local" ? String(lastSession?.where || "Local")
-    : state === "reconnecting" ? "Reconnecting to PairBrowse" : s === "closed" ? "Not connected to PairBrowse" : "Connecting to PairBrowse";
-  pill.title = lastSession?.name ? `${lastSession.where || "Local"} · ${lastSession.name}` : "";
+  $("pill-text").textContent = state === "live" ? "Live session" : offline ? "Local" : state === "local" ? String(lastSession?.where || "Local")
+    : state === "reconnecting" ? "Reconnecting to PairBrowse" : "Connecting to PairBrowse";
+  pill.title = offline ? "No agent connected" : lastSession?.name ? `${lastSession.where || "Local"} · ${lastSession.name}` : "";
 }
 // Who is in the session (the side panel's header): board people by name with their color, then
 // guests; four shown, then "+N".
@@ -438,7 +515,7 @@ async function start() {
       if (Number.isInteger(given) && given > 0) myWindow = given;
       else {
         const { windows } = await pb.windows.list();
-        myWindow = (windows.find((w) => w.focused) || windows[0])?.id ?? -1;
+        myWindow = (windows.find((w) => w.current) || windows.find((w) => w.focused) || windows[0])?.id ?? -1;
       }
       pb.tabs.addObserver({
         onCreated: (t) => { if (t.window === myWindow) { tabs.set(t.id, t); render(); } },

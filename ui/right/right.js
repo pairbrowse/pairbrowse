@@ -6,11 +6,13 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState, askDock, helperStream } from "../common.js";
+import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser } from "../common.js";
 import { toolsPanel } from "./tools.js";
 
 const pb = globalThis.pairbrowse || null;
-document.documentElement.dataset.host = pb ? "native" : "extension";
+// The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
+// API: no extension header there (the strip has the logo, the pill and the avatars).
+document.documentElement.dataset.host = pb || servedByBrowser() ? "native" : "extension";
 
 const DRIVING_MS = 8000; // "Working…" for this long after the agent's last action
 const ACTIVITY_SHOWN = 12;
@@ -327,7 +329,8 @@ function setDriver() {
   const s = document.body.dataset.s;
   const driving = !turn && !paused && s === "live" && Date.now() - lastActivity < DRIVING_MS;
   document.body.dataset.driving = String(driving);
-  const [text, state] = s === "closed" ? ["The browser is closed. It reopens on Claude's next action.", "closed"]
+  const [text, state] = s === "none" ? ["No agent connected", "closed"]
+    : s === "closed" ? ["The browser is closed. It reopens on Claude's next action.", "closed"]
     : s === "connecting" ? ["Waiting for PairBrowse", "connecting"]
     : turn ? ["Waiting for you", "you"]
     : paused ? [pauseInfo?.by ? `Paused by ${pauseInfo.by}` : "Paused", "paused"]
@@ -335,6 +338,8 @@ function setDriver() {
     : ["Idle", "idle"];
   $("driver-text").textContent = text;
   $("driver").dataset.state = state;
+  // Where the card goes while no agent is named: no helper at all, or none in this session.
+  $("agent-none-title").textContent = s === "none" ? "No agent connected" : "No agent in this session";
   $("status-live").hidden = !driving;
   if ($("agent-name").textContent !== agentName(activeEntry())) drawAgent();
   markCurrent();
@@ -385,6 +390,11 @@ const agentName = (entry) => whose(lastWho || entry?.who || "");
 // in the Status box) and the tab it is in (the name's title).
 function drawAgent() {
   const entry = activeEntry();
+  // No card for an agent nobody named: until the helper reports one (an action or the board),
+  // the card is hidden and #agent-none says so.
+  const named = !!(lastWho || entry || lastBoard.people.some((p) => p?.kind === "agent"));
+  $("agent").hidden = !named;
+  $("agent-none").hidden = named;
   const name = agentName(entry);
   $("agent-name").textContent = name;
   const a = $("agent-avatar");
@@ -524,7 +534,7 @@ function connect(url) {
   stream?.close();
   stream = helperStream(base, {
     kind: pb ? "right" : "",
-    onState: (s) => { document.body.dataset.s = s; setDriver(); },
+    onState: (s) => { document.body.dataset.s = s; setDriver(); drawSessionCard(); },
     onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); tools.stale(); },
   });
   const on = stream.on;
@@ -544,6 +554,7 @@ function connect(url) {
     $("session-line").hidden = editing;
     $("session-card").dataset.clean = String(!!s.temporary);
     $("session-card").title = `${s.where} · ${s.name}`;
+    drawSessionCard();
     drawHeader();
   });
   on("collaboration", (c) => {
@@ -627,13 +638,31 @@ function connect(url) {
   on("joinhost", drawHosts);
 }
 
+// The session card (name, Save, Share, End session) only for a session the helper named, and
+// not while there is no helper or its stream has closed: never controls for a session that is
+// not there.
+function drawSessionCard() {
+  const s = document.body.dataset.s;
+  $("session-card").hidden = !lastSession?.name || s === "none" || s === "closed";
+}
+
 // The helper's address: from the browser in the build, else from the extension's storage (null
 // on a page opened without it, a plain file, which then renders with its defaults and connects
 // to nothing).
 const store = (area) => { try { return globalThis.chrome?.storage?.[area] || null; } catch { return null; } };
-if (pb) pb.session.helper().then(({ origin, key }) => { if (origin && key) connect(`${origin}/${key}/`); }).catch(() => {});
+// No helper to ask (no browser API and no extension storage, or the browser has no helper
+// address): the strip's words, not a wait for something that is not coming.
+function noHelper() {
+  if (base) return;
+  document.body.dataset.s = "none";
+  setDriver();
+  drawSessionCard();
+}
+if (pb) pb.session.helper().then(({ origin, key }) => { if (origin && key) connect(`${origin}/${key}/`); else noHelper(); }).catch(noHelper);
 else {
-  store("session")?.get("view").then(({ view }) => connect(view)).catch(() => {});
+  const area = store("session");
+  if (!area) noHelper();
+  else area.get("view").then(({ view }) => connect(view)).catch(() => {});
   try { globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
 }
 

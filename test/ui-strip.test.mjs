@@ -280,7 +280,10 @@ describe("keyboard paths", () => pageTest("strip", { viewport: ROW }, async ({ p
   // keyboard paths: the Tab order, each with the 2 px --accent ring
   await inPage(focusBody);
   const seen = [];
-  for (let i = 0; i < 6; i++) {
+  // In the 44 px row the menu is not shown (it has nowhere to open): Share ends the order. In a
+  // taller host the menu button follows Share (the menu test).
+  assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), false);
+  for (let i = 0; i < 5; i++) {
     await page.keyboard.press("Tab");
     seen.push(await inPage(() => {
       const a = document.activeElement;
@@ -288,7 +291,7 @@ describe("keyboard paths", () => pageTest("strip", { viewport: ROW }, async ({ p
       return { id: a.id || (a.dataset.id ? `tab:${a.dataset.id}` : a.classList.contains("close") ? `close:${a.closest("li").dataset.id}` : a.tagName), ring: `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor}` };
     }));
   }
-  assert.deepEqual(seen.map((s) => s.id), ["switch", "tab:11", "close:11", "new", "share-btn", "menu-btn"]);
+  assert.deepEqual(seen.map((s) => s.id), ["switch", "tab:11", "close:11", "new", "share-btn"]);
   for (const s of seen) assert.equal(s.ring, `solid 2px ${ACCENT}`, s.id);
   // arrows move focus, not the selection
   await page.focus('#tabs li[data-id="11"]');
@@ -351,6 +354,22 @@ describe("the pill: Local, Live session, Reconnecting", () => pageTest("strip", 
   p = await inPage(pill);
   assert.equal(p.state, "reconnecting");
   assert.equal(p.dot, "rgb(244, 180, 93)");
+}));
+
+// No helper to ask (no browser API, no extension storage): the resting state, not an error.
+// "Local" with the muted dot, as when not sharing; no --warn, and the title says why.
+describe("the pill with no helper: Local, muted", () => pageTest("strip", { viewport: ROW, native: false, bridge: false }, async ({ inPage, until, errors }) => {
+  await until("closed", () => document.body.dataset.s === "closed");
+  const p = await inPage(() => {
+    const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
+    const pill = document.getElementById("pill");
+    return { state: pill.dataset.state, text: document.getElementById("pill-text").textContent, title: pill.title, dot: getComputedStyle(pill.querySelector(".dot")).backgroundColor, muted: probe("muted"), warn: probe("warn") };
+  });
+  assert.deepEqual({ state: p.state, text: p.text, title: p.title }, { state: "local", text: "Local", title: "No agent connected" });
+  assert.equal(p.dot, p.muted, "the muted dot");
+  assert.notEqual(p.dot, p.warn, "no --warn");
+  assert.equal(await inPage(() => document.body.textContent.includes("Not connected")), false);
+  assert.deepEqual(errors, []);
 }));
 
 describe("avatar stack with +N", () => pageTest("strip", {
@@ -521,12 +540,27 @@ describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ 
   await page.click("#reload");
   await page.waitForTimeout(50);
   assert.deepEqual(await callsOf(shim, "tabs", "reload"), [[11]]);
+  // Back and forward follow the active tab's history as the browser reports it.
+  await shim.change({ id: 11, canGoBack: true });
+  await until("back on", () => !document.getElementById("back").disabled);
+  assert.equal(await inPage(() => document.getElementById("forward").disabled), true);
+  await page.click("#back");
+  await page.waitForTimeout(50);
+  assert.deepEqual(await callsOf(shim, "tabs", "goBack"), [[11]]);
+  await shim.change({ id: 11, canGoBack: false, canGoForward: true });
+  await until("forward on, back off", () => !document.getElementById("forward").disabled && document.getElementById("back").disabled);
+  await page.click("#forward");
+  await page.waitForTimeout(50);
+  assert.deepEqual(await callsOf(shim, "tabs", "goForward"), [[11]]);
 
   await go("#nav-right");
   await until("nav-right", () => document.body.dataset.mode === "nav-right");
   const right = await inPage(() => ({ star: document.getElementById("star").disabled, find: document.getElementById("find").disabled, pressed: document.getElementById("sparkle").getAttribute("aria-pressed"), names: ["star", "find"].map((id) => document.getElementById(id).getAttribute("aria-label")) }));
   assert.equal(right.star, true);
-  assert.equal(right.find, true);
+  assert.equal(right.find, false, "find is the window's find bar");
+  await page.click("#find");
+  await page.waitForTimeout(50);
+  assert.deepEqual(await callsOf(shim, "windows", "find"), [[1]]);
   assert.equal(right.pressed, "true");
   assert.match(right.names[0], /^Bookmark this page \((⌘D|Ctrl\+D)\)$/);
   assert.match(right.names[1], /^Find in page \((⌘F|Ctrl\+F)\)$/);
@@ -561,4 +595,73 @@ describe("reduced motion and no timers", () => pageTest("strip", { viewport: ROW
   assert.equal(await inPage(() => getComputedStyle(document.querySelector("#tabs li")).transitionDuration), "0s");
   const l = await harness.live();
   assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0);
+}));
+
+// The browser's tab-row slot is 44 px tall and clips the rest: a popover under the row would open
+// unseen and take the keyboard focus with it. There the logo opens the picker as a tab, Share opens
+// the workspace dock's Share card, the menu is not shown, and nothing under the row ever opens.
+describe("in the 44 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1 } } }, async ({ page, shim, inPage, until }) => {
+  const under = () => ["switcher", "share-card", "menu"].filter((id) => !document.getElementById(id).hidden);
+  const insidePopover = () => !!document.activeElement?.closest?.("#switcher, #share-card, #menu");
+  assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), false, "no menu without room for it");
+  for (const id of ["switch", "share-btn"]) assert.equal(await page.getAttribute(`#${id}`, "aria-expanded"), null, `${id}: no popover to expand`);
+  assert.match(await page.getAttribute("#switch", "aria-label"), /opens the session picker in a new tab/);
+  await page.click("#switch");
+  await page.waitForTimeout(50);
+  assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://picker", true, 1]]);
+  assert.deepEqual(await inPage(under), []);
+  assert.equal(await inPage(insidePopover), false);
+  // Share: the left dock opens (it was a rail), then its Share card is asked for this window.
+  // A stand-in for the left dock answers that it opened the card (another window's answer is not
+  // this strip's).
+  await inPage(() => { window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => { window.__asked.push(e.data); if (e.data?.open === "share") { ch.postMessage({ opened: "share", window: 2 }); ch.postMessage({ opened: "share", window: e.data.window }); } }; });
+  await page.click("#share-btn");
+  await until("asked", () => window.__asked.length === 1);
+  assert.deepEqual(await inPage(() => window.__asked), [{ open: "share", window: 1 }]);
+  // The card opened elsewhere in the window: said where once the dock says so, the focus stays on Share.
+  await until("the note", () => document.getElementById("share-note").textContent !== "");
+  assert.deepEqual(await inPage(() => { const n = document.getElementById("share-note"); return { text: n.textContent, role: n.getAttribute("role"), live: n.getAttribute("aria-live"), focus: document.activeElement.id }; }),
+    { text: "Share card opened in the workspace dock (F6)", role: "status", live: "polite", focus: "share-btn" });
+  // No dock answers (it does not know its window yet): no claim that the card opened, what to do instead.
+  await inPage(() => { window.__dock.onmessage = (e) => window.__asked.push(e.data); });
+  await page.click("#share-btn");
+  await until("the fallback", () => /^Open the workspace dock to share \((⌘⇧L|Ctrl\+Shift\+L)\)$/.test(document.getElementById("share-note").textContent));
+  assert.equal(await inPage(() => (window.__dock.close(), document.activeElement.id)), "share-btn");
+  assert.equal((await callsOf(shim, "layout", "set")).at(-1)[0].left, 2);
+  assert.deepEqual(await inPage(under), []);
+  assert.equal(await inPage(insidePopover), false);
+  // A taller host (the harness, a later bubble host) gets the popovers back.
+  await page.setViewportSize(TALL);
+  await until("menu back", () => document.getElementById("menu-btn").checkVisibility());
+  assert.equal(await page.getAttribute("#switch", "aria-expanded"), "false");
+  await page.click("#menu-btn");
+  assert.deepEqual(await inPage(under), ["menu"]);
+}));
+
+// The nav fragments sit in the shell's 108 x 34 nav groups: the fragment is exactly as tall as its
+// slot, its buttons centered (no hover square cut off), and the page transparent so the nav row's
+// own color shows through.
+describe("the nav fragments fit their 34 px slots", () => pageTest("strip", { viewport: { width: 108, height: 34 } }, async ({ inPage, until }) => {
+  for (const hash of ["#nav-left", "#nav-right"]) {
+    await inPage((h) => { location.hash = h; }, hash);
+    await until(hash, (h) => document.body.dataset.mode === h.slice(1), hash);
+    const box = await inPage((id) => {
+      const nav = document.getElementById(id);
+      const buttons = [...nav.querySelectorAll("button")].filter((b) => b.checkVisibility()).map((b) => b.getBoundingClientRect());
+      return {
+        height: nav.getBoundingClientRect().height, doc: document.documentElement.scrollHeight,
+        body: getComputedStyle(document.body).backgroundColor, html: getComputedStyle(document.documentElement).backgroundColor,
+        tops: buttons.map((r) => r.top), bottoms: buttons.map((r) => r.bottom), lefts: buttons.map((r) => r.left), rights: buttons.map((r) => r.right),
+      };
+    }, hash.slice(1));
+    assert.equal(box.height, 34, `${hash}: as tall as the slot`);
+    assert.equal(box.doc, 34, `${hash}: the document is the slot's height`);
+    assert.deepEqual([box.body, box.html], ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"], `${hash}: transparent over the nav row`);
+    for (const top of box.tops) assert.equal(top, 3, `${hash}: centered`);
+    for (const bottom of box.bottoms) assert.equal(bottom, 31, `${hash}: nothing cut off`);
+    // nav-left centered across its slot; nav-right starts 8 px after the omnibox (its slot is wider
+    // than its two or three buttons until the shell sizes it to them).
+    if (hash === "#nav-left") assert.equal(Math.round(box.lefts[0] + box.rights.at(-1)), 108, `${hash}: centered across`);
+    else assert.equal(Math.round(box.lefts[0]), 8, `${hash}: search 8 px from the omnibox`);
+  }
 }));

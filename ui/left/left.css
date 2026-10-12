@@ -2,7 +2,9 @@
    reflected from the browser's layout: open (200 px), rail (44 px, icons only) and hidden. */
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-body { display: grid; grid-template-rows: 44px minmax(0, 1fr) auto; height: 100vh; background: var(--sidebar); color: var(--ink); font: var(--fs-3)/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; }
+/* The dock's inner side: 1 px --edge from the nav row to the bottom (DESIGN.md B3), open and rail;
+   none when hidden. */
+body { display: grid; grid-template-rows: 44px minmax(0, 1fr) auto; height: 100vh; background: var(--sidebar); color: var(--ink); font: var(--fs-3)/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; box-shadow: inset -1px 0 0 var(--edge); }
 button { font: inherit; }
 /* The icon sheet: symbols only, never laid out (an <svg hidden> still takes a grid row). */
 body > svg[hidden] { display: none; }
@@ -31,7 +33,7 @@ body > svg[hidden] { display: none; }
 .row:disabled, .gear:disabled { color: var(--muted); cursor: default; }
 .row:disabled .ic { color: inherit; }
 .row:disabled:hover, .gear:disabled:hover { background: transparent; }
-.row[aria-current="page"] { background-color: var(--accent-soft); background-image: var(--surface-grad); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-lit), inset 0 1px 0 var(--edge-light), var(--glow-soft); }
+.row[aria-current="page"] { background-color: var(--accent-soft); background-image: none; color: var(--ink); box-shadow: none; }
 .row[aria-current="page"] .ic { color: var(--accent-ink); }
 .row .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { display: inline-grid; place-items: center; flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font: 600 var(--fs-1)/1 var(--sans); }
@@ -59,6 +61,8 @@ h2 { margin: 0; font: 600 var(--fs-2) var(--sans); color: var(--ink-2); }
 #shared { position: relative; }
 .empty-note { margin: 0 12px 6px; font-size: var(--fs-2); color: var(--ink-2); }
 .empty-note[hidden] { display: none; }
+/* "No agent yet" and "Not shared yet" are the helper's word: not before its stream is live. */
+body:not([data-s="live"]) #agents li.empty, body:not([data-s="live"]) #guests-empty { display: none; }
 .add { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: var(--elevated); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
 .add svg { width: 14px; height: 14px; }
 .add:hover, .add[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
@@ -156,5 +160,6 @@ body[data-dock="rail"] .gear { grid-column: 1; }
 
 /* Hidden: nothing shows and nothing takes focus (left.js makes it inert too). */
 body[data-dock="hidden"] > * { visibility: hidden; }
+body[data-dock="hidden"] { box-shadow: none; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

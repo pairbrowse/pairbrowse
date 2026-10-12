@@ -46,13 +46,19 @@ test("window preview: geometry, regions and the scene", () => {
   assert.ok(people.some((p) => p.who === "Claude Code" && p.color === "#E9763F"));
   assert.ok(people.some((p) => p.who === "Codex" && p.color === "#7088F0"));
   assert.equal(fx.helper.approvals.pending.length, 1);
-  assert.match(fx.helper.approvals.pending[0].reason, /: a final action \((pay|publish|delete|send|submit)\)$/);
+  // the mockup's sentence (the scene is the mockup's data; the card shows the reason it is given)
+  assert.equal(fx.helper.approvals.pending[0].reason, "This will create a new Notion workspace with the information above.");
+  assert.equal(fx.helper.session.storage.limit, 1e10, "the Storage row's figure, in the scene only");
   assert.deepEqual(HOST_GROUPS.localhost, ["nav-left", "nav-right", "timeline"]);
   assert.equal(HOST_GROUPS["127.0.0.1"].length, 4);
   assert.deepEqual([...HOST_GROUPS["127.0.0.1"], ...HOST_GROUPS.localhost].sort(), [...FRAMES].sort());
 
   const t = resolveTimes({ a: { t: -5, at: -2, updatedAt: -1000, n: -3 }, list: [{ t: -1 }] }, 10_000);
   assert.deepEqual(t, { a: { t: 9995, at: 9998, updatedAt: new Date(9000).toISOString(), n: -3 }, list: [{ t: 9999 }] });
+  // "HH:MM" under t: that time today, or yesterday when still ahead
+  const noon = new Date(2026, 9, 12, 12, 0).getTime();
+  assert.equal(resolveTimes({ t: "10:24" }, noon).t, new Date(2026, 9, 12, 10, 24).getTime());
+  assert.equal(resolveTimes({ t: "13:00" }, noon).t, new Date(2026, 9, 11, 13, 0).getTime());
 });
 
 // width and height from a PNG's IHDR.

@@ -269,7 +269,8 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.equal(v.sessionHidden, false);
     assert.equal(v.people.length, 5, "everyone else, the active agent not repeated");
     assert.ok(!v.people.some((p) => /^Claude/.test(p)), "the active agent is on the card only");
-    assert.ok(v.people.some((p) => p.startsWith("Alice · Codex") && p.includes("waiting for their person") && p.includes("shop.example/cart")), "name, app, state in words, tab");
+    assert.ok(v.people.some((p) => p.startsWith("Alice · Codex") && p.includes("waiting for their person")), "name, app, state in words");
+    assert.ok(await page.evaluate(() => [...document.querySelectorAll("#people .st")].some((s) => s.title.includes("shop.example/cart"))), "the tab in the line's title");
     assert.ok(v.people.some((p) => p.startsWith("Sam · Claude Code") && p.includes("done") && p.includes("Sam's browser")), "where");
     assert.ok(v.people.some((p) => p.startsWith("Gemini · Gemini CLI") && p.includes("Checking prices")));
     assert.equal(await page.evaluate(() => document.querySelector("#people .app")?.textContent), " · Codex", "the app, apart from the name");

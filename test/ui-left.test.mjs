@@ -113,9 +113,9 @@ scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }
   const { until, inPage } = ctx;
   assert.deepEqual(await inPage(() => [...document.querySelectorAll(".nav .row")].map((b) => b.id)), ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools"]);
   assert.equal(await inPage(() => document.getElementById("nav-browser").getAttribute("aria-current")), "page");
-  // The active row (DESIGN.md B3, B11): a plain --accent-soft fill, no outline, no halo, no gradient.
-  const look = await inPage(() => { const p = document.createElement("i"); p.style.backgroundColor = "var(--accent-soft)"; document.body.append(p); const want = getComputedStyle(p).backgroundColor; p.remove(); const s = getComputedStyle(document.getElementById("nav-browser")); return { bg: s.backgroundColor === want, image: s.backgroundImage, shadow: s.boxShadow }; });
-  assert.deepEqual(look, { bg: true, image: "none", shadow: "none" });
+  // The active row, as the mockup draws it: the --nav-active fill, no gradient, the soft blue glow.
+  const look = await inPage(() => { const p = document.createElement("i"); p.style.backgroundColor = "var(--nav-active)"; document.body.append(p); const want = getComputedStyle(p).backgroundColor; p.remove(); const s = getComputedStyle(document.getElementById("nav-browser")); return { bg: s.backgroundColor === want, image: s.backgroundImage, shadow: s.boxShadow }; });
+  assert.deepEqual({ ...look, shadow: look.shadow !== "none" }, { bg: true, image: "none", shadow: true });
   await ctx.page.click("#nav-history");
   await until("a history tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
   assert.deepEqual((await calls(ctx, "tabs", "create"))[0].args, ["chrome://history", true, 1]);
@@ -146,16 +146,18 @@ scenario("left: tab count", { viewport: OPEN }, async (ctx) => {
 
 scenario("left: agents rows with their state in words", { viewport: OPEN, fixtures: { board: BOARD }, shim: TWO_TABS }, async (ctx) => {
   const { until, inPage } = ctx;
-  await until("two rows", () => document.querySelectorAll("#agents li[data-state]").length === 2);
+  await until("three rows", () => document.querySelectorAll("#agents li[data-state]").length === 3);
   const all = await inPage(rows);
-  assert.deepEqual(all.map((r) => r.name), ["Claude", "Alice · Codex"], "agents only: no person row, You absent");
-  assert.equal(all.some((r) => r.state === "online"), false);
+  // The agents, then the owner ("You · Online", the mockup); another person (Bob) is never a row here.
+  assert.deepEqual(all.map((r) => r.name), ["Claude", "Alice · Codex", "You"], "agents, then you; no other person");
+  assert.deepEqual(all.filter((r) => r.state === "online").map((r) => [r.name, r.line]), [["You", "Online"]]);
   const [claude, alice] = all;
-  assert.deepEqual([claude.state, claude.name, claude.line, claude.bg], ["working", "Claude", "Working · 2 tabs", "rgb(233, 118, 63)"]);
+  // An agent in tabs reads "Active · N tabs" (the mockup); its working state is the row's state and dot.
+  assert.deepEqual([claude.state, claude.name, claude.line, claude.bg], ["working", "Claude", "Active · 2 tabs", "rgb(233, 118, 63)"]);
   assert.deepEqual([alice.state, alice.name, alice.line], ["waiting", "Alice · Codex", "Waiting for you"]);
   assert.equal(await inPage(() => document.querySelector("#agents li:nth-child(2) strong .app").textContent), " · Codex");
-  assert.equal(await inPage(() => getComputedStyle(document.querySelector("#agents li:nth-child(2) strong .app")).color === getComputedStyle(document.querySelector("#nav-tools")).color), true, "the app in --ink-2");
-  assert.equal(await inPage(() => document.querySelector("#agents li").getBoundingClientRect().height), 44);
+  assert.equal(await inPage(() => { const s = document.createElement("span"); s.style.color = "var(--ink-2)"; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return getComputedStyle(document.querySelector("#agents li:nth-child(2) strong .app")).color === c; }), true, "the app in --ink-2");
+  assert.equal(await inPage(() => document.querySelector("#agents li").getBoundingClientRect().height), 50);
   const dot = (state) => getComputedStyle(document.querySelector(`#agents li[data-state="${state}"] .dot`)).backgroundColor;
   const token = (name) => { const s = document.createElement("span"); s.style.color = `var(${name})`; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; };
   assert.equal(await inPage(dot, "working"), await inPage(token, "--ok"));
@@ -169,7 +171,7 @@ scenario("left: agents rows with their state in words", { viewport: OPEN, fixtur
   await ctx.shim.clearOwner(11);
   await until("Idle", () => document.querySelector("#agents li small")?.textContent === "Idle");
   assert.equal(await inPage(() => document.querySelector("#agents li").dataset.state), "idle");
-  assert.equal(await inPage(dot, "idle"), await inPage(token, "--muted"));
+  assert.equal(await inPage(dot, "idle"), await inPage(token, "--accent"), "idle: the mockup's blue dot");
   await ctx.shim.setOwner(13, "Codex", "#4fd1e8");
   await until("a Codex row", () => [...document.querySelectorAll("#agents li")].some((li) => li.querySelector("strong")?.textContent === "Codex" && li.querySelector("small").textContent === "Active · 1 tab"));
   assert.equal(await inPage(() => document.querySelectorAll('#agents li[data-state="failed"]').length), 0);
@@ -189,7 +191,7 @@ scenario("left: the Activity list", { viewport: OPEN, fixtures: { board: { peopl
   const token = (name) => { const s = document.createElement("span"); s.style.color = `var(${name})`; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; };
   assert.equal(await inPage(() => getComputedStyle(document.querySelector("#activity-list li.empty")).color), await inPage(token, "--muted"), "the placeholder in --muted");
   ctx.helper.push("activity", [{ t: Date.now(), who: "Claude", tab: "Shop", text: "clicked **Pay**" }]);
-  await until("Working", () => /^Working/.test(document.querySelector("#agents li small")?.textContent || ""));
+  await until("working", () => document.querySelector("#agents li")?.dataset.state === "working");
   assert.equal((await ctx.harness.live()).timeouts, 1);
   const li = await inPage(() => { const l = document.querySelector("#activity-list li"); return { n: document.querySelectorAll("#activity-list li").length, time: l.querySelector("time").textContent, strong: [...l.querySelectorAll("strong")].map((s) => s.textContent) }; });
   assert.equal(li.n, 1);
@@ -216,8 +218,9 @@ scenario("left: shared with", { viewport: OPEN, fixtures: { collaboration: { gue
     size: li.querySelector(".avatar").getBoundingClientRect().width, title: li.title, sr: li.querySelector(".sr")?.textContent, srHidden: (li.querySelector(".sr")?.getBoundingClientRect().width ?? 9) <= 1,
   })));
   assert.deepEqual(got, [
-    { text: "Dana · 2 online", icon: true, filled: true, ink: "rgb(11, 20, 33)", size: 32, title: "Dana · 2 online · can drive", sr: ", can drive", srHidden: true },
-    { text: "Eve · 1 online", icon: true, filled: true, ink: "rgb(11, 20, 33)", size: 32, title: "Eve · 1 online · watching", sr: ", watching", srHidden: true },
+    // neutral group circles with the icon in --ink when the helper sends no color (the mockup's Team row)
+    { text: "Dana · 2 online", icon: true, filled: false, ink: "rgb(241, 245, 250)", size: 36, title: "Dana · 2 online · can drive", sr: ", can drive", srHidden: true },
+    { text: "Eve · 1 online", icon: true, filled: false, ink: "rgb(241, 245, 250)", size: 36, title: "Eve · 1 online · watching", sr: ", watching", srHidden: true },
   ], "'N online' on screen; the role in the title and, for readers, in words");
   ctx.helper.set("collaboration", { guests: [] });
   await until("not shared", () => document.querySelectorAll("#guests li").length === 0 && !document.getElementById("guests-empty").hidden);
@@ -237,10 +240,25 @@ scenario("left: no Storage row (Pro only), even when the session event carries d
   await clean(ctx);
 });
 
+scenario("left: the Storage row when the session event carries storage (Pro's figure), gone without it", { viewport: OPEN }, async (ctx) => {
+  const { until, inPage } = ctx;
+  ctx.helper.push("session", { name: "default", where: "Local", storage: { used: 2400000000, limit: 10000000000 } });
+  await until("the row", () => !!document.getElementById("storage"));
+  const row = await inPage(() => {
+    const bar = document.querySelector("#storage .bar");
+    return { text: document.getElementById("storage-text").textContent, label: bar.getAttribute("aria-label"), role: bar.getAttribute("role"),
+      fill: Math.round(document.getElementById("storage-bar").getBoundingClientRect().width / bar.getBoundingClientRect().width * 100), beforeGear: document.getElementById("storage").nextElementSibling?.id };
+  });
+  assert.deepEqual(row, { text: "2.4 GB / 10 GB", label: "2.4 GB of 10 GB used", role: "img", fill: 24, beforeGear: "settings" });
+  ctx.helper.push("session", { name: "default", where: "Local" });
+  await until("no row", () => !document.getElementById("storage"));
+  await clean(ctx);
+});
+
 scenario("left: Shared with +", { viewport: OPEN }, async (ctx) => {
   const { until, inPage, page, helper } = ctx;
   const add = await inPage(() => { const b = document.getElementById("share-add"), r = b.getBoundingClientRect(); return { w: r.width, h: r.height, expanded: b.getAttribute("aria-expanded"), label: b.getAttribute("aria-label") }; });
-  assert.deepEqual(add, { w: 24, h: 24, expanded: "false", label: "Share this session" });
+  assert.deepEqual(add, { w: 28, h: 26, expanded: "false", label: "Share this session" });
   await page.focus("#share-add");
   await page.keyboard.press("Enter");
   await until("the share card", () => !document.getElementById("share-card").hidden && document.activeElement?.name === "share" && document.activeElement.value === "code");
@@ -372,7 +390,7 @@ scenario("left: the session switcher under reduced motion", { viewport: { width:
 scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { layout: { left: 1 } }, fixtures: { board: BOARD } }, async (ctx) => {
   const { until, inPage } = ctx;
   await until("the rail", () => document.body.dataset.dock === "rail");
-  await until("the agents", () => document.querySelectorAll("#agents li[data-state]").length === 2);
+  await until("the agents", () => document.querySelectorAll("#agents li[data-state]").length === 3);
   const seen = await inPage(() => ({
     labels: [...document.querySelectorAll(".label, .ws-label, .badge, h2, .add, .hint, .conn, .activity, #storage, #share-add, .empty-note, .share-card")].filter((n) => n.checkVisibility()).length,
     clipped: [...document.querySelectorAll(".people strong, .people small")].map((n) => n.getBoundingClientRect().width <= 1),
@@ -392,8 +410,8 @@ scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { 
   assert.ok(seen.clipped.length > 0 && seen.clipped.every(Boolean), "names and states clipped, not removed");
   assert.ok(seen.width <= 44, `scrollWidth ${seen.width}`);
   assert.equal(seen.gear, true);
-  assert.deepEqual(seen.avatars, [[true, true, 28], [true, true, 28]]);
-  assert.deepEqual(seen.titles, ["Claude · Working · 1 tab", "Alice · Codex · Waiting for you"]);
+  assert.deepEqual(seen.avatars, [[true, true, 28], [true, true, 28], [true, true, 28]]);
+  assert.deepEqual(seen.titles, ["Claude · Active · 1 tab", "Alice · Codex · Waiting for you", "You · Online"]);
   assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions", "History", "Activity", "Tools"]);
   await clean(ctx);
 });
@@ -419,7 +437,7 @@ scenario("left: collapse and expand", { viewport: OPEN }, async (ctx) => {
     const b = document.getElementById("dock-collapse"), r = b.getBoundingClientRect();
     return { width: r.width, height: r.height, right: r.right, label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded"), expand: document.getElementById("dock-expand").checkVisibility() };
   });
-  assert.deepEqual(box, { width: 24, height: 24, right: 192, label: "Collapse the workspace", expanded: "true", expand: false });
+  assert.deepEqual(box, { width: 24, height: 24, right: 194, label: "Collapse the workspace", expanded: "true", expand: false });
   // Hover: --hover under --ink, over the 120 ms transition.
   assert.equal(await inPage(() => getComputedStyle(document.getElementById("dock-collapse")).transitionDuration), "0.12s, 0.12s");
   await page.hover("#dock-collapse");

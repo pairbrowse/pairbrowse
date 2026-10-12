@@ -5,8 +5,8 @@
 // visible; while hidden it fetches nothing and holds no picture.
 import { $, el, shortClock, helperStream } from "../common.js";
 
-const PITCH = 132; // a card (120 px) and its gap (12 px)
-const PAD = 16; // the strip's left padding
+const PITCH = 114; // a card (104 px) and its gap (10 px)
+const PAD = 15; // the strip's left padding
 const DRIVING_MS = 8000; // "is driving" for this long after the agent's last action (as the side panel)
 const FETCH_MARGIN = 3; // pictures fetched this many cards beyond the visible ones
 const RELEASE_MARGIN = 10; // and released beyond this many

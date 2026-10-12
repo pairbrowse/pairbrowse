@@ -41,7 +41,7 @@ const contrast = (a, b) => { const [x, y] = [lum(norm(a)), lum(norm(b))].sort((p
 const REQUIRED = ["bg", "chrome", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "accent", "accent-ink", "accent-soft",
   "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t",
   "tab-idle", "tab-top", "tab-halo", "tab-halo-idle", "edge-light", "edge-lit", "edge-top", "surface-grad", "shadow-raised", "glow-soft", "glow-accent", "glow-top",
-  "glow-ok", "glow-bad", "glow-focus", "ok-soft", "ok-edge", "bad-soft"];
+  "glow-ok", "glow-bad", "glow-focus", "live-bg", "live-edge", "live-ink", "btn", "edge-btn", "accent-fill", "panel", "panel-edge", "inset"];
 const PAGES = ["right/right.css", "picker/picker.css", "newtab/newtab.css", "screen/screen.css", "settings/settings.css"].map((x) => UI + x).concat("scripts/liveview.css");
 // Every page sheet under ui/ (strip, docks, timeline, approve and the rest) plus the live view's.
 const ALL_CSS = readdirSync(root + UI, { withFileTypes: true }).filter((d) => d.isDirectory())
@@ -89,9 +89,8 @@ test("dark ink on every participant color is AA (the cursor and avatar pills)", 
   assert.ok(SPARK_COLORS.includes("#7088f0"), "Codex's color is in the palette");
   const codex = contrast(dark.bg, "#7088f0");
   assert.ok(codex >= 4.5, `--bg on Codex's #7088f0 is ${codex.toFixed(2)}:1`);
-  // The left page's "Shared with" avatars pick from the same palette.
-  const guests = JSON.parse(read(UI + "left/left.js").match(/const GUEST_COLORS = (\[[^\]]*\])/)[1]);
-  assert.ok(guests.length > 1 && guests.every((c) => SPARK_COLORS.includes(c)), "GUEST_COLORS are participant colors");
+  // The left page's "Shared with" avatars are neutral unless the helper sends a color (the mockup's Team row).
+  assert.doesNotMatch(read(UI + "left/left.js"), /GUEST_COLORS/, "no colors picked from a name");
 });
 
 // oklch() literals allowed in the sheets: white or black with alpha (shadows, a scrim), the participant chip
@@ -141,7 +140,13 @@ test("the static light keeps text at AA", () => {
     const r = contrast(t[fg], t[bg]);
     assert.ok(r >= 4.5, `--${fg} on --${bg} is ${r.toFixed(2)}:1`);
   }
-  const pairs = [["bad", "bad-soft", "chrome"], ["ink", "ok-soft", "bg"], ["ink", "accent-soft", "sidebar"], ["accent-ink", "accent-soft", "sidebar"]];
+  // The mockup's opaque fills under text: End session, the Live session pill, Allow (white), the docks' panels.
+  for (const [fg, bg] of [["bad-ink", "bad-fill"], ["live-ink", "live-bg"], ["ink", "btn"], ["ink-2", "panel"], ["ink-2", "inset"], ["ink-soft", "sidebar"], ["accent-ink", "nav-active"], ["ink", "badge"]]) {
+    const r = contrast(t[fg], t[bg]);
+    assert.ok(r >= 4.5, `--${fg} on --${bg} is ${r.toFixed(2)}:1`);
+  }
+  assert.ok(contrast("#ffffff", t["accent-fill"]) >= 4.5, "white on --accent-fill (Allow)");
+  const pairs = [["ink", "accent-soft", "sidebar"], ["accent-ink", "accent-soft", "sidebar"]];
   for (const [fg, tint, bg] of pairs) {
     const c = colorsIn(t[tint])[0];
     const r = contrast(t[fg], over(c, alphaOf(c), t[bg]));

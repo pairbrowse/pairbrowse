@@ -22,7 +22,7 @@ iframe { display: block; border: 0; }
 .column { position: absolute; left: var(--left); right: var(--right); top: 88px; bottom: 0; background: var(--chrome); }
 .card { position: absolute; left: 8px; right: 8px; top: 8px; bottom: calc(var(--tl) + 8px); border-radius: 10px; overflow: hidden; background: #fff; }
 #contents { display: block; width: 100%; height: 100%; }
-#approval { position: absolute; right: 16px; bottom: 48px; width: 360px; height: 300px; border-radius: 12px; overflow: hidden; }
+#approval { position: absolute; right: 16px; bottom: 48px; width: 364px; height: 300px; border-radius: 12px; overflow: hidden; }
 #approval[hidden] { display: none; }
-#approve { position: absolute; left: 0; top: 0; width: 360px; height: 300px; }
+#approve { position: absolute; left: 0; top: 0; width: 364px; height: 300px; }
 #timeline { position: absolute; left: 0; bottom: 0; width: 100%; height: var(--tl); }

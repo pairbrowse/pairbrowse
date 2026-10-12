@@ -4,40 +4,42 @@
 html, body { margin: 0; height: 100%; }
 /* The dock's inner side: 1 px --edge from the nav row to the bottom (DESIGN.md B3), open and rail;
    none when hidden. */
-body { display: grid; grid-template-rows: 44px minmax(0, 1fr) auto; height: 100vh; background: var(--sidebar); color: var(--ink); font: var(--fs-3)/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; box-shadow: inset -1px 0 0 var(--edge); }
+body { display: grid; grid-template-rows: 52px minmax(0, 1fr) auto; height: 100vh; background: var(--sidebar); color: var(--ink); font: var(--fs-3)/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; box-shadow: inset -1px 0 0 var(--edge); }
 button { font: inherit; }
 /* The icon sheet: symbols only, never laid out (an <svg hidden> still takes a grid row). */
 body > svg[hidden] { display: none; }
 
 /* Header: the workspace square, its name and the chevron (the session switcher). */
-.head { height: 44px; display: flex; align-items: center; gap: 4px; padding: 0 8px; min-width: 0; }
-.workspace { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; width: auto; min-width: 0; height: 36px; padding: 0 4px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); text-align: left; cursor: pointer; transition: background 120ms ease-out; }
+.head { height: 52px; display: flex; align-items: center; gap: 4px; padding: 4px 6px 0 9px; min-width: 0; }
+.workspace { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; width: auto; min-width: 0; height: 36px; padding: 0 6px 0 3px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); text-align: left; cursor: pointer; transition: background 120ms ease-out; }
 .workspace:hover { background: var(--hover); }
-.ws-icon { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: var(--r-2); background: var(--elevated); }
+.ws-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-2); background: var(--btn); box-shadow: inset 0 0 0 1px var(--panel-edge), inset 0 1px 0 var(--edge-light); }
 .ws-icon svg { width: 20px; height: 20px; color: var(--ink); }
-.ws-label { min-width: 0; font-size: 14px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chev { flex: none; width: 12px; height: 12px; margin-left: auto; color: var(--ink-2); }
+.ws-label { min-width: 0; font-size: 14px; font-weight: 400; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chev { flex: none; width: 14px; height: 14px; margin-left: auto; color: var(--ink-soft); }
 /* Collapse (open) and expand (rail): the dock's own state, set through the browser's layout. */
 .dock-btn { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
 .dock-btn svg { width: 14px; height: 14px; }
 .dock-btn:hover { background: var(--hover); color: var(--ink); }
 .dock-btn[hidden] { display: none; }
 
-.body { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 4px 8px 8px; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+.body { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 4px 7px 8px 9px; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
 
 /* Nav rows: 36 px, 8 px radius, a 16 px icon and a 13 px/500 label. */
 .nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.row { display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 12px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); font: 500 var(--fs-3) var(--sans); text-align: left; cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
-.row .ic { flex: none; width: 16px; height: 16px; color: var(--ink-2); }
+.row { display: flex; align-items: center; gap: 17px; width: 100%; height: 34px; padding: 0 6px 0 11px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-soft); font: 400 13.5px var(--sans); text-align: left; cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+.row .ic { flex: none; width: 18px; height: 18px; color: var(--ink-soft); }
 .row:hover { background: var(--hover); color: var(--ink); }
 .row:disabled, .gear:disabled { color: var(--muted); cursor: default; }
 .row:disabled .ic { color: inherit; }
 .row:disabled:hover, .gear:disabled:hover { background: transparent; }
-.row[aria-current="page"] { background-color: var(--accent-soft); background-image: none; color: var(--ink); box-shadow: none; }
+.row[aria-current="page"] { background-color: var(--nav-active); color: var(--accent-ink); font-weight: 500; box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-soft); }
 .row[aria-current="page"] .ic { color: var(--accent-ink); }
 .row .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.badge { display: inline-grid; place-items: center; flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font: 600 var(--fs-1)/1 var(--sans); }
+.badge { display: inline-grid; place-items: center; flex: none; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--badge); color: var(--ink); font: 500 var(--fs-3)/1 var(--sans); }
 .badge:empty { display: none; }
+/* Activity's fold mark shows on hover, keyboard focus and while open (the mockup draws none). */
+#nav-activity:not(:hover):not(:focus-visible):not([aria-expanded="true"])::after { visibility: hidden; }
 #nav-activity::after { content: ""; flex: none; width: 5px; height: 5px; margin-right: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform 160ms ease-out; }
 #nav-activity[aria-expanded="true"]::after { transform: translateY(1px) rotate(-135deg); }
 
@@ -52,10 +54,11 @@ body > svg[hidden] { display: none; }
 .activity li.empty { display: block; color: var(--muted); }
 
 /* Sections: Agents (with the + hint) and Shared with. */
-.sec { margin-top: 14px; }
+.sec { margin-top: 11px; padding-top: 6px; border-top: 1px solid var(--edge); }
+#shared { margin-top: 17px; }
 .sec[hidden] { display: none; }
-.sec-head { display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 4px 0 12px; }
-h2 { margin: 0; font: 600 var(--fs-2) var(--sans); color: var(--ink-2); }
+.sec-head { display: flex; align-items: center; justify-content: space-between; height: 32px; margin-bottom: 3px; padding: 0 3px 0 9px; }
+h2 { margin: 0; font: 500 13.5px var(--sans); color: var(--ink); }
 /* Shared with: always shown, with its own "+" (the Share card, a popover under it) and a line
    while nobody has joined. */
 #shared { position: relative; }
@@ -63,8 +66,8 @@ h2 { margin: 0; font: 600 var(--fs-2) var(--sans); color: var(--ink-2); }
 .empty-note[hidden] { display: none; }
 /* "No agent yet" and "Not shared yet" are the helper's word: not before its stream is live. */
 body:not([data-s="live"]) #agents li.empty, body:not([data-s="live"]) #guests-empty { display: none; }
-.add { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: var(--elevated); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
-.add svg { width: 14px; height: 14px; }
+.add { display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; border-radius: var(--r-1); background: var(--btn); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+.add svg { width: 16px; height: 16px; }
 .add:hover, .add[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
 .hint { margin: 4px 0 8px; padding: 10px 12px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); font-size: var(--fs-2); color: var(--ink-2); }
 .hint[hidden] { display: none; }
@@ -75,26 +78,36 @@ body:not([data-s="live"]) #agents li.empty, body:not([data-s="live"]) #guests-em
 .conn[hidden] { display: none; }
 
 /* People rows: 44 px, a 32 px avatar with a 10 px state dot, the name and the state in words. */
-.people { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.people li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 0 10px; align-items: center; align-content: center; height: 44px; padding: 0 12px; border-radius: var(--r-2); }
+.people { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+#guests li { height: 49px; }
+.people li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 0 16px; align-items: center; align-content: center; height: 50px; padding: 0 9px; border-radius: var(--r-2); }
 .people li.empty { display: block; height: auto; padding: 4px 12px; font-size: var(--fs-2); color: var(--muted); }
-.people .avatar { position: relative; grid-row: span 2; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--spark); color: var(--bg); font: 700 var(--fs-3)/1 var(--sans); }
+.people .avatar { position: relative; grid-row: span 2; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--spark); color: var(--bg); font: 600 16px/1 var(--sans); }
 .people .avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input); }
-.people .avatar svg { width: 16px; height: 16px; color: var(--ink-2); }
-.people .avatar.guest svg { color: var(--bg); } /* dark ink on the participant color: AA */
-.dot { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2px var(--sidebar); }
+.people .avatar svg { width: 20px; height: 20px; color: var(--ink); }
+.people .avatar.guest svg { color: var(--ink); } /* a filled icon on the group color: a graphic, 3:1 or more */
+.people .avatar.guest.plain { background: var(--btn); box-shadow: inset 0 0 0 1px var(--panel-edge); }
+.dot { position: absolute; right: -3px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2.5px var(--sidebar); }
 li[data-state="working"] .dot, li[data-state="active"] .dot, li[data-state="online"] .dot { background: var(--ok); }
 li[data-state="waiting"] .dot { background: var(--warn); }
 li[data-state="failed"] .dot { background: var(--bad); }
-li[data-state="idle"] .dot { background: var(--muted); }
-.people strong { min-width: 0; font: 600 var(--fs-3)/1.2 var(--sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+li[data-state="idle"] .dot { background: var(--accent); }
+.people strong { align-self: end; min-width: 0; font: 500 13.5px/19px var(--sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .people strong .app { font-weight: 400; color: var(--ink-2); }
-.people small { grid-column: 2; min-width: 0; font-size: var(--fs-2); line-height: 1.2; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people small { grid-column: 2; align-self: start; min-width: 0; font-size: 12.5px; line-height: 18px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Bottom: the settings gear, at the left (Storage returns with PairBrowse Pro; see the markup). */
-.foot { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 8px 10px; border-top: 1px solid var(--edge); }
-.gear { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
-.gear svg { width: 20px; height: 20px; }
+.foot { display: flex; flex-direction: column; align-items: flex-start; gap: 0; min-width: 0; margin: 0 7px 0 9px; padding: 0 0 17px; }
+/* Storage (PairBrowse Pro's cloud storage): only when the helper sends the figure; left.js builds it. */
+.storage { align-self: stretch; padding: 13px 4px 0 9px; border-top: 1px solid var(--edge); }
+.storage .line { display: flex; justify-content: space-between; font-size: var(--fs-2); line-height: 16px; color: var(--ink-soft); }
+.storage .bar { height: 6px; margin-top: 9px; border-radius: 3px; background: var(--meter-track); overflow: hidden; }
+.storage .bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--meter-from), var(--meter-to)); }
+.foot .gear { margin: 40px 0 0 9px; }
+.foot:not(:has(.storage)) { padding-top: 8px; border-top: 1px solid var(--edge); }
+.foot:not(:has(.storage)) .gear { margin-top: 0; }
+.gear { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
+.gear svg { width: 22px; height: 22px; }
 .gear:hover { background: var(--hover); color: var(--ink); }
 
 .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -151,7 +164,9 @@ body[data-dock="rail"] .sec-head { display: none; }
 body[data-dock="rail"] .people li { grid-template-columns: 28px; justify-content: center; height: 40px; padding: 0; }
 body[data-dock="rail"] .people .avatar { width: 28px; height: 28px; font-size: var(--fs-2); }
 body[data-dock="rail"] .foot { grid-template-columns: auto; justify-content: center; padding: 8px 4px; }
-body[data-dock="rail"] .gear { grid-column: 1; }
+body[data-dock="rail"] .gear { grid-column: 1; margin: 0; }
+body[data-dock="rail"] .foot { align-items: center; margin: 0; padding: 8px 4px; border-top: 1px solid var(--edge); }
+body[data-dock="rail"] .storage { display: none; }
 
 /* The session switcher: the picker in a same-origin frame, under the header (the B2 switcher size: 360 px wide, 560 tall). */
 .switcher { position: fixed; top: 44px; left: 8px; z-index: 3; width: 360px; height: min(560px, calc(100vh - 52px)); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); overflow: hidden; animation: fade var(--t); }

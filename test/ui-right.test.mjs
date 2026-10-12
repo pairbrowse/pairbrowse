@@ -66,12 +66,12 @@ describe("tabs", () => pageTest("right", opts(), async ({ page, inPage, until, e
   assert.equal(await inPage(visible, "#session-line"), false, "no session line, no placeholder, before the helper names a session");
   assert.equal(await inPage(() => getComputedStyle(document.querySelector(".top")).display), "none", "the strip owns the header in the build");
   assert.deepEqual(await inPage(() => [...document.querySelectorAll("[role=tab]")].map((t) => [t.textContent, t.getAttribute("aria-selected"), t.tabIndex])),
-    [["Agent", "true", 0], ["Page", "false", -1], ["Pictures", "false", -1], ["Tools", "false", -1]]);
-  assert.equal(await inPage(() => document.querySelector(".tabs").getBoundingClientRect().height), 44);
-  assert.equal(await inPage(() => document.querySelector(".tabs").getBoundingClientRect().top), 0, "the tab bar comes first");
+    [["Agent", "true", 0], ["Page", "false", -1], ["Screenshots", "false", -1], ["Tools", "false", -1]]);
+  // the top of the Agent panel: 8 px under the dock's top, 41 px tall (the mockup)
+  assert.deepEqual(await inPage(() => { const r = document.querySelector(".tabs").getBoundingClientRect(); return [r.top, r.height]; }), [8, 41]);
   await page.click("#tab-tools");
   assert.deepEqual(await inPage(() => ["agent", "page", "pictures", "tools"].map((t) => document.getElementById(`pane-${t}`).checkVisibility())), [false, false, false, true]);
-  assert.equal(await inPage(() => getComputedStyle(document.getElementById("tab-tools")).boxShadow.includes("inset")), true, "the accent underline");
+  assert.equal(await inPage(() => { const a = getComputedStyle(document.getElementById("tab-tools"), "::after"); return a.height === "2px" && a.backgroundColor === "rgb(50, 133, 246)"; }), true, "the accent underline (2 px, under the label)");
   await page.keyboard.press("ArrowLeft");
   await until("Pictures", () => document.getElementById("tab-pictures").getAttribute("aria-selected") === "true" && document.activeElement.id === "tab-pictures");
   await page.keyboard.press("Home");
@@ -87,7 +87,7 @@ describe("tabs", () => pageTest("right", opts(), async ({ page, inPage, until, e
   });
   assert.equal(collapse.w, 24);
   assert.equal(collapse.h, 24);
-  assert.ok(Math.abs(collapse.right - (330 - 6)) <= 1, `right edge ${collapse.right}`);
+  assert.ok(Math.abs(collapse.right - (330 - 17)) <= 1, `right edge ${collapse.right}`); // inside the Agent panel card, where the mockup puts its corner button
   assert.ok(Math.abs(collapse.middle) <= 1, `vertically centered in the bar (${collapse.middle})`);
   assert.equal(collapse.label, "Collapse the agent panel");
   assert.equal(collapse.expanded, "true");
@@ -147,8 +147,8 @@ describe("pause and resume", () => pageTest("right", opts({ pause: { paused: fal
   assert.match(tabLine.nameTitle, /^(In \S.*)?$/, "the tab is in #agent-name's title");
   assert.deepEqual(await inPage(() => { const e = document.getElementById("pause-text"); return [e.className, e.getBoundingClientRect().width <= 1]; }), ["sr", true], "the description is for readers only");
   const box = await inPage(() => { const b = document.getElementById("pause-btn"); const s = getComputedStyle(b); return { h: b.getBoundingClientRect().height, bg: s.backgroundColor, border: s.borderTopWidth }; });
-  assert.equal(box.h, 32);
-  assert.equal(box.bg, await inPage(token, "elevated"));
+  assert.equal(box.h, 36, "the mockup's Pause: 89 x 36");
+  assert.equal(box.bg, await inPage(token, "btn"));
   assert.equal(box.border, "1px");
   await page.click("#pause-btn");
   assert.deepEqual((await posted(helper, "pause"))[0]?.body, { paused: true });
@@ -176,11 +176,11 @@ describe("checklist marks, task and saved", () => pageTest("right", opts({ journ
     return { state: li.dataset.state, h: li.getBoundingClientRect().height, w: r.width, mh: r.height, bg: m.backgroundColor, color: m.color, border: m.borderTopWidth, borderColor: m.borderTopColor };
   }));
   assert.deepEqual(rows.map((r) => r.state), ["done", "current", "waiting", "pending"]);
-  for (const r of rows) { assert.ok(r.h >= 30, `${r.state}: ${r.h}px row`); assert.equal(r.w, 18); assert.equal(r.mh, 18); }
+  for (const r of rows) { assert.ok(r.h >= 28, `${r.state}: ${r.h}px row`); assert.equal(r.w, 17); assert.equal(r.mh, 17); }
   assert.equal(rows[0].bg, await inPage(token, "ok"), "done: filled --ok");
   assert.equal(rows[0].color, "rgb(255, 255, 255)", "the white check");
   assert.equal(rows[1].border, "2px");
-  assert.equal(rows[1].borderColor, await inPage(token, "accent"), "current: a 2 px --accent ring");
+  assert.equal(rows[1].borderColor, await inPage(token, "accent-ink"), "current: the mockup's light blue ring (--accent-ink)");
   assert.equal(rows[2].borderColor, await inPage(token, "warn"));
   assert.equal(rows[3].borderColor, await inPage(token, "muted"));
   assert.equal(await inPage(text, "task-name"), JOURNAL.name);
@@ -252,7 +252,9 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
     for (const k of ["name", "st"]) { assert.ok(r[k].h <= 18, `${r.text}: .${k} is one line (${r[k].h}px)`); assert.equal(r[k].ws, "nowrap"); }
   }
   const alice = rows.findIndex((r) => r.text.includes("Alice"));
-  assert.ok(alice >= 0 && rows[alice].stText.includes("waiting for their person") && rows[alice].stText.includes("shop.example/cart"), rows[alice]?.stText);
+  // the part in words on screen; the tab in the line's title (the mockup's "Observing", "Helping · …")
+  assert.ok(alice >= 0 && rows[alice].stText.includes("waiting for their person") && !rows[alice].stText.includes("shop.example/cart"), rows[alice]?.stText);
+  assert.match(await inPage((i) => document.querySelectorAll("#people li .st")[i].title, alice), /shop\.example\/cart/);
   assert.equal(rows[alice].first, "uppercase", "the state line starts with a capital");
   const sel = `#people li:nth-child(${alice + 1})`;
   assert.equal(await page.getAttribute(`${sel} .chev`, "aria-expanded"), "false");
@@ -307,8 +309,8 @@ describe("session card", () => pageTest("right", opts({ session: { name: "Checko
   const card = await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(); return { bottom: c.bottom, vh: innerHeight }; });
   assert.ok(card.vh - card.bottom >= 0 && card.vh - card.bottom <= 12, `a raised card just above the bottom (its 10 px margin): ${card.vh - card.bottom}`);
   const end = await inPage(() => { const s = getComputedStyle(document.getElementById("switch-btn")); return { color: s.color, bg: s.backgroundColor, shadow: s.boxShadow }; });
-  assert.equal(end.color, await inPage(token, "bad"));
-  assert.equal(end.bg, await inPage(token, "bad-soft", "backgroundColor"), "a red-tinted fill");
+  assert.equal(end.color, await inPage(token, "bad-ink"));
+  assert.equal(end.bg, await inPage(token, "bad-fill", "backgroundColor"), "the mockup's red fill");
   assert.match(end.shadow, /rgba?\(239, 100, 104/, "a soft red halo");
   assert.equal(await inPage(() => [...document.querySelectorAll("#session-card .row3 button")].filter((b) => b.checkVisibility()).length), 2, "Share and End session; no Save, no rename without a helper route");
   assert.equal(await inPage(() => document.getElementById("session-save").hidden && document.getElementById("session-rename").hidden), true);
@@ -1049,7 +1051,7 @@ describe("rail and hidden", () => pageTest("right", opts(), async ({ page, helpe
   assert.equal(await inPage(() => document.getElementById("rail").getBoundingClientRect().width), 44);
   assert.deepEqual(await inPage(() => { const b = document.getElementById("dock-expand"); return { shown: b.checkVisibility(), inTop: b.parentElement.classList.contains("rail-top"), h: b.parentElement.getBoundingClientRect().height }; }),
     { shown: true, inTop: true, h: 44 });
-  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".rail-btn")].map((b) => b.getAttribute("aria-label"))), ["Agent", "Page", "Pictures", "Tools"]);
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".rail-btn")].map((b) => b.getAttribute("aria-label"))), ["Agent", "Page", "Screenshots", "Tools"]);
   assert.deepEqual(await inPage(() => [...document.querySelectorAll(".rail-btn")].map((b) => b.getAttribute("aria-current"))), ["true", null, null, null], "the rail says which tab opens");
   assert.equal(await inPage(() => getComputedStyle(document.querySelector(".rail-btn[aria-current]")).boxShadow.includes("inset")), true, "in a shape, not by color alone");
   // A join request while the dock is a rail shows on the rail's Agent button, in words too.

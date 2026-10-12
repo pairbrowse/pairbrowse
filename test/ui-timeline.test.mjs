@@ -55,7 +55,7 @@ pageTest("timeline", opts(), async ({ until, inPage, helper, harness }) => {
     const li = document.querySelector(s), p = li.querySelector(".live-pill");
     return { left: p.getBoundingClientRect().left - li.getBoundingClientRect().left, dot: getComputedStyle(p.querySelector(".live")).backgroundColor };
   }, card(last));
-  assert.ok(Math.abs(pill.left - 12) <= 1, `the Live pill at the top-left (${pill.left})`);
+  assert.ok(Math.abs(pill.left - 8) <= 1, `the Live pill at the top-left (${pill.left})`);
   assert.equal(pill.dot, "rgb(239, 100, 104)", "a red Live dot");
   const live = await harness.live();
   assert.equal(live.eventSources, 1);
@@ -82,7 +82,7 @@ pageTest("timeline", opts(), async ({ until, inPage, helper }) => {
   await until("the end cards' pictures", blob, CARDS.slice(22, 29).map((c) => c.id));
   await until("the first cards released", none, CARDS.slice(0, 6).map((c) => c.id));
   const held = Number(await inPage(() => document.body.dataset.held));
-  assert.ok(held > 0 && held <= 16, `held ${held}`);
+  assert.ok(held > 0 && held <= 20, `held ${held}`); // 104 px cards: about 12 in view, plus the margins
   const fetches = await inPage(() => window.__fetches);
   assert.ok(fetches.length > 0);
   for (const [url, method] of fetches) {
@@ -115,22 +115,22 @@ pageTest("timeline", opts({ fixtures: { timeline: { cards: [cardFx(0), cardFx(1,
   assert.equal(n.img, false);
   assert.match(n.label, /note/);
   assert.ok(n.time.length > 0);
-  // Hours and minutes only (common.js shortClock), the locale's own clock, no seconds.
-  const want = await inPage((t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), cardFx(1).t);
+  // Hours and minutes only (common.js shortClock) on a 24-hour clock ("10:24", the mockup), no seconds.
+  const want = await inPage((t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }), cardFx(1).t);
   assert.equal(n.time, want, "HH:MM");
   assert.doesNotMatch(n.time, /\d+:\d+:\d+/, "no seconds");
   assert.ok(n.label.startsWith(want), "the card's name starts with the same time");
   // Captions in --ink-2 at 400; Add note shows a 16 px "+" above its label and keeps its name.
   const look = await inPage(() => {
-    const probe = document.createElement("i"); probe.style.color = "var(--ink-2)"; document.body.append(probe); const ink2 = getComputedStyle(probe).color; probe.remove();
+    const probe = document.createElement("i"); probe.style.color = "var(--ink-soft)"; document.body.append(probe); const ink2 = getComputedStyle(probe).color; probe.remove();
     const cap = getComputedStyle(document.querySelector(".card:not(.add) .cap"));
     const btn = document.getElementById("add-btn"), plus = btn.querySelector("svg.plus"), label = btn.querySelector("span");
     const pr = plus.getBoundingClientRect(), lr = label.getBoundingClientRect();
     return { capColor: cap.color, ink2, capWeight: cap.fontWeight, plus: [pr.width, pr.height], above: pr.bottom <= lr.top, hidden: plus.getAttribute("aria-hidden"), name: btn.textContent.trim() };
   });
-  assert.equal(look.capColor, look.ink2, "captions are --ink-2");
+  assert.equal(look.capColor, look.ink2, "captions are --ink-soft (the mockup's light captions)");
   assert.equal(look.capWeight, "400");
-  assert.deepEqual(look.plus, [16, 16]);
+  assert.deepEqual(look.plus, [18, 18]);
   assert.equal(look.above, true, "the + sits above the label");
   assert.equal(look.hidden, "true");
   assert.equal(look.name, "Add note", "the accessible name stays Add note");
@@ -323,7 +323,7 @@ pageTest("timeline", opts({ fixtures: { timeline: { cards: PINNED }, pictures } 
     const li = document.querySelector(s), p = li.querySelector(".live-pill"), m = li.querySelector(".more");
     return { left: getComputedStyle(p).left, right: p.getBoundingClientRect().right, more: m.getBoundingClientRect().left };
   }, card(id));
-  assert.equal(at.left, "12px", "the Live pill stays at the top-left");
+  assert.equal(at.left, "8px", "the Live pill stays at the top-left");
   assert.ok(at.right <= at.more, "clear of the More button");
   assert.equal(await inPage(chip, card(id)), "32px", "the Pinned chip steps aside while the menu is open");
   await page.keyboard.press("Escape");

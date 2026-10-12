@@ -71,10 +71,16 @@ export function geometry({ rail = false } = {}) {
 }
 
 // A deep copy; a negative number under t or at becomes now + it, under updatedAt or savedAt an ISO
-// string.
+// string; an "HH:MM" string under t becomes that time today (the mockup's 10:24 cards), or
+// yesterday when that is still ahead of now.
 export function resolveTimes(value, now, key = "") {
   if (Array.isArray(value)) return value.map((v) => resolveTimes(v, now));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveTimes(v, now, k)]));
+  if (key === "t" && typeof value === "string" && /^\d\d:\d\d$/.test(value)) {
+    const d = new Date(now);
+    d.setHours(Number(value.slice(0, 2)), Number(value.slice(3)), 0, 0);
+    return d.getTime() > now ? d.getTime() - 86400000 : d.getTime();
+  }
   if (typeof value === "number" && value < 0) {
     if (key === "t" || key === "at") return now + value;
     if (key === "updatedAt" || key === "savedAt") return new Date(now + value).toISOString();

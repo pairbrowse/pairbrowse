@@ -372,17 +372,18 @@ function drawPill() {
   pill.title = lastSession?.name ? `${lastSession.where || "Local"} · ${lastSession.name}` : "";
 }
 // Who is in the session (the side panel's header): board people by name with their color, then
-// guests; four shown, then "+N".
+// guests; three shown (the mockup), then "+N".
+const SHOWN = 3;
 function drawAvatars() {
   const seen = new Set();
   const people = [];
   for (const p of lastBoard.people) if (p?.who && !seen.has(p.who)) { seen.add(p.who); people.push({ name: p.who, color: p.color }); }
   for (const g of lastCollab?.guests || []) if (g?.label && !seen.has(g.label)) { seen.add(g.label); people.push({ name: g.label, color: "" }); }
-  const shown = people.slice(0, 4).map((p) => el("li", {}, avatar(p.name, p.color)));
-  if (people.length > 4) {
-    const more = el("span", { className: "avatar more", textContent: `+${people.length - 4}` });
+  const shown = people.slice(0, SHOWN).map((p) => el("li", {}, avatar(p.name, p.color)));
+  if (people.length > SHOWN) {
+    const more = el("span", { className: "avatar more", textContent: `+${people.length - SHOWN}` });
     more.setAttribute("role", "img");
-    more.setAttribute("aria-label", `${people.length - 4} more`);
+    more.setAttribute("aria-label", `${people.length - SHOWN} more`);
     shown.push(el("li", {}, more));
   }
   $("avatars").replaceChildren(...shown);

@@ -4,8 +4,8 @@
 // agents (board), the activity, who it is shared with and the session. The page only reflects
 // the dock's state: it sets it only from Tools (the right dock opens, on its Tools tab through
 // the helper's POST layout tab), from Activity in the rail and from the collapse and expand
-// buttons. Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): no row until then (see
-// the comment in index.html), whatever the session event carries.
+// buttons. Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
+// when the session event carries session.storage (see the comment in index.html), never diskBytes.
 import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
@@ -21,6 +21,7 @@ let board = { people: [], messages: [] };
 let activity = [];
 let guests = [];
 let session = null;
+let ownerLabel = "You"; // the collaboration's owner label: the one person row under Agents
 let lastWebTab = -1; // the last active tab that is not History
 let base = null;
 let stream = null; // the shared helper stream (common.js helperStream)
@@ -91,9 +92,9 @@ function drawNav() {
   setCurrent($("nav-browser"), !history);
 }
 
-// ---- agents: the board's agents, then every agent that owns a tab and is not on it ----
-// Only agents: people (the owner, anyone who joined) are never rows here; joiners are under
-// Shared with, and the owner is in the strip's avatars and the right dock.
+// ---- agents: the board's agents, then every agent that owns a tab and is not on it, then you ----
+// Agents, and the owner last ("You · Online", the mockup's row); people who joined are under
+// Shared with, never here.
 function drawAgents() {
   // The native host keys owners and tabs by the browser's tab id, so a closed tab never counts;
   // the served host's agent-tabs list replaces owners whole and its tabs are keyed by index.
@@ -107,12 +108,15 @@ function drawAgents() {
     rows.push(p);
   }
   for (const o of owners.values()) if (o.agent && !seen.has(o.agent)) { seen.add(o.agent); rows.push({ who: o.agent, kind: "agent" }); }
+  const me = board.people.find((p) => p?.kind === "person" && p.who === ownerLabel);
   const newest = activity.at(-1);
+  if (me) rows.push(me);
   const items = rows.map((p) => {
     const n = tabCount(p.who);
     const driving = !!newest && newest.who === p.who && Date.now() - newest.t < DRIVING_MS;
-    const state = p.status === "you" ? "waiting" : p.status === "working" || driving ? "working" : n > 0 ? "active" : "idle";
-    const words = { waiting: "Waiting for you", working: n ? `Working · ${plural(n, "tab")}` : "Working", active: `Active · ${plural(n, "tab")}`, idle: "Idle" }[state];
+    const state = p.kind === "person" ? "online" : p.status === "you" ? "waiting" : p.status === "working" || driving ? "working" : n > 0 ? "active" : "idle";
+    // An agent in tabs is "Active · N tabs" whether or not it acts right now (the mockup); its dot says working.
+    const words = { online: "Online", waiting: "Waiting for you", working: n ? `Active · ${plural(n, "tab")}` : "Working", active: `Active · ${plural(n, "tab")}`, idle: "Idle" }[state];
     const { name, app } = splitLabel(p.who);
     const color = isColor(p.color) ? p.color : colorOf(p.who);
     const face = el("span", { className: "avatar", textContent: initialOf(name) });
@@ -126,7 +130,26 @@ function drawAgents() {
     li.dataset.state = state;
     return li;
   });
-  $("agents").replaceChildren(...(items.length ? items : [el("li", { className: "empty", textContent: "No agent yet" })]));
+  const agents = items.filter((li) => li.dataset.state !== "online");
+  $("agents").replaceChildren(...(agents.length ? items : [el("li", { className: "empty", textContent: "No agent yet" }), ...items]));
+}
+
+// ---- storage: PairBrowse Pro's cloud storage, only when the session event carries it ----
+// session.storage = { used, limit } in bytes; anything else (diskBytes, no figure) shows nothing.
+const gb = (n) => { const v = n / 1e9; return `${v >= 10 || Number.isInteger(v) ? Math.round(v) : v.toFixed(1)} GB`; };
+function drawStorage() {
+  const st = session?.storage;
+  const ok = st && Number.isFinite(st.used) && Number.isFinite(st.limit) && st.limit > 0 && st.used >= 0;
+  $("storage")?.remove();
+  if (!ok) return;
+  const text = `${gb(st.used)} / ${gb(st.limit)}`;
+  const fill = el("i", { id: "storage-bar" });
+  fill.style.width = `${Math.min(100, (st.used / st.limit) * 100).toFixed(1)}%`;
+  const bar = el("div", { className: "bar", title: `${text} used` }, fill);
+  bar.setAttribute("role", "img");
+  bar.setAttribute("aria-label", `${gb(st.used)} of ${gb(st.limit)} used`);
+  const box = el("div", { className: "storage", id: "storage" }, el("div", { className: "line" }, el("span", { textContent: "Storage" }), el("span", { id: "storage-text", textContent: text })), bar);
+  $("settings").before(box);
 }
 
 // ---- activity ----
@@ -151,11 +174,8 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // ---- shared with: the joined people, one row per name ----
-// A filled avatar per name: the helper's color when it sends one, else a participant color picked
-// from the name (scripts/daemon/hud.mjs SPARK_COLORS without Claude Code's spark; dark ink on each is
-// AA, test/tokens.test.mjs), so a name keeps its color across draws.
-const GUEST_COLORS = ["#7088f0", "#4fd1e8", "#4ade80", "#a78bfa", "#f472b6"];
-const guestColor = (label) => { let h = 0; for (const ch of label) h = (h * 31 + ch.codePointAt(0)) >>> 0; return GUEST_COLORS[h % GUEST_COLORS.length]; };
+// A group avatar per name: the helper's color when it sends one, else the neutral raised circle (the
+// mockup's Team row); the people icon in --ink on either.
 function drawGuests() {
   const byName = new Map();
   for (const g of guests) {
@@ -171,7 +191,8 @@ function drawGuests() {
     const role = drive ? "can drive" : "watching";
     const face = el("span", { className: "avatar guest" }, icon("i-people"));
     face.setAttribute("aria-hidden", "true");
-    face.style.background = color || guestColor(label);
+    if (color) face.style.background = color;
+    else face.classList.add("plain");
     const li = el("li", { title: `${label} · ${n} online · ${role}` }, face, el("strong", { textContent: label }), el("small", { textContent: `${n} online` }), el("span", { className: "sr", textContent: `, ${role}` }));
     li.dataset.state = "online";
     return li;
@@ -306,8 +327,13 @@ function connect(url) {
     },
   });
   const on = stream.on;
-  on("session", (s) => { session = s && typeof s === "object" ? s : null; railTitles(); });
-  on("collaboration", (c) => { guests = Array.isArray(c?.guests) ? c.guests : []; drawGuests(); });
+  on("session", (s) => { session = s && typeof s === "object" ? s : null; railTitles(); drawStorage(); });
+  on("collaboration", (c) => {
+    guests = Array.isArray(c?.guests) ? c.guests : [];
+    const label = typeof c?.owner?.label === "string" && c.owner.label ? c.owner.label : "You";
+    if (label !== ownerLabel) { ownerLabel = label; drawAgents(); }
+    drawGuests();
+  });
   on("activity", (list) => {
     activity = Array.isArray(list) ? list.filter((a) => a && Number.isFinite(a.t)) : [];
     if ($("nav-activity").getAttribute("aria-expanded") === "true") drawActivity();

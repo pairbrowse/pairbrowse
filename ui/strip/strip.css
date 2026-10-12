@@ -15,15 +15,15 @@ svg { flex: none; }
 body[data-platform="mac"] .row { padding-left: 80px; } /* the traffic lights */
 .row button, .row a, .row input, .row label, #tabs li, .pop, .nav, .nav button { -webkit-app-region: no-drag; }
 
-#switch { display: flex; align-items: center; gap: 6px; align-self: center; height: 28px; padding: 0 6px 0 2px; border: 0; border-radius: var(--r-2); background: transparent; cursor: default; flex: none; transition: background-color 120ms; }
+#switch { display: flex; align-items: center; gap: 11px; align-self: center; height: 28px; padding: 0 6px 0 2px; border: 0; border-radius: var(--r-2); background: transparent; cursor: default; flex: none; transition: background-color 120ms; }
 #switch img { display: block; flex: none; }
-#switch .wordmark { font-size: 17px; font-weight: 600; color: var(--ink); white-space: nowrap; }
-#switch .chevron { width: 12px; height: 12px; color: var(--ink-2); }
+#switch .wordmark { font-size: 17px; font-weight: 500; letter-spacing: -0.005em; color: var(--ink); white-space: nowrap; }
+#switch .chevron { width: 12px; height: 12px; margin-left: 1px; color: var(--ink-2); }
 #switch:hover, #switch[aria-expanded="true"] { background: var(--hover); }
 
 /* The tabs sit on the row's bottom edge, 40 px tall; the padding keeps the active tab's feet unclipped. */
-#tabs { display: flex; align-items: flex-end; flex: 0 1 auto; gap: 8px; min-width: 0; margin: 0 -10px; padding: 0 10px; list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-#tabs li { position: relative; display: flex; align-items: center; gap: 8px; flex: 1 1 240px; min-width: 160px; max-width: 240px; height: 40px; padding: 0 10px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color 120ms, color 120ms; }
+#tabs { display: flex; align-items: flex-end; flex: 0 1 auto; gap: 2px; min-width: 0; margin: 0 -10px; padding: 0 10px; list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#tabs li { position: relative; display: flex; align-items: center; gap: 8px; flex: 0 1 235px; width: 235px; min-width: 160px; max-width: 240px; height: 40px; padding: 0 7px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color 120ms, color 120ms; }
 #tabs li:not([aria-selected="true"]):hover { background-color: var(--elevated); }
 /* The active tab: lit at the top, fading into the nav row's --chrome, a neutral lit top edge with a
    soft static halo above it (--halo), and two curved feet that carry its edge into the row's bottom
@@ -47,7 +47,7 @@ body[data-platform="mac"] .row { padding-left: 80px; } /* the traffic lights */
 #tabs .icon img { display: block; width: 16px; height: 16px; }
 #tabs .icon .generic { width: 16px; height: 16px; color: var(--ink-2); }
 #tabs .ring { display: block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; }
-#tabs .title { flex: 0 1 auto; min-width: 0; font-size: var(--fs-3); font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#tabs .title { flex: 0 1 auto; min-width: 0; font-size: 12.5px; font-weight: 400; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #tabs li.pinned .title { display: none; }
 #tabs .agent { flex: none; width: 7px; height: 7px; margin-left: -2px; margin-right: 0; border-radius: 50%; } /* 8 px gap - 2 = 6 px after the title */
 /* The close shows on every tab but a pinned one; Tab reaches the active tab's alone. */
@@ -65,10 +65,10 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 
 /* ---- the right end ---- */
 #right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; }
-#pill { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--edge); border-radius: 999px; background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; }
-#pill .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+#pill { display: inline-flex; align-items: center; gap: 10px; height: 32px; padding: 0 14px; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; }
+#pill .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--warn); }
 #pill[data-state="local"] .dot { background: var(--muted); }
-#pill[data-state="live"] { background-color: var(--ok-soft); border-color: var(--ok-edge); }
+#pill[data-state="live"] { background-color: var(--live-bg); border-color: var(--live-edge); color: var(--live-ink); }
 #pill[data-state="live"] .dot { background: var(--ok); box-shadow: var(--glow-ok); }
 #pill[data-state="live"] .live { animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.35; } }
@@ -76,16 +76,16 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 #avatars { display: flex; margin: 0; padding: 0; list-style: none; }
 #avatars:empty { display: none; }
 #avatars li { display: flex; }
-#avatars li + li { margin-left: -8px; }
-.avatar { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--spark); color: var(--bg); font-size: var(--fs-2); font-weight: 700; line-height: 1; box-shadow: 0 0 0 1.5px var(--bg); }
+#avatars li + li { margin-left: -2px; }
+.avatar { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--spark); color: var(--bg); font-size: var(--fs-2); font-weight: 700; line-height: 1; box-shadow: 0 0 0 1.5px var(--bg); }
 .avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input), 0 0 0 1.5px var(--bg); }
-.avatar.more { background: var(--elevated); color: var(--ink-2); }
+.avatar.more { background: var(--elevated); color: var(--ink); font-weight: 500; font-size: var(--fs-3); }
 
-#share-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--edge-lit); border-radius: var(--r-2); background: transparent; box-shadow: inset 0 1px 0 var(--edge-light); color: var(--ink); font-size: var(--fs-3); font-weight: 500; cursor: default; transition: background-color 120ms; }
-#share-btn svg { width: 14px; height: 14px; }
+#share-btn { display: inline-flex; align-items: center; gap: 9px; height: 34px; padding: 0 14px 0 13px; border: 1px solid var(--edge-btn); border-radius: var(--r-2); background: var(--btn); box-shadow: inset 0 1px 0 var(--edge-light); color: var(--ink); font-size: var(--fs-3); font-weight: 500; cursor: default; transition: background-color 120ms; }
+#share-btn svg { width: 16px; height: 16px; }
 #share-btn:hover, #share-btn[aria-expanded="true"] { background: var(--hover); }
-#menu-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
-#menu-btn svg { width: 16px; height: 16px; }
+#menu-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); cursor: default; transition: background-color 120ms, color 120ms; }
+#menu-btn svg { width: 18px; height: 18px; }
 #menu-btn:hover, #menu-btn[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
 
 /* ---- popovers: under the row (a taller host), or alone in a bubble (#switcher, #share, #menu) ---- */
@@ -130,10 +130,10 @@ body[data-platform="mac"] #switcher { left: 80px; }
 /* ---- the nav fragments beside the native address bar ---- */
 .nav { display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 8px; }
 .nav button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color 120ms, color 120ms; }
-.nav button svg { width: 16px; height: 16px; }
+.nav button svg { width: 18px; height: 18px; }
 .nav button:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
 .nav button:disabled { color: var(--muted); }
-#sparkle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+#sparkle[aria-pressed="true"] { color: var(--ink); }
 
 /* ---- modes: the bubbles show their popover alone ---- */
 body[data-mode="switcher"] .row, body[data-mode="share"] .row, body[data-mode="menu"] .row { display: block; height: auto; padding: 0; -webkit-app-region: no-drag; }

@@ -6,7 +6,7 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, STATE_WORDS as STATES, shareCard, checklistItems, checkState, askDock, helperStream } from "../common.js";
+import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream } from "../common.js";
 import { toolsPanel } from "./tools.js";
 
 const pb = globalThis.pairbrowse || null;
@@ -404,6 +404,21 @@ function drawAgent() {
 // each, a chevron to the board's task and last action, and "Pause this agent" only when the
 // helper says it can pause one agent.
 const openRows = new Set();
+// The part someone plays, in words: an agent at work helps, an agent between actions observes, one
+// waiting for its person says so; a person in the session is active.
+const PARTS = { working: "helping", you: "waiting for their person", done: "done", idle: "observing" };
+const partWord = (p) => (p.kind === "person" ? "active" : Object.hasOwn(PARTS, p.status) ? PARTS[p.status] : "observing");
+const takeIcon = () => {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [k, v] of Object.entries({ viewBox: "0 0 18 18", width: "18", height: "18", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "aria-hidden": "true" })) s.setAttribute(k, v);
+  for (const d of ["M7.5 8.6a2.9 2.9 0 1 0 0-5.8 2.9 2.9 0 0 0 0 5.8z", "M2.2 15.6c.4-2.9 2.6-4.6 5.3-4.6s4.9 1.7 5.3 4.6z", "M14.4 3.4v4.2M12.3 5.5h4.2"]) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    if (d.startsWith("M2.2") || d.startsWith("M7.5")) path.setAttribute("fill", "currentColor");
+    s.append(path);
+  }
+  return s;
+};
 function drawPeople() {
   const all = lastBoard.people;
   const active = activeEntry();
@@ -416,16 +431,18 @@ function drawPeople() {
     face.removeAttribute("role");
     face.removeAttribute("aria-label");
     face.setAttribute("aria-hidden", "true");
-    // Two lines: the name, then the state in words with what it does, its tab and whose browser.
-    const word = STATES[p.status] || "idle";
-    const rest = [p.task, p.tab, p.where ? `${p.where}'s browser` : ""].filter(Boolean).join(" · ");
-    const st = el("small", { className: "st", title: rest ? `${word} · ${rest}` : word }, el("span", { className: "state", textContent: word }), ...(rest ? [document.createTextNode(` · ${rest}`)] : []));
+    // Two lines: the name, then its part in the session in words (the mockup's "Observing",
+    // "Helping", "Active") with what it does and whose browser; the tab stays in the title.
+    const word = partWord(p);
+    const rest = [p.task, p.where ? `${p.where}'s browser` : ""].filter(Boolean).join(" · ");
+    const st = el("small", { className: "st", title: [word, p.task, p.tab, p.where ? `${p.where}'s browser` : ""].filter(Boolean).join(" · ") }, el("span", { className: "state", textContent: word }), ...(rest ? [document.createTextNode(` · ${rest}`)] : []));
+    if (isColor(p.color)) st.style.setProperty("--who", p.color);
     const lines = [p.task, p.last].filter(Boolean);
     const acts = el("div", { className: "acts", id: `acts-${i}` }, ...lines.map((t) => el("small", { textContent: t })));
     acts.hidden = !openRows.has(p.who);
     const kids = [face, el("strong", { className: "name", textContent: name, title: p.who }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])), st];
     if (p.kind === "agent" && perAgent) {
-      const stop = el("button", { className: "pause-one", type: "button", textContent: "Pause this agent" });
+      const stop = el("button", { className: "pause-one", type: "button", title: `Pause ${name}: you take control` }, takeIcon(), "Take control");
       // A person's click or key press: a synthetic event pauses nothing.
       stop.addEventListener("click", (ev) => { if (ev.isTrusted && base) post("pause", { paused: true, who: p.who }).catch(() => {}); });
       kids.push(stop);
@@ -444,7 +461,7 @@ function drawPeople() {
     }
     kids.push(acts);
     const li = el("li", {}, ...kids);
-    li.dataset.state = p.status || "idle";
+    li.dataset.state = p.kind === "person" ? "active" : p.status || "idle";
     return li;
   }), ...(idle ? [el("li", { className: "idle" }, el("small", { textContent: `+ ${idle} idle agent${idle === 1 ? "" : "s"} in this browser` }))] : []));
 }

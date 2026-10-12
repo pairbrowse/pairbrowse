@@ -66,8 +66,9 @@ describe("renders the tab list, its states and the drag region", () => pageTest(
     assert.equal(t.bottom, 44, "on the row's bottom edge");
     assert.ok(t.width >= 160 && t.width <= 240, `width ${t.width}`);
   }
-  assert.equal(Math.round(b.left - a.right), 8);
-  assert.equal(Math.round(c.left - b.right), 8);
+  // 2 px apart (the mockup: the tabs nearly touch; the active tab's feet reach over the gap)
+  assert.equal(Math.round(b.left - a.right), 2);
+  assert.equal(Math.round(c.left - b.right), 2);
   assert.equal(a.selected, "true");
   assert.equal(a.tabindex, "0");
   assert.equal(a.bg, "rgb(16, 29, 45)");
@@ -337,14 +338,14 @@ describe("the pill: Local, Live session, Reconnecting", () => pageTest("strip", 
   // the live pill's static light: a green-tinted edge and a soft halo on the dot
   const lit = await inPage(() => {
     const probe = document.createElement("i");
-    probe.style.borderColor = "var(--ok-edge)";
+    probe.style.borderColor = "var(--live-edge)";
     document.body.append(probe);
     const want = getComputedStyle(probe).borderTopColor;
     probe.remove();
     const pill = document.getElementById("pill");
     return { border: getComputedStyle(pill).borderTopColor, want, dotShadow: getComputedStyle(pill.querySelector(".dot")).boxShadow };
   });
-  assert.equal(lit.border, lit.want, "the pill's border is --ok-edge");
+  assert.equal(lit.border, lit.want, "the pill's border is --live-edge (the mockup's dark green pill)");
   assert.match(lit.dotShadow, /rgba?\(32, 201, 151/);
   for (const s of helper.streams) s.res.destroy();
   await until("reconnecting", () => document.getElementById("pill-text").textContent === "Reconnecting to PairBrowse");
@@ -361,24 +362,24 @@ describe("avatar stack with +N", () => pageTest("strip", {
   },
 }, async ({ inPage, until }) => {
   // the avatar stack with +N
-  await until("avatars", () => document.querySelectorAll("#avatars li").length === 5);
+  // three shown, then "+N" (the mockup's C G Y +2)
+  await until("avatars", () => document.querySelectorAll("#avatars li").length === 4);
   const av = await inPage(() => [...document.querySelectorAll("#avatars .avatar")].map((a) => {
     const r = a.getBoundingClientRect();
     const s = getComputedStyle(a);
     return { text: a.textContent, left: r.left, w: r.width, h: r.height, weight: s.fontWeight, shadow: s.boxShadow, bg: s.backgroundColor, plain: a.classList.contains("plain"), role: a.getAttribute("role"), label: a.getAttribute("aria-label") };
   }));
-  assert.deepEqual(av.slice(0, 4).map((a) => a.text), ["C", "C", "B", "D"]);
-  for (const a of av.slice(0, 4)) {
-    assert.equal(a.w, 28);
-    assert.equal(a.h, 28);
+  assert.deepEqual(av.slice(0, 3).map((a) => a.text), ["C", "C", "B"]);
+  for (const a of av.slice(0, 3)) {
+    assert.equal(a.w, 30);
+    assert.equal(a.h, 30);
     assert.equal(a.weight, "700");
     assert.match(a.shadow, /rgb\(11, 20, 33\) 0px 0px 0px 1\.5px/);
   }
-  for (let i = 1; i < 5; i++) assert.equal(Math.round(av[i - 1].left + 28 - av[i].left), 8);
+  for (let i = 1; i < 4; i++) assert.equal(Math.round(av[i - 1].left + 30 - av[i].left), 2);
   assert.equal(av[0].bg, "rgb(233, 118, 63)");
-  assert.equal(av[3].plain, true);
-  assert.equal(av[3].bg, "rgb(25, 42, 61)");
-  assert.deepEqual([av[4].text, av[4].role, av[4].label], ["+3", "img", "3 more"]);
+  assert.equal(av[3].bg, "rgb(25, 42, 61)", "the +N chip on --elevated");
+  assert.deepEqual([av[3].text, av[3].role, av[3].label], ["+4", "img", "4 more"]);
 }));
 
 describe("share card opens and posts an invite", () => pageTest("strip", { viewport: TALL, replies: { invite: { ok: true, code: "pb-join:FAKE", rights: "Shared browser: they can drive." } } }, async ({ page, helper, inPage, until }) => {

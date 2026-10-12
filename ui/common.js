@@ -19,8 +19,8 @@ export function rich(text) {
   return frag;
 }
 export const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-// Hours and minutes only (the timeline's cards), in the locale's own clock.
-export const shortClock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+// Hours and minutes only on a 24-hour clock (the timeline's cards: "10:24", the mockup).
+export const shortClock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 // How long ago, worked out once when drawn (nothing ticks): "just now", "N min ago", else the date and time.
 export function ago(iso, now = Date.now()) {
   const t = Date.parse(iso);

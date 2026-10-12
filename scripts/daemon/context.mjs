@@ -18,7 +18,7 @@ import { sleep, readJson, within } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
 import { chromePages, nativeManifest } from "../native-engine.mjs";
 import { isChromePage } from "../policy.mjs";
-import { createPersonTabs } from "./tools.mjs";
+import { createPersonTabs, keepDownloadMark } from "./tools.mjs";
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
@@ -184,6 +184,7 @@ let switched = Promise.resolve();
           try { copyFileSync(from, dest, fsConstants.COPYFILE_EXCL); break; } // never over an existing file
           catch (e) { if (e.code !== "EEXIST" || i > 500) throw e; }
         }
+        await keepDownloadMark(from, dest); // Open and Office's Protected View read it
         try { onDownload({ op: "done", id, path: dest }); } catch {}
         if (!personal) hostNote(`Downloaded ${name} to ${dest}`);
         log(`downloaded ${dest}`);

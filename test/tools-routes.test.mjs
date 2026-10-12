@@ -5,12 +5,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, mkdirSync, writeFileSync, renameSync, rmSync, unlinkSync, symlinkSync, existsSync, readFileSync, readdirSync, statSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, renameSync, rmSync, unlinkSync, symlinkSync, existsSync, readFileSync, readdirSync, statSync, realpathSync, copyFileSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { startLiveView, createInvites } from "../scripts/liveview.mjs";
-import { createDownloads, createRecordings, createHandoffs, openFile, downloadMarked, fileStill, handoffKind, createPersonTabs } from "../scripts/daemon/tools.mjs";
+import { createDownloads, createRecordings, createHandoffs, openFile, downloadMarked, keepDownloadMark, fileStill, handoffKind, createPersonTabs } from "../scripts/daemon/tools.mjs";
 import { createPreviews } from "../scripts/daemon/preview.mjs";
 import { createDiagnostics } from "../scripts/daemon/diagnostics.mjs";
 
@@ -608,6 +608,29 @@ test("open: on macOS a download without the quarantine mark is refused (409, Fin
     // The real reader on this Mac: a file written here has no quarantine mark.
     if (process.platform === "darwin") assert.equal(await downloadMarked(p), false);
   } finally { t.done(); }
+});
+
+test("a saved download keeps the browser's mark: copied across, never invented", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pb-mark-"));
+  try {
+    const from = join(dir, "from.pdf"), to = join(dir, "to.pdf");
+    writeFileSync(from, "%PDF-1.4"); copyFileSync(from, to);
+    // Fakes: the mark moves as read, and no mark on the source writes nothing.
+    const wrote = [];
+    assert.equal(await keepDownloadMark(from, to, { platform: "darwin", read: async () => "0081;1;PairBrowse;\n", write: async (p, v) => { wrote.push([p, v]); return true; } }), true);
+    assert.deepEqual(wrote, [[to, "0081;1;PairBrowse;"]]);
+    assert.equal(await keepDownloadMark(from, to, { platform: "darwin", read: async () => null, write: async () => { throw new Error("never"); } }), false);
+    assert.equal(await keepDownloadMark(from, to, { platform: "linux" }), false);
+    if (process.platform === "darwin") {
+      // The real thing: Node's copy drops the attribute; keepDownloadMark brings it back.
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("/usr/bin/xattr", ["-w", "com.apple.quarantine", "0081;1;PairBrowse;", from]);
+      const copy = join(dir, "copy.pdf"); copyFileSync(from, copy);
+      assert.equal(await downloadMarked(copy), false, "a plain copy loses the mark");
+      assert.equal(await keepDownloadMark(from, copy), true);
+      assert.equal(await downloadMarked(copy), true);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 const post = (t, id, verb = "open", body = {}) => request(t.view.port, "POST", `/${t.key}/downloads/${id}/${verb}`, { body });

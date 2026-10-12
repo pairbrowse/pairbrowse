@@ -90,6 +90,19 @@ const readQuarantine = (path, execFile = nodeExecFile) => new Promise((resolve) 
     execFile("/usr/bin/xattr", ["-p", "com.apple.quarantine", path], { timeout: XATTR_MS }, (err, out) => resolve(err ? null : String(out || "")));
   } catch { resolve(null); }
 });
+// A copy drops extended attributes, the browser's download mark among them: carry the browser's own
+// mark from its file to the helper's copy (never one of our own: no mark on the source, none on the copy).
+const writeQuarantine = (path, value, execFile = nodeExecFile) => new Promise((resolve) => {
+  try {
+    execFile("/usr/bin/xattr", ["-w", "com.apple.quarantine", value, path], { timeout: XATTR_MS }, (err) => resolve(!err));
+  } catch { resolve(false); }
+});
+export async function keepDownloadMark(from, to, { platform = process.platform, read = readQuarantine, write = writeQuarantine } = {}) {
+  if (platform !== "darwin") return false;
+  const v = await within(XATTR_MS, Promise.resolve().then(() => read(String(from))).catch(() => null));
+  if (typeof v !== "string" || v.trim() === "") return false;
+  return (await within(XATTR_MS, Promise.resolve().then(() => write(String(to), v.trim())).catch(() => false))) === true;
+}
 export async function downloadMarked(path, { platform = process.platform, xattr = readQuarantine } = {}) {
   if (platform !== "darwin") return true;
   const v = await within(XATTR_MS, Promise.resolve().then(() => xattr(String(path))).catch(() => null));

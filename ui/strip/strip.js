@@ -1,9 +1,11 @@
 // The browser build's top strip (DESIGN.md B2). One document, three hosts by location hash: the
-// 44 px tab row (no hash), the nav fragments beside the native address bar (#nav-left,
+// 53 px tab row (no hash), the nav fragments beside the native address bar (#nav-left,
 // #nav-right), and each popover alone (#switcher, #share, #menu) for the shell's bubbles, which
-// cannot draw outside a 44 px slot. Tabs, owners and the dock layout come from window.pairbrowse
-// (the browser's own API); people, sharing and recording from the helper's event stream. Without
-// window.pairbrowse the row shows the helper's tabs event, read only. Nothing here starts a timer,
+// cannot draw outside a 53 px slot. Tabs, owners and the dock layout come from window.pairbrowse
+// (the browser's own API); people, sharing and recording from the helper's event stream, and the
+// helper's agent-tabs, which this page writes into the browser's owners for its window's tabs (the
+// owner dots of every page read those). Without window.pairbrowse the row shows the helper's tabs
+// event, read only. Nothing here starts a timer,
 // a frame loop or a DOM observer: observers of the browser API and the one shared helper stream
 // (common.js helperStream) only. The nav fragments read no stream at all.
 import { $, el, avatar, shareCard, isColor, pickerPopover, helperStream, servedByBrowser } from "../common.js";
@@ -14,7 +16,8 @@ document.body.dataset.platform = mac ? "mac" : "other";
 document.body.dataset.native = String(!!pb);
 // Served by the browser itself (chrome://pairbrowse.top-chrome), with or without the API.
 const nativeHost = servedByBrowser();
-document.body.dataset.host = nativeHost ? "native" : "page";
+// The browser's own host: its API, or served by it (strip.css lets the row end before Chromium's ⋯).
+document.body.dataset.host = pb || nativeHost ? "native" : "page";
 
 // Back, forward and find come from the browser API when it has them (the active tab's history,
 // the window's find bar); without it they show disabled, their shortcut in the name, never a
@@ -105,13 +108,13 @@ function drawRecord(on) {
 // The browser API's items have nothing to call without it.
 if (!pb) for (const id of ["zoom", "settings", "about", "new-window"]) $(id).hidden = true;
 
-// ---- a page no taller than the row (the browser's 44 px tab-row slot, which clips the rest):
+// ---- a page no taller than the row (the browser's 53 px tab-row slot, which clips the rest):
 // nothing can open under the row until the browser hosts the popovers as bubbles. The logo opens
 // the session picker as a tab, Share opens the Share card of the workspace dock (the left dock,
 // opened if it is not), and the menu, which has no surface there, is not shown. Each runs in the
 // capture phase, ahead of the popover's own click handler, so no popover opens unseen and no
 // focus moves into one. ----
-const ROW_ONLY = 60; // px: taller than the 44 px row, shorter than any popover
+const ROW_ONLY = 60; // px: taller than the 53 px row, shorter than any popover
 const inSlot = () => !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
 const SHARE_CHANNEL = "pairbrowse-share";
 const SLOT_LABELS = { switch: "PairBrowse: switch session (opens the session picker in a new tab)", share: "Share this session (opens the Share card in the workspace)" };
@@ -198,7 +201,7 @@ $("reload").addEventListener("click", () => { const id = activeId(); if (pb && i
 $("back").addEventListener("click", () => { const id = activeId(); if (can("tabs", "goBack") && id !== -1) pb.tabs.goBack(id).catch(() => {}); });
 $("forward").addEventListener("click", () => { const id = activeId(); if (can("tabs", "goForward") && id !== -1) pb.tabs.goForward(id).catch(() => {}); });
 $("find").addEventListener("click", () => { if (can("windows", "find") && myWindow !== -1) pb.windows.find(myWindow).catch(() => {}); });
-$("star").hidden = nativeHost;
+$("star").hidden = !!pb || nativeHost; // the browser draws its own star in the address bar
 // Back and forward follow the active tab's history as the browser reports it.
 function drawNav() {
   const t = tabs.get(activeId());
@@ -259,9 +262,6 @@ function drawTab(t) {
   const color = owners.colors?.[String(t.id)] || "";
   li.setAttribute("aria-selected", String(!!t.active));
   li.classList.toggle("pinned", !!t.pinned);
-  // An owned tab glows in its owner's color (strip.css [data-owned]), only a plain #rrggbb.
-  if (agent && isColor(color)) { li.dataset.owned = "true"; li.style.setProperty("--owner", color); }
-  else { delete li.dataset.owned; li.style.removeProperty("--owner"); }
   li.title = title;
   li.setAttribute("aria-label", `${title}${agent ? `, ${agent} is in this tab` : ""}${loading ? ", loading" : ""}${t.pinned ? ", pinned" : ""}`);
   // The icon slot: a loading ring, the favicon, or a generic globe; redrawn only when it changes.
@@ -486,8 +486,83 @@ function connect(url) {
   if (!pb) {
     on("tabs", renderFallback);
     on("layout", (l) => drawSparkle(l?.right === "open"));
-  }
+  } else on("agent-tabs", applyAgentTabs);
 }
+
+// ---- the helper's agent-tabs, written into the browser's owners for this window's tabs ----
+// The helper knows which agent is in which page ({ id, i, host, agent: { label, color } | null,
+// person }, scripts/liveview.mjs agentTabs); the browser's owners (pb.agent) are what every page's
+// dot reads. An entry with `target` (the page's CDP target id) matches the tab with that targetId.
+// One without matches only when that cannot be the wrong tab: the browser has one window (the
+// helper's list counts every window's pages), and its host is on exactly one of this window's tabs
+// and in exactly one entry without a target. The helper's `i` is the page's place in creation
+// order, not in the tab row (a popup opens beside its opener, a person drags a tab), so it never
+// picks a tab. Anything else waits for `target`. Only changes are written, and only owners this page
+// set are cleared (kept in sessionStorage, so a reloaded strip still clears its own). The last list
+// is mapped again when this window's tabs are created, moved or removed: events only, no timer.
+let sentOwners = null; // tab id -> "label\ncolor" this page set
+let lastAgentTabs = null;
+let agentTabsSeq = 0;
+const hostOfUrl = (u) => { try { return new URL(u).host; } catch { return null; } };
+const ownersKey = () => `pairbrowse.strip.owners.${myWindow}`;
+function loadSentOwners() {
+  if (sentOwners) return sentOwners;
+  sentOwners = new Map();
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(ownersKey()) || "[]");
+    if (Array.isArray(saved)) for (const pair of saved) if (Array.isArray(pair) && Number.isInteger(pair[0]) && typeof pair[1] === "string") sentOwners.set(pair[0], pair[1]);
+  } catch {}
+  return sentOwners;
+}
+function saveSentOwners() {
+  try { sessionStorage.setItem(ownersKey(), JSON.stringify([...sentOwners])); } catch {}
+}
+// The entry for tab `t`, or undefined: by target, else by a host both sides hold once.
+function entryFor(t, entries, single) {
+  const byTarget = entries.find((e) => typeof e.target === "string" && e.target && e.target === t.targetId);
+  if (byTarget || !single) return byTarget;
+  const host = hostOfUrl(t.url);
+  if (!host) return undefined;
+  const loose = entries.filter((e) => !e.target && e.host === host);
+  if (loose.length !== 1) return undefined;
+  let onTabs = 0;
+  for (const other of tabs.values()) if (hostOfUrl(other.url) === host) onTabs++;
+  return onTabs === 1 ? loose[0] : undefined;
+}
+async function applyAgentTabs(list) {
+  if (!pb || !Array.isArray(list)) return;
+  lastAgentTabs = list;
+  const seq = ++agentTabsSeq;
+  let single;
+  try { const { windows } = await pb.windows.list(); single = Array.isArray(windows) && windows.length === 1; } catch { return; }
+  if (seq !== agentTabsSeq) return; // a newer list is on its way
+  const sent = loadSentOwners();
+  const entries = list.filter((e) => e && typeof e === "object");
+  const want = new Map();
+  for (const t of tabs.values()) {
+    const entry = entryFor(t, entries, single);
+    const label = entry?.agent && typeof entry.agent.label === "string" ? entry.agent.label.trim() : "";
+    if (label) want.set(t.id, { label, color: isColor(entry.agent.color) ? entry.agent.color : "" });
+  }
+  let changed = false;
+  for (const [id, { label, color }] of want) {
+    const key = `${label}\n${color}`;
+    if (sent.get(id) === key) continue;
+    const k = String(id);
+    if (owners.agents?.[k] === label && (owners.colors?.[k] || "") === color) continue; // already so, not ours
+    sent.set(id, key);
+    changed = true;
+    pb.agent.setTabOwner(id, label, color).catch(() => {});
+  }
+  for (const id of [...sent.keys()]) {
+    if (want.has(id)) continue;
+    sent.delete(id);
+    changed = true;
+    if (tabs.has(id)) pb.agent.clear(id).catch(() => {});
+  }
+  if (changed) saveSentOwners();
+}
+const remapAgentTabs = () => { if (lastAgentTabs) applyAgentTabs(lastAgentTabs); };
 // Connects once, outside the nav modes; a nav mode reads no stream and keeps no state attribute.
 async function ensureStream() {
   if (navMode()) {
@@ -519,13 +594,16 @@ async function start() {
         myWindow = (windows.find((w) => w.current) || windows.find((w) => w.focused) || windows[0])?.id ?? -1;
       }
       pb.tabs.addObserver({
-        onCreated: (t) => { if (t.window === myWindow) { tabs.set(t.id, t); render(); } },
+        onCreated: (t) => { if (t.window === myWindow) { tabs.set(t.id, t); render(); remapAgentTabs(); } },
         onChanged: (t) => { if (tabs.has(t.id)) { tabs.set(t.id, t); render(); } },
-        onRemoved: (id) => { if (tabs.delete(id)) render(); },
+        onRemoved: (id) => { if (tabs.delete(id)) { render(); remapAgentTabs(); } },
+        // The browser sends a move for every tab whose index changed (its tabs handler syncs the
+        // whole window), so each tab's index here is the browser's own.
         onMoved: (id, index, w) => {
           if (w !== myWindow) tabs.delete(id);
           else if (tabs.has(id)) tabs.get(id).index = index;
           render();
+          remapAgentTabs();
         },
         onActivated: (id, w) => { if (w !== myWindow) return; for (const t of tabs.values()) t.active = t.id === id; render(); },
       });

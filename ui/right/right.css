@@ -41,7 +41,8 @@ html[data-host="native"] .top, html[data-host="native"] #sec-activity { display:
 /* The tab bar: Agent, Page, Pictures, Tools; the selected one in --ink over a 2 px --accent line. */
 /* The tab bar is the top of the Agent panel: a card from the tab bar to the Live reasoning box (the
    mockup), its divider inset 11 px on each side. */
-.tabs { position: relative; flex: none; height: 41px; display: flex; align-items: stretch; margin: 8px 8px 0 3px; padding: 0 8px 0 1px; border: 1px solid var(--panel-edge); border-bottom: 0; border-radius: 12px 12px 0 0; background-color: var(--panel); box-shadow: inset 0 1px 0 var(--edge-light); }
+/* The tab bar centred 30 px below the dock's top (the mockup: Agent at y 83, the dock from y 53). */
+.tabs { position: relative; flex: none; height: 41px; display: flex; align-items: stretch; margin: 10px 8px 0 3px; padding: 0 8px 0 1px; border: 1px solid var(--panel-edge); border-bottom: 0; border-radius: 12px 12px 0 0; background-color: var(--panel); box-shadow: inset 0 1px 0 var(--edge-light); }
 .tabs::after { content: ""; position: absolute; left: 11px; right: 11px; bottom: 0; height: 1px; background: var(--edge); }
 body[data-tab]:not([data-tab="agent"]) .tabs { border-radius: 12px; border-bottom: 1px solid var(--panel-edge); height: 42px; }
 .tabset { display: flex; align-items: stretch; }
@@ -137,8 +138,9 @@ body[data-paused="true"] #pause-btn::before { width: 0; height: 0; padding: 0; b
 .checklist ol { list-style: none; margin: 7px 0 0; padding: 0 0 0 12px; }
 .checklist li { display: grid; grid-template-columns: 17px 1fr; gap: 11px; align-items: center; min-height: 28.5px; font-size: 12.5px; color: var(--ink); }
 .checklist li.empty { display: block; min-height: 0; color: var(--muted); font-size: var(--fs-2); }
-.checklist [data-state="done"] { color: var(--ink); }
-.checklist [data-state="current"], .checklist [data-state="pending"] { color: var(--ink-2); }
+/* Every step's label in one light ink (the mockup's, 2026-10-13; AA on the card): the state is in
+   the mark's shape (a check, the accent ring, the muted ring) and in the step's accessible text. */
+.checklist [data-state="done"], .checklist [data-state="current"], .checklist [data-state="waiting"], .checklist [data-state="pending"] { color: var(--ink-soft); }
 .checklist .mark { position: relative; display: grid; place-items: center; box-sizing: border-box; width: 17px; height: 17px; border-radius: 50%; font-size: var(--fs-1); font-weight: 700; line-height: 1; }
 .checklist [data-state="done"] .mark { background: var(--ok); color: #fff; }
 .checklist [data-state="current"] .mark { border: 2.5px solid var(--accent-ink); color: transparent; box-shadow: 0 0 6px rgb(106 166 249 / 0.45); }
@@ -192,6 +194,9 @@ body[data-paused="true"] #pause-btn::before { width: 0; height: 0; padding: 0; b
 .people .chev[aria-expanded="true"]::before { transform: translateY(2px) rotate(-135deg); }
 .people .pause-one { grid-column: 3; grid-row: 1 / span 2; display: inline-flex; align-items: center; gap: 9px; height: 35px; padding: 0 13px 0 12px; border: 1px solid var(--edge-btn); border-radius: var(--r-2); background-color: var(--btn); color: var(--ink); font-size: 12.5px; font-weight: 500; cursor: pointer; box-shadow: inset 0 1px 0 var(--edge-light); transition: background-color 120ms ease-out; }
 .people .pause-one:hover { background-color: var(--hover); }
+/* Icon-only on a row with a task line, so the line shows in full; its name and tooltip stay "Take control". */
+.people .pause-one.icon { justify-content: center; gap: 0; width: 34px; height: 34px; padding: 0; }
+.people .pause-one.icon svg { display: block; }
 .messages { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .messages:empty { display: none; }
 .messages li { font-size: var(--fs-2); color: var(--ink-2); overflow-wrap: anywhere; }

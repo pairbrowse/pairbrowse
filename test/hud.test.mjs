@@ -604,7 +604,7 @@ test("the helper sends the participant's spark color with its status", async () 
   const statuses = [];
   const hud = createHud({ pages: async () => [page], participants: () => ["a", "b"], labelOf: (id) => ({ a: "Alice · Claude Code", b: "Bob · Codex" })[id] || "", waiting: () => null, liveView: () => ({ setStatus: (s) => statuses.push(s) }), notify: () => {} });
   await hud.setBadgeFor("b", "typing", "claude", "Bob · Codex");
-  assert.deepEqual(calls.at(-1)[2], { text: "Codex: typing", color: "#7088f0" });
+  assert.deepEqual(calls.at(-1)[2], { text: "Codex: typing", color: "#9b7bfa" });
   assert.equal(calls.at(-1)[3], "agent");
   assert.equal(statuses.at(-1).text, "Codex: typing", "the live view reads text and kind as before");
   await hud.setBadge("Solve it", "you");
@@ -710,7 +710,7 @@ test("with reduced motion the cursor jumps and the click leaves a static dot", {
 
 // ---- participant colors by app ----
 
-test("appOf names Claude Code and Codex from a label, and nothing for a person or another agent", async () => {
+test("appOf names Claude Code, Codex and Gemini from a label, and nothing for a person or another agent", async () => {
   const { appOf } = await import("../scripts/daemon/hud.mjs");
   assert.equal(appOf("Claude"), "claude");
   assert.equal(appOf("Claude 3fed"), "claude");
@@ -720,19 +720,26 @@ test("appOf names Claude Code and Codex from a label, and nothing for a person o
   assert.equal(appOf("Claude (by hand)"), "", "a person");
   assert.equal(appOf("Ana (by hand)"), "");
   assert.equal(appOf("Agent x"), "");
-  assert.equal(appOf("Gemini"), "");
+  assert.equal(appOf("Gemini"), "gemini");
+  assert.equal(appOf("Gemini 2"), "gemini");
+  assert.equal(appOf("Cleo · Gemini"), "gemini");
+  assert.equal(appOf("Gemini (by hand)"), "", "a person named Gemini");
+  assert.equal(appOf("Geminis"), "", "a word boundary, not a prefix");
   assert.equal(appOf(""), "");
   assert.equal(appOf(undefined), "");
 });
 
-test("assignColors: Claude orange and Codex #7088f0 in any join order, the rest for everyone else", async () => {
+test("assignColors: Claude orange, Codex purple and Gemini blue in any join order, the rest for everyone else", async () => {
   const { assignColors, SPARK_COLORS } = await import("../scripts/daemon/hud.mjs");
-  assert.deepEqual(assignColors(["Claude", "Codex", "Agent x", "Ana (by hand)", "Claude"]), ["#e9763f", "#7088f0", "#4fd1e8", "#4ade80", "#a78bfa"]);
-  assert.deepEqual(assignColors(["Agent x", "Ana (by hand)", "Codex"]), ["#4fd1e8", "#4ade80", "#7088f0"], "Codex after two unknowns keeps its color");
-  assert.deepEqual(assignColors(["Codex", "Bob · Codex"]), ["#7088f0", "#4fd1e8"], "a second Codex takes the next free other color");
-  assert.deepEqual(assignColors(["Alice · Claude Code", "Claude 3fed"]), ["#e9763f", "#4fd1e8"], "a second Claude too");
+  assert.deepEqual(SPARK_COLORS, ["#e9763f", "#9b7bfa", "#4b8ffb", "#4ade80", "#4fd1e8", "#f472b6"], "the mockup's palette (the user, 2026-10-12)");
+  assert.deepEqual(assignColors(["Claude", "Codex", "Agent x", "Ana (by hand)", "Claude"]), ["#e9763f", "#9b7bfa", "#4ade80", "#4fd1e8", "#f472b6"]);
+  assert.deepEqual(assignColors(["Agent x", "Ana (by hand)", "Codex"]), ["#4ade80", "#4fd1e8", "#9b7bfa"], "Codex after two unknowns keeps its color");
+  assert.deepEqual(assignColors(["Codex", "Bob · Codex"]), ["#9b7bfa", "#4ade80"], "a second Codex takes the next free other color");
+  assert.deepEqual(assignColors(["Alice · Claude Code", "Claude 3fed"]), ["#e9763f", "#4ade80"], "a second Claude too");
+  assert.deepEqual(assignColors(["You (by hand)", "Gemini", "Claude Code", "Codex"]), ["#4ade80", "#4b8ffb", "#e9763f", "#9b7bfa"], "the mockup's four: Gemini blue, the person green");
+  assert.deepEqual(assignColors(["Gemini", "Cleo · Gemini"]), ["#4b8ffb", "#4ade80"], "a second Gemini takes the next free other color");
   const many = assignColors(Array.from({ length: 10 }, (_, i) => `Agent ${i}`));
-  assert.ok(many.every((c) => SPARK_COLORS.includes(c) && c !== "#e9763f" && c !== "#7088f0"), "with every color taken, the others again in turn");
+  assert.ok(many.every((c) => SPARK_COLORS.includes(c) && !["#e9763f", "#9b7bfa", "#4b8ffb"].includes(c)), "with every color taken, the others again in turn");
 });
 
 test("sparkColor colors by app from labelOf; an unlisted joined:<label> id is labelled from itself; labelOf is optional", async () => {
@@ -741,13 +748,13 @@ test("sparkColor colors by app from labelOf; an unlisted joined:<label> id is la
   const labels = { x: "Agent x", c: "Sam · Codex", k: "Claude" };
   const hud = createHud({ ...base, participants: () => ["x", "c", "k"], labelOf: (id) => labels[id] || "" });
   assert.equal(hud.sparkColor("k"), "#e9763f");
-  assert.equal(hud.sparkColor("c"), "#7088f0");
-  assert.equal(hud.sparkColor("x"), "#4fd1e8");
+  assert.equal(hud.sparkColor("c"), "#9b7bfa");
+  assert.equal(hud.sparkColor("x"), "#4ade80");
   const joined = createHud({ ...base, participants: () => ["k"], labelOf: (id) => labels[id] || "" });
-  assert.equal(joined.sparkColor("joined:Sam · Codex"), "#7088f0", "an unlisted joined id, by its own label");
+  assert.equal(joined.sparkColor("joined:Sam · Codex"), "#9b7bfa", "an unlisted joined id, by its own label");
   const plain = createHud({ ...base, participants: () => ["a", "b"] });
-  assert.equal(plain.sparkColor("a"), "#4fd1e8", "without labelOf every participant is someone else");
-  assert.equal(plain.sparkColor("b"), "#4ade80");
+  assert.equal(plain.sparkColor("a"), "#4ade80", "without labelOf every participant is someone else");
+  assert.equal(plain.sparkColor("b"), "#4fd1e8");
 });
 
 test("peers' pointers: an agent's is the white agent cursor edged in its color, a person's keeps its colored fill", { skip: !runtime, timeout: 60_000 }, async () => {
@@ -775,7 +782,7 @@ test("peers' pointers: an agent's is the white agent cursor edged in its color, 
           if (!ps?.length) continue;
           return [...ps].map((p) => {
             const path = p.querySelector("path"), svg = p.querySelector("svg"), span = p.querySelector("span");
-            return { cls: p.className, fill: path.getAttribute("fill"), stroke: path.getAttribute("stroke"), sw: path.getAttribute("stroke-width"), w: svg.getBoundingClientRect().width, pill: getComputedStyle(span).backgroundColor, left: getComputedStyle(span).left, opacity: getComputedStyle(p).opacity };
+            return { cls: p.className, fill: path.getAttribute("fill"), stroke: path.getAttribute("stroke"), sw: path.getAttribute("stroke-width"), w: svg.getBoundingClientRect().width, pill: getComputedStyle(span).backgroundColor, left: getComputedStyle(span).left, opacity: getComputedStyle(p).opacity, ph: span.getBoundingClientRect().height, fs: getComputedStyle(span).fontSize };
           });
         }
         return null;
@@ -785,8 +792,11 @@ test("peers' pointers: an agent's is the white agent cursor edged in its color, 
       for (const [p, color, rgb] of [[codex, "#7088f0", "rgb(112, 136, 240)"], [gemini, "#4fd1e8", "rgb(79, 209, 232)"]]) {
         assert.equal(p.cls, "p a on", reducedMotion);
         assert.deepEqual([p.fill, p.stroke, p.sw, p.w, p.pill, p.left], ["#fff", color, "1.4", 22, rgb, "16px"], `an agent's pointer, ${reducedMotion}`);
+        // The name pill: 24 px tall, 12 px text (DESIGN.md B5).
+        assert.deepEqual([p.ph, p.fs], [24, "12px"], `an agent's name pill, ${reducedMotion}`);
       }
       assert.deepEqual([sam.cls, sam.fill, sam.stroke, sam.w, sam.pill, sam.left], ["p on", "#4ade80", "#fff", 18, "rgb(74, 222, 128)", "14px"], `a person's pointer, ${reducedMotion}`);
+      assert.deepEqual([sam.ph, sam.fs], [24, "12px"], `a person's name pill, ${reducedMotion}`);
       if (reducedMotion === "reduce") assert.equal(codex.opacity, "1", "in place at once under reduced motion");
       await page.close();
     }

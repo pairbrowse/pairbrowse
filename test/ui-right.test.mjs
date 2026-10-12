@@ -67,8 +67,11 @@ describe("tabs", () => pageTest("right", opts(), async ({ page, inPage, until, e
   assert.equal(await inPage(() => getComputedStyle(document.querySelector(".top")).display), "none", "the strip owns the header in the build");
   assert.deepEqual(await inPage(() => [...document.querySelectorAll("[role=tab]")].map((t) => [t.textContent, t.getAttribute("aria-selected"), t.tabIndex])),
     [["Agent", "true", 0], ["Page", "false", -1], ["Screenshots", "false", -1], ["Tools", "false", -1]]);
-  // the top of the Agent panel: 8 px under the dock's top, 41 px tall (the mockup)
-  assert.deepEqual(await inPage(() => { const r = document.querySelector(".tabs").getBoundingClientRect(); return [r.top, r.height]; }), [8, 41]);
+  // the top of the Agent panel: 10 px under the dock's top, 41 px tall, its labels centred about
+  // 30 px under the dock's top (the mockup: Agent at y 83, the dock from y 53)
+  assert.deepEqual(await inPage(() => { const r = document.querySelector(".tabs").getBoundingClientRect(); return [r.top, r.height]; }), [10, 41]);
+  const mid = await inPage(() => { const r = document.getElementById("tab-agent").getBoundingClientRect(); return r.top + r.height / 2; });
+  assert.ok(Math.abs(mid - 30) <= 1, `the tab labels centred 30 px under the dock's top (${mid})`);
   await page.click("#tab-tools");
   assert.deepEqual(await inPage(() => ["agent", "page", "pictures", "tools"].map((t) => document.getElementById(`pane-${t}`).checkVisibility())), [false, false, false, true]);
   assert.equal(await inPage(() => { const a = getComputedStyle(document.getElementById("tab-tools"), "::after"); return a.height === "2px" && a.backgroundColor === "rgb(50, 133, 246)"; }), true, "the accent underline (2 px, under the label)");
@@ -173,8 +176,10 @@ describe("checklist marks, task and saved", () => pageTest("right", opts({ journ
   const rows = await inPage(() => [...document.querySelectorAll("#checklist-items li")].map((li) => {
     const m = getComputedStyle(li.querySelector(".mark"));
     const r = li.querySelector(".mark").getBoundingClientRect();
-    return { state: li.dataset.state, h: li.getBoundingClientRect().height, w: r.width, mh: r.height, bg: m.backgroundColor, color: m.color, border: m.borderTopWidth, borderColor: m.borderTopColor };
+    return { state: li.dataset.state, h: li.getBoundingClientRect().height, w: r.width, mh: r.height, bg: m.backgroundColor, color: m.color, border: m.borderTopWidth, borderColor: m.borderTopColor, label: getComputedStyle(li.querySelector(".text")).color };
   }));
+  // Every step's label in one light ink (--ink-soft, the mockup's); the state is in the mark's shape.
+  for (const r of rows) assert.equal(r.label, "rgb(201, 210, 222)", `${r.state}: the label in --ink-soft`);
   assert.deepEqual(rows.map((r) => r.state), ["done", "current", "waiting", "pending"]);
   for (const r of rows) { assert.ok(r.h >= 28, `${r.state}: ${r.h}px row`); assert.equal(r.w, 17); assert.equal(r.mh, 17); }
   assert.equal(rows[0].bg, await inPage(token, "ok"), "done: filled --ok");
@@ -265,6 +270,8 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
   assert.equal(await inPage(() => document.querySelectorAll(".pause-one").length), 0, "no per-agent pause from today's helper");
   helper.push("pause", { paused: false, can: true, perAgent: true });
   await until("per-agent pause", () => document.querySelectorAll(".pause-one").length === 4);
+  // Every Take control says whose: several rows never read as identical buttons.
+  assert.ok(await inPage(() => [...document.querySelectorAll(".pause-one")].every((b) => /^Take control from \S/.test(b.getAttribute("aria-label")))), "each Take control names its agent");
   const place = await inPage((s) => {
     const li = document.querySelector(s), p = li.querySelector(".pause-one"), c = li.querySelector(".chev");
     return { col: getComputedStyle(p).gridColumnStart, right: p.getBoundingClientRect().right, chev: c.getBoundingClientRect().left };
@@ -281,6 +288,20 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
   await page.focus(`${sel} .pause-one`);
   await page.keyboard.press("Enter");
   assert.deepEqual((await posted(helper, "pause", 2))[1]?.body, { paused: true, who: "Alice · Codex" }, "Enter on Pause this agent pauses it");
+  // Take control on every agent row, by its accessible name; icon-only on a row with a task line
+  // (Gemini: "Checking prices"), whose state line then shows in full; with its text where there is none.
+  const take = await inPage(() => [...document.querySelectorAll("#people li")].filter((li) => li.querySelector(".pause-one")).map((li) => {
+    const b = li.querySelector(".pause-one"), st = li.querySelector(".st");
+    return { who: li.querySelector(".name").title, name: b.getAttribute("aria-label") || b.textContent.trim(), icon: b.classList.contains("icon"), text: b.textContent.trim(), title: b.title, fits: st.scrollWidth <= st.clientWidth, w: b.getBoundingClientRect().width };
+  }));
+  assert.equal(take.length, 4);
+  for (const t of take) { assert.match(t.name, /Take control/, t.who); assert.match(t.title, /you take control/, t.who); }
+  const gemini = take.find((t) => t.who.startsWith("Gemini"));
+  assert.deepEqual([gemini.icon, gemini.text, gemini.w, gemini.fits], [true, "", 34, true], "Gemini: icon-only, the task line in full");
+  const aliceBtn = take.find((t) => t.who === "Alice · Codex");
+  assert.deepEqual([aliceBtn.icon, aliceBtn.text], [false, "Take control"], "no task line: the button keeps its text");
+  await page.focus("#people li .pause-one.icon");
+  assert.equal(await inPage(() => document.activeElement.classList.contains("icon")), true, "the icon-only button takes focus");
   assert.deepEqual(errors, []);
 }));
 

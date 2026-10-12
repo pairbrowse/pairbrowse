@@ -55,7 +55,7 @@
         {
           "who": "Codex",
           "kind": "agent",
-          "color": "#7088F0",
+          "color": "#9B7BFA",
           "status": "idle",
           "tab": "notion.so/new-workspace",
           "task": "",
@@ -64,7 +64,7 @@
         {
           "who": "Gemini",
           "kind": "agent",
-          "color": "#4FD1E8",
+          "color": "#4B8FFB",
           "status": "working",
           "tab": "notion.so/new-workspace",
           "task": "Suggesting inputs",
@@ -380,7 +380,7 @@
         "fx": 0.62,
         "fy": 0.5,
         "who": "Codex",
-        "color": "#7088F0"
+        "color": "#9B7BFA"
       },
       {
         "k": "j1:a1",
@@ -388,28 +388,8 @@
         "fx": 0.45,
         "fy": 0.32,
         "who": "Gemini",
-        "color": "#4FD1E8"
+        "color": "#4B8FFB"
       }
-    ],
-    "bar": {
-      "items": [
-        {
-          "t": -40000,
-          "who": "Claude Code",
-          "text": "Opened **notion.so/new-workspace**"
-        },
-        {
-          "t": -9000,
-          "who": "Claude Code",
-          "text": "Filled **Workspace name**"
-        },
-        {
-          "t": -1000,
-          "who": "Claude Code",
-          "text": "Now: asking to click **Continue**"
-        }
-      ],
-      "canPause": true
-    }
+    ]
   }
 }

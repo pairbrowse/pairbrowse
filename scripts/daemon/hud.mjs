@@ -7,15 +7,16 @@ import { within } from "../util.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 
 // Each connected agent's tab carries the spark on its icon, in that participant's color. It moves
-// when that agent works in another tab. Colors go by app, not by join order: Claude Code is orange,
-// Codex #7088f0; everyone else (other agents, a second Claude or Codex, people) takes the rest in
-// join order. The cursor's edge and pill, the avatars, the owner dots and the tab glow all read
-// this one value. Dark ink (#0B1421) on each is AA (test/tokens.test.mjs).
-export const SPARK_COLORS = ["#e9763f", "#7088f0", "#4fd1e8", "#4ade80", "#a78bfa", "#f472b6"];
-const APP_COLORS = { claude: "#e9763f", codex: "#7088f0" };
+// when that agent works in another tab. Colors go by app, not by join order, as the mockup draws
+// them (the user, 2026-10-12): Claude Code orange, Codex purple #9b7bfa, Gemini blue #4b8ffb;
+// everyone else (other agents, a second agent of the same app, people) takes the rest in join
+// order. The cursor's edge and pill, the avatars and the owner dots all read this one value. Dark
+// ink (#0B1421) on each is AA, white is not (test/tokens.test.mjs; ui/common.js inkOn picks it).
+export const SPARK_COLORS = ["#e9763f", "#9b7bfa", "#4b8ffb", "#4ade80", "#4fd1e8", "#f472b6"];
+const APP_COLORS = { claude: "#e9763f", codex: "#9b7bfa", gemini: "#4b8ffb" };
 const OTHER_COLORS = SPARK_COLORS.filter((c) => !Object.values(APP_COLORS).includes(c));
 
-// The app a participant's label names: "claude", "codex" or "" (another agent, or a person). A
+// The app a participant's label names: "claude", "codex", "gemini" or "" (another agent, or a person). A
 // person's label ends in "(by hand)"; "Name · App" names its app after the dot, else the first word
 // does ("Claude 3fed", "Codex").
 export function appOf(label) {
@@ -25,6 +26,7 @@ export function appOf(label) {
   const app = i >= 0 ? s.slice(i + 3).trim() : s;
   if (/^claude\b/i.test(app)) return "claude";
   if (/^codex\b/i.test(app)) return "codex";
+  if (/^gemini\b/i.test(app)) return "gemini";
   return "";
 }
 // Colors for labels in join order: an app's own color while it is free, else the first free other

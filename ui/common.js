@@ -256,11 +256,24 @@ export function profilePanel(base) {
 export const isColor = (c) => /^#[0-9a-f]{6}$/i.test(c || "");
 export const splitLabel = (who) => { const [name, app] = String(who || "").split(" · "); return { name: name || "", app: app || "" }; };
 export const initialOf = (name) => (String(name || "").trim()[0] || "?").toUpperCase();
+// The ink for text on a #rrggbb fill: white or the sheet's dark ink (--bg), whichever has the higher
+// WCAG contrast on it (DESIGN.md B11). Every participant color takes the dark ink; a dark fill white.
+export const INK_LIGHT = "#FFFFFF", INK_DARK = "#0B1421";
+const luminance = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+export function inkOn(color) {
+  if (!isColor(color)) return INK_DARK;
+  const l = luminance(color);
+  const light = 1.05 / (l + 0.05), dark = (l + 0.05) / (luminance(INK_DARK) + 0.05);
+  return light > dark ? INK_LIGHT : INK_DARK;
+}
 export function avatar(name, color, tag = "span") {
   const a = el(tag, { className: "avatar", textContent: initialOf(name), title: String(name || "") });
   a.setAttribute("role", "img");
   a.setAttribute("aria-label", String(name || ""));
-  if (isColor(color)) a.style.background = color;
+  if (isColor(color)) { a.style.background = color; a.style.color = inkOn(color); }
   else a.classList.add("plain");
   return a;
 }

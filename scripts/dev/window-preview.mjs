@@ -53,19 +53,20 @@ export const MOCKUP = {
 };
 const BAD_KINDS = new Set(["error", "pageerror", "rejection", "csp"]);
 
-// The window's rects at the hybrid 500-shell geometry (DESIGN.md B1). The CSS gives the same: the
-// docks run from under the tab row to the bottom; the nav row, the card (inset 8 px on all four
-// sides) and the timeline share the contents column between them.
+// The window's rects at the 500-shell geometry as 525 measures it to the mockup (DESIGN.md B1). The
+// CSS gives the same: the docks run from under the tab row to the bottom; the nav row, the card
+// (right under the nav row, inset 8 px on the sides and the bottom) and the timeline share the
+// contents column between them.
 export function geometry({ rail = false } = {}) {
-  const W = 1536, H = 1024, row = 44, nav = 44, tl = 130, inset = 8;
-  const left = rail ? 44 : 200, right = rail ? 44 : 330, top = row + nav;
+  const W = 1536, H = 1024, row = 53, nav = 42, tl = 125, inset = 8, topInset = 0;
+  const left = rail ? 44 : 205, right = rail ? 44 : 346, top = row + nav;
   return {
     window: { w: W, h: H },
     strip: { x: 0, y: 0, w: W, h: row },
     nav: { x: left, y: row, w: W - left - right, h: nav },
     left: { x: 0, y: row, w: left, h: H - row },
     right: { x: W - right, y: row, w: right, h: H - row },
-    card: { x: left + inset, y: top + inset, w: W - left - right - 2 * inset, h: H - top - tl - 2 * inset },
+    card: { x: left + inset, y: top + topInset, w: W - left - right - 2 * inset, h: H - top - topInset - tl - inset },
     timeline: { x: left, y: H - tl, w: W - left - right, h: tl },
   };
 }
@@ -217,8 +218,11 @@ export async function renderContents(browser, { proxy, geo, raw, scale, reducedM
     await ensureHud(page, hud.source, hud.name);
     const call = (value, kind) => page.evaluate(([n, t, v, k]) => window[n]?.(t, v, k), [hud.name, hud.token, value, kind]);
     const rect = (sel) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, sx: scrollX, sy: scrollY }; }, sel);
-    const bar = resolveTimes(raw.hud.bar, Date.now());
-    await call(JSON.stringify({ items: bar.items, canPause: true }), "bar");
+    // The bottom bar only when the scene has one: the native build draws none (DESIGN.md B5).
+    if (raw.hud.bar) {
+      const bar = resolveTimes(raw.hud.bar, Date.now());
+      await call(JSON.stringify({ items: bar.items, canPause: true }), "bar");
+    }
     const c = raw.hud.cursor, r = await rect(c.field);
     const sent = await call(JSON.stringify({ x: r.x + r.width / 2, y: r.y + r.height / 2, act: c.act, who: c.who, color: c.color, w: Math.round(Math.min(r.width, r.height)), bw: Math.round(r.width), bh: Math.round(r.height) }), "cursor");
     // The cursor glides in (its motion model); the peers fade out 3 s after they stop moving.
@@ -367,7 +371,7 @@ export async function main(args) {
     // The scene's owners replace the default fixture's whole (a deep merge would keep its tab 11).
     let shim = { ...merge(defaultFixture(), fx.shim), owners: fx.shim.owners };
     if (rail) {
-      helper.fixtures.layout = { left: "rail", right: "rail", strip: 88 };
+      helper.fixtures.layout = { left: "rail", right: "rail", strip: 53 };
       shim = merge(shim, { layout: { left: 1, right: 1 } });
     }
     ui = await startUiServer({ helper, fixture: shim });

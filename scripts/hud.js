@@ -628,10 +628,10 @@
   // w: the target's smaller side (a small target takes a little longer to reach).
   // A name on a tag: at most 40 characters, cut between words.
   // The pointer's shape (its tip at 0,0 in a "1 1 22 22" view box: exactly at the point) and the
-  // name pill, shared by the agent's cursor and other people's pointers: dark ink on the
+  // name pill (24 px tall, 12 px text: DESIGN.md B5), shared by the agent's cursor and other people's pointers: dark ink on the
   // participant's color, AA on every palette color (test/tokens.test.mjs), a 1 px darker outline, no glow.
   const POINTER = "M1 1v16.6l4.3-3.8 2.7 6.1 2.8-1.3-2.7-6 5.6-.6z";
-  const PILL = "padding:2px 8px;border-radius:999px;font:600 11px/1.45 system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0B1421;white-space:nowrap;box-shadow:0 0 0 1px rgba(0,0,0,.28);-webkit-font-smoothing:antialiased";
+  const PILL = "padding:4px 10px;border-radius:999px;font:600 12px/16px system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0B1421;white-space:nowrap;box-shadow:0 0 0 1px rgba(0,0,0,.28);-webkit-font-smoothing:antialiased";
   const shortWho = (who) => { const t = String(who || "Claude"); return t.length > 40 ? `${t.slice(0, 40).replace(/\s+\S*$/, "")}…` : t; };
   function pointer(x, y, act, who = "Claude", color = "", w = 24) {
     if (!curHost || !curHost.isConnected) {
@@ -761,7 +761,7 @@
         .p.a span{left:16px;top:18px}
         .v{position:fixed;right:0;top:0;display:flex;align-items:flex-start;gap:4px;opacity:.8;pointer-events:none}
         .v i{display:block;width:4px;border-radius:2px 0 0 2px;box-shadow:0 0 0 1px rgba(255,255,255,.7)}
-        .v b{order:-1;${PILL};padding:1px 6px;font-size:10px;opacity:0;transition:opacity .35s ease}
+        .v b{order:-1;${PILL};padding:1px 6px;font-size:10px;line-height:1.45;opacity:0;transition:opacity .35s ease}
         .v.fresh b{opacity:1}
         @media (prefers-reduced-motion:reduce){.p,.v b{transition:none}}
       </style><div aria-hidden="true"></div>`);

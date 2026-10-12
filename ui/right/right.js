@@ -6,7 +6,7 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser } from "../common.js";
+import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser } from "../common.js";
 import { toolsPanel } from "./tools.js";
 
 const pb = globalThis.pairbrowse || null;
@@ -400,6 +400,7 @@ function drawAgent() {
   const a = $("agent-avatar");
   a.textContent = initialOf(splitLabel(lastWho || entry?.who || "Claude").name);
   a.style.background = isColor(entry?.color) ? entry.color : "var(--spark)";
+  a.style.color = inkOn(isColor(entry?.color) ? entry.color : "#e9763f"); // the initial's ink passes AA (B11)
   $("agent-status-text").textContent = entry?.task || "No status from the agent yet.";
   // The tab it is in: the name's tooltip, not a line of the Status box (#agent-tab stays, hidden
   // and empty: the side panel's ids are pinned).
@@ -452,7 +453,12 @@ function drawPeople() {
     acts.hidden = !openRows.has(p.who);
     const kids = [face, el("strong", { className: "name", textContent: name, title: p.who }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])), st];
     if (p.kind === "agent" && perAgent) {
-      const stop = el("button", { className: "pause-one", type: "button", title: `Pause ${name}: you take control` }, takeIcon(), "Take control");
+      // Icon-only when the row has a task line after its part word, so the line shows in full; the
+      // name and the tooltip still say "Take control".
+      const stop = rest
+        ? el("button", { className: "pause-one icon", type: "button", title: `Pause ${name}: you take control` }, takeIcon())
+        : el("button", { className: "pause-one", type: "button", title: `Pause ${name}: you take control` }, takeIcon(), "Take control");
+      stop.setAttribute("aria-label", `Take control from ${name}`);
       // A person's click or key press: a synthetic event pauses nothing.
       stop.addEventListener("click", (ev) => { if (ev.isTrusted && base) post("pause", { paused: true, who: p.who }).catch(() => {}); });
       kids.push(stop);

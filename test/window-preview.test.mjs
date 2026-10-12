@@ -15,12 +15,18 @@ const BAD = new Set(["error", "pageerror", "rejection", "csp"]);
 
 test("window preview: geometry, regions and the scene", () => {
   const g = geometry();
-  assert.deepEqual(g.card, { x: 208, y: 96, w: 990, h: 790 });
-  assert.deepEqual(g.nav, { x: 200, y: 44, w: 1006, h: 44 });
-  assert.deepEqual(g.left, { x: 0, y: 44, w: 200, h: 980 });
+  // 525's geometry, measured on the mockup: tab row 53, nav row 42 with the card right under it,
+  // docks 205 and 346, inset 8 on the sides and the bottom, timeline 125.
+  assert.deepEqual(g.strip, { x: 0, y: 0, w: 1536, h: 53 });
+  assert.deepEqual(g.card, { x: 213, y: 95, w: 969, h: 796 });
+  assert.deepEqual(g.nav, { x: 205, y: 53, w: 985, h: 42 });
+  assert.deepEqual(g.left, { x: 0, y: 53, w: 205, h: 971 });
+  assert.deepEqual(g.right, { x: 1190, y: 53, w: 346, h: 971 });
+  assert.deepEqual(g.timeline, { x: 205, y: 899, w: 985, h: 125 });
+  assert.equal(g.card.y + g.card.h + 8, g.timeline.y, "8 px between the card and the timeline");
   const r = geometry({ rail: true });
   assert.equal(r.card.w, 1432);
-  assert.equal(r.card.h, 790);
+  assert.equal(r.card.h, 796);
   assert.equal(r.left.w, 44);
   assert.equal(r.right.w, 44);
 
@@ -44,7 +50,10 @@ test("window preview: geometry, regions and the scene", () => {
   const people = fx.helper.board.people;
   assert.equal(people.length, 4);
   assert.ok(people.some((p) => p.who === "Claude Code" && p.color === "#E9763F"));
-  assert.ok(people.some((p) => p.who === "Codex" && p.color === "#7088F0"));
+  assert.ok(people.some((p) => p.who === "Codex" && p.color === "#9B7BFA"), "Codex purple (the mockup's palette)");
+  assert.ok(people.some((p) => p.who === "Gemini" && p.color === "#4B8FFB"), "Gemini blue");
+  assert.deepEqual(fx.hud.peers.map((p) => [p.who, p.color]), [["Codex", "#9B7BFA"], ["Gemini", "#4B8FFB"]]);
+  assert.equal(fx.hud.bar, undefined, "no bottom bar in the scene: the native build draws none (DESIGN.md B5)");
   assert.equal(fx.helper.approvals.pending.length, 1);
   // the mockup's sentence (the scene is the mockup's data; the card shows the reason it is given)
   assert.equal(fx.helper.approvals.pending[0].reason, "This will create a new Notion workspace with the information above.");

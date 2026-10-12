@@ -18,7 +18,7 @@ const cardById = (id) => CARDS.find((c) => c.id === id) || cardFx(0, { id });
 const replies = {
   timeline: (body, rest) => (rest[0] === "note" ? { status: 200, body: noteCard(body.text) } : { status: 200, body: { ...cardById(rest[0]), pinned: body.on !== false } }),
 };
-const opts = (over = {}) => ({ viewport: { width: 1300, height: 130 }, fixtures: { timeline: { cards: CARDS }, pictures }, replies, ...over });
+const opts = (over = {}) => ({ viewport: { width: 1300, height: 125 }, fixtures: { timeline: { cards: CARDS }, pictures }, replies, ...over });
 
 // In the page: every fetch from here on, as [url, method].
 const logFetches = () => { window.__fetches = []; const f = window.fetch; window.fetch = (u, o) => { window.__fetches.push([String(u), o?.method || "GET"]); return f(u, o); }; };
@@ -106,6 +106,22 @@ pageTest("timeline", opts(), async ({ until, inPage, helper, harness, page }) =>
   assert.equal(live.timeouts + live.intervals + live.frames + live.observers, 0, JSON.stringify(live));
   await harness.setHidden(false);
   await until("the new card's picture", (s) => document.querySelector(`${s} img`).src.startsWith("blob:") && window.__fetches.length > 0, card(added.id));
+});
+
+// The mockup's sizes (2026-10-13): time and caption at 10 px (--fs-0), so "Filled workspace name"
+// shows in full; the cards start 17 px in from the strip's left edge.
+pageTest("timeline", opts({ fixtures: { timeline: { cards: [cardFx(0, { caption: "Filled workspace name" }), cardFx(1)] }, pictures } }), async ({ until, inPage }) => {
+  await until("2 cards", drawn, 2);
+  const m = await inPage((s) => {
+    const li = document.querySelector(s), time = li.querySelector(".time"), cap = li.querySelector(".cap");
+    return { time: getComputedStyle(time).fontSize, cap: getComputedStyle(cap).fontSize, text: cap.textContent, fits: cap.scrollWidth <= cap.clientWidth, sw: cap.scrollWidth, cw: cap.clientWidth, font: getComputedStyle(cap).fontFamily, first: document.querySelector("li.card").getBoundingClientRect().left - document.getElementById("strip").getBoundingClientRect().left, next: li.getBoundingClientRect().left - document.querySelector("li.card").getBoundingClientRect().right, capRight: cap.getBoundingClientRect().right - li.getBoundingClientRect().right };
+  }, card(hex(0)));
+  assert.deepEqual([m.time, m.cap], ["10px", "10px"]);
+  assert.equal(m.text, "Filled workspace name");
+  assert.equal(m.fits, true, `the caption has no ellipsis: ${JSON.stringify(m)}`);
+  assert.equal(m.first, 17, "the first card 17 px in");
+  assert.equal(m.next, 10, "10 px between cards");
+  assert.ok(m.capRight <= 6, "a caption runs at most 6 px into the 10 px gap");
 });
 
 pageTest("timeline", opts({ fixtures: { timeline: { cards: [cardFx(0), cardFx(1, { caption: "Check the VAT field", step: null, note: true })] }, pictures } }), async ({ until, inPage }) => {
@@ -299,7 +315,7 @@ pageTest("timeline", opts({ replies: { timeline: (body, rest) => (rest[0] === "n
   const line = await inPage(() => { const l = document.getElementById("line"); const r = l.getBoundingClientRect(); return { text: l.textContent, left: r.left, right: r.right, top: r.top, bottom: r.bottom, visible: l.checkVisibility() }; });
   assert.equal(line.text, "Too long.");
   assert.equal(line.visible, true);
-  assert.ok(line.left >= 0 && line.right <= 1300 && line.top >= 0 && line.bottom <= 130, `on screen: ${JSON.stringify(line)}`);
+  assert.ok(line.left >= 0 && line.right <= 1300 && line.top >= 0 && line.bottom <= 125, `on screen: ${JSON.stringify(line)}`);
   assert.equal(await inPage(() => document.querySelector("li.card:not(.add)").getBoundingClientRect().left), before, "no card moved");
   assert.equal(await inPage(() => document.querySelectorAll("li.card:not(.add)").length), 30, "no card added");
 });

@@ -116,6 +116,9 @@ scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }
   // The active row, as the mockup draws it: the --nav-active fill, no gradient, the soft blue glow.
   const look = await inPage(() => { const p = document.createElement("i"); p.style.backgroundColor = "var(--nav-active)"; document.body.append(p); const want = getComputedStyle(p).backgroundColor; p.remove(); const s = getComputedStyle(document.getElementById("nav-browser")); return { bg: s.backgroundColor === want, image: s.backgroundImage, shadow: s.boxShadow }; });
   assert.deepEqual({ ...look, shadow: look.shadow !== "none" }, { bg: true, image: "none", shadow: true });
+  // The header centred 30 px under the dock's top (the mockup: Workspace at y 83, the dock from y 53).
+  const head = await inPage(() => { const r = document.querySelector(".workspace").getBoundingClientRect(); return r.top + r.height / 2; });
+  assert.equal(head, 30, "Workspace centred 30 px under the dock's top");
   await ctx.page.click("#nav-history");
   await until("a history tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
   assert.deepEqual((await calls(ctx, "tabs", "create"))[0].args, ["chrome://history", true, 1]);

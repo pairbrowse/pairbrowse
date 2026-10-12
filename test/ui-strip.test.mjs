@@ -7,7 +7,7 @@ import { describe } from "node:test";
 import { pageTest } from "./helpers/ui-page.mjs";
 import { inPage as inFrame } from "./live.mjs";
 
-const ROW = { width: 1536, height: 44 };
+const ROW = { width: 1536, height: 53 };
 const TALL = { width: 1536, height: 480 };
 const ACCENT = "rgb(50, 133, 246)";
 // A 1x1 PNG, a favicon the page may show under its CSP.
@@ -62,8 +62,8 @@ describe("renders the tab list, its states and the drag region", () => pageTest(
   assert.deepEqual(await inPage(order), [11, 12, 13]);
   const [a, b, c] = [await inPage(tabInfo, 11), await inPage(tabInfo, 12), await inPage(tabInfo, 13)];
   for (const t of [a, b, c]) {
-    assert.equal(t.height, 40, "40 px tall");
-    assert.equal(t.bottom, 44, "on the row's bottom edge");
+    assert.equal(t.height, 42, "42 px tall");
+    assert.equal(t.bottom, 53, "on the row's bottom edge");
     assert.ok(t.width >= 160 && t.width <= 240, `width ${t.width}`);
   }
   // 2 px apart (the mockup: the tabs nearly touch; the active tab's feet reach over the gap)
@@ -71,7 +71,7 @@ describe("renders the tab list, its states and the drag region", () => pageTest(
   assert.equal(Math.round(c.left - b.right), 2);
   assert.equal(a.selected, "true");
   assert.equal(a.tabindex, "0");
-  assert.equal(a.bg, "rgb(16, 29, 45)");
+  assert.equal(a.bg, "rgb(27, 40, 54)", "the active tab fades into the centre column (--column)");
   assert.match(a.image, /linear-gradient/, "the active tab's light");
   assert.equal(a.rtl, "10px");
   assert.equal(a.rtr, "10px");
@@ -178,45 +178,58 @@ describe("agent dot, loading ring, close buttons and the pinned tab", () => page
   assert.equal(generic.img, null);
 }));
 
-describe("owned tabs glow in the owner's color, undriven tabs stay neutral", () => pageTest("strip", { viewport: ROW }, async ({ shim, inPage, until }) => {
+describe("the active tab glows blue whoever drives it, the owner shows by its dot", () => pageTest("strip", { viewport: ROW }, async ({ shim, inPage, until }) => {
   const edges = (id) => {
     const li = document.querySelector(`#tabs li[data-id="${id}"]`);
     const s = getComputedStyle(li);
-    return { owned: li.dataset.owned || "", owner: li.style.getPropertyValue("--owner"), top: s.borderTopColor, shadow: s.boxShadow };
+    return { owned: li.dataset.owned || "", owner: li.style.getPropertyValue("--owner"), side: s.borderLeftColor, top: s.borderTopColor, shadow: s.boxShadow, dot: !!li.querySelector(".agent") };
   };
   // A probe of the same color expression, resolved by the page's own engine.
   const probe = (expr) => { const p = document.createElement("i"); p.style.color = expr; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; };
-  const ACCENTS = /50, 133, 246|106, 166, 249/;
-  // the active tab, Claude's: the full owner color on top, a halo carrying it
+  // The mockup's measured edge (--edge-tab, opaque) and its lit top edge (--tab-lit), 2026-10-13.
+  const BLUE = { edge: "rgb(36, 147, 237)", top: "rgb(85, 186, 242)", halo: await inPage(probe, "rgb(50 133 246 / 0.45)") };
+  const OWNER = /233, 118, 63|155, 123, 250/;
+  // the active tab, Claude's: the blue edge, its top lit in --tab-lit, the blue halo; the owner's
+  // color only on its dot
   const a = await inPage(edges, 11);
-  assert.deepEqual([a.owned, a.owner], ["true", "#e9763f"]);
-  assert.equal(a.top, "rgb(233, 118, 63)");
-  const halo = await inPage(probe, "color-mix(in srgb, #e9763f 50%, transparent)");
-  assert.ok(a.shadow.includes(halo), `the halo carries the owner color: ${a.shadow}`);
-  assert.doesNotMatch(a.top + a.shadow, ACCENTS);
-  // an inactive owned tab: the top edge at 60%, a weaker halo
-  await shim.setOwner(12, "Codex", "#7088f0");
-  await until("tab 12 owned", () => document.querySelector('#tabs li[data-id="12"]').dataset.owned === "true");
+  assert.deepEqual([a.owned, a.owner, a.dot], ["", "", true]);
+  assert.equal(a.side, BLUE.edge);
+  assert.equal(a.top, BLUE.top);
+  assert.ok(a.shadow.includes(BLUE.halo), `the blue halo: ${a.shadow}`);
+  assert.doesNotMatch(a.top + a.shadow, OWNER);
+  // an inactive owned tab: no glow of its owner's, the dot
+  await shim.setOwner(12, "Codex", "#9b7bfa");
+  await until("tab 12's dot", () => !!document.querySelector('#tabs li[data-id="12"] .agent'));
   const b = await inPage(edges, 12);
-  assert.equal(b.owner, "#7088f0");
-  assert.equal(b.top, await inPage(probe, "color-mix(in srgb, #7088f0 60%, transparent)"));
-  const weak = await inPage(probe, "color-mix(in srgb, #7088f0 30%, transparent)");
-  assert.ok(b.shadow.includes(weak), `a weaker halo in the owner color: ${b.shadow}`);
-  // an undriven tab: no owner, neutral edges, no accent channels
-  const c = await inPage(edges, 13);
-  assert.deepEqual([c.owned, c.owner], ["", ""]);
-  assert.doesNotMatch(c.top + c.shadow, ACCENTS);
-  // the active tab undriven: the neutral lit top edge and halo
+  assert.deepEqual([b.owned, b.owner], ["", ""]);
+  assert.doesNotMatch(b.top + b.shadow, OWNER);
+  assert.doesNotMatch(b.shadow, /50, 133, 246/, "no halo on an inactive tab");
+  // the active tab undriven: the same blue edge and halo
   await shim.clearOwner(11);
-  await until("tab 11 undriven", () => !document.querySelector('#tabs li[data-id="11"]').dataset.owned);
+  await until("tab 11 undriven", () => !document.querySelector('#tabs li[data-id="11"] .agent'));
   const d = await inPage(edges, 11);
-  assert.equal(d.owner, "");
-  assert.equal(d.top, await inPage(probe, "rgb(255 255 255 / 0.24)"));
-  assert.doesNotMatch(d.top + d.shadow, ACCENTS);
-  // a color that is not a plain #rrggbb never reaches --owner
+  assert.equal(d.side, BLUE.edge);
+  assert.equal(d.top, BLUE.top);
+  assert.ok(d.shadow.includes(BLUE.halo), `the blue halo, undriven too: ${d.shadow}`);
+  // another tab active, Codex's: blue as well
+  await shim.activate(12);
+  await until("tab 12 active", () => document.querySelector('#tabs li[data-id="12"]').getAttribute("aria-selected") === "true");
+  const e = await inPage(edges, 12);
+  assert.equal(e.top, BLUE.top);
+  assert.ok(e.shadow.includes(BLUE.halo), `blue for Codex's tab: ${e.shadow}`);
+  assert.doesNotMatch(e.top + e.shadow, OWNER);
+  // a color that is not a plain #rrggbb never reaches a style: the dot falls back to --spark
   await shim.setOwner(13, "Odd", "red");
   await until("tab 13's dot", () => !!document.querySelector('#tabs li[data-id="13"] .agent'));
-  assert.deepEqual(await inPage(edges, 13).then((e) => [e.owned, e.owner]), ["", ""]);
+  const odd = await inPage(() => {
+    const li = document.querySelector('#tabs li[data-id="13"]');
+    const dot = li.querySelector(".agent");
+    return { inline: dot.style.background, computed: getComputedStyle(dot).backgroundColor, owner: li.style.getPropertyValue("--owner") };
+  });
+  assert.equal(odd.inline, "var(--spark)");
+  assert.equal(odd.computed, "rgb(233, 118, 63)", "the --spark color");
+  assert.notEqual(odd.computed, "rgb(255, 0, 0)");
+  assert.equal(odd.owner, "", "no inline --owner on the tab");
 }));
 
 describe("close and new tab", () => pageTest("strip", { viewport: ROW }, async ({ page, shim, inPage, until }) => {
@@ -281,7 +294,7 @@ describe("keyboard paths", () => pageTest("strip", { viewport: ROW }, async ({ p
   // keyboard paths: the Tab order, each with the 2 px --accent ring
   await inPage(focusBody);
   const seen = [];
-  // In the 44 px row the menu is not shown (it has nowhere to open): Share ends the order. In a
+  // In the 53 px row the menu is not shown (it has nowhere to open): Share ends the order. In a
   // taller host the menu button follows Share (the menu test).
   assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), false);
   for (let i = 0; i < 5; i++) {
@@ -409,7 +422,7 @@ describe("share card opens and posts an invite", () => pageTest("strip", { viewp
     const r = c.getBoundingClientRect();
     return { hidden: c.hidden, role: c.getAttribute("role"), expanded: document.getElementById("share-btn").getAttribute("aria-expanded"), w: r.width, top: r.top, right: innerWidth - r.right, focus: document.activeElement.value };
   });
-  assert.deepEqual(card, { hidden: false, role: "dialog", expanded: "true", w: 320, top: 44, right: 12, focus: "code" });
+  assert.deepEqual(card, { hidden: false, role: "dialog", expanded: "true", w: 320, top: 53, right: 12, focus: "code" });
   await page.click("#share-make");
   await until("the code", () => document.getElementById("share-code").value === "pb-join:FAKE");
   assert.deepEqual(helper.posts.filter((p) => p.route === "invite").map((p) => p.body), [{ share: "code" }]);
@@ -537,7 +550,7 @@ describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ 
   await until("nav-left", () => document.body.dataset.mode === "nav-left");
   assert.deepEqual(await inPage(shown), { row: false, left: true, right: false, tabs: false, share: false, switcher: false, menu: false, mode: "nav-left", same: true });
   const nav = await inPage(() => ["back", "forward", "reload"].map((id) => { const b = document.getElementById(id); return [id, b.disabled, getComputedStyle(b).color]; }));
-  assert.deepEqual(nav, [["back", true, "rgb(134, 153, 177)"], ["forward", true, "rgb(134, 153, 177)"], ["reload", false, "rgb(162, 178, 198)"]]);
+  assert.deepEqual(nav, [["back", true, "rgb(134, 153, 177)"], ["forward", true, "rgb(134, 153, 177)"], ["reload", false, "rgb(241, 245, 250)"]]);
   await page.click("#reload");
   await page.waitForTimeout(50);
   assert.deepEqual(await callsOf(shim, "tabs", "reload"), [[11]]);
@@ -559,6 +572,8 @@ describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ 
   const right = await inPage(() => ({ star: document.getElementById("star").disabled, find: document.getElementById("find").disabled, pressed: document.getElementById("sparkle").getAttribute("aria-pressed"), names: ["star", "find"].map((id) => document.getElementById(id).getAttribute("aria-label")) }));
   assert.equal(right.star, true);
   assert.equal(right.find, false, "find is the window's find bar");
+  // Enabled icons in --ink (the mockup's), a disabled one in --muted.
+  assert.deepEqual(await inPage(() => ["star", "find"].map((id) => getComputedStyle(document.getElementById(id)).color)), ["rgb(134, 153, 177)", "rgb(241, 245, 250)"]);
   await page.click("#find");
   await page.waitForTimeout(50);
   assert.deepEqual(await callsOf(shim, "windows", "find"), [[1]]);
@@ -598,10 +613,10 @@ describe("reduced motion and no timers", () => pageTest("strip", { viewport: ROW
   assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0);
 }));
 
-// The browser's tab-row slot is 44 px tall and clips the rest: a popover under the row would open
+// The browser's tab-row slot is 53 px tall and clips the rest: a popover under the row would open
 // unseen and take the keyboard focus with it. There the logo opens the picker as a tab, Share opens
 // the workspace dock's Share card, the menu is not shown, and nothing under the row ever opens.
-describe("in the 44 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1 } } }, async ({ page, shim, inPage, until }) => {
+describe("in the 53 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1 } } }, async ({ page, shim, inPage, until }) => {
   const under = () => ["switcher", "share-card", "menu"].filter((id) => !document.getElementById(id).hidden);
   const insidePopover = () => !!document.activeElement?.closest?.("#switcher, #share-card, #menu");
   assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), false, "no menu without room for it");
@@ -639,30 +654,143 @@ describe("in the 44 px row no popover opens under the row", () => pageTest("stri
   assert.deepEqual(await inPage(under), ["menu"]);
 }));
 
-// The nav fragments sit in the shell's 108 x 34 nav groups: the fragment is exactly as tall as its
-// slot, its buttons centered (no hover square cut off), and the page transparent so the nav row's
-// own color shows through.
-describe("the nav fragments fit their 34 px slots", () => pageTest("strip", { viewport: { width: 108, height: 34 } }, async ({ inPage, until }) => {
-  for (const hash of ["#nav-left", "#nav-right"]) {
+// The nav fragments sit in the shell's nav groups (525: 118 x 32 left, 76 x 32 right, in the 42 px
+// nav row): the fragment is exactly as tall as its slot, its buttons centered (no hover square cut
+// off) at the mockup's places, and the page painted in the nav row's own color (--column).
+describe("the nav fragments fit their 32 px slots", () => pageTest("strip", { viewport: { width: 118, height: 32 } }, async ({ page, inPage, until }) => {
+  for (const [hash, width] of [["#nav-left", 118], ["#nav-right", 76]]) {
+    await page.setViewportSize({ width, height: 32 });
     await inPage((h) => { location.hash = h; }, hash);
     await until(hash, (h) => document.body.dataset.mode === h.slice(1), hash);
     const box = await inPage((id) => {
       const nav = document.getElementById(id);
       const buttons = [...nav.querySelectorAll("button")].filter((b) => b.checkVisibility()).map((b) => b.getBoundingClientRect());
+      const probe = document.createElement("i"); probe.style.color = "var(--column)"; document.body.append(probe); const column = getComputedStyle(probe).color; probe.remove();
       return {
-        height: nav.getBoundingClientRect().height, doc: document.documentElement.scrollHeight,
-        body: getComputedStyle(document.body).backgroundColor, html: getComputedStyle(document.documentElement).backgroundColor,
+        height: nav.getBoundingClientRect().height, doc: document.documentElement.scrollHeight, column,
+        body: getComputedStyle(document.body).backgroundColor,
         tops: buttons.map((r) => r.top), bottoms: buttons.map((r) => r.bottom), lefts: buttons.map((r) => r.left), rights: buttons.map((r) => r.right),
       };
     }, hash.slice(1));
-    assert.equal(box.height, 34, `${hash}: as tall as the slot`);
-    assert.equal(box.doc, 34, `${hash}: the document is the slot's height`);
-    assert.deepEqual([box.body, box.html], ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"], `${hash}: transparent over the nav row`);
-    for (const top of box.tops) assert.equal(top, 3, `${hash}: centered`);
-    for (const bottom of box.bottoms) assert.equal(bottom, 31, `${hash}: nothing cut off`);
-    // nav-left centered across its slot; nav-right starts 8 px after the omnibox (its slot is wider
-    // than its two or three buttons until the shell sizes it to them).
-    if (hash === "#nav-left") assert.equal(Math.round(box.lefts[0] + box.rights.at(-1)), 108, `${hash}: centered across`);
-    else assert.equal(Math.round(box.lefts[0]), 8, `${hash}: search 8 px from the omnibox`);
+    assert.equal(box.height, 32, `${hash}: as tall as the slot`);
+    assert.equal(box.doc, 32, `${hash}: the document is the slot's height`);
+    assert.equal(box.column, "rgb(27, 40, 54)");
+    assert.equal(box.body, box.column, `${hash}: the nav row's own color (--column)`);
+    for (const top of box.tops) assert.equal(top, 2, `${hash}: centered`);
+    for (const bottom of box.bottoms) assert.equal(bottom, 30, `${hash}: nothing cut off`);
+    for (const right of box.rights) assert.ok(right <= width, `${hash}: inside the slot`);
+    // The mockup's places: back, forward and reload 41 px apart from 5 px in (centres 19, 60, 101);
+    // search 8 px after the address bar, the sparkle 40 px after it (the star is the browser's).
+    const centres = box.lefts.map((l, i) => Math.round((l + box.rights[i]) / 2));
+    if (hash === "#nav-left") assert.deepEqual(centres, [19, 60, 101], `${hash}: the mockup's places`);
+    else {
+      assert.equal(Math.round(box.lefts[0]), 8, `${hash}: search 8 px from the omnibox`);
+      for (let i = 1; i < centres.length; i++) assert.equal(centres[i] - centres[i - 1], 40, `${hash}: 40 px apart`);
+    }
   }
+}));
+
+// The helper's agent-tabs (scripts/liveview.mjs agentTabs: { id, i, host, agent, person } per web
+// page) written into the browser's owners for this window's tabs (ui/strip/strip.js): by `target`
+// when the entry has one, else by a host that one tab and one target-less entry hold, while the
+// browser has one window (the helper's `i` is creation order, never a tab-row place); only changes
+// are written, and only owners this page set are cleared.
+const sceneTab = (id, index, title, url, active) => ({
+  id, index, window: 1, title, url, favicon: null, defaultFavicon: true, networkState: 0, muted: false, audible: false, pinned: false,
+  group: null, groupTitle: null, groupColor: null, active, selected: active, blocked: false, width: 1280, height: 800, targetId: `T${id}`, canGoBack: false, canGoForward: false,
+});
+const SCENE_TABS = [sceneTab(21, 0, "Notion – New workspace", "https://www.notion.so/new-workspace", true), sceneTab(22, 1, "GitHub – pairbrowse", "https://github.com/pairbrowse", false), sceneTab(23, 2, "Calendar", "https://calendar.google.com/", false)];
+const CLAUDE = { label: "Claude Code", color: "#e9763f" };
+const entry = (i, host, agent = null, extra = {}) => ({ id: `a1b2c3d${i}`, i, host, agent, person: null, ...extra });
+const SCENE_ENTRIES = [entry(0, "www.notion.so", CLAUDE), entry(1, "github.com"), entry(2, "calendar.google.com")];
+describe("agent-tabs become the browser's owners for this window's tabs", () => pageTest("strip", { viewport: ROW, shim: { tabs: SCENE_TABS }, fixtures: { agentTabs: SCENE_ENTRIES } }, async ({ page, helper, shim, inPage, until }) => {
+  const owners = async () => (await shim.calls()).filter((c) => c.iface === "agent" && (c.method === "setTabOwner" || c.method === "clear")).map((c) => [c.method, ...c.args]);
+  const settle = () => page.waitForTimeout(150);
+  // an index and host match: the owner set once, and its dot drawn
+  await until("tab 21's dot", () => !!document.querySelector('#tabs li[data-id="21"] .agent'));
+  assert.deepEqual(await owners(), [["setTabOwner", 21, "Claude Code", "#e9763f"]]);
+  assert.equal(await inPage(() => document.querySelector('#tabs li[data-id="21"] .agent').title), "Claude Code is in this tab");
+  // the same list again: no call
+  helper.push("agent-tabs", SCENE_ENTRIES);
+  await settle();
+  assert.equal((await owners()).length, 1, "an unchanged list writes nothing");
+  // a host that does not match the tab at that index: nothing for it
+  helper.push("agent-tabs", [SCENE_ENTRIES[0], entry(1, "gitlab.com", { label: "Codex", color: "#9b7bfa" }), SCENE_ENTRIES[2]]);
+  await settle();
+  assert.equal((await owners()).length, 1, "a host mismatch writes nothing");
+  // the entry's agent gone: the owner this page set is cleared
+  helper.push("agent-tabs", [entry(0, "www.notion.so"), SCENE_ENTRIES[1], SCENE_ENTRIES[2]]);
+  await until("tab 21's dot gone", () => !document.querySelector('#tabs li[data-id="21"] .agent'));
+  assert.deepEqual((await owners()).slice(1), [["clear", 21]]);
+  // a target id wins over the index: Gemini in the calendar tab, though its index names Notion's
+  helper.push("agent-tabs", [entry(0, "www.notion.so", { label: "Gemini", color: "#4b8ffb" }, { target: "T23" }), SCENE_ENTRIES[1]]);
+  await until("tab 23's dot", () => !!document.querySelector('#tabs li[data-id="23"] .agent'));
+  assert.deepEqual((await owners()).slice(2), [["setTabOwner", 23, "Gemini", "#4b8ffb"]]);
+  assert.equal(await inPage(() => !!document.querySelector('#tabs li[data-id="21"] .agent')), false, "not the tab at that index");
+  // two windows: an index names no tab for sure, so an entry without a target writes nothing
+  await shim.setWindow({ id: 2 });
+  helper.push("agent-tabs", [entry(0, "www.notion.so", { label: "Gemini", color: "#4b8ffb" }, { target: "T23" }), entry(1, "github.com", CLAUDE)]);
+  await settle();
+  assert.equal((await owners()).length, 3, "no index match with two windows");
+  // a person's own tab (no agent) is never an owner
+  assert.equal(await inPage(() => !!document.querySelector('#tabs li[data-id="22"] .agent')), false);
+  // no timer, no poll: one call per change
+  const l = await inPage(() => window.__harness.live());
+  assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0);
+}));
+
+// Without a target, the helper's `i` never picks a tab: two tabs on one host match nothing, and a
+// tab that moves keeps its own owner and never takes another's.
+const SAME_HOST_TABS = [sceneTab(31, 0, "Notion – New workspace", "https://www.notion.so/new-workspace", true), sceneTab(32, 1, "GitHub – a", "https://github.com/a", false), sceneTab(33, 2, "GitHub – b", "https://github.com/b", false)];
+const CODEX = { label: "Codex", color: "#9b7bfa" };
+const SAME_HOST_ENTRIES = [entry(0, "www.notion.so", CLAUDE), entry(1, "github.com", CODEX), entry(2, "github.com")];
+describe("agent-tabs: one host on two tabs names neither, a move takes no owner", () => pageTest("strip", { viewport: ROW, shim: { tabs: SAME_HOST_TABS }, fixtures: { agentTabs: SAME_HOST_ENTRIES } }, async ({ page, helper, shim, inPage, until }) => {
+  const owners = async () => (await shim.calls()).filter((c) => c.iface === "agent" && (c.method === "setTabOwner" || c.method === "clear")).map((c) => [c.method, ...c.args]);
+  const dots = () => inPage(() => [...document.querySelectorAll("#tabs li")].filter((li) => li.querySelector(".agent")).map((li) => Number(li.dataset.id)));
+  const settle = () => page.waitForTimeout(150);
+  await until("tab 31's dot", () => !!document.querySelector('#tabs li[data-id="31"] .agent'));
+  await settle();
+  // Notion's host is on one tab: Claude's; github.com is on two, so Codex's `i` names neither
+  assert.deepEqual(await owners(), [["setTabOwner", 31, "Claude Code", "#e9763f"]]);
+  assert.deepEqual(await dots(), [31]);
+  // the owned tab moves to the end: it keeps its owner, and the tab now at its old index takes none
+  await shim.moveTab(31, 2);
+  await until("tab 31 last", () => document.querySelector("#tabs li:last-of-type")?.dataset.id === "31");
+  await settle();
+  assert.deepEqual(await owners(), [["setTabOwner", 31, "Claude Code", "#e9763f"]], "a move writes nothing");
+  assert.deepEqual(await dots(), [31]);
+  // one github.com tab closes: the host is now on one tab, but still in two target-less entries
+  await shim.removeTab(33);
+  await settle();
+  assert.equal((await owners()).length, 1, "two entries on one host name no tab");
+  // the helper's list then says which: one github.com entry, Codex's
+  helper.push("agent-tabs", [entry(0, "www.notion.so", CLAUDE), entry(1, "github.com", CODEX)]);
+  await until("tab 32's dot", () => !!document.querySelector('#tabs li[data-id="32"] .agent'));
+  assert.deepEqual((await owners()).slice(1), [["setTabOwner", 32, "Codex", "#9b7bfa"]]);
+  const l = await inPage(() => window.__harness.live());
+  assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0);
+}));
+
+// Only owners this page set are cleared: one another writer set (already as the helper says) stays
+// when the helper's entry goes; one this page set before a reload is still cleared after it.
+describe("agent-tabs clear only this page's owners, across a reload", () => pageTest("strip", { viewport: ROW, shim: { tabs: SCENE_TABS }, fixtures: { agentTabs: SCENE_ENTRIES } }, async ({ page, helper, shim, inPage, until }) => {
+  const owners = async () => (await shim.calls()).filter((c) => c.iface === "agent" && (c.method === "setTabOwner" || c.method === "clear")).map((c) => [c.method, ...c.args]);
+  const settle = () => page.waitForTimeout(150);
+  await until("tab 21's dot", () => !!document.querySelector('#tabs li[data-id="21"] .agent'));
+  // another writer set Gemini on the calendar tab; the helper then says the same: nothing to write
+  await shim.setOwner(23, "Gemini", "#4b8ffb");
+  helper.push("agent-tabs", [SCENE_ENTRIES[0], SCENE_ENTRIES[1], entry(2, "calendar.google.com", { label: "Gemini", color: "#4b8ffb" }, { target: "T23" })]);
+  await settle();
+  assert.deepEqual(await owners(), [["setTabOwner", 21, "Claude Code", "#e9763f"]]);
+  // the helper's entry goes: the owner is not this page's, so it stays
+  helper.push("agent-tabs", SCENE_ENTRIES);
+  await settle();
+  assert.deepEqual(await owners(), [["setTabOwner", 21, "Claude Code", "#e9763f"]], "not this page's to clear");
+  assert.equal(await inPage(() => !!document.querySelector('#tabs li[data-id="23"] .agent')), true);
+  // the strip reloads, and the helper's first list no longer has Claude: the owner this page set
+  // before the reload is cleared
+  helper.fixtures.agentTabs = [entry(0, "www.notion.so"), SCENE_ENTRIES[1], SCENE_ENTRIES[2]];
+  await page.reload();
+  await until("the clear", () => (window.__pairbrowse?.calls || []).some((c) => c.iface === "agent" && c.method === "clear"));
+  assert.deepEqual(await owners(), [["clear", 21]]);
 }));

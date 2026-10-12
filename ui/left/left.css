@@ -9,8 +9,9 @@ button { font: inherit; }
 /* The icon sheet: symbols only, never laid out (an <svg hidden> still takes a grid row). */
 body > svg[hidden] { display: none; }
 
-/* Header: the workspace square, its name and the chevron (the session switcher). */
-.head { height: 52px; display: flex; align-items: center; gap: 4px; padding: 4px 6px 0 9px; min-width: 0; }
+/* Header: the workspace square, its name and the chevron (the session switcher), centred 30 px
+   below the dock's top (the mockup: Workspace at y 83, the dock from y 53). */
+.head { height: 52px; display: flex; align-items: center; gap: 4px; padding: 8px 6px 0 9px; min-width: 0; }
 .workspace { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; width: auto; min-width: 0; height: 36px; padding: 0 6px 0 3px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); text-align: left; cursor: pointer; transition: background 120ms ease-out; }
 .workspace:hover { background: var(--hover); }
 .ws-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-2); background: var(--btn); box-shadow: inset 0 0 0 1px var(--panel-edge), inset 0 1px 0 var(--edge-light); }

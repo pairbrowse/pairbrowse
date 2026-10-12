@@ -39,9 +39,9 @@ const lum = (hex) => {
 const contrast = (a, b) => { const [x, y] = [lum(norm(a)), lum(norm(b))].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
 
 const REQUIRED = ["bg", "chrome", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "accent", "accent-ink", "accent-soft",
-  "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t",
-  "tab-idle", "tab-top", "tab-halo", "tab-halo-idle", "edge-light", "edge-lit", "edge-top", "surface-grad", "shadow-raised", "glow-soft", "glow-accent", "glow-top",
-  "glow-ok", "glow-bad", "glow-focus", "live-bg", "live-edge", "live-ink", "btn", "edge-btn", "accent-fill", "panel", "panel-edge", "inset"];
+  "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-0", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t",
+  "tab-idle", "tab-top", "edge-tab", "tab-lit", "glow-tab", "edge-light", "edge-lit", "surface-grad", "shadow-raised", "glow-soft", "glow-accent",
+  "glow-ok", "glow-bad", "glow-focus", "live-bg", "live-edge", "live-ink", "btn", "edge-btn", "accent-fill", "panel", "panel-edge", "inset", "column"];
 const PAGES = ["right/right.css", "picker/picker.css", "newtab/newtab.css", "screen/screen.css", "settings/settings.css"].map((x) => UI + x).concat("scripts/liveview.css");
 // Every page sheet under ui/ (strip, docks, timeline, approve and the rest) plus the live view's.
 const ALL_CSS = readdirSync(root + UI, { withFileTypes: true }).filter((d) => d.isDirectory())
@@ -86,9 +86,12 @@ test("dark ink on every participant color is AA (the cursor and avatar pills)", 
     const r = contrast(dark.bg, c);
     assert.ok(r >= 4.5, `--bg on ${c} is ${r.toFixed(2)}:1`);
   }
-  assert.ok(SPARK_COLORS.includes("#7088f0"), "Codex's color is in the palette");
-  const codex = contrast(dark.bg, "#7088f0");
-  assert.ok(codex >= 4.5, `--bg on Codex's #7088f0 is ${codex.toFixed(2)}:1`);
+  // The mockup's palette (the user, 2026-10-12): Codex purple, Gemini blue; white fails AA on each.
+  for (const c of ["#9b7bfa", "#4b8ffb"]) assert.ok(SPARK_COLORS.includes(c), `${c} is in the palette`);
+  for (const c of SPARK_COLORS) {
+    const white = contrast("#ffffff", c);
+    assert.ok(white < 4.5, `white on ${c} is ${white.toFixed(2)}:1, so the initials and pills take the dark ink`);
+  }
   // The left page's "Shared with" avatars are neutral unless the helper sends a color (the mockup's Team row).
   assert.doesNotMatch(read(UI + "left/left.js"), /GUEST_COLORS/, "no colors picked from a name");
 });
@@ -130,6 +133,14 @@ function over(fg, alpha, bg) {
 }
 const alphaOf = (c) => { const m = String(c).match(/\/\s*([\d.]+)\s*\)$/); return m ? Number(m[1]) : 1; };
 const colorsIn = (v) => [...String(v).matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g)].map(([m]) => m);
+
+// The mockup's active tab and timeline sizes, measured on its pixels (2026-10-13).
+test("the active tab's colors and the 10 px size are the mockup's", () => {
+  assert.deepEqual([norm(dark["tab-top"]), norm(dark["edge-tab"]), norm(dark["tab-lit"]), dark["fs-0"]], ["#1b365f", "#2493ed", "#55baf2", "10px"]);
+  const sizes = Object.entries(dark).filter(([k]) => /^fs-\d$/.test(k)).map(([, v]) => v);
+  assert.deepEqual(sizes, ["10px", "11px", "12px", "13px"]);
+  assert.ok(contrast(dark["ink-2"], dark["tab-top"]) >= 4.5 && contrast(dark.ink, dark["tab-top"]) >= 4.5, "the active tab's text stays AA");
+});
 
 test("the static light keeps text at AA", () => {
   const t = dark;
@@ -228,4 +239,36 @@ test("the Opening tabs page says each row's state in text, not by color alone", 
   const html = loadingHtml([{ url: "https://example.com/", title: "Example" }]);
   for (const s of ["waiting", "opening", "failed"]) assert.match(html, new RegExp(`li\\[data-s=${s}\\] \\.h::before\\{content:"${s} · "`), s);
   assert.doesNotMatch(html, /--card\b/, "the sheet's name, --sidebar");
+});
+
+test("the centre column (--column, 525): the mockup's value, the text on it AA and a field's border 3:1", () => {
+  assert.equal(norm(dark.column), "#1b2836");
+  for (const [fg, min, want] of [["ink", 4.5, 13.7], ["ink-2", 4.5, 6.9], ["muted", 4.5, 5.1], ["edge-input", 3, 3.3]]) {
+    const r = contrast(dark[fg], dark.column);
+    assert.ok(r >= min, `--${fg} on --column is ${r.toFixed(2)}:1`);
+    assert.ok(Math.abs(r - want) < 0.1, `--${fg} on --column is ${r.toFixed(2)}:1, measured ${want}`);
+  }
+  // The omnibox (--panel) sits darker on the column, the docks (--sidebar) darker still.
+  assert.ok(lum(norm(dark.panel)) < lum(norm(dark.column)), "--panel is darker than --column");
+});
+
+test("inkOn: the dark ink on every participant color, white on a dark fill, whichever has the higher contrast", async () => {
+  const { inkOn, INK_DARK, INK_LIGHT } = await import("../ui/common.js");
+  const { SPARK_COLORS } = await import("../scripts/daemon/hud.mjs");
+  assert.equal(INK_DARK, "#0B1421");
+  assert.equal(norm(INK_DARK), norm(dark.bg), "the dark ink is the sheet's --bg");
+  for (const c of SPARK_COLORS) {
+    assert.equal(inkOn(c), "#0B1421", `ink on ${c}`);
+    assert.ok(contrast(inkOn(c), c) >= 4.5, `ink on ${c} is AA`);
+  }
+  for (const c of ["#E9763F", "#9B7BFA", "#4B8FFB", "#4ADE80"]) assert.equal(inkOn(c), "#0B1421", `ink on ${c} (upper case)`);
+  assert.equal(inkOn("#1D2B3A"), INK_LIGHT, "white on a dark fill");
+  assert.equal(inkOn("#000000"), INK_LIGHT);
+  assert.equal(inkOn("#ffffff"), INK_DARK);
+  for (const c of ["#3285F6", "#7a7a7a", "#2870E4", "#EF6468", "#1D2B3A"]) {
+    const ink = inkOn(c), other = ink === INK_LIGHT ? INK_DARK : INK_LIGHT;
+    assert.ok(contrast(ink, c) >= contrast(other, c), `inkOn(${c}) picks the higher contrast`);
+  }
+  assert.equal(inkOn("var(--spark)"), INK_DARK, "not a color: the dark ink");
+  assert.equal(inkOn(""), INK_DARK);
 });

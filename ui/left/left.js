@@ -6,7 +6,7 @@
 // the helper's POST layout tab), from Activity in the rail and from the collapse and expand
 // buttons. Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
-import { $, el, rich, clock, activityHead, isColor, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream, servedByBrowser } from "../common.js";
+import { $, el, rich, clock, activityHead, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream, servedByBrowser } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -126,7 +126,7 @@ function drawAgents() {
     const color = isColor(p.color) ? p.color : colorOf(p.who);
     const face = el("span", { className: "avatar", textContent: initialOf(name) });
     face.setAttribute("aria-hidden", "true");
-    if (color) face.style.background = color;
+    if (color) { face.style.background = color; face.style.color = inkOn(color); } // the initial's ink passes AA (B11)
     else face.classList.add("plain");
     face.append(el("i", { className: "dot" }));
     const li = el("li", { title: `${p.who} · ${words}` }, face,

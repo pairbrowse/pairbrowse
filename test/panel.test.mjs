@@ -193,7 +193,7 @@ const until = async (page, what, fn, arg) => {
 
 const PEOPLE = [
   { who: "Claude", kind: "agent", color: "#e9763f", tab: "shop.example/checkout", task: "Filling the shipping form", status: "working", last: "Typed into Email" },
-  { who: "Alice · Codex", kind: "agent", color: "#a78bfa", tab: "shop.example/cart", task: "", status: "you", last: "Clicked Cart" },
+  { who: "Alice · Codex", kind: "agent", color: "#9b7bfa", tab: "shop.example/cart", task: "", status: "you", last: "Clicked Cart" },
   { who: "Sam · Claude Code", kind: "agent", color: "#22d3ee", where: "Sam", tab: "docs.example", task: "", status: "done", last: "Read the docs" },
   { who: "Sam (by hand)", kind: "person", color: "", where: "Sam", status: "idle" },
   { who: "Gemini · Gemini CLI", kind: "agent", color: "#20c997", tab: "shop.example/prices", task: "Checking prices", status: "working" },

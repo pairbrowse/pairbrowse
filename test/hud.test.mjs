@@ -588,7 +588,7 @@ test("the badge's left edge is the agent's color, accent for Your turn, ok for D
       const b = host.shadowRoot.querySelector(".b");
       return { edge: getComputedStyle(b).borderLeftColor, text: b.querySelector("span").textContent };
     }, [text, kind, hud.tags.hud]);
-    assert.deepEqual(await badge({ text: "filling", color: "#a78bfa" }, "claude"), { edge: "rgb(167, 139, 250)", text: "Claude: filling" });
+    assert.deepEqual(await badge({ text: "filling", color: "#9b7bfa" }, "claude"), { edge: "rgb(155, 123, 250)", text: "Claude: filling" });
     assert.deepEqual(await badge("Your turn", "you"), { edge: "rgb(50, 133, 246)", text: "Your turn: Your turn" });
     assert.deepEqual(await badge("done", "done"), { edge: "rgb(32, 201, 151)", text: "Done: done" });
     assert.equal((await badge("plain", "claude")).edge, "rgb(233, 118, 63)", "no color: Claude's orange");
@@ -611,9 +611,11 @@ test("the helper sends the participant's spark color with its status", async () 
   const calls = [];
   const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => { if (!["bar", "spark"].includes(args?.[3])) calls.push(args); } };
   const statuses = [];
-  const hud = createHud({ pages: async () => [page], participants: () => ["a", "b"], waiting: () => null, liveView: () => ({ setStatus: (s) => statuses.push(s) }), notify: () => {} });
+  const hud = createHud({ pages: async () => [page], waiting: () => null, liveView: () => ({ setStatus: (s) => statuses.push(s) }), notify: () => {} });
+  hud.setApp("a", "claude-code");
+  hud.setApp("b", "codex-mcp-client");
   await hud.setBadgeFor("b", "typing", "claude", "Bob · Codex");
-  assert.deepEqual(calls.at(-1)[2], { text: "Codex: typing", color: "#4fd1e8" });
+  assert.deepEqual(calls.at(-1)[2], { text: "Codex: typing", color: "#9b7bfa" });
   assert.equal(calls.at(-1)[3], "agent");
   assert.equal(statuses.at(-1).text, "Codex: typing", "the live view reads text and kind as before");
   await hud.setBadge("Solve it", "you");
@@ -661,12 +663,12 @@ test("the field the agent acts on is outlined in its color inside the cursor's s
       return null;
     }, hud.tags.cursor);
     const near = (a, b) => Math.abs(a - b) <= 1;
-    await send("cursor", { x: 220, y: 320, act: "type", who: "Codex", color: "#a78bfa", w: 40, bw: 240, bh: 40 });
+    await send("cursor", { x: 220, y: 320, act: "type", who: "Codex", color: "#9b7bfa", w: 40, bw: 240, bh: 40 });
     let o = await outline();
     assert.ok(o.on && near(o.x, 100) && near(o.y, 300) && near(o.w, 240) && near(o.h, 40), `around the field: ${JSON.stringify(o)}`);
-    assert.equal(o.border, "rgb(167, 139, 250)");
+    assert.equal(o.border, "rgb(155, 123, 250)");
     assert.equal(o.ink, "rgb(11, 20, 33)", "dark ink on the pill");
-    assert.equal(o.fill, "#fff", "a white pointer"); assert.equal(o.edge, "#a78bfa", "edged in the agent's color");
+    assert.equal(o.fill, "#fff", "a white pointer"); assert.equal(o.edge, "#9b7bfa", "edged in the agent's color");
     await page.evaluate(() => scrollTo(0, 200));
     await page.waitForTimeout(100);
     o = await outline();

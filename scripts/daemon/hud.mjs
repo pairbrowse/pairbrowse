@@ -6,9 +6,36 @@ import { isRef } from "../policy.mjs";
 import { within } from "../util.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 
-// Each connected agent's tab carries the spark on its icon, in that participant's color (in the
-// order they joined: orange, cyan, purple, green). It moves when that agent works in another tab.
-export const SPARK_COLORS = ["#e9763f", "#4fd1e8", "#a78bfa", "#4ade80"];
+// Each connected agent's tab carries the spark on its icon, in that agent's color; it moves when
+// that agent works in another tab. The color is its app's: Claude Code orange, Codex purple,
+// Gemini blue. An agent whose app has none, or whose app's color another agent here already has
+// (two Claude Codes), takes the first of AGENT_FALLBACKS no agent here has (cyan first), so two
+// cursors never look the same; with all four taken it repeats. A color stays an agent's while it
+// is connected. People's colors (tabsync.mjs PEOPLE_COLORS) are never any of these.
+export const APP_COLORS = { claude: "#e9763f", codex: "#9b7bfa", gemini: "#4b8ffb" };
+export const AGENT_FALLBACKS = ["#4fd1e8", APP_COLORS.claude, APP_COLORS.codex, APP_COLORS.gemini];
+// Every color an agent can have; [0] is Claude's own (the sheets' --spark).
+export const SPARK_COLORS = [...new Set([...Object.values(APP_COLORS), ...AGENT_FALLBACKS])];
+// Which app: its MCP clientInfo.name ("claude-code", "codex-mcp-client", a joiner's agent's
+// "remote:..."), or the app part of a label ("Alice · Codex"). "" for any other.
+export function appKey(name) {
+  const s = String(name || "").replace(/^remote:/, "");
+  const app = s.includes(" · ") ? s.split(" · ").pop() : s;
+  if (/^claude/i.test(app)) return "claude";
+  if (/^codex/i.test(app)) return "codex";
+  if (/gemini/i.test(app)) return "gemini";
+  return "";
+}
+// The color an agent of this app has when it's the only one of its app ("" when the app has none).
+export const appColor = (name) => APP_COLORS[appKey(name)] || "";
+// The color for one more agent of app, beside agents that have the colors in taken.
+export function pickAgentColor(app, taken = []) {
+  const list = [...taken].map((c) => String(c).toLowerCase());
+  const used = new Set(list);
+  const own = appColor(app);
+  if (own && !used.has(own)) return own;
+  return AGENT_FALLBACKS.find((c) => !used.has(c)) || AGENT_FALLBACKS[list.length % AGENT_FALLBACKS.length];
+}
 // Claude's cursor: before a click, typing or a choice, show where in the page it happens.
 const CURSOR_TOOLS = { browser_click: "click", browser_type: "type", browser_hover: "hover", browser_select_option: "click", browser_fill_form: "type", pairbrowse_upload: "click" };
 const CURSOR_WAIT_MS = 300; // never holds an action up for longer finding its element
@@ -22,12 +49,11 @@ const RECENT_ITEMS = 4;
 const SHARED_SPARK_MS = 30_000;
 const PERSON_MARK_MS = 8000; // a person from the other browser stays marked this long after their last input
 
-// pages(): the open tabs (none while the browser is closed). participants(): ids in the order
-// they joined. waiting(page): the person an agent waits for there. liveView(): the live view, if
+// pages(): the open tabs (none while the browser is closed). waiting(page): the person an agent waits for there. liveView(): the live view, if
 // up. notify(text): tells the user it's their turn. pause(): { by, can }: who paused agents (by
 // empty: nobody) and whether the person here may pause and resume (daemon/pause.mjs).
 // onStatus(participant, status | null): an agent's status set or taken down (the Tools tab's hand-offs).
-export function createHud({ pages, participants, waiting, liveView, notify, pause = () => ({ by: "", can: true }), onStatus = () => {} }) {
+export function createHud({ pages, waiting, liveView, notify, pause = () => ({ by: "", can: true }), onStatus = () => {} }) {
   // The page script, with names and a key that are new each time the helper starts.
   const { source, name: HUD_NAME, token: HUD_TOKEN } = hudScript();
   let badge = { text: "", kind: "clear", color: "" };
@@ -149,10 +175,17 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     await Promise.all((await pages()).map(applyBadge));
   }
 
-  function sparkColor(participant) {
-    const order = participants();
-    return SPARK_COLORS[Math.max(0, order.indexOf(participant)) % SPARK_COLORS.length];
+  // Each connected agent's color, picked once its app is known (setApp, at its MCP initialize)
+  // and kept until it goes (forgetParticipant). One not known yet shows Claude's orange.
+  const agentColors = new Map(); // participant -> color
+  function setApp(participant, app) {
+    if (agentColors.has(participant)) return agentColors.get(participant);
+    const color = pickAgentColor(app, agentColors.values());
+    agentColors.set(participant, color);
+    return color;
   }
+  const forgetParticipant = (participant) => { agentColors.delete(participant); };
+  const sparkColor = (participant) => agentColors.get(participant) || APP_COLORS.claude;
   // Moves a participant's spark to a tab: the page itself, else the tab showing url (none: takes
   // it away). A page is exact; two tabs can show the same URL.
   async function moveSpark(participant, url) {
@@ -313,7 +346,7 @@ export function createHud({ pages, participants, waiting, liveView, notify, paus
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
     source, call, ensure, onPageLoad, applyBar, setReconnecting, setRecording, setBadge, setBadgeFor, statusOf, badge: () => badge,
-    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, forgetPage, sparkColor, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
+    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, forgetPage, sparkColor, setApp, forgetParticipant, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor, markTargets,
     pressOn, declarePress, onPress: (fn) => { pressListeners.add(fn); return () => pressListeners.delete(fn); },
   };

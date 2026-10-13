@@ -297,6 +297,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       clients.delete(participant);
       lastCall.delete(participant);
       collaboration.unregister(participant);
+      hud.forgetParticipant?.(participant);
       tabClaims.release(participant);
       screenshots.forget(participant);
       follow.ownerGone(participant);
@@ -1327,6 +1328,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (!initialized) {
           initialized = true;
           clientName = String(msg.params?.clientInfo?.name || "").slice(0, 60);
+          hud.setApp?.(participant, clientName); // its color: its app's (a joiner's agent's too), unless another agent here has it
           // A joiner's agent: its app's OK (its own user's) never counts as the host's.
           if (remote) { collaboration.register(participant, personLabel(remote.name, appName(clientName))); clientName = `remote:${clientName}`; }
           log(`participant ${participant} is ${clientName || "an unnamed app"}`);

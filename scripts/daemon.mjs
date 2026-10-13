@@ -46,7 +46,7 @@ import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
 import { contextCount } from "./daemon/contexts.mjs";
-import { createHud } from "./daemon/hud.mjs";
+import { createHud, appColor, APP_COLORS } from "./daemon/hud.mjs";
 import { createPresence } from "./daemon/presence.mjs";
 import { createPause, pressPause as pressPauseIn } from "./daemon/pause.mjs";
 import { fieldOwner } from "./daemon/fields.mjs";
@@ -230,7 +230,7 @@ function pressPause(paused, who = HOST, agent = null) {
   });
 }
 const hud = createHud({
-  pages: () => context.openPages(), participants: () => [...collaboration.participants.keys()],
+  pages: () => context.openPages(),
   waiting: (page) => presence.waiting(page), liveView, notify: panel.notify,
   pause: () => ({ by: pause.view().by, can: canPause() }),
   // An agent handed a step to the person (pairbrowse_status "you"): a hand-off until it moves on.
@@ -326,7 +326,7 @@ function remoteHolder(page) {
 function tabMeta(page) {
   const remote = follow.agentIn(page); // an agent in the other browser of a joined session
   const theirs = joinedAgents.get(page);
-  const agent = localAgent(page) || (remote ? { label: remote.label, color: remote.color || hud.sparkColor(`joined:${remote.label}`), joined: true } :
+  const agent = localAgent(page) || (remote ? { label: remote.label, color: remote.color || appColor(remote.label) || APP_COLORS.claude, joined: true } :
     theirs && Date.now() < theirs.until ? { label: theirs.label, color: theirs.color || "#e9763f", joined: true, from: theirs.from, until: theirs.turnUntil } : null);
   return { agent, person: presence.recentPerson(page), waiting: !!presence.waiting(page), last: hud.lastIn(page),
     sharedPerson: presence.sharedPerson(page), did: presence.feedAfter(page) };

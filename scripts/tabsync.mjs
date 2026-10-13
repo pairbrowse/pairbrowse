@@ -421,8 +421,10 @@ export function readPointers(body, ids) {
     agents: (Array.isArray(body?.agents) ? body.agents : []).slice(0, 8).map((p) => readPointer(p, ids)).filter((p) => p && p.who),
   };
 }
-// A stable color per name, for people's pointers.
-const PEOPLE_COLORS = ["#f472b6", "#facc15", "#38bdf8", "#fb923c", "#34d399", "#c084fc"];
+// A stable color per name, for people's pointers and tags: pink, yellow, lime, green, fuchsia.
+// None is near an agent's color (daemon/hud.mjs SPARK_COLORS: orange, purple, blue, cyan), so a
+// tag's color alone says person or agent, and each carries the tags' dark ink (#0B1421) at WCAG AA.
+export const PEOPLE_COLORS = ["#f472b6", "#fde047", "#a3e635", "#4ade80", "#ee78f0"];
 export function personColor(name) {
   let h = 0;
   for (const c of textOf(name)) h = (h * 31 + c.codePointAt(0)) >>> 0;

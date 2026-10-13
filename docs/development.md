@@ -17,8 +17,11 @@ from the same file through the live view's fixed asset list). The live view alon
 light scheme with `data-scheme="system"`; the extension pages stay dark. `scripts/hud.js` (closed
 shadow roots), `record.js` (a canvas) and the "Opening tabs" page in `scripts/tabs.mjs` carry the same hex values inline, and
 `test/tokens.test.mjs` keeps every literal color in those files and the page sheets equal to a
-sheet value or a `SPARK_COLORS` entry and checks WCAG AA contrast in both schemes. Participant
-colors are `SPARK_COLORS` in `scripts/daemon/hud.mjs`. The window frame follows `THEME_COLOR` in
+sheet value or a `SPARK_COLORS` entry and checks WCAG AA contrast in both schemes. Agent
+colors are `SPARK_COLORS` in `scripts/daemon/hud.mjs`, by app (Claude Code orange, Codex purple,
+Gemini blue; a second agent of one app, or an app without a color, takes the first free of
+`AGENT_FALLBACKS`, cyan first). People's colors are `PEOPLE_COLORS` in `scripts/tabsync.mjs`,
+never near an agent's (`test/colors.test.mjs` checks hue, distance and the tags' AA contrast). The window frame follows `THEME_COLOR` in
 `scripts/browser.mjs` (the sheet's chrome navy) unless the user picked a theme.
 
 ### The live tests

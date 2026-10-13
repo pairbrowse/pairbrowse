@@ -452,6 +452,16 @@ pageTest("picker", { fixtures: { sessions: STATE }, shim: { bubbles: true }, vie
   await page.goto(url, { waitUntil: "load" });
   await until("the rows", ready);
   assert.deepEqual(await run(() => [document.documentElement.dataset.host, document.documentElement.dataset.bubble]), ["frame", "native"]);
+  // The browser sizes the bubble to the page (120 up to 560 px): the card is its contents' height,
+  // never the viewport's, so three sessions leave no empty space under the card.
+  const fit = await run(() => {
+    const main = document.querySelector("main").getBoundingClientRect().height;
+    // The body's own height (the document's scroll height never drops below this test's fixed
+    // viewport; in the bubble the viewport follows the body).
+    return { main: Math.round(main), doc: Math.round(document.body.getBoundingClientRect().height), view: innerHeight };
+  });
+  assert.ok(fit.main < fit.view - 40, `the card keeps its contents' height: ${JSON.stringify(fit)}`);
+  assert.ok(Math.abs(fit.doc - fit.main) <= 1, `the page is the card's height: ${JSON.stringify(fit)}`);
   await page.click("#fresh");
   await until("the bubble closed", () => window.__pairbrowse.calls.some((c) => c.iface === "bubbles" && c.method === "close" && c.args[0] === 0));
   assert.deepEqual(posted(helper, "pick"), [{ action: "new" }]);

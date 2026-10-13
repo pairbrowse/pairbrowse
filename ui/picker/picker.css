@@ -158,6 +158,10 @@ html[data-host="frame"] #fresh small, html[data-host="frame"] details.choice > s
 .switch-ask { margin: var(--sp-3) 0 0; }
 .switch-ask .agents { font-size: var(--fs-2); color: var(--ink-2); }
 /* In the browser's own switcher bubble (530 E2 B1): the card is the bubble at its 360 px width; the
-   browser draws the corners, the shadow, the arrow and the motion. */
+   browser draws the corners, the shadow, the arrow and the motion. The bubble is as tall as the card
+   (the browser sizes it to the page, 120 up to 560 px), so the card takes its contents' height: a
+   height or cap from the viewport would hold the bubble at whatever height it has now. Past 560 px
+   the "More sessions" list scrolls, as in the popover. */
+html[data-bubble="native"], html[data-bubble="native"] body { min-height: 0; }
 html[data-bubble="native"] body, html[data-bubble="native"] main { background: var(--elevated); }
-html[data-bubble="native"] main { height: 100vh; max-height: none; border: 1px solid var(--edge); border-radius: var(--r-3); box-shadow: inset 0 1px 0 var(--edge-light); }
+html[data-bubble="native"] main { height: auto; max-height: 560px; border: 1px solid var(--edge); border-radius: var(--r-3); box-shadow: inset 0 1px 0 var(--edge-light); }

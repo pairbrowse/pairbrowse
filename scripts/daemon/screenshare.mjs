@@ -271,6 +271,9 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
   return {
     // Whether a direct connection can be offered at all (false: the slower route only).
     available,
+    // Waits up to ms for the build's capture page to say hello (it loads with the browser), so an
+    // invite made right after launch says what its joiners will get; at once everywhere else.
+    whenReady: async (ms) => { await capture?.waitReady?.(ms); return available(); },
     // Starts sending a tab to one joiner's page: the offer (SDP) to pass on. role: their invite's.
     // onInput(ev, line, view): they did something there (replayed already). onState(state): the
     // direct connection's state ("connected", "failed", ...).

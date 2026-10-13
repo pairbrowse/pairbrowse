@@ -42,7 +42,11 @@ test("the page's own errors come back with the run, and a recording is saved as 
   const downloads = join(h, "downloads");
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || process.env.PAIRBROWSE_TEST_JOINER_EXECUTABLE || createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, downloadsDir: downloads }));
+  // A PairBrowse build (its PairBrowse-build.json beside the program) runs as the PairBrowse
+  // browser, its capture page recording, on the mock keychain as every test launch of it.
+  const native = existsSync(join(dirname(executablePath), "..", "Resources", "PairBrowse-build.json"));
+  const engine = native ? { browserEngine: "pairbrowse", chromeArgs: ["--headless=new", "--use-mock-keychain", "--password-store=basic"] } : { chromeArgs: ["--headless=new"] };
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, ...engine, display: "none", screenshots: false, downloadsDir: downloads }));
   const out = openSync(join(h, "daemon.stderr.log"), "a");
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h }, stdio: ["ignore", out, out] });
   let a;

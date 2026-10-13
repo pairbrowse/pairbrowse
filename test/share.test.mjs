@@ -95,3 +95,37 @@ test("an invite made before a native browser starts says the pictures go through
   const chromium = contextFor(false, false);
   assert.equal(backend(chromium).kind(), "extension", "Chromium: the extension, as before");
 });
+
+// A build that declares its capture page, invited right as it starts (the page hasn't said hello
+// yet): the invite waits for the hello, as a recording does, and says picture and sound; a page that
+// never says hello leaves it at the join channel after that wait.
+test("an invite made before the capture page's hello waits for it", async () => {
+  const { createCaptureBackend } = await import("../scripts/daemon/capture.mjs");
+  const { createScreenShare } = await import("../scripts/daemon/screenshare.mjs");
+  const make = async (helloAfter) => {
+    let hello = false;
+    const channel = {
+      ready: () => hello,
+      whenReady: (ms) => new Promise((resolve) => {
+        if (helloAfter === null || helloAfter > ms) return setTimeout(resolve, ms);
+        setTimeout(() => { hello = true; resolve(); }, helloAfter);
+      }),
+    };
+    const capture = createCaptureBackend({ chromePages: () => true, capturePages: () => true, panelCall: async () => null, channel, env: {} });
+    assert.equal(capture.kind(), null, "no hello yet");
+    const screens = createScreenShare({ call: async () => null, capture });
+    const { sharing } = sharingWith({}, { screens });
+    const started = Date.now();
+    try {
+      const made = await sharing.inviteCommand({ action: "create", role: "drive", share: "code", name: "Bob" });
+      return { text: made.text, ms: Date.now() - started, kind: capture.kind() };
+    } finally { sharing.endAll(); }
+  };
+  const late = await make(150);
+  assert.equal(late.kind, "page");
+  assert.match(late.text, /picture and sound, sent straight to their PairBrowse/);
+  assert.ok(late.ms < 2000, `waited only for the hello (${late.ms} ms)`);
+  const never = await make(null);
+  assert.equal(never.kind, null);
+  assert.match(never.text, /pictures through the join channel; no sound from this PairBrowse build yet/);
+});

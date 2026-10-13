@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -83,6 +83,14 @@ function rpc(write, input) {
 const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const tool = (call, name, args = {}) => call("tools/call", { name, arguments: args });
 
+// A PairBrowse build (its Contents/Resources/PairBrowse-build.json beside the program) runs as the
+// PairBrowse browser (its own pages, its capture page), on the mock keychain as every test launch
+// of it; any other program runs as a browser of your own, with the side panel.
+const isPairBrowseBuild = (exe) => existsSync(join(dirname(exe), "..", "Resources", "PairBrowse-build.json"));
+const sideConfig = (exe, args) => (isPairBrowseBuild(exe)
+  ? { browserEngine: "pairbrowse", executablePath: exe, chromeArgs: [...args, "--use-mock-keychain", "--password-store=basic"] }
+  : { executablePath: exe, chromeArgs: args });
+
 function home(prefix) {
   mkdirSync(shortBase, { recursive: true });
   const dir = mkdtempSync(join(shortBase, prefix));
@@ -104,8 +112,8 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
   const port = fixture.address().port;
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("sh-"), joinHome = home("sj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath: joinerExecutablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ ...sideConfig(executablePath, chromeArgs), display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ ...sideConfig(joinerExecutablePath, chromeArgs), display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", ...(realTunnel ? {} : { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" }), ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}), ...(noCapture && h === hostHome ? { PAIRBROWSE_TEST_NO_CAPTURE: "1" } : {}) });
   const daemons = [];
   const daemonOf = new Map(); // home -> its helper
@@ -234,6 +242,12 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     await sleep(3000);
     const settled = (await onScreen({ expr: "window.pbScreen.state()" }))?.value;
     assert.deepEqual([settled?.doc, settled?.offers, settled?.peer], [again.doc, 1, again.peer], "one connection for the picture page, kept");
+
+    // The host's tab is a new document since the typed addresses: its tone stopped with the old
+    // one. A click on the picture starts it again (a person's click, so the page may play sound).
+    stage = "a click on the picture starts the host page's tone again";
+    await click(toJoiner(0.5, 0.15));
+    await until("the host's page was clicked again", async () => /(^| · )clicked$/.test(await evaluate(host.call, "() => document.title")), 15_000);
 
     stage = "picture and sound arrive smoothly, and the sound plays";
     const stats = await until("frames and sound", async () => {

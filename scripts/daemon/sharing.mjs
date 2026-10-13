@@ -1,5 +1,6 @@
 // The live view and letting other people in: invite links, join codes through the sharing tunnel
 // (joiners get the shared tabs, tabsync.mjs), and the host's approvals.
+import { RECORD_READY_MS } from "./capture.mjs";
 import { ownTitle } from "./tablabels.mjs";
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
 import { createApprovals, encodeJoinCode, cleanName } from "../join.mjs";
@@ -346,7 +347,9 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     const live = await ensureLiveView();
     const port = live.port;
     // How the picture goes: straight to their PairBrowse, or (a PairBrowse build without its
-    // capture page) through the join channel, without sound.
+    // capture page) through the join channel, without sound. A capture page that hasn't said hello
+    // yet (the browser just started) gets the record's wait first.
+    await view.screens?.whenReady?.(RECORD_READY_MS)?.catch?.(() => {});
     const how = view.screens?.available && !view.screens.available() ? "pictures through the join channel; no sound from this PairBrowse build yet" : "picture and sound, sent straight to their PairBrowse";
     const rights = share === "code" && invite.mode === "shared"
       ? (invite.role === "drive"

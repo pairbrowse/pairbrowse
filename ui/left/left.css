@@ -7,29 +7,22 @@
 html, body { margin: 0; height: 100%; }
 /* The dock's inner side: 1 px --edge from the nav row to the bottom (DESIGN.md B3), open and rail;
    none when hidden. */
-body { display: grid; grid-template-rows: 52px minmax(0, 1fr) auto; height: 100vh; background: var(--sidebar); color: var(--ink); font: var(--fs-3)/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; box-shadow: inset -1px 0 0 var(--edge); }
+body { display: grid; grid-template-rows: minmax(0, 1fr) auto; height: 100vh; background: var(--sidebar); color: var(--ink); font: var(--fs-3)/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; box-shadow: inset -1px 0 0 var(--edge); }
 button { font: inherit; }
 /* The icon sheet: symbols only, never laid out (an <svg hidden> still takes a grid row). */
 body > svg[hidden] { display: none; }
 
-/* Header: the workspace square and its name (a title: the strip's logo switches sessions), then
-   the collapse chevron on the same right edge as the sections' "+", centred 30 px below the
-   dock's top (8 + 44 / 2; the mockup: Workspace at y 83, the dock from y 53). */
-.head { height: 52px; display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2) var(--sp-5) 0 var(--dock-gutter); min-width: 0; }
-.workspace { display: flex; align-items: center; gap: var(--sp-3); flex: 1 1 auto; min-width: 0; height: var(--row-nav); padding: 0 var(--dock-inset); color: var(--ink); }
-.ws-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-2); background: var(--btn); box-shadow: inset 0 0 0 1px var(--panel-edge), inset 0 1px 0 var(--edge-light); } /* mockup: B3's 30 px square */
-.ws-icon svg { width: 20px; height: 20px; color: var(--ink); }
-.ws-label { min-width: 0; font-size: var(--fs-4); font-weight: 400; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Collapse (open) and expand (rail): the dock's own state, set through the browser's layout. */
+/* Collapse (open) and expand (rail), at the foot beside the gear: the dock's own state, set through
+   the browser's layout. */
 .dock-btn { display: grid; place-items: center; flex: none; width: var(--ctl-sm); height: var(--ctl-sm); padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
 .dock-btn svg { width: var(--icon); height: var(--icon); }
 .dock-btn:hover { background: var(--hover); color: var(--ink); }
 .dock-btn[hidden] { display: none; }
 
-.body { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-1) var(--dock-gutter) var(--sp-2); scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+.body { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-3) var(--dock-gutter) var(--sp-2); scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
 
 /* Nav rows: 36 px, 8 px radius, a 16 px icon and a 13 px label. */
-.nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.nav { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .row { display: flex; align-items: center; gap: var(--sp-4); width: 100%; height: var(--row-nav); padding: 0 var(--dock-inset); border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-soft); font: 400 var(--fs-3) var(--sans); text-align: left; cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
 .row .ic { flex: none; width: var(--icon); height: var(--icon); color: var(--ink-soft); }
 .row:hover { background: var(--hover); color: var(--ink); }
@@ -41,6 +34,11 @@ body > svg[hidden] { display: none; }
 .row .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { display: inline-grid; place-items: center; flex: none; min-width: 24px; height: 24px; padding: 0 var(--sp-2); border-radius: 12px; background: var(--badge); color: var(--ink); font: 500 var(--fs-3)/1 var(--sans); }
 .badge:empty { display: none; }
+/* Sessions: the open session's name at the row's end, where Browser has its count (muted, cut
+   with an ellipsis; its whole name is in the row's words and, in the rail, its tooltip). */
+#nav-sessions .label { flex: none; }
+.row .current { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--muted); font-size: var(--fs-2); }
+.row .current:empty { display: none; }
 /* Activity's fold mark shows on hover, keyboard focus and while open (the mockup draws none). */
 #nav-activity:not(:hover):not(:focus-visible):not([aria-expanded="true"])::after { visibility: hidden; }
 #nav-activity::after { content: ""; flex: none; width: 8px; height: 8px; margin-right: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform var(--t); }
@@ -105,16 +103,17 @@ li[data-state="idle"] .dot { background: var(--muted); }
 .people strong .app { font-weight: 400; color: var(--ink-2); }
 .people small { grid-column: 2; align-self: start; min-width: 0; font-size: var(--fs-2); line-height: 18px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Bottom: the settings gear, at the left (Storage returns with PairBrowse Pro; see the markup). */
+/* Bottom: the settings gear at the left, the collapse chevron on the sections' right edge (the
+   "+"'s); Storage returns with PairBrowse Pro (see the markup). */
 .foot { display: flex; flex-direction: column; align-items: flex-start; gap: 0; min-width: 0; margin: 0 var(--dock-gutter); padding: 0 0 var(--sp-4); }
 /* Storage (PairBrowse Pro's cloud storage): only when the helper sends the figure; left.js builds it. */
 .storage { align-self: stretch; padding: var(--sp-3) var(--dock-inset) 0; border-top: 1px solid var(--edge); }
 .storage .line { display: flex; justify-content: space-between; font-size: var(--fs-2); line-height: 16px; color: var(--ink-soft); }
 .storage .bar { height: 4px; margin-top: var(--sp-2); border-radius: 2px; background: var(--meter-track); overflow: hidden; }
 .storage .bar i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--meter-from), var(--meter-to)); }
-.foot .gear { margin: var(--sp-8) 0 0 var(--dock-inset); }
+.foot-row { align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1); margin-top: var(--sp-8); padding: 0 var(--dock-inset); }
 .foot:not(:has(.storage)) { padding-top: var(--sp-2); border-top: 1px solid var(--edge); }
-.foot:not(:has(.storage)) .gear { margin-top: 0; }
+.foot:not(:has(.storage)) .foot-row { margin-top: 0; }
 .gear { display: grid; place-items: center; width: var(--ctl-sm); height: var(--ctl-sm); padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
 .gear svg { width: 20px; height: 20px; }
 .gear:hover { background: var(--hover); color: var(--ink); }
@@ -126,19 +125,14 @@ li[data-state="idle"] .dot { background: var(--muted); }
 .row[aria-current="page"]:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-lit), inset 0 1px 0 var(--edge-light), var(--glow-soft), var(--glow-focus); }
 
 /* Rail: 44 px, icons, avatars with their dots and the gear; every word moves to a tooltip. */
-/* The rail's top: the expand button centered in the 44 px band, the workspace square under it. */
-body[data-dock="rail"] { grid-template-rows: auto minmax(0, 1fr) auto; }
-body[data-dock="rail"] .head { height: auto; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3) var(--sp-1) var(--sp-1); }
-body[data-dock="rail"] .workspace { flex: none; justify-content: center; width: 36px; padding: 0; margin: 0 auto; }
-body[data-dock="rail"] .ws-label,
-body[data-dock="rail"] .row .label, body[data-dock="rail"] .badge, body[data-dock="rail"] #tab-count-words,
+body[data-dock="rail"] .row .label, body[data-dock="rail"] .row .current, body[data-dock="rail"] .badge, body[data-dock="rail"] #tab-count-words,
 body[data-dock="rail"] #nav-activity::after, body[data-dock="rail"] .sec-head h2, body[data-dock="rail"] .add,
 body[data-dock="rail"] .hint, body[data-dock="rail"] .conn, body[data-dock="rail"] .activity,
 body[data-dock="rail"] .people li.empty,
 body[data-dock="rail"] #shared h2, body[data-dock="rail"] .empty-note { display: none; }
 /* The agents' names and states leave the eye but stay in the accessibility tree (the .sr recipe). */
 body[data-dock="rail"] .people strong, body[data-dock="rail"] .people small { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-body[data-dock="rail"] .body { padding: var(--sp-1) var(--sp-1) var(--sp-2); }
+body[data-dock="rail"] .body { padding: var(--sp-3) var(--sp-1) var(--sp-2); }
 body[data-dock="rail"] .row { justify-content: center; width: 36px; padding: 0; margin: 0 auto; }
 body[data-dock="rail"] .sec { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--edge); }
 body[data-dock="rail"] .sec-head { display: none; }
@@ -148,12 +142,13 @@ body[data-dock="rail"] .foot { grid-template-columns: auto; justify-content: cen
 body[data-dock="rail"] .gear { grid-column: 1; margin: 0; }
 body[data-dock="rail"] .foot { align-items: center; margin: 0; padding: var(--sp-2) var(--sp-1); border-top: 1px solid var(--edge); }
 body[data-dock="rail"] .storage { display: none; }
+/* The rail's foot: the gear, then the expand chevron under it, both centred in the 44 px band. */
+body[data-dock="rail"] .foot-row { flex-direction: column; margin: 0; padding: 0; }
 
-/* The session switcher: the picker in a same-origin frame at the dock's top, right under the strip's
-   logo (B2's switcher, 360 by 560 at most, narrowed to the dock's width with the gutter on both
-   sides), a caret at the logo's place (--caret-x, from left.js; DESIGN.md Part I). Opened by the
-   Sessions row it hangs under that row instead (--pop-top), the caret at the row's icon. It opens
-   with the sheet's motion (.m-pop) from the caret. */
+/* The session switcher served without the browser's API: the picker in a same-origin frame under the
+   Sessions row (--pop-top; 360 by 560 at most, narrowed to the dock's width with the gutter on both
+   sides), its caret at the row's icon (--caret-x, from left.js; DESIGN.md Part I). It opens with the
+   sheet's motion (.m-pop) from the caret. */
 .switcher { position: fixed; top: var(--pop-top, var(--sp-2)); left: var(--dock-gutter); z-index: 3; width: min(360px, calc(100vw - 2 * var(--dock-gutter))); height: min(560px, calc(100vh - var(--pop-top, var(--sp-2)) - var(--sp-2))); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); --origin: var(--caret-x, 50%) top; }
 .switcher::before { content: ""; position: absolute; top: -5px; left: calc(var(--caret-x, 50%) - 5px); width: 10px; height: 10px; rotate: 45deg; background: var(--elevated); box-shadow: -1px -1px 0 var(--edge); pointer-events: none; } /* mockup: the caret under the logo */
 .switcher iframe { display: block; width: 100%; height: 100%; border: 0; border-radius: inherit; background: var(--bg); }

@@ -1,0 +1,75 @@
+{
+  "helper": {
+    "session": {
+      "name": "work",
+      "where": "Local",
+      "temporary": false,
+      "canRename": true
+    },
+    "sessions": {
+      "picking": false,
+      "sessions": [
+        {
+          "name": "work",
+          "tabs": 3,
+          "sites": [
+            "shop.example",
+            "docs.example"
+          ],
+          "current": true,
+          "used": 1792000000000,
+          "live": [
+            {
+              "who": "Sam",
+              "app": "Claude Code",
+              "kind": "guest"
+            }
+          ],
+          "people": [
+            {
+              "who": "You",
+              "kind": "you",
+              "computer": "Mac"
+            },
+            {
+              "who": "Sam",
+              "app": "Claude Code",
+              "kind": "guest"
+            }
+          ]
+        },
+        {
+          "name": "shop",
+          "tabs": 1,
+          "sites": [
+            "shop.example"
+          ],
+          "used": 1791900000000,
+          "people": [
+            {
+              "who": "You",
+              "kind": "you",
+              "computer": "Mac"
+            }
+          ]
+        },
+        {
+          "name": "default",
+          "tabs": 0,
+          "sites": [],
+          "used": 1791000000000,
+          "people": []
+        },
+        {
+          "name": "travel",
+          "tabs": 2,
+          "sites": [
+            "trips.example"
+          ],
+          "used": 0,
+          "people": []
+        }
+      ]
+    }
+  }
+}

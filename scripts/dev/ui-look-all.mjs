@@ -47,6 +47,7 @@ export const SHOTS = [
   { name: "screen", page: "screen", width: 969, height: 796 },
   { name: "approve", page: "approve", width: 360, height: 300 },
   { name: "settings", page: "settings", width: 969, height: 796 },
+  { name: "sessions", page: "sessions", width: 969, height: 796 },
   { name: "timeline", page: "timeline", width: 985, height: 125 },
 ];
 const BAD = new Set(["error", "pageerror", "rejection", "csp"]);

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Sessions</title>
+<link rel="icon" href="../logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="sessions.css">
+</head>
+<body data-s="connecting">
+  <main>
+    <header>
+      <img class="logo" src="../logo.svg" alt="" width="40" height="40">
+      <div>
+        <p class="brand">PairBrowse</p>
+        <h1>Sessions</h1>
+        <!-- Which session is open, from the helper's session event (sessions.js). -->
+        <p class="sub" id="sub"></p>
+      </div>
+    </header>
+
+    <section class="saved" id="saved" aria-labelledby="saved-h">
+      <div class="saved-head">
+        <h2 id="saved-h">Saved sessions</h2>
+        <input id="filter" class="filter" type="search" placeholder="Find a session" aria-label="Find a session" autocomplete="off" spellcheck="false" hidden>
+      </div>
+      <ul class="list" id="list"></ul>
+      <p class="none" id="none" hidden>No session by that name.</p>
+    </section>
+
+    <section class="new" aria-labelledby="new-h">
+      <h2 id="new-h">Start or join</h2>
+      <button class="choice" id="fresh" type="button">
+        <span class="icon" aria-hidden="true">+</span>
+        <span class="text"><strong>Start a fresh session</strong><small>A clean browser with no logins. It's deleted when you switch away.</small></span>
+      </button>
+      <details class="choice join" id="join">
+        <summary>
+          <span class="icon" aria-hidden="true">&#8644;</span>
+          <span class="text"><strong>Join a shared session</strong><small>Paste the pb-join code someone sent you. They let you in first.</small></span>
+        </summary>
+        <form id="join-form" autocomplete="off">
+          <input id="code" type="text" placeholder="pb-join:..." aria-label="Join code" spellcheck="false" autocomplete="off">
+          <input id="join-name" type="text" placeholder="Your name (the host sees it)" aria-label="Your name" maxlength="40" autocomplete="off">
+          <button class="primary" type="submit">Join</button>
+        </form>
+        <div class="ask card" id="host-ask" role="group" aria-label="This code's address" hidden></div>
+      </details>
+    </section>
+
+    <div class="ask card" id="switch-ask" role="group" aria-label="Switch while agents are at work" hidden></div>
+    <p class="msg" id="msg" role="status" aria-live="polite"></p>
+  </main>
+  <script type="module" src="sessions.js"></script>
+</body>
+</html>

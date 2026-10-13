@@ -462,6 +462,7 @@ pageTest("picker", { fixtures: { sessions: STATE }, shim: { bubbles: true }, vie
   });
   assert.ok(fit.main < fit.view - 40, `the card keeps its contents' height: ${JSON.stringify(fit)}`);
   assert.ok(Math.abs(fit.doc - fit.main) <= 1, `the page is the card's height: ${JSON.stringify(fit)}`);
+  assert.equal(await run(() => document.getElementById("all").checkVisibility()), false, "no All sessions while an agent waits for this pick");
   await page.click("#fresh");
   await until("the bubble closed", () => window.__pairbrowse.calls.some((c) => c.iface === "bubbles" && c.method === "close" && c.args[0] === 0));
   assert.deepEqual(posted(helper, "pick"), [{ action: "new" }]);
@@ -473,4 +474,40 @@ pageTest("picker", { fixtures: { sessions: { picking: true, sessions: [] } }, vi
   await until("ready", ready);
   const shown = await run(() => ["continue-h", "or-h", "fresh"].map((id) => !!document.getElementById(id).getClientRects().length));
   assert.deepEqual(shown, [false, false, true]);
+});
+
+// "All sessions…", the switcher's last item (2026-10-14). As the first tab's question it isn't there
+// (no session open to manage yet), nor while the helper waits for a pick. In the browser's bubble (no Tabs of its own) it asks the dock over
+// the pairbrowse-sessions channel and closes once the dock says the page is open; with no dock
+// holding the opener lock (nobody would answer) it says so in place at once and the bubble stays.
+pageTest("picker", { fixtures: { sessions: STATE }, viewport: { width: 1200, height: 760 } }, async ({ until, inPage: run }) => {
+  await until("the rows", ready);
+  assert.equal(await run(() => document.getElementById("all").checkVisibility()), false, "not on the first tab's question");
+});
+pageTest("picker", { fixtures: { sessions: { ...STATE, picking: false } }, shim: { bubbles: true }, viewport: { width: 360, height: 560 } }, async ({ page, helper, until, inPage: run }) => {
+  const url = `${page.url().split("#")[0]}#bubble`;
+  await page.goto("about:blank");
+  await page.goto(url, { waitUntil: "load" });
+  await until("the rows", ready);
+  const item = await run(() => { const a = document.getElementById("all"), r = a.getBoundingClientRect(), last = [...document.querySelectorAll(".choices > *")].filter((n) => n.checkVisibility()).at(-1);
+    return { shown: a.checkVisibility(), href: a.getAttribute("href"), text: a.querySelector("strong").textContent, last: last === a, height: r.height >= 44 }; });
+  assert.deepEqual(item, { shown: true, href: "../sessions/", text: "All sessions…", last: true, height: true });
+  const closes = () => run(() => window.__pairbrowse.calls.filter((c) => c.iface === "bubbles" && c.method === "close").length);
+  // No dock holds the opener lock: the item says so where it was clicked; the bubble stays.
+  await run(() => { const ch = new BroadcastChannel("pairbrowse-sessions"); window.__unheld = []; ch.onmessage = (e) => window.__unheld.push(e.data); window.__quiet = ch; });
+  await page.click("#all");
+  await until("the note", () => document.getElementById("msg").dataset.kind === "error");
+  assert.deepEqual(await run(() => (window.__quiet.close(), window.__unheld)), [], "nothing asked of nobody");
+  assert.equal(await run(() => document.getElementById("msg").textContent), "Couldn't open the sessions list from here. Open pairbrowse://sessions in a tab.");
+  assert.equal(await closes(), 0);
+  assert.equal(await run(() => document.getElementById("all").hasAttribute("aria-busy")), false);
+  // The dock that opened the bubble answers: the bubble closes, nothing was picked.
+  await run(() => { navigator.locks.request("pairbrowse-switcher-opener", () => new Promise(() => {})); const ch = new BroadcastChannel("pairbrowse-sessions"); window.__asked = []; ch.onmessage = (e) => { window.__asked.push(e.data); if (e.data?.open === "sessions") ch.postMessage({ opened: "sessions" }); }; window.__dock = ch; });
+  await page.click("#all");
+  assert.equal(await run(() => document.getElementById("all").getAttribute("aria-busy")), "true", "busy while the dock answers");
+  await until("the bubble closed", () => window.__pairbrowse.calls.some((c) => c.iface === "bubbles" && c.method === "close" && c.args[0] === 0));
+  assert.deepEqual(await run(() => window.__asked), [{ open: "sessions" }]);
+  assert.equal(await run(() => document.getElementById("msg").textContent), "");
+  assert.deepEqual(posted(helper, "pick"), []);
+  assert.equal(page.url(), url, "the bubble's page stays where it is");
 });

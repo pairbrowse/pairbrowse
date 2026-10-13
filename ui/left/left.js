@@ -5,7 +5,9 @@
 // the dock's state: it sets it only from Tools (the right dock opens, on its Tools tab through
 // the helper's POST layout tab), from Activity in the rail and from the collapse and expand
 // buttons. Tools is the agent panel's (its tab): no row here opens the other dock (DESIGN.md Part
-// I). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
+// I). The Sessions row is the one door to sessions (2026-10-14): it names the open session (the
+// helper's session event) and opens the switcher; the switcher's "All sessions…" asks this dock
+// (pairbrowse-sessions channel) to open the sessions page in the contents. Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
 import { $, el, rich, clock, activityHead, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
 
@@ -59,19 +61,35 @@ function railTitles() {
     if (!rail) row.removeAttribute("title");
     else row.title = id === "nav-browser" ? `${label} · ${$("tab-count-words").textContent}` : label;
   }
+  // The open session's name follows the row's word in the rail's tooltip ("Sessions · Default").
+  const open = sessionShown();
+  if (rail && open) $("nav-sessions").title = `Sessions · ${open.long}`;
   // A disabled row keeps saying why, in either state.
   for (const id of ["nav-history"]) if ($(id).disabled) $(id).title = `${$(id).querySelector(".label").textContent} · opens in the PairBrowse browser`;
-  // The header is a title (the switcher is the strip's logo and the Sessions row): in the rail its
-  // square says what it is in a tooltip, with the session's name when there is one.
-  if (rail) $("workspace").title = session?.name ? `Workspace · ${session.name}` : "Workspace";
-  else $("workspace").removeAttribute("title");
+}
+// The open session as the row shows it: a kept session by its name ("default" as "Default"), a
+// fresh one (the helper's temporary, deleted when the person switches away) marked as such; null
+// before the helper said.
+function sessionShown() {
+  if (session?.temporary === true) return { short: "Fresh", long: "Fresh session (temporary)" };
+  const name = typeof session?.name === "string" ? session.name.trim() : "";
+  if (!name) return null;
+  const shown = name === "default" ? "Default" : name;
+  return { short: shown, long: shown };
+}
+function drawSession() {
+  const open = sessionShown();
+  $("session-name").textContent = open?.short || "";
+  $("session-name").toggleAttribute("data-temporary", session?.temporary === true);
+  $("session-words").textContent = open ? `, ${open.long}` : "";
+  railTitles();
 }
 function setDock(name) {
   const state = DOCK.includes(name) ? name : "open";
   const was = dock();
   document.body.dataset.dock = state;
   const hidden = state === "hidden";
-  for (const id of ["main", "workspace", "settings", "dock-collapse", "dock-expand"]) $(id).inert = hidden;
+  for (const id of ["main", "settings", "dock-collapse", "dock-expand"]) $(id).inert = hidden;
   // The buttons show only once the layout is known (a host that cannot set it shows none).
   $("dock-collapse").hidden = !layout || state !== "open";
   $("dock-expand").hidden = !layout || state !== "rail";
@@ -79,7 +97,7 @@ function setDock(name) {
   else if (switchAsked) { switchAsked = false; caretAt(); switcher.open($("nav-sessions")); }
   // Open and rail swap the dock's content: it comes in with the sheet's motion, not a jump (the
   // first state, on load, is only placed).
-  if (was && was !== state && state !== "hidden") for (const n of [$("main"), document.querySelector(".head"), document.querySelector(".foot")]) enter(n, { axis: "fade" });
+  if (was && was !== state && state !== "hidden") for (const n of [$("main"), document.querySelector(".foot")]) enter(n, { axis: "fade" });
   if (hidden) { switcher.close(false); closeRowBubble(); }
   // Nothing redraws rows nobody can see: the drive timer stops with the dock hidden.
   if (hidden) { clearTimeout(driveTimer); driveTimer = 0; } else armDrive();
@@ -166,7 +184,7 @@ function drawStorage() {
   bar.setAttribute("role", "img");
   bar.setAttribute("aria-label", `${gb(st.used)} of ${gb(st.limit)} used`);
   const box = el("div", { className: "storage", id: "storage" }, el("div", { className: "line" }, el("span", { textContent: "Storage" }), el("span", { id: "storage-text", textContent: text })), bar);
-  $("settings").before(box);
+  document.querySelector(".foot-row").before(box);
 }
 
 // ---- activity ----
@@ -226,10 +244,9 @@ function drawGuests() {
 }
 
 // ---- actions ----
-// The session switcher. In the browser (window.pairbrowse) the Sessions row opens the browser's own
-// switcher bubble beside the row, its arrow at the row (530's Bubbles, the same bubble as the
-// strip's logo: the picker page itself, which reaches the helper; a frame here gets no bindings and
-// could not): its state shows on the row (pressed), a second click or Escape on the row closes it,
+// The session switcher. In the browser (window.pairbrowse) the Sessions row, its one door, opens
+// the browser's own switcher bubble beside the row, its arrow at the row (530's Bubbles: the picker
+// page itself, which reaches the helper; a frame here gets no bindings and could not): its state shows on the row (pressed), a second click or Escape on the row closes it,
 // and Escape inside gives the focus back to the row. A build without Bubbles, or one that refuses,
 // opens the picker as a tab. Served without the browser's API (a plain browser, the pages'
 // harness) the picker opens in a same-origin frame under the row, where it reads the extension's
@@ -261,6 +278,19 @@ let rowObserved = false;
 function rowState(open) {
   rowBubble = open;
   $("nav-sessions").setAttribute("aria-expanded", String(open));
+  holdOpener(open);
+}
+// While this dock's bubble shows it holds the pairbrowse-switcher-opener lock: the bubble's "All
+// sessions…" checks for it before asking over the channel, so it can say at once when no dock
+// would answer (no timer of its own). Released when the bubble closes.
+const OPENER_LOCK = "pairbrowse-switcher-opener";
+let wantOpener = false;
+let releaseOpener = null;
+function holdOpener(on) {
+  wantOpener = on;
+  if (!on) { releaseOpener?.(); releaseOpener = null; return; }
+  if (releaseOpener || typeof navigator.locks?.request !== "function") return;
+  navigator.locks.request(OPENER_LOCK, { ifAvailable: true }, (lock) => (lock && wantOpener ? new Promise((r) => { releaseOpener = r; }) : null)).catch(() => {});
 }
 function observeRowBubble() {
   if (rowObserved) return;
@@ -286,6 +316,20 @@ function anchorRect(node) {
 }
 const isPicker = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)picker(\/|#|$)/.test(url || "");
 const openPickerTab = () => findOrOpen(isPicker, "pairbrowse://picker");
+// ---- "All sessions…" (the switcher's last item): the sessions page in the contents ----
+// The bubble gets Session and Bubbles only, so it cannot open a tab: it asks over the
+// pairbrowse-sessions channel (this origin only) with { open: "sessions" }, and the dock whose row
+// opened it (the one door: the strip's logo is a brand mark; it holds the opener lock meanwhile)
+// finds or opens pairbrowse://sessions in its window and answers { opened: "sessions" }; the bubble
+// then closes. Any other dock stays quiet.
+const isSessionsPage = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)sessions(\/|#|\?|$)/.test(url || "");
+let sessionsChannel = null;
+try { sessionsChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("pairbrowse-sessions") : null; } catch {}
+if (sessionsChannel) sessionsChannel.onmessage = (e) => {
+  if (e.data?.open !== "sessions" || !pb || !rowBubble) return;
+  findOrOpen(isSessionsPage, "pairbrowse://sessions");
+  sessionsChannel.postMessage({ opened: "sessions" });
+};
 function closeRowBubble() {
   if (!rowBubble) return;
   rowSelfClosed = true;
@@ -452,7 +496,8 @@ function connect(url) {
     },
   });
   const on = stream.on;
-  on("session", (s) => { session = s && typeof s === "object" ? s : null; railTitles(); drawStorage(); });
+  // The open session's name follows every switch and rename as the helper says it (no polling).
+  on("session", (s) => { session = s && typeof s === "object" ? s : null; drawSession(); drawStorage(); });
   on("collaboration", (c) => {
     guests = Array.isArray(c?.guests) ? c.guests : [];
     const label = typeof c?.owner?.label === "string" && c.owner.label ? c.owner.label : "You";
@@ -508,8 +553,7 @@ $("nav-browser").addEventListener("click", openBrowser);
 $("nav-history").addEventListener("click", openHistory);
 $("nav-activity").addEventListener("click", toggleActivity);
 $("add-agent").addEventListener("click", toggleHint);
-// The strip's logo opens its own switcher bubble (530), or the picker as a tab in a build without
-// one: it no longer asks this dock (the frame here gets no bindings in the browser).
+// The strip's logo is a brand mark: the Sessions row above is the one door to the switcher.
 $("settings").addEventListener("click", openSettings);
 const askLeft = (state) => { focusAfter = state; if (!askDock({ pb, layout, base, side: "left", state, onFail: () => { focusAfter = ""; } })) focusAfter = ""; };
 $("dock-collapse").addEventListener("click", () => askLeft("rail"));

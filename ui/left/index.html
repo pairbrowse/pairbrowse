@@ -12,7 +12,6 @@
 <svg hidden aria-hidden="true">
   <symbol id="i-workspace" viewBox="0 0 20 20"><g stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.2V5.5A2.5 2.5 0 0 1 5.5 3h1.7M12.8 3h1.7A2.5 2.5 0 0 1 17 5.5v1.7M17 12.8v1.7a2.5 2.5 0 0 1-2.5 2.5h-1.7M7.2 17H5.5A2.5 2.5 0 0 1 3 14.5v-1.7"/><circle cx="10" cy="10" r="3.2"/></g><circle cx="10" cy="10" r="1.3" fill="currentColor"/></symbol>
   <symbol id="i-browser" viewBox="0 0 18 18"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.8" width="14.4" height="12.4" rx="2"/><path d="M5.5 6.6h7M9 6.6v3.6M7.4 8.4h3.2"/></g></symbol>
-  <symbol id="i-sessions" viewBox="0 0 18 18"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.8" width="14.4" height="12.4" rx="2.6"/><path d="M1.8 6.4h14.4M4.6 15.2v-3M13.4 15.2v-3"/></g></symbol>
   <symbol id="i-history" viewBox="0 0 18 18"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="7"/><path d="M9 5v4.2l2.6 1.8"/></g></symbol>
   <symbol id="i-activity" viewBox="0 0 18 18"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 2.6 16 7.4l-5.4 4.8V9.6c-3.4 0-5.6 1.4-7.4 4.6-.6.9-1.6.6-1.3-.4 1.1-4.4 4.2-7.2 8.7-7.6z"/></g></symbol>
   <symbol id="i-people" viewBox="0 0 20 20"><g fill="currentColor"><circle cx="7.4" cy="6.6" r="3"/><path d="M1.6 15.6c.3-3.2 2.7-5 5.8-5s5.5 1.8 5.8 5c0 .4-.3.7-.7.7H2.3c-.4 0-.7-.3-.7-.7z"/><circle cx="14" cy="7.4" r="2.4"/><path d="M14.4 11.1c2.4.1 3.9 1.7 4.1 4.1 0 .4-.3.7-.7.7h-3.4c.1-1.9-.3-3.5-1.4-4.6.4-.1.9-.2 1.4-.2z"/></g></symbol>
@@ -22,21 +21,17 @@
   <symbol id="i-chevron-left" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4L6 8l4 4"/></g></symbol>
   <symbol id="i-chevron-right" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></g></symbol>
 </svg>
-<header class="head">
-  <button class="dock-btn" id="dock-expand" type="button" aria-label="Expand the workspace" title="Expand the workspace" aria-expanded="false" hidden><svg aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
-  <!-- A title, not a control (DESIGN.md Part G): the strip's logo switches sessions, the Sessions row
-       below lists them; a workspace switcher comes with workspaces. -->
-  <div class="workspace" id="workspace"><span class="ws-icon" aria-hidden="true"><svg><use href="#i-workspace"/></svg></span><span class="ws-label">Workspace</span></div>
-  <button class="dock-btn" id="dock-collapse" type="button" aria-label="Collapse the workspace" title="Collapse the workspace" aria-expanded="true" hidden><svg aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
-</header>
-<!-- The session switcher, under the strip's logo (the caret at the logo's place) and the Sessions row:
-     at the dock's top, the nearest it can be to the logo until 530's bubbles (DESIGN.md Part I). -->
+<!-- The session switcher served without the browser's API (a plain browser): the picker in a frame
+     under the Sessions row, the caret at its icon (DESIGN.md Part I). In the browser the row opens
+     the browser's own switcher bubble instead. -->
 <div id="switcher" class="switcher m-pop" role="dialog" aria-label="Switch session" tabindex="-1" hidden><iframe id="picker" title="Session picker"></iframe></div>
 <main class="body" id="main">
   <nav aria-label="Workspace">
     <ul class="nav" role="list">
       <li><button class="row" id="nav-browser" type="button" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-browser"/></svg><span class="label">Browser</span><span class="badge" id="tab-count" aria-hidden="true"></span><span class="sr" id="tab-count-words"></span></button></li>
-      <li><button class="row" id="nav-sessions" type="button" aria-expanded="false" aria-controls="switcher"><svg class="ic" aria-hidden="true"><use href="#i-sessions"/></svg><span class="label">Sessions</span></button></li>
+      <!-- The one door to sessions (2026-10-14): the open session's name at the row's end (the
+           helper's session event), the switcher on a click; "All sessions…" in it lists them all. -->
+      <li><button class="row" id="nav-sessions" type="button" aria-expanded="false" aria-controls="switcher"><svg class="ic" aria-hidden="true"><use href="#i-workspace"/></svg><span class="label">Sessions</span><span class="current" id="session-name" aria-hidden="true"></span><span class="sr" id="session-words"></span></button></li>
       <li><button class="row" id="nav-history" type="button"><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg><span class="label">History</span></button></li>
       <li><button class="row" id="nav-activity" type="button" aria-expanded="false" aria-controls="activity-list"><svg class="ic" aria-hidden="true"><use href="#i-activity"/></svg><span class="label">Activity</span></button>
         <ol class="activity m-fold" id="activity-list" hidden aria-label="Activity"></ol></li>
@@ -62,7 +57,12 @@
 </main>
 <footer class="foot">
   <!-- Storage is PairBrowse Pro's cloud storage (api.pairbrowse.com): left.js adds the row before the gear only when the session event carries session.storage; until Pro the helper sends no figure and nothing shows here. -->
-  <button class="gear" id="settings" type="button" aria-label="Settings" title="Settings"><svg aria-hidden="true"><use href="#i-gear"/></svg></button>
+  <div class="foot-row">
+    <button class="gear" id="settings" type="button" aria-label="Settings" title="Settings"><svg aria-hidden="true"><use href="#i-gear"/></svg></button>
+    <!-- The dock's own state (open, rail), set through the browser's layout: shown once it is known. -->
+    <button class="dock-btn" id="dock-collapse" type="button" aria-label="Collapse the workspace" title="Collapse the workspace" aria-expanded="true" hidden><svg aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
+    <button class="dock-btn" id="dock-expand" type="button" aria-label="Expand the workspace" title="Expand the workspace" aria-expanded="false" hidden><svg aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
+  </div>
 </footer>
 <script type="module" src="left.js"></script>
 </body>

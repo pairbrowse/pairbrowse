@@ -97,8 +97,12 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-1); font-weight: 650
 .none { margin: var(--sp-1) var(--sp-3); color: var(--ink-2); font-size: var(--fs-2); }
 
 /* Start fresh and join: two 44 px secondary rows. */
-#fresh, details.choice { background: transparent; border-color: var(--edge); }
-#fresh:hover, details.choice:hover, details.choice[open] { background: var(--hover); }
+#fresh, details.choice, #all { background: transparent; border-color: var(--edge); }
+#fresh:hover, details.choice:hover, details.choice[open], #all:hover { background: var(--hover); }
+/* "All sessions…" (framed and in the bubble only): a link that reads as the rows above it. */
+#all { text-decoration: none; }
+#all[hidden] { display: none; }
+html[data-host="frame"] #all small { white-space: normal; overflow: visible; text-overflow: clip; }
 details.choice { display: block; cursor: default; }
 summary { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 0 var(--sp-3); min-height: 36px; list-style: none; cursor: pointer; border-radius: var(--r-2); }
 summary::-webkit-details-marker { display: none; }

@@ -1,7 +1,8 @@
 // The left dock (ui/left, DESIGN.md B3) over the pages' harness: the dock state reflected from the
 // layout, the nav rows and what they open, the tab count, the agents and who it is shared with,
 // the activity list, no Storage row (PairBrowse Pro's), the Share card the strip's Share opens, the
-// switcher the strip's logo opens, the collapse and expand buttons (native and over the helper's route) and the keyboard.
+// Sessions row (the one door to sessions: the open session's name, the switcher, "All sessions…"),
+// the collapse and expand buttons at the foot (native and over the helper's route) and the keyboard.
 // The common checks are in test/ui.test.mjs.
 import { describe } from "node:test";
 import assert from "node:assert/strict";
@@ -78,9 +79,12 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   await until("the rail", () => document.body.dataset.dock === "rail");
   assert.equal(await inPage(() => document.querySelector("#nav-browser .label").checkVisibility()), false);
   assert.match(await inPage(() => document.getElementById("nav-browser").title), /^Browser · 3 open tabs$/);
-  // The header is a title (the strip's logo switches sessions): in the rail its square names itself.
-  assert.equal(await inPage(() => document.getElementById("workspace").title), "Workspace");
-  assert.equal(await inPage(() => document.getElementById("workspace").tagName), "DIV", "not a control");
+  // No Workspace header (2026-10-14): the Sessions row names itself in the rail, the open session's
+  // name after it once the helper says one.
+  assert.equal(await inPage(() => document.getElementById("workspace")), null);
+  assert.equal(await inPage(() => document.getElementById("nav-sessions").title), "Sessions");
+  ctx.helper.push("session", { name: "work", where: "Local" });
+  await until("the session in the rail's tooltip", () => document.getElementById("nav-sessions").title === "Sessions · work");
   assert.deepEqual(await inPage(shown), { collapse: false, expand: true });
   e = await inPage(innerEdge);
   assert.equal(e.shadow, `${e.edge} -1px 0px 0px 0px inset`, "rail: the same inner edge");
@@ -92,7 +96,7 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   assert.equal((await ctx.harness.live()).timeouts, 1);
   await ctx.shim.layout({ left: 0 });
   await until("hidden", () => document.body.dataset.dock === "hidden");
-  assert.deepEqual(await inPage(() => ["main", "workspace", "settings", "dock-collapse", "dock-expand"].map((id) => document.getElementById(id).inert)), [true, true, true, true, true]);
+  assert.deepEqual(await inPage(() => ["main", "settings", "dock-collapse", "dock-expand"].map((id) => document.getElementById(id).inert)), [true, true, true, true]);
   assert.deepEqual(await inPage(shown), { collapse: false, expand: false });
   assert.equal((await inPage(innerEdge)).shadow, "none", "hidden: no edge");
   await ctx.page.keyboard.press("Tab");
@@ -120,9 +124,11 @@ scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }
   // The active row, as the mockup draws it: the --nav-active fill, no gradient, the soft blue glow.
   const look = await inPage(() => { const p = document.createElement("i"); p.style.backgroundColor = "var(--nav-active)"; document.body.append(p); const want = getComputedStyle(p).backgroundColor; p.remove(); const s = getComputedStyle(document.getElementById("nav-browser")); return { bg: s.backgroundColor === want, image: s.backgroundImage, shadow: s.boxShadow }; });
   assert.deepEqual({ ...look, shadow: look.shadow !== "none" }, { bg: true, image: "none", shadow: true });
-  // The header centred 30 px under the dock's top (the mockup: Workspace at y 83, the dock from y 53).
-  const head = await inPage(() => { const r = document.querySelector(".workspace").getBoundingClientRect(); return r.top + r.height / 2; });
-  assert.equal(head, 30, "Workspace centred 30 px under the dock's top");
+  // No Workspace header (2026-10-14): the nav starts 12 px under the dock's top, and the Sessions row
+  // carries the workspace icon.
+  assert.deepEqual(await inPage(() => [document.getElementById("workspace"), document.querySelector(".head")]), [null, null]);
+  assert.equal(await inPage(() => document.getElementById("nav-browser").getBoundingClientRect().top), 12);
+  assert.equal(await inPage(() => document.querySelector("#nav-sessions .ic use").getAttribute("href")), "#i-workspace");
   await ctx.page.click("#nav-history");
   await until("a history tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
   assert.deepEqual((await calls(ctx, "tabs", "create"))[0].args, ["chrome://history", true, 1]);
@@ -268,7 +274,7 @@ scenario("left: the Storage row when the session event carries storage (Pro's fi
   const row = await inPage(() => {
     const bar = document.querySelector("#storage .bar");
     return { text: document.getElementById("storage-text").textContent, label: bar.getAttribute("aria-label"), role: bar.getAttribute("role"),
-      fill: Math.round(document.getElementById("storage-bar").getBoundingClientRect().width / bar.getBoundingClientRect().width * 100), beforeGear: document.getElementById("storage").nextElementSibling?.id };
+      fill: Math.round(document.getElementById("storage-bar").getBoundingClientRect().width / bar.getBoundingClientRect().width * 100), beforeGear: document.getElementById("storage").nextElementSibling?.querySelector("#settings")?.id };
   });
   assert.deepEqual(row, { text: "2.4 GB / 10 GB", label: "2.4 GB of 10 GB used", role: "img", fill: 24, beforeGear: "settings" });
   ctx.helper.push("session", { name: "default", where: "Local" });
@@ -296,9 +302,9 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   const order = [];
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
   for (let i = 0; i < 7; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
-  // The Workspace header is a title and Share is the strip's (DESIGN.md Part G): neither is a stop;
-  // Tools is the agent panel's tab (Part I).
-  assert.deepEqual(order, ["dock-collapse", "nav-browser", "nav-sessions", "nav-history", "nav-activity", "add-agent", "settings"]);
+  // Share is the strip's (DESIGN.md Part G) and Tools the agent panel's tab (Part I): neither is a
+  // stop; the collapse chevron sits at the foot after the gear (2026-10-14).
+  assert.deepEqual(order, ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "add-agent", "settings", "dock-collapse"]);
   await ctx.page.focus("#nav-sessions");
   await ctx.page.keyboard.press("Enter");
   // In the browser without its bubbles the Sessions row opens the picker as a tab (a page of its
@@ -329,8 +335,8 @@ scenario("left: the session switcher", { viewport: { width: 420, height: 936 }, 
   const { page, until, inPage, helper, settle } = ctx;
   const live = await ctx.harness.live();
   const state = () => ({ hidden: document.getElementById("switcher").hidden, src: document.getElementById("picker").getAttribute("src"), focus: document.activeElement?.id || "" });
-  // The Workspace header is a title (DESIGN.md Part G): the Sessions row and the strip's logo open it.
-  assert.equal(await inPage(() => document.getElementById("workspace").tagName), "DIV");
+  // The Sessions row is the one door (2026-10-14): no header, and the strip's logo is a brand mark.
+  assert.equal(await inPage(() => document.getElementById("workspace")), null);
   await until("the layout", () => document.body.dataset.dock === "open");
   await page.click("#nav-sessions");
   await settle();
@@ -422,36 +428,40 @@ scenario("left: the session switcher under reduced motion", { viewport: { width:
   assert.deepEqual(await ctx.inPage(() => { const s = getComputedStyle(document.getElementById("switcher")); return [s.animationName, s.transitionDuration, s.opacity]; }), ["none", "0s", "1"]);
   assert.deepEqual(await ctx.harness.animations(), []);
   await ctx.page.keyboard.press("Escape");
+  // The frame's Escape reaches the dock as a message (a task of its own): closed and unloaded at once
+  // when it lands, with no fade in between.
+  await ctx.until("closed and unloaded", () => document.getElementById("switcher").hidden);
   assert.deepEqual(await ctx.inPage(() => [document.getElementById("switcher").hidden, document.getElementById("picker").getAttribute("src"), document.activeElement?.id]), [true, null, "nav-sessions"]);
   await clean(ctx);
 });
 
-scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { layout: { left: 1 } }, fixtures: { board: BOARD } }, async (ctx) => {
+scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { layout: { left: 1 } }, fixtures: { board: BOARD, session: { name: "work", where: "Local" } } }, async (ctx) => {
   const { until, inPage } = ctx;
   await until("the rail", () => document.body.dataset.dock === "rail");
   await until("the agents", () => document.querySelectorAll("#agents li[data-state]").length === 3);
   const seen = await inPage(() => ({
-    labels: [...document.querySelectorAll(".label, .ws-label, .badge, h2, .add, .hint, .conn, .activity, #storage, .empty-note, .share-card")].filter((n) => n.checkVisibility()).length,
+    labels: [...document.querySelectorAll(".label, .current, .badge, h2, .add, .hint, .conn, .activity, #storage, .empty-note, .share-card")].filter((n) => n.checkVisibility()).length,
     clipped: [...document.querySelectorAll(".people strong, .people small")].map((n) => n.getBoundingClientRect().width <= 1),
     width: document.documentElement.scrollWidth,
     gear: document.getElementById("settings").checkVisibility(),
     avatars: [...document.querySelectorAll("#agents .avatar")].map((a) => [a.checkVisibility(), a.querySelector(".dot").checkVisibility(), a.getBoundingClientRect().width]),
     titles: [...document.querySelectorAll("#agents li")].map((li) => li.title),
     rows: [...document.querySelectorAll(".nav .row")].map((r) => r.title),
-    expand: (() => { const b = document.getElementById("dock-expand"), r = b.getBoundingClientRect(); return { shown: b.checkVisibility(), width: r.width, left: r.left, top: r.top }; })(),
+    expand: (() => { const b = document.getElementById("dock-expand"), r = b.getBoundingClientRect(), g = document.getElementById("settings").getBoundingClientRect(); return { shown: b.checkVisibility(), width: r.width, left: r.left, underGear: r.top >= g.bottom, gearLeft: g.left, inView: r.bottom <= innerHeight }; })(),
     collapse: document.getElementById("dock-collapse").checkVisibility(),
-    workspace: document.getElementById("workspace").checkVisibility(),
+    sessions: (() => { const r = document.getElementById("nav-sessions"); return { shown: r.checkVisibility(), name: r.querySelector(".current").textContent, words: r.textContent }; })(),
   }));
-  assert.deepEqual(seen.expand, { shown: true, width: 28, left: 8, top: 12 }, "--ctl-sm, centred in the 44 px rail, 12 px down");
+  // The foot: the gear, the expand chevron under it, both --ctl-sm and centred in the 44 px rail.
+  assert.deepEqual(seen.expand, { shown: true, width: 28, left: 8, underGear: true, gearLeft: 8, inView: true });
   assert.equal(seen.collapse, false);
-  assert.equal(seen.workspace, true);
+  assert.deepEqual(seen.sessions, { shown: true, name: "work", words: "Sessionswork, work" }, "the icon, the name in words for readers");
   assert.equal(seen.labels, 0);
   assert.ok(seen.clipped.length > 0 && seen.clipped.every(Boolean), "names and states clipped, not removed");
   assert.ok(seen.width <= 44, `scrollWidth ${seen.width}`);
   assert.equal(seen.gear, true);
   assert.deepEqual(seen.avatars, [[true, true, 28], [true, true, 28], [true, true, 28]]);
   assert.deepEqual(seen.titles, ["Claude · Working · 1 tab", "Alice · Codex · Waiting for you", "You · Online"]);
-  assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions", "History", "Activity"]);
+  assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions · work", "History", "Activity"]);
   await clean(ctx);
 });
 
@@ -476,9 +486,11 @@ scenario("left: collapse and expand", { viewport: OPEN }, async (ctx) => {
     const b = document.getElementById("dock-collapse"), r = b.getBoundingClientRect();
     return { width: r.width, height: r.height, right: r.right, label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded"), expand: document.getElementById("dock-expand").checkVisibility() };
   });
-  // --ctl-sm, its right edge on the sections' "+" (20 px in from the dock's outer edge).
+  // --ctl-sm at the foot, beside the gear (2026-10-14), its right edge on the sections' "+" (20 px in
+  // from the dock's inner edge), on the gear's line.
   assert.deepEqual(box, { width: 28, height: 28, right: 180, label: "Collapse the workspace", expanded: "true", expand: false });
   assert.equal(await inPage(() => document.querySelector("#add-agent").getBoundingClientRect().right), 180, "the + on the same right edge");
+  assert.deepEqual(await inPage(() => { const g = document.getElementById("settings").getBoundingClientRect(), c = document.getElementById("dock-collapse").getBoundingClientRect(); return [c.top === g.top, !!document.getElementById("dock-collapse").closest(".foot"), g.left]; }), [true, true, 20]);
   // Hover: --hover under --ink, over the 120 ms transition.
   assert.equal(await inPage(() => getComputedStyle(document.getElementById("dock-collapse")).transitionDuration), "0.12s, 0.12s");
   await page.hover("#dock-collapse");
@@ -499,7 +511,9 @@ scenario("left: collapse and expand", { viewport: OPEN }, async (ctx) => {
   });
   assert.deepEqual(expand.ring, ["solid", "2px", "2px", await inPage(token, "--accent")], "the 2 px accent focus ring");
   delete expand.ring;
-  assert.deepEqual(expand, { label: "Expand the workspace", expanded: "false", top: 12, collapse: false });
+  assert.ok(expand.top > 800, `the expand chevron at the rail's foot (${expand.top})`);
+  delete expand.top;
+  assert.deepEqual(expand, { label: "Expand the workspace", expanded: "false", collapse: false });
   await page.keyboard.press("Enter");
   await until("open, focus on collapse", () => document.body.dataset.dock === "open" && document.activeElement?.id === "dock-collapse");
   const all = await calls(ctx, "layout", "set");
@@ -707,5 +721,93 @@ scenario("left: a refused bubble opens the picker as a tab", { viewport: OPEN, s
   await until("the picker tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create" && c.args[0] === "pairbrowse://picker"));
   assert.equal(await inPage(() => document.getElementById("nav-sessions").getAttribute("aria-expanded")), "false");
   assert.equal(pickerFrames(page), 0);
+  await clean(ctx);
+});
+
+// ---- the Sessions row names the open session (2026-10-14), live from the helper's session event ----
+const sessionRow = () => {
+  const row = document.getElementById("nav-sessions"), cur = row.querySelector(".current"), label = row.querySelector(".label");
+  const s = getComputedStyle(cur);
+  return { name: cur.textContent, shown: cur.checkVisibility(), words: document.getElementById("session-words").textContent, temporary: cur.hasAttribute("data-temporary"),
+    cut: cur.scrollWidth > cur.clientWidth, ellipsis: s.textOverflow, muted: s.color, label: label.scrollWidth <= label.clientWidth, right: Math.round(row.getBoundingClientRect().right - cur.getBoundingClientRect().right) };
+};
+scenario("left: the Sessions row shows the open session", { viewport: OPEN, fixtures: { session: { name: "default", where: "Local" } } }, async (ctx) => {
+  const { until, inPage, helper } = ctx;
+  await until("Default", () => document.querySelector("#nav-sessions .current").textContent === "Default");
+  let r = await inPage(sessionRow);
+  assert.deepEqual({ name: r.name, shown: r.shown, words: r.words, temporary: r.temporary, right: r.right }, { name: "Default", shown: true, words: ", Default", temporary: false, right: 12 }, "at the row's end, where Browser has its count");
+  assert.equal(r.muted, await inPage(token, "--muted"), "muted");
+  assert.match(await ctx.page.locator("#nav-sessions").ariaSnapshot(), /Sessions ?, Default/, "the row's name says the session");
+  assert.equal(await inPage(() => document.getElementById("nav-sessions").hasAttribute("title")), false, "no tooltip in the open dock");
+  // A switch: the name follows the helper's event, no polling.
+  helper.push("session", { name: "quarterly-planning-research", where: "Local" });
+  await until("the new name", () => document.querySelector("#nav-sessions .current").textContent === "quarterly-planning-research");
+  r = await inPage(sessionRow);
+  assert.deepEqual([r.cut, r.ellipsis, r.label], [true, "ellipsis", true], "a long name is cut with an ellipsis, Sessions never");
+  // A fresh (temporary) session is marked as such.
+  helper.push("session", { name: "Clean session", where: "Local", temporary: true });
+  await until("Fresh", () => document.querySelector("#nav-sessions .current").textContent === "Fresh");
+  r = await inPage(sessionRow);
+  assert.deepEqual([r.words, r.temporary], [", Fresh session (temporary)", true]);
+  await ctx.shim.layout({ left: 1 });
+  await until("the rail", () => document.body.dataset.dock === "rail");
+  assert.equal(await inPage(() => document.getElementById("nav-sessions").title), "Sessions · Fresh session (temporary)");
+  assert.equal(await inPage(() => document.querySelector("#nav-sessions .current").checkVisibility()), false, "the rail shows the icon only");
+  helper.push("session", { name: "work", where: "Local" });
+  await until("the rail's tooltip follows", () => document.getElementById("nav-sessions").title === "Sessions · work");
+  const live = await ctx.harness.live();
+  assert.equal(live.intervals, 0, "no polling");
+  await clean(ctx);
+});
+
+// "All sessions…" in the switcher bubble asks the dock whose Sessions row opened it (the bubble has
+// no Tabs): that dock finds or opens pairbrowse://sessions in its window and says so; with its row's
+// bubble closed it stays quiet.
+const askAll = (inPage) => inPage(() => new Promise((resolve) => {
+  const ch = new BroadcastChannel("pairbrowse-sessions");
+  const heard = [];
+  ch.onmessage = (e) => heard.push(e.data);
+  ch.postMessage({ open: "sessions" });
+  setTimeout(() => { ch.close(); resolve(heard); }, 300);
+}));
+scenario("left: All sessions opens the sessions page from the bubble", { viewport: OPEN, shim: { bubbles: true } }, async (ctx) => {
+  const { page, until, inPage } = ctx;
+  await until("the tabs", () => document.getElementById("tab-count").textContent === "3");
+  assert.deepEqual(await askAll(inPage), [], "no bubble of this row's open: nothing answers");
+  assert.deepEqual(await calls(ctx, "tabs", "create"), []);
+  const lockHeld = () => navigator.locks.query().then((q) => q.held.filter((l) => l.name === "pairbrowse-switcher-opener").length);
+  assert.equal(await inPage(lockHeld), 0);
+  await page.click("#nav-sessions");
+  await until("pressed", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "true");
+  await until("the opener lock held while the bubble shows", () => navigator.locks.query().then((q) => q.held.some((l) => l.name === "pairbrowse-switcher-opener")));
+  assert.deepEqual(await askAll(inPage), [{ opened: "sessions" }]);
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://sessions", true, 1]], "in this dock's window");
+  // Asked again while the page is open: the open tab comes forward, no second one.
+  const id = await inPage(() => window.__pairbrowse.fixture.tabs.find((t) => t.url === "pairbrowse://sessions")?.id);
+  assert.ok(Number.isInteger(id), "the shim made the tab");
+  assert.deepEqual(await askAll(inPage), [{ opened: "sessions" }]);
+  assert.equal((await calls(ctx, "tabs", "create")).length, 1);
+  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [id]);
+  // The bubble closed: the lock goes with it, and the dock answers no more.
+  await inPage(() => window.__pairbrowse.bubbles.closed(0, false));
+  await until("released", () => navigator.locks.query().then((q) => !q.held.some((l) => l.name === "pairbrowse-switcher-opener")));
+  assert.deepEqual(await askAll(inPage), []);
+  await clean(ctx);
+});
+
+// Served without the browser's API (a plain browser): the framed switcher's "All sessions…" opens the
+// sessions page as a new tab and the switcher closes.
+scenario("left: All sessions from the framed switcher", { viewport: { width: 420, height: 936 }, native: false, fixtures: { sessions: SWITCHER_SESSIONS } }, async (ctx) => {
+  const { page, until } = ctx;
+  await page.click("#nav-sessions");
+  const frame = await framedPicker(page, "ready");
+  assert.deepEqual(await inFrame(frame, () => { const a = document.getElementById("all"); return [a.checkVisibility(), a.getAttribute("href"), a.target]; }), [true, "../sessions/", "_blank"]);
+  const opened = page.context().waitForEvent("page");
+  await clickInFrame(page, frame, "#all");
+  const tab = await opened;
+  await tab.waitForLoadState("load");
+  assert.match(tab.url(), /\/sessions\/$/);
+  await until("the switcher closed", () => document.getElementById("switcher").hidden);
+  await tab.close();
   await clean(ctx);
 });

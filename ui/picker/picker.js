@@ -164,6 +164,8 @@ async function load() {
     return;
   }
   head(QUESTION, state.picking ? WAITS : SWITCH);
+  // "All sessions…" only in the switcher, and not while an agent waits for this pick.
+  $("all").hidden = !framed || !!state.picking;
   // Redrawn only when something changed (someone joined or left), keeping the filter.
   const sig = JSON.stringify(state.sessions);
   if (sig === drawn) return;
@@ -185,6 +187,34 @@ async function load() {
 }
 
 $("fresh").addEventListener("click", (ev) => { if (real(ev)) send({ action: "new" }, "Starting a fresh session..."); });
+// "All sessions…", the switcher's last item: the sessions page in the contents (the full list, with
+// rename and delete). Framed in a plain browser it opens as a new tab and the switcher closes. In
+// the browser's bubble (Session and Bubbles only: no tab of its own to open) it asks the dock whose
+// Sessions row opened it over the pairbrowse-sessions channel (this origin only); that dock holds the
+// pairbrowse-switcher-opener lock while its bubble shows, so with no lock held nobody would answer
+// and the item says so at once (no timer). The bubble closes once the dock says the page is open.
+const OPENER_LOCK = "pairbrowse-switcher-opener";
+if (framed && !bubbled) { $("all").target = "_blank"; $("all").rel = "noopener"; }
+$("all").addEventListener("click", async (ev) => {
+  if (!framed) return;
+  if (!bubbled) { notify("close"); return; }
+  ev.preventDefault();
+  if (!real(ev) || $("all").getAttribute("aria-busy") === "true") return;
+  const failed = () => { $("all").removeAttribute("aria-busy"); say("Couldn't open the sessions list from here. Open pairbrowse://sessions in a tab.", "error"); };
+  $("all").setAttribute("aria-busy", "true");
+  const held = await Promise.resolve().then(() => navigator.locks.query()).then((s) => (s?.held || []).some((l) => l.name === OPENER_LOCK), () => false);
+  let ch = null;
+  try { ch = held ? new BroadcastChannel("pairbrowse-sessions") : null; } catch {}
+  if (!ch) { failed(); return; }
+  ch.onmessage = (e) => {
+    if (e.data?.opened !== "sessions") return;
+    ch.close();
+    $("all").removeAttribute("aria-busy");
+    say("");
+    notify("all");
+  };
+  ch.postMessage({ open: "sessions" });
+});
 // The code is only ever what the person typed or pasted here: nothing fills it in.
 $("join-form").addEventListener("submit", (ev) => {
   ev.preventDefault();

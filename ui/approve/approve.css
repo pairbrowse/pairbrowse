@@ -7,7 +7,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: var(--fs-3)/1.
 .empty { margin: 0; padding: var(--sp-4); color: var(--ink-2); }
 .card {
   /* The mockup's card: the avatar in its own column at the left, everything else in one column. */
-  position: relative; box-sizing: border-box; width: 100%; max-width: 364px; padding: 10px 13px 26px 57px; /* mockup: B6's card, the avatar in its own column */
+  position: relative; box-sizing: border-box; width: 100%; max-width: 364px; padding: 10px 16px 24px 54px; /* mockup: B6's card, the avatar in its own column (measured on the 530 gate capture: column 55, right 17, Allow 24 above the bottom) */
   display: grid; gap: 0;
   background-color: var(--panel); border: 1px solid var(--edge-btn); border-radius: 12px;
   box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised);
@@ -21,7 +21,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: var(--fs-3)/1.
 .hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; height: 30px; } /* mockup: the 30 px header line */
 #avatar-slot { display: contents; }
 .avatar {
-  position: absolute; left: 13px; top: 11px; /* mockup */
+  position: absolute; left: 12px; top: 12px; /* mockup: 13 px in from the card's outer edge on both sides */
   flex: none; width: 28px; height: 28px; border-radius: 50%;
   display: inline-grid; place-items: center;
   font: 600 var(--fs-4)/1 var(--sans); color: var(--bg);
@@ -32,7 +32,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: var(--fs-3)/1.
   font-size: var(--fs-3); font-weight: 400; color: var(--ink-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.title b { font-weight: 500; color: var(--ink); }
+.title b { font-weight: var(--fw-name); color: var(--ink); }
 .count {
   flex: none; height: 20px; padding: 0 var(--sp-2); border-radius: 10px;
   background: var(--accent-soft); color: var(--accent-ink);
@@ -45,28 +45,30 @@ button {
 }
 .x {
   flex: none; width: var(--ctl-xs); height: var(--ctl-xs); margin-right: -1px; padding: 0; border: 0; border-radius: var(--r-1);
-  background: transparent; color: var(--ink); font-size: var(--fs-6); font-weight: 300; line-height: 1;
+  background: transparent; color: var(--ink-soft); display: inline-grid; place-items: center;
 }
+.x svg { width: var(--icon); height: var(--icon); } /* mockup: a thin 9 px cross */
 .x:hover { background: var(--hover); color: var(--ink); }
 
 .target {
   margin: 0; padding: calc(var(--sp-2) - 1px) calc(var(--sp-3) - 1px); border: 1px solid var(--panel-edge); border-radius: var(--r-2); background: var(--inset);
-  font-size: var(--fs-3); line-height: 17px; color: var(--ink); overflow-wrap: anywhere;
+  font-size: var(--fs-2); line-height: 17px; color: var(--ink); overflow-wrap: anywhere;
 }
 .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.reason { max-width: 250px; margin: var(--sp-2) 0 0; font-size: var(--fs-3); line-height: 16px; color: var(--ink-soft); }
+.reason { max-width: 250px; margin: var(--sp-2) 0 0; font-size: var(--fs-2); line-height: 16px; color: var(--ink-soft); }
 .hint { margin: 0; min-height: 16px; font-size: var(--fs-2); color: var(--ink-2); }
 /* An empty hint leaves the grid (no gap, no height) but stays a live region for what it says next. */
 .hint:empty { position: absolute; width: 1px; height: 1px; min-height: 0; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .hint[data-kind="error"] { color: var(--bad); }
 
-.act { display: flex; gap: var(--sp-3); align-items: center; margin-top: 14px; } /* mockup: 14 px from the reason */
-.act button { font-size: var(--fs-4); font-weight: 500; }
-.allow { width: 84px; background: var(--accent-fill); color: #fff; border: 0; box-shadow: var(--glow-accent); }
+.act { display: flex; gap: var(--sp-3); align-items: center; margin-top: 16px; } /* mockup: 16 px from the reason */
+.act button { font-size: var(--fs-3); font-weight: 500; }
+.allow { width: 86px; background: var(--accent-fill); color: #fff; border: 0; box-shadow: var(--glow-accent); }
 .allow:hover { background: var(--accent-fill-top); }
-.deny { width: 86px; background: var(--panel); color: var(--ink); border: 1px solid var(--edge-btn); }
+.deny { width: 88px; background: var(--panel); color: var(--ink); border: 1px solid var(--edge-btn); }
 .deny:hover { background: var(--hover); }
 .act .more { position: relative; margin-left: auto; padding: 0 2px 0 13px; background: transparent; border: 0; border-radius: 0 var(--r-2) var(--r-2) 0; color: var(--ink-soft); font-size: var(--fs-2); font-weight: 400; white-space: nowrap; } /* mockup: the More actions divider */
+.more .chevron { width: 12px; height: 12px; margin-left: 6px; vertical-align: -2px; } /* mockup: the strip's chevron, 6 px after the words */
 .more::before { content: ""; position: absolute; left: 0; top: 1px; bottom: 1px; width: 1px; background: var(--edge); }
 .more:hover { background: var(--hover); color: var(--ink); }
 

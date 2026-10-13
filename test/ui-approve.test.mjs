@@ -101,7 +101,7 @@ named("renders the oldest pending click and counts the rest", async (ctx) => {
   assert.deepEqual(m, {
     pending: "2", focus: "card", countLabel: "1 more waiting",
     // the mockup's card: the name at 500, a 57 px avatar column, the dark panel, white on the Allow fill
-    whoWeight: "500", avRole: "img", avLabel: "Claude", avBg: "rgb(233, 118, 63)", avText: "C",
+    whoWeight: "600", avRole: "img", avLabel: "Claude", avBg: "rgb(233, 118, 63)", avText: "C",
     width: "360px", padding: "10px", radius: "12px", border: `1px solid ${edgeBtn}`,
     bg: panel, shadow: "raised", // the sheet's raised light: a 1 px top highlight and --shadow-raised
     target: `1px ${panelEdge}`, reason: inkSoft,
@@ -117,11 +117,11 @@ named("renders the oldest pending click and counts the rest", async (ctx) => {
     return { who: cs("#who").fontWeight, verb: cs("#verb").fontWeight, verbColor: cs("#verb").color, hintBox: [r("#hint").width, r("#hint").height], hintLive: hint.getAttribute("aria-live"),
       hintEmpty: hint.textContent === "", gap: Math.round(r(".act").top - r("#reason").bottom), height: r("#card").height };
   });
-  assert.deepEqual([hd.who, hd.verb, hd.verbColor], ["500", "400", ink2]);
+  assert.deepEqual([hd.who, hd.verb, hd.verbColor], ["600", "400", ink2]);
   assert.deepEqual(hd.hintBox, [1, 1], "an empty hint is a 1 px box out of the grid");
   assert.equal(hd.hintLive, "polite");
   assert.equal(hd.hintEmpty, true);
-  assert.equal(hd.gap, 14, "the mockup's 14 px between the reason and the buttons");
+  assert.equal(hd.gap, 16, "the mockup's 16 px between the reason and the buttons (measured on the 530 gate capture)");
   assert.ok(hd.height <= 205, `the card is compact: ${hd.height} px`);
 });
 

@@ -466,3 +466,11 @@ pageTest("picker", { fixtures: { sessions: STATE }, shim: { bubbles: true }, vie
   await until("the bubble closed", () => window.__pairbrowse.calls.some((c) => c.iface === "bubbles" && c.method === "close" && c.args[0] === 0));
   assert.deepEqual(posted(helper, "pick"), [{ action: "new" }]);
 });
+
+// No saved session (a first start, the look harness's scene): neither the "Continue where you
+// left off" heading over an empty list nor the "Or" before the two choices.
+pageTest("picker", { fixtures: { sessions: { picking: true, sessions: [] } }, viewport: { width: 1200, height: 760 } }, async ({ until, inPage: run }) => {
+  await until("ready", ready);
+  const shown = await run(() => ["continue-h", "or-h", "fresh"].map((id) => !!document.getElementById(id).getClientRects().length));
+  assert.deepEqual(shown, [false, false, true]);
+});

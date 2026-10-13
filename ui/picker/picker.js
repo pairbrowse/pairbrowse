@@ -171,6 +171,8 @@ async function load() {
   // Most recently used first (the helper's order); the rest behind "More sessions", with a filter.
   const sessions = state.sessions;
   $("sessions").replaceChildren(...sessions.slice(0, TOP).map(sessionRow));
+  // No saved session to continue: no heading over an empty list, and no "Or" before the choices.
+  $("continue-h").hidden = $("or-h").hidden = !sessions.length;
   // Opened, "More sessions" lists them all (with the filter) in place of the top ones.
   const rest = sessions.length - TOP;
   $("more").hidden = rest <= 0;

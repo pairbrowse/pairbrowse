@@ -124,9 +124,12 @@ export function loadingHtml(tabs) {
 // Brings back saved tabs one by one, in order. Each tab starts loading before the next one opens,
 // so they appear in sequence but load side by side.
 // screen: the tab to show the progress in (default: the first one); it closes at the end.
-export async function restoreTabs(ctx, saved, { onProgress = () => {}, log = () => {}, screen: given = null } = {}) {
+// list false (a build with its own pages): no progress page; the start tab closes at the end only
+// while it is still the untouched new tab page.
+export async function restoreTabs(ctx, saved, { onProgress = () => {}, log = () => {}, screen: given = null, list = true } = {}) {
   const { tabs, active } = saved;
   if (!tabs.length) { if (given) await given.close().catch(() => {}); return; }
+  if (!list) return restoreQuietly(ctx, saved, { onProgress, log, start: given || ctx.pages()[0] || null });
   const screen = given || ctx.pages()[0] || (await ctx.newPage());
   await screen.setContent(loadingHtml(tabs)).catch(() => {});
   await screen.bringToFront().catch(() => {});
@@ -150,4 +153,21 @@ export async function restoreTabs(ctx, saved, { onProgress = () => {}, log = () 
   await sleep(350); // let the finished list register
   await (pages[active] || pages[0]).bringToFront().catch(() => {});
   await screen.close().catch(() => {});
+}
+
+// The new tab page as a start tab shows it: the browser's address or PairBrowse's own.
+export const isUntouchedStart = (url) => /^chrome:\/\/(newtab|pairbrowse\/newtab)\/?([?#].*)?$/i.test(String(url ?? ""));
+
+// restoreTabs without the progress page: the saved tabs open in order, the one that was active
+// comes forward, and the start tab closes if nobody used it (still the new tab page).
+async function restoreQuietly(ctx, { tabs, active }, { onProgress, log, start }) {
+  const pages = [];
+  for (const [i, t] of tabs.entries()) {
+    onProgress(i + 1, tabs.length, t);
+    const page = await ctx.newPage();
+    await page.goto(t.url, { waitUntil: "commit", timeout: 5000 }).catch((e) => log(`restore ${t.url}: ${e.message.split("\n")[0]}`));
+    pages.push(page);
+  }
+  await (pages[active] || pages[0]).bringToFront().catch(() => {});
+  if (start && !start.isClosed?.() && isUntouchedStart(start.url())) await start.close().catch(() => {});
 }

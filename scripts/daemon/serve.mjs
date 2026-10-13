@@ -8,6 +8,7 @@ import { createInterface } from "node:readline";
 import { paths } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
 import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, sensitiveLabel, isChromePage, CHROME_PAGE_RULE } from "../policy.mjs";
+import { isUntouchedStart } from "../tabs.mjs";
 import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
@@ -217,7 +218,12 @@ const isFileTab = (page) => { try { return /^file:/i.test(String(page?.url?.() ?
 export function tabRefusal(name, args = {}, { here = null, pages = [], personTab = () => false } = {}) {
   const person = (page) => !!page && (!!personTab(page) || isFileTab(page));
   if ((name.startsWith("browser_") && name !== "browser_tabs" && name !== "browser_close") || CHROME_GUARDED.has(name)) {
-    if (here && isChromePage(here.url())) return `${CHROME_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
+    // The one exception: browser_navigate may take an untouched new tab page (the start tab, a fresh
+    // Cmd+T) to a web page, as it took the about:blank start tab before the build had its own new
+    // tab page (plans/555 Risk 1); nothing reads or acts in the page itself, and navigationProblem
+    // still refuses every browser page as a target.
+    const leavingNewTab = name === "browser_navigate" && here && isUntouchedStart(here.url());
+    if (here && isChromePage(here.url()) && !leavingNewTab) return `${CHROME_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
     if (person(here)) return `${PERSON_TAB_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
   }
   if (name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined) {

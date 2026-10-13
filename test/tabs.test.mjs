@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { trackTabs, restoreTabs, loadingHtml, readSavedTabs } from "../scripts/tabs.mjs";
+import { trackTabs, restoreTabs, loadingHtml, readSavedTabs, isUntouchedStart } from "../scripts/tabs.mjs";
 
 // A tab and a browser context with only what tabs.mjs uses.
 function fakePage(url, title = "", { fails = false } = {}) {
@@ -154,4 +154,29 @@ test("nothing saved: a given loading screen is just closed", async () => {
   await restoreTabs(ctx, { tabs: [], active: 0 }, { screen: given });
   assert.ok(given.closed);
   assert.equal(ctx.opened.length, 0);
+});
+
+// plans/555 D1.4: a build with its own pages restores without the "Opening tabs" page (setContent
+// fails on its new tab page) and closes its start tab only while nobody used it.
+test("a build with its own pages restores quietly and closes an untouched start tab", async () => {
+  const start = fakePage("chrome://pairbrowse/newtab/");
+  const ctx = fakeContext([start]);
+  await restoreTabs(ctx, { tabs: [{ url: "https://a.test/" }, { url: "https://b.test/" }], active: 0 }, { list: false });
+  assert.deepEqual(ctx.opened.map((p) => p.url()), ["https://a.test/", "https://b.test/"]);
+  assert.equal(start.html, "", "no progress page");
+  assert.deepEqual(start.marks, []);
+  assert.ok(start.closed, "the untouched new tab page closes");
+  assert.ok(ctx.opened[0].fronted > 0, "the active tab comes forward");
+
+  const used = fakePage("chrome://pairbrowse/newtab/");
+  const ctx2 = fakeContext([used]);
+  const restoring = restoreTabs(ctx2, { tabs: [{ url: "https://a.test/" }], active: 0 }, { list: false });
+  used._url = "https://typed.test/"; // the person went somewhere meanwhile
+  await restoring;
+  assert.equal(used.closed, false, "a start tab the person used stays");
+});
+
+test("the untouched start tab is the new tab page by either address", () => {
+  for (const url of ["chrome://newtab/", "chrome://newtab", "chrome://pairbrowse/newtab/", "chrome://pairbrowse/newtab/?x#y"]) assert.equal(isUntouchedStart(url), true, url);
+  for (const url of ["about:blank", "chrome://pairbrowse/picker/", "https://newtab/", "chrome://pairbrowse/newtab/more", ""]) assert.equal(isUntouchedStart(url), false, url);
 });

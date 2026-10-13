@@ -118,3 +118,20 @@ test("the four cases: a file: tab the person opened, by index, an agent's tab na
     assert.ok(!/PB-TITLE|file:|private\.pdf|statement\.pdf/i.test(out), out);
   }
 });
+
+// plans/555 Risk 1: the start tab is now PairBrowse's new tab page. browser_navigate may take an
+// untouched one to a web page (as it took the about:blank start tab before); nothing else acts in
+// it, and any other browser page stays refused even for browser_navigate.
+test("tabRefusal: browser_navigate may leave an untouched new tab page, nothing else may act in it", () => {
+  const personTab = () => false;
+  for (const url of ["chrome://pairbrowse/newtab/", "chrome://newtab/"]) {
+    const start = page(url);
+    assert.equal(tabRefusal("browser_navigate", { url: "https://example.com" }, { here: start, personTab }), null, url);
+    for (const name of ["browser_snapshot", "browser_click", "browser_type", "browser_navigate_back", "pairbrowse_run"]) {
+      if (url.startsWith("chrome://pairbrowse")) assert.match(tabRefusal(name, {}, { here: start, personTab }) || "", /chrome:\/\/pairbrowse pages/, name);
+    }
+  }
+  for (const url of ["chrome://pairbrowse/picker/", "chrome://pairbrowse/settings/", "chrome://pairbrowse/newtab/more"]) {
+    assert.match(tabRefusal("browser_navigate", { url: "https://example.com" }, { here: page(url), personTab }) || "", /chrome:\/\/pairbrowse pages/, url);
+  }
+});

@@ -291,6 +291,9 @@ let switched = Promise.resolve();
     restoredActiveUrl = saved.tabs[saved.active]?.url || null;
     restoring = focusing(own, () => restoreTabs(ctx, saved, {
       log, screen,
+      // A build with its own pages: no "Opening tabs" list (setContent fails on its new tab page,
+      // and the strip shows the progress); its untouched start tab closes after (plans/555 D1.4).
+      list: !chrome,
       // Progress shows in the live view and side panel only (never as a badge in the pages),
       // and only when there's more than one tab to bring back.
       onProgress: (n, total) => { if (total > 1) status({ text: `Opening tabs ${n} of ${total}`, kind: "claude" }); },
@@ -338,14 +341,16 @@ let switched = Promise.resolve();
         env: { ...process.env, ...(screen?.env || {}) },
         executablePath: config.executablePath || await ensureBrowser(browserType(), log),
         viewport: null,
-        // Its own side panel is the only extension it loads.
-        ignoreDefaultArgs: ["--disable-extensions"],
+        // Its own side panel is the only extension it loads. A build with its own pages opens its
+        // startup page (PairBrowse's new tab page), not the driver's about:blank (plans/555 D1.2).
+        ignoreDefaultArgs: chrome ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"],
         args: launchArgs(config, { firstRun, chromePages: chrome, helper: helper && keyFile ? { origin: helper.origin, keyFile } : null }),
       }, log);
     } catch (e) { dropHelperKey(keyFile); throw e; } // a failed launch leaves no key file
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
     await ctx.addInitScript({ content: hud.source });
-    for (const p of ctx.pages()) { adopt(p, ctx); hud.ensure(p); }
+    // Never into the browser's own pages (its new tab page among them: plans/555 D1.3).
+    for (const p of ctx.pages()) { adopt(p, ctx); if (!isChromePage(p.url())) hud.ensure(p); }
     // A tab can arrive already loaded (one the side panel opened at its address): its page
     // script comes now, since under Patchright it isn't there until ensure adds it.
     ctx.on("page", (p) => { adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => { if (!isChromePage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => capTabs(ctx, p).catch(() => {}), 300); });

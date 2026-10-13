@@ -62,7 +62,7 @@ async function setup({ file = ON_DISK, native = true, inUse = "pairbrowse", time
 
 // The fields every answer carries besides browser, timeline, layout, native and chosen, as a
 // config with none of them set reads.
-const MORE = { name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, report: false };
+const MORE = { name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, report: true }; // report: on by default (PairBrowse's own address, paths.mjs)
 
 test("GET config.json: exactly its twelve keys, the choice as browserChoice reads it", async () => {
   const { view, key } = await setup();
@@ -75,7 +75,7 @@ test("GET config.json: exactly its twelve keys, the choice as browserChoice read
     assert.ok(!r.text.includes(TOKEN) && !r.text.includes("share.example.org"), "no other setting in the answer");
   } finally { view.close(); }
   // The same reading, without the server.
-  assert.deepEqual(readSettings({}, { native: false }), { browser: "chromium", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, native: false, chosen: false });
+  assert.deepEqual(readSettings({}, { native: false }), { browser: "chromium", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, report: false, native: false, chosen: false }); // a raw config with no reportUrl: no report
   assert.deepEqual(readSettings({ browserEngine: "pairbrowse", executablePath: "/x/PairBrowse.app/Contents/MacOS/pairbrowse" }, { native: true }).chosen, true, "the older names count as chosen");
   assert.equal(readSettings({ browserEngine: "chromium", executablePath: "/fake/chrome" }, { native: true }).browser, "/fake/chrome");
   assert.equal(readSettings({ browserEngine: "chromium" }, { native: true }).browser, "chromium");

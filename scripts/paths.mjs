@@ -86,9 +86,10 @@ export const DEFAULT_CONFIG = {
   // strip's height in pixels (44 to 176).
   layout: { left: "open", right: "open", strip: 88 },
   // Report a problem (Settings, About and diagnostics): the https address a report you send goes
-  // to (no user, query or fragment; anything else is ignored). Unset: no report is ever sent, and
-  // Settings doesn't offer it. Nothing goes there but what you saw and sent.
-  reportUrl: null,
+  // to (no user, query or fragment; anything else is ignored): PairBrowse's own, which files it as
+  // a Jira bug. null: no report is ever sent, and Settings doesn't offer it. Nothing goes there but
+  // what you saw and sent, and only when you press Send.
+  reportUrl: "https://pairbrowse.com/api/report",
 };
 
 export function loadConfig() {

@@ -11,7 +11,11 @@
 // An ask shows only where someone can really answer it: the in-page card on the agent's own tab
 // when that tab is in front (never while joiners or invite-link viewers are on the session, and taken down when one comes), or
 // the browser's own page that lists approvals (approve; the right dock and the strip don't list
-// them yet, so they don't count). With neither, nothing is kept and nothing waits. A Codex ask
+// them yet, so they don't count). In the PairBrowse build with its own pages (docked) that page
+// is the window's approval card (a bubble over the page card, its own widget: never in a tab's
+// capture), the one browser home of click approvals: while it is there the in-page card isn't
+// drawn. The item names the tab's CDP target id (tab.target, "" when unknown) so the browser
+// shows the card in that tab's window. With neither, nothing is kept and nothing waits. A Codex ask
 // whose only card goes (×, the page went elsewhere, the tab closed) with no such page open is
 // handed to the user at once rather than left waiting where nothing can answer it. The card's text is the rule's own reason (guard.mjs approvalAsk), masked
 // like titles; its id is random (128 bits). An answer from the in-page card counts only when it was
@@ -68,8 +72,10 @@ export function routeConnection(sock, { onHook, onOther }) {
 
 // deps: hud (call, sparkColor, sparkPage), presence (byPerson), collaboration (its participants
 // Map, for labels), liveView() (the live view or null: sharing, guestViewers, pageClients,
-// tabIndex), frontPage() (the tab in front, or null), mask(text), log(text).
-export function createClickApprovals({ hud, presence, collaboration, liveView = () => null, frontPage = async () => null, mask = (t) => t, log = () => {},
+// tabIndex), frontPage() (the tab in front, or null), docked() (the browser has its own pages:
+// its approve page is the window's approval card), targetOf(page, ms) (the tab's CDP target id or
+// null; capture.mjs targetIdOf), mask(text), log(text).
+export function createClickApprovals({ hud, presence, collaboration, liveView = () => null, frontPage = async () => null, docked = () => false, targetOf = async () => null, mask = (t) => t, log = () => {},
   now = Date.now, waitMs = APPROVAL_WAIT_MS, random = randomBytes, setInterval: every = setInterval, clearInterval: stopEvery = clearInterval }) {
   const items = new Map(); // id -> item
   const answered = new Map(); // key -> { answer, at }
@@ -80,7 +86,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   let reading = false;
 
   const emit = (change) => { for (const fn of listeners) { try { fn(change); } catch {} } };
-  const publicItem = (it) => ({ id: it.id, agent: { label: it.agent.label, color: it.agent.color }, kind: it.kind, target: it.target, reason: it.reason, tab: { id: it.tab.id, host: it.tab.host }, at: it.at });
+  const publicItem = (it) => ({ id: it.id, agent: { label: it.agent.label, color: it.agent.color }, kind: it.kind, target: it.target, reason: it.reason, tab: { id: it.tab.id, host: it.tab.host, target: it.tab.target }, at: it.at });
   const short = (id) => String(id).slice(0, 11);
   const remember = (key, answer) => {
     const t = now();
@@ -126,20 +132,26 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     let page = info ? (info.tab() || hud.sparkPage?.(p) || null) : null;
     if (page?.isClosed?.()) page = null;
     const lv = liveView();
-    let tab = { id: -1, host: "" };
+    let tab = { id: -1, host: "", target: "" };
     if (page) {
       let host = "";
       try { host = new URL(page.url()).host; } catch {}
       const index = lv?.tabIndex ? await within(2000, Promise.resolve(lv.tabIndex(page)).catch(() => -1)) : -1;
-      tab = { id: Number.isInteger(index) ? index : -1, host };
+      // The tab's CDP target id: which window shows the browser's approval card.
+      // Only the native build's card uses it: plain Chromium never waits on the lookup.
+      const found = docked() ? await within(2000, Promise.resolve().then(() => targetOf(page, 2000)).catch(() => null)) : null;
+      const target = typeof found === "string" && /^[0-9A-Za-z]{1,64}$/.test(found) ? found : "";
+      tab = { id: Number.isInteger(index) ? index : -1, host, target };
     }
     const target = String(mask(String(ask?.target || ""))).slice(0, 120);
     const reason = String(mask(String(ask?.reason || ""))).slice(0, 300);
     const id = `ap-${random(16).toString("hex")}`;
     const at = now();
-    // The in-page card: on the agent's tab in front, with nobody else looking.
+    // The in-page card: on the agent's tab in front, with nobody else looking, and only where the
+    // browser has no approval card of its own (docked with its approve page there: that is the home).
     let shownIn = null;
-    if (page && !lv?.sharing?.() && !lv?.guestViewers?.()) {
+    const bubble = !!docked() && surface();
+    if (page && !bubble && !lv?.sharing?.() && !lv?.guestViewers?.()) {
       const front = await within(3000, Promise.resolve(frontPage()).catch(() => null));
       if (front === page) {
         // terminal: whether the agent's app asks too (Claude Code's terminal); elsewhere the third
@@ -156,7 +168,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     it.timer = setTimeout(() => { if (end(it, "expired")) log(`approval ${short(id)}: no answer in ${Math.round(waitMs / 1000)} s`); }, waitMs);
     it.timer.unref?.();
     emit({ op: "add", item: publicItem(it) });
-    log(`approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : "in the browser's pages"})`);
+    log(`approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : bubble ? "in the browser's approval card" : "in the browser's pages"})`);
     watch();
     return { item: publicItem(it), shown: true, answer };
   }

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCaptureChannel, CAPTURE_WAITING_MAX, CAPTURE_SDP_MAX, CAPTURE_ERROR_MAX } from "../scripts/liveview/capture.mjs";
-import { createCaptureBackend, NO_CAPTURE_RECORD, NO_CAPTURE_SHARE } from "../scripts/daemon/capture.mjs";
+import { createCaptureBackend, targetIdOf, NO_CAPTURE_RECORD, NO_CAPTURE_SHARE } from "../scripts/daemon/capture.mjs";
 
 test("a call goes out as a capture event and resolves on its reply", async () => {
   const sent = [];
@@ -105,4 +105,26 @@ test("a tab that never answers: tabRef gives up within its bound; a tab's target
   assert.equal(await backend.tabRef(page), "T1");
   assert.equal(await backend.tabRef(page), "T1");
   assert.equal(asked, 1, "the target id is kept for the page");
+});
+
+test("targetIdOf: one cached lookup for every caller; null when the tab fails or hangs, within its bound", async () => {
+  let asked = 0;
+  const page = { context: () => ({ newCDPSession: async () => ({ send: async () => { asked++; return { targetInfo: { targetId: "T2" } }; }, detach: async () => {} }) }) };
+  assert.equal(await targetIdOf(page, 2000), "T2");
+  const backend = createCaptureBackend({ chromePages: () => true, capturePages: () => true, channel: { ready: () => true }, env: {}, panelCall: async () => 7 });
+  assert.equal(await backend.tabRef(page), "T2", "tabRef reuses the approvals' lookup");
+  assert.equal(await targetIdOf(page), "T2");
+  assert.equal(asked, 1, "asked once for every caller");
+  const failing = { context: () => ({ newCDPSession: async () => { throw new Error("closed"); } }) };
+  assert.equal(await targetIdOf(failing, 500), null);
+  await assert.rejects(backend.tabRef(failing, 500), /the tab didn't answer/);
+  const empty = { context: () => ({ newCDPSession: async () => ({ send: async () => ({}), detach: async () => {} }) }) };
+  assert.equal(await targetIdOf(empty, 500), null);
+  const hung = { context: () => ({ newCDPSession: async () => ({ send: () => new Promise(() => {}), detach: async () => {} }) }) };
+  const t0 = Date.now();
+  assert.equal(await targetIdOf(hung, 300), null);
+  assert.ok(Date.now() - t0 < 1500, "bounded by its wait");
+  const t1 = Date.now();
+  assert.equal(await targetIdOf(hung, 60_000), null);
+  assert.ok(Date.now() - t1 < 3500, "never longer than 3 s");
 });

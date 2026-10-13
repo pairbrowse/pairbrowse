@@ -13,6 +13,22 @@ import { within } from "../util.mjs";
 export const NO_CAPTURE_RECORD = "Recording isn't available in this PairBrowse browser yet: it needs the browser's capture page, which comes with a later build. Nothing was recorded.";
 export const NO_CAPTURE_SHARE = "This PairBrowse browser has no capture page yet: the picture goes through the join channel, without sound.";
 
+// A tab's CDP target id (it never changes), or null when the tab didn't answer within ms (at most
+// 3 s). Asked once per page and kept in one WeakMap for every caller (capture, approvals): a page
+// whose scripts never pause answers nothing, so the session and the question are bounded.
+const targets = new WeakMap(); // page -> its CDP target id
+export async function targetIdOf(page, ms = 3000) {
+  const known = targets.get(page);
+  if (known) return known;
+  const targetId = await within(Math.min(ms, 3000), (async () => {
+    const cdp = await page.context().newCDPSession(page);
+    try { return (await cdp.send("Target.getTargetInfo"))?.targetInfo?.targetId || null; } finally { cdp.detach().catch(() => {}); }
+  })().catch(() => null)).catch(() => null);
+  if (typeof targetId !== "string" || !targetId) return null;
+  targets.set(page, targetId);
+  return targetId;
+}
+
 export function createCaptureBackend({ chromePages = () => false, capturePages = () => false, panelCall, channel = null, env = process.env }) {
   // "extension", "page", or null (nowhere).
   function kind() {
@@ -22,19 +38,10 @@ export function createCaptureBackend({ chromePages = () => false, capturePages =
   }
   // The tab as the capturer knows it: the extension's tab id (its worker maps the CDP target), or
   // the CDP target id itself for the browser's own capture page.
-  // A page whose scripts never pause answers nothing: the session and the question are bounded,
-  // and a tab's target id (it never changes) is asked once.
-  const targets = new WeakMap(); // page -> its CDP target id
+  // The target id is asked once per tab (targetIdOf, bounded).
   async function tabRef(page, ms = 4000) {
-    let targetId = targets.get(page);
-    if (!targetId) {
-      targetId = await within(Math.min(ms, 3000), (async () => {
-        const cdp = await page.context().newCDPSession(page);
-        try { return (await cdp.send("Target.getTargetInfo"))?.targetInfo?.targetId || null; } finally { cdp.detach().catch(() => {}); }
-      })());
-      if (typeof targetId !== "string" || !targetId) throw new Error("the tab didn't answer");
-      targets.set(page, targetId);
-    }
+    const targetId = await targetIdOf(page, ms);
+    if (!targetId) throw new Error("the tab didn't answer");
     if (kind() === "page") return targetId;
     return panelCall((t) => { if (!globalThis.pbTabId) throw new Error("not ready"); return globalThis.pbTabId(t); }, targetId, ms);
   }

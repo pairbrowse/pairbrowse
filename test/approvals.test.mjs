@@ -20,7 +20,7 @@ function fakePage(url = "https://shop.example/checkout") {
   const page = { calls: [], answers: null, closed: false, url: () => url, isClosed: () => page.closed };
   return page;
 }
-function setup({ front = null, surfaces = {}, sharing = false, guests = 0, person = () => true, waitMs = 120_000, clock = null } = {}) {
+function setup({ front = null, surfaces = {}, sharing = false, guests = 0, person = () => true, waitMs = 120_000, clock = null, docked = null, targetOf = null } = {}) {
   const logs = [];
   const intervals = new Set();
   let fronted = front;
@@ -41,6 +41,8 @@ function setup({ front = null, surfaces = {}, sharing = false, guests = 0, perso
     hud, presence: { byPerson: person }, collaboration, liveView: () => lv, frontPage: async () => { fronts++; return fronted; },
     mask: (t) => t.replace(/secret123/g, "••••"), log: (t) => logs.push(t), waitMs,
     ...(clock ? { now: clock } : {}),
+    ...(docked ? { docked } : {}),
+    ...(targetOf ? { targetOf } : {}),
     setInterval: (fn, ms) => { const h = setInterval(fn, ms); intervals.add(h); return h; },
     clearInterval: (h) => { intervals.delete(h); clearInterval(h); },
   });
@@ -102,7 +104,7 @@ test("open(): the item's contract, a random id, the agent's name and tab, masked
   assert.deepEqual(Object.keys(r.item).sort(), KEYS);
   assert.match(r.item.id, APPROVAL_ID);
   assert.deepEqual(r.item.agent, { label: "Alice · Codex", color: "#20c997" });
-  assert.deepEqual(r.item.tab, { id: 2, host: "shop.example" });
+  assert.deepEqual(r.item.tab, { id: 2, host: "shop.example", target: "" }, "no target lookup given: empty");
   assert.equal(r.item.kind, "click");
   assert.equal(r.item.reason, "pays ••••", "masked like titles");
   assert.deepEqual(ca.pending(), [r.item]);
@@ -113,7 +115,7 @@ test("open(): the item's contract, a random id, the agent's name and tab, masked
   const { ca: other } = setup({ surfaces: { approve: 1 } });
   const lone = await other.open({ tool: "browser_click", input: PAY, ask: { reason: "r", target: "t" } });
   assert.deepEqual(lone.item.agent, { label: "Claude Code", color: "#e9763f" });
-  assert.deepEqual(lone.item.tab, { id: -1, host: "" });
+  assert.deepEqual(lone.item.tab, { id: -1, host: "", target: "" });
 });
 
 test("nowhere to ask: nothing kept, nothing waits", async () => {
@@ -408,4 +410,88 @@ test("the terminal's yes before the hook's line: no card for a click that alread
   ca.answer(ca.pending()[0].id, "deny", "the live view");
   await waiting;
   assert.deepEqual(s2.written, ['{"answer":"deny"}\n']);
+});
+
+// The PairBrowse build with its own pages (docked): its approve page is the window's approval card,
+// the one browser home of click approvals; the item names the tab's CDP target id for its window.
+const T1 = "0123456789ABCDEF0123456789ABCDEF";
+test("docked with the approval card there: no in-page card, the item names the tab's target", async () => {
+  const page = fakePage();
+  const asked = [];
+  const { ca, logs, intervals } = setup({ front: page, surfaces: { approve: 1 }, docked: () => true, targetOf: async (p, ms) => { asked.push([p, ms]); return T1; } });
+  ca.participant("p1", { client: "codex-mcp-client", remote: false, tab: () => page });
+  const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "pays", target: "Place order" }, participant: "p1", client: "codex-mcp-client" });
+  assert.equal(r.shown, true);
+  assert.deepEqual(Object.keys(r.item).sort(), KEYS);
+  assert.deepEqual(r.item.tab, { id: 2, host: "shop.example", target: T1 });
+  assert.deepEqual(asked, [[page, 2000]], "asked once, bounded");
+  assert.deepEqual(page.calls.filter(([k]) => k === "approval"), [], "no in-page card");
+  assert.equal(intervals.size, 0, "nothing in a page to read");
+  assert.match(logs.at(-1), /in the browser's approval card/);
+  assert.deepEqual(ca.pending(), [r.item]);
+  assert.equal(ca.answer(r.item.id, "allow", "the approval card"), true);
+  assert.equal(await r.answer, "allow");
+});
+
+test("docked, the approval card not there: the in-page card as before; plain Chromium unchanged", async () => {
+  for (const docked of [() => true, () => false]) {
+    const page = fakePage();
+    const { ca } = setup({ front: page, docked, targetOf: async () => T1 });
+    ca.participant("p1", { client: "codex-mcp-client", remote: false, tab: () => page });
+    const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "pays", target: "Place order" }, participant: "p1", client: "codex-mcp-client" });
+    assert.equal(r.shown, true);
+    assert.equal(page.calls.filter(([k]) => k === "approval").length, 1, "the in-page card");
+    // The lookup only in the native build: plain Chromium never waits on it.
+    assert.equal(r.item.tab.target, docked() ? T1 : "");
+  }
+  // Plain Chromium with its approval page open (the extension era's tab): the in-page card still shows.
+  const page = fakePage();
+  const { ca } = setup({ front: page, surfaces: { approve: 1 }, docked: () => false });
+  ca.participant("p1", { client: "codex-mcp-client", remote: false, tab: () => page });
+  const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "pays", target: "Place order" }, participant: "p1", client: "codex-mcp-client" });
+  assert.equal(page.calls.filter(([k]) => k === "approval").length, 1);
+  assert.equal(r.item.tab.target, "");
+});
+
+test("docked while joiners look: the approval card still asks (no in-page card either way)", async () => {
+  const page = fakePage();
+  const { ca } = setup({ front: page, surfaces: { approve: 1 }, sharing: true, docked: () => true, targetOf: async () => T1 });
+  ca.participant("p1", { client: "codex-mcp-client", remote: false, tab: () => page });
+  const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "pays", target: "Place order" }, participant: "p1", client: "codex-mcp-client" });
+  assert.equal(r.shown, true);
+  assert.deepEqual(page.calls, []);
+  assert.equal(r.item.tab.target, T1);
+});
+
+test("the tab's target: a failed, odd or hung lookup is empty, and the ask isn't held up", async () => {
+  const cases = [
+    async () => { throw new Error("no CDP"); },
+    async () => null,
+    async () => "not a target id!",
+    async () => "A".repeat(65),
+    () => { throw new Error("sync throw"); },
+  ];
+  for (const targetOf of cases) {
+    const page = fakePage();
+    const { ca } = setup({ front: page, surfaces: { approve: 1 }, docked: () => true, targetOf });
+    ca.participant("p1", { client: "codex-mcp-client", remote: false, tab: () => page });
+    const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "r", target: "t" }, participant: "p1", client: "codex-mcp-client" });
+    assert.equal(r.shown, true);
+    assert.equal(r.item.tab.target, "");
+  }
+  const page = fakePage();
+  const { ca } = setup({ front: page, surfaces: { approve: 1 }, docked: () => true, targetOf: () => new Promise(() => {}) });
+  ca.participant("p1", { client: "codex-mcp-client", remote: false, tab: () => page });
+  const t0 = Date.now();
+  const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "r", target: "t" }, participant: "p1", client: "codex-mcp-client" });
+  const took = Date.now() - t0;
+  assert.ok(took >= 1900 && took < 3000, `bounded at 2 s (took ${took} ms)`);
+  assert.equal(r.shown, true);
+  assert.deepEqual(r.item.tab, { id: 2, host: "shop.example", target: "" });
+  // No tab of the agent's own: nothing is looked up.
+  let looked = 0;
+  const { ca: lone } = setup({ surfaces: { approve: 1 }, docked: () => true, targetOf: async () => { looked++; return T1; } });
+  const l = await lone.open({ tool: "browser_click", input: PAY, ask: { reason: "r", target: "t" } });
+  assert.equal(l.item.tab.target, "");
+  assert.equal(looked, 0);
 });

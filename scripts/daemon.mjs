@@ -36,7 +36,7 @@ import { homedir } from "node:os";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./secrets.mjs";
 import { createFollow, isScreenPage } from "./daemon/follow.mjs";
-import { createCaptureBackend } from "./daemon/capture.mjs";
+import { createCaptureBackend, targetIdOf } from "./daemon/capture.mjs";
 import { createCaptureChannel } from "./liveview/capture.mjs";
 import { createFacts } from "./facts.mjs";
 import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
@@ -547,7 +547,9 @@ const joinPrompt = createJoinPrompt({
   front: frontPage,
 });
 // A named final click asked in the browser as well as in the agent's app (daemon/approvals.mjs).
-const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, mask: output.mask, log });
+// Docked (the browser's own pages), its approve page is the window's approval card; the tab's
+// target id says which window.
+const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, docked: () => !!context.chromePages?.(), targetOf: targetIdOf, mask: output.mask, log });
 // Who used each session, for the session picker: joiners the host let in. A joiner let in also
 // takes any approval card in the page down at once (approvals.mjs cover).
 sharing.approvals.onChange(() => {

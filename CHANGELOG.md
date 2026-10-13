@@ -5,6 +5,13 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.15.46 (2026-10-14)
+
+A security fix release, from the native browser work (both fixes land unchanged on that branch).
+
+- **A joiner's keys stay in the page.** In shared browser mode a joiner's keys were sent to the host with their Windows key code also given as the native one. Chromium then made real OS key events of them (on macOS with the wrong keys: Shift as Y, "!" as Space), and a key the page didn't use went on to the host browser's own shortcuts. Keys now reach the host's page only, as the live view already sends them.
+- **The sandbox is never dropped quietly on macOS or Windows.** A launch that failed with a sandbox error was retried without Chromium's sandbox on every system. That retry exists for Linux containers and AppArmor rules; on macOS and Windows a sandbox failure is now the launch's error. `docs/security.md` says so.
+
 ## 0.15.45 (2026-10-11)
 
 The design mission's finishing touches, gated as before (478 live tests green, lint clean; `docs/design-progress.md` has nothing open). The logo is unchanged.

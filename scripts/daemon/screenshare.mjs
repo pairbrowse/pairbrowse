@@ -220,9 +220,11 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     keepViews();
   }
   // One key as a person presses it: down (with its text) and up, so pages that listen for keys
-  // (games, typing tests, editors, shortcuts) get them.
+  // (games, typing tests, editors, shortcuts) get them. No native key code: with one Chromium
+  // makes an OS key event of it, and a key the page leaves alone goes on to the host's browser
+  // itself (its shortcuts; on macOS a redispatch a native build stops at). Keys are the page's only.
   async function rawKey(cdp, ev) {
-    const base = { key: ev.key, code: ev.code, windowsVirtualKeyCode: ev.keyCode, nativeVirtualKeyCode: ev.keyCode, location: ev.location, modifiers: ev.modifiers, autoRepeat: ev.repeat };
+    const base = { key: ev.key, code: ev.code, windowsVirtualKeyCode: ev.keyCode, location: ev.location, modifiers: ev.modifiers, autoRepeat: ev.repeat };
     if (ev.action === "down") await cdp.send("Input.dispatchKeyEvent", { type: ev.text ? "keyDown" : "rawKeyDown", ...base, ...(ev.text ? { text: ev.text, unmodifiedText: ev.text } : {}) });
     else await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
   }

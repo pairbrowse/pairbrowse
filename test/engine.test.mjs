@@ -38,7 +38,7 @@ test("Chromium's sandbox is on unless config, root on Linux, or the system turns
     if (opts.chromiumSandbox) throw new Error("Chromium sandboxing failed!\nNo usable sandbox!");
     return { opts };
   } };
-  const result = await launchEngine(fake, {}, "/a", {}, (m) => logs.push(m));
+  const result = await launchEngine(fake, {}, "/a", {}, (m) => logs.push(m), undefined, { platform: "linux" });
   const expected = process.platform === "linux" && process.getuid?.() === 0 ? [false] : [true, false];
   assert.deepEqual(tries, expected);
   assert.equal(result.opts.chromiumSandbox, false);
@@ -49,8 +49,17 @@ test("Chromium's sandbox is on unless config, root on Linux, or the system turns
     suid.push(opts.chromiumSandbox);
     if (opts.chromiumSandbox) throw new Error("browserType.launchPersistentContext: Target page, context or browser has been closed\n[err] FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox helper binary was found, but is not configured correctly. Rather than run without sandboxing I'm aborting now.");
     return { opts };
-  } }, {}, "/a", {});
+  } }, {}, "/a", {}, undefined, undefined, { platform: "linux" });
   assert.deepEqual(suid, expected);
   const other = { launchPersistentContext: async () => { throw new Error("profile in use"); } };
-  if (expected.length === 2) await assert.rejects(launchEngine(other, {}, "/a", {}), /profile in use/);
+  if (expected.length === 2) await assert.rejects(launchEngine(other, {}, "/a", {}, undefined, undefined, { platform: "linux" }), /profile in use/);
+  // macOS and Windows never fall back: the sandbox failure is the error, and no launch runs without it.
+  for (const platform of ["darwin", "win32"]) {
+    const seen = [];
+    await assert.rejects(launchEngine({ launchPersistentContext: async (profile, opts) => {
+      seen.push(opts.chromiumSandbox);
+      throw new Error("Chromium sandboxing failed!\nNo usable sandbox!");
+    } }, {}, "/a", {}, () => {}, undefined, { platform }), /sandboxing failed/);
+    assert.deepEqual(seen, [true], platform);
+  }
 });

@@ -65,3 +65,22 @@ test("the slower route lets go of a tab that closed: nothing reopens on it, noth
   assert.equal(sessions, 1, "no new session on a closed tab");
   await share.close();
 });
+// A joiner's keys are for the host's page only. With a native key code, Chromium makes a real OS
+// key event of them, and one the page leaves alone goes on to the host's browser itself (its
+// shortcuts; on macOS through the window's key handling, which a native build's Dev checks stop
+// at). Without one, a key the page doesn't take ends there.
+test("a joiner's keys reach the host's page only, never the host browser's own shortcuts", async () => {
+  const sent = [];
+  const cdp = { send: async (m, p) => { sent.push([m, p]); return {}; }, on() {}, off() {}, detach: async () => {} };
+  const page = { isClosed: () => false, once() {}, context: () => ({ newCDPSession: async () => cdp }), evaluate: async () => [800, 600, 1, 0, 0] };
+  const share = createScreenShare({ call: async () => null });
+  await share.input(page, [{ t: "key", a: "down", key: "Shift", code: "ShiftLeft", kc: 16, loc: 1, m: 8 }, { t: "key", a: "down", key: "w", code: "KeyW", kc: 87, m: 4 }, { t: "key", a: "up", key: "w", code: "KeyW", kc: 87, m: 4 }]);
+  const keys = sent.filter(([m]) => m === "Input.dispatchKeyEvent").map(([, p]) => p);
+  assert.equal(keys.length, 3);
+  for (const k of keys) {
+    assert.ok(!("nativeVirtualKeyCode" in k), `no native key code: ${JSON.stringify(k)}`);
+    assert.ok(k.windowsVirtualKeyCode > 0, "the page still gets its key code");
+  }
+  await share.close();
+});
+

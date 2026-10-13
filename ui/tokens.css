@@ -51,7 +51,6 @@
   --glow-accent: 0 0 0 1px rgb(50 133 246 / 0.45), 0 4px 16px rgb(50 133 246 / 0.35);
   --glow-tab: 0 -2px 10px -2px rgb(50 133 246 / 0.45); /* the active tab's blue halo */
   --glow-ok: 0 0 6px rgb(32 201 151 / 0.8);
-  --glow-bad: 0 0 0 1px rgb(239 100 104 / 0.5), 0 4px 18px rgb(239 100 104 / 0.28);
   --glow-focus: 0 0 0 4px rgb(50 133 246 / 0.18), 0 0 14px rgb(50 133 246 / 0.35);
   /* The mockup's own surfaces (2026-10-12, the mockup wins over B): the Live session pill, the
      raised buttons (Share, Pause, Take control, the session row), the accent fill under white text
@@ -60,7 +59,7 @@
   --btn: #1C2A38; --edge-btn: #36485A;
   --accent-fill: #2870E4; --accent-fill-top: #3480F0;
   --panel: #0F1A24; --panel-edge: #233243; --inset: #172331;
-  --bad-fill: #4A2328; --bad-edge: #7A3138; --bad-ink: #F47A7C;
+  --bad-ink: #F47A7C; /* red text on a raised surface (a destructive confirm, an error line) */
   --ink-soft: #C9D2DE; --nav-active: #162E54; --badge: #2E4870; --meter-from: #1D6FE0; --meter-to: #22C5F0; --meter-track: #1A2532;
   /* The centre column, measured on the mockup (2026-10-12): the nav row, the contents card's
      surround and the active tab's foot. The browser's color mixer seeds the same value (525). */

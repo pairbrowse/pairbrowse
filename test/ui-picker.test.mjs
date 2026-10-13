@@ -121,6 +121,22 @@ pageTest("picker", { fixtures: { sessions: STATE } }, async ({ page, helper, unt
   assert.deepEqual(await run(msg), { text: "Done.", kind: "ok" });
 });
 
+// Part H: a refused pick offers Report a problem while the helper relays reports.
+pageTest("picker", { fixtures: { sessions: STATE, config: { report: true } }, replies: { pick: { error: true, text: "A session is already chosen." } } }, async ({ page, until, inPage: run }) => {
+  await until("the rows", ready);
+  await page.click("#fresh");
+  await until("the offer", () => !!document.querySelector("#msg a.report-offer"));
+  assert.deepEqual(await run(() => { const a = document.querySelector("#msg a"); return [document.getElementById("msg").textContent, a.getAttribute("href"), a.target]; }),
+    ["A session is already chosen. Report a problem", "chrome://pairbrowse/settings#report", "_blank"]);
+});
+pageTest("picker", { fixtures: { sessions: STATE }, replies: { pick: { error: true, text: "A session is already chosen." } } }, async ({ page, until, inPage: run }) => {
+  await until("the rows", ready);
+  await page.click("#fresh");
+  await until("the refusal", () => document.getElementById("msg").textContent === "A session is already chosen.");
+  await page.waitForTimeout(300);
+  assert.equal(await run(() => !!document.querySelector("#msg a")), false, "no relay, no offer");
+});
+
 pageTest("picker", { fixtures: { sessions: STATE }, replies: { pick: { error: true, hostAsk: { id: "a1", host: "share.example" } } } }, async ({ page, helper, until, inPage: run }) => {
   await until("the rows", ready);
   await page.click("#join summary");

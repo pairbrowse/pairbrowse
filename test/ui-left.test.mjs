@@ -146,6 +146,10 @@ scenario("left: tab count", { viewport: OPEN }, async (ctx) => {
   await ctx.shim.removeTab(12);
   await until("3 tabs", () => document.getElementById("tab-count").textContent === "3");
   assert.deepEqual(await inPage(count), ["3", "3 open tabs"]);
+  // Another window's tab is not this dock's (Part H): the badge counts this window only.
+  await ctx.shim.createTab({ window: 2 });
+  await ctx.page.waitForTimeout(150);
+  assert.deepEqual(await inPage(count), ["3", "3 open tabs"]);
   await clean(ctx);
 });
 
@@ -390,10 +394,12 @@ scenario("left: the session switcher", { viewport: { width: 420, height: 936 }, 
   await until("hidden", () => document.body.dataset.dock === "hidden" && document.getElementById("switcher").hidden);
   assert.equal((await inPage(state)).src, null);
   assert.equal(pickerFrames(page), 0);
-  // The rail's Sessions row opens it too; Escape closes it.
+  // The rail's Sessions row opens the dock first (44 px leaves the switcher no room), then the
+  // switcher (Part H); Escape closes it.
   await ctx.shim.layout({ left: 1 });
   await until("the rail", () => document.body.dataset.dock === "rail");
   await page.click("#nav-sessions");
+  await until("the dock opened", () => document.body.dataset.dock === "open");
   await framedPicker(page, "ready");
   await page.keyboard.press("Escape");
   await until("closed by Escape", () => document.getElementById("switcher").hidden && document.activeElement?.id === "nav-sessions");

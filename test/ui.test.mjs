@@ -573,10 +573,14 @@ function controls(selector) {
   // Every visible control stays in the list (the name check reads all of them); the flag only lets
   // the Tab check skip these, and inTablist proves the exception covers nothing else.
   const roving = (el) => el.getAttribute("tabindex") === "-1" && !!el.closest('[role=tab][tabindex="-1"]');
+  // A radio group is one Tab stop, its checked radio; the others are reached by the arrows (the
+  // browser's own radio group). Only an unchecked radio whose group has a checked one is skipped.
+  const radioPeer = (el) => el.type === "radio" && !el.checked && !!el.name && !!el.form?.querySelector?.(`input[type=radio][name="${CSS.escape(el.name)}"]:checked`)
+    || (el.type === "radio" && !el.checked && !!el.name && !el.form && !!document.querySelector(`input[type=radio][name="${CSS.escape(el.name)}"]:checked`));
   return [...document.querySelectorAll(selector)].filter((el) => el.checkVisibility() && !el.disabled).map((el, i) => {
     el.dataset.harnessId = String(i);
     const r = roving(el);
-    return { id: String(i), tag: el.tagName.toLowerCase(), elId: el.id, name: label(el), roving: r, inTablist: r && !!el.closest("[role=tab]").closest("[role=tablist]") };
+    return { id: String(i), tag: el.tagName.toLowerCase(), elId: el.id, name: label(el), roving: r || radioPeer(el), inTablist: (r && !!el.closest("[role=tab]").closest("[role=tablist]")) || radioPeer(el) };
   });
 }
 

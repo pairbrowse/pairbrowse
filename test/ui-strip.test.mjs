@@ -330,13 +330,16 @@ describe("keyboard paths", () => pageTest("strip", { viewport: ROW }, async ({ p
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press(" ");
   assert.deepEqual(await callsOf(shim, "tabs", "activate"), [[13], [12]]);
-  // Delete and Backspace close the focused tab
+  // Delete closes the focused tab; Backspace does not (Part H: too easy to press by accident)
   await page.focus('#tabs li[data-id="11"]');
   await page.keyboard.press("Delete");
   await until("11 gone", () => !document.querySelector('#tabs li[data-id="11"]'));
   assert.ok((await inPage(active)).startsWith("tab:"), "focus stays in the tab row");
   await page.focus('#tabs li[data-id="13"]');
   await page.keyboard.press("Backspace");
+  await page.waitForTimeout(100);
+  assert.ok(await inPage(() => !!document.querySelector('#tabs li[data-id="13"]')), "Backspace keeps the tab");
+  await page.keyboard.press("Delete");
   await until("13 gone", () => !document.querySelector('#tabs li[data-id="13"]'));
   assert.deepEqual(await callsOf(shim, "tabs", "close"), [[11], [13]]);
 }));
@@ -439,47 +442,36 @@ describe("share card opens and posts an invite", () => pageTest("strip", { viewp
   assert.equal(await inPage(() => document.getElementById("share-card").hidden), true);
 }));
 
-describe("menu: Record, Settings, Zoom, keyboard", () => pageTest("strip", { viewport: TALL, replies: { record: {} } }, async ({ page, helper, shim, inPage, until }) => {
-  // the menu: Record, Settings, Zoom, keyboard
+describe("menu: PairBrowse settings, found or opened", () => pageTest("strip", { viewport: TALL }, async ({ page, shim, inPage }) => {
+  // Part H: the menu holds only PairBrowse settings; New window, Zoom and Record are gone.
   assert.equal(await inPage(() => document.getElementById("menu-btn").getAttribute("aria-haspopup")), "menu");
   await page.click("#menu-btn");
   const m = await inPage(() => ({
     role: document.getElementById("menu").getAttribute("role"), hidden: document.getElementById("menu").hidden,
     items: [...document.querySelectorAll('#menu [role="menuitem"]')].map((b) => [b.querySelector("span").textContent, b.disabled]),
-    key: document.getElementById("new-window-key").textContent, focus: document.activeElement.id,
+    focus: document.activeElement.id, gone: ["new-window", "zoom", "record", "about"].filter((id) => document.getElementById(id)),
   }));
   assert.equal(m.role, "menu");
   assert.equal(m.hidden, false);
-  assert.deepEqual(m.items, [["New window", true], ["Zoom", false], ["Record", false], ["Settings", false], ["About PairBrowse", false]]);
-  assert.match(m.key, /^(⌘N|Ctrl\+N)$/);
-  assert.equal(m.focus, "zoom");
-  for (const [key, want] of [["ArrowDown", "record"], ["ArrowDown", "settings"], ["ArrowUp", "record"], ["End", "about"], ["ArrowDown", "zoom"], ["Home", "zoom"], ["ArrowUp", "about"]]) {
-    await page.keyboard.press(key);
-    assert.equal(await inPage(() => document.activeElement.id), want, key);
-  }
+  assert.deepEqual(m.items, [["PairBrowse settings", false]]);
+  assert.deepEqual(m.gone, []);
+  assert.equal(m.focus, "settings");
   await page.keyboard.press("Escape");
   assert.deepEqual(await inPage(() => [document.getElementById("menu").hidden, document.activeElement.id, document.getElementById("menu-btn").getAttribute("aria-expanded")]), [true, "menu-btn", "false"]);
   await page.click("#menu-btn");
-  await page.click("#record");
-  for (let i = 0; i < 40 && !helper.posts.some((p) => p.route === "record"); i++) await page.waitForTimeout(50);
-  assert.deepEqual(helper.posts.filter((p) => p.route === "record").map((p) => p.body), [{ on: true }]);
-  helper.push("record", { recording: true, since: Date.now() });
-  await until("Stop recording", () => document.getElementById("record-text").textContent === "Stop recording");
-  // Op notices carry no `recording`: a saved or removed recording leaves the indicator on.
-  helper.push("record", { op: "saved", item: { id: "r1", name: "Recording 1" } });
-  helper.push("record", { op: "removed", id: "r0" });
-  await page.waitForTimeout(150);
-  assert.equal(await inPage(() => document.getElementById("record-text").textContent), "Stop recording", "a saved notice keeps REC on");
-  helper.push("record", { recording: false });
-  await until("Record again", () => document.getElementById("record-text").textContent === "Record");
-  await page.click("#menu-btn");
   await page.click("#settings");
-  await page.click("#menu-btn");
-  await page.click("#zoom");
   await page.waitForTimeout(100);
   assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://settings", true, 1]]);
-  assert.deepEqual(await callsOf(shim, "windows", "zoom"), [[1]]);
   assert.equal(await inPage(() => document.getElementById("menu").hidden), true);
+  // An open settings tab in this window is brought forward, not opened twice.
+  const id = await inPage(async () => (await window.pairbrowse.tabs.list()).tabs.find((t) => t.url === "pairbrowse://settings")?.id);
+  if (id !== undefined) {
+    await page.click("#menu-btn");
+    await page.click("#settings");
+    await page.waitForTimeout(100);
+    assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://settings", true, 1]]);
+    assert.ok((await callsOf(shim, "tabs", "activate")).some((c) => c[0] === id));
+  }
 }));
 
 describe("switcher opens the picker in an iframe", () => pageTest("strip", { viewport: TALL }, async ({ page, inPage, harness }) => {
@@ -572,17 +564,16 @@ describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ 
 
   await go("#nav-right");
   await until("nav-right", () => document.body.dataset.mode === "nav-right");
-  const right = await inPage(() => ({ star: document.getElementById("star").disabled, find: document.getElementById("find").disabled, pressed: document.getElementById("sparkle").getAttribute("aria-pressed"), names: ["star", "find"].map((id) => document.getElementById(id).getAttribute("aria-label")) }));
-  assert.equal(right.star, true);
+  const right = await inPage(() => ({ star: !!document.getElementById("star"), find: document.getElementById("find").disabled, pressed: document.getElementById("sparkle").getAttribute("aria-pressed"), names: ["find"].map((id) => document.getElementById(id).getAttribute("aria-label")) }));
+  assert.equal(right.star, false, "no placeholder star: the browser's own is in the address bar");
   assert.equal(right.find, false, "find is the window's find bar");
-  // Enabled icons in --ink (the mockup's), a disabled one in --muted.
-  assert.deepEqual(await inPage(() => ["star", "find"].map((id) => getComputedStyle(document.getElementById(id)).color)), ["rgb(134, 153, 177)", "rgb(241, 245, 250)"]);
+  // Enabled icons in --ink (the mockup's).
+  assert.deepEqual(await inPage(() => ["find"].map((id) => getComputedStyle(document.getElementById(id)).color)), ["rgb(241, 245, 250)"]);
   await page.click("#find");
   await page.waitForTimeout(50);
   assert.deepEqual(await callsOf(shim, "windows", "find"), [[1]]);
   assert.equal(right.pressed, "true");
-  assert.match(right.names[0], /^Bookmark this page \((⌘D|Ctrl\+D)\)$/);
-  assert.match(right.names[1], /^Find in page \((⌘F|Ctrl\+F)\)$/);
+  assert.match(right.names[0], /^Find in page \((⌘F|Ctrl\+F)\)$/);
   await page.click("#sparkle");
   await until("sparkle off", () => document.getElementById("sparkle").getAttribute("aria-pressed") === "false");
   assert.equal((await callsOf(shim, "layout", "set")).at(-1)[0].right, 0);

@@ -67,7 +67,7 @@ test("the panel's markup keeps every id once, and each section folds with a name
   assert.match(html, /id="share-code" readonly aria-label="[^"]+"/);
   assert.match(html, /id="share-msg" role="status" aria-live="polite"/);
   assert.match(html, /<p class="sr" id="checklist-said" role="status" aria-live="polite"><\/p><ol id="checklist-items" aria-label="[^"]+">/);
-  assert.match(html, /<footer class="session-card" id="session-card" hidden>[\s\S]*id="session-name"[\s\S]*<button class="mini share-btn" id="share-btn"/, "Share comes after the session's name (the session card)");
+  assert.match(html, /<footer class="session-card" id="session-card" tabindex="-1" hidden>[\s\S]*id="session-name"[\s\S]*<button class="mini share-btn" id="share-btn"/, "Share comes after the session's name (the session card)");
 });
 
 test("the logo is untouched: the same img line and the same files", () => {

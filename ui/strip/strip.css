@@ -126,7 +126,6 @@ body[data-platform="mac"] #switcher { left: 92px; }
 #menu .item { display: flex; align-items: center; gap: var(--sp-3); width: 100%; height: var(--ctl); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); font-size: var(--fs-3); text-align: left; cursor: default; transition: background-color var(--t-hover); }
 #menu .item:hover:not(:disabled), #menu .item:focus { background: var(--hover); }
 #menu .item:disabled { color: var(--muted); }
-#menu kbd { margin-left: auto; font: var(--fs-2) var(--sans); color: var(--ink-2); }
 
 /* ---- the nav fragments beside the native address bar ----
    Each fills its slot (the shell's nav groups, 118 x 32 left and 76 x 32 right, centered in the

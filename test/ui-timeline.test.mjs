@@ -278,8 +278,11 @@ pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
   await page.keyboard.press("Home");
   assert.equal(await active(), ids.at(-1));
   await inPage(logFetches);
+  // Part H: with the agent panel a rail, showing a picture opens it first.
+  await inPage(() => window.__pairbrowse.layout.set({ right: 1 }));
   await page.keyboard.press("Enter");
   await until("the show post", (u) => window.__fetches.some(([url, m]) => url === u && m === "POST"), `${helper.base}timeline/${ids.at(-1)}/show`);
+  await until("the panel opened", () => window.__pairbrowse.calls.some((c) => c.iface === "layout" && c.method === "set" && c.args[0]?.right === 2));
   await page.waitForTimeout(200);
   assert.equal(await inPage(() => document.querySelectorAll("[data-shown]").length), 0, "nothing marked shown");
   await page.keyboard.press("Delete");

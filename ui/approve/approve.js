@@ -116,7 +116,8 @@ function normalize(kind, raw) {
     Object.assign(it, {
       who: String(raw.agent?.label || "Claude"), color: raw.agent?.color || "", verb: "wants to click",
       target: String(raw.target || ""), host: raw.tab?.host ? String(raw.tab.host) : "", reason: String(raw.reason || ""),
-      menu: [{ answer: "site", label: raw.tab?.host ? `Allow for ${raw.tab.host}` : "Allow for this site" }, { answer: "terminal", label: "Ask in the terminal only" }],
+      // No "Allow for <site>" (Part H): the helper keeps no per-site memory, so it was a plain Allow.
+      menu: [{ answer: "terminal", label: "Ask in the terminal only" }],
       at: Number(raw.at) || it.at,
     });
   } else if (kind === "join") {
@@ -189,6 +190,8 @@ function draw() {
   $("host").textContent = it.host ? `In the tab on ${it.host}` : "";
   $("reason").textContent = it.reason;
   $("reason").hidden = !it.reason;
+  // × says where the request stays: a click in the terminal, the others in the agent panel (Part H).
+  $("dismiss").setAttribute("aria-label", it.kind === "click" ? "Dismiss; it stays in the terminal" : "Dismiss; it stays in the agent panel");
   $("allow").textContent = it.labels.allow || "Allow";
   $("deny").textContent = it.labels.deny || "Deny";
   more.hidden = !it.menu.length;

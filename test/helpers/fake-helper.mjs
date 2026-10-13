@@ -75,17 +75,26 @@ export const defaultFixtures = () => ({
   pause: null,
   record: null,
   approvals: { pending: [] },
+  // GET outline.json (the Page tab): { outline: null } or { outline: { tab, host, who, at, cut, text } }; null: 404.
+  outline: { outline: null },
   handoffs: { items: [] },
   downloads: { items: [] },
   recordings: { recording: { on: false, since: 0 }, items: [] },
   diagnostics: { helper: { version: "0.15.45", node: "22.11.0", uptime: 7500 }, browser: { engine: "pairbrowse", version: "142.0.7444.59", build: "3" },
     connections: { agents: 1, viewers: 0, joiners: 0, streams: 2 }, joined: [], errors: [] },
   report: { text: "PairBrowse diagnostics\nhelper 0.15.45\n" },
+  // GET config.json as liveview/settings.mjs answers it (null: 404, a helper without the route),
+  // plus `report`: true when the helper relays problem reports (the follow-up route POST report;
+  // not in liveview.mjs yet). running: the browser of the window open now (restart in the answer).
+  config: { browser: "pairbrowse", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, native: true, chosen: true, report: false },
+  running: "pairbrowse",
+  // POST report's answer while config.report is true: { status, body }.
+  sent: { status: 200, body: { ok: true, id: "PB-1042" } },
 });
 
 // The event each fixture goes out as (the names liveview.mjs broadcasts); null: none.
 const EVENT = { status: "status", session: "session", collaboration: "collaboration", activity: "activity", join: "join", tabs: "tabs", layout: "layout",
-  agentTabs: "agent-tabs", profile: "profile", dev: "dev", joinhost: "joinhost", board: "board", pause: "pause", record: "record", timeline: "timeline" };
+  agentTabs: "agent-tabs", config: "config", profile: "profile", dev: "dev", joinhost: "joinhost", board: "board", pause: "pause", record: "record", timeline: "timeline" };
 
 const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 export function merge(base, over) {
@@ -109,6 +118,37 @@ function readLayout(given, base) {
     next.strip = given.strip;
   }
   return next;
+}
+
+// POST config checked as liveview/settings.mjs applySettings does: any subset of { browser,
+// timeline: { on?, cap? }, layout: { left?, right?, strip? } }; anything else 409 { error }.
+function applyConfig(given, config) {
+  if (!plainObject(given)) return { error: "Settings are { browser, timeline, layout }." };
+  for (const k of Object.keys(given)) if (!["browser", "timeline", "layout"].includes(k)) return { error: `Unknown setting "${k}"` };
+  const next = { ...config, timeline: { ...config.timeline }, layout: { ...config.layout } };
+  if (given.browser !== undefined) {
+    const b = given.browser;
+    if (b === "pairbrowse") { if (!config.native) return { error: "There's no PairBrowse browser build for this computer yet" }; }
+    else if (b !== "chromium") {
+      if (typeof b !== "string" || !b.startsWith("/") || b.length > 1024) return { error: 'browser is "pairbrowse", "chromium" or an absolute path.' };
+      if (b.includes("missing")) return { error: `${b} isn't an executable file` };
+    }
+    next.browser = b;
+    next.chosen = true;
+  }
+  if (given.timeline !== undefined) {
+    const t = given.timeline;
+    if (!plainObject(t)) return { error: "timeline is { on, cap }." };
+    if (t.on !== undefined && typeof t.on !== "boolean") return { error: "timeline.on is true or false." };
+    if (t.cap !== undefined && (!Number.isInteger(t.cap) || t.cap < 1 || t.cap > 200)) return { error: "timeline.cap is a whole number from 1 to 200." };
+    Object.assign(next.timeline, t);
+  }
+  if (given.layout !== undefined) {
+    const l = readLayout(given.layout, config.layout);
+    if (l.error) return { error: l.error };
+    next.layout = l;
+  }
+  return { config: next };
 }
 
 const sse = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -168,11 +208,11 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   const GETS = {
     "state.json": () => state(), "journal.json": () => fx.journal ?? null, "profile.json": () => fx.profile, "sessions.json": () => fx.sessions,
     "joins.json": () => fx.joins, "tabs.json": () => fx.tabs, "agent-tabs.json": () => fx.agentTabs, "timeline.json": () => fx.timeline, "layout.json": () => fx.layout,
-    "approvals.json": () => fx.approvals,
+    "approvals.json": () => fx.approvals, "config.json": () => fx.config, "outline.json": () => fx.outline,
     "handoffs.json": () => fx.handoffs, "downloads.json": () => fx.downloads, "recordings.json": () => fx.recordings, "diagnostics.json": () => fx.diagnostics,
   };
   const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session",
-    "handoffs", "downloads", "recordings", "diagnostics", "tab-order"]);
+    "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report"]);
   const hasItem = (name, id) => Array.isArray(fx[name]?.items) && fx[name].items.some((it) => it && String(it.id) === id);
 
   // The answer to a POST without a reply of the test's own.
@@ -210,6 +250,19 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
       return { status: 200, body: out };
     }
     if (route === "pause") return { status: 200, body: { paused: !!body?.paused, can: true } };
+    if (route === "config") {
+      if (fx.config === null) return { status: 404 };
+      const r = applyConfig(body, fx.config);
+      if (r.error) return { status: 409, body: { error: r.error } };
+      fx.config = r.config;
+      const out = { ...fx.config, restart: fx.running !== null && fx.config.browser !== fx.running };
+      push("config", out);
+      return { status: 200, body: out };
+    }
+    if (route === "report") {
+      if (fx.config?.report !== true) return { status: 404 };
+      return fx.sent;
+    }
     if (route === "session") {
       if (body?.op === "save") return { status: 200, body: { ok: true, savedAt: new Date().toISOString() } };
       if (body?.op === "rename" && typeof body.name === "string" && body.name.trim() && body.name.length <= 60) {
@@ -232,7 +285,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   }
 
   async function post(req, res, route, rest) {
-    const max = route === "profile" ? BODY_MAX.profile : route === "input" || route === "tab" ? BODY_MAX.input : BODY_MAX.approve;
+    const max = route === "profile" ? BODY_MAX.profile : route === "input" || route === "tab" || route === "report" ? BODY_MAX.input : BODY_MAX.approve;
     const raw = await readBody(req, max);
     if (raw === null) return plain(res, 413);
     const body = parsed(raw);

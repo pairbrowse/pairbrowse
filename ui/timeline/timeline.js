@@ -1,7 +1,8 @@
 // The session timeline (DESIGN.md B7): the pictures the helper sent to agents, the current picture
 // first, then the history oldest to newest, then Add note, from the helper's owner routes (timeline.json, timeline/<id>.jpg, DELETE timeline/<id>,
-// POST timeline/note and timeline/<id>/pin) and the owner stream's `timeline` event. The page only
-// renders: it never writes layout or toggles itself. Nothing runs before the page is first
+// POST timeline/note and timeline/<id>/pin) and the owner stream's `timeline` event. The page
+// never toggles itself; a card's click opens the agent panel when it is a rail or hidden, so the
+// picture it asks for shows (Part H). Nothing runs before the page is first
 // visible; while hidden it fetches nothing and holds no picture.
 import { $, el, shortClock, helperStream } from "../common.js";
 
@@ -354,8 +355,16 @@ function focusStop(target) {
 }
 
 function show(id) {
+  // A note has no picture to show (the helper answers 409): nothing to ask for.
+  if (cards.find((c) => c.id === id)?.note === true) return;
   // The helper's show route (the right dock shows the picture); a 404 from a helper without it is
-  // silent and nothing is marked shown.
+  // silent and nothing is marked shown. The agent panel opens first when it is not (Part H).
+  const pb = window.pairbrowse;
+  if (pb) {
+    pb.layout.get().then(({ state }) => {
+      if (state && state.right !== pb.DockState.kOpen) return pb.layout.set({ ...state, right: pb.DockState.kOpen });
+    }).catch(() => {});
+  }
   if (base) post(base + `timeline/${id}/show`, {}).catch(() => {});
 }
 

@@ -348,6 +348,14 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
   assert.deepEqual([aliceBtn.icon, aliceBtn.text], [false, "Take control"], "no task line: the button keeps its text");
   await page.focus("#people li .pause-one.icon");
   assert.equal(await inPage(() => document.activeElement.classList.contains("icon")), true, "the icon-only button takes focus");
+  // Part H: an agent held on its own shows it and offers Resume (Take control was one-way).
+  helper.push("pause", { paused: false, can: true, perAgent: true, agents: [{ who: "Alice · Codex", by: "You", at: Date.now() }] });
+  await until("Resume on Alice", () => [...document.querySelectorAll("#people li")].some((li) => li.querySelector(".name")?.title === "Alice · Codex" && li.querySelector(".pause-one")?.textContent === "Resume"));
+  const held = await inPage(() => { const li = [...document.querySelectorAll("#people li")].find((x) => x.querySelector(".name")?.title === "Alice · Codex"); return { name: li.querySelector(".pause-one").getAttribute("aria-label"), state: li.querySelector(".state").textContent }; });
+  assert.equal(held.name, "Resume Alice");
+  const n = helper.posts.filter((p) => p.route === "pause").length;
+  await page.click("#people li .pause-one[aria-label='Resume Alice']");
+  assert.deepEqual((await posted(helper, "pause", n + 1))[n]?.body, { paused: false, who: "Alice · Codex" });
   assert.deepEqual(errors, []);
 }));
 
@@ -375,64 +383,42 @@ describe("session card", () => pageTest("right", opts({ session: { name: "Checko
   assert.equal(await inPage(visible, "#session-line"), true);
   const card = await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(); return { bottom: c.bottom, vh: innerHeight }; });
   assert.ok(card.vh - card.bottom >= 0 && card.vh - card.bottom <= 12, `a raised card just above the bottom (its 8 px margin): ${card.vh - card.bottom}`);
-  const end = await inPage(() => { const s = getComputedStyle(document.getElementById("switch-btn")); return { color: s.color, bg: s.backgroundColor, shadow: s.boxShadow }; });
-  assert.equal(end.color, await inPage(token, "bad-ink"));
-  assert.equal(end.bg, await inPage(token, "bad-fill", "backgroundColor"), "the mockup's red fill");
-  assert.match(end.shadow, /rgba?\(239, 100, 104/, "a soft red halo");
-  // Share is the strip's in the browser (DESIGN.md Part G): End session alone, the row's full width.
-  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#session-card .row3 button")].filter((b) => b.checkVisibility()).map((b) => b.id)), ["switch-btn"], "End session; no Share, no Save, no rename without a helper route");
+  // Part H: in the browser the session card switches nothing (the strip's logo and the left dock's
+  // Sessions row do) and End session, which only opened the picker, is gone: no Save, no buttons.
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#session-card button")].filter((b) => b.checkVisibility()).map((b) => b.id)), [], "no Share, Save, Switch or fold without a helper route");
+  assert.equal(await inPage(() => !!document.getElementById("end-confirm")), false);
   assert.equal(await inPage(visible, "#share-card"), false);
-  const wide = await inPage(() => { const r = document.getElementById("session-actions").getBoundingClientRect(), b = document.getElementById("switch-btn").getBoundingClientRect(); return Math.abs(r.width - b.width) <= 1; });
-  assert.equal(wide, true, "alone, End session takes the row");
   // At the gutter on every side, its icon on the shared 20 px edge.
   assert.deepEqual(await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(), i = document.querySelector("#session-card .sicon").getBoundingClientRect(); return [c.left, innerWidth - c.right, innerHeight - c.bottom, i.left]; }), [8, 8, 8, 20]);
-  assert.equal(await inPage(() => document.getElementById("session-save").hidden && document.getElementById("session-rename").hidden), true);
-  // The confirm sits in the card (a dock slot has no JavaScript dialogs): no dialog may open.
   let dialogs = 0;
   page.on("dialog", (d) => { dialogs++; d.dismiss(); });
-  const picks = () => helper.posts.filter((p) => p.route === "picker").length;
-  await page.click("#switch-btn");
-  await until("the in-card confirm", () => !document.getElementById("end-confirm").hidden);
-  assert.equal(await inPage(() => document.getElementById("switch-btn").getAttribute("aria-expanded")), "true");
-  assert.equal(await inPage(() => document.activeElement?.id), "end-no", "focus moves to Keep, so a second Enter ends nothing");
-  const yes = await inPage(textContrast, "#end-yes");
-  assert.ok(yes >= 4.5, `End session in the confirm keeps AA on its box: ${yes.toFixed(2)}:1`);
-  await sleep(300);
-  assert.equal(picks(), 0, "the first click only asks");
-  await page.click("#end-no");
-  await until("the confirm closes", () => document.getElementById("end-confirm").hidden);
-  assert.equal(await inPage(() => document.activeElement?.id), "switch-btn", "Keep returns focus");
-  await sleep(300);
-  assert.equal(picks(), 0, "Keep ends nothing");
-  await page.click("#switch-btn");
-  await until("the confirm again", () => !document.getElementById("end-confirm").hidden);
-  await page.keyboard.press("Escape");
-  await until("Escape closes it", () => document.getElementById("end-confirm").hidden);
-  assert.equal(picks(), 0, "Escape ends nothing");
-  await page.click("#switch-btn");
-  await until("the confirm once more", () => !document.getElementById("end-confirm").hidden);
-  await inPage(() => document.getElementById("end-yes").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
-  await sleep(300);
-  assert.equal(picks(), 0, "a synthetic click ends nothing");
-  await page.click("#end-yes");
-  assert.equal((await posted(helper, "picker")).length, 1, "End session opens the picker");
-  await until("the confirm closes after", () => document.getElementById("end-confirm").hidden);
-  // From the keyboard: the focus lands on Keep; Shift+Tab reaches End session, and Enter there ends it.
-  await page.click("#switch-btn");
-  await until("the confirm by keyboard", () => !document.getElementById("end-confirm").hidden && document.activeElement?.id === "end-no");
-  await page.keyboard.press("Shift+Tab");
-  assert.equal(await inPage(() => document.activeElement?.id), "end-yes", "Shift+Tab reaches End session");
-  await page.keyboard.press("Enter");
-  assert.equal((await posted(helper, "picker", 2)).length, 2, "Enter on End session opens the picker");
-  await until("the confirm closes after Enter", () => document.getElementById("end-confirm").hidden);
+  await sleep(200);
+  assert.equal(helper.posts.filter((p) => p.route === "picker").length, 0);
   assert.equal(dialogs, 0, "no JavaScript dialog");
+  assert.deepEqual(errors, []);
+}));
+
+describe("session card in the side panel: Switch session", () => pageTest("right", opts({ session: { name: "Checkout test", where: "Local", temporary: false } }, { native: false }), async ({ page, helper, inPage, until, errors }) => {
+  await until("the session name", () => document.getElementById("session-name").textContent === "Checkout test");
+  // Part H: the button says what it does (it was "End session" and only opened the picker).
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#session-card .row3 button")].filter((b) => b.checkVisibility()).map((b) => b.textContent.trim())), ["Share", "Switch session"]);
+  await inPage(() => document.getElementById("switch-btn").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+  await sleep(200);
+  assert.equal(helper.posts.filter((p) => p.route === "picker").length, 0, "a synthetic click switches nothing");
+  await page.click("#switch-btn");
+  assert.equal((await posted(helper, "picker")).length, 1);
+  await until("said", () => document.getElementById("session-msg").textContent === "The session picker opened in a new tab.");
+  helper.replies.picker = () => ({ status: 404, body: { error: "Not found" } });
+  await page.click("#switch-btn");
+  await until("refused", () => document.getElementById("session-msg").textContent === "Couldn't open the session picker.");
   assert.deepEqual(errors, []);
 }));
 
 describe("session card with the helper's routes", () => pageTest("right", opts({ session: { name: "Checkout test", where: "Local", canSave: true, canRename: true } }), async ({ page, helper, inPage, until, errors }) => {
   await until("Save and the pencil", () => document.getElementById("session-save").checkVisibility() && document.getElementById("session-rename").checkVisibility());
-  // Save and End session in two equal columns (the browser's session card).
-  assert.equal(await inPage(() => Math.abs(document.getElementById("session-save").getBoundingClientRect().width - document.getElementById("switch-btn").getBoundingClientRect().width) <= 1), true, "two equal columns");
+  // Save alone takes the row (the browser's session card, Part H).
+  assert.equal(await inPage(() => Math.abs(document.getElementById("session-save").getBoundingClientRect().width - document.getElementById("session-actions").getBoundingClientRect().width) <= 1), true, "Save takes the row");
+  assert.equal(await inPage(visible, "#switch-btn"), false);
   const sessions = () => helper.posts.filter((p) => p.route === "session");
   // Save: a synthetic click posts nothing; a person's click saves.
   await inPage(() => document.getElementById("session-save").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
@@ -464,13 +450,8 @@ describe("session card with the helper's routes", () => pageTest("right", opts({
   helper.replies.session = () => ({ status: 404, body: { error: "Not found" } });
   await page.click("#session-save");
   await until("Save hidden", () => document.getElementById("session-save").hidden);
-  assert.equal(await inPage(() => document.activeElement?.id), "switch-btn", "focus moves to End session (Share is the strip's here), not lost to the body");
-  // The fold hides the buttons.
-  await page.click("#session-fold");
-  assert.equal(await inPage(visible, "#session-actions"), false);
-  assert.equal(await page.getAttribute("#session-fold", "aria-expanded"), "false");
-  await page.click("#session-fold");
-  assert.equal(await inPage(visible, "#session-actions"), true);
+  assert.equal(await inPage(() => document.activeElement?.id), "session-card", "focus moves to the card (Share is the strip's here), not lost to the body");
+  assert.equal(await inPage(visible, "#session-fold"), false, "nothing left to fold");
   assert.deepEqual(errors, []);
 }));
 
@@ -529,7 +510,31 @@ describe("pictures without the timeline", () => pageTest("right", opts({ timelin
   assert.equal(await inPage(text, "pictures-empty"), "Nothing sent yet.");
   assert.equal(await inPage(visible, "#picture"), false);
   await page.click("#tab-page");
-  assert.equal(await inPage(text, "outline-empty"), "No outline yet.");
+  await until("the outline read", () => document.getElementById("outline-empty").textContent === "No outline yet: it shows once an agent reads a page.");
+  assert.deepEqual(errors, []);
+}));
+
+// Part H: the Page tab reads outline.json when shown and on new activity while in front.
+describe("page tab: the outline an agent read", () => pageTest("right", opts({ outline: { outline: { tab: "t1", host: "shop.example", who: "Claude", at: Date.now(), cut: false, text: "- heading \"Checkout\"\n- textbox \"Email\"" } } }), async ({ page, helper, inPage, until, errors }) => {
+  await until("live", () => document.body.dataset.s === "live");
+  const reads = () => helper.gets.filter((r) => r === "outline.json").length;
+  const before = reads();
+  await page.click("#tab-page");
+  await until("the outline", () => document.getElementById("outline").checkVisibility());
+  assert.match(await inPage(text, "outline"), /textbox "Email"/);
+  assert.match(await inPage(text, "outline-head"), /^shop\.example · read by Claude · /);
+  assert.equal(await inPage(visible, "#outline-empty"), false);
+  assert.ok(reads() > before);
+  helper.fixtures.outline = { outline: null };
+  const n = reads();
+  helper.push("activity", [{ t: Date.now(), text: "Clicked **Pay**", who: "Claude", tab: "Checkout" }]);
+  await until("read again", () => document.getElementById("outline-empty").checkVisibility());
+  assert.ok(reads() > n);
+  await page.click("#tab-agent");
+  const m = reads();
+  helper.push("activity", [{ t: Date.now(), text: "Typed", who: "Claude", tab: "Checkout" }]);
+  await sleep(300);
+  assert.equal(reads(), m, "not read while another tab is in front");
   assert.deepEqual(errors, []);
 }));
 
@@ -593,8 +598,8 @@ describe("tools order and reads", () => pageTest("right", opts(), async ({ page,
   await until("Hand-offs and Downloads shown", () => document.getElementById("sec-handoffs").checkVisibility() && document.getElementById("sec-downloads").checkVisibility());
   await until("Dev servers shown", () => document.getElementById("dev").checkVisibility());
   const shownNow = await inPage(() => [...document.querySelectorAll("#pane-tools .scroll > section")].filter((sec) => sec.checkVisibility()).map((sec) => sec.id));
-  assert.deepEqual(shownNow, ["sec-handoffs", "sec-downloads", "sec-recordings", "dev", "sec-settings-link", "sec-diag"], "the browser's Tools");
-  assert.equal(await inPage(text, "settings-link-note"), "Passwords, remembered details and join addresses are in Settings.");
+  assert.deepEqual(shownNow, ["sec-handoffs", "sec-downloads", "sec-recordings", "dev", "sec-settings-link"], "the browser's Tools: Diagnostics is in Settings (Part H)");
+  assert.equal(await inPage(text, "settings-link-note"), "Passwords, remembered details, join addresses and diagnostics are in Settings.");
   // Open settings: the Settings page on its Passwords section, in a new tab of this window.
   await page.click("#open-settings");
   await until("a settings tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
@@ -606,21 +611,7 @@ describe("tools order and reads", () => pageTest("right", opts(), async ({ page,
   await page.click("#tab-tools");
   await sleep(300);
   for (const r of LIST_ROUTES) assert.equal(reads(helper, r), 1, `${r}: once per connection`);
-  assert.equal(reads(helper, "diagnostics.json"), 0, "no diagnostics.json while folded");
-  await page.click("#sec-diag .disclose");
-  await waitFor("one diagnostics read", () => reads(helper, "diagnostics.json") === 1);
-  await sleep(200);
-  assert.equal(reads(helper, "diagnostics.json"), 1);
-  await page.click("#tab-agent");
-  await sleep(200);
-  assert.equal(reads(helper, "diagnostics.json"), 1, "nothing while another tab is in front");
-  await page.click("#tab-tools");
-  await waitFor("again on a show while open", () => reads(helper, "diagnostics.json") === 2);
-  await page.click("#sec-diag .disclose");
-  await page.click("#tab-agent");
-  await page.click("#tab-tools");
-  await sleep(300);
-  assert.equal(reads(helper, "diagnostics.json"), 2, "folded: not read on a show");
+  assert.equal(reads(helper, "diagnostics.json"), 0, "the browser's dock never reads diagnostics (Settings does)");
   assert.deepEqual(errors, []);
 }));
 
@@ -788,7 +779,7 @@ describe("downloads: the helper's confirm and refusal in the row", () => pageTes
   assert.deepEqual(errors, []);
 }));
 
-// The helper's Open answers say where it opened ({ opened }); Word-type names get Open in Word.
+// The helper's Open answers say where it opened ({ opened }); Word-type names get Open in app.
 const OPENS = [
   { id: "t1", name: "statement.pdf", state: "done", at: NOW - 60_000, size: 1000, from: { host: "bank.example" }, opens: "tab" },
   { id: "w1", name: "contract.docx", state: "done", at: NOW - 50_000, size: 1000, from: { host: "mail.example" }, opens: "preview" },
@@ -799,7 +790,7 @@ const OPENS = [
   { id: "m1", name: "report.docx.pdf", state: "done", at: NOW - 12_000, size: 1000, from: { host: "team.example" } },
   { id: "v1", name: "mail.html", state: "done", at: NOW - 10_000, size: 1000, from: { host: "mail.example" }, program: true, confirm: CONFIRM_WEB },
 ];
-describe("downloads: where Open opened it, and Open in Word", () => pageTest("right", opts({ downloads: { items: OPENS } }), async ({ page, helper, inPage, until, errors }) => {
+describe("downloads: where Open opened it, and Open in app", () => pageTest("right", opts({ downloads: { items: OPENS } }), async ({ page, helper, inPage, until, errors }) => {
   await page.click("#tab-tools");
   await until("the rows", () => document.querySelectorAll("#downloads li").length === 8);
   const rowOf = (name) => `#downloads li:has(button[aria-label="Open ${name}"])`;
@@ -807,11 +798,11 @@ describe("downloads: where Open opened it, and Open in Word", () => pageTest("ri
   const saidIn = (name) => inPage((s) => document.querySelector(`${s} .said`).textContent, rowOf(name));
   const dl = () => helper.posts.filter((p) => p.route === "downloads");
 
-  // (1) Open in Word on Word-type names only, between Open and Show in Finder.
-  const words = await inPage(() => [...document.querySelectorAll("#downloads button")].filter((b) => b.textContent === "Open in Word").map((b) => b.getAttribute("aria-label")));
-  assert.deepEqual(words.sort(), ["Open Minutes.ODT in Word", "Open contract.docx in Word", "Open gone.rtf in Word"]);
+  // (1) Open in app on Word-type names only, between Open and Show in Finder.
+  const words = await inPage(() => [...document.querySelectorAll("#downloads button")].filter((b) => b.textContent === "Open in app").map((b) => b.getAttribute("aria-label")));
+  assert.deepEqual(words.sort(), ["Open Minutes.ODT in its app", "Open contract.docx in its app", "Open gone.rtf in its app"]);
   const reveal = await inPage(() => (/mac/i.test(navigator.userAgentData?.platform || navigator.platform) ? "Show in Finder" : "Show in folder"));
-  assert.deepEqual(await inPage((s) => [...document.querySelectorAll(`${s} button`)].map((b) => b.textContent), rowOf("contract.docx")), ["Open", "Open in Word", reveal]);
+  assert.deepEqual(await inPage((s) => [...document.querySelectorAll(`${s} button`)].map((b) => b.textContent), rowOf("contract.docx")), ["Open", "Open in app", reveal]);
   // (2) Open's title, only for types the page can name.
   const mac = reveal === "Show in Finder";
   const titles = await inPage(() => Object.fromEntries([...document.querySelectorAll("#downloads li")].map((li) => {
@@ -823,11 +814,11 @@ describe("downloads: where Open opened it, and Open in Word", () => pageTest("ri
     "sheet.xlsx": null, "notes.txt": "Opens in a new tab", "Minutes.ODT": mac ? "Opens as a read-only preview in a new tab" : "Opens in its app",
     "gone.rtf": mac ? "Opens as a read-only preview in a new tab" : "Opens in its app", "report.docx.pdf": "Opens in a new tab", "mail.html": null,
   });
-  assert.equal(await inPage(() => document.querySelector('button[aria-label="Open contract.docx in Word"]').title), "Opens the original in its default app, for editing");
-  // (3) A synthetic click on Open in Word sends nothing.
-  await inPage(synthetic, 'button[aria-label="Open contract.docx in Word"]');
+  assert.equal(await inPage(() => document.querySelector('button[aria-label="Open contract.docx in its app"]').title), "Opens the original in its default app, for editing");
+  // (3) A synthetic click on Open in app sends nothing.
+  await inPage(synthetic, 'button[aria-label="Open contract.docx in its app"]');
   await sleep(300);
-  assert.equal(dl().length, 0, "a synthetic Open in Word opens nothing");
+  assert.equal(dl().length, 0, "a synthetic Open in app opens nothing");
   // (4)-(7) The row says where the helper opened it, only as it answered; one status at a time.
   await page.click('button[aria-label="Open statement.pdf"]');
   await until("t1 said", () => document.querySelector('#downloads li:has(button[aria-label="Open statement.pdf"]) .said').textContent === "Opened in a new tab");
@@ -844,10 +835,10 @@ describe("downloads: where Open opened it, and Open in Word", () => pageTest("ri
   await sleep(200);
   assert.deepEqual(await saids(), [], "an answer without `opened` says nothing");
   assert.equal(await inPage(() => document.getElementById("downloads-msg").textContent), "");
-  // (8) Open in Word by keyboard: Tab from Open, Enter.
+  // (8) Open in app by keyboard: Tab from Open, Enter.
   await page.focus('button[aria-label="Open contract.docx"]');
   await page.keyboard.press("Tab");
-  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Open contract.docx in Word");
+  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Open contract.docx in its app");
   await page.keyboard.press("Enter");
   await waitFor("open-app", () => dl().some((p) => p.rest[1] === "open-app"));
   assert.deepEqual(dl().at(-1), { route: "downloads", rest: ["w1", "open-app"], body: null });
@@ -861,11 +852,11 @@ describe("downloads: where Open opened it, and Open in Word", () => pageTest("ri
   await waitFor("w1 reveal", () => dl().some((p) => p.rest[0] === "w1" && p.rest[1] === "reveal"));
   assert.deepEqual(await saids(), []);
   // (10) open-app refused: the helper's sentence in the row, no Open anyway.
-  await page.click('button[aria-label="Open Minutes.ODT in Word"]');
+  await page.click('button[aria-label="Open Minutes.ODT in its app"]');
   await until("n1 refusal", () => document.getElementById("dl-confirm-n1")?.hidden === false);
   assert.deepEqual(await inPage(() => { const b = document.getElementById("dl-confirm-n1"); return [b.querySelector("p").textContent, b.querySelector(".confirm-row").hidden]; }), [NO_APP, true]);
   // (11) 410: the helper's sentence under the list.
-  await page.click('button[aria-label="Open gone.rtf in Word"]');
+  await page.click('button[aria-label="Open gone.rtf in its app"]');
   await until("g1 gone", () => document.getElementById("downloads-msg").dataset.kind === "error");
   assert.equal(await inPage(() => document.getElementById("downloads-msg").textContent), FILE_CHANGED);
   // (12) A web page's confirm, verbatim from the helper.
@@ -874,16 +865,16 @@ describe("downloads: where Open opened it, and Open in Word", () => pageTest("ri
   assert.equal(await inPage(() => document.querySelector("#dl-confirm-v1 p").textContent), CONFIRM_WEB);
   await page.click('button[aria-label="Don\'t open mail.html"]');
   await until("v1 cancelled", () => document.getElementById("dl-confirm-v1").hidden);
-  // (13) open-app asks first: Open anyway repeats open-app, the focus back on Open in Word.
+  // (13) open-app asks first: Open anyway repeats open-app, the focus back on Open in app.
   helper.replies.downloads = (body, rest) => (rest[1] === "open-app" && body?.confirm !== true ? { status: 428, body: { confirm: "Ask first." } } : { status: 200, body: { ok: true, opened: "app" } });
-  await page.click('button[aria-label="Open contract.docx in Word"]');
+  await page.click('button[aria-label="Open contract.docx in its app"]');
   await until("w1 asks", () => document.getElementById("dl-confirm-w1")?.hidden === false && document.querySelector("#dl-confirm-w1 p").textContent === "Ask first.");
   const n = dl().length;
   await page.click("#dl-confirm-w1 .confirm-row button");
   await waitFor("the confirmed open-app", () => dl().length === n + 1);
   assert.deepEqual(dl().at(-1), { route: "downloads", rest: ["w1", "open-app"], body: { confirm: true } });
   await until("w1 box goes", () => document.getElementById("dl-confirm-w1").hidden);
-  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Open contract.docx in Word");
+  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "Open contract.docx in its app");
   assert.equal(await saidIn("contract.docx"), "Opened in its app");
   assert.deepEqual(errors, []);
 }));
@@ -1010,7 +1001,7 @@ describe("recordings without the route", () => pageTest("right", opts({ recordin
 
 const DIAG = { joined: [{ label: "Sam", role: "drive" }], connections: { agents: 1, viewers: 2, joiners: 1, streams: 3 },
   errors: [{ at: NOW - 60_000, where: "serve.mjs", text: "older error" }, { at: NOW - 1000, where: "tunnel.mjs", text: "newer error" }] };
-describe("diagnostics", () => pageTest("right", opts({ diagnostics: DIAG }), async ({ page, helper, inPage, until, errors }) => {
+describe("diagnostics", () => pageTest("right", opts({ diagnostics: DIAG }, { native: false }), async ({ page, helper, inPage, until, errors }) => {
   await page.click("#tab-tools");
   // Before its first answer the section shows no values (no placeholders).
   assert.equal(await inPage(visible, "#diag"), false);
@@ -1056,7 +1047,7 @@ describe("diagnostics", () => pageTest("right", opts({ diagnostics: DIAG }), asy
   assert.deepEqual(errors, []);
 }));
 
-describe("diagnostics without the route", () => pageTest("right", opts({ diagnostics: null }), async ({ page, inPage, until, errors }) => {
+describe("diagnostics without the route", () => pageTest("right", opts({ diagnostics: null }, { native: false }), async ({ page, inPage, until, errors }) => {
   await page.click("#tab-tools");
   await page.click("#sec-diag .disclose");
   await until("none", () => document.getElementById("diag-none").checkVisibility());
@@ -1067,7 +1058,7 @@ describe("diagnostics without the route", () => pageTest("right", opts({ diagnos
   assert.deepEqual(errors, []);
 }));
 
-describe("diagnostics read fails", () => pageTest("right", opts({ diagnostics: "not an object" }), async ({ page, inPage, until, errors }) => {
+describe("diagnostics read fails", () => pageTest("right", opts({ diagnostics: "not an object" }, { native: false }), async ({ page, inPage, until, errors }) => {
   await page.click("#tab-tools");
   await page.click("#sec-diag .disclose");
   await until("the failure", () => document.getElementById("diag-msg").textContent !== "");
@@ -1266,7 +1257,7 @@ describe("no API and no storage: No agent connected", () => pageTest("right", op
 
 // The session card only for a session the helper named.
 describe("session card waits for the helper's session", () => pageTest("right", opts({}), async ({ helper, inPage, until, errors }) => {
-  assert.match(SERVED, /<footer class="session-card" id="session-card" hidden>/, "served hidden");
+  assert.match(SERVED, /<footer class="session-card" id="session-card" tabindex="-1" hidden>/, "served hidden");
   await until("live", () => document.body.dataset.s === "live");
   assert.equal(await inPage(() => document.getElementById("session-card").checkVisibility()), false, "no name yet: no card");
   helper.push("session", { name: "Checkout test", where: "Local", temporary: false });

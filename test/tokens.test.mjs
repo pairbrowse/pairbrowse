@@ -41,7 +41,7 @@ const contrast = (a, b) => { const [x, y] = [lum(norm(a)), lum(norm(b))].sort((p
 const REQUIRED = ["bg", "chrome", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "accent", "accent-ink", "accent-soft",
   "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-0", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t",
   "tab-idle", "tab-top", "edge-tab", "tab-lit", "glow-tab", "edge-light", "edge-lit", "surface-grad", "shadow-raised", "glow-soft", "glow-accent",
-  "glow-ok", "glow-bad", "glow-focus", "live-bg", "live-edge", "live-ink", "btn", "edge-btn", "accent-fill", "panel", "panel-edge", "inset", "column"];
+  "glow-ok", "glow-focus", "live-bg", "live-edge", "live-ink", "btn", "edge-btn", "accent-fill", "panel", "panel-edge", "inset", "column"];
 const PAGES = ["right/right.css", "picker/picker.css", "newtab/newtab.css", "screen/screen.css", "settings/settings.css"].map((x) => UI + x).concat("scripts/liveview.css");
 // Every page sheet under ui/ (strip, docks, timeline, approve and the rest) plus the live view's.
 const ALL_CSS = readdirSync(root + UI, { withFileTypes: true }).filter((d) => d.isDirectory())
@@ -152,8 +152,9 @@ test("the static light keeps text at AA", () => {
     const r = contrast(t[fg], t[bg]);
     assert.ok(r >= 4.5, `--${fg} on --${bg} is ${r.toFixed(2)}:1`);
   }
-  // The mockup's opaque fills under text: End session, the Live session pill, Allow (white), the docks' panels.
-  for (const [fg, bg] of [["bad-ink", "bad-fill"], ["live-ink", "live-bg"], ["ink", "btn"], ["ink-2", "panel"], ["ink-2", "inset"], ["ink-soft", "sidebar"], ["accent-ink", "nav-active"], ["ink", "badge"]]) {
+  // The mockup's opaque fills under text: the Live session pill, Allow (white), the docks' panels; a
+  // destructive confirm's red on the raised surface.
+  for (const [fg, bg] of [["bad-ink", "elevated"], ["bad-ink", "chrome"], ["live-ink", "live-bg"], ["ink", "btn"], ["ink-2", "panel"], ["ink-2", "inset"], ["ink-soft", "sidebar"], ["accent-ink", "nav-active"], ["ink", "badge"]]) {
     const r = contrast(t[fg], t[bg]);
     assert.ok(r >= 4.5, `--${fg} on --${bg} is ${r.toFixed(2)}:1`);
   }

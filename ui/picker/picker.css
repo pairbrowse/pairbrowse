@@ -120,6 +120,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; box
 .msg { margin: var(--sp-3) 0 0; font-size: var(--fs-3); color: var(--muted); }
 .msg:empty { display: none; }
 .msg[data-kind="error"] { color: var(--bad); }
+.report-offer { color: var(--accent-ink); font-weight: 500; }
 .msg[data-kind="ok"] { color: var(--ok); }
 body[data-s="connecting"] .choices, body[data-s="done"] .choices { display: none; }
 body[data-s="connecting"] .msg:empty { display: block; }

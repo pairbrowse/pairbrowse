@@ -21,8 +21,9 @@ button { font: inherit; }
    state, and the agent card's state line says "Working…": the session card's Share, its card and
    the Status box's Live pill are the side panel's (extension host) only. */
 html[data-host="native"] #share-btn, html[data-host="native"] #share-card, html[data-host="native"] #status-live { display: none; }
-/* With the browser's Settings page, Join addresses, Remembered details and Passwords live there. */
-html[data-profile-home="settings"] #hosts, html[data-profile-home="settings"] #sec-details, html[data-profile-home="settings"] #sec-secrets { display: none; }
+/* With the browser's Settings page, Join addresses, Remembered details, Passwords and Diagnostics live there (Part H). */
+html[data-profile-home="settings"] #hosts, html[data-profile-home="settings"] #sec-details, html[data-profile-home="settings"] #sec-secrets, html[data-profile-home="settings"] #sec-diag { display: none; }
+.mini.bad { color: var(--bad-ink); }
 .settings-link { display: grid; justify-items: start; gap: var(--sp-2); margin-top: var(--sp-4); }
 .settings-link .note { margin: 0; }
 .settings-link[hidden] { display: none; }
@@ -273,7 +274,6 @@ h2 { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-2); }
 .tab[aria-selected="true"]:focus-visible { box-shadow: var(--glow-focus); }
 .rail-btn[aria-current="true"]:focus-visible { box-shadow: inset 2px 0 0 var(--accent), var(--glow-focus); }
 #pause-btn:focus-visible, .people .pause-one:focus-visible, .row3 button:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-focus); }
-.row3 .end:focus-visible, .end-row .end:focus-visible { box-shadow: var(--glow-bad), var(--glow-focus); }
 .primary:focus-visible { box-shadow: var(--glow-accent), var(--glow-focus); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; } }
 
@@ -368,8 +368,10 @@ body[data-recording="true"] #record-btn::before { border-radius: 2px; background
 .pencil:hover { background: var(--hover); color: var(--ink); }
 .pencil[hidden] { display: none; }
 .session-card .fold { grid-column: 3; }
+.session-card .fold[hidden] { display: none; }
 .session-card > .msg { grid-column: 1 / -1; margin: var(--sp-2) 0 0; min-height: 0; }
 .session-card > .msg:empty { display: none; }
+.report-offer { color: var(--accent-ink); font-weight: 500; }
 .row3[hidden] { display: none; }
 .row3 svg { flex: none; }
 .sicon { grid-row: 1 / span 2; display: grid; place-items: center; width: var(--av-card); height: var(--av-card); border: 1px solid var(--panel-edge); border-radius: var(--r-2); background: var(--inset); color: var(--ink); }
@@ -380,24 +382,14 @@ body[data-recording="true"] #record-btn::before { border-radius: 2px; background
 .saved { grid-column: 2; align-self: start; font-size: var(--fs-2); line-height: 20px; color: var(--ink-2); }
 .saved[hidden] { display: none; }
 .row3 { grid-column: 1 / -1; display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
-.row3 .save { flex: 84 1 0; } .row3 .share-btn { flex: 93 1 0; } .row3 .end { flex: 134 1 0; }
-html[data-host="native"] .row3 { display: grid; grid-template-columns: 1fr 1fr; }
-html[data-host="native"] .row3[hidden] { display: none; }
-html[data-host="native"] #session-save[hidden] ~ .end { grid-column: 1 / -1; }
-.row3 button, .end-row button { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: var(--icon-gap); height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-btn); border-radius: var(--r-2); background-color: var(--btn); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; cursor: pointer; box-shadow: inset 0 1px 0 var(--edge-light); transition: background-color var(--t-hover); }
+.row3 .save { flex: 84 1 0; } .row3 .share-btn { flex: 93 1 0; } .row3 .switch { flex: 134 1 0; }
+/* In the browser Save alone takes the row (Switch session is the strip's and the left dock's, Part H). */
+html[data-host="native"] .row3 { display: grid; grid-template-columns: 1fr; }
+html[data-host="native"] .row3[hidden], html[data-host="native"] .row3.empty, html[data-host="native"] #switch-btn { display: none; }
+.row3 button { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: var(--icon-gap); height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-btn); border-radius: var(--r-2); background-color: var(--btn); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; cursor: pointer; box-shadow: inset 0 1px 0 var(--edge-light); transition: background-color var(--t-hover); }
 .row3 button[hidden] { display: none; }
-.row3 button:hover, .end-row button:hover { background-color: var(--hover); }
+.row3 button:hover { background-color: var(--hover); }
 .row3 .share-btn[aria-expanded="true"] { background-color: var(--hover); }
-.row3 .end { background-color: var(--bad-fill); border-color: var(--bad-edge); color: var(--bad-ink); box-shadow: 0 0 14px rgb(239 100 104 / 0.18); }
-/* The confirm sits on the opaque --elevated box: no tint there, so the red text keeps AA (4.65:1). */
-.end-row .end { background-color: transparent; border-color: var(--bad); color: var(--bad); }
-.row3 .end:hover, .end-row .end:hover { background-color: var(--elevated); }
-/* End session asks in the card itself (a dock slot has no JavaScript dialogs). */
-.end-confirm { grid-column: 1 / -1; margin-top: var(--sp-2); padding: calc(var(--sp-3) - 1px); border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); }
-.end-confirm[hidden] { display: none; }
-.end-row { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
-.end-confirm p { margin: 0; font-size: var(--fs-2); color: var(--ink); }
-.row3 .end[aria-expanded="true"] { background-color: var(--elevated); }
 
 /* Share (the side panel's): a card above the session card (not a modal): a join code or a watch
    link, made with a click, shown once with Copy. */
@@ -422,6 +414,8 @@ html[data-host="native"] #session-save[hidden] ~ .end { grid-column: 1 / -1; }
 /* Page and Pictures: on the 20 px edge; an empty pane says so with 16 px above and below. */
 .outline { margin: 0; padding: var(--sp-3) var(--sp-5); font: var(--fs-2)/1.5 var(--mono); white-space: pre-wrap; color: var(--ink-2); }
 .outline[hidden] { display: none; }
+.outline-head { margin: 0; padding: var(--sp-3) var(--sp-5) 0; font-size: var(--fs-2); color: var(--ink-2); }
+.outline-head[hidden] { display: none; }
 .picture { margin: 0; padding: var(--sp-3) var(--sp-5); }
 .picture[hidden] { display: none; }
 .picture img { display: block; width: 100%; height: auto; border-radius: var(--r-2); border: 1px solid var(--edge); }

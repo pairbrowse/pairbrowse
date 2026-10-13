@@ -243,14 +243,11 @@ named("More actions: site by a click, terminal by a key", async (ctx) => {
     expanded: document.getElementById("more").getAttribute("aria-expanded"), hidden: document.getElementById("menu").hidden,
     items: [...document.querySelectorAll("#menu button")].map((b) => [b.textContent, b.dataset.answer]), focus: document.activeElement.dataset.answer,
   }));
-  assert.deepEqual(opened, { expanded: "true", hidden: false, items: [["Allow for shop.example", "site"], ["Ask in the terminal only", "terminal"]], focus: "site" });
-  await page.keyboard.press("Enter");
-  await sleep(200);
-  assert.deepEqual(helper.posts, [], "a key press on site posts nothing");
-  assert.equal(await text(ctx, "hint"), "Allow with a click: a key press can't allow.");
-  await realClick(page, '#menu [data-answer="site"]');
+  // Part H: no "Allow for <site>": the helper keeps no per-site memory (it was a plain Allow).
+  assert.deepEqual(opened, { expanded: "true", hidden: false, items: [["Ask in the terminal only", "terminal"]], focus: "terminal" });
+  await realClick(page, '#menu [data-answer="terminal"]');
   await shown(ctx, "Publish");
-  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "site" }]);
+  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "terminal" }]);
 
   await sleep(SETTLE);
   await realClick(page, "#more");
@@ -360,6 +357,7 @@ named("join, dev-share and host asks render in the same card and post to their o
   helper.push("join", [{ id: "j1", name: "Sam", app: "Claude Code", role: "drive" }, { id: "j0", name: "Old", state: "approved" }]);
   await shown(ctx, "Shared browser, can drive");
   assert.deepEqual([await text(ctx, "who"), await text(ctx, "verb")], ["Sam (Claude Code)", "wants to join"]);
+  assert.equal(await inPage(() => document.getElementById("dismiss").getAttribute("aria-label")), "Dismiss; it stays in the agent panel", "× says where a join request stays");
   assert.equal(await border(), accent);
   assert.equal(await inPage(() => document.getElementById("more").hidden), true);
   assert.equal(await inPage(() => document.body.dataset.pending), "1", "a person already let in is no request");

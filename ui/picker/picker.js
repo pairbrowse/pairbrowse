@@ -4,7 +4,7 @@
 // the live view with the owner's key: in the build from the browser's Session API
 // (window.pairbrowse), in the extension from the side panel's worker (chrome.storage.session).
 // The live view takes these requests only from the page's own origin.
-import { $, el, avatar, initialOf } from "../common.js";
+import { $, el, avatar, initialOf, reportOffer } from "../common.js";
 
 // Framed: the switcher popover. No page chrome of its own, the list even when a session is open,
 // and the parent told (same origin only) when to close; the pick itself goes only to the helper.
@@ -35,6 +35,8 @@ async function send(op, label) {
     // The code is fine but leads somewhere other than a PairBrowse address: the person decides.
     if (r.hostAsk?.id && r.hostAsk.host) { showHostAsk(r.hostAsk); say(""); return; }
     say(r.text || "That didn't work.", "error");
+    // A refused pick: offer Report a problem when the helper relays reports (Part H).
+    reportOffer(base).then((a) => { if (a && $("msg").dataset.kind === "error") $("msg").append(" ", a); });
     return;
   }
   // Switching sessions closes this window; joining keeps this tab with what happens next.
@@ -236,6 +238,10 @@ if (window.pairbrowse) {
   const lost = () => say("Couldn't reach PairBrowse.", "error");
   window.pairbrowse.session.helper().then((r) => { const { origin, key } = r || {}; if (origin && key) connect(`${origin}/${key}/`); else lost(); }, lost);
 } else {
-  chrome.storage.session.get("view").then(({ view }) => connect(view));
-  chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); });
+  // Neither the browser's API nor the extension's storage (a frame given no bindings): say so
+  // instead of staying on "connecting" (Part H).
+  try {
+    chrome.storage.session.get("view").then(({ view } = {}) => connect(view), () => say("Couldn't reach PairBrowse.", "error"));
+    chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); });
+  } catch { say("Couldn't reach PairBrowse.", "error"); }
 }

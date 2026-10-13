@@ -8,123 +8,220 @@
 <link rel="stylesheet" href="../tokens.css">
 <link rel="stylesheet" href="settings.css">
 </head>
+<!-- PairBrowse Settings (DESIGN.md Part H): organized by what people come for. Every control reads
+     its current value from the helper and writes through a real route; a setting whose route the
+     helper lacks is not on the page (Part H lists the routes it needs). -->
 <body data-s="connecting" data-host="">
   <header class="top">
     <img src="../logo.svg" alt="" width="24" height="24">
     <h1>Settings</h1>
-    <p id="conn" role="status" aria-live="polite">Connecting to PairBrowse…</p>
+    <div class="search">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input id="search" type="search" placeholder="Search settings" aria-label="Search settings" aria-describedby="search-hint" autocomplete="off" spellcheck="false" maxlength="60">
+      <kbd id="search-hint" aria-label="Press slash to search">/</kbd>
+    </div>
   </header>
+
+  <p class="banner" id="conn" role="status" aria-live="polite">Connecting to PairBrowse…</p>
 
   <div class="layout">
     <nav class="nav" aria-label="Settings sections">
-      <a href="#browser">Browser</a>
-      <a href="#sessions">Sessions</a>
-      <a href="#sharing">Sharing</a>
-      <a href="#passwords">Passwords</a>
-      <a href="#remembered">Remembered details</a>
-      <a href="#timeline">Timeline</a>
-      <a href="#appearance">Appearance</a>
-      <a href="#about">About</a>
+      <a href="#general" data-sec="general"><svg aria-hidden="true" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 3v10" stroke="currentColor" stroke-width="1.4"/></svg>General</a>
+      <a href="#agents" data-sec="agents"><svg aria-hidden="true" viewBox="0 0 16 16"><path d="M8 2.5 13 4.5v3.6c0 2.9-2.1 4.9-5 5.9-2.9-1-5-3-5-5.9V4.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Agents and approvals</a>
+      <a href="#sharing" data-sec="sharing"><svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="6" cy="6" r="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 13c.6-2.2 2.1-3.3 4-3.3s3.4 1.1 4 3.3M10.5 3.6a2.5 2.5 0 0 1 0 4.8M12 9.9c1 .5 1.7 1.5 2 3.1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Sharing</a>
+      <a href="#data" data-sec="data"><svg aria-hidden="true" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>Your data</a>
+      <a href="#about" data-sec="about"><svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 7.2v3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="5.2" r=".9" fill="currentColor"/></svg>About and diagnostics</a>
+      <hr>
+      <a href="chrome://settings" id="browser-settings" class="out" target="_blank" rel="noopener noreferrer"><svg aria-hidden="true" viewBox="0 0 16 16"><path d="M9 3h4v4M13 3 7.5 8.5M11 9.5V13H3V5h3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Browser settings</a>
     </nav>
 
     <main>
-      <section class="sec" id="browser" aria-labelledby="browser-h">
-        <h2 class="sec-h" id="browser-h">Browser</h2>
-        <div class="sheet">
-          <div class="kv"><span class="k">Running now</span><span class="v" id="browser-now"></span></div>
-          <p class="note" id="browser-note">The browser setting can't be read or changed from this page yet: PairBrowse has no settings route. Edit ~/.pairbrowse/config.json; the change takes effect on the browser's next start, on the same profile.</p>
-          <div class="kv cfg"><div><code class="line" id="line-pairbrowse">"browserEngine": "pairbrowse"</code><small>The PairBrowse browser (downloads the pinned build once)</small></div><button class="mini copy" type="button" data-for="line-pairbrowse" aria-label="Copy the pairbrowse line">Copy</button></div>
-          <div class="kv cfg"><div><code class="line" id="line-chromium">"browserEngine": "chromium"</code><small>Playwright's Chromium with the PairBrowse extension</small></div><button class="mini copy" type="button" data-for="line-chromium" aria-label="Copy the chromium line">Copy</button></div>
-          <div class="kv cfg"><div><code class="line" id="line-path">"executablePath": "/path/to/your/Chromium"</code><small>A browser of your own, with browserEngine chromium</small></div><button class="mini copy" type="button" data-for="line-path" aria-label="Copy the executablePath line">Copy</button></div>
+      <p class="empty no-match" id="no-match" role="status" aria-live="polite" hidden></p>
+
+      <!-- General -->
+      <section class="sec" id="general" aria-labelledby="general-h">
+        <h2 class="sec-h" id="general-h">General</h2>
+
+        <div class="item cfg-item" id="browser" data-k="browser chromium executable path engine build restart which browser opens">
+          <fieldset class="group" id="browser-group" aria-describedby="browser-help">
+            <legend class="item-h">Browser PairBrowse opens</legend>
+            <p class="help" id="browser-help">Used from the browser's next start, with the same session and logins.</p>
+            <label class="choice" id="choice-pairbrowse"><input type="radio" name="browser" value="pairbrowse"><span><b>The PairBrowse browser</b><small id="pairbrowse-small">Docks, timeline and approvals in the window</small></span></label>
+            <label class="choice"><input type="radio" name="browser" value="chromium"><span><b>Chromium with the PairBrowse extension</b><small>The side panel instead of the docks</small></span></label>
+            <label class="choice"><input type="radio" name="browser" value="path"><span><b>Another Chromium on this computer</b><small>With the PairBrowse extension</small></span></label>
+            <form class="inline" id="path-form" hidden autocomplete="off">
+              <label class="sr" for="path">Path to the browser</label>
+              <input class="field mono" id="path" name="path" placeholder="/Applications/Chromium.app/Contents/MacOS/Chromium" maxlength="1024" spellcheck="false">
+              <button class="action" type="submit">Use this browser</button>
+            </form>
+          </fieldset>
           <p class="msg" id="browser-msg" role="status" aria-live="polite"></p>
         </div>
+
+        <div class="item cfg-item native-only" id="docks" data-k="docks dock layout left right sidebar rail hidden open agent panel start">
+          <h3 class="item-h">Docks when a session starts</h3>
+          <p class="help">Each session remembers what you change while it runs; this is where a new one starts.</p>
+          <div class="seg-row"><span class="seg-label" id="dock-left-l">Left dock</span>
+            <div class="seg" role="radiogroup" aria-labelledby="dock-left-l" data-side="left">
+              <label><input type="radio" name="dock-left" value="open">Open</label><label><input type="radio" name="dock-left" value="rail">Icons only</label><label><input type="radio" name="dock-left" value="hidden">Hidden</label>
+            </div></div>
+          <div class="seg-row"><span class="seg-label" id="dock-right-l">Agent panel</span>
+            <div class="seg" role="radiogroup" aria-labelledby="dock-right-l" data-side="right">
+              <label><input type="radio" name="dock-right" value="open">Open</label><label><input type="radio" name="dock-right" value="rail">Icons only</label><label><input type="radio" name="dock-right" value="hidden">Hidden</label>
+            </div></div>
+          <p class="msg" id="docks-msg" role="status" aria-live="polite"></p>
+        </div>
+
+        <p class="note cfg-missing" hidden>This PairBrowse helper can't change its settings from here yet. Update PairBrowse to choose the browser and the docks here.</p>
       </section>
 
-      <section class="sec" id="sessions" aria-labelledby="sessions-h">
-        <h2 class="sec-h" id="sessions-h">Sessions</h2>
-        <div class="sheet">
-          <ul class="rows" id="session-list" aria-label="Sessions"></ul>
-          <p class="note">Switching, renaming and deleting happen in the session picker and through Claude (pairbrowse_session); this page lists them.</p>
-          <button class="action" id="switch-btn" type="button">Switch session…</button>
-          <p class="msg" id="sessions-msg" role="status" aria-live="polite"></p>
+      <!-- Agents and approvals: the rules the helper enforces (scripts/guard.mjs); none can be switched off. -->
+      <section class="sec" id="agents" aria-labelledby="agents-h">
+        <h2 class="sec-h" id="agents-h">Agents and approvals</h2>
+        <div class="item" id="asks" data-k="approval approve ask permission pay delete publish send submit upload local network review allow deny agent claude codex">
+          <h3 class="item-h">Always asks you first</h3>
+          <p class="help">Agents work in the browser without asking, except for these. They can't be switched off.</p>
+          <ul class="rules">
+            <li><b>Final clicks</b><span>A click that pays, deletes, publishes, sends or submits.</span></li>
+            <li><b>Confirm dialogs</b><span>OK on a page's confirm after such a click.</span></li>
+            <li><b>Publishing</b><span>Blocked until a passing pre-submit review in the last 30 minutes, then asked.</span></li>
+            <li><b>Uploads</b><span>Any file outside PairBrowse's uploads folder, or not a plain document or picture.</span></li>
+            <li><b>Local addresses</b><span>Your router, NAS and other addresses on your own network.</span></li>
+          </ul>
+          <p class="help" id="asks-where">You answer in the agent's app, and in the PairBrowse browser on an approval card as well. The first answer counts.</p>
+        </div>
+        <div class="item" id="agents-who" data-k="agent who pause take control stop">
+          <h3 class="item-h">Stopping agents</h3>
+          <p class="help" id="agents-who-text">Pause stops every agent at once; Take control stops one. Both are on the agent panel.</p>
         </div>
       </section>
 
+      <!-- Sharing -->
       <section class="sec" id="sharing" aria-labelledby="sharing-h">
         <h2 class="sec-h" id="sharing-h">Sharing</h2>
-        <div class="sheet">
-          <div class="sub" id="hosts" hidden>
-            <h3>Join addresses</h3>
-            <p class="note">Addresses you allowed in join codes besides PairBrowse's own (*.trycloudflare.com): a host's own tunnel. "Always" ones are kept in your config.</p>
-            <ul class="devs" id="host-list"></ul>
-          </div>
-          <p class="empty" id="hosts-empty" hidden>No join addresses allowed besides PairBrowse's own.</p>
-          <div class="joins" id="host-asks" role="region" aria-label="Join codes with another address" aria-live="assertive"></div>
-          <!-- Dev servers have one home, the agent panel's Tools tab (DESIGN.md Part G): live session tools. -->
-          <p class="note" id="dev-note">Share a dev server from the agent panel's Tools tab.</p>
+        <div class="item" id="invites" data-k="invite share join code watch link people">
+          <h3 class="item-h">Inviting people</h3>
+          <p class="help" id="invites-text">Make a join code or a watch link with Share at the top of the window. Each one asks you before anyone gets in.</p>
+        </div>
+        <div class="item" id="join-addresses" data-k="join address addresses tunnel host allowed remove">
+          <h3 class="item-h">Join addresses</h3>
+          <p class="help">Addresses you allowed in join codes besides PairBrowse's own (*.trycloudflare.com). "Always" ones are kept in your config.</p>
+          <ul class="devs" id="host-list" aria-label="Allowed join addresses"></ul>
+          <p class="empty" id="hosts-empty">None besides PairBrowse's own.</p>
+        </div>
+        <div class="item" id="dev-servers" data-k="dev server localhost port share tunnel next vite">
+          <h3 class="item-h">Dev servers</h3>
+          <p class="help" id="dev-note">Share a dev server from the agent panel's Tools tab while people are in your session.</p>
         </div>
       </section>
 
-      <section class="sec" id="passwords" aria-labelledby="passwords-h">
-        <h2 class="sec-h" id="passwords-h">Passwords</h2>
-        <div class="sheet">
-          <p class="note">Saved on this computer, readable only by you. Claude sees the name, never the password, and it's only filled in on the sites you list.</p>
+      <!-- Your data -->
+      <section class="sec" id="data" aria-labelledby="data-h">
+        <h2 class="sec-h" id="data-h">Your data</h2>
+
+        <div class="item" id="passwords" data-k="password passwords secret secrets site sites domain login">
+          <h3 class="item-h">Passwords</h3>
+          <p class="help">Saved on this computer, readable only by you. Agents see the name, never the password, and it's only filled in on the sites you list.</p>
           <div id="secrets"></div>
           <form class="add" id="add-secret" autocomplete="off">
             <div class="pair">
-              <label class="lab" for="secret-label">Name<input class="field" id="secret-label" name="label" placeholder="Name, e.g. Shopify" maxlength="60"></label>
+              <label class="lab" for="secret-label">Name<input class="field" id="secret-label" name="label" placeholder="e.g. Shopify" maxlength="60"></label>
               <label class="lab" for="secret-value">Password<input class="field" id="secret-value" name="value" type="password" placeholder="Password" autocomplete="new-password" maxlength="4096"></label>
             </div>
-            <label class="lab" for="secret-domains">Sites<input class="field" id="secret-domains" name="domains" placeholder="Sites, e.g. accounts.shopify.com" maxlength="400"></label>
+            <label class="lab" for="secret-domains">Sites<input class="field" id="secret-domains" name="domains" placeholder="e.g. accounts.shopify.com" maxlength="400"></label>
             <button class="primary" type="submit">Save password</button>
           </form>
           <p class="msg" id="profile-msg" role="status" aria-live="polite"></p>
         </div>
-      </section>
 
-      <section class="sec" id="remembered" aria-labelledby="remembered-h">
-        <h2 class="sec-h" id="remembered-h">Remembered details</h2>
-        <div class="sheet">
-          <p class="note">Used to fill forms. Claude adds what you tell it, and what gets filled in forms is kept here too. Passwords never are.</p>
+        <div class="item" id="remembered" data-k="remembered details detail form fill address vat company phone">
+          <h3 class="item-h">Remembered details</h3>
+          <p class="help">Used to fill forms. Agents add what you tell them, and what gets filled in forms is kept here too. Passwords never are.</p>
           <div id="details"></div>
           <form class="add" id="add-detail" autocomplete="off">
             <div class="pair">
-              <label class="lab" for="detail-label">Label<input class="field" id="detail-label" name="label" placeholder="Label, e.g. VAT number" maxlength="80"></label>
+              <label class="lab" for="detail-label">Label<input class="field" id="detail-label" name="label" placeholder="e.g. VAT number" maxlength="80"></label>
               <label class="lab" for="detail-value">Value<input class="field" id="detail-value" name="value" placeholder="Value" maxlength="2000"></label>
             </div>
             <button class="primary" type="submit">Add detail</button>
           </form>
         </div>
-      </section>
 
-      <section class="sec" id="timeline" aria-labelledby="timeline-h">
-        <h2 class="sec-h" id="timeline-h">Timeline</h2>
-        <div class="sheet">
-          <div class="kv"><span class="k">Pictures kept for this session</span><span class="v" id="timeline-state">Checking…</span></div>
-          <p class="note">With the timeline on, the pictures already sent to agents are kept for this browser session (at most 200, plus up to 50 pinned), deleted with it, never shown to joiners.</p>
-          <div class="kv cfg"><div><code class="line" id="line-timeline">"timeline": false</code><small>Keeps no timeline</small></div><button class="mini copy" type="button" data-for="line-timeline" aria-label="Copy the timeline line">Copy</button></div>
-          <p class="msg" id="timeline-msg" role="status" aria-live="polite"></p>
+        <div class="item cfg-item" id="pictures" data-k="pictures timeline screenshots kept keep history pin">
+          <h3 class="item-h">Pictures kept for the timeline</h3>
+          <div class="sw-row">
+            <span class="sw-text"><span id="tl-label">Keep the pictures agents saw</span><small id="tl-state">Checking…</small></span>
+            <button class="switch" id="tl-on" type="button" role="switch" aria-checked="false" aria-labelledby="tl-label" aria-describedby="tl-state"><i aria-hidden="true"></i></button>
+          </div>
+          <form class="cap-row" id="cap-form" autocomplete="off">
+            <label for="tl-cap">Keep at most</label>
+            <input class="field num" id="tl-cap" type="number" min="1" max="200" step="1" inputmode="numeric" required>
+            <span>pictures per session, plus up to 50 pinned</span>
+            <button class="action" type="submit" id="cap-save" hidden>Save</button>
+          </form>
+          <p class="help">Only on this computer, deleted with the session, never shown to people who join. Delete or pin single pictures on the timeline.</p>
+          <p class="msg" id="pictures-msg" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="item" id="sessions" data-k="session sessions profile logins tabs saved">
+          <h3 class="item-h">Saved sessions</h3>
+          <p class="help">Each session is a browser of its own, with its own logins and tabs. Switch with the PairBrowse logo; ask your agent to delete one.</p>
+          <ul class="rows" id="session-list" aria-label="Saved sessions"></ul>
+          <p class="msg" id="sessions-msg" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="item" id="browsing-data" data-k="cookies history cache clear browsing data site data">
+          <h3 class="item-h">Cookies, history and site data</h3>
+          <p class="help">The browser keeps these; clear them in <a class="link" href="chrome://settings" data-browser-settings>Browser settings</a>.</p>
         </div>
       </section>
 
-      <section class="sec" id="appearance" aria-labelledby="appearance-h">
-        <h2 class="sec-h" id="appearance-h">Appearance</h2>
-        <div class="sheet">
-          <div class="kv"><span class="k">Scheme</span><span class="v">Dark</span></div>
-          <p class="note">A light scheme comes later.</p>
-        </div>
-      </section>
-
+      <!-- About and diagnostics -->
       <section class="sec" id="about" aria-labelledby="about-h">
-        <h2 class="sec-h" id="about-h">About</h2>
-        <div class="sheet">
-          <div class="kv"><span class="k">PairBrowse</span><span class="v" id="about-host"></span></div>
-          <div class="kv"><span class="k">Chromium's own settings</span><button class="action" id="chromium-settings" type="button">Open chrome://settings</button></div>
-          <p class="msg" id="about-msg" role="status" aria-live="polite"></p>
+        <h2 class="sec-h" id="about-h">About and diagnostics</h2>
+        <div class="item" id="versions" data-k="about version helper browser build node running connection connected">
+          <dl class="facts">
+            <dt>Running in</dt><dd id="about-host"></dd>
+            <dt>Connection</dt><dd><span class="state" id="about-conn" data-s="connecting">Connecting…</span></dd>
+            <dt>PairBrowse helper</dt><dd id="about-helper">—</dd>
+            <dt>Browser</dt><dd id="about-browser">—</dd>
+            <dt>Connected now</dt><dd id="about-agents">—</dd>
+          </dl>
+        </div>
+        <div class="item" id="diagnostics" data-k="diagnostics errors log report copy problem bug">
+          <h3 class="item-h">Recent errors</h3>
+          <ol class="errors" id="errors" aria-label="Recent errors" hidden></ol>
+          <p class="empty" id="errors-empty">Checking…</p>
+          <div class="acts">
+            <button class="action" id="diag-copy" type="button">Copy diagnostics report</button>
+            <button class="primary" id="report-open" type="button" hidden>Report a problem…</button>
+          </div>
+          <p class="help" id="diag-help">The report holds versions, counts and the helper's last errors, with your home folder and page text masked.</p>
+          <p class="msg" id="diag-msg" role="status" aria-live="polite"></p>
         </div>
       </section>
     </main>
   </div>
+
+  <!-- Report a problem: the person reviews exactly what is sent, then sends it. -->
+  <dialog class="report" id="report" aria-labelledby="report-h" aria-describedby="report-sub">
+    <form method="dialog" id="report-form" autocomplete="off">
+      <h2 id="report-h">Report a problem</h2>
+      <p class="help" id="report-sub">This goes to the PairBrowse team as a ticket. Below is everything that is sent: no page contents, form values, passwords or cookies.</p>
+      <label class="lab" for="report-what">What happened?<textarea class="field" id="report-what" rows="4" maxlength="4000" required placeholder="What you did, what you expected, and what happened instead"></textarea></label>
+      <label class="check" id="report-tab-row" hidden><input type="checkbox" id="report-tab"><span>Include the address of the tab in front: <code id="report-tab-url"></code></span></label>
+      <details class="preview" open>
+        <summary>Exactly what will be sent</summary>
+        <pre id="report-preview" tabindex="0" aria-label="The report, exactly as it will be sent"></pre>
+      </details>
+      <p class="msg" id="report-msg" role="status" aria-live="polite"></p>
+      <div class="acts end">
+        <button class="action" id="report-copy" type="button">Copy instead</button>
+        <button class="action" id="report-cancel" type="button">Cancel</button>
+        <button class="primary" id="report-send" type="button">Send</button>
+      </div>
+    </form>
+  </dialog>
   <script type="module" src="settings.js"></script>
 </body>
 </html>

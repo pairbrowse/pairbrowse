@@ -2,7 +2,7 @@
 // 53 px tab row (no hash), the nav fragments beside the native address bar (#nav-left,
 // #nav-right), and each popover alone (#switcher, #share, #menu) for the shell's bubbles, which
 // cannot draw outside a 53 px slot. Tabs, owners and the dock layout come from window.pairbrowse
-// (the browser's own API); people, sharing and recording from the helper's event stream, and the
+// (the browser's own API); people and sharing from the helper's event stream, and the
 // helper's agent-tabs, which this page writes into the browser's owners for its window's tabs (the
 // owner dots of every page read those). Without window.pairbrowse the row shows the helper's tabs
 // event, read only. Nothing here starts a timer,
@@ -24,11 +24,9 @@ document.body.dataset.host = pb || nativeHost ? "native" : "page";
 // state they don't have. The star is Chromium's own in the address bar beside the nav-right
 // fragment, so the fragment draws none in the browser.
 const KEYS = mac
-  ? { back: "Back (⌘[)", forward: "Forward (⌘])", reload: "Reload (⌘R)", star: "Bookmark this page (⌘D)", find: "Find in page (⌘F)", newWindow: "⌘N" }
-  : { back: "Back (Alt+Left)", forward: "Forward (Alt+Right)", reload: "Reload (Ctrl+R)", star: "Bookmark this page (Ctrl+D)", find: "Find in page (Ctrl+F)", newWindow: "Ctrl+N" };
-for (const id of ["back", "forward", "reload", "star", "find"]) { $(id).setAttribute("aria-label", KEYS[id]); $(id).title = KEYS[id]; }
-$("new-window-key").textContent = KEYS.newWindow;
-$("new-window").title = `Not available yet: use ${KEYS.newWindow}`;
+  ? { back: "Back (⌘[)", forward: "Forward (⌘])", reload: "Reload (⌘R)", find: "Find in page (⌘F)" }
+  : { back: "Back (Alt+Left)", forward: "Forward (Alt+Right)", reload: "Reload (Ctrl+R)", find: "Find in page (Ctrl+F)" };
+for (const id of ["back", "forward", "reload", "find"]) { $(id).setAttribute("aria-label", KEYS[id]); $(id).title = KEYS[id]; }
 
 const postJson = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 const tabsEl = $("tabs");
@@ -38,7 +36,6 @@ const tabs = new Map(); // id -> tab (this window's only)
 const lis = new Map(); // id -> li
 let owners = { agents: {}, colors: {} };
 let rovingId = null; // the tab keyboard focus moved to with the arrows (else the active one)
-let recording = false;
 
 // ---- modes ----
 const MODES = new Set(["row", "nav-left", "nav-right", "switcher", "share", "menu"]);
@@ -93,20 +90,21 @@ menu.addEventListener("keydown", (e) => {
 });
 menu.addEventListener("focusout", (e) => { if (e.relatedTarget && !menu.contains(e.relatedTarget) && e.relatedTarget !== menuBtn) closeMenu(false); });
 const menuItem = (id, fn) => $(id).addEventListener("click", () => { closeMenu(); fn(); });
-menuItem("zoom", () => pb?.windows.zoom(myWindow).catch(() => {}));
-menuItem("settings", () => pb?.tabs.create("pairbrowse://settings", true, myWindow).catch(() => {}));
-menuItem("about", () => pb?.tabs.create("pairbrowse://settings#about", true, myWindow).catch(() => {}));
-menuItem("record", async () => {
-  if (!base) return;
-  const r = await postJson(base + "record", { on: !recording }).then((x) => x.json()).catch(() => null);
-  if (r && typeof r.recording === "boolean") drawRecord(r.recording);
+// Part H: the menu holds what has no other door in a page host: PairBrowse settings (found if open,
+// else a new tab). New window, Zoom (it maximized the window) and Record (one home: the agent
+// panel's Tools) are gone; the browser's own menu and shortcuts do the window's.
+const isSettings = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)settings(\/|#|$)/.test(url || "");
+menuItem("settings", async () => {
+  if (!pb) return;
+  try {
+    const { tabs } = await pb.tabs.list();
+    const open = (tabs || []).find((t) => t.window === myWindow && isSettings(t.url));
+    if (open) await pb.tabs.activate(open.id);
+    else await pb.tabs.create("pairbrowse://settings", true, myWindow);
+  } catch {}
 });
-function drawRecord(on) {
-  recording = !!on;
-  $("record-text").textContent = recording ? "Stop recording" : "Record";
-}
-// The browser API's items have nothing to call without it.
-if (!pb) for (const id of ["zoom", "settings", "about", "new-window"]) $(id).hidden = true;
+// Without the browser's API the menu has nothing to call.
+if (!pb) menuBtn.hidden = true;
 
 // ---- a page no taller than the row (the browser's 53 px tab-row slot, which clips the rest):
 // nothing can open under the row until the browser hosts the popovers as bubbles. The logo opens
@@ -116,7 +114,8 @@ if (!pb) for (const id of ["zoom", "settings", "about", "new-window"]) $(id).hid
 // capture phase, ahead of the popover's own click handler, so no popover opens unseen and no
 // focus moves into one. ----
 const ROW_ONLY = 60; // px: taller than the 53 px row, shorter than any popover
-const inSlot = () => !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
+// Without the browser API there is no dock to ask: the popovers open in place.
+const inSlot = () => !!pb && !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
 const SHARE_CHANNEL = "pairbrowse-share";
 const SLOT_LABELS = { switch: "PairBrowse: switch session (opens the session switcher in the workspace)", share: "Share this session (opens the Share card in the workspace)" };
 function slotControls() {
@@ -128,7 +127,7 @@ function slotControls() {
   }
   if (slot) { $("switch").setAttribute("aria-label", SLOT_LABELS.switch); $("share-btn").title = SLOT_LABELS.share; }
   else { $("switch").setAttribute("aria-label", "PairBrowse: switch session"); $("share-btn").removeAttribute("title"); }
-  menuBtn.hidden = slot;
+  menuBtn.hidden = slot || !pb;
 }
 // Opens the workspace dock (the left), as Share does, before it asks over the channel.
 async function openLeftDock() {
@@ -218,7 +217,6 @@ $("reload").addEventListener("click", () => { const id = activeId(); if (pb && i
 $("back").addEventListener("click", () => { const id = activeId(); if (can("tabs", "goBack") && id !== -1) pb.tabs.goBack(id).catch(() => {}); });
 $("forward").addEventListener("click", () => { const id = activeId(); if (can("tabs", "goForward") && id !== -1) pb.tabs.goForward(id).catch(() => {}); });
 $("find").addEventListener("click", () => { if (can("windows", "find") && myWindow !== -1) pb.windows.find(myWindow).catch(() => {}); });
-$("star").hidden = !!pb || nativeHost; // the browser draws its own star in the address bar
 // Back and forward follow the active tab's history as the browser reports it.
 function drawNav() {
   const t = tabs.get(activeId());
@@ -348,7 +346,7 @@ tabsEl.addEventListener("click", (e) => {
 tabsEl.addEventListener("auxclick", (e) => { const li = liOf(e); if (li && pb && e.button === 1) { e.preventDefault(); pb.tabs.close(idOf(li)).catch(() => {}); } });
 
 // Keyboard: arrows, Home and End move focus (not the selection); Enter or Space activates;
-// Delete or Backspace closes; Cmd/Ctrl+Shift+Arrow moves the tab.
+// Delete closes (Backspace does not: easy to press by accident); Cmd/Ctrl+Shift+Arrow moves the tab.
 tabsEl.addEventListener("keydown", (e) => {
   const li = e.target.matches?.('li[role="tab"]') ? e.target : null;
   if (!li || !pb) return;
@@ -371,7 +369,7 @@ tabsEl.addEventListener("keydown", (e) => {
   else if (e.key === "End") next = list.at(-1);
   if (next) { e.preventDefault(); rovingId = idOf(next); roving(); next.focus(); return; }
   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pb.tabs.activate(id).catch(() => {}); }
-  else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); pb.tabs.close(id).catch(() => {}); }
+  else if (e.key === "Delete") { e.preventDefault(); pb.tabs.close(id).catch(() => {}); }
 });
 tabsEl.addEventListener("focusout", (e) => { if (!tabsEl.contains(e.relatedTarget) && rovingId !== null) { rovingId = null; roving(); } });
 
@@ -450,7 +448,7 @@ function renderFallback(list) {
   tabsEl.replaceChildren(...rows);
 }
 
-// ---- the helper's stream: the pill, the people, recording ----
+// ---- the helper's stream: the pill, the people ----
 let lastSession = null, lastCollab = null, lastBoard = { people: [] }, everOpen = false;
 const pill = $("pill");
 // No helper (closed, or none to ask) is the normal resting state: "Local" with the muted dot, as
@@ -497,9 +495,6 @@ function connect(url) {
   on("session", (s) => { lastSession = s && typeof s === "object" ? s : null; drawPill(); });
   on("collaboration", (c) => { lastCollab = c && typeof c === "object" ? c : null; drawPill(); drawAvatars(); });
   on("board", (b) => { lastBoard = { people: Array.isArray(b?.people) ? b.people : [] }; drawAvatars(); });
-  // Only an event that says the state moves the indicator: an op notice ({ op: "saved", item }
-  // or { op: "removed", id }) without a `recording` field leaves it as it is.
-  on("record", (r) => { if (typeof r?.recording === "boolean") drawRecord(r.recording); });
   if (!pb) {
     on("tabs", renderFallback);
     on("layout", (l) => drawSparkle(l?.right === "open"));

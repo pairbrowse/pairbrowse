@@ -26,6 +26,7 @@ let guests = [];
 let session = null;
 let ownerLabel = "You"; // the collaboration's owner label: the one person row under Agents
 let lastWebTab = -1; // the last active tab that is not History
+let myWindow = -1; // this dock's window (pb.windows.list), -1 until known
 let base = null;
 let stream = null; // the shared helper stream (common.js helperStream)
 let everLive = false;
@@ -217,6 +218,13 @@ function drawGuests() {
 // The session switcher: the picker in a same-origin frame under the header, opened by the Sessions
 // row and by the strip's logo (its ask over the pairbrowse-share channel): one surface.
 const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("nav-sessions")] });
+// In the rail the switcher has no room (44 px): the Sessions row opens the dock first and the
+// switcher once the dock is open, as the strip's ask does (Part H).
+$("nav-sessions").addEventListener("click", (e) => {
+  if (dock() !== "rail") return;
+  e.stopImmediatePropagation();
+  if (askDock({ pb, layout, base, side: "left", state: "open" })) switchAsked = true;
+}, true);
 // Find a tab whose address matches, else open one in the active tab's window.
 function findOrOpen(match, url) {
   if (!pb) return;
@@ -283,9 +291,12 @@ function closeHint(refocus) {
 const toggleHint = () => ($("hint").hidden ? openHint() : closeHint(false));
 
 // ---- the browser's own state (native) ----
+// This dock's own window (Part H): the badge, the current row and find-or-open read only its tabs.
+// Until the window is known (-1) every tab counts.
+const ours = (t) => !!t && (myWindow === -1 || t.window === myWindow);
 function tabsFrom(list) {
   tabs.clear();
-  for (const t of list) tabs.set(t.id, t);
+  for (const t of list) if (ours(t)) tabs.set(t.id, t);
   const a = list.find((t) => t.active);
   if (a && !isHistory(a.url)) lastWebTab = a.id;
   drawCount();
@@ -300,12 +311,21 @@ function setOwners(agents, colors) {
 if (pb) {
   pb.layout.get().then(({ state }) => { layout = state; setDock(DOCK[state?.left] ?? "open"); }).catch(() => {});
   pb.layout.addObserver({ onLayout: (s) => { layout = s; setDock(DOCK[s?.left] ?? "open"); } });
-  pb.tabs.list().then(({ tabs: list }) => tabsFrom(list || [])).catch(() => {});
+  // The window first, then its tabs.
+  pb.windows.list().then(({ windows }) => { myWindow = (windows.find((w) => w.current) || windows.find((w) => w.focused))?.id ?? -1; }).catch(() => {})
+    .then(() => pb.tabs.list()).then(({ tabs: list }) => tabsFrom(list || [])).catch(() => {});
   pb.tabs.addObserver({
-    onCreated: (t) => { tabs.set(t.id, t); drawCount(); drawNav(); },
-    onChanged: (t) => { tabs.set(t.id, t); drawNav(); },
+    onCreated: (t) => { if (!ours(t)) return; tabs.set(t.id, t); drawCount(); drawNav(); },
+    onChanged: (t) => {
+      if (!ours(t)) { if (tabs.delete(t.id)) { drawCount(); drawNav(); } return; } // moved to another window
+      const known = tabs.has(t.id);
+      tabs.set(t.id, t);
+      if (!known) drawCount();
+      drawNav();
+    },
     onRemoved: (id) => { tabs.delete(id); owners.delete(id); if (lastWebTab === id) lastWebTab = -1; drawCount(); drawNav(); drawAgents(); },
-    onActivated: (id) => {
+    onActivated: (id, window) => {
+      if (myWindow !== -1 && window !== undefined && window !== myWindow) return; // another window's
       for (const t of tabs.values()) t.active = t.id === id;
       const t = tabs.get(id);
       if (t && !isHistory(t.url)) lastWebTab = id;
@@ -401,8 +421,6 @@ $("add-agent").addEventListener("click", toggleHint);
 const share = shareCard({ btn: null, card: $("share-card"), base: () => base, returnTo: $("shared-h") });
 // The strip's Share in the browser opens this card (its own popover has no room in the strip's
 // slot): one message per click, for this window only.
-let myWindow = -1;
-if (pb) pb.windows.list().then(({ windows }) => { myWindow = (windows.find((w) => w.current) || windows.find((w) => w.focused))?.id ?? -1; }).catch(() => {});
 let shareChannel = null;
 // The strip's Share asked for the card: open it, then tell the strip it did (its screen-reader
 // note says where the card is only once the card is there).
@@ -438,6 +456,7 @@ const askLeft = (state) => { focusAfter = state; if (!askDock({ pb, layout, base
 $("dock-collapse").addEventListener("click", () => askLeft("rail"));
 $("dock-expand").addEventListener("click", () => askLeft("open"));
 if (!pb) {
+  $("nav-browser").disabled = true; // it brings the last web tab forward: the browser's API only
   $("nav-history").disabled = true;
   $("settings").disabled = true;
   $("settings").title = "Settings · opens in the PairBrowse browser";

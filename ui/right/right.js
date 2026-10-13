@@ -6,7 +6,7 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, agentWords, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser } from "../common.js";
+import { $, el, rich, clock, ago, whose, agentWords, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer } from "../common.js";
 import { toolsPanel } from "./tools.js";
 
 const pb = globalThis.pairbrowse || null;
@@ -72,7 +72,30 @@ function selectTab(name) {
   if (name === "agent") { if (checklistStale) scheduleChecklist(); }
   else { clearTimeout(checklistTimer); checklistTimer = 0; checklistPending = false; }
   if (name === "pictures") showPictures();
+  if (name === "page") showOutline();
   if (name === "tools") tools.show();
+}
+// The Page tab (Part H: it never read anything): the structure an agent last read of a page,
+// GET outline.json, read when the tab is shown and again on new activity while it is in front.
+// One read at a time; no timer. The helper masks its text as it masks every page text.
+let outlineBusy = false, outlineAgain = false;
+async function showOutline() {
+  if (!base || unseen() || document.body.dataset.tab !== "page") return;
+  if (outlineBusy) { outlineAgain = true; return; }
+  outlineBusy = true;
+  const r = await fetch(base + "outline.json").then(async (x) => ({ status: x.status, body: x.ok ? await x.json().catch(() => null) : null })).catch(() => ({ status: 0, body: null }));
+  outlineBusy = false;
+  const o = r.body?.outline;
+  const empty = $("outline-empty");
+  if (r.status === 200 && o && typeof o.text === "string") {
+    $("outline-head").textContent = [o.host, o.who ? `read by ${o.who}` : "", o.at ? clock(o.at) : "", o.cut ? "shortened" : ""].filter(Boolean).join(" · ");
+    $("outline").textContent = o.text;
+    $("outline").hidden = false; $("outline-head").hidden = false; empty.hidden = true;
+  } else {
+    $("outline").hidden = true; $("outline-head").hidden = true; empty.hidden = false;
+    empty.textContent = r.status === 200 || r.status === 404 ? (r.status === 404 ? "This PairBrowse doesn't share the page outline yet." : "No outline yet: it shows once an agent reads a page.") : "Couldn't reach PairBrowse.";
+  }
+  if (outlineAgain) { outlineAgain = false; showOutline(); }
 }
 for (const t of TABS) $(`tab-${t}`).addEventListener("click", () => selectTab(t));
 document.querySelector(".tabset").addEventListener("keydown", (e) => {
@@ -138,24 +161,15 @@ if (pb) {
   $("dock-expand").addEventListener("click", () => ask("open"));
 }
 
-// End session: the session picker again, after a confirm in the card itself (a dock slot in the
-// browser build has no JavaScript dialogs, so confirm() would answer no at once). A person's
-// choice: agents' next actions wait for it; nothing is deleted. A synthetic click ends nothing.
-function endAsk(open, refocus) {
-  $("end-confirm").hidden = !open;
-  $("switch-btn").setAttribute("aria-expanded", String(open));
-  if (open) $("end-no").focus(); else if (refocus) $("switch-btn").focus();
-}
-$("switch-btn").addEventListener("click", () => endAsk($("end-confirm").hidden, false));
-$("end-yes").addEventListener("click", (ev) => {
-  // A person's click or key press; a page's synthetic event does nothing. The focus lands on Keep,
-  // so a second Enter on End session keeps the session.
-  if (!ev.isTrusted) return;
-  endAsk(false, false);
-  if (base) fetch(base + "picker", { method: "POST" }).catch(() => {});
+// Switch session (the side panel's; Part H): the session picker as a tab, through the helper. It
+// was "End session" with a confirm, though it ended nothing: the picker only switches, and nothing
+// is deleted. A synthetic click does nothing. In the browser the strip's logo and the left dock's
+// Sessions row switch (one home, Part G), so this button is not shown there.
+$("switch-btn").addEventListener("click", async (ev) => {
+  if (!ev.isTrusted || !base) return;
+  const r = await fetch(base + "picker", { method: "POST" }).catch(() => null);
+  sessionSay(r?.ok ? "The session picker opened in a new tab." : "Couldn't open the session picker.", r?.ok ? "ok" : "error");
 });
-$("end-no").addEventListener("click", () => endAsk(false, true));
-$("end-confirm").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); endAsk(false, true); } });
 // Record: the browser as a video (the helper saves it in Downloads and says where).
 let recording = null; // { since } while recording
 let recordTimer = 0;
@@ -175,14 +189,14 @@ function drawRecord() {
   tick();
   if (!unseen()) recordTimer = setInterval(tick, 1000);
 }
-$("record-btn").addEventListener("click", async () => {
-  if (!base) return;
+$("record-btn").addEventListener("click", async (ev) => {
+  if (!ev.isTrusted || !base) return;
   const btn = $("record-btn");
   btn.disabled = true;
   if (recording) $("record-note").textContent = "Saving the recording…";
   try {
     const r = await post("record", { on: !recording }).then((x) => x.json()).catch(() => null);
-    if (r && !r.recording) { recording = null; drawRecord(); $("record-note").hidden = false; $("record-note").textContent = r.path ? `Saved to ${r.path}` : r.text || "Recording stopped."; }
+    if (r && !r.recording) { recording = null; drawRecord(); $("record-note").hidden = false; $("record-note").textContent = r.text || "Recording stopped."; }
     else if (r?.recording) { recording = { since: r.since || Date.now() }; drawRecord(); }
   } finally { btn.disabled = false; }
 });
@@ -195,8 +209,8 @@ function drawPause() {
   $("pause-btn").textContent = paused ? "Resume" : agents.size >= 2 ? "Pause all" : "Pause";
   $("pause-btn").setAttribute("aria-label", paused ? "Resume agents" : agents.size >= 2 ? "Pause all agents" : "Pause agents");
 }
-$("pause-btn").addEventListener("click", () => {
-  if (base) post("pause", { paused: !paused }).catch(() => {});
+$("pause-btn").addEventListener("click", (ev) => {
+  if (ev.isTrusted && base) post("pause", { paused: !paused }).catch(() => {});
 });
 
 // Tools in the browser: one row for what lives in Settings (Passwords first; the page's #passwords
@@ -283,12 +297,19 @@ $("agent-more").addEventListener("click", () => {
 // key press only: a synthetic event saves and renames nothing.
 let canSave = false, canRename = false, editing = false, renaming = false;
 // Where focus goes when Save or rename turns out to be missing: Share where the card has it (the
-// extension host), else End session.
-const sessionFallback = () => (native() ? $("switch-btn") : $("share-btn"));
-const sessionSay = (text, kind = "") => { $("session-msg").textContent = text; $("session-msg").dataset.kind = kind; };
+// extension host), else the session's name.
+const sessionFallback = () => (native() ? $("session-card") : $("share-btn"));
+const sessionSay = (text, kind = "") => {
+  $("session-msg").textContent = text;
+  $("session-msg").dataset.kind = kind;
+  // A failed session action: offer Report a problem when the helper relays reports (Part H).
+  if (kind === "error") reportOffer(base).then((a) => { if (a && $("session-msg").dataset.kind === "error" && !$("session-msg").querySelector("a")) $("session-msg").append(" ", a); });
+};
 function drawSessionTools() {
   $("session-save").hidden = !canSave;
   $("session-rename").hidden = !canRename || editing;
+  // In the browser Save is the row's only button: no Save, no row and nothing to fold.
+  if (native()) { $("session-actions").classList.toggle("empty", !canSave); $("session-fold").hidden = !canSave; }
 }
 function editName(open, refocus = false) {
   editing = open;
@@ -348,7 +369,6 @@ $("session-name-input").addEventListener("blur", () => { if (editing && !renamin
 $("session-fold").addEventListener("click", () => {
   const fold = !$("session-actions").hidden;
   $("session-actions").hidden = fold;
-  if (fold) endAsk(false, false);
   $("session-fold").setAttribute("aria-expanded", String(!fold));
   $("session-fold").setAttribute("aria-label", fold ? "Show the session buttons" : "Hide the session buttons");
 });
@@ -479,7 +499,9 @@ function drawPeople() {
     face.setAttribute("aria-hidden", "true");
     // Two lines: the name, then its part in the session in words (the mockup's "Observing",
     // "Helping", "Active") with what it does and whose browser; the tab stays in the title.
-    const { state, words: word } = agentWords(p, { paused: paused && p.kind === "agent" });
+    // Held on its own (Take control): the helper's pause event lists it by name (Part H).
+    const held = p.kind === "agent" && Array.isArray(pauseInfo?.agents) ? pauseInfo.agents.find((a) => a?.who === p.who) : null;
+    const { state, words: word } = agentWords(p, { paused: (paused || !!held) && p.kind === "agent" });
     const rest = [p.task, p.where ? `${p.where}'s browser` : ""].filter(Boolean).join(" · ");
     const st = el("small", { className: "st", title: [word, p.task, p.tab, p.where ? `${p.where}'s browser` : ""].filter(Boolean).join(" · ") }, el("span", { className: "state", textContent: word }), ...(rest ? [document.createTextNode(` · ${rest}`)] : []));
     if (isColor(p.color)) st.style.setProperty("--who", p.color);
@@ -487,7 +509,13 @@ function drawPeople() {
     const acts = el("div", { className: "acts", id: `acts-${i}` }, ...lines.map((t) => el("small", { textContent: t })));
     acts.hidden = !openRows.has(p.who);
     const kids = [face, el("strong", { className: "name", textContent: name, title: p.who }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])), st];
-    if (p.kind === "agent" && perAgent) {
+    if (held) {
+      // Resuming one is always possible (the helper's resumeOne), also in a session joined from here.
+      const back = el("button", { className: "pause-one", type: "button", title: `${name} was paused by ${held.by || "someone"}: let it act again` }, "Resume");
+      back.setAttribute("aria-label", `Resume ${name}`);
+      back.addEventListener("click", (ev) => { if (ev.isTrusted && base) post("pause", { paused: false, who: p.who }).catch(() => {}); });
+      kids.push(back);
+    } else if (p.kind === "agent" && perAgent) {
       // Icon-only when the row has a task line after its part word, so the line shows in full; the
       // name and the tooltip still say "Take control".
       const stop = rest
@@ -593,7 +621,7 @@ function connect(url) {
   stream = helperStream(base, {
     kind: pb ? "right" : "",
     onState: (s) => { document.body.dataset.s = s; setDriver(); drawSessionCard(); },
-    onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); tools.stale(); },
+    onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); showOutline(); tools.stale(); },
   });
   const on = stream.on;
   on("status", (s) => {
@@ -623,6 +651,7 @@ function connect(url) {
     drawHeader();
   });
   on("activity", (list) => {
+    showOutline();
     const items = list.slice(-ACTIVITY_SHOWN).reverse();
     if (!items.length) return;
     const was = activeEntry();

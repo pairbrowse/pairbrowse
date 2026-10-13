@@ -220,7 +220,7 @@ export function profilePanel(base) {
       const input = el("input", { className: "field", value: d.value, ariaLabel: d.label });
       input.addEventListener("change", async () => { const e = await change({ op: "setDetail", label: d.label, value: input.value }); say(e || `Saved ${d.label}.`, e ? "error" : "ok"); });
       const del = el("button", { className: "mini", type: "button", textContent: "Remove", ariaLabel: `Remove ${d.label}` });
-      del.addEventListener("click", async () => { await change({ op: "forgetDetail", label: d.label }); say(`Removed ${d.label}.`, "ok"); });
+      del.addEventListener("click", async () => { const e = await change({ op: "forgetDetail", label: d.label }); say(e || `Removed ${d.label}.`, e ? "error" : "ok"); });
       return el("div", { className: "row" }, el("div", { className: "label", title: d.label }, d.label, el("small", { textContent: sourceLabel(d) })), input, del);
     }) : [el("p", { className: "empty-row", textContent: "Nothing yet. Add details below, or tell Claude." })]));
     $("secrets").replaceChildren(...(p.secrets.length ? p.secrets.map((x) => {
@@ -231,8 +231,18 @@ export function profilePanel(base) {
         f.value.placeholder = "New password (empty: keep the current one)"; f.value.focus();
       });
       const del = el("button", { className: "mini", type: "button", textContent: "Delete", ariaLabel: `Delete ${x.name}` });
-      del.addEventListener("click", async () => { if (!confirm(`Delete the saved password ${x.name}?`)) return; await change({ op: "deleteSecret", name: x.name }); say(`Deleted ${x.name}.`, "ok"); });
-      return el("div", { className: "row secret" }, el("div", { className: "label", title: x.name }, x.name), el("div", { className: "sites", title: x.domains.join(", "), textContent: x.domains.join(", ") }), el("span", {}, replace, del));
+      // An in-row question (pages in a window slot or a side panel get no confirm() dialog).
+      const acts = el("span", {}, replace, del);
+      del.addEventListener("click", () => {
+        const yes = el("button", { className: "mini bad", type: "button", textContent: "Delete", ariaLabel: `Yes, delete ${x.name}` });
+        const keep = el("button", { className: "mini", type: "button", textContent: "Keep" });
+        const back = () => { acts.replaceChildren(replace, del); del.focus(); };
+        keep.addEventListener("click", back);
+        yes.addEventListener("click", async () => { const e = await change({ op: "deleteSecret", name: x.name }); say(e || `Deleted ${x.name}.`, e ? "error" : "ok"); if (e) back(); });
+        acts.replaceChildren(el("small", { className: "ask", textContent: "Delete it?" }), yes, keep);
+        keep.focus();
+      });
+      return el("div", { className: "row secret" }, el("div", { className: "label", title: x.name }, x.name), el("div", { className: "sites", title: x.domains.join(", "), textContent: x.domains.join(", ") }), acts);
     }) : [el("p", { className: "empty-row", textContent: "No passwords saved." })]));
     if (p.problem) say(p.problem, "error");
   }
@@ -262,6 +272,69 @@ export function profilePanel(base) {
     f.reset(); f.value.placeholder = "Password";
   });
   return { draw, load, say };
+}
+
+// Report a problem (Settings → About and diagnostics). reportPayload builds exactly the JSON the
+// PairBrowse server receives; the review screen shows it before anything is sent. It holds the
+// person's words, the app's versions, the platform, the helper's state (counts, never names) and
+// the diagnostics report the helper already masks; the tab's address only when the person ticked
+// it (origin and path, no query or fragment). Never page contents, form values, passwords,
+// secrets, cookies or other tabs. sendReport posts it to the helper's owner route `report`, which
+// relays it to the report address in the helper's config: the pages hold no key, token or server
+// address (connect-src is the helper's origin only). -> { ok, id? } or { ok: false, error }.
+export const REPORT_SCHEMA = "pairbrowse-report/1";
+export const REPORT_WHAT_MAX = 4000;
+export function reportPayload({ what = "", host = "", page = "", connection = "", diag = null, report = "", tab = null, now = new Date() } = {}) {
+  const h = diag?.helper || {}, b = diag?.browser || {}, c = diag?.connections || {};
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  const ua = globalThis.navigator?.userAgentData;
+  return {
+    schema: REPORT_SCHEMA,
+    createdAt: now.toISOString(),
+    what: String(what || "").trim().slice(0, REPORT_WHAT_MAX),
+    app: {
+      host: host === "pairbrowse" ? "pairbrowse" : "chromium",
+      page: String(page || ""),
+      helper: h.version ? String(h.version) : null,
+      browser: { engine: b.engine ?? null, version: b.version ?? null, build: b.build ?? null },
+    },
+    platform: { os: String(ua?.platform || globalThis.navigator?.platform || ""), mobile: !!ua?.mobile, language: String(globalThis.navigator?.language || "") },
+    helperState: { connection: String(connection || ""), uptime: num(h.uptime), agents: num(c.agents), viewers: num(c.viewers), joiners: num(c.joiners), streams: num(c.streams), errors: Array.isArray(diag?.errors) ? diag.errors.length : null },
+    diagnostics: String(report || ""),
+    tab: tab ? { url: String(tab) } : null,
+  };
+}
+export async function sendReport(base, payload) {
+  if (!base) return { ok: false, error: "PairBrowse isn't connected." };
+  let r;
+  try {
+    r = await fetch(base + "report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+  } catch {
+    return { ok: false, error: "Couldn't reach PairBrowse." };
+  }
+  const body = await r.json().catch(() => null);
+  if (r.ok && body?.ok !== false) return { ok: true, ...(typeof body?.id === "string" && /^[A-Za-z0-9._-]{1,40}$/.test(body.id) ? { id: body.id } : {}) };
+  if (r.status === 404) return { ok: false, error: "This PairBrowse doesn't send reports." };
+  return { ok: false, error: typeof body?.error === "string" && body.error ? body.error.slice(0, 200) : "The report server didn't take it." };
+}
+// The offer on a page's error state: a "Report a problem" link to Settings' review screen, only
+// while the helper relays reports (config.json report). -> the element, or null. A window slot
+// page opens Settings with the browser's tabs; a tab page of the browser follows the link itself;
+// the extension opens its own settings page.
+export const REPORT_URL = "chrome://pairbrowse/settings#report";
+export async function reportOffer(base) {
+  if (!base) return null;
+  const c = await fetch(base + "config.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (c?.report !== true) return null;
+  const a = el("a", { className: "report-offer", href: REPORT_URL, textContent: "Report a problem", target: "_blank", rel: "noopener" });
+  a.addEventListener("click", (ev) => {
+    const pb = globalThis.pairbrowse;
+    if (pb && location.host === "pairbrowse.top-chrome") { ev.preventDefault(); pb.tabs.create("pairbrowse://settings#report", true, -1).catch(() => {}); return; }
+    if (pb) return; // a tab page: the link itself
+    const tabs = globalThis.chrome?.tabs, runtime = globalThis.chrome?.runtime;
+    if (tabs?.create && runtime?.getURL) { ev.preventDefault(); tabs.create({ url: runtime.getURL("settings/index.html#report") }); }
+  });
+  return a;
 }
 
 // Participants as the side panel shows them: a color only when it is a plain #rrggbb (board
@@ -496,7 +569,7 @@ export function askDock({ pb, layout, base, side, state, onFail }) {
 // event's `tab` (the right dock opening on a tab) and a record event's `op` ("saved", with its
 // item), so a late page neither jumps to a tab nor adds a recording from an old event. Without Web Locks or BroadcastChannel (or when the lock is refused) a page
 // opens its own stream as before. No timer, frame or observer anywhere here.
-export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs", "tab-order"];
+export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "config", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs", "tab-order"];
 const STREAM_DELTAS = new Set(["approval", "timeline", "downloads", "handoffs", "tab-order"]);
 // What the holder keeps of a state event for a late page: no delta, and no one-shot field.
 function replayable(name, v) {

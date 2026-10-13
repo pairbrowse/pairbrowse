@@ -7,9 +7,9 @@
 // events keep them current after that, and an event that comes before its list has loaded is
 // dropped (the read brings the whole list). diagnostics.json when Diagnostics is opened, on
 // Refresh, and again whenever the Tools tab comes back into view (or the stream reconnects) with
-// Diagnostics open; never while it is folded or the tab is not shown. Rows are patched in place by id, never rebuilt. Open, Open in Word,
+// Diagnostics open; never while it is folded or the tab is not shown. Rows are patched in place by id, never rebuilt. Open, Open in app,
 // Show in Finder, Show (a hand-off's tab) and a confirmed Delete count only for a person's click or key press.
-// A download's Open (POST downloads/<id>/open) and Open in Word (Word-type names only, POST
+// A download's Open (POST downloads/<id>/open) and Open in app (Word-type names only, POST
 // downloads/<id>/open-app: the original in its default app) are answered { ok, opened: tab |
 // preview | app }; the row's status line says where only as the helper answered (nothing for an
 // answer without `opened`), one line across the list, emptied when the next Downloads action starts.
@@ -22,7 +22,7 @@ const REVEAL = MAC ? "Show in Finder" : "Show in folder";
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 // Names the page can hint about, as the helper's openWay (scripts/daemon/tools.mjs) decides from the
 // name alone: IN_TAB is its TAB_TYPES (always a tab), TEXT its TEXT_TYPES (an escaped preview in a
-// tab), WORD its DOCUMENT_TYPES (Open in Word; a preview on macOS). No hint for mp4, m4v and m4a
+// tab), WORD its DOCUMENT_TYPES (Open in app; a preview on macOS). No hint for mp4, m4v and m4a
 // (a tab only in the macOS PairBrowse build) or mov and aac (their app). Titles only: what really
 // opens, asks first or is refused is the helper's answer.
 const WORD = /\.(docx?|rtf|odt)$/i;
@@ -211,7 +211,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     return [open, reveal];
   }
 
-  // A download's Open, Open in Word (Word-type names) and Show in Finder, plus the helper's answers
+  // A download's Open, Open in app (Word-type names) and Show in Finder, plus the helper's answers
   // in the row: 200 { opened } in the row's status line; 428 { confirm } (a program, script or web
   // page) asks there, and Open anyway repeats the POST that asked with { confirm: true }; 409 (e.g.
   // the download mark is gone, or no app) says why, with Show in Finder still there.
@@ -219,7 +219,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     const open = button("Open", `Open ${name}`);
     const hint = openHint(name);
     if (hint) open.title = hint;
-    const word = WORD.test(name) ? button("Open in Word", `Open ${name} in Word`) : null;
+    const word = WORD.test(name) ? button("Open in app", `Open ${name} in its app`) : null;
     if (word) word.title = "Opens the original in its default app, for editing";
     const status = el("p", { className: "said" });
     status.setAttribute("role", "status");

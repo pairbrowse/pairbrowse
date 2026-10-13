@@ -112,6 +112,12 @@ export function looksLikeSecretName(tool, args) {
 // and settings): never an agent's to open, read or act in.
 export const CHROME_PAGE_ORIGINS = ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"];
 export const isChromePage = (url) => /^chrome:\/\/pairbrowse(\.top-chrome)?([/?#]|$)/i.test(String(url ?? "").trim());
+// A joiner's picture page in a build with its own pages (chrome://pairbrowse/screen/): the
+// browser's own page that shows a host's tab, as the extension's screen.html does elsewhere. The
+// live view lists, shows and replays a person's input into it like that page; the browser's other
+// pages stay out of the live view.
+export const isChromeScreenPage = (url) => /^chrome:\/\/pairbrowse\/screen\/(?:[?#]|$)/i.test(String(url ?? "").trim());
+export const hiddenFromLiveView = (url) => isChromePage(url) && !isChromeScreenPage(url);
 export const CHROME_PAGE_RULE = "chrome://pairbrowse pages are the PairBrowse browser's own (its tab strip, docks, session picker, new tab and settings): no agent opens, reads or acts in them.";
 
 export function navigationProblem(url) {

@@ -26,7 +26,7 @@ import { createInputReplayer } from "./liveview/input.mjs";
 import { createJoinerServer, recentlySeen } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/tabs.mjs";
 import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
-import { isChromePage, CHROME_PAGE_ORIGINS } from "./policy.mjs";
+import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "./policy.mjs";
 import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
 import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } from "./daemon/tools.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";
@@ -211,8 +211,9 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
     const id = previewOf.get(p);
     return id ? { personal: true, preview: { id, kind: "document" } } : { personal: true };
   };
-  // Each tab with its number, without the browser's own pages (chrome://pairbrowse...).
-  const webPages = (pages) => pages.map((p, i) => [p, i]).filter(([p]) => !isChromePage(p.url()));
+  // Each tab with its number, without the browser's own pages (chrome://pairbrowse...) other than
+  // a joiner's picture page (chrome://pairbrowse/screen/, like the extension's screen.html).
+  const webPages = (pages) => pages.map((p, i) => [p, i]).filter(([p]) => !hiddenFromLiveView(p.url()));
   // Every tab, with who is in it (the agent holding it, with its spark color; a person using it
   // by hand) and the last thing done there: the tab overview.
   const tabsInfo = async () => {
@@ -567,7 +568,7 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
   let casting = null; // the CDP session whose frames are taken (set before its cast starts)
   const show = (page) => { switching++; return showQueue(() => showNow(page)).finally(() => { switching--; }); };
   async function showNow(page) {
-    if (closed || shown?.page === page || isChromePage(page.url())) return;
+    if (closed || shown?.page === page || hiddenFromLiveView(page.url())) return;
     if (shown) {
       const old = shown.cdp;
       // Switching away from a person's own tab: its last picture goes with it.
@@ -624,7 +625,7 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
       // The browser's own pages are never shown; followedPage stays the agents' page (a chrome
       // page is never listed, so no tab is marked as Claude's).
       const at = ctx.pages().find((p) => p.url() === url);
-      const page = (at && !isChromePage(at.url()) ? at : null) || shown?.page || ctx.pages().filter((p) => !isChromePage(p.url()) && !personTab(p)).at(-1);
+      const page = (at && !hiddenFromLiveView(at.url()) ? at : null) || shown?.page || ctx.pages().filter((p) => !hiddenFromLiveView(p.url()) && !personTab(p)).at(-1);
       if (url) followedPage = at || page;
       if (page) await show(page);
     } catch (e) {
@@ -666,7 +667,7 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
       else if (ev.close !== undefined) {
         const found = ctx.pages()[Number(ev.close)];
         // never the browser's own pages, and never a guest closing a person's own tab
-        const page = found && !isChromePage(found.url()) && !(role !== "owner" && personTab(found)) ? found : null;
+        const page = found && !hiddenFromLiveView(found.url()) && !(role !== "owner" && personTab(found)) ? found : null;
         // The last tab is emptied instead of closed, so the browser window stays open.
         if (page && ctx.pages().length > 1) await page.close().catch(() => {});
         else if (page) await page.goto("about:blank").catch(() => {});
@@ -677,7 +678,7 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
         await shared.arrange(ev.order.slice(0, 100).map((id) => known.get(String(id))).filter((p) => p && !p.isClosed()));
       } else {
         const page = ctx.pages()[Number(ev.i)];
-        if (page && !isChromePage(page.url()) && !(role !== "owner" && personTab(page))) await show(page);
+        if (page && !hiddenFromLiveView(page.url()) && !(role !== "owner" && personTab(page))) await show(page);
       }
     });
   }
@@ -1086,8 +1087,8 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
     else {
       const ctx = await getContext();
       const url = await currentUrl();
-      if (isChromePage(url)) return plain(res, 404); // never the browser's own pages
-      const web = ctx.pages().filter((p) => !isChromePage(p.url()));
+      if (hiddenFromLiveView(url)) return plain(res, 404); // never the browser's own pages
+      const web = ctx.pages().filter((p) => !hiddenFromLiveView(p.url()));
       const page = web.find((p) => p.url() === url && !(invite && personTab(p))) || web.filter((p) => !personTab(p)).at(-1);
       if (!page) return plain(res, 404);
       const cdp = await page.context().newCDPSession(page);

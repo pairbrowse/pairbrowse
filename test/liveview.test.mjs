@@ -909,6 +909,30 @@ test("the browser's own pages are never tabs on the live view, nor on its stage"
   } finally { view.close(); }
 });
 
+test("a joiner's picture page in a build with its own pages is a tab on the live view: shown, and a click reaches it", async () => {
+  const { ctx, pages, sessions } = fakeTabs(3);
+  // A native joiner's picture of the host's tab (the extension's screen.html elsewhere), beside
+  // another of the browser's own pages, which stays out.
+  const own = { 1: "chrome://pairbrowse/screen/#0a1b2c3d", 2: "chrome://pairbrowse/picker" };
+  pages.forEach((p, i) => { if (own[i]) p.url = () => own[i]; p.mainFrame = () => ({}); p.isClosed = () => false; });
+  const view = await startLiveView({ getContext: async () => ({ ...ctx, on: () => {} }), currentUrl: async () => "about:blank#0" });
+  const key = view.url.split("/").at(-2);
+  try {
+    const state = JSON.parse((await request(view.port, "GET", `/${key}/state.json`)).text);
+    assert.deepEqual(state.tabs.map((t) => t.i), [0, 1], "the picture page is listed; the picker is not");
+    assert.equal((await request(view.port, "POST", `/${key}/tab`, { body: { i: 1 } })).status, 204);
+    await wait(60);
+    const onPicture = sessions.filter((s) => s.page === pages[1]);
+    assert.equal(onPicture.length, 1, "clicking it shows it");
+    const p = { x: 40, y: 30 };
+    assert.equal((await request(view.port, "POST", `/${key}/input`, { body: [{ type: "mouse", action: "mousePressed", ...p, button: "left", buttons: 1, clickCount: 1 }, { type: "mouse", action: "mouseReleased", ...p, button: "left", clickCount: 1 }] })).status, 204);
+    assert.equal(onPicture[0].calls.filter((m) => m === "Input.dispatchMouseEvent").length, 2, "the click goes into the picture page");
+    assert.equal((await request(view.port, "POST", `/${key}/tab`, { body: { i: 2 } })).status, 204);
+    await wait(30);
+    assert.ok(!sessions.some((s) => s.page === pages[2]), "the browser's other pages are never shown");
+  } finally { view.close(); }
+});
+
 test("click approvals: owner-only list and answers, events to owner streams only", async () => {
   const invites = createInvites();
   const listeners = new Set();

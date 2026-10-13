@@ -1,7 +1,7 @@
 // The browser's own pages (chrome://pairbrowse...): never an agent's to open, list or act in.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { navigationProblem, isChromePage, CHROME_PAGE_RULE, CHROME_PAGE_ORIGINS } from "../scripts/policy.mjs";
+import { navigationProblem, isChromePage, hiddenFromLiveView, CHROME_PAGE_RULE, CHROME_PAGE_ORIGINS } from "../scripts/policy.mjs";
 import { hideChromeTabs } from "../scripts/daemon/output.mjs";
 
 const OWN = ["chrome://pairbrowse/picker", "chrome://pairbrowse.top-chrome/strip", "chrome://PairBrowse/x?y#z", "  chrome://pairbrowse"];
@@ -23,6 +23,15 @@ test("isChromePage matches the browser's own pages and nothing that looks like t
   for (const url of ["chrome://pairbrowse.evil/", "chrome://xpairbrowse/", "https://pairbrowse/", "chrome-extension://abc/picker.html", "about:blank", "", undefined, null, "not a url", "chrome://pairbrowse-x/", "chrome://pairbrowse.top-chrome.evil/"]) {
     assert.equal(isChromePage(url), false, String(url));
   }
+});
+
+test("the live view keeps out the browser's own pages, a joiner's picture page excepted", () => {
+  for (const url of OWN) assert.equal(hiddenFromLiveView(url), true, url);
+  for (const url of ["chrome://pairbrowse/screen/#0a1b2c3d", "chrome://pairbrowse/screen/"]) assert.equal(hiddenFromLiveView(url), false, url);
+  for (const url of ["chrome://pairbrowse/screenx/", "chrome://pairbrowse/screen", "chrome://pairbrowse.top-chrome/screen/", "chrome://pairbrowse/picker#screen/"]) assert.equal(hiddenFromLiveView(url), true, url);
+  for (const url of ["https://x.com/", "about:blank"]) assert.equal(hiddenFromLiveView(url), false, url);
+  // Agents' rules are unchanged: the picture page is still the browser's own page to them.
+  assert.equal(navigationProblem("chrome://pairbrowse/screen/#0a1b2c3d"), CHROME_PAGE_RULE);
 });
 
 test("browser_tabs lists without the browser's own pages, every other tab keeping its number", () => {

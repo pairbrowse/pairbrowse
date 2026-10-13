@@ -213,7 +213,15 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     }
 
     stage = "the picture's tab says who works in the host's tab: the host's agent, by name and spark";
-    const inTab = await until("the host's agent on the picture's tab", async () => { const w = (await onScreen({ expr: "window.pbScreen.inTab()" }))?.value; return w?.agent && w.icon && w.title === `\u2726 ${w.agent} \u00b7 clicked` && w; }, 15_000);
+    // In a build with its own pages the strip shows this title as the tab's name, so it also says
+    // whose tab it is ("<host>'s tab").
+    const nativeScreen = /^chrome:\/\//.test((await onScreen({ url: true }))?.url || "");
+    let seen;
+    const inTab = await until("the host's agent on the picture's tab", async () => {
+      const w = (seen = (await onScreen({ expr: "window.pbScreen.inTab()" }))?.value);
+      const want = nativeScreen ? new RegExp(`^\u2726 ${w?.agent} \u00b7 [^\u00b7]+'s tab \u00b7 clicked$`) : null;
+      return w?.agent && w.icon && (want ? want.test(w.title) : w.title === `\u2726 ${w.agent} \u00b7 clicked`) && w;
+    }, 15_000).catch((e) => { throw new Error(`${e.message} (saw ${JSON.stringify(seen)})`); });
     assert.equal(inTab.person, "", "the joiner's own hand isn't shown to them");
 
     stage = "the picture shows the host tab's real address; its own address is short";

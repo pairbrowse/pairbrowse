@@ -54,14 +54,15 @@ pageTest("settings", { fixtures, viewport: { width: 1000, height: 900 } }, async
   assert.match(prof.secrets[0][0], /SHOPIFY_PASSWORD.*accounts\.shopify\.com/);
   assert.equal(prof.secrets[0][1], 0, "no password field");
 
-  await until("dev and host rows", () => document.querySelectorAll("#devs li").length === 2 && document.querySelectorAll("#host-list li").length === 1);
+  await until("the host rows", () => document.querySelectorAll("#host-list li").length === 1);
   const share = await inPage(() => ({
-    devs: [...document.querySelectorAll("#devs li span")].map((s) => s.textContent),
-    dev: document.getElementById("dev").hidden, devEmpty: document.getElementById("dev-empty").hidden,
     hosts: [...document.querySelectorAll("#host-list li span")].map((s) => s.textContent),
     hostsEmpty: document.getElementById("hosts-empty").hidden,
+    // Dev servers have one home, the agent panel's Tools tab (DESIGN.md Part G): a note here, no list.
+    devs: !!document.getElementById("devs") || !!document.getElementById("dev") || !!document.getElementById("dev-asks"),
+    note: document.getElementById("dev-note").textContent,
   }));
-  assert.deepEqual(share, { devs: ["localhost:3000 · shared", "localhost:5173 · Vite"], dev: false, devEmpty: true, hosts: ["tunnel.example.com · always"], hostsEmpty: true });
+  assert.deepEqual(share, { hosts: ["tunnel.example.com · always"], hostsEmpty: true, devs: false, note: "Share a dev server from the agent panel's Tools tab." });
 
   await until("the timeline", () => document.getElementById("timeline-state").textContent === "On · 1 picture kept");
   assert.equal(helper.streams.size, 1);
@@ -69,9 +70,8 @@ pageTest("settings", { fixtures, viewport: { width: 1000, height: 900 } }, async
   assert.equal(stream.panel, true, "events?panel=1: no page screencast");
   assert.equal(stream.kind, null);
 
-  helper.set("dev", { shared: [], open: [] });
   helper.set("joinhost", { hosts: [] });
-  await until("the empty lines", () => !document.getElementById("dev-empty").hidden && !document.getElementById("hosts-empty").hidden);
+  await until("the empty line", () => !document.getElementById("hosts-empty").hidden);
 });
 
 // 2. The browser setting: the host and the config line; Copy copies it.
@@ -110,8 +110,6 @@ pageTest("settings", { fixtures, viewport: { width: 1000, height: 900 } }, async
   await page.press("#details .row input[aria-label='Company']", "Tab");
   await posted(helper, page, "an existing detail", "profile", { op: "setDetail", label: "Company", value: "Acme AG" });
 
-  await page.click("#devs li:first-child button");
-  await posted(helper, page, "Stop", "dev", { op: "unshare", port: 3000 });
   await page.click("button[aria-label='Remove tunnel.example.com']");
   await posted(helper, page, "Remove", "joinhost", { op: "forget", host: "tunnel.example.com" });
   await page.click("#switch-btn");
@@ -184,14 +182,22 @@ pageTest("settings", { fixtures: { ...fixtures, timeline: null }, reducedMotion:
   await harness.setHidden(false);
 });
 
-// 6. Before the helper's first dev and joinhost events (the stream's burst leaves them out while
-// they are null), the empty lines say nothing; the first events bring them.
+// 6. Before the helper's first joinhost event (the stream's burst leaves it out while it is
+// null), the empty line says nothing; the first event brings it.
 pageTest("settings", { fixtures: { ...fixtures, dev: null, joinhost: null }, viewport: { width: 1000, height: 900 } }, async ({ helper, page, until, inPage }) => {
   await until("the stream", live);
   await until("the timeline", () => document.getElementById("timeline-state").textContent === "On · 1 picture kept");
   await page.waitForTimeout(200);
-  assert.deepEqual(await inPage(() => ({ dev: document.getElementById("dev-empty").hidden, hosts: document.getElementById("hosts-empty").hidden })), { dev: true, hosts: true }, "no empty fact before any dev event");
-  helper.set("dev", { asks: [], shared: [], open: [] });
+  assert.equal(await inPage(() => document.getElementById("hosts-empty").hidden), true, "no empty fact before any joinhost event");
   helper.set("joinhost", { asks: [], hosts: [] });
-  await until("the empty lines", () => !document.getElementById("dev-empty").hidden && !document.getElementById("hosts-empty").hidden);
+  await until("the empty line", () => !document.getElementById("hosts-empty").hidden);
+});
+
+// 7. Open settings from the agent panel lands on Passwords: the section is a hash anchor that
+// scrolls clear of the sticky header.
+pageTest("settings", { fixtures, viewport: { width: 1000, height: 900 } }, async ({ until, inPage }) => {
+  await until("the stream", live);
+  await inPage(() => { location.hash = "#passwords"; });
+  await until("scrolled to Passwords", () => Math.abs(document.getElementById("passwords").getBoundingClientRect().top - parseFloat(getComputedStyle(document.getElementById("passwords")).scrollMarginTop)) <= 1);
+  assert.ok(await inPage(() => document.getElementById("passwords-h").getBoundingClientRect().top >= document.querySelector(".top").getBoundingClientRect().bottom), "the heading clear of the sticky header");
 });

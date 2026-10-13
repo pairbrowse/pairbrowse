@@ -3,10 +3,14 @@
 // lay it out, from the real ui/ pages in iframes over the pages' harness (the fake helper and the
 // ui server from test/helpers), before the native build exists.
 //   PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime node scripts/dev/window-preview.mjs --out <dir>
-//     [--rail] [--reduced-motion] [--mockup <png>] [--one-host]
+//     [--rail] [--reduced-motion] [--mockup <png>] [--one-host] [--plain]
 // The scene is scripts/dev/preview/fixtures.json. The contents card is the stand-in page in
 // scripts/dev/preview/ with scripts/hud.js added the way the helper adds it, rendered as its own
 // top-level page (as the build's contents is a WebContents of its own) and shown as an image.
+// The scene's page is docked (hud.docked: the helper tells pages inside the PairBrowse browser's
+// window that its docks carry the bottom bar, DESIGN.md Part G) before the bar it sends every page;
+// --plain also writes contents-plain.png, the same page as plain Chromium shows it (not docked:
+// the 30 px bottom bar with who drives, the steps and Pause agents).
 // Writes window.png, window@2x.png, contents.png, contents@2x.png, pictures/<card>.jpg (the
 // timeline's pictures: real renders of the sample page at each step), side-by-side.png and
 // regions/<name>.png (crop pairs against the mockup's window area), harness-log.json and
@@ -208,7 +212,7 @@ export async function renderPictures(browser, { proxy, geo, fx, helper, out, red
 
 // The contents card: the sample page filled, with scripts/hud.js added and called the helper's
 // way (scripts/daemon/hud.mjs: ensure, then window[name](token, value, kind)). -> PNG buffer.
-export async function renderContents(browser, { proxy, geo, raw, scale, reducedMotion, log }) {
+export async function renderContents(browser, { proxy, geo, raw, scale, reducedMotion, log, plain = false }) {
   const page = await browser.newPage({ viewport: { width: geo.card.w, height: geo.card.h }, deviceScaleFactor: scale, reducedMotion });
   page.on("pageerror", (e) => log.push({ frame: "contents", kind: "pageerror", text: String(e).slice(0, 500) }));
   try {
@@ -218,10 +222,12 @@ export async function renderContents(browser, { proxy, geo, raw, scale, reducedM
     await ensureHud(page, hud.source, hud.name);
     const call = (value, kind) => page.evaluate(([n, t, v, k]) => window[n]?.(t, v, k), [hud.name, hud.token, value, kind]);
     const rect = (sel) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, sx: scrollX, sy: scrollY }; }, sel);
-    // The bottom bar only when the scene has one: the native build draws none (DESIGN.md B5).
+    // Docked first, as the helper does in the PairBrowse browser (scripts/daemon/hud.mjs
+    // onPageLoad), then the bar it sends every page: docked, only a join card would show.
+    if (raw.hud.docked && !plain) await call(JSON.stringify({ on: true }), "docked");
     if (raw.hud.bar) {
       const bar = resolveTimes(raw.hud.bar, Date.now());
-      await call(JSON.stringify({ items: bar.items, canPause: true }), "bar");
+      await call(JSON.stringify({ items: bar.items, canPause: raw.hud.bar.canPause !== false }), "bar");
     }
     const c = raw.hud.cursor, r = await rect(c.field);
     const sent = await call(JSON.stringify({ x: r.x + r.width / 2, y: r.y + r.height / 2, act: c.act, who: c.who, color: c.color, w: Math.round(Math.min(r.width, r.height)), bw: Math.round(r.width), bh: Math.round(r.height) }), "cursor");
@@ -351,7 +357,7 @@ export async function main(args) {
   const value = (name) => { const i = args.indexOf(name); return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : null; };
   const out = value("--out");
   if (!out) {
-    console.error("usage: node scripts/dev/window-preview.mjs --out <dir> [--rail] [--reduced-motion] [--mockup <png>] [--one-host]");
+    console.error("usage: node scripts/dev/window-preview.mjs --out <dir> [--rail] [--reduced-motion] [--mockup <png>] [--one-host] [--plain]");
     return 2;
   }
   const rail = flag("--rail"), oneHost = flag("--one-host");
@@ -386,6 +392,12 @@ export async function main(args) {
       contents[scale] = await renderContents(browser, { proxy, geo, raw, scale, reducedMotion, log });
       const file = join(out, scale === 1 ? "contents.png" : `contents@${scale}x.png`);
       writeFileSync(file, contents[scale]);
+      written.push(file);
+    }
+    // Plain Chromium (no docks): the same page, not docked.
+    if (flag("--plain")) {
+      const file = join(out, "contents-plain.png");
+      writeFileSync(file, await renderContents(browser, { proxy, geo, raw, scale: 1, reducedMotion, log, plain: true }));
       written.push(file);
     }
     let first = null;

@@ -2,7 +2,7 @@
 // A dev tool, not plugin code: renders ui/<page> over the pages' harness (the fake helper and the
 // ui server from test/helpers) to a PNG, for reviews.
 //   node scripts/dev/ui-look.mjs <page> [--width 360] [--height 900] [--fixtures file.json]
-//                                [--reduced-motion] [--no-bridge] [--hash name] [--out file.png]
+//                                [--reduced-motion] [--no-bridge] [--no-native] [--hash name] [--out file.png]
 // The fixtures are scripts/dev/look/<page>.json when it exists (the review fixture
 // scripts/dev/ui-look-all.mjs uses too); --fixtures <file> replaces them. A fixtures file is
 // { helper: {...fake-helper fixtures}, replies: {...}, shim: {...shim fixture overrides},
@@ -13,7 +13,8 @@
 // frameable by same-origin pages only, as the native build will, so the strip's switcher shows
 // the real framed picker.
 // Prints the PNG's path, then the page's harness log and live() counts. Exit 1 when the page
-// could not load. renderPage(browser, opts) is the same render for scripts (ui-look-all.mjs).
+// could not load. --no-native leaves out the window.pairbrowse shim (the side panel host). renderPage(browser, opts)
+// is the same render for scripts (ui-look-all.mjs).
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -33,13 +34,13 @@ export function lookFixtures(page) {
 }
 
 // Renders one page to out; starts and closes its own fake helper. -> { out, log, live }.
-export async function renderPage(browser, { page, width = 360, height = 900, fixtures = lookFixtures(page), hash = "", reducedMotion = false, bridge = true, out }) {
+export async function renderPage(browser, { page, width = 360, height = 900, fixtures = lookFixtures(page), hash = "", reducedMotion = false, bridge = true, native = true, out }) {
   const given = fixtures || {};
   let helper = null, ctx = null;
   try {
     helper = await startFakeHelper({ pageOrigin: null, fixtures: given.helper, replies: given.replies });
     ctx = await openPage(browser, page, {
-      helper, fixture: merge(defaultFixture(), given.shim || {}), bridge,
+      helper, fixture: merge(defaultFixture(), given.shim || {}), bridge, native,
       viewport: { width, height }, reducedMotion: reducedMotion ? "reduce" : "no-preference",
     });
     for (const [event, data] of given.push || []) { helper.push(event, data); await sleep(200); }
@@ -69,7 +70,7 @@ async function main(args) {
   const value = (name, fallback) => { const i = args.indexOf(name); return i >= 0 && args[i + 1] ? args[i + 1] : fallback; };
   const page = args[0];
   if (!page || page.startsWith("--") || !pages().includes(page)) {
-    console.error(`usage: node scripts/dev/ui-look.mjs <${pages().join("|")}> [--width 360] [--height 900] [--fixtures file.json] [--reduced-motion] [--no-bridge] [--hash name] [--out file.png]`);
+    console.error(`usage: node scripts/dev/ui-look.mjs <${pages().join("|")}> [--width 360] [--height 900] [--fixtures file.json] [--reduced-motion] [--no-bridge] [--no-native] [--hash name] [--out file.png]`);
     return 1;
   }
   const width = Number(value("--width", 360)), height = Number(value("--height", 900));
@@ -80,7 +81,7 @@ async function main(args) {
   let browser = null;
   try {
     browser = await patchright(runtime).chromium.launch();
-    const r = await renderPage(browser, { page, width, height, fixtures, hash, reducedMotion: flag("--reduced-motion"), bridge: !flag("--no-bridge"), out });
+    const r = await renderPage(browser, { page, width, height, fixtures, hash, reducedMotion: flag("--reduced-motion"), bridge: !flag("--no-bridge"), native: !flag("--no-native"), out });
     console.log(r.out);
     console.log(`harness log: ${r.log.length} entr${r.log.length === 1 ? "y" : "ies"}`);
     for (const e of r.log) console.log(`  ${e.kind}: ${e.text}`);

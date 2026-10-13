@@ -1,9 +1,9 @@
 // PairBrowse settings (pairbrowse://settings in the PairBrowse browser; the extension's
 // settings/index.html in Chromium). It shows only what the helper reports today: sessions,
-// passwords by name, remembered details, sharing and the timeline, through the live view's owner
+// passwords by name, remembered details, join addresses and the timeline, through the live view's owner
 // routes with the owner's key. The browser and timeline settings have no route yet, so the page
 // says so and shows the config.json line. Nothing ticks: no timer, no observer, the one shared event stream (common.js).
-import { $, el, ago, initialOf, devPanel, hostPanel, profilePanel, helperStream } from "../common.js";
+import { $, el, ago, initialOf, hostPanel, profilePanel, helperStream } from "../common.js";
 
 // The host, a fact of the page (not a reading of the config): window.pairbrowse exists only in
 // the PairBrowse browser.
@@ -36,7 +36,6 @@ function helperBase() {
   } catch { return Promise.resolve(null); }
 }
 
-const drawDev = devPanel($("dev-asks"), $("devs"), $("dev"), () => base);
 const drawHosts = hostPanel($("host-asks"), $("host-list"), $("hosts"), () => base);
 const profile = profilePanel(() => base);
 
@@ -96,7 +95,6 @@ function connect(url) {
   });
   const on = stream.on;
   on("profile", profile.draw);
-  on("dev", (s) => { drawDev(s); $("dev-empty").hidden = !$("dev").hidden; });
   on("joinhost", (s) => { drawHosts(s); $("hosts-empty").hidden = !$("hosts").hidden; });
 }
 

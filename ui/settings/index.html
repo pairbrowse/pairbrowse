@@ -60,13 +60,8 @@
           </div>
           <p class="empty" id="hosts-empty" hidden>No join addresses allowed besides PairBrowse's own.</p>
           <div class="joins" id="host-asks" role="region" aria-label="Join codes with another address" aria-live="assertive"></div>
-          <div class="sub" id="dev" hidden>
-            <h3>Dev servers</h3>
-            <p class="note">Show a dev server on this computer to the people in your session, at an address only their PairBrowse opens. Watchers can only look.</p>
-            <ul class="devs" id="devs"></ul>
-          </div>
-          <p class="empty" id="dev-empty" hidden>No dev server open in a tab or shared.</p>
-          <div class="joins" id="dev-asks" role="region" aria-label="Requests to share a dev server" aria-live="assertive"></div>
+          <!-- Dev servers have one home, the agent panel's Tools tab (DESIGN.md Part G): live session tools. -->
+          <p class="note" id="dev-note">Share a dev server from the agent panel's Tools tab.</p>
         </div>
       </section>
 

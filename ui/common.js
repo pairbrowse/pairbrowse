@@ -33,6 +33,20 @@ export function ago(iso, now = Date.now()) {
 // An agent's status (pairbrowse_status kinds) in words, so it never shows by color alone.
 export const STATE_WORDS = { working: "working", you: "waiting for their person", done: "done", idle: "idle" };
 export const stateWord = (s) => (Object.hasOwn(STATE_WORDS, s) ? STATE_WORDS[s] : "idle");
+// One vocabulary for an agent's or a person's state, the left dock's and the right dock's alike
+// (545): agents "Working", "Waiting for you" ("Waiting for their person" for an agent in another
+// browser), "Paused", "Done", "Idle", or "Active · N tabs" when the caller counts its tabs (the
+// left dock); people "Online". state is the word's key, for a dot that repeats it (never alone).
+export function agentWords(p, { tabs = 0, driving = false, paused = false } = {}) {
+  if (p?.kind === "person") return { state: "online", words: "Online" };
+  const n = Number.isInteger(tabs) && tabs > 0 ? `Active · ${tabs} tab${tabs === 1 ? "" : "s"}` : "";
+  if (p?.status === "you") return { state: "waiting", words: p.where ? "Waiting for their person" : "Waiting for you" };
+  if (paused) return { state: "paused", words: "Paused" };
+  if (p?.status === "working" || driving) return { state: "working", words: n || "Working" };
+  if (n) return { state: "active", words: n };
+  if (p?.status === "done") return { state: "done", words: "Done" };
+  return { state: "idle", words: "Idle" };
+}
 // "Alice" -> "Alice's Claude". Unnamed ("Claude 3fed") and app-labelled ("Alice · Codex") stay as they are.
 export const whose = (who) => !who ? "Claude" : /^Claude\b| · /.test(who) ? who : `${who}'s Claude`;
 // The activity line's head: who did it, and in which tab.
@@ -328,34 +342,45 @@ export function checklistItems(run, { driving = false } = {}) {
 // helper's own invite code. The code or link is shown once, in a read-only field, and cleared
 // when the card closes. Asks the owner's first name once (the helper says when). card holds
 // the ids share-name-row, share-name, share-make, share-result, share-code, share-copy,
-// share-rights and share-msg. base(): the live view address (null: not connected yet).
+// share-rights and share-msg. base(): the live view address (null: not connected yet). btn may
+// be null (the left dock's card, opened only by the strip's Share): open() and close() then touch
+// no button; returnTo (optional) takes the focus back when it was inside the card (F6 into the
+// dock, then Escape), else close() moves no focus.
 // dismissable(): false while a host owns dismissal (the strip's #share bubble): no outside click or Escape closes it.
-export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = () => true }) {
+export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = () => true, returnTo = null }) {
   const q = (id) => card.querySelector(`#${id}`);
   const nameRow = q("share-name-row"), name = q("share-name"), make = q("share-make"), result = q("share-result");
   const code = q("share-code"), copy = q("share-copy"), rights = q("share-rights"), msg = q("share-msg");
   const say = (text, kind = "") => { msg.textContent = text; msg.dataset.kind = kind; };
   const radios = () => [...card.querySelectorAll('input[name="share"]')];
-  const outside = (e) => { if (!card.contains(e.target) && !btn.contains(e.target)) close(false); };
+  const outside = (e) => { if (!card.contains(e.target) && !btn?.contains(e.target)) close(false); };
   function open() {
     card.hidden = false;
-    btn.setAttribute("aria-expanded", "true");
+    btn?.setAttribute("aria-expanded", "true");
     if (dismissable()) document.addEventListener("pointerdown", outside, true);
     (radios().find((r) => r.checked) || radios()[0])?.focus();
   }
   function close(refocus = true) {
     card.hidden = true;
-    btn.setAttribute("aria-expanded", "false");
+    btn?.setAttribute("aria-expanded", "false");
     document.removeEventListener("pointerdown", outside, true);
     code.value = ""; rights.textContent = ""; result.hidden = true; nameRow.hidden = true; say("");
-    if (refocus) btn.focus();
+    if (refocus) btn?.focus();
+    // No button to return to: focus never stays on a control the card just hid; it goes to
+    // returnTo when there is one, so the next Tab goes on from there.
+    else if (!btn && card.contains(document.activeElement)) {
+      if (returnTo) returnTo.focus();
+      else document.activeElement.blur();
+    }
   }
-  btn.addEventListener("click", () => (card.hidden ? open() : close()));
-  const onEscape = (e) => { if (e.key === "Escape" && !card.hidden && dismissable()) { e.preventDefault(); close(); } };
+  btn?.addEventListener("click", () => (card.hidden ? open() : close()));
+  // With no button of its own (opened from another page's: the strip's Share asks the left dock)
+  // nothing here takes the focus back on close: the asking control keeps it.
+  const onEscape = (e) => { if (e.key === "Escape" && !card.hidden && dismissable()) { e.preventDefault(); close(!!btn); } };
   card.addEventListener("keydown", onEscape);
-  btn.addEventListener("keydown", onEscape);
+  btn?.addEventListener("keydown", onEscape);
   // A non-modal card: Tab out of it (not onto its button) closes it, so it never lingers.
-  card.addEventListener("focusout", (e) => { if (!card.hidden && e.relatedTarget && !card.contains(e.relatedTarget) && e.relatedTarget !== btn) close(); });
+  card.addEventListener("focusout", (e) => { if (!card.hidden && e.relatedTarget && !card.contains(e.relatedTarget) && e.relatedTarget !== btn) close(!!btn); });
   // A person's click or key press only: a synthetic event makes nothing.
   async function makeInvite() {
     if (make.disabled) return;
@@ -466,13 +491,13 @@ export function askDock({ pb, layout, base, side, state, onFail }) {
 // to the page's own origin, so a web page, another extension or the live view page can neither
 // take the lock nor hear the channel. Owner-only filtering stays the helper's: the same events
 // reach the same pages. A page that joins late gets the last value of each state event from the
-// page holding the stream; deltas (approval, timeline, downloads, handoffs) are never replayed:
+// page holding the stream; deltas (approval, timeline, downloads, handoffs, a tab-order request) are never replayed:
 // pages fetch their snapshot in onOpen. One-shot fields are never replayed either: a layout
 // event's `tab` (the right dock opening on a tab) and a record event's `op` ("saved", with its
 // item), so a late page neither jumps to a tab nor adds a recording from an old event. Without Web Locks or BroadcastChannel (or when the lock is refused) a page
 // opens its own stream as before. No timer, frame or observer anywhere here.
-export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs"];
-const STREAM_DELTAS = new Set(["approval", "timeline", "downloads", "handoffs"]);
+export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs", "tab-order"];
+const STREAM_DELTAS = new Set(["approval", "timeline", "downloads", "handoffs", "tab-order"]);
 // What the holder keeps of a state event for a late page: no delta, and no one-shot field.
 function replayable(name, v) {
   if (STREAM_DELTAS.has(name)) return undefined;

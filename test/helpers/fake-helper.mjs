@@ -172,12 +172,12 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     "handoffs.json": () => fx.handoffs, "downloads.json": () => fx.downloads, "recordings.json": () => fx.recordings, "diagnostics.json": () => fx.diagnostics,
   };
   const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session",
-    "handoffs", "downloads", "recordings", "diagnostics"]);
+    "handoffs", "downloads", "recordings", "diagnostics", "tab-order"]);
   const hasItem = (name, id) => Array.isArray(fx[name]?.items) && fx[name].items.some((it) => it && String(it.id) === id);
 
   // The answer to a POST without a reply of the test's own.
   function defaultPost(route, body, rest = []) {
-    if (route === "input" || route === "tab") return { status: 204 };
+    if (route === "input" || route === "tab" || route === "tab-order") return { status: 204 };
     if (route === "downloads" && (rest[1] === "open" || rest[1] === "open-app") && rest.length === 2 && hasItem(route, rest[0])) {
       // The helper's Open and Open in Word: a download without macOS's mark answers 409 { error };
       // a file changed since it was saved 410; a program, script or web page (`program: true`) 428

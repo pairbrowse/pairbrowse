@@ -6,7 +6,7 @@
 // the helper's POST layout tab), from Activity in the rail and from the collapse and expand
 // buttons. Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
-import { $, el, rich, clock, activityHead, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream, servedByBrowser } from "../common.js";
+import { $, el, rich, clock, activityHead, agentWords, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream, servedByBrowser } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -32,10 +32,11 @@ let everLive = false;
 let driveTimer = 0;
 let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
 let shareAsked = false; // the strip's Share asked for the card while this dock was not yet open
+let switchAsked = false; // the strip's logo asked for the switcher while this dock was not yet open
+let paused = false; // agents paused session-wide (the helper's pause event)
 
 const isHistory = (url) => /^chrome:\/\/history(\/|$)/.test(url || "");
 const isSettings = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)settings(\/|$)/.test(url || "");
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const dock = () => document.body.dataset.dock;
 const icon = (id) => {
   const svg = document.createElementNS(SVG, "svg");
@@ -58,7 +59,10 @@ function railTitles() {
   }
   // A disabled row keeps saying why, in either state.
   for (const id of ["nav-history"]) if ($(id).disabled) $(id).title = `${$(id).querySelector(".label").textContent} · opens in the PairBrowse browser`;
-  $("workspace").title = rail ? "Workspace: switch session" : session?.name ? `Switch session (now: ${session.name})` : "Switch session";
+  // The header is a title (the switcher is the strip's logo and the Sessions row): in the rail its
+  // square says what it is in a tooltip, with the session's name when there is one.
+  if (rail) $("workspace").title = session?.name ? `Workspace · ${session.name}` : "Workspace";
+  else $("workspace").removeAttribute("title");
 }
 function setDock(name) {
   const state = DOCK.includes(name) ? name : "open";
@@ -70,7 +74,10 @@ function setDock(name) {
   $("dock-collapse").hidden = !layout || state !== "open";
   $("dock-expand").hidden = !layout || state !== "rail";
   if (state !== "open") { closeHint(false); setActivity(false); }
-  else if (shareAsked) { shareAsked = false; openAskedShare(); }
+  else {
+    if (shareAsked) { shareAsked = false; openAskedShare(); }
+    if (switchAsked) { switchAsked = false; openAskedSwitch(); }
+  }
   if (hidden) switcher.close(false);
   // Nothing redraws rows nobody can see: the drive timer stops with the dock hidden.
   if (hidden) { clearTimeout(driveTimer); driveTimer = 0; } else armDrive();
@@ -119,9 +126,9 @@ function drawAgents() {
   const items = rows.map((p) => {
     const n = tabCount(p.who);
     const driving = !!newest && newest.who === p.who && Date.now() - newest.t < DRIVING_MS;
-    const state = p.kind === "person" ? "online" : p.status === "you" ? "waiting" : p.status === "working" || driving ? "working" : n > 0 ? "active" : "idle";
-    // An agent in tabs is "Active · N tabs" whether or not it acts right now (the mockup); its dot says working.
-    const words = { online: "Online", waiting: "Waiting for you", working: n ? `Active · ${plural(n, "tab")}` : "Working", active: `Active · ${plural(n, "tab")}`, idle: "Idle" }[state];
+    // The right dock's words too (common.js agentWords). An agent in tabs is "Active · N tabs"
+    // whether or not it acts right now (the mockup); its dot says working.
+    const { state, words } = agentWords(p, { tabs: n, driving, paused: paused && p.kind === "agent" });
     const { name, app } = splitLabel(p.who);
     const color = isColor(p.color) ? p.color : colorOf(p.who);
     const face = el("span", { className: "avatar", textContent: initialOf(name) });
@@ -202,14 +209,14 @@ function drawGuests() {
     li.dataset.state = "online";
     return li;
   }));
-  // The section stays (its "+" is how you share): a line says so while nobody has joined.
+  // The section stays (the strip's Share opens its card): a line says so while nobody has joined.
   $("guests-empty").hidden = byName.size > 0;
 }
 
 // ---- actions ----
-// The session switcher: the picker in a same-origin frame under the header, opened by the
-// Workspace header and the Sessions row (common.js pickerPopover wires both).
-const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("workspace"), $("nav-sessions")] });
+// The session switcher: the picker in a same-origin frame under the header, opened by the Sessions
+// row and by the strip's logo (its ask over the pairbrowse-share channel): one surface.
+const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("nav-sessions")] });
 // Find a tab whose address matches, else open one in the active tab's window.
 function findOrOpen(match, url) {
   if (!pb) return;
@@ -346,6 +353,8 @@ function connect(url) {
     armDrive();
   });
   on("board", (b) => { board = { people: Array.isArray(b?.people) ? b.people : [], messages: [] }; drawAgents(); });
+  // Paused agents read "Paused" here as in the right dock.
+  on("pause", (p) => { const was = paused; paused = !!p?.paused; if (paused !== was) drawAgents(); });
   if (!pb) {
     on("layout", (l) => { if (l && typeof l === "object") { layout = l; setDock(l.left); } });
     on("tabs", (list) => {
@@ -387,7 +396,9 @@ $("nav-activity").addEventListener("click", toggleActivity);
 $("nav-tools").addEventListener("click", openTools);
 $("add-agent").addEventListener("click", toggleHint);
 // Share: a join code or a watch link, made here with a person's click (the helper's own invite).
-const share = shareCard({ btn: $("share-add"), card: $("share-card"), base: () => base });
+// Its one trigger is the strip's Share (DESIGN.md Part G): no button of its own, so closing it
+// moves no focus (the strip's Share keeps it).
+const share = shareCard({ btn: null, card: $("share-card"), base: () => base, returnTo: $("shared-h") });
 // The strip's Share in the browser opens this card (its own popover has no room in the strip's
 // slot): one message per click, for this window only.
 let myWindow = -1;
@@ -399,13 +410,25 @@ function openAskedShare() {
   if ($("share-card").hidden) share.open();
   try { shareChannel?.postMessage({ opened: "share", window: myWindow }); } catch {}
 }
+// The strip's logo asked for the switcher: the same switcher as the Sessions row.
+function openAskedSwitch() {
+  if (!switcher.isOpen()) switcher.open($("nav-sessions"));
+  try { shareChannel?.postMessage({ opened: "switch", window: myWindow }); } catch {}
+}
 try {
   shareChannel = new BroadcastChannel("pairbrowse-share");
   shareChannel.onmessage = (e) => {
     const asked = e.data?.window;
     // Only an ask for this window, once this dock knows which window it is in; and only into an
     // open dock (the strip opens it first: the card waits for that layout if it has not come yet).
-    if (e.data?.open !== "share" || myWindow === -1 || asked !== myWindow) return;
+    // The strip gave up waiting and opened the picker as a tab: the ask is withdrawn.
+    if (e.data?.cancel === "switch" && myWindow !== -1 && asked === myWindow) { switchAsked = false; return; }
+    const what = e.data?.open;
+    if ((what !== "share" && what !== "switch") || myWindow === -1 || asked !== myWindow) return;
+    if (what === "switch") {
+      if (dock() !== "open") { switchAsked = true; return; }
+      return openAskedSwitch();
+    }
     if (dock() !== "open") { shareAsked = true; return; }
     openAskedShare();
   };

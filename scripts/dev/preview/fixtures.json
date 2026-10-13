@@ -390,6 +390,27 @@
         "who": "Gemini",
         "color": "#4B8FFB"
       }
-    ]
+    ],
+    "bar": {
+      "items": [
+        {
+          "t": -40000,
+          "who": "Claude Code",
+          "text": "Opened **notion.so/new-workspace**"
+        },
+        {
+          "t": -9000,
+          "who": "Claude Code",
+          "text": "Filled **Workspace name**"
+        },
+        {
+          "t": -1000,
+          "who": "Claude Code",
+          "text": "Now: asking to click **Continue**"
+        }
+      ],
+      "canPause": true
+    },
+    "docked": true
   }
 }

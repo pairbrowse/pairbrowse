@@ -53,7 +53,13 @@ test("window preview: geometry, regions and the scene", () => {
   assert.ok(people.some((p) => p.who === "Codex" && p.color === "#9B7BFA"), "Codex purple (the mockup's palette)");
   assert.ok(people.some((p) => p.who === "Gemini" && p.color === "#4B8FFB"), "Gemini blue");
   assert.deepEqual(fx.hud.peers.map((p) => [p.who, p.color]), [["Codex", "#9B7BFA"], ["Gemini", "#4B8FFB"]]);
-  assert.equal(fx.hud.bar, undefined, "no bottom bar in the scene: the native build draws none (DESIGN.md B5)");
+  // The scene carries the bar the helper sends every page, and docked: in the native build the page
+  // is told it is docked first (DESIGN.md Part G), so it draws no bottom bar.
+  assert.ok(Array.isArray(fx.hud.bar?.items) && fx.hud.bar.items.length > 0, "the bar the helper sends every page");
+  assert.equal(fx.hud.docked, true);
+  const source = readFileSync(join(root, "scripts", "dev", "window-preview.mjs"), "utf8");
+  const docked = source.indexOf('call(JSON.stringify({ on: true }), "docked")'), bar = source.indexOf('"bar");');
+  assert.ok(docked > 0 && docked < bar, "the harness sends docked before the bar");
   assert.equal(fx.helper.approvals.pending.length, 1);
   // the mockup's sentence (the scene is the mockup's data; the card shows the reason it is given)
   assert.equal(fx.helper.approvals.pending[0].reason, "This will create a new Notion workspace with the information above.");
@@ -77,7 +83,7 @@ function png(file) {
   return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
 }
 
-function run(extra, geo) {
+function run(extra, geo, more = () => {}) {
   const dir = mkdtempSync(join(tmpdir(), "pb-wp-"));
   try {
     const r = spawnSync(process.execPath, ["scripts/dev/window-preview.mjs", "--out", dir, "--mockup", "ui/icon128.png", ...extra], { cwd: root, encoding: "utf8", timeout: 220_000 });
@@ -101,6 +107,7 @@ function run(extra, geo) {
     for (const f of frames.frames.filter((x) => x.name.startsWith("nav-"))) assert.equal(f.live?.eventSources, 0, `${f.name} opens no stream`);
     assert.equal(frames.thumbs.loaded, frames.thumbs.cards, "every timeline picture loaded");
     for (const k of ["strip", "nav", "left", "right", "timeline", "card"]) assert.deepEqual(frames.rects[k], geo[k], k);
+    more(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -109,3 +116,10 @@ function run(extra, geo) {
 test("window preview: the default run", { skip: !runtime, timeout: 240_000 }, () => run([], geometry()));
 test("window preview: rails and reduced motion", { skip: !runtime, timeout: 240_000 }, () => run(["--rail", "--reduced-motion"], geometry({ rail: true })));
 test("window preview: one helper host, one event stream", { skip: !runtime, timeout: 240_000 }, () => run(["--one-host"], geometry()));
+// --plain: the same page as plain Chromium shows it (not docked), with the 30 px bottom bar.
+test("window preview: --plain writes the plain-Chromium contents", { skip: !runtime, timeout: 240_000 }, () => run(["--one-host", "--plain"], geometry(), (dir) => {
+  const plain = png(join(dir, "contents-plain.png")), docked = png(join(dir, "contents.png"));
+  assert.deepEqual(plain, docked, "the contents card's size");
+  // Docked, the page's bottom rows are the sample page; plain, the bar's navy (#0B1421 at 96%).
+  assert.notDeepEqual(readFileSync(join(dir, "contents-plain.png")), readFileSync(join(dir, "contents.png")), "the bar shows only in the plain capture");
+}));

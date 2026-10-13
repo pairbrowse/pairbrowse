@@ -6,20 +6,31 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser } from "../common.js";
+import { $, el, rich, clock, ago, whose, agentWords, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser } from "../common.js";
 import { toolsPanel } from "./tools.js";
 
 const pb = globalThis.pairbrowse || null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
 // API: no extension header there (the strip has the logo, the pill and the avatars).
 document.documentElement.dataset.host = pb || servedByBrowser() ? "native" : "extension";
+// One home each (DESIGN.md Part G): with the browser's API, Passwords, Remembered details and Join
+// addresses live in pairbrowse://settings, and Tools has one row that opens it; the extension host
+// (no Settings page) keeps them here.
+if (pb) document.documentElement.dataset.profileHome = "settings";
+const native = () => document.documentElement.dataset.host === "native";
 
 const DRIVING_MS = 8000; // "Working…" for this long after the agent's last action
 const ACTIVITY_SHOWN = 12;
 const PICTURE_ID = /^[0-9a-f]{12}$/;
 let base = null;
 let stream = null; // the shared helper stream (common.js helperStream)
-let lastActivity = 0;
+// When each agent of this browser acted last (who -> time; the newest 50): the card says its own
+// agent is working on that agent's actions only, never on a joiner's line, a note or another
+// browser's agent.
+const actedAt = new Map();
+const ACTED_KEPT = 50;
+const ownAgentLine = (a) => !!a?.who && !a.from && !String(a.text || "").startsWith("Note: ");
+const cardActedAt = () => actedAt.get(lastWho || activeEntry()?.who || "") || 0;
 let lastWho = "";
 let driveTimer = 0;
 let paused = false;
@@ -175,9 +186,25 @@ $("record-btn").addEventListener("click", async () => {
     else if (r?.recording) { recording = { since: r.since || Date.now() }; drawRecord(); }
   } finally { btn.disabled = false; }
 });
+// "Pause all" when the session holds two agents or more (it stops every one), else "Pause";
+// "Resume" while paused. The accessible name holds the visible text (WCAG 2.5.3): "Pause all
+// agents", "Pause agents", "Resume agents".
+function drawPause() {
+  const agents = new Set(lastBoard.people.filter((p) => p?.kind === "agent" && p.who).map((p) => p.who));
+  if (lastWho) agents.add(lastWho);
+  $("pause-btn").textContent = paused ? "Resume" : agents.size >= 2 ? "Pause all" : "Pause";
+  $("pause-btn").setAttribute("aria-label", paused ? "Resume agents" : agents.size >= 2 ? "Pause all agents" : "Pause agents");
+}
 $("pause-btn").addEventListener("click", () => {
   if (base) post("pause", { paused: !paused }).catch(() => {});
 });
+
+// Tools in the browser: one row for what lives in Settings (Passwords first; the page's #passwords
+// anchor). Without the browser's API there is nothing to open it with, so the row stays hidden.
+if (pb) {
+  $("sec-settings-link").hidden = false;
+  $("open-settings").addEventListener("click", () => { pb.tabs.create("pairbrowse://settings#passwords", true, -1).catch(() => {}); });
+}
 
 // The requests, then the count on the Agent tab.
 const joins = joinBanners($("joins"), () => base);
@@ -255,6 +282,9 @@ $("agent-more").addEventListener("click", () => {
 // canRename; a 404 from the route hides the button again for this helper. A person's click or
 // key press only: a synthetic event saves and renames nothing.
 let canSave = false, canRename = false, editing = false, renaming = false;
+// Where focus goes when Save or rename turns out to be missing: Share where the card has it (the
+// extension host), else End session.
+const sessionFallback = () => (native() ? $("switch-btn") : $("share-btn"));
 const sessionSay = (text, kind = "") => { $("session-msg").textContent = text; $("session-msg").dataset.kind = kind; };
 function drawSessionTools() {
   $("session-save").hidden = !canSave;
@@ -283,7 +313,7 @@ $("session-save").addEventListener("click", async (ev) => {
     const had = document.activeElement === $("session-save");
     canSave = false;
     drawSessionTools();
-    if (had) $("share-btn").focus();
+    if (had) sessionFallback().focus();
     return;
   }
   const r = res ? await res.json().catch(() => null) : null;
@@ -306,7 +336,7 @@ $("session-name-input").addEventListener("keydown", async (ev) => {
     const had = [$("session-name-input"), $("session-rename")].includes(document.activeElement);
     canRename = false;
     editName(false);
-    if (had) $("share-btn").focus();
+    if (had) sessionFallback().focus();
     return;
   }
   const r = res ? await res.json().catch(() => null) : null;
@@ -327,7 +357,7 @@ $("session-fold").addEventListener("click", () => {
 function setDriver() {
   const turn = document.body.dataset.turn === "true";
   const s = document.body.dataset.s;
-  const driving = !turn && !paused && s === "live" && Date.now() - lastActivity < DRIVING_MS;
+  const driving = !turn && !paused && s === "live" && Date.now() - cardActedAt() < DRIVING_MS;
   document.body.dataset.driving = String(driving);
   const [text, state] = s === "none" ? ["No agent connected", "closed"]
     : s === "closed" ? ["The browser is closed. It reopens on Claude's next action.", "closed"]
@@ -388,6 +418,7 @@ const agentName = (entry) => whose(lastWho || entry?.who || "");
 
 // The active agent's card: avatar in its color, name, its own status text (pairbrowse_status,
 // in the Status box) and the tab it is in (the name's title).
+const lastTask = new Map();
 function drawAgent() {
   const entry = activeEntry();
   // No card for an agent nobody named: until the helper reports one (an action or the board),
@@ -401,7 +432,11 @@ function drawAgent() {
   a.textContent = initialOf(splitLabel(lastWho || entry?.who || "Claude").name);
   a.style.background = isColor(entry?.color) ? entry.color : "var(--spark)";
   a.style.color = inkOn(isColor(entry?.color) ? entry.color : "#e9763f"); // the initial's ink passes AA (B11)
-  $("agent-status-text").textContent = entry?.task || "No status from the agent yet.";
+  // A hand-off ("your turn") is the turn line's: the board's task then holds the hand-off text,
+  // so the box keeps that agent's last task that was not one.
+  if (entry && entry.status !== "you") lastTask.set(entry.who, entry.task || "");
+  const shown = entry?.status === "you" ? (lastTask.get(entry.who) ?? "") : entry?.task;
+  $("agent-status-text").textContent = shown || "No status from the agent yet.";
   // The tab it is in: the name's tooltip, not a line of the Status box (#agent-tab stays, hidden
   // and empty: the side panel's ids are pinned).
   const tab = entry?.tab || (!entry || entry.who === lastWho ? lastTab : "");
@@ -415,10 +450,8 @@ function drawAgent() {
 // each, a chevron to the board's task and last action, and "Pause this agent" only when the
 // helper says it can pause one agent.
 const openRows = new Set();
-// The part someone plays, in words: an agent at work helps, an agent between actions observes, one
-// waiting for its person says so; a person in the session is active.
-const PARTS = { working: "helping", you: "waiting for their person", done: "done", idle: "observing" };
-const partWord = (p) => (p.kind === "person" ? "active" : Object.hasOwn(PARTS, p.status) ? PARTS[p.status] : "observing");
+// The state in words: the left dock's words (common.js agentWords), so an agent reads the same in
+// both docks.
 const takeIcon = () => {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   for (const [k, v] of Object.entries({ viewBox: "0 0 18 18", width: "18", height: "18", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "aria-hidden": "true" })) s.setAttribute(k, v);
@@ -433,7 +466,9 @@ const takeIcon = () => {
 function drawPeople() {
   const all = lastBoard.people;
   const active = activeEntry();
-  const people = all.filter((p) => !quiet(p) && p !== active);
+  // In the browser the left dock lists the people (you and your guests): here only the agents a
+  // person can take control from. The side panel (extension host) keeps everyone.
+  const people = all.filter((p) => !quiet(p) && p !== active && !(native() && p?.kind === "person"));
   const idle = all.filter(quiet).length;
   const perAgent = !!(pauseInfo?.perAgent && pauseInfo?.can);
   $("people").replaceChildren(...people.map((p, i) => {
@@ -444,7 +479,7 @@ function drawPeople() {
     face.setAttribute("aria-hidden", "true");
     // Two lines: the name, then its part in the session in words (the mockup's "Observing",
     // "Helping", "Active") with what it does and whose browser; the tab stays in the title.
-    const word = partWord(p);
+    const { state, words: word } = agentWords(p, { paused: paused && p.kind === "agent" });
     const rest = [p.task, p.where ? `${p.where}'s browser` : ""].filter(Boolean).join(" · ");
     const st = el("small", { className: "st", title: [word, p.task, p.tab, p.where ? `${p.where}'s browser` : ""].filter(Boolean).join(" · ") }, el("span", { className: "state", textContent: word }), ...(rest ? [document.createTextNode(` · ${rest}`)] : []));
     if (isColor(p.color)) st.style.setProperty("--who", p.color);
@@ -477,7 +512,7 @@ function drawPeople() {
     }
     kids.push(acts);
     const li = el("li", {}, ...kids);
-    li.dataset.state = p.kind === "person" ? "active" : p.status || "idle";
+    li.dataset.state = state;
     return li;
   }), ...(idle ? [el("li", { className: "idle" }, el("small", { textContent: `+ ${idle} idle agent${idle === 1 ? "" : "s"} in this browser` }))] : []));
 }
@@ -590,14 +625,23 @@ function connect(url) {
   on("activity", (list) => {
     const items = list.slice(-ACTIVITY_SHOWN).reverse();
     if (!items.length) return;
-    lastActivity = Math.max(lastActivity, items[0].t);
     const was = activeEntry();
-    lastWho = items[0].who || "";
-    lastTab = items[0].tab || "";
+    // The card follows the newest line of an agent of this browser; other lines are only listed.
+    let newest = null;
+    for (const a of list) {
+      if (!ownAgentLine(a)) continue;
+      const at = Math.max(actedAt.get(a.who) || 0, Number(a.t) || 0);
+      actedAt.delete(a.who);
+      actedAt.set(a.who, at);
+      if (actedAt.size > ACTED_KEPT) actedAt.delete(actedAt.keys().next().value);
+      newest = a;
+    }
+    if (newest) { lastWho = newest.who; lastTab = newest.tab || ""; }
     $("activity").replaceChildren(...items.map((a) => el("li", {}, el("time", { textContent: clock(a.t) }), el("span", {}, ...(activityHead(a) ? [el("strong", { textContent: `${activityHead(a)}: ` })] : []), rich(a.text)))));
     setDriver();
     if (!unseen()) armDrive();
     drawAgent();
+    drawPause();
     // The list changes only when the active agent does.
     if (activeEntry() !== was) drawPeople();
     checklistStale = true;
@@ -610,6 +654,7 @@ function connect(url) {
     const messages = Array.isArray(b?.messages) ? b.messages : [];
     $("session").hidden = !messages.length;
     lastBoard = { people: all, messages };
+    drawPause();
     drawPeople();
     drawAgent();
     drawHeader();
@@ -622,8 +667,7 @@ function connect(url) {
     document.body.dataset.paused = String(paused);
     $("pause").hidden = false;
     $("pause-btn").hidden = !p?.can;
-    $("pause-btn").textContent = paused ? "Resume" : "Pause";
-    $("pause-btn").setAttribute("aria-label", paused ? "Resume agents" : "Pause agents");
+    drawPause();
     $("pause-text").replaceChildren(...(paused ? [document.createTextNode("Paused by "), el("b", { textContent: p.by || "someone" })] : [document.createTextNode("Agents can act in the browser")]));
     setDriver();
     drawPeople();
@@ -701,7 +745,7 @@ function sleepTimers() {
 function wakeTimers() {
   if (unseen()) return;
   setDriver();
-  if (Date.now() - lastActivity < DRIVING_MS) armDrive();
+  if (Date.now() - cardActedAt() < DRIVING_MS) armDrive();
   if (checklistStale) scheduleChecklist();
   if (recording) drawRecord();
   if (document.body.dataset.tab === "pictures") showPictures();

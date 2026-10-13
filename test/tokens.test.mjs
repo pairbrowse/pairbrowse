@@ -138,7 +138,8 @@ const colorsIn = (v) => [...String(v).matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*
 test("the active tab's colors and the 10 px size are the mockup's", () => {
   assert.deepEqual([norm(dark["tab-top"]), norm(dark["edge-tab"]), norm(dark["tab-lit"]), dark["fs-0"]], ["#1b365f", "#2493ed", "#55baf2", "10px"]);
   const sizes = Object.entries(dark).filter(([k]) => /^fs-\d$/.test(k)).map(([, v]) => v);
-  assert.deepEqual(sizes, ["10px", "11px", "12px", "13px"]);
+  // B11's scale: 10 (the timeline's time and caption) to 20 (page titles).
+  assert.deepEqual(sizes, ["10px", "11px", "12px", "13px", "14px", "17px", "20px"]);
   assert.ok(contrast(dark["ink-2"], dark["tab-top"]) >= 4.5 && contrast(dark.ink, dark["tab-top"]) >= 4.5, "the active tab's text stays AA");
 });
 
@@ -271,4 +272,57 @@ test("inkOn: the dark ink on every participant color, white on a dark fill, whic
   }
   assert.equal(inkOn("var(--spark)"), INK_DARK, "not a color: the dark ink");
   assert.equal(inkOn(""), INK_DARK);
+});
+
+// ---- one spacing, size and type scale (545, DESIGN.md Part G) ----
+// Only the page sheets under ui/ (the live view has its own rhythm).
+const UI_CSS = ALL_CSS.filter((f) => f.startsWith(UI));
+// A line that keeps a measured value says so: /* mockup ... */ (the mockup's pixels, Part B) or
+// /* native ... */ (a size the browser sets).
+const exempt = (line) => /\/\*\s*(mockup|native)\b/.test(line);
+// Function calls (calc, var, min, max) are left whole: their parts are tokens, or a 1 px border
+// taken off one; what is left must be 0, 1, 2 or a multiple of 4 px.
+const flat = (v) => { let out = "", depth = 0; for (const ch of v) { if (ch === "(") depth++; if (!depth) out += ch; if (ch === ")") { depth--; if (!depth) out += "0"; } } return out; };
+const onGrid = (v) => !/^-?\d*\.?\d+px$/.test(v) || [0, 1, 2].includes(Math.abs(Number.parseFloat(v))) || Number.parseFloat(v) % 4 === 0;
+const SPACING = /(?:^|[;{\s])((?:padding|margin)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?|gap|row-gap|column-gap|top|right|bottom|left|height|min-height)\s*:\s*([^;}]+)/g;
+
+test("spacing on the 4 px grid: every padding, margin, gap, offset and height in the pages", () => {
+  const off = [];
+  for (const f of UI_CSS) {
+    read(f).split("\n").forEach((line, i) => {
+      if (exempt(line)) return;
+      const code = line.replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const [, prop, value] of code.matchAll(SPACING)) {
+        const parts = flat(value.trim().replace(/\s*!important$/, "")).split(/[\s,/]+/);
+        if (parts.some((v) => !onGrid(v))) off.push(`${f}:${i + 1} ${prop}: ${value.trim()}`);
+      }
+    });
+  }
+  assert.deepEqual(off, [], "a value off the grid takes a token or a 4 px step, or says /* mockup */ or /* native */ on its line");
+  // The scale is in the sheet, and the docks share one content edge (gutter + inset = 20 px).
+  for (const [k, v] of Object.entries({ "sp-1": "4px", "sp-2": "8px", "sp-3": "12px", "sp-4": "16px", "sp-5": "20px", "sp-6": "24px", "sp-8": "32px", "dock-gutter": "8px", "dock-inset": "12px", ctl: "32px", "ctl-sm": "28px", "ctl-xs": "24px", "ctl-strip": "34px", "row-nav": "36px", "row-person": "44px", "row-peer": "56px", "row-check": "30px", icon: "16px", "t-hover": "120ms ease-out" })) {
+    assert.equal(dark[k], v, `--${k}`);
+  }
+  assert.equal(parseFloat(dark["dock-gutter"]) + parseFloat(dark["dock-inset"]), 20, "the docks' shared content edge is 20 px in");
+});
+
+test("font sizes come from the sheet: every font-size and font shorthand size is var(--fs-*)", () => {
+  const off = [];
+  for (const f of UI_CSS) {
+    read(f).split("\n").forEach((line, i) => {
+      const code = line.replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const [, v] of code.matchAll(/(?:^|[;{\s])font-size\s*:\s*([^;}]+)/g)) if (!/^var\(--fs-\d\)$/.test(v.trim()) && v.trim() !== "inherit") off.push(`${f}:${i + 1} font-size: ${v.trim()}`);
+      for (const [, raw] of code.matchAll(/(?:^|[;{\s])font\s*:\s*([^;}]+)/g)) {
+        const v = raw.trim();
+        if (v === "inherit" || /^var\(--[a-z-]+\)$/.test(v)) continue;
+        const size = v.replace(/^(?:(?:normal|italic|[1-9]\d0|bold|var\(--fw-[a-z]+\))\s+)*/, "").split(/[\s/]/)[0];
+        if (!/^var\(--fs-\d\)$/.test(size)) off.push(`${f}:${i + 1} font: ${v}`);
+      }
+    });
+  }
+  assert.deepEqual(off, []);
+});
+
+test("hover colors change in the sheet's 120 ms (--t-hover), not a literal", () => {
+  for (const f of UI_CSS) assert.doesNotMatch(read(f), /\b120ms\b/, `${f}: transition durations come from --t-hover or --t`);
 });

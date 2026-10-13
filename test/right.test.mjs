@@ -123,6 +123,8 @@ async function fakeLiveView() {
   const streams = new Set();
   const posts = [];
   const counts = { journal: 0 };
+  // A route's own answer, when a test sets one: [status, body].
+  const replies = {};
   const server = createServer((req, res) => {
     const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
@@ -143,6 +145,8 @@ async function fakeLiveView() {
         let parsed = null;
         try { parsed = JSON.parse(body || "null"); } catch {}
         posts.push({ route: path.slice(3), body: parsed });
+        const own = replies[path.slice(3)];
+        if (own) { res.writeHead(own[0], { ...cors, "content-type": "application/json" }); return res.end(JSON.stringify(own[1])); }
         // The Share card's invite: the helper's refusal while no name is known, then a code.
         if (path === "/k/invite") {
           const named = typeof parsed?.name === "string" && parsed.name;
@@ -161,7 +165,7 @@ async function fakeLiveView() {
   const base = `http://127.0.0.1:${server.address().port}/k/`;
   const push = (event, data) => { for (const res of streams) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
   const close = () => { for (const res of streams) res.destroy(); server.close(); };
-  return { base, posts, push, close, streams, counts };
+  return { base, posts, push, close, streams, counts, replies };
 }
 
 // chrome.storage as the side panel has it: session holds the live view address; local is kept
@@ -269,9 +273,16 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.equal(v.sessionHidden, false);
     assert.equal(v.people.length, 5, "everyone else, the active agent not repeated");
     assert.ok(!v.people.some((p) => /^Claude/.test(p)), "the active agent is on the card only");
-    assert.ok(v.people.some((p) => p.startsWith("Alice · Codex") && p.includes("waiting for their person")), "name, app, state in words");
+    // The state in the left dock's words (common.js agentWords): Alice's agent is in this browser.
+    assert.ok(v.people.some((p) => p.startsWith("Alice · Codex") && p.includes("Waiting for you")), "name, app, state in words");
     assert.ok(await page.evaluate(() => [...document.querySelectorAll("#people .st")].some((s) => s.title.includes("shop.example/cart"))), "the tab in the line's title");
-    assert.ok(v.people.some((p) => p.startsWith("Sam · Claude Code") && p.includes("done") && p.includes("Sam's browser")), "where");
+    assert.ok(v.people.some((p) => p.startsWith("Sam · Claude Code") && p.includes("Done") && p.includes("Sam's browser")), "where");
+    // The side panel has no left dock or strip: it keeps the people's rows (the plain-Chromium
+    // guard of DESIGN.md Part G), the Live pill while the agent drives and Share in the session card.
+    assert.ok(v.people.some((p) => p.startsWith("Sam (by hand)") && p.includes("Online")), "a person's row, Online");
+    assert.equal(await page.evaluate(() => document.getElementById("status-live").checkVisibility()), true, "the Live pill while driving");
+    assert.equal(await page.evaluate(() => document.getElementById("share-btn").checkVisibility()), true, "Share in the session card");
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.host), "extension");
     assert.ok(v.people.some((p) => p.startsWith("Gemini · Gemini CLI") && p.includes("Checking prices")));
     assert.equal(await page.evaluate(() => document.querySelector("#people .app")?.textContent), " · Codex", "the app, apart from the name");
 
@@ -337,6 +348,13 @@ test("the panel, fed by the owner stream: header, agent card, people, pause, req
     assert.deepEqual(JSON.parse(await inPage(page, () => localStorage.getItem("__store"))), { "pb-panel": { collapsed: ["dev", "hosts", "details", "secrets"] } });
     // Keyboard: a disclosure takes focus and toggles with Enter (Remembered details is on the Tools tab).
     await page.click("#tab-tools");
+    // Every Tools section in the side panel (no Settings page here): the profile sections stay and
+    // the Settings row is the browser's only.
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#pane-tools .scroll > section")].map((sec) => sec.id)),
+      ["sec-handoffs", "sec-downloads", "sec-recordings", "dev", "hosts", "sec-details", "sec-secrets", "sec-settings-link", "sec-diag"]);
+    assert.deepEqual(await page.evaluate(() => ["sec-details", "sec-secrets", "sec-settings-link"].map((id) => document.getElementById(id).checkVisibility())), [true, true, false]);
+    lv.push("joinhost", { asks: [], hosts: [{ host: "tunnel.example.org", always: true }] });
+    await until(page, "Join addresses", () => document.getElementById("hosts").checkVisibility());
     await page.focus("#sec-details .disclose");
     await page.keyboard.press("Enter");
     assert.deepEqual((await fold()).details, { expanded: "true", hidden: false });
@@ -414,6 +432,9 @@ test("Share makes an invite from the panel by keyboard, and the Checklist reads 
     assert.equal(await page.evaluate(() => document.activeElement.value), "code", "focus on the first choice");
     assert.equal(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), "solid", "visible focus on the radio");
     assert.equal(await page.evaluate(() => document.getElementById("share-result").hidden), true, "nothing more until a result");
+    // The card opens above the session card, never over its own button.
+    const at = await page.evaluate(() => ({ card: document.getElementById("share-card").getBoundingClientRect().bottom, btn: document.getElementById("share-btn").getBoundingClientRect().top }));
+    assert.ok(at.card <= at.btn, `the card opens above the session card (${at.card} <= ${at.btn})`);
 
     // A synthetic click makes nothing; the first real Make asks for a first name.
     await inPage(page, () => document.getElementById("share-make").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
@@ -450,6 +471,16 @@ test("Share makes an invite from the panel by keyboard, and the Checklist reads 
     await page.click("#share-btn");
     await page.click("#share-btn");
     assert.equal(await page.evaluate(() => document.getElementById("share-card").hidden), true, "the button closes it again");
+
+    // A helper without the session route (404): Save goes away and the focus moves to Share
+    // (the side panel's), never lost to the body.
+    lv.push("session", { name: "Checkout test", where: "Local", temporary: false, canSave: true });
+    await until(page, "Save", () => document.getElementById("session-save").checkVisibility());
+    lv.replies.session = [404, { error: "Not found" }];
+    await page.click("#session-save");
+    await until(page, "Save hidden", () => document.getElementById("session-save").hidden);
+    assert.equal(await active(), "share-btn", "Save 404 moves focus to Share");
+    delete lv.replies.session;
 
     // Checklist: open by default; an action reads it again (the last read was over 5 s ago),
     // rows in glyph and words.
@@ -511,5 +542,36 @@ test("reduced motion: no pulse, no card drop, the chevron turns at once", { skip
     assert.equal(moving, "pulse", "the pulse is there when motion is allowed");
   } finally {
     await browser.close();
+  }
+});
+
+test("the card works on its own agent's actions only: a joiner's line, a note or another browser's agent leave it Idle", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const browser = await chromium.launch();
+  const lv = await fakeLiveView();
+  try {
+    const { page, errors } = await openPanel(browser, { base: lv.base });
+    await until(page, "the stream", () => document.body.dataset.s === "live");
+    for (let i = 0; i < 50 && !lv.streams.size; i++) await page.waitForTimeout(50);
+    const t = Date.now();
+    lv.push("board", { people: PEOPLE, messages: [] });
+    const lines = [{ t: t - 60_000, text: "Typed into **Email**", who: "Claude", tab: "Checkout" }];
+    lv.push("activity", lines);
+    await until(page, "the card", () => document.getElementById("agent-name").textContent === "Claude");
+    const driver = () => page.evaluate(() => document.getElementById("driver-text").textContent);
+    assert.equal(await driver(), "Idle");
+    lines.push({ t: Date.now(), text: "Clicked **Next**", who: "Alice", tab: "Checkout", from: "inv:alice" },
+      { t: Date.now(), text: "Note: check the totals", who: "Bob", tab: "" },
+      { t: Date.now(), text: "Opened **Docs**", who: "Sam · Claude Code", tab: "Docs", from: "joined" });
+    lv.push("activity", lines);
+    await until(page, "the lines", () => document.getElementById("activity").children.length === 4);
+    assert.equal(await driver(), "Idle", "listed, but not the card's agent's");
+    assert.equal(await page.evaluate(() => document.getElementById("agent-name").textContent), "Claude");
+    lv.push("activity", [...lines, { t: Date.now(), text: "Typed into **Name**", who: "Claude", tab: "Checkout" }]);
+    await until(page, "working", () => document.getElementById("driver-text").textContent === "Working…");
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    lv.close();
   }
 });

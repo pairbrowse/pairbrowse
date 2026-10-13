@@ -238,6 +238,9 @@ describe("close and new tab", () => pageTest("strip", { viewport: ROW }, async (
   await until("two tabs", () => document.querySelectorAll("#tabs li").length === 2);
   assert.deepEqual(await callsOf(shim, "tabs", "close"), [[11]]);
   await until("tab 12 active", () => document.querySelector('#tabs li[data-id="12"]').getAttribute("aria-selected") === "true");
+  // The + sits on the tabs' centre line (the user saw it ride high on the row's).
+  const mid = await inPage(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); const t = r("#tabs li"), n = r("#new"); return [t.top + t.height / 2, n.top + n.height / 2]; });
+  assert.ok(Math.abs(mid[0] - mid[1]) <= 1, `+ centre ${mid[1]} vs tab centre ${mid[0]}`);
   await page.click("#new");
   await until("a new tab", () => document.querySelectorAll("#tabs li").length === 3);
   assert.deepEqual(await callsOf(shim, "tabs", "create"), [["", true, 1]]);
@@ -614,17 +617,34 @@ describe("reduced motion and no timers", () => pageTest("strip", { viewport: ROW
 }));
 
 // The browser's tab-row slot is 53 px tall and clips the rest: a popover under the row would open
-// unseen and take the keyboard focus with it. There the logo opens the picker as a tab, Share opens
-// the workspace dock's Share card, the menu is not shown, and nothing under the row ever opens.
-describe("in the 53 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1 } } }, async ({ page, shim, inPage, until }) => {
+// unseen and take the keyboard focus with it. There the logo opens the workspace dock's session
+// switcher (the picker as a tab when no dock answers), Share opens the workspace dock's Share card,
+// the menu is not shown, and nothing under the row ever opens.
+describe("in the 53 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1 } } }, async ({ page, shim, inPage, until, harness }) => {
   const under = () => ["switcher", "share-card", "menu"].filter((id) => !document.getElementById(id).hidden);
   const insidePopover = () => !!document.activeElement?.closest?.("#switcher, #share-card, #menu");
   assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), false, "no menu without room for it");
   for (const id of ["switch", "share-btn"]) assert.equal(await page.getAttribute(`#${id}`, "aria-expanded"), null, `${id}: no popover to expand`);
-  assert.match(await page.getAttribute("#switch", "aria-label"), /opens the session picker in a new tab/);
+  assert.equal(await page.getAttribute("#switch", "aria-label"), "PairBrowse: switch session (opens the session switcher in the workspace)");
+  // The logo (DESIGN.md Part G: the one switch-session home): the left dock opens and its switcher
+  // is asked for, over the same channel as Share; a dock that answers keeps it there (no tab).
+  await inPage(() => { window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => { window.__asked.push(e.data); if (e.data?.open === "switch") ch.postMessage({ opened: "switch", window: e.data.window }); }; });
   await page.click("#switch");
-  await page.waitForTimeout(50);
+  await until("the switch ask", () => window.__asked.length === 1);
+  assert.deepEqual(await inPage(() => window.__asked), [{ open: "switch", window: 1 }]);
+  assert.equal((await callsOf(shim, "layout", "set")).at(-1)[0].left, 2, "the left dock opens first");
+  await page.waitForTimeout(1300); // past SHARE_WAIT_MS
+  assert.deepEqual(await callsOf(shim, "tabs", "create"), [], "answered: no picker tab");
+  assert.equal((await harness.live()).timeouts, 0, "its one-shot timer is gone once answered");
+  // No dock answers (another host, or none listening): the picker as a tab, as before.
+  // Before the tab opens the ask is withdrawn, so a dock whose open layout lands later never
+  // opens a second switcher.
+  await inPage(() => { window.__dock.close(); window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => window.__asked.push(e.data); });
+  await page.click("#switch");
+  await until("the picker tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
   assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://picker", true, 1]]);
+  await until("the withdrawn ask", () => window.__asked.length === 2);
+  assert.deepEqual(await inPage(() => (window.__dock.close(), window.__asked)), [{ open: "switch", window: 1 }, { cancel: "switch", window: 1 }]);
   assert.deepEqual(await inPage(under), []);
   assert.equal(await inPage(insidePopover), false);
   // Share: the left dock opens (it was a rail), then its Share card is asked for this window.
@@ -793,4 +813,31 @@ describe("agent-tabs clear only this page's owners, across a reload", () => page
   await page.reload();
   await until("the clear", () => (window.__pairbrowse?.calls || []).some((c) => c.iface === "agent" && c.method === "clear"));
   assert.deepEqual(await owners(), [["clear", 21]]);
+}));
+
+// The tab order for the helper (scripts/daemon/taborder.mjs): every window's tabs by CDP target,
+// posted once per burst of tab or focus events (a microtask, no timer), and the helper's arrange
+// request moving only this window's tabs among the places they hold.
+describe("reports the tab order and arranges this window's tabs", () => pageTest("strip", { viewport: ROW }, async ({ helper, shim, inPage, until, harness }) => {
+  const reports = () => helper.posts.filter((p) => p.route === "tab-order").map((p) => p.body);
+  for (let i = 0; i < 60 && !reports().length; i++) await new Promise((r) => setTimeout(r, 50));
+  assert.equal(reports().length, 1, "one report once connected");
+  assert.deepEqual(reports()[0], { tabs: [{ target: "T11", window: 1, index: 0, active: true }, { target: "T12", window: 1, index: 1, active: false }, { target: "T13", window: 1, index: 2, active: false }], focused: 1, last: 1 });
+  // A burst: a move and an activation in one task, one report.
+  await inPage(() => { window.__pairbrowse.tabs.move(13, 0, -1); window.__pairbrowse.tabs.activate(12); });
+  for (let i = 0; i < 60 && reports().length < 2; i++) await new Promise((r) => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(reports().length, 2, "one report for the burst");
+  assert.deepEqual(reports()[1].tabs.map((t) => [t.target, t.index, t.active]).sort(), [["T11", 1, false], ["T12", 2, true], ["T13", 0, false]]);
+  // Another window's tab, then the helper asks for an order: only this window's tabs move.
+  await shim.setWindow({ id: 2 });
+  await shim.createTab({ url: "https://other.example/", title: "Other", window: 2, active: true });
+  await new Promise((r) => setTimeout(r, 200));
+  const other = (await shim.fixture()).tabs.find((t) => t.window === 2);
+  helper.push("tab-order", { op: "arrange", targets: ["T12", other.targetId, "T11", "T13"] });
+  await until("arranged", () => { const t = window.__pairbrowse.fixture.tabs.filter((x) => x.window === 1).sort((a, b) => a.index - b.index).map((x) => x.id); return t.join() === "12,11,13"; });
+  const moves = (await shim.calls()).filter((c) => c.iface === "tabs" && c.method === "move").map((c) => c.args[0]);
+  assert.ok(!moves.includes(other.id), "the other window's tab stays");
+  assert.equal((await shim.fixture()).tabs.find((t) => t.id === other.id).index, 0);
+  assert.equal((await harness.live()).timeouts ?? 0, 0, "no timer");
 }));

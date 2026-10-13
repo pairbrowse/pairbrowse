@@ -325,6 +325,15 @@
   let barPerson = ""; // who is using this tab (empty: you)
   let barReconnecting = ""; // the host this shared tab is being reconnected to (empty: the channel is up)
   let barRecording = false; // this browser's recorder runs (the helper sends it to its own pages only)
+  // Docked (the helper says so, kind "docked", only in the PairBrowse browser with its own pages):
+  // the window's agent panel carries the bar's duties (who drives, the steps, Pause) and the
+  // agent's status, so the bar draws only a join request's card and the badge only "your turn"
+  // (DESIGN.md Part G). What no dock carries stays as a note at the page's bottom left: the agent
+  // waiting while a person uses the browser, a shared tab reconnecting, who paused, and REC.
+  // Outside it nothing changes. No listener, timer or observer of its own.
+  let docked = false;
+  let lastBadge = null; // the badge's last { text, kind }, drawn again when docked changes
+  const panelName = () => (docked ? "agent panel" : "side panel");
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const rich = (t) => esc(t).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/`([^`]*)`/g, "<code>$1</code>");
   // "Alice" -> "Alice's Claude". Unnamed ("Claude 3fed") and app-labelled ("Alice · Codex") stay as they are.
@@ -370,6 +379,13 @@
       .bar.paused{background:rgba(11,20,33,.96);border-top-color:#F4B45D}
       .bar.paused .pz{background:#F4B45D;color:#0B1421}
       .bar.asking{background:#0B1421}
+      .bar.docked{height:0;padding:0;border:0;background:none}
+      .bar.docked>.who,.bar.docked>ol,.bar.docked>.pz{display:none}
+      .bar.docked .jq{bottom:12px}
+      .bar.docked.note{height:30px;padding:0 14px;width:max-content;max-width:100%;border-top:1px solid #293B50;border-right:1px solid #293B50;border-radius:0 8px 0 0;background:rgba(11,20,33,.96)}
+      .bar.docked.note>.who{display:flex}
+      .bar.docked.note .jq{bottom:40px}
+      .bar.reconly .who>.dot,.bar.reconly .who>span:not(.rec){display:none}
       .jq{position:absolute;right:12px;bottom:40px;display:flex;flex-direction:column;gap:9px;box-sizing:border-box;max-width:min(420px,70vw);
         padding:12px 34px 12px 14px;border-radius:10px;background:rgba(25,42,61,.97);box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35);
         pointer-events:auto;cursor:default;font:600 12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#F1F5FA}
@@ -426,18 +442,28 @@
     if (d) d.style.background = barReconnecting && !barPause ? "#8699B1" : sparkAgent || "#e9763f";
   }
   function drawBar() {
+    bar.classList.toggle("docked", docked);
+    const x = bar.querySelector(".jq .x");
+    if (x) x.title = `Dismiss (it stays in the ${panelName()})`;
     const driving = barItems.length && Date.now() - barItems.at(-1).t < 8000;
     bar.classList.toggle("driving", !!driving);
     const who = barItems.length ? whose(barItems.at(-1).who) : "Claude";
     bar.classList.toggle("paused", !!barPause);
+    paintDot();
+    bar.querySelector(".rec").hidden = !barRecording;
+    // Docked: the who line only for what no dock shows (a wait, a reconnect, a pause, REC; REC
+    // alone shows only its chip, never a driving line that would go stale without the re-check).
+    const note = docked && !!(barWaiting || barReconnecting || barRecording || barPause);
+    bar.classList.toggle("note", note);
+    bar.classList.toggle("reconly", note && !barWaiting && !barReconnecting && !barPause);
+    if (barPause) bar.querySelector(".who span").innerHTML = html(`Paused by <b>${esc(barPause.by)}</b>${barCanPause && !docked ? " \u00b7" : ""}`);
+    else if (barReconnecting) bar.querySelector(".who span").innerHTML = html(`Reconnecting to <b>${esc(barReconnecting)}</b>…`);
+    else bar.querySelector(".who span").innerHTML = html(barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`);
+    // Docked: no steps and no Pause (the docks' own), so nothing more is drawn or re-checked.
+    if (docked) { clearTimeout(barTimer); barTimer = 0; return; }
     const pz = bar.querySelector(".pz");
     pz.hidden = !barCanPause;
     pz.textContent = barPause ? "Resume" : "Pause agents";
-    paintDot();
-    bar.querySelector(".rec").hidden = !barRecording;
-    if (barPause) bar.querySelector(".who span").innerHTML = html(`Paused by <b>${esc(barPause.by)}</b>${barCanPause ? " \u00b7" : ""}`);
-    else if (barReconnecting) bar.querySelector(".who span").innerHTML = html(`Reconnecting to <b>${esc(barReconnecting)}</b>…`);
-    else bar.querySelector(".who span").innerHTML = html(barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`);
     // Oldest to newest, the newest at the right next to Pause agents. Each chip's state comes from
     // the bar's own lines: a failure says so, the newest is under way while the agent drives (or
     // its line says "Now:"), the rest are done. The glyph's shape says it too, not its color alone.
@@ -476,7 +502,10 @@
     // (and a click on Allow then wouldn't count).
     const card = joins.size ? bar?.querySelector(".jq") : null;
     const lift = card && !card.hidden ? card.offsetHeight + 8 : 0;
-    hostPlace.textContent = barHost?.isConnected ? `:host{bottom:${42 + lift}px !important}${lift ? ".b{box-shadow:0 0 0 1px #293B50 !important}" : ""}` : "";
+    // Above the 30 px bar (12 px clear), or, docked, at the page's corner where the bar's card sits
+    // (above the docked note while one shows).
+    const note = docked && !!bar?.classList.contains("note");
+    hostPlace.textContent = barHost?.isConnected ? `:host{bottom:${(docked && !note ? 12 : 42) + lift}px !important}${lift ? ".b{box-shadow:0 0 0 1px #293B50 !important}" : ""}` : "";
   }
 
   // Someone asks to join the session (shown on the host's tab in front only, when the browser has
@@ -506,12 +535,12 @@
       const id = joinShown;
       if (!e.isTrusted || !(e.detail > 0) || !id || !joins.has(id)) return;
       if (now() - joinAt < JOIN_ARM_MS) return;
-      if (!joinVisible) return joinHint("covered: answer in the side panel");
+      if (!joinVisible) return joinHint(`covered: answer in the ${panelName()}`);
       if (answeredCount < 5) { answered = { t: now(), kind, what: id, next: answered }; answeredCount++; }
       for (const b of jq.querySelectorAll("button")) b.disabled = true;
       joinHint(kind === "join-allow" ? "letting them in…" : "");
       // Not answered after a moment (the helper didn't take the click): back to the buttons.
-      setTimeout(() => { if (joinShown === id && joins.has(id)) { for (const b of jq.querySelectorAll("button")) b.disabled = false; joinHint("didn't go through: use the side panel"); } }, 3000);
+      setTimeout(() => { if (joinShown === id && joins.has(id)) { for (const b of jq.querySelectorAll("button")) b.disabled = false; joinHint(`didn't go through: use the ${panelName()}`); } }, 3000);
     };
     for (const b of jq.querySelectorAll("button, .x")) b.addEventListener("mousedown", (e) => e.preventDefault()); // never takes focus from the page
     jq.querySelector(".ok").addEventListener("click", answer("join-allow"));
@@ -568,7 +597,7 @@
     const more = ids.length - 1;
     const m = jq.querySelector(".m");
     m.hidden = !more;
-    m.textContent = more ? `+${more} more in the side panel` : "";
+    m.textContent = more ? `+${more} more in the ${panelName()}` : "";
     placeBadge();
   }
   function joinOff(id) {
@@ -882,6 +911,16 @@
       setBar(text);
       return true;
     }
+    if (kind === "docked") {
+      let on = false;
+      try { on = JSON.parse(String(text || "null"))?.on === true; } catch {}
+      if (on === docked) return true; // no change: a badge the person hid stays hidden
+      docked = on;
+      if (bar) drawBar();
+      if (lastBadge) badge(lastBadge.text, lastBadge.kind);
+      else placeBadge();
+      return true;
+    }
     if (kind === "join") return joinOn(text);
     if (kind === "join-off") return joinOff(String(text || ""));
     if (kind === "join-state") return joinState();
@@ -894,11 +933,17 @@
       spark(String(text || ""));
       return true;
     }
-    // The badge's text, plain or as data with the agent's spark color ({ text, color }), never
-    // through JSON.parse.
+    return badge(text, kind);
+  }
+
+  // The badge's text, plain or as data with the agent's spark color ({ text, color }), never
+  // through JSON.parse. Docked, only "your turn" shows: the person must act in the page, and the
+  // agent panel may be a rail or hidden; the agent's status is the panel's Status box.
+  function badge(text, kind) {
     const label = text && typeof text === "object" ? String(text.text || "") : text;
     const edge = text && typeof text === "object" && /^#[0-9a-f]{6}$/i.test(text.color || "") ? text.color : "";
-    if (!label) {
+    lastBadge = label ? { text, kind } : null;
+    if (!label || (docked && kind !== "you")) {
       host?.remove();
       return true;
     }

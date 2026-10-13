@@ -110,14 +110,15 @@ if (!pb) for (const id of ["zoom", "settings", "about", "new-window"]) $(id).hid
 
 // ---- a page no taller than the row (the browser's 53 px tab-row slot, which clips the rest):
 // nothing can open under the row until the browser hosts the popovers as bubbles. The logo opens
-// the session picker as a tab, Share opens the Share card of the workspace dock (the left dock,
-// opened if it is not), and the menu, which has no surface there, is not shown. Each runs in the
+// the session switcher of the workspace dock and Share its Share card (the left dock, opened if it
+// is not: one surface each, DESIGN.md Part G); with no answer from the dock the logo falls back to
+// the session picker as a tab. The menu, which has no surface there, is not shown. Each runs in the
 // capture phase, ahead of the popover's own click handler, so no popover opens unseen and no
 // focus moves into one. ----
 const ROW_ONLY = 60; // px: taller than the 53 px row, shorter than any popover
 const inSlot = () => !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
 const SHARE_CHANNEL = "pairbrowse-share";
-const SLOT_LABELS = { switch: "PairBrowse: switch session (opens the session picker in a new tab)", share: "Share this session (opens the Share card in the workspace)" };
+const SLOT_LABELS = { switch: "PairBrowse: switch session (opens the session switcher in the workspace)", share: "Share this session (opens the Share card in the workspace)" };
 function slotControls() {
   const slot = inSlot();
   for (const [id, popover] of [["switch", "switcher"], ["share-btn", "share-card"]]) {
@@ -129,33 +130,49 @@ function slotControls() {
   else { $("switch").setAttribute("aria-label", "PairBrowse: switch session"); $("share-btn").removeAttribute("title"); }
   menuBtn.hidden = slot;
 }
-$("switch").addEventListener("click", (e) => {
+// Opens the workspace dock (the left), as Share does, before it asks over the channel.
+async function openLeftDock() {
+  if (!pb) return;
+  try {
+    const { state } = await pb.layout.get();
+    if (state.left !== pb.DockState.kOpen) await pb.layout.set({ ...state, left: pb.DockState.kOpen });
+  } catch {}
+}
+$("switch").addEventListener("click", async (e) => {
   if (!inSlot()) return;
   e.stopImmediatePropagation();
-  if (pb) pb.tabs.create("pairbrowse://picker", true, myWindow).catch(() => {});
+  await openLeftDock();
+  // The dock answers {opened: "switch"}; with no answer in SHARE_WAIT_MS (no dock in this window,
+  // or none listening) the picker opens as a tab, as before. One timer, armed by a click only.
+  // The fallback first withdraws the ask, so a dock whose open layout comes later never opens a
+  // second switcher.
+  clearTimeout(switchWait);
+  switchWait = setTimeout(() => {
+    switchWait = 0;
+    try { shareChannel?.postMessage({ cancel: "switch", window: myWindow }); } catch {}
+    if (pb) pb.tabs.create("pairbrowse://picker", true, myWindow).catch(() => {});
+  }, pb ? SHARE_WAIT_MS : 0);
+  try { shareChannel?.postMessage({ open: "switch", window: myWindow }); } catch {}
 }, true);
 $("share-btn").addEventListener("click", async (e) => {
   if (!inSlot()) return;
   $("share-note").textContent = "";
   e.stopImmediatePropagation();
-  if (pb) {
-    try {
-      const { state } = await pb.layout.get();
-      if (state.left !== pb.DockState.kOpen) await pb.layout.set({ ...state, left: pb.DockState.kOpen });
-    } catch {}
-  }
+  await openLeftDock();
   // The card opens in another part of the window: said only once the dock says it opened it (the
   // focus stays here); with no answer, what to do instead.
   clearTimeout(shareWait);
   shareWait = setTimeout(() => { shareWait = 0; $("share-note").textContent = `Open the workspace dock to share (${mac ? "⌘⇧L" : "Ctrl+Shift+L"})`; }, pb ? SHARE_WAIT_MS : 0);
   try { shareChannel?.postMessage({ open: "share", window: myWindow }); } catch {}
 }, true);
-let shareChannel = null, shareWait = 0;
+let shareChannel = null, shareWait = 0, switchWait = 0;
 const SHARE_WAIT_MS = 1000;
 try {
   shareChannel = new BroadcastChannel(SHARE_CHANNEL);
   shareChannel.onmessage = (e) => {
-    if (e.data?.opened !== "share" || e.data.window !== myWindow || myWindow === -1) return;
+    if (e.data?.window !== myWindow || myWindow === -1) return;
+    if (e.data?.opened === "switch") { clearTimeout(switchWait); switchWait = 0; return; }
+    if (e.data?.opened !== "share") return;
     clearTimeout(shareWait); shareWait = 0;
     $("share-note").textContent = "Share card opened in the workspace dock (F6)";
   };
@@ -486,7 +503,57 @@ function connect(url) {
   if (!pb) {
     on("tabs", renderFallback);
     on("layout", (l) => drawSparkle(l?.right === "open"));
-  } else on("agent-tabs", applyAgentTabs);
+  } else {
+    on("agent-tabs", applyAgentTabs);
+    on("tab-order", (m) => { if (m?.op === "arrange" && Array.isArray(m.targets)) arrangeOrder(m.targets); });
+    reportOrder();
+  }
+}
+
+// ---- the tab order, for the helper (scripts/daemon/taborder.mjs): every window's tabs by CDP
+// target, the focused window and the last one focused. Sent on the tab and focus events only,
+// at most once per burst of them (a microtask, no timer); the helper drops a repeat. ----
+let lastFocused = -1;
+let orderQueued = false;
+function reportOrder() {
+  if (!pb || !base || orderQueued) return;
+  orderQueued = true;
+  queueMicrotask(async () => {
+    orderQueued = false;
+    try {
+      const [{ tabs: all }, { windows }] = await Promise.all([pb.tabs.list(), pb.windows.list()]);
+      const focused = windows.find((w) => w.focused)?.id ?? -1;
+      if (focused !== -1) lastFocused = focused;
+      const list = all.filter((t) => typeof t.targetId === "string" && t.targetId).slice(0, 500)
+        .map((t) => ({ target: t.targetId, window: t.window, index: t.index, active: !!t.active }));
+      if (base) postJson(base + "tab-order", { tabs: list, focused, last: lastFocused }).catch(() => {});
+    } catch {}
+  });
+}
+// The helper asked for an order (a shared session's host order, by CDP target): this window's
+// tabs among them take the places those tabs hold now, in the order asked; other tabs and other
+// windows stay. One move at a time, each to its final index.
+let arranging = Promise.resolve();
+function arrangeOrder(targets) {
+  if (!pb) return;
+  const want = targets.filter((x) => typeof x === "string").slice(0, 500);
+  arranging = arranging.then(async () => {
+    const { tabs: all } = await pb.tabs.list();
+    const mine = all.filter((t) => t.window === myWindow).sort((a, b) => a.index - b.index);
+    const byTarget = new Map(mine.map((t) => [t.targetId, t]));
+    const asked = [...new Set(want)].map((x) => byTarget.get(x)).filter(Boolean);
+    if (asked.length < 2) return;
+    const isAsked = new Set(asked);
+    let k = 0;
+    const order = mine.map((t) => (isAsked.has(t) ? asked[k++] : t));
+    const now = mine.slice();
+    for (let i = 0; i < order.length; i++) {
+      if (now[i] === order[i]) continue;
+      now.splice(now.indexOf(order[i]), 1);
+      now.splice(i, 0, order[i]);
+      await pb.tabs.move(order[i].id, i, -1);
+    }
+  }).catch(() => {});
 }
 
 // ---- the helper's agent-tabs, written into the browser's owners for this window's tabs ----
@@ -594,19 +661,21 @@ async function start() {
         myWindow = (windows.find((w) => w.current) || windows.find((w) => w.focused) || windows[0])?.id ?? -1;
       }
       pb.tabs.addObserver({
-        onCreated: (t) => { if (t.window === myWindow) { tabs.set(t.id, t); render(); remapAgentTabs(); } },
+        onCreated: (t) => { reportOrder(); if (t.window === myWindow) { tabs.set(t.id, t); render(); remapAgentTabs(); } },
         onChanged: (t) => { if (tabs.has(t.id)) { tabs.set(t.id, t); render(); } },
-        onRemoved: (id) => { if (tabs.delete(id)) { render(); remapAgentTabs(); } },
+        onRemoved: (id) => { reportOrder(); if (tabs.delete(id)) { render(); remapAgentTabs(); } },
         // The browser sends a move for every tab whose index changed (its tabs handler syncs the
         // whole window), so each tab's index here is the browser's own.
         onMoved: (id, index, w) => {
+          reportOrder();
           if (w !== myWindow) tabs.delete(id);
           else if (tabs.has(id)) tabs.get(id).index = index;
           render();
           remapAgentTabs();
         },
-        onActivated: (id, w) => { if (w !== myWindow) return; for (const t of tabs.values()) t.active = t.id === id; render(); },
+        onActivated: (id, w) => { reportOrder(); if (w !== myWindow) return; for (const t of tabs.values()) t.active = t.id === id; render(); },
       });
+      pb.windows.addObserver({ onFocusChanged: (id) => { if (id !== -1) lastFocused = id; reportOrder(); } });
       pb.agent.addObserver({
         onOwnerChanged: (id, agent, color) => {
           const k = String(id);

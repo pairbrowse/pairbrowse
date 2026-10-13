@@ -25,7 +25,9 @@
 </svg>
 <header class="head">
   <button class="dock-btn" id="dock-expand" type="button" aria-label="Expand the workspace" title="Expand the workspace" aria-expanded="false" hidden><svg aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
-  <button class="workspace" id="workspace" type="button" title="Switch session" aria-expanded="false" aria-controls="switcher"><span class="ws-icon" aria-hidden="true"><svg><use href="#i-workspace"/></svg></span><span class="ws-label">Workspace</span><span class="sr">: switch session</span><svg class="chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+  <!-- A title, not a control (DESIGN.md Part G): the strip's logo switches sessions, the Sessions row
+       below lists them; a workspace switcher comes with workspaces. -->
+  <div class="workspace" id="workspace"><span class="ws-icon" aria-hidden="true"><svg><use href="#i-workspace"/></svg></span><span class="ws-label">Workspace</span></div>
   <button class="dock-btn" id="dock-collapse" type="button" aria-label="Collapse the workspace" title="Collapse the workspace" aria-expanded="true" hidden><svg aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
 </header>
 <div id="switcher" class="switcher" role="dialog" aria-label="Switch session" tabindex="-1" hidden><iframe id="picker" title="Session picker"></iframe></div>
@@ -51,7 +53,9 @@
     <ul class="people" id="agents" role="list"></ul>
   </section>
   <section class="sec" id="shared" aria-labelledby="shared-h">
-    <div class="sec-head"><h2 id="shared-h">Shared with</h2><button class="add" id="share-add" type="button" aria-label="Share this session" aria-expanded="false" aria-controls="share-card"><svg aria-hidden="true"><use href="#i-plus"/></svg></button></div>
+    <div class="sec-head"><h2 id="shared-h" tabindex="-1">Shared with</h2></div>
+    <!-- The Share card's one trigger is the strip's Share (DESIGN.md Part G): it opens this dock and
+         asks for the card over the pairbrowse-share channel. -->
     <div class="share-card" id="share-card" role="dialog" aria-labelledby="share-title" hidden>
       <h2 id="share-title">Share this session</h2>
       <fieldset class="share-choice"><legend>Invite</legend>
@@ -63,7 +67,7 @@
       <div class="share-result" id="share-result" hidden><div class="share-line"><input class="field share-code" id="share-code" readonly aria-label="The invite"><button class="mini" id="share-copy" type="button">Copy</button></div><p class="note" id="share-rights"></p></div>
       <p class="msg" id="share-msg" role="status" aria-live="polite"></p>
     </div>
-    <p class="empty-note" id="guests-empty">Not shared yet</p>
+    <p class="empty-note" id="guests-empty">Not shared yet: use Share at the top</p>
     <ul class="people" id="guests" role="list"></ul>
   </section>
 </main>

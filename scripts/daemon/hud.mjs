@@ -58,8 +58,10 @@ const PERSON_MARK_MS = 8000; // a person from the other browser stays marked thi
 // pages(): the open tabs (none while the browser is closed). participants(): ids in the order
 // they joined. labelOf(id): a participant's label ("" when unknown), for its color by app. waiting(page): the person an agent waits for there. liveView(): the live view, if
 // up. notify(text): tells the user it's their turn. pause(): { by, can }: who paused agents (by
-// empty: nobody) and whether the person here may pause and resume (daemon/pause.mjs).
-export function createHud({ pages, participants, labelOf = () => "", waiting, liveView, notify, pause = () => ({ by: "", can: true }) }) {
+// empty: nobody) and whether the person here may pause and resume (daemon/pause.mjs). docked():
+// true while the browser is a PairBrowse build with its own pages (the window's docks carry the
+// bar's duties; scripts/hud.js "docked").
+export function createHud({ pages, participants, labelOf = () => "", waiting, liveView, notify, pause = () => ({ by: "", can: true }), docked = () => false }) {
   // The page script, with names and a key that are new each time the helper starts.
   const { source, name: HUD_NAME, token: HUD_TOKEN } = hudScript();
   let badge = { text: "", kind: "clear", color: "" };
@@ -335,9 +337,12 @@ export function createHud({ pages, participants, labelOf = () => "", waiting, li
     const boxes = (await Promise.all((targets || []).filter((t) => typeof t === "string" && t).slice(0, 40).map((t) => within(400, page.locator(isRef(t) ? `aria-ref=${t}` : t).first().boundingBox().catch(() => null)).catch(() => null)))).filter(Boolean);
     if (boxes.length) await quietly(page, JSON.stringify(boxes.map((b) => ({ x: b.x, y: b.y, w: b.width, h: b.height }))), "targets");
   }
-  // Each page as it loads: the script, then the badge, spark and bar.
+  // Each page as it loads: the script, then the badge, spark and bar. Inside the PairBrowse
+  // browser's own window (docked()), the page first learns that the window's agent panel carries
+  // the bar and the agent's status (scripts/hud.js "docked"); elsewhere no call is made.
   async function onPageLoad(page) {
     await ensure(page);
+    if (docked()) await quietly(page, JSON.stringify({ on: true }), "docked");
     if (badge.text) applyBadge(page);
     if (tabIcon(page)) applySpark(page, tabIcon(page));
     applyBar(page);

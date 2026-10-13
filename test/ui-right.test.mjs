@@ -67,9 +67,11 @@ describe("tabs", () => pageTest("right", opts(), async ({ page, inPage, until, e
   assert.equal(await inPage(() => getComputedStyle(document.querySelector(".top")).display), "none", "the strip owns the header in the build");
   assert.deepEqual(await inPage(() => [...document.querySelectorAll("[role=tab]")].map((t) => [t.textContent, t.getAttribute("aria-selected"), t.tabIndex])),
     [["Agent", "true", 0], ["Page", "false", -1], ["Screenshots", "false", -1], ["Tools", "false", -1]]);
-  // the top of the Agent panel: 10 px under the dock's top, 41 px tall, its labels centred about
-  // 30 px under the dock's top (the mockup: Agent at y 83, the dock from y 53)
-  assert.deepEqual(await inPage(() => { const r = document.querySelector(".tabs").getBoundingClientRect(); return [r.top, r.height]; }), [10, 41]);
+  // the top of the Agent panel: 8 px under the dock's top, 44 px tall, its labels centred 30 px
+  // under the dock's top (the mockup: Agent at y 83, the dock from y 53); the card at the 8 px
+  // gutter and its first label on the shared 20 px edge (545)
+  assert.deepEqual(await inPage(() => { const r = document.querySelector(".tabs").getBoundingClientRect(); return [r.top, r.height, r.left, innerWidth - r.right]; }), [8, 44, 8, 8]);
+  assert.equal(await inPage(() => Math.round(document.getElementById("tab-agent").getBoundingClientRect().left + parseFloat(getComputedStyle(document.getElementById("tab-agent")).paddingLeft))), 20, "the first label 20 px in");
   const mid = await inPage(() => { const r = document.getElementById("tab-agent").getBoundingClientRect(); return r.top + r.height / 2; });
   assert.ok(Math.abs(mid - 30) <= 1, `the tab labels centred 30 px under the dock's top (${mid})`);
   await page.click("#tab-tools");
@@ -88,9 +90,9 @@ describe("tabs", () => pageTest("right", opts(), async ({ page, inPage, until, e
     const b = document.getElementById("dock-collapse"), r = b.getBoundingClientRect(), bar = document.querySelector(".tabs").getBoundingClientRect();
     return { w: r.width, h: r.height, right: r.right, middle: r.top + r.height / 2 - (bar.top + (bar.height - 1) / 2), label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded") };
   });
-  assert.equal(collapse.w, 24);
-  assert.equal(collapse.h, 24);
-  assert.ok(Math.abs(collapse.right - (330 - 17)) <= 1, `right edge ${collapse.right}`); // inside the Agent panel card, where the mockup puts its corner button
+  assert.equal(collapse.w, 28);
+  assert.equal(collapse.h, 28);
+  assert.ok(Math.abs(collapse.right - (330 - 20)) <= 1, `right edge ${collapse.right}`); // on the shared right edge, inside the Agent panel card
   assert.ok(Math.abs(collapse.middle) <= 1, `vertically centered in the bar (${collapse.middle})`);
   assert.equal(collapse.label, "Collapse the agent panel");
   assert.equal(collapse.expanded, "true");
@@ -104,7 +106,10 @@ describe("agent states in words", () => pageTest("right", opts(), async ({ page,
   helper.push("activity", [{ t: Date.now(), text: "Typed into **Email**", who: "Claude", tab: "Checkout" }]);
   await until("working", () => document.getElementById("driver-text").textContent === "Working…");
   assert.equal(await inPage(() => document.getElementById("driver").dataset.state), "working");
-  assert.equal(await inPage(visible, "#status-live"), true, "the Live pill while driving");
+  // One home for Live (DESIGN.md Part G): in the browser the strip's pill says the session is live
+  // and this line says "Working…"; the Status box's Live pill is the side panel's (test/right.test.mjs).
+  assert.equal(await inPage(visible, "#status-live"), false, "no Live pill in the browser, even while driving");
+  assert.equal(await inPage(() => document.getElementById("status-live").hidden), false, "its state is kept (the side panel shows it)");
   assert.equal(await inPage(() => getComputedStyle(document.querySelector("#driver .dot")).backgroundColor), await inPage(token, "ok"));
   helper.push("status", { kind: "you", text: "Solve the CAPTCHA" });
   await until("your turn", () => document.getElementById("driver-text").textContent === "Waiting for you");
@@ -113,6 +118,7 @@ describe("agent states in words", () => pageTest("right", opts(), async ({ page,
   assert.equal(await inPage(visible, "#turn"), true);
   assert.equal(await inPage(() => getComputedStyle(document.getElementById("driver")).color), await inPage(token, "warn"));
   assert.equal(await inPage(visible, "#status-live"), false, "not driving while it waits for you");
+  assert.equal(await inPage(() => document.getElementById("status-live").hidden), true, "not driving: the pill's state is off too");
   helper.push("status", { kind: "clear", text: "" });
   helper.push("pause", { paused: true, can: true, by: "Sam" });
   await until("paused", () => document.getElementById("driver-text").textContent === "Paused by Sam");
@@ -150,7 +156,7 @@ describe("pause and resume", () => pageTest("right", opts({ pause: { paused: fal
   assert.match(tabLine.nameTitle, /^(In \S.*)?$/, "the tab is in #agent-name's title");
   assert.deepEqual(await inPage(() => { const e = document.getElementById("pause-text"); return [e.className, e.getBoundingClientRect().width <= 1]; }), ["sr", true], "the description is for readers only");
   const box = await inPage(() => { const b = document.getElementById("pause-btn"); const s = getComputedStyle(b); return { h: b.getBoundingClientRect().height, bg: s.backgroundColor, border: s.borderTopWidth }; });
-  assert.equal(box.h, 36, "the mockup's Pause: 89 x 36");
+  assert.equal(box.h, 32, "B4's Pause: 32 px (--ctl), as every text button in the docks");
   assert.equal(box.bg, await inPage(token, "btn"));
   assert.equal(box.border, "1px");
   await page.click("#pause-btn");
@@ -238,7 +244,21 @@ describe("journal read follows the Agent tab", () => pageTest("right", opts({ jo
 
 describe("status box", () => pageTest("right", opts({ board: { people: [PEOPLE[0]], messages: [] } }), async ({ helper, inPage, until, errors }) => {
   await until("the status", () => document.getElementById("agent-status-text").textContent === "Filling the shipping form");
+  // Its header names what it holds: the agent's own status text, never "reasoning" (545).
+  assert.equal(await inPage(() => document.getElementById("status-head").textContent.trim()), "Status");
   assert.equal(await inPage(() => getComputedStyle(document.getElementById("agent-status")).borderTopWidth), "1px");
+  // A hand-off ("your turn") is the turn line's: the Status box keeps the agent's own text.
+  helper.push("status", { kind: "you", text: "Solve the CAPTCHA" });
+  await until("your turn", () => document.getElementById("turn-text").textContent === "Solve the CAPTCHA");
+  assert.equal(await inPage(text, "agent-status-text"), "Filling the shipping form", "the Status box is not the turn line");
+  // The helper's board then carries the hand-off as the agent's task (status "you"): the box
+  // still keeps the last task that was not a hand-off.
+  helper.push("board", { people: [{ ...PEOPLE[0], status: "you", task: "Solve the CAPTCHA", tab: "shop.example/pay" }], messages: [] });
+  await until("the board's hand-off", () => document.getElementById("agent-name").title === "In shop.example/pay");
+  assert.equal(await inPage(text, "agent-status-text"), "Filling the shipping form", "the board's hand-off stays out of the Status box");
+  // Its header and its body start on the same line (545).
+  const lines = await inPage(() => { const h = document.getElementById("status-head").getBoundingClientRect().left, p = document.querySelector("#agent-status .sbox"), b = p.getBoundingClientRect().left + parseFloat(getComputedStyle(p).paddingLeft); return Math.abs(h - b); });
+  assert.ok(lines <= 0.5, `header and body on one line (${lines}px apart)`);
   helper.push("board", { people: [{ ...PEOPLE[0], task: "" }], messages: [] });
   await until("no status", () => document.getElementById("agent-status-text").textContent === "No status from the agent yet.");
   assert.equal(await inPage(visible, "#agent-status"), true, "the box stays");
@@ -246,19 +266,39 @@ describe("status box", () => pageTest("right", opts({ board: { people: [PEOPLE[0
 }));
 
 describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE, messages: [] }, activity: [{ t: Date.now(), text: "Typed into **Email**", who: "Claude", tab: "Checkout" }] }), async ({ page, helper, inPage, until, errors }) => {
-  await until("the rows", () => document.querySelectorAll("#people li").length === 5);
+  // In the browser the people (you, guests) are the left dock's: here the agents only (DESIGN.md
+  // Part G); the side panel keeps everyone (test/right.test.mjs).
+  await until("the rows", () => document.querySelectorAll("#people li").length === 4);
+  assert.equal(await inPage(() => [...document.querySelectorAll("#people li")].some((li) => li.textContent.includes("Sam (by hand)"))), false, "no person row");
   const rows = await inPage(() => [...document.querySelectorAll("#people li")].map((li) => {
     const line = (el) => ({ h: el.getBoundingClientRect().height, ws: getComputedStyle(el).whiteSpace });
     const st = li.querySelector(".st");
-    return { h: li.getBoundingClientRect().height, text: li.textContent, name: line(li.querySelector(".name")), st: line(st), stText: st.textContent, first: getComputedStyle(st, "::first-letter").textTransform };
+    return { h: li.getBoundingClientRect().height, text: li.textContent, name: line(li.querySelector(".name")), st: line(st), stText: st.textContent, first: getComputedStyle(st, "::first-letter").textTransform, clamp: getComputedStyle(st).webkitLineClamp };
   }));
   for (const r of rows) {
     assert.ok(r.h >= 56, `${r.text}: ${r.h}px`);
-    for (const k of ["name", "st"]) { assert.ok(r[k].h <= 18, `${r.text}: .${k} is one line (${r[k].h}px)`); assert.equal(r[k].ws, "nowrap"); }
+    assert.ok(r.name.h <= 18, `${r.text}: the name is one line (${r.name.h}px)`);
+    assert.equal(r.name.ws, "nowrap");
+    // The state line wraps to two lines at most (545: "Working · Suggesting inputs" whole).
+    assert.ok(r.st.h <= 36, `${r.text}: the state line is two lines at most (${r.st.h}px)`);
+    assert.equal(r.clamp, "2");
   }
   const alice = rows.findIndex((r) => r.text.includes("Alice"));
-  // the part in words on screen; the tab in the line's title (the mockup's "Observing", "Helping · …")
-  assert.ok(alice >= 0 && rows[alice].stText.includes("waiting for their person") && !rows[alice].stText.includes("shop.example/cart"), rows[alice]?.stText);
+  // the state in the left dock's words (common.js agentWords); the tab in the line's title
+  assert.ok(alice >= 0 && rows[alice].stText.startsWith("Waiting for you") && !rows[alice].stText.includes("shop.example/cart"), rows[alice]?.stText);
+  const sam = rows.find((r) => r.text.includes("Sam · Claude Code"));
+  assert.ok(sam.stText.startsWith("Done") && sam.stText.includes("Sam's browser"), sam.stText);
+  assert.ok(rows.find((r) => r.text.includes("Gemini")).stText.startsWith("Working · Checking prices"));
+  assert.ok(rows.find((r) => r.text.includes("Bob")).stText.startsWith("Idle"));
+  // Idle and Done dots are --muted, as in the left dock (B3), never the agent's own color.
+  const muted = await inPage(token, "muted");
+  const dots = await inPage(() => [...document.querySelectorAll("#people li")].filter((li) => ["idle", "done"].includes(li.dataset.state)).map((li) => getComputedStyle(li.querySelector(".st")).backgroundImage));
+  assert.ok(dots.length >= 2, `idle and done rows (${dots.length})`);
+  for (const d of dots) assert.ok(d.includes(muted) && !d.includes("rgb(34, 211, 238)"), d);
+  // The rows' dividers run from gutter to gutter; avatars on the shared 20 px edge; the chevrons
+  // on the shared right edge (545).
+  const edges = await inPage(() => { const li = document.querySelector("#people li").getBoundingClientRect(), av = document.querySelector("#people li .avatar").getBoundingClientRect(), ch = document.querySelector("#people li .chev")?.getBoundingClientRect(); return { li: [li.left, innerWidth - li.right], av: av.left, chev: ch ? innerWidth - ch.right : 20 }; });
+  assert.deepEqual(edges, { li: [8, 8], av: 20, chev: 20 });
   assert.match(await inPage((i) => document.querySelectorAll("#people li .st")[i].title, alice), /shop\.example\/cart/);
   assert.equal(rows[alice].first, "uppercase", "the state line starts with a capital");
   const sel = `#people li:nth-child(${alice + 1})`;
@@ -270,6 +310,9 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
   assert.equal(await inPage(() => document.querySelectorAll(".pause-one").length), 0, "no per-agent pause from today's helper");
   helper.push("pause", { paused: false, can: true, perAgent: true });
   await until("per-agent pause", () => document.querySelectorAll(".pause-one").length === 4);
+  // Two or more agents: the card's button stops them all and says so ("Pause all").
+  assert.equal(await inPage(text, "pause-btn"), "Pause all");
+  assert.equal(await page.getAttribute("#pause-btn", "aria-label"), "Pause all agents");
   // Every Take control says whose: several rows never read as identical buttons.
   assert.ok(await inPage(() => [...document.querySelectorAll(".pause-one")].every((b) => /^Take control from \S/.test(b.getAttribute("aria-label")))), "each Take control names its agent");
   const place = await inPage((s) => {
@@ -297,7 +340,10 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
   assert.equal(take.length, 4);
   for (const t of take) { assert.match(t.name, /Take control/, t.who); assert.match(t.title, /you take control/, t.who); }
   const gemini = take.find((t) => t.who.startsWith("Gemini"));
-  assert.deepEqual([gemini.icon, gemini.text, gemini.w, gemini.fits], [true, "", 34, true], "Gemini: icon-only, the task line in full");
+  assert.deepEqual([gemini.icon, gemini.text, gemini.w, gemini.fits], [true, "", 32, true], "Gemini: icon-only (32 x 32, --ctl), the task line in full");
+  // Take control (text and icon) and Pause share one height; the buttons and chevrons one right edge.
+  assert.deepEqual(await inPage(() => [...new Set([...document.querySelectorAll(".pause-one, #pause-btn")].map((b) => b.getBoundingClientRect().height))]), [32]);
+  assert.deepEqual(await inPage(() => [...new Set([...document.querySelectorAll("#people .chev, #agent-fold")].map((b) => innerWidth - b.getBoundingClientRect().right))]), [20]);
   const aliceBtn = take.find((t) => t.who === "Alice · Codex");
   assert.deepEqual([aliceBtn.icon, aliceBtn.text], [false, "Take control"], "no task line: the button keeps its text");
   await page.focus("#people li .pause-one.icon");
@@ -328,12 +374,18 @@ describe("session card", () => pageTest("right", opts({ session: { name: "Checko
   await until("the session name", () => document.getElementById("session-name").textContent === "Checkout test");
   assert.equal(await inPage(visible, "#session-line"), true);
   const card = await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(); return { bottom: c.bottom, vh: innerHeight }; });
-  assert.ok(card.vh - card.bottom >= 0 && card.vh - card.bottom <= 12, `a raised card just above the bottom (its 10 px margin): ${card.vh - card.bottom}`);
+  assert.ok(card.vh - card.bottom >= 0 && card.vh - card.bottom <= 12, `a raised card just above the bottom (its 8 px margin): ${card.vh - card.bottom}`);
   const end = await inPage(() => { const s = getComputedStyle(document.getElementById("switch-btn")); return { color: s.color, bg: s.backgroundColor, shadow: s.boxShadow }; });
   assert.equal(end.color, await inPage(token, "bad-ink"));
   assert.equal(end.bg, await inPage(token, "bad-fill", "backgroundColor"), "the mockup's red fill");
   assert.match(end.shadow, /rgba?\(239, 100, 104/, "a soft red halo");
-  assert.equal(await inPage(() => [...document.querySelectorAll("#session-card .row3 button")].filter((b) => b.checkVisibility()).length), 2, "Share and End session; no Save, no rename without a helper route");
+  // Share is the strip's in the browser (DESIGN.md Part G): End session alone, the row's full width.
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#session-card .row3 button")].filter((b) => b.checkVisibility()).map((b) => b.id)), ["switch-btn"], "End session; no Share, no Save, no rename without a helper route");
+  assert.equal(await inPage(visible, "#share-card"), false);
+  const wide = await inPage(() => { const r = document.getElementById("session-actions").getBoundingClientRect(), b = document.getElementById("switch-btn").getBoundingClientRect(); return Math.abs(r.width - b.width) <= 1; });
+  assert.equal(wide, true, "alone, End session takes the row");
+  // At the gutter on every side, its icon on the shared 20 px edge.
+  assert.deepEqual(await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(), i = document.querySelector("#session-card .sicon").getBoundingClientRect(); return [c.left, innerWidth - c.right, innerHeight - c.bottom, i.left]; }), [8, 8, 8, 20]);
   assert.equal(await inPage(() => document.getElementById("session-save").hidden && document.getElementById("session-rename").hidden), true);
   // The confirm sits in the card (a dock slot has no JavaScript dialogs): no dialog may open.
   let dialogs = 0;
@@ -374,15 +426,13 @@ describe("session card", () => pageTest("right", opts({ session: { name: "Checko
   assert.equal((await posted(helper, "picker", 2)).length, 2, "Enter on End session opens the picker");
   await until("the confirm closes after Enter", () => document.getElementById("end-confirm").hidden);
   assert.equal(dialogs, 0, "no JavaScript dialog");
-  await page.click("#share-btn");
-  await until("the share card", () => !document.getElementById("share-card").hidden);
-  const at = await inPage(() => ({ card: document.getElementById("share-card").getBoundingClientRect().bottom, btn: document.getElementById("share-btn").getBoundingClientRect().top }));
-  assert.ok(at.card <= at.btn, "the card opens above the session card");
   assert.deepEqual(errors, []);
 }));
 
 describe("session card with the helper's routes", () => pageTest("right", opts({ session: { name: "Checkout test", where: "Local", canSave: true, canRename: true } }), async ({ page, helper, inPage, until, errors }) => {
   await until("Save and the pencil", () => document.getElementById("session-save").checkVisibility() && document.getElementById("session-rename").checkVisibility());
+  // Save and End session in two equal columns (the browser's session card).
+  assert.equal(await inPage(() => Math.abs(document.getElementById("session-save").getBoundingClientRect().width - document.getElementById("switch-btn").getBoundingClientRect().width) <= 1), true, "two equal columns");
   const sessions = () => helper.posts.filter((p) => p.route === "session");
   // Save: a synthetic click posts nothing; a person's click saves.
   await inPage(() => document.getElementById("session-save").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
@@ -414,7 +464,7 @@ describe("session card with the helper's routes", () => pageTest("right", opts({
   helper.replies.session = () => ({ status: 404, body: { error: "Not found" } });
   await page.click("#session-save");
   await until("Save hidden", () => document.getElementById("session-save").hidden);
-  assert.equal(await inPage(() => document.activeElement?.id), "share-btn", "focus moves to Share, not lost to the body");
+  assert.equal(await inPage(() => document.activeElement?.id), "switch-btn", "focus moves to End session (Share is the strip's here), not lost to the body");
   // The fold hides the buttons.
   await page.click("#session-fold");
   assert.equal(await inPage(visible, "#session-actions"), false);
@@ -486,9 +536,13 @@ describe("pictures without the timeline", () => pageTest("right", opts({ timelin
 describe("tools", () => pageTest("right", opts(), async ({ page, helper, inPage, until, errors }) => {
   await page.click("#tab-tools");
   assert.deepEqual(await inPage(() => ["sec-details", "sec-secrets", "dev", "hosts"].map((id) => document.getElementById(id).closest(".pane").id)), ["pane-tools", "pane-tools", "pane-tools", "pane-tools"]);
-  helper.push("dev", { asks: [], shared: [{ port: 3000 }], open: [], joiners: 1 });
-  await until("the dev section", () => !document.getElementById("dev").hidden);
+  // Dev servers' one home (DESIGN.md Part G; Settings has none): the rows and Stop, here.
+  helper.push("dev", { asks: [], shared: [{ port: 3000 }], open: [{ port: 5173, title: "Vite" }], joiners: 1 });
+  await until("the dev section", () => !document.getElementById("dev").hidden && document.querySelectorAll("#devs li").length === 2);
   assert.match(await inPage(text, "devs"), /localhost:3000 · shared/);
+  await page.click("#dev .disclose");
+  await page.click("#devs li:first-child button");
+  assert.deepEqual((await posted(helper, "dev")).map((p) => p.body), [{ op: "unshare", port: 3000 }]);
   helper.push("profile", { details: [{ label: "VAT", value: "1", source: "you" }], secrets: [] });
   await until("a detail", () => !!document.querySelector("#details .row"));
   assert.equal(await inPage(text, "record-btn"), "Record");
@@ -524,14 +578,27 @@ describe("tools order and reads", () => pageTest("right", opts(), async ({ page,
   for (const r of LIST_ROUTES) assert.equal(reads(helper, r), 0, `no ${r} before the Tools tab is shown`);
   await page.click("#tab-tools");
   await waitFor("the three reads", () => LIST_ROUTES.every((r) => reads(helper, r) === 1));
-  const secs = await inPage(() => [...document.querySelectorAll("#pane-tools section.sec")].map((sec) => {
+  const secs = await inPage(() => [...document.querySelectorAll("#pane-tools .scroll > section")].map((sec) => {
     const b = sec.querySelector(".disclose");
-    return { id: sec.id, head: [...b.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(""), expanded: b.getAttribute("aria-expanded") };
+    return { id: sec.id, head: b ? [...b.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("") : "", expanded: b?.getAttribute("aria-expanded") ?? null };
   }));
-  assert.deepEqual(secs.map((x) => x.id), ["sec-handoffs", "sec-downloads", "sec-recordings", "dev", "hosts", "sec-details", "sec-secrets", "sec-diag"]);
-  assert.deepEqual(secs.map((x) => x.head), ["Hand-offs", "Downloads", "Recordings", "Dev servers", "Join addresses", "Remembered details", "Passwords", "Diagnostics"]);
-  assert.deepEqual(secs.map((x) => x.expanded), ["true", "true", "true", "false", "false", "false", "false", "false"]);
+  // In the browser (DESIGN.md Part G) Join addresses, Remembered details and Passwords are the
+  // Settings page's, with one row here that opens it; the side panel keeps all of them
+  // (test/right.test.mjs).
+  assert.deepEqual(secs.map((x) => x.id), ["sec-handoffs", "sec-downloads", "sec-recordings", "dev", "hosts", "sec-details", "sec-secrets", "sec-settings-link", "sec-diag"]);
+  assert.deepEqual(secs.map((x) => x.head), ["Hand-offs", "Downloads", "Recordings", "Dev servers", "Join addresses", "Remembered details", "Passwords", "", "Diagnostics"]);
+  assert.deepEqual(secs.map((x) => x.expanded), ["true", "true", "true", "false", "false", "false", "false", null, "false"]);
+  helper.push("dev", { asks: [], shared: [{ port: 3000 }], open: [], joiners: 1 });
+  helper.push("joinhost", { asks: [], hosts: [{ host: "tunnel.example.org", always: true }] });
   await until("Hand-offs and Downloads shown", () => document.getElementById("sec-handoffs").checkVisibility() && document.getElementById("sec-downloads").checkVisibility());
+  await until("Dev servers shown", () => document.getElementById("dev").checkVisibility());
+  const shownNow = await inPage(() => [...document.querySelectorAll("#pane-tools .scroll > section")].filter((sec) => sec.checkVisibility()).map((sec) => sec.id));
+  assert.deepEqual(shownNow, ["sec-handoffs", "sec-downloads", "sec-recordings", "dev", "sec-settings-link", "sec-diag"], "the browser's Tools");
+  assert.equal(await inPage(text, "settings-link-note"), "Passwords, remembered details and join addresses are in Settings.");
+  // Open settings: the Settings page on its Passwords section, in a new tab of this window.
+  await page.click("#open-settings");
+  await until("a settings tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual(await inPage(() => window.__pairbrowse.calls.filter((c) => c.iface === "tabs" && c.method === "create").map((c) => c.args)), [["pairbrowse://settings#passwords", true, -1]]);
   assert.equal(await inPage(text, "handoffs-empty"), "Nothing waiting for you.");
   assert.equal(await inPage(text, "downloads-empty"), "Nothing downloaded in this session.");
   await until("No recordings yet", () => document.getElementById("recordings-empty").checkVisibility());
@@ -1226,5 +1293,28 @@ describe("collapse under reduced motion", () => pageTest("right", opts({}, { red
   await page.hover("#dock-collapse");
   await sleep(50);
   assert.deepEqual(await harness.animations(), []);
+  assert.deepEqual(errors, []);
+}));
+
+// The card's "Working…" is its own agent's: a joiner's line (from the other browser), a host's
+// note and the other browser's agent are listed, and the card stays Idle on its agent's quiet.
+describe("the card works on its own agent's lines only", () => pageTest("right", opts(), async ({ helper, inPage, until, errors }) => {
+  const t = Date.now();
+  helper.push("board", { people: PEOPLE, messages: [] });
+  helper.push("activity", [{ t: t - 60_000, text: "Typed into **Email**", who: "Claude", tab: "Checkout" }]);
+  await until("the card names Claude", () => document.getElementById("agent-name").textContent === "Claude");
+  assert.equal(await inPage(text, "driver-text"), "Idle", "its last action was a minute ago");
+  const lines = [
+    { t: t - 60_000, text: "Typed into **Email**", who: "Claude", tab: "Checkout" },
+    { t: Date.now(), text: "Clicked **Next**", who: "Alice", tab: "Checkout", from: "inv:alice" },
+    { t: Date.now(), text: "Note: check the totals", who: "Bob", tab: "" },
+    { t: Date.now(), text: "Opened **Docs**", who: "Sam · Claude Code", tab: "Docs", from: "joined" },
+  ];
+  helper.push("activity", lines);
+  await until("the lines listed", () => document.getElementById("activity").children.length === 4);
+  assert.equal(await inPage(text, "driver-text"), "Idle", "a joiner's line, a note and another browser's agent leave it Idle");
+  assert.equal(await inPage(text, "agent-name"), "Claude", "the card stays on its agent");
+  helper.push("activity", [...lines, { t: Date.now(), text: "Typed into **Name**", who: "Claude", tab: "Checkout" }]);
+  await until("working", () => document.getElementById("driver-text").textContent === "Working…");
   assert.deepEqual(errors, []);
 }));

@@ -1,5 +1,8 @@
 /* The PairBrowse left dock (DESIGN.md B3): colors and type from tokens.css. Three states,
-   reflected from the browser's layout: open (200 px), rail (44 px, icons only) and hidden. */
+   reflected from the browser's layout: open (205 px), rail (44 px, icons only) and hidden.
+   Spacing (545): row highlights, cards and dividers stop --dock-gutter (8 px) from the dock's
+   edges and their content --dock-inset (12 px) further in, so every icon, avatar and heading
+   starts 20 px from the dock's outer edge. */
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 /* The dock's inner side: 1 px --edge from the nav row to the bottom (DESIGN.md B3), open and rail;
@@ -9,27 +12,26 @@ button { font: inherit; }
 /* The icon sheet: symbols only, never laid out (an <svg hidden> still takes a grid row). */
 body > svg[hidden] { display: none; }
 
-/* Header: the workspace square, its name and the chevron (the session switcher), centred 30 px
-   below the dock's top (the mockup: Workspace at y 83, the dock from y 53). */
-.head { height: 52px; display: flex; align-items: center; gap: 4px; padding: 8px 6px 0 9px; min-width: 0; }
-.workspace { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; width: auto; min-width: 0; height: 36px; padding: 0 6px 0 3px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); text-align: left; cursor: pointer; transition: background 120ms ease-out; }
-.workspace:hover { background: var(--hover); }
-.ws-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-2); background: var(--btn); box-shadow: inset 0 0 0 1px var(--panel-edge), inset 0 1px 0 var(--edge-light); }
+/* Header: the workspace square and its name (a title: the strip's logo switches sessions), then
+   the collapse chevron on the same right edge as the sections' "+", centred 30 px below the
+   dock's top (8 + 44 / 2; the mockup: Workspace at y 83, the dock from y 53). */
+.head { height: 52px; display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2) var(--sp-5) 0 var(--dock-gutter); min-width: 0; }
+.workspace { display: flex; align-items: center; gap: var(--sp-3); flex: 1 1 auto; min-width: 0; height: var(--row-nav); padding: 0 var(--dock-inset); color: var(--ink); }
+.ws-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-2); background: var(--btn); box-shadow: inset 0 0 0 1px var(--panel-edge), inset 0 1px 0 var(--edge-light); } /* mockup: B3's 30 px square */
 .ws-icon svg { width: 20px; height: 20px; color: var(--ink); }
-.ws-label { min-width: 0; font-size: 14px; font-weight: 400; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chev { flex: none; width: 14px; height: 14px; margin-left: auto; color: var(--ink-soft); }
+.ws-label { min-width: 0; font-size: var(--fs-4); font-weight: 400; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Collapse (open) and expand (rail): the dock's own state, set through the browser's layout. */
-.dock-btn { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
-.dock-btn svg { width: 14px; height: 14px; }
+.dock-btn { display: grid; place-items: center; flex: none; width: var(--ctl-sm); height: var(--ctl-sm); padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
+.dock-btn svg { width: var(--icon); height: var(--icon); }
 .dock-btn:hover { background: var(--hover); color: var(--ink); }
 .dock-btn[hidden] { display: none; }
 
-.body { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 4px 7px 8px 9px; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+.body { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-1) var(--dock-gutter) var(--sp-2); scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
 
-/* Nav rows: 36 px, 8 px radius, a 16 px icon and a 13 px/500 label. */
+/* Nav rows: 36 px, 8 px radius, a 16 px icon and a 13 px label. */
 .nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.row { display: flex; align-items: center; gap: 17px; width: 100%; height: 34px; padding: 0 6px 0 11px; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-soft); font: 400 13.5px var(--sans); text-align: left; cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
-.row .ic { flex: none; width: 18px; height: 18px; color: var(--ink-soft); }
+.row { display: flex; align-items: center; gap: var(--sp-4); width: 100%; height: var(--row-nav); padding: 0 var(--dock-inset); border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-soft); font: 400 var(--fs-3) var(--sans); text-align: left; cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
+.row .ic { flex: none; width: var(--icon); height: var(--icon); color: var(--ink-soft); }
 .row:hover { background: var(--hover); color: var(--ink); }
 .row:disabled, .gear:disabled { color: var(--muted); cursor: default; }
 .row:disabled .ic { color: inherit; }
@@ -37,78 +39,84 @@ body > svg[hidden] { display: none; }
 .row[aria-current="page"] { background-color: var(--nav-active); color: var(--accent-ink); font-weight: 500; box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-soft); }
 .row[aria-current="page"] .ic { color: var(--accent-ink); }
 .row .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.badge { display: inline-grid; place-items: center; flex: none; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--badge); color: var(--ink); font: 500 var(--fs-3)/1 var(--sans); }
+.badge { display: inline-grid; place-items: center; flex: none; min-width: 24px; height: 24px; padding: 0 var(--sp-2); border-radius: 12px; background: var(--badge); color: var(--ink); font: 500 var(--fs-3)/1 var(--sans); }
 .badge:empty { display: none; }
 /* Activity's fold mark shows on hover, keyboard focus and while open (the mockup draws none). */
 #nav-activity:not(:hover):not(:focus-visible):not([aria-expanded="true"])::after { visibility: hidden; }
-#nav-activity::after { content: ""; flex: none; width: 5px; height: 5px; margin-right: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform 160ms ease-out; }
-#nav-activity[aria-expanded="true"]::after { transform: translateY(1px) rotate(-135deg); }
+#nav-activity::after { content: ""; flex: none; width: 8px; height: 8px; margin-right: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform var(--t); }
+#nav-activity[aria-expanded="true"]::after { transform: translateY(2px) rotate(-135deg); }
 
 /* The activity list, under its row (the helper's own lines, newest first). */
-.activity { list-style: none; margin: 2px 0 4px; padding: 0 0 0 12px; }
+.activity { list-style: none; margin: 2px 0 var(--sp-1); padding: 0 var(--dock-inset); }
 .activity[hidden] { display: none; }
-.activity li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--edge); font-size: var(--fs-2); color: var(--ink-2); overflow-wrap: anywhere; }
+.activity li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-2); padding: var(--sp-1) 0; border-bottom: 1px solid var(--edge); font-size: var(--fs-2); color: var(--ink-2); overflow-wrap: anywhere; }
 .activity li:first-child { color: var(--ink); }
 .activity time { font-family: var(--mono); font-size: var(--fs-1); color: var(--muted); padding-top: 1px; }
 .activity strong { font-weight: var(--fw-name); color: var(--ink); }
-.activity code { font-family: var(--mono); font-size: var(--fs-1); padding: 0 4px; border-radius: var(--r-1); background: var(--hover); }
+.activity code { font-family: var(--mono); font-size: var(--fs-1); padding: 0 var(--sp-1); border-radius: var(--r-1); background: var(--hover); }
 .activity li.empty { display: block; color: var(--muted); }
 
-/* Sections: Agents (with the + hint) and Shared with. */
-.sec { margin-top: 11px; padding-top: 6px; border-top: 1px solid var(--edge); }
-#shared { margin-top: 17px; }
+/* Sections: Agents (with the + hint) and Shared with; 16 px between groups, the divider from
+   gutter to gutter, the heading and its "+" on the shared edges. */
+.sec { margin-top: var(--sp-4); padding-top: var(--sp-2); border-top: 1px solid var(--edge); }
 .sec[hidden] { display: none; }
-.sec-head { display: flex; align-items: center; justify-content: space-between; height: 32px; margin-bottom: 3px; padding: 0 3px 0 9px; }
-h2 { margin: 0; font: 500 13.5px var(--sans); color: var(--ink); }
-/* Shared with: always shown, with its own "+" (the Share card, a popover under it) and a line
-   while nobody has joined. */
+.sec-head { display: flex; align-items: center; justify-content: space-between; height: var(--ctl); margin-bottom: var(--sp-1); padding: 0 var(--dock-inset); }
+h2 { margin: 0; font: 500 var(--fs-3) var(--sans); color: var(--ink); }
+/* Shared with: always shown, a line while nobody has joined, and the Share card (opened by the
+   strip's Share) as a popover under its heading. */
 #shared { position: relative; }
-.empty-note { margin: 0 12px 6px; font-size: var(--fs-2); color: var(--ink-2); }
+.empty-note { margin: 0 var(--dock-inset) var(--sp-2); font-size: var(--fs-2); color: var(--ink-2); }
 .empty-note[hidden] { display: none; }
 /* "No agent yet" and "Not shared yet" are the helper's word: not before its stream is live. */
 body:not([data-s="live"]) #agents li.empty, body:not([data-s="live"]) #guests-empty { display: none; }
-.add { display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; border-radius: var(--r-1); background: var(--btn); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
-.add svg { width: 16px; height: 16px; }
+/* In the browser the right dock's empty state says it ("No agent in this session" and what to do):
+   the Agents section keeps only its label and its "+" (DESIGN.md Part G). */
+html[data-host="native"] #agents li.empty { display: none; }
+.add { display: grid; place-items: center; width: var(--ctl-xs); height: var(--ctl-xs); padding: 0; border: 0; border-radius: var(--r-1); background: var(--btn); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
+.add svg { width: var(--icon); height: var(--icon); }
 .add:hover, .add[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
-.hint { margin: 4px 0 8px; padding: 10px 12px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); font-size: var(--fs-2); color: var(--ink-2); }
+.hint { margin: var(--sp-1) 0 var(--sp-2); padding: calc(var(--sp-3) - 1px); border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); font-size: var(--fs-2); color: var(--ink-2); }
 .hint[hidden] { display: none; }
-.hint p { margin: 0 0 6px; }
+.hint p { margin: 0 0 var(--sp-2); }
 .hint p:last-child { margin: 0; }
-.hint code { display: inline-block; padding: 1px 5px; border-radius: var(--r-1); background: var(--bg); color: var(--ink); font: var(--fs-1)/1.4 var(--mono); overflow-wrap: anywhere; }
-.conn { margin: 0 12px 6px; font-size: var(--fs-2); color: var(--muted); }
+.hint code { display: inline-block; padding: 1px var(--sp-1); border-radius: var(--r-1); background: var(--bg); color: var(--ink); font: var(--fs-1)/1.4 var(--mono); overflow-wrap: anywhere; }
+.conn { margin: 0 var(--dock-inset) var(--sp-2); font-size: var(--fs-2); color: var(--muted); }
 .conn[hidden] { display: none; }
+/* In the browser the strip's pill says it once (Local, Live session, Reconnecting): no line here. */
+html[data-host="native"] .conn { display: none; }
 
-/* People rows: 44 px, a 32 px avatar with a 10 px state dot, the name and the state in words. */
+/* People rows: 44 px, a 36 px avatar with its state dot, the name and the state in words. */
 .people { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
-#guests li { height: 49px; }
-.people li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 0 16px; align-items: center; align-content: center; height: 50px; padding: 0 9px; border-radius: var(--r-2); }
-.people li.empty { display: block; height: auto; padding: 4px 12px; font-size: var(--fs-2); color: var(--muted); }
-.people .avatar { position: relative; grid-row: span 2; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--spark); color: var(--bg); font: 600 16px/1 var(--sans); }
+.people li { display: grid; grid-template-columns: var(--av-row) minmax(0, 1fr); gap: 0 var(--sp-3); align-items: center; align-content: center; height: var(--row-person); padding: 0 var(--dock-inset); border-radius: var(--r-2); }
+.people li.empty { display: block; height: auto; padding: var(--sp-1) var(--dock-inset); font-size: var(--fs-2); color: var(--muted); }
+.people .avatar { position: relative; grid-row: span 2; display: grid; place-items: center; width: var(--av-row); height: var(--av-row); border-radius: 50%; background: var(--spark); color: var(--bg); font: 600 var(--fs-5)/1 var(--sans); }
 .people .avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input); }
 .people .avatar svg { width: 20px; height: 20px; color: var(--ink); }
 .people .avatar.guest svg { color: var(--ink); } /* a filled icon on the group color: a graphic, 3:1 or more */
 .people .avatar.guest.plain { background: var(--btn); box-shadow: inset 0 0 0 1px var(--panel-edge); }
-.dot { position: absolute; right: -3px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2.5px var(--sidebar); }
+/* The state dot repeats the words (B3): --ok working, active and online; --warn waiting for you;
+   --bad failed; --muted idle, done and paused. */
+.dot { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2.5px var(--sidebar); }
 li[data-state="working"] .dot, li[data-state="active"] .dot, li[data-state="online"] .dot { background: var(--ok); }
 li[data-state="waiting"] .dot { background: var(--warn); }
 li[data-state="failed"] .dot { background: var(--bad); }
-li[data-state="idle"] .dot { background: var(--accent); }
-.people strong { align-self: end; min-width: 0; font: 500 13.5px/19px var(--sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+li[data-state="idle"] .dot { background: var(--muted); }
+.people strong { align-self: end; min-width: 0; font: var(--fs-3)/18px var(--sans); font-weight: var(--fw-name); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .people strong .app { font-weight: 400; color: var(--ink-2); }
-.people small { grid-column: 2; align-self: start; min-width: 0; font-size: 12.5px; line-height: 18px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people small { grid-column: 2; align-self: start; min-width: 0; font-size: var(--fs-2); line-height: 18px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Bottom: the settings gear, at the left (Storage returns with PairBrowse Pro; see the markup). */
-.foot { display: flex; flex-direction: column; align-items: flex-start; gap: 0; min-width: 0; margin: 0 7px 0 9px; padding: 0 0 17px; }
+.foot { display: flex; flex-direction: column; align-items: flex-start; gap: 0; min-width: 0; margin: 0 var(--dock-gutter); padding: 0 0 var(--sp-4); }
 /* Storage (PairBrowse Pro's cloud storage): only when the helper sends the figure; left.js builds it. */
-.storage { align-self: stretch; padding: 13px 4px 0 9px; border-top: 1px solid var(--edge); }
+.storage { align-self: stretch; padding: var(--sp-3) var(--dock-inset) 0; border-top: 1px solid var(--edge); }
 .storage .line { display: flex; justify-content: space-between; font-size: var(--fs-2); line-height: 16px; color: var(--ink-soft); }
-.storage .bar { height: 6px; margin-top: 9px; border-radius: 3px; background: var(--meter-track); overflow: hidden; }
-.storage .bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--meter-from), var(--meter-to)); }
-.foot .gear { margin: 40px 0 0 9px; }
-.foot:not(:has(.storage)) { padding-top: 8px; border-top: 1px solid var(--edge); }
+.storage .bar { height: 4px; margin-top: var(--sp-2); border-radius: 2px; background: var(--meter-track); overflow: hidden; }
+.storage .bar i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--meter-from), var(--meter-to)); }
+.foot .gear { margin: var(--sp-8) 0 0 var(--dock-inset); }
+.foot:not(:has(.storage)) { padding-top: var(--sp-2); border-top: 1px solid var(--edge); }
 .foot:not(:has(.storage)) .gear { margin-top: 0; }
-.gear { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; }
-.gear svg { width: 22px; height: 22px; }
+.gear { display: grid; place-items: center; width: var(--ctl-sm); height: var(--ctl-sm); padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
+.gear svg { width: 20px; height: 20px; }
 .gear:hover { background: var(--hover); color: var(--ink); }
 
 .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -118,28 +126,29 @@ li[data-state="idle"] .dot { background: var(--accent); }
 .row[aria-current="page"]:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-lit), inset 0 1px 0 var(--edge-light), var(--glow-soft), var(--glow-focus); }
 .share-card .primary:focus-visible { box-shadow: var(--glow-accent), var(--glow-focus); }
 
-/* The Share card (DESIGN.md B8, the strip's markup and styles): a popover under "Shared with". */
-.share-card { position: absolute; top: 34px; left: 0; right: 0; max-width: 320px; z-index: 3; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); line-height: 1.45; }
+/* The Share card (DESIGN.md B8, the strip's markup and styles): a popover under "Shared with",
+   from gutter to gutter. */
+.share-card { position: absolute; top: 36px; left: 0; right: 0; max-width: 320px; z-index: 3; display: grid; gap: var(--sp-3); padding: calc(var(--sp-3) - 1px); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); line-height: 1.45; }
 .share-card[hidden] { display: none; }
-.share-card h2 { margin: 0; font-size: 14px; font-weight: var(--fw-name); color: var(--ink); }
-.share-card .share-choice { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; min-width: 0; }
-.share-card .share-choice legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-1); font-weight: var(--fw-name); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
-.share-card .share-opt { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 6px 8px; border-radius: var(--r-2); font-size: var(--fs-3); cursor: pointer; transition: background-color 120ms ease-out; }
+.share-card h2 { margin: 0; font-size: var(--fs-4); font-weight: var(--fw-name); color: var(--ink); }
+.share-card .share-choice { display: grid; gap: var(--sp-1); margin: 0; padding: 0; border: 0; min-width: 0; }
+.share-card .share-choice legend { padding: 0; margin-bottom: var(--sp-1); font-size: var(--fs-1); font-weight: var(--fw-name); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.share-card .share-opt { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-2); align-items: start; padding: var(--sp-2); border-radius: var(--r-2); font-size: var(--fs-3); cursor: pointer; transition: background-color var(--t-hover); }
 .share-card .share-opt:hover { background: var(--hover); }
 .share-card .share-opt input { margin: 2px 0 0; accent-color: var(--accent); }
 .share-card .share-opt small { display: block; font-size: var(--fs-2); color: var(--ink-2); }
-.share-card .share-name { display: grid; gap: 4px; font-size: var(--fs-2); color: var(--ink-2); }
+.share-card .share-name { display: grid; gap: var(--sp-1); font-size: var(--fs-2); color: var(--ink-2); }
 .share-card .share-name[hidden], .share-card .share-result[hidden] { display: none; }
-.share-card .share-line { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
-.share-card .field { width: 100%; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
+.share-card .share-line { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-2); align-items: center; }
+.share-card .field { width: 100%; min-width: 0; height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
 .share-card .field:focus { border-color: var(--accent); }
 .share-card .share-code { font-family: var(--mono); }
-.share-card .primary { justify-self: start; height: 30px; padding: 0 14px; border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font-weight: 650; cursor: pointer; box-shadow: var(--glow-accent); }
+.share-card .primary { justify-self: start; height: var(--ctl); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font-weight: 650; cursor: pointer; box-shadow: var(--glow-accent); }
 .share-card .primary:hover { background: var(--accent-ink); }
 .share-card .primary:disabled { opacity: 0.6; }
-.share-card .mini { height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: var(--fw-name); cursor: pointer; transition: background-color 120ms ease-out, color 120ms ease-out; }
+.share-card .mini { height: var(--ctl-sm); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: var(--fw-name); cursor: pointer; transition: background-color var(--t-hover), color var(--t-hover); }
 .share-card .mini:hover { background: var(--hover); color: var(--ink); }
-.share-card .note { margin: 6px 0 0; font-size: var(--fs-2); color: var(--ink-2); }
+.share-card .note { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
 .share-card .msg { margin: 0; font-size: var(--fs-2); color: var(--muted); }
 .share-card .msg:empty { display: none; }
 .share-card .msg[data-kind="error"] { color: var(--bad); }
@@ -148,29 +157,30 @@ li[data-state="idle"] .dot { background: var(--accent); }
 /* Rail: 44 px, icons, avatars with their dots and the gear; every word moves to a tooltip. */
 /* The rail's top: the expand button centered in the 44 px band, the workspace square under it. */
 body[data-dock="rail"] { grid-template-rows: auto minmax(0, 1fr) auto; }
-body[data-dock="rail"] .head { height: auto; flex-direction: column; gap: 4px; padding: 10px 4px 4px; }
+body[data-dock="rail"] .head { height: auto; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3) var(--sp-1) var(--sp-1); }
 body[data-dock="rail"] .workspace { flex: none; justify-content: center; width: 36px; padding: 0; margin: 0 auto; }
-body[data-dock="rail"] .ws-label, body[data-dock="rail"] .chev, body[data-dock="rail"] .head .sr,
+body[data-dock="rail"] .ws-label,
 body[data-dock="rail"] .row .label, body[data-dock="rail"] .badge, body[data-dock="rail"] #tab-count-words,
 body[data-dock="rail"] #nav-activity::after, body[data-dock="rail"] .sec-head h2, body[data-dock="rail"] .add,
 body[data-dock="rail"] .hint, body[data-dock="rail"] .conn, body[data-dock="rail"] .activity,
 body[data-dock="rail"] .people li.empty,
-body[data-dock="rail"] #shared h2, body[data-dock="rail"] #share-add, body[data-dock="rail"] .empty-note, body[data-dock="rail"] .share-card { display: none; }
+body[data-dock="rail"] #shared h2, body[data-dock="rail"] .empty-note, body[data-dock="rail"] .share-card { display: none; }
 /* The agents' names and states leave the eye but stay in the accessibility tree (the .sr recipe). */
 body[data-dock="rail"] .people strong, body[data-dock="rail"] .people small { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-body[data-dock="rail"] .body { padding: 4px 4px 8px; }
+body[data-dock="rail"] .body { padding: var(--sp-1) var(--sp-1) var(--sp-2); }
 body[data-dock="rail"] .row { justify-content: center; width: 36px; padding: 0; margin: 0 auto; }
-body[data-dock="rail"] .sec { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--edge); }
+body[data-dock="rail"] .sec { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--edge); }
 body[data-dock="rail"] .sec-head { display: none; }
 body[data-dock="rail"] .people li { grid-template-columns: 28px; justify-content: center; height: 40px; padding: 0; }
 body[data-dock="rail"] .people .avatar { width: 28px; height: 28px; font-size: var(--fs-2); }
-body[data-dock="rail"] .foot { grid-template-columns: auto; justify-content: center; padding: 8px 4px; }
+body[data-dock="rail"] .foot { grid-template-columns: auto; justify-content: center; padding: var(--sp-2) var(--sp-1); }
 body[data-dock="rail"] .gear { grid-column: 1; margin: 0; }
-body[data-dock="rail"] .foot { align-items: center; margin: 0; padding: 8px 4px; border-top: 1px solid var(--edge); }
+body[data-dock="rail"] .foot { align-items: center; margin: 0; padding: var(--sp-2) var(--sp-1); border-top: 1px solid var(--edge); }
 body[data-dock="rail"] .storage { display: none; }
 
-/* The session switcher: the picker in a same-origin frame, under the header (the B2 switcher size: 360 px wide, 560 tall). */
-.switcher { position: fixed; top: 44px; left: 8px; z-index: 3; width: 360px; height: min(560px, calc(100vh - 52px)); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); overflow: hidden; animation: fade var(--t); }
+/* The session switcher: the picker in a same-origin frame, under the header (B2's switcher, 360 by
+   560 at most, narrowed to the dock's width with the gutter on both sides). */
+.switcher { position: fixed; top: 44px; left: var(--dock-gutter); z-index: 3; width: min(360px, calc(100vw - 2 * var(--dock-gutter))); height: min(560px, calc(100vh - 52px)); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); overflow: hidden; animation: fade var(--t); }
 .switcher iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
 @keyframes fade { from { opacity: 0; } }
 

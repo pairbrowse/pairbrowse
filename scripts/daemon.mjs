@@ -155,6 +155,9 @@ const hud = createHud({
   labelOf: (id) => collaboration.participants.get(id)?.label || "",
   waiting: (page) => presence.waiting(page), liveView, notify: panel.notify,
   pause: () => ({ by: pause.view().by, can: canPause() }),
+  // A build with its own pages (the context's chromePages, on the helper lane): its docks carry the
+  // bottom bar's duties, so pages are told they are docked. Plain Chromium: false, no call.
+  docked: () => { try { return !!context.chromePages?.(); } catch { return false; } },
 });
 const presence = createPresence({
   host: HOST, readEvents: (frame, waitMs) => hud.call(frame, String(waitMs), "user-wait"), pages: () => context.openPages(), paused: () => context.isSwitching(),

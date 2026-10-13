@@ -55,7 +55,7 @@
               <div class="task-head"><span class="k">Current task</span><button class="more" id="agent-more" type="button" aria-expanded="true" aria-controls="checklist" aria-label="Checklist" title="Show or hide the checklist"></button></div>
               <div class="task" id="task" hidden><div class="box" id="task-name"></div></div>
               <div class="checklist" id="checklist"><p class="sr" id="checklist-said" role="status" aria-live="polite"></p><ol id="checklist-items" aria-label="Checklist from the goal log"><li class="empty">Waiting for PairBrowse.</li></ol></div>
-              <section class="statusbox" id="agent-status" aria-labelledby="status-head"><div class="head"><span class="k" id="status-head"><svg class="reason-ic" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 8A5.2 5.2 0 1 1 11.6 4.3"/><path d="M13.4 2.6v2.6h-2.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>Live reasoning</span><span class="pill live-pill" id="status-live" hidden><i class="live" aria-hidden="true"></i>Live</span></div><div class="sbox"><p id="agent-status-text">No status from the agent yet.</p></div><p class="agent-tab" id="agent-tab" hidden></p></section>
+              <section class="statusbox" id="agent-status" aria-labelledby="status-head"><div class="head"><span class="k" id="status-head"><svg class="reason-ic" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 8A5.2 5.2 0 1 1 11.6 4.3"/><path d="M13.4 2.6v2.6h-2.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>Status</span><span class="pill live-pill" id="status-live" hidden><i class="live" aria-hidden="true"></i>Live</span></div><div class="sbox"><p id="agent-status-text">No status from the agent yet.</p></div><p class="agent-tab" id="agent-tab" hidden></p></section>
             </div>
           </article>
         </section>
@@ -195,6 +195,13 @@
             </form>
             <p class="msg" id="profile-msg" role="status" aria-live="polite"></p>
           </div>
+        </section>
+
+        <!-- The browser build: Passwords, Remembered details and Join addresses have one home, the
+             Settings page (DESIGN.md Part G); right.js shows this row only with the browser's API. -->
+        <section class="settings-link" id="sec-settings-link" aria-labelledby="settings-link-note" hidden>
+          <p class="note" id="settings-link-note">Passwords, remembered details and join addresses are in Settings.</p>
+          <button class="act" id="open-settings" type="button">Open settings</button>
         </section>
 
         <!-- Diagnostics: read only while open and shown (and on Refresh); always starts folded and

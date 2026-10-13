@@ -773,6 +773,9 @@ test("peers' pointers: an agent's is the white agent cursor edged in its color, 
         { k: "host-agent:3", x: 200, y: 150, who: "Codex", color: "#7088f0" },
         { k: "j1:a0", x: 400, y: 150, who: "Gemini", color: "#4fd1e8" },
         { k: "sam", x: 300, y: 300, who: "Sam", color: "#4ade80" },
+        // As the helper keys a joiner's: `${invite}:${joiner}:me` and `${invite}:${joiner}:a<n>`.
+        { k: "inv7:j3:a1", x: 600, y: 150, who: "Claude", color: "#a78bfa" },
+        { k: "inv7:j3:me", x: 500, y: 300, who: "Pat", color: "#f472b6" },
       ];
       await page.evaluate((v) => window.__pbtest("tok", v, "cursors"), JSON.stringify(list));
       await page.waitForTimeout(reducedMotion === "reduce" ? 50 : 500);
@@ -787,9 +790,9 @@ test("peers' pointers: an agent's is the white agent cursor edged in its color, 
         }
         return null;
       }, hud.tags.cursor);
-      assert.ok(peers && peers.length === 3, `three pointers: ${JSON.stringify(peers)}`);
-      const [codex, gemini, sam] = peers;
-      for (const [p, color, rgb] of [[codex, "#7088f0", "rgb(112, 136, 240)"], [gemini, "#4fd1e8", "rgb(79, 209, 232)"]]) {
+      assert.ok(peers && peers.length === 5, `five pointers: ${JSON.stringify(peers)}`);
+      const [codex, gemini, sam, claude, pat] = peers;
+      for (const [p, color, rgb] of [[codex, "#7088f0", "rgb(112, 136, 240)"], [gemini, "#4fd1e8", "rgb(79, 209, 232)"], [claude, "#a78bfa", "rgb(167, 139, 250)"]]) {
         assert.equal(p.cls, "p a on", reducedMotion);
         assert.deepEqual([p.fill, p.stroke, p.sw, p.w, p.pill, p.left], ["#fff", color, "1.4", 22, rgb, "16px"], `an agent's pointer, ${reducedMotion}`);
         // The name pill: 24 px tall, 12 px text (DESIGN.md B5).
@@ -797,9 +800,45 @@ test("peers' pointers: an agent's is the white agent cursor edged in its color, 
       }
       assert.deepEqual([sam.cls, sam.fill, sam.stroke, sam.w, sam.pill, sam.left], ["p on", "#4ade80", "#fff", 18, "rgb(74, 222, 128)", "14px"], `a person's pointer, ${reducedMotion}`);
       assert.deepEqual([sam.ph, sam.fs], [24, "12px"], `a person's name pill, ${reducedMotion}`);
+      assert.deepEqual([pat.cls, pat.fill, pat.stroke, pat.w, pat.pill], ["p on", "#f472b6", "#fff", 18, "rgb(244, 114, 182)"], `a joiner's own pointer, ${reducedMotion}`);
       if (reducedMotion === "reduce") assert.equal(codex.opacity, "1", "in place at once under reduced motion");
       await page.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+// The helper sends this page's pointers to the other browser of a shared tab: the person's (me)
+// is drawn there filled in their color, the agent's (agent) as its white cursor. An agent's own
+// mouse move onto its target is a trusted event too: it must never become the person's pointer.
+test("pointers sent across: an agent's own mouse move stays the agent's, a person's move is theirs", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, reducedMotion: "reduce" });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<body style=\"margin:0;height:2000px\"><button style=\"position:absolute;left:480px;top:290px;width:40px;height:20px\">Go</button></body>" }));
+    await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
+    const pointers = () => page.evaluate(() => window.__pbtest("tok", "", "pointer"));
+    await page.mouse.move(100, 100);
+    await page.mouse.move(120, 110);
+    let p = await pointers();
+    assert.deepEqual([p.me?.x, p.me?.y], [120, 110], "the person's move");
+    // The agent's turn: its cursor goes to the button, then its click moves the mouse there.
+    await page.evaluate(() => window.__pbtest("tok", JSON.stringify({ x: 500, y: 300, act: "click", who: "Claude", color: "#a78bfa", bw: 40, bh: 20 }), "cursor"));
+    await page.mouse.move(500, 300);
+    await page.mouse.move(502, 301);
+    p = await pointers();
+    assert.deepEqual([p.agent?.x, p.agent?.y], [500, 300], "the agent's pointer");
+    assert.deepEqual([p.me?.x, p.me?.y], [120, 110], `the agent's move isn't the person's: ${JSON.stringify(p.me)}`);
+    // The person moves well away from it meanwhile: theirs.
+    await page.mouse.move(150, 600);
+    await page.mouse.move(160, 610);
+    p = await pointers();
+    assert.deepEqual([p.me?.x, p.me?.y], [160, 610], "a person's move far from the agent's target, while it acts");
   } finally {
     await browser.close();
   }

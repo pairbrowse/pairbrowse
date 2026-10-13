@@ -127,10 +127,15 @@
   addEventListener("scroll", () => { if (outline) placeOutline(); if (now() - personAt < 1500) looked(); }, opts);
   // Where the person's pointer is, in document coordinates (a shared tab shows it in the other
   // browser's copy at the same place in the page, whatever its window size). Never what's under it.
+  // An agent's own mouse moves (its click's move onto the target, a drag) are trusted events too:
+  // while it acts (PRESS_WINDOW_MS after its cursor or a press was sent), a move near what it acts
+  // on is the agent's, never the person's pointer. Taken as theirs, the other side drew a person's
+  // filled pointer, in their name and color, on top of the agent's white cursor.
   let ptr = null;
   addEventListener("mousemove", (e) => {
     if (!e.isTrusted) return;
     const n = now();
+    if (n - agentAt < PRESS_WINDOW_MS && !awayFromAgent(e)) return;
     ptr = { x: Math.round(e.pageX), y: Math.round(e.pageY), t: n };
     // Only a move that moves: Chromium also sends one, with no distance, when a page loads or
     // scrolls under a resting pointer, and that isn't the person looking.

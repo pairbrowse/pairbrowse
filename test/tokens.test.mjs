@@ -121,7 +121,10 @@ test("every literal color in the styled files is a sheet value, a participant co
 });
 
 test("every token in the sheet is read by a page", () => {
-  const css = ALL_CSS.map(read).join("\n");
+  // The sheet's own shared rules after :root (the motion language, DESIGN.md Part I) are on every
+  // page, so a token they read counts, and so does one a token is made of (--t-close of --ease-in).
+  const shared = noComments.slice(noComments.indexOf("}", noComments.search(/^:root\s*\{/m)) + 1) + Object.values(dark).join("\n");
+  const css = [...ALL_CSS.map(read), shared].join("\n");
   for (const k of Object.keys(dark)) assert.match(css, new RegExp(`var\\(--${k}\\b`), `--${k} is used`);
   for (const f of PAGES) assert.doesNotMatch(read(f), /font(-size)?:[^;]*\b1[123]px/, `${f}: type sizes come from --fs-1..3`);
 });

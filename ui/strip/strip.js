@@ -8,7 +8,7 @@
 // event, read only. Nothing here starts a timer,
 // a frame loop or a DOM observer: observers of the browser API and the one shared helper stream
 // (common.js helperStream) only. The nav fragments read no stream at all.
-import { $, el, avatar, shareCard, isColor, pickerPopover, helperStream, servedByBrowser } from "../common.js";
+import { $, el, avatar, shareCard, isColor, pickerPopover, helperStream, servedByBrowser, enter, leave } from "../common.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
@@ -107,40 +107,57 @@ menuItem("settings", async () => {
 if (!pb) menuBtn.hidden = true;
 
 // ---- a page no taller than the row (the browser's 53 px tab-row slot, which clips the rest):
-// nothing can open under the row until the browser hosts the popovers as bubbles. The logo opens
-// the session switcher of the workspace dock and Share its Share card (the left dock, opened if it
-// is not: one surface each, DESIGN.md Part G); with no answer from the dock the logo falls back to
-// the session picker as a tab. The menu, which has no surface there, is not shown. Each runs in the
-// capture phase, ahead of the popover's own click handler, so no popover opens unseen and no
-// focus moves into one. ----
+// nothing can open under the row until the browser hosts the popovers as bubbles (530, "Bubbles for
+// cross-slot popovers"). Until then each opens in the dock right under its trigger, so it still
+// shows where the person acted (DESIGN.md Part I): the logo's switcher at the top of the left dock
+// (under the logo), Share's card at the top of the agent panel (under Share), each with a caret at
+// the trigger's place; the dock opens first if it is not. The trigger shows the popover's state
+// (pressed, aria-expanded), a second click or Escape on it closes it, and with no answer from the
+// dock the logo falls back to the session picker as a tab. The menu, which has no surface there, is
+// not shown. Each runs in the capture phase, ahead of the popover's own click handler, so no
+// popover opens unseen and no focus moves into one. ----
 const ROW_ONLY = 60; // px: taller than the 53 px row, shorter than any popover
 // Without the browser API there is no dock to ask: the popovers open in place.
 const inSlot = () => !!pb && !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
 const SHARE_CHANNEL = "pairbrowse-share";
-const SLOT_LABELS = { switch: "PairBrowse: switch session (opens the session switcher in the workspace)", share: "Share this session (opens the Share card in the workspace)" };
+const SLOT_LABELS = { switch: "PairBrowse: switch session (opens under the logo, in the workspace)", share: "Share this session (opens under Share, in the agent panel)" };
+// Chromium's own ⋯ (32 px, 16 px from the window's edge) sits after this page in the browser: the
+// docks measure from the window's edge (native: B2).
+const APP_MENU = nativeHost ? 48 : 0;
+// What each dock said it shows for this window: { switch, share } open or not.
+const remote = { switch: false, share: false };
 function slotControls() {
   const slot = inSlot();
-  for (const [id, popover] of [["switch", "switcher"], ["share-btn", "share-card"]]) {
+  for (const [id, popover, key] of [["switch", "switcher", "switch"], ["share-btn", "share-card", "share"]]) {
     const b = $(id);
-    if (slot) { b.removeAttribute("aria-expanded"); b.removeAttribute("aria-controls"); }
-    else { b.setAttribute("aria-expanded", String(id === "switch" ? switcher.isOpen() : !$("share-card").hidden)); b.setAttribute("aria-controls", popover); }
+    // In the slot the popover is in another page: its state shows here (pressed), never its id.
+    if (slot) { b.setAttribute("aria-expanded", String(remote[key])); b.removeAttribute("aria-controls"); b.dataset.remote = String(remote[key]); }
+    else { b.setAttribute("aria-expanded", String(id === "switch" ? switcher.isOpen() : !$("share-card").hidden)); b.setAttribute("aria-controls", popover); delete b.dataset.remote; }
   }
   if (slot) { $("switch").setAttribute("aria-label", SLOT_LABELS.switch); $("share-btn").title = SLOT_LABELS.share; }
   else { $("switch").setAttribute("aria-label", "PairBrowse: switch session"); $("share-btn").removeAttribute("title"); }
   menuBtn.hidden = slot || !pb;
 }
-// Opens the workspace dock (the left), as Share does, before it asks over the channel.
-async function openLeftDock() {
+// Opens a dock (the left for the switcher, the right for Share) before it asks over the channel.
+async function openDock(side) {
   if (!pb) return;
   try {
     const { state } = await pb.layout.get();
-    if (state.left !== pb.DockState.kOpen) await pb.layout.set({ ...state, left: pb.DockState.kOpen });
+    if (state[side] !== pb.DockState.kOpen) await pb.layout.set({ ...state, [side]: pb.DockState.kOpen });
   } catch {}
+}
+const ask = (msg) => { try { shareChannel?.postMessage({ ...msg, window: myWindow }); } catch {} };
+// Where the trigger is, so the dock puts its caret under it: the logo's centre from the window's
+// left edge, Share's from the window's right edge.
+function anchorOf(id) {
+  const r = $(id).getBoundingClientRect();
+  return id === "switch" ? { left: Math.round(r.left + r.width / 2) } : { right: Math.round(window.innerWidth - r.right + r.width / 2 + APP_MENU) };
 }
 $("switch").addEventListener("click", async (e) => {
   if (!inSlot()) return;
   e.stopImmediatePropagation();
-  await openLeftDock();
+  if (remote.switch) { ask({ close: "switch" }); return; }
+  await openDock("left");
   // The dock answers {opened: "switch"}; with no answer in SHARE_WAIT_MS (no dock in this window,
   // or none listening) the picker opens as a tab, as before. One timer, armed by a click only.
   // The fallback first withdraws the ask, so a dock whose open layout comes later never opens a
@@ -148,32 +165,45 @@ $("switch").addEventListener("click", async (e) => {
   clearTimeout(switchWait);
   switchWait = setTimeout(() => {
     switchWait = 0;
-    try { shareChannel?.postMessage({ cancel: "switch", window: myWindow }); } catch {}
+    ask({ cancel: "switch" });
     if (pb) pb.tabs.create("pairbrowse://picker", true, myWindow).catch(() => {});
   }, pb ? SHARE_WAIT_MS : 0);
-  try { shareChannel?.postMessage({ open: "switch", window: myWindow }); } catch {}
+  ask({ open: "switch", anchor: anchorOf("switch") });
 }, true);
 $("share-btn").addEventListener("click", async (e) => {
   if (!inSlot()) return;
   $("share-note").textContent = "";
   e.stopImmediatePropagation();
-  await openLeftDock();
-  // The card opens in another part of the window: said only once the dock says it opened it (the
+  if (remote.share) { ask({ close: "share" }); return; }
+  await openDock("right");
+  // The card opens under Share in the agent panel: said only once the dock says it opened it (the
   // focus stays here); with no answer, what to do instead.
   clearTimeout(shareWait);
-  shareWait = setTimeout(() => { shareWait = 0; $("share-note").textContent = `Open the workspace dock to share (${mac ? "⌘⇧L" : "Ctrl+Shift+L"})`; }, pb ? SHARE_WAIT_MS : 0);
-  try { shareChannel?.postMessage({ open: "share", window: myWindow }); } catch {}
+  shareWait = setTimeout(() => { shareWait = 0; $("share-note").textContent = "Open the agent panel (the sparkle beside the address bar) to share"; }, pb ? SHARE_WAIT_MS : 0);
+  ask({ open: "share", anchor: anchorOf("share-btn") });
 }, true);
+// Escape on the trigger closes what it opened in the dock (the focus stays on the trigger).
+for (const [id, key] of [["switch", "switch"], ["share-btn", "share"]]) {
+  $(id).addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !inSlot() || !remote[key]) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    ask({ close: key });
+  }, true);
+}
 let shareChannel = null, shareWait = 0, switchWait = 0;
 const SHARE_WAIT_MS = 1000;
 try {
   shareChannel = new BroadcastChannel(SHARE_CHANNEL);
   shareChannel.onmessage = (e) => {
     if (e.data?.window !== myWindow || myWindow === -1) return;
-    if (e.data?.opened === "switch") { clearTimeout(switchWait); switchWait = 0; return; }
-    if (e.data?.opened !== "share") return;
-    clearTimeout(shareWait); shareWait = 0;
-    $("share-note").textContent = "Share card opened in the workspace dock (F6)";
+    const opened = e.data?.opened, closed = e.data?.closed;
+    if (opened === "switch") { clearTimeout(switchWait); switchWait = 0; }
+    if (opened === "share") { clearTimeout(shareWait); shareWait = 0; $("share-note").textContent = "Share card opened under Share, in the agent panel (F6)"; }
+    if (opened === "switch" || opened === "share") remote[opened] = true;
+    else if (closed === "switch" || closed === "share") remote[closed] = false;
+    else return;
+    slotControls();
   };
 } catch {}
 
@@ -316,20 +346,27 @@ function roving() {
     li.querySelector(".close").tabIndex = id === act ? 0 : -1;
   }
 }
+// The tabs on the row, without one that is folding away (a closed tab leaves in --t-close).
+const shownTabs = () => [...tabsEl.children].filter((n) => !n.dataset.leaving);
+let rendered = false; // start()'s first render places the tabs; a tab created later grows in (--t-open)
 function render() {
   const focused = document.activeElement?.closest?.("#tabs li");
   const hadFocus = !!focused;
   const focusedId = focused ? Number(focused.dataset.id) : null;
-  for (const [id, li] of lis) if (!tabs.has(id)) { li.remove(); lis.delete(id); }
+  for (const [id, li] of lis) if (!tabs.has(id)) { lis.delete(id); leave(li, { axis: "inline" }); }
   ordered().forEach((t, i) => {
+    const fresh = !lis.has(t.id);
     const li = drawTab(t);
-    if (tabsEl.children[i] !== li) tabsEl.insertBefore(li, tabsEl.children[i] || null);
+    const kids = shownTabs();
+    if (kids[i] !== li) tabsEl.insertBefore(li, kids[i] || null);
+    if (fresh && rendered) enter(li, { axis: "inline" });
   });
   if (rovingId !== null && !lis.has(rovingId)) rovingId = null;
   roving();
   drawNav();
   // A tab moved in the DOM loses focus; a closed one hands it to the tab now active.
-  if (hadFocus && !tabsEl.contains(document.activeElement)) (lis.get(focusedId) || lis.get(activeId()))?.focus();
+  // A closed tab folds away (inert): the focus leaves it for the tab now active.
+  if (hadFocus && (!tabsEl.contains(document.activeElement) || document.activeElement.closest("[data-leaving]"))) (lis.get(focusedId) || lis.get(activeId()))?.focus();
 }
 
 // Clicks: a tab activates, its close closes it, a middle click closes it.
@@ -350,7 +387,7 @@ tabsEl.addEventListener("auxclick", (e) => { const li = liOf(e); if (li && pb &&
 tabsEl.addEventListener("keydown", (e) => {
   const li = e.target.matches?.('li[role="tab"]') ? e.target : null;
   if (!li || !pb) return;
-  const list = [...tabsEl.children];
+  const list = shownTabs();
   const at = list.indexOf(li);
   const id = idOf(li);
   const t = tabs.get(id);
@@ -381,7 +418,7 @@ tabsEl.addEventListener("pointerdown", (e) => {
   if (e.button === 1) { e.preventDefault(); return; } // a middle click closes, never autoscrolls
   const li = liOf(e);
   if (e.button !== 0 || !pb || !li || li.classList.contains("pinned") || e.target.closest(".close")) return;
-  const order = [...tabsEl.children];
+  const order = shownTabs();
   drag = { li, id: idOf(li), x0: e.clientX, pointer: e.pointerId, on: false, order, rects: order.map((n) => n.getBoundingClientRect()), from: order.indexOf(li), target: order.indexOf(li) };
 });
 tabsEl.addEventListener("pointermove", (e) => {
@@ -686,6 +723,7 @@ async function start() {
       drawSparkle(state?.right === pb.DockState.kOpen);
       render();
     } catch {}
+    rendered = true;
   }
   started = true;
   ensureStream();

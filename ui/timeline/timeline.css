@@ -45,17 +45,16 @@ body[data-driving="true"] .card:has(.face[aria-current="true"]) { box-shadow: 0 
 .card.add button[hidden] { display: none; }
 /* The note field fades in and out like the menu (--t); while it fades out it lies over the card, so
    the Add note button takes its place at once. */
-#note-form { opacity: 1; transition: opacity var(--t), display var(--t) allow-discrete; }
-#note-form[hidden] { position: absolute; inset: 0; opacity: 0; display: none; pointer-events: none; }
+#note-form { opacity: 1; transition: opacity var(--t-open), display var(--t-open) allow-discrete; }
+#note-form[hidden] { position: absolute; inset: 0; opacity: 0; display: none; pointer-events: none; transition: opacity var(--t-close), display var(--t-close) allow-discrete; }
 @starting-style { #note-form:not([hidden]) { opacity: 0; } }
 .card.add form { box-sizing: border-box; width: 100%; padding: var(--sp-2); }
 .field { box-sizing: border-box; width: 100%; height: var(--ctl-sm); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
 .field::placeholder { color: var(--muted); }
 .hint { display: block; margin-top: 4px; font-size: var(--fs-1); line-height: 13px; color: var(--ink-2); }
 
-.menu { position: absolute; z-index: 2; box-sizing: border-box; min-width: 140px; padding: 4px; border: 1px solid var(--edge); border-radius: var(--r-2); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); opacity: 1; transition: opacity var(--t), display var(--t) allow-discrete; }
-.menu[hidden] { opacity: 0; display: none; }
-@starting-style { .menu:not([hidden]) { opacity: 0; } }
+.menu { position: absolute; z-index: 2; box-sizing: border-box; min-width: 140px; padding: 4px; border: 1px solid var(--edge); border-radius: var(--r-2); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); --origin: top right; } /* opens with the sheet's .m-pop from its More button */
+.menu[hidden] { display: none; }
 .menu button { display: block; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-1); background: none; color: var(--ink); font: var(--fs-3) var(--sans); text-align: left; cursor: pointer; }
 .menu button:hover { background: var(--hover); }
 .menu button.danger { color: var(--bad); }
@@ -66,6 +65,11 @@ body[data-driving="true"] .card:has(.face[aria-current="true"]) { box-shadow: 0 
 /* A route's error: out of the scrolling flow, in the strip's bottom padding under the cards, so it
    shows wherever the strip is scrolled and moves no card. */
 .line.toast { position: absolute; left: 16px; top: 109px; z-index: 1; margin: 0; font-size: var(--fs-1); line-height: 16px; color: var(--bad); } /* mockup: in the strip's bottom padding, under the 104 px cards */
+/* The card last shown large in the agent panel: a ring on it and, under it, where it went (a
+   picture opens in another part of the window until 530's bubble; DESIGN.md Part I). */
+.card[data-shown="true"]:not(:has(.face[aria-current="true"])) .thumb { box-shadow: 0 0 0 1px var(--edge-btn), 0 0 0 2px var(--accent-ink); }
+.where { position: absolute; top: 109px; z-index: 1; margin: 0; font-size: var(--fs-1); line-height: 16px; color: var(--ink-2); white-space: nowrap; pointer-events: none; } /* mockup: in the strip's bottom padding, under the card */
+.where[hidden] { display: none; }
 .line small { display: block; margin-top: 2px; font-size: var(--fs-1); color: var(--muted); }
 .line small:empty { display: none; }
 .sr { position: absolute; top: 0; left: 0; margin: 0; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

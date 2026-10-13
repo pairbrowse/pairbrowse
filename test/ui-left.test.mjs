@@ -59,7 +59,8 @@ const pickerFrames = (page) => page.frames().filter((f) => f.url().includes("/pi
 const shown = () => ({ collapse: document.getElementById("dock-collapse").checkVisibility(), expand: document.getElementById("dock-expand").checkVisibility() });
 const token = (name) => { const s = document.createElement("span"); s.style.color = `var(${name})`; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; };
 const calls = async (ctx, iface, method) => (await ctx.shim.calls()).filter((c) => c.iface === iface && c.method === method);
-const rows = () => [...document.querySelectorAll("#agents li")].map((li) => ({
+// The rows that stay: one that leaves folds away first (common.js leave, data-leaving).
+const rows = () => [...document.querySelectorAll("#agents li:not([data-leaving])")].map((li) => ({
   state: li.dataset.state || "", name: li.querySelector("strong")?.textContent || "", line: li.querySelector("small")?.textContent || li.textContent,
   title: li.title, bg: li.querySelector(".avatar") ? getComputedStyle(li.querySelector(".avatar")).backgroundColor : "",
 }));
@@ -77,7 +78,6 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   await until("the rail", () => document.body.dataset.dock === "rail");
   assert.equal(await inPage(() => document.querySelector("#nav-browser .label").checkVisibility()), false);
   assert.match(await inPage(() => document.getElementById("nav-browser").title), /^Browser · 3 open tabs$/);
-  assert.equal(await inPage(() => document.getElementById("nav-tools").title), "Tools");
   // The header is a title (the strip's logo switches sessions): in the rail its square names itself.
   assert.equal(await inPage(() => document.getElementById("workspace").title), "Workspace");
   assert.equal(await inPage(() => document.getElementById("workspace").tagName), "DIV", "not a control");
@@ -113,7 +113,9 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
 
 scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }, async (ctx) => {
   const { until, inPage } = ctx;
-  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".nav .row")].map((b) => b.id)), ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools"]);
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".nav .row")].map((b) => b.id)), ["nav-browser", "nav-sessions", "nav-history", "nav-activity"]);
+  // Tools is the agent panel's tab: no row here opens the other dock (DESIGN.md Part I).
+  assert.equal(await inPage(() => document.getElementById("nav-tools")), null);
   assert.equal(await inPage(() => document.getElementById("nav-browser").getAttribute("aria-current")), "page");
   // The active row, as the mockup draws it: the --nav-active fill, no gradient, the soft blue glow.
   const look = await inPage(() => { const p = document.createElement("i"); p.style.backgroundColor = "var(--nav-active)"; document.body.append(p); const want = getComputedStyle(p).backgroundColor; p.remove(); const s = getComputedStyle(document.getElementById("nav-browser")); return { bg: s.backgroundColor === want, image: s.backgroundImage, shadow: s.boxShadow }; });
@@ -272,45 +274,17 @@ scenario("left: the Storage row when the session event carries storage (Pro's fi
   await clean(ctx);
 });
 
-// The Share card's one trigger is the strip's Share (DESIGN.md Part G): it asks over the
-// pairbrowse-share channel; the card has no button of its own here.
-scenario("left: Shared with: the card the strip's Share opens", { viewport: OPEN }, async (ctx) => {
-  const { until, inPage, page, helper } = ctx;
+// Share is the strip's (DESIGN.md Part G) and its card opens under it, at the top of the agent panel
+// (Part I): nothing of it opens here, whoever asks; the section keeps its line.
+scenario("left: Shared with: no Share card here", { viewport: OPEN }, async (ctx) => {
+  const { until, inPage } = ctx;
   await until("live", () => document.body.dataset.s === "live");
   await inPage(() => new Promise((r) => setTimeout(r, 100))); // windows.list has answered
-  assert.equal(await inPage(() => !!document.getElementById("share-add")), false, "no + of its own");
-  await inPage(() => { const ch = new BroadcastChannel("pairbrowse-share"); ch.postMessage({ open: "share", window: 1 }); ch.close(); });
-  await until("the share card", () => !document.getElementById("share-card").hidden && document.activeElement?.name === "share" && document.activeElement.value === "code");
-  const inside = await inPage(() => { const c = document.getElementById("share-card").getBoundingClientRect(); return c.left >= 0 && c.right <= innerWidth && c.top > document.getElementById("shared-h").getBoundingClientRect().top; });
-  assert.equal(inside, true, "under Shared with, inside the dock");
-  // From gutter to gutter (545): the card's edges 8 px in from the dock's.
-  assert.deepEqual(await inPage(() => { const c = document.getElementById("share-card").getBoundingClientRect(); return [c.left, innerWidth - c.right]; }), [8, 8]);
-  // A synthetic click makes nothing; a person's click asks the helper.
-  await inPage(() => document.getElementById("share-make").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
-  await new Promise((r) => setTimeout(r, 300));
-  assert.equal(helper.posts.filter((p) => p.route === "invite").length, 0, "a synthetic click invites nobody");
-  await page.click("#share-make");
-  for (let i = 0; i < 40 && !helper.posts.some((p) => p.route === "invite"); i++) await new Promise((r) => setTimeout(r, 50));
-  assert.deepEqual(helper.posts.filter((p) => p.route === "invite").map((p) => p.body), [{ share: "code" }]);
-  // The helper asks for a name first; with it, the code and Copy fit the open dock's 200 px.
-  await until("the name field", () => document.activeElement?.id === "share-name");
-  await page.keyboard.type("Sam");
-  await page.keyboard.press("Enter");
-  await until("the code", () => !document.getElementById("share-result").hidden && document.getElementById("share-code").value === "pb-join:FAKE");
-  const fit = await inPage(() => {
-    const card = document.getElementById("share-card").getBoundingClientRect(), copy = document.getElementById("share-copy").getBoundingClientRect(), code = document.getElementById("share-code").getBoundingClientRect();
-    return { right: card.right, vw: innerWidth, copyIn: copy.left >= card.left && copy.right <= card.right && copy.left >= 0 && copy.right <= innerWidth && copy.width > 0, code: code.width };
-  });
-  assert.ok(fit.right <= fit.vw, `the card inside the dock: ${fit.right} <= ${fit.vw}`);
-  assert.equal(fit.copyIn, true, "Copy fully visible");
-  assert.ok(fit.code > 80, `the code field readable: ${fit.code}px`);
-  // Escape closes it; with no button here the focus goes back to the section's heading (F6 into
-  // the dock, then Escape: the next Tab goes on from there, never from the top) and nothing throws.
-  await page.focus("#share-make");
-  await page.keyboard.press("Escape");
-  await until("closed", () => document.getElementById("share-card").hidden);
-  assert.equal(await inPage(() => document.getElementById("share-card").contains(document.activeElement)), false);
-  assert.equal(await inPage(() => document.activeElement?.id), "shared-h", "the focus returns to the Shared with heading");
+  assert.equal(await inPage(() => !!document.getElementById("share-card") || !!document.getElementById("share-add")), false, "no card and no + of its own");
+  await inPage(() => { window.__heard = []; const ch = new BroadcastChannel("pairbrowse-share"); ch.onmessage = (e) => window.__heard.push(e.data); ch.postMessage({ open: "share", window: 1 }); window.__strip = ch; });
+  await inPage(() => new Promise((r) => setTimeout(r, 200)));
+  assert.deepEqual(await inPage(() => (window.__strip.close(), window.__heard)), [], "the agent panel answers Share, not this dock");
+  assert.equal(await inPage(() => document.querySelector("dialog, [role=dialog]:not([hidden])")), null);
   await clean(ctx);
 });
 
@@ -319,9 +293,10 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   await inPage(() => { document.activeElement?.blur?.(); document.body.tabIndex = -1; document.body.focus(); document.body.removeAttribute("tabindex"); });
   const order = [];
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
-  for (let i = 0; i < 8; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
-  // The Workspace header is a title and Share is the strip's (DESIGN.md Part G): neither is a stop.
-  assert.deepEqual(order, ["dock-collapse", "nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools", "add-agent", "settings"]);
+  for (let i = 0; i < 7; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
+  // The Workspace header is a title and Share is the strip's (DESIGN.md Part G): neither is a stop;
+  // Tools is the agent panel's tab (Part I).
+  assert.deepEqual(order, ["dock-collapse", "nav-browser", "nav-sessions", "nav-history", "nav-activity", "add-agent", "settings"]);
   await ctx.page.focus("#nav-sessions");
   await ctx.page.keyboard.press("Enter");
   // The Sessions row opens the switcher: the picker in a same-origin frame, no picker route.
@@ -331,15 +306,6 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   assert.equal(ctx.helper.posts.some((p) => p.route === "picker"), false, "no picker route");
   await ctx.page.keyboard.press("Escape");
   await until("the switcher closed", () => document.getElementById("switcher").hidden && document.activeElement?.id === "nav-sessions");
-  const fixture = await inPage(() => ({ ...window.__pairbrowse.fixture.layout }));
-  await ctx.page.focus("#nav-tools");
-  await ctx.page.keyboard.press("Enter");
-  await until("a layout.set", () => window.__pairbrowse.calls.some((c) => c.iface === "layout" && c.method === "set"));
-  assert.deepEqual((await calls(ctx, "layout", "set"))[0].args[0], { ...fixture, right: 2 });
-  // The right dock lands on its Tools tab: the helper relays POST layout's tab to it.
-  const layouts = () => ctx.helper.posts.filter((p) => p.route === "layout");
-  for (let i = 0; i < 60 && !layouts().length; i++) await ctx.page.waitForTimeout(50);
-  assert.deepEqual(layouts().map((p) => p.body), [{ tab: "tools" }], "the tab only: the dock opens through the mojom");
   await ctx.page.focus("#add-agent");
   await ctx.page.keyboard.press("Enter");
   await until("the hint", () => !document.getElementById("hint").hidden && document.getElementById("add-agent").getAttribute("aria-expanded") === "true");
@@ -350,24 +316,30 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   await ctx.page.mouse.click(100, 20);
   await until("closed by a click outside", () => document.getElementById("hint").hidden);
   assert.equal(await inPage(() => document.querySelectorAll("#hint code").length), 4);
+  assert.deepEqual(await calls(ctx, "layout", "set"), [], "nothing here opens or moves another dock");
   await clean(ctx);
 });
 
 scenario("left: the session switcher", { viewport: { width: 420, height: 936 }, fixtures: { sessions: SWITCHER_SESSIONS } }, async (ctx) => {
-  const { page, until, inPage, helper } = ctx;
+  const { page, until, inPage, helper, settle } = ctx;
   const live = await ctx.harness.live();
   const state = () => ({ hidden: document.getElementById("switcher").hidden, src: document.getElementById("picker").getAttribute("src"), focus: document.activeElement?.id || "" });
   // The Workspace header is a title (DESIGN.md Part G): the Sessions row and the strip's logo open it.
   assert.equal(await inPage(() => document.getElementById("workspace").tagName), "DIV");
   await page.click("#nav-sessions");
+  await settle();
   const box = await inPage(() => {
     const d = document.getElementById("switcher"), r = d.getBoundingClientRect();
     return { role: d.getAttribute("role"), label: d.getAttribute("aria-label"), left: r.left, top: r.top, width: r.width, height: r.height,
-      shadow: getComputedStyle(d).boxShadow, expanded: document.getElementById("nav-sessions").getAttribute("aria-expanded") };
+      shadow: getComputedStyle(d).boxShadow, expanded: document.getElementById("nav-sessions").getAttribute("aria-expanded"),
+      caret: d.style.getPropertyValue("--caret-x"), icon: document.querySelector("#nav-sessions .ic").getBoundingClientRect().left, row: document.getElementById("nav-sessions").getBoundingClientRect().bottom };
   });
   assert.equal(box.role, "dialog");
   assert.equal(box.label, "Switch session");
-  assert.deepEqual([box.left, box.top, box.width, box.height], [8, 44, 360, 560]);
+  // At its trigger (DESIGN.md Part I): opened by the Sessions row it hangs 8 px under that row, its
+  // caret at the row's icon (the strip's logo puts it at the dock's top, under the logo).
+  assert.deepEqual([box.left, box.top, box.width, box.height], [8, box.row + 8, 360, 560]);
+  assert.equal(box.caret, `${box.icon}px`);
   assert.match(box.shadow, /rgb\(41, 59, 80\)/, "the 1 px edge ring");
   assert.equal(box.expanded, "true");
   const frame = await framedPicker(page, "ready");
@@ -376,7 +348,8 @@ scenario("left: the session switcher", { viewport: { width: 420, height: 936 }, 
   await clickInFrame(page, frame, "#sessions > li:first-child button");
   for (let i = 0; i < 60 && !helper.posts.some((p) => p.route === "pick"); i++) await page.waitForTimeout(50);
   assert.deepEqual(helper.posts.filter((p) => p.route === "pick").map((p) => p.body), [{ action: "use", name: "work" }]);
-  await until("closed after the pick", () => document.getElementById("switcher").hidden && document.activeElement?.id === "nav-sessions");
+  // The frame unloads once the switcher has faded out (DESIGN.md Part I).
+  await until("closed after the pick", () => document.getElementById("switcher").hidden && document.activeElement?.id === "nav-sessions" && document.getElementById("picker").getAttribute("src") === null);
   assert.deepEqual(await inPage(state), { hidden: true, src: null, focus: "nav-sessions" });
   assert.equal(pickerFrames(page), 0, "the picker unloaded");
   // Again; a click outside closes it without moving focus there.
@@ -391,8 +364,7 @@ scenario("left: the session switcher", { viewport: { width: 420, height: 936 }, 
   await page.click("#nav-sessions");
   await framedPicker(page);
   await ctx.shim.layout({ left: 0 });
-  await until("hidden", () => document.body.dataset.dock === "hidden" && document.getElementById("switcher").hidden);
-  assert.equal((await inPage(state)).src, null);
+  await until("hidden", () => document.body.dataset.dock === "hidden" && document.getElementById("switcher").hidden && document.getElementById("picker").getAttribute("src") === null);
   assert.equal(pickerFrames(page), 0);
   // The rail's Sessions row opens the dock first (44 px leaves the switcher no room), then the
   // switcher (Part H); Escape closes it.
@@ -437,7 +409,11 @@ scenario("left: the switcher asks while agents are at work", { viewport: { width
 scenario("left: the session switcher under reduced motion", { viewport: { width: 420, height: 936 }, reducedMotion: "reduce", fixtures: { sessions: SWITCHER_SESSIONS } }, async (ctx) => {
   await ctx.page.click("#nav-sessions");
   await framedPicker(ctx.page);
-  assert.equal(await ctx.inPage(() => getComputedStyle(document.getElementById("switcher")).animationName), "none");
+  // Instant: no transition opens it, nothing runs, and closing unloads the picker at once.
+  assert.deepEqual(await ctx.inPage(() => { const s = getComputedStyle(document.getElementById("switcher")); return [s.animationName, s.transitionDuration, s.opacity]; }), ["none", "0s", "1"]);
+  assert.deepEqual(await ctx.harness.animations(), []);
+  await ctx.page.keyboard.press("Escape");
+  assert.deepEqual(await ctx.inPage(() => [document.getElementById("switcher").hidden, document.getElementById("picker").getAttribute("src"), document.activeElement?.id]), [true, null, "nav-sessions"]);
   await clean(ctx);
 });
 
@@ -466,7 +442,7 @@ scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { 
   assert.equal(seen.gear, true);
   assert.deepEqual(seen.avatars, [[true, true, 28], [true, true, 28], [true, true, 28]]);
   assert.deepEqual(seen.titles, ["Claude · Active · 1 tab", "Alice · Codex · Waiting for you", "You · Online"]);
-  assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions", "History", "Activity", "Tools"]);
+  assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions", "History", "Activity"]);
   await clean(ctx);
 });
 
@@ -538,17 +514,6 @@ scenario("left: collapse and expand over the helper's route", { viewport: OPEN, 
   await clean(ctx);
 });
 
-scenario("left: Tools over the helper's route", { viewport: OPEN, native: false }, async (ctx) => {
-  const { until, page, helper } = ctx;
-  await until("live", () => document.body.dataset.s === "live");
-  await page.click("#nav-tools");
-  for (let i = 0; i < 60 && !helper.posts.some((p) => p.route === "layout"); i++) await page.waitForTimeout(50);
-  await page.waitForTimeout(300);
-  assert.deepEqual(helper.posts.filter((p) => p.route === "layout").map((p) => p.body), [{ right: "open", tab: "tools" }], "one POST: the right dock open, on Tools");
-  assert.deepEqual(helper.fixtures.layout, { left: "open", right: "open", strip: 88 }, "the tab is never kept");
-  await clean(ctx);
-});
-
 scenario("left: a failed collapse takes no focus later", { viewport: OPEN, native: false, replies: { layout: () => ({ status: 500, body: { error: "no" } }) } }, async (ctx) => {
   const { until, inPage, page, helper } = ctx;
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
@@ -590,34 +555,6 @@ scenario("left: no API and no storage shows no connection line", { viewport: OPE
   assert.deepEqual(ctx.errors, []);
 });
 
-// The strip's Share in the browser (its own card has no room in the 44 px row) opens this dock's
-// Share card for the same window only.
-scenario("left: the strip's Share opens the Share card here", { viewport: OPEN }, async (ctx) => {
-  const { until, inPage } = ctx;
-  await until("live", () => document.body.dataset.s === "live");
-  await inPage(() => new Promise((r) => setTimeout(r, 100))); // windows.list has answered
-  await inPage(() => { const ch = new BroadcastChannel("pairbrowse-share"); ch.postMessage({ open: "share", window: 2 }); ch.close(); });
-  await inPage(() => new Promise((r) => setTimeout(r, 100)));
-  assert.equal(await inPage(() => document.getElementById("share-card").hidden), true, "another window's ask is not this dock's");
-  await inPage(() => { window.__heard = []; const ch = new BroadcastChannel("pairbrowse-share"); ch.onmessage = (e) => window.__heard.push(e.data); window.__strip = ch; ch.postMessage({ open: "share", window: 1 }); });
-  await until("the card", () => !document.getElementById("share-card").hidden);
-  // It tells the strip the card opened, for this window (the strip's note says so only then).
-  await until("the answer", () => window.__heard.length === 1);
-  assert.deepEqual(await inPage(() => (window.__strip.close(), window.__heard)), [{ opened: "share", window: 1 }]);
-  // Asked while the dock is a rail (the strip's open has not landed yet): the card waits for the
-  // open layout, then opens in the open dock.
-  await inPage(() => document.getElementById("share-card").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-  await until("the card closes", () => document.getElementById("share-card").hidden);
-  await ctx.shim.layout({ left: 1 });
-  await until("the rail", () => document.body.dataset.dock === "rail");
-  await inPage(() => { const ch = new BroadcastChannel("pairbrowse-share"); ch.postMessage({ open: "share", window: 1 }); ch.close(); });
-  await inPage(() => new Promise((r) => setTimeout(r, 100)));
-  assert.equal(await inPage(() => document.getElementById("share-card").hidden), true, "no card in a rail");
-  await ctx.shim.layout({ left: 2 });
-  await until("the card once open", () => document.body.dataset.dock === "open" && !document.getElementById("share-card").hidden);
-  await clean(ctx);
-});
-
 // The strip's logo (DESIGN.md Part G: the one switch-session home) asks for this dock's switcher:
 // it opens the same popover as the Sessions row and answers {opened: "switch"}; in a rail it waits
 // for the open layout, as Share does.
@@ -632,7 +569,18 @@ scenario("left: the strip's logo opens the session switcher here", { viewport: {
   await until("the switcher", () => !document.getElementById("switcher").hidden && document.getElementById("nav-sessions").getAttribute("aria-expanded") === "true");
   await framedPicker(page);
   await until("the answer", () => window.__heard.length === 1);
-  assert.deepEqual(await inPage(() => (window.__strip.close(), window.__heard)), [{ opened: "switch", window: 1 }]);
+  assert.deepEqual(await inPage(() => window.__heard), [{ opened: "switch", window: 1 }]);
+  // The strip's second click (or Escape on the logo) closes it, and the strip hears it closed.
+  await inPage(() => window.__strip.postMessage({ close: "switch", window: 1 }));
+  await until("closed by the logo", () => document.getElementById("switcher").hidden && window.__heard.length === 2);
+  assert.deepEqual(await inPage(() => window.__heard[1]), { closed: "switch", window: 1 });
+  // Asked with the logo's place: the caret goes under it (its centre from the window's left, less
+  // the switcher's 8 px gutter).
+  await inPage(() => window.__strip.postMessage({ open: "switch", window: 1, anchor: { left: 176 } }));
+  await until("open again", () => !document.getElementById("switcher").hidden);
+  assert.equal(await inPage(() => document.getElementById("switcher").style.getPropertyValue("--caret-x")), "168px");
+  await framedPicker(page);
+  await inPage(() => window.__strip.close());
   await page.keyboard.press("Escape");
   await until("closed", () => document.getElementById("switcher").hidden);
   await ctx.shim.layout({ left: 1 });
@@ -670,11 +618,11 @@ scenario("left: no connection line in the browser", { viewport: OPEN, fixtures: 
 });
 
 // Before the dock knows its window (the list has not answered): no ask is taken as this window's.
-scenario("left: no Share card before the window is known", { viewport: OPEN, shim: { windows: [] } }, async (ctx) => {
+scenario("left: no switcher before the window is known", { viewport: OPEN, shim: { windows: [] } }, async (ctx) => {
   const { until, inPage } = ctx;
   await until("live", () => document.body.dataset.s === "live");
-  await inPage(() => { const ch = new BroadcastChannel("pairbrowse-share"); ch.postMessage({ open: "share", window: 1 }); ch.close(); });
+  await inPage(() => { const ch = new BroadcastChannel("pairbrowse-share"); ch.postMessage({ open: "switch", window: 1 }); ch.close(); });
   await inPage(() => new Promise((r) => setTimeout(r, 100)));
-  assert.equal(await inPage(() => document.getElementById("share-card").hidden), true);
+  assert.equal(await inPage(() => document.getElementById("switcher").hidden), true);
   await clean(ctx);
 });

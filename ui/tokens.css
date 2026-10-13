@@ -17,8 +17,20 @@
   --fs-5: 17px; /* page section titles (settings, the picker's more sessions) */
   --fs-6: 20px; /* page titles and the strip's wordmark */
   --r-1: 6px; --r-2: 8px; --r-3: 10px;
-  --t: 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* One motion language (DESIGN.md Part I): opening, entering and expanding take --t-open, closing,
+     leaving and collapsing --t-close (quicker: the person already moved on), hover and pressed
+     colors --t-hover. Opacity with a small translate (--rise) or scale (--shrink); no bounce, no
+     overshoot. Under prefers-reduced-motion every one of them is instant (the block at the end).
+     common.js reads --dur-open, --dur-close, --ease-out and --ease-in for the animations it runs. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1); --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --dur-open: 160ms; --dur-close: 120ms;
+  --t-open: var(--dur-open) var(--ease-out);
+  --t-close: var(--dur-close) var(--ease-in);
+  --t: var(--t-open); /* the older name for --t-open (slides, folds' chevrons) */
   --t-hover: 120ms ease-out; /* hover and pressed colors (B11) */
+  --rise: 4px; /* how far a popover, a card or a row travels as it opens or enters */
+  --shrink: 0.98; /* the scale a popover opens from */
+  --slide: 8px; /* how far a tab's pane travels in from the side of the tab chosen */
   /* One spacing scale (545): every padding, margin, gap and inset is a step of 4 px. A value off it
      carries a mockup or native comment on its line (test/tokens.test.mjs). */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
@@ -65,6 +77,36 @@
      surround and the active tab's foot. The browser's color mixer seeds the same value (525). */
   --column: #1B2836;
 }
+/* ---- the motion language (DESIGN.md Part I), shared by every page ----
+   .m-pop: a popover, menu or card that opens from its trigger: fades in with --rise of travel and
+     --shrink of scale from --origin (default: down from the top), closes faster. Shown and hidden
+     with the hidden attribute only; the display transition keeps it on screen while it fades.
+   .m-fold: content under a disclosure: its height grows from 0 (and back) instead of jumping.
+   .m-pane: a tab's pane: it slides --slide in from the side of the tab chosen (data-from on the
+     pane's parent: "start" or "end") and fades.
+   [aria-busy="true"]: a control whose request is out: no spinner (nothing endless); after 300 ms a
+     thin bar along its foot fills once, so a quick answer shows nothing and a slow one shows work. */
+:root { interpolate-size: allow-keywords; }
+.m-pop { transform-origin: var(--origin, top center); transition: opacity var(--t-open), translate var(--t-open), scale var(--t-open), display var(--t-open) allow-discrete; }
+.m-pop[hidden] { opacity: 0; translate: 0 calc(-1 * var(--rise)); scale: var(--shrink); transition: opacity var(--t-close), translate var(--t-close), scale var(--t-close), display var(--t-close) allow-discrete; }
+.m-pop.m-up[hidden] { translate: 0 var(--rise); }
+@starting-style { .m-pop:not([hidden]) { opacity: 0; translate: 0 calc(-1 * var(--rise)); scale: var(--shrink); } .m-pop.m-up:not([hidden]) { translate: 0 var(--rise); } }
+.m-fold { overflow: clip; transition: height var(--t-open), padding-block var(--t-open), margin-block var(--t-open), border-block-width var(--t-open), opacity var(--t-open), display var(--t-open) allow-discrete; }
+.m-fold[hidden] { height: 0; padding-block: 0; margin-block: 0; border-block-width: 0; opacity: 0; transition: height var(--t-close), padding-block var(--t-close), margin-block var(--t-close), border-block-width var(--t-close), opacity var(--t-close), display var(--t-close) allow-discrete; }
+@starting-style { .m-fold:not([hidden]) { height: 0; padding-block: 0; margin-block: 0; border-block-width: 0; opacity: 0; } }
+.m-pane:not([hidden]) { transition: opacity var(--t-open), translate var(--t-open); }
+@starting-style { .m-pane:not([hidden]) { opacity: 0; } [data-from="end"] > .m-pane:not([hidden]) { translate: var(--slide) 0; } [data-from="start"] > .m-pane:not([hidden]) { translate: calc(-1 * var(--slide)) 0; } }
+/* A container shown again (a tab's pane, a dock back from its rail; common.js revealed): the folds
+   and popovers inside keep their state, only the container moves. */
+[data-entering] .m-fold, [data-entering] .m-pop { transition: none !important; }
+[aria-busy="true"] { position: relative; cursor: progress; }
+[aria-busy="true"]::after { content: ""; position: absolute; left: var(--sp-2); right: var(--sp-2); bottom: 3px; height: 2px; border-radius: 1px; background: currentColor; opacity: 0; transform-origin: left center; animation: busy 2400ms var(--ease-out) 300ms both; pointer-events: none; }
+@keyframes busy { from { opacity: 0.7; scale: 0 1; } to { opacity: 0.7; scale: 0.9 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .m-pop, .m-pop[hidden], .m-fold, .m-fold[hidden], .m-pane:not([hidden]) { transition: none !important; }
+  [aria-busy="true"]::after { animation: none !important; opacity: 0.7; scale: 0.6 1; }
+}
+
 /* The live view alone follows the system's light scheme (liveview.html sets data-scheme); the
    extension pages stay dark. */
 @media (prefers-color-scheme: light) {

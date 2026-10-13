@@ -4,7 +4,7 @@
 // never toggles itself; a card's click opens the agent panel when it is a rail or hidden, so the
 // picture it asks for shows (Part H). Nothing runs before the page is first
 // visible; while hidden it fetches nothing and holds no picture.
-import { $, el, shortClock, helperStream } from "../common.js";
+import { $, el, shortClock, helperStream, enter, leave, busy } from "../common.js";
 
 const PITCH = 114; // a card (104 px) and its gap (10 px)
 const PAD = 15; // the strip's left padding
@@ -27,6 +27,8 @@ let lastActivity = 0;
 let driveTimer = 0;
 let focusId = null; // the card that takes Tab (roving tabindex)
 let menuFor = null; // the card id whose menu is open
+let drawn = false; // the first draw of a list places its cards; later ones grow in
+let shownId = null; // the card last shown large in the agent panel (marked here, with a note under it)
 
 const strip = $("strip"), list = $("cards"), addLi = $("add"), addBtn = $("add-btn"), form = $("note-form"), note = $("note"), menu = $("menu");
 const visible = () => document.visibilityState === "visible";
@@ -70,6 +72,7 @@ async function load() {
   }
   const seen = new Set();
   cards = body.cards.map(valid).filter((c) => c && !seen.has(c.id) && seen.add(c.id));
+  if (document.body.dataset.state !== "list") drawn = false;
   document.body.dataset.state = "list";
   addLi.hidden = false; // Add note only where a note can land: the list state
   list.hidden = false;
@@ -199,9 +202,20 @@ function draw() {
   }
   // In place, Add note kept last: a node moved loses focus, so only what changed moves, and the
   // focus is put back where it was.
+  // A card that joins grows in from nothing and one deleted folds away (common.js enter and leave),
+  // once the list was read: the first draw only places them.
   const had = list.contains(document.activeElement) ? document.activeElement : null;
-  for (const li of [...list.children]) if (li !== addLi && !items.includes(li)) li.remove();
-  items.forEach((li, i) => { const at = list.children[i]; if (at !== li) list.insertBefore(li, at); });
+  // (A list that goes away whole, the timeline turned off, takes its cards at once.)
+  const listing = document.body.dataset.state === "list";
+  for (const li of [...list.children]) {
+    if (li === addLi || li.dataset.leaving || items.includes(li)) continue;
+    if (li.dataset.id === shownId) setShown(null);
+    if (listing) leave(li, { axis: "inline" }); else li.remove();
+  }
+  const fresh = items.filter((li) => !li.isConnected);
+  items.forEach((li, i) => { const at = [...list.children].filter((n) => !n.dataset.leaving)[i]; if (at !== li) list.insertBefore(li, at); });
+  if (drawn) for (const li of fresh) enter(li, { axis: "inline" });
+  drawn = true;
   if (had?.isConnected && document.activeElement !== had) had.focus({ preventScroll: true });
   if (document.body.dataset.state === "list") showLine(cards.length ? "" : "Nothing yet. Pictures sent to the agent appear here.");
   setDriver();
@@ -257,7 +271,7 @@ function release(id) {
 }
 const releaseAll = () => { for (const id of [...held.keys()]) release(id); countHeld(); };
 
-strip.addEventListener("scroll", () => { frame(); if (menuFor) closeMenu(false); }, { passive: true });
+strip.addEventListener("scroll", () => { frame(); if (menuFor) closeMenu(false); if (!$("where").hidden) $("where").hidden = true; }, { passive: true });
 window.addEventListener("resize", () => frame());
 
 // ---- driving: the panel's definition (an action within DRIVING_MS) ----
@@ -358,14 +372,28 @@ function show(id) {
   // A note has no picture to show (the helper answers 409): nothing to ask for.
   if (cards.find((c) => c.id === id)?.note === true) return;
   // The helper's show route (the right dock shows the picture); a 404 from a helper without it is
-  // silent and nothing is marked shown. The agent panel opens first when it is not (Part H).
+  // silent and nothing is marked shown; another failure says so under the cards. The agent panel opens first when it is not (Part H).
   const pb = window.pairbrowse;
   if (pb) {
     pb.layout.get().then(({ state }) => {
       if (state && state.right !== pb.DockState.kOpen) return pb.layout.set({ ...state, right: pb.DockState.kOpen });
     }).catch(() => {});
   }
-  if (base) post(base + `timeline/${id}/show`, {}).catch(() => {});
+  if (base) post(base + `timeline/${id}/show`, {}).then((r) => { if (r.ok) setShown(id); else if (r.status !== 404) problem("Couldn't show it in the agent panel."); }).catch(() => problem("Couldn't reach PairBrowse."));
+}
+// The picture shows large in another part of the window (the agent panel) until 530's bubble can
+// show it here: the card says so where it was clicked, a ring on it and a line under it, until
+// another card is shown or the strip scrolls (DESIGN.md Part I). No timer.
+function setShown(id) {
+  for (const li of list.querySelectorAll('li.card[data-shown="true"]')) delete li.dataset.shown;
+  shownId = id;
+  const li = id && nodes.get(id);
+  const note = $("where");
+  if (!li) { note.hidden = true; return; }
+  li.dataset.shown = "true";
+  note.style.left = `${Math.round(li.getBoundingClientRect().left)}px`;
+  note.hidden = false;
+  say("Shown large in the agent panel");
 }
 
 list.addEventListener("click", (e) => {
@@ -472,8 +500,10 @@ menu.addEventListener("keydown", (e) => {
   if (to) { e.preventDefault(); for (const b of all) b.tabIndex = b === to ? 0 : -1; to.focus(); }
 });
 
+// The menu item pressed says busy while its request is out (tokens.css draws the bar after 300 ms).
+const pressed = () => (menu.contains(document.activeElement) ? document.activeElement : null);
 async function pin(card) {
-  const r = await post(base + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null);
+  const r = await busy(pressed(), () => post(base + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
   const body = await r?.json().catch(() => null);
   const next = r?.ok ? valid(body) : null;
   closeMenu(true);
@@ -484,7 +514,7 @@ async function pin(card) {
 
 async function del(card) {
   const i = items().indexOf(faceOf(nodes.get(card.id))); // its place on screen
-  const r = await fetch(base + `timeline/${card.id}`, { method: "DELETE" }).catch(() => null);
+  const r = await busy(pressed(), () => fetch(base + `timeline/${card.id}`, { method: "DELETE" }).catch(() => null));
   closeMenu(false);
   if (!r?.ok) {
     const body = await r?.json().catch(() => null);

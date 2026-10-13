@@ -125,6 +125,8 @@ describe("agent states in words", () => pageTest("right", opts(), async ({ page,
   assert.equal(await inPage(() => getComputedStyle(document.getElementById("driver")).color), await inPage(token, "muted"), "paused in --muted, words and dot");
   assert.equal(await inPage(visible, "#turn"), false);
   await page.click("#agent-fold");
+  // The body folds with the sheet's motion (.m-fold, DESIGN.md Part I): read where it lands.
+  await until("folded", () => document.getElementById("agent-body").getAnimations().length === 0);
   assert.equal(await inPage(visible, "#agent-body"), false, "folded to one line");
   assert.equal(await page.getAttribute("#agent-fold", "aria-expanded"), "false");
   assert.equal(await page.getAttribute("#agent-fold", "aria-label"), "Expand the agent card");
@@ -327,7 +329,9 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
   assert.equal(helper.posts.filter((p) => p.route === "pause").length, 0, "a synthetic click pauses nothing");
   await page.click(`${sel} .pause-one`);
   assert.deepEqual((await posted(helper, "pause"))[0]?.body, { paused: true, who: "Alice · Codex" });
-  // From the keyboard: a trusted Enter pauses too (pausing is the safe direction).
+  // From the keyboard: a trusted Enter pauses too (pausing is the safe direction), once the first
+  // answer is in (a press while the request is out is the same press: the button says busy).
+  await until("answered", (q) => !document.querySelector(q)?.hasAttribute("aria-busy"), `${sel} .pause-one`);
   await page.focus(`${sel} .pause-one`);
   await page.keyboard.press("Enter");
   assert.deepEqual((await posted(helper, "pause", 2))[1]?.body, { paused: true, who: "Alice · Codex" }, "Enter on Pause this agent pauses it");

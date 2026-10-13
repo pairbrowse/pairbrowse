@@ -6,7 +6,7 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, agentWords, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer } from "../common.js";
+import { $, el, rich, clock, ago, whose, agentWords, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer, syncList, enter, busy, revealed } from "../common.js";
 import { toolsPanel } from "./tools.js";
 
 const pb = globalThis.pairbrowse || null;
@@ -56,6 +56,10 @@ const post = (route, body) => fetch(base + route, { method: "POST", headers: { "
 const TABS = ["agent", "page", "pictures", "tools"];
 function selectTab(name) {
   if (!TABS.includes(name)) return;
+  // The pane slides in from the side of the tab chosen (tokens.css .m-pane): a tab to the right of
+  // the one shown brings its pane from the end, one to the left from the start.
+  const was = TABS.indexOf(document.body.dataset.tab);
+  if (was !== -1 && was !== TABS.indexOf(name)) document.querySelector("main").dataset.from = TABS.indexOf(name) > was ? "end" : "start";
   document.body.dataset.tab = name;
   for (const t of TABS) {
     const tab = $(`tab-${t}`);
@@ -74,6 +78,7 @@ function selectTab(name) {
   if (name === "pictures") showPictures();
   if (name === "page") showOutline();
   if (name === "tools") tools.show();
+  revealed($(`pane-${name}`)); // what it holds is drawn as it was (open sections open), only the pane moves
 }
 // The Page tab (Part H: it never read anything): the structure an agent last read of a page,
 // GET outline.json, read when the tab is shown and again on new activity while it is in front.
@@ -111,7 +116,9 @@ document.querySelector(".tabset").addEventListener("keydown", (e) => {
 // Open requests (joins, dev servers, join addresses) on the Agent tab's label while another tab
 // is in front, and on the rail's Agent button whenever there are any (the rail shows no pane).
 function countRequests() {
-  const n = $("joins").children.length + $("dev-asks").children.length + $("host-asks").children.length;
+  // A request that was answered folds away (common.js leave, data-leaving): it no longer counts.
+  const open = (id) => [...$(id).children].filter((c) => !c.dataset.leaving).length;
+  const n = open("joins") + open("dev-asks") + open("host-asks");
   const words = `${n} request${n === 1 ? "" : "s"}`;
   const c = $("agent-count");
   c.hidden = !n || document.body.dataset.tab === "agent";
@@ -128,6 +135,7 @@ function countRequests() {
 // moves to the other button once the browser applies it. Hidden is on the shortcut only.
 let lastLayout = null;
 let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
+let tabFocusAfter = ""; // a rail button's tab, focused once the dock is open
 function applyDock(s) {
   const name = ["hidden", "rail", "open"][s?.right] || "open";
   const was = document.documentElement.dataset.dock;
@@ -136,6 +144,11 @@ function applyDock(s) {
   $("dock-collapse").hidden = name !== "open";
   $("dock-expand").hidden = name !== "rail";
   if (name === was) return;
+  if (name === "open") revealed(document.querySelector("main"));
+  if (name === "open" && tabFocusAfter) { const t = tabFocusAfter; tabFocusAfter = ""; if (document.activeElement?.closest?.("#rail") || document.activeElement === document.body) $(`tab-${t}`).focus(); }
+  // Open and rail swap the dock's content: it comes in with the sheet's motion, not a jump (the
+  // first state, on load, is only placed).
+  if (was && name !== "hidden") for (const n of [$("rail"), document.querySelector(".tabs"), document.querySelector("main")]) if (n && getComputedStyle(n).display !== "none") enter(n, { axis: "fade" });
   if (focusAfter) {
     const wanted = focusAfter;
     focusAfter = "";
@@ -143,6 +156,8 @@ function applyDock(s) {
   }
   // A hidden dock or a rail runs no timer, whether or not its document reports hidden; open
   // again, each is re-armed from the state it left. Open on Pictures again: the newest picture.
+  if (name === "open" && shareAsked) { const a = shareAsked; shareAsked = null; openAskedShare(a); }
+  if (name !== "open") share.close(false);
   if (name === "hidden" || name === "rail") sleepTimers();
   else if (was === "hidden" || was === "rail") wakeTimers();
   else if (name === "open" && document.body.dataset.tab === "pictures") showPictures();
@@ -152,7 +167,8 @@ if (pb) {
   pb.layout.addObserver({ onLayout: (state) => { lastLayout = state; applyDock(state); } });
   for (const btn of document.querySelectorAll(".rail-btn")) {
     btn.addEventListener("click", () => {
-      if (lastLayout) pb.layout.set({ ...lastLayout, right: pb.DockState.kOpen }).catch(() => {});
+      // The rail goes as the dock opens: the focus moves on to the tab that button opened.
+      if (lastLayout) { tabFocusAfter = btn.dataset.tab; pb.layout.set({ ...lastLayout, right: pb.DockState.kOpen }).catch(() => { tabFocusAfter = ""; }); }
       selectTab(btn.dataset.tab);
     });
   }
@@ -167,7 +183,8 @@ if (pb) {
 // Sessions row switch (one home, Part G), so this button is not shown there.
 $("switch-btn").addEventListener("click", async (ev) => {
   if (!ev.isTrusted || !base) return;
-  const r = await fetch(base + "picker", { method: "POST" }).catch(() => null);
+  if (ev.currentTarget.getAttribute("aria-busy") === "true") return;
+  const r = await busy(ev.currentTarget, () => fetch(base + "picker", { method: "POST" }).catch(() => null));
   sessionSay(r?.ok ? "The session picker opened in a new tab." : "Couldn't open the session picker.", r?.ok ? "ok" : "error");
 });
 // Record: the browser as a video (the helper saves it in Downloads and says where).
@@ -209,8 +226,17 @@ function drawPause() {
   $("pause-btn").textContent = paused ? "Resume" : agents.size >= 2 ? "Pause all" : "Pause";
   $("pause-btn").setAttribute("aria-label", paused ? "Resume agents" : agents.size >= 2 ? "Pause all agents" : "Pause agents");
 }
+// The agent card's own buttons: busy while the request is out, a failure said in the card
+// (#agent-msg), success shown by the pause event that follows (the button's text and the state line).
+const agentSay = (text) => { $("agent-msg").textContent = text; $("agent-msg").dataset.kind = text ? "error" : ""; };
+async function pauseAsk(btn, body, what) {
+  if (btn.getAttribute("aria-busy") === "true") return;
+  agentSay("");
+  const r = await busy(btn, () => post("pause", body).then(async (x) => ({ ok: x.ok, body: await x.json().catch(() => null) }), () => null));
+  if (!r?.ok) agentSay(`${what}: ${r?.body?.error || "Couldn't reach PairBrowse."}`);
+}
 $("pause-btn").addEventListener("click", (ev) => {
-  if (ev.isTrusted && base) post("pause", { paused: !paused }).catch(() => {});
+  if (ev.isTrusted && base) pauseAsk($("pause-btn"), { paused: !paused }, paused ? "Couldn't resume" : "Couldn't pause");
 });
 
 // Tools in the browser: one row for what lives in Settings (Passwords first; the page's #passwords
@@ -228,13 +254,56 @@ const drawJoins = (x) => { joins(x); countRequests(); };
 const drawDev = (x) => { dev(x); countRequests(); };
 const drawHosts = (x) => { hosts(x); countRequests(); };
 const profile = profilePanel(() => base);
-// Share: a join code or a watch link, made here with a click (the helper's own invite code).
-shareCard({ btn: $("share-btn"), card: $("share-card"), base: () => base });
+// Share: a join code or a watch link, made here with a click (the helper's own invite code). The
+// side panel: the session card's Share opens it above the session card. In the browser the
+// strip's Share is the one trigger (DESIGN.md Part G) and the card opens here, at the top of the
+// agent panel right under Share, its caret at Share's place (Part I; 530's bubble later), asked
+// over the pairbrowse-share channel; opening and closing it tells the strip, whose Share shows the
+// state and closes it on a second click or Escape.
+let myWindow = -1, shareAsked = null, shareChannel = null;
+const tellStrip = (msg) => { try { if (myWindow !== -1) shareChannel?.postMessage({ ...msg, window: myWindow }); } catch {} };
+if (pb) {
+  const card = $("share-card");
+  card.classList.add("dock-share");
+  card.classList.remove("m-up"); // it hangs from the top here: it opens downward
+  document.body.append(card);
+}
+const share = shareCard({ btn: pb ? null : $("share-btn"), card: $("share-card"), base: () => base, returnTo: pb ? $("tab-agent") : null,
+  onToggle: (open) => { if (pb) tellStrip(open ? { opened: "share" } : { closed: "share" }); } });
+$("share-close").addEventListener("click", () => share.close(false));
+// The caret under the strip's Share: its centre `right` px from the window's right edge, which is
+// this dock's too; the card's right edge is --dock-gutter (8 px) in.
+function shareCaret(right) {
+  const w = Math.min(320, window.innerWidth - 16);
+  const x = Number.isFinite(right) ? w - (right - 8) : w - 48;
+  $("share-card").style.setProperty("--caret-x", `${Math.round(Math.max(16, Math.min(x, w - 16)))}px`);
+}
+function openAskedShare(anchor) {
+  if (share.isOpen()) { tellStrip({ opened: "share" }); return; }
+  shareCaret(anchor?.right);
+  share.open();
+}
+if (pb) {
+  pb.windows.list().then(({ windows }) => { myWindow = (windows.find((w) => w.current) || windows.find((w) => w.focused))?.id ?? -1; }).catch(() => {});
+  try {
+    shareChannel = new BroadcastChannel("pairbrowse-share");
+    shareChannel.onmessage = (e) => {
+      if (myWindow === -1 || e.data?.window !== myWindow) return;
+      if (e.data?.close === "share") { shareAsked = null; share.close(false); return; }
+      if (e.data?.open !== "share") return;
+      // Into an open dock only (the strip opens it first: the card waits for that layout).
+      const anchor = e.data.anchor && typeof e.data.anchor === "object" ? e.data.anchor : {};
+      if (document.documentElement.dataset.dock !== "open") { shareAsked = anchor; return; }
+      openAskedShare(anchor);
+    };
+  } catch {}
+}
 
 // The agent card folds to one line.
 $("agent-fold").addEventListener("click", () => {
   const folded = $("agent").dataset.folded !== "true";
   $("agent").dataset.folded = String(folded);
+  $("agent-body").hidden = folded; // folds with the sheet's motion (.m-fold)
   $("agent-fold").setAttribute("aria-expanded", String(!folded));
   $("agent-fold").setAttribute("aria-label", folded ? "Expand the agent card" : "Collapse the agent card");
 });
@@ -329,7 +398,8 @@ function forgetSessionTools() {
 $("session-save").addEventListener("click", async (ev) => {
   if (!ev.isTrusted || !base || !canSave) return;
   sessionSay("");
-  const res = await post("session", { op: "save" }).catch(() => null);
+  if ($("session-save").getAttribute("aria-busy") === "true") return;
+  const res = await busy($("session-save"), () => post("session", { op: "save" }).catch(() => null));
   if (res?.status === 404) {
     const had = document.activeElement === $("session-save");
     canSave = false;
@@ -491,7 +561,7 @@ function drawPeople() {
   const people = all.filter((p) => !quiet(p) && p !== active && !(native() && p?.kind === "person"));
   const idle = all.filter(quiet).length;
   const perAgent = !!(pauseInfo?.perAgent && pauseInfo?.can);
-  $("people").replaceChildren(...people.map((p, i) => {
+  const rows = people.map((p, i) => {
     const { name, app } = splitLabel(p.who);
     const face = avatar(name, p.color);
     face.removeAttribute("role");
@@ -506,14 +576,14 @@ function drawPeople() {
     const st = el("small", { className: "st", title: [word, p.task, p.tab, p.where ? `${p.where}'s browser` : ""].filter(Boolean).join(" · ") }, el("span", { className: "state", textContent: word }), ...(rest ? [document.createTextNode(` · ${rest}`)] : []));
     if (isColor(p.color)) st.style.setProperty("--who", p.color);
     const lines = [p.task, p.last].filter(Boolean);
-    const acts = el("div", { className: "acts", id: `acts-${i}` }, ...lines.map((t) => el("small", { textContent: t })));
+    const acts = el("div", { className: "acts m-fold", id: `acts-${i}` }, ...lines.map((t) => el("small", { textContent: t })));
     acts.hidden = !openRows.has(p.who);
     const kids = [face, el("strong", { className: "name", textContent: name, title: p.who }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])), st];
     if (held) {
       // Resuming one is always possible (the helper's resumeOne), also in a session joined from here.
       const back = el("button", { className: "pause-one", type: "button", title: `${name} was paused by ${held.by || "someone"}: let it act again` }, "Resume");
       back.setAttribute("aria-label", `Resume ${name}`);
-      back.addEventListener("click", (ev) => { if (ev.isTrusted && base) post("pause", { paused: false, who: p.who }).catch(() => {}); });
+      back.addEventListener("click", (ev) => { if (ev.isTrusted && base) pauseAsk(back, { paused: false, who: p.who }, `Couldn't resume ${name}`); });
       kids.push(back);
     } else if (p.kind === "agent" && perAgent) {
       // Icon-only when the row has a task line after its part word, so the line shows in full; the
@@ -523,7 +593,7 @@ function drawPeople() {
         : el("button", { className: "pause-one", type: "button", title: `Pause ${name}: you take control` }, takeIcon(), "Take control");
       stop.setAttribute("aria-label", `Take control from ${name}`);
       // A person's click or key press: a synthetic event pauses nothing.
-      stop.addEventListener("click", (ev) => { if (ev.isTrusted && base) post("pause", { paused: true, who: p.who }).catch(() => {}); });
+      stop.addEventListener("click", (ev) => { if (ev.isTrusted && base) pauseAsk(stop, { paused: true, who: p.who }, `Couldn't take control from ${name}`); });
       kids.push(stop);
     }
     if (lines.length) {
@@ -541,8 +611,14 @@ function drawPeople() {
     kids.push(acts);
     const li = el("li", {}, ...kids);
     li.dataset.state = state;
+    li.dataset.key = `who:${p.who}`;
     return li;
-  }), ...(idle ? [el("li", { className: "idle" }, el("small", { textContent: `+ ${idle} idle agent${idle === 1 ? "" : "s"} in this browser` }))] : []));
+  });
+  const quietLine = el("li", { className: "idle" }, el("small", { textContent: `+ ${idle} idle agent${idle === 1 ? "" : "s"} in this browser` }));
+  quietLine.dataset.key = "idle";
+  // Keyed (common.js syncList): a row that joins grows in, one that leaves folds away, a focused
+  // button keeps the focus.
+  syncList($("people"), [...rows, ...(idle ? [quietLine] : [])]);
 }
 
 // ---- Pictures: the picture last sent to the agent, fetched only while the tab is in front and

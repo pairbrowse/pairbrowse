@@ -15,7 +15,7 @@
 // answer without `opened`), one line across the list, emptied when the next Downloads action starts.
 // Nothing is sent anywhere: Prepare report shows the helper's text, Copy uses the clipboard and
 // Save is a download made in the page. No timer, observer or frame loop here; no markup strings.
-import { $, el, avatar, splitLabel, shortClock } from "../common.js";
+import { $, el, avatar, splitLabel, shortClock, enter, leave, revealed } from "../common.js";
 
 const MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
 const REVEAL = MAC ? "Show in Finder" : "Show in folder";
@@ -92,7 +92,9 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
   async function once(btn, fn) {
     if (busy.has(btn)) return;
     busy.add(btn);
-    try { await fn(); } finally { busy.delete(btn); }
+    // aria-busy: tokens.css draws the busy bar once the request is out 300 ms (DESIGN.md Part I).
+    btn.setAttribute("aria-busy", "true");
+    try { await fn(); } finally { busy.delete(btn); btn.removeAttribute("aria-busy"); }
   }
   // The one download row status showing (p.said), or null; emptied when the next Downloads action starts.
   let said = null;
@@ -109,9 +111,10 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
   // that stay where they are (a moved row would lose the focus). ----
   function makeList({ ul, valid, newest, build, update, changed, fallback }) {
     const L = { loaded: false, busy: false, pending: [], rows: new Map(), seq: 0 };
+    // Rows folding away (common.js leave) keep their place until gone and are not counted.
     const order = () => {
       const all = [...L.rows.values()].sort((a, b) => (newest ? (b.t - a.t) || (b.seq - a.seq) : (a.t - b.t) || (a.seq - b.seq)));
-      all.forEach((row, i) => { if (ul.children[i] !== row.li) ul.insertBefore(row.li, ul.children[i] || null); });
+      all.forEach((row, i) => { const kids = [...ul.children].filter((n) => !n.dataset.leaving); if (kids[i] !== row.li) ul.insertBefore(row.li, kids[i] || null); });
     };
     L.upsert = (item, top = false) => {
       const id = idOf(item?.id);
@@ -119,8 +122,10 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
       let row = L.rows.get(id);
       const t = top ? Infinity : timeOf(item.at) ?? 0;
       if (row) { row.item = item; if (top || timeOf(item.at) !== null) row.t = t; update(row, item, id); }
-      else { row = { id, item, t, seq: L.seq++, li: null }; row.li = build(row, item, id); L.rows.set(id, row); }
+      else { row = { id, item, t, seq: L.seq++, li: null, fresh: true }; row.li = build(row, item, id); L.rows.set(id, row); }
       order();
+      // A row that arrives after the list was read grows in (the first read only places rows).
+      if (row.fresh) { row.fresh = false; if (L.loaded) enter(row.li); }
       changed();
     };
     L.remove = (id) => {
@@ -130,9 +135,9 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
       if (row.li.contains(document.activeElement)) {
         const near = row.li.nextElementSibling || row.li.previousElementSibling;
         const to = near?.querySelector("button:not([hidden])") || fallback();
-        row.li.remove();
+        leave(row.li);
         to?.focus();
-      } else row.li.remove();
+      } else leave(row.li);
       L.rows.delete(row.id);
       changed();
     };
@@ -370,14 +375,17 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
   // ---- reading the lists ----
   const LISTS = [
     { L: handoffs, route: "handoffs.json",
-      found: () => { $("sec-handoffs").hidden = false; },
+      // A section the helper has: shown with its folds as they are (common.js revealed); the read
+      // lands within the pane's own fade-in (a local route), so nothing grows after it.
+      found: () => { $("sec-handoffs").hidden = false; revealed($("sec-handoffs")); },
       absent: () => { $("sec-handoffs").hidden = true; } },
     { L: downloads, route: "downloads.json",
-      found: () => { $("sec-downloads").hidden = false; },
+      found: () => { $("sec-downloads").hidden = false; revealed($("sec-downloads")); },
       absent: () => { $("sec-downloads").hidden = true; } },
     { L: recordings, route: "recordings.json",
       found: (body) => {
         $("recordings").hidden = false;
+        revealed($("recordings"));
         const rec = body?.recording;
         if (rec && typeof rec === "object") onRecording({ on: !!rec.on, since: Number(rec.since) || Date.now() });
       },

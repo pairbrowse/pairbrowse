@@ -20,7 +20,7 @@ button { font: inherit; }
 /* One home each (DESIGN.md Part G). In the browser the strip owns Share and the session's Live
    state, and the agent card's state line says "Working…": the session card's Share, its card and
    the Status box's Live pill are the side panel's (extension host) only. */
-html[data-host="native"] #share-btn, html[data-host="native"] #share-card, html[data-host="native"] #status-live { display: none; }
+html[data-host="native"] #share-btn, html[data-host="native"] #share-card:not(.dock-share), html[data-host="native"] #status-live { display: none; }
 /* With the browser's Settings page, Join addresses, Remembered details, Passwords and Diagnostics live there (Part H). */
 html[data-profile-home="settings"] #hosts, html[data-profile-home="settings"] #sec-details, html[data-profile-home="settings"] #sec-secrets, html[data-profile-home="settings"] #sec-diag { display: none; }
 .mini.bad { color: var(--bad-ink); }
@@ -65,7 +65,9 @@ body[data-tab]:not([data-tab="agent"]) .tabs { border-radius: 12px; border-botto
 .tab { position: relative; display: flex; align-items: center; gap: var(--sp-2); padding: 0 calc(var(--dock-inset) - 1px); border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: 500; cursor: pointer; user-select: none; transition: color var(--t-hover), background-color var(--t-hover); }
 .tab:hover { background: var(--hover); color: var(--ink); }
 .tab[aria-selected="true"] { color: var(--ink); }
-.tab[aria-selected="true"]::after { content: ""; position: absolute; left: calc(var(--dock-inset) - 1px); right: calc(var(--dock-inset) - 1px); bottom: -1px; z-index: 1; height: 2px; border-radius: 1px; background: var(--accent); box-shadow: 0 0 8px rgb(50 133 246 / 0.7); }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: calc(var(--dock-inset) - 1px); right: calc(var(--dock-inset) - 1px); bottom: -1px; z-index: 1; height: 2px; border-radius: 1px; background: var(--accent); box-shadow: 0 0 8px rgb(50 133 246 / 0.7); transition: scale var(--t-open), opacity var(--t-open); }
+/* The underline grows from the chosen tab's middle as its pane slides in (DESIGN.md Part I). */
+@starting-style { .tab[aria-selected="true"]::after { scale: 0.4 1; opacity: 0; } }
 .count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 var(--sp-1); border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font-size: var(--fs-1); font-weight: var(--fw-name); line-height: 1; }
 .count[hidden] { display: none; }
 /* Collapse (open, at the tab bar's end) and expand (the rail's top): the dock's own state. */
@@ -113,7 +115,7 @@ html[data-dock="hidden"] .top, html[data-dock="hidden"] .tabs, html[data-dock="h
 .session-card .fold[aria-expanded="false"]::before { transform: translateY(2px) rotate(-135deg); }
 #agent-body, .turn { grid-column: 1 / -1; min-width: 0; }
 #agent-body { margin: var(--sp-3) 0 0; border-top: 1px solid var(--edge); }
-.agent[data-folded="true"] #agent-body { display: none; }
+#agent-body[hidden] { display: none; }
 .agent-tab[hidden] { display: none; }
 
 /* Your turn: the helper's own words under the state line; no motion. */
@@ -277,6 +279,9 @@ h2 { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-2); }
 .primary:focus-visible { box-shadow: var(--glow-accent), var(--glow-focus); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; } }
 
+/* A request's failure, in its row (common.js rowSay): never silent, cleared by the next answer. */
+.join .fail, .dev .fail { grid-column: 1 / -1; font-size: var(--fs-2); color: var(--bad-ink); }
+.fail:empty { display: none; }
 /* People asking to join: the host decides with a click. */
 .joins:empty { display: none; }
 .join { display: grid; gap: var(--sp-2); margin-bottom: var(--sp-2); padding: calc(var(--sp-3) - 1px) calc(var(--sp-3) - 1px) calc(var(--sp-3) - 1px) var(--sp-4); border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); animation: drop var(--t); }
@@ -410,6 +415,17 @@ html[data-host="native"] .row3[hidden], html[data-host="native"] .row3.empty, ht
 .share-card .note { margin: var(--sp-2) 0 0; color: var(--ink-2); }
 .share-card .msg { margin: 0; }
 .share-card .msg:empty { display: none; }
+
+/* In the browser the strip's Share opens this card here, at the top of the agent panel right under
+   Share (DESIGN.md Part I; 530's bubble later), its caret at Share's place (--caret-x, right.js). */
+html[data-host="native"] #share-card.dock-share { position: fixed; top: var(--sp-2); right: var(--dock-gutter); bottom: auto; left: auto; width: min(320px, calc(100vw - 2 * var(--dock-gutter))); --origin: var(--caret-x, 90%) top; }
+html[data-host="native"] #share-card.dock-share::before { content: ""; position: absolute; top: -5px; left: calc(var(--caret-x, 90%) - 5px); width: 10px; height: 10px; rotate: 45deg; background: var(--elevated); box-shadow: -1px -1px 0 var(--edge); pointer-events: none; } /* mockup: the caret under Share */
+html[data-host="native"] #share-card.dock-share .share-close { display: grid; }
+.share-close { position: absolute; top: var(--sp-2); right: var(--sp-2); display: none; place-items: center; width: var(--ctl-xs); height: var(--ctl-xs); padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background-color var(--t-hover), color var(--t-hover); }
+.share-close:hover { background: var(--hover); color: var(--ink); }
+/* The agent card's own buttons (Pause, Take control, Resume) say a failure here, in the card. */
+.agent-msg { grid-column: 1 / -1; margin: var(--sp-2) 0 0; font-size: var(--fs-2); }
+.agent-msg:empty { display: none; }
 
 /* Page and Pictures: on the 20 px edge; an empty pane says so with 16 px above and below. */
 .outline { margin: 0; padding: var(--sp-3) var(--sp-5); font: var(--fs-2)/1.5 var(--mono); white-space: pre-wrap; color: var(--ink-2); }

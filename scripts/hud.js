@@ -207,7 +207,8 @@
     host = document.createElement(TAG_HUD);
     const shadow = host.attachShadow({ mode: "closed" });
     // The elevated navy surface, the sheet's values (tokens.css), a 3 px left edge in the agent's
-    // color (accent for your turn, ok for done) and its spark.
+    // color (accent for your turn, ok for done) and its spark. Your turn calls three times (a ring
+    // and the spark), then stays lit: nothing endless but the Live dot (DESIGN.md B11, Part I).
     shadow.innerHTML = html(`<style>
       :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;right:12px !important;bottom:12px !important}
       .b{display:flex;align-items:center;gap:9px;font:600 12px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;color:#F1F5FA;
@@ -216,8 +217,8 @@
          box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35)}
       .b span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       svg{flex:none;width:15px;height:15px;color:#e9763f}
-      .you{animation:g 1.8s ease-in-out infinite}
-      .you svg{animation:s 1.8s ease-in-out infinite}
+      .you{animation:g 1.8s ease-in-out 3}
+      .you svg{animation:s 1.8s ease-in-out 3}
       .x{flex:none;margin-left:2px;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:0 2px}
       .x:hover{color:#F1F5FA}
       @keyframes g{50%{box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35),0 0 0 4px rgba(50,133,246,.28)}}
@@ -354,7 +355,7 @@
         background:rgba(11,20,33,.96);
         border-top:1px solid #293B50;color:#A2B2C6;
         font:12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;
-        transition:opacity .18s ease,transform .18s ease}
+        transition:opacity .16s cubic-bezier(.22,1,.36,1),transform .16s cubic-bezier(.22,1,.36,1)}
       .bar.away{opacity:0;transform:translateY(8px)}
       .who{display:flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
       .who b{color:#F1F5FA;font-weight:600}

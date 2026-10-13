@@ -124,35 +124,6 @@ li[data-state="idle"] .dot { background: var(--muted); }
 .add:focus-visible { box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--glow-focus); }
 /* Focus keeps the active row's own edge and light first, then the halo. */
 .row[aria-current="page"]:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-lit), inset 0 1px 0 var(--edge-light), var(--glow-soft), var(--glow-focus); }
-.share-card .primary:focus-visible { box-shadow: var(--glow-accent), var(--glow-focus); }
-
-/* The Share card (DESIGN.md B8, the strip's markup and styles): a popover under "Shared with",
-   from gutter to gutter. */
-.share-card { position: absolute; top: 36px; left: 0; right: 0; max-width: 320px; z-index: 3; display: grid; gap: var(--sp-3); padding: calc(var(--sp-3) - 1px); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); line-height: 1.45; }
-.share-card[hidden] { display: none; }
-.share-card h2 { margin: 0; font-size: var(--fs-4); font-weight: var(--fw-name); color: var(--ink); }
-.share-card .share-choice { display: grid; gap: var(--sp-1); margin: 0; padding: 0; border: 0; min-width: 0; }
-.share-card .share-choice legend { padding: 0; margin-bottom: var(--sp-1); font-size: var(--fs-1); font-weight: var(--fw-name); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
-.share-card .share-opt { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-2); align-items: start; padding: var(--sp-2); border-radius: var(--r-2); font-size: var(--fs-3); cursor: pointer; transition: background-color var(--t-hover); }
-.share-card .share-opt:hover { background: var(--hover); }
-.share-card .share-opt input { margin: 2px 0 0; accent-color: var(--accent); }
-.share-card .share-opt small { display: block; font-size: var(--fs-2); color: var(--ink-2); }
-.share-card .share-name { display: grid; gap: var(--sp-1); font-size: var(--fs-2); color: var(--ink-2); }
-.share-card .share-name[hidden], .share-card .share-result[hidden] { display: none; }
-.share-card .share-line { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-2); align-items: center; }
-.share-card .field { width: 100%; min-width: 0; height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
-.share-card .field:focus { border-color: var(--accent); }
-.share-card .share-code { font-family: var(--mono); }
-.share-card .primary { justify-self: start; height: var(--ctl); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font-weight: 650; cursor: pointer; box-shadow: var(--glow-accent); }
-.share-card .primary:hover { background: var(--accent-ink); }
-.share-card .primary:disabled { opacity: 0.6; }
-.share-card .mini { height: var(--ctl-sm); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: var(--fw-name); cursor: pointer; transition: background-color var(--t-hover), color var(--t-hover); }
-.share-card .mini:hover { background: var(--hover); color: var(--ink); }
-.share-card .note { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
-.share-card .msg { margin: 0; font-size: var(--fs-2); color: var(--muted); }
-.share-card .msg:empty { display: none; }
-.share-card .msg[data-kind="error"] { color: var(--bad); }
-.share-card .msg[data-kind="ok"] { color: var(--ok); }
 
 /* Rail: 44 px, icons, avatars with their dots and the gear; every word moves to a tooltip. */
 /* The rail's top: the expand button centered in the 44 px band, the workspace square under it. */
@@ -164,7 +135,7 @@ body[data-dock="rail"] .row .label, body[data-dock="rail"] .badge, body[data-doc
 body[data-dock="rail"] #nav-activity::after, body[data-dock="rail"] .sec-head h2, body[data-dock="rail"] .add,
 body[data-dock="rail"] .hint, body[data-dock="rail"] .conn, body[data-dock="rail"] .activity,
 body[data-dock="rail"] .people li.empty,
-body[data-dock="rail"] #shared h2, body[data-dock="rail"] .empty-note, body[data-dock="rail"] .share-card { display: none; }
+body[data-dock="rail"] #shared h2, body[data-dock="rail"] .empty-note { display: none; }
 /* The agents' names and states leave the eye but stay in the accessibility tree (the .sr recipe). */
 body[data-dock="rail"] .people strong, body[data-dock="rail"] .people small { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 body[data-dock="rail"] .body { padding: var(--sp-1) var(--sp-1) var(--sp-2); }
@@ -178,11 +149,17 @@ body[data-dock="rail"] .gear { grid-column: 1; margin: 0; }
 body[data-dock="rail"] .foot { align-items: center; margin: 0; padding: var(--sp-2) var(--sp-1); border-top: 1px solid var(--edge); }
 body[data-dock="rail"] .storage { display: none; }
 
-/* The session switcher: the picker in a same-origin frame, under the header (B2's switcher, 360 by
-   560 at most, narrowed to the dock's width with the gutter on both sides). */
-.switcher { position: fixed; top: 44px; left: var(--dock-gutter); z-index: 3; width: min(360px, calc(100vw - 2 * var(--dock-gutter))); height: min(560px, calc(100vh - 52px)); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); overflow: hidden; animation: fade var(--t); }
-.switcher iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
-@keyframes fade { from { opacity: 0; } }
+/* The session switcher: the picker in a same-origin frame at the dock's top, right under the strip's
+   logo (B2's switcher, 360 by 560 at most, narrowed to the dock's width with the gutter on both
+   sides), a caret at the logo's place (--caret-x, from left.js; DESIGN.md Part I). Opened by the
+   Sessions row it hangs under that row instead (--pop-top), the caret at the row's icon. It opens
+   with the sheet's motion (.m-pop) from the caret. */
+.switcher { position: fixed; top: var(--pop-top, var(--sp-2)); left: var(--dock-gutter); z-index: 3; width: min(360px, calc(100vw - 2 * var(--dock-gutter))); height: min(560px, calc(100vh - var(--pop-top, var(--sp-2)) - var(--sp-2))); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); --origin: var(--caret-x, 50%) top; }
+.switcher::before { content: ""; position: absolute; top: -5px; left: calc(var(--caret-x, 50%) - 5px); width: 10px; height: 10px; rotate: 45deg; background: var(--elevated); box-shadow: -1px -1px 0 var(--edge); pointer-events: none; } /* mockup: the caret under the logo */
+.switcher iframe { display: block; width: 100%; height: 100%; border: 0; border-radius: inherit; background: var(--bg); }
+
+/* A change of the dock's state (open, rail) brings its content in with the sheet's motion: left.js
+   runs it (common.js enter's timing); the slot's own width is the browser's. */
 
 /* Hidden: nothing shows and nothing takes focus (left.js makes it inert too). */
 body[data-dock="hidden"] > * { visibility: hidden; }

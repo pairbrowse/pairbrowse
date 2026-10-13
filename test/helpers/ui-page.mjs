@@ -49,8 +49,17 @@ export async function openPage(browser, name, { helper, fixture = defaultFixture
     for (let i = 0; i < 100; i++) { if (await inPage(page, fn, arg)) return; await page.waitForTimeout(50); }
     assert.fail(`timed out waiting for ${what}`);
   };
+  // Every running animation and transition of the page (DESIGN.md Part I's motion) at its end, so
+  // a measure after a click sees where things land, not a frame of the way there.
+  const settle = () => inPage(page, () => {
+    let timer = 0;
+    return Promise.race([
+      Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))),
+      new Promise((r) => { timer = setTimeout(r, 1000); }),
+    ]).then(() => { clearTimeout(timer); return true; });
+  });
   return {
-    page, ui, errors, harness, until,
+    page, ui, errors, harness, until, settle,
     inPage: (fn, arg) => inPage(page, fn, arg),
     shim: {
       calls: () => shim("calls"),

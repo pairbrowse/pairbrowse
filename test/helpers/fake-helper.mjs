@@ -307,6 +307,15 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   // The answer to a POST without a reply of the test's own.
   function defaultPost(route, body, rest = []) {
     if (route === "input" || route === "tab" || route === "tab-order") return { status: 204 };
+    // POST timeline/<id>/show: the agent panel shows that picture (the helper's `timeline` event
+    // { op: "show", id, card }); 404 for a card it doesn't hold, 409 for a note (no picture).
+    if (route === "timeline" && rest[1] === "show") {
+      const card = (fx.timeline?.cards || []).find((c) => c?.id === rest[0]);
+      if (!card) return { status: 404, body: { error: "No such card." } };
+      if (card.note) return { status: 409, body: { error: "A note has no picture." } };
+      push("timeline", { op: "show", id: card.id, card });
+      return { status: 200, body: { ok: true } };
+    }
     if (route === "downloads" && (rest[1] === "open" || rest[1] === "open-app") && rest.length === 2 && hasItem(route, rest[0])) {
       // The helper's Open and Open in Word: a download without macOS's mark answers 409 { error };
       // a file changed since it was saved 410; a program, script or web page (`program: true`) 428
@@ -430,7 +439,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
         return plain(res, 404);
       }
       if (req.method === "POST" && POSTS.has(route)) {
-        if (route === "timeline" && !(rest.length === 1 && rest[0] === "note") && !(rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "pin")) return plain(res, 404);
+        if (route === "timeline" && !(rest.length === 1 && rest[0] === "note") && !(rest.length === 2 && TIMELINE_ID.test(rest[0]) && (rest[1] === "pin" || rest[1] === "show"))) return plain(res, 404);
         if (TOOL_ACTS[route] && !(rest.length === 2 && rest[0] && TOOL_ACTS[route].has(rest[1]))) return plain(res, 404);
         if (route === "diagnostics" && !(rest.length === 1 && rest[0] === "report")) return plain(res, 404);
         return await post(req, res, route, rest);

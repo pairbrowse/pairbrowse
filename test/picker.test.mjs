@@ -32,7 +32,7 @@ test("the picker's markup keeps every id once, its texts and the sheet before it
     assert.ok(html.includes(text), text);
   }
   assert.match(html, /<p class="brand">PairBrowse<\/p>\s*<h1>Which session\?<\/h1>/, "the wordmark over the question");
-  assert.match(html, /class="host-ask card" id="host-ask" role="group" aria-label="This code's address" hidden/);
+  assert.match(html, /class="host-ask card m-fold" id="host-ask" role="group" aria-label="This code's address" hidden/);
   const a = html.indexOf('<link rel="stylesheet" href="../tokens.css">'), b = html.indexOf('<link rel="stylesheet" href="picker.css">');
   assert.ok(a >= 0 && b > a, "tokens.css before picker.css");
 });

@@ -7,6 +7,104 @@
 export const $ = (id) => document.getElementById(id);
 export function el(tag, props = {}, ...kids) { const n = document.createElement(tag); Object.assign(n, props); n.append(...kids); return n; }
 
+// ---- motion (DESIGN.md Part I): the sheet's tokens (tokens.css), the same for every page ----
+// Rows, cards and tabs that join or leave a list move in and out instead of jumping; a page that is
+// hidden, a node not on screen and reduced motion get the end state at once. No timer and no frame
+// loop: the browser runs each animation and its finished promise ends it.
+export const calm = () => { try { return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches !== false; } catch { return true; } };
+function timing(open) {
+  const cs = getComputedStyle(document.documentElement);
+  const duration = Number.parseFloat(cs.getPropertyValue(open ? "--dur-open" : "--dur-close")) || (open ? 160 : 120);
+  return { duration, easing: cs.getPropertyValue(open ? "--ease-out" : "--ease-in").trim() || "ease-out" };
+}
+const still = (node) => calm() || document.hidden || !node?.isConnected || typeof node.animate !== "function";
+const px = (name) => `${Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 4}px`;
+// A node that just joined its list: it grows from nothing to its size (height, or width for a tab
+// in a row: axis "inline") and fades in, so what is after it slides along; axis "fade" only fades.
+export function enter(node, { axis = "block" } = {}) {
+  if (still(node)) return null;
+  // "fade": the same box with new content (a dock's open and rail): opacity only.
+  if (axis === "fade") return node.animate([{ opacity: 0 }, { opacity: 1 }], timing(true));
+  const r = node.getBoundingClientRect();
+  const from = axis === "inline"
+    ? { opacity: 0, minWidth: "0px", maxWidth: "0px", width: "0px", paddingInline: "0px" }
+    : { opacity: 0, height: "0px", paddingBlock: "0px", marginBlock: "0px", translate: `0 -${px("--rise")}` };
+  const to = axis === "inline" ? { opacity: 1, minWidth: `${r.width}px`, maxWidth: `${r.width}px`, width: `${r.width}px` } : { opacity: 1, height: `${r.height}px`, translate: "0 0" };
+  const was = node.style.overflow;
+  node.style.overflow = "clip";
+  const a = node.animate([from, to], timing(true));
+  const done = () => { node.style.overflow = was; };
+  a.finished.then(done, done);
+  return a;
+}
+// A node leaving its list: it fades and folds to nothing (out of reach and out of the reading
+// order meanwhile, data-leaving set), then is removed; then() runs after.
+export function leave(node, { axis = "block", then } = {}) {
+  const gone = () => { node.remove(); then?.(); };
+  if (still(node)) { gone(); return; }
+  node.dataset.leaving = "true";
+  node.inert = true;
+  node.setAttribute("aria-hidden", "true");
+  const r = node.getBoundingClientRect();
+  const frames = axis === "inline"
+    ? [{ opacity: 1, minWidth: `${r.width}px`, maxWidth: `${r.width}px`, width: `${r.width}px` }, { opacity: 0, minWidth: "0px", maxWidth: "0px", width: "0px", paddingInline: "0px", borderWidth: "0px" }]
+    : [{ opacity: 1, height: `${r.height}px` }, { opacity: 0, height: "0px", paddingBlock: "0px", marginBlock: "0px", borderWidth: "0px" }];
+  node.style.overflow = "clip";
+  node.animate(frames, { ...timing(false), fill: "forwards" }).finished.then(gone, gone);
+}
+// A keyed list (each child's data-key) drawn again: rows that stay are replaced in place (keeping
+// a focused control focused when the new row has one of the same name), new rows enter, gone rows
+// leave. The first draw only places the rows.
+export function syncList(box, next) {
+  const first = box.dataset.listed !== "true";
+  box.dataset.listed = "true";
+  const old = new Map();
+  for (const n of [...box.children]) {
+    if (n.dataset.leaving) continue;
+    if (n.dataset.key && !old.has(n.dataset.key)) old.set(n.dataset.key, n);
+    else n.remove();
+  }
+  const keys = new Set(next.map((n) => n.dataset.key));
+  for (const [k, n] of old) if (!keys.has(k)) leave(n);
+  const added = [];
+  for (const n of next) {
+    const o = old.get(n.dataset.key);
+    if (!o) { added.push(n); continue; }
+    if (o === n) continue;
+    const had = o.contains(document.activeElement) ? document.activeElement : null;
+    o.replaceWith(n);
+    if (had) {
+      const name = had.getAttribute("aria-label");
+      const same = (name && [...n.querySelectorAll("[aria-label]")].find((x) => x.getAttribute("aria-label") === name))
+        || (had.className && n.querySelector(`.${String(had.className).trim().split(/\s+/).join(".")}`));
+      same?.focus?.();
+    }
+  }
+  let prev = null;
+  for (const n of next) {
+    let at = prev ? prev.nextSibling : box.firstChild;
+    while (at && at !== n && at.dataset?.leaving) at = at.nextSibling;
+    if (at !== n) box.insertBefore(n, at);
+    prev = n;
+  }
+  if (!first) for (const n of added) enter(n);
+}
+// A container just shown again (a tab's pane, a dock back from its rail): what folds or pops inside
+// it is drawn as it was, with no motion of its own (tokens.css [data-entering]); only the container
+// itself moves. Call it right after the container is shown.
+export function revealed(node) {
+  if (!node) return;
+  node.dataset.entering = "";
+  document.documentElement.getBoundingClientRect(); // the style, computed with the folds held still
+  delete node.dataset.entering;
+}
+// A control whose request is out: aria-busy while work() runs (tokens.css draws the bar after
+// 300 ms); the control keeps the focus (it is not disabled). -> work()'s result.
+export async function busy(btn, work) {
+  btn?.setAttribute("aria-busy", "true");
+  try { return await work(); } finally { btn?.removeAttribute("aria-busy"); }
+}
+
 // Activity text: **bold** and `code`, rendered safely (text nodes only, never markup).
 export function rich(text) {
   const frag = document.createDocumentFragment();
@@ -80,27 +178,37 @@ export function sparkIcon(className, label = "") {
 
 const postJson = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
+// A request row's failure, said in the row (DESIGN.md Part I: nothing silent); the next answer
+// clears it.
+function rowSay(row, text) {
+  let m = row.querySelector(":scope > small.fail");
+  if (!m) { m = el("small", { className: "fail" }); m.setAttribute("role", "status"); row.append(m); }
+  m.textContent = text;
+}
 // People asking to join: Allow or Deny; people let in: Remove. Always by a click. Banners go
 // into container; base(): the live view address (null: not connected yet). Returns draw(list of
 // requests, asking and let in).
 export function joinBanners(container, base) {
   const rows = new Map(); // `${request id}:${state}` -> banner
-  function answer(op, row) {
+  function answer(op, row, btn) {
     if (!base()) return;
     for (const b of row.querySelectorAll("button")) b.disabled = true;
+    btn?.setAttribute("aria-busy", "true");
     postJson(base() + "approve", op)
+      .finally(() => btn?.removeAttribute("aria-busy"))
       .then((r) => { if (!r.ok) throw r; })
       .catch((r) => {
         // Gone meanwhile (answered elsewhere, timed out after 10 minutes): say so, rather than a button that does nothing.
         if (r?.status === 404) { const t = row.querySelector("strong"); t.textContent = t.title = "That request is gone (answered, or it timed out)."; return; }
         for (const b of row.querySelectorAll("button")) b.disabled = false;
+        rowSay(row, r?.status ? "That didn't go through. Try again." : "Couldn't reach PairBrowse. Try again.");
       });
   }
   return function draw(list) {
     const open = Array.isArray(list) ? list.filter((r) => r && r.id && (!r.state || r.state === "pending" || r.state === "approved")) : [];
     const keyOf = (r) => `${r.id}:${r.state === "approved" ? "in" : "asking"}`;
     const keys = new Set(open.map(keyOf));
-    for (const [k, row] of rows) if (!keys.has(k)) { row.remove(); rows.delete(k); }
+    for (const [k, row] of rows) if (!keys.has(k)) { leave(row); rows.delete(k); } // answered: it folds away
     for (const r of open) {
       const k = keyOf(r);
       if (rows.has(k)) continue;
@@ -111,15 +219,15 @@ export function joinBanners(container, base) {
         const remove = el("button", { className: "mini", type: "button", textContent: "Remove", title: "Take them out now. If they try their code again, you're asked again." });
         const text = `${who} is in (${role})`;
         row = el("div", { className: "join in" }, el("strong", { textContent: text, title: text }), el("span", {}, remove));
-        remove.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer({ id: r.id, remove: true }, row); });
+        remove.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer({ id: r.id, remove: true }, row, remove); });
       } else {
         const allow = el("button", { className: "primary", type: "button", textContent: "Allow" });
         const deny = el("button", { className: "mini", type: "button", textContent: "Deny" });
         const text = `${who} wants to join (${role})`;
         row = el("div", { className: "join" }, el("strong", { textContent: text, title: text }), el("span", {}, allow, deny));
         // A real pointer click only: no synthetic events, no keyboard default.
-        allow.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer({ id: r.id, allow: true }, row); });
-        deny.addEventListener("click", (ev) => { if (ev.isTrusted) answer({ id: r.id, allow: false }, row); });
+        allow.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer({ id: r.id, allow: true }, row, allow); });
+        deny.addEventListener("click", (ev) => { if (ev.isTrusted) answer({ id: r.id, allow: false }, row, deny); });
       }
       rows.set(k, row);
       container.append(row);
@@ -135,7 +243,12 @@ export function hostPanel(asks, list, section, base) {
   const send = (body, buttons) => {
     if (!base()) return;
     for (const b of buttons) b.disabled = true;
-    postJson(base() + "joinhost", body).catch(() => {}).finally(() => { for (const b of buttons) b.disabled = false; });
+    const pressed = buttons.find((b) => b === document.activeElement) || buttons[0];
+    pressed?.setAttribute("aria-busy", "true");
+    const row = pressed?.closest(".join, li");
+    postJson(base() + "joinhost", body).then((r) => { if (!r.ok) throw r; if (row) rowSay(row, ""); })
+      .catch((r) => { if (row) rowSay(row, r?.status ? "That didn't go through. Try again." : "Couldn't reach PairBrowse. Try again."); })
+      .finally(() => { pressed?.removeAttribute("aria-busy"); for (const b of buttons) b.disabled = false; });
   };
   const real = (fn) => (ev) => { if (ev.isTrusted && ev.detail > 0) fn(); };
   return function draw(state) {
@@ -170,7 +283,12 @@ export function devPanel(asks, list, section, base) {
   const send = (body, buttons) => {
     if (!base()) return;
     for (const b of buttons) b.disabled = true;
-    postJson(base() + "dev", body).catch(() => {}).finally(() => { for (const b of buttons) b.disabled = false; });
+    const pressed = buttons.find((b) => b === document.activeElement) || buttons[0];
+    pressed?.setAttribute("aria-busy", "true");
+    const row = pressed?.closest(".join, li");
+    postJson(base() + "dev", body).then((r) => { if (!r.ok) throw r; if (row) rowSay(row, ""); })
+      .catch((r) => { if (row) rowSay(row, r?.status ? "That didn't go through. Try again." : "Couldn't reach PairBrowse. Try again."); })
+      .finally(() => { pressed?.removeAttribute("aria-busy"); for (const b of buttons) b.disabled = false; });
   };
   const real = (fn) => (ev) => { if (ev.isTrusted && ev.detail > 0) fn(); };
   return function draw(state) {
@@ -420,7 +538,8 @@ export function checklistItems(run, { driving = false } = {}) {
 // no button; returnTo (optional) takes the focus back when it was inside the card (F6 into the
 // dock, then Escape), else close() moves no focus.
 // dismissable(): false while a host owns dismissal (the strip's #share bubble): no outside click or Escape closes it.
-export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = () => true, returnTo = null }) {
+// onToggle(open) runs on every open and close (the right dock tells the strip's Share, which asked).
+export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = () => true, returnTo = null, onToggle = () => {} }) {
   const q = (id) => card.querySelector(`#${id}`);
   const nameRow = q("share-name-row"), name = q("share-name"), make = q("share-make"), result = q("share-result");
   const code = q("share-code"), copy = q("share-copy"), rights = q("share-rights"), msg = q("share-msg");
@@ -432,9 +551,12 @@ export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = ()
     btn?.setAttribute("aria-expanded", "true");
     if (dismissable()) document.addEventListener("pointerdown", outside, true);
     (radios().find((r) => r.checked) || radios()[0])?.focus();
+    onToggle(true);
   }
   function close(refocus = true) {
+    if (card.hidden) return;
     card.hidden = true;
+    onToggle(false);
     btn?.setAttribute("aria-expanded", "false");
     document.removeEventListener("pointerdown", outside, true);
     code.value = ""; rights.textContent = ""; result.hidden = true; nameRow.hidden = true; say("");
@@ -462,7 +584,7 @@ export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = ()
     const given = name.value.trim();
     make.disabled = true;
     say("");
-    const r = await postJson(base() + "invite", { share, ...(given ? { name: given } : {}) }).then((x) => x.json()).catch(() => ({ error: "Couldn't reach PairBrowse." }));
+    const r = await busy(make, () => postJson(base() + "invite", { share, ...(given ? { name: given } : {}) }).then((x) => x.json()).catch(() => ({ error: "Couldn't reach PairBrowse." })));
     make.disabled = false;
     if (r?.needName) { nameRow.hidden = false; name.focus(); return say(r.error || "Your first name, please.", "error"); }
     if (!r?.ok) return say(r?.error || "Couldn't make the invite.", "error");
@@ -487,7 +609,7 @@ export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = ()
       say("Select and press Ctrl/Cmd+C to copy.", "error");
     }
   });
-  return { open, close };
+  return { open, close, isOpen: () => !card.hidden };
 }
 
 // The session switcher (the strip's chevron, the left dock's Workspace header and Sessions row):
@@ -497,7 +619,9 @@ export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = ()
 // it, except after a click outside. The parent never posts to the frame. openers: the buttons
 // that toggle it (each gets aria-expanded). dismissable(): false while a host owns dismissal (the
 // strip's #switcher bubble): no notice, Escape or outside click closes it then.
-export function pickerPopover({ pop, frame, openers, dismissable = () => true }) {
+// onToggle(open) runs on every open and close (the left dock tells the strip's logo, which asked).
+// The frame unloads once the popover has faded out (at once under reduced motion).
+export function pickerPopover({ pop, frame, openers, dismissable = () => true, onToggle = () => {} }) {
   let opener = null;
   const isOpen = () => !pop.hidden;
   const outside = (e) => { if (dismissable() && !pop.contains(e.target) && !openers.some((b) => b.contains(e.target))) close(false); };
@@ -515,11 +639,15 @@ export function pickerPopover({ pop, frame, openers, dismissable = () => true })
     if (dismissable()) document.addEventListener("pointerdown", outside, true);
     window.addEventListener("message", onMessage);
     frame.focus();
+    onToggle(true);
   }
   function close(refocus = true) {
     if (!isOpen()) return;
-    frame.removeAttribute("src");
     pop.hidden = true;
+    const unload = () => { if (pop.hidden) frame.removeAttribute("src"); };
+    const fading = pop.getAnimations?.() || [];
+    if (fading.length) Promise.all(fading.map((a) => a.finished)).then(unload, unload); else unload();
+    onToggle(false);
     opener?.setAttribute("aria-expanded", "false");
     document.removeEventListener("pointerdown", outside, true);
     window.removeEventListener("message", onMessage);

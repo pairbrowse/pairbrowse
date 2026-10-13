@@ -4,9 +4,10 @@
 // agents (board), the activity, who it is shared with and the session. The page only reflects
 // the dock's state: it sets it only from Tools (the right dock opens, on its Tools tab through
 // the helper's POST layout tab), from Activity in the rail and from the collapse and expand
-// buttons. Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
+// buttons. Tools is the agent panel's (its tab): no row here opens the other dock (DESIGN.md Part
+// I). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
-import { $, el, rich, clock, activityHead, agentWords, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, shareCard, helperStream, servedByBrowser } from "../common.js";
+import { $, el, rich, clock, activityHead, agentWords, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -32,7 +33,6 @@ let stream = null; // the shared helper stream (common.js helperStream)
 let everLive = false;
 let driveTimer = 0;
 let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
-let shareAsked = false; // the strip's Share asked for the card while this dock was not yet open
 let switchAsked = false; // the strip's logo asked for the switcher while this dock was not yet open
 let paused = false; // agents paused session-wide (the helper's pause event)
 
@@ -49,7 +49,7 @@ const icon = (id) => {
 };
 
 // ---- dock state ----
-const ROWS = ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-tools"];
+const ROWS = ["nav-browser", "nav-sessions", "nav-history", "nav-activity"];
 function railTitles() {
   const rail = dock() === "rail";
   for (const id of ROWS) {
@@ -75,10 +75,10 @@ function setDock(name) {
   $("dock-collapse").hidden = !layout || state !== "open";
   $("dock-expand").hidden = !layout || state !== "rail";
   if (state !== "open") { closeHint(false); setActivity(false); }
-  else {
-    if (shareAsked) { shareAsked = false; openAskedShare(); }
-    if (switchAsked) { switchAsked = false; openAskedSwitch(); }
-  }
+  else if (switchAsked) { switchAsked = false; openAskedSwitch(); }
+  // Open and rail swap the dock's content: it comes in with the sheet's motion, not a jump (the
+  // first state, on load, is only placed).
+  if (was && was !== state && state !== "hidden") for (const n of [$("main"), document.querySelector(".head"), document.querySelector(".foot")]) enter(n, { axis: "fade" });
   if (hidden) switcher.close(false);
   // Nothing redraws rows nobody can see: the drive timer stops with the dock hidden.
   if (hidden) { clearTimeout(driveTimer); driveTimer = 0; } else armDrive();
@@ -141,10 +141,14 @@ function drawAgents() {
       el("strong", { textContent: name }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])),
       el("small", { textContent: words }));
     li.dataset.state = state;
+    li.dataset.key = `who:${p.who}`;
     return li;
   });
   const agents = items.filter((li) => li.dataset.state !== "online");
-  $("agents").replaceChildren(...(agents.length ? items : [el("li", { className: "empty", textContent: "No agent yet" }), ...items]));
+  const none = el("li", { className: "empty", textContent: "No agent yet" });
+  none.dataset.key = "empty";
+  // Keyed (common.js syncList): an agent that joins grows in, one that leaves folds away.
+  syncList($("agents"), agents.length ? items : [none, ...items]);
 }
 
 // ---- storage: PairBrowse Pro's cloud storage, only when the session event carries it ----
@@ -199,7 +203,7 @@ function drawGuests() {
     e.drive ||= g.role === "drive";
     byName.set(g.label, e);
   }
-  $("guests").replaceChildren(...[...byName].map(([label, { n, drive, color }]) => {
+  syncList($("guests"), [...byName].map(([label, { n, drive, color }]) => {
     // "N online" on screen; the role stays in the row's title and, for readers, in words.
     const role = drive ? "can drive" : "watching";
     const face = el("span", { className: "avatar guest" }, icon("i-people"));
@@ -208,21 +212,40 @@ function drawGuests() {
     else face.classList.add("plain");
     const li = el("li", { title: `${label} · ${n} online · ${role}` }, face, el("strong", { textContent: label }), el("small", { textContent: `${n} online` }), el("span", { className: "sr", textContent: `, ${role}` }));
     li.dataset.state = "online";
+    li.dataset.key = `guest:${label}`;
     return li;
   }));
-  // The section stays (the strip's Share opens its card): a line says so while nobody has joined.
+  // The section stays: a line says so while nobody has joined (Share is the strip's).
   $("guests-empty").hidden = byName.size > 0;
 }
 
 // ---- actions ----
 // The session switcher: the picker in a same-origin frame under the header, opened by the Sessions
 // row and by the strip's logo (its ask over the pairbrowse-share channel): one surface.
-const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("nav-sessions")] });
+// Open or closed, the strip's logo hears it (it shows the switcher's state, pressed, and a second
+// click or Escape on it closes it).
+// Only an open the logo asked for lights the logo (the Sessions row shows its own state).
+let byLogo = false;
+const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("nav-sessions")],
+  onToggle: (open) => { if (open && byLogo) tell({ opened: "switch" }); if (!open) { byLogo = false; tell({ closed: "switch" }); } } });
+// Where the switcher opens, at its trigger (DESIGN.md Part I): asked by the strip's logo, at the
+// dock's top with its caret under the logo (its centre from the window's left edge, which is this
+// dock's too); opened by the Sessions row (left null), right under that row, the caret at its icon.
+function caretAt(left) {
+  const edge = 8; // the switcher's left edge in the dock (--dock-gutter, left.css)
+  const row = $("nav-sessions").getBoundingClientRect();
+  const x = Number.isFinite(left) ? left - edge : $("nav-sessions").querySelector(".ic").getBoundingClientRect().left + 8 - edge;
+  const pop = $("switcher");
+  pop.style.setProperty("--caret-x", `${Math.round(Math.max(16, Math.min(x, window.innerWidth - 32)))}px`);
+  if (Number.isFinite(left)) pop.style.removeProperty("--pop-top");
+  else pop.style.setProperty("--pop-top", `${Math.round(row.bottom + 8)}px`);
+}
 // In the rail the switcher has no room (44 px): the Sessions row opens the dock first and the
 // switcher once the dock is open, as the strip's ask does (Part H).
 $("nav-sessions").addEventListener("click", (e) => {
-  if (dock() !== "rail") return;
+  if (dock() !== "rail") { if (!switcher.isOpen()) caretAt(null); return; }
   e.stopImmediatePropagation();
+  askedAt = null;
   if (askDock({ pb, layout, base, side: "left", state: "open" })) switchAsked = true;
 }, true);
 // Find a tab whose address matches, else open one in the active tab's window.
@@ -237,14 +260,6 @@ const openHistory = () => findOrOpen(isHistory, "chrome://history");
 const openSettings = () => findOrOpen(isSettings, "pairbrowse://settings");
 function openBrowser() {
   if (pb && lastWebTab >= 0 && tabs.has(lastWebTab) && !tabs.get(lastWebTab).active) pb.tabs.activate(lastWebTab).catch(() => {});
-}
-// Tools lives in the right dock: open it on its Tools tab. The dock opens through the browser's
-// layout (native) or the helper's (served); the tab goes through the helper's POST layout, whose
-// `tab` it relays to the right dock in that answer and its layout event only (never kept).
-function openTools() {
-  const ask = (body) => fetch(base + "layout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
-  if (pb) { askDock({ pb, layout, base: null, side: "right", state: "open" }); if (base) ask({ tab: "tools" }); }
-  else if (base) ask({ right: "open", tab: "tools" });
 }
 function setActivity(open) {
   $("nav-activity").setAttribute("aria-expanded", String(open));
@@ -413,42 +428,35 @@ else {
 $("nav-browser").addEventListener("click", openBrowser);
 $("nav-history").addEventListener("click", openHistory);
 $("nav-activity").addEventListener("click", toggleActivity);
-$("nav-tools").addEventListener("click", openTools);
 $("add-agent").addEventListener("click", toggleHint);
-// Share: a join code or a watch link, made here with a person's click (the helper's own invite).
-// Its one trigger is the strip's Share (DESIGN.md Part G): no button of its own, so closing it
-// moves no focus (the strip's Share keeps it).
-const share = shareCard({ btn: null, card: $("share-card"), base: () => base, returnTo: $("shared-h") });
-// The strip's Share in the browser opens this card (its own popover has no room in the strip's
-// slot): one message per click, for this window only.
+// The strip's logo asks for the switcher over the pairbrowse-share channel (its own popover has no
+// room in the strip's 53 px slot): one message per click, for this window only. Share's card is
+// the agent panel's (under Share); this dock answers only the switcher.
 let shareChannel = null;
-// The strip's Share asked for the card: open it, then tell the strip it did (its screen-reader
-// note says where the card is only once the card is there).
-function openAskedShare() {
-  if ($("share-card").hidden) share.open();
-  try { shareChannel?.postMessage({ opened: "share", window: myWindow }); } catch {}
-}
-// The strip's logo asked for the switcher: the same switcher as the Sessions row.
+let askedAt = null; // where the logo is (its centre from the window's left), from the last ask
+const tell = (msg) => { try { if (myWindow !== -1) shareChannel?.postMessage({ ...msg, window: myWindow }); } catch {} };
+// The strip's logo asked for the switcher: the same switcher as the Sessions row, its caret under
+// the logo.
 function openAskedSwitch() {
-  if (!switcher.isOpen()) switcher.open($("nav-sessions"));
-  try { shareChannel?.postMessage({ opened: "switch", window: myWindow }); } catch {}
+  byLogo = true;
+  caretAt(askedAt); // already open from the Sessions row: it moves under the logo
+  if (!switcher.isOpen()) switcher.open($("nav-sessions")); else tell({ opened: "switch" });
 }
 try {
   shareChannel = new BroadcastChannel("pairbrowse-share");
   shareChannel.onmessage = (e) => {
     const asked = e.data?.window;
     // Only an ask for this window, once this dock knows which window it is in; and only into an
-    // open dock (the strip opens it first: the card waits for that layout if it has not come yet).
+    // open dock (the strip opens it first: the switcher waits for that layout if it has not come yet).
+    if (myWindow === -1 || asked !== myWindow) return;
     // The strip gave up waiting and opened the picker as a tab: the ask is withdrawn.
-    if (e.data?.cancel === "switch" && myWindow !== -1 && asked === myWindow) { switchAsked = false; return; }
-    const what = e.data?.open;
-    if ((what !== "share" && what !== "switch") || myWindow === -1 || asked !== myWindow) return;
-    if (what === "switch") {
-      if (dock() !== "open") { switchAsked = true; return; }
-      return openAskedSwitch();
-    }
-    if (dock() !== "open") { shareAsked = true; return; }
-    openAskedShare();
+    if (e.data?.cancel === "switch") { switchAsked = false; return; }
+    // A second click or Escape on the logo.
+    if (e.data?.close === "switch") { switchAsked = false; switcher.close(false); return; }
+    if (e.data?.open !== "switch") return;
+    askedAt = Number.isFinite(e.data?.anchor?.left) ? e.data.anchor.left : null;
+    if (dock() !== "open") { switchAsked = true; return; }
+    openAskedSwitch();
   };
 } catch {}
 $("settings").addEventListener("click", openSettings);

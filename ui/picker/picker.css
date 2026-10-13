@@ -88,7 +88,8 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-1); font-weight: 650
 .more-row:hover { background: var(--hover); }
 .more-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 .more-body { display: none; flex-direction: column; min-height: 0; flex: 0 1 auto; }
-.more[data-open="true"] .more-body { display: flex; }
+.more[data-open="true"] .more-body { display: flex; transition: opacity var(--t-open), translate var(--t-open); }
+@starting-style { .more[data-open="true"] .more-body { opacity: 0; translate: 0 calc(-1 * var(--rise)); } } /* the list opens under its row (DESIGN.md Part I) */
 .chev { width: 8px; height: 8px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: rotate(45deg); transition: transform var(--t); margin: 0 var(--sp-1) var(--sp-1) 0; }
 .more[data-open="true"] .chev { transform: rotate(-135deg); margin-bottom: -4px; }
 .filter { flex: none; display: block; width: 100%; margin: var(--sp-1) 0 var(--sp-2); font-family: var(--sans); }

@@ -186,7 +186,8 @@ pageTest("picker", { fixtures: { sessions: STATE }, replies: { pick: { error: tr
 
   await page.fill("#code", "pb-join:https://share.example/abc");
   await page.click("#join-form .primary");
-  await until("the address question", () => !document.getElementById("host-ask").hidden);
+  // The question folds open in place (.m-fold, DESIGN.md Part I): read it where it lands.
+  await until("the address question", () => { const b = document.getElementById("host-ask"); return !b.hidden && b.getAnimations().length === 0; });
   assert.deepEqual(posted(helper, "pick"), [{ action: "join", code: "pb-join:https://share.example/abc", joinName: "" }]);
   const ask = await run(() => {
     const box = document.getElementById("host-ask"), s = getComputedStyle(box);
@@ -308,7 +309,8 @@ test("picker framed as the session switcher", { skip: !runtime, timeout: 90_000 
     assert.deepEqual(bad(afterPick), [], "the framed picker logged nothing on the pick");
     for (let i = 0; i < 60 && !(await notes()).length; i++) await sleep(50);
     assert.deepEqual(await notes(), [{ source: "pairbrowse-picker", op: "picked" }], "the parent told, nothing more");
-    for (let i = 0; i < 60 && !(await closed()).hidden; i++) await sleep(50);
+    // The frame unloads once the switcher has faded out (DESIGN.md Part I).
+    for (let i = 0; i < 60 && ((await closed()).src !== null || !(await closed()).hidden); i++) await sleep(50);
     assert.deepEqual(await closed(), { hidden: true, src: null, focus: "switch" }, "the strip closed the switcher");
 
     await inPage(page, () => { window.__notes = []; });
@@ -317,7 +319,7 @@ test("picker framed as the session switcher", { skip: !runtime, timeout: 90_000 
     await page.keyboard.press("Escape");
     for (let i = 0; i < 20 && !(await notes()).length; i++) await sleep(50);
     assert.deepEqual(await notes(), [{ source: "pairbrowse-picker", op: "close" }], "Escape closes the switcher");
-    for (let i = 0; i < 60 && !(await closed()).hidden; i++) await sleep(50);
+    for (let i = 0; i < 60 && ((await closed()).src !== null || !(await closed()).hidden); i++) await sleep(50);
     assert.deepEqual(await closed(), { hidden: true, src: null, focus: "switch" });
     const again = await openSwitcher();
     await again.click("#more-btn");

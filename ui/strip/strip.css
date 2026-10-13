@@ -90,8 +90,9 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 #menu-btn:hover, #menu-btn[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
 
 /* ---- popovers: under the row (a taller host), or alone in a bubble (#switcher, #share, #menu) ---- */
-.pop { animation: fade var(--t); }
-@keyframes fade { from { opacity: 0; } }
+/* They open and close with the sheet's motion (tokens.css .m-pop): down from the row, the right
+   end's from their top right corner. */
+.share-card, #menu { --origin: top right; }
 #switcher { position: absolute; top: 53px; left: 12px; z-index: 3; width: 360px; height: 560px; border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); overflow: hidden; } /* mockup: under the 53 px row */
 body[data-platform="mac"] #switcher { left: 92px; }
 #picker { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }

@@ -364,6 +364,10 @@ body[data-role="watch"] .tab, body[data-role="watch"] .url { cursor: default; }
 .join span { display: flex; gap: 10px; flex: none; }
 .join .mini { color: var(--ink-2); }
 .join button:disabled { opacity: 0.5; cursor: default; }
+/* A request's failure, said in its row (ui/common.js rowSay); nothing while it says nothing. */
+.join:has(.fail:not(:empty)) { flex-wrap: wrap; }
+.join .fail { flex-basis: 100%; font-size: var(--fs-2); color: var(--bad); }
+.join .fail:empty { display: none; }
 
 body:not([data-role="owner"]) #fit { display: none; }
 

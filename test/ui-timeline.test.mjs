@@ -284,7 +284,10 @@ pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
   await until("the show post", (u) => window.__fetches.some(([url, m]) => url === u && m === "POST"), `${helper.base}timeline/${ids.at(-1)}/show`);
   await until("the panel opened", () => window.__pairbrowse.calls.some((c) => c.iface === "layout" && c.method === "set" && c.args[0]?.right === 2));
   await page.waitForTimeout(200);
-  assert.equal(await inPage(() => document.querySelectorAll("[data-shown]").length), 0, "nothing marked shown");
+  // Shown large in the agent panel (another part of the window until 530's bubble): the card says
+  // so where it was clicked, a ring and a line under it (DESIGN.md Part I).
+  await until("marked shown", (id) => document.querySelector(`li.card[data-id="${id}"]`)?.dataset.shown === "true" && !document.getElementById("where").hidden, ids.at(-1));
+  assert.equal(await inPage(() => document.querySelectorAll("[data-shown]").length), 1, "one card marked shown");
   await page.keyboard.press("Delete");
   assert.match(await inPage(() => document.getElementById("menu").textContent), /Delete this picture\?/);
   await page.keyboard.press("Escape");

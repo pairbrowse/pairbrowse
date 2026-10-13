@@ -42,7 +42,8 @@ test("the panel's markup keeps every id once, and each section folds with a name
     const sec = html.match(new RegExp(`<section class="sec"[^>]*data-key="${key}"[^>]*>\\s*<h2><button class="disclose" type="button" aria-expanded="(true|false)" aria-controls="([^"]+)"(?: aria-describedby="[^"]+")?>`));
     assert.ok(sec, `${key}: an h2 disclosure button`);
     assert.equal(sec[1], OPEN.has(key) ? "true" : "false", `${key}: ${OPEN.has(key) ? "open" : "folded"} by default`);
-    const body = html.match(new RegExp(`<div class="body" id="${sec[2]}"( hidden)?>`));
+    // (It folds with the sheet's motion: class "body m-fold", DESIGN.md Part I.)
+    const body = html.match(new RegExp(`<div class="body m-fold" id="${sec[2]}"( hidden)?>`));
     assert.ok(body, `${key}: its body #${sec[2]} exists`);
     assert.equal(!!body[1], !OPEN.has(key), `${key}: body hidden matches aria-expanded`);
   }
@@ -62,7 +63,8 @@ test("the panel's markup keeps every id once, and each section folds with a name
     if (open) assert.doesNotMatch(html, new RegExp(`id="${target}"[^>]*hidden`), `#${target} starts open`);
     else assert.match(html, new RegExp(`id="${target}"[^>]*hidden`), `#${target} starts hidden`);
   }
-  assert.match(html, /<div class="share-card" id="share-card" role="dialog" aria-labelledby="share-title" hidden>/);
+  // It rises from the session card's Share with the sheet's motion (m-pop m-up, DESIGN.md Part I).
+  assert.match(html, /<div class="share-card m-pop m-up" id="share-card" role="dialog" aria-labelledby="share-title" hidden>/);
   assert.deepEqual([...html.matchAll(/<input type="radio" name="share" value="(\w+)"/g)].map(([, v]) => v), ["code", "link"]);
   assert.match(html, /id="share-code" readonly aria-label="[^"]+"/);
   assert.match(html, /id="share-msg" role="status" aria-live="polite"/);

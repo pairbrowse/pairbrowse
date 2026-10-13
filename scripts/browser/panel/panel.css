@@ -39,7 +39,7 @@ body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1.45 var(--sa
 .share-card .msg:empty { display: none; }
 
 /* Who is in the session: initials in their colors, overlapping, then "+N". */
-.avatars { display: flex; flex: none; margin: 0; padding: 0 0 0 4px; list-style: none; }
+.avatars { display: flex; flex: 0 1 auto; min-width: 0; overflow: hidden; margin: 0; padding: 0 0 0 4px; list-style: none; } /* gives way first in a narrow header (wider fonts on Linux) */
 .avatars:empty { display: none; }
 .avatars li { margin-left: -4px; }
 .avatar { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--spark); color: var(--bg); font-size: var(--fs-1); font-weight: var(--fw-name); line-height: 1; }

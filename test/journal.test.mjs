@@ -62,8 +62,11 @@ test("the first action opens a run named after the site and time; each page is a
   assert.deepEqual(read(files()[0]).done, run.done);
 });
 
-test("run_save takes the auto log over; status finished closes it and the next action opens a new one", async () => {
+test("run_save takes the auto log over; status finished closes it and the next action opens a new one", async (c) => {
   let t = start + 3600_000;
+  // run_save reads the clock itself: hold it at this run's hour, so the auto run is still live
+  // whatever day the test runs on.
+  c.mock.timers.enable({ apis: ["Date"], now: t + 30_000 });
   const page = tab("https://partners.shopify.com/apps/new", "New app");
   const j = createJournal({ session: () => "listing", openPages: async () => [page], now: () => t, delayMs: 10 });
   j.activity("Opened https://partners.shopify.com/apps/new", "Claude", page);

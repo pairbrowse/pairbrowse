@@ -178,6 +178,52 @@ describe("agent dot, loading ring, close buttons and the pinned tab", () => page
   assert.equal(generic.img, null);
 }));
 
+// The Shared mark (550): a tab the browser captures (a share or a recording through the capture
+// page) says so in its name and with a still glyph in the accent, after the title; it goes when
+// the capture ends. No timer, no animation.
+describe("the Shared mark on a tab the browser captures", () => pageTest("strip", { viewport: ROW }, async ({ shim, inPage, until, harness }) => {
+  const mark = (id) => {
+    const li = document.querySelector(`#tabs li[data-id="${id}"]`);
+    const m = li?.querySelector(".shared-mark");
+    if (!m) return null;
+    const r = m.getBoundingClientRect(), title = li.querySelector(".title").getBoundingClientRect();
+    return { w: r.width, h: r.height, color: getComputedStyle(m).color, hidden: m.getAttribute("aria-hidden"), tip: m.querySelector("title")?.textContent,
+      afterTitle: r.left >= title.right - 0.5, inside: r.right <= li.getBoundingClientRect().right, anims: m.getAnimations().length + li.getAnimations().filter((a) => a.playState === "running" && a.effect?.getTiming().iterations === Infinity).length };
+  };
+  assert.equal(await inPage(mark, 12), null, "no mark while nothing captures");
+  assert.doesNotMatch((await inPage(tabInfo, 12)).label, /shared/);
+  await shim.change({ id: 12, capturing: true });
+  await until("tab 12's mark", () => !!document.querySelector('#tabs li[data-id="12"] .shared-mark'));
+  assert.deepEqual(await inPage(mark, 12), { w: 14, h: 14, color: ACCENT, hidden: "true", tip: "Shared", afterTitle: true, inside: true, anims: 0 });
+  assert.equal((await inPage(tabInfo, 12)).label, "Docs, shared");
+  // With an agent in the tab: the title, shared, then who is there.
+  await shim.change({ id: 11, capturing: true });
+  await until("tab 11's mark", () => !!document.querySelector('#tabs li[data-id="11"] .shared-mark'));
+  assert.equal((await inPage(tabInfo, 11)).label, "Shop, shared, Claude is in this tab");
+  assert.equal(await inPage(() => document.querySelectorAll('#tabs li[data-id="11"] .shared-mark').length), 1, "drawn once however often the tab changes");
+  await shim.change({ id: 11, title: "Shop 2" });
+  await until("the new title", () => document.querySelector('#tabs li[data-id="11"]').getAttribute("aria-label") === "Shop 2, shared, Claude is in this tab");
+  assert.equal(await inPage(() => document.querySelectorAll('#tabs li[data-id="11"] .shared-mark').length), 1);
+  // The capture ends: the mark and the word go.
+  await shim.change({ id: 12, capturing: false });
+  await until("tab 12's mark gone", () => !document.querySelector('#tabs li[data-id="12"] .shared-mark'));
+  assert.equal((await inPage(tabInfo, 12)).label, "Docs");
+  // A pinned shared tab keeps the mark, in its corner.
+  await shim.change({ id: 13, pinned: true, capturing: true });
+  await until("tab 13's mark", () => !!document.querySelector('#tabs li[data-id="13"] .shared-mark'));
+  const p = await inPage(mark, 13);
+  assert.equal(p.w, 10);
+  assert.equal(p.inside, true);
+  assert.match((await inPage(tabInfo, 13)).label, /^New Tab, shared, pinned$/);
+  // Nothing runs while the page is hidden.
+  const fires = await harness.hiddenFires();
+  await harness.setHidden(true);
+  await shim.change({ id: 12, capturing: true });
+  await until("tab 12's mark again", () => !!document.querySelector('#tabs li[data-id="12"] .shared-mark'));
+  assert.equal(await harness.hiddenFires(), fires, "no timer or frame fired for it");
+  await harness.setHidden(false);
+}));
+
 describe("the active tab glows blue whoever drives it, the owner shows by its dot", () => pageTest("strip", { viewport: ROW }, async ({ shim, inPage, until }) => {
   const edges = (id) => {
     const li = document.querySelector(`#tabs li[data-id="${id}"]`);

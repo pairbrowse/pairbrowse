@@ -54,6 +54,8 @@ body[data-host="native"] .row { padding-right: 8px; }
 #tabs .ring { display: block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; }
 #tabs .title { flex: 0 1 auto; min-width: 0; font-size: var(--fs-2); font-weight: 400; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #tabs li.pinned .title { display: none; }
+#tabs .shared-mark { flex: none; width: 14px; height: 14px; margin-left: -2px; color: var(--accent); } /* the Shared mark (550): still, no timer or animation */
+#tabs li.pinned .shared-mark { position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; margin: 0; }
 #tabs .agent { flex: none; width: 7px; height: 7px; margin-left: -2px; margin-right: 0; border-radius: 50%; } /* mockup: B2's 7 px dot; 8 px gap - 2 = 6 px after the title */
 /* The close shows on every tab but a pinned one; Tab reaches the active tab's alone. */
 #tabs .close { display: grid; place-items: center; flex: none; margin-left: auto; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup: the 18 px close */

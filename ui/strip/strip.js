@@ -288,6 +288,14 @@ function svg(viewBox, className, build) {
 }
 const line = { fill: "none", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round" };
 const genericIcon = () => svg("0 0 16 16", "generic", [["circle", { cx: "8", cy: "8", r: "6", ...line }], ["path", { d: "M2 8h12M8 2c2 2 2.6 4 2.6 6S10 12 8 14C6 12 5.4 10 5.4 8S6 4 8 2", ...line }]]);
+// Shared: a dot sending waves (the browser is capturing the tab), drawn in the accent.
+const sharedIcon = () => {
+  const s = svg("0 0 16 16", "shared-mark", [["circle", { cx: "8", cy: "8", r: "1.75", fill: "currentColor" }], ["path", { d: "M5.2 5.2a4 4 0 0 0 0 5.6M10.8 5.2a4 4 0 0 1 0 5.6M3.1 3.1a7 7 0 0 0 0 9.8M12.9 3.1a7 7 0 0 1 0 9.8", ...line }]]);
+  const tip = document.createElementNS(SVG, "title");
+  tip.textContent = "Shared";
+  s.prepend(tip);
+  return s;
+};
 const closeIcon = () => svg("0 0 12 12", "", [["path", { d: "M3 3l6 6M9 3l-6 6", ...line }]]);
 // A favicon the page may show under its CSP: data: images (the adapter's) or the browser's own.
 const faviconOk = (u) => typeof u === "string" && /^(data:image\/|chrome:\/\/)/.test(u);
@@ -313,7 +321,9 @@ function drawTab(t) {
   li.setAttribute("aria-selected", String(!!t.active));
   li.classList.toggle("pinned", !!t.pinned);
   li.title = title;
-  li.setAttribute("aria-label", `${title}${agent ? `, ${agent} is in this tab` : ""}${loading ? ", loading" : ""}${t.pinned ? ", pinned" : ""}`);
+  const shared = t.capturing === true;
+  li.classList.toggle("shared", shared);
+  li.setAttribute("aria-label", `${title}${shared ? ", shared" : ""}${agent ? `, ${agent} is in this tab` : ""}${loading ? ", loading" : ""}${t.pinned ? ", pinned" : ""}`);
   // The icon slot: a loading ring, the favicon, or a generic globe; redrawn only when it changes.
   const icon = li.querySelector(".icon");
   const iconKey = loading ? "ring" : faviconOk(t.favicon) && !t.defaultFavicon ? `img:${t.favicon}` : "generic";
@@ -328,6 +338,13 @@ function drawTab(t) {
     else icon.replaceChildren(el("img", { src: t.favicon, alt: "", width: 16, height: 16 }));
   }
   li.querySelector(".title").textContent = title;
+  // The Shared mark: the browser is capturing this tab (people in the session see it live, or a
+  // recording takes it). A still glyph in the accent after the title; the words are in the tab's
+  // name (", shared") and the glyph's tooltip.
+  let mark = li.querySelector(".shared-mark");
+  if (shared) {
+    if (!mark) { mark = sharedIcon(); li.querySelector(".title").after(mark); }
+  } else mark?.remove();
   // The agent dot: the owning agent's color, right after the title (strip.css), named in words too.
   let dot = li.querySelector(".agent");
   if (agent) {

@@ -26,6 +26,8 @@
 //       windows.startTabDrag(tabId, offset) -> { moved }
 //     The nav row's calls: tabs.goBack(id), tabs.goForward(id), tabs.stop(id), windows.bookmark(id),
 //     windows.find(id); a tab's history in canGoBack / canGoForward, a window's own slot in current.
+//     A tab the browser is capturing (550: a share or a recording through the capture page) has
+//     capturing true; onChanged fires when it flips.
 //     A method without a reply resolves to undefined once applied. Arguments are positional, in
 //     mojom order.
 // (3) Struct fields are lowerCamel: target_id -> targetId, default_favicon -> defaultFavicon,
@@ -61,7 +63,7 @@ const tab = (id, index, title, url, active) => ({
   id, index, window: 1, title, url, favicon: null, defaultFavicon: true, networkState: 0,
   muted: false, audible: false, pinned: false, group: null, groupTitle: null, groupColor: null,
   active, selected: active, blocked: false, width: 1280, height: 800, targetId: `T${id}`,
-  canGoBack: false, canGoForward: false,
+  canGoBack: false, canGoForward: false, capturing: false,
 });
 
 export function defaultFixture() {
@@ -130,7 +132,7 @@ function install(F, E) {
       index: inWindow(w).length, title: "New Tab", url: "chrome://pairbrowse/newtab", favicon: null, defaultFavicon: true,
       networkState: 0, muted: false, audible: false, pinned: false, group: null, groupTitle: null, groupColor: null,
       active: false, selected: false, blocked: false, width: 1280, height: 800, targetId: `T${id}`,
-      canGoBack: false, canGoForward: false, ...given, id, window: w,
+      canGoBack: false, canGoForward: false, capturing: false, ...given, id, window: w,
     };
     t.index = inWindow(w).length;
     t.active = false;

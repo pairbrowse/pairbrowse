@@ -42,11 +42,16 @@
 // downloads path with "missing" in it isn't a folder). GET invites.json { items: [{ id, role,
 // label, share, expires }] } and POST invite { op: "revoke", id } (8-hex id: 200 { ok, id } and an
 // `invites` event, 404 for an id not out, 409 for any other body with an op).
+// POST capture/reply (the capture page's answers and hellos, plans/550 D4): recorded, 204, the
+// body up to the helper lane's 2 MB; the test pushes `capture` events itself.
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { hostOk, originOk, keyOk, pathParts, readBody, BODY_MAX, SECURITY_HEADERS, plain, listen } from "../../scripts/liveview/http.mjs";
 
 const NOT_JSON = "The body is not JSON.";
+// The capture page's answers (POST capture/reply): the helper lane's BODY_MAX.capture
+// (scripts/liveview/http.mjs there), a recording's 1 MB piece as base64 with room to spare.
+const CAPTURE_BODY_MAX = 2_000_000;
 const PAGE_KINDS = new Set(["strip", "left", "right", "timeline", "picker", "approve", "screen", "capture"]);
 const LAYOUT_STATES = new Set(["open", "rail", "hidden"]);
 const STRIP_MIN = 44, STRIP_MAX = 176;
@@ -301,12 +306,12 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     "invites.json": () => fx.invites,
   };
   const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session",
-    "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report"]);
+    "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report", "capture"]);
   const hasItem = (name, id) => Array.isArray(fx[name]?.items) && fx[name].items.some((it) => it && String(it.id) === id);
 
   // The answer to a POST without a reply of the test's own.
   function defaultPost(route, body, rest = []) {
-    if (route === "input" || route === "tab" || route === "tab-order") return { status: 204 };
+    if (route === "input" || route === "tab" || route === "tab-order" || route === "capture") return { status: 204 };
     // POST timeline/<id>/show: the agent panel shows that picture (the helper's `timeline` event
     // { op: "show", id, card }); 404 for a card it doesn't hold, 409 for a note (no picture).
     if (route === "timeline" && rest[1] === "show") {
@@ -394,7 +399,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   }
 
   async function post(req, res, route, rest) {
-    const max = route === "profile" ? BODY_MAX.profile : route === "input" || route === "tab" || route === "report" ? BODY_MAX.input : BODY_MAX.approve;
+    const max = route === "profile" ? BODY_MAX.profile : route === "input" || route === "tab" || route === "report" ? BODY_MAX.input : route === "capture" ? CAPTURE_BODY_MAX : BODY_MAX.approve;
     const raw = await readBody(req, max);
     if (raw === null) return plain(res, 413);
     const body = parsed(raw);
@@ -442,6 +447,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
         if (route === "timeline" && !(rest.length === 1 && rest[0] === "note") && !(rest.length === 2 && TIMELINE_ID.test(rest[0]) && (rest[1] === "pin" || rest[1] === "show"))) return plain(res, 404);
         if (TOOL_ACTS[route] && !(rest.length === 2 && rest[0] && TOOL_ACTS[route].has(rest[1]))) return plain(res, 404);
         if (route === "diagnostics" && !(rest.length === 1 && rest[0] === "report")) return plain(res, 404);
+        if (route === "capture" && !(rest.length === 1 && rest[0] === "reply")) return plain(res, 404);
         return await post(req, res, route, rest);
       }
       if (req.method === "DELETE" && route === "timeline") {

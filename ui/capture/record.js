@@ -1,11 +1,11 @@
-/* global tabs, capture, stopTab */
 // Recording the browser (pairbrowse_record, the side panel's Record button): what the person
-// sees, as a video. The tab in front is captured the way a shared tab is (share.js: tabs,
-// capture), drawn onto a canvas under a strip naming the window's tabs and the agent at work in
+// sees, as a video. The tab in front is captured the way a shared tab is (capture.js), drawn onto a canvas under a strip naming the window's tabs and the agent at work in
 // each, and encoded here by the browser. When the person (or an agent) switches tabs, the video
 // switches with them. The helper takes the finished file over the browser's private pipe and
-// saves it; nothing here talks to a page or the network. Asked only by the helper, through the
-// extension's worker (background.js).
+// saves it; nothing here talks to a page or the network. Asked only by the helper, through a
+// transport (transport-extension.js or transport-native.js): record(m) takes today's rec* ops.
+import { captured, has, capture, stopTab, onTabStopped } from "./capture.js";
+
 const STRIP = 40; // the tab strip's height, in CSS pixels
 const RECORD_TYPES = ["video/mp4;codecs=avc1.640028", "video/mp4", "video/webm;codecs=vp9", "video/webm"];
 const RECORD_MAX_MS = 60 * 60_000; // past an hour the helper saves the recording and stops
@@ -21,7 +21,7 @@ const even = (n) => Math.max(2, Math.round(n / 2) * 2);
 // the newest, so switching to it shows it at once.
 function follow(tabId) {
   if (readers.has(tabId)) return;
-  const source = tabs.get(tabId)?.stream.getVideoTracks()[0];
+  const source = captured(tabId)?.stream.getVideoTracks()[0];
   if (!source) return;
   const track = source.clone(); // its own copy: ending it never ends what joiners see
   const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
@@ -37,7 +37,7 @@ function follow(tabId) {
   })();
 }
 
-// A tab's capture ended (share.js stopTab): its reader and picture go.
+// A tab's capture ended (capture.js stopTab): its reader and picture go.
 function forgetRecorded(tabId) {
   const r = readers.get(tabId);
   if (r) { readers.delete(tabId); r.reader.cancel().catch(() => {}); r.track.stop(); }
@@ -142,7 +142,8 @@ async function recordStart(m) {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, w, h);
   recorder.start(1000);
-  const r = await recordFront(m);
+  // A capture that fails (the tab closed under it) ends the start, never a recording left running.
+  const r = await recordFront(m).catch((e) => ({ error: String(e?.message || e) }));
   if (r?.error) { recorder.stop(); rec = null; return r; }
   return { type: type.split(";")[0], w, h };
 }
@@ -151,12 +152,12 @@ async function recordStart(m) {
 async function recordFront({ tabId, streamId, frame, tabs: list }) {
   if (!rec || rec.blob) return { error: "not recording" };
   if (Array.isArray(list)) rec.tabs = list;
-  if (!tabs.has(tabId)) {
+  if (!has(tabId)) {
     if (!streamId) return { need: true };
     const f = frame || { w: rec.w / rec.scale, h: rec.h / rec.scale - STRIP };
     await capture(tabId, streamId, { w: even(f.w * rec.scale), h: even(f.h * rec.scale) });
   }
-  const t = tabs.get(tabId);
+  const t = captured(tabId);
   if (!t.rec) { t.rec = true; rec.mine.add(tabId); }
   follow(tabId);
   rec.front = tabId;
@@ -172,7 +173,7 @@ async function recordStop() {
   r.chunks = [];
   // The captures only the recording needed end; tabs joiners still watch stay.
   for (const id of r.mine) {
-    const t = tabs.get(id);
+    const t = captured(id);
     if (!t) continue;
     t.rec = false;
     if (!t.peers.size) stopTab(id);
@@ -188,7 +189,7 @@ async function recordChunk({ offset, size }) {
   return String(url).slice(String(url).indexOf(",") + 1);
 }
 
-function record(m) {
+export function record(m) {
   if (m.op === "recStart") return recordStart(m);
   if (m.op === "recFront") return recordFront(m);
   if (m.op === "recTabs") {
@@ -205,5 +206,5 @@ function record(m) {
   return { error: "unknown" };
 }
 
-// share.js calls these (one offscreen document holds both).
-Object.assign(globalThis, { record, forgetRecorded });
+// A capture that ends (capture.js stopTab) takes its reader and picture with it.
+onTabStopped(forgetRecorded);

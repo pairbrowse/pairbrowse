@@ -744,17 +744,24 @@ function replayable(name, v) {
   }
   return v;
 }
+// Events one page kind's own stream carries and no other page hears: never on the shared stream,
+// never relayed or replayed. The capture page's calls from the helper (`capture`, plans/550 D4:
+// SDPs and recordings for the capture page alone). A page of such a kind always gets a stream of
+// its own (helperStream below), whatever it asks.
+export const OWN_STREAM_EVENTS = Object.freeze({ capture: Object.freeze(["capture"]) });
+
 // The helper's page kinds: one of them on the stream gets the browser pages' initial burst
 // (agent-tabs); the helper sends the same burst to every kind, so one kind stands for all.
 const STREAM_KINDS = new Set(["strip", "left", "right", "timeline", "approve", "picker", "screen", "capture"]);
 
 // One EventSource to the helper: event(name, parsed data) for every STREAM_EVENTS name (a body
 // that is not JSON is dropped), state("live" | "connecting" | "closed").
-function openStream(base, kind, { event, state }) {
+// own: the kind's OWN_STREAM_EVENTS too (a page's own stream only).
+function openStream(base, kind, { event, state }, own = []) {
   const es = new EventSource(base + "events?panel=1" + (kind ? `&page=${kind}` : ""));
   es.onopen = () => state("live");
   es.onerror = () => state(es.readyState === EventSource.CLOSED ? "closed" : "connecting");
-  for (const name of STREAM_EVENTS) {
+  for (const name of [...STREAM_EVENTS, ...own]) {
     es.addEventListener(name, (e) => { let v; try { v = JSON.parse(e.data); } catch { return; } event(name, v); });
   }
   return es;
@@ -764,7 +771,8 @@ function openStream(base, kind, { event, state }) {
 // helper's `${origin}/${key}/`. kind: the page's own helper page kind, or "". shared: false opens a
 // stream of this page's own, never the origin's shared one: the helper counts a page kind only
 // from the stream that carries it, so a page that must count on its own (the approval bubble, 530
-// D2) says so. onState(s) on every state change; onOpen() each time the stream goes live (fetch
+// D2) says so; a kind with OWN_STREAM_EVENTS (the capture page) always does, and only its own
+// stream delivers those events. onState(s) on every state change; onOpen() each time the stream goes live (fetch
 // snapshots there). Nothing is delivered during the call itself, so on() calls made right after it
 // miss nothing.
 export function helperStream(base, { kind = "", shared = true, onState = () => {}, onOpen = () => {} } = {}) {
@@ -783,13 +791,15 @@ export function helperStream(base, { kind = "", shared = true, onState = () => {
     if (s === "live" && was !== "live") onOpen();
   };
   const ownKind = STREAM_KINDS.has(kind) ? kind : "";
+  const ownEvents = Object.hasOwn(OWN_STREAM_EVENTS, ownKind) ? OWN_STREAM_EVENTS[ownKind] : [];
+  if (ownEvents.length) shared = false;
   let closed = false;
   let es = null;
 
   // A stream of this page's own (shared: false, no Web Locks or BroadcastChannel, or the lock refused).
   function own() {
     if (closed) return;
-    es = openStream(base, ownKind, { event: deliver, state: setState });
+    es = openStream(base, ownKind, { event: deliver, state: setState }, ownEvents);
   }
 
   let name = "";

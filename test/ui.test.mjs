@@ -240,17 +240,33 @@ test("only ui/common.js opens an event stream to the helper", () => {
 });
 
 test("every event a page listens to on the shared stream is in STREAM_EVENTS", async () => {
-  const { STREAM_EVENTS } = await import(join(UI_ROOT, "common.js"));
+  const { STREAM_EVENTS, OWN_STREAM_EVENTS } = await import(join(UI_ROOT, "common.js"));
   let checked = 0;
   for (const f of uiScripts()) {
     const js = read(f);
     if (!/\bhelperStream\b/.test(js)) continue;
+    // A page kind's own events (the capture page's calls) only in a file whose stream is of that kind.
+    const kinds = [...js.matchAll(/\bkind:\s*["']([a-z]+)["']/g)].map(([, k]) => k);
     for (const [, name] of js.matchAll(/\bon\(\s*["']([^"']+)["']/g)) {
-      assert.ok(STREAM_EVENTS.includes(name), `${relative(root, f)}: on("${name}") is not in STREAM_EVENTS`);
+      const own = kinds.some((k) => Object.hasOwn(OWN_STREAM_EVENTS, k) && OWN_STREAM_EVENTS[k].includes(name));
+      assert.ok(STREAM_EVENTS.includes(name) || own, `${relative(root, f)}: on("${name}") is not in STREAM_EVENTS`);
       checked++;
     }
   }
   assert.ok(checked > 20, `the pages' handlers were found (${checked})`);
+});
+
+// A page kind's own events never reach the shared stream: none is in STREAM_EVENTS (so the stream's
+// holder never relays or replays one), and only the capture page has any.
+test("own-stream events stay off the shared stream", async () => {
+  const { STREAM_EVENTS, OWN_STREAM_EVENTS } = await import(join(UI_ROOT, "common.js"));
+  assert.deepEqual(Object.keys(OWN_STREAM_EVENTS), ["capture"]);
+  assert.deepEqual(OWN_STREAM_EVENTS.capture, ["capture"]);
+  for (const names of Object.values(OWN_STREAM_EVENTS)) for (const n of names) assert.ok(!STREAM_EVENTS.includes(n), `${n} is in STREAM_EVENTS`);
+  const common = read(join(UI_ROOT, "common.js"));
+  assert.match(common, /if \(ownEvents\.length\) shared = false;/, "a kind with own events always gets its own stream");
+  assert.match(common, /es = openStream\(base, ownKind, \{ event: deliver, state: setState \}, ownEvents\);/, "only the page's own stream listens for them");
+  assert.equal([...common.matchAll(/ownEvents\)/g)].length, 1, "the shared stream (openHeld) never does");
 });
 
 test("the strip's nav fragments never connect", () => {

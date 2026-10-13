@@ -3,7 +3,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCaptureChannel, CAPTURE_WAITING_MAX, CAPTURE_SDP_MAX, CAPTURE_ERROR_MAX } from "../scripts/liveview/capture.mjs";
-import { createCaptureBackend, targetIdOf, NO_CAPTURE_RECORD, NO_CAPTURE_SHARE } from "../scripts/daemon/capture.mjs";
+import { createCaptureBackend, targetIdOf, NO_CAPTURE_RECORD, NO_CAPTURE_SHARE, RECORD_READY_MS } from "../scripts/daemon/capture.mjs";
+import { createRecorder } from "../scripts/daemon/recorder.mjs";
+import { tmpdir } from "node:os";
 
 test("a call goes out as a capture event and resolves on its reply", async () => {
   const sent = [];
@@ -127,4 +129,75 @@ test("targetIdOf: one cached lookup for every caller; null when the tab fails or
   const t1 = Date.now();
   assert.equal(await targetIdOf(hung, 60_000), null);
   assert.ok(Date.now() - t1 < 3500, "never longer than 3 s");
+});
+
+test("whenReady: true at a late hello, at once after it, false after its time or when the browser closes", async () => {
+  const ch = createCaptureChannel({ send: () => {} });
+  const t0 = Date.now();
+  assert.equal(await ch.whenReady(60), false, "no hello: false after its time");
+  assert.ok(Date.now() - t0 >= 50);
+  const late = ch.whenReady(5000);
+  setTimeout(() => ch.reply({ hello: true, caps: { share: true, record: true } }), 40);
+  assert.equal(await late, true, "the hello ends the wait");
+  assert.equal(await ch.whenReady(5000), true, "already said hello: at once");
+  ch.reset();
+  const closing = ch.whenReady(5000);
+  ch.reset();
+  assert.equal(await closing, false, "the browser closed: false");
+  const many = Array.from({ length: CAPTURE_WAITING_MAX }, () => ch.whenReady(5000));
+  assert.equal(await ch.whenReady(5000), false, "one more than the bound: false at once");
+  ch.reset();
+  assert.deepEqual(new Set(await Promise.all(many)), new Set([false]));
+});
+
+test("waitReady: the capture page's late hello is waited for; nothing is waited for where no capture page is declared", async () => {
+  const ch = createCaptureChannel({ send: () => {} });
+  const backend = (chromePages, capturePages, env = {}) => createCaptureBackend({ chromePages: () => chromePages, capturePages: () => capturePages, panelCall: async () => null, channel: ch, env });
+  assert.equal(RECORD_READY_MS, 3000);
+  assert.equal(await backend(false, false).waitReady(5000), "extension", "the extension: at once");
+  let t0 = Date.now();
+  assert.equal(await backend(true, false).waitReady(5000), null, "no capture page declared: nowhere at once");
+  assert.equal(await backend(false, false, { PAIRBROWSE_TEST_NO_CAPTURE: "1" }).waitReady(5000), null);
+  assert.ok(Date.now() - t0 < 500, "nothing waited for");
+  const b = backend(true, true);
+  t0 = Date.now();
+  assert.equal(await b.waitReady(80), null, "declared, no hello within the wait: nowhere");
+  assert.ok(Date.now() - t0 >= 70);
+  const p = b.waitReady(5000);
+  assert.equal(b.kind(), null, "kind() never waits (share's immediate fallback)");
+  setTimeout(() => ch.reply({ hello: true, caps: { share: true, record: true } }), 50);
+  assert.equal(await p, "page");
+});
+
+test("record waits for the capture page's late hello, then records through it", async () => {
+  const sent = [];
+  const ch = createCaptureChannel({ send: (d) => { sent.push(d); if (d.op === "start") setImmediate(() => ch.reply({ n: d.n, value: { type: "video/webm", w: 1280, h: 840 } })); } });
+  const capture = createCaptureBackend({ chromePages: () => true, capturePages: () => true, panelCall: async () => { throw new Error("the extension isn't there"); }, channel: ch, env: {} });
+  const rec = createRecorder({ call: async () => { throw new Error("the extension isn't there"); }, dir: () => tmpdir(), capture });
+  setTimeout(() => ch.reply({ hello: true, caps: { share: true, record: true } }), 300);
+  const t0 = Date.now();
+  const r = await rec.start();
+  assert.ok(!r.error, r.text);
+  assert.ok(Date.now() - t0 >= 250, "it waited for the hello");
+  assert.equal(rec.state().recording, true);
+  assert.equal(sent.filter((d) => d.op === "start" && d.to === "record").length, 1);
+  rec.browserClosed();
+  ch.reset();
+});
+
+test("record still refuses after 3 s with no capture page, and asks nothing", async () => {
+  const sent = [];
+  const ch = createCaptureChannel({ send: (d) => sent.push(d) });
+  let extension = 0;
+  const capture = createCaptureBackend({ chromePages: () => true, capturePages: () => true, panelCall: async () => { extension++; }, channel: ch, env: {} });
+  const rec = createRecorder({ call: async () => { extension++; }, dir: () => tmpdir(), capture });
+  const t0 = Date.now();
+  const r = await rec.start();
+  const took = Date.now() - t0;
+  assert.equal(r.error, true);
+  assert.equal(r.text, NO_CAPTURE_RECORD);
+  assert.ok(took >= RECORD_READY_MS - 50 && took < RECORD_READY_MS + 1500, `waited ${took} ms`);
+  assert.deepEqual(sent, [], "nothing sent to a page");
+  assert.equal(extension, 0, "nothing asked of the extension");
+  assert.equal(rec.state().recording, false);
 });

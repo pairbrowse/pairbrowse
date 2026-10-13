@@ -1191,10 +1191,9 @@ test("the capture and tab-order events reach the browser's own pages only, never
     view.sendToPages("tab-order", { op: "arrange", targets: ["A"] });
     view.sendToPages("activity", []); // not a pages-only event: refused
     await wait(80);
-    for (const s of [page, strip]) {
-      assert.equal(eventsIn(s.text(), "capture").length, 1);
-      assert.equal(eventsIn(s.text(), "tab-order").length, 1);
-    }
+    for (const s of [page, strip]) assert.equal(eventsIn(s.text(), "tab-order").length, 1, "tab-order: every page stream");
+    assert.equal(eventsIn(page.text(), "capture").length, 1, "capture: the capture page's stream");
+    assert.equal(eventsIn(strip.text(), "capture").length, 0, "capture: never another page's stream");
     for (const s of [panel, viewer, guest]) {
       assert.equal(eventsIn(s.text(), "capture").length, 0);
       assert.equal(eventsIn(s.text(), "tab-order").length, 0);

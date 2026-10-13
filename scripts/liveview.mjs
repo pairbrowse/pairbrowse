@@ -55,8 +55,11 @@ const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the p
 const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites"]); // events only the owner's streams get
 // Events for the browser's own pages alone (streams opened with ?page=): the capture page's calls
 // (liveview/capture.mjs) and the tab strip's order requests. Never the live view page, a viewer
-// or a guest.
+// or a guest. An event named here goes only to the page streams of that one kind (least
+// privilege: the SDPs and recording calls reach the capture page alone); the others go to every
+// page stream.
 const PAGES_ONLY = new Set(["capture", "tab-order"]);
+const PAGE_EVENT_KIND = new Map([["capture", "capture"]]);
 // The tab strip's report of every window's tabs (POST tab-order), checked.
 const TAB_ORDER_MAX = 500;
 const TARGET_ID = /^[A-F0-9]{32}$/i;
@@ -263,6 +266,7 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
     const msg = sse(event, data);
     for (const res of event === "frame" ? viewers : OWNER_ONLY.has(event) ? owners : clients) {
       if (PAGES_ONLY.has(event) && !kinds.has(res)) continue;
+      if (PAGE_EVENT_KIND.has(event) && kinds.get(res) !== PAGE_EVENT_KIND.get(event)) continue;
       // A reader that stopped reading (a laptop asleep with the connection still open) would
       // otherwise collect every frame in memory: frames wait for it, and one far behind is cut.
       if (res.writableLength > STALLED_BYTES) { res.destroy(); continue; }
@@ -1294,7 +1298,8 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
     url: `http://127.0.0.1:${server.address().port}/${key}/`,
     // The tab strip's last report of every window's tabs ({ tabs, focused, last }), or null.
     stripTabs: () => stripOrder.order,
-    // An event for the browser's own pages alone (capture, tab-order).
+    // An event for the browser's own pages alone: capture (the capture page's streams only),
+    // tab-order (every page stream).
     sendToPages: (name, data) => { if (PAGES_ONLY.has(name)) broadcast(name, data); },
     // The browser's own pages' key (written to an owner-only key file, never the command line):
     // never printed, logged or sent in an event.

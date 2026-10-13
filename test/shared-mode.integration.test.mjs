@@ -2,7 +2,9 @@
 // joiner's helper, each with its own real browser): the joiner joins with a shared browser code,
 // sees the host's tab live over a direct (WebRTC) connection, and their clicks, keys and a drag
 // on a canvas happen in the host's own page. The sharing tunnel is skipped
-// (PAIRBROWSE_TEST_TUNNEL=direct). Needs PAIRBROWSE_TEST_RUNTIME.
+// (PAIRBROWSE_TEST_TUNNEL=direct). Needs PAIRBROWSE_TEST_RUNTIME. PAIRBROWSE_TEST_EXECUTABLE runs
+// both sides on another build; PAIRBROWSE_TEST_JOINER_EXECUTABLE runs the joiner on its own build
+// (a native host with an extension joiner, or the other way round).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -19,6 +21,33 @@ const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const shortBase = testBase();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// The picture page's own address: the extension's screen.html on Playwright's Chromium; with
+// another build on either side, the browser's own chrome://pairbrowse/screen/ page may be it.
+const otherBuild = !!(process.env.PAIRBROWSE_TEST_EXECUTABLE || process.env.PAIRBROWSE_TEST_JOINER_EXECUTABLE);
+const SCREEN_OWN = otherBuild ? /^(?:chrome-extension:\/\/[a-p]{32}\/screen\.html|chrome:\/\/pairbrowse\/screen\/)#[0-9a-f]{8}$/ : /^chrome-extension:\/\/[a-p]{32}\/screen\.html#[0-9a-f]{8}$/;
+const SCREEN_OWN_END = otherBuild ? /(?:\/screen\.html|\/screen\/)#[0-9a-f]{8}$/ : /\/screen\.html#[0-9a-f]{8}$/;
+// The sound probe, run in the joiner's picture page: the host tab's tone (the button's
+// oscillator, 440 Hz) heard in the picture's own stream through an AnalyserNode. Bounded in the
+// page (2 s at most) and closed after. tone and floor in dB: the loudest bin within 2 bins of 440
+// Hz, and the median of every bin (silent bins counted as -200).
+const SOUND_PROBE = `(async () => {
+  const v = document.getElementById('v'); const s = v && v.srcObject;
+  if (!s || typeof s.getAudioTracks !== 'function' || !s.getAudioTracks().length) return { tracks: 0 };
+  const a = new AudioContext();
+  try {
+    await Promise.race([a.resume(), new Promise((r) => setTimeout(r, 500))]);
+    const an = a.createAnalyser(); an.fftSize = 8192; an.smoothingTimeConstant = 0.5;
+    a.createMediaStreamSource(s).connect(an);
+    await new Promise((r) => setTimeout(r, 1200));
+    const f = new Float32Array(an.frequencyBinCount); an.getFloatFrequencyData(f);
+    const db = [...f].map((x) => (Number.isFinite(x) ? x : -200));
+    const hz = a.sampleRate / an.fftSize, at = Math.round(440 / hz);
+    let tone = -200; for (let i = Math.max(0, at - 2); i <= at + 2; i++) tone = Math.max(tone, db[i]);
+    let peak = 0; for (let i = 1; i < db.length; i++) if (db[i] > db[peak]) peak = i;
+    const floor = [...db].sort((x, y) => x - y)[db.length >> 1];
+    return { tracks: s.getAudioTracks().length, live: s.getAudioTracks()[0].readyState, state: a.state, tone, floor, peakHz: Math.round(peak * hz) };
+  } finally { a.close().catch(() => {}); }
+})()`;
 
 // The host's page (its button also starts a tone too quiet to hear, so sound has something to carry): a button over the top half, a text field below it, a canvas at the bottom that
 // draws where a pressed pointer moves (like a whiteboard).
@@ -67,13 +96,16 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
   const require = createRequire(join(runtime, "package.json"));
   // PAIRBROWSE_TEST_EXECUTABLE: another Chromium build to run both sides on (the PairBrowse browser, say).
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("patchright").chromium.executablePath();
+  // PAIRBROWSE_TEST_JOINER_EXECUTABLE: the joiner on a build of its own (the acceptance matrix:
+  // native host with extension joiner, extension host with native joiner).
+  const joinerExecutablePath = process.env.PAIRBROWSE_TEST_JOINER_EXECUTABLE || executablePath;
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   const port = fixture.address().port;
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("sh-"), joinHome = home("sj-");
   writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath: joinerExecutablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", ...(realTunnel ? {} : { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" }), ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}), ...(noCapture && h === hostHome ? { PAIRBROWSE_TEST_NO_CAPTURE: "1" } : {}) });
   const daemons = [];
   const daemonOf = new Map(); // home -> its helper
@@ -178,7 +210,7 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
 
     stage = "the picture shows the host tab's real address; its own address is short";
     const own = (await onScreen({ url: true }))?.url || "";
-    assert.match(own, /^chrome-extension:\/\/[a-p]{32}\/screen\.html#[0-9a-f]{8}$/, own);
+    assert.match(own, SCREEN_OWN, own);
     const shownAt = async (want) => until(`the address ${want} on the picture`, async () => { const a = (await onScreen({ expr: "window.pbScreen.address()" }))?.value; return a?.shown && a.text === want && a; }, 15_000);
     const addr = await shownAt("one.pbtest.example/app");
     assert.equal(addr.lock, false, "no lock on a plain http page");
@@ -190,7 +222,7 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     await onScreen({ goto: "http://one.pbtest.example/typed" });
     await until("the host's tab at the typed address", async () => (await hostUrl()) === "http://one.pbtest.example/typed", 15_000);
     await shownAt("one.pbtest.example/typed"); // and the tab here is the picture again
-    await until("the picture tab's own address again", async () => /\/screen\.html#[0-9a-f]{8}$/.test((await onScreen({ url: true }))?.url || ""), 10_000);
+    await until("the picture tab's own address again", async () => SCREEN_OWN_END.test((await onScreen({ url: true }))?.url || ""), 10_000);
     await onScreen({ goto: "http://one.pbtest.example/app" });
     await until("the host's tab back at the app", async () => (await hostUrl()) === "http://one.pbtest.example/app", 15_000);
     await shownAt("one.pbtest.example/app");
@@ -213,6 +245,13 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     console.log(`shared browser stats: ${JSON.stringify(stats)}`);
     assert.equal(stats.muted, false, "the sound plays, without a click first");
     assert.equal(stats.paused, false);
+    stage = "the host tab's tone is in the joiner's picture: 440 Hz above the floor";
+    const heard = await until("the 440 Hz tone in the picture's sound", async () => {
+      const r = (await onScreen({ expr: SOUND_PROBE }))?.value;
+      return r && r.tracks > 0 && r.tone > r.floor + 15 && Math.abs(r.peakHz - 440) <= 20 && r;
+    }, 20_000).catch(async (e) => { throw new Error(`${e.message}: ${JSON.stringify((await onScreen({ expr: SOUND_PROBE }))?.value)}`); });
+    console.log(`shared browser sound: ${JSON.stringify(heard)}`);
+    assert.equal(heard.live, "live");
     if (realTunnel) assert.ok(stats.route, "a route was found");
     if (excalidraw) {
       // Excalidraw in the host's tab: the joiner picks the rectangle tool with R and drags; a shape

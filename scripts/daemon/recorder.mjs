@@ -6,7 +6,7 @@
 import { openSync, writeSync, closeSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { shortLabel } from "./tablabels.mjs";
-import { NO_CAPTURE_RECORD } from "./capture.mjs";
+import { NO_CAPTURE_RECORD, RECORD_READY_MS } from "./capture.mjs";
 
 const LABELS_EVERY_MS = 1500; // who works in which tab, while recording
 const DWELL_MS = 4000; // following agents: a tab stays in the video at least this long while they work there
@@ -70,7 +70,8 @@ export function createRecorder({ onSaved = () => {}, call, owners = () => [], di
   // follow: "front" (the tab the person sees) or "agents" (the tab where agents are at work, held
   // DWELL_MS at least; the browser's own tabs stay as they are).
   async function start(follow = "front") {
-    if (capture && capture.kind() === null) return { text: NO_CAPTURE_RECORD, error: true };
+    // A build with a capture page that hasn't said hello yet (just launched): wait for it a little.
+    if (capture && (typeof capture.waitReady === "function" ? await capture.waitReady(RECORD_READY_MS) : capture.kind()) === null) return { text: NO_CAPTURE_RECORD, error: true };
     if (on) return { text: `Already recording (${minutes(Date.now() - on.since)} so far). Stop it with pairbrowse_record action "stop".` };
     follow = follow === "agents" ? "agents" : "front";
     const r = await ext({ op: "start", follow, labels: await labels().catch(() => ({})), scale: await scale().catch(() => 1) });

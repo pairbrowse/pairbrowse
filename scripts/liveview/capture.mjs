@@ -8,8 +8,10 @@
 // call(to, arg, ms): sends { n, to, ...arg } and resolves with the page's value, or rejects with
 // its error, or "the capture page didn't answer" after ms. reply(body): the page's answer
 // ({ n, value } or { n, error }) or its hello ({ hello: true, caps: { share, record } }); false
-// for a body that isn't one. ready(): a hello came since the browser started. reset(): the
-// browser closed: every waiting call is rejected and the hello is forgotten.
+// for a body that isn't one. ready(): a hello came since the browser started. whenReady(ms):
+// resolves true at the hello (at once if it came), false after ms or when the browser closes
+// (at most CAPTURE_WAITING_MAX wait; one more resolves false at once). reset(): the browser
+// closed: every waiting call is rejected, every hello wait ends false and the hello is forgotten.
 export const CAPTURE_WAITING_MAX = 64;
 export const CAPTURE_ERROR_MAX = 300;
 export const CAPTURE_SDP_MAX = 100_000;
@@ -20,6 +22,18 @@ export function createCaptureChannel({ send, log = () => {} }) {
   const waiting = new Map(); // n -> { resolve, reject, timer }
   let seq = 0;
   let hello = null; // { share, record } once the page said hello
+  const helloWaits = new Set(); // { resolve, timer }: whenReady() calls waiting for the hello
+  const endWaits = (value) => { for (const w of helloWaits) { clearTimeout(w.timer); w.resolve(value); } helloWaits.clear(); };
+
+  function whenReady(ms = 3000) {
+    if (hello) return Promise.resolve(true);
+    if (helloWaits.size >= CAPTURE_WAITING_MAX) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const w = { resolve };
+      w.timer = setTimeout(() => { helloWaits.delete(w); resolve(false); }, Math.max(0, ms));
+      helloWaits.add(w);
+    });
+  }
 
   function call(to, arg = {}, ms = 8000) {
     if (!TARGETS.has(to)) return Promise.reject(new Error(`no capture call "${to}"`));
@@ -47,6 +61,7 @@ export function createCaptureChannel({ send, log = () => {} }) {
       const caps = body.caps && typeof body.caps === "object" ? body.caps : {};
       hello = { share: caps.share === true, record: caps.record === true };
       log(`capture page: ready (share ${hello.share}, record ${hello.record})`);
+      endWaits(true);
       return true;
     }
     const n = body.n;
@@ -64,8 +79,9 @@ export function createCaptureChannel({ send, log = () => {} }) {
 
   function reset() {
     hello = null;
+    endWaits(false);
     for (const [n, w] of waiting) { clearTimeout(w.timer); w.reject(new Error("the browser closed")); waiting.delete(n); }
   }
 
-  return { call, reply, reset, ready: () => !!hello, caps: () => (hello ? { ...hello } : null), waiting: () => waiting.size };
+  return { call, reply, reset, whenReady, ready: () => !!hello, caps: () => (hello ? { ...hello } : null), waiting: () => waiting.size };
 }

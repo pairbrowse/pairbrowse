@@ -10,7 +10,13 @@ import { within } from "../util.mjs";
 // chromePages(): the browser has its own pages. capturePages(): its build declares a capture page.
 // panelCall(fn, arg, ms): runs fn(arg) in the extension's worker (daemon/panel.mjs). channel: the
 // capture page's channel. env: PAIRBROWSE_TEST_NO_CAPTURE=1 (tests only) makes it nowhere.
+//
+// waitReady(ms): where tabs are captured, waiting up to ms for the capture page's hello when the
+// build declares one and it hasn't said hello yet (the page loads with the browser, so a record
+// asked right after launch would otherwise be refused). Recording waits RECORD_READY_MS; sharing
+// never waits (its fallback, the join channel, works at once).
 export const NO_CAPTURE_RECORD = "Recording isn't available in this PairBrowse browser yet: it needs the browser's capture page, which comes with a later build. Nothing was recorded.";
+export const RECORD_READY_MS = 3000;
 export const NO_CAPTURE_SHARE = "This PairBrowse browser has no capture page yet: the picture goes through the join channel, without sound.";
 
 // A tab's CDP target id (it never changes), or null when the tab didn't answer within ms (at most
@@ -53,5 +59,12 @@ export function createCaptureBackend({ chromePages = () => false, capturePages =
     if (kind() === "page") return channel.call("record", arg, ms);
     return panelCall((a) => { if (!globalThis.pbRecord) throw new Error("not ready"); return globalThis.pbRecord(a); }, arg, ms);
   }
-  return { kind, tabRef, share, record };
+  async function waitReady(ms = RECORD_READY_MS) {
+    const now = kind();
+    if (now !== null || env.PAIRBROWSE_TEST_NO_CAPTURE === "1" || !chromePages() || !capturePages()) return now;
+    if (typeof channel?.whenReady !== "function") return now;
+    await within(Math.max(0, ms) + 100, channel.whenReady(ms)).catch(() => null);
+    return kind();
+  }
+  return { kind, waitReady, tabRef, share, record };
 }

@@ -1,5 +1,8 @@
 // An agent hears what the page says is wrong with what it filled, and a recording of the browser
 // is saved as a video file. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
+// PAIRBROWSE_TEST_EXECUTABLE runs it on another build (the PairBrowse browser, a native build with
+// its capture page); PAIRBROWSE_TEST_JOINER_EXECUTABLE is taken as that build too when only it is
+// set (the acceptance matrix sets the native build there).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -38,7 +41,7 @@ test("the page's own errors come back with the run, and a recording is saved as 
   const h = mkdtempSync(join(base, "rec-"));
   const downloads = join(h, "downloads");
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
+  const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || process.env.PAIRBROWSE_TEST_JOINER_EXECUTABLE || createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, downloadsDir: downloads }));
   const out = openSync(join(h, "daemon.stderr.log"), "a");
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h }, stdio: ["ignore", out, out] });
@@ -50,6 +53,15 @@ test("the page's own errors come back with the run, and a recording is saved as 
     assert.match(text(await a.tool("pairbrowse_session", { action: "new", clean: true })), /clean/);
     const url = `http://127.0.0.1:${site.address().port}/`;
     assert.ok(!(await a.tool("browser_navigate", { url })).result?.isError);
+
+    // Recording asked for right as the browser came up (a build with its capture page may not
+    // have said hello yet: the helper waits for it a little rather than refusing).
+    const early = text(await a.tool("pairbrowse_record", { action: "start" }));
+    assert.match(early, /Recording the browser \(\d+x\d+\)/, early);
+    await sleep(1500);
+    const earlySaved = text(await a.tool("pairbrowse_record", { action: "stop" }, 90_000));
+    assert.match(earlySaved, /Saved the recording \(\d+ s, [\d.]+ MB\) to /, earlySaved);
+    assert.equal(readdirSync(downloads).length, 1, "the early recording");
 
     // A value the page doesn't accept: the run says so, in the page's own words.
     const bad = text(await a.tool("pairbrowse_run", { steps: [{ fill: { Email: "not an email", Name: "Ada" } }, { select: { Country: "Netherlands" } }] }));
@@ -81,10 +93,10 @@ test("the page's own errors come back with the run, and a recording is saved as 
     assert.match(text(await a.tool("pairbrowse_record", { action: "status" })), /Recording, \d+ s so far/);
     const saved = text(await a.tool("pairbrowse_record", { action: "stop" }, 90_000));
     assert.match(saved, /Saved the recording \(\d+ s, [\d.]+ MB\) to /, saved);
-    const files = readdirSync(downloads);
-    assert.equal(files.length, 1, files.join(", "));
-    assert.match(files[0], /^PairBrowse recording \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d\.(mp4|webm)$/);
-    const file = join(downloads, files[0]);
+    const files = readdirSync(downloads).sort(); // named by when they started: the early one first
+    assert.equal(files.length, 2, files.join(", "));
+    for (const f of files) assert.match(f, /^PairBrowse recording \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d\.(mp4|webm)$/);
+    const file = join(downloads, files[1]);
     assert.ok(statSync(file).size > 10_000, `a real video (${statSync(file).size} bytes)`);
     const head = readFileSync(file).subarray(0, 12);
     assert.ok(head.subarray(4, 8).toString() === "ftyp" || head.readUInt32BE(0) === 0x1a45dfa3, "an MP4 or WebM file");

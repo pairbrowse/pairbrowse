@@ -83,6 +83,25 @@ screenTest("the tab's title carries the host's name in the build", {}, async (ct
   assert.equal(await title(), "Bob's tab · Shop", "nobody in it: whose tab and the title");
 });
 
+screenTest("on the slower route the helper's word on the channel drives the hold, never a quiet spell", {}, async (ctx) => {
+  await ctx.inPage(() => { window.pbScreen.holdAfter(300, 1000); window.pbScreen.info({ title: "Shop", url: "https://shop.example/cart", who: "Bob" }); });
+  await sendFrame(ctx);
+  assert.equal(await ctx.inPage(() => window.pbScreen.link("up")), true);
+  assert.equal((await ctx.harness.live()).intervals, 0, "no watch while the channel is up");
+  await ctx.page.waitForTimeout(800);
+  assert.deepEqual(await ctx.inPage(() => window.pbScreen.hold()), { shown: false, text: "", dimmed: false }, "a quiet host page on a healthy channel: no wait");
+  await ctx.inPage(() => window.pbScreen.link("down"));
+  assert.deepEqual(await ctx.inPage(() => window.pbScreen.hold()), { shown: true, text: "Reconnecting to Bob…", dimmed: true }, "the channel down: said at once");
+  await ctx.inPage(() => window.pbScreen.link("up"));
+  assert.equal((await ctx.inPage(() => window.pbScreen.hold())).shown, false, "the channel up again: taken down");
+  await ctx.inPage(() => window.pbScreen.link("down"));
+  await sendFrame(ctx);
+  assert.equal((await ctx.inPage(() => window.pbScreen.hold())).shown, false, "a picture takes it down");
+  await ctx.page.waitForTimeout(800);
+  assert.equal((await ctx.inPage(() => window.pbScreen.hold())).shown, false, "and a picture means the channel is up");
+  assert.equal(await ctx.inPage(() => window.pbScreen.link("sideways")), false, "only up or down");
+});
+
 screenTest("hidden pauses the hold watch and return resumes it", {}, async (ctx) => {
   await ctx.inPage(() => { window.pbScreen.holdAfter(300, 1000); window.pbScreen.info({ title: "Shop", url: "https://shop.example/cart", who: "Bob" }); });
   await sendFrame(ctx);

@@ -1318,3 +1318,22 @@ describe("the card works on its own agent's lines only", () => pageTest("right",
   await until("working", () => document.getElementById("driver-text").textContent === "Working…");
   assert.deepEqual(errors, []);
 }));
+
+// A second agent of this browser (Codex, no from) acting: the card names it, working; the first
+// agent's earlier line never makes the card work.
+describe("a second local agent's line moves the card to it, working", () => pageTest("right", opts(), async ({ helper, inPage, until, errors }) => {
+  helper.push("board", { people: PEOPLE, messages: [] });
+  const lines = [{ t: Date.now() - 60_000, text: "Typed into **Email**", who: "Claude", tab: "Checkout" }];
+  helper.push("activity", lines);
+  await until("the card names Claude", () => document.getElementById("agent-name").textContent === "Claude");
+  assert.equal(await inPage(text, "driver-text"), "Idle", "Claude acted a minute ago");
+  lines.push({ t: Date.now(), text: "Clicked **Next**", who: "Codex 1a2b", tab: "Checkout" });
+  helper.push("activity", lines);
+  await until("the card names Codex", () => /^Codex 1a2b/.test(document.getElementById("agent-name").textContent));
+  await until("working", () => document.getElementById("driver-text").textContent === "Working…");
+  helper.push("activity", [...lines]);
+  await sleep(200);
+  assert.match(await inPage(text, "agent-name"), /^Codex 1a2b/, "Claude's older line doesn't take the card back");
+  assert.equal(await inPage(text, "driver-text"), "Working…");
+  assert.deepEqual(errors, []);
+}));

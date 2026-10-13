@@ -32,7 +32,7 @@ const joinerOf = (req) => ({
 });
 
 // key: the owner's key (it never works here). joiners: the live view's joiner map, filled here.
-// live: the coordinator's { tabsFor(j), openStream(j, conn), applyTabs(body, j), pointersFor(body, j), say(body, j), screen(body, j),
+// live: the coordinator's { tabsFor(j), openStream(j, conn), applyTabs(body, j, heardAt), pointersFor(body, j), say(body, j), screen(body, j),
 // stopScreens(j), changed } (changed: the participant list changed; screen: shared browser mode, invites with mode "shared" only).
 export function createJoinerServer({ key, invites, approvals, joiners, tunnelHost, live, onJoinRequest, log }) {
   // Answers to the tunnels' public names (tunnelHost(): one or a list), or to loopback
@@ -100,7 +100,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       const n = Array.isArray(parsed?.ops) ? parsed.ops.length : 0;
       if (j.ops.length + n > OPS_PER_WINDOW) return { code: 429, body: { error: "Too many tab changes at once. Slow down." } };
       for (let i = 0; i < n; i++) j.ops.push(t);
-      const r = await live.applyTabs(parsed, j);
+      const r = await live.applyTabs(parsed, j, t); // t: when it arrived (what a person did counts from then back)
       return r.problem ? { code: 400, body: { error: r.problem } } : { code: 200, body: r };
     }
     // Who is doing what on their side, and messages: text only, both roles (a watcher may talk).

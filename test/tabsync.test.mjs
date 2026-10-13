@@ -101,13 +101,13 @@ test("a person in the other browser counts as a person here, and isn't sent back
     const page = {};
     presence.elsewhere(page, "Bob", ['typed in "Email"']);
     assert.equal(presence.actingIn(page), "Bob", "agents' page changes here wait for Bob");
-    assert.deepEqual(presence.sharedPerson(page), { who: "Bob", local: false, acting: true, ago: 0 }, "not this browser's person: never sent back");
+    assert.deepEqual(presence.sharedPerson(page), { who: "Bob", local: false, acting: true, at: Date.now() }, "not this browser's person: never sent back");
     assert.match(presence.userNote(page), /Bob used this tab meanwhile: typed in "Email"/);
     assert.equal(stale.length, 1);
     mock.timers.tick(2500);
     assert.equal(presence.personIn(page), null, "and stop waiting once Bob stops");
     presence.userDid([{ kind: "type", t: Date.now(), what: "Name" }], page);
-    assert.deepEqual(presence.sharedPerson(page), { who: "Alice", local: true, acting: true, ago: 0 });
+    assert.deepEqual(presence.sharedPerson(page), { who: "Alice", local: true, acting: true, at: Date.now() });
     assert.deepEqual(presence.feedAfter(page).filter((e) => e.local).map((e) => e.line), ['typed in "Name"']);
     // News that crossed late (a busy computer): busy from when they acted, not from when it arrived.
     const other = {};

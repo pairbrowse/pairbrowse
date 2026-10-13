@@ -1,6 +1,6 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { createPresence } from "../scripts/daemon/presence.mjs";
+import { createPresence, sentAgo } from "../scripts/daemon/presence.mjs";
 
 test("an agent's own input read late is still the agent's, a person's is a person's", () => {
   mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 1_000_000 });
@@ -250,4 +250,46 @@ test("onActing says when agents start acting and when the last action ends, once
   assert.deepEqual(seen, [true, false]);
   b();
   assert.deepEqual(seen, [true, false], "ending twice says nothing more");
+});
+
+test("a person's input in the other browser counts from when they did it, however late the news crosses", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 3_000_000 });
+  try {
+    const make = (host) => createPresence({ host, readEvents: async () => [], pages: () => [], paused: () => true, onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    const joiner = make("Alice"), host = make("Bob");
+    const copy = {}, tab = {};
+    // Alice types in her copy of the tab, at t0.
+    const t0 = Date.now();
+    joiner.userDid([{ kind: "type", t: t0, what: "Comments" }], copy);
+    mock.timers.tick(1200);
+    // The joiner's round puts its news together 1.2 s later: when she typed, not how long ago yet.
+    const person = joiner.sharedPerson(copy);
+    assert.equal(person.at, t0, "the time she typed, not an age that goes stale");
+    const op = { op: "person", id: "x", did: [], acting: true, at: person.at };
+    // A busy computer: the round sends it 1.3 s later still (its forms read slowly).
+    mock.timers.tick(1300);
+    const sent = sentAgo(op);
+    assert.deepEqual(sent, { op: "person", id: "x", did: [], acting: true, ago: 2500 }, "ago measured as it leaves; at never crosses");
+    // On the host it waits in line behind other input for 400 ms before it's applied.
+    const heardAt = Date.now();
+    mock.timers.tick(400);
+    host.elsewhere(tab, "Alice", sent.did, sent.acting, sent.ago, heardAt);
+    assert.equal(host.actingIn(tab), null, "a keystroke 2.9 s old holds the host's agents no longer: a run starting now goes on");
+    // Measured when the op was put together (1.2 s) and applied as if it had just arrived, the
+    // same keystroke would have held them until 2 s after the news landed.
+    const late = make("Bob");
+    late.elsewhere(tab, "Alice", [], true, 1200);
+    assert.equal(late.actingIn(tab), "Alice", "the old way: old input made new");
+    // Fresh news still holds them, from when she did it.
+    host.elsewhere(tab, "Alice", [], true, 300, Date.now() - 100);
+    assert.equal(host.actingIn(tab), "Alice");
+    mock.timers.tick(1500);
+    assert.equal(host.actingIn(tab), "Alice", "1.9 s after she typed");
+    mock.timers.tick(200);
+    assert.equal(host.actingIn(tab), null, "2.1 s after: idle");
+    const form = { op: "form", id: "x" };
+    assert.equal(sentAgo(form), form, "other changes go as they are");
+  } finally {
+    mock.timers.reset();
+  }
 });

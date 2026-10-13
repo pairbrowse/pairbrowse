@@ -8,6 +8,7 @@
 import { parseJoinCode, cleanName, displayName, joinHostsOf, cleanHost, saveJoinHosts, createHostAsks, appName } from "../join.mjs";
 import { startJoin, FAILOVER_MS } from "../relay.mjs";
 import { waitForLink, waitedLine } from "./linkwait.mjs";
+import { sentAgo } from "./presence.mjs";
 import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, tabWho, personColor, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
 import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../devshare.mjs";
@@ -207,9 +208,10 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         // Still there: said again twice a second (the host's agents wait while it's fresh).
         if (fresh.length || Date.now() - (cur.personSent.get(id) || 0) >= PERSON_AGAIN_MS) {
           cur.personSent.set(id, Date.now());
-          // ago: how long ago they last clicked or typed here (news that crosses late holds nobody longer).
-          const ago = person?.acting ? person.ago : fresh.length ? Date.now() - fresh.at(-1).t : 0;
-          ops.push({ op: "person", id, did: fresh.map((e) => e.line), ...(person?.acting ? { acting: true } : {}), ago: Math.max(0, Math.round(ago || 0)) });
+          // at: when they last clicked or typed here, sent as an ago measured as it leaves (sentAgo):
+          // news that crosses late holds nobody longer.
+          const at = (person?.acting ? person.at : fresh.length ? fresh.at(-1).t : null) ?? Date.now();
+          ops.push({ op: "person", id, did: fresh.map((e) => e.line), ...(person?.acting ? { acting: true } : {}), at });
         }
       }
     }
@@ -275,7 +277,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (ops.length) {
       let answer = null;
       for (let i = 0; i < ops.length; i += OPS_MAX) {
-        const r = await cur.join.send(ops.slice(i, i + OPS_MAX));
+        const batch = ops.slice(i, i + OPS_MAX).map((o) => sentAgo(o));
+        const r = await cur.join.send(batch);
         if (r) answer = { ...r, opened: { ...answer?.opened, ...r.opened } };
       }
       for (const { op, page } of adopting) {

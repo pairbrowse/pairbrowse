@@ -453,7 +453,7 @@ const sharing = createSharing({
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
     // their pointer alone, or just being in the tab, leaves the page as it was.
     // Their mark (a dot in their pointer's color) shows on the tab's icon here while they're in it.
-    onJoinerPerson: (page, who, did, acting, changed = false, ago = 0) => { presence.elsewhere(page, who, did, acting, ago); hud.setPersonMark(page, personColor(who)); if (changed) bumpRevision(page); },
+    onJoinerPerson: (page, who, did, acting, changed = false, ago = 0, heardAt = Date.now()) => { presence.elsewhere(page, who, did, acting, ago, heardAt); hud.setPersonMark(page, personColor(who)); if (changed) bumpRevision(page); },
     onPause: (paused, who, agent) => pressPause(paused, who || HOST, agent || null), pauseState,
     onRecord: (on) => (on ? recorder.start() : recorder.stop()), recordState: () => recorder.state(),
     // A joiner's agent at work in their copy of a tab: in use, so the tab cap here keeps it (closing

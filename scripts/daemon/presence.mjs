@@ -24,6 +24,16 @@ const USER_KINDS = new Set(["click", "type", "key", "wheel", "scroll", "move", "
 // "Pause agents" or "Resume" in the page's bar ("pause" or "resume"; never page input).
 // onActing(on): an agent's action started with none running (true), or the last one running ended
 // (false): the live view tells the browser's own pages, so an approval card there can say so.
+// A person op for the other browser of a joined session carries at (when they last clicked or
+// typed, this computer's clock): sent as ago, measured now, as it leaves. Measured when the op
+// was put together instead, a round that sends late (a busy computer reading its forms) would
+// make old input new there, and stop an agent's run for a click made seconds before it started.
+export function sentAgo(op, now = Date.now()) {
+  if (op?.op !== "person" || !Number.isFinite(op.at)) return op;
+  const { at, ...rest } = op;
+  return { ...rest, ago: Math.max(0, Math.round(now - at)) };
+}
+
 export function createPresence({ host, readEvents, pages, paused, onUsed, onStale, applyBar, refreshTabs, onPauseButton = () => {}, restoring = () => false, onActing = () => {} }) {
   const humanAt = new WeakMap(); // tab -> { t, who }: the last time a person used it, and who
   // Where agents' cursors went in each tab lately ([{ x, y, w, h, t, press }], document pixels,
@@ -258,14 +268,15 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   // names only, never values (the other side's presence made them).
   // acting: they clicked or typed there just now (not only moved the pointer or scrolled).
   // ago: how long before this news arrived they did (it can cross late on a busy computer): they
-  // count as busy from then, not from now.
-  function elsewhere(page, who, lines = [], acting = false, ago = 0) {
+  // count as busy from then, not from now. heardAt: when it arrived here (it can wait in line
+  // behind other input before it's applied): ago counts back from then.
+  function elsewhere(page, who, lines = [], acting = false, ago = 0, heardAt = Date.now()) {
     if (!page) return;
     // Only there (moving the pointer, scrolling): nothing waits, but agents are told someone was.
     const acted = lines.some((l) => l !== "scrolled" && l !== "was in this tab");
     if (!acted && personIn(page) !== who) lines = ["was in this tab"];
     humanIn(page, who);
-    if (acted || acting) actedIn(page, who, Date.now() - Math.max(0, Math.min(LATE_NEWS_MAX_MS, Number(ago) || 0)));
+    if (acted || acting) actedIn(page, who, Math.min(Date.now(), Number(heardAt) || Date.now()) - Math.max(0, Math.min(LATE_NEWS_MAX_MS, Number(ago) || 0)));
     if (lines.length) onUsed(page); // in use on the other side too: the tab cap keeps it
     const h = humanAt.get(page);
     if (h.who === who) h.remote = true; // never sent back to where it came from
@@ -281,8 +292,9 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     if (acted) onStale(page);
   }
   // Who is using this tab by hand right now ({ who, local }), and what people did there after n.
-  // ago: how long ago they last clicked or typed (ms), so news that crosses late holds nobody longer.
-  const sharedPerson = (page) => { const h = page && humanAt.get(page); return h && Date.now() - h.t < USER_IDLE_MS ? { who: h.who, local: !h.remote, acting: !!actingIn(page), ago: actingIn(page) ? Date.now() - actedAt.get(page).t : null } : null; };
+  // at: when they last clicked or typed (this computer's clock), said as an ago only when the news
+  // is sent (sentAgo), so news that crosses late holds nobody longer.
+  const sharedPerson = (page) => { const h = page && humanAt.get(page); return h && Date.now() - h.t < USER_IDLE_MS ? { who: h.who, local: !h.remote, acting: !!actingIn(page), at: actingIn(page) ? actedAt.get(page).t : null } : null; };
   const feedAfter = (page, n = 0) => (feeds.get(page) || []).filter((e) => e.n > n);
 
   // What people did in the tab, as a note for the agent's next result (once), each under their

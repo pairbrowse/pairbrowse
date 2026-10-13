@@ -123,8 +123,10 @@ async function release(cdp) {
 // too); changes: false when they only moved the pointer or scrolled.
 // onReplay(): marks input replayed from a viewer while it runs (returns done()).
 // secretDomains(): sites with saved passwords, whose tabs reach joiners as origin + path only.
-// onJoinerPerson(page, who, did, acting, changed, ago): a drive joiner uses their copy of a tab by
-// hand (agents here wait, as for a person here; changed: they navigated, opened or closed it).
+// onJoinerPerson(page, who, did, acting, changed, ago, heardAt): a drive joiner uses their copy of a
+// tab by hand (agents here wait, as for a person here; changed: they navigated, opened or closed
+// it). ago: how long before heardAt (when their news arrived here) they did: it can wait in line
+// behind other input before it's applied.
 // onJoinerActivity(page, text, who, from): their agent acted there.
 // journal(): the goal log for the Timeline (journal.mjs read), or null.
 // makeInvite(choice): the Share card's invite (sharing.mjs createInvite), or null.
@@ -461,7 +463,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       ctx.on("page", (p) => { watch(p); push.changed(); });
     }).catch(() => {});
   };
-  async function applyTabs(body, j) {
+  async function applyTabs(body, j, heardAt = Date.now()) {
     const ctx = await getContext();
     const known = new Map(ctx.pages().map((p) => [idOf(p), p]));
     const { ops, problem } = readOps(body, new Set((await tabsFor(j)).tabs.map((t) => t.id)));
@@ -473,7 +475,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
         if (o.op === "order") { await shared.arrange(o.ids.map((id) => known.get(id)).filter((p) => p && !p.isClosed())); continue; }
         const page = o.op === "open" ? await keepFocus(() => ctx.newPage()) : known.get(o.id);
         if (!page || page.isClosed()) continue;
-        if (o.op === "person") { onJoinerPerson(page, j.name, o.did, o.acting, false, o.ago); continue; }
+        if (o.op === "person") { onJoinerPerson(page, j.name, o.did, o.acting, false, o.ago, heardAt); continue; }
         if (o.op === "activity") { onJoinerActivity(page, o.text, o.who || who, joinerKey(j)); continue; }
         if (o.op === "agent") { shared.onJoinerAgent(page, o.who, o.color, o.left, joinerKey(j), cleanName(j.name)); continue; }
         if (o.op === "form") {
@@ -485,7 +487,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
           push.dirty(page); // on to the other joiners
           continue;
         }
-        onJoinerPerson(page, j.name, [], true, true);
+        onJoinerPerson(page, j.name, [], true, true, 0, heardAt);
         if (o.op === "close") {
           // The last tab is emptied instead of closed, so the browser window stays open.
           if (ctx.pages().length > 1) await page.close().catch(() => {}); else await page.goto("about:blank").catch(() => {});

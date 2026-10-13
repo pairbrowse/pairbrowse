@@ -69,6 +69,18 @@ const FILE_PART = 120_000; // bytes of a file per message to the host
 // Logs how long pointers and field values took from the other side's page (for the live check).
 const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 
+// A person in the host's browser, from one tab of its state (applyHost): what they did there that
+// is new here (did, each with its own ago: stateAgo), else whether they act there now (the tab's
+// ago). Every ago counts back from heardAt, when the state arrived here, not from now: it may
+// have waited behind other changes before it's applied. A host without the times sends no ago:
+// from arrival, as before.
+export function hostPeople(presence, page, t, did, host, heardAt = Date.now()) {
+  const ago = (x) => (Number.isFinite(x?.ago) ? x.ago : 0);
+  for (const e of did) presence.elsewhere(page, String(e.who || host), [e.line], false, ago(e), heardAt);
+  // The same moment however often the state comes again while they keep still.
+  if (t.person && !did.length) presence.elsewhere(page, String(t.person), [], t.acting === true, t.acting === true ? ago(t) : 0, heardAt);
+}
+
 // context: the helper's browser ({ getContext }). hud: addActivity, onActivity. presence: people
 // using tabs by hand (a person in the other browser's copy of a tab counts as one here).
 // liveView(): the user's live view (who is in the session). secretDomains(): sites with this
@@ -397,10 +409,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       const did = (Array.isArray(t.did) ? t.did : []).filter((e) => Number(e.n) > heard);
       cur.heard.set(t.id, did.length ? Math.max(...did.map((e) => Number(e.n) || 0)) : heard);
       if (first) continue; // on joining, what was done before isn't news
-      for (const e of did) presence.elsewhere(page, String(e.who || cur.join.host), [e.line]);
-      // ago: how long before the state left the host they last clicked or typed (stateAgo): the
-      // same moment however often the state comes again while they keep still.
-      if (t.person && !did.length) presence.elsewhere(page, String(t.person), [], t.acting === true, t.acting === true && Number.isFinite(t.ago) ? t.ago : 0, heardAt);
+      hostPeople(presence, page, t, did, cur.join.host, heardAt);
     }
 
     // What happens there shows here, like local activity.

@@ -39,12 +39,21 @@ export function sentAgo(op, now = Date.now()) {
 // stays the same until they act again, so an unchanged state is no news), and at becomes ago,
 // measured now, as it leaves. The joiner counts ago back from when the state arrived: the other
 // computer's clock never matters, and a state resent while they keep still holds nobody longer.
+// Each did entry (what they did there) carries its own at, and leaves as its own ago the same way.
+// An ago is whole, never negative and at most LATE_NEWS_MAX_MS (older news holds nobody anyway).
+const agoOf = (at, now) => Math.min(LATE_NEWS_MAX_MS, Math.max(0, Math.round(now - at)));
+const timed = (x) => !!x && Object.hasOwn(x, "at");
+const withAgo = (x, now) => {
+  if (!timed(x)) return x;
+  const { at, ...rest } = x;
+  return Number.isFinite(at) ? { ...rest, ago: agoOf(at, now) } : rest;
+};
 export function stateAgo(state, now = Date.now()) {
-  if (!Array.isArray(state?.tabs) || !state.tabs.some((t) => t && Object.hasOwn(t, "at"))) return state;
+  if (!Array.isArray(state?.tabs) || !state.tabs.some((t) => timed(t) || (Array.isArray(t?.did) && t.did.some(timed)))) return state;
   return { ...state, tabs: state.tabs.map((t) => {
-    if (!t || !Object.hasOwn(t, "at")) return t;
-    const { at, ...rest } = t;
-    return Number.isFinite(at) ? { ...rest, ago: Math.max(0, Math.round(now - at)) } : rest;
+    if (!t) return t;
+    const out = withAgo(t, now);
+    return Array.isArray(t.did) && t.did.some(timed) ? { ...out, did: t.did.map((e) => withAgo(e, now)) } : out;
   }) };
 }
 

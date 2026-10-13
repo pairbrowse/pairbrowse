@@ -2,6 +2,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createPresence, sentAgo, stateAgo } from "../scripts/daemon/presence.mjs";
 import { stateForJoiner } from "../scripts/tabsync.mjs";
+import { hostPeople } from "../scripts/daemon/follow.mjs";
 
 test("an agent's own input read late is still the agent's, a person's is a person's", () => {
   mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 1_000_000 });
@@ -358,4 +359,72 @@ test("stateAgo: only tabs with a time change; at becomes a whole, never negative
   const s = stateForJoiner({ tabs: [{ id: "a", url: "https://e.com/", title: "E", person: "Bob", acting: true, at: 5000 }, { id: "b", url: "https://e.com/b", title: "B", person: "Bob", acting: false, at: 5000 },
     { id: "c", url: "https://e.com/c", title: "C", person: "Ann", acting: true, at: 5000 }, { id: "d", url: "https://e.com/d", title: "D", person: "Bob", acting: true, at: "soon" }] }, { name: "Ann" });
   assert.deepEqual(s.tabs.map((t) => [t.id, t.acting, t.at]), [["a", true, 5000], ["b", undefined, undefined], ["c", undefined, undefined], ["d", true, undefined]]);
+});
+
+test("a state from the host heard 1.2 s late with ago 300 ms counts the person from 1.5 s back", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 6_000_000 });
+  try {
+    const joiner = createPresence({ host: "Ann", readEvents: async () => [], pages: () => [], paused: () => true, onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    const copy = {};
+    // The state arrived (heardAt), then waited 1.2 s here behind other changes before it's applied.
+    const heardAt = Date.now();
+    mock.timers.tick(1200);
+    joiner.elsewhere(copy, "Bob", [], true, 300, heardAt);
+    assert.equal(joiner.actingIn(copy), "Bob", "1.5 s after he typed: still acting");
+    mock.timers.tick(499);
+    assert.equal(joiner.actingIn(copy), "Bob", "1.999 s after");
+    mock.timers.tick(2);
+    assert.equal(joiner.actingIn(copy), null, "2 s after he typed, not 2 s after it was applied");
+    // A heardAt in the future (a confused caller) never makes news newer than now.
+    const later = {};
+    joiner.elsewhere(later, "Bob", [], true, 0, Date.now() + 60_000);
+    mock.timers.tick(2001);
+    assert.equal(joiner.actingIn(later), null);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// What people did in a host tab (its did entries) crossed with no time and counted from when the
+// joiner applied the state: each entry now carries its own, counted back from arrival.
+test("the joiner applies the host's state late: what the person did there counts from when they did it (hostPeople)", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 7_000_000 });
+  try {
+    const make = (host) => createPresence({ host, readEvents: async () => [], pages: () => [], paused: () => true, onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    const host = make("Bob"), joiner = make("Ann"), oldWay = make("Ann");
+    const tab = {}, copy = {}, oldCopy = {};
+    const t0 = Date.now();
+    host.userDid([{ kind: "click", t: t0, what: "Save" }], tab);
+    const p = host.sharedPerson(tab);
+    const did = host.feedAfter(tab);
+    assert.equal(did.at(-1).t, t0);
+    // The host's round 400 ms later: its did entries keep their time (at), then leave as an ago.
+    mock.timers.tick(400);
+    const state = stateForJoiner({ tabs: [{ id: "x", url: "https://example.com/", title: "Example", person: p.who, acting: p.acting, at: p.at, did }] }, { name: "Ann" });
+    assert.equal(state.tabs[0].did[0].at, t0, "the time crosses inside the host's own state");
+    const sent = stateAgo(state);
+    assert.ok(!("at" in sent.tabs[0].did[0]), "at never crosses");
+    assert.equal(sent.tabs[0].did[0].ago, 400);
+    // It crosses in 200 ms, then waits 1 s behind other changes before the joiner applies it.
+    mock.timers.tick(200);
+    const heardAt = Date.now();
+    mock.timers.tick(1000);
+    hostPeople(joiner, copy, sent.tabs[0], sent.tabs[0].did, "Bob", heardAt);
+    // The old way: no ago, counted from when it was applied.
+    hostPeople(oldWay, oldCopy, { person: "Bob" }, [{ n: 1, who: "Bob", line: sent.tabs[0].did[0].line }], "Bob");
+    assert.equal(joiner.actingIn(copy), "Bob", "1.6 s after his click: the joiner's agents wait");
+    assert.match(joiner.userNote(copy), /Bob used this tab meanwhile/);
+    mock.timers.tick(600); // 2.2 s after his click: counted from it plus the 200 ms crossing (unknowable without a shared clock)
+    assert.equal(joiner.actingIn(copy), null, "2 s after that they go on");
+    assert.equal(oldWay.actingIn(oldCopy), "Bob", "the old way: held until 2 s after the late apply");
+    // An older host: no ago anywhere, counted from arrival.
+    const older = {};
+    const arrived = Date.now();
+    mock.timers.tick(500);
+    hostPeople(joiner, older, { person: "Bob", acting: true }, [], "Bob", arrived);
+    mock.timers.tick(1501);
+    assert.equal(joiner.actingIn(older), null, "2 s after arrival");
+  } finally {
+    mock.timers.reset();
+  }
 });

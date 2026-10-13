@@ -77,7 +77,7 @@ export const onSecretDomain = (raw, secretDomains = []) => {
 // (devshare.mjs) for its localhost one, else null. tabs: [{ id, url, title, agent, left, person, did }] in
 // order (agent: the agent's label holding it; left: ms its turn there still holds; person: who uses it by hand right now;
 // acting: they click or type there now, at: since when (this computer's clock: sent as an ago, presence.mjs stateAgo); did: [{ n, who,
-// line }], what people did there: field and button names, never values). activity: [{ t, text,
+// line, t }], what people did there: field and button names, never values; t, when, crosses as at, then an ago like the tab's). activity: [{ t, text,
 // who, tabId, from }]; people: who is in the session (labels). Nothing about a tab that doesn't
 // cross; on secretDomains, nothing but the address; and nothing that came from this joiner.
 export function stateForJoiner({ tabs = [], activity = [], people = [] }, { drive = false, secretDomains = [], name = "", from = "", mapUrl = () => null } = {}) {
@@ -87,7 +87,7 @@ export function stateForJoiner({ tabs = [], activity = [], people = [] }, { driv
     const url = shareableUrl(mapUrl(t.url) || t.url, { full: drive, secretDomains });
     if (!url || out.length >= TABS_MAX) continue;
     if (onSecretDomain(t.url, secretDomains)) { quiet.add(t.id); out.push({ id: t.id, url }); continue; }
-    const did = (Array.isArray(t.did) ? t.did : []).filter((e) => e.who !== name).slice(-10).map((e) => ({ n: numOf(e.n) || 0, who: clean(e.who, 60), line: clean(e.line, 80) }));
+    const did = (Array.isArray(t.did) ? t.did : []).filter((e) => e.who !== name).slice(-10).map((e) => ({ n: numOf(e.n) || 0, who: clean(e.who, 60), line: clean(e.line, 80), ...(Number.isFinite(e.t) ? { at: e.t } : {}) }));
     out.push({ id: t.id, url, title: clean(t.title), ...(t.agent ? { agent: clean(t.agent, 60), ...(COLOR.test(textOf(t.color)) ? { color: t.color } : {}), ...(turnLeft(t.left) ? { left: turnLeft(t.left) } : {}) } : {}), ...(t.person && t.person !== name ? { person: clean(t.person, 60), ...(t.acting ? { acting: true, ...(Number.isFinite(t.at) ? { at: t.at } : {}) } : {}) } : {}), ...(did.length ? { did } : {}) });
   }
   const shared = new Set(out.map((t) => t.id).filter((id) => !quiet.has(id)));

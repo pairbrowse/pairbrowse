@@ -1,7 +1,7 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { shareableUrl, stateForJoiner, readOps, createMirror, createFormSync, createOrderSync, shareFields, readForm, formForJoiner, readPointers, sameOrder, tabWho, personColor, PERSON_SHOWN_MS, TABS_MAX, OPS_MAX, FIELDS_MAX, VALUE_MAX } from "../scripts/tabsync.mjs";
-import { createPresence } from "../scripts/daemon/presence.mjs";
+import { createPresence, stateAgo } from "../scripts/daemon/presence.mjs";
 
 test("only public web addresses cross, and only the safe parts of them", () => {
   for (const bad of ["file:///etc/passwd", "chrome://settings", "data:text/html,x", "javascript:alert(1)", "about:blank", "chrome-extension://abc/x.html",
@@ -348,4 +348,22 @@ test("a drive address keeps its query parts as written: no '=' added, encodings 
   // Twice through (the joiner's copy reports its address back): nothing gains an '='.
   const once = shareableUrl("https://a.example/x?after-pause", { full: true });
   assert.equal(shareableUrl(once, { full: true }), once);
+});
+
+test("the host's state for a joiner: an acting person's time and each did entry's, as an ago capped at 15 s", () => {
+  const tabs = [
+    { id: "a", url: "https://e.com/a", title: "A", person: "Bob", acting: true, at: 50_000, did: [{ n: 1, who: "Bob", line: "clicked \"Save\"", t: 49_000 }, { n: 2, who: "Bob", line: "typed in \"Name\"", t: "soon" }, { n: 3, who: "Ann", line: "clicked", t: 49_500 }] },
+    { id: "b", url: "https://e.com/b", title: "B", person: "Bob", acting: true, at: 10_000, did: [{ n: 4, who: "Cy", line: "clicked", t: 1_000 }, { n: 5, who: "Cy", line: "clicked", t: 70_000 }] },
+  ];
+  const s = stateForJoiner({ tabs }, { name: "Ann" });
+  assert.deepEqual(s.tabs[0].did, [{ n: 1, who: "Bob", line: 'clicked "Save"', at: 49_000 }, { n: 2, who: "Bob", line: 'typed in "Name"' }], "a time only when it is one; never the joiner's own");
+  const out = stateAgo(s, 60_000);
+  assert.equal(out.tabs[0].ago, 10_000);
+  assert.deepEqual(out.tabs[0].did, [{ n: 1, who: "Bob", line: 'clicked "Save"', ago: 11_000 }, { n: 2, who: "Bob", line: 'typed in "Name"' }]);
+  assert.equal(out.tabs[1].ago, 15_000, "older than 15 s: 15 s (it holds nobody anyway)");
+  assert.deepEqual(out.tabs[1].did.map((e) => e.ago), [15_000, 0], "capped, and never negative (a time ahead of now)");
+  for (const t of out.tabs) for (const e of [t, ...t.did]) assert.ok(!("at" in e), "at never crosses");
+  // Nothing to convert: the same state, not a copy.
+  const plain = { tabs: [{ id: "c", did: [{ n: 1, who: "Bob", line: "clicked" }] }] };
+  assert.equal(stateAgo(plain, 60_000), plain);
 });

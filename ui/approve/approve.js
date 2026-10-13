@@ -3,6 +3,15 @@
 // window.pairbrowse (the native build) the helper's address comes from session.helper();
 // otherwise from chrome.storage.session "view" (the extension).
 //
+// Two modes. On the top-chrome host (chrome://pairbrowse.top-chrome/approve/) it is the window's
+// click-approval bubble (530): click approvals only (join, dev and host asks stay in the agent
+// panel, DESIGN.md G1), a stream of its own (helperStream shared: false: the helper counts the
+// approve surface only from a stream that carries page=approve), and after every draw it tells
+// the browser how many wait and the DevTools target id of the tab the shown one is for
+// (pairbrowse.approval.setPending; the browser shows the bubble, inactive, at count > 0 and hides
+// it at 0). Escape dismisses there (the request stays for the terminal). Anywhere else (the
+// pairbrowse://approve tab, the extension) it lists every kind on the shared stream, as before.
+//
 // Data contract with the helper (lane H builds scripts/liveview.mjs to this shape;
 // test/fixtures/ui-approve.json and test/ui-approve.test.mjs pin it):
 //   GET <base>approvals.json -> { pending: Item[] } (owner key; 404 or a failure = none pending,
@@ -19,10 +28,11 @@
 //     | { op: "cancel", id }: unchanged routes.
 //   Item = { id: string, agent: { label: string, color: "#rrggbb" }, kind: "click",
 //     target: string (the button's label with its glyph), reason: string (the click rule's
-//     reason as the helper sends it; empty hides the line), tab: { id: number, host: string },
+//     reason as the helper sends it; empty hides the line), tab: { id: number, host: string,
+//     target?: string (the tab's DevTools target id, passed through to the browser) },
 //     at: number (ms epoch; the oldest shows first) }.
 // The page sets body[data-pending] to the number of open requests and body[data-driving]; the
-// bubble host reads nothing else.
+// browser reads nothing of the page but what setPending tells it.
 //
 // Gating, as the in-page join card (scripts/hud.js joinWire/joinWatch): trusted events only;
 // Allow-type answers by a pointer click (detail > 0), Deny-type answers by any trusted click (so
@@ -57,6 +67,11 @@ let busy = false;
 
 const card = $("card"), menu = $("menu"), more = $("more");
 
+// The window's approval bubble (530), not the tab page: set before the first paint.
+const BUBBLE = location.host === "pairbrowse.top-chrome";
+if (BUBBLE) document.documentElement.dataset.mode = "bubble";
+let told = null; // the last [count, target id] told to the browser
+
 // ---- the helper's address and stream ----
 async function findBase() {
   const pb = globalThis.pairbrowse;
@@ -75,7 +90,7 @@ function connect(url) {
   stream?.close();
   base = url;
   // panel=1 always (common.js): the bubble is never a viewer. approvals.json is the snapshot on each open.
-  stream = helperStream(base, { kind: "approve", onState: (s) => { document.body.dataset.s = s; }, onOpen: () => load() });
+  stream = helperStream(base, { kind: "approve", shared: !BUBBLE, onState: (s) => { document.body.dataset.s = s; }, onOpen: () => load() });
   const on = stream.on;
   on("approval", (d) => {
     const id = d?.item?.id;
@@ -89,6 +104,7 @@ function connect(url) {
     document.body.dataset.driving = String(driving);
     hint(driving ? SAY.driving : "");
   });
+  if (BUBBLE) return; // the bubble lists click approvals only
   on("join", (d) => {
     replace("join", (Array.isArray(d) ? d : []).filter((r) => r && r.id && (!r.state || r.state === "pending")));
   });
@@ -111,11 +127,12 @@ async function load() {
 function normalize(kind, raw) {
   const key = `${kind}:${raw.id}`;
   if (!ats.has(key)) ats.set(key, Date.now());
-  const it = { key, kind, id: raw.id, who: "", color: "", verb: "", target: "", host: "", reason: "", labels: {}, menu: [], at: ats.get(key) };
+  const it = { key, kind, id: raw.id, who: "", color: "", verb: "", target: "", host: "", tabTarget: "", reason: "", labels: {}, menu: [], at: ats.get(key) };
   if (kind === "click") {
     Object.assign(it, {
       who: String(raw.agent?.label || "Claude"), color: raw.agent?.color || "", verb: "wants to click",
       target: String(raw.target || ""), host: raw.tab?.host ? String(raw.tab.host) : "", reason: String(raw.reason || ""),
+      tabTarget: typeof raw.tab?.target === "string" ? raw.tab.target : "",
       // No "Allow for <site>" (Part H): the helper keeps no per-site memory, so it was a plain Allow.
       menu: [{ answer: "terminal", label: "Ask in the terminal only" }],
       at: Number(raw.at) || it.at,
@@ -163,6 +180,22 @@ function closeMenu() { menu.hidden = true; more.setAttribute("aria-expanded", "f
 function draw() {
   const open = items.map((it, i) => [it, i]).filter(([it]) => !dismissed.has(it.key))
     .sort((a, b) => a[0].at - b[0].at || a[1] - b[1]).map(([it]) => it);
+  render(open);
+  tell(open.length, open[0]?.tabTarget || "");
+}
+
+// The bubble's host hears the count and the shown request's tab after every draw, once per change.
+// A build without 530 has no setPending: the page then only draws.
+function tell(count, target) {
+  if (!BUBBLE) return;
+  const host = globalThis.pairbrowse?.approval;
+  if (typeof host?.setPending !== "function") return;
+  if (told && told[0] === count && told[1] === target) return;
+  told = [count, target];
+  Promise.resolve().then(() => host.setPending(count, target)).catch(() => { told = null; });
+}
+
+function render(open) {
   document.body.dataset.pending = String(open.length);
   const it = open[0];
   $("empty").hidden = !!it;
@@ -269,7 +302,18 @@ async function post(it, name) {
 
 $("allow").addEventListener("click", (ev) => answer("allow", ev));
 $("deny").addEventListener("click", (ev) => answer("deny", ev));
-$("dismiss").addEventListener("click", () => { if (shownKey) { dismissed.add(shownKey); draw(); } });
+const dismiss = () => { if (shownKey) { dismissed.add(shownKey); draw(); } };
+$("dismiss").addEventListener("click", dismiss);
+// The bubble: Escape closes the topmost, the menu first, then the card (dismissed here, as ×).
+// The tab page keeps Escape answering nothing.
+if (BUBBLE) {
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Escape" || !ev.isTrusted || ev.defaultPrevented || card.hidden) return;
+    ev.preventDefault();
+    if (!menu.hidden) { closeMenu(); more.focus(); return; }
+    dismiss();
+  });
+}
 more.addEventListener("click", () => {
   if (!menu.hidden) return closeMenu();
   menu.hidden = false;

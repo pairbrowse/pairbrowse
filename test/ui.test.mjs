@@ -275,8 +275,11 @@ test("the shim: window.pairbrowse as the page contract says", async () => {
   const plainCopy = (v) => JSON.parse(JSON.stringify(v));
   assert.deepEqual(plainCopy(await pb.tabs.list()), { tabs: fixture.tabs });
   assert.deepEqual(plainCopy(await pb.session.helper()), { origin: "http://127.0.0.1:9", key: "k" });
-  assert.deepEqual(Object.keys(pb).sort(), ["DockState", "NetworkState", "SecurityLevel", "agent", "files", "layout", "omnibox", "session", "tabs", "windows"]);
+  assert.deepEqual(Object.keys(pb).sort(), ["DockState", "NetworkState", "SecurityLevel", "agent", "approval", "files", "layout", "omnibox", "session", "tabs", "windows"]);
   assert.equal(pb.DockState.kOpen, 2);
+  // The approval bubble's host (530): setPending(count, targetId) is recorded, nothing more.
+  assert.equal(await pb.approval.setPending(2, "T11"), undefined);
+  assert.deepEqual(plainCopy(controls.calls.at(-1)), { iface: "approval", method: "setPending", args: [2, "T11"] });
 
   const seen = [];
   const remove = pb.tabs.addObserver({ onActivated: (id, w) => seen.push([id, w]) });

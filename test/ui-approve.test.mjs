@@ -6,7 +6,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { patchright } from "./live.mjs";
-import { openPage, runtime } from "./helpers/ui-page.mjs";
+import { openPage, runtime, hostProxy } from "./helpers/ui-page.mjs";
+import { startUiServer } from "./helpers/ui-server.mjs";
+import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";
+import { inPage as evalIn } from "./live.mjs";
 import { startFakeHelper } from "./helpers/fake-helper.mjs";
 
 const FIXTURE = JSON.parse(readFileSync(new URL("./fixtures/ui-approve.json", import.meta.url), "utf8"));
@@ -426,5 +429,203 @@ test("approve page: the pending list loads from approvals.json on connect", { sk
     await ctx?.close();
     await browser?.close();
     await helper.close();
+  }
+});
+
+named("the tab page never tells the browser's bubble host", async (ctx) => {
+  const { helper, shim } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  helper.push("approval", { op: "withdraw", item: { id: OLDER.id } });
+  await ctx.until("the empty state", () => document.getElementById("card").hidden);
+  assert.equal(await ctx.inPage(() => document.documentElement.dataset.mode), undefined, "no bubble mode off the top-chrome host");
+  assert.deepEqual((await shim.calls()).filter((c) => c.iface === "approval"), []);
+});
+
+// ---- the window's click-approval bubble (530): the same page on the top-chrome host ----
+const TOP = "pairbrowse.top-chrome";
+const T11 = { ...OLDER, tab: { ...OLDER.tab, target: "T11" } };
+const T12 = { ...NEWER, tab: { ...NEWER.tab, target: "T12" } };
+const told = async (ctx) => (await ctx.shim.calls()).filter((c) => c.iface === "approval").map((c) => [c.method, ...c.args]);
+// Waits until the last call told is want; returns every call so far.
+async function toldUntil(ctx, what, want) {
+  for (let i = 0; i < 100; i++) {
+    const got = await told(ctx);
+    if (JSON.stringify(got.at(-1)) === JSON.stringify(want)) return got;
+    await sleep(50);
+  }
+  assert.fail(`timed out waiting for ${what}: ${JSON.stringify(await told(ctx))}`);
+}
+
+function bubble(title, opts, fn) {
+  if (typeof opts === "function") { fn = opts; opts = {}; }
+  test(`approve bubble: ${title}`, { skip: !runtime, timeout: 60_000 }, async () => {
+    const proxy = await hostProxy(TOP);
+    const browser = await patchright(runtime).chromium.launch({ args: proxy.args });
+    let helper = null, ctx = null;
+    try {
+      helper = await startFakeHelper({ replies: opts.replies });
+      ctx = await openPage(browser, "approve", { helper, host: TOP, proxy, reducedMotion: opts.reducedMotion });
+      await fn({ ...ctx, helper });
+    } finally {
+      await ctx?.close();
+      await helper?.close();
+      await browser.close();
+      await proxy.close();
+    }
+  });
+}
+
+bubble("clicks only, and the browser hears the count and the tab on add, withdraw, answer and dismiss", async (ctx) => {
+  const { page, helper, inPage } = ctx;
+  await ctx.until("live", () => document.body.dataset.s === "live");
+  assert.equal(await inPage(() => [location.host, document.documentElement.dataset.mode].join(" ")), `${TOP} bubble`);
+  // The connect burst carried join, dev and host asks (the fake helper sends them): none is listed.
+  helper.push("join", [{ id: "j1", name: "Sam", role: "drive" }]);
+  helper.push("dev", { asks: [{ id: "d1", who: "Claude", port: 3000 }] });
+  helper.push("joinhost", { asks: [{ id: "h1", host: "relay.example" }] });
+  await sleep(300);
+  assert.equal(await inPage(() => document.body.dataset.pending), "0", "join, dev and host asks stay in the agent panel");
+  assert.deepEqual(await told(ctx), [["setPending", 0, ""]], "told once at start: nothing waits");
+
+  add(helper, T12);
+  await shown(ctx, "Publish");
+  await toldUntil(ctx, "one waiting", ["setPending", 1, "T12"]);
+  add(helper, T11); // older: shown first, so its tab is the one told
+  await shown(ctx, "Place order");
+  await toldUntil(ctx, "two waiting", ["setPending", 2, "T11"]);
+  helper.push("approval", { op: "withdraw", item: { id: T12.id } });
+  await toldUntil(ctx, "the withdraw", ["setPending", 1, "T11"]);
+  helper.push("join", [{ id: "j2", name: "Bo", role: "watch" }]);
+  await sleep(200);
+  assert.equal(await inPage(() => document.body.dataset.pending), "1", "a join request never joins the list");
+
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await toldUntil(ctx, "the answer", ["setPending", 0, ""]);
+  assert.deepEqual(bodies(helper, "approve"), [{ id: T11.id, answer: "allow" }]);
+
+  add(helper, T12);
+  await shown(ctx, "Publish");
+  await toldUntil(ctx, "the next ask", ["setPending", 1, "T12"]);
+  await realClick(page, "#dismiss");
+  const all = await toldUntil(ctx, "the dismiss", ["setPending", 0, ""]);
+  assert.deepEqual(all, [[0, ""], [1, "T12"], [2, "T11"], [1, "T11"], [0, ""], [1, "T12"], [0, ""]].map((a) => ["setPending", ...a]), "once per change");
+  assert.equal(bodies(helper, "approve").length, 1, "× posts nothing");
+  // An item without a target: "" for the browser (it picks the last active window).
+  add(helper, { ...OLDER, id: "ap-notarget" });
+  await toldUntil(ctx, "no target", ["setPending", 1, ""]);
+  assert.deepEqual(await ctx.harness.log(), [], "no error, rejection or CSP entry");
+});
+
+bubble("the bubble's look: the card is the document, 364 px, the native frame draws the shadow", async (ctx) => {
+  const { helper, inPage } = ctx;
+  await ctx.until("live", () => document.body.dataset.s === "live");
+  assert.equal(await inPage(() => getComputedStyle(document.getElementById("empty")).display), "none", "no empty line in a bubble");
+  add(helper, T11);
+  await shown(ctx, "Place order");
+  await ctx.settle();
+  const m = await inPage(() => {
+    const cs = (q) => getComputedStyle(document.querySelector(q));
+    const r = document.getElementById("card").getBoundingClientRect();
+    const p = document.createElement("i");
+    p.style.boxShadow = "inset 0 1px 0 var(--edge-light)";
+    document.body.append(p);
+    const inset = getComputedStyle(p).boxShadow;
+    p.remove();
+    return { body: [cs("body").width, cs("body").marginTop, cs("body").backgroundColor], root: cs("html").backgroundColor, card: [r.left, r.top, r.width], shadow: cs("#card").boxShadow === inset,
+      focused: document.activeElement.id, focusShadow: (document.getElementById("card").focus(), cs("#card").boxShadow === inset), border: `${cs("#card").borderTopWidth} ${cs("#card").borderTopColor}`, radius: cs("#card").borderTopLeftRadius };
+  });
+  const [panel, edgeBtn] = await Promise.all(["panel", "edge-btn"].map((n) => token(ctx, n)));
+  assert.deepEqual(m, { body: ["364px", "0px", panel], root: panel, card: [0, 0, 364], shadow: true, focused: "card", focusShadow: true, border: `1px ${edgeBtn}`, radius: "12px" });
+});
+
+bubble("Escape closes the menu, then dismisses; Deny by Enter; Allow never by key", async (ctx) => {
+  const { page, helper, inPage } = ctx;
+  add(helper, T11);
+  add(helper, T12);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  await press(page, "#allow", "Enter");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "a key never allows");
+  assert.equal(await text(ctx, "hint"), "Allow with a click: a key press can't allow.");
+  await realClick(page, "#more");
+  assert.equal(await inPage(() => document.getElementById("menu").hidden), false);
+  await page.keyboard.press("Escape");
+  assert.deepEqual(await inPage(() => [document.getElementById("menu").hidden, document.activeElement.id, document.body.dataset.pending]), [true, "more", "2"], "the menu first, the focus back on More actions");
+  await page.keyboard.press("Escape");
+  await shown(ctx, "Publish");
+  await toldUntil(ctx, "the dismiss", ["setPending", 1, "T12"]);
+  assert.equal(await inPage(() => document.activeElement.id), "card", "the next card takes the focus itself");
+  // A synthetic Escape dismisses nothing.
+  await inPage(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await sleep(200);
+  assert.equal(await inPage(() => document.body.dataset.pending), "1");
+  assert.deepEqual(helper.posts, [], "Escape answers nothing");
+  await sleep(SETTLE);
+  await press(page, "#deny", "Enter");
+  await toldUntil(ctx, "the deny", ["setPending", 0, ""]);
+  assert.deepEqual(bodies(helper, "approve"), [{ id: T12.id, answer: "deny" }]);
+});
+
+bubble("an ask that arrives while the bubble is hidden arms only once it shows; nothing while driving", async (ctx) => {
+  const { page, helper, harness } = ctx;
+  await ctx.until("live", () => document.body.dataset.s === "live");
+  await harness.setHidden(true); // the browser keeps the page while the bubble is closed
+  add(helper, T11);
+  await toldUntil(ctx, "the ask", ["setPending", 1, "T11"]);
+  assert.equal((await harness.live()).observers, 0, "no observer while hidden");
+  const fires = await harness.hiddenFires();
+  await sleep(SETTLE);
+  assert.equal(await harness.hiddenFires(), fires, "nothing runs while hidden");
+  await harness.setHidden(false); // the bubble showed
+  assert.equal((await harness.live()).observers, 1);
+  await realClick(page, "#allow");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "not armed at once after showing");
+  await sleep(SETTLE);
+  helper.push("driving", { on: true });
+  await ctx.until("driving", () => document.body.dataset.driving === "true");
+  await realClick(page, "#allow");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "nothing while an agent drives");
+  helper.push("driving", { on: false });
+  await ctx.until("not driving", () => document.body.dataset.driving === "false");
+  await realClick(page, "#allow");
+  await toldUntil(ctx, "the answer", ["setPending", 0, ""]);
+  assert.deepEqual(bodies(helper, "approve"), [{ id: T11.id, answer: "allow" }]);
+});
+
+test("approve bubble: its own stream (page=approve) beside the strip's shared one", { skip: !runtime, timeout: 60_000 }, async () => {
+  const proxy = await hostProxy(TOP);
+  // The full Chromium (new headless): the headless shell ignores the secure-origin switch, and
+  // without Web Locks every page would open its own stream anyway.
+  const browser = await patchright(runtime).chromium.launch({ channel: "chromium", args: proxy.args });
+  const helper = await startFakeHelper();
+  const ui = await startUiServer({ helper, fixture: defaultFixture() });
+  proxy.to(ui.origin);
+  helper.setPageOrigin(`http://${TOP}`);
+  try {
+    const context = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+    const strip = await context.newPage();
+    await strip.goto(`http://${TOP}/strip/index.html`, { waitUntil: "load" });
+    const approve = await context.newPage();
+    await approve.goto(`http://${TOP}/approve/index.html`, { waitUntil: "load" });
+    const until = async (what, fn) => { for (let i = 0; i < 120; i++) { if (await fn()) return; await sleep(50); } assert.fail(`timed out waiting for ${what}`); };
+    for (const p of [strip, approve]) await until("live", () => evalIn(p, () => document.body.dataset.s === "live"));
+    assert.equal(await evalIn(strip, () => typeof navigator.locks?.request === "function" && typeof BroadcastChannel === "function"), true, "the host can share a stream");
+    await until("two streams", () => helper.streams.size === 2);
+    assert.deepEqual([...helper.streams].map((s) => `${s.kind} ${s.panel}`).sort(), ["approve true", "strip true"], "the approve surface counts on its own");
+    assert.equal((await evalIn(approve, () => window.__harness.live())).eventSources, 1, "the bubble holds its own EventSource");
+    // A click ask reaches it on its own stream.
+    add(helper, T11);
+    await until("the bubble's card", () => evalIn(approve, () => document.body.dataset.pending === "1"));
+    await context.close();
+  } finally {
+    await browser.close();
+    await ui.close();
+    await helper.close();
+    await proxy.close();
   }
 });

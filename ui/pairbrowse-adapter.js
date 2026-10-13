@@ -29,6 +29,10 @@ const INTERFACES = [
   ["session", "Session", null, []],
   ["agent", "Agent", "AgentObserver", ["onOwnerChanged"]],
   ["files", "Files", null, []],
+  // The click-approval bubble (530): the browser binds it only for its approval page, so only the
+  // approve page in bubble mode calls it, after checking setPending is a function (a build without
+  // 530 compiles no ApprovalHost: no methods here).
+  ["approval", "ApprovalHost", null, []],
 ];
 const TAB_PAGE_INTERFACES = new Set(["session"]);
 const ENUMS = ["NetworkState", "SecurityLevel", "DockState"];

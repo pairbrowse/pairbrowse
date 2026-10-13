@@ -760,11 +760,14 @@ function openStream(base, kind, { event, state }) {
   return es;
 }
 
-// helperStream(base, { kind, onState, onOpen }) -> { on(name, fn), close() }. base: the helper's
-// `${origin}/${key}/`. kind: the page's own helper page kind, or "". onState(s) on every state
-// change; onOpen() each time the stream goes live (fetch snapshots there). Nothing is delivered
-// during the call itself, so on() calls made right after it miss nothing.
-export function helperStream(base, { kind = "", onState = () => {}, onOpen = () => {} } = {}) {
+// helperStream(base, { kind, shared, onState, onOpen }) -> { on(name, fn), close() }. base: the
+// helper's `${origin}/${key}/`. kind: the page's own helper page kind, or "". shared: false opens a
+// stream of this page's own, never the origin's shared one: the helper counts a page kind only
+// from the stream that carries it, so a page that must count on its own (the approval bubble, 530
+// D2) says so. onState(s) on every state change; onOpen() each time the stream goes live (fetch
+// snapshots there). Nothing is delivered during the call itself, so on() calls made right after it
+// miss nothing.
+export function helperStream(base, { kind = "", shared = true, onState = () => {}, onOpen = () => {} } = {}) {
   const handlers = new Map(); // event name -> [fn]
   const on = (name, fn) => { if (!handlers.has(name)) handlers.set(name, []); handlers.get(name).push(fn); };
   const deliver = (name, data) => {
@@ -783,7 +786,7 @@ export function helperStream(base, { kind = "", onState = () => {}, onOpen = () 
   let closed = false;
   let es = null;
 
-  // A stream of this page's own (no Web Locks or BroadcastChannel, or the lock refused).
+  // A stream of this page's own (shared: false, no Web Locks or BroadcastChannel, or the lock refused).
   function own() {
     if (closed) return;
     es = openStream(base, ownKind, { event: deliver, state: setState });
@@ -791,7 +794,7 @@ export function helperStream(base, { kind = "", onState = () => {}, onOpen = () 
 
   let name = "";
   try { name = "pairbrowse-stream " + new URL(base).origin; } catch { name = ""; }
-  if (!name || typeof navigator.locks?.request !== "function" || typeof BroadcastChannel !== "function" || typeof crypto?.randomUUID !== "function") {
+  if (!shared || !name || typeof navigator.locks?.request !== "function" || typeof BroadcastChannel !== "function" || typeof crypto?.randomUUID !== "function") {
     // The first delivery still comes from the stream's own callbacks, never from this call.
     own();
     return { on, close() { closed = true; es?.close(); es = null; } };

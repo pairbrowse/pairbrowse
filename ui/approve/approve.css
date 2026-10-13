@@ -87,3 +87,13 @@ button:disabled, button:disabled:hover { cursor: default; background: var(--hove
 }
 /* The rows after the buttons keep the card's rhythm (the card's own gap is 0 for the mockup's spacing). */
 .hint:not(:empty), .menu { margin-top: var(--sp-2); }
+
+/* The window's click-approval bubble (530, approve.js sets the mode on the top-chrome host): the
+   card is the whole document, 364 px wide (the mockup's), on the card's own fill so the native
+   frame's 12 px corners anti-alias against the same color. The native frame draws the shadow (a
+   page can't paint outside its WebContents), so the card keeps only its border and inset top line. */
+:root[data-mode="bubble"] { background: var(--panel); }
+:root[data-mode="bubble"] body { width: 364px; margin: 0; background: var(--panel); }
+:root[data-mode="bubble"] .empty { display: none; }
+:root[data-mode="bubble"] .card,
+:root[data-mode="bubble"] .card:focus { max-width: none; box-shadow: inset 0 1px 0 var(--edge-light); }

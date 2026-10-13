@@ -20,7 +20,7 @@ function tsEnum(names) {
 }
 
 // The fake bindings: what each remote was asked, how many remotes were made, the receivers bound.
-function fakeBindings({ owners = new Map([[11, "Claude"]]), throwOn = null } = {}) {
+function fakeBindings({ owners = new Map([[11, "Claude"]]), throwOn = null, approval = true } = {}) {
   const log = { calls: [], remotes: {}, receivers: [] };
   const mod = {
     NetworkState: tsEnum(["kNone", "kWaiting", "kLoading", "kError"]),
@@ -57,6 +57,7 @@ function fakeBindings({ owners = new Map([[11, "Claude"]]), throwOn = null } = {
   remote("Session", { helper: () => Promise.resolve({ origin: "http://127.0.0.1:9", key: "k" }), grantTabCapture: () => Promise.resolve({ streamId: null }) });
   remote("Agent", { getOwners: () => Promise.resolve({ agents: owners, colors: new Map([[11, "#e9763f"]]) }), addObserver });
   remote("Files", { choose: () => Promise.resolve({ paths: [] }) });
+  if (approval) remote("ApprovalHost", { setPending: null });
   for (const name of ["TabsObserver", "WindowsObserver", "LayoutObserver", "OmniboxObserver", "AgentObserver"]) observer(name);
   return { mod, log };
 }
@@ -83,7 +84,7 @@ test("no API off the browser's hosts or without bindings", () => {
 test("a slot page: every interface, the contract's shape, remotes made on first use", async () => {
   const { mod, log } = fakeBindings();
   const pb = adapt(mod, scope(TOP));
-  assert.deepEqual(Object.keys(pb).sort(), ["DockState", "NetworkState", "SecurityLevel", "agent", "files", "layout", "omnibox", "session", "tabs", "windows"]);
+  assert.deepEqual(Object.keys(pb).sort(), ["DockState", "NetworkState", "SecurityLevel", "agent", "approval", "files", "layout", "omnibox", "session", "tabs", "windows"]);
   assert.ok(Object.isFrozen(pb) && Object.isFrozen(pb.tabs));
   assert.deepEqual(pb.DockState, { kHidden: 0, kRail: 1, kOpen: 2 }, "the names only");
   assert.deepEqual(log.remotes, {}, "nothing asked of the browser yet");
@@ -147,6 +148,27 @@ test("a tab page: Session only; the rest refuse without asking the browser", asy
   remove();
   assert.deepEqual(log.remotes, { Session: 1 }, "no other interface is asked for (it would end the renderer)");
   assert.deepEqual(log.receivers, []);
+});
+
+test("the approval bubble's host (530): on the top-chrome host only, absent from a build without it", async () => {
+  const top = fakeBindings();
+  const pb = adapt(top.mod, scope(TOP));
+  assert.equal(typeof pb.approval.setPending, "function");
+  assert.equal(await pb.approval.setPending(1, "T11"), undefined);
+  assert.deepEqual(top.log.calls.at(-1), ["ApprovalHost", "setPending", [1, "T11"]]);
+  assert.deepEqual(top.log.remotes, { ApprovalHost: 1 });
+
+  const tab = fakeBindings();
+  const onTab = adapt(tab.mod, scope(TAB));
+  await assert.rejects(onTab.approval.setPending(1, ""), /not available on this page/);
+  assert.deepEqual(tab.log.remotes, {}, "the tab host never asks the browser for it");
+  assert.deepEqual(tab.log.calls, []);
+
+  // A build without 530 compiles no ApprovalHost: nothing to call, so the page's feature check fails.
+  const old = fakeBindings({ approval: false });
+  const before = adapt(old.mod, scope(TOP));
+  assert.equal(typeof before.approval?.setPending, "undefined");
+  assert.deepEqual(Object.keys(before.approval), []);
 });
 
 test("plain(): maps, arrays and objects all the way down", () => {

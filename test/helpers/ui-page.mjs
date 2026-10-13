@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import http from "node:http";
 import { patchright, inPage } from "../live.mjs";
 import { startFakeHelper, merge } from "./fake-helper.mjs";
 import { startUiServer, UI_ROOT } from "./ui-server.mjs";
@@ -19,13 +20,19 @@ export const pages = () => readdirSync(UI_ROOT, { withFileTypes: true })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function openPage(browser, name, { helper, fixture = defaultFixture(), bridge = true, native = true, viewport = { width: 360, height: 900 }, reducedMotion = "no-preference" } = {}) {
+// host: serve the page as http://<host>/ instead of the ui server's own origin, for a page whose
+// mode follows location.host (the approve page's bubble on pairbrowse.top-chrome). The browser
+// must reach the ui server as its proxy: launch it with hostProxy(...).args, then pass the same
+// proxy as `proxy` here (the ui server answers a proxied request by its path).
+export async function openPage(browser, name, { helper, fixture = defaultFixture(), bridge = true, native = true, viewport = { width: 360, height: 900 }, reducedMotion = "no-preference", host = "", proxy = null } = {}) {
   const ui = await startUiServer({ helper, fixture, bridge, native });
-  helper.setPageOrigin(ui.origin);
+  const origin = host ? `http://${host}` : ui.origin;
+  proxy?.to(ui.origin);
+  helper.setPageOrigin(origin);
   const page = await browser.newPage({ viewport, reducedMotion });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  await page.goto(ui.url(name), { waitUntil: "load" });
+  await page.goto(host ? `${origin}/${name}/index.html` : ui.url(name), { waitUntil: "load" });
   // A page that says it connects (body[data-s]) gets up to 3 s to leave "connecting"; not a failure.
   for (let i = 0; i < 60; i++) {
     const s = await page.evaluate(() => document.body?.dataset.s);
@@ -81,6 +88,31 @@ export async function openPage(browser, name, { helper, fixture = defaultFixture
       reply: (name, value) => shim("reply", name, value),
     },
     close: async () => { await page.close().catch(() => {}); await ui.close(); },
+  };
+}
+
+// The ui server under another host name: a forward proxy on loopback that hands every request to
+// the ui server set by to(origin). args: the browser's launch switches (loopback stays direct, so
+// the helper is reached as usual; the host counts as a secure context, as chrome:// pages do, so
+// Web Locks exist there: in the full Chromium, launch({ channel: "chromium" }); the headless
+// shell ignores that switch).
+export async function hostProxy(host) {
+  let target = null;
+  const server = http.createServer((req, res) => {
+    if (!target) { res.writeHead(502); res.end(); return; }
+    const up = http.request({ host: target.hostname, port: target.port, method: req.method, path: req.url, headers: req.headers }, (r) => {
+      res.writeHead(r.statusCode, r.headers);
+      r.pipe(res);
+    });
+    up.on("error", () => { res.writeHead(502); res.end(); });
+    req.pipe(up);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const port = server.address().port;
+  return {
+    args: [`--proxy-server=http://127.0.0.1:${port}`, `--unsafely-treat-insecure-origin-as-secure=http://${host}`],
+    to: (origin) => { target = new URL(origin); },
+    close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(() => r()); }),
   };
 }
 

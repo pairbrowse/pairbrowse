@@ -5,14 +5,15 @@
 // mismatch found later is fixed in the adapter, never by changing this contract.
 //
 // (1) window.pairbrowse is a plain object
-//       { tabs, windows, layout, omnibox, session, agent, files, NetworkState, SecurityLevel, DockState }.
+//       { tabs, windows, layout, omnibox, session, agent, files, approval, NetworkState, SecurityLevel, DockState }.
 //     It exists before the page's first script in the harness (the ui server inserts this file)
 //     and in the browser build (the 520 patch inserts the adapter the same way at pack time), and
 //     is absent in the extension and the live view: a page tests `window.pairbrowse` once and
 //     otherwise falls back to the helper's routes.
 //     Interfaces: Tabs (tabs), TabsObserver, Windows (windows), WindowsObserver, Layout (layout),
 //     LayoutObserver, Omnibox (omnibox), OmniboxObserver, Session (session), Agent (agent),
-//     AgentObserver, Files (files).
+//     AgentObserver, Files (files), ApprovalHost (approval: setPending(count, targetId), 530; the
+//     browser binds it only for its approval page, the harness records the calls).
 // (2) Mojom Interface.Method is interface.method (lowerCamel). Every method returns a Promise.
 //     A method with a reply `=> (a, b)` resolves to { a, b }, the reply names in lowerCamel:
 //       session.helper() -> { origin, key }        tabs.list() -> { tabs }
@@ -284,9 +285,13 @@ function install(F, E) {
     choose: () => ({ paths: has("choose") ? copy(fx.replies.choose) : [] }),
     saveAs: () => ({ path: has("saveAs") ? fx.replies.saveAs : null }),
   });
+  // The approval bubble's host (530): recorded in calls, nothing else.
+  const approval = iface("approval", null, {
+    setPending: () => {},
+  });
 
   window.pairbrowse = Object.freeze({
-    tabs, windows, layout, omnibox, session, agent, files,
+    tabs, windows, layout, omnibox, session, agent, files, approval,
     NetworkState: Object.freeze({ ...E.NetworkState }), SecurityLevel: Object.freeze({ ...E.SecurityLevel }), DockState: Object.freeze({ ...E.DockState }),
   });
 

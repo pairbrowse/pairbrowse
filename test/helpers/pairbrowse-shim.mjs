@@ -77,7 +77,7 @@ export function defaultFixture() {
     tabs: [
       tab(11, 0, "Shop", "https://shop.example/checkout", true),
       tab(12, 1, "Docs", "https://docs.example/", false),
-      tab(13, 2, "New Tab", "chrome://pairbrowse/newtab", false),
+      tab(13, 2, "New tab", "chrome://pairbrowse/newtab", false),
     ],
     windows: [{ id: 1, bounds: { x: 0, y: 0, width: 1536, height: 1024 }, focused: true, minimized: false, maximized: false, fullscreen: false, activeTab: 11, incognito: false, current: true }],
     layout: { left: 2, right: 2, leftWidth: 200, rightWidth: 330, stripHeight: 44, timeline: false, timelineHeight: 130 },
@@ -134,7 +134,7 @@ function install(F, E) {
     const id = Number.isInteger(given.id) ? given.id : newId();
     const w = Number.isInteger(given.window) && given.window !== -1 ? given.window : (fx.windows.find((x) => x.focused) || fx.windows[0] || { id: 1 }).id;
     const t = {
-      index: inWindow(w).length, title: "New Tab", url: "chrome://pairbrowse/newtab", favicon: null, defaultFavicon: true,
+      index: inWindow(w).length, title: "New tab", url: "chrome://pairbrowse/newtab", favicon: null, defaultFavicon: true,
       networkState: 0, muted: false, audible: false, pinned: false, group: null, groupTitle: null, groupColor: null,
       active: false, selected: false, blocked: false, width: 1280, height: 800, targetId: `T${id}`,
       canGoBack: false, canGoForward: false, capturing: false, ...given, id, window: w,
@@ -226,7 +226,7 @@ function install(F, E) {
     get: (id) => ({ tab: copy(byId(id)) }),
     activate: (id) => { activate(id); },
     close: (id) => { removeTab(id); },
-    create: (url, active, window) => ({ id: addTab({ url: url || "chrome://pairbrowse/newtab", title: url ? url : "New Tab", active: !!active, window }).id }),
+    create: (url, active, window) => ({ id: addTab({ url: url || "chrome://pairbrowse/newtab", title: url ? url : "New tab", active: !!active, window }).id }),
     move: (id, index, window) => ({ ok: moveTab(id, index, window) }),
     pin: (id, on) => { changeTab(id, { pinned: !!on }); },
     mute: (id, on) => { changeTab(id, { muted: !!on }); },

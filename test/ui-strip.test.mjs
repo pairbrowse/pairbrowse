@@ -214,7 +214,7 @@ describe("the Shared mark on a tab the browser captures", () => pageTest("strip"
   const p = await inPage(mark, 13);
   assert.equal(p.w, 8);
   assert.equal(p.inside, true);
-  assert.match((await inPage(tabInfo, 13)).label, /^New Tab, shared, pinned$/);
+  assert.match((await inPage(tabInfo, 13)).label, /^New tab, shared, pinned$/);
   // Nothing runs while the page is hidden.
   const fires = await harness.hiddenFires();
   await harness.setHidden(true);

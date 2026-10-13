@@ -1,5 +1,5 @@
-// The new tab page. The search field: a web address opens, anything else searches Google (the live
-// view's rule). The chips: your other recent sessions from the helper's sessions.json, one press
+// The new tab page. The field, "Type a URL" as the omnibox: a web address (http or https) opens;
+// anything else stays and the line under it says so (no search engine, as the omnibox's default). The chips: your other recent sessions from the helper's sessions.json, one press
 // switches (POST pick; while agents are at work the helper asks first, and the page asks the
 // person in the page before the same pick goes again with confirm: true). One source for two hosts: in the browser build window.pairbrowse gives the helper's
 // address (session.helper()); as the extension page it is chrome.storage.session "view", as in the
@@ -9,16 +9,19 @@ import { $, el, addressToUrl, askSwitch } from "../common.js";
 $("search").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = $("q").value;
-  const url = addressToUrl(text);
-  if (!url) return;
-  // Web pages only: anything else (file:, chrome:, javascript:) is searched for instead.
-  location.href = /^https?:\/\//i.test(url) ? url : `https://www.google.com/search?q=${encodeURIComponent(text.trim())}`;
+  if (!text.trim()) return;
+  const url = addressToUrl(text, { search: false });
+  // Web pages only: words, file:, chrome: and javascript: open nothing.
+  if (!url || !/^https?:\/\//i.test(url)) { say(NOT_AN_ADDRESS, "error"); return; }
+  location.href = url;
 });
+$("q").addEventListener("input", () => { if ($("msg").textContent === NOT_AN_ADDRESS) say(""); });
 
 // A person's click or key press only, never a script's synthetic event.
 const real = (ev) => ev.isTrusted;
 const CHIPS = 3;
 const UNREACHABLE = { text: "Couldn't reach PairBrowse. Try again.", error: true };
+const NOT_AN_ADDRESS = "Type a web address, like example.com.";
 let busy = false;
 let askCancel = null; // the open switch question's Cancel path
 

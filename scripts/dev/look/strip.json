@@ -207,7 +207,7 @@
         "id": 14,
         "index": 4,
         "window": 1,
-        "title": "New Tab",
+        "title": "New tab",
         "url": "chrome://pairbrowse/newtab",
         "favicon": null,
         "defaultFavicon": true,

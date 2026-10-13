@@ -45,7 +45,9 @@ pageTest("newtab", { viewport: VIEW }, async ({ inPage }) => {
   assert.equal(r.h, "96");
   assert.ok(r.src.endsWith("/logo.svg"), r.src);
   assert.equal(r.h1, "PairBrowse");
-  assert.equal(r.placeholder, "Search Google or type a URL");
+  assert.equal(r.placeholder, "Type a URL");
+  assert.equal(await inPage(() => document.title), "New tab");
+  assert.ok(!/google|chromium/i.test(await inPage(() => document.documentElement.outerHTML)), "no Google or Chromium wording");
   assert.equal(r.pill, 560);
 });
 
@@ -54,15 +56,20 @@ pageTest("newtab", { viewport: VIEW }, async ({ ui }) => {
   assert.equal(createHash("sha256").update(bytes).digest("hex"), "415a3f8e100338210d7ffc070dd1d7ced24297bb682af9a4153a9f49d1bffd8a");
 });
 
-pageTest("newtab", { viewport: VIEW }, async ({ page, shim }) => {
+pageTest("newtab", { viewport: VIEW }, async ({ page, shim, inPage }) => {
   const calls = await shim.calls();
   assert.ok(calls.some((c) => c.iface === "session" && c.method === "helper"), "session.helper() asked");
   assert.deepEqual(calls.filter((c) => c.iface === "tabs"), [], "never a tabs.* call");
-  await page.route("https://www.google.com/**", (route) => route.fulfill({ contentType: "text/html", body: "<p>search</p>" }));
-  await page.fill("#q", "hello world");
-  await page.press("#q", "Enter");
-  await page.waitForURL("https://www.google.com/**");
-  assert.equal(page.url(), "https://www.google.com/search?q=hello%20world");
+  // Words are no address: nothing opens (no search engine), the line says so and goes on the next edit.
+  const before = page.url();
+  for (const words of ["hello world", "javascript:alert(1)", "file:///etc/hosts"]) {
+    await page.fill("#q", words);
+    await page.press("#q", "Enter");
+    assert.equal(await inPage(() => document.getElementById("msg").textContent), "Type a web address, like example.com.");
+    assert.equal(page.url(), before);
+  }
+  await page.type("#q", "x");
+  assert.equal(await inPage(() => document.getElementById("msg").textContent), "");
 });
 
 pageTest("newtab", { viewport: VIEW }, async ({ page, ui, shim }) => {

@@ -356,7 +356,7 @@ const closeIcon = () => svg("0 0 12 12", "", [["path", { d: "M3 3l6 6M9 3l-6 6",
 // A favicon the page may show under its CSP: data: images (the adapter's) or the browser's own.
 const faviconOk = (u) => typeof u === "string" && /^(data:image\/|chrome:\/\/)/.test(u);
 const loadingState = (t) => pb && (t.networkState === pb.NetworkState.kWaiting || t.networkState === pb.NetworkState.kLoading);
-const titleOf = (t) => String(t.title || t.url || "New Tab");
+const titleOf = (t) => String(t.title || t.url || "New tab");
 
 // One tab: the icon slot (its data-key, "img:", "generic" or "ring", picks the tile in strip.css), the
 // title, the agent dot and a close button. Every unpinned tab shows its close; Tab still reaches only
@@ -615,7 +615,7 @@ $("new").hidden = !pb;
 // Without the browser API: the helper's tabs event, read only (title, icon, the one shown).
 function renderFallback(list) {
   const rows = (Array.isArray(list) ? list : []).map((t) => {
-    const title = String(t?.title || "New Tab");
+    const title = String(t?.title || "New tab");
     const li = el("li", { title, tabIndex: t?.shown ? 0 : -1 }, el("span", { className: "icon" }, genericIcon()), el("span", { className: "title", textContent: title }));
     li.setAttribute("role", "tab");
     li.setAttribute("aria-selected", String(!!t?.shown));

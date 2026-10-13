@@ -161,14 +161,16 @@ export const activityHead = (a) => [a.who, a.tab ? `in ${a.tab}` : ""].filter(Bo
 export const NO_AGENT = "No agent connected";
 export const noAgentLine = (what) => `Ask Claude Code or Codex to use PairBrowse. ${what} show here.`;
 
-// What you type in an address bar, as a URL: a web address, or a Google search.
-export function addressToUrl(text) {
+// What you type in an address bar, as a URL: a web address, or a Google search (the live view's
+// bar, over Playwright's Chromium). { search: false }: a web address only, else null (PairBrowse's
+// own new tab page, which never sends words to a search engine: the omnibox's "Type a URL").
+export function addressToUrl(text, { search = true } = {}) {
   const t = String(text || "").trim().slice(0, 2000);
   if (!t) return null;
   if (/^(localhost|\d{1,3}(\.\d{1,3}){3})(:\d+)?([/?#]|$)/i.test(t)) return `http://${t}`;
   if (/^[a-z][a-z0-9+.-]*:/i.test(t) && !/^[^/\s]+:\d+([/?#]|$)/.test(t)) return t;
   if (!/\s/.test(t) && /^[^/?#]+\.[a-z]{2,}([:/?#]|$)/i.test(t)) return `https://${t}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(t)}`;
+  return search ? `https://www.google.com/search?q=${encodeURIComponent(t)}` : null;
 }
 
 // Claude's orange spark, as an icon.

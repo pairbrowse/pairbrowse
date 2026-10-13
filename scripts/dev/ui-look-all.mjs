@@ -23,7 +23,7 @@ import { renderPage, lookFixtures } from "./ui-look.mjs";
 
 // A helper connected, nothing in it: its default fixtures, and the browser with one new tab and no owners.
 export const EMPTY = { helper: {}, shim: { tabs: [{
-  id: 21, index: 0, window: 1, title: "New Tab", url: "chrome://pairbrowse/newtab", favicon: null, defaultFavicon: true, networkState: 0,
+  id: 21, index: 0, window: 1, title: "New tab", url: "chrome://pairbrowse/newtab", favicon: null, defaultFavicon: true, networkState: 0,
   muted: false, audible: false, pinned: false, group: null, groupTitle: null, groupColor: null,
   active: true, selected: true, blocked: false, width: 1280, height: 800, targetId: "T21", canGoBack: false, canGoForward: false,
 }], owners: { agents: [], colors: [] } } }; // empty lists replace the default owners whole (merge keeps an object's keys)

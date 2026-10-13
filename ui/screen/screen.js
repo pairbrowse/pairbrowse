@@ -185,12 +185,16 @@ addEventListener("paste", (e) => {
 // ---- pointers: the host's, and other people's, over the picture ----
 const drawn = new Map(); // key -> element
 const AGENT_KEY = /^host-agent:|:a\d+$/;
-function pointers(list) {
+// self: the joiner id of the person at this page: a pointer keyed by it ("<invite>:<id>:me", their
+// agents' ":a<n>") is their own, never drawn here (their own mouse is the pointer they see).
+function pointers(list, self = "") {
   const r = shown();
   const keep = new Set();
+  const own = (k) => typeof self === "string" && self !== "" && k.split(":").includes(self);
   for (const p of Array.isArray(list) ? list.slice(0, 12) : []) {
     if (!r || typeof p?.nx !== "number" || typeof p?.ny !== "number") continue;
     const k = String(p.k || p.who || "");
+    if (own(k)) continue;
     keep.add(k);
     // An agent's pointer (host-agent:<id>, <joiner>:a<n>) is white, edged in its color, at the agent
     // cursor's size (as scripts/hud.js draws it); a person's is filled with their color. The agent's

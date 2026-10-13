@@ -844,6 +844,47 @@ test("pointers sent across: an agent's own mouse move stays the agent's, a perso
   }
 });
 
+// A joiner's mouse replayed in a shared tab moves the page's mouse there; Chromium then sends moves
+// with no distance at that spot (a page loading, scrolling or changing under it). Taken as new
+// moves, the helper sent them as the host person's pointer, at the joiner's own place: the joiner
+// saw a pointer trailing their own mouse. They keep the time of the move that put the mouse there.
+test("a move with no distance is nobody's new move: the pointer keeps its time", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<body style=\"margin:0;height:3000px\">long</body>" }));
+    await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
+    const pointers = () => page.evaluate(() => window.__pbtest("tok", "", "pointer"));
+    const cdp = await page.context().newCDPSession(page);
+    const move = (x, y) => cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    const moves = () => page.evaluate(() => window.__moves, undefined, undefined, false);
+    await page.evaluate(() => { window.__moves = []; addEventListener("mousemove", (e) => window.__moves.push([e.movementX, e.movementY])); }, undefined, undefined, false);
+    // The first move in a page has no distance (nothing before it to measure from): no pointer yet.
+    await move(300, 200);
+    assert.deepEqual(await moves(), [[0, 0]]);
+    assert.equal((await pointers()).me, null, "a page's first move, with no distance");
+    await move(320, 210);
+    const p = (await pointers()).me;
+    assert.deepEqual([p?.x, p?.y], [320, 210], "a move that moves");
+    // The page scrolls under the resting mouse, and Chromium sends a move with no distance there.
+    await page.waitForTimeout(150);
+    await page.evaluate(() => scrollTo(0, 400), undefined, undefined, false);
+    await move(320, 210);
+    assert.deepEqual((await moves()).at(-1), [0, 0], "Chromium's move with no distance");
+    const q = (await pointers()).me;
+    assert.deepEqual([q?.x, q?.y, q?.t], [320, 610, p.t], `the same place on the screen, further down the page, at the time of the move that put it there: ${JSON.stringify(q)}`);
+    await move(340, 230);
+    const r = (await pointers()).me;
+    assert.ok(r.t > p.t && r.x === 340 && r.y === 630, `the next move that moves is new: ${JSON.stringify(r)}`);
+  } finally {
+    await browser.close();
+  }
+});
+
 // ---- docked (545, DESIGN.md Part G): inside the PairBrowse browser's own window ----
 // The window's agent panel carries the bottom bar's duties (who drives, the steps, Pause) and the
 // agent's status, so a docked page draws only a join request's card and only the "your turn" badge.

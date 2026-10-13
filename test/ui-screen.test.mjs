@@ -237,3 +237,23 @@ screenTest("under reduced motion the Live dot is still and nothing transitions",
   const t = await ctx.page.evaluate(() => ["top", "status", "sound"].map((id) => getComputedStyle(document.getElementById(id)).transitionDuration));
   assert.deepEqual(t, ["0s", "0s", "0s"]);
 });
+
+// The joiner's own pointer (and their agents') is the mouse they hold: the helper names who the
+// page is for, and a pointer keyed by that joiner id is never drawn, whatever the host sends.
+screenTest("never draws the joiner's own pointer, only the others'", {}, async (ctx) => {
+  await ctx.inPage(() => window.pbScreen.info({ title: "Shop", url: "https://shop.example/cart", who: "Bob" }));
+  await sendFrame(ctx);
+  const me = "0123456789abcdef0123456789abcdef";
+  const drawn = () => ctx.page.evaluate(() => [...document.querySelectorAll("#pointers .p")].map((el) => el.querySelector("span").textContent));
+  await ctx.inPage((self) => window.pbScreen.pointers([
+    { k: `inv1:${self}:me`, who: "Alice", color: "#22c55e", nx: 0.4, ny: 0.4 },
+    { k: `inv1:${self}:a0`, who: "Claude", color: "#a78bfa", nx: 0.45, ny: 0.4 },
+    { k: "host", who: "Bob", color: "#2fb6d9", nx: 0.6, ny: 0.5 },
+    { k: "inv1:fedcba9876543210fedcba9876543210:me", who: "Carol", color: "#f472b6", nx: 0.2, ny: 0.7 },
+  ], self), me);
+  assert.deepEqual(await drawn(), ["Bob", "Carol"], "the host's and another joiner's, never Alice's own or her agent's");
+  // Without a self (an older helper): everything sent is drawn, as before.
+  await ctx.inPage(() => window.pbScreen.pointers([{ k: "inv1:x:me", who: "Alice", color: "#22c55e", nx: 0.4, ny: 0.4 }]));
+  assert.deepEqual(await drawn(), ["Alice"]);
+  assert.deepEqual(await bad(ctx), []);
+});

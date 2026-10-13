@@ -74,6 +74,31 @@ body[data-driving="true"] .card:has(.face[aria-current="true"]) { box-shadow: 0 
 .line small:empty { display: none; }
 .sr { position: absolute; top: 0; left: 0; margin: 0; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
+/* The picture large in the browser's bubble above its card (530 E2 B3, #picture=<id>): the 820 px
+   picture scaled to 400 in a fixed 16:10 frame (the bubble keeps its size while the picture loads),
+   its time and caption, Pin and Delete, the x. 424 px wide (400 + 2 x 12); the browser draws the
+   corners, the shadow, the arrow and the motion, so the page draws none. */
+body[data-mode="picture"] { height: auto; background: var(--panel); }
+body[data-mode="picture"] .strip, body[data-mode="picture"] .menu, body[data-mode="picture"] .where { display: none; }
+.picture { position: relative; box-sizing: border-box; width: 424px; padding: 12px; border: 1px solid var(--panel-edge); border-radius: var(--r-3); box-shadow: inset 0 1px 0 var(--edge-light); }
+.picture[hidden] { display: none; }
+.pic-frame { width: 400px; aspect-ratio: 16 / 10; border-radius: var(--r-1); background: var(--inset); overflow: hidden; }
+.pic-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.pic-frame img:not([src]) { visibility: hidden; }
+.pic-title { margin: var(--sp-3) 32px 0 0; font-size: var(--fs-3); line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+#pic-time { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pic-actions, .pic-ask { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.pic-ask[hidden], .pic-actions[hidden] { display: none; }
+.pic-ask p { margin: 0 auto 0 0; font-size: var(--fs-2); color: var(--ink-2); }
+.pic-btn { height: var(--ctl-sm); padding: 0 var(--sp-3); border: 1px solid var(--edge-btn); border-radius: var(--r-1); background: var(--btn); color: var(--ink); font: var(--fs-2) var(--sans); cursor: default; transition: background-color var(--t-hover); }
+.pic-btn:hover { background: var(--hover); }
+.pic-btn.danger { color: var(--bad); }
+.pic-msg { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--bad); }
+.pic-msg:empty { display: none; }
+.pic-x { position: absolute; top: calc(var(--sp-3) + 400px * 10 / 16 + var(--sp-2)); right: 8px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }
+.pic-x svg { width: 12px; height: 12px; }
+.pic-x:hover { background: var(--hover); color: var(--ink); }
+
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 .card:has(.face:focus-visible) { box-shadow: none; }
 

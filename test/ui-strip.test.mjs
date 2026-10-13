@@ -194,7 +194,7 @@ describe("the Shared mark on a tab the browser captures", () => pageTest("strip"
   assert.doesNotMatch((await inPage(tabInfo, 12)).label, /shared/);
   await shim.change({ id: 12, capturing: true });
   await until("tab 12's mark", () => !!document.querySelector('#tabs li[data-id="12"] .shared-mark'));
-  assert.deepEqual(await inPage(mark, 12), { w: 14, h: 14, color: ACCENT, hidden: "true", tip: "Shared", afterTitle: true, inside: true, anims: 0 });
+  assert.deepEqual(await inPage(mark, 12), { w: 12, h: 12, color: ACCENT, hidden: "true", tip: "Shared", afterTitle: true, inside: true, anims: 0 });
   assert.equal((await inPage(tabInfo, 12)).label, "Docs, shared");
   // With an agent in the tab: the title, shared, then who is there.
   await shim.change({ id: 11, capturing: true });
@@ -212,7 +212,7 @@ describe("the Shared mark on a tab the browser captures", () => pageTest("strip"
   await shim.change({ id: 13, pinned: true, capturing: true });
   await until("tab 13's mark", () => !!document.querySelector('#tabs li[data-id="13"] .shared-mark'));
   const p = await inPage(mark, 13);
-  assert.equal(p.w, 10);
+  assert.equal(p.w, 8);
   assert.equal(p.inside, true);
   assert.match((await inPage(tabInfo, 13)).label, /^New Tab, shared, pinned$/);
   // Nothing runs while the page is hidden.
@@ -995,4 +995,84 @@ describe("reports the tab order and arranges this window's tabs", () => pageTest
   assert.ok(!moves.includes(other.id), "the other window's tab stays");
   assert.equal((await shim.fixture()).tabs.find((t) => t.id === other.id).index, 0);
   assert.equal((await harness.live()).timeouts ?? 0, 0, "no timer");
+}));
+
+// 530 E1/E2 B1, B2: with the browser's bubbles the logo and Share in the 53 px row open the switcher
+// and the Share card in a bubble anchored to the trigger (bubbles.open with its rect), never over
+// the docks' channel and never as a picker tab; the trigger shows it open, a second click closes it,
+// OnClosed by Escape gives the focus back to the trigger, and a click outside that lands on the
+// trigger is that close, not a new open.
+describe("in the 53 px row the logo and Share open the browser's bubbles", () => pageTest("strip", { viewport: ROW, shim: { bubbles: true } }, async ({ page, shim, inPage, until }) => {
+  await inPage(() => { window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => window.__asked.push(e.data); });
+  const opens = () => callsOf(shim, "bubbles", "open");
+  const boxOf = (id) => inPage((x) => { const r = document.getElementById(x).getBoundingClientRect(); const left = Math.floor(r.left), top = Math.max(0, Math.floor(r.top)); return { x: left, y: top, width: Math.ceil(r.right) - left, height: Math.min(innerHeight, Math.ceil(r.bottom)) - top }; }, id);
+  assert.equal(await page.getAttribute("#switch", "aria-label"), "PairBrowse: switch session");
+  assert.equal(await page.getAttribute("#switch", "aria-haspopup"), "dialog");
+  await page.click("#switch");
+  await until("the switcher open", () => document.getElementById("switch").getAttribute("aria-expanded") === "true");
+  assert.deepEqual(await opens(), [[0, await boxOf("switch"), ""]], "B1 with the logo's rect");
+  // The second click closes it.
+  await page.click("#switch");
+  await until("closed", () => document.getElementById("switch").getAttribute("aria-expanded") === "false");
+  assert.deepEqual(await callsOf(shim, "bubbles", "close"), [[0]]);
+  // Share: B2 with Share's rect; the browser closes it by Escape and the focus comes back to Share.
+  await page.click("#share-btn");
+  await until("the share card open", () => document.getElementById("share-btn").getAttribute("aria-expanded") === "true");
+  assert.deepEqual((await opens()).at(-1), [1, await boxOf("share-btn"), ""]);
+  await inPage(() => { document.activeElement.blur(); window.__pairbrowse.bubbles.closed(1, true); });
+  await until("focus on Share", () => document.activeElement?.id === "share-btn" && document.getElementById("share-btn").getAttribute("aria-expanded") === "false");
+  // Opening one closes the other: the logo's bubble replaces Share's.
+  await page.click("#share-btn");
+  await until("share open", () => document.getElementById("share-btn").getAttribute("aria-expanded") === "true");
+  await page.click("#switch");
+  await until("only the switcher", () => document.getElementById("switch").getAttribute("aria-expanded") === "true" && document.getElementById("share-btn").getAttribute("aria-expanded") === "false");
+  // A click outside closed it: the click that lands on the logo then is that close.
+  const n = (await opens()).length;
+  await inPage(() => window.__pairbrowse.bubbles.closed(0, false));
+  await page.click("#switch");
+  await page.waitForTimeout(100);
+  assert.equal((await opens()).length, n, "the closing click opens nothing");
+  await page.waitForTimeout(450);
+  await page.click("#switch");
+  await until("opens again later", (k) => window.__pairbrowse.calls.filter((c) => c.iface === "bubbles" && c.method === "open").length === k, n + 1);
+  // Never the docks' channel, never the picker tab, nothing under the row.
+  await page.waitForTimeout(1200);
+  assert.deepEqual(await inPage(() => window.__asked), []);
+  assert.deepEqual(await callsOf(shim, "tabs", "create"), []);
+  assert.deepEqual(await inPage(() => ["switcher", "share-card", "menu"].filter((id) => !document.getElementById(id).hidden)), []);
+  // The browser says it showed nothing (a minimized window): the trigger stays closed.
+  await page.click("#switch");
+  await until("closed", () => document.getElementById("switch").getAttribute("aria-expanded") === "false");
+  await shim.reply("open", false);
+  await page.waitForTimeout(450);
+  await page.click("#share-btn");
+  await page.waitForTimeout(100);
+  assert.equal(await page.getAttribute("#share-btn", "aria-expanded"), "false");
+}));
+
+// The Share bubble's own page (strip/#share) in the browser's bubble: framed by the browser
+// (data-bubble), the card fills it, its x closes B2. (B1 is the picker page itself: ui-picker.)
+describe("the strip in the browser's Share bubble closes it itself", () => pageTest("strip", { viewport: { width: 360, height: 560 }, shim: { bubbles: true } }, async ({ page, shim, inPage, until }) => {
+  await inPage(() => { location.hash = "#share"; });
+  await until("share mode", () => document.body.dataset.mode === "share" && !document.getElementById("share-close").hidden);
+  assert.deepEqual(await inPage(() => { const r = document.getElementById("share-card").getBoundingClientRect(); return [r.left, r.top, r.width]; }), [0, 0, 360], "the card fills the bubble from its top left");
+  await page.click("#share-close");
+  await until("closed by the x", () => window.__pairbrowse.calls.some((c) => c.iface === "bubbles" && c.method === "close" && c.args[0] === 1));
+  assert.deepEqual(await callsOf(shim, "tabs", "create"), []);
+}));
+
+// A helper address that never answers (none running, or gone before the strip opened): the same
+// resting pill as no helper ("Local", muted, titled "No agent connected"), never "Connecting" for
+// ever and no --warn; once it answers the stream opens on its own and the pill names the session.
+describe("the pill with a helper that never answers, then does", () => pageTest("strip", { viewport: ROW, down: true, fixtures: { session: { name: "work", where: "Local" } }, timeout: 90_000 }, async ({ helper, inPage, errors }) => {
+  const pill = () => {
+    const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
+    const p = document.getElementById("pill");
+    return { s: document.body.dataset.s, state: p.dataset.state, text: document.getElementById("pill-text").textContent, title: p.title, muted: getComputedStyle(p.querySelector(".dot")).backgroundColor === probe("muted") };
+  };
+  assert.deepEqual(await inPage(pill), { s: "connecting", state: "local", text: "Local", title: "No agent connected", muted: true });
+  helper.setDown(false);
+  for (let i = 0; i < 160 && (await inPage(() => document.body.dataset.s)) !== "live"; i++) await inPage(() => new Promise((r) => setTimeout(r, 50)));
+  assert.deepEqual(await inPage(pill), { s: "live", state: "local", text: "Local", title: "Local · work", muted: true });
+  assert.deepEqual(errors, []);
 }));

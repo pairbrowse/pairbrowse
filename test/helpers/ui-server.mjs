@@ -48,7 +48,9 @@ export async function startUiServer({ helper, fixture = defaultFixture(), bridge
     let path;
     try { path = decodeURIComponent(new URL(req.url, "http://x").pathname); } catch { return plain(res, 400); }
     if (path === "/__harness/prelude.js") return js(res, PRELUDE);
-    if (path === "/__harness/pairbrowse-api.js") return js(res, shimScript({ ...current, helper: { origin: helper.origin, key: helper.key } }));
+    // A fixture with helper: null is a browser started without a helper: session.helper() answers
+    // with no address.
+    if (path === "/__harness/pairbrowse-api.js") return js(res, shimScript({ ...current, helper: current.helper === null ? { origin: "", key: "" } : { origin: helper.origin, key: helper.key } }));
     if (path === "/__harness/chrome.js") return js(res, bridgeChromeScript(helper.base));
     const clean = posix.normalize(path);
     const parts = clean.split("/").filter(Boolean);

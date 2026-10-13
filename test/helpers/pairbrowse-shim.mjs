@@ -5,7 +5,8 @@
 // mismatch found later is fixed in the adapter, never by changing this contract.
 //
 // (1) window.pairbrowse is a plain object
-//       { tabs, windows, layout, omnibox, session, agent, files, approval, NetworkState, SecurityLevel, DockState }.
+//       { tabs, windows, layout, omnibox, session, agent, files, approval, NetworkState, SecurityLevel, DockState,
+//         BubbleKind } and, with the fixture's bubbles: true, bubbles.
 //     It exists before the page's first script in the harness (the ui server inserts this file)
 //     and in the browser build (the 520 patch inserts the adapter the same way at pack time), and
 //     is absent in the extension and the live view: a page tests `window.pairbrowse` once and
@@ -13,7 +14,10 @@
 //     Interfaces: Tabs (tabs), TabsObserver, Windows (windows), WindowsObserver, Layout (layout),
 //     LayoutObserver, Omnibox (omnibox), OmniboxObserver, Session (session), Agent (agent),
 //     AgentObserver, Files (files), ApprovalHost (approval: setPending(count, targetId), 530; the
-//     browser binds it only for its approval page, the harness records the calls).
+//     browser binds it only for its approval page, the harness records the calls), Bubbles
+//     (bubbles: open(kind, anchor, arg) -> { shown }, close(kind), addObserver; 530 E1, a build
+//     with the cross-slot bubbles; opt-in: the fixture's bubbles: true, so a page's tests without it
+//     see a build without them), BubblesObserver.
 // (2) Mojom Interface.Method is interface.method (lowerCamel). Every method returns a Promise.
 //     A method with a reply `=> (a, b)` resolves to { a, b }, the reply names in lowerCamel:
 //       session.helper() -> { origin, key }        tabs.list() -> { tabs }
@@ -46,7 +50,7 @@
 //     onMoved(id, index, window), onActivated(id, window); WindowsObserver onFocusChanged(id),
 //     onBoundsChanged(window), onCreated(window), onRemoved(id); LayoutObserver onLayout(state);
 //     OmniboxObserver onState(state); AgentObserver onOwnerChanged(id, agent, color),
-//     onNotificationAction(id, button). Missing methods are no-ops; calls arrive asynchronously
+//     onNotificationAction(id, button); BubblesObserver onClosed(kind, byEscape). Missing methods are no-ops; calls arrive asynchronously
 //     (queueMicrotask) in registration order; addObserver returns a remove() function (the
 //     adapter closes the receiver).
 // (5) No synchronous getters, no other properties, no events on window.
@@ -57,6 +61,7 @@ export const ENUMS = {
   NetworkState: { kNone: 0, kWaiting: 1, kLoading: 2, kError: 3 },
   SecurityLevel: { kNone: 0, kSecure: 1, kWarning: 2, kDangerous: 3 },
   DockState: { kHidden: 0, kRail: 1, kOpen: 2 },
+  BubbleKind: { kSwitcher: 0, kShare: 1, kPicture: 2 },
 };
 
 const tab = (id, index, title, url, active) => ({
@@ -87,7 +92,7 @@ function install(F, E) {
   const fx = F;
   const calls = [];
   const copy = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-  const observers = { tabs: [], windows: [], layout: [], omnibox: [], agent: [] };
+  const observers = { tabs: [], windows: [], layout: [], omnibox: [], agent: [], bubbles: [] };
   const fire = (kind, method, ...args) => {
     const given = args.map(copy); // as the browser sent it at that moment
     for (const o of observers[kind].slice()) {
@@ -292,9 +297,25 @@ function install(F, E) {
     setPending: () => {},
   });
 
+  // The cross-slot bubbles (530 E1), opt-in: the bubble the page opened (one at a time, as the
+  // browser keeps one per window), shown unless the fixture's replies.open says false.
+  let openBubble = null;
+  const bubbles = iface("bubbles", "bubbles", {
+    open: (kind) => {
+      const shown = has("open") ? !!fx.replies.open : true;
+      if (shown) {
+        if (openBubble !== null && openBubble !== kind) fire("bubbles", "onClosed", openBubble, false);
+        openBubble = kind;
+      }
+      return { shown };
+    },
+    close: (kind) => { if (openBubble === kind) { openBubble = null; fire("bubbles", "onClosed", kind, false); } },
+  });
+
   window.pairbrowse = Object.freeze({
-    tabs, windows, layout, omnibox, session, agent, files, approval,
+    tabs, windows, layout, omnibox, session, agent, files, approval, ...(fx.bubbles ? { bubbles } : {}),
     NetworkState: Object.freeze({ ...E.NetworkState }), SecurityLevel: Object.freeze({ ...E.SecurityLevel }), DockState: Object.freeze({ ...E.DockState }),
+    BubbleKind: Object.freeze({ ...E.BubbleKind }),
   });
 
   // Test controls: each changes the fixture as the browser would and tells the observers.
@@ -325,6 +346,11 @@ function install(F, E) {
       notificationAction: (id, button) => fire("agent", "onNotificationAction", id, button),
     },
     reply: (name, value) => { fx.replies = { ...(fx.replies || {}), [name]: value }; },
+    // The browser closed the bubble (Escape: byEscape true; a click outside: false).
+    bubbles: {
+      get open() { return openBubble; },
+      closed: (kind, byEscape = false) => { if (openBubble === kind) openBubble = null; fire("bubbles", "onClosed", kind, !!byEscape); },
+    },
   };
 }
 

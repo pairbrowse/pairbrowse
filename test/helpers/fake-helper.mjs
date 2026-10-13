@@ -249,7 +249,9 @@ const json = (res, code, body) => { res.writeHead(code, { "content-type": "appli
 // undefined when the body is not JSON; an empty body is null (a route that takes none).
 const parsed = (body) => { if (!body) return null; try { return JSON.parse(body); } catch { return undefined; } };
 
-export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replies = {} } = {}) {
+// down: the helper is not reachable (not running, or gone): every connection is reset, so fetches
+// fail and the event stream retries on its own; setDown(false) brings it back on the same address.
+export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replies = {}, down = false } = {}) {
   const key = randomBytes(32).toString("base64url");
   const fx = merge(defaultFixtures(), fixtures || {});
   const streams = new Set();
@@ -412,6 +414,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   }
 
   const server = http.createServer(async (req, res) => {
+    if (down) { req.socket.destroy(); return; }
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
     if (origin) {
       res.setHeader("access-control-allow-origin", origin);
@@ -486,6 +489,11 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     streams,
     replies: allReplies,
     setPageOrigin: (o) => { origin = o; },
+    setDown: (on) => {
+      down = !!on;
+      if (down) { for (const s of streams) s.res.destroy(); streams.clear(); }
+    },
+    get down() { return down; },
     get pageOrigin() { return origin; },
     close: () => new Promise((resolve) => {
       for (const s of streams) s.res.destroy();

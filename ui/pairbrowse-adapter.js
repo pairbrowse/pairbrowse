@@ -33,9 +33,14 @@ const INTERFACES = [
   // approve page in bubble mode calls it, after checking setPending is a function (a build without
   // 530 compiles no ApprovalHost: no methods here).
   ["approval", "ApprovalHost", null, []],
+  // Bubbles for cross-slot popovers (530 E1): the strip's switcher and Share card and the
+  // timeline's picture in a bubble anchored to the control that opened it. The browser binds it
+  // for the strip and the timeline only; a page checks bubbles.open is a function first (a build
+  // without it compiles no Bubbles: no methods here, and the page keeps its in-dock fallback).
+  ["bubbles", "Bubbles", "BubblesObserver", ["onClosed"]],
 ];
 const TAB_PAGE_INTERFACES = new Set(["session"]);
-const ENUMS = ["NetworkState", "SecurityLevel", "DockState"];
+const ENUMS = ["NetworkState", "SecurityLevel", "DockState", "BubbleKind"];
 
 // A reply or an observer argument as the page contract has it: plain objects and arrays all the
 // way down, a Map as an object keyed by the decimal id.

@@ -20,12 +20,13 @@ function tsEnum(names) {
 }
 
 // The fake bindings: what each remote was asked, how many remotes were made, the receivers bound.
-function fakeBindings({ owners = new Map([[11, "Claude"]]), throwOn = null, approval = true } = {}) {
+function fakeBindings({ owners = new Map([[11, "Claude"]]), throwOn = null, approval = true, bubbles = true } = {}) {
   const log = { calls: [], remotes: {}, receivers: [] };
   const mod = {
     NetworkState: tsEnum(["kNone", "kWaiting", "kLoading", "kError"]),
     SecurityLevel: tsEnum(["kNone", "kSecure", "kWarning", "kDangerous"]),
     DockState: tsEnum(["kHidden", "kRail", "kOpen"]),
+    ...(bubbles ? { BubbleKind: tsEnum(["kSwitcher", "kShare", "kPicture"]) } : {}),
   };
   const remote = (name, methods) => {
     class Remote {}
@@ -58,7 +59,8 @@ function fakeBindings({ owners = new Map([[11, "Claude"]]), throwOn = null, appr
   remote("Agent", { getOwners: () => Promise.resolve({ agents: owners, colors: new Map([[11, "#e9763f"]]) }), addObserver });
   remote("Files", { choose: () => Promise.resolve({ paths: [] }) });
   if (approval) remote("ApprovalHost", { setPending: null });
-  for (const name of ["TabsObserver", "WindowsObserver", "LayoutObserver", "OmniboxObserver", "AgentObserver"]) observer(name);
+  if (bubbles) remote("Bubbles", { open: () => Promise.resolve({ shown: true }), close: null, addObserver });
+  for (const name of ["TabsObserver", "WindowsObserver", "LayoutObserver", "OmniboxObserver", "AgentObserver", ...(bubbles ? ["BubblesObserver"] : [])]) observer(name);
   return { mod, log };
 }
 
@@ -84,7 +86,7 @@ test("no API off the browser's hosts or without bindings", () => {
 test("a slot page: every interface, the contract's shape, remotes made on first use", async () => {
   const { mod, log } = fakeBindings();
   const pb = adapt(mod, scope(TOP));
-  assert.deepEqual(Object.keys(pb).sort(), ["DockState", "NetworkState", "SecurityLevel", "agent", "approval", "files", "layout", "omnibox", "session", "tabs", "windows"]);
+  assert.deepEqual(Object.keys(pb).sort(), ["BubbleKind", "DockState", "NetworkState", "SecurityLevel", "agent", "approval", "bubbles", "files", "layout", "omnibox", "session", "tabs", "windows"]);
   assert.ok(Object.isFrozen(pb) && Object.isFrozen(pb.tabs));
   assert.deepEqual(pb.DockState, { kHidden: 0, kRail: 1, kOpen: 2 }, "the names only");
   assert.deepEqual(log.remotes, {}, "nothing asked of the browser yet");
@@ -169,6 +171,34 @@ test("the approval bubble's host (530): on the top-chrome host only, absent from
   const before = adapt(old.mod, scope(TOP));
   assert.equal(typeof before.approval?.setPending, "undefined");
   assert.deepEqual(Object.keys(before.approval), []);
+});
+
+test("the cross-slot bubbles (530 E1): on the top-chrome host only, absent from a build without them", async () => {
+  const top = fakeBindings();
+  const pb = adapt(top.mod, scope(TOP));
+  assert.deepEqual(pb.BubbleKind, { kSwitcher: 0, kShare: 1, kPicture: 2 });
+  assert.equal(typeof pb.bubbles.open, "function");
+  const anchor = { x: 92, y: 10, width: 140, height: 33 };
+  assert.deepEqual(await pb.bubbles.open(pb.BubbleKind.kSwitcher, anchor, ""), { shown: true });
+  assert.deepEqual(top.log.calls.at(-1), ["Bubbles", "open", [0, anchor, ""]]);
+  const closed = [];
+  const remove = pb.bubbles.addObserver({ onClosed: (kind, byEscape) => closed.push([kind, byEscape]) });
+  assert.deepEqual(top.log.calls.at(-1), ["observer", "BubblesObserver"]);
+  top.log.receivers.at(-1).impl.onClosed(1, true);
+  assert.deepEqual(closed, [[1, true]]);
+  remove();
+  assert.equal(top.log.receivers.at(-1).closed, true);
+
+  const tab = fakeBindings();
+  const onTab = adapt(tab.mod, scope(TAB));
+  await assert.rejects(onTab.bubbles.open(0, anchor, ""), /not available on this page/);
+  assert.deepEqual(tab.log.remotes, {});
+
+  // A build without them compiles no Bubbles: the pages' feature check fails and they keep the
+  // in-dock fallback.
+  const old = adapt(fakeBindings({ bubbles: false }).mod, scope(TOP));
+  assert.equal(typeof old.bubbles?.open, "undefined");
+  assert.deepEqual(old.BubbleKind, {});
 });
 
 test("plain(): maps, arrays and objects all the way down", () => {

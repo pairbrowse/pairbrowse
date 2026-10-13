@@ -10,7 +10,7 @@
 // diagnostics/report, and report (Report a problem; shown only while the helper says it relays
 // reports). The config, sessions and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
-import { $, el, ago, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport } from "../common.js";
+import { $, el, ago, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
 
 const NATIVE = !!window.pairbrowse;
 const HOST = NATIVE ? "The PairBrowse browser" : "Chromium with the PairBrowse extension";
@@ -36,7 +36,9 @@ const postJson = (path, body) => fetch(base + path, { method: "POST", headers: {
   .then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) })).catch(() => ({ status: 0, body: null }));
 
 // ---- connection ------------------------------------------------------------------------------
-const CONN_TEXT = { live: "Connected", connecting: "Connecting…", closed: "Not connected" };
+const CONN_TEXT = { live: "Connected", connecting: "Connecting…", closed: NO_AGENT };
+// No helper to ask, or it went away: the resting state in every page's words, muted (not an error).
+const NO_HELPER = `${NO_AGENT}. ${noAgentLine("Your settings")}`;
 function setConn(state, text) {
   conn = state;
   document.body.dataset.s = state;
@@ -318,6 +320,8 @@ async function loadSessions(clear = true) {
   const r = await getJson("sessions.json");
   if (r.status !== 200 || !r.body) {
     $("session-list").replaceChildren();
+    // Not reached at all: the banner says so and the list loads again on the next open; no red.
+    if (r.status === 0) return say($("sessions-msg"), "");
     return say($("sessions-msg"), r.status === 404 ? "This PairBrowse doesn't list sessions." : "Couldn't read the sessions. They load again when PairBrowse reconnects.", "error");
   }
   drawSessions(r.body);
@@ -398,7 +402,7 @@ async function loadInvites() {
   $("invite-list").replaceChildren();
   $("invite-list").hidden = true;
   $("invites-empty").hidden = true;
-  if (r.status !== 404) say($("invites-msg"), "Couldn't read the invites. They load again when PairBrowse reconnects.", "error");
+  if (r.status !== 404 && r.status !== 0) say($("invites-msg"), "Couldn't read the invites. They load again when PairBrowse reconnects.", "error");
 }
 
 // ---- About and diagnostics (diagnostics.json, diagnostics/report) ------------------------------
@@ -422,7 +426,7 @@ async function loadDiag() {
   const r = await getJson("diagnostics.json");
   if (r.status === 200) return drawDiag(r.body);
   drawDiag(null);
-  if (r.status !== 404) say($("diag-msg"), "Couldn't read diagnostics. They load again when PairBrowse reconnects.", "error");
+  if (r.status !== 404 && r.status !== 0) say($("diag-msg"), "Couldn't read diagnostics. They load again when PairBrowse reconnects.", "error");
 }
 async function reportText() {
   const r = await postJson("diagnostics/report", null);
@@ -599,7 +603,7 @@ function connect(url) {
   stream = helperStream(base, {
     onState: (s) => {
       if (s === "live") setConn("live", "");
-      else if (s === "closed") setConn("closed", "Not connected to PairBrowse. Settings load again when it's back.");
+      else if (s === "closed") setConn("closed", NO_HELPER);
       else setConn("connecting", "Connecting to PairBrowse…");
     },
     onOpen: async () => {
@@ -623,4 +627,4 @@ $("errors-empty").textContent = "Checking…";
 if (!NATIVE) {
   try { globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
 }
-helperBase().then((b) => (b ? connect(b) : setConn("closed", NATIVE ? "Not connected to PairBrowse. Settings show once an agent starts PairBrowse." : "Not connected to PairBrowse: start it from Claude Code or Codex, then reopen this page.")));
+helperBase().then((b) => (b ? connect(b) : setConn("closed", NO_HELPER)));

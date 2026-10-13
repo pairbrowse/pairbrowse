@@ -22,6 +22,22 @@
 </main>
 <div class="menu m-pop" id="menu" role="menu" aria-label="Card menu" hidden></div>
 <p class="where" id="where" aria-hidden="true" hidden>Shown large in the agent panel <span aria-hidden="true">→</span></p>
+<!-- The picture large, alone in the browser's bubble above its card (#picture=<id>, 530 E2 B3). -->
+<section class="picture" id="picture" aria-labelledby="pic-title" hidden>
+  <div class="pic-frame"><img id="pic-img" alt=""></div>
+  <p class="pic-title" id="pic-title"><span id="pic-time"></span> <span id="pic-cap"></span></p>
+  <div class="pic-actions" id="pic-actions">
+    <button class="pic-btn" id="pic-pin" type="button">Pin</button>
+    <button class="pic-btn danger" id="pic-delete" type="button">Delete</button>
+  </div>
+  <div class="pic-ask" id="pic-ask" hidden>
+    <p id="pic-q">Delete this picture?</p>
+    <button class="pic-btn danger" id="pic-yes" type="button" aria-describedby="pic-q">Delete</button>
+    <button class="pic-btn" id="pic-no" type="button" aria-describedby="pic-q">Keep</button>
+  </div>
+  <p class="pic-msg" id="pic-msg" role="status" aria-live="polite"></p>
+  <button class="pic-x" id="pic-close" type="button" aria-label="Close"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+</section>
 <p class="sr" id="said" role="status" aria-live="polite"></p>
 <script type="module" src="timeline.js"></script>
 </body>

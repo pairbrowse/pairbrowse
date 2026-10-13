@@ -26,12 +26,15 @@ const IDS = ["sub", "choices", "sessions", "more", "more-btn", "more-label", "mo
 
 test("the picker's markup keeps every id once, its texts and the sheet before its own", () => {
   for (const id of IDS) assert.equal(count(html, `id="${id}"`), 1, `#${id}`);
-  for (const text of ["<title>Choose a session</title>", "Which session?", "Your agent waits until you pick one.", "Continue where you left off",
+  for (const text of ["<title>Choose a session</title>", "Which session?", "Continue where you left off",
     "More sessions", "Find a session", "No session by that name.", "Start a fresh session", "Join a shared session", "pb-join:...",
     "Your name (the host sees it)", ">Join</button>", '<body data-s="connecting">', 'aria-controls="more-body"', 'aria-expanded="false"']) {
     assert.ok(html.includes(text), text);
   }
-  assert.match(html, /<p class="brand">PairBrowse<\/p>\s*<h1>Which session\?<\/h1>/, "the wordmark over the question");
+  assert.match(html, /<p class="brand">PairBrowse<\/p>\s*<h1 id="title">Which session\?<\/h1>/, "the wordmark over the question");
+  // The waiting line is the helper's to give (sessions.json picking): the page as served claims no wait.
+  assert.match(html, /<p class="sub" id="sub"><\/p>/, "no wait claimed before the helper answers");
+  assert.doesNotMatch(html, /Your agent waits/);
   assert.match(html, /class="host-ask card m-fold" id="host-ask" role="group" aria-label="This code's address" hidden/);
   const a = html.indexOf('<link rel="stylesheet" href="../tokens.css">'), b = html.indexOf('<link rel="stylesheet" href="picker.css">');
   assert.ok(a >= 0 && b > a, "tokens.css before picker.css");
@@ -47,7 +50,8 @@ test("the picker script keeps its one timer and its words", () => {
   assert.equal(count(js, "setTimeout("), 0);
   assert.equal(count(js, "requestAnimationFrame("), 0);
   assert.equal(count(js, "Observer"), 0);
-  for (const text of ['"Allow once"', '"Always allow"', '"Cancel"', '"A join code starts with pb-join:"', "not a PairBrowse address. Join through it?"]) {
+  for (const text of ['"Allow once"', '"Always allow"', '"Cancel"', '"A join code starts with pb-join:"', "not a PairBrowse address. Join through it?",
+    '"Your agent waits until you pick one."', "state.picking ? WAITS : SWITCH", 'noAgentLine("Your sessions")']) {
     assert.ok(js.includes(text), text);
   }
   assert.deepEqual([...js.matchAll(/fetch\(base \+ "([a-z.]+)"/g)].map((m) => m[1]).sort(), ["joinhost", "pick", "sessions.json"], "no new route");

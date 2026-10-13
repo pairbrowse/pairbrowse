@@ -124,6 +124,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; box
 .report-offer { color: var(--accent-ink); font-weight: 500; }
 .msg[data-kind="ok"] { color: var(--ok); }
 body[data-s="connecting"] .choices, body[data-s="done"] .choices { display: none; }
+/* No helper to ask: the resting state (the title and the line say it), no list, nothing in red. */
+body[data-s="none"] .choices, body[data-s="none"] .switch-ask { display: none; }
+.sub:empty { display: none; }
 body[data-s="connecting"] .msg:empty { display: block; }
 body[data-s="connecting"] .msg:empty::before { content: "Connecting to PairBrowse..."; }
 body[data-s="picking"] .choices { opacity: 0.55; pointer-events: none; }
@@ -154,3 +157,7 @@ html[data-host="frame"] #fresh small, html[data-host="frame"] details.choice > s
 /* Switching while agents are at work (the helper's 428): the same approval card, under the choices. */
 .switch-ask { margin: var(--sp-3) 0 0; }
 .switch-ask .agents { font-size: var(--fs-2); color: var(--ink-2); }
+/* In the browser's own switcher bubble (530 E2 B1): the card is the bubble at its 360 px width; the
+   browser draws the corners, the shadow, the arrow and the motion. */
+html[data-bubble="native"] body, html[data-bubble="native"] main { background: var(--elevated); }
+html[data-bubble="native"] main { height: 100vh; max-height: none; border: 1px solid var(--edge); border-radius: var(--r-3); box-shadow: inset 0 1px 0 var(--edge-light); }

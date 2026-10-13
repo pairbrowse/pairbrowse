@@ -1259,6 +1259,35 @@ describe("no API and no storage: No agent connected", () => pageTest("right", op
   assert.deepEqual(errors, []);
 }));
 
+// A helper address that never answers (none running, or gone before the dock opened): the same
+// resting state as no helper at all, not "in this session" and nothing in red. When it answers,
+// the stream opens on its own (EventSource's retry, no poll of the page's) and the dock's content
+// replaces the empty state in place.
+describe("a helper that never answers, then does", () => pageTest("right", opts({}, { down: true, timeout: 90_000 }), async ({ helper, inPage, until, errors }) => {
+  const look = () => {
+    const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
+    const reds = [probe("bad"), probe("bad-ink")];
+    return { title: document.getElementById("agent-none-title").textContent, none: document.getElementById("agent-none").checkVisibility(), card: document.getElementById("agent").checkVisibility(),
+      session: document.getElementById("session-card").checkVisibility(),
+      red: [...document.querySelectorAll("body *")].filter((e) => e.checkVisibility() && e.textContent.trim() && reds.includes(getComputedStyle(e).color)).map((e) => e.id || e.className) };
+  };
+  await until("the empty state", () => document.getElementById("agent-none").checkVisibility());
+  assert.notEqual(await inPage(() => document.body.dataset.s), "live");
+  assert.deepEqual(await inPage(look), { title: "No agent connected", none: true, card: false, session: false, red: [] });
+  // The Page tab while nothing answers: its resting line, not an error.
+  await inPage(() => document.getElementById("tab-page").click());
+  await inPage(() => new Promise((r) => setTimeout(r, 300)));
+  assert.equal(await inPage(text, "outline-empty"), "No outline yet: it shows once an agent reads a page.");
+  await inPage(() => document.getElementById("tab-agent").click());
+  helper.setDown(false);
+  for (let i = 0; i < 160 && (await inPage(() => document.body.dataset.s)) !== "live"; i++) await sleep(50);
+  assert.equal(await inPage(() => document.body.dataset.s), "live", "connected on its own");
+  await until("the session's words", () => document.getElementById("agent-none-title").textContent === "No agent in this session");
+  helper.push("board", ONE_AGENT);
+  await until("the card replaces the empty state", () => document.getElementById("agent").checkVisibility() && !document.getElementById("agent-none").checkVisibility());
+  assert.deepEqual(errors, []);
+}));
+
 // The session card only for a session the helper named.
 describe("session card waits for the helper's session", () => pageTest("right", opts({}), async ({ helper, inPage, until, errors }) => {
   assert.match(SERVED, /<footer class="session-card" id="session-card" tabindex="-1" hidden>/, "served hidden");

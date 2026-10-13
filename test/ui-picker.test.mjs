@@ -381,3 +381,78 @@ test("picker framed as the session switcher", { skip: !runtime, timeout: 90_000 
     await browser.close();
   }
 });
+
+// ---- no helper, or none reached: the resting state, never the question nor an error ----
+// The words of DESIGN.md B4 (common.js NO_AGENT and noAgentLine), muted: no list, no wait claimed
+// (only the helper's `picking` says an agent waits), nothing in red, no refresh while there is
+// no helper to ask.
+const NO_AGENT = "No agent connected";
+const SESSIONS_LINE = "Ask Claude Code or Codex to use PairBrowse. Your sessions show here.";
+const resting = () => {
+  const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
+  const reds = [probe("bad"), probe("bad-ink")];
+  return {
+    s: document.body.dataset.s, title: document.getElementById("title").textContent, sub: document.getElementById("sub").textContent,
+    subInk2: getComputedStyle(document.getElementById("sub")).color === probe("ink-2"),
+    list: document.getElementById("choices").checkVisibility(), msg: document.getElementById("msg").textContent,
+    red: [...document.querySelectorAll("body *")].filter((e) => e.checkVisibility() && e.textContent.trim() && reds.includes(getComputedStyle(e).color)).map((e) => e.id || e.className),
+    waits: document.body.textContent.includes("Your agent waits"),
+  };
+};
+const RESTING = { s: "none", title: NO_AGENT, sub: SESSIONS_LINE, subInk2: true, list: false, msg: "", red: [], waits: false };
+
+pageTest("picker", { fixtures: { sessions: STATE }, shim: { helper: null }, bridge: false }, async ({ until, inPage: run, harness, helper }) => {
+  // The browser started without a helper: session.helper() answers no address.
+  await until("the resting state", () => document.body.dataset.s === "none");
+  assert.deepEqual(await run(resting), RESTING);
+  assert.equal((await harness.live()).intervals, 0, "nothing refreshes with no helper to ask");
+  assert.deepEqual(helper.gets, [], "nothing asked");
+  assert.deepEqual(bad(await harness.log()), []);
+});
+
+pageTest("picker", { fixtures: { sessions: STATE }, native: false, bridge: false }, async ({ until, inPage: run, harness }) => {
+  // Neither the browser's API nor the extension's storage (a page opened bare): the same state.
+  await until("the resting state", () => document.body.dataset.s === "none");
+  assert.deepEqual(await run(resting), RESTING);
+  assert.deepEqual(bad(await harness.log()), []);
+});
+
+// The wait is said only while the helper reports a pick pending; with a session open the page is
+// done and claims no wait.
+pageTest("picker", { fixtures: { sessions: { ...STATE, picking: false } } }, async ({ until, inPage: run }) => {
+  await until("done", () => document.body.dataset.s === "done");
+  assert.deepEqual(await run(() => ({ title: document.getElementById("title").textContent, sub: document.getElementById("sub").textContent, waits: document.body.textContent.includes("Your agent waits") })),
+    { title: "Which session?", sub: "", waits: false });
+});
+pageTest("picker", { fixtures: { sessions: STATE } }, async ({ until, inPage: run }) => {
+  await until("the rows", ready);
+  assert.deepEqual(await run(() => [document.getElementById("title").textContent, document.getElementById("sub").textContent]), ["Which session?", "Your agent waits until you pick one."]);
+});
+
+// The helper not reached (its address known, nothing answering): the resting state, no red; once
+// it answers, the list replaces it on the page's own refresh (visible only), with no reload.
+pageTest("picker", { fixtures: { sessions: STATE }, down: true, timeout: 90_000 }, async ({ until, inPage: run, helper, harness }) => {
+  await until("the resting state", () => document.body.dataset.s === "none");
+  assert.deepEqual(await run(resting), RESTING);
+  const marker = await run(() => { window.__same = true; return true; });
+  helper.setDown(false);
+  for (let i = 0; i < 120 && !(await run(ready)); i++) await sleep(50);
+  assert.equal(await run(ready), true, "the list replaced the resting state");
+  assert.deepEqual(await run(() => ({ same: window.__same === true, title: document.getElementById("title").textContent, sub: document.getElementById("sub").textContent, rows: document.querySelectorAll("#sessions > li").length, msg: document.getElementById("msg").textContent })),
+    { same: marker, title: "Which session?", sub: "Your agent waits until you pick one.", rows: 3, msg: "" });
+  assert.deepEqual(bad(await harness.log()), []);
+});
+
+// 530 E2 B1: the switcher bubble is the picker page itself (#bubble), with its own Session, so it
+// reaches the helper (a frame gets no bindings); laid out as the popover, and a pick closes the bubble
+// through the browser (which puts the focus back on the logo).
+pageTest("picker", { fixtures: { sessions: STATE }, shim: { bubbles: true }, viewport: { width: 360, height: 560 } }, async ({ page, helper, until, inPage: run }) => {
+  const url = `${page.url().split("#")[0]}#bubble`;
+  await page.goto("about:blank");
+  await page.goto(url, { waitUntil: "load" });
+  await until("the rows", ready);
+  assert.deepEqual(await run(() => [document.documentElement.dataset.host, document.documentElement.dataset.bubble]), ["frame", "native"]);
+  await page.click("#fresh");
+  await until("the bubble closed", () => window.__pairbrowse.calls.some((c) => c.iface === "bubbles" && c.method === "close" && c.args[0] === 0));
+  assert.deepEqual(posted(helper, "pick"), [{ action: "new" }]);
+});

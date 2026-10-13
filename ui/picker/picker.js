@@ -4,13 +4,23 @@
 // the live view with the owner's key: in the build from the browser's Session API
 // (window.pairbrowse), in the extension from the side panel's worker (chrome.storage.session).
 // The live view takes these requests only from the page's own origin.
-import { $, el, avatar, initialOf, reportOffer, askSwitch } from "../common.js";
+import { $, el, avatar, initialOf, reportOffer, askSwitch, NO_AGENT, noAgentLine } from "../common.js";
 
 // Framed: the switcher popover. No page chrome of its own, the list even when a session is open,
 // and the parent told (same origin only) when to close; the pick itself goes only to the helper.
-const framed = window.top !== window;
+// In the browser's own switcher bubble (530 E2 B1, #bubble): the same popover, but a page of its
+// own (a frame gets no bindings, so only a page reaches the helper), and the bubble is closed through
+// the browser after a pick or on Escape (the browser then puts the focus back on the logo).
+const pb = window.pairbrowse || null;
+const bubbled = location.hash === "#bubble" && typeof pb?.bubbles?.close === "function";
+const framed = window.top !== window || bubbled;
 document.documentElement.dataset.host = framed ? "frame" : "page";
-const notify = (op) => { if (framed) window.parent.postMessage({ source: "pairbrowse-picker", op }, location.origin); };
+if (bubbled) document.documentElement.dataset.bubble = "native";
+const SWITCHER = Number.isInteger(pb?.BubbleKind?.kSwitcher) ? pb.BubbleKind.kSwitcher : 0;
+const notify = (op) => {
+  if (bubbled) pb.bubbles.close(SWITCHER).catch(() => {});
+  else if (framed) window.parent.postMessage({ source: "pairbrowse-picker", op }, location.origin);
+};
 
 let base = null;
 let busy = false;
@@ -20,6 +30,24 @@ let askCancel = null;
 let switchCancel = null;
 
 const say = (text, kind = "") => { $("msg").textContent = text; $("msg").dataset.kind = kind; };
+const QUESTION = "Which session?";
+// The line under the question: what the helper said, never more. An agent waits only while the
+// helper reports a pick pending (sessions.json `picking`).
+const WAITS = "Your agent waits until you pick one.";
+const SWITCH = "Switch to another session, or start one.";
+const head = (title, sub) => {
+  if ($("title").textContent !== title) $("title").textContent = title;
+  if ($("sub").textContent !== sub) $("sub").textContent = sub;
+};
+// No helper to ask, or none reached: the resting state (DESIGN.md B4's words), muted, no list and
+// no error. The list comes back on its own: the refresh below (visible only) or the address
+// arriving reads sessions.json again.
+function none() {
+  document.body.dataset.s = "none";
+  head(NO_AGENT, noAgentLine("Your sessions"));
+  say("");
+  drawn = "";
+}
 // A person's click or key press only, never a script's synthetic event.
 const real = (ev) => ev.isTrusted;
 
@@ -127,17 +155,15 @@ let drawn = "";
 async function load() {
   const state = await fetch(base + "sessions.json").then((r) => (r.ok ? r.json() : null), () => null);
   if (busy || document.body.dataset.s === "done" || document.body.dataset.s === "picking") return;
-  if (!state) { document.body.dataset.s = "connecting"; say("Couldn't reach PairBrowse.", "error"); return; }
+  if (!state) return none();
   // A session is open: the first tab is done; the switcher still lists them to switch to.
   if (!state.picking && !framed) {
     document.body.dataset.s = "done";
+    head(QUESTION, "");
     if (!$("msg").textContent) say("A session is already open. You can close this tab.", "ok");
     return;
   }
-  if (framed) {
-    const sub = state.picking ? "Your agent waits until you pick one." : "Switch to another session, or start one.";
-    if ($("sub").textContent !== sub) $("sub").textContent = sub;
-  }
+  head(QUESTION, state.picking ? WAITS : SWITCH);
   // Redrawn only when something changed (someone joined or left), keeping the filter.
   const sig = JSON.stringify(state.sessions);
   if (sig === drawn) return;
@@ -249,14 +275,17 @@ function connect(url) {
   if (!document.hidden) start();
 }
 // The helper's address and key: the browser's Session API in the build, else the extension's.
-if (window.pairbrowse) {
-  const lost = () => say("Couldn't reach PairBrowse.", "error");
-  window.pairbrowse.session.helper().then((r) => { const { origin, key } = r || {}; if (origin && key) connect(`${origin}/${key}/`); else lost(); }, lost);
-} else {
-  // Neither the browser's API nor the extension's storage (a frame given no bindings): say so
-  // instead of staying on "connecting" (Part H).
-  try {
-    chrome.storage.session.get("view").then(({ view } = {}) => connect(view), () => say("Couldn't reach PairBrowse.", "error"));
-    chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); });
-  } catch { say("Couldn't reach PairBrowse.", "error"); }
-}
+// A frame whose parent knows there is no helper (#none, common.js pickerPopover) shows the resting
+// state at once. A frame given no binding of its own while its parent has a helper (DESIGN.md
+// H4.1) says it couldn't reach PairBrowse: the switcher the person opened failed (Part H).
+const lost = () => { if (framed) say("Couldn't reach PairBrowse.", "error"); else none(); };
+let store = null;
+try { store = globalThis.chrome?.storage?.session || null; } catch {}
+if (framed && location.hash === "#none") none();
+else if (window.pairbrowse) {
+  // The browser answers with no address when it was started without a helper: nothing to reach.
+  window.pairbrowse.session.helper().then((r) => { const { origin, key } = r || {}; if (origin && key) connect(`${origin}/${key}/`); else none(); }, lost);
+} else if (store) {
+  store.get("view").then(({ view } = {}) => connect(view), lost);
+  try { chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
+} else lost();

@@ -21,7 +21,6 @@ body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1.45 var(--sa
 /* The connection: one line under the header while not live. */
 .banner { margin: 0; padding: var(--sp-2) var(--sp-6); font-size: var(--fs-2); color: var(--ink-2); background: var(--chrome); border-bottom: 1px solid var(--edge); }
 body[data-s="live"] .banner { display: none; }
-body[data-s="closed"] .banner { color: var(--warn); }
 
 .layout { display: grid; grid-template-columns: 216px minmax(0, 680px); gap: var(--sp-8); max-width: 960px; margin: 0 auto; padding: var(--sp-6) var(--sp-6) 48px; }
 .nav { position: sticky; top: 80px; align-self: start; display: grid; gap: 2px; }
@@ -116,9 +115,9 @@ fieldset[disabled] .seg label, fieldset[disabled] .choice, form[disabled] { opac
 .facts dt:first-of-type, .facts dt:first-of-type + dd { border-top: 0; }
 .facts dt { color: var(--ink-2); }
 .facts dd { color: var(--ink); overflow-wrap: anywhere; }
-.state::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: var(--sp-2); border-radius: 50%; background: var(--warn); vertical-align: 1px; }
+/* Not connected is the resting state (DESIGN.md B2): the muted dot, never --warn or --bad. */
+.state::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: var(--sp-2); border-radius: 50%; background: var(--muted); vertical-align: 1px; }
 .state[data-s="live"]::before { background: var(--ok); }
-.state[data-s="closed"]::before { background: var(--bad); }
 .errors { margin: var(--sp-2) 0 0; padding: 0; list-style: none; font: var(--fs-2)/1.5 var(--mono); }
 .errors li { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: var(--sp-2); padding: var(--sp-1) 0; border-top: 1px solid var(--edge); }
 .errors time { color: var(--ink-2); }

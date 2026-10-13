@@ -35,6 +35,7 @@ let driveTimer = 0;
 let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
 let switchAsked = false; // the strip's logo asked for the switcher while this dock was not yet open
 let paused = false; // agents paused session-wide (the helper's pause event)
+let noHelperKnown = false; // the browser (or the host) said there is no helper to ask
 
 const isHistory = (url) => /^chrome:\/\/history(\/|$)/.test(url || "");
 const isSettings = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)settings(\/|$)/.test(url || "");
@@ -226,7 +227,9 @@ function drawGuests() {
 // click or Escape on it closes it).
 // Only an open the logo asked for lights the logo (the Sessions row shows its own state).
 let byLogo = false;
-const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("nav-sessions")],
+// With no helper to ask (none at all, or one whose stream never opened) the switcher opens on the
+// picker's resting state, not its question.
+const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("nav-sessions")], noHelper: () => (base ? !everLive : noHelperKnown),
   onToggle: (open) => { if (open && byLogo) tell({ opened: "switch" }); if (!open) { byLogo = false; tell({ closed: "switch" }); } } });
 // Where the switcher opens, at its trigger (DESIGN.md Part I): asked by the strip's logo, at the
 // dock's top with its caret under the logo (its centre from the window's left edge, which is this
@@ -411,6 +414,7 @@ function connect(url) {
 // the Agents section keeps only its label and its + button.
 function noHelper() {
   if (base) return;
+  noHelperKnown = true;
   document.body.dataset.s = "closed";
   $("conn").hidden = true;
 }

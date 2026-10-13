@@ -397,3 +397,95 @@ pageTest("timeline", opts({ fixtures: { timeline: { cards: "not a list" }, pictu
   assert.equal(await inPage(() => document.getElementById("line").hidden), true);
   assert.equal(await inPage(() => document.getElementById("add").checkVisibility()), true, "Add note back with the list");
 });
+
+// 530 E2 B3: with the browser's bubbles a card's click shows its picture in a bubble above the card
+// (bubbles.open with the face's rect and the card's id), not in the agent panel (no show post, no
+// "Shown large" note); a second click closes it; the browser closing it by Escape (or the bubble's
+// own page) gives the focus back to the card; a click outside that lands on the same card is that
+// close, not a new open.
+pageTest("timeline", opts({ shim: { bubbles: true } }), async ({ page, until, inPage, settle }) => {
+  await until("30 cards", drawn, 30);
+  const id = CARDS.at(-1).id;
+  await inPage(logFetches);
+  const opens = () => window.__pairbrowse.calls.filter((c) => c.iface === "bubbles" && c.method === "open").map((c) => c.args);
+  await page.click(`${card(id)} .face`);
+  await until("the open", () => window.__pairbrowse.calls.some((c) => c.iface === "bubbles" && c.method === "open"));
+  const [kind, rect, arg] = (await inPage(opens))[0];
+  assert.equal(kind, 2, "BubbleKind.kPicture");
+  assert.equal(arg, id);
+  const face = await inPage((s) => { const r = document.querySelector(`${s} .face`).getBoundingClientRect(); return { x: Math.floor(r.left), y: Math.floor(r.top), right: Math.ceil(r.right), bottom: Math.ceil(r.bottom) }; }, card(id));
+  assert.deepEqual(rect, { x: face.x, y: face.y, width: face.right - face.x, height: face.bottom - face.y }, "the face's rect, rounded outward");
+  assert.equal(await inPage((s) => document.querySelector(`${s} .face`).getAttribute("aria-expanded"), card(id)), "true");
+  await page.waitForTimeout(200);
+  assert.deepEqual(await inPage(() => window.__fetches.filter(([u]) => u.endsWith("/show"))), [], "no show post");
+  assert.equal(await inPage(() => document.getElementById("where").hidden), true, "no note under the card");
+  // A second click closes it.
+  await page.click(`${card(id)} .face`);
+  await until("the close", () => window.__pairbrowse.calls.some((c) => c.iface === "bubbles" && c.method === "close" && c.args[0] === 2));
+  await until("collapsed", (s) => document.querySelector(`${s} .face`).getAttribute("aria-expanded") === "false", card(id));
+  // Opened again; the browser closes it by Escape: the focus comes back to the card's face.
+  await page.click(`${card(id)} .face`);
+  await until("open again", () => window.__pairbrowse.bubbles.open === 2);
+  await inPage(() => { document.activeElement.blur(); window.__pairbrowse.bubbles.closed(2, true); });
+  await until("the focus on the card", (s) => document.activeElement === document.querySelector(`${s} .face`), card(id));
+  // A click outside closed it (not by Escape): a click on the same card right then does not reopen it.
+  await page.click(`${card(id)} .face`);
+  await until("open once more", () => window.__pairbrowse.bubbles.open === 2);
+  const before = (await inPage(opens)).length;
+  await inPage(() => window.__pairbrowse.bubbles.closed(2, false));
+  await page.click(`${card(id)} .face`);
+  await page.waitForTimeout(100);
+  assert.equal((await inPage(opens)).length, before, "the closing click opens nothing");
+  // Another card opens its own picture.
+  const other = CARDS.at(-2).id;
+  await page.click(`${card(other)} .face`);
+  await until("the other", (o) => window.__pairbrowse.calls.filter((c) => c.iface === "bubbles" && c.method === "open").at(-1)?.args[2] === o, other);
+  await settle();
+});
+
+// The picture bubble's own page (timeline/#picture=<id>): the picture, its time and caption (also the
+// title that names the bubble), the focus on the x, Pin, Delete asked first and then the bubble
+// closed; the x closes it.
+pageTest("timeline", opts({ shim: { bubbles: true }, viewport: { width: 424, height: 400 } }), async ({ page, until, inPage, helper }) => {
+  const id = CARDS[3].id;
+  const url = `${page.url().split("#")[0]}#picture=${id}`;
+  await page.goto("about:blank");
+  await page.goto(url, { waitUntil: "load" });
+  await until("the picture", () => document.body.dataset.mode === "picture" && !!document.getElementById("pic-img").getAttribute("src"));
+  const s = await inPage(() => ({ title: document.title, cap: document.getElementById("pic-cap").textContent, focus: document.activeElement.id, strip: document.getElementById("strip").checkVisibility(), width: document.getElementById("picture").getBoundingClientRect().width }));
+  assert.match(s.title, /, Step 3$/);
+  assert.equal(s.cap, "Step 3");
+  assert.equal(s.focus, "pic-close", "the focus starts on the x");
+  assert.equal(s.strip, false, "the strip is not shown");
+  assert.equal(s.width, 424);
+  await page.click("#pic-pin");
+  await until("unpin", () => document.getElementById("pic-pin").textContent === "Unpin");
+  await page.click("#pic-delete");
+  assert.equal(await inPage(() => [document.getElementById("pic-ask").hidden, document.activeElement.id]).then((x) => x.join()), "false,pic-no", "asked first, the focus on Keep");
+  await page.click("#pic-yes");
+  await until("closed after the delete", () => window.__pairbrowse.calls.some((c) => c.iface === "bubbles" && c.method === "close" && c.args[0] === 2));
+  assert.equal(await inPage(async ([b, x]) => (await (await fetch(b + "timeline.json")).json()).cards.some((c) => c.id === x), [helper.base, id]), false, "deleted");
+  await page.click("#pic-close");
+  assert.ok((await inPage(() => window.__pairbrowse.calls.filter((c) => c.iface === "bubbles" && c.method === "close").length)) >= 2, "the x closes it");
+});
+
+// A helper address that never answers (none running, or gone before the strip opened): the
+// resting line "No agent connected", not the error state and nothing in red; once it answers, the
+// stream opens on its own and the cards replace the line (one read on open, no poll).
+pageTest("timeline", opts({ down: true, timeout: 90_000 }), async ({ until, inPage, helper, errors }) => {
+  const look = () => {
+    const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
+    const reds = [probe("bad"), probe("bad-ink")];
+    return { state: document.body.dataset.state, line: document.getElementById("line").hidden ? "" : document.getElementById("line-text").textContent, add: document.getElementById("add").checkVisibility(),
+      red: [...document.querySelectorAll("body *")].filter((e) => e.checkVisibility() && e.textContent.trim() && reds.includes(getComputedStyle(e).color)).map((e) => e.id || e.className) };
+  };
+  await until("the resting line", () => !document.getElementById("line").hidden);
+  const at = await inPage(look);
+  assert.notEqual(at.state, "error");
+  assert.deepEqual({ line: at.line, add: at.add, red: at.red }, { line: "No agent connected", add: false, red: [] });
+  helper.setDown(false);
+  for (let i = 0; i < 160 && !(await inPage(drawn, 30)); i++) await inPage(() => new Promise((r) => setTimeout(r, 50)));
+  assert.equal(await inPage(drawn, 30), true, "the cards replaced the line");
+  assert.equal(await inPage(() => document.getElementById("line").hidden), true);
+  assert.deepEqual(errors, []);
+});

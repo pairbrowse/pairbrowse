@@ -408,3 +408,47 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
   assert.ok(!(await inPage(() => document.body.textContent)).includes("pb-join:"), "never a code on the page");
   assert.deepEqual(errors, []);
 });
+
+// ---- no helper, or none reached: the resting state, not an error ----
+// The banner says it in every page's words (DESIGN.md B4: common.js NO_AGENT and noAgentLine), in
+// --ink-2; About's connection reads "No agent connected" with the muted dot; nothing in red.
+const restingLook = () => {
+  const probe = (v, prop = "color") => { const i = document.createElement("i"); i.style[prop] = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i)[prop]; i.remove(); return c; };
+  const reds = [probe("bad"), probe("bad-ink")];
+  const banner = document.getElementById("conn");
+  return {
+    s: document.body.dataset.s, banner: banner.textContent, bannerInk2: getComputedStyle(banner).color === probe("ink-2"),
+    about: document.getElementById("about-conn").textContent,
+    dotMuted: getComputedStyle(document.getElementById("about-conn"), "::before").backgroundColor === probe("muted", "backgroundColor"),
+    red: [...document.querySelectorAll("body *")].filter((e) => e.checkVisibility() && e.textContent.trim() && reds.includes(getComputedStyle(e).color)).map((e) => e.id || e.className),
+  };
+};
+const RESTING = { s: "closed", banner: "No agent connected. Ask Claude Code or Codex to use PairBrowse. Your settings show here.", bannerInk2: true, about: "No agent connected", dotMuted: true, red: [] };
+
+pageTest("settings", { fixtures, viewport: VIEW, shim: { helper: null }, bridge: false }, async ({ until, inPage, helper, errors }) => {
+  await until("no helper", () => document.body.dataset.s === "closed");
+  assert.deepEqual(await inPage(restingLook), RESTING);
+  assert.deepEqual(helper.gets, [], "nothing asked");
+  assert.deepEqual(errors, []);
+});
+
+pageTest("settings", { fixtures, viewport: VIEW, native: false, bridge: false }, async ({ until, inPage, errors }) => {
+  await until("no helper", () => document.body.dataset.s === "closed");
+  assert.deepEqual(await inPage(restingLook), RESTING);
+  assert.deepEqual(errors, []);
+});
+
+// The helper not reached, then answering: no red read errors meanwhile; once it answers the stream
+// opens on its own and the settings replace the banner.
+pageTest("settings", { fixtures, viewport: VIEW, down: true, timeout: 90_000 }, async ({ until, inPage, helper, errors }) => {
+  await inPage(() => new Promise((r) => setTimeout(r, 300)));
+  const at = await inPage(restingLook);
+  assert.notEqual(at.s, "live");
+  assert.deepEqual(at.red, []);
+  helper.setDown(false);
+  for (let i = 0; i < 160 && !(await inPage(live)); i++) await inPage(() => new Promise((r) => setTimeout(r, 50)));
+  assert.equal(await inPage(live), true, "connected on its own");
+  await until("the settings read", () => document.getElementById("about-conn").textContent === "Connected" && !document.getElementById("conn").checkVisibility());
+  assert.deepEqual((await inPage(restingLook)).red, []);
+  assert.deepEqual(errors, []);
+});

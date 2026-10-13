@@ -6,7 +6,7 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, agentWords, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer, syncList, enter, busy, revealed } from "../common.js";
+import { $, el, rich, clock, ago, whose, agentWords, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
 
 const pb = globalThis.pairbrowse || null;
@@ -23,6 +23,7 @@ const DRIVING_MS = 8000; // "Working…" for this long after the agent's last ac
 const ACTIVITY_SHOWN = 12;
 const PICTURE_ID = /^[0-9a-f]{12}$/;
 let base = null;
+let everLive = false; // the helper's stream has opened at least once (an address that never answers is no helper)
 let stream = null; // the shared helper stream (common.js helperStream)
 // When each agent of this browser acted last (who -> time; the newest 50): the card says its own
 // agent is working on that agent's actions only, never on a joiner's line, a note or another
@@ -98,7 +99,9 @@ async function showOutline() {
     $("outline").hidden = false; $("outline-head").hidden = false; empty.hidden = true;
   } else {
     $("outline").hidden = true; $("outline-head").hidden = true; empty.hidden = false;
-    empty.textContent = r.status === 200 || r.status === 404 ? (r.status === 404 ? "This PairBrowse doesn't share the page outline yet." : "No outline yet: it shows once an agent reads a page.") : "Couldn't reach PairBrowse.";
+    // Not reached while the stream is down too: the resting line, not an error (it reads again on open).
+    const away = r.status === 0 && document.body.dataset.s !== "live";
+    empty.textContent = r.status === 200 || r.status === 404 || away ? (r.status === 404 ? "This PairBrowse doesn't share the page outline yet." : "No outline yet: it shows once an agent reads a page.") : "Couldn't reach PairBrowse.";
   }
   if (outlineAgain) { outlineAgain = false; showOutline(); }
 }
@@ -449,7 +452,7 @@ function setDriver() {
   const s = document.body.dataset.s;
   const driving = !turn && !paused && s === "live" && Date.now() - cardActedAt() < DRIVING_MS;
   document.body.dataset.driving = String(driving);
-  const [text, state] = s === "none" ? ["No agent connected", "closed"]
+  const [text, state] = s === "none" ? [NO_AGENT, "closed"]
     : s === "closed" ? ["The browser is closed. It reopens on Claude's next action.", "closed"]
     : s === "connecting" ? ["Waiting for PairBrowse", "connecting"]
     : turn ? ["Waiting for you", "you"]
@@ -458,8 +461,9 @@ function setDriver() {
     : ["Idle", "idle"];
   $("driver-text").textContent = text;
   $("driver").dataset.state = state;
-  // Where the card goes while no agent is named: no helper at all, or none in this session.
-  $("agent-none-title").textContent = s === "none" ? "No agent connected" : "No agent in this session";
+  // Where the card goes while no agent is named: no helper at all (none to ask, or a stream that
+  // never opened), or none in this session.
+  $("agent-none-title").textContent = s === "none" || (!everLive && s !== "live") ? NO_AGENT : "No agent in this session";
   $("status-live").hidden = !driving;
   if ($("agent-name").textContent !== agentName(activeEntry())) drawAgent();
   markCurrent();
@@ -696,7 +700,7 @@ function connect(url) {
   stream?.close();
   stream = helperStream(base, {
     kind: pb ? "right" : "",
-    onState: (s) => { document.body.dataset.s = s; setDriver(); drawSessionCard(); },
+    onState: (s) => { if (s === "live") everLive = true; document.body.dataset.s = s; setDriver(); drawSessionCard(); },
     onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); showOutline(); tools.stale(); },
   });
   const on = stream.on;

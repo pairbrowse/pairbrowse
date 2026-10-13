@@ -3,7 +3,9 @@
 // lay it out, from the real ui/ pages in iframes over the pages' harness (the fake helper and the
 // ui server from test/helpers), before the native build exists.
 //   PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime node scripts/dev/window-preview.mjs --out <dir>
-//     [--rail] [--reduced-motion] [--mockup <png>] [--one-host] [--plain]
+//     [--rail] [--reduced-motion] [--mockup <png>] [--one-host] [--plain] [--no-helper]
+// --no-helper: the browser started without a helper (session.helper() answers no address): every
+// dock and page in its resting state (DESIGN.md B2-B4, "No agent connected").
 // The scene is scripts/dev/preview/fixtures.json. The contents card is the stand-in page in
 // scripts/dev/preview/ with scripts/hud.js added the way the helper adds it, rendered as its own
 // top-level page (as the build's contents is a WebContents of its own) and shown as an image.
@@ -144,7 +146,7 @@ export async function startPreviewServer({ ui, helper, shim, mockupPath, out }) 
     if (path === "/sample/sample.css") return file(res, join(PREVIEW_DIR, "sample.css"), TYPES.css);
     if (via && path === "/__harness/pairbrowse-api.js") {
       res.writeHead(200, { ...SECURITY_HEADERS, "content-type": TYPES.js });
-      return res.end(shimScript({ ...shim, helper: { origin: localOrigin, key: helper.key } }));
+      return res.end(shimScript({ ...shim, helper: shim.helper === null ? { origin: "", key: "" } : { origin: localOrigin, key: helper.key } }));
     }
     if (via && path === "/__harness/chrome.js") {
       res.writeHead(200, { ...SECURITY_HEADERS, "content-type": TYPES.js });
@@ -357,7 +359,7 @@ export async function main(args) {
   const value = (name) => { const i = args.indexOf(name); return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : null; };
   const out = value("--out");
   if (!out) {
-    console.error("usage: node scripts/dev/window-preview.mjs --out <dir> [--rail] [--reduced-motion] [--mockup <png>] [--one-host] [--plain]");
+    console.error("usage: node scripts/dev/window-preview.mjs --out <dir> [--rail] [--reduced-motion] [--mockup <png>] [--one-host] [--plain] [--no-helper]");
     return 2;
   }
   const rail = flag("--rail"), oneHost = flag("--one-host");
@@ -376,6 +378,7 @@ export async function main(args) {
     helper = await startFakeHelper({ pageOrigin: null, fixtures: fx.helper });
     // The scene's owners replace the default fixture's whole (a deep merge would keep its tab 11).
     let shim = { ...merge(defaultFixture(), fx.shim), owners: fx.shim.owners };
+    if (flag("--no-helper")) shim = { ...shim, helper: null, owners: { agents: {}, colors: {} } };
     if (rail) {
       helper.fixtures.layout = { left: "rail", right: "rail", strip: 53 };
       shim = merge(shim, { layout: { left: 1, right: 1 } });
@@ -422,7 +425,7 @@ export async function main(args) {
     for (const h of Object.keys(byHost)) if (byHost[h] || !oneHost) console.log(`  ${h}: ${byHost[h]}`);
     const { loaded, cards } = first.thumbs;
     console.log(`timeline pictures loaded: ${loaded} of ${cards}`);
-    if (loaded < cards) failed = true;
+    if (loaded < cards && !flag("--no-helper")) failed = true;
     const bad = log.filter((e) => BAD_KINDS.has(e.kind));
     for (const e of bad) console.log(`  ${e.frame} ${e.kind}: ${e.text}`);
     const stalled = first.frames.filter((f) => f.s === "connecting").map((f) => f.name);

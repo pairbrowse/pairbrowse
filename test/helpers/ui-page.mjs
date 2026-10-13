@@ -116,7 +116,7 @@ export async function hostProxy(host) {
   };
 }
 
-// pageTest(name, [opts], fn): opts { fixtures, replies (fake-helper), shim (over defaultFixture()),
+// pageTest(name, [opts], fn): opts { fixtures, replies, down (fake-helper), shim (over defaultFixture()),
 // bridge, native (false: no window.pairbrowse, the served or extension host), viewport,
 // reducedMotion, timeout }; fn gets { page, helper, ui, shim, harness, errors,
 // until, inPage }.
@@ -127,7 +127,7 @@ export function pageTest(name, opts, fn) {
     const browser = await patchright(runtime).chromium.launch();
     let helper = null, ctx = null;
     try {
-      helper = await startFakeHelper({ pageOrigin: null, fixtures: o.fixtures, replies: o.replies });
+      helper = await startFakeHelper({ pageOrigin: null, fixtures: o.fixtures, replies: o.replies, down: o.down });
       ctx = await openPage(browser, name, { helper, fixture: merge(defaultFixture(), o.shim || {}), bridge: o.bridge ?? true, native: o.native ?? true, viewport: o.viewport, reducedMotion: o.reducedMotion });
       await fn({ ...ctx, helper });
     } finally {

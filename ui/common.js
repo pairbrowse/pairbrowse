@@ -150,6 +150,12 @@ export const whose = (who) => !who ? "Claude" : /^Claude\b| · /.test(who) ? who
 // The activity line's head: who did it, and in which tab.
 export const activityHead = (a) => [a.who, a.tab ? `in ${a.tab}` : ""].filter(Boolean).join(" ");
 
+// No helper to ask, or none reached (DESIGN.md B2, B4): the resting state, not an error. The same
+// words on every page, muted, no red and no retry line; `what` is what shows on that page once an
+// agent starts ("Its task, checklist and status", "Your sessions").
+export const NO_AGENT = "No agent connected";
+export const noAgentLine = (what) => `Ask Claude Code or Codex to use PairBrowse. ${what} show here.`;
+
 // What you type in an address bar, as a URL: a web address, or a Google search.
 export function addressToUrl(text) {
   const t = String(text || "").trim().slice(0, 2000);
@@ -620,8 +626,11 @@ export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = ()
 // that toggle it (each gets aria-expanded). dismissable(): false while a host owns dismissal (the
 // strip's #switcher bubble): no notice, Escape or outside click closes it then.
 // onToggle(open) runs on every open and close (the left dock tells the strip's logo, which asked).
+// noHelper(): true when the parent knows there is no helper to ask; the frame then opens as
+// picker/index.html#none and shows the resting state (a frame in a slot gets no Session binding
+// of its own, DESIGN.md H4.1, so it can't tell by itself). The hash carries no key or name.
 // The frame unloads once the popover has faded out (at once under reduced motion).
-export function pickerPopover({ pop, frame, openers, dismissable = () => true, onToggle = () => {} }) {
+export function pickerPopover({ pop, frame, openers, dismissable = () => true, onToggle = () => {}, noHelper = () => false }) {
   let opener = null;
   const isOpen = () => !pop.hidden;
   const outside = (e) => { if (dismissable() && !pop.contains(e.target) && !openers.some((b) => b.contains(e.target))) close(false); };
@@ -633,7 +642,7 @@ export function pickerPopover({ pop, frame, openers, dismissable = () => true, o
   function open(by) {
     if (isOpen()) return;
     opener = by || openers[0];
-    frame.src = "../picker/index.html";
+    frame.src = noHelper() ? "../picker/index.html#none" : "../picker/index.html";
     pop.hidden = false;
     opener.setAttribute("aria-expanded", "true");
     if (dismissable()) document.addEventListener("pointerdown", outside, true);

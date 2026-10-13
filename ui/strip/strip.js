@@ -111,15 +111,18 @@ menuItem("settings", async () => {
 if (!pb) menuBtn.hidden = true;
 
 // ---- a page no taller than the row (the browser's 53 px tab-row slot, which clips the rest):
-// nothing can open under the row until the browser hosts the popovers as bubbles (530, "Bubbles for
-// cross-slot popovers"). Until then each opens in the dock right under its trigger, so it still
-// shows where the person acted (DESIGN.md Part I): the logo's switcher at the top of the left dock
-// (under the logo), Share's card at the top of the agent panel (under Share), each with a caret at
-// the trigger's place; the dock opens first if it is not. The trigger shows the popover's state
-// (pressed, aria-expanded), a second click or Escape on it closes it, and with no answer from the
-// dock the logo falls back to the session picker as a tab. The menu, which has no surface there, is
-// not shown. Each runs in the capture phase, ahead of the popover's own click handler, so no
-// popover opens unseen and no focus moves into one. ----
+// nothing can open under the row. With the browser's bubbles (530 E1, pairbrowse.bubbles) the
+// logo's switcher and Share's card open in a bubble of the window anchored to the trigger (B1, B2):
+// this page in its #switcher or #share mode, framed by the browser, which owns its dismissal and
+// says when it closed (OnClosed; by Escape, or closed by its own page, the focus comes back to the
+// trigger). Without them (a build before 530) each opens in the dock right under its trigger, so it
+// still shows where the person acted (DESIGN.md Part I): the logo's switcher at the top of the left
+// dock (under the logo), Share's card at the top of the agent panel (under Share), each with a
+// caret at the trigger's place; the dock opens first if it is not, and with no answer from the dock
+// the logo falls back to the session picker as a tab. Either way the trigger shows the popover's
+// state (pressed, aria-expanded) and a second click or Escape on it closes it. The menu, which has
+// no surface there, is not shown. Each runs in the capture phase, ahead of the popover's own click
+// handler, so no popover opens unseen and no focus moves into one. ----
 const ROW_ONLY = 60; // px: taller than the 53 px row, shorter than any popover
 // Without the browser API there is no dock to ask: the popovers open in place.
 const inSlot = () => !!pb && !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
@@ -128,8 +131,61 @@ const SLOT_LABELS = { switch: "PairBrowse: switch session (opens under the logo,
 // Chromium's own ⋯ (32 px, 16 px from the window's edge) sits after this page in the browser: the
 // docks measure from the window's edge (native: B2).
 const APP_MENU = nativeHost ? 48 : 0;
-// What each dock said it shows for this window: { switch, share } open or not.
+// What each dock (or the browser's bubble) said it shows for this window: { switch, share } open or not.
 const remote = { switch: false, share: false };
+// ---- the browser's bubbles (530 E1) ----
+const hasBubbles = () => typeof pb?.bubbles?.open === "function";
+const KINDS = pb?.BubbleKind && Number.isInteger(pb.BubbleKind.kSwitcher) ? pb.BubbleKind : { kSwitcher: 0, kShare: 1, kPicture: 2 };
+const BUBBLE_OF = { switch: KINDS.kSwitcher, share: KINDS.kShare };
+const TRIGGER_OF = { switch: "switch", share: "share-btn" };
+const keyOfKind = (kind) => (kind === KINDS.kSwitcher ? "switch" : kind === KINDS.kShare ? "share" : null);
+// A click outside closes a bubble before that click lands: when it lands on the bubble's own trigger
+// it is the close, not a new open. When the browser said so (OnClosed, not by Escape), and how
+// recently: a timestamp, no timer.
+const REOPEN_MS = 400;
+const closedAt = { switch: -Infinity, share: -Infinity };
+const selfClosed = { switch: false, share: false }; // closed by this page (its trigger): no guard then
+let bubblesObserved = false;
+function observeBubbles() {
+  if (bubblesObserved) return;
+  bubblesObserved = true;
+  pb.bubbles.addObserver({
+    onClosed: (kind, byEscape) => {
+      const key = keyOfKind(kind);
+      if (!key) return;
+      remote[key] = false;
+      if (!byEscape && !selfClosed[key]) closedAt[key] = performance.now();
+      selfClosed[key] = false;
+      slotControls();
+      // Escape, a pick or the bubble's own x: the focus comes back to the trigger.
+      if (byEscape) $(TRIGGER_OF[key]).focus();
+    },
+  });
+}
+// The trigger's box in this page's CSS pixels, rounded outward and kept inside the page (the browser
+// refuses an anchor outside its slot).
+function anchorRect(node) {
+  const r = node.getBoundingClientRect();
+  const x = Math.max(0, Math.floor(r.left)), y = Math.max(0, Math.floor(r.top));
+  const right = Math.min(window.innerWidth, Math.ceil(r.right)), bottom = Math.min(window.innerHeight, Math.ceil(r.bottom));
+  return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
+}
+async function toggleBubble(key) {
+  observeBubbles();
+  if (remote[key]) {
+    remote[key] = false;
+    selfClosed[key] = true;
+    slotControls();
+    pb.bubbles.close(BUBBLE_OF[key]).catch(() => {});
+    return;
+  }
+  if (performance.now() - closedAt[key] < REOPEN_MS) return;
+  let shown = false;
+  try { ({ shown } = await pb.bubbles.open(BUBBLE_OF[key], anchorRect($(TRIGGER_OF[key])), "")); } catch {}
+  // One bubble per window: opening one closed the other.
+  for (const k of Object.keys(remote)) remote[k] = k === key && !!shown;
+  slotControls();
+}
 function slotControls() {
   const slot = inSlot();
   for (const [id, popover, key] of [["switch", "switcher", "switch"], ["share-btn", "share-card", "share"]]) {
@@ -138,7 +194,8 @@ function slotControls() {
     if (slot) { b.setAttribute("aria-expanded", String(remote[key])); b.removeAttribute("aria-controls"); b.dataset.remote = String(remote[key]); }
     else { b.setAttribute("aria-expanded", String(id === "switch" ? switcher.isOpen() : !$("share-card").hidden)); b.setAttribute("aria-controls", popover); delete b.dataset.remote; }
   }
-  if (slot) { $("switch").setAttribute("aria-label", SLOT_LABELS.switch); $("share-btn").title = SLOT_LABELS.share; }
+  if (slot && hasBubbles()) { $("switch").setAttribute("aria-label", "PairBrowse: switch session"); $("share-btn").removeAttribute("title"); for (const id of ["switch", "share-btn"]) $(id).setAttribute("aria-haspopup", "dialog"); }
+  else if (slot) { $("switch").setAttribute("aria-label", SLOT_LABELS.switch); $("share-btn").title = SLOT_LABELS.share; }
   else { $("switch").setAttribute("aria-label", "PairBrowse: switch session"); $("share-btn").removeAttribute("title"); }
   menuBtn.hidden = slot || !pb;
   inView();
@@ -161,6 +218,7 @@ function anchorOf(id) {
 $("switch").addEventListener("click", async (e) => {
   if (!inSlot()) return;
   e.stopImmediatePropagation();
+  if (hasBubbles()) { toggleBubble("switch"); return; }
   if (remote.switch) { ask({ close: "switch" }); return; }
   await openDock("left");
   // The dock answers {opened: "switch"}; with no answer in SHARE_WAIT_MS (no dock in this window,
@@ -179,6 +237,7 @@ $("share-btn").addEventListener("click", async (e) => {
   if (!inSlot()) return;
   $("share-note").textContent = "";
   e.stopImmediatePropagation();
+  if (hasBubbles()) { toggleBubble("share"); return; }
   if (remote.share) { ask({ close: "share" }); return; }
   await openDock("right");
   // The card opens under Share in the agent panel: said only once the dock says it opened it (the
@@ -193,6 +252,7 @@ for (const [id, key] of [["switch", "switch"], ["share-btn", "share"]]) {
     if (e.key !== "Escape" || !inSlot() || !remote[key]) return;
     e.preventDefault();
     e.stopImmediatePropagation();
+    if (hasBubbles()) { toggleBubble(key); return; }
     ask({ close: key });
   }, true);
 }
@@ -211,6 +271,11 @@ try {
     slotControls();
   };
 } catch {}
+
+// ---- in the browser's own Share bubble (530 E2 B2): the card's x closes it; the browser then gives
+// the focus back to Share. (B1, the switcher, is the picker page itself: ui/picker #bubble.) ----
+const inNativeBubble = () => hasBubbles() && (mode === "switcher" || mode === "share");
+$("share-close").addEventListener("click", () => { if (inNativeBubble()) pb.bubbles.close(KINDS.kShare).catch(() => {}); });
 
 // ---- hash modes (no reload: the hash only picks what shows) ----
 function openBubble(m) {
@@ -231,6 +296,9 @@ function applyMode() {
   mode = next;
   if (BUBBLES.has(was)) closeBubble(was);
   document.body.dataset.mode = mode;
+  // The browser frames the bubble modes (its corners, shadow and motion): the card fills the page.
+  if (hasBubbles() && BUBBLES.has(mode)) document.body.dataset.bubble = "native"; else delete document.body.dataset.bubble;
+  $("share-close").hidden = !inNativeBubble() || mode !== "share";
   $("row").hidden = !(mode === "row" || BUBBLES.has(mode));
   $("nav-left").hidden = mode !== "nav-left";
   $("nav-right").hidden = mode !== "nav-right";
@@ -577,7 +645,7 @@ const pill = $("pill");
 // when not sharing; --warn is for reconnecting only.
 function drawPill() {
   const s = document.body.dataset.s;
-  const offline = s === "closed" || s === "none";
+  const offline = s === "closed" || s === "none" || (s === "connecting" && !everOpen); // never opened: no helper reached
   const state = s === "live" ? ((lastCollab?.guests || []).length ? "live" : "local") : offline ? "local"
     : everOpen && s === "connecting" ? "reconnecting" : "connecting";
   pill.dataset.state = state;
@@ -622,7 +690,8 @@ function connect(url) {
   if (!pb) {
     on("tabs", renderFallback);
     on("layout", (l) => drawSparkle(l?.right === "open"));
-  } else {
+  } else if (!bubble()) {
+    // The row writes the owners and reports the order; a bubble's page (the same strip) does not.
     on("agent-tabs", applyAgentTabs);
     on("tab-order", (m) => { if (m?.op === "arrange" && Array.isArray(m.targets)) arrangeOrder(m.targets); });
     reportOrder();
@@ -635,7 +704,7 @@ function connect(url) {
 let lastFocused = -1;
 let orderQueued = false;
 function reportOrder() {
-  if (!pb || !base || orderQueued) return;
+  if (!pb || !base || orderQueued || bubble()) return;
   orderQueued = true;
   queueMicrotask(async () => {
     orderQueued = false;

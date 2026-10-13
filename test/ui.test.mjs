@@ -281,6 +281,23 @@ test("the strip's nav fragments never connect", () => {
 
 // ---- Part 2: the harness's own fakes ----
 
+test("the shim: the cross-slot bubbles (530 E1) only with the fixture's bubbles", async () => {
+  const run = (fixture) => { const sandbox = { queueMicrotask, JSON, Promise, Object, Math, Number, String, Array }; sandbox.window = sandbox; vm.runInNewContext(shimScript(fixture), sandbox); return sandbox; };
+  assert.equal(run(defaultFixture()).pairbrowse.bubbles, undefined, "a build without them by default");
+  const { pairbrowse: pb, __pairbrowse: controls } = run({ ...defaultFixture(), bubbles: true });
+  const closed = [];
+  pb.bubbles.addObserver({ onClosed: (kind, byEscape) => closed.push([kind, byEscape]) });
+  assert.deepEqual(JSON.parse(JSON.stringify(await pb.bubbles.open(0, { x: 1, y: 2, width: 3, height: 4 }, ""))), { shown: true });
+  assert.equal(controls.bubbles.open, 0);
+  await pb.bubbles.open(1, { x: 1, y: 2, width: 3, height: 4 }, "");
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(closed, [[0, false]], "one bubble at a time");
+  controls.bubbles.closed(1, true);
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(closed.at(-1), [1, true]);
+  assert.equal(controls.bubbles.open, null);
+});
+
 test("the shim: window.pairbrowse as the page contract says", async () => {
   const fixture = defaultFixture();
   fixture.helper = { origin: "http://127.0.0.1:9", key: "k" };
@@ -291,8 +308,9 @@ test("the shim: window.pairbrowse as the page contract says", async () => {
   const plainCopy = (v) => JSON.parse(JSON.stringify(v));
   assert.deepEqual(plainCopy(await pb.tabs.list()), { tabs: fixture.tabs });
   assert.deepEqual(plainCopy(await pb.session.helper()), { origin: "http://127.0.0.1:9", key: "k" });
-  assert.deepEqual(Object.keys(pb).sort(), ["DockState", "NetworkState", "SecurityLevel", "agent", "approval", "files", "layout", "omnibox", "session", "tabs", "windows"]);
+  assert.deepEqual(Object.keys(pb).sort(), ["BubbleKind", "DockState", "NetworkState", "SecurityLevel", "agent", "approval", "files", "layout", "omnibox", "session", "tabs", "windows"]);
   assert.equal(pb.DockState.kOpen, 2);
+  assert.deepEqual({ ...pb.BubbleKind }, { kSwitcher: 0, kShare: 1, kPicture: 2 });
   // The approval bubble's host (530): setPending(count, targetId) is recorded, nothing more.
   assert.equal(await pb.approval.setPending(2, "T11"), undefined);
   assert.deepEqual(plainCopy(controls.calls.at(-1)), { iface: "approval", method: "setPending", args: [2, "T11"] });

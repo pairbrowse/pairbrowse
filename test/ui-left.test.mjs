@@ -626,3 +626,52 @@ scenario("left: no switcher before the window is known", { viewport: OPEN, shim:
   assert.equal(await inPage(() => document.getElementById("switcher").hidden), true);
   await clean(ctx);
 });
+
+// ---- no helper: the switcher opens on the picker's resting state, never its question ----
+// DESIGN.md B3/B4: no agent waits, so no "Which session?" and no "Your agent waits…", and an
+// absent helper is not an error (nothing in red). The dock tells the frame by its address only
+// (#none: no key, no name); in the browser a framed picker gets no Session binding of its own.
+const NO_AGENT_FRAME = () => {
+  const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
+  const reds = [probe("bad"), probe("bad-ink")];
+  return {
+    hash: location.hash, s: document.body.dataset.s, title: document.getElementById("title").textContent, sub: document.getElementById("sub").textContent,
+    list: document.getElementById("choices").checkVisibility(), msg: document.getElementById("msg").textContent,
+    red: [...document.querySelectorAll("body *")].filter((e) => e.checkVisibility() && e.textContent.trim() && reds.includes(getComputedStyle(e).color)).map((e) => e.id || e.className),
+    question: document.body.textContent.includes("Which session?") || document.body.textContent.includes("Your agent waits"),
+  };
+};
+const RESTING_FRAME = { hash: "#none", s: "none", title: "No agent connected", sub: "Ask Claude Code or Codex to use PairBrowse. Your sessions show here.", list: false, msg: "", red: [], question: false };
+
+scenario("left: no helper, the switcher at rest", { viewport: { width: 420, height: 936 }, fixtures: { sessions: SWITCHER_SESSIONS }, shim: { helper: null } }, async (ctx) => {
+  const { page, until, inPage, helper } = ctx;
+  await until("no helper", () => document.body.dataset.s === "closed");
+  await page.click("#nav-sessions");
+  const frame = await framedPicker(page, "none");
+  assert.deepEqual(await inFrame(frame, NO_AGENT_FRAME), RESTING_FRAME);
+  assert.equal((await inFrame(frame, () => window.__harness.live())).intervals, 0, "the frame refreshes nothing");
+  assert.deepEqual(helper.gets, [], "nothing asked of a helper");
+  // The Agents section keeps only its label and its + (B3): no wait, no error line.
+  assert.deepEqual(await inPage(() => ({ conn: document.getElementById("conn").checkVisibility(), empty: document.querySelector("#agents li.empty")?.checkVisibility() ?? false })), { conn: false, empty: false });
+  await clean(ctx);
+});
+
+scenario("left: a helper that never answers, then does", { viewport: { width: 420, height: 936 }, fixtures: { sessions: SWITCHER_SESSIONS }, down: true, timeout: 90_000 }, async (ctx) => {
+  const { page, until, inPage, helper } = ctx;
+  await page.click("#nav-sessions");
+  let frame = await framedPicker(page, "none");
+  assert.deepEqual(await inFrame(frame, NO_AGENT_FRAME), RESTING_FRAME);
+  await page.keyboard.press("Escape");
+  await until("closed", () => document.getElementById("switcher").hidden);
+  // The helper comes up: the dock's stream opens on its own (EventSource's own retry, no poll of
+  // the page's), and the switcher then opens on the list.
+  helper.setDown(false);
+  for (let i = 0; i < 160 && (await inPage(() => document.body.dataset.s)) !== "live"; i++) await page.waitForTimeout(50);
+  assert.equal(await inPage(() => document.body.dataset.s), "live");
+  await until("the frame unloaded", () => document.getElementById("picker").getAttribute("src") === null);
+  await page.click("#nav-sessions");
+  frame = await framedPicker(page, "ready");
+  assert.deepEqual(await inFrame(frame, () => ({ hash: location.hash, title: document.getElementById("title").textContent, sub: document.getElementById("sub").textContent, rows: document.querySelectorAll("#sessions > li").length })),
+    { hash: "", title: "Which session?", sub: "Switch to another session, or start one.", rows: 3 });
+  await clean(ctx);
+});

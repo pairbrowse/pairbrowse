@@ -21,3 +21,6 @@ docs/media/*
 !docs/media/pairbrowse-demo.gif
 
 coverage/
+
+# Dev renders (scripts/dev/surface-refs.mjs)
+.cache/

@@ -249,7 +249,7 @@ export async function renderContents(browser, { proxy, geo, raw, scale, reducedM
 }
 
 // Waits up to ms for fn (run in the frame's page world) to be truthy.
-async function until(frame, fn, ms, arg) {
+export async function until(frame, fn, ms, arg) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     if (await inPage(frame, fn, arg).catch(() => false)) return true;

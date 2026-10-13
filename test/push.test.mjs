@@ -151,3 +151,80 @@ test("pointers: a shared browser joiner's own never in the host's tab, never twi
     push.close();
   }
 });
+
+// An agent's cursor here is drawn in the host's tab (hud.js), so a shared browser joiner already
+// sees it in their picture of the tab: it goes on its own only to joiners with copies of the tab
+// (follow mode). Each pointer reaches each joiner exactly once.
+test("pointers: the host's agent cursor goes to follow joiners only, never twice to a shared browser joiner", async () => {
+  const page = { isClosed: () => false, url: () => "https://example.com/" };
+  const got = new Map();
+  const connFor = (key) => { let closed = () => {}; return { send: (raw) => { const m = JSON.parse(raw); if (m.event === "pointers") got.set(key, m.data); }, onClose(cb) { closed = cb; }, close() { closed(); } }; };
+  const push = createPush({
+    getContext: async () => ({ pages: () => [page] }), idOf: () => "t1", joinerKey: (j) => j.key, secretDomains: () => [],
+    tabMeta: () => ({ agent: { label: "Claude Code", color: "#e9763f" } }),
+    shared: { host: "Bob", showPointers() {}, readForm: async () => null, toView: (p, x, y) => ({ nx: x / 1000, ny: y / 1000 }) },
+    tabsFor: async () => ({ tabs: [] }),
+  });
+  const alice = { name: "Alice", key: "i1:a", invite: { mode: "shared" } };
+  const dan = { name: "Dan", key: "i2:d", invite: { mode: "follow" } };
+  try {
+    for (const j of [alice, dan]) await push.open(j, connFor(j.key));
+    push.agentPointed(page, { x: 300, y: 400, t: Date.now() });
+    push.pointed(page, { me: { x: 10, y: 20, t: Date.now() }, agent: { x: 300, y: 400, t: Date.now() } });
+    await sleep(120);
+    const keys = (key) => (got.get(key) || []).map((p) => p.k).sort();
+    assert.deepEqual(keys("i2:d"), ["host", "host-agent:t1"], "Dan, in his copy: the host's pointer and the agent's cursor");
+    assert.deepEqual(keys("i1:a"), ["host"], "Alice: the host's pointer only; the agent's cursor is in her picture");
+  } finally {
+    push.close();
+  }
+});
+
+// 530 F1: a shared browser joiner's pointer, never drawn in the host's tab, goes to the browser's
+// own overlay over the page card, as the place they point at in their picture of the tab; a follow
+// joiner's (drawn in the tab) never does; only changes go, and one gone empties it.
+test("overlay: shared browser joiners' pointers, as places in the tab's view, only on a change", async () => {
+  const page = { isClosed: () => false, url: () => "https://example.com/" };
+  const drawn = [];
+  const overlays = [];
+  const conn = () => { let closed = () => {}; return { send() {}, onClose(cb) { closed = cb; }, close() { closed(); } }; };
+  const joiners = new Set(["i1:a", "i2:d"]);
+  const push = createPush({
+    getContext: async () => ({ pages: () => [page] }), idOf: () => "t1", joinerKey: (j) => j.key, secretDomains: () => [], tabMeta: () => ({}),
+    shared: { host: "Bob", showPointers: (p, list) => drawn.push(list.map((x) => x.who)), readForm: async () => null, toView: () => null,
+      overlay: (entries) => overlays.push(entries.map(({ page: p, pointers }) => ({ same: p === page, pointers }))) },
+    tabsFor: async () => ({ tabs: [] }), isIn: (key) => joiners.has(key),
+  });
+  const alice = { name: "Alice", key: "i1:a", invite: { mode: "shared" } };
+  const dan = { name: "Dan", key: "i2:d", invite: { mode: "follow" } };
+  try {
+    for (const j of [alice, dan]) await push.open(j, conn());
+    await push.fromJoiner({ me: { id: "t1", x: 100, y: 200 } }, alice, { x: 0.25, y: 0.5 });
+    await push.fromJoiner({ me: { id: "t1", x: 300, y: 400 } }, dan);
+    await sleep(120);
+    assert.deepEqual(drawn.at(-1), ["Dan"], "the tab draws the follow joiner's only");
+    const last = overlays.at(-1);
+    assert.equal(last.length, 1);
+    assert.ok(last[0].same);
+    assert.deepEqual(last[0].pointers.map(({ fresh, ...p }) => p), [{ k: "i1:a:me", who: "Alice", color: last[0].pointers[0].color, x: 0.25, y: 0.5 }]);
+    assert.ok(last[0].pointers[0].fresh > 2500 && last[0].pointers[0].fresh <= 3000, "how long it stays without a move");
+    const before = overlays.length;
+    await push.fromJoiner({ me: { id: "t1", x: 300, y: 410 } }, dan); // only Dan moved
+    await sleep(80);
+    assert.equal(overlays.length, before, "no change for the overlay: nothing sent");
+    await push.fromJoiner({ me: { id: "t1", x: 120, y: 200 } }, alice, { x: 0.3, y: 0.5 });
+    await sleep(80);
+    assert.equal(overlays.at(-1)[0].pointers[0].x, 0.3, "Alice moved: sent");
+    joiners.delete("i1:a"); // she left
+    await push.fromJoiner({ me: { id: "t1", x: 300, y: 420 } }, dan);
+    await sleep(80);
+    assert.deepEqual(overlays.at(-1), [], "gone: the overlay empties");
+    // Bad places never reach it.
+    joiners.add("i1:a");
+    await push.fromJoiner({ me: { id: "t1", x: 100, y: 200 } }, alice, { x: 2, y: 0.5 });
+    await sleep(80);
+    assert.deepEqual(overlays.at(-1), [], "a place outside the view is dropped");
+  } finally {
+    push.close();
+  }
+});

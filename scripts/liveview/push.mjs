@@ -48,7 +48,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
   // never goes to them again on its own (it would show twice).
   const pictureJoiners = new Set();
   const seesPicture = (key) => pictureJoiners.has(key);
-  let stateTimer = null, pointerTimer = null, lastPointers = 0;
+  let stateTimer = null, pointerTimer = null, lastPointers = 0, overlaySig = "[]";
   let hostView = null; // { page, t }: the tab the host scrolled in last
 
   const send = (st, event, data) => {
@@ -136,18 +136,23 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       if (r?.view && Date.now() - Number(r.view.t) < VIEW_FRESH_MS && !(hostView && hostView.page !== page && hostView.t > r.view.t)) out.push({ id, x: 0, y: r.view.y, h: r.view.h, v: 1, t: r.view.t, who: shared.host || "Host", color: personColor(shared.host || "Host"), k: "host-view" });
       let meta = {};
       try { meta = tabMeta(page) || {}; } catch {}
-      if (r?.agent && Date.now() - Number(r.agent.t) < AGENT_POINTER_MS && meta.agent && !meta.agent.joined) out.push({ id, x: r.agent.x, y: r.agent.y, t: r.agent.t, who: meta.agent.label, color: meta.agent.color || "#e9763f", k: `host-agent:${id}` });
+      // An agent's cursor here is drawn in the tab (hud.js), so a shared browser joiner sees it in
+      // their picture of the tab already: sent on its own only to joiners with copies of the tab.
+      if (r?.agent && Date.now() - Number(r.agent.t) < AGENT_POINTER_MS && meta.agent && !meta.agent.joined && st.j?.invite?.mode !== "shared") out.push({ id, x: r.agent.x, y: r.agent.y, t: r.agent.t, who: meta.agent.label, color: meta.agent.color || "#e9763f", k: `host-agent:${id}` });
     }
     // Never a joiner's own (theirs is the mouse they hold); to a shared browser joiner, never what
     // their picture of the tab shows already (follow joiners' pointers, drawn in the tab here).
     const sees = (key) => key !== st.key && !(st.j?.invite?.mode === "shared" && !seesPicture(key));
-    for (const [key, e] of joinerPointers) if (sees(key) && Date.now() - e.t < POINTER_FRESH_MS) out.push(...e.list);
+    for (const [key, e] of joinerPointers) if (sees(key) && Date.now() - e.t < POINTER_FRESH_MS) out.push(...e.list.map((p) => ({ ...p })));
     for (const [key, v] of joinerViews) if (sees(key) && pages.has(v.id) && Date.now() - v.t < VIEW_FRESH_MS) out.push(v);
     // Shared browser mode: their page shows the picture of the tab, so pointers go as places in
     // the tab's view (fractions), drawn over it.
     if (st.j?.invite?.mode === "shared" && shared.toView) {
-      for (const p of out) { if (p.v) continue; const at = shared.toView(pages.get(p.id), p.x, p.y); if (at) Object.assign(p, at); }
+      // A shared browser joiner's own pointer is already a place in that view (where they point in
+      // their picture of it).
+      for (const p of out) { if (p.v) continue; const at = typeof p.vx === "number" ? { nx: p.vx, ny: p.vy } : shared.toView(pages.get(p.id), p.x, p.y); if (at) Object.assign(p, at); }
     }
+    for (const p of out) { delete p.vx; delete p.vy; }
     return out;
   }
   async function pushPointers() {
@@ -178,6 +183,30 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
     for (const page of drawn) if (!byPage.has(page) && !page.isClosed()) shared.showPointers(page, []);
     drawn.clear();
     for (const [page, list] of byPage) { drawn.add(page); shared.showPointers(page, list.map(({ k, who, color, x, y, v, h }) => ({ k, who, color, x, y, ...(v ? { v: 1, h } : {}) }))); }
+    pushOverlay(pages);
+  }
+  // Shared browser joiners' pointers, which nothing draws in the tab: for the browser's own overlay
+  // over the page card (the PairBrowse build draws it outside the tab, so no picture of the tab
+  // carries a joiner's pointer back to them). Each is where they point in their picture of it: a
+  // place in the tab's view (x, y as fractions), with how long it stays without a new move.
+  function pushOverlay(pages) {
+    if (!shared.overlay) return;
+    const now = Date.now();
+    const over = new Map(); // page -> pointers
+    for (const [key, e] of joinerPointers) {
+      if (!seesPicture(key) || !isIn(key) || now - e.t >= POINTER_FRESH_MS) continue;
+      for (const p of e.list) {
+        const page = pages.get(p.id);
+        if (!page || typeof p.vx !== "number" || typeof p.vy !== "number") continue;
+        const fresh = Math.round(POINTER_FRESH_MS - Math.max(0, now - Number(p.t || e.t)));
+        if (fresh >= 1) over.set(page, [...(over.get(page) || []), { k: p.k, who: p.who, color: p.color, x: p.vx, y: p.vy, fresh }]);
+      }
+    }
+    // Only a change goes (a pointer that stays fades there by itself).
+    const sig = JSON.stringify([...over].map(([page, list]) => [idOf(page), list.map(({ fresh, ...p }) => p)]));
+    if (sig === overlaySig) return;
+    overlaySig = sig;
+    try { shared.overlay([...over].map(([page, pointers]) => ({ page, pointers }))); } catch (e) { log("push", e?.message || e); }
   }
   const pointersChanged = () => {
     if (pointerTimer) return;
@@ -239,15 +268,18 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       if (value?.view && (!hostView || value.view.t > hostView.t)) hostView = { page, t: value.view.t };
       if (active()) pointersChanged();
     },
-    // A joiner's pointers ({ me, agents }); they move or pause nothing.
-    async fromJoiner(body, j) {
+    // A joiner's pointers ({ me, agents }); they move or pause nothing. at: where a shared browser
+    // joiner's own pointer is in the tab's view ({ x, y } fractions: where they point in their
+    // picture of it), for the browser's overlay.
+    async fromJoiner(body, j, at = null) {
       const pages = await crossing();
       const { me, agents, view } = readPointers(body, new Set(pages.keys()));
       const key = joinerKey(j);
       if (j?.invite?.mode === "shared") pictureJoiners.add(key); else pictureJoiners.delete(key);
       const t = Number(body?.t) > 0 ? Math.min(Date.now(), Number(body.t)) : Date.now();
       const list = [];
-      if (me) list.push({ ...me, t, who: cleanName(j.name), color: personColor(j.name), k: `${key}:me` });
+      const place = at && [at.x, at.y].every((n) => Number.isFinite(n) && n >= 0 && n <= 1) ? { vx: Math.round(at.x * 10000) / 10000, vy: Math.round(at.y * 10000) / 10000 } : {};
+      if (me) list.push({ ...me, ...place, t, who: cleanName(j.name), color: personColor(j.name), k: `${key}:me` });
       agents.forEach((a, i) => list.push({ ...a, t, color: a.color || "#e9763f", k: `${key}:a${i}` }));
       joinerPointers.set(key, { t: Date.now(), list });
       // Where they read stays shown while they stay put (a pointer fades after a few seconds).

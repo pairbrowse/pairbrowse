@@ -428,3 +428,38 @@ test("the joiner applies the host's state late: what the person did there counts
     mock.timers.reset();
   }
 });
+
+// Whose a pointer move was: the live view replays the owner's input (the host's person) and an
+// invite link's viewer's (someone else: never the host's pointer for joiners), an agent's actions
+// and a shared browser joiner's input are never the host's either.
+test("othersMove: an invite viewer's replayed move is not the host's; the owner's live view move is", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 3_000_000 });
+  try {
+    const presence = createPresence({ host: "You", readEvents: async () => [], pages: () => [], paused: () => true,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    assert.equal(presence.othersMove(Date.now()), false, "nothing replayed: the host's own");
+    let done = presence.replayStart(); // the owner's live view
+    const owner = Date.now();
+    mock.timers.tick(100);
+    done();
+    assert.equal(presence.othersMove(owner), false, "the owner is the host's person");
+    mock.timers.tick(1000);
+    done = presence.replayStart("Dana (by hand)"); // an invite link's viewer
+    const viewer = Date.now();
+    mock.timers.tick(100);
+    done();
+    assert.equal(presence.othersMove(viewer), true, "an invite viewer's move is theirs");
+    assert.equal(presence.byPerson(viewer), false, "and never an answer to a join prompt");
+    mock.timers.tick(1000);
+    assert.equal(presence.othersMove(Date.now()), false, "after it, the host's again");
+    done = presence.remoteStart("Eve");
+    assert.equal(presence.othersMove(Date.now()), true, "a joiner's replayed input");
+    done();
+    mock.timers.tick(1000);
+    done = presence.busyStart();
+    assert.equal(presence.othersMove(Date.now()), true, "an agent's action");
+    done();
+  } finally {
+    mock.timers.reset();
+  }
+});

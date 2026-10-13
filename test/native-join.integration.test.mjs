@@ -1,7 +1,8 @@
-// Joining with the PairBrowse build that has its own pages (no side panel extension, no capture
-// page yet): a native host sends pictures through the join channel, a native joiner shows them in
-// its chrome://pairbrowse/screen/ tab, and recording says it isn't there yet. Three cases: native
-// host with a Chromium (extension) joiner, the other way round, and native on both sides.
+// Joining with the PairBrowse build that has its own pages (no side panel extension; its own
+// capture page, 550): a native host shares the tab live from its capture page (picture and sound,
+// straight to the joiner), a native joiner shows it in its chrome://pairbrowse/screen/ tab, and
+// recording on the native side records and saves a file. Three cases: native host with a Chromium
+// (extension) joiner, the other way round, and native on both sides.
 // Needs PAIRBROWSE_TEST_RUNTIME, PAIRBROWSE_TEST_ENGINE and PAIRBROWSE_TEST_EXECUTABLE naming a
 // build whose manifest declares its own pages; skipped otherwise. Headed: real windows open and
 // close on this screen.
@@ -9,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync, cpSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync, cpSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -24,7 +25,7 @@ const engine = process.env.PAIRBROWSE_TEST_ENGINE;
 const nativeExe = process.env.PAIRBROWSE_TEST_EXECUTABLE;
 const native = (() => { try { return !!(runtime && engine && nativeExe && chromePages(nativeManifest(nativeExe))); } catch { return false; } })();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const NO_RECORD = "Recording isn't available in this PairBrowse browser yet: it needs the browser's capture page, which comes with a later build. Nothing was recorded.";
+const NO_RECORD = /Recording isn't available in this PairBrowse browser yet/;
 const APP = "<!doctype html><title>app</title><button id=tap style='position:fixed;left:0;top:0;width:100vw;height:40vh;font-size:40px' onclick=\"document.title='clicked'\">Tap</button>";
 
 function rpc(sock) {
@@ -87,12 +88,22 @@ async function run({ nativeHost, nativeJoiner }) {
     assert.match(await host("browser_navigate", { url: "http://one.pbtest.example/app" }, 300_000), /app/);
     await joiner("browser_navigate", { url: "about:blank" }, 300_000).catch(() => "");
 
-    stage = "recording on the native side says it isn't there yet";
-    assert.equal(await nativeTool("pairbrowse_record", { action: "start" }), NO_RECORD);
+    stage = "recording on the native side records (its capture page) and saves a file";
+    const started = await nativeTool("pairbrowse_record", { action: "start" });
+    assert.doesNotMatch(started, NO_RECORD);
+    assert.match(started, /Recording the browser \(\d+x\d+\)/, started);
+    await sleep(1500);
+    const saved = await nativeTool("pairbrowse_record", { action: "stop" }, 90_000);
+    assert.match(saved, /Saved the recording \(\d+ s, [\d.]+ MB\) to /, saved);
+    const files = readdirSync(join(nativeHome, "dl"));
+    assert.equal(files.length, 1, files.join(", "));
+    assert.ok(statSync(join(nativeHome, "dl", files[0])).size > 0, "a recording with something in it");
 
     stage = "invite (drive, code), join, approve";
     const made = await host("pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" });
-    if (nativeHost) assert.match(made, /pictures through the join channel; no sound from this PairBrowse build yet/);
+    // A native host's capture page sends the tab live, with its sound.
+    if (nativeHost) assert.match(made, /picture and sound, sent straight to their PairBrowse/, made);
+    assert.doesNotMatch(made, /no sound from this PairBrowse build yet/);
     const code = made.match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     assert.ok(code, made);
     assert.match(await joiner("pairbrowse_join", { action: "join", code, name: "Alice" }, 120_000), /shared browser/);
@@ -116,7 +127,7 @@ async function run({ nativeHost, nativeJoiner }) {
       lastState = s;
       return s && ((s.conn === "connected" && s.size[0] > 0) || (s.view === "frames" && s.size[0] > 0)) && s;
     }, 20_000).catch((e) => { throw new Error(`${e.message}; last state ${JSON.stringify(lastState)}; joiner log: ${readFileSync(join(joinHome, "daemon.log"), "utf8").split("\n").filter((l) => /shared|screen|picture/i.test(l)).slice(-8).join(" | ")}`); });
-    if (nativeHost) assert.equal(shown.view, "frames", "a host without a capture page sends pictures");
+    if (nativeHost) assert.equal(shown.conn, "connected", `a native host's capture page connects straight to the joiner (${JSON.stringify(shown)})`);
     // An extension host and a native joiner's picture tab that can't connect directly (it reports
     // no helper word, or runs as the extension's page): the helper takes the slower route at once,
     // so the picture comes within the same 20 s.
@@ -142,6 +153,6 @@ async function run({ nativeHost, nativeJoiner }) {
   }
 }
 
-test("native host, Chromium (extension) joiner: pictures through the join channel, a click goes through", { skip: !native, timeout: 600_000 }, () => run({ nativeHost: true, nativeJoiner: false }));
+test("native host, Chromium (extension) joiner: the tab live from the capture page, a click goes through", { skip: !native, timeout: 600_000 }, () => run({ nativeHost: true, nativeJoiner: false }));
 test("Chromium (extension) host, native joiner: the picture in chrome://pairbrowse/screen/, a click goes through", { skip: !native, timeout: 600_000 }, () => run({ nativeHost: false, nativeJoiner: true }));
 test("native host, native joiner", { skip: !native, timeout: 600_000 }, () => run({ nativeHost: true, nativeJoiner: true }));

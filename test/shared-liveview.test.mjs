@@ -72,3 +72,19 @@ test("viewport input does not signal human control; real input does, in FIFO ord
     assert.deepEqual(calls, ["start", "end", "start", "end"]);
   } finally { view.close(); }
 });
+
+// The live view's replayed input is marked with whose it is: an invite link's viewer by name (their
+// moves are never the host's pointer for joiners), the owner (the host's person) with none.
+test("onReplay names an invite link's viewer and never the owner", async () => {
+  const invites = createInvites();
+  const who = [];
+  const { view, base, key } = await live({ invites, onReplay: (w) => { who.push(w); return () => {}; } });
+  try {
+    const port = new URL(base).port;
+    const post = (k) => fetch(`http://127.0.0.1:${port}/${k}/input`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "mouse", action: "mouseMoved", x: 1, y: 1 }) });
+    assert.equal((await post(key)).status, 204);
+    const d = invites.create({ role: "drive", label: "Dana" });
+    assert.equal((await post(d.key)).status, 204);
+    assert.deepEqual(who, [null, "Dana (by hand)"]);
+  } finally { view.close(); }
+});

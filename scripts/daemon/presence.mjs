@@ -156,14 +156,17 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   }
   const byRemote = (t) => remote.find(([start, end]) => t >= start && t <= end)?.[2] || null;
   // Input the live view replays here (the owner's or an invite link's viewer): theirs to make,
-  // but never an answer to a join prompt (the live view has its own Allow).
-  const replays = []; // [start, end]
-  function replayStart() {
-    const span = [Date.now() - 50, Infinity];
+  // but never an answer to a join prompt (the live view has its own Allow). who: an invite link's
+  // viewer's name ("" for the owner, who is the host's person): their moves are never the host's.
+  const replays = []; // [start, end, who]
+  function replayStart(who = "") {
+    const span = [Date.now() - 50, Infinity, String(who || "")];
     replays.push(span);
     if (replays.length > 100) replays.shift();
     return () => { span[1] = Date.now() + 300; };
   }
+  // The invite link's viewer whose input the live view replayed at time t, or null.
+  const byViewer = (t) => replays.find(([start, end, who]) => who && t >= start && t <= end)?.[2] || null;
   // Any input replayed at time t: the live view's, or a joiner's (named or not).
   const byReplay = (t) => replays.some(([start, end]) => t >= start && t <= end) || remote.some(([start, end]) => t >= start && t <= end);
   const agentActing = () => busy.some(([, end]) => end === Infinity);
@@ -350,6 +353,10 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     typedByAgent: (t) => busy.some((s) => s.tag !== "popup" && t >= s[0] && t <= s[1]),
     // Shared browser mode: marks a joiner's replayed input (returns done()); whose input time t was.
     remoteStart, byRemote, replayStart,
+    // Whether the pointer move at time t was someone else's than the host's person: an agent's
+    // action, a joiner's input (shared browser) or an invite link's viewer's, replayed here. The
+    // owner's own live view moves are the host's.
+    othersMove: (t) => byAgent(t) || !!byRemote(t) || !!byViewer(t),
     // A person's own input at time t: no agent acting then (or just before), nothing replayed
     // (a joiner's, the live view's). The join prompt's answers must be.
     byPerson: (t) => !byAgent(t, 300) && !byReplay(t),

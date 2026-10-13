@@ -471,7 +471,7 @@ const sharing = createSharing({
     onJoinerActivity: (page, text, who, from) => { context.touch(page); hud.addActivity(text, who, page, from); },
     extraOrigins: panel.origins, getContext: () => context.getContext(), currentUrl: () => context.currentUrl(), profile: facts.profile, tabMeta,
     onHumanInput: (page, who, changes = true) => { presence.humanIn(page, who || HOST); if (changes) bumpRevision(page); },
-    onReplay: () => presence.replayStart(), // the live view's input never answers a join prompt
+    onReplay: (who) => presence.replayStart(who), // the live view's input never answers a join prompt; an invite viewer's is theirs
     shared: {
       host: HOST, readForm: forms.read, arrange: (pages) => tabOrder.arrange(pages), order: (pages) => tabOrder.strip(pages), showPointers: hud.showPointers,
       // The host's person typing in that tab wins: the joiner gets the host's value instead.
@@ -593,7 +593,7 @@ const cobrowse = createCobrowse({
   },
   onPointer: (page, value) => {
     // An agent's clicks move the real mouse too: that's the agent's pointer, not the person's.
-    const v = value.me && (presence.byAgent(Number(value.me.t)) || presence.byRemote(Number(value.me.t))) ? { ...value, me: null } : value; // an agent's or a joiner's moves (shared browser) are not the host's pointer
+    const v = value.me && presence.othersMove(Number(value.me.t)) ? { ...value, me: null } : value; // an agent's, a joiner's (shared browser) or an invite viewer's moves are not the host's pointer
     liveView()?.pointed(page, v);
     follow.pointed(page, v);
   },

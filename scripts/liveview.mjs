@@ -31,7 +31,7 @@ import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
 import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } from "./daemon/tools.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";
 import { within } from "./util.mjs";
-import { NO_CAPTURE_SHARE } from "./daemon/capture.mjs";
+import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { readPick } from "./daemon/pick.mjs";
 import { REPORT_BODY_MAX } from "./liveview/report.mjs";
 
@@ -52,13 +52,14 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites", "overlay-pointers"]); // events only the owner's streams get
 // Events for the browser's own pages alone (streams opened with ?page=): the capture page's calls
-// (liveview/capture.mjs) and the tab strip's order requests. Never the live view page, a viewer
+// (liveview/capture.mjs), the tab strip's order requests and the pointers its browser draws over
+// the page card (overlay-pointers). Never the live view page, a viewer
 // or a guest. An event named here goes only to the page streams of that one kind (least
 // privilege: the SDPs and recording calls reach the capture page alone); the others go to every
 // page stream.
-const PAGES_ONLY = new Set(["capture", "tab-order"]);
+const PAGES_ONLY = new Set(["capture", "tab-order", "overlay-pointers"]);
 const PAGE_EVENT_KIND = new Map([["capture", "capture"]]);
 // The tab strip's report of every window's tabs (POST tab-order), checked.
 const TAB_ORDER_MAX = 500;
@@ -129,7 +130,8 @@ async function release(cdp) {
 // tabMeta(page): who is in a tab ({ agent: { label, color }, person, last }).
 // onHumanInput(page, who, changes): someone used a tab by hand (a drive joiner's tab changes count
 // too); changes: false when they only moved the pointer or scrolled.
-// onReplay(): marks input replayed from a viewer while it runs (returns done()).
+// onReplay(who): marks input replayed from a viewer while it runs (returns done()); who: an invite
+// link's viewer's name, null for the owner.
 // secretDomains(): sites with saved passwords, whose tabs reach joiners as origin + path only.
 // onJoinerPerson(page, who, did, acting, changed, ago, heardAt): a drive joiner uses their copy of a
 // tab by hand (agents here wait, as for a person here; changed: they navigated, opened or closed
@@ -341,7 +343,32 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
   // A tab on a shared dev server, as its shared address (null: not one).
   const devUrl = (url) => devShare?.toPublic(url) || null;
   devShare?.members((key) => joiners.has(key));
-  const push = createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared: { ...shared, toView: (page, x, y) => screens?.viewCached(page, x, y) || null }, tabMeta, isIn: (key) => joiners.has(key), sessionFor: (j) => shared.sessionFor(j), mapUrl: devUrl, onLost: (j) => lostJoiner(j), log });
+  // Shared browser joiners' pointers for the PairBrowse browser's overlay over the page card
+  // (push.mjs pushOverlay): to the browser's own pages only (its strip passes them on to the
+  // browser), each tab by its CDP target id. A browser without pages of its own (plain Chromium)
+  // gets nothing: there they are not drawn (never in the tab). One at a time, the latest wins.
+  let overlayNext = null, overlayBusy = false;
+  async function overlayPointers(entries) {
+    overlayNext = entries;
+    if (overlayBusy) return;
+    overlayBusy = true;
+    try {
+      while (overlayNext) {
+        const list = overlayNext;
+        overlayNext = null;
+        if (!kinds.size) continue;
+        const tabs = [];
+        for (const { page, pointers } of list.slice(0, 16)) {
+          const target = page.isClosed() ? null : await targetIdOf(page, 1000);
+          if (target) tabs.push({ target, pointers: pointers.slice(0, 12) });
+        }
+        broadcast("overlay-pointers", tabs);
+      }
+    } finally {
+      overlayBusy = false;
+    }
+  }
+  const push = createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared: { ...shared, toView: (page, x, y) => screens?.viewCached(page, x, y) || null, overlay: (entries) => { overlayPointers(entries).catch((e) => log("overlay", e?.message || e)); } }, tabMeta, isIn: (key) => joiners.has(key), sessionFor: (j) => shared.sessionFor(j), mapUrl: devUrl, onLost: (j) => lostJoiner(j), log });
 
   // Shared browser mode (invites with mode "shared", daemon/screenshare.mjs): a joiner sees the
   // tabs live and works in them. Here: setting up the direct connection for one tab (its offer
@@ -352,8 +379,9 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
   function onScreenInput(page, j, id) {
     const key = joinerKey(j);
     return (ev, line, view) => {
-      // Their pointer, drawn here (and so in everyone's picture) with their name.
-      if (ev.type === "mouse" && view) push.fromJoiner({ me: { id, x: Math.round(ev.x + view.sx), y: Math.round(ev.y + view.sy) }, t: Date.now() }, j).catch(() => {});
+      // Their pointer, for the others with their name: where they point in their picture of the
+      // tab is a place in its view (never drawn in the tab itself: it would come back to them).
+      if (ev.type === "mouse" && view) push.fromJoiner({ me: { id, x: Math.round(ev.x + view.sx), y: Math.round(ev.y + view.sy) }, t: Date.now() }, j, view.w > 0 && view.h > 0 ? { x: ev.x / view.w, y: ev.y / view.h } : null).catch(() => {});
       if (!line) return;
       const k = `${key}|${id}`;
       if (Date.now() - (lastInput.get(k) || 0) < 500 && line !== "clicked on the page") return;
@@ -656,7 +684,7 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
         if (role !== "owner" && personTab(shown?.page)) return; // a person's own tab: never a guest's input
         // Only moving the pointer (or the wheel) changes nothing an agent's refs point at.
         if (batch.some((one) => one?.type !== "viewport")) await onHumanInput(shown?.page || null, who, batch.some((one) => !["viewport", "wheel"].includes(one?.type) && !(one?.type === "mouse" && one.action === "mouseMoved")));
-        const done = onReplay();
+        const done = onReplay(who);
         try { for (const one of batch) await replayer.replay(shown, one, role).catch((e) => log("liveview input", e?.message || e)); } finally { done(); }
       });
     }

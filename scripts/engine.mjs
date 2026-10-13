@@ -23,7 +23,7 @@ export function engineProfile(config, profile) {
 // "chromeSandbox": false or a --no-sandbox in chromeArgs turns it off. On Linux, Chromium refuses
 // it as root, so it's off there; and where the kernel or container gives it nothing to work with
 // (no user namespaces, Docker's default seccomp profile), the launch fails and runs again
-// without it (launchEngine). Either way the log says so once.
+// without it, on Linux only (launchEngine). Either way the log says so once.
 export function sandboxDecision(config = {}, { platform = process.platform, uid = process.getuid?.() } = {}) {
   if (config.chromeSandbox === false) return { on: false, reason: "chromeSandbox is false in config.json" };
   if ((config.chromeArgs || []).includes("--no-sandbox")) return { on: false, reason: "chromeArgs has --no-sandbox" };
@@ -46,7 +46,7 @@ function noteOnce(log, text) {
 
 // loadPack: the native engine pack's helpers (tests pass their own); default: the pinned pack,
 // installed first when it isn't yet (scripts/native-pack.mjs).
-export async function launchEngine(chromium, config, profile, options, log = () => {}, loadPack) {
+export async function launchEngine(chromium, config, profile, options, log = () => {}, loadPack, { platform = process.platform } = {}) {
   const engine = validateEngine(config);
   const sandbox = sandboxDecision(config);
   if (!sandbox.on) noteOnce(log, `Chromium sandbox off: ${sandbox.reason}`);
@@ -64,7 +64,10 @@ export async function launchEngine(chromium, config, profile, options, log = () 
   try {
     return await start(true);
   } catch (e) {
-    if (!SANDBOX_FAILED.test(String(e?.message || e))) throw e;
+    // Only Linux falls back (containers and AppArmor take away what its sandbox needs). On macOS
+    // and Windows the sandbox always works: a failure there is an error to show, never a quiet
+    // launch without it.
+    if (platform !== "linux" || !SANDBOX_FAILED.test(String(e?.message || e))) throw e;
     noteOnce(log, "Chromium sandbox off: this system can't run it (no user namespaces: a container or an AppArmor rule blocks them); set \"chromeSandbox\": false in config.json to skip the first try");
     return start(false);
   }

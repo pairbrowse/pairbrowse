@@ -1,6 +1,7 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { createPresence, sentAgo } from "../scripts/daemon/presence.mjs";
+import { createPresence, sentAgo, stateAgo } from "../scripts/daemon/presence.mjs";
+import { stateForJoiner } from "../scripts/tabsync.mjs";
 
 test("an agent's own input read late is still the agent's, a person's is a person's", () => {
   mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 1_000_000 });
@@ -292,4 +293,69 @@ test("a person's input in the other browser counts from when they did it, howeve
   } finally {
     mock.timers.reset();
   }
+});
+
+// The other direction (host -> joiner): the host's tabs say a person there is acting. Without a
+// time, every resend of the state (each 900 ms while the person is there) made it new on the
+// joiner's side, so the joiner's agents waited for as long as the resends went on, past the 2 s.
+test("a person acting in the host's browser holds the joiner's agents from when they acted, however often the state comes again", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 5_000_000 });
+  try {
+    const make = (host) => createPresence({ host, readEvents: async () => [], pages: () => [], paused: () => true, onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    const host = make("Bob"), joiner = make("Ann"), oldWay = make("Ann");
+    const tab = {}, copy = {}, oldCopy = {};
+    const t0 = Date.now();
+    host.userDid([{ kind: "type", t: t0, what: "Comments" }], tab);
+    // The host's round, as liveview.mjs tabsFor and push.mjs build it: at rounded up to the
+    // second, the state compared with at in it, sent with at as an ago.
+    const round = () => {
+      const p = host.sharedPerson(tab);
+      const at = p?.acting && Number.isFinite(p.at) ? Math.ceil(p.at / 1000) * 1000 : null;
+      return stateForJoiner({ tabs: [{ id: "x", url: "https://example.com/", title: "Example", person: p?.who || "", acting: !!p?.acting, at }] }, { name: "Ann" });
+    };
+    const first = round();
+    assert.equal(first.tabs[0].at, t0, "the host's time, in the state it compares");
+    mock.timers.tick(600);
+    assert.equal(JSON.stringify(round()), JSON.stringify(first), "unchanged while they keep still: no news, the dedupe holds");
+    // Resent every 900 ms while Bob is there; each copy crosses 300 ms late and waits 100 ms here.
+    let heldUntil = 0;
+    for (let sent = 900; sent <= 1800; sent += 900) {
+      mock.timers.tick(sent - (Date.now() - t0));
+      const out = stateAgo(round());
+      assert.ok(!("at" in out.tabs[0]), "at never crosses");
+      assert.equal(out.tabs[0].ago, sent, "ago measured as it leaves");
+      mock.timers.tick(300);
+      const heardAt = Date.now();
+      mock.timers.tick(100);
+      joiner.elsewhere(copy, out.tabs[0].person, [], out.tabs[0].acting, out.tabs[0].ago, heardAt);
+      oldWay.elsewhere(oldCopy, out.tabs[0].person, [], out.tabs[0].acting);
+      if (joiner.actingIn(copy)) heldUntil = Date.now();
+    }
+    assert.ok(heldUntil > 0, "the joiner's agents wait while Bob types");
+    // Each copy holds them from Bob's keystroke plus the 300 ms it took to cross (unknowable without
+    // a shared clock), the same moment for both copies: 2 s after that they go on.
+    mock.timers.tick(t0 + 2350 - Date.now());
+    assert.equal(joiner.actingIn(copy), null, "2.3 s after Bob's keystroke the joiner's agents go on");
+    assert.equal(oldWay.actingIn(oldCopy), "Bob", "the old way: the last resend made his keystroke new again");
+    // A state from a host without the time still holds them (from arrival, as before).
+    const plain = stateAgo({ tabs: [{ id: "x", person: "Bob", acting: true }] });
+    assert.equal(plain.tabs[0].ago, undefined);
+    const t = {};
+    joiner.elsewhere(t, "Bob", [], true, plain.tabs[0].ago ?? 0, Date.now());
+    assert.equal(joiner.actingIn(t), "Bob");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("stateAgo: only tabs with a time change; at becomes a whole, never negative ago", () => {
+  const none = { tabs: [{ id: "a", person: "Bob" }], activity: [] };
+  assert.equal(stateAgo(none, 10_000), none, "nothing to convert: the same state");
+  assert.equal(stateAgo(null), null);
+  const out = stateAgo({ tabs: [{ id: "a", acting: true, at: 9_000.4 }, { id: "b", acting: true, at: 11_000 }, { id: "c", at: null }, { id: "d" }], people: [] }, 10_000);
+  assert.deepEqual(out.tabs, [{ id: "a", acting: true, ago: 1000 }, { id: "b", acting: true, ago: 0 }, { id: "c" }, { id: "d" }]);
+  // stateForJoiner carries at only while the person acts, and never the joiner's own.
+  const s = stateForJoiner({ tabs: [{ id: "a", url: "https://e.com/", title: "E", person: "Bob", acting: true, at: 5000 }, { id: "b", url: "https://e.com/b", title: "B", person: "Bob", acting: false, at: 5000 },
+    { id: "c", url: "https://e.com/c", title: "C", person: "Ann", acting: true, at: 5000 }, { id: "d", url: "https://e.com/d", title: "D", person: "Bob", acting: true, at: "soon" }] }, { name: "Ann" });
+  assert.deepEqual(s.tabs.map((t) => [t.id, t.acting, t.at]), [["a", true, 5000], ["b", undefined, undefined], ["c", undefined, undefined], ["d", true, undefined]]);
 });

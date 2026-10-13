@@ -32,6 +32,8 @@ import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } 
 import { scrub } from "./daemon/diagnostics.mjs";
 import { within } from "./util.mjs";
 import { NO_CAPTURE_SHARE } from "./daemon/capture.mjs";
+import { readPick } from "./daemon/pick.mjs";
+import { REPORT_BODY_MAX } from "./liveview/report.mjs";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
@@ -50,7 +52,7 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites"]); // events only the owner's streams get
 // Events for the browser's own pages alone (streams opened with ?page=): the capture page's calls
 // (liveview/capture.mjs) and the tab strip's order requests. Never the live view page, a viewer
 // or a guest.
@@ -77,6 +79,9 @@ const TOOL_ID = /^[0-9a-f]{12}$/; // a download, recording or hand-off (daemon/t
 const TIMELINE_OFF = "The timeline is off (timeline: false in ~/.pairbrowse/config.json).";
 const SESSION_OP = 'A session change is { op: "rename", name } or { op: "save" }.';
 const SESSION_FIELDS = ["canRename", "canSave", "savedAt"]; // the owner's streams only
+const INVITE_ID = /^[0-9a-f]{8}$/;
+// The invites as Settings lists them (GET invites.json, the invites event): never a key or a code.
+const inviteItems = (list) => list.map((i) => ({ id: i.id, role: i.role, label: i.label, share: i.share, expires: i.expiresAt }));
 
 const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
@@ -145,7 +150,9 @@ async function release(cdp) {
 // the owner sees it (personal: true); guests never list, pick, close or type into it.
 // onPagesKey(): called on every request authenticated with the browser's own pages' key under a
 // loopback host; the receiver makes it idempotent (the helper deletes the key file).
-export async function startLiveView({ tools = null, onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// reporter: Report a problem's relay ({ enabled(), relay(body) -> { status, body } },
+// liveview/report.mjs), or null.
+export async function startLiveView({ reporter = null, tools = null, onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null, capture = null }) {
@@ -307,7 +314,11 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       // left: how long its turn there still holds (the joiner's agents wait or hear "in use"), in
       // whole seconds so the state isn't news every round.
       const left = agent?.until > Date.now() ? Math.ceil((agent.until - Date.now()) / 1000) * 1000 : 0;
-      return { id: idOf(p), url: p.url(), title: await ownTitle(p), agent: agent?.label || "", color: agent?.color || "", left, person: meta.sharedPerson?.who || "", acting: !!meta.sharedPerson?.acting, did: meta.did || [] };
+      // at: when the person here last clicked or typed, while they act, rounded up to the second
+      // for the same reason (a keystroke a second is news once; never older than it was). It
+      // leaves as an ago (presence.mjs stateAgo), so the other computer's clock never matters.
+      const actedAt = meta.sharedPerson?.acting && Number.isFinite(meta.sharedPerson.at) ? Math.ceil(meta.sharedPerson.at / 1000) * 1000 : null;
+      return { id: idOf(p), url: p.url(), title: await ownTitle(p), agent: agent?.label || "", color: agent?.color || "", left, person: meta.sharedPerson?.who || "", acting: !!meta.sharedPerson?.acting, at: actedAt, did: meta.did || [] };
     }));
     const people = [...collaboration.participants.map((x) => x?.label || ""), ...guests().map((g) => g.label)].filter((x) => x && x !== personLabel(j.name, j.app));
     const state = stateForJoiner({ tabs, activity, people }, { drive: j.invite.role === "drive", secretDomains: secretDomains(), name: j.name, from: joinerKey(j), mapUrl: devUrl });
@@ -522,6 +533,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     }
     approvals.forget(ids);
     if (changed) collaborationChanged();
+    broadcast("invites", { items: inviteItems(invites.list()) });
   });
 
   // Light frames while the page moves (scrolling, animations), then one sharp still at the viewer's
@@ -740,25 +752,48 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     // The Share card (the side panel, the live view toolbar): the owner makes a join code or a
     // watch link with a real click, through the helper's own invite code. The code or link is in
     // this answer only: never broadcast, logged or kept in state.json.
+    // { op: "revoke", id } (Settings' Invites, Revoke): that invite stops at once, as with
+    // pairbrowse_invite revoke (anyone using it is out; a join code's tunnel goes with the last code).
     { method: "POST", path: "invite", right: "invite", handler: async ({ req, res }) => {
-      if (!makeInvite) return plain(res, 404);
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
-      const op = JSON.parse(body);
+      const op = parsed(body);
+      if (op === undefined) return json(res, 400, { error: NOT_JSON });
+      if (op && typeof op === "object" && !Array.isArray(op) && op.op !== undefined) {
+        if (op.op !== "revoke" || Object.keys(op).some((k) => k !== "op" && k !== "id")) return json(res, 409, { error: 'An invite change is { op: "revoke", id }.' });
+        if (typeof op.id !== "string" || !INVITE_ID.test(op.id)) return json(res, 409, { error: "id is an invite's id, as invites.json lists it." });
+        if (!invites.revoke(op.id)) return json(res, 404, { error: "No such invite (it may have expired or been revoked already)." });
+        log(`invite ${op.id} revoked from PairBrowse's settings`);
+        return json(res, 200, { ok: true, id: op.id });
+      }
+      if (!makeInvite) return plain(res, 404);
       if (!op || typeof op !== "object" || Array.isArray(op)) return json(res, 409, { error: "Choose a join code or a watch link." });
       const { share, role, name, label, hours } = op;
       const r = await makeInvite({ share, role, name, label, hours });
       json(res, r?.error ? 409 : 200, r);
+      if (!r?.error) broadcast("invites", { items: inviteItems(invites.list()) });
     } },
+    // The invites out now, for Settings (Sharing, Invites): id, role, label, link or code, when it
+    // ends (epoch ms). Never a key, a code or a link.
+    { method: "GET", path: "invites.json", right: "invite", handler: ({ res }) => json(res, 200, { items: inviteItems(invites.list()) }) },
     // The session picker (an extension page, with the owner's key from the side panel's memory):
     // the saved sessions, and the person's pick. picker: { state(), pick(op) } from the helper.
     { method: "GET", path: "sessions.json", right: "session", handler: ({ res }) => picker ? json(res, 200, picker.state()) : plain(res, 404) },
+    // While a session is open too (the switcher, the new tab page's chips, Settings' Delete): the
+    // helper decides (daemon/pick.mjs). 428 { confirm, agents } while other agents are at work and
+    // the body has no confirm: true; 409 { text, error } for a refusal; the open pages hear the
+    // sessions event after a change.
     { method: "POST", path: "pick", right: "session", handler: async ({ req, res }) => {
       if (!picker) return plain(res, 404);
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
-      const r = await picker.pick(JSON.parse(body) || {});
-      json(res, r.error ? 409 : 200, r);
+      const given = parsed(body);
+      if (given === undefined) return json(res, 400, { error: NOT_JSON });
+      const { op, error } = readPick(given);
+      if (error) return json(res, 409, { text: error, error: true });
+      const r = (await picker.pick(op)) || { text: "That didn't work.", error: true };
+      json(res, r.confirm ? 428 : r.error ? 409 : 200, r);
+      if (!r.error) { try { broadcast("sessions", picker.state()); } catch {} }
     } },
     // "Switch session..." in the side panel: the picker again, in a new tab (the owner only).
     { method: "POST", path: "picker", right: "session", handler: async ({ res }) => {
@@ -802,6 +837,19 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
       if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
       broadcast("config", r);
       json(res, 200, r);
+    } },
+    // Report a problem (Settings, on the person's click after they saw the JSON): relayed over
+    // HTTPS to config.json's reportUrl (liveview/report.mjs: checked, scrubbed again, 5 an hour).
+    // 404 without a report address; the address itself is never in an answer.
+    { method: "POST", path: "report", right: "config", handler: async ({ req, res }) => {
+      if (!reporter?.enabled()) return plain(res, 404);
+      const body = await readBody(req, REPORT_BODY_MAX);
+      if (body === null) return plain(res, 413);
+      const given = parsed(body);
+      if (given === undefined) return json(res, 400, { error: NOT_JSON });
+      const r = await reporter.relay(given);
+      if (r.status === 404) return plain(res, 404);
+      json(res, r.status, r.body);
     } },
     // The session card (the owner only): { op: "rename", name } restarts the browser on the renamed
     // session, { op: "save" } writes its tabs now. sessionOps from the helper (daemon.mjs).

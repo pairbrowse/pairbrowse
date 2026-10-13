@@ -327,8 +327,9 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (page) { cur.screens.delete(page); cur.dirty.delete(page); }
   }
 
-  // The host's tabs as they changed (pushed): applied here.
-  async function applyHost(state, cur) {
+  // The host's tabs as they changed (pushed): applied here. heardAt: when they arrived (a person
+  // acting there counts back from then: they may wait here in line behind other changes).
+  async function applyHost(state, cur, heardAt = Date.now()) {
     if (s !== cur) return;
     await allowDevServers(state.dev, cur).catch((e) => log("shared dev server", e?.message || e));
 
@@ -397,7 +398,9 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       cur.heard.set(t.id, did.length ? Math.max(...did.map((e) => Number(e.n) || 0)) : heard);
       if (first) continue; // on joining, what was done before isn't news
       for (const e of did) presence.elsewhere(page, String(e.who || cur.join.host), [e.line]);
-      if (t.person && !did.length) presence.elsewhere(page, String(t.person), [], t.acting === true);
+      // ago: how long before the state left the host they last clicked or typed (stateAgo): the
+      // same moment however often the state comes again while they keep still.
+      if (t.person && !did.length) presence.elsewhere(page, String(t.person), [], t.acting === true, t.acting === true && Number.isFinite(t.ago) ? t.ago : 0, heardAt);
     }
 
     // What happens there shows here, like local activity.
@@ -752,7 +755,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     s = cur;
     cur.join = startJoin({
       join: parsed, name: who, app, log,
-      onTabs: (state) => queue(() => applyHost(state, cur)),
+      onTabs: (state, arrived = Date.now()) => queue(() => applyHost(state, cur, arrived)),
       on: {
         form: (data) => queue(() => onForm(data, cur)),
         pointers: (list) => drawPointers(list, cur),

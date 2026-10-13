@@ -25,8 +25,8 @@ const SILENT_MIN_MS = 3000;
 const REPLY_MS = 30_000;
 
 // join: a parsed join code ({ url, key, role, label }). name, app: who is joining, as the host
-// sees it. onTabs(state): the session's shared tabs, each time they come in (awaited before the
-// next request). onChange(phase). onLink(up): the push channel opened (true) or dropped (false),
+// sees it. onTabs(state, arrived): the session's shared tabs, each time they come in (awaited before the
+// next request; arrived: when that message came, as it may wait behind others). onChange(phase). onLink(up): the push channel opened (true) or dropped (false),
 // as it happens (phase stays "in" while another address is tried). The host is asked right away.
 // on: handlers for the host's events (tabs, form, pointers, session, message), each awaited in
 // order except pointers (the latest wins).
@@ -160,8 +160,9 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
           if (event === "screen") { try { on.screen?.(data); } catch {} return; } // shared browser mode: pictures, connection states
           if (event === "agent") { try { on.agent?.(data); } catch {} return; } // shared browser mode: answers for this side's agents
           if (event === "tabs") takeRelays(data?.relays);
+          const arrived = heard; // tabs: a person acting there counts back from here
           chain = chain.then(async () => {
-            if (event === "tabs") await onTabs(data);
+            if (event === "tabs") await onTabs(data, arrived);
             else if (typeof on[event] === "function") await on[event](data);
           }).catch((e) => log("shared tabs", e?.message || e));
         });

@@ -1,24 +1,39 @@
 // The settings the browser's own pages read and change (the owner-only live view routes
-// GET config.json and POST config, liveview.mjs): three fields of config.json and nothing else.
+// GET config.json and POST config, liveview.mjs): the fields of config.json below and nothing else.
 //
 // GET config.json answers exactly:
 //   { browser: "pairbrowse" | "chromium" | "<absolute path>",  which browser runs (browserChoice)
 //     timeline: { on: boolean, cap: 1..200 },                   the session's pictures kept
 //     layout: { left, right, strip },                           where the docks start
+//     name: string,                                             participantName: your name in shared sessions ("" unset)
+//     downloads: string | null,                                 downloadsDir: where downloads go (null: your Downloads folder)
+//     pictures: boolean,                                        screenshots: a picture with each result agents get
+//     cookies: "accept" | "reject",                             cookieChoice: what agents press on cookie banners
+//     maxTabs: integer,                                         maxTabs: tabs kept open (POST: 2..50)
+//     askSession: boolean,                                      sessionPicker: ask which session when the browser starts
 //     native: boolean,                                          a PairBrowse build is pinned for this computer
-//     chosen: boolean }                                         a person recorded the browser choice
+//     chosen: boolean,                                          a person recorded the browser choice
+//     report: boolean }                                         Report a problem is relayed (a valid reportUrl is set; never the address)
 // POST config takes any subset of { browser, timeline: { on?, cap? }, layout: { left?, right?,
-// strip? } } and answers the same body plus restart: true while "browser" differs from the browser
-// of the window open now (it takes effect when the browser next starts; no window: false). Anything else in the body,
-// or an invalid value, is refused (409, { error }) and nothing is written. Tunnel tokens, join
-// addresses, names and every other setting are never in an answer.
-import { isAbsolute } from "node:path";
+// strip? }, name, downloads, pictures, cookies, maxTabs, askSession } and answers the same body
+// plus restart: true while "browser" differs from the browser of the window open now (it takes
+// effect when the browser next starts; no window: false). pictures, cookies, maxTabs, downloads and
+// the timeline apply at once; name applies to joins at once and to your label in this browser from
+// the helper's next start; askSession from the next start. Anything else in the body, or an
+// invalid value, is refused (409, { error }) and nothing is written. Tunnel tokens, join
+// addresses, the report address and every other setting are never in an answer.
+import { isAbsolute, resolve, sep } from "node:path";
+import { statSync, realpathSync } from "node:fs";
 import { browserChoice } from "../browser.mjs";
-import { saveConfig } from "../paths.mjs";
+import { saveConfig, paths } from "../paths.mjs";
+import { cleanName } from "../join.mjs";
 import { readLayout, layoutFrom } from "./layout.mjs";
+import { reportUrlFrom } from "./report.mjs";
 
-export const SETTINGS_KEYS = ["browser", "timeline", "layout"];
+export const SETTINGS_KEYS = ["browser", "timeline", "layout", "name", "downloads", "pictures", "cookies", "maxTabs", "askSession"];
 export const CAP_MIN = 1, CAP_MAX = 200;
+export const TABS_MIN = 2, TABS_MAX = 50;
+export const NAME_MAX = 40;
 const PATH_MAX = 1024;
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
@@ -28,18 +43,36 @@ const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 // File checks for a path (tests pass stand-ins; browserChoice's own by default).
 const checksOf = (exists, executable) => ({ ...(exists ? { exists } : {}), ...(executable ? { executable } : {}) });
 
+// A folder that exists (stat follows links; the stand-in in tests). The real folder, or null.
+const folderOf = (p) => { try { return statSync(p).isDirectory() ? realpathSync(p) : null; } catch { return null; } };
+// Inside the helper's own home (~/.pairbrowse: the profile, secrets, keys): never a downloads folder,
+// so a site's file can't land beside them.
+const inHelperHome = (real, home) => { const h = folderOf(home) || resolve(home); return real === h || real.startsWith(h + sep); };
+
 // config: the settings with the older names as the person wrote them (context.choiceConfig()).
 // exists / executable: as applySettings.
 export function readSettings(config, { native = false, exists, executable } = {}) {
   const choice = browserChoice(config, { native, ...checksOf(exists, executable) });
-  return { browser: choice.browser, timeline: { on: config.timeline !== false, cap: capOf(config.timelineCap) }, layout: layoutFrom(config.layout), native: !!native, chosen: choice.set };
+  return {
+    browser: choice.browser, timeline: { on: config.timeline !== false, cap: capOf(config.timelineCap) }, layout: layoutFrom(config.layout),
+    name: typeof config.participantName === "string" ? cleanName(config.participantName, "") : "",
+    downloads: typeof config.downloadsDir === "string" && config.downloadsDir ? config.downloadsDir : null,
+    pictures: config.screenshots !== false,
+    cookies: config.cookieChoice === "reject" ? "reject" : "accept",
+    maxTabs: Math.max(2, Number(config.maxTabs) || 20),
+    askSession: config.sessionPicker !== false,
+    native: !!native, chosen: choice.set,
+    report: reportUrlFrom(config.reportUrl) !== null,
+  };
 }
 
 // given (the POST body, parsed) checked against config: { fields } (only the config keys given:
-// browser, timeline, timelineCap, layout) or { error }. exists / executable: file checks for a
-// path (tests pass stand-ins; browserChoice's own by default).
-export function applySettings(given, config, { native = false, exists, executable } = {}) {
-  if (!plainObject(given)) return { error: "Settings are { browser, timeline, layout }." };
+// browser, timeline, timelineCap, layout, participantName, downloadsDir, screenshots, cookieChoice,
+// maxTabs, sessionPicker) or { error }. exists / executable: file checks for a path (tests pass
+// stand-ins; browserChoice's own by default). folder(path): the real folder at path, or null
+// (statSync's by default). home: the helper's home, which no downloads folder may be in.
+export function applySettings(given, config, { native = false, exists, executable, folder = folderOf, home = paths.home } = {}) {
+  if (!plainObject(given)) return { error: `Settings are { ${SETTINGS_KEYS.join(", ")} }.` };
   for (const k of Object.keys(given)) if (!SETTINGS_KEYS.includes(k)) return { error: `Unknown setting "${k}"` };
   const fields = {};
   if (given.browser !== undefined) {
@@ -68,6 +101,39 @@ export function applySettings(given, config, { native = false, exists, executabl
     if (next.error) return { error: next.error };
     fields.layout = next;
   }
+  if (given.name !== undefined) {
+    // Kept as the person typed it (spaces run together), or refused: never quietly changed.
+    const t = typeof given.name === "string" && given.name.length <= NAME_MAX * 4 ? given.name.trim().replace(/\s+/g, " ") : null;
+    if (t === null || t.length > NAME_MAX || (t && cleanName(t, "") !== t)) return { error: `name is up to ${NAME_MAX} characters, without < > " ' \` or control characters ("" for none).` };
+    fields.participantName = t || null;
+  }
+  if (given.downloads !== undefined) {
+    const d = given.downloads;
+    if (d === null || d === "") fields.downloadsDir = null;
+    else {
+      if (typeof d !== "string" || !isAbsolute(d) || d.length > PATH_MAX || CONTROL.test(d)) return { error: "downloads is an absolute path to a folder, or null for your Downloads folder." };
+      const real = folder(d);
+      if (!real) return { error: `${d} isn't a folder` };
+      if (inHelperHome(real, home)) return { error: "Downloads can't go inside PairBrowse's own folder (~/.pairbrowse)." };
+      fields.downloadsDir = d;
+    }
+  }
+  if (given.pictures !== undefined) {
+    if (typeof given.pictures !== "boolean") return { error: "pictures is true or false." };
+    fields.screenshots = given.pictures;
+  }
+  if (given.cookies !== undefined) {
+    if (given.cookies !== "accept" && given.cookies !== "reject") return { error: 'cookies is "accept" or "reject".' };
+    fields.cookieChoice = given.cookies;
+  }
+  if (given.maxTabs !== undefined) {
+    if (!Number.isInteger(given.maxTabs) || given.maxTabs < TABS_MIN || given.maxTabs > TABS_MAX) return { error: `maxTabs is a whole number from ${TABS_MIN} to ${TABS_MAX}.` };
+    fields.maxTabs = given.maxTabs;
+  }
+  if (given.askSession !== undefined) {
+    if (typeof given.askSession !== "boolean") return { error: "askSession is true or false." };
+    fields.sessionPicker = given.askSession;
+  }
   return { fields };
 }
 
@@ -75,15 +141,17 @@ export function applySettings(given, config, { native = false, exists, executabl
 // place, so the timeline and the docks' default follow at once); choiceConfig(): the settings the
 // browser choice is read from; browserInUse(): the browser of the window open now, or null.
 // save(fields): writes config.json (saveConfig: a temp file and a rename).
-export function createSettings({ config, choiceConfig = () => config, native = false, browserInUse = () => null, save = (fields) => saveConfig(fields), exists, executable }) {
+// folder / home: as applySettings. onChange(fields): after a write (the helper passes it on).
+export function createSettings({ config, choiceConfig = () => config, native = false, browserInUse = () => null, save = (fields) => saveConfig(fields), exists, executable, folder, home, onChange = () => {} }) {
   const read = () => readSettings(choiceConfig(), { native, exists, executable });
   return {
     read,
     write(given) {
-      const r = applySettings(given, choiceConfig(), { native, exists, executable });
+      const r = applySettings(given, choiceConfig(), { native, exists, executable, ...(folder ? { folder } : {}), ...(home ? { home } : {}) });
       if (r.error) return r;
       try { save(r.fields); } catch (e) { return { error: `Couldn't write config.json: ${e?.message || e}` }; }
       Object.assign(config, r.fields);
+      try { onChange(r.fields); } catch {}
       const body = read();
       const running = browserInUse();
       // (A browser window open now that isn't the chosen one: the choice waits for its next start.)

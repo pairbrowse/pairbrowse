@@ -60,18 +60,22 @@ async function setup({ file = ON_DISK, native = true, inUse = "pairbrowse", time
   return { config, state, view, key, invites, onDisk: () => readFileSync(paths.config, "utf8") };
 }
 
-test("GET config.json: exactly the five keys, the choice as browserChoice reads it", async () => {
+// The fields every answer carries besides browser, timeline, layout, native and chosen, as a
+// config with none of them set reads.
+const MORE = { name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, report: false };
+
+test("GET config.json: exactly its twelve keys, the choice as browserChoice reads it", async () => {
   const { view, key } = await setup();
   try {
     const r = await request(view.port, "GET", `/${key}/config.json`);
     assert.equal(r.status, 200);
     const body = JSON.parse(r.text);
-    assert.deepEqual(Object.keys(body).sort(), ["browser", "chosen", "layout", "native", "timeline"]);
-    assert.deepEqual(body, { browser: "pairbrowse", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, native: true, chosen: false });
-    assert.ok(!r.text.includes(TOKEN) && !r.text.includes("share.example.org") && !r.text.includes("Ann"), "no other setting in the answer");
+    assert.deepEqual(Object.keys(body).sort(), ["askSession", "browser", "chosen", "cookies", "downloads", "layout", "maxTabs", "name", "native", "pictures", "report", "timeline"]);
+    assert.deepEqual(body, { browser: "pairbrowse", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, name: "Ann", native: true, chosen: false });
+    assert.ok(!r.text.includes(TOKEN) && !r.text.includes("share.example.org"), "no other setting in the answer");
   } finally { view.close(); }
   // The same reading, without the server.
-  assert.deepEqual(readSettings({}, { native: false }), { browser: "chromium", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, native: false, chosen: false });
+  assert.deepEqual(readSettings({}, { native: false }), { browser: "chromium", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, native: false, chosen: false });
   assert.deepEqual(readSettings({ browserEngine: "pairbrowse", executablePath: "/x/PairBrowse.app/Contents/MacOS/pairbrowse" }, { native: true }).chosen, true, "the older names count as chosen");
   assert.equal(readSettings({ browserEngine: "chromium", executablePath: "/fake/chrome" }, { native: true }).browser, "/fake/chrome");
   assert.equal(readSettings({ browserEngine: "chromium" }, { native: true }).browser, "chromium");
@@ -105,7 +109,7 @@ test("POST config merges what's given into config.json alone; the tunnel token a
     let r = await request(view.port, "POST", `/${key}/config`, { body: { browser: "chromium" } });
     assert.equal(r.status, 200);
     const body = JSON.parse(r.text);
-    assert.deepEqual(body, { browser: "chromium", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, native: true, chosen: true, restart: true });
+    assert.deepEqual(body, { browser: "chromium", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, name: "Ann", native: true, chosen: true, restart: true });
     assert.equal(onDisk(), JSON.stringify({ ...ON_DISK, browser: "chromium" }, null, 2), "only that key changed");
     assert.ok(onDisk().includes(TOKEN));
     assert.ok(!r.text.includes(TOKEN));
@@ -214,6 +218,76 @@ test("no settings dep: both routes answer 404", async () => {
     assert.equal((await request(view.port, "GET", `/${key}/config.json`)).status, 404);
     assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { browser: "chromium" } })).status, 404);
   } finally { view.close(); }
+});
+
+test("the settings the helper already honors: name, downloads, pictures, cookies, maxTabs, askSession", async () => {
+  const { view, key, config, onDisk } = await setup();
+  const owner = await readStream(view.port, `/${key}/events?panel=1`);
+  const folder = mkdtempSync(join(tmpdir(), "pb-downloads-"));
+  try {
+    const body = { name: "  Ann   Lee ", downloads: folder, pictures: false, cookies: "reject", maxTabs: 8, askSession: false };
+    const r = await request(view.port, "POST", `/${key}/config`, { body });
+    assert.equal(r.status, 200, r.text);
+    const got = JSON.parse(r.text);
+    assert.deepEqual({ name: got.name, downloads: got.downloads, pictures: got.pictures, cookies: got.cookies, maxTabs: got.maxTabs, askSession: got.askSession },
+      { name: "Ann Lee", downloads: folder, pictures: false, cookies: "reject", maxTabs: 8, askSession: false });
+    assert.deepEqual(JSON.parse(onDisk()), { ...ON_DISK, participantName: "Ann Lee", downloadsDir: folder, screenshots: false, cookieChoice: "reject", maxTabs: 8, sessionPicker: false },
+      "the names the helper reads, merged into the file");
+    // The running config: what serve.mjs (screenshots), popups (cookieChoice), context.mjs
+    // (maxTabs, downloadsDir) and follow.mjs (participantName) read at each use.
+    assert.equal(config.screenshots, false);
+    assert.equal(config.cookieChoice, "reject");
+    assert.equal(config.maxTabs, 8);
+    assert.equal(config.downloadsDir, folder);
+    assert.equal(config.participantName, "Ann Lee");
+    assert.equal(config.sessionPicker, false);
+    // Back to the defaults: "" for no name, null for the Downloads folder.
+    const back = JSON.parse((await request(view.port, "POST", `/${key}/config`, { body: { name: "", downloads: null } })).text);
+    assert.equal(back.name, "");
+    assert.equal(back.downloads, null);
+    assert.equal(JSON.parse(onDisk()).participantName, null);
+    assert.equal(JSON.parse(onDisk()).downloadsDir, null);
+    await wait(50);
+    const seen = eventsIn(owner.text(), "config");
+    assert.equal(seen.length, 2, "a config event per change, for open pages");
+    assert.equal(seen[0].cookies, "reject");
+  } finally { owner.close(); view.close(); rmSync(folder, { recursive: true, force: true }); }
+});
+
+test("the new settings refuse every bad value and write nothing", async () => {
+  const { view, key, config, onDisk } = await setup();
+  const before = onDisk();
+  const running = JSON.stringify(config);
+  const file = join(tmpdir(), `pb-not-a-folder-${process.pid}`);
+  writeFileSync(file, "x");
+  mkdirSync(join(home, "inside"), { recursive: true });
+  try {
+    for (const bad of [{ name: "x".repeat(41) }, { name: "<b>Ann</b>" }, { name: "Ann\u0007" }, { name: 7 }, { name: null },
+      { downloads: "relative/folder" }, { downloads: "/nowhere/at/all" }, { downloads: file }, { downloads: home }, { downloads: join(home, "inside") }, { downloads: 5 }, { downloads: "/a\nb" },
+      { pictures: "no" }, { pictures: 0 }, { cookies: "maybe" }, { cookies: true }, { maxTabs: 1 }, { maxTabs: 51 }, { maxTabs: 2.5 }, { maxTabs: "8" },
+      { askSession: "yes" }, { askSession: null }, { report: true }, { reportUrl: "https://x.example/r" }, { name: "Ann", maxTabs: 1 }]) {
+      const r = await request(view.port, "POST", `/${key}/config`, { body: bad });
+      assert.equal(r.status, 409, JSON.stringify(bad));
+      assert.ok(JSON.parse(r.text).error, JSON.stringify(bad));
+    }
+    assert.match(JSON.parse((await request(view.port, "POST", `/${key}/config`, { body: { downloads: join(home, "inside") } })).text).error, /PairBrowse's own folder/);
+    assert.match(JSON.parse((await request(view.port, "POST", `/${key}/config`, { body: { report: true } })).text).error, /Unknown setting "report"/, "report is read only");
+    assert.equal(onDisk(), before, "nothing written");
+    assert.equal(JSON.stringify(config), running, "nothing applied");
+  } finally { view.close(); rmSync(file, { force: true }); }
+});
+
+test("report: true only for a valid https reportUrl; the address is never in an answer", async () => {
+  const cases = [["https://reports.example.org/v1/report", true], ["http://reports.example.org/r", false], ["https://user:pw@reports.example.org/r", false],
+    ["https://reports.example.org/r?token=abc", false], ["https://reports.example.org/r#x", false], ["reports.example.org", false], [42, false], [null, false]];
+  for (const [reportUrl, on] of cases) {
+    const { view, key } = await setup({ file: { ...ON_DISK, reportUrl } });
+    try {
+      const r = await request(view.port, "GET", `/${key}/config.json`);
+      assert.equal(JSON.parse(r.text).report, on, String(reportUrl));
+      assert.ok(!r.text.includes("reports.example.org"), "never the address");
+    } finally { view.close(); }
+  }
 });
 
 test.after(() => rmSync(home, { recursive: true, force: true }));

@@ -34,6 +34,20 @@ export function sentAgo(op, now = Date.now()) {
   return { ...rest, ago: Math.max(0, Math.round(now - at)) };
 }
 
+// The host's tabs for a joiner carry at (when the person there last clicked or typed, the host's
+// clock) while they act: the state is compared with what that joiner last got with at in it (it
+// stays the same until they act again, so an unchanged state is no news), and at becomes ago,
+// measured now, as it leaves. The joiner counts ago back from when the state arrived: the other
+// computer's clock never matters, and a state resent while they keep still holds nobody longer.
+export function stateAgo(state, now = Date.now()) {
+  if (!Array.isArray(state?.tabs) || !state.tabs.some((t) => t && Object.hasOwn(t, "at"))) return state;
+  return { ...state, tabs: state.tabs.map((t) => {
+    if (!t || !Object.hasOwn(t, "at")) return t;
+    const { at, ...rest } = t;
+    return Number.isFinite(at) ? { ...rest, ago: Math.max(0, Math.round(now - at)) } : rest;
+  }) };
+}
+
 export function createPresence({ host, readEvents, pages, paused, onUsed, onStale, applyBar, refreshTabs, onPauseButton = () => {}, restoring = () => false, onActing = () => {} }) {
   const humanAt = new WeakMap(); // tab -> { t, who }: the last time a person used it, and who
   // Where agents' cursors went in each tab lately ([{ x, y, w, h, t, press }], document pixels,

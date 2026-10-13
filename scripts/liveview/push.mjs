@@ -5,6 +5,7 @@
 // script. What may cross is decided in tabsync.mjs, per joiner.
 import { shareableUrl, onSecretDomain, readPointers, personColor, formForJoiner, VIEW_FRESH_MS, TABS_MAX } from "../tabsync.mjs";
 import { cleanName } from "../join.mjs";
+import { stateAgo } from "../daemon/presence.mjs";
 
 const STATE_DEBOUNCE_MS = 20; // changes that come together go as one
 const STATE_AGAIN_MS = 1000; // titles and the like, which no event announces
@@ -73,7 +74,8 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       if (!state) continue;
       const sig = JSON.stringify(state);
       const person = Array.isArray(state.tabs) && state.tabs.some((t) => t?.person);
-      if (sig !== st.stateSig || (person && Date.now() - st.stateAt >= PERSON_AGAIN_MS)) { st.stateSig = sig; st.stateAt = Date.now(); send(st, "tabs", state); }
+      // Compared with at in it (stable while the person keeps still); sent with at as an ago.
+      if (sig !== st.stateSig || (person && Date.now() - st.stateAt >= PERSON_AGAIN_MS)) { st.stateSig = sig; st.stateAt = Date.now(); send(st, "tabs", stateAgo(state)); }
       const session = sessionFor(st.j);
       const ssig = JSON.stringify(session);
       if (session && ssig !== st.sessionSig) { st.sessionSig = ssig; send(st, "session", session); }

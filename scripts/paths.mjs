@@ -85,6 +85,10 @@ export const DEFAULT_CONFIG = {
   // Where the browser's own pages start: each dock "open", "rail" or "hidden", and the tab
   // strip's height in pixels (44 to 176).
   layout: { left: "open", right: "open", strip: 88 },
+  // Report a problem (Settings, About and diagnostics): the https address a report you send goes
+  // to (no user, query or fragment; anything else is ignored). Unset: no report is ever sent, and
+  // Settings doesn't offer it. Nothing goes there but what you saw and sent.
+  reportUrl: null,
 };
 
 export function loadConfig() {

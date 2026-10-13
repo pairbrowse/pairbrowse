@@ -17,16 +17,24 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // A line safe to show and to leave the computer later. quotes: false keeps quoted text, for a
 // sentence of the helper's own that holds no page text (its folders and addresses still go).
-export function scrub(text, { home = homedir(), mask = (t) => t, quotes = true } = {}) {
+// For a person's own words (Report a problem's "What happened?", liveview/report.mjs): max: the
+// length kept (default a line's 200); addresses: "path" keeps a web address's origin and path (no
+// user info, query or fragment) instead of its host alone; emails: false keeps email addresses.
+export function scrub(text, { home = homedir(), mask = (t) => t, quotes = true, max = LINE_MAX, addresses = "host", emails = true } = {}) {
   let s = String(text ?? "");
   try { s = String(mask(s)); } catch {}
   // Addresses: the host alone (no user info, path or query); file:// says only that it was a file.
-  s = s.replace(/[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]*/gi, (m) => {
+  // One pass, so a kept address isn't read again: anything that only looks like one goes too.
+  s = s.replace(/(?:[a-z][a-z0-9+.-]*)?:\/\/[^\s"'<>]*/gi, (m) => {
+    if (m.startsWith(":")) return "[url]";
     if (/^file:/i.test(m)) return "[file]";
-    try { const h = new URL(m).host; return h || "[url]"; } catch { return "[url]"; }
+    try {
+      const u = new URL(m);
+      if (addresses === "path" && (u.protocol === "https:" || u.protocol === "http:")) return `${u.origin}${u.pathname}`;
+      return u.host || "[url]";
+    } catch { return "[url]"; }
   });
-  s = s.replace(/:\/\/[^\s"'<>]*/g, "[url]"); // anything left that still looks like one
-  s = s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]");
+  if (emails) s = s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]");
   const h = String(home || "").replace(/[\\/]+$/, "");
   if (h) {
     s = s.split(`${h}/.pairbrowse`).join("~/.pairbrowse");
@@ -38,7 +46,7 @@ export function scrub(text, { home = homedir(), mask = (t) => t, quotes = true }
   s = s.replace(/\b(key|token|secret|password|passwd|authorization)(?:\s*[=:]\s*(?:bearer\s+|basic\s+)?|\s+(?:bearer|basic)\s+)\S+/gi, "$1=[hidden]");
   s = s.replace(/[A-Za-z0-9_-]{32,}/g, "[key]");
   if (quotes) s = s.replace(/"[^"\n]*"/g, "\"…\"");
-  return s.length > LINE_MAX ? `${s.slice(0, LINE_MAX - 1)}…` : s;
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
 // The last error lines of the helper's log (it also takes the helper's stderr), read from its

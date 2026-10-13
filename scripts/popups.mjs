@@ -20,9 +20,11 @@ const CONSENT_FRAME = /consent|cookie|privacy|cmp|onetrust|sourcepoint|didomi|tr
 // null after ms, or on an error: a page or frame that never answers must not hold anything up.
 const settle = (ms, work) => within(ms, work.catch(() => null));
 
-// cookieChoice: "accept" (default) or "reject" for cookie banners.
+// cookieChoice: "accept" (default) or "reject" for cookie banners, or a function giving it (read
+// at each banner: Settings can change it while the browser runs).
 // agentActing(): an agent's action is under way (a tab it closes itself needs no note).
 export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared = () => {}, quiet = () => false, cookieChoice = "accept", agentActing = () => false } = {}) {
+  const rejecting = () => { try { return (typeof cookieChoice === "function" ? cookieChoice() : cookieChoice) === "reject"; } catch { return false; } };
   const notes = []; // [{ text, page }]: page is the tab it's about (null: for every agent)
   const described = new Set(); // overlays already described to Claude, by page and text
   const note = (text, page = null) => { notes.push({ text, page }); if (notes.length > 40) notes.shift(); };
@@ -216,14 +218,14 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
         return { unresolved: true, text: (box.innerText || "").trim().replace(/\s+/g, " ").slice(0, 160), buttons: [...new Set(labels)].slice(0, 8) };
       }
       return null;
-    }, [cookieChoice !== "reject", frame !== frame.page().mainFrame(), closeOffers]).catch(() => null);
+    }, [!rejecting(), frame !== frame.page().mainFrame(), closeOffers]).catch(() => null);
     if (found?.unresolved) {
       const key = `${frame.page().url()} ${found.text}`;
       if (!described.has(key)) {
         if (described.size >= 500) described.clear(); // kept small: at worst one is described again
         described.add(key);
         note(`Something covers the page: "${found.text}" (buttons: ${found.buttons.map((b) => `"${b}"`).join(", ")}). ` +
-          `If it's a cookie or consent banner, click the button that ${cookieChoice === "reject" ? "accepts only necessary cookies" : "accepts"}; otherwise close it if it's in the way. Never a subscribe, pay or sign-up button.`, frame.page());
+          `If it's a cookie or consent banner, click the button that ${rejecting() ? "accepts only necessary cookies" : "accepts"}; otherwise close it if it's in the way. Never a subscribe, pay or sign-up button.`, frame.page());
       }
       return false;
     }

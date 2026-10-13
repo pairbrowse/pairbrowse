@@ -7,6 +7,7 @@ import http from "node:http";
 import { JOINER_ID, cleanName, appName, cleanComputer } from "../join.mjs";
 import { LOOPBACK, keyOk, readBody, BODY_MAX, listen } from "./http.mjs";
 import { acceptUpgrade, refuseUpgrade } from "../ws.mjs";
+import { stateAgo } from "../daemon/presence.mjs";
 
 const SEEN_MS = 5000; // a joiner who polled this recently still counts as there
 const INFLIGHT_MAX = 4; // requests at once per joiner: the tunnel carries a limited number
@@ -141,7 +142,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
 
   // One plain request from an admitted joiner (the push channel carries the same).
   async function handle(req, route, invite, j, answer) {
-    if (req.method === "GET" && route === "tabs") return answer(200, { role: invite.role, name: j.name, ...await live.tabsFor(j) });
+    if (req.method === "GET" && route === "tabs") return answer(200, { role: invite.role, name: j.name, ...stateAgo(await live.tabsFor(j)) });
     if (req.method !== "POST") return answer(404, { error: "Unknown request." });
     const body = await readBody(req, BODY_MAX.input);
     if (body === null) return answer(413, { error: "Too large." });

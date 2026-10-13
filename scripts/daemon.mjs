@@ -65,6 +65,8 @@ import { createJournal } from "./daemon/journal.mjs";
 import { createTimeline } from "./daemon/timeline.mjs";
 import { createOutlines } from "./daemon/outline.mjs";
 import { createSettings } from "./liveview/settings.mjs";
+import { createReporter } from "./liveview/report.mjs";
+import { createPick } from "./daemon/pick.mjs";
 import { nativeDirs, pinnedAsset } from "./native-install.mjs";
 import { timelineDir, isTemporary } from "./sessions.mjs";
 import { readFields, applyFields } from "./daemon/forms.mjs";
@@ -245,7 +247,7 @@ const presence = createPresence({
 const popups = createPopups({
   log,
   quiet: () => context.isRestoring(), // tabs reopened at startup aren't new
-  cookieChoice: config.cookieChoice, // "accept" (default) or "reject"
+  cookieChoice: () => config.cookieChoice, // "accept" (default) or "reject"; Settings can change it
   agentActing: () => presence.agentActing(), // a tab an agent closes itself needs no note
   onYourTurn: (text, page) => { hud.setBadge(text, "you").catch(() => {}); handoffs.set("check", { text, page: page || null, kind: "captcha", by: { label: "PairBrowse", color: "" } }); },
   // The check is done: take "Your turn" down again if it was this one.
@@ -450,6 +452,8 @@ const sharing = createSharing({
     // The browser's Settings page: which browser runs, the timeline, the docks' default layout
     // (liveview/settings.mjs; written into config.json and the running config).
     settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), browserInUse: () => context.browserInUse() }),
+    // Report a problem: relayed to config.json's reportUrl on the person's click (liveview/report.mjs).
+    reporter: createReporter({ url: () => config.reportUrl, mask: output.mask, log }),
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
     // their pointer alone, or just being in the tab, leaves the page as it was.
     // Their mark (a dot in their pointer's color) shows on the tab's icon here while they're in it.
@@ -500,11 +504,11 @@ const sharing = createSharing({
     // Named final clicks asked in the browser (owner only). Declared further down: read when the
     // live view starts, after startup.
     get clickApprovals() { return clickApprovals; },
-    picker: { state: () => context.pickerState(), pick: (op) => pickFromBrowser(op), open: () => context.reopenPicker() },
+    picker: { state: () => context.pickerState(), pick: (op) => picks.pick(op), open: () => context.reopenPicker() },
     // the first request a browser page makes with its key: the key file has done its job
     onPagesKey: () => context.dropHelperKey(),
     // A join code's address the person hasn't allowed: their answer from the side panel or picker.
-    joinHost: { state: () => follow.hostState(), act: (op) => hostDecision(op) },
+    joinHost: { state: () => follow.hostState(), act: (op) => picks.hostDecision(op) },
     // The Tools tab (owner only): files by id; Open and Reveal through the OS opener, on a click.
     // A download opens in the person's own tab where the browser renders it, as a preview there,
     // or with its app (liveview.mjs fileAction).
@@ -526,13 +530,6 @@ const follow = createFollow({
   onMessage: (data) => session.receive(readMessage(data)),
   onHostChange: (state) => liveView()?.setJoinHost(state),
 });
-// The person allowed (or not) a code's address in the side panel or the picker. A yes starts
-// the join; one that came from the picker is its pick (the saved tabs come back behind it).
-async function hostDecision(op) {
-  const r = await follow.decideHost(op);
-  if (r.joined && r.owner === "picker") context.pickedJoin(`The person joined a shared session from the browser's session picker, after allowing its address ${r.host}: ${r.text.split(". Then")[0]}. Check with pairbrowse_join status.`);
-  return r;
-}
 // A join request: the bottom bar in the host's tab in front asks (Allow / Deny) while the browser
 // has the focus, else a notification with Allow / Deny (daemon/joinprompt.mjs).
 let testFocus = null; // tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): true or false in place of the browser's own
@@ -558,18 +555,6 @@ sharing.approvals.onChange(() => {
   for (const e of sharing.approvals.list()) if (e.state === "approved") { approved = true; context.recordPerson({ who: e.name, app: e.app, computer: e.computer, kind: "guest" }); }
   if (approved) clickApprovals.cover();
 });
-// The person's pick in the session picker (the browser's first tab, see context.mjs). Joining
-// takes the same code checks as pairbrowse_join, and the host still has to let them in.
-async function pickFromBrowser(op) {
-  if (op?.action !== "join") return context.pickSession({ action: op?.action, name: op?.name });
-  if (!context.picking()) return { text: "A session is already chosen.", error: true };
-  const r = await follow.command({ action: "join", code: String(op.code || "").trim().slice(0, 4000), name: String(op.joinName || "").slice(0, 40) }, { owner: "picker", app: "PairBrowse" });
-  if (r.needsName) return { text: "Type your name too: the host sees it before letting you in. It's remembered for next time.", error: true };
-  if (r.error) return r;
-  const asked = `${r.text.split(". Then")[0]}.`; // "Asked Bob to let Alice in (drive). They have to approve first."
-  context.pickedJoin(`The person joined a shared session from the browser's session picker: ${asked} Check with pairbrowse_join status.`);
-  return { text: asked };
-}
 // This side's agents, for the host of a session joined from here (when it changes, and every 10 s).
 let sentSession = { sig: "", at: 0 };
 setInterval(() => {
@@ -720,6 +705,20 @@ const serve = createServe({
       const pages = (await context.getContext()).pages().filter((p) => !p.isClosed()).map((p) => p.url());
       return { text: JSON.stringify({ ...state, pages }) };
     } } : {}),
+  },
+});
+// The person's session choices from the browser's own pages (POST pick, POST joinhost): the
+// picker at start, the switcher and the new tab page's chips while a session is open (asking first
+// while other agents are at work), Settings' Delete (daemon/pick.mjs).
+const picks = createPick({
+  context, follow, log, hostNote,
+  activeAgents: () => serve.activeAgents(),
+  busy: () => {
+    const lv = liveView();
+    if ((lv?.guestViewers?.() || 0) > 0 || (lv?.joinersNow?.().length || 0) > 0) return "People are in this session; switch once they have left.";
+    if (recorder.state()?.recording) return "Stop the recording first.";
+    if (clickApprovals.pending().length) return "An approval is waiting; answer it first.";
+    return null;
   },
 });
 output.start();

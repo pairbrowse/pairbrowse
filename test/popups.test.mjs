@@ -176,3 +176,27 @@ test("notes are drained per tab: a result about one tab leaves the other tabs' n
   a.closed = true;
   assert.match(popups.drain(b), /Last in A/);
 });
+
+// Settings can change the cookie choice while the browser runs: it is read at each banner.
+test("the cookie choice is read at each banner, so a change in Settings applies at once", async () => {
+  const config = { cookieChoice: "accept" };
+  const popups = createPopups({ cookieChoice: () => config.cookieChoice });
+  const seen = [];
+  const fakePage = (n) => {
+    const page = { isClosed: () => false, url: () => `https://shop.example/${n}`, frames: () => [frame], mainFrame: () => frame };
+    const frame = { page: () => page, url: () => page.url(), evaluate: async (_fn, args) => { seen.push(args?.[0]); return { unresolved: true, text: `Cookies ${n}`, buttons: ["Accept all", "Reject all"] }; } };
+    return page;
+  };
+  const one = fakePage(1);
+  await popups.dismissOverlay(one);
+  assert.equal(seen.at(-1), true, "accept first");
+  assert.match(popups.drain(), /click the button that accepts;/);
+  config.cookieChoice = "reject";
+  await popups.dismissOverlay(fakePage(2));
+  assert.equal(seen.at(-1), false, "reject first, without a restart");
+  assert.match(popups.drain(), /accepts only necessary cookies/);
+  // The plain value still works, as before.
+  const fixed = createPopups({ cookieChoice: "reject" });
+  await fixed.dismissOverlay(fakePage(3));
+  assert.equal(seen.at(-1), false);
+});

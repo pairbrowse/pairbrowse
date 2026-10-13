@@ -277,7 +277,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     return ctx;
   };
 
-  return async function serve(sock, { remote = null } = {}) {
+  async function serve(sock, { remote = null } = {}) {
     const participant = randomBytes(8).toString("hex");
     let initialized = false;
     let clientName = ""; // the app on this connection, from its MCP initialize ("claude-code", "codex-mcp-client", ...)
@@ -1563,5 +1563,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
     await mcpServer.connect(transport);
     log(`participant connected ${participant}`);
     context.openPages().then((pages) => pages.forEach(stopRequestMirroring)).catch(() => {});
+  }
+  // The agents at work in this browser now (a call in the last ACTIVE_MS, or holding it), by name:
+  // a person's session switch from the browser's own pages asks before closing their tabs
+  // (daemon/pick.mjs), as an agent's own switch is refused while others are at work.
+  serve.activeAgents = () => {
+    const { owner, participants } = collaboration.state();
+    const label = (id) => participants.find((p) => p.id === id)?.label || "An agent";
+    return [...clients.keys()].filter((id) => owner?.id === id || Date.now() - (lastCall.get(id) || 0) < ACTIVE_MS).map(label);
   };
+  return serve;
 }

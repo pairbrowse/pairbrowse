@@ -91,3 +91,32 @@ test("reconnecting() names a joiner whose channel dropped while in, not one who 
     push.close();
   }
 });
+
+// The host's person acting: the state carries when (at), compared as it is, sent as an ago.
+test("a person's acting time goes out as an ago, and an unchanged time is no news", async () => {
+  const sent = [];
+  let closed = () => {};
+  const conn = { send: (raw) => { const m = JSON.parse(raw); if (m.event === "tabs") sent.push({ data: m.data, t: Date.now() }); }, onClose(cb) { closed = cb; }, close() { closed(); } };
+  let at = Math.ceil(Date.now() / 1000) * 1000 - 1000;
+  const push = createPush({
+    getContext: async () => ({ pages: () => [] }), idOf: () => "t1", joinerKey: () => "k", secretDomains: () => [], shared: { showPointers() {} }, tabMeta: () => ({}),
+    tabsFor: async () => ({ tabs: [{ id: "t1", url: "https://example.com/", title: "Example", person: "Bob", acting: true, at }] }),
+  });
+  try {
+    await push.open({ name: "Sam" }, conn);
+    await sleep(60);
+    const before = sent.length;
+    for (let i = 0; i < 10; i++) { push.changed(); await sleep(30); }
+    assert.equal(sent.length, before, "ten rounds within 900 ms with the same time: nothing new went out");
+    for (const { data, t } of sent) {
+      assert.ok(!("at" in data.tabs[0]), "at never crosses");
+      assert.ok(Math.abs(data.tabs[0].ago - (t - at)) <= 50, `ago ${data.tabs[0].ago} measured as it left`);
+    }
+    at += 1000; // Bob typed again
+    push.changed();
+    await sleep(60);
+    assert.equal(sent.length, before + 1, "a new time is news at once");
+  } finally {
+    push.close();
+  }
+});

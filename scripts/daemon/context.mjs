@@ -150,13 +150,15 @@ let switched = Promise.resolve();
   // Claude is in, one that just opened, or one anyone used in the last minutes (in a shared
   // session that could be another agent's or person's tab): then more tabs stay open. Claude is
   // told which tab went.
-  const MAX_TABS = Math.max(2, Number(config.maxTabs) || 20);
+  // Read at each check: Settings can change it while the browser runs.
+  const maxTabs = () => Math.max(2, Number(config.maxTabs) || 20);
   const IN_USE_MS = 10 * 60_000;
   const lastUsed = new WeakMap();
   const touch = (page) => page && lastUsed.set(page, Date.now());
   async function capTabs(ctx, keep = null) {
     if (restoring) return; // tabs coming back after a restart: decide once they're all open
     const pages = ctx.pages().filter((p) => !p.isClosed() && /^(https?:|about:blank)/.test(p.url()));
+    const MAX_TABS = maxTabs();
     if (pages.length <= MAX_TABS) return;
     const current = findPage(ctx, lastCurrentUrl);
     const idleSince = Date.now() - IN_USE_MS;
@@ -524,6 +526,30 @@ let switched = Promise.resolve();
     contextPromise?.then(async (ctx) => restore(ctx, await ctx.newPage())).catch((e) => log("restore", e?.message || e));
   }
 
+  // The person switches away from the session that's open (POST pick while no picker shows: the
+  // session switcher, the new tab page's chips; daemon/pick.mjs checks who else is at work first):
+  // { action: "use", name } or { action: "new" }. Checked here at once, then the browser restarts
+  // on the other session after the answer went out (the page that asked closes with the window).
+  // Returns { text } or { text, error: true }.
+  async function switchForPerson({ action, name } = {}) {
+    if (pick.state === "showing") return pickSession({ action, name });
+    if (switching) return { text: "The browser is switching sessions; try again in a moment.", error: true };
+    if (restoring) return { text: "Tabs are still reopening; switch once they're back.", error: true };
+    if (action === "use") {
+      if (!validName(name) || isTemporary(name) || !listSessions().some((s) => s.name === name)) return { text: `No session "${name}".`, error: true };
+      if (name === session) return { text: `You're in session "${name}" already.` };
+      setImmediate(() => switchTo(name).catch((e) => log("switch", e?.message || e)));
+      return { text: `Opening session "${name}".` };
+    }
+    if (action === "new") {
+      const target = `clean-${Date.now()}`;
+      createSession(target);
+      setImmediate(() => switchTo(target).catch((e) => log("switch", e?.message || e)));
+      return { text: "Starting a fresh session." };
+    }
+    return { text: 'Use action "use" or "new".', error: true };
+  }
+
   // ---- browser sessions ----------------------------------------------------------------
 
   const sessionInfo = () => ({ name: isTemporary(session) ? "Clean session" : session, where: where(), temporary: isTemporary(session) });
@@ -735,7 +761,7 @@ let switched = Promise.resolve();
     sessionInfo, sessionCommand, startUp, close, sessionName: () => session, renameCurrent, saveTabs,
     // The browser's pages used their key (or the helper stops): its file has done its job.
     dropHelperKey: () => dropHelperKey(),
-    waitForPick, pickerState, pickSession, pickedJoin, // In the session being opened, when the person just picked another.
+    waitForPick, pickerState, pickSession, pickedJoin, switchForPerson, // In the session being opened, when the person just picked another.
     recordPerson: async (person) => { while (pickSwitch) await pickSwitch; recordPerson(session, person); }, picking: () => pick.state === "showing", reopenPicker,
     // An agent chose (pairbrowse_join): the picker goes, the saved tabs come back.
     agentChose(text) {

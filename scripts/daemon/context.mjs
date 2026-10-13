@@ -289,6 +289,7 @@ let switched = Promise.resolve();
     tabTracker = trackTabs(ctx, { file: tabsFile(session), activePage: () => findPage(ctx, lastCurrentUrl), log });
     if (!saved.tabs.length) { screen?.close().catch(() => {}); return; }
     restoredActiveUrl = saved.tabs[saved.active]?.url || null;
+    const restoreAt = Date.now();
     restoring = focusing(own, () => restoreTabs(ctx, saved, {
       log, screen,
       // A build with its own pages: no "Opening tabs" list (setContent fails on its new tab page,
@@ -301,6 +302,7 @@ let switched = Promise.resolve();
       status(hud.badge());
       restoring = null;
       log(`restored ${saved.tabs.length} tabs`);
+      log(`launch: restore ${Date.now() - restoreAt} ms`);
       capTabs(ctx).catch(() => {});
     }));
   }
@@ -309,13 +311,18 @@ let switched = Promise.resolve();
     const own = byHand;
     byHand = false;
     chosen = false;
+    // Each launch step's time (plans/555 item 4), logged as "launch: <step> <ms> ms".
+    let stepAt = Date.now();
+    const step = (name) => { const now = Date.now(); log(`launch: ${name} ${now - stepAt} ms`); stepAt = now; };
     await chooseEngine();
+    step("engine");
     chrome = !!chromePagesOf(config);
     capture = chrome && !!capturePagesOf(config);
     chosen = true;
     // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
     // colors; see prepareProfile in browser.mjs), written before each launch.
     const firstRun = prepareProfile(profile(), undefined, { chromePages: chrome, layout: config.layout });
+    step("prepare");
     // A side panel worker from another build (an update): the browser would keep running its
     // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
     if (!chrome) try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
@@ -323,6 +330,7 @@ let switched = Promise.resolve();
     // key in an owner-only file the other switch names (neither the key nor the path is logged).
     const helper = chrome ? await helperFor().catch((e) => { log("live view", e?.message || e); return null; }) : null;
     if (chrome && !helper) log("the browser's own pages have no helper address");
+    step("live view");
     forgetTemporaryDownloads();
     if (!screen && needsVirtualDisplay(config)) screen = await startVirtualDisplay(log);
     createSession(session);
@@ -347,6 +355,7 @@ let switched = Promise.resolve();
         args: launchArgs(config, { firstRun, chromePages: chrome, helper: helper && keyFile ? { origin: helper.origin, keyFile } : null }),
       }, log);
     } catch (e) { dropHelperKey(keyFile); throw e; } // a failed launch leaves no key file
+    step("browser (fingerprint and launchPersistentContext inside)");
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
     await ctx.addInitScript({ content: hud.source });
     // Never into the browser's own pages (its new tab page among them: plans/555 D1.3).
@@ -354,6 +363,7 @@ let switched = Promise.resolve();
     // A tab can arrive already loaded (one the side panel opened at its address): its page
     // script comes now, since under Patchright it isn't there until ensure adds it.
     ctx.on("page", (p) => { adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => { if (!isChromePage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => capTabs(ctx, p).catch(() => {}), 300); });
+    step(`first page (${ctx.pages().length} open)`);
     if (pick.state === "pending") showPicker(ctx, { own });
     else restore(ctx, null, { own });
     const mine = contextPromise;
@@ -422,7 +432,10 @@ let switched = Promise.resolve();
       pick.page = page;
       // The extension may still be loading right after launch: try a few times.
       for (let i = 0; i < 20 && pick.state === "showing" && !page.isClosed(); i++) {
-        if (await page.goto(pickerUrl(), { waitUntil: "domcontentloaded", timeout: 5000 }).then(() => true, () => false)) break;
+        const at = Date.now();
+        const went = await page.goto(pickerUrl(), { waitUntil: "domcontentloaded", timeout: 5000 }).then(() => "ok", (e) => String(e?.message || e).split("\n")[0].slice(0, 80));
+        log(`launch: picker goto try ${i + 1} ${Date.now() - at} ms: ${went}`);
+        if (went === "ok") break;
         await sleep(250);
       }
       await focusing(own, () => page.bringToFront().catch(() => {}));

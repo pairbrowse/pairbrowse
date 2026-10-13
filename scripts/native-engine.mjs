@@ -451,18 +451,23 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   fingerprint.brandVersion ??= version;
   const picksPersona = selection === "auto" || selection === "local";
   let source = null;
+  const steps = [];
   if (picksPersona) {
+    const measureAt = Date.now();
     const host = await pack.measureHost((probe) => chromium.launch({ ...probe, executablePath: options.executablePath, chromiumSandbox: options.chromiumSandbox, ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS }),
       options.executablePath, Number(CHROMIUM_MAJOR));
     const resolved = selection === "local" ? pack.resolveLocal(host, profileSelect) : await pack.resolveAuto(host, profileSelect);
     fingerprint.fingerprintProfile = resolved.profile;
     source = resolved.source;
+    steps.push(`measure ${Date.now() - measureAt} ms`);
   }
   let hostCapture = false;
   if (fingerprint.fingerprintProfile === undefined) {
     fingerprint.fingerprint ??= createHash("sha256").update(directory).digest("hex");
     if (process.platform === "darwin") {
+      const hostAt = Date.now();
       fingerprint.fingerprintProfile = await macHostProfile(chromium, options.executablePath, pack, directory, version);
+      steps.push(`host capture ${Date.now() - hostAt} ms`);
       if (!fingerprint.fingerprintProfile) throw new Error("PairBrowse macOS host capture failed; provide an explicit fingerprintProfile.");
       hostCapture = true;
     }
@@ -479,7 +484,7 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   }
   fingerprint.timezone ??= Intl.DateTimeFormat().resolvedOptions().timeZone;
   fingerprint.acceptLanguage ??= Intl.DateTimeFormat().resolvedOptions().locale;
-  return { fingerprint, rest, source };
+  return { fingerprint, rest, source, steps };
 }
 
 // Only the fingerprint is kept with the profile: never proxy credentials, agent keys or bridge auth.
@@ -509,7 +514,10 @@ export async function launchNative(chromium, config, directory, options, pack, l
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const personaPath = join(directory, "pairbrowse-persona.json");
   const settings = readSettings(config, pack, personaPath);
-  const { fingerprint, rest, source } = await resolveFingerprint(chromium, options, pack, directory, settings, metadata.version);
+  const fingerprintAt = Date.now();
+  const { fingerprint, rest, source, steps } = await resolveFingerprint(chromium, options, pack, directory, settings, metadata.version);
+  // Each launch step's time (plans/555 item 4): what a slow first launch spent where.
+  log(`launch: fingerprint ${Date.now() - fingerprintAt} ms${steps.length ? ` (${steps.join(", ")})` : ""}`);
   if (source) log(`PairBrowse persona selected from ${source}.`);
   savePersona(pack, personaPath, fingerprint);
 
@@ -533,12 +541,14 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const gated = pack.gateEngineSwitches(options.executablePath, args, false);
   // Linux: the build's bundled fonts (FONTCONFIG_FILE) and the UI language from --lang (LANGUAGE).
   const env = pack.fontLaunchEnv?.(options.executablePath, merged.env, gated.args);
+  const contextAt = Date.now();
   const context = await chromium.launchPersistentContext(directory, {
     ...merged, proxy, ...(env ? { env } : {}),
     viewport: merged.viewport ?? null,
     args: gated.args,
     ignoreDefaultArgs: [...new Set([...pack.DEFAULT_IGNORED_ARGS, ...(merged.ignoreDefaultArgs ?? []), "--enable-automation"])],
   });
+  log(`launch: launchPersistentContext ${Date.now() - contextAt} ms`);
   try {
     pack.installHumanizeOnContext(context, { humanize: settings.humanize, showCursor: settings.showCursor, typingPace: settings.typingPace, motion: settings.motion, seed: fingerprint.fingerprint });
     return context;

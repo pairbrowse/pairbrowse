@@ -379,8 +379,12 @@ macPackTest("macOS host capture keeps its seed across persisted restarts", async
     webgpu: { vendor: "Apple", architecture: "Apple GPU" },
     media_devices: [], speech: [],
   });
+  const lines = [];
   await launchNative(chromium, { pairbrowse: {} }, directory,
-    { executablePath: app.executablePath, headless: false }, pack);
+    { executablePath: app.executablePath, headless: false }, pack, (line) => lines.push(line));
+  // Each launch step's time (plans/555 item 4): the capture inside the fingerprint step, then the launch.
+  assert.match(lines.join("\n"), /^launch: fingerprint \d+ ms \(host capture \d+ ms\)$/m);
+  assert.match(lines.join("\n"), /^launch: launchPersistentContext \d+ ms$/m);
   assert.equal(readdirSync(directory).some(name => name.startsWith(".mac-host-capture-")), false);
   const saved = pack.Profile.load(join(directory, "pairbrowse-persona.json")).options;
   assert.equal(saved.fingerprint.length, 64);

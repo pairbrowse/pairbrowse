@@ -8,7 +8,7 @@
 // event, read only. Nothing here starts a timer,
 // a frame loop or a DOM observer: observers of the browser API and the one shared helper stream
 // (common.js helperStream) only. The nav fragments read no stream at all.
-import { $, el, avatar, shareCard, isColor, pickerPopover, helperStream, servedByBrowser, enter, leave } from "../common.js";
+import { $, el, avatar, shareCard, isColor, pickerPopover, helperStream, servedByBrowser, enter, leave, calm } from "../common.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
@@ -36,6 +36,10 @@ const tabs = new Map(); // id -> tab (this window's only)
 const lis = new Map(); // id -> li
 let owners = { agents: {}, colors: {} };
 let rovingId = null; // the tab keyboard focus moved to with the arrows (else the active one)
+// The active tab stays in view (inView below): the tab it last kept in view and the row's width then.
+// It runs from slotControls at load, so its state and helpers are declared here, before that.
+let shownActive = null, shownWidth = -1, wheelOn = false, revealed = false;
+const SPARE = 24; // px kept clear beside the active tab: the edge fade's width
 
 // ---- modes ----
 const MODES = new Set(["row", "nav-left", "nav-right", "switcher", "share", "menu"]);
@@ -137,6 +141,7 @@ function slotControls() {
   if (slot) { $("switch").setAttribute("aria-label", SLOT_LABELS.switch); $("share-btn").title = SLOT_LABELS.share; }
   else { $("switch").setAttribute("aria-label", "PairBrowse: switch session"); $("share-btn").removeAttribute("title"); }
   menuBtn.hidden = slot || !pb;
+  inView();
 }
 // Opens a dock (the left for the switcher, the right for Share) before it asks over the channel.
 async function openDock(side) {
@@ -353,21 +358,83 @@ function render() {
   const focused = document.activeElement?.closest?.("#tabs li");
   const hadFocus = !!focused;
   const focusedId = focused ? Number(focused.dataset.id) : null;
-  for (const [id, li] of lis) if (!tabs.has(id)) { lis.delete(id); leave(li, { axis: "inline" }); }
+  // A tab folding away or growing in changes the overflow once it is done: the edges again then.
+  for (const [id, li] of lis) if (!tabs.has(id)) { lis.delete(id); leave(li, { axis: "inline", then: edges }); }
   ordered().forEach((t, i) => {
     const fresh = !lis.has(t.id);
     const li = drawTab(t);
     const kids = shownTabs();
     if (kids[i] !== li) tabsEl.insertBefore(li, kids[i] || null);
-    if (fresh && rendered) enter(li, { axis: "inline" });
+    if (fresh && rendered) enter(li, { axis: "inline" })?.finished.then(edges, () => {});
   });
   if (rovingId !== null && !lis.has(rovingId)) rovingId = null;
   roving();
   drawNav();
   // A tab moved in the DOM loses focus; a closed one hands it to the tab now active.
   // A closed tab folds away (inert): the focus leaves it for the tab now active.
-  if (hadFocus && (!tabsEl.contains(document.activeElement) || document.activeElement.closest("[data-leaving]"))) (lis.get(focusedId) || lis.get(activeId()))?.focus();
+  if (hadFocus && (!tabsEl.contains(document.activeElement) || document.activeElement.closest("[data-leaving]"))) (lis.get(focusedId) || lis.get(activeId()))?.focus({ preventScroll: true });
+  inView();
 }
+
+// ---- the active tab stays in view (B2: tabs keep their 160 px minimum; past it the row scrolls) ----
+// After a render where the active tab changed (or a tab was created active), and whenever the
+// row's width changed, the active tab is scrolled fully into the row with 24 px to spare, the
+// width of the edge fade; the same rule runs for a tab that takes the focus. #tabs only, never
+// scrollIntoView (that also scrolls the body). Smooth (the browser's own scroll), instant under
+// reduced motion and on the first render. Run by events only: renders, the window's resize, the
+// right end's redraws, focus, a tab's entrance or exit ending; no timer and no observer.
+function shownActiveLi() { return tabsEl.querySelector('li[aria-selected="true"]:not([data-leaving])'); }
+function reveal(li, smooth) {
+  const box = tabsEl.getBoundingClientRect();
+  const w = tabsEl.clientWidth;
+  if (!li || !w) return;
+  const r = li.getBoundingClientRect();
+  const left = r.left - box.left - tabsEl.clientLeft + tabsEl.scrollLeft;
+  const right = left + r.width;
+  const now = tabsEl.scrollLeft;
+  let to = now;
+  if (right > now + w - SPARE) to = right - w + SPARE;
+  if (left < to + SPARE) to = left - SPARE; // a tab wider than the row shows its start
+  to = Math.max(0, Math.min(to, tabsEl.scrollWidth - w));
+  if (Math.abs(to - now) < 1) return;
+  tabsEl.scrollTo({ left: to, behavior: smooth && !calm() && !document.hidden ? "smooth" : "instant" });
+}
+function inView() {
+  const w = tabsEl.clientWidth;
+  if (!w) return; // a nav fragment or a bubble: no row shown
+  const li = shownActiveLi();
+  const changed = li !== shownActive, resized = w !== shownWidth;
+  shownActive = li;
+  shownWidth = w;
+  if (li && (changed || resized)) {
+    reveal(li, revealed && changed);
+    revealed = true;
+    // A tab created active grows in (--t-open): once it has its width, the rule again.
+    const growing = li.getAnimations?.() || [];
+    for (const a of growing) a.finished.then(() => { if (shownActiveLi() === li) reveal(li, true); edges(); }, () => {});
+  }
+  edges();
+}
+// The row shows where tabs are hidden: a 24 px fade at each edge that has some (strip.css,
+// static). The vertical wheel scrolls the row only while it overflows (passive otherwise).
+function edges() {
+  const over = tabsEl.scrollWidth - tabsEl.clientWidth;
+  tabsEl.classList.toggle("fade-start", over > 0 && tabsEl.scrollLeft > 0.5);
+  tabsEl.classList.toggle("fade-end", over > 0 && tabsEl.scrollLeft < over - 0.5);
+  if (over > 0 !== wheelOn) {
+    wheelOn = over > 0;
+    if (wheelOn) tabsEl.addEventListener("wheel", wheel, { passive: false });
+    else tabsEl.removeEventListener("wheel", wheel, { passive: false });
+  }
+}
+function wheel(e) {
+  if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return; // a pinch, or already sideways
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? tabsEl.clientWidth : 1;
+  tabsEl.scrollBy({ left: e.deltaY * unit, behavior: "instant" });
+}
+tabsEl.addEventListener("scroll", edges, { passive: true });
+tabsEl.addEventListener("focusin", (e) => { const li = e.target.closest?.('li[role="tab"]'); if (li && !li.dataset.leaving) reveal(li, !calm()); });
 
 // Clicks: a tab activates, its close closes it, a middle click closes it.
 let suppressClick = false;
@@ -404,7 +471,7 @@ tabsEl.addEventListener("keydown", (e) => {
   if (arrow) next = list[(at + arrow + list.length) % list.length];
   else if (e.key === "Home") next = list[0];
   else if (e.key === "End") next = list.at(-1);
-  if (next) { e.preventDefault(); rovingId = idOf(next); roving(); next.focus(); return; }
+  if (next) { e.preventDefault(); rovingId = idOf(next); roving(); next.focus({ preventScroll: true }); return; }
   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pb.tabs.activate(id).catch(() => {}); }
   else if (e.key === "Delete") { e.preventDefault(); pb.tabs.close(id).catch(() => {}); }
 });
@@ -483,6 +550,7 @@ function renderFallback(list) {
     return li;
   });
   tabsEl.replaceChildren(...rows);
+  inView();
 }
 
 // ---- the helper's stream: the pill, the people ----
@@ -499,6 +567,7 @@ function drawPill() {
   $("pill-text").textContent = state === "live" ? "Live session" : offline ? "Local" : state === "local" ? String(lastSession?.where || "Local")
     : state === "reconnecting" ? "Reconnecting to PairBrowse" : "Connecting to PairBrowse";
   pill.title = offline ? "No agent connected" : lastSession?.name ? `${lastSession.where || "Local"} · ${lastSession.name}` : "";
+  inView(); // the pill's width is the row's
 }
 // Who is in the session (the side panel's header): board people by name with their color, then
 // guests; three shown (the mockup), then "+N".
@@ -516,6 +585,7 @@ function drawAvatars() {
     shown.push(el("li", {}, more));
   }
   $("avatars").replaceChildren(...shown);
+  inView();
 }
 
 function connect(url) {

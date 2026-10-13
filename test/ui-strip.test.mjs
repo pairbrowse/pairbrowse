@@ -344,6 +344,96 @@ describe("keyboard paths", () => pageTest("strip", { viewport: ROW }, async ({ p
   assert.deepEqual(await callsOf(shim, "tabs", "close"), [[11], [13]]);
 }));
 
+// Thirty tabs in the mockup's 1494 px window: the tabs keep B2's 160 px minimum and the row
+// scrolls; the active tab is always fully in view (24 px clear of either edge, the fade's width),
+// the vertical wheel scrolls the row, and an edge with hidden tabs fades (plans/555 item 3).
+const WIDE = { width: 1494, height: 53 };
+const THIRTY = Array.from({ length: 30 }, (_, i) => ({
+  id: 101 + i, index: i, window: 1, title: `Tab ${i + 1}`, url: `https://site${i + 1}.example/`, favicon: null, defaultFavicon: true, networkState: 0,
+  muted: false, audible: false, pinned: false, group: null, groupTitle: null, groupColor: null, active: i === 0, selected: i === 0, blocked: false,
+  width: 1280, height: 800, targetId: `T${101 + i}`, canGoBack: false, canGoForward: false,
+}));
+const MANY = { tabs: THIRTY, windows: [{ id: 1, bounds: { x: 0, y: 0, width: 1494, height: 842 }, focused: true, minimized: false, maximized: false, fullscreen: false, activeTab: 101, incognito: false, current: true }] };
+// In the page: the row's scroll, its fades, and where tab `id` sits in it.
+const rowOf = (id) => {
+  const tabs = document.getElementById("tabs");
+  const box = tabs.getBoundingClientRect();
+  const li = id === undefined ? null : document.querySelector(`#tabs li[data-id="${id}"]`);
+  const r = li?.getBoundingClientRect();
+  return {
+    scroll: tabs.scrollLeft, max: tabs.scrollWidth - tabs.clientWidth, start: tabs.classList.contains("fade-start"), end: tabs.classList.contains("fade-end"),
+    mask: getComputedStyle(tabs).maskImage, widths: [...tabs.querySelectorAll("li")].map((n) => Math.round(n.getBoundingClientRect().width)),
+    inside: r ? r.left >= box.left && r.right <= box.right : null, spare: r ? Math.min(r.left - box.left, box.right - r.right) : null,
+  };
+};
+// Tab `id` fully in the row and 24 px clear of each edge that has hidden tabs (at an end of the
+// row there is nothing to fade: the row's own 12 px padding is all there is).
+const settled = (id) => {
+  const tabs = document.getElementById("tabs");
+  const box = tabs.getBoundingClientRect();
+  const r = document.querySelector(`#tabs li[data-id="${id}"]`).getBoundingClientRect();
+  const atStart = tabs.scrollLeft < 0.5, atEnd = tabs.scrollLeft > tabs.scrollWidth - tabs.clientWidth - 0.5;
+  return r.left >= box.left && r.right <= box.right && (atStart || r.left - box.left >= 23.5) && (atEnd || box.right - r.right >= 23.5);
+};
+
+describe("thirty tabs: the active tab stays in view, the wheel scrolls, the edges fade", () => pageTest("strip", { viewport: WIDE, shim: MANY }, async ({ page, shim, inPage, until, harness }) => {
+  let row = await inPage(rowOf, 101);
+  assert.equal(row.widths.length, 30);
+  for (const w of row.widths) assert.equal(w, 160, "past B2's minimum the tabs stop shrinking");
+  assert.ok(row.max > 0, "the row overflows");
+  assert.equal(row.scroll, 0);
+  assert.equal(row.inside, true);
+  assert.deepEqual([row.start, row.end], [false, true], "only the end has hidden tabs");
+  assert.match(row.mask, /linear-gradient/);
+  // the last, the first and one in the middle: each lands fully inside the row, 24 px clear
+  for (const [id, fades] of [[130, [true, false]], [101, [false, true]], [115, [true, true]]]) {
+    await shim.activate(id);
+    await until(`${id} in view`, settled, id);
+    row = await inPage(rowOf, id);
+    assert.equal(row.inside, true, `${id} inside the row`);
+    assert.ok(row.spare >= (id === 115 ? 23.5 : 11.5), `${id}: ${row.spare} px to spare`);
+    await until(`${id}'s fades`, (want) => { const c = document.getElementById("tabs").classList; return c.contains("fade-start") === want[0] && c.contains("fade-end") === want[1]; }, fades);
+  }
+  // only #tabs scrolls, never the page
+  assert.deepEqual(await inPage(() => [document.scrollingElement.scrollLeft, document.scrollingElement.scrollTop]), [0, 0]);
+  // the vertical wheel over the row scrolls it sideways
+  const before = (await inPage(rowOf)).scroll;
+  const at = await center(page, "#tabs");
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.wheel(0, 200);
+  await until("the wheel scrolled the row", (b) => document.getElementById("tabs").scrollLeft > b + 100, before);
+  // a tab created active comes into view once it has grown in
+  await shim.createTab({ id: 140, title: "Fresh", url: "https://fresh.example/", active: true });
+  await until("140 in view", settled, 140);
+  assert.equal((await inPage(rowOf, 140)).inside, true);
+  // keyboard: End moves focus to the last tab, and the rule brings it into view
+  await shim.activate(101);
+  await until("101 in view", settled, 101);
+  await page.focus('#tabs li[data-id="101"]');
+  await page.keyboard.press("End");
+  assert.equal(await inPage(active), "tab:140");
+  await until("the focused tab in view", settled, 140);
+  // the window narrower: the active tab stays in view
+  await shim.activate(120);
+  await until("120 in view", settled, 120);
+  await page.setViewportSize({ width: 900, height: 53 });
+  await until("120 in view at 900 px", settled, 120);
+  const l = await harness.live();
+  assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0, "no timer and no observer");
+}));
+
+describe("thirty tabs under reduced motion: the row jumps to the active tab at once", () => pageTest("strip", { viewport: WIDE, shim: MANY, reducedMotion: "reduce" }, async ({ shim, inPage, harness }) => {
+  await shim.activate(130);
+  // The activation's observer call is a microtask: the next read already sees the end position.
+  const row = await inPage(rowOf, 130);
+  assert.equal(row.scroll, row.max, "at the end at once, no smooth scroll");
+  assert.equal(row.inside, true);
+  assert.deepEqual([row.start, row.end], [true, false]);
+  assert.deepEqual(await harness.animations(), []);
+  const l = await harness.live();
+  assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0);
+}));
+
 describe("the pill: Local, Live session, Reconnecting", () => pageTest("strip", { viewport: ROW }, async ({ helper, inPage, until }) => {
   // the pill: Local, Live session, Reconnecting
   const pill = () => { const p = document.getElementById("pill"); return { state: p.dataset.state, text: document.getElementById("pill-text").textContent, dot: getComputedStyle(p.querySelector(".dot")).backgroundColor, role: p.getAttribute("role"), live: p.getAttribute("aria-live"), anims: document.getAnimations().filter((a) => a.playState === "running" && a.animationName === "pulse").map((a) => [a.effect.target.className, a.effect.getTiming().duration]) }; };

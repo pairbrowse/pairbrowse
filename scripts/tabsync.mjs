@@ -414,6 +414,10 @@ export function readView(p, ids) {
   if (!p || !ids.has(p.id) || !Number.isFinite(numOf(p.y)) || !Number.isFinite(numOf(p.h))) return null;
   return { id: p.id, x: 0, y: coord(p.y), h: coord(p.h), v: 1, ...(p.who ? { who: clean(p.who, 60) } : {}), ...(COLOR.test(textOf(p.color)) ? { color: p.color } : {}) };
 }
+// Whether a pointer the host sent (its key k: "<invite>:<joiner id>:me", ":a<n>", ":view") is
+// this joiner's own, or their agents': never drawn here, whatever the host sends. Theirs is the
+// mouse they hold; a drawn copy of it would trail it.
+export const ownPointer = (k, joinerId) => !!joinerId && typeof k === "string" && k.split(":").includes(joinerId);
 // A joiner's pointers: theirs (me), their agents' (agents) and where they read (view), checked.
 export function readPointers(body, ids) {
   return {

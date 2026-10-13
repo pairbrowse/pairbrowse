@@ -5,11 +5,11 @@
 // (tabsync.mjs), never cookies or pictures; everyone stays signed in as themselves. What happens in the host's
 // session shows here like local activity: in the bar at the bottom of each page, the side panel
 // and the tab overview.
-import { parseJoinCode, cleanName, displayName, joinHostsOf, cleanHost, saveJoinHosts, createHostAsks, appName } from "../join.mjs";
+import { parseJoinCode, cleanName, displayName, joinHostsOf, cleanHost, saveJoinHosts, createHostAsks, appName, newJoinerId } from "../join.mjs";
 import { startJoin, FAILOVER_MS } from "../relay.mjs";
 import { waitForLink, waitedLine } from "./linkwait.mjs";
 import { sentAgo } from "./presence.mjs";
-import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, tabWho, personColor, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
+import { createMirror, createFormSync, createOrderSync, sameOrder, readForm, readPointer, readView, ownPointer, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, tabWho, personColor, TABS_MAX, OPS_MAX } from "../tabsync.mjs";
 import { keepFocus } from "../focus.mjs";
 import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../devshare.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
@@ -659,12 +659,13 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       const byPage = new Map();
       for (const raw of (Array.isArray(list) ? list : []).slice(0, 24)) {
         const page = cur.pages.get(raw?.id);
-        if (!page || page.isClosed() || raw.v || typeof raw.nx !== "number" || typeof raw.ny !== "number") continue;
+        if (!page || page.isClosed() || raw.v || ownPointer(raw.k, cur.joinerId) || typeof raw.nx !== "number" || typeof raw.ny !== "number") continue;
         byPage.set(page, [...(byPage.get(page) || []), { k: String(raw.k || "").slice(0, 100), who: String(raw.who || "").slice(0, 40), color: raw.color, nx: raw.nx, ny: raw.ny }]);
       }
       for (const page of cur.drawn) if (!byPage.has(page) && !page.isClosed()) inScreen(page, () => window.pbScreen?.pointers([])).catch(() => {});
       cur.drawn = new Set(byPage.keys());
-      for (const [page, l] of byPage) inScreen(page, (x) => window.pbScreen?.pointers(x), l).catch(() => {});
+      // The page is told who it is for too: it never draws that person's own pointer either.
+      for (const [page, l] of byPage) inScreen(page, ([x, self]) => window.pbScreen?.pointers(x, self), [l, cur.joinerId]).catch(() => {});
       return;
     }
     const ids = new Set([...cur.pages.keys()].filter((id) => !cur.quiet.has(id)));
@@ -672,7 +673,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     for (const raw of (Array.isArray(list) ? list : []).slice(0, 24)) {
       const p = raw?.v ? readView(raw, ids) : readPointer(raw, ids);
       const page = p && cur.pages.get(p.id);
-      if (!page || page.isClosed() || !p.who || typeof raw.k !== "string") continue;
+      // Never this person's own pointer (or their agents'), whatever the host sends.
+      if (!page || page.isClosed() || !p.who || typeof raw.k !== "string" || ownPointer(raw.k, cur.joinerId)) continue;
       if (latencyLog && Number(raw.t) && !p.v) log(`latency pointer ${Date.now() - Number(raw.t)} ms`);
       byPage.set(page, [...(byPage.get(page) || []), { k: raw.k.slice(0, 100), who: p.who, color: p.color || "#e9763f", x: p.x, y: p.y, ...(p.v ? { v: 1, h: p.h } : {}) }]);
     }
@@ -758,12 +760,13 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const cur = { mirror: createMirror(), pages: new Map(), owner, window: false, windowId: null, lastT: 0, candidates: new Map(), seen: new WeakSet(), heard: new Map(), told: new WeakMap(), agents: new Map(), outbox: [],
       forms: createFormSync(), order: createOrderSync(), quiet: new Set(), agentSent: new Map(), personSent: new Map(), dirty: new Set(), formsAllAt: 0,
       formT: new Map(), pointed: new WeakMap(), pointerTimer: null, pointerSig: "", drawn: new Set(), formTimer: null,
-      shared: parsed.mode === "shared", screens: new Map(), titles: new Map(), infos: new Map(), who: new Map(), urls: new Map(), inputTimer: null };
+      shared: parsed.mode === "shared", screens: new Map(), titles: new Map(), infos: new Map(), who: new Map(), urls: new Map(), inputTimer: null,
+      joinerId: newJoinerId() }; // who this side is to the host (its pointers come back keyed by it)
     const queue = serially(); // the host's changes and this side's, one at a time
     cur.queue = queue;
     s = cur;
     cur.join = startJoin({
-      join: parsed, name: who, app, log,
+      join: parsed, name: who, app, log, joinerId: cur.joinerId,
       onTabs: (state, arrived = Date.now()) => queue(() => applyHost(state, cur, arrived)),
       on: {
         form: (data) => queue(() => onForm(data, cur)),

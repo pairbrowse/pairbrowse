@@ -367,3 +367,19 @@ test("the host's state for a joiner: an acting person's time and each did entry'
   const plain = { tabs: [{ id: "c", did: [{ n: 1, who: "Bob", line: "clicked" }] }] };
   assert.equal(stateAgo(plain, 60_000), plain);
 });
+
+// The host keys a joiner's pointers "<invite>:<joiner id>:me" / ":a<n>" / ":view": the joiner's
+// side never draws one keyed by its own id, whatever the host sends.
+test("ownPointer: a pointer keyed by this joiner's id is theirs, nothing else is", async () => {
+  const { ownPointer } = await import("../scripts/tabsync.mjs");
+  const me = "0123456789abcdef0123456789abcdef";
+  assert.equal(ownPointer(`inv:${me}:me`, me), true);
+  assert.equal(ownPointer(`inv:${me}:a2`, me), true, "their agents' too");
+  assert.equal(ownPointer(`inv:${me}:view`, me), true);
+  assert.equal(ownPointer("host", me), false);
+  assert.equal(ownPointer("host-agent:t1", me), false);
+  assert.equal(ownPointer("inv:fedcba9876543210fedcba9876543210:me", me), false);
+  assert.equal(ownPointer(`inv:${me}x:me`, me), false, "a whole id, not a part of one");
+  assert.equal(ownPointer(`inv:${me}:me`, ""), false, "no id known: nothing hidden");
+  assert.equal(ownPointer(null, me), false);
+});

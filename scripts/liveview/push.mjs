@@ -42,6 +42,12 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
   const joinerPointers = new Map(); // joinerKey -> { t, list: [{ id, x, y, who, color, k, t }] }
   const joinerViews = new Map(); // joinerKey -> { id, x, y, h, v, who, color, k, t }: where they read
   const drawn = new Set(); // tabs showing joiners' pointers here
+  // Joiners in shared browser mode (keys): they see a picture of the tab itself, so anything drawn
+  // in it here reaches them in that picture. Their own pointer is never drawn in the tab (they'd
+  // see a copy of it trailing their own mouse), and what is drawn in it (a follow joiner's pointer)
+  // never goes to them again on its own (it would show twice).
+  const pictureJoiners = new Set();
+  const seesPicture = (key) => pictureJoiners.has(key);
   let stateTimer = null, pointerTimer = null, lastPointers = 0;
   let hostView = null; // { page, t }: the tab the host scrolled in last
 
@@ -132,8 +138,11 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       try { meta = tabMeta(page) || {}; } catch {}
       if (r?.agent && Date.now() - Number(r.agent.t) < AGENT_POINTER_MS && meta.agent && !meta.agent.joined) out.push({ id, x: r.agent.x, y: r.agent.y, t: r.agent.t, who: meta.agent.label, color: meta.agent.color || "#e9763f", k: `host-agent:${id}` });
     }
-    for (const [key, e] of joinerPointers) if (key !== st.key && Date.now() - e.t < POINTER_FRESH_MS) out.push(...e.list);
-    for (const [key, v] of joinerViews) if (key !== st.key && pages.has(v.id) && Date.now() - v.t < VIEW_FRESH_MS) out.push(v);
+    // Never a joiner's own (theirs is the mouse they hold); to a shared browser joiner, never what
+    // their picture of the tab shows already (follow joiners' pointers, drawn in the tab here).
+    const sees = (key) => key !== st.key && !(st.j?.invite?.mode === "shared" && !seesPicture(key));
+    for (const [key, e] of joinerPointers) if (sees(key) && Date.now() - e.t < POINTER_FRESH_MS) out.push(...e.list);
+    for (const [key, v] of joinerViews) if (sees(key) && pages.has(v.id) && Date.now() - v.t < VIEW_FRESH_MS) out.push(v);
     // Shared browser mode: their page shows the picture of the tab, so pointers go as places in
     // the tab's view (fractions), drawn over it.
     if (st.j?.invite?.mode === "shared" && shared.toView) {
@@ -152,14 +161,17 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       st.pointersSig = sig;
       send(st, "pointers", list);
     }
-    // Joiners' pointers, drawn in this browser's tabs.
+    // Joiners' pointers, drawn in this browser's tabs: a follow joiner's only. A shared browser
+    // joiner's would be in the picture of the tab they look at, following their own mouse.
     const byPage = new Map();
     for (const [key, e] of joinerPointers) {
-      if (Date.now() - e.t > POINTER_FRESH_MS * 3) { joinerPointers.delete(key); continue; }
+      if (Date.now() - e.t > POINTER_FRESH_MS * 3) { joinerPointers.delete(key); if (!joinerViews.has(key)) pictureJoiners.delete(key); continue; }
+      if (seesPicture(key)) continue;
       for (const p of e.list) { const page = pages.get(p.id); if (page) byPage.set(page, [...(byPage.get(page) || []), p]); }
     }
     for (const [key, v] of joinerViews) {
-      if (Date.now() - v.t > VIEW_FRESH_MS || !isIn(key)) { joinerViews.delete(key); continue; }
+      if (Date.now() - v.t > VIEW_FRESH_MS || !isIn(key)) { joinerViews.delete(key); if (!joinerPointers.has(key)) pictureJoiners.delete(key); continue; }
+      if (seesPicture(key)) continue;
       const page = pages.get(v.id);
       if (page) byPage.set(page, [...(byPage.get(page) || []), v]);
     }
@@ -232,6 +244,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       const pages = await crossing();
       const { me, agents, view } = readPointers(body, new Set(pages.keys()));
       const key = joinerKey(j);
+      if (j?.invite?.mode === "shared") pictureJoiners.add(key); else pictureJoiners.delete(key);
       const t = Number(body?.t) > 0 ? Math.min(Date.now(), Number(body.t)) : Date.now();
       const list = [];
       if (me) list.push({ ...me, t, who: cleanName(j.name), color: personColor(j.name), k: `${key}:me` });

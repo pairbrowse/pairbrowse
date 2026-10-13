@@ -120,3 +120,34 @@ test("a person's acting time goes out as an ago, and an unchanged time is no new
     push.close();
   }
 });
+
+// Shared browser mode: a joiner sees a picture of the host's tab itself, so a pointer drawn in the
+// tab reaches them in that picture. Their own is never drawn there (they saw a copy trailing their
+// own mouse, a moment late), and what is drawn there (a follow joiner's) isn't sent to them again.
+test("pointers: a shared browser joiner's own never in the host's tab, never twice, never back to them", async () => {
+  const page = { isClosed: () => false, url: () => "https://example.com/" };
+  const drawn = []; // what the host's tab draws, each time
+  const got = new Map(); // joiner key -> the last pointers sent to them
+  const connFor = (key) => { let closed = () => {}; return { send: (raw) => { const m = JSON.parse(raw); if (m.event === "pointers") got.set(key, m.data); }, onClose(cb) { closed = cb; }, close() { closed(); } }; };
+  const push = createPush({
+    getContext: async () => ({ pages: () => [page] }), idOf: () => "t1", joinerKey: (j) => j.key, secretDomains: () => [], tabMeta: () => ({}),
+    shared: { host: "Bob", showPointers: (p, list) => drawn.push(list.map((x) => x.who)), readForm: async () => null, toView: (p, x, y) => ({ nx: x / 1000, ny: y / 1000 }) },
+    tabsFor: async () => ({ tabs: [] }),
+  });
+  const alice = { name: "Alice", key: "i1:a", invite: { mode: "shared" } }; // works in the host's tab through its picture
+  const carol = { name: "Carol", key: "i1:c", invite: { mode: "shared" } };
+  const dan = { name: "Dan", key: "i2:d", invite: { mode: "follow" } }; // his own copy of the tab
+  try {
+    for (const j of [alice, carol, dan]) await push.open(j, connFor(j.key));
+    for (const j of [alice, carol, dan]) await push.fromJoiner({ me: { id: "t1", x: 100, y: 200 } }, j);
+    await sleep(120);
+    assert.deepEqual(drawn.at(-1), ["Dan"], "the host's tab draws the follow joiner's pointer only");
+    const whos = (key) => (got.get(key) || []).map((p) => p.who).sort();
+    assert.deepEqual(whos("i1:a"), ["Carol"], "Alice: never her own; Dan's is in her picture already");
+    assert.deepEqual(whos("i1:c"), ["Alice"], "Carol: Alice's, drawn over her picture");
+    assert.deepEqual(whos("i2:d"), ["Alice", "Carol"], "Dan, in his copy: both, never his own");
+    assert.ok((got.get("i1:a") || []).every((p) => typeof p.nx === "number"), "over the picture: places in the tab's view");
+  } finally {
+    push.close();
+  }
+});

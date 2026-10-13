@@ -53,7 +53,9 @@ const PERSON_MARK_MS = 8000; // a person from the other browser stays marked thi
 // up. notify(text): tells the user it's their turn. pause(): { by, can }: who paused agents (by
 // empty: nobody) and whether the person here may pause and resume (daemon/pause.mjs).
 // onStatus(participant, status | null): an agent's status set or taken down (the Tools tab's hand-offs).
-export function createHud({ pages, waiting, liveView, notify, pause = () => ({ by: "", can: true }), onStatus = () => {} }) {
+// docked(): true while the browser is a PairBrowse build with its own pages (the window's docks
+// carry the bar's duties; scripts/hud.js "docked").
+export function createHud({ pages, waiting, liveView, notify, pause = () => ({ by: "", can: true }), onStatus = () => {}, docked = () => false }) {
   // The page script, with names and a key that are new each time the helper starts.
   const { source, name: HUD_NAME, token: HUD_TOKEN } = hudScript();
   let badge = { text: "", kind: "clear", color: "" };
@@ -336,6 +338,10 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
   // Each page as it loads: the script, then the badge, spark and bar.
   async function onPageLoad(page) {
     await ensure(page);
+    // Inside the PairBrowse browser's own window (docked()), the page first learns that the
+    // window's agent panel carries the bar and the agent's status (scripts/hud.js "docked");
+    // elsewhere no call is made.
+    if (docked()) await quietly(page, JSON.stringify({ on: true }), "docked");
     if (badge.text) applyBadge(page);
     if (tabIcon(page)) applySpark(page, tabIcon(page));
     applyBar(page);

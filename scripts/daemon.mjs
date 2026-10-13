@@ -238,6 +238,9 @@ const hud = createHud({
   pause: () => ({ by: pause.view().by, can: canPause() }),
   // An agent handed a step to the person (pairbrowse_status "you"): a hand-off until it moves on.
   onStatus: (p, st) => { if (st?.kind === "you") handoffs.set(`status:${p}`, { text: st.text, page: hud.sparkPage(p) || null, by: agentBy(p, st.color) }); else handoffs.clear(`status:${p}`); },
+  // A build with its own pages (the context's chromePages): its docks carry the bottom bar's
+  // duties, so pages are told they are docked (DESIGN.md Part G3). Plain Chromium: false, no call.
+  docked: () => { try { return !!context.chromePages?.(); } catch { return false; } },
 });
 const presence = createPresence({
   host: HOST, readEvents: (frame, waitMs) => hud.call(frame, String(waitMs), "user-wait"), pages: () => context.openPages(), paused: () => context.isSwitching(),
@@ -419,7 +422,9 @@ const recorder = createRecorder({
 });
 // Who works in which tab, named on the tab strip (the agent's name in front of the tab's title).
 const tabLabels = createTabLabels({ sparks: () => hud.sparkList(), labelOf: (id) => collaboration.participants.get(id)?.label || "Agent", lastIn: (page) => hud.lastIn(page), name: (page, text) => hud.call(page, text, "tab-name").catch(() => {}), log });
-hud.onSparks(() => tabLabels.changed());
+// A spark moved: the tab names, and the board (each agent's tab is its spark's), so both docks
+// read where an agent is from the same state.
+hud.onSparks(() => { tabLabels.changed(); sessionChanged(); });
 hud.onActivity((_text, who, page) => { if (who && page) tabLabels.changed(); });
 // ...and a joiner's own agent works here as a participant (serve, below), files only from its side.
 const remoteAgents = createRemoteAgents({ serve: (sock, opts) => serve(sock, opts), dir: join(paths.uploads, "remote"), log });

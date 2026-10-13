@@ -744,3 +744,109 @@ test("the bar's chips end in an ellipsis when long, the newest never shrinks, an
   assert.match(src, /li\.chip:last-child\{flex-shrink:0\}/, "the newest chip keeps its size");
   assert.match(src, /\.chip span\{[^}]*text-overflow:ellipsis[^}]*white-space:nowrap[^}]*\}/, "a long chip ends in an ellipsis");
 });
+
+// ---- docked (545, DESIGN.md Part G): inside the PairBrowse browser's own window ----
+// The window's agent panel carries the bottom bar's duties (who drives, the steps, Pause) and the
+// agent's status, so a docked page draws only a join request's card and only the "your turn" badge.
+// Plain Chromium never hears "docked": nothing changes there (the tests above).
+test("docked: no bottom bar, the join card still asks, the badge only for your turn; undocked again, all back", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Shop</h1>" }));
+    await page.goto("http://pairbrowse.test/");
+    // The shadow roots are closed; the test opens them (in the world the script runs in) to look in.
+    await page.evaluate(() => { const a = Element.prototype.attachShadow; Element.prototype.attachShadow = function (i) { return a.call(this, { ...i, mode: "open" }); }; });
+    await ensureHud(page, source, "__pbtest");
+    const send = (v, k) => page.evaluate(([v, k]) => window.__pbtest("tok", typeof v === "string" || k === "join" ? v : JSON.stringify(v), k), [v, k]);
+    const look = () => page.evaluate((tags) => {
+      const bar = document.querySelector(tags.bar)?.shadowRoot?.querySelector(".bar");
+      const shown = (el) => !!el && el.checkVisibility() && el.getBoundingClientRect().height > 0;
+      const badge = document.querySelector(tags.hud)?.shadowRoot?.querySelector(".b");
+      return {
+        barH: bar ? bar.getBoundingClientRect().height : null, who: shown(bar?.querySelector(".who")), chips: shown(bar?.querySelector("ol")), pause: shown(bar?.querySelector(".pz")),
+        join: shown(bar?.querySelector(".jq")), joinBottom: bar?.querySelector(".jq") ? innerHeight - Math.round(bar.querySelector(".jq").getBoundingClientRect().bottom) : null,
+        dismiss: bar?.querySelector(".jq .x")?.title || "",
+        badge: badge && document.querySelector(tags.hud).isConnected ? badge.querySelector("span").textContent : null,
+      };
+    }, hud.tags);
+    const items = [{ t: Date.now() - 1000, text: "Filled **Name**", who: "Claude" }];
+    // As the helper sends them in a build with its own pages: docked first, then the bar and badge.
+    assert.equal(await send({ on: true }, "docked"), true);
+    await send({ items, canPause: true }, "bar");
+    await send("Filling the shipping form", "claude");
+    let v = await look();
+    assert.deepEqual([v.barH, v.who, v.chips, v.pause], [0, false, false, false], "no bar strip: no who line, no steps, no Pause agents");
+    assert.equal(v.badge, null, "the agent's status is the panel's Status box, not a badge");
+    // A join request still asks in the page (an urgent decision, trusted-click gated), at the corner.
+    await send({ id: "r0a1b2c", who: "Sam", role: "drive" }, "join");
+    v = await look();
+    assert.equal(v.join, true, "the join card shows");
+    assert.equal(v.joinBottom, 12, "12 px from the page's bottom (no bar under it)");
+    assert.equal(v.dismiss, "Dismiss (it stays in the agent panel)");
+    // Your turn: the person must act in the page, and the panel may be a rail or hidden.
+    await send("Solve the CAPTCHA", "you");
+    v = await look();
+    assert.equal(v.badge, "Your turn: Solve the CAPTCHA");
+    const lift = await page.evaluate((tags) => { const b = document.querySelector(tags.hud).getBoundingClientRect(), j = document.querySelector(tags.bar).shadowRoot.querySelector(".jq").getBoundingClientRect(); return b.bottom <= j.top; }, hud.tags);
+    assert.equal(lift, true, "the badge sits above the join card");
+    // A new bar while docked: still no strip (drawBar returns before it draws or arms its re-check).
+    await send({ items: [{ t: Date.now(), text: "Clicked Next", who: "Claude" }], canPause: true }, "bar");
+    assert.equal((await look()).barH, 0);
+    // What no dock shows stays as a note at the bottom left: the agent waiting while a person uses
+    // the browser, a shared tab reconnecting, REC. The who line only: no steps, no Pause agents.
+    const whoText = () => page.evaluate((tags) => document.querySelector(tags.bar).shadowRoot.querySelector(".who").textContent, hud.tags);
+    await send({ items, canPause: true, waiting: true }, "bar");
+    v = await look();
+    assert.deepEqual([v.barH, v.who, v.chips, v.pause], [30, true, false, false], "docked wait: the who line alone");
+    assert.match(await whoText(), /Claude is waiting… you're using the browser/);
+    assert.equal(v.joinBottom, 40, "the join card above the note");
+    assert.equal(await page.evaluate((tags) => { const b = document.querySelector(tags.hud).getBoundingClientRect(), j = document.querySelector(tags.bar).shadowRoot.querySelector(".jq").getBoundingClientRect(); return b.bottom <= j.top; }, hud.tags), true, "the badge still above the join card");
+    await send({ items, canPause: true, reconnecting: "Alice" }, "bar");
+    v = await look();
+    assert.deepEqual([v.barH, v.who, v.chips, v.pause], [30, true, false, false], "docked reconnect: the who line alone");
+    assert.match(await whoText(), /Reconnecting to Alice…/);
+    await send({ items, canPause: true, recording: true }, "bar");
+    v = await look();
+    assert.deepEqual([v.barH, v.who, v.chips, v.pause], [30, true, false, false], "docked REC: the chip alone");
+    assert.deepEqual(await page.evaluate((tags) => { const w = document.querySelector(tags.bar).shadowRoot.querySelector(".who"); return [w.querySelector(".rec").checkVisibility(), w.querySelector(":scope>span:not(.rec)").checkVisibility(), w.querySelector(".dot").checkVisibility()]; }, hud.tags), [true, false, false], "REC alone: no driving line to go stale");
+    await send({ items, canPause: true }, "bar");
+    v = await look();
+    assert.deepEqual([v.barH, v.who], [0, false], "nothing to note: no strip again");
+    assert.equal(v.joinBottom, 12);
+    // Undocked again (the same tab in plain Chromium): the whole bar and the agent's badge are back.
+    await send({ on: false }, "docked");
+    await send("Filling the shipping form", "claude");
+    v = await look();
+    assert.ok(v.barH >= 30, `the bar is back (${v.barH} px)`);
+    assert.deepEqual([v.who, v.chips, v.pause], [true, true, true]);
+    assert.equal(v.badge, "Claude: Filling the shipping form");
+    assert.equal(v.dismiss, "Dismiss (it stays in the side panel)");
+    assert.equal(await send("not json", "docked"), true, "anything but {on:true} is undocked");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("docked: the helper tells a page it is docked before its badge, only in a build with its own pages", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const run = async (opts) => {
+    const calls = [];
+    const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => { if (Array.isArray(args) && typeof args[3] === "string") calls.push(args[3]); return typeof fn === "function" && args === undefined ? true : true; } };
+    const hud = createHud({ pages: async () => [page], participants: () => [], waiting: () => null, liveView: () => null, notify: () => {}, ...opts });
+    await hud.setBadge("Working", "claude").catch(() => {});
+    calls.length = 0;
+    await hud.onPageLoad(page);
+    return calls;
+  };
+  const docked = await run({ docked: () => true });
+  assert.ok(docked.includes("docked"), docked.join(","));
+  assert.ok(docked.indexOf("docked") < docked.indexOf("claude"), `docked before the badge: ${docked.join(",")}`);
+  assert.ok(docked.indexOf("docked") < docked.indexOf("bar"), "and before the bar");
+  const plain = await run({});
+  assert.equal(plain.includes("docked"), false, "plain Chromium: no extra call");
+  assert.ok(plain.includes("bar"));
+});

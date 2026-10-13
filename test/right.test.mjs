@@ -556,7 +556,9 @@ test("the card works on its own agent's actions only: a joiner's line, a note or
     await until(page, "the stream", () => document.body.dataset.s === "live");
     for (let i = 0; i < 50 && !lv.streams.size; i++) await page.waitForTimeout(50);
     const t = Date.now();
-    lv.push("board", { people: PEOPLE, messages: [] });
+    // Claude idle on the board: the card reads the board's status as the left dock does (a board
+    // "working" is "Working…" without any action).
+    lv.push("board", { people: PEOPLE.map((p) => (p.who === "Claude" ? { ...p, status: "idle", task: "" } : p)), messages: [] });
     const lines = [{ t: t - 60_000, text: "Typed into **Email**", who: "Claude", tab: "Checkout" }];
     lv.push("activity", lines);
     await until(page, "the card", () => document.getElementById("agent-name").textContent === "Claude");

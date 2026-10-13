@@ -749,12 +749,12 @@ describe("reduced motion and no timers", () => pageTest("strip", { viewport: ROW
 }));
 
 // The browser's tab-row slot is 53 px tall and clips the rest: a popover under the row would open
-// unseen and take the keyboard focus with it. There each popover opens in the dock right under its
-// trigger (DESIGN.md Part I): the logo's switcher at the top of the left dock, Share's card at the
-// top of the agent panel, each asked with the trigger's place for its caret (the picker as a tab
-// when no dock answers); the trigger shows the state the dock reports, and a second click or Escape
-// on it closes it. The menu is not shown, and nothing under the row ever opens.
-describe("in the 53 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1, right: 1 } } }, async ({ page, shim, inPage, until, harness }) => {
+// unseen and take the keyboard focus with it. In a build without the browser's bubbles the logo
+// opens the session picker as a tab (a page of its own reaches the helper; the left dock's frame
+// gets no bindings), and Share's card opens at the top of the agent panel, under Share, asked with
+// Share's place for its caret (DESIGN.md Part I); Share shows the state the dock reports, and a
+// second click or Escape on it closes it. The menu is not shown, and nothing under the row ever opens.
+describe("in the 53 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1, right: 1 } } }, async ({ page, shim, inPage, until }) => {
   const under = () => ["switcher", "share-card", "menu"].filter((id) => !document.getElementById(id).hidden);
   const insidePopover = () => !!document.activeElement?.closest?.("#switcher, #share-card, #menu");
   const asked = () => window.__asked.map(({ anchor, ...m }) => ({ ...m, anchor: anchor ? Object.keys(anchor).join() : null }));
@@ -763,35 +763,18 @@ describe("in the 53 px row no popover opens under the row", () => pageTest("stri
     assert.equal(await page.getAttribute(`#${id}`, "aria-expanded"), "false", `${id}: says its popover is closed`);
     assert.equal(await page.getAttribute(`#${id}`, "aria-controls"), null, `${id}: the popover is another page's`);
   }
-  assert.equal(await page.getAttribute("#switch", "aria-label"), "PairBrowse: switch session (opens under the logo, in the workspace)");
+  assert.equal(await page.getAttribute("#switch", "aria-label"), "PairBrowse: switch session (opens the session picker in a tab)");
   assert.equal(await page.getAttribute("#share-btn", "title"), "Share this session (opens under Share, in the agent panel)");
-  // The logo (DESIGN.md Part G: the one switch-session home): the left dock opens and its switcher
-  // is asked for with the logo's place; a dock that answers keeps it there (no tab), and the logo
-  // shows it open.
-  await inPage(() => { window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => { window.__asked.push(e.data); if (e.data?.open === "switch") ch.postMessage({ opened: "switch", window: e.data.window }); if (e.data?.close === "switch") ch.postMessage({ closed: "switch", window: e.data.window }); }; });
-  await page.click("#switch");
-  await until("the switch ask", () => window.__asked.length === 1);
-  assert.deepEqual(await inPage(asked), [{ open: "switch", window: 1, anchor: "left" }]);
-  const logo = await inPage(() => { const r = document.getElementById("switch").getBoundingClientRect(); return { centre: Math.round(r.left + r.width / 2), sent: window.__asked[0].anchor.left }; });
-  assert.equal(logo.sent, logo.centre, "the caret goes under the logo's centre");
-  assert.equal((await callsOf(shim, "layout", "set")).at(-1)[0].left, 2, "the left dock opens first");
-  await until("the logo shows it open", () => document.getElementById("switch").getAttribute("aria-expanded") === "true");
-  await page.waitForTimeout(1300); // past SHARE_WAIT_MS
-  assert.deepEqual(await callsOf(shim, "tabs", "create"), [], "answered: no picker tab");
-  assert.equal((await harness.live()).timeouts, 0, "its one-shot timer is gone once answered");
-  // A second click closes it (no second ask to open).
-  await page.click("#switch");
-  await until("closed", () => document.getElementById("switch").getAttribute("aria-expanded") === "false");
-  assert.deepEqual((await inPage(asked)).at(-1), { close: "switch", window: 1, anchor: null });
-  // No dock answers (another host, or none listening): the picker as a tab, as before.
-  // Before the tab opens the ask is withdrawn, so a dock whose open layout lands later never
-  // opens a second switcher.
-  await inPage(() => { window.__dock.close(); window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => window.__asked.push(e.data); });
+  // The logo (DESIGN.md Part G: the one switch-session home): the picker as a tab at once, no ask of
+  // the left dock and no dock opened.
+  await inPage(() => { window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => window.__asked.push(e.data); });
   await page.click("#switch");
   await until("the picker tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
   assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://picker", true, 1]]);
-  await until("the withdrawn ask", () => window.__asked.length === 2);
-  assert.deepEqual(await inPage(() => { window.__dock.close(); return window.__asked.map(({ anchor, ...m }) => m); }), [{ open: "switch", window: 1 }, { cancel: "switch", window: 1 }]);
+  await page.waitForTimeout(100);
+  assert.deepEqual(await inPage(() => (window.__dock.close(), window.__asked)), [], "no ask of the left dock");
+  assert.deepEqual(await callsOf(shim, "layout", "set"), [], "no dock opened for it");
+  assert.equal(await page.getAttribute("#switch", "aria-expanded"), "false");
   assert.deepEqual(await inPage(under), []);
   assert.equal(await inPage(insidePopover), false);
   // Share: the agent panel opens (it was a rail), then its Share card is asked for this window

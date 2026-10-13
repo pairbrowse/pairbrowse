@@ -1322,9 +1322,11 @@ describe("collapse under reduced motion", () => pageTest("right", opts({}, { red
 
 // The card's "Working…" is its own agent's: a joiner's line (from the other browser), a host's
 // note and the other browser's agent are listed, and the card stays Idle on its agent's quiet.
+// (Claude idle on the board here: the board's "working" is the next test's.)
+const IDLE_CLAUDE = PEOPLE.map((p) => (p.who === "Claude" ? { ...p, status: "idle", task: "" } : p));
 describe("the card works on its own agent's lines only", () => pageTest("right", opts(), async ({ helper, inPage, until, errors }) => {
   const t = Date.now();
-  helper.push("board", { people: PEOPLE, messages: [] });
+  helper.push("board", { people: IDLE_CLAUDE, messages: [] });
   helper.push("activity", [{ t: t - 60_000, text: "Typed into **Email**", who: "Claude", tab: "Checkout" }]);
   await until("the card names Claude", () => document.getElementById("agent-name").textContent === "Claude");
   assert.equal(await inPage(text, "driver-text"), "Idle", "its last action was a minute ago");
@@ -1346,7 +1348,7 @@ describe("the card works on its own agent's lines only", () => pageTest("right",
 // A second agent of this browser (Codex, no from) acting: the card names it, working; the first
 // agent's earlier line never makes the card work.
 describe("a second local agent's line moves the card to it, working", () => pageTest("right", opts(), async ({ helper, inPage, until, errors }) => {
-  helper.push("board", { people: PEOPLE, messages: [] });
+  helper.push("board", { people: IDLE_CLAUDE, messages: [] });
   const lines = [{ t: Date.now() - 60_000, text: "Typed into **Email**", who: "Claude", tab: "Checkout" }];
   helper.push("activity", lines);
   await until("the card names Claude", () => document.getElementById("agent-name").textContent === "Claude");
@@ -1359,5 +1361,34 @@ describe("a second local agent's line moves the card to it, working", () => page
   await sleep(200);
   assert.match(await inPage(text, "agent-name"), /^Codex 1a2b/, "Claude's older line doesn't take the card back");
   assert.equal(await inPage(text, "driver-text"), "Working…");
+  assert.deepEqual(errors, []);
+}));
+
+// One truth for an agent's state (DESIGN.md Part G): the card reads the helper's board as the left
+// dock does (common.js agentWords): its status "working" is "Working…" here without a recent action,
+// and an idle agent is "Idle" in both.
+describe("the card's state is the board's, as the left dock reads it", () => pageTest("right", opts(), async ({ helper, until, errors }) => {
+  helper.push("board", { people: [{ who: "Claude 2e48", kind: "agent", color: "#e9763f", tab: "example.com", task: "Checking the page", status: "working" }], messages: [] });
+  await until("working from the board", () => document.getElementById("driver-text").textContent === "Working…");
+  helper.push("board", { people: [{ who: "Claude 2e48", kind: "agent", color: "#e9763f", tab: "example.com", task: "", status: "idle" }], messages: [] });
+  await until("idle from the board", () => document.getElementById("driver-text").textContent === "Idle");
+  assert.deepEqual(errors, []);
+}));
+
+// One agent connected (one MCP connection), idle and in no tab yet: the card is that agent; no
+// "+ 1 idle agent in this browser" line counts it a second time. A second idle agent is the line.
+describe("one idle agent is the card, not also an idle line", () => pageTest("right", opts(), async ({ helper, inPage, until, errors }) => {
+  const one = { who: "Claude 2e48", kind: "agent", color: "#e9763f", tab: "", task: "", status: "idle" };
+  helper.push("board", { people: [one, { who: "You", kind: "person", status: "idle" }], messages: [] });
+  await until("the card names it", () => /Claude 2e48/.test(document.getElementById("agent-name").textContent));
+  await sleep(200);
+  assert.equal(await inPage(() => document.querySelector("#people li.idle")), null, "no idle line for the card's own agent");
+  assert.equal(await inPage(() => document.getElementById("driver-text").textContent), "Idle");
+  // The same agent once a line names it (lastWho): still no idle line.
+  helper.push("activity", [{ t: Date.now() - 60_000, text: "Opened https://example.com", who: "Claude 2e48", tab: "Example Domain" }]);
+  await sleep(200);
+  assert.equal(await inPage(() => document.querySelector("#people li.idle")), null);
+  helper.push("board", { people: [one, { ...one, who: "Codex 77aa", color: "#9b7bfa" }], messages: [] });
+  await until("one idle line for the other", () => document.querySelector("#people li.idle")?.textContent === "+ 1 idle agent in this browser");
   assert.deepEqual(errors, []);
 }));

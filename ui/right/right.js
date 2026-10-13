@@ -6,7 +6,7 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, agentWords, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
+import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
 
 const pb = globalThis.pairbrowse || null;
@@ -30,7 +30,6 @@ let stream = null; // the shared helper stream (common.js helperStream)
 // browser's agent.
 const actedAt = new Map();
 const ACTED_KEPT = 50;
-const ownAgentLine = (a) => !!a?.who && !a.from && !String(a.text || "").startsWith("Note: ");
 const cardActedAt = () => actedAt.get(lastWho || activeEntry()?.who || "") || 0;
 let lastWho = "";
 let driveTimer = 0;
@@ -450,7 +449,10 @@ $("session-fold").addEventListener("click", () => {
 function setDriver() {
   const turn = document.body.dataset.turn === "true";
   const s = document.body.dataset.s;
-  const driving = !turn && !paused && s === "live" && Date.now() - cardActedAt() < DRIVING_MS;
+  // The agent's state as the left dock reads it (common.js agentWords: the board's status and its
+  // own last action), so one agent never reads "Working" there and "Idle" here.
+  const { state: agentState } = agentWords(activeEntry() || { kind: "agent" }, { driving: Date.now() - cardActedAt() < DRIVING_MS });
+  const driving = !turn && !paused && s === "live" && agentState === "working";
   document.body.dataset.driving = String(driving);
   const [text, state] = s === "none" ? [NO_AGENT, "closed"]
     : s === "closed" ? ["The browser is closed. It reopens on Claude's next action.", "closed"]
@@ -458,6 +460,7 @@ function setDriver() {
     : turn ? ["Waiting for you", "you"]
     : paused ? [pauseInfo?.by ? `Paused by ${pauseInfo.by}` : "Paused", "paused"]
     : driving ? ["Working…", "working"]
+    : agentState === "done" ? ["Done", "idle"]
     : ["Idle", "idle"];
   $("driver-text").textContent = text;
   $("driver").dataset.state = state;
@@ -502,11 +505,12 @@ function drawHeader() {
 }
 
 // The agent the card is about: the one whose action is newest, else the first agent at work in
-// this browser.
+// this browser, else the first one connected here (one idle agent is the card's, not an "idle
+// agent" line under it).
 function activeEntry() {
   const agents = lastBoard.people.filter((p) => p?.kind === "agent");
   if (lastWho) return agents.find((p) => p.who === lastWho) || null;
-  return agents.find((p) => !p.where && !quiet(p)) || null;
+  return agents.find((p) => !p.where && !quiet(p)) || agents.find((p) => !p.where) || null;
 }
 const agentName = (entry) => whose(lastWho || entry?.who || "");
 
@@ -563,7 +567,8 @@ function drawPeople() {
   // In the browser the left dock lists the people (you and your guests): here only the agents a
   // person can take control from. The side panel (extension host) keeps everyone.
   const people = all.filter((p) => !quiet(p) && p !== active && !(native() && p?.kind === "person"));
-  const idle = all.filter(quiet).length;
+  // The idle agents other than the card's own: the card already stands for that one.
+  const idle = all.filter((p) => quiet(p) && p !== active).length;
   const perAgent = !!(pauseInfo?.perAgent && pauseInfo?.can);
   const rows = people.map((p, i) => {
     const { name, app } = splitLabel(p.who);
@@ -766,6 +771,8 @@ function connect(url) {
     drawPause();
     drawPeople();
     drawAgent();
+    // The card's state line reads the board too (its agent's status).
+    setDriver();
     drawHeader();
     $("messages").replaceChildren(...messages.slice(-6).reverse().map((m) => el("li", {}, el("time", { textContent: `${clock(m.t)} ` }), el("strong", { textContent: `${m.from}${m.to && m.to !== "all" ? ` to ${m.to}` : ""}: ` }), document.createTextNode(m.text))));
   });

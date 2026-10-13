@@ -97,7 +97,7 @@ html[data-host="native"] .conn { display: none; }
 /* The state dot repeats the words (B3): --ok working, active and online; --warn waiting for you;
    --bad failed; --muted idle, done and paused. */
 .dot { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2.5px var(--sidebar); }
-li[data-state="working"] .dot, li[data-state="active"] .dot, li[data-state="online"] .dot { background: var(--ok); }
+li[data-state="working"] .dot, li[data-state="online"] .dot { background: var(--ok); }
 li[data-state="waiting"] .dot { background: var(--warn); }
 li[data-state="failed"] .dot { background: var(--bad); }
 li[data-state="idle"] .dot { background: var(--muted); }

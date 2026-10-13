@@ -113,21 +113,20 @@ if (!pb) menuBtn.hidden = true;
 // ---- a page no taller than the row (the browser's 53 px tab-row slot, which clips the rest):
 // nothing can open under the row. With the browser's bubbles (530 E1, pairbrowse.bubbles) the
 // logo's switcher and Share's card open in a bubble of the window anchored to the trigger (B1, B2):
-// this page in its #switcher or #share mode, framed by the browser, which owns its dismissal and
-// says when it closed (OnClosed; by Escape, or closed by its own page, the focus comes back to the
-// trigger). Without them (a build before 530) each opens in the dock right under its trigger, so it
-// still shows where the person acted (DESIGN.md Part I): the logo's switcher at the top of the left
-// dock (under the logo), Share's card at the top of the agent panel (under Share), each with a
-// caret at the trigger's place; the dock opens first if it is not, and with no answer from the dock
-// the logo falls back to the session picker as a tab. Either way the trigger shows the popover's
-// state (pressed, aria-expanded) and a second click or Escape on it closes it. The menu, which has
+// the picker page (picker/#bubble) or this page in its #share mode, framed by the browser, which owns
+// its dismissal and says when it closed (OnClosed; by Escape, or closed by its own page, the focus
+// comes back to the trigger). Without them (a build before 530) the logo opens the session picker
+// as a tab (a page of its own reaches the helper; a frame in a dock gets no bindings), and Share's
+// card opens at the top of the agent panel, right under Share, with a caret at it (DESIGN.md Part
+// I); the panel opens first if it is not. The trigger shows the popover's state (pressed,
+// aria-expanded) and a second click or Escape on it closes it. The menu, which has
 // no surface there, is not shown. Each runs in the capture phase, ahead of the popover's own click
 // handler, so no popover opens unseen and no focus moves into one. ----
 const ROW_ONLY = 60; // px: taller than the 53 px row, shorter than any popover
 // Without the browser API there is no dock to ask: the popovers open in place.
 const inSlot = () => !!pb && !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
 const SHARE_CHANNEL = "pairbrowse-share";
-const SLOT_LABELS = { switch: "PairBrowse: switch session (opens under the logo, in the workspace)", share: "Share this session (opens under Share, in the agent panel)" };
+const SLOT_LABELS = { switch: "PairBrowse: switch session (opens the session picker in a tab)", share: "Share this session (opens under Share, in the agent panel)" };
 // Chromium's own ⋯ (32 px, 16 px from the window's edge) sits after this page in the browser: the
 // docks measure from the window's edge (native: B2).
 const APP_MENU = nativeHost ? 48 : 0;
@@ -219,19 +218,9 @@ $("switch").addEventListener("click", async (e) => {
   if (!inSlot()) return;
   e.stopImmediatePropagation();
   if (hasBubbles()) { toggleBubble("switch"); return; }
-  if (remote.switch) { ask({ close: "switch" }); return; }
-  await openDock("left");
-  // The dock answers {opened: "switch"}; with no answer in SHARE_WAIT_MS (no dock in this window,
-  // or none listening) the picker opens as a tab, as before. One timer, armed by a click only.
-  // The fallback first withdraws the ask, so a dock whose open layout comes later never opens a
-  // second switcher.
-  clearTimeout(switchWait);
-  switchWait = setTimeout(() => {
-    switchWait = 0;
-    ask({ cancel: "switch" });
-    if (pb) pb.tabs.create("pairbrowse://picker", true, myWindow).catch(() => {});
-  }, pb ? SHARE_WAIT_MS : 0);
-  ask({ open: "switch", anchor: anchorOf("switch") });
+  // A build without the browser's bubbles: the picker as a tab (a page of its own, which reaches the
+  // helper; the left dock's frame gets no bindings in the browser and could not).
+  pb.tabs.create("pairbrowse://picker", true, myWindow).catch(() => {});
 }, true);
 $("share-btn").addEventListener("click", async (e) => {
   if (!inSlot()) return;
@@ -256,14 +245,13 @@ for (const [id, key] of [["switch", "switch"], ["share-btn", "share"]]) {
     ask({ close: key });
   }, true);
 }
-let shareChannel = null, shareWait = 0, switchWait = 0;
+let shareChannel = null, shareWait = 0;
 const SHARE_WAIT_MS = 1000;
 try {
   shareChannel = new BroadcastChannel(SHARE_CHANNEL);
   shareChannel.onmessage = (e) => {
     if (e.data?.window !== myWindow || myWindow === -1) return;
     const opened = e.data?.opened, closed = e.data?.closed;
-    if (opened === "switch") { clearTimeout(switchWait); switchWait = 0; }
     if (opened === "share") { clearTimeout(shareWait); shareWait = 0; $("share-note").textContent = "Share card opened under Share, in the agent panel (F6)"; }
     if (opened === "switch" || opened === "share") remote[opened] = true;
     else if (closed === "switch" || closed === "share") remote[closed] = false;

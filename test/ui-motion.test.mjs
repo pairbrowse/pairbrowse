@@ -197,21 +197,14 @@ describe("tabs grow in and fold away", () => pageTest("strip", { viewport: { wid
   assert.match(await inPage(() => document.activeElement?.closest?.("#tabs li")?.dataset.id || ""), /^\d+$/, "the focus stays in the tab row");
 }));
 
-// ---- the switcher opens at the trigger that asked: under the Sessions row, or under the logo ----
-describe("the left dock's switcher opens at its trigger", () => pageTest("left", { viewport: { width: 420, height: 936 } }, async ({ page, inPage, until, settle }) => {
+// ---- the framed switcher opens at its trigger: under the Sessions row (served without the browser's
+// API; in the browser the row opens the browser's bubble beside it, test/ui-left.test.mjs) ----
+describe("the left dock's switcher opens at its trigger", () => pageTest("left", { viewport: { width: 420, height: 936 }, native: false }, async ({ page, inPage, until, settle }) => {
   await until("live", () => document.body.dataset.s === "live");
-  await inPage(() => new Promise((r) => setTimeout(r, 100))); // windows.list has answered
-  await inPage(() => { window.__heard = []; const ch = new BroadcastChannel("pairbrowse-share"); ch.onmessage = (e) => window.__heard.push(e.data); window.__strip = ch; });
+  await until("the layout", () => document.body.dataset.dock === "open");
   await page.click("#nav-sessions");
   await until("open", () => !document.getElementById("switcher").hidden);
   await settle();
   const under = await inPage(() => ({ top: document.getElementById("switcher").getBoundingClientRect().top, row: document.getElementById("nav-sessions").getBoundingClientRect().bottom }));
   assert.equal(under.top, under.row + 8, "under the Sessions row");
-  await page.waitForTimeout(100);
-  assert.deepEqual(await inPage(() => window.__heard), [], "the logo is not lit for the Sessions row's switcher");
-  // The logo asks while it is open: it moves under the logo, and the logo hears it is open.
-  await inPage(() => window.__strip.postMessage({ open: "switch", window: 1, anchor: { left: 176 } }));
-  await until("told", () => window.__heard.some((m) => m.opened === "switch"));
-  assert.deepEqual(await inPage(() => { const d = document.getElementById("switcher"); return [d.getBoundingClientRect().top, d.style.getPropertyValue("--caret-x")]; }), [8, "168px"]);
-  await inPage(() => window.__strip.close());
 }));

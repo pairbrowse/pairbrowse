@@ -133,18 +133,23 @@ export const STATE_WORDS = { working: "working", you: "waiting for their person"
 export const stateWord = (s) => (Object.hasOwn(STATE_WORDS, s) ? STATE_WORDS[s] : "idle");
 // One vocabulary for an agent's or a person's state, the left dock's and the right dock's alike
 // (545): agents "Working", "Waiting for you" ("Waiting for their person" for an agent in another
-// browser), "Paused", "Done", "Idle", or "Active · N tabs" when the caller counts its tabs (the
-// left dock); people "Online". state is the word's key, for a dot that repeats it (never alone).
+// browser), "Paused", "Done", "Idle"; people "Online". The state is the helper's (the board's
+// status, its pause) and the agent's own last action (driving: within the last 8 s), read the same
+// way in both docks, never the number of its tabs: a caller that counts them (the left dock) gets
+// them after the state ("Idle · 1 tab"). state is the word's key, for a dot that repeats it (never
+// alone).
 export function agentWords(p, { tabs = 0, driving = false, paused = false } = {}) {
   if (p?.kind === "person") return { state: "online", words: "Online" };
-  const n = Number.isInteger(tabs) && tabs > 0 ? `Active · ${tabs} tab${tabs === 1 ? "" : "s"}` : "";
-  if (p?.status === "you") return { state: "waiting", words: p.where ? "Waiting for their person" : "Waiting for you" };
-  if (paused) return { state: "paused", words: "Paused" };
-  if (p?.status === "working" || driving) return { state: "working", words: n || "Working" };
-  if (n) return { state: "active", words: n };
-  if (p?.status === "done") return { state: "done", words: "Done" };
-  return { state: "idle", words: "Idle" };
+  const n = Number.isInteger(tabs) && tabs > 0 ? ` · ${tabs} tab${tabs === 1 ? "" : "s"}` : "";
+  if (p?.status === "you") return { state: "waiting", words: (p.where ? "Waiting for their person" : "Waiting for you") + n };
+  if (paused) return { state: "paused", words: `Paused${n}` };
+  if (p?.status === "working" || driving) return { state: "working", words: `Working${n}` };
+  if (p?.status === "done") return { state: "done", words: `Done${n}` };
+  return { state: "idle", words: `Idle${n}` };
 }
+// An agent's own action in the activity list (not a joiner's line from the other browser, not a
+// note): what "working" counts, in both docks.
+export const ownAgentLine = (a) => !!a?.who && !a.from && !String(a.text || "").startsWith("Note: ");
 // "Alice" -> "Alice's Claude". Unnamed ("Claude 3fed") and app-labelled ("Alice · Codex") stay as they are.
 export const whose = (who) => !who ? "Claude" : /^Claude\b| · /.test(who) ? who : `${who}'s Claude`;
 // The activity line's head: who did it, and in which tab.

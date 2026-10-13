@@ -80,6 +80,7 @@ import { createDownloads, createRecordings, createHandoffs, openFile, createPers
 import { createPreviews } from "./daemon/preview.mjs";
 import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mjs";
 import { engineDir } from "./native-pack.mjs";
+import { answerOpen, writeOpener } from "./opener.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
 
@@ -762,13 +763,20 @@ async function main() {
     rmSync(paths.socket, { force: true });
   }
   context.startUp();
-  // An agent's connection, or a PairBrowse hook's single line (an approval asked in the browser).
+  // An agent's connection, or a single line: a PairBrowse hook's (an approval asked in the browser)
+  // or the opener's (the browser opened by hand, scripts/open.mjs).
   socketServer = net.createServer((sock) => shuttingDown ? sock.destroy() : routeConnection(sock, {
-    onHook: (s, line) => clickApprovals.hook(s, line).catch((e) => { log("approval hook", e?.message || e); s.destroy(); }),
+    onHook: (s, line) => answerOpen(s, line, () => context.openByHand(), log)
+      || clickApprovals.hook(s, line).catch((e) => { log("approval hook", e?.message || e); s.destroy(); }),
     onOther: (s) => serve(s).catch((e) => { log("session error", e?.stack || e); s.destroy(); }),
   }));
   socketServer.listen(paths.socket, () => {
     log(`listening on ${paths.socket}`);
+    // The PairBrowse browser opened by hand runs this helper's opener (scripts/opener.mjs): the
+    // record names this Node and this copy's script, rewritten at each start.
+    if (process.platform !== "win32") {
+      try { writeOpener({ script: join(dirname(fileURLToPath(import.meta.url)), "open.mjs") }); } catch (e) { log(`opener: ${e?.code || e?.message || e}`); }
+    }
     const socketAt = Math.round(performance.now());
     setImmediate(() => {
       try { runtime(); } catch (e) { log(`the runtime didn't load: ${e?.stack || e}`); shutdown(1); return; }

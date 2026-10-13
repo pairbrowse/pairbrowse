@@ -2,62 +2,17 @@
 // What Claude Code runs as the "browser" MCP server: a thin bridge between Claude Code (stdio)
 // and the PairBrowse daemon (private socket). Starts the daemon when it isn't running, and
 // reconnects transparently if the browser is restarted mid-session.
-import net from "node:net";
-import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { existsSync, copyFileSync, chmodSync, openSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { paths, ensureDirs, loadConfig } from "./paths.mjs";
-import { ensureRuntime } from "./runtime.mjs";
+import { loadConfig } from "./paths.mjs";
+import { connectLocal as connectHelper } from "./daemon-connect.mjs";
 import { DOCK_TOOL, dockSupported, startPane } from "./dock.mjs";
 import { JOIN_TOOL } from "./policy.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const err = (s) => process.stderr.write(`pairbrowse: ${s}\n`);
 
 const config = loadConfig();
 
-let localReady = false;
-function prepareLocal() {
-  if (localReady) return;
-  ensureDirs();
-  if (!existsSync(paths.secrets)) {
-    copyFileSync(join(root, "templates", "secrets.env.example"), paths.secrets);
-    if (process.platform !== "win32") chmodSync(paths.secrets, 0o600);
-  }
-  if (!existsSync(paths.facts)) copyFileSync(join(root, "templates", "facts.example.md"), paths.facts);
-  ensureRuntime((m) => err(m));
-  localReady = true;
-}
-
-function startDaemon() {
-  const out = openSync(paths.daemonLog, "a");
-  spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { detached: true, stdio: ["ignore", out, out], env: process.env }).unref();
-}
-
-function connectOnce() {
-  return new Promise((resolve, reject) => {
-    const s = net.connect(paths.socket);
-    s.once("connect", () => resolve(s));
-    s.once("error", reject);
-  });
-}
-
-async function connectLocal() {
-  prepareLocal();
-  try {
-    return await connectOnce();
-  } catch {}
-  startDaemon();
-  for (let i = 0; i < 100; i++) {
-    await new Promise((r) => setTimeout(r, 150));
-    try {
-      return await connectOnce();
-    } catch {}
-  }
-  throw new Error(`couldn't reach the PairBrowse daemon; see ${paths.daemonLog}`);
-}
+const connectLocal = () => connectHelper((m) => err(m));
 
 // The upstream: the local daemon socket.
 async function openUpstream() {

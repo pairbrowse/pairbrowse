@@ -19,6 +19,7 @@ import { pruneStaleContexts } from "./contexts.mjs";
 import { chromePages, capturePages, nativeManifest } from "../native-engine.mjs";
 import { isChromePage } from "../policy.mjs";
 import { createPersonTabs, keepDownloadMark } from "./tools.mjs";
+import { OPEN_ACCEPT_MS } from "../opener.mjs";
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
@@ -87,6 +88,10 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   // the user hears of it, and actions say so at once rather than waiting for minutes.
   let installing = false;
   let launching = false;
+  // The next launch is for a person who opened the PairBrowse browser by hand (openByHand): it may
+  // come to the front, so nothing puts the app they were in back in front of it (keepFocus).
+  let byHand = false;
+  const focusing = (own, change) => (own ? change() : keepFocus(change));
   // Which browser runs ("browser" in config.json, browserChoice in browser.mjs). The launch sets
   // config.browserEngine and config.executablePath from it (in memory only), so the older names a
   // person wrote are kept aside here: every launch reads the choice anew (a change in Settings
@@ -278,13 +283,13 @@ let switched = Promise.resolve();
   }
 
   // screen: the tab that shows "Opening tabs" (default: the first one).
-  function restore(ctx, screen = null) {
+  function restore(ctx, screen = null, { own = false } = {}) {
     recordPerson(session, { who: "You", computer: computerName(), kind: "you" }); // the session is in use now
     const saved = readSavedTabs(tabsFile(session));
     tabTracker = trackTabs(ctx, { file: tabsFile(session), activePage: () => findPage(ctx, lastCurrentUrl), log });
     if (!saved.tabs.length) { screen?.close().catch(() => {}); return; }
     restoredActiveUrl = saved.tabs[saved.active]?.url || null;
-    restoring = keepFocus(() => restoreTabs(ctx, saved, {
+    restoring = focusing(own, () => restoreTabs(ctx, saved, {
       log, screen,
       // Progress shows in the live view and side panel only (never as a badge in the pages),
       // and only when there's more than one tab to bring back.
@@ -298,6 +303,8 @@ let switched = Promise.resolve();
   }
 
   async function launch() {
+    const own = byHand;
+    byHand = false;
     chosen = false;
     await chooseEngine();
     chrome = !!chromePagesOf(config);
@@ -342,8 +349,8 @@ let switched = Promise.resolve();
     // A tab can arrive already loaded (one the side panel opened at its address): its page
     // script comes now, since under Patchright it isn't there until ensure adds it.
     ctx.on("page", (p) => { adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => { if (!isChromePage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => capTabs(ctx, p).catch(() => {}), 300); });
-    if (pick.state === "pending") showPicker(ctx);
-    else restore(ctx);
+    if (pick.state === "pending") showPicker(ctx, { own });
+    else restore(ctx, null, { own });
     const mine = contextPromise;
     ctx.on("close", () => {
       dropHelperKey(keyFile); // this launch's own file: an older browser closing late keeps the next one's
@@ -400,7 +407,7 @@ let switched = Promise.resolve();
 
   // Its tab, instead of the saved tabs (they come back once the person chose this session).
   // reopened: asked for again from the side panel, in a tab of its own; the open tabs stay.
-  function showPicker(ctx, { reopened = false } = {}) {
+  function showPicker(ctx, { reopened = false, own = false } = {}) {
     pick.state = "showing";
     if (!reopened) tabTracker = null; // the saved tabs stay as they were until the person chose
     (async () => {
@@ -413,7 +420,7 @@ let switched = Promise.resolve();
         if (await page.goto(pickerUrl(), { waitUntil: "domcontentloaded", timeout: 5000 }).then(() => true, () => false)) break;
         await sleep(250);
       }
-      await keepFocus(() => page.bringToFront().catch(() => {}));
+      await focusing(own, () => page.bringToFront().catch(() => {}));
       log("session picker shown");
     })().catch((e) => log("session picker", e?.message || e));
   }
@@ -704,6 +711,28 @@ let switched = Promise.resolve();
   }
 
   // At startup: throwaway sessions a crash left behind, and the note that a clean one ended.
+  // The person opened the PairBrowse browser by hand, and its bare start handed itself to this
+  // helper (scripts/open.mjs; plans/555 item 6): the browser opens as the helper's, or the window
+  // already open comes to the front. { ok } once it's up, or after acceptMs while it still starts
+  // (the launch goes on; a failure after that is logged). { ok: false, why } when the browser this
+  // helper uses isn't a PairBrowse build with its own pages (then the person's start opens as a
+  // plain window, as before), while the helper stops, or when the launch failed at once.
+  async function openByHand({ acceptMs = OPEN_ACCEPT_MS } = {}) {
+    if (shuttingDown()) return { ok: false, why: "PairBrowse is restarting" };
+    const pages = contextPromise && chosen ? chrome : predict().pages;
+    if (!pages) return { ok: false, why: "the browser in use here isn't the PairBrowse browser (\"browser\" in ~/.pairbrowse/config.json)" };
+    if (!contextPromise) byHand = true; // this start is the person's: it may come to the front
+    const up = getContext().then(async (ctx) => {
+      const page = pick.state === "showing" && pick.page && !pick.page.isClosed() ? pick.page : ctx.pages().findLast((p) => !p.isClosed()) || null;
+      if (page) await within(3000, page.bringToFront().catch(() => {}));
+      return { ok: true };
+    }, (e) => ({ ok: false, why: e?.message || String(e) }));
+    const answer = await within(acceptMs, up);
+    if (answer) return answer;
+    up.then((a) => { if (!a.ok) log(`the browser opened by hand didn't start: ${a.why}`); });
+    return { ok: true };
+  }
+
   function startUp() {
     try { sweepTemporary(); } catch {}
     if (!existsSync(CLEAN_MARKER)) return;
@@ -750,7 +779,7 @@ let switched = Promise.resolve();
     // first says what the share will really carry.
     willHaveChromePages: () => (contextPromise && chosen ? chrome : predict().pages),
     willHaveCapturePages: () => (contextPromise && chosen ? capture : predict().capture),
-    openForPerson, isPersonTab: (p) => personTabs.has(p),
+    openForPerson, isPersonTab: (p) => personTabs.has(p), openByHand,
     // The browser of the window open now ("pairbrowse", "chromium" or a path), null when none is.
     browserInUse: () => (contextPromise ? inUse : null),
     // The settings the choice is read from (config with the older names as the person wrote them).

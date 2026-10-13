@@ -45,9 +45,9 @@ pageTest("newtab", { viewport: VIEW }, async ({ inPage }) => {
   assert.equal(r.h, "96");
   assert.ok(r.src.endsWith("/logo.svg"), r.src);
   assert.equal(r.h1, "PairBrowse");
-  assert.equal(r.placeholder, "Type a URL");
+  assert.equal(r.placeholder, "Search Google or type a URL");
   assert.equal(await inPage(() => document.title), "New tab");
-  assert.ok(!/google|chromium/i.test(await inPage(() => document.documentElement.outerHTML)), "no Google or Chromium wording");
+  assert.ok(!/chromium/i.test(await inPage(() => document.documentElement.outerHTML)), "no Chromium wording");
   assert.equal(r.pill, 560);
 });
 
@@ -60,9 +60,10 @@ pageTest("newtab", { viewport: VIEW }, async ({ page, shim, inPage }) => {
   const calls = await shim.calls();
   assert.ok(calls.some((c) => c.iface === "session" && c.method === "helper"), "session.helper() asked");
   assert.deepEqual(calls.filter((c) => c.iface === "tabs"), [], "never a tabs.* call");
-  // Words are no address: nothing opens (no search engine), the line says so and goes on the next edit.
+  // Words search Google (checked below); javascript: and file: open nothing, the line says so and
+  // goes on the next edit.
   const before = page.url();
-  for (const words of ["hello world", "javascript:alert(1)", "file:///etc/hosts"]) {
+  for (const words of ["javascript:alert(1)", "file:///etc/hosts"]) {
     await page.fill("#q", words);
     await page.press("#q", "Enter");
     assert.equal(await inPage(() => document.getElementById("msg").textContent), "Type a web address, like example.com.");
@@ -70,6 +71,15 @@ pageTest("newtab", { viewport: VIEW }, async ({ page, shim, inPage }) => {
   }
   await page.type("#q", "x");
   assert.equal(await inPage(() => document.getElementById("msg").textContent), "");
+});
+
+pageTest("newtab", { viewport: VIEW }, async ({ page }) => {
+  // Words search Google (the request is answered here: nothing leaves the test).
+  await page.route("https://www.google.com/**", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<title>results</title>" }));
+  await page.fill("#q", "hello world");
+  await page.press("#q", "Enter");
+  await page.waitForURL((u) => u.hostname === "www.google.com");
+  assert.equal(page.url(), "https://www.google.com/search?q=hello%20world");
 });
 
 pageTest("newtab", { viewport: VIEW }, async ({ page, ui, shim }) => {

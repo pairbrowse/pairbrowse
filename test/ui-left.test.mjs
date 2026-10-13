@@ -408,6 +408,32 @@ scenario("left: the session switcher", { viewport: { width: 420, height: 936 }, 
   await clean(ctx);
 });
 
+// Agents at work: the switcher (the picker in its dock slot frame, where confirm() gets no
+// dialog) asks in its own card, naming them; the switcher stays open on Cancel, and Switch anyway
+// resends the pick with confirm: true and closes it.
+scenario("left: the switcher asks while agents are at work", { viewport: { width: 420, height: 936 }, fixtures: { sessions: SWITCHER_SESSIONS, agents: ["Claude", "Codex"] } }, async (ctx) => {
+  const { page, until, helper } = ctx;
+  await page.click("#nav-sessions");
+  const frame = await framedPicker(page, "ready");
+  await clickInFrame(page, frame, "#sessions > li:nth-child(2) button");
+  let q = null;
+  for (let i = 0; i < 60 && !q; i++) { q = await inFrame(frame, () => (document.getElementById("switch-ask").hidden ? null : document.querySelector("#switch-ask strong").textContent)); if (!q) await page.waitForTimeout(50); }
+  assert.equal(q, "Claude and Codex are using the browser. Switching closes every tab for them. Switch anyway?");
+  assert.deepEqual(helper.posts.filter((p) => p.route === "pick").map((p) => p.body), [{ action: "use", name: "shop" }]);
+  assert.equal(await inFrame(page, () => document.getElementById("switcher").hidden), false, "the switcher stays open on the question");
+  await clickInFrame(page, frame, "#switch-ask .secondary");
+  for (let i = 0; i < 40 && (await inFrame(frame, () => document.getElementById("msg").textContent)) !== "Not switched."; i++) await page.waitForTimeout(50);
+  assert.equal(await inFrame(frame, () => document.getElementById("msg").textContent), "Not switched.");
+  assert.equal(await inFrame(page, () => document.getElementById("switcher").hidden), false, "Cancel keeps the switcher");
+  await clickInFrame(page, frame, "#sessions > li:nth-child(2) button");
+  for (let i = 0; i < 60 && (await inFrame(frame, () => document.getElementById("switch-ask").hidden)); i++) await page.waitForTimeout(50);
+  await clickInFrame(page, frame, "#switch-ask .primary");
+  await until("closed after the switch", () => document.getElementById("switcher").hidden);
+  assert.deepEqual(helper.posts.filter((p) => p.route === "pick").map((p) => p.body),
+    [{ action: "use", name: "shop" }, { action: "use", name: "shop" }, { action: "use", name: "shop", confirm: true }]);
+  await clean(ctx);
+});
+
 scenario("left: the session switcher under reduced motion", { viewport: { width: 420, height: 936 }, reducedMotion: "reduce", fixtures: { sessions: SWITCHER_SESSIONS } }, async (ctx) => {
   await ctx.page.click("#nav-sessions");
   await framedPicker(ctx.page);

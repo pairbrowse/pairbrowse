@@ -1,5 +1,6 @@
 // The settings page (ui/settings, DESIGN.md Part H): every control reads the helper's current value
-// and writes through a real owner route (config, profile, joinhost, diagnostics/report, report).
+// and writes through a real owner route (config, profile, joinhost, pick, invite, diagnostics/report,
+// report), and the config, sessions and invites events keep it current.
 // The common checks (CSP, names, Tab ring, hidden, reduced motion) stay in test/ui.test.mjs.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -46,7 +47,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPag
     name: li.querySelector(".name").textContent, badges: [...li.querySelectorAll("em")].map((e) => e.textContent), controls: li.querySelectorAll("button, input, a").length,
   })));
   assert.deepEqual(rows.map((r) => [r.name, r.badges]), [["Default", ["This session"]], ["checkout-test", ["Live · 1 other"]]]);
-  assert.ok(rows.every((r) => r.controls === 0));
+  assert.deepEqual(rows.map((r) => r.controls), [0, 1], "Delete only on a saved session that isn't open");
 
   await until("the profile", () => document.querySelectorAll("#details .row").length === 2);
   await until("the host rows", () => document.querySelectorAll("#host-list li").length === 1);
@@ -184,7 +185,8 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, until, inPage 
 pageTest("settings", { fixtures: { ...fixtures, timeline: null, config: null }, reducedMotion: "reduce", viewport: VIEW }, async ({ page, until, inPage, harness }) => {
   await until("the stream", live);
   await until("the missing line", () => !document.querySelector(".cfg-missing").hidden);
-  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".cfg-item")].map((n) => n.hidden)), [true, true, true]);
+  const cfg = await inPage(() => [...document.querySelectorAll(".cfg-item")].map((n) => n.hidden));
+  assert.ok(cfg.length >= 9 && cfg.every(Boolean), JSON.stringify(cfg));
   assert.equal(await inPage(() => document.getElementById("report-open").hidden), true, "no report relay: no button");
   await page.hover("#session-list li:first-child");
   assert.deepEqual(await harness.animations(), []);
@@ -262,5 +264,147 @@ pageTest("settings", { fixtures, native: false, viewport: VIEW }, async ({ page,
   await inPage(() => { window.__opened = []; window.chrome.tabs = { create: (o) => { window.__opened.push(o.url); } }; });
   await page.click("#browser-settings");
   assert.deepEqual(await inPage(() => window.__opened), ["chrome://settings"]);
+  assert.deepEqual(errors, []);
+});
+
+// 10. The six config fields: read from config.json, written through POST config one at a time,
+// a refusal in the item's own line, the notes on what waits for the next start, the config event.
+pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("the config", () => document.getElementById("your-name-field").value === "Alice");
+  const read = () => inPage(() => ({
+    ask: document.getElementById("ask-on").getAttribute("aria-checked"),
+    dl: document.getElementById("dl-where").textContent, reset: document.getElementById("dl-acts").hidden,
+    pics: document.getElementById("pics-on").getAttribute("aria-checked"),
+    cookies: document.querySelector("input[name=cookies]:checked")?.value,
+    tabs: document.getElementById("max-tabs").value, name: document.getElementById("your-name-field").value,
+    shown: ["session-start", "downloads", "results", "cookie-banners", "open-tabs", "your-name"].map((id) => !document.getElementById(id).hidden),
+  }));
+  assert.deepEqual(await read(), { ask: "true", dl: "your Downloads folder", reset: true, pics: "true", cookies: "accept", tabs: "20", name: "Alice", shown: [true, true, true, true, true, true] });
+  // What waits for the next start says so; the rest applies at once.
+  assert.match(await inPage(text, "ask-state"), /next start/);
+  assert.match(await inPage(() => document.querySelector("#your-name .help").textContent), /at PairBrowse's next start/);
+  for (const id of ["downloads", "results", "cookie-banners", "open-tabs"]) assert.match(await inPage((i) => document.getElementById(i).textContent, id), /Applies at once/, id);
+
+  await page.click("#ask-on");
+  await posted(helper, page, "askSession", "config", { askSession: false });
+  await until("ask saved", () => /next start/.test(document.getElementById("ask-msg").textContent) && document.getElementById("ask-on").getAttribute("aria-checked") === "false");
+
+  await page.fill("#dl-path", "/opt/missing/folder");
+  await page.press("#dl-path", "Enter");
+  await posted(helper, page, "a bad folder", "config", { downloads: "/opt/missing/folder" });
+  await until("the refusal", () => document.getElementById("dl-msg").textContent === "/opt/missing/folder isn't a folder" && document.getElementById("dl-msg").dataset.kind === "error");
+  assert.equal(await inPage(() => document.getElementById("dl-path").value), "/opt/missing/folder", "what was typed stays to fix");
+  await page.fill("#dl-path", "/Users/alice/Invoices");
+  await page.click("#dl-form button[type=submit]");
+  await posted(helper, page, "a folder", "config", { downloads: "/Users/alice/Invoices" });
+  await until("saved", () => document.getElementById("dl-where").textContent === "/Users/alice/Invoices" && !document.getElementById("dl-acts").hidden);
+  await page.click("#dl-reset");
+  await posted(helper, page, "back to Downloads", "config", { downloads: null });
+  await until("reset", () => document.getElementById("dl-where").textContent === "your Downloads folder" && document.getElementById("dl-acts").hidden);
+
+  await page.click("#pics-on");
+  await posted(helper, page, "pictures", "config", { pictures: false });
+  await until("text only", () => document.getElementById("pics-msg").textContent === "Saved. Agents get text only.");
+  await page.click("#cookie-banners .seg label:nth-child(2)");
+  await posted(helper, page, "cookies", "config", { cookies: "reject" });
+  await until("reject", () => document.getElementById("cookies-msg").textContent === "Saved. Cookie banners get Reject.");
+
+  await page.fill("#max-tabs", "51");
+  assert.equal(await inPage(() => document.getElementById("tabs-save").hidden), false, "Save shows once changed");
+  await page.press("#max-tabs", "Enter");
+  await until("the range", () => document.getElementById("tabs-msg").textContent === "Enter a whole number from 2 to 50.");
+  assert.equal(helper.posts.some((p) => p.route === "config" && p.body?.maxTabs === 51), false, "nothing sent out of range");
+  await page.fill("#max-tabs", "30");
+  await page.press("#max-tabs", "Enter");
+  await posted(helper, page, "maxTabs", "config", { maxTabs: 30 });
+  await until("tabs saved", () => document.getElementById("tabs-msg").textContent === "Saved. At most 30 tabs stay open.");
+
+  await page.fill("#your-name-field", "Al <b>");
+  await page.press("#your-name-field", "Enter");
+  await posted(helper, page, "a bad name", "config", { name: "Al <b>" });
+  await until("the name refusal", () => /^name is up to 40 characters/.test(document.getElementById("name-msg").textContent));
+  await page.fill("#your-name-field", "  Alice   Berg ");
+  await page.click("#name-save");
+  await posted(helper, page, "the name", "config", { name: "Alice Berg" });
+  await until("name saved", () => /^Saved\. People see you as Alice Berg/.test(document.getElementById("name-msg").textContent));
+  assert.deepEqual({ name: helper.fixtures.config.name, tabs: helper.fixtures.config.maxTabs, cookies: helper.fixtures.config.cookies, pictures: helper.fixtures.config.pictures, ask: helper.fixtures.config.askSession },
+    { name: "Alice Berg", tabs: 30, cookies: "reject", pictures: false, ask: false });
+
+  // Another page's change arrives as the config event.
+  helper.push("config", { ...helper.fixtures.config, maxTabs: 12, cookies: "accept", pictures: true, askSession: true, downloads: "/Volumes/Data", name: "Al" });
+  await until("the event", () => document.getElementById("max-tabs").value === "12" && document.querySelector("input[name=cookies]:checked")?.value === "accept");
+  const after = await read();
+  assert.deepEqual([after.ask, after.dl, after.reset, after.pics, after.name], ["true", "/Volumes/Data", false, "true", "Al"]);
+  assert.deepEqual(errors, []);
+});
+
+// 11. An older helper's config.json without the new fields: those items stay off the page.
+pageTest("settings", { fixtures, viewport: VIEW, replies: {} }, async ({ helper, until, inPage }) => {
+  await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
+  const { name, downloads, pictures, cookies, maxTabs, askSession, ...old } = helper.fixtures.config;
+  assert.ok(name !== undefined && downloads !== undefined && pictures !== undefined && cookies !== undefined && maxTabs !== undefined && askSession !== undefined);
+  helper.push("config", old);
+  await until("hidden", () => document.getElementById("your-name").hidden);
+  assert.deepEqual(await inPage(() => ["session-start", "downloads", "results", "cookie-banners", "open-tabs", "your-name", "browser", "pictures"].map((id) => document.getElementById(id).hidden)),
+    [true, true, true, true, true, true, false, false]);
+});
+
+// 12. Saved sessions: Delete after a question in the row (never the open session or Default),
+// POST pick { action: "delete" }; a refusal puts the row back; the sessions event redraws the list.
+pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("two session rows", () => document.querySelectorAll("#session-list li").length === 2);
+  await page.click("button[aria-label='Delete session checkout-test']");
+  assert.equal(await inPage(() => document.activeElement.textContent), "Keep", "the question starts on Keep");
+  assert.equal(await inPage(() => document.querySelector("#session-list .ask").textContent), "Delete it with its logins?");
+  await page.keyboard.press("Enter");
+  assert.equal(await inPage(() => document.activeElement.getAttribute("aria-label")), "Delete session checkout-test", "Keep puts focus back");
+  assert.equal(helper.posts.some((p) => p.route === "pick"), false, "Keep sends nothing");
+  await page.click("button[aria-label='Delete session checkout-test']");
+  await page.click("button[aria-label='Yes, delete session checkout-test']");
+  await posted(helper, page, "delete", "pick", { action: "delete", name: "checkout-test" });
+  await until("gone", () => document.querySelectorAll("#session-list li").length === 1);
+  assert.equal(await inPage(text, "sessions-msg"), 'Deleted session "checkout-test" and its logins.');
+
+  // A session saved elsewhere arrives with the sessions event; a refused delete keeps its row.
+  helper.set("sessions", { sessions: [...helper.fixtures.sessions.sessions, { name: "travel", tabs: 2, sites: ["trips.example"], current: false, people: [], live: [] }] });
+  await until("travel", () => !!document.querySelector("button[aria-label='Delete session travel']"));
+  helper.replies.pick = () => ({ status: 409, body: { text: "People are in this session; try once they have left.", error: true } });
+  await page.click("button[aria-label='Delete session travel']");
+  await page.click("button[aria-label='Yes, delete session travel']");
+  await until("the refusal", () => document.getElementById("sessions-msg").textContent === "People are in this session; try once they have left.");
+  await until("the row back", () => document.activeElement?.getAttribute("aria-label") === "Delete session travel");
+  assert.equal(await inPage(() => document.querySelectorAll("#session-list li").length), 2);
+  assert.deepEqual(errors, []);
+});
+
+// 13. Invites out now: listed from invites.json (no key, code or link), Revoke after a question
+// in the row posts invite { op: "revoke", id }; the invites event adds and drops rows; one already
+// gone (404) says so and reloads the list.
+pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("two invites", () => document.querySelectorAll("#invite-list li").length === 2);
+  const rows = await inPage(() => [...document.querySelectorAll("#invite-list li")].map((li) => [li.querySelector(".name").textContent, li.querySelector("small").textContent]));
+  assert.deepEqual(rows, [["Bob", "Join code · can drive"], ["Wendy", "Link · can watch"]]);
+  assert.equal(await inPage(() => document.getElementById("invites-empty").hidden), true);
+  await page.click("button[aria-label='Revoke Bob']");
+  assert.equal(await inPage(() => document.activeElement.textContent), "Keep");
+  await page.click("button[aria-label='Yes, revoke Bob']");
+  await posted(helper, page, "revoke", "invite", { op: "revoke", id: "0a1b2c3d" });
+  await until("Bob gone", () => document.querySelectorAll("#invite-list li").length === 1);
+  assert.equal(await inPage(text, "invites-msg"), "Revoked Bob. Anyone using it is out.");
+
+  // A new invite made elsewhere (the Share card) arrives with the event, with when it ends.
+  helper.set("invites", { items: [...helper.fixtures.invites.items, { id: "89abcdef", role: "drive", label: "Carol", share: "code", expires: Date.now() + 3 * 3600_000 + 60_000 }] });
+  await until("Carol", () => [...document.querySelectorAll("#invite-list .name")].some((n) => n.textContent === "Carol"));
+  assert.equal(await inPage(() => [...document.querySelectorAll("#invite-list li")].find((li) => li.dataset.id === "89abcdef").querySelector("small").textContent), "Join code · can drive · ends in 3 h");
+  // One that ended meanwhile: the helper's 404, said, and the list read again.
+  helper.push("invites", { items: [...helper.fixtures.invites.items, { id: "deadbeef", role: "watch", label: "Old", share: "link", expires: Date.now() + 60_000 }] });
+  await until("Old", () => !!document.querySelector("button[aria-label='Revoke Old']"));
+  await page.click("button[aria-label='Revoke Old']");
+  await page.click("button[aria-label='Yes, revoke Old']");
+  await until("the 404", () => document.getElementById("invites-msg").textContent === "No such invite (it may have expired or been revoked already).");
+  await until("reloaded", () => !document.querySelector("button[aria-label='Revoke Old']"));
+  helper.set("invites", { items: [] });
+  await until("empty", () => !document.getElementById("invites-empty").hidden && document.getElementById("invite-list").hidden);
+  assert.ok(!(await inPage(() => document.body.textContent)).includes("pb-join:"), "never a code on the page");
   assert.deepEqual(errors, []);
 });

@@ -72,6 +72,28 @@
           <p class="msg" id="docks-msg" role="status" aria-live="polite"></p>
         </div>
 
+        <div class="item cfg-item" id="session-start" data-field="askSession" data-k="session picker ask start startup which session choose">
+          <h3 class="item-h">Session at start</h3>
+          <div class="sw-row">
+            <span class="sw-text"><span id="ask-label">Ask which session when the browser starts</span><small id="ask-state">Applies at PairBrowse's next start. Off: your agent asks you in the chat.</small></span>
+            <button class="switch" id="ask-on" type="button" role="switch" aria-checked="false" aria-labelledby="ask-label" aria-describedby="ask-state"><i aria-hidden="true"></i></button>
+          </div>
+          <p class="msg" id="ask-msg" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="item cfg-item" id="downloads" data-field="downloads" data-k="downloads download folder save files path invoice export">
+          <h3 class="item-h">Downloads</h3>
+          <p class="help">Where files from websites are saved. Applies at once.</p>
+          <p class="where">Saved to <span id="dl-where">your Downloads folder</span></p>
+          <form class="inline flat" id="dl-form" autocomplete="off">
+            <label class="sr" for="dl-path">Folder for downloads</label>
+            <input class="field mono" id="dl-path" placeholder="/Users/you/Documents/PairBrowse" maxlength="1024" spellcheck="false">
+            <button class="action" type="submit">Use this folder</button>
+          </form>
+          <div class="acts" id="dl-acts" hidden><button class="action" id="dl-reset" type="button">Use my Downloads folder</button></div>
+          <p class="msg" id="dl-msg" role="status" aria-live="polite"></p>
+        </div>
+
         <p class="note cfg-missing" hidden>This PairBrowse helper can't change its settings from here yet. Update PairBrowse to choose the browser and the docks here.</p>
       </section>
 
@@ -94,14 +116,57 @@
           <h3 class="item-h">Stopping agents</h3>
           <p class="help" id="agents-who-text">Pause stops every agent at once; Take control stops one. Both are on the agent panel.</p>
         </div>
+        <div class="item cfg-item" id="results" data-field="pictures" data-k="pictures picture screenshot screenshots result image see text only">
+          <h3 class="item-h">What agents see</h3>
+          <div class="sw-row">
+            <span class="sw-text"><span id="pics-label">A picture of the page with each result</span><small id="pics-state">Off: agents get text only. Applies at once.</small></span>
+            <button class="switch" id="pics-on" type="button" role="switch" aria-checked="false" aria-labelledby="pics-label" aria-describedby="pics-state"><i aria-hidden="true"></i></button>
+          </div>
+          <p class="msg" id="pics-msg" role="status" aria-live="polite"></p>
+        </div>
+        <div class="item cfg-item" id="cookie-banners" data-field="cookies" data-k="cookies cookie banner banners consent accept reject privacy">
+          <fieldset class="group" aria-describedby="cookies-help">
+            <legend class="item-h">Cookie banners</legend>
+            <p class="help" id="cookies-help">What a plain cookie banner gets pressed when it shows up. Applies at once.</p>
+            <div class="seg-row"><span class="seg-label" id="cookies-l">Press</span>
+              <div class="seg" role="radiogroup" aria-labelledby="cookies-l">
+                <label><input type="radio" name="cookies" value="accept">Accept</label><label><input type="radio" name="cookies" value="reject">Reject</label>
+              </div></div>
+          </fieldset>
+          <p class="msg" id="cookies-msg" role="status" aria-live="polite"></p>
+        </div>
+        <div class="item cfg-item" id="open-tabs" data-field="maxTabs" data-k="tabs tab open maximum max limit close oldest">
+          <h3 class="item-h">Open tabs</h3>
+          <p class="help">Past this, the tab used longest ago closes: never the one an agent works in, nor one used in the last 10 minutes. Applies at once.</p>
+          <form class="cap-row" id="tabs-form" autocomplete="off" novalidate>
+            <label for="max-tabs">Keep at most</label>
+            <input class="field num" id="max-tabs" type="number" min="2" max="50" step="1" inputmode="numeric" required>
+            <span>tabs open</span>
+            <button class="action" type="submit" id="tabs-save" hidden>Save</button>
+          </form>
+          <p class="msg" id="tabs-msg" role="status" aria-live="polite"></p>
+        </div>
       </section>
 
       <!-- Sharing -->
       <section class="sec" id="sharing" aria-labelledby="sharing-h">
         <h2 class="sec-h" id="sharing-h">Sharing</h2>
-        <div class="item" id="invites" data-k="invite share join code watch link people">
+        <div class="item cfg-item" id="your-name" data-field="name" data-k="name your name participant shared join label people see">
+          <h3 class="item-h">Your name</h3>
+          <p class="help">What people see when you join their session or they join yours. Joins use it at once; your own label in this browser changes at PairBrowse's next start.</p>
+          <form class="inline flat" id="name-form" autocomplete="off">
+            <label class="sr" for="your-name-field">Your name</label>
+            <input class="field" id="your-name-field" placeholder="Your first name" maxlength="40" spellcheck="false">
+            <button class="action" type="submit" id="name-save">Save</button>
+          </form>
+          <p class="msg" id="name-msg" role="status" aria-live="polite"></p>
+        </div>
+        <div class="item" id="invites" data-k="invite invites share join code watch link people revoke">
           <h3 class="item-h">Inviting people</h3>
           <p class="help" id="invites-text">Make a join code or a watch link with Share at the top of the window. Each one asks you before anyone gets in.</p>
+          <ul class="rows invites" id="invite-list" aria-label="Invites out now"></ul>
+          <p class="empty" id="invites-empty" hidden>No invites out now.</p>
+          <p class="msg" id="invites-msg" role="status" aria-live="polite"></p>
         </div>
         <div class="item" id="join-addresses" data-k="join address addresses tunnel host allowed remove">
           <h3 class="item-h">Join addresses</h3>
@@ -165,7 +230,7 @@
 
         <div class="item" id="sessions" data-k="session sessions profile logins tabs saved">
           <h3 class="item-h">Saved sessions</h3>
-          <p class="help">Each session is a browser of its own, with its own logins and tabs. Switch with the PairBrowse logo; ask your agent to delete one.</p>
+          <p class="help">Each session is a browser of its own, with its own logins and tabs. Switch with the PairBrowse logo. Deleting one removes its logins and tabs for good; the open session can't be deleted.</p>
           <ul class="rows" id="session-list" aria-label="Saved sessions"></ul>
           <p class="msg" id="sessions-msg" role="status" aria-live="polite"></p>
         </div>

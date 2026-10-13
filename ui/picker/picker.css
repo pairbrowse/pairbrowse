@@ -150,3 +150,6 @@ html[data-host="frame"] h1 { font-size: var(--fs-5); }
 /* The 360 px popover is too narrow for the secondary rows' copy on one line (the fresh row's
    deletion warning among it): they wrap to two lines; the session rows keep their fixed 44 px. */
 html[data-host="frame"] #fresh small, html[data-host="frame"] details.choice > summary small { white-space: normal; overflow: visible; text-overflow: clip; }
+/* Switching while agents are at work (the helper's 428): the same approval card, under the choices. */
+.switch-ask { margin: var(--sp-3) 0 0; }
+.switch-ask .agents { font-size: var(--fs-2); color: var(--ink-2); }

@@ -4,7 +4,7 @@
 // the live view with the owner's key: in the build from the browser's Session API
 // (window.pairbrowse), in the extension from the side panel's worker (chrome.storage.session).
 // The live view takes these requests only from the page's own origin.
-import { $, el, avatar, initialOf, reportOffer } from "../common.js";
+import { $, el, avatar, initialOf, reportOffer, askSwitch } from "../common.js";
 
 // Framed: the switcher popover. No page chrome of its own, the list even when a session is open,
 // and the parent told (same origin only) when to close; the pick itself goes only to the helper.
@@ -16,6 +16,8 @@ let base = null;
 let busy = false;
 // The open address question's Cancel path (set while the card shows), for Escape.
 let askCancel = null;
+// The open switch question's Cancel path (agents at work: the helper's 428), for Escape.
+let switchCancel = null;
 
 const say = (text, kind = "") => { $("msg").textContent = text; $("msg").dataset.kind = kind; };
 // A person's click or key press only, never a script's synthetic event.
@@ -23,6 +25,8 @@ const real = (ev) => ev.isTrusted;
 
 async function send(op, label) {
   if (!base || busy) return;
+  // Another choice while the switch question shows drops that question.
+  if (switchCancel) { const c = switchCancel; switchCancel = null; c(); }
   busy = true;
   document.body.dataset.s = "picking";
   say(label);
@@ -34,6 +38,16 @@ async function send(op, label) {
     document.body.dataset.s = "ready";
     // The code is fine but leads somewhere other than a PairBrowse address: the person decides.
     if (r.hostAsk?.id && r.hostAsk.host) { showHostAsk(r.hostAsk); say(""); return; }
+    // Agents are at work in the open session (428): the person decides here, then the same pick
+    // goes again with confirm: true.
+    if (r.confirm && op.confirm !== true && (op.action === "use" || op.action === "new")) {
+      say("");
+      switchCancel = askSwitch($("switch-ask"), r, {
+        yes: () => { switchCancel = null; send({ ...op, confirm: true }, label); },
+        no: () => { switchCancel = null; say("Not switched."); },
+      });
+      return;
+    }
     say(r.text || "That didn't work.", "error");
     // A refused pick: offer Report a problem when the helper relays reports (Part H).
     reportOffer(base).then((a) => { if (a && $("msg").dataset.kind === "error") $("msg").append(" ", a); });
@@ -215,6 +229,7 @@ document.addEventListener("keydown", (ev) => {
   // A pick in flight finishes first; Escape on the address question is its Cancel, not a close.
   if (document.body.dataset.s === "picking") return;
   if (!$("host-ask").hidden && askCancel) { askCancel(); return; }
+  if (switchCancel) { switchCancel(); return; }
   notify("close");
 });
 

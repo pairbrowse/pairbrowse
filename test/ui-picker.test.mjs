@@ -118,7 +118,45 @@ pageTest("picker", { fixtures: { sessions: STATE } }, async ({ page, helper, unt
   await page.click("#fresh");
   await until("done", () => document.body.dataset.s === "done");
   assert.deepEqual(posted(helper, "pick"), [{ action: "new" }]);
-  assert.deepEqual(await run(msg), { text: "Done.", kind: "ok" });
+  assert.deepEqual(await run(msg), { text: "Starting a fresh session.", kind: "ok" });
+});
+
+// Agents at work (the helper's 428 { confirm, agents }): asked in the page's own card, never a
+// confirm() dialog; agents the question doesn't name are listed; Cancel sends nothing more, a
+// row's own press drops the question, Switch anyway resends the same pick with confirm: true.
+const AT_WORK = (body) => (body.confirm === true ? { status: 200, body: { text: "Opening session \"shop\"." } }
+  : { status: 428, body: { text: "Agents are using the browser.", error: true, confirm: "Claude is using the browser. Switching closes every tab for them. Switch anyway?", agents: ["Claude", "Codex"] } });
+pageTest("picker", { fixtures: { sessions: STATE }, replies: { pick: AT_WORK } }, async ({ page, helper, until, inPage: run, harness, errors }) => {
+  await until("the rows", ready);
+  await run(() => { window.__dialogs = 0; window.confirm = () => { window.__dialogs++; return true; }; });
+  await page.click("#sessions > li:nth-child(2) button");
+  await until("the question", () => !document.getElementById("switch-ask").hidden);
+  const ask = await run(() => {
+    const box = document.getElementById("switch-ask"), s = getComputedStyle(box);
+    return { q: box.querySelector("strong").textContent, agents: box.querySelector(".agents")?.textContent ?? null,
+      buttons: [...box.querySelectorAll("button")].map((b) => `${b.textContent}:${b.className}`), focus: document.activeElement.textContent,
+      s: document.body.dataset.s, msg: document.getElementById("msg").textContent, shadow: s.boxShadow };
+  });
+  assert.deepEqual({ ...ask, shadow: undefined }, { q: "Claude is using the browser. Switching closes every tab for them. Switch anyway?", agents: "At work: Claude, Codex",
+    buttons: ["Switch anyway:primary", "Cancel:secondary"], focus: "Cancel", s: "ready", msg: "", shadow: undefined });
+  assert.match(ask.shadow, /rgb\(244, 180, 93\)/, "the warn edge of an approval card");
+  await page.keyboard.press("Enter");
+  await until("cancelled", () => document.getElementById("switch-ask").hidden);
+  assert.deepEqual(await run(msg), { text: "Not switched.", kind: "" });
+  assert.deepEqual(posted(helper, "pick"), [{ action: "use", name: "shop" }]);
+
+  // Asked again; a press on another choice drops the question and asks for that one.
+  await page.click("#sessions > li:nth-child(2) button");
+  await until("asked", () => !document.getElementById("switch-ask").hidden);
+  await page.click("#fresh");
+  await until("asked for the fresh one", () => !document.getElementById("switch-ask").hidden && document.getElementById("msg").textContent === "");
+  assert.deepEqual(posted(helper, "pick").slice(1), [{ action: "use", name: "shop" }, { action: "new" }]);
+  await page.click("#switch-ask .primary");
+  await until("done", () => document.body.dataset.s === "done");
+  assert.deepEqual(posted(helper, "pick").at(-1), { action: "new", confirm: true });
+  assert.equal(await run(() => window.__dialogs), 0, "never a confirm() dialog");
+  assert.deepEqual(bad(await harness.log()), []);
+  assert.deepEqual(errors, []);
 });
 
 // Part H: a refused pick offers Report a problem while the helper relays reports.

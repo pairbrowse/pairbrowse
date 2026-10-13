@@ -1,9 +1,10 @@
 // The new tab page. The search field: a web address opens, anything else searches Google (the live
 // view's rule). The chips: your other recent sessions from the helper's sessions.json, one press
-// switches. One source for two hosts: in the browser build window.pairbrowse gives the helper's
+// switches (POST pick; while agents are at work the helper asks first, and the page asks the
+// person in the page before the same pick goes again with confirm: true). One source for two hosts: in the browser build window.pairbrowse gives the helper's
 // address (session.helper()); as the extension page it is chrome.storage.session "view", as in the
 // session picker. One fetch at load; no timer, observer or poll.
-import { $, el, addressToUrl } from "../common.js";
+import { $, el, addressToUrl, askSwitch } from "../common.js";
 
 $("search").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -19,6 +20,7 @@ const real = (ev) => ev.isTrusted;
 const CHIPS = 3;
 const UNREACHABLE = { text: "Couldn't reach PairBrowse. Try again.", error: true };
 let busy = false;
+let askCancel = null; // the open switch question's Cancel path
 
 const say = (text, kind = "") => { $("msg").textContent = text; $("msg").dataset.kind = kind; };
 
@@ -41,22 +43,25 @@ const post = (base, route, body) => fetch(base + route, { method: "POST", header
   .then((x) => x.json(), () => UNREACHABLE)
   .catch(() => UNREACHABLE);
 
-// The picker's own two steps in one press: show the choice (the side panel's Switch session...),
-// then make it. The helper takes a pick only while its picker is showing.
-async function open(base, name, label) {
+// One press: the pick itself (the helper switches with a session open). Agents at work: 428
+// { confirm, agents }, asked here; Switch anyway sends the same pick with confirm: true.
+async function open(base, op, label) {
   if (busy || document.body.dataset.s === "done") return;
+  if (askCancel) { const c = askCancel; askCancel = null; c(); }
   busy = true;
   document.body.dataset.s = "picking";
   say(`Opening ${label}...`);
-  const opened = await post(base, "picker", {});
-  if (opened?.error) {
-    busy = false;
+  const r = await post(base, "pick", op);
+  busy = false;
+  if (r?.confirm && op.confirm !== true) {
     document.body.dataset.s = "ready";
-    say(opened.text || "That didn't work.", "error");
+    say("");
+    askCancel = askSwitch($("ask"), r, {
+      yes: () => { askCancel = null; open(base, { ...op, confirm: true }, label); },
+      no: () => { askCancel = null; say("Not switched."); },
+    });
     return;
   }
-  const r = await post(base, "pick", { action: "use", name });
-  busy = false;
   if (!r || r.error) {
     document.body.dataset.s = "ready";
     say(r?.text || "That didn't work.", "error");
@@ -72,7 +77,7 @@ function chip(base, s) {
   const button = el("button", { className: "chip", type: "button" },
     el("span", { className: "name", textContent: name }), document.createTextNode(" · "), el("span", { className: "meta", textContent: meta }));
   button.dataset.name = s.name;
-  button.addEventListener("click", (ev) => { if (real(ev)) open(base, s.name, name); });
+  button.addEventListener("click", (ev) => { if (real(ev)) open(base, { action: "use", name: s.name }, name); });
   return button;
 }
 

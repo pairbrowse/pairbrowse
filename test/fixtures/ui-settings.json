@@ -114,6 +114,12 @@
         "right": "open",
         "strip": 88
       },
+      "name": "Alice",
+      "downloads": null,
+      "pictures": true,
+      "cookies": "accept",
+      "maxTabs": 20,
+      "askSession": true,
       "native": true,
       "chosen": true,
       "report": true
@@ -153,7 +159,25 @@
         "url": "https://shop.example/checkout?step=2",
         "active": true
       }
-    ]
+    ],
+    "invites": {
+      "items": [
+        {
+          "id": "0a1b2c3d",
+          "role": "drive",
+          "label": "Bob",
+          "share": "code",
+          "expires": 4102444800000
+        },
+        {
+          "id": "4e5f6a7b",
+          "role": "watch",
+          "label": "Wendy",
+          "share": "link",
+          "expires": 4102444800000
+        }
+      ]
+    }
   },
   "shim": {},
   "push": []

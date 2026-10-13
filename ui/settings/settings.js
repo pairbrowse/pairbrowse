@@ -3,10 +3,12 @@
 // General, Agents and approvals, Sharing, Your data, About and diagnostics, and one link to the
 // browser's own settings. Every control reads the helper's current value and writes through a real
 // owner route with the owner's key: config.json / config (the browser, the docks at a session's
-// start, the timeline), profile.json / profile (passwords, remembered details), the joinhost event /
-// joinhost (join addresses), sessions.json (saved sessions), diagnostics.json and
+// start, the timeline, the session question at start, downloads, pictures with results, cookie
+// banners, open tabs, your name), profile.json / profile (passwords, remembered details), the
+// joinhost event / joinhost (join addresses), sessions.json / pick { action: "delete" } (saved
+// sessions), invites.json / invite { op: "revoke" } (invites out now), diagnostics.json and
 // diagnostics/report, and report (Report a problem; shown only while the helper says it relays
-// reports). This is a tab page: in the browser only window.pairbrowse.session exists here, so the
+// reports). The config, sessions and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
 import { $, el, ago, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport } from "../common.js";
 
@@ -44,7 +46,7 @@ function setConn(state, text) {
   c.textContent = CONN_TEXT[state] || state;
   // Nothing writes while the helper is away; what was read stays on screen.
   for (const f of document.querySelectorAll("main fieldset, main form")) f.toggleAttribute("disabled", state !== "live");
-  for (const b of document.querySelectorAll("#tl-on, #diag-copy, #report-open")) b.disabled = state !== "live";
+  for (const b of document.querySelectorAll("#tl-on, #ask-on, #pics-on, #dl-reset, #diag-copy, #report-open, .needs-live")) b.disabled = state !== "live";
 }
 
 // The live view's address with the owner's key: from the browser, or from the extension's session
@@ -66,7 +68,8 @@ function drawConfig(c) {
   config = c && typeof c === "object" ? c : null;
   const have = !!config;
   // The docks are the PairBrowse browser's window; the extension's Chromium has none.
-  for (const n of document.querySelectorAll(".cfg-item")) n.hidden = !have || (!NATIVE && n.classList.contains("native-only"));
+  // An item for a field this helper doesn't answer with (an older helper) stays off the page.
+  for (const n of document.querySelectorAll(".cfg-item")) n.hidden = !have || (!NATIVE && n.classList.contains("native-only")) || (!!n.dataset.field && !(n.dataset.field in config));
   for (const n of document.querySelectorAll(".cfg-missing")) n.hidden = have;
   if (!have) { applySearch(); return; }
   // The browser.
@@ -89,6 +92,18 @@ function drawConfig(c) {
   if (document.activeElement !== $("tl-cap")) $("tl-cap").value = String(config.timeline?.cap ?? 200);
   $("cap-form").hidden = !on;
   $("cap-save").hidden = true;
+  // The session question at start, downloads, pictures with results, cookie banners, open tabs, your name.
+  $("ask-on").setAttribute("aria-checked", String(config.askSession !== false));
+  const dl = typeof config.downloads === "string" && config.downloads ? config.downloads : null;
+  $("dl-where").textContent = dl || "your Downloads folder";
+  $("dl-where").classList.toggle("mono", !!dl);
+  $("dl-acts").hidden = !dl;
+  if (document.activeElement !== $("dl-path")) $("dl-path").value = dl || "";
+  $("pics-on").setAttribute("aria-checked", String(config.pictures !== false));
+  for (const r of document.querySelectorAll("input[name=cookies]")) r.checked = r.value === (config.cookies === "reject" ? "reject" : "accept");
+  if (document.activeElement !== $("max-tabs")) $("max-tabs").value = String(config.maxTabs ?? 20);
+  $("tabs-save").hidden = true;
+  if (document.activeElement !== $("your-name-field")) $("your-name-field").value = typeof config.name === "string" ? config.name : "";
   // Report a problem: only while the helper relays reports.
   $("report-open").hidden = config.report !== true;
   applySearch();
@@ -158,6 +173,55 @@ $("cap-form").addEventListener("submit", async (e) => {
   if (await writeConfig({ timeline: { cap } }, $("pictures-msg"))) return;
   say($("pictures-msg"), `Saved. At most ${cap} ${cap === 1 ? "picture" : "pictures"} per session.`, "ok");
 });
+// ---- General: the session question at start, downloads ---------------------------------------
+$("ask-on").addEventListener("click", async () => {
+  const on = $("ask-on").getAttribute("aria-checked") !== "true";
+  if (await writeConfig({ askSession: on }, $("ask-msg"))) return;
+  say($("ask-msg"), on ? "Saved. The browser asks which session from PairBrowse's next start." : "Saved. From PairBrowse's next start your agent asks you in the chat instead.", "ok");
+});
+$("dl-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const p = $("dl-path").value.trim();
+  if (!p) return say($("dl-msg"), "Enter the full path to a folder, or use your Downloads folder.", "error");
+  if (await writeConfig({ downloads: p }, $("dl-msg"))) { $("dl-path").value = p; return; }
+  say($("dl-msg"), "Saved. Downloads go there from now on.", "ok");
+});
+$("dl-reset").addEventListener("click", async () => {
+  if (await writeConfig({ downloads: null }, $("dl-msg"))) return;
+  say($("dl-msg"), "Saved. Downloads go to your Downloads folder.", "ok");
+});
+
+// ---- Agents: pictures with results, cookie banners, open tabs ---------------------------------
+$("pics-on").addEventListener("click", async () => {
+  const on = $("pics-on").getAttribute("aria-checked") !== "true";
+  if (await writeConfig({ pictures: on }, $("pics-msg"))) return;
+  say($("pics-msg"), on ? "Saved. Each result carries a picture of the page." : "Saved. Agents get text only.", "ok");
+});
+for (const r of document.querySelectorAll("input[name=cookies]")) {
+  r.addEventListener("change", async () => {
+    if (!r.checked) return;
+    if (await writeConfig({ cookies: r.value }, $("cookies-msg"))) return;
+    say($("cookies-msg"), r.value === "reject" ? "Saved. Cookie banners get Reject." : "Saved. Cookie banners get Accept.", "ok");
+  });
+}
+$("max-tabs").addEventListener("input", () => { $("tabs-save").hidden = String(config?.maxTabs ?? "") === $("max-tabs").value; });
+$("tabs-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const n = Number($("max-tabs").value);
+  if (!Number.isInteger(n) || n < 2 || n > 50) return say($("tabs-msg"), "Enter a whole number from 2 to 50.", "error");
+  if (await writeConfig({ maxTabs: n }, $("tabs-msg"))) return;
+  say($("tabs-msg"), `Saved. At most ${n} tabs stay open.`, "ok");
+});
+
+// ---- Sharing: your name -------------------------------------------------------------------------
+$("name-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("your-name-field").value.trim().replace(/\s+/g, " ");
+  if (name.length > 40) return say($("name-msg"), "Up to 40 characters.", "error");
+  if (await writeConfig({ name }, $("name-msg"))) { $("your-name-field").value = name; return; }
+  say($("name-msg"), name ? `Saved. People see you as ${name} when you join; your label here changes at PairBrowse's next start.` : "Saved. Joins ask your name again.", "ok");
+});
+
 async function loadTimelineCount() {
   const r = await getJson("timeline.json");
   const off = config && config.timeline?.on === false;
@@ -184,7 +248,21 @@ function hostsChanged(s) {
 // ---- Your data: passwords and remembered details (profile.json / profile) ----------------------
 const profile = profilePanel(() => base);
 
-// ---- Your data: saved sessions (sessions.json), read only -------------------------------------
+// ---- Your data: saved sessions (sessions.json, the sessions event; Delete posts pick) -----------
+// Delete only for a saved session that isn't open and isn't "default" (the helper refuses those
+// too), after a question in the row: pages in a window slot get no confirm() dialog.
+async function deleteSession(name, shown) {
+  if (!base || conn !== "live") return say($("sessions-msg"), "Not connected to PairBrowse.", "error");
+  say($("sessions-msg"), `Deleting ${shown}…`);
+  const r = await postJson("pick", { action: "delete", name });
+  if (r.status === 200 && r.body && !r.body.error) {
+    say($("sessions-msg"), r.body.text || `Deleted ${shown}.`, "ok");
+    loadSessions(false);
+    return true;
+  }
+  say($("sessions-msg"), r.body?.text || r.body?.error || (r.status === 0 ? "Couldn't reach PairBrowse." : "That didn't work."), "error");
+  return false;
+}
 function sessionRow(s) {
   const name = s.name === "default" ? "Default" : String(s.name);
   const live = Array.isArray(s.live) ? s.live : [];
@@ -199,18 +277,128 @@ function sessionRow(s) {
     tabs ? `${tabs} ${tabs === 1 ? "tab" : "tabs"}${sites.length ? ` · ${sites.join(", ")}` : ""}` : "No saved tabs",
     s.used ? `used ${ago(new Date(s.used).toISOString())}` : "",
   ].filter(Boolean).join(" · ");
-  return el("li", {}, face, head, el("small", { textContent: meta }));
+  const li = el("li", {}, face, head, el("small", { textContent: meta }));
+  li.dataset.name = String(s.name);
+  if (s.current || s.name === "default") return li;
+  const del = el("button", { className: "mini needs-live", type: "button", textContent: "Delete", ariaLabel: `Delete session ${name}`, disabled: conn !== "live" });
+  const acts = el("span", { className: "acts-row" }, del);
+  del.addEventListener("click", (ev) => {
+    if (!ev.isTrusted) return;
+    const yes = el("button", { className: "mini bad needs-live", type: "button", textContent: "Delete", ariaLabel: `Yes, delete session ${name}` });
+    const keep = el("button", { className: "mini", type: "button", textContent: "Keep" });
+    const back = () => { acts.replaceChildren(del); del.focus(); };
+    keep.addEventListener("click", back);
+    yes.addEventListener("click", async (e) => {
+      if (!e.isTrusted) return;
+      yes.disabled = keep.disabled = true;
+      if (!(await deleteSession(s.name, name)) && acts.isConnected) back();
+    });
+    acts.replaceChildren(el("small", { className: "ask", textContent: "Delete it with its logins?" }), yes, keep);
+    keep.focus();
+  });
+  li.append(acts);
+  li.classList.add("has-acts");
+  return li;
 }
-async function loadSessions() {
+function drawSessions(state) {
+  if (!state || typeof state !== "object") return;
+  const list = Array.isArray(state.sessions) ? state.sessions.filter((s) => s && typeof s.name === "string" && s.name) : [];
+  // A row asking its question keeps it while the list redraws for something else.
+  const asking = [...$("session-list").querySelectorAll("li")].find((li) => li.querySelector(".ask"))?.dataset.name;
+  const rows = list.map(sessionRow);
+  if (asking) {
+    const i = rows.findIndex((li) => li.dataset.name === asking);
+    const old = [...$("session-list").children].find((li) => li.dataset.name === asking);
+    if (i >= 0 && old) rows[i] = old;
+  }
+  $("session-list").replaceChildren(...(rows.length ? rows : [el("li", { className: "empty", textContent: "No saved sessions yet." })]));
+  applySearch();
+}
+async function loadSessions(clear = true) {
   const r = await getJson("sessions.json");
   if (r.status !== 200 || !r.body) {
     $("session-list").replaceChildren();
     return say($("sessions-msg"), r.status === 404 ? "This PairBrowse doesn't list sessions." : "Couldn't read the sessions. They load again when PairBrowse reconnects.", "error");
   }
-  const list = Array.isArray(r.body.sessions) ? r.body.sessions : [];
-  $("session-list").replaceChildren(...(list.length ? list.map(sessionRow) : [el("li", { className: "empty", textContent: "No saved sessions yet." })]));
-  say($("sessions-msg"), "");
+  drawSessions(r.body);
+  if (clear) say($("sessions-msg"), "");
+}
+
+// ---- Sharing: invites out now (invites.json, the invites event; Revoke posts invite) ----------
+const INVITE_ID = /^[0-9a-f]{8}$/;
+function endsIn(at, now = Date.now()) {
+  const ms = Number(at) - now;
+  if (!Number.isFinite(ms)) return "";
+  if (ms <= 60_000) return "ends in a minute";
+  const min = Math.round(ms / 60_000);
+  if (min < 60) return `ends in ${min} min`;
+  const h = Math.round(min / 60);
+  // An invite lasts 7 days at most: a later end is no time worth showing.
+  return h < 48 ? `ends in ${h} h` : h <= 8 * 24 ? `ends in ${Math.round(h / 24)} days` : "";
+}
+async function revokeInvite(id, shown) {
+  if (!base || conn !== "live") return say($("invites-msg"), "Not connected to PairBrowse.", "error");
+  const r = await postJson("invite", { op: "revoke", id });
+  if (r.status === 200 && r.body?.ok) {
+    say($("invites-msg"), `Revoked ${shown}. Anyone using it is out.`, "ok");
+    loadInvites();
+    return true;
+  }
+  if (r.status === 404) { say($("invites-msg"), r.body?.error || "That invite had already ended.", "error"); loadInvites(); return true; }
+  say($("invites-msg"), r.body?.error || (r.status === 0 ? "Couldn't reach PairBrowse." : "That didn't work."), "error");
+  return false;
+}
+function inviteRow(i) {
+  const shown = i.label ? String(i.label) : i.role === "watch" ? "a watch invite" : "a drive invite";
+  const kind = i.share === "code" ? "Join code" : "Link";
+  const rights = i.role === "watch" ? "can watch" : "can drive";
+  const face = el("span", { className: "avatar plain", textContent: initialOf(i.label || kind) });
+  face.setAttribute("aria-hidden", "true");
+  const head = el("strong", {}, el("span", { className: "name", textContent: i.label ? String(i.label) : kind, title: i.label ? String(i.label) : kind }));
+  const meta = [kind, rights, endsIn(i.expires)].filter(Boolean).join(" · ");
+  const li = el("li", { className: "has-acts" }, face, head, el("small", { textContent: meta }));
+  li.dataset.id = i.id;
+  const revoke = el("button", { className: "mini needs-live", type: "button", textContent: "Revoke", ariaLabel: `Revoke ${shown}`, disabled: conn !== "live" });
+  const acts = el("span", { className: "acts-row" }, revoke);
+  revoke.addEventListener("click", (ev) => {
+    if (!ev.isTrusted) return;
+    const yes = el("button", { className: "mini bad needs-live", type: "button", textContent: "Revoke", ariaLabel: `Yes, revoke ${shown}` });
+    const keep = el("button", { className: "mini", type: "button", textContent: "Keep" });
+    const back = () => { acts.replaceChildren(revoke); revoke.focus(); };
+    keep.addEventListener("click", back);
+    yes.addEventListener("click", async (e) => {
+      if (!e.isTrusted) return;
+      yes.disabled = keep.disabled = true;
+      if (!(await revokeInvite(i.id, shown)) && acts.isConnected) back();
+    });
+    acts.replaceChildren(el("small", { className: "ask", textContent: "Revoke it? Anyone using it is out." }), yes, keep);
+    keep.focus();
+  });
+  li.append(acts);
+  return li;
+}
+function drawInvites(body) {
+  const items = Array.isArray(body?.items) ? body.items.filter((i) => i && typeof i.id === "string" && INVITE_ID.test(i.id)) : [];
+  const asking = [...$("invite-list").querySelectorAll("li")].find((li) => li.querySelector(".ask"))?.dataset.id;
+  const rows = items.map(inviteRow);
+  if (asking) {
+    const k = rows.findIndex((li) => li.dataset.id === asking);
+    const old = [...$("invite-list").children].find((li) => li.dataset.id === asking);
+    if (k >= 0 && old) rows[k] = old;
+  }
+  $("invite-list").replaceChildren(...rows);
+  $("invite-list").hidden = !rows.length;
+  $("invites-empty").hidden = !!rows.length;
   applySearch();
+}
+async function loadInvites() {
+  const r = await getJson("invites.json");
+  if (r.status === 200) return drawInvites(r.body);
+  // An older helper without the route: the help line alone, as before.
+  $("invite-list").replaceChildren();
+  $("invite-list").hidden = true;
+  $("invites-empty").hidden = true;
+  if (r.status !== 404) say($("invites-msg"), "Couldn't read the invites. They load again when PairBrowse reconnects.", "error");
 }
 
 // ---- About and diagnostics (diagnostics.json, diagnostics/report) ------------------------------
@@ -416,7 +604,7 @@ function connect(url) {
     },
     onOpen: async () => {
       await loadConfig();
-      loadSessions(); profile.load(); loadTimelineCount(); loadDiag();
+      loadSessions(); loadInvites(); profile.load(); loadTimelineCount(); loadDiag();
       if (location.hash === "#report" && config?.report === true) openReport();
     },
   });
@@ -425,6 +613,8 @@ function connect(url) {
   on("joinhost", hostsChanged);
   on("config", (c) => { const { restart, ...rest } = c || {}; drawConfig({ ...rest, ...(restart !== undefined ? { restart } : {}) }); });
   on("timeline", () => loadTimelineCount());
+  on("sessions", drawSessions);
+  on("invites", drawInvites);
 }
 
 setConn("connecting", "Connecting to PairBrowse…");

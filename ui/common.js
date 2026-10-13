@@ -534,6 +534,38 @@ export function pickerPopover({ pop, frame, openers, dismissable = () => true })
   return { open, close, isOpen };
 }
 
+// The question POST pick answers with 428 while other agents are at work ({ text, error, confirm:
+// "<question>", agents: [names] }): asked in the page itself, since a page in a dock slot gets no
+// confirm() dialog. box: the card's element (emptied and hidden once answered). The question is
+// the helper's own; agents it doesn't name are listed under it. Only a person's own click or key
+// press answers: yes() resends the same pick with confirm: true, no() drops it. -> the Cancel path
+// (for Escape).
+export function askSwitch(box, r, { yes, no }) {
+  const agents = Array.isArray(r?.agents) ? r.agents.filter((a) => typeof a === "string" && a.trim()).map((a) => a.slice(0, 60)).slice(0, 8) : [];
+  const many = agents.length !== 1;
+  const question = typeof r?.confirm === "string" && r.confirm.trim() ? r.confirm.slice(0, 300)
+    : `${agents.length ? agents.join(", ") : "Agents"} ${many ? "are" : "is"} using the browser. Switching closes every tab for them. Switch anyway?`;
+  const unnamed = agents.filter((a) => !question.includes(a));
+  const go = el("button", { className: "primary", type: "button", textContent: "Switch anyway" });
+  const cancel = el("button", { className: "secondary", type: "button", textContent: "Cancel" });
+  let done = false;
+  const finish = (fn) => {
+    if (done) return;
+    done = true;
+    box.hidden = true;
+    box.replaceChildren();
+    fn();
+  };
+  go.addEventListener("click", (ev) => { if (ev.isTrusted) finish(yes); });
+  cancel.addEventListener("click", (ev) => { if (ev.isTrusted) finish(no); });
+  box.replaceChildren(el("strong", { textContent: question }),
+    ...(unnamed.length ? [el("small", { className: "agents", textContent: `At work: ${agents.join(", ")}` })] : []),
+    el("span", { className: "buttons" }, go, cancel));
+  box.hidden = false;
+  cancel.focus();
+  return () => finish(no);
+}
+
 // The page is served by the PairBrowse browser itself, on its own hosts (the window's slots on
 // chrome://pairbrowse.top-chrome, the tab pages on chrome://pairbrowse), with or without
 // window.pairbrowse; anything else is a page in a plain browser (the extension, the harness).
@@ -569,7 +601,7 @@ export function askDock({ pb, layout, base, side, state, onFail }) {
 // event's `tab` (the right dock opening on a tab) and a record event's `op` ("saved", with its
 // item), so a late page neither jumps to a tab nor adds a recording from an old event. Without Web Locks or BroadcastChannel (or when the lock is refused) a page
 // opens its own stream as before. No timer, frame or observer anywhere here.
-export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "config", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs", "tab-order"];
+export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "config", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "sessions", "invites", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs", "tab-order"];
 const STREAM_DELTAS = new Set(["approval", "timeline", "downloads", "handoffs", "tab-order"]);
 // What the holder keeps of a state event for a late page: no delta, and no one-shot field.
 function replayable(name, v) {

@@ -31,6 +31,17 @@
 // lane H: size is in bytes; at is epoch ms (an ISO string is accepted too); duration and uptime
 // are in seconds; an id is a string or number matching /^[A-Za-z0-9_-]{1,64}$/ (the page skips
 // other items, and items whose state or kind is outside the contract's set).
+// The routes of the helper lane's 19c2dc0 (daemon/pick.mjs, liveview/settings.mjs, liveview.mjs):
+// POST pick { action: "use", name, confirm? } | { action: "new", confirm? } | { action: "join",
+// code, joinName? } | { action: "delete", name }, each with only its own fields (else 409 { text,
+// error: true }); with a session open and agents at work (the `agents` fixture: names) use and new
+// answer 428 { text, error: true, confirm, agents } until the body has confirm: true; delete
+// refuses the open session and "default" (409) and drops the row; every change pushes `sessions`
+// (the sessions fixture). GET config.json / POST config: the fields settings.mjs reads and takes
+// (name, downloads, pictures, cookies, maxTabs, askSession besides browser, timeline, layout; a
+// downloads path with "missing" in it isn't a folder). GET invites.json { items: [{ id, role,
+// label, share, expires }] } and POST invite { op: "revoke", id } (8-hex id: 200 { ok, id } and an
+// `invites` event, 404 for an id not out, 409 for any other body with an op).
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { hostOk, originOk, keyOk, pathParts, readBody, BODY_MAX, SECURITY_HEADERS, plain, listen } from "../../scripts/liveview/http.mjs";
@@ -86,7 +97,12 @@ export const defaultFixtures = () => ({
   // GET config.json as liveview/settings.mjs answers it (null: 404, a helper without the route),
   // plus `report`: true when the helper relays problem reports (the follow-up route POST report;
   // not in liveview.mjs yet). running: the browser of the window open now (restart in the answer).
-  config: { browser: "pairbrowse", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, native: true, chosen: true, report: false },
+  config: { browser: "pairbrowse", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 },
+    name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, native: true, chosen: true, report: false },
+  // The agents at work in the browser now (their names): a switch asks first (428) while any are.
+  agents: [],
+  // GET invites.json: the invites out now, never a key, code or link (null: 404).
+  invites: { items: [] },
   running: "pairbrowse",
   // POST report's answer while config.report is true: { status, body }.
   sent: { status: 200, body: { ok: true, id: "PB-1042" } },
@@ -94,7 +110,8 @@ export const defaultFixtures = () => ({
 
 // The event each fixture goes out as (the names liveview.mjs broadcasts); null: none.
 const EVENT = { status: "status", session: "session", collaboration: "collaboration", activity: "activity", join: "join", tabs: "tabs", layout: "layout",
-  agentTabs: "agent-tabs", config: "config", profile: "profile", dev: "dev", joinhost: "joinhost", board: "board", pause: "pause", record: "record", timeline: "timeline" };
+  agentTabs: "agent-tabs", config: "config", profile: "profile", dev: "dev", joinhost: "joinhost", board: "board", pause: "pause", record: "record", timeline: "timeline",
+  sessions: "sessions", invites: "invites" };
 
 const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 export function merge(base, over) {
@@ -121,11 +138,42 @@ function readLayout(given, base) {
 }
 
 // POST config checked as liveview/settings.mjs applySettings does: any subset of { browser,
-// timeline: { on?, cap? }, layout: { left?, right?, strip? } }; anything else 409 { error }.
+// timeline: { on?, cap? }, layout: { left?, right?, strip? }, name, downloads, pictures, cookies,
+// maxTabs, askSession }; anything else 409 { error }.
+const SETTINGS_KEYS = ["browser", "timeline", "layout", "name", "downloads", "pictures", "cookies", "maxTabs", "askSession"];
 function applyConfig(given, config) {
-  if (!plainObject(given)) return { error: "Settings are { browser, timeline, layout }." };
-  for (const k of Object.keys(given)) if (!["browser", "timeline", "layout"].includes(k)) return { error: `Unknown setting "${k}"` };
+  if (!plainObject(given)) return { error: `Settings are { ${SETTINGS_KEYS.join(", ")} }.` };
+  for (const k of Object.keys(given)) if (!SETTINGS_KEYS.includes(k)) return { error: `Unknown setting "${k}"` };
   const next = { ...config, timeline: { ...config.timeline }, layout: { ...config.layout } };
+  if (given.name !== undefined) {
+    const t = typeof given.name === "string" ? given.name.trim().replace(/\s+/g, " ") : null;
+    if (t === null || t.length > 40 || /[<>"'`\u0000-\u001f\u007f]/.test(t)) return { error: 'name is up to 40 characters, without < > " \' ` or control characters ("" for none).' };
+    next.name = t;
+  }
+  if (given.downloads !== undefined) {
+    const d = given.downloads;
+    if (d === null || d === "") next.downloads = null;
+    else if (typeof d !== "string" || !d.startsWith("/") || d.length > 1024) return { error: "downloads is an absolute path to a folder, or null for your Downloads folder." };
+    else if (d.includes("missing")) return { error: `${d} isn't a folder` };
+    else if (d.includes("/.pairbrowse")) return { error: "Downloads can't go inside PairBrowse's own folder (~/.pairbrowse)." };
+    else next.downloads = d;
+  }
+  if (given.pictures !== undefined) {
+    if (typeof given.pictures !== "boolean") return { error: "pictures is true or false." };
+    next.pictures = given.pictures;
+  }
+  if (given.cookies !== undefined) {
+    if (given.cookies !== "accept" && given.cookies !== "reject") return { error: 'cookies is "accept" or "reject".' };
+    next.cookies = given.cookies;
+  }
+  if (given.maxTabs !== undefined) {
+    if (!Number.isInteger(given.maxTabs) || given.maxTabs < 2 || given.maxTabs > 50) return { error: "maxTabs is a whole number from 2 to 50." };
+    next.maxTabs = given.maxTabs;
+  }
+  if (given.askSession !== undefined) {
+    if (typeof given.askSession !== "boolean") return { error: "askSession is true or false." };
+    next.askSession = given.askSession;
+  }
   if (given.browser !== undefined) {
     const b = given.browser;
     if (b === "pairbrowse") { if (!config.native) return { error: "There's no PairBrowse browser build for this computer yet" }; }
@@ -149,6 +197,46 @@ function applyConfig(given, config) {
     next.layout = l;
   }
   return { config: next };
+}
+
+// POST pick as daemon/pick.mjs readPick and pick answer it (fx: the fixtures; push: the stream).
+const PICK_KEYS = { use: ["action", "name", "confirm"], new: ["action", "confirm"], join: ["action", "code", "joinName"], delete: ["action", "name"] };
+const PICK_SHAPE = 'A pick is { action: "use", name }, { action: "new" }, { action: "join", code, joinName } or { action: "delete", name }.';
+const SESSION_NAME = /^[A-Za-z0-9_-]{1,40}$/;
+const listOf = (names) => (names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+function pickAnswer(body, fx, push) {
+  const refuse = (text) => ({ status: 409, body: { text, error: true } });
+  if (!plainObject(body) || !Object.hasOwn(PICK_KEYS, body.action)) return refuse(PICK_SHAPE);
+  const extra = Object.keys(body).find((k) => !PICK_KEYS[body.action].includes(k));
+  if (extra !== undefined) return refuse(`Unknown field "${extra}" for "${body.action}".`);
+  if (PICK_KEYS[body.action].includes("name") && !SESSION_NAME.test(String(body.name ?? ""))) return refuse("name is a session's name (letters, numbers, - and _, up to 40).");
+  if (body.confirm !== undefined && typeof body.confirm !== "boolean") return refuse("confirm is true or false.");
+  const list = Array.isArray(fx.sessions?.sessions) ? fx.sessions.sessions : [];
+  const open = list.find((s) => s?.current)?.name ?? null;
+  const changed = () => { if (fx.sessions) push("sessions", fx.sessions); };
+  if (body.action === "join") {
+    if (typeof body.code !== "string" || !body.code.trim()) return refuse("code is the join code you were given (pb-join:...).");
+    return { status: 200, body: { text: "Asked to join. They have to approve first." } };
+  }
+  if (body.action === "delete") {
+    if (!list.some((s) => s?.name === body.name)) return refuse(`No session "${body.name}".`);
+    if (body.name === open) return refuse("That session is in use. Switch to another one first.");
+    if (body.name === "default") return refuse("The default session can't be deleted.");
+    fx.sessions = { ...fx.sessions, sessions: list.filter((s) => s?.name !== body.name) };
+    changed();
+    return { status: 200, body: { text: `Deleted session "${body.name}" and its logins.` } };
+  }
+  const to = body.action === "new" ? "a fresh session" : `session "${body.name}"`;
+  if (!fx.sessions?.picking) {
+    if (body.action === "use" && body.name === open) return { status: 200, body: { text: `You're in session "${body.name}" already.` } };
+    const agents = [...new Set(Array.isArray(fx.agents) ? fx.agents : [])];
+    if (agents.length && body.confirm !== true) {
+      const n = agents.length === 1 ? `${agents[0]} is` : `${listOf(agents)} are`;
+      return { status: 428, body: { text: `${n} using the browser: switching closes its tabs for them.`, error: true, confirm: `${n} using the browser. Switching closes every tab for them. Switch anyway?`, agents } };
+    }
+  }
+  changed();
+  return { status: 200, body: { text: body.action === "new" ? "Starting a fresh session." : `Opening ${to}.` } };
 }
 
 const sse = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -210,6 +298,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     "joins.json": () => fx.joins, "tabs.json": () => fx.tabs, "agent-tabs.json": () => fx.agentTabs, "timeline.json": () => fx.timeline, "layout.json": () => fx.layout,
     "approvals.json": () => fx.approvals, "config.json": () => fx.config, "outline.json": () => fx.outline,
     "handoffs.json": () => fx.handoffs, "downloads.json": () => fx.downloads, "recordings.json": () => fx.recordings, "diagnostics.json": () => fx.diagnostics,
+    "invites.json": () => fx.invites,
   };
   const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session",
     "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report"]);
@@ -234,6 +323,17 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     }
     if (TOOL_ACTS[route]) return hasItem(route, rest[0]) ? { status: 200, body: { ok: true } } : { status: 404, body: { ok: false } };
     if (route === "diagnostics") return fx.report === null ? { status: 404, body: { ok: false } } : { status: 200, body: fx.report };
+    if (route === "pick") return pickAnswer(body, fx, push);
+    if (route === "invite" && plainObject(body) && body.op !== undefined) {
+      // Settings' Revoke (liveview.mjs): { op: "revoke", id } and nothing else.
+      if (body.op !== "revoke" || Object.keys(body).some((k) => k !== "op" && k !== "id")) return { status: 409, body: { error: 'An invite change is { op: "revoke", id }.' } };
+      if (typeof body.id !== "string" || !/^[0-9a-f]{8}$/.test(body.id)) return { status: 409, body: { error: "id is an invite's id, as invites.json lists it." } };
+      const items = Array.isArray(fx.invites?.items) ? fx.invites.items : [];
+      if (!items.some((i) => i?.id === body.id)) return { status: 404, body: { error: "No such invite (it may have expired or been revoked already)." } };
+      fx.invites = { ...fx.invites, items: items.filter((i) => i?.id !== body.id) };
+      push("invites", fx.invites);
+      return { status: 200, body: { ok: true, id: body.id } };
+    }
     if (route === "invite") {
       if (typeof body?.name !== "string" || !body.name) return { status: 409, body: { error: "Not yet: ask the user what name the people they invite should see.", needName: true } };
       return { status: 200, body: { ok: true, id: "abcd1234", share: body.share, role: body.role, mode: "shared", code: "pb-join:FAKE", rights: "Shared browser: they can drive.", hint: "The person pastes it into their own PairBrowse." } };

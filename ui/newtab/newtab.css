@@ -48,3 +48,16 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box
 body[data-s="picking"] .chips { opacity: 0.55; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Switching while agents are at work (the helper's 428): asked here, a warn edge as the picker's card. */
+.ask { display: grid; gap: var(--sp-3); width: 100%; padding: var(--sp-4); border-radius: 12px; border: 1px solid var(--edge); background: var(--elevated); box-shadow: inset 3px 0 0 var(--warn), 0 12px 32px rgb(0 0 0 / 0.4); text-align: left; }
+.ask[hidden] { display: none; }
+.ask strong { font-size: var(--fs-3); font-weight: 650; overflow-wrap: anywhere; }
+.ask .agents { font-size: var(--fs-2); color: var(--ink-2); }
+.ask .buttons { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.ask button { height: var(--ctl); padding: 0 var(--sp-4); border-radius: var(--r-2); font: 600 var(--fs-3) var(--sans); cursor: pointer; }
+.ask .primary { border: 0; background: var(--accent-fill); color: var(--ink); }
+.ask .primary:hover { background: var(--accent-fill-top); }
+.ask .secondary { border: 1px solid var(--edge); background: transparent; color: inherit; font-weight: 500; }
+.ask .secondary:hover { background: var(--hover); }
+.ask button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }

@@ -1,5 +1,6 @@
 // The new tab page: the logo, the search pill, and chips for your other recent sessions from the
-// helper's sessions.json (one press: the picker route, then the pick). The common checks (clean
+// helper's sessions.json (one press: the pick itself; while agents are at work the helper's 428
+// question is asked in the page, then the same pick goes again with confirm: true). The common checks (clean
 // console, names, Tab ring, hidden, reduced motion) stay in test/ui.test.mjs.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -80,13 +81,13 @@ pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS }, replies: 
   assert.equal(await inPage(() => document.body.dataset.host), "build");
   await page.click("#sessions .chip >> nth=0");
   await until("the switch", () => document.body.dataset.s === "done");
-  assert.deepEqual(helper.posts.map((p) => p.route), ["picker", "pick"]);
-  assert.deepEqual(helper.posts[1].body, { action: "use", name: "Shop" });
+  assert.deepEqual(helper.posts.map((p) => p.route), ["pick"], "no picker step");
+  assert.deepEqual(helper.posts[0].body, { action: "use", name: "Shop" });
   assert.deepEqual(await msg(inPage), { text: 'Opening session "Shop".', kind: "ok" });
-  // A second press after the switch opens no second picker.
+  // A second press after the switch sends no second pick.
   await page.click("#sessions .chip >> nth=0");
   await inPage(() => new Promise((r) => setTimeout(r, 300)));
-  assert.deepEqual(helper.posts.map((p) => p.route), ["picker", "pick"]);
+  assert.deepEqual(helper.posts.map((p) => p.route), ["pick"]);
 });
 
 pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS }, replies: { pick: () => ({ status: 200, body: { text: 'No session "Shop".', error: true } }) } }, async ({ page, helper, until, inPage }) => {
@@ -94,17 +95,49 @@ pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS }, replies: 
   await page.click("#sessions .chip >> nth=0");
   await until("the error", () => document.body.dataset.s === "ready" && document.getElementById("msg").textContent !== "");
   assert.deepEqual(await msg(inPage), { text: 'No session "Shop".', kind: "error" });
-  assert.deepEqual(helper.posts.map((p) => p.route), ["picker", "pick"]);
+  assert.deepEqual(helper.posts.map((p) => p.route), ["pick"]);
   const usable = await inPage(() => { const b = document.querySelector("#sessions .chip"); return !b.disabled && getComputedStyle(document.getElementById("sessions")).pointerEvents !== "none"; });
   assert.ok(usable, "the chips are usable again");
 });
 
-pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS }, replies: { picker: () => ({ status: 404 }) } }, async ({ page, helper, until, inPage }) => {
+pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS }, replies: { pick: () => ({ status: 404 }) } }, async ({ page, helper, until, inPage }) => {
   await until("the chips", () => !document.getElementById("sessions").hidden);
   await page.click("#sessions .chip >> nth=0");
   await until("the error", () => document.body.dataset.s === "ready" && document.getElementById("msg").textContent !== "");
   assert.deepEqual(await msg(inPage), { text: "Couldn't reach PairBrowse. Try again.", kind: "error" });
-  assert.deepEqual(helper.posts.map((p) => p.route), ["picker"]);
+  assert.deepEqual(helper.posts.map((p) => p.route), ["pick"]);
+});
+
+// Agents at work: the helper's 428 question, asked in the page (no confirm() dialog), naming them;
+// Cancel sends nothing more, Switch anyway sends the same pick with confirm: true.
+pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS, agents: ["Claude", "Codex"] } }, async ({ page, helper, until, inPage, harness, errors }) => {
+  await until("the chips", () => !document.getElementById("sessions").hidden);
+  await inPage(() => { window.__dialogs = 0; window.confirm = () => { window.__dialogs++; return true; }; });
+  await page.click("#sessions .chip >> nth=0");
+  await until("the question", () => !document.getElementById("ask").hidden);
+  const ask = await inPage(() => ({
+    q: document.querySelector("#ask strong").textContent, extra: !!document.querySelector("#ask .agents"),
+    buttons: [...document.querySelectorAll("#ask button")].map((b) => b.textContent), focus: document.activeElement.textContent,
+    s: document.body.dataset.s, msg: document.getElementById("msg").textContent,
+  }));
+  assert.deepEqual(ask, { q: "Claude and Codex are using the browser. Switching closes every tab for them. Switch anyway?", extra: false,
+    buttons: ["Switch anyway", "Cancel"], focus: "Cancel", s: "ready", msg: "" });
+  assert.deepEqual(helper.posts.map((p) => p.body), [{ action: "use", name: "Shop" }]);
+  await page.keyboard.press("Enter");
+  await until("cancelled", () => document.getElementById("ask").hidden);
+  assert.deepEqual(await msg(inPage), { text: "Not switched.", kind: "" });
+  assert.equal(helper.posts.length, 1, "Cancel sends nothing");
+
+  await page.click("#sessions .chip >> nth=1");
+  await until("asked again", () => !document.getElementById("ask").hidden);
+  await page.click("#ask .primary");
+  await until("the switch", () => document.body.dataset.s === "done");
+  assert.deepEqual(helper.posts.map((p) => p.body), [{ action: "use", name: "Shop" }, { action: "use", name: "Docs" }, { action: "use", name: "Docs", confirm: true }]);
+  assert.deepEqual(await msg(inPage), { text: 'Opening session "Docs".', kind: "ok" });
+  assert.equal(await inPage(() => document.getElementById("ask").hidden), true);
+  assert.equal(await inPage(() => window.__dialogs), 0, "never a confirm() dialog");
+  assert.deepEqual((await harness.live()).timeouts, 0);
+  assert.deepEqual(errors, []);
 });
 
 pageTest("newtab", { viewport: VIEW }, async ({ page, helper, harness, errors, inPage }) => {
@@ -133,7 +166,7 @@ pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS } }, async (
   assert.deepEqual(await chipTexts(inPage), CHIP_TEXTS);
   await page.click("#sessions .chip >> nth=1");
   await until("the posts", () => document.body.dataset.s === "done" || document.body.dataset.s === "ready");
-  assert.deepEqual(helper.posts.map((p) => p.route).slice(-2), ["picker", "pick"]);
+  assert.deepEqual(helper.posts.map((p) => p.route).slice(-1), ["pick"]);
   assert.deepEqual(helper.posts.at(-1).body, { action: "use", name: "Docs" });
 });
 

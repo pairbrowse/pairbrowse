@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { ensureHud } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
@@ -592,6 +593,14 @@ test("the badge's left edge is the agent's color, accent for Your turn, ok for D
     assert.deepEqual(await badge("done", "done"), { edge: "rgb(32, 201, 151)", text: "Done: done" });
     assert.equal((await badge("plain", "claude")).edge, "rgb(233, 118, 63)", "no color: Claude's orange");
     assert.equal(await badge("", "clear"), null, "cleared: the badge is gone");
+    // A text that already starts with its kind's word gets the word once.
+    assert.equal((await badge("Your turn: sign in", "you")).text, "Your turn: sign in");
+    assert.equal((await badge("your turn - enter the code", "you")).text, "Your turn: enter the code");
+    assert.equal((await badge("Your turnaround is ready", "you")).text, "Your turn: Your turnaround is ready", "the word whole, not the start of another");
+    assert.equal((await badge("Done: 3 fields filled", "done")).text, "Done: 3 fields filled");
+    assert.equal((await badge("Claude: checking prices", "claude")).text, "Claude: checking prices");
+    assert.equal((await badge("Claude is checking prices", "claude")).text, "Claude: Claude is checking prices", "a sentence about Claude keeps its subject");
+    assert.equal((await badge("Done: sign in", "you")).text, "Your turn: Done: sign in", "another kind's word stays");
   } finally {
     await browser.close();
   }
@@ -722,4 +731,14 @@ test("with reduced motion the cursor jumps and the click leaves a static dot", {
   } finally {
     await browser.close();
   }
+});
+
+test("the bar's chips end in an ellipsis when long, the newest never shrinks, and nothing fades the left edge", () => {
+  const src = readFileSync(new URL("../scripts/hud.js", import.meta.url), "utf8");
+  const ol = src.match(/\n\s*ol\{[^}]*\}/)?.[0] || "";
+  assert.ok(ol, "the chips' list rule");
+  assert.doesNotMatch(ol, /mask-image/, "no left fade mask on the list");
+  assert.match(src, /li\.chip\{flex:0 1 auto;min-width:44px;overflow:hidden\}/, "older chips shrink, down to 44 px");
+  assert.match(src, /li\.chip:last-child\{flex-shrink:0\}/, "the newest chip keeps its size");
+  assert.match(src, /\.chip span\{[^}]*text-overflow:ellipsis[^}]*white-space:nowrap[^}]*\}/, "a long chip ends in an ellipsis");
 });

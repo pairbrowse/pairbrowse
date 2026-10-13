@@ -5,19 +5,18 @@
 // with PAIRBROWSE_TEST_TAB_ORDER=1. Needs PAIRBROWSE_TEST_RUNTIME.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import net from "node:net";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir(); // socket paths must stay short
+const shortBase = testBase(); // socket paths must stay short
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function rpc(write, input) {
@@ -60,17 +59,7 @@ test("tab order follows in a shared session: a move on the host reaches the join
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
     const socketPath = join(h, "run", "browser.sock");
-    // A busy machine (the whole suite at once) can take a while to start the helper.
-    for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
-    // The socket file can show a moment before the helper listens on it (a busy machine): retry.
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
-      if (ok) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await attachDaemon({ socketPath, daemon: daemons.at(-1), home: h });
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
@@ -147,14 +136,7 @@ test("a new agent starts on the tab the person looks at, unless another agent is
   const socks = [];
   const connect = async () => {
     const socketPath = join(h, "run", "browser.sock");
-    for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await attachDaemon({ socketPath, daemon: daemon, home: h });
     socks.push(sock);
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });

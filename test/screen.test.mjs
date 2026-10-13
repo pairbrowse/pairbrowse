@@ -62,6 +62,44 @@ test("pictures that stop coming show a spinner and 'Reconnecting to Bob…' over
   }
 });
 
+test("on the slower route the helper's word on the channel drives the wait, never a quiet spell", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
+    await page.route("http://pairbrowse.test/**", (route) => {
+      const name = new URL(route.request().url()).pathname.slice(1);
+      route.fulfill({ contentType: TYPES[name.split(".").pop()], body: readFileSync(join(panel, name)) });
+    });
+    await page.goto("http://pairbrowse.test/screen.html");
+    const hold = () => inPage(page, () => window.pbScreen.hold());
+    const holdUntil = async (ok) => { for (let i = 0; i < 80; i++) { const h = await hold(); if (ok(h)) return h; await page.waitForTimeout(50); } return hold(); };
+    await inPage(page, () => { window.pbScreen.holdAfter(300, 1000); window.pbScreen.info({ title: "Shop", url: "https://shop.example", who: "Bob" }); });
+    const sendFrame = () => inPage(page, () => {
+      const c = document.createElement("canvas"); c.width = 320; c.height = 200;
+      c.getContext("2d").fillRect(0, 0, 320, 200);
+      window.pbScreen.frame(c.toDataURL("image/jpeg").split(",")[1]);
+    });
+    await sendFrame();
+    assert.equal(await inPage(page, () => window.pbScreen.link("up")), true);
+    await page.waitForTimeout(1200);
+    assert.deepEqual(await hold(), { shown: false, text: "", dimmed: false }, "a quiet host page on a healthy channel: no wait");
+    await inPage(page, () => window.pbScreen.link("down"));
+    assert.deepEqual(await hold(), { shown: true, text: "Reconnecting to Bob…", dimmed: true }, "the channel down: said at once");
+    assert.equal((await holdUntil((h) => /Still/.test(h.text))).text, "Still reconnecting to Bob…", "down for long: said so");
+    await inPage(page, () => window.pbScreen.link("up"));
+    assert.equal((await hold()).shown, false, "the channel up again: taken down");
+    await inPage(page, () => window.pbScreen.link("down"));
+    await sendFrame();
+    assert.equal((await holdUntil((h) => !h.shown)).shown, false, "a picture takes it down");
+    await page.waitForTimeout(800);
+    assert.equal((await hold()).shown, false, "and a picture means the channel is up");
+    assert.equal(await inPage(page, () => window.pbScreen.link("sideways")), false, "only up or down");
+  } finally {
+    await browser.close();
+  }
+});
+
 test("the picture page keeps its ids, its words, its timers and a flat sheet", () => {
   const html = readFileSync(join(panel, "screen.html"), "utf8"), css = readFileSync(join(panel, "screen.css"), "utf8"), js = readFileSync(join(panel, "screen.js"), "utf8");
   for (const id of ["v", "still", "pointers", "status", "status-text", "hold", "hold-text", "top", "tag", "tag-text", "who", "who-text", "addr", "addr-state", "addr-text", "addr-host", "addr-rest", "sound", "pick", "pick-text", "pick-go", "pick-no", "pick-input"]) {

@@ -5,11 +5,10 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { session } from "./live.mjs";
+import { session, testBase } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,7 +33,7 @@ let x = 0; setInterval(() => { x = (x + 4) % 400; dot.style.left = x + "px"; }, 
 test("the page's own errors come back with the run, and a recording is saved as a video", { skip: !runtime, timeout: 180_000 }, async () => {
   const site = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(PAGE); });
   await new Promise((r) => site.listen(0, "127.0.0.1", r));
-  const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+  const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "rec-"));
   const downloads = join(h, "downloads");

@@ -37,6 +37,20 @@ more browsers at once for about three minutes on a 12-core machine. Knobs:
   near its solo pace.
 - `node --test test/scroll.integration.test.mjs` runs one file; the live ones skip without
   `PAIRBROWSE_TEST_RUNTIME`.
+- Helper homes come from `testBase()` in `test/live.mjs`: the system's temporary folder (on the
+  machine's own disk; an external disk a build saturates holds every helper's start up), or `/tmp`
+  when a socket path there would pass the Unix limit. `attachDaemon()` waits for a helper to
+  listen and fails at once, with the ends of its `daemon.stderr.log` and `daemon.log`, when it
+  exits first. A helper listens before it loads the browser runtime (its log says
+  `startup: socket after N ms, runtime after M ms`).
+- `PAIRBROWSE_TEST_NO_CAPTURE=1` (tests only) makes the helper act as a PairBrowse build without a
+  capture page: no direct connection is offered to joiners (pictures through the join channel)
+  and recording is refused (`shared-mode.integration` sets it on the host only).
+- `test/native-join.integration.test.mjs` joins with a PairBrowse build that has its own pages:
+  set `PAIRBROWSE_TEST_RUNTIME`, `PAIRBROWSE_TEST_ENGINE` and `PAIRBROWSE_TEST_EXECUTABLE` (that
+  build's `Contents/MacOS/pairbrowse`); it skips unless the build's manifest declares its own
+  pages. It opens real windows. The macOS download-mark test in `tools.integration` opens one
+  window too: headless Chromium writes no mark.
 
 Speed checks (the smooth scroll in `scroll.integration`, the styled pick on a big page and the
 fields whose names go away in `form-patterns.integration`) are relative: each test first times

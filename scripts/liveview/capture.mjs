@@ -1,0 +1,71 @@
+// The capture page's channel (a PairBrowse build that declares one; native-engine capturePages):
+// the helper asks the browser's own capture page for a tab's picture and sound (share) or a
+// recording (record) with a `capture` event on the owner streams of the browser's own pages, and
+// the page answers on POST capture/reply. Nothing reaches a viewer, a guest or the live view page
+// (liveview.mjs sends the event only to `?page=` streams), and nothing here starts a capture: the
+// page does, only once it has said hello.
+//
+// call(to, arg, ms): sends { n, to, ...arg } and resolves with the page's value, or rejects with
+// its error, or "the capture page didn't answer" after ms. reply(body): the page's answer
+// ({ n, value } or { n, error }) or its hello ({ hello: true, caps: { share, record } }); false
+// for a body that isn't one. ready(): a hello came since the browser started. reset(): the
+// browser closed: every waiting call is rejected and the hello is forgotten.
+export const CAPTURE_WAITING_MAX = 64;
+export const CAPTURE_ERROR_MAX = 300;
+export const CAPTURE_SDP_MAX = 100_000;
+export const CAPTURE_VALUE_MAX = 1_500_000;
+const TARGETS = new Set(["share", "record"]);
+
+export function createCaptureChannel({ send, log = () => {} }) {
+  const waiting = new Map(); // n -> { resolve, reject, timer }
+  let seq = 0;
+  let hello = null; // { share, record } once the page said hello
+
+  function call(to, arg = {}, ms = 8000) {
+    if (!TARGETS.has(to)) return Promise.reject(new Error(`no capture call "${to}"`));
+    if (waiting.size >= CAPTURE_WAITING_MAX) return Promise.reject(new Error("too many capture calls waiting"));
+    const n = ++seq;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { waiting.delete(n); reject(new Error("the capture page didn't answer")); }, ms);
+      waiting.set(n, { resolve, reject, timer });
+      try { send({ ...(arg && typeof arg === "object" ? arg : {}), n, to }); } catch (e) { clearTimeout(timer); waiting.delete(n); reject(e); }
+    });
+  }
+
+  // A size the answer may have: an SDP up to CAPTURE_SDP_MAX, a recording's piece (base64 of
+  // 1 MB) up to CAPTURE_VALUE_MAX in all.
+  const fits = (v) => {
+    if (v === undefined || v === null) return true;
+    if (typeof v === "string") return v.length <= CAPTURE_VALUE_MAX;
+    if (typeof v === "object" && "sdp" in v && (typeof v.sdp !== "string" || v.sdp.length > CAPTURE_SDP_MAX)) return false;
+    try { return JSON.stringify(v).length <= CAPTURE_VALUE_MAX; } catch { return false; }
+  };
+
+  function reply(body) {
+    if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+    if (body.hello === true) {
+      const caps = body.caps && typeof body.caps === "object" ? body.caps : {};
+      hello = { share: caps.share === true, record: caps.record === true };
+      log(`capture page: ready (share ${hello.share}, record ${hello.record})`);
+      return true;
+    }
+    const n = body.n;
+    if (!Number.isSafeInteger(n) || n <= 0) return false;
+    if ("error" in body && (typeof body.error !== "string" || body.error.length > CAPTURE_ERROR_MAX)) return false;
+    if (!fits(body.value)) return false;
+    const w = waiting.get(n);
+    if (!w) return true; // late or unknown: dropped
+    waiting.delete(n);
+    clearTimeout(w.timer);
+    if (typeof body.error === "string") w.reject(new Error(body.error));
+    else w.resolve(body.value);
+    return true;
+  }
+
+  function reset() {
+    hello = null;
+    for (const [n, w] of waiting) { clearTimeout(w.timer); w.reject(new Error("the browser closed")); waiting.delete(n); }
+  }
+
+  return { call, reply, reset, ready: () => !!hello, caps: () => (hello ? { ...hello } : null), waiting: () => waiting.size };
+}

@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
-import { session } from "./live.mjs";
+import { session, testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,19 +23,20 @@ const PAGE = `<!doctype html><title>Tools page</title><body>
 <script>setInterval(async () => { try { if ((await (await fetch("/state")).text()) === "done") w.textContent = "Welcome back"; } catch {} }, 300);</script>`;
 
 // A helper of its own (a fresh home, Playwright's Chromium, headless), with its site.
-async function startHelper(handler, prefix) {
+// headed: a visible window (closed at the end), for what headless Chromium leaves out.
+async function startHelper(handler, prefix, { headed = false } = {}) {
   const site = createServer(handler);
   await new Promise((r) => site.listen(0, "127.0.0.1", r));
-  const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+  const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, prefix));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, downloadsDir: join(h, "downloads") }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: headed ? [] : ["--headless=new"], display: "none", screenshots: false, downloadsDir: join(h, "downloads") }));
   const out = openSync(join(h, "daemon.stderr.log"), "a");
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h }, stdio: ["ignore", out, out] });
   const socketPath = join(h, "run", "browser.sock");
-  const ready = async () => { for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50); };
+  const ready = async () => { (await attachDaemon({ socketPath, daemon, home: h })).destroy(); };
   const log = () => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2000); } catch { return ""; } };
   const stop = async () => {
     if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
@@ -195,6 +196,40 @@ test("a downloaded PDF and .txt open in the person's tab; agents can't reach it"
   } finally {
     a?.sock.destroy();
     b?.sock.destroy();
+    await stop();
+  }
+});
+
+// macOS's download mark, as the browser itself writes it: a real download saved by the helper
+// keeps it with no help from the test, and the Tools tab opens it (no 409 for a file without one).
+// Headed on purpose: Chromium under --headless=new writes no mark at all (checked with a probe
+// before writing this test), so this one test opens a window, and closes it at the end.
+test("a real download keeps the browser's own download mark, and opens", { skip: !runtime || process.platform !== "darwin", timeout: 180_000 }, async () => {
+  const { site, h, socketPath, ready, log, stop } = await startHelper((req, res) => {
+    if (req.url === "/note.txt") { res.writeHead(200, { "content-type": "text/plain", "content-disposition": "attachment; filename=note.txt" }); return res.end("marked by the browser\n"); }
+    res.writeHead(200, { "content-type": "text/html" }); res.end('<!doctype html><title>Mark</title><a href="/note.txt">Get the note</a>');
+  }, "mark-", { headed: true });
+  let a;
+  try {
+    await ready();
+    a = await session(socketPath, "m");
+    assert.match(text(await a.tool("pairbrowse_session", { action: "new", clean: true })), /clean/);
+    assert.ok(!(await a.tool("browser_navigate", { url: `http://127.0.0.1:${site.address().port}/` })).result?.isError);
+    const live = text(await a.tool("pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)[0];
+    const get = async (p) => (await fetch(`${live}${p}`)).json();
+    const ref = text(await a.tool("browser_snapshot", {})).match(/link "Get the note"[^\n]*\[ref=(e\d+)\]/)?.[1];
+    assert.ok(ref, "the link's ref");
+    assert.ok(!(await a.tool("browser_click", { element: "Get the note link", target: ref })).result?.isError);
+    const d = await until(async () => (await get("downloads.json")).items.find((x) => x.state === "done" && x.name === "note.txt"), "the download, done");
+    const file = join(h, "downloads", "note.txt");
+    const mark = execFileSync("/usr/bin/xattr", ["-p", "com.apple.quarantine", file], { encoding: "utf8" }).trim();
+    assert.match(mark, /^[0-9a-f]{4};[0-9a-f]+;/i, `the browser's own mark: ${mark}`);
+    const r = await fetch(`${live}downloads/${d.id}/open`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.notEqual(r.status, 409, await r.text());
+  } catch (e) {
+    throw new Error(`${e.message}\n${log()}`);
+  } finally {
+    a?.sock.destroy();
     await stop();
   }
 });

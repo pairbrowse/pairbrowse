@@ -8,20 +8,20 @@
 // many fresh Quick Tunnels from one machine in a while (this test opens three): run it sparingly.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import net from "node:net";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir, homedir } from "node:os";
+import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
 import { createInterface } from "node:readline";
+import { testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const real = process.env.PAIRBROWSE_TEST_REAL_TUNNEL === "1";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+const shortBase = testBase();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const APP = `<title>Form</title><body style="margin:0"><form><label>Note <input id="i" name="note" style="display:block;width:100vw;height:20vh;font-size:30px"></label></form></body>`;
@@ -74,15 +74,7 @@ test("sharing failover: the tunnel the joiner uses dies; they move to the standb
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
     const socketPath = join(h, "run", "browser.sock");
-    for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
-      if (ok) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await attachDaemon({ socketPath, daemon: daemons.at(-1), home: h });
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");

@@ -1,8 +1,35 @@
 // Shared by the live tests: they drive the browser the way PairBrowse ships, through Patchright.
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import net from "node:net";
 import { createInterface } from "node:readline";
+
+// Where live tests make their helper homes: the system's temporary folder, on the machine's own
+// disk (an external disk a build saturates holds every helper up for seconds), or /tmp when the
+// socket path under it would pass the 104-byte limit of a Unix socket's address.
+export function testBase() {
+  const base = tmpdir();
+  return join(base, "xx-XXXXXX/run/browser.sock").length > 100 ? "/tmp" : base;
+}
+
+const tail = (file, n = 1500) => { try { return readFileSync(file, "utf8").slice(-n); } catch { return ""; } };
+
+// A helper started by a test, once it listens: a connected socket. It fails at once when the
+// helper exits, with the ends of its stderr and its log, rather than at the end of a wait.
+export async function attachDaemon({ socketPath, daemon, home, ms = 60_000 }) {
+  const end = Date.now() + ms;
+  const why = () => `\n--- daemon.stderr.log ---\n${tail(join(home, "daemon.stderr.log"))}\n--- daemon.log ---\n${tail(join(home, "daemon.log"))}`;
+  for (;;) {
+    if (daemon && (daemon.exitCode !== null || daemon.signalCode !== null)) throw new Error(`the helper exited (${daemon.exitCode ?? daemon.signalCode}) before it listened${why()}`);
+    const sock = net.createConnection(socketPath);
+    if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) return sock;
+    sock.destroy();
+    if (Date.now() > end) throw new Error(`couldn't connect to ${socketPath} within ${ms} ms${why()}`);
+    await sleep(100);
+  }
+}
 
 // Patchright from the pinned runtime (PAIRBROWSE_TEST_RUNTIME).
 export const patchright = (runtime) => createRequire(join(runtime, "package.json"))("patchright");

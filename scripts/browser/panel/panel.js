@@ -6,7 +6,12 @@ const DRIVING_MS = 8000; // "is driving" for this long after Claude's last actio
 const ACTIVITY_SHOWN = 12;
 let base = null;
 let es = null;
-let lastActivity = 0;
+// When each agent of this browser acted last (who -> time; the newest 50): the card says its own
+// agent is driving on that agent's actions only, never on a joiner's line, a note or another
+// browser's agent.
+const actedAt = new Map();
+const ACTED_KEPT = 50;
+const ownAgentLine = (a) => !!a?.who && !a.from && !String(a.text || "").startsWith("Note: ");
 let lastWho = "";
 let driveTimer = 0;
 let paused = false;
@@ -108,7 +113,7 @@ $("agent-more").addEventListener("click", () => {
 function setDriver() {
   const turn = document.body.dataset.turn === "true";
   const s = document.body.dataset.s;
-  const driving = !turn && s === "live" && Date.now() - lastActivity < DRIVING_MS;
+  const driving = !turn && s === "live" && Date.now() - (actedAt.get(lastWho || activeEntry()?.who || "") || 0) < DRIVING_MS;
   document.body.dataset.driving = String(driving);
   $("driver-text").textContent = s === "closed" ? "The browser is closed. It reopens on Claude's next action."
     : s === "connecting" ? "Waiting for PairBrowse"
@@ -218,10 +223,18 @@ function connect(url) {
   on("activity", (list) => {
     const items = list.slice(-ACTIVITY_SHOWN).reverse();
     if (!items.length) return;
-    lastActivity = Math.max(lastActivity, items[0].t);
     const was = activeEntry();
-    lastWho = items[0].who || "";
-    lastTab = items[0].tab || "";
+    // The card follows the newest line of an agent of this browser; other lines are only listed.
+    let newest = null;
+    for (const a of list) {
+      if (!ownAgentLine(a)) continue;
+      const at = Math.max(actedAt.get(a.who) || 0, Number(a.t) || 0);
+      actedAt.delete(a.who);
+      actedAt.set(a.who, at);
+      if (actedAt.size > ACTED_KEPT) actedAt.delete(actedAt.keys().next().value);
+      newest = a;
+    }
+    if (newest) { lastWho = newest.who; lastTab = newest.tab || ""; }
     $("activity").replaceChildren(...items.map((a) => el("li", {}, el("time", { textContent: clock(a.t) }), el("span", {}, ...(activityHead(a) ? [el("strong", { textContent: `${activityHead(a)}: ` })] : []), rich(a.text)))));
     setDriver();
     clearTimeout(driveTimer);

@@ -26,7 +26,8 @@ const REPLY_MS = 30_000;
 
 // join: a parsed join code ({ url, key, role, label }). name, app: who is joining, as the host
 // sees it. onTabs(state): the session's shared tabs, each time they come in (awaited before the
-// next request). onChange(phase). The host is asked right away.
+// next request). onChange(phase). onLink(up): the push channel opened (true) or dropped (false),
+// as it happens (phase stays "in" while another address is tried). The host is asked right away.
 // on: handlers for the host's events (tabs, form, pointers, session, message), each awaited in
 // order except pointers (the latest wins).
 // One of the host's other tunnel addresses, checked (never trust the other side): a Quick Tunnel
@@ -41,7 +42,7 @@ export function relayUrl(raw, codeUrl) {
   return null;
 }
 
-export function startJoin({ join: code, name, app = "", joinerId = newJoinerId(), log = () => {}, onTabs = async () => {}, on = {}, onChange = () => {} }) {
+export function startJoin({ join: code, name, app = "", joinerId = newJoinerId(), log = () => {}, onTabs = async () => {}, on = {}, onChange = () => {}, onLink = () => {} }) {
   // The addresses to the host's session: the code's, then the others the host names once we're in
   // (its standby tunnels). A dropped connection tries the next one, so a tunnel going down moves
   // this joiner to another without a new code.
@@ -130,6 +131,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
       try {
         const c = await connect(`${base()}/events`, { headers, timeoutMs: lostAt ? REQUEST_TIMEOUT_MS.switch : REQUEST_TIMEOUT_MS.connect });
         conn = c;
+        try { onLink(true); } catch {}
         const connectedAt = Date.now();
         answered = true;
         offlineSince = 0;
@@ -166,6 +168,7 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
         await new Promise((r) => c.onClose(r));
         clearInterval(watchdog);
         conn = null;
+        if (!stopped) try { onLink(false); } catch {}
         for (const [, resolve] of replies) resolve(null);
         replies.clear();
         // Dropped while in: straight on to the next address (a standby tunnel), no pause first,
@@ -191,6 +194,8 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     // In, but the channel dropped and another address is being tried: the picture stands still
     // meanwhile, and the person here is told so (never an agent: nothing in results or notes).
     get switching() { return !!switching(); },
+    // The push channel to the host is open right now.
+    get linked() { return !!conn && !conn.closed; },
     // A drive joiner's changes to the shared tabs. Resolves to the host's answer ({ opened }), or null.
     async send(ops) {
       if (code.role !== "drive" || phase !== "in" || !ops.length) return null;
@@ -206,7 +211,8 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
     async screen(body) {
       if (phase !== "in" || code.mode !== "shared") return { error: "not in a shared browser session" };
       const r = await ask("screen", body);
-      return r?.code === 200 ? r.body : { error: r?.body?.error || "no answer" };
+      // route "frames": the host sends this tab's pictures through the channel (it can't capture).
+      return r?.code === 200 ? r.body : { error: r?.body?.error || "no answer", ...(r?.body?.route === "frames" ? { route: "frames" } : {}) };
     },
     // Shared browser mode: one MCP message from an agent here (agent: its id) for its participant
     // in the host's browser; answers come on the channel (on.agent). Drive codes only.

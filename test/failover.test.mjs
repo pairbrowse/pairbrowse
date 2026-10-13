@@ -62,10 +62,10 @@ test("a tunnel dies: the joiner moves to the standby with the same key, stays in
   let C = null;
   relays = [A.url, B.url];
   const inv = invites.create({ role: "drive", label: "Dee", share: "code" });
-  const phases = [];
+  const phases = [], links = [];
   let states = 0, lastRelays = null;
   // The code carries A alone, as a real one does; B is learnt once in.
-  const j = startJoin({ join: { url: A.url, key: inv.key, role: "drive", label: "Bob", mode: "follow" }, name: "Dee", onChange: (p) => phases.push(p), onTabs: async (st) => { states++; if (st.relays) lastRelays = st.relays; } });
+  const j = startJoin({ join: { url: A.url, key: inv.key, role: "drive", label: "Bob", mode: "follow" }, name: "Dee", onChange: (p) => phases.push(p), onLink: (up) => links.push(up), onTabs: async (st) => { states++; if (st.relays) lastRelays = st.relays; } });
   try {
     await until("the join request", () => requests.length);
     view.approvals.approve(requests[0].id);
@@ -74,6 +74,8 @@ test("a tunnel dies: the joiner moves to the standby with the same key, stays in
     assert.deepEqual(lastRelays, [A.url, B.url], "every tunnel address comes with the tabs");
     assert.deepEqual(phases, ["waiting", "in"]);
     assert.equal(B.hits, 0, "B unused while A works");
+    assert.deepEqual(links, [true], "the channel's state as it happens: open");
+    assert.equal(j.linked, true);
 
     // A goes down. The joiner is on B within a few seconds, still in, and the host still has them.
     const before = states;
@@ -85,6 +87,8 @@ test("a tunnel dies: the joiner moves to the standby with the same key, stays in
     assert.deepEqual(lost, [], "the host never lost them");
     assert.ok(view.joinersNow().some((x) => x.who === "Dee"), "still listed with the host");
     assert.doesNotMatch(j.message, /tunnel|offline|dropped/i);
+    assert.ok(links.includes(false) && links.at(-1) === true, `the drop and the reopening are said (${links})`);
+    assert.equal(j.linked, true);
 
     // The host started a replacement: the joiner learns the new list.
     C = await tunnelTo(view.guestPort);
@@ -95,6 +99,8 @@ test("a tunnel dies: the joiner moves to the standby with the same key, stays in
     B.cut(); C.cut();
     await new Promise((r) => setTimeout(r, 2000));
     assert.equal(j.phase, "in", "still in while the addresses are tried");
+    assert.equal(links.at(-1), false, "the channel is said down at once, while the phase stays in");
+    assert.equal(j.linked, false);
     await until("offline at last", () => j.phase === "offline", 8000);
     assert.doesNotMatch(j.message, /tunnel|Cloudflare/i);
   } finally {

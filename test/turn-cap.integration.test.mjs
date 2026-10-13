@@ -5,11 +5,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { session } from "./live.mjs";
+import { session, testBase } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,7 +17,7 @@ const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n"
 
 test("a call that runs past the cap is answered, the browser resets, and the next agent goes on", { skip: !runtime, timeout: 240_000 }, async () => {
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+  const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "cap-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");

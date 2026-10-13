@@ -266,6 +266,7 @@ function frame(b64) {
     still.getContext("2d").drawImage(frameImage, 0, 0);
     if (view !== "frames") { view = "frames"; still.hidden = false; video.hidden = true; }
     lastFrameAt = Date.now();
+    if (link === "down") link = "up"; // a picture came: the channel is up again
     hold(false);
     showLive(true);
   };
@@ -275,7 +276,11 @@ function frame(b64) {
 // a few seconds): the last one stays, dimmed, with a spinner and a word for the person. The first
 // new picture takes it down. Said in plain words only; nothing about what carries the connection.
 const HOLD = { after: 1500, long: 30_000 }; // ms without a picture before it shows, before "Still"
-let lastFrameAt = 0, holdSince = 0;
+// The helper's word on the join channel (link()): "up", "down", or "" before it said anything. On
+// the slower route the host sends a picture only when its page changes, so a quiet page is no stop:
+// while the helper says the channel is up the wait never shows; it shows when the helper says it's
+// down. Only without its word does a gap between pictures count.
+let lastFrameAt = 0, holdSince = 0, link = "";
 function hold(on) {
   const box = $("hold");
   if (!on) { holdSince = 0; box.hidden = true; still.style.filter = ""; return; }
@@ -285,9 +290,15 @@ function hold(on) {
   if (box.hidden) { box.hidden = false; still.style.filter = "brightness(.75)"; }
 }
 setInterval(() => {
-  if (view !== "frames" || !lastFrameAt) return;
-  if (Date.now() - lastFrameAt >= HOLD.after) hold(true);
+  if (view !== "frames" || !lastFrameAt || link === "up") return;
+  if (link === "down" || Date.now() - lastFrameAt >= HOLD.after) hold(true);
 }, 250);
+function setLink(v) {
+  if (v !== "up" && v !== "down") return false;
+  link = v;
+  if (view === "frames" && lastFrameAt) hold(v === "down");
+  return true;
+}
 
 soundButton.addEventListener("click", () => { video.muted = false; video.play().catch(() => {}); soundButton.hidden = true; });
 
@@ -349,6 +360,8 @@ window.pbScreen = {
   // The address shown on the picture (as the person reads it), and whether a lock is there.
   address: () => ({ shown: !$("addr").hidden, text: $("addr-text").textContent, lock: $("addr-state").innerHTML === LOCK, warn: $("addr-state").classList.contains("warn") }),
   // Tests only: how long without a picture before the wait shows, and before it says "Still".
+  // The join channel's state, from the helper ("up" or "down"): drives the wait on the slower route.
+  link: setLink,
   holdAfter(after, long) { HOLD.after = Math.max(50, Number(after) || HOLD.after); HOLD.long = Math.max(HOLD.after, Number(long) || HOLD.long); return true; },
   // The wait over a stilled picture, as the person sees it: { shown, text, dimmed }.
   hold: () => ({ shown: !$("hold").hidden, text: $("hold-text").textContent, dimmed: still.style.filter !== "" }),

@@ -121,7 +121,9 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       j.screens.push(t);
       if (size > SCREEN_BODY_MAX) return { code: 413, body: { error: "Too large." } };
       const r = await live.screen(parsed, j);
-      return r?.problem ? { code: 400, body: { error: r.problem } } : { code: 200, body: r };
+      // route: where the joiner's side goes instead ("frames": this host sends pictures through the
+      // channel, it has nothing to capture a tab with).
+      return r?.problem ? { code: 400, body: { error: r.problem, ...(r.route === "frames" ? { route: "frames" } : {}) } } : { code: 200, body: r };
     }
     // Shared browser mode: their own agent's messages for its participant here, and the files it
     // sends over for an upload (in parts).

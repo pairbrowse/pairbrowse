@@ -1135,3 +1135,95 @@ test("a person's tab never crosses to joiners, even at a web address; screen req
     }
   } finally { view.close(); }
 });
+
+test("POST tab-order and POST capture/reply: the owner's and the pages' key only, checked, never on the join-code port", async () => {
+  const invites = createInvites();
+  const { ctx } = fakeTabs(1);
+  const replies = [];
+  const capture = { reply: (b) => { if (!b || typeof b.n !== "number") return false; replies.push(b); return true; } };
+  const logs = [];
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", invites, capture, log: (...a) => logs.push(a.join(" ")) });
+  const key = view.url.split("/").at(-2);
+  const T = "0123456789abcdef0123456789ABCDEF";
+  const order = { tabs: [{ target: T, window: 1, index: 0, active: true }], focused: 1, last: 1 };
+  try {
+    assert.equal(view.stripTabs(), null, "nothing reported yet");
+    for (const k of [key, view.pagesKey]) {
+      assert.equal((await request(view.port, "POST", `/${k}/tab-order`, { body: order })).status, 204);
+      assert.equal((await request(view.port, "POST", `/${k}/capture/reply`, { body: { n: 1, value: true } })).status, 204);
+    }
+    assert.deepEqual(view.stripTabs(), { tabs: [{ target: T.toUpperCase(), window: 1, index: 0, active: true }], focused: 1, last: 1 });
+    assert.equal(replies.length, 2);
+    assert.equal((await request(view.port, "POST", `/${key}/tab-order`, { body: { tabs: [{ target: "nope", window: 1, index: 0, active: true }], focused: 1, last: 1 } })).status, 400);
+    assert.equal((await request(view.port, "POST", `/${key}/tab-order`, { raw: "{" })).status, 400);
+    assert.equal((await request(view.port, "POST", `/${key}/tab-order`, { raw: JSON.stringify({ tabs: [], focused: 1, last: 1, pad: "x".repeat(70_000) }) })).status, 413, "at most 64 KB");
+    assert.equal((await request(view.port, "POST", `/${key}/capture/reply`, { body: { n: "x" } })).status, 400);
+    assert.equal((await request(view.port, "POST", `/${key}/capture/other`, { body: { n: 1 } })).status, 404);
+    for (const role of ["drive", "watch"]) {
+      const i = invites.create({ role, label: role });
+      assert.equal((await request(view.port, "POST", `/${i.key}/tab-order`, { body: order })).status, 403, role);
+      assert.equal((await request(view.port, "POST", `/${i.key}/capture/reply`, { body: { n: 2, value: true } })).status, 403, role);
+    }
+    const c = invites.create({ role: "drive", label: "C", share: "code", mode: "shared" });
+    for (const k of [c.key, key]) {
+      assert.notEqual((await request(view.guestPort, "POST", `/${k}/tab-order`, { body: order })).status, 204, "the join-code port never serves it");
+      assert.notEqual((await request(view.guestPort, "POST", `/${k}/capture/reply`, { body: { n: 3, value: true } })).status, 204);
+    }
+    assert.equal(replies.length, 2, "no reply came in by a guest");
+  } finally { view.close(); }
+});
+
+test("the capture and tab-order events reach the browser's own pages only, never the live view, a viewer or a guest", async () => {
+  const invites = createInvites();
+  const { ctx } = fakeTabs(1);
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", invites });
+  const key = view.url.split("/").at(-2);
+  const streams = [];
+  try {
+    const page = await readStream(view.port, `/${key}/events?panel=1&page=capture`); streams.push(page);
+    const strip = await readStream(view.port, `/${key}/events?page=strip`); streams.push(strip);
+    const panel = await readStream(view.port, `/${key}/events?panel=1`); streams.push(panel);
+    const viewer = await readStream(view.port, `/${key}/events`); streams.push(viewer);
+    const w = invites.create({ role: "watch", label: "W" });
+    const guest = await readStream(view.port, `/${w.key}/events?page=capture`); streams.push(guest);
+    await wait(50);
+    view.sendToPages("capture", { n: 1, to: "share", op: "offer" });
+    view.sendToPages("tab-order", { op: "arrange", targets: ["A"] });
+    view.sendToPages("activity", []); // not a pages-only event: refused
+    await wait(80);
+    for (const s of [page, strip]) {
+      assert.equal(eventsIn(s.text(), "capture").length, 1);
+      assert.equal(eventsIn(s.text(), "tab-order").length, 1);
+    }
+    for (const s of [panel, viewer, guest]) {
+      assert.equal(eventsIn(s.text(), "capture").length, 0);
+      assert.equal(eventsIn(s.text(), "tab-order").length, 0);
+    }
+  } finally { for (const s of streams) s.close(); view.close(); }
+});
+
+test("a screen want while nothing here captures a tab: the slower route at once, nothing offered, nothing logged", async () => {
+  const { ctx, pages } = fakeTabs(1);
+  pages[0].url = () => "https://shop.example/";
+  pages.forEach((p) => { p.isClosed = () => false; });
+  const invites = createInvites();
+  const requests = [];
+  const logs = [];
+  let offered = 0;
+  const screens = { available: () => false, offer: async () => { offered++; throw new Error("no"); }, frames: async () => {}, input: async () => {}, stop: async () => {}, answer: async () => true, stopAll: async () => {} };
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => pages[0].url(), invites, screens, onJoinRequest: (e) => requests.push(e), log: (...a) => logs.push(a.join(" ")) });
+  const code = invites.create({ role: "drive", label: "D", share: "code", mode: "shared" });
+  const headers = { "x-pairbrowse-joiner": "b".repeat(32), "x-pairbrowse-name": "Dee", "x-pairbrowse-app": "Claude Code" };
+  try {
+    await request(view.guestPort, "GET", `/${code.key}/tabs`, { headers });
+    view.approvals.approve(requests[0].id);
+    const tabs = JSON.parse((await request(view.guestPort, "GET", `/${code.key}/tabs`, { headers })).text).tabs;
+    const s = await request(view.guestPort, "POST", `/${code.key}/screen`, { headers, body: { op: "want", id: tabs[0].id } });
+    assert.equal(s.status, 400);
+    const body = JSON.parse(s.text);
+    assert.equal(body.route, "frames");
+    assert.match(body.error, /join channel/);
+    assert.equal(offered, 0);
+    assert.ok(!logs.some((l) => /liveview guest|shared screen/.test(l)), logs.join("\n"));
+  } finally { view.close(); }
+});

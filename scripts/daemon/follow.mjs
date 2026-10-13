@@ -48,11 +48,16 @@ const FORM_COALESCE_MS = 30; // keystrokes that come together go as one
 const SCREEN_KEEP_MS = 60_000; // a tab out of sight stays connected this long (switching back is instant)
 const SCREEN_CONNECT_MS = process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" ? 3000 : 12_000; // no direct connection by then: try again, then the slower route
 const SCREEN_INPUT_MS = 30; // on the slower route, input goes to the host this often
-const screenBase = () => `chrome-extension://${panelExtensionId()}/screen.html`;
-// The tab id after # keeps the address short (screen.html#a1b2c3d4); the page itself shows the
-// host tab's real address and title (screen.js).
-const screenUrl = (id) => `${screenBase()}#${encodeURIComponent(id)}`;
-const isScreen = (page) => page.url().startsWith(screenBase());
+// The picture page: the extension's screen.html, or in a PairBrowse build with its own pages its
+// chrome://pairbrowse/screen/ tab (the same page, driven the same way through window.pbScreen).
+const CHROME_SCREEN = "chrome://pairbrowse/screen/";
+const screenBaseFor = (chrome) => (chrome ? CHROME_SCREEN : `chrome-extension://${panelExtensionId()}/screen.html`);
+// Any of the picture page's addresses (the extension's, the browser's own, and the name the
+// browser shows for it).
+export const isScreenPage = (url) => {
+  const u = String(url || "");
+  return /^chrome-extension:\/\/[a-p]{32}\/screen\.html(?:[#?]|$)/.test(u) || u.startsWith(CHROME_SCREEN) || /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(u);
+};
 // The tools an agent here uses in the host's browser while in a shared browser session (the rest,
 // such as its status, remembered details and sessions, stay here).
 const FORWARDED = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_click_at"]);
@@ -75,6 +80,12 @@ const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 // onHostChange(state): the join addresses the person is asked about or allowed changed (for the
 // side panel, hostState()). configFile: where "Always allow" is written (paths.config).
 export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {}, onHostChange = () => {}, configFile = paths.config }) {
+  const screenBase = () => screenBaseFor(!!context.chromePages?.());
+  // The tab id after # keeps the address short (screen.html#a1b2c3d4); the page itself shows the
+  // host tab's real address and title (screen.js).
+  const screenUrl = (id) => `${screenBase()}#${encodeURIComponent(id)}`;
+  // The browser's own picture tab may show under its pairbrowse:// name too.
+  const isScreen = (page) => page.url().startsWith(screenBase()) || (!!context.chromePages?.() && /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(page.url()));
   let s = null;
   let ended = null; // { text }: how the last session ended without a leave (denied, revoked), for status // { join, mirror, pages: Map id -> page, owner, window, windowId, lastT, candidates, seen, heard, told, agents, outbox }
   const idOf = (cur, page) => { for (const [id, p] of cur.pages) if (p === page) return id; return null; };
@@ -446,12 +457,25 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       // and the connection asked for the one before it is let go (the slower route, once found, stays).
       let sc = cur.screens.get(page), was = null;
       if (sc && sc.doc !== st.doc) { if (sc.peer) cur.join.screen({ op: "stop", peer: sc.peer }).catch(() => {}); was = sc; sc = null; }
-      if (!sc) { sc = { doc: st.doc, peer: null, conn: "none", since: now, tries: was?.tries || 0, fallback: !!was?.fallback, framesOn: !!was?.framesOn, hiddenSince: 0, busy: false }; cur.screens.set(page, sc); }
+      if (!sc) { sc = { doc: st.doc, peer: null, conn: "none", since: now, tries: was?.tries || 0, fallback: !!was?.fallback, framesOn: !!was?.framesOn, hiddenSince: 0, busy: false, rounds: 0, linkSaid: "" }; cur.screens.set(page, sc); }
+      sc.rounds++;
       if (st.conn !== sc.conn) { sc.conn = st.conn; sc.since = now; }
       sc.hiddenSince = st.visible ? 0 : sc.hiddenSince || now;
       if (st.visible) sc.seenAt = now; // the last one looked at, for this side's agents
       const outOfSight = sc.hiddenSince && now - sc.hiddenSince > SCREEN_KEEP_MS;
+      // The browser's own picture page that can't make a direct connection here (no helper word
+      // for it, or it runs as the extension's page would): the slower route at once, without
+      // two tries of SCREEN_CONNECT_MS first. Asked from its second round (the word comes async);
+      // an offer asked for meanwhile is let go.
+      const ownPage = !!context.chromePages?.();
+      if (!sc.fallback && ownPage && sc.rounds >= 2 && st.conn !== "connected" && (st.host === "extension" || st.helper === false)) {
+        sc.fallback = true;
+        if (sc.peer) { cur.join.screen({ op: "stop", peer: sc.peer }).catch(() => {}); sc.peer = null; await inScreen(page, () => window.pbScreen?.close()).catch(() => {}); }
+        log("shared browser: this picture page can't connect directly; using the slower route");
+        startScreenInput(cur);
+      }
       if (sc.fallback) {
+        sayLink(cur, page, sc);
         if (outOfSight && sc.framesOn) { sc.framesOn = false; cur.join.screen({ op: "frames", id, on: false }).catch(() => {}); }
         else if (st.visible && !sc.framesOn) { sc.framesOn = true; const r = await cur.join.screen({ op: "frames", id, on: true }); if (r?.error) sc.framesOn = false; }
         continue;
@@ -467,19 +491,30 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         if (sc.peer) cur.join.screen({ op: "stop", peer: sc.peer }).catch(() => {});
         sc.peer = null;
         await inScreen(page, () => window.pbScreen?.close()).catch(() => {});
-        if (sc.tries >= 2) { sc.fallback = true; log("shared browser: no direct connection; using the slower route"); startScreenInput(cur); continue; }
+        if (sc.tries >= 2) { sc.fallback = true; log("shared browser: no direct connection; using the slower route"); startScreenInput(cur); sayLink(cur, page, sc); continue; }
       }
-      if (st.visible && (st.conn === "none" || stuck)) {
+      if (st.visible && (st.conn === "none" || stuck) && !(ownPage && sc.rounds < 2)) {
         sc.busy = true;
         sc.since = now;
         (async () => {
           try {
             const r = await cur.join.screen({ op: "want", id });
+            // The host has nothing to capture a tab with (a PairBrowse build without its capture
+            // page): its pictures come through the channel from now on, with no retries.
+            if (r?.route === "frames") {
+              if (cur.screens.get(page) === sc && !sc.fallback) {
+                sc.fallback = true;
+                log("shared browser: the host sends pictures through the join channel");
+                startScreenInput(cur);
+                sayLink(cur, page, sc);
+              }
+              return;
+            }
             if (!r?.sdp) { log("shared browser", r?.error || "no offer"); return; }
             // The page went somewhere else while the host made the offer (an address typed in its
             // bar): its new document asks for its own; this one is let go, never offered to it.
             const stale = () => { cur.join.screen({ op: "stop", peer: r.peer }).catch(() => {}); };
-            if (cur.screens.get(page) !== sc || page.isClosed()) return stale();
+            if (cur.screens.get(page) !== sc || page.isClosed() || sc.fallback) return stale();
             sc.peer = r.peer;
             // Tests only (PAIRBROWSE_TEST_NO_DIRECT=1): a network where no direct connection can be made.
             const answer = await inScreen(page, (o) => window.pbScreen?.offer(o) ?? null, { sdp: r.sdp, peer: r.peer, doc: sc.doc, noDirect: process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" });
@@ -494,6 +529,18 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         })();
       }
     }
+  }
+  // The slower route: the join channel's state ("up" or "down"), said to a picture page when it
+  // changed. On that route the host sends a picture only when its page changes, so the page's wait
+  // ("Reconnecting to …") follows this word, never a quiet spell. Said again next round if the
+  // page didn't take it (still loading).
+  function sayLink(cur, page, sc) {
+    const want = cur.join?.linked ? "up" : "down";
+    if (sc.linkSaid === want || page.isClosed()) return;
+    sc.linkSaid = want;
+    const unsaid = () => { if (sc.linkSaid === want) sc.linkSaid = ""; };
+    // A page without link() (a build's page from before it): said once, not again each round.
+    within(800, inScreen(page, (v) => (window.pbScreen ? (typeof window.pbScreen.link === "function" ? window.pbScreen.link(v) === true : "none") : false), want)).then((ok) => { if (!ok) unsaid(); }, unsaid);
   }
   // The slower route's input: what the person does on a picture page goes to the host every few
   // tens of milliseconds (the direct connection carries it when there is one).
@@ -711,6 +758,11 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         session: (data) => onSession?.(data, cur.join),
         message: (data) => onMessage?.(data, cur.join),
       },
+      // The channel opened or dropped: the picture pages on the slower route hear it at once.
+      onLink: () => {
+        if (s !== cur || !cur.join) return;
+        for (const [page, sc] of cur.screens) if (sc.fallback) sayLink(cur, page, sc);
+      },
       onChange: (phase) => {
         if (phase === "in") { if (!cur.wasIn) hud.addActivity(`Joined ${parsed.label}'s session (${parsed.role})`, who, null, "joined"); cur.wasIn = true; }
         if ((phase === "denied" || phase === "ended") && s === cur) {
@@ -740,7 +792,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     for (const end = Date.now() + JOIN_ANSWER_MS; s === cur && cur.join.phase === "asking" && Date.now() < end;) await sleep(100);
     if (s !== cur) return { text: ended?.text || cur.join.message, error: true };
     if (cur.shared) return {
-      text: `Asked ${parsed.label} to let ${who} in (${parsed.role}, shared browser). They have to approve first. Then ${parsed.label}'s tabs open here in a window of their own, each showing their tab live (picture and sound, straight from their browser)` +
+      text: `Asked ${parsed.label} to let ${who} in (${parsed.role}, shared browser). They have to approve first. Then ${parsed.label}'s tabs open here in a window of their own, each showing their tab live (picture, and sound when their browser sends it)` +
         (parsed.role === "drive" ? ", and what you click, type and scroll there happens in their browser itself, logged in as they are." : "; you watch, without clicking or typing there.") +
         " Their logins stay on their computer. Check with pairbrowse_join status; stop with leave (each tab then opens here as your own).",
     };

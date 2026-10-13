@@ -57,8 +57,14 @@ export function shareableUrl(raw, { full = false, secretDomains = [] } = {}) {
   const base = u.origin + u.pathname;
   if (base.length > URL_MAX) return null;
   if (!full || secretDomains.some((d) => d && (host === d || host.endsWith(`.${d}`)))) return base;
-  const keep = [...u.searchParams].filter(([k, v]) => !SENSITIVE.test(k) && !CREDENTIAL.test(k) && !secretish(v));
-  let out = base + (keep.length ? `?${new URLSearchParams(keep)}` : "");
+  // Part by part as written: each is decoded for the checks and kept as it was ("?after-pause"
+  // stays without an "=", and the page's own encoding is kept); empty parts go.
+  const keep = u.search.slice(1).split("&").filter((part) => {
+    if (!part) return false;
+    const [k = "", v = ""] = [...new URLSearchParams(part)][0] || [];
+    return !SENSITIVE.test(k) && !CREDENTIAL.test(k) && !secretish(v);
+  });
+  let out = base + (keep.length ? `?${keep.join("&")}` : "");
   if (/^#!?\/[^=&@]*$/.test(u.hash) && !secretish(u.hash)) out += u.hash;
   return out.length <= URL_MAX ? out : base;
 }

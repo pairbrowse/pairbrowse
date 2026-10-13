@@ -5,20 +5,19 @@
 // (PAIRBROWSE_TEST_TUNNEL=direct). Needs PAIRBROWSE_TEST_RUNTIME.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import net from "node:net";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { personColor } from "../scripts/tabsync.mjs";
+import { testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+const shortBase = testBase();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The host's page (its button also starts a tone too quiet to hear, so sound has something to carry): a button over the top half, a text field below it, a canvas at the bottom that
@@ -62,7 +61,9 @@ function home(prefix) {
   return dir;
 }
 
-async function run({ noDirect = false, realTunnel = false, youtube = false, excalidraw = false, joinerApp = "claude-code" } = {}) {
+// noCapture: the host has nothing to capture a tab with (PAIRBROWSE_TEST_NO_CAPTURE=1 on its side
+// only, as a PairBrowse build without its capture page): pictures go through the join channel.
+async function run({ noDirect = false, noCapture = false, realTunnel = false, youtube = false, excalidraw = false, joinerApp = "claude-code" } = {}) {
   const require = createRequire(join(runtime, "package.json"));
   // PAIRBROWSE_TEST_EXECUTABLE: another Chromium build to run both sides on (the PairBrowse browser, say).
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("patchright").chromium.executablePath();
@@ -73,25 +74,19 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
   const hostHome = home("sh-"), joinHome = home("sj-");
   writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
   writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
-  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", ...(realTunnel ? {} : { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" }), ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}) });
+  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", ...(realTunnel ? {} : { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" }), ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}), ...(noCapture && h === hostHome ? { PAIRBROWSE_TEST_NO_CAPTURE: "1" } : {}) });
   const daemons = [];
+  const daemonOf = new Map(); // home -> its helper
   const connect = async (h, app = "claude-code") => {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
+    daemonOf.set(h, daemons.at(-1));
     return attach(h, app);
   };
   // One more agent on a running helper: a participant of its own.
   const attach = async (h, app = "claude-code") => {
     const socketPath = join(h, "run", "browser.sock");
-    for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
-      if (ok) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await attachDaemon({ socketPath, daemon: daemonOf.get(h), home: h });
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: app, version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
@@ -120,6 +115,8 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     stage = "a shared browser code (the default), joined and approved";
     const made = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" }));
     assert.match(made, /Shared browser: they work in this browser itself/);
+    if (noCapture) assert.match(made, /pictures through the join channel; no sound from this PairBrowse build yet/);
+    else assert.match(made, /picture and sound, sent straight to their PairBrowse/);
     const code = made.match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     assert.ok(code, made);
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code })), /shared browser/);
@@ -133,7 +130,11 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     const screen = await until("the picture page", async () => (await onScreen({}))?.index >= 0 && await onScreen({}));
     const live = text(await tool(joiner.call, "pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)[0];
     assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: screen.index }) })).ok); // in sight: it connects
-    if (noDirect) {
+    if (noCapture) {
+      // Nothing on the host's side to capture a tab with: the joiner's side goes to the pictures
+      // through the channel at once (well under the two 12 s connection tries).
+      await until("pictures on the slower route at once", async () => (await onScreen({ expr: "window.pbScreen && window.pbScreen.state()" }))?.value?.view === "frames", 10_000);
+    } else if (noDirect) {
       // No direct connection possible: pictures come through the join channel, and input goes back that way.
       await until("pictures on the slower route", async () => (await onScreen({ expr: "window.pbScreen && window.pbScreen.state()" }))?.value?.view === "frames", 60_000);
     } else {
@@ -143,7 +144,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
       const state = await until("input goes over the direct connection", async () => { const s = (await onScreen({ expr: "window.pbScreen.state()" }))?.value; return s?.conn === "connected" && s.direct && s; }, 5000);
       assert.equal(state.offers, 1, "one connection for the picture page");
     }
-    const size = await until("the picture", async () => { const s = (await onScreen({ expr: noDirect ? "[document.getElementById('still').width, document.getElementById('still').height, innerWidth, innerHeight]" : "[document.getElementById('v').videoWidth, document.getElementById('v').videoHeight, innerWidth, innerHeight]" }))?.value; return Array.isArray(s) && s[0] > 0 && s; }, 20_000);
+    const size = await until("the picture", async () => { const s = (await onScreen({ expr: noDirect || noCapture ? "[document.getElementById('still').width, document.getElementById('still').height, innerWidth, innerHeight]" : "[document.getElementById('v').videoWidth, document.getElementById('v').videoHeight, innerWidth, innerHeight]" }))?.value; return Array.isArray(s) && s[0] > 0 && s; }, 20_000);
 
     // Where a point of the host's tab (fractions of it) is in the joiner's window.
     const [fw, fh, vw, vh] = size;
@@ -155,6 +156,21 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
     stage = "a click on the picture clicks the host's button";
     await click(toJoiner(0.5, 0.15));
     await until("the host's page was clicked", async () => /(^| · )clicked$/.test(await evaluate(host.call, "() => document.title")), 15_000);
+    if (noCapture) {
+      // The host sends a picture only when its page changes: a quiet page on a healthy channel is
+      // no stop, and the picture is never dimmed under "Reconnecting to …" for it.
+      stage = "a quiet host page on a healthy channel shows no wait";
+      await sleep(5000);
+      assert.deepEqual(await onScreen({ expr: "window.pbScreen.hold()" }).then((r) => r?.value?.shown), false, "5 s after the host's last change: no wait shown");
+      stage = "the host's helper offered nothing and logged no failure";
+      const hostLog = readFileSync(join(hostHome, "daemon.log"), "utf8");
+      assert.doesNotMatch(hostLog, /liveview guest/);
+      assert.doesNotMatch(hostLog, /no side panel/);
+      const joinLog = readFileSync(join(joinHome, "daemon.log"), "utf8");
+      assert.match(joinLog, /the host sends pictures through the join channel/);
+      assert.doesNotMatch(joinLog, /no direct connection; using the slower route/, "no connection was tried");
+      return;
+    }
 
     stage = "the picture's tab says who works in the host's tab: the host's agent, by name and spark";
     const inTab = await until("the host's agent on the picture's tab", async () => { const w = (await onScreen({ expr: "window.pbScreen.inTab()" }))?.value; return w?.agent && w.icon && w.title === `\u2726 ${w.agent} \u00b7 clicked` && w; }, 15_000);
@@ -346,6 +362,7 @@ async function run({ noDirect = false, realTunnel = false, youtube = false, exca
 test("shared browser: the joiner sees the host's tab live (direct connection) and clicks, types, draws and uploads in it; their agent works there too", { skip: !runtime, timeout: 240_000 }, () => run());
 test("shared browser: the joiner's Codex works in the host's browser too", { skip: !runtime, timeout: 240_000 }, () => run({ joinerApp: "codex-mcp-client" }));
 test("shared browser without a direct connection: pictures and input through the join channel", { skip: !runtime, timeout: 240_000 }, () => run({ noDirect: true }));
+test("shared browser when the host has no capture page: pictures and input through the join channel at once, no failure logged", { skip: !runtime, timeout: 240_000 }, () => run({ noCapture: true }));
 // Through a real Cloudflare Quick Tunnel, as between two computers (needs the network and cloudflared).
 // Excalidraw on the real site through the picture (needs the network).
 test("shared browser: the joiner draws in the host's Excalidraw", { skip: !runtime || process.env.PAIRBROWSE_TEST_EXCALIDRAW !== "1", timeout: 300_000 }, () => run({ excalidraw: true }));

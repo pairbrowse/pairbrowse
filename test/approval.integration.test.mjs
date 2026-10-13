@@ -8,14 +8,13 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { join, dirname } from "node:path";
-import net from "node:net";
 import { createInterface } from "node:readline";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync, openSync, copyFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, readFileSync, rmSync, openSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { hudScript } from "../scripts/browser.mjs";
-import { ensureHud, inPage } from "./live.mjs";
+import { ensureHud, inPage, testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -193,7 +192,7 @@ test("the approval card in the bottom bar: above its right end, takes only a per
 // ---- end to end ----------------------------------------------------------------------------------
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+const shortBase = testBase();
 function rpc(write, input) {
   const waiting = new Map();
   createInterface({ input }).on("line", (line) => {
@@ -230,14 +229,7 @@ test("a named click asked in the browser and the terminal at once: the first ans
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...env, PAIRBROWSE_TEST_APPROVAL: "1" }, stdio: ["ignore", out, out] });
   const socketPath = join(home, "run", "browser.sock");
   const connect = async (client) => {
-    for (let i = 0; i < 200 && !existsSync(socketPath); i++) await sleep(50);
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await attachDaemon({ socketPath, daemon, home });
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: client, version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");

@@ -64,15 +64,24 @@ export function readInput(ev, view) {
 const describe = (ev) => ev.type === "mouse" ? (ev.action === "mousePressed" ? "clicked on the page" : null)
   : ev.type === "wheel" ? "scrolled" : ev.type === "text" || ev.type === "rawkey" ? (ev.action === "up" ? null : "typed") : null;
 
+// The offer couldn't be made: this browser has nothing to capture a tab with (a PairBrowse build
+// with its own pages and no capture page yet). Joiners use the slower route.
+export class NoDirect extends Error {
+  constructor(message) { super(message); this.code = "NO_CAPTURE"; }
+}
+
 // call: the extension worker. getContext(): the browser. log.
 // during(who): marks a joiner's input while it's replayed (presence.remoteStart; returns done()).
-export function createScreenShare({ call, log = () => {}, during = () => () => {} }) {
+// capture: where tabs are captured (daemon/capture.mjs); without it, the extension as before.
+export function createScreenShare({ call, log = () => {}, during = () => () => {}, capture = null }) {
   const peers = new Map(); // peer -> { page, tabId, view, frame, onInput, onState, role }
   const sessions = new Map(); // page -> { cdp, replayer, view, viewAt }
   const watchedClose = new WeakSet(); // tabs whose closing ends their session and peers
   let looping = false;
 
-  const ext = (fn, arg, ms = 8000) => call(fn, arg, ms);
+  // The browser's own capture page takes the share calls when there is one; else the extension.
+  const ext = (fn, arg, ms = 8000) => (capture?.kind() === "page" ? capture.share(arg, ms) : call(fn, arg, ms));
+  const available = () => !capture || capture.kind() !== null;
 
   async function session(page) {
     let s = sessions.get(page);
@@ -99,6 +108,7 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     return s.view;
   }
   async function tabIdOf(page) {
+    if (capture) return capture.tabRef(page, 8000);
     const cdp = await page.context().newCDPSession(page);
     let targetId;
     try { ({ targetInfo: { targetId } } = await cdp.send("Target.getTargetInfo")); } finally { cdp.detach().catch(() => {}); }
@@ -259,10 +269,13 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
   }
 
   return {
+    // Whether a direct connection can be offered at all (false: the slower route only).
+    available,
     // Starts sending a tab to one joiner's page: the offer (SDP) to pass on. role: their invite's.
     // onInput(ev, line, view): they did something there (replayed already). onState(state): the
     // direct connection's state ("connected", "failed", ...).
     async offer(page, peer, { role = "watch", who = "", onInput, onState, onPick } = {}) {
+      if (!available()) throw new NoDirect("nothing here captures a tab: pictures go through the join channel");
       await stop(peer);
       const view = await viewOf(page, true);
       if (!view) throw new Error("the tab didn't answer");

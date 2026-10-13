@@ -8,14 +8,12 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { join, dirname } from "node:path";
-import net from "node:net";
 import { createInterface } from "node:readline";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync, openSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { hudScript } from "../scripts/browser.mjs";
-import { ensureHud, inPage } from "./live.mjs";
+import { ensureHud, inPage, testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -177,7 +175,7 @@ test("the join request in the bottom bar: shows as a card above its right end, g
 // ---- end to end: a host helper and a joiner's, each with its own headless browser -------------
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+const shortBase = testBase();
 function rpc(write, input) {
   const waiting = new Map();
   createInterface({ input }).on("line", (line) => {
@@ -216,14 +214,7 @@ test("a join request: the bar in the host's tab in front when the browser has th
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_JOIN_PROMPT: "1" }, stdio: ["ignore", out, out] }));
     const socketPath = join(h, "run", "browser.sock");
-    for (let i = 0; i < 200 && !existsSync(socketPath); i++) await sleep(50);
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await attachDaemon({ socketPath, daemon: daemons.at(-1), home: h });
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
@@ -346,6 +337,16 @@ test("a join request: the bar in the host's tab in front when the browser has th
     await ask();
     assert.match(text(await tool(host.call, "pairbrowse_invite", { action: "revoke_all" })), /Revoked/);
     await until("gone on revoke", async () => (await rowsIn(/two\.pbtest/)).length === 0, 5000);
+
+    // Then the person asks to switch session (the side panel's "Switch session...", the live view's
+    // picker route): the host's agent still gets an answer at once or after the pick's wait (the
+    // picker is waiting, or the tabs), never a call held behind the join's cleanup.
+    const live = text(await tool(host.call, "pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)[0];
+    assert.equal((await fetch(live + "picker", { method: "POST" })).status, 200);
+    const asked = Date.now();
+    const tabs = text(await tool(host.call, "browser_tabs", { action: "list" }).catch((e) => ({ error: { message: String(e) } })));
+    assert.ok(Date.now() - asked < 20_000, `browser_tabs answered after ${Date.now() - asked} ms`);
+    assert.match(tabs, /waiting for the person to pick a session|pbtest/, `the picker is waiting, or the tabs: ${tabs.slice(0, 200)}`);
   } finally {
     host?.sock.destroy();
     joiner?.sock.destroy();

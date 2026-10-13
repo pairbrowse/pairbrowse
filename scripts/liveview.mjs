@@ -31,6 +31,7 @@ import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
 import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } from "./daemon/tools.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";
 import { within } from "./util.mjs";
+import { NO_CAPTURE_SHARE } from "./daemon/capture.mjs";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
@@ -49,7 +50,25 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order"]); // events only the owner's streams get
+// Events for the browser's own pages alone (streams opened with ?page=): the capture page's calls
+// (liveview/capture.mjs) and the tab strip's order requests. Never the live view page, a viewer
+// or a guest.
+const PAGES_ONLY = new Set(["capture", "tab-order"]);
+// The tab strip's report of every window's tabs (POST tab-order), checked.
+const TAB_ORDER_MAX = 500;
+const TARGET_ID = /^[A-F0-9]{32}$/i;
+export function readTabOrder(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body) || !Array.isArray(body.tabs) || body.tabs.length > TAB_ORDER_MAX) return null;
+  if (!Number.isInteger(body.focused) || !Number.isInteger(body.last)) return null;
+  const tabs = [];
+  for (const t of body.tabs) {
+    if (!t || typeof t !== "object" || typeof t.target !== "string" || !TARGET_ID.test(t.target)) return null;
+    if (!Number.isInteger(t.window) || !Number.isInteger(t.index) || t.index < 0 || typeof t.active !== "boolean") return null;
+    tabs.push({ target: t.target.toUpperCase(), window: t.window, index: t.index, active: t.active });
+  }
+  return { tabs, focused: body.focused, last: body.last };
+}
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
 const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture", "timeline"]);
@@ -127,7 +146,7 @@ async function release(cdp) {
 export async function startLiveView({ tools = null, onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
-  clickApprovals = null }) {
+  clickApprovals = null, capture = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const key = randomBytes(32).toString("base64url");
   // A second owner key, for the browser's own pages (a native build's chrome://pairbrowse pages,
@@ -157,6 +176,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
   const replayer = createInputReplayer();
   const iconFor = createIcons();
   const kinds = new Map(); // event stream -> the browser page's kind (?page=), owner streams only
+  let stripOrder = { sig: "", order: null }; // the tab strip's last report (POST tab-order); gone with this live view
   const loading = new WeakSet(); // tabs whose main frame is loading (watched from watchPages on)
   // The docks' layout, per browser session, in memory (the browser keeps its own in its profile).
   const layoutStart = () => layoutFrom(typeof layoutDefaults === "function" ? layoutDefaults() : layoutDefaults);
@@ -233,6 +253,7 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
   const broadcast = (event, data) => {
     const msg = sse(event, data);
     for (const res of event === "frame" ? viewers : OWNER_ONLY.has(event) ? owners : clients) {
+      if (PAGES_ONLY.has(event) && !kinds.has(res)) continue;
       // A reader that stopped reading (a laptop asleep with the connection still open) would
       // otherwise collect every frame in memory: frames wait for it, and one far behind is cut.
       if (res.writableLength > STALLED_BYTES) { res.destroy(); continue; }
@@ -342,6 +363,9 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     const op = String(body?.op || "");
     const peerOk = (peer) => typeof peer === "string" && peer.startsWith(`${key}|`) && peer.length < 200;
     if (op === "want") {
+      // Nothing here captures a tab (a PairBrowse build without its capture page): the joiner's
+      // side goes to the pictures through the channel at once.
+      if (screens.available && !screens.available()) return { problem: NO_CAPTURE_SHARE, route: "frames" };
       const page = await pageById(String(body?.id || ""));
       if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared." };
       const id = idOf(page);
@@ -902,6 +926,28 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
     // who may drive. who: the guest's name (null: the owner). With `who` in the body: "Pause this
     // agent" / "Resume this agent" for the agent of that name, the owner's only.
     // Record (the side panel): the browser as a video, saved in Downloads. The owner only.
+    // The tab strip's report of every window's tabs by CDP target (the browser's own pages): kept
+    // for the helper's tab order (daemon/taborder.mjs), the last one only.
+    { method: "POST", path: "tab-order", right: "strip", handler: async ({ req, res }) => {
+      const body = await readBody(req, BODY_MAX.tabOrder);
+      if (body === null) return plain(res, 413);
+      const order = readTabOrder(parsed(body));
+      if (!order) return json(res, 400, { error: "Not a tab order." });
+      const sig = JSON.stringify(order);
+      if (sig !== stripOrder.sig) stripOrder = { sig, order };
+      res.writeHead(204, SECURITY_HEADERS);
+      res.end();
+    } },
+    // The browser's own capture page answering the helper (liveview/capture.mjs): an offer, an
+    // answer, a recording's piece, or its hello.
+    { method: "POST", path: "capture", right: "capture", handler: async ({ req, res, rest }) => {
+      if (!capture || rest.length !== 1 || rest[0] !== "reply") return plain(res, 404);
+      const body = await readBody(req, BODY_MAX.capture);
+      if (body === null) return plain(res, 413);
+      if (!capture.reply(parsed(body))) return json(res, 400, { error: "Not a capture reply." });
+      res.writeHead(204, SECURITY_HEADERS);
+      res.end();
+    } },
     { method: "POST", path: "record", right: "record", handler: async ({ req, res }) => {
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
@@ -1196,6 +1242,10 @@ export async function startLiveView({ tools = null, onPagesKey = () => {}, sessi
   log("live view started");
   return {
     url: `http://127.0.0.1:${server.address().port}/${key}/`,
+    // The tab strip's last report of every window's tabs ({ tabs, focused, last }), or null.
+    stripTabs: () => stripOrder.order,
+    // An event for the browser's own pages alone (capture, tab-order).
+    sendToPages: (name, data) => { if (PAGES_ONLY.has(name)) broadcast(name, data); },
     // The browser's own pages' key (written to an owner-only key file, never the command line):
     // never printed, logged or sent in an event.
     pagesKey,

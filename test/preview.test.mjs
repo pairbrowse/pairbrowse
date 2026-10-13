@@ -130,12 +130,27 @@ test("the sanitizer's output holds only allowed tags and attributes", () => {
 });
 
 test("the sanitizer is linear: a tag, declaration or comment that never closes costs no scan to the end per '<'", () => {
+  // Timed as a ratio of CPU time (this process's, so a busy machine that leaves it waiting for a
+  // core counts for nothing), per unit: one warm-up, then the best of five runs at 50k and at 200k,
+  // taken in turns so both sizes see the same moment. Linear work is about 4x for 4x the input, a
+  // scan to the end per '<' about 16x. Below 4 ms at 50k the clock and the collector decide more
+  // than the code does, so that is the floor: a scan per '<' already takes far longer at 50k. The
+  // absolute bound only catches a catastrophe.
+  const cpu = (input) => {
+    const t = process.cpuUsage();
+    sanitizeDocumentHtml(input);
+    const d = process.cpuUsage(t);
+    return (d.user + d.system) / 1000;
+  };
   for (const unit of ["<a x", '<a x="', "<!", "<?", "<!--", "<head>", "<head><style>", "<body x='", "<script"]) {
-    const input = unit.repeat(Math.ceil(200_000 / unit.length));
-    const t = performance.now();
-    const { body } = sanitizeDocumentHtml(input);
-    const ms = performance.now() - t;
-    assert.ok(ms < 200, `${JSON.stringify(unit)}: ${Math.round(ms)} ms`);
+    const of = (n) => unit.repeat(Math.ceil(n / unit.length));
+    const small = of(50_000), large = of(200_000);
+    sanitizeDocumentHtml(small); // warm-up
+    let t50 = Infinity, t200 = Infinity;
+    for (let i = 0; i < 5; i++) { t50 = Math.min(t50, cpu(small)); t200 = Math.min(t200, cpu(large)); }
+    assert.ok(t200 / Math.max(t50, 4) < 8, `${JSON.stringify(unit)}: ${t200.toFixed(1)} ms for 200k against ${t50.toFixed(1)} ms for 50k`);
+    assert.ok(t200 < 1500, `${JSON.stringify(unit)}: ${Math.round(t200)} ms for 200k`);
+    const { body } = sanitizeDocumentHtml(large);
     assert.ok(!/<(?!\/?[a-z0-9]+[\s>])/.test(body), `${JSON.stringify(unit)}: no raw < left`);
   }
   // An unterminated tag's text is escaped, and what follows it is still read.

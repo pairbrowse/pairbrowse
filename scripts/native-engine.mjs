@@ -36,6 +36,10 @@ export function nativeManifest(executablePath) {
 // chrome://pairbrowse and chrome://pairbrowse.top-chrome pages reading --pairbrowse-helper).
 // Absent in today's builds: then the side panel extension takes their place.
 export const chromePages = (manifest) => Number.isInteger(manifest?.chrome) && manifest.chrome >= 1;
+// The build manifest's `capture` field: the browser's own capture page (a tab's picture and sound
+// for joiners, recordings; liveview/capture.mjs) is there. Absent: a shared browser sends pictures
+// through the join channel and recording is refused (daemon/capture.mjs).
+export const capturePages = (manifest) => Number.isInteger(manifest?.capture) && manifest.capture >= 1;
 
 // The primary display as Chromium reports it, so the hidden capture sees the real screen, not
 // headless's 800x600. Chromium on macOS reports 30-bit color on EDR (XDR) displays.

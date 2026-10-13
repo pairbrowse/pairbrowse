@@ -16,7 +16,7 @@ import { renameRunsSession } from "../runs.mjs";
 import { keepFocus } from "../focus.mjs";
 import { sleep, readJson, within } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
-import { chromePages, nativeManifest } from "../native-engine.mjs";
+import { chromePages, capturePages, nativeManifest } from "../native-engine.mjs";
 import { isChromePage } from "../policy.mjs";
 import { createPersonTabs, keepDownloadMark } from "./tools.mjs";
 
@@ -39,6 +39,8 @@ const CHROME_PICKER = "chrome://pairbrowse/picker";
 // Whether the browser config launches is a native build that declares its own pages (its
 // manifest's `chrome` field).
 const chromePagesIn = (config) => { try { return config.browserEngine === "pairbrowse" && chromePages(nativeManifest(config.executablePath)); } catch { return false; } };
+// Whether that build also declares its capture page (native-engine capturePages).
+const capturePagesIn = (config) => { try { return config.browserEngine === "pairbrowse" && capturePages(nativeManifest(config.executablePath)); } catch { return false; } };
 
 // Started in an SSH session (say, the desktop app's SSH sessions) means the browser runs on that
 // machine, not the user's: its live view needs an SSH tunnel.
@@ -64,10 +66,14 @@ export function stopRequestMirroring(page) {
 // the Tools tab's Downloads (daemon/tools.mjs), in memory only.
 // personTabs: the person's own tabs (daemon/tools.mjs createPersonTabs), shared with serve.mjs:
 // openForPerson opens one, and no agent's fallback tab is ever one.
-export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, helperFor = async () => null,
+export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, capturePagesOf = capturePagesIn, helperFor = async () => null,
   beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null }) {
   let contextPromise = null;
   let chrome = false; // the browser in use has its own pages (no side panel extension)
+  let chosen = false; // chrome and capture are this launch's (set once its build was chosen)
+  let capture = false; // ...and its own capture page
+  // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
+  const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
   let helperKeyPath = null; // the key file of the browser launched last, until used or closed
 
   // Sync and idempotent: a path given is one launch's own file (its close drops only that one).
@@ -290,8 +296,11 @@ let switched = Promise.resolve();
   }
 
   async function launch() {
+    chosen = false;
     await chooseEngine();
     chrome = !!chromePagesOf(config);
+    capture = chrome && !!capturePagesOf(config);
+    chosen = true;
     // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
     // colors; see prepareProfile in browser.mjs), written before each launch.
     const firstRun = prepareProfile(profile(), undefined, { chromePages: chrome, layout: config.layout });
@@ -310,7 +319,7 @@ let switched = Promise.resolve();
     if (helper) try { keyFile = helperKeyPath = writeHelperKeyFile(helper.key); } catch (e) { log(`the browser's own pages have no helper address (key file: ${e?.code || "refused"})`); }
     let ctx;
     try {
-      ctx = await launchEngine(chromium, config, profile(), {
+      ctx = await launchEngine(browserType(), config, profile(), {
         headless: false,
         // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
         // Playwright's signal handlers would start a close of their own on the same SIGTERM, and
@@ -318,7 +327,7 @@ let switched = Promise.resolve();
         // it wrote its cookies (it writes them every ~30 s and on a clean exit): logins lost.
         handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
         env: { ...process.env, ...(screen?.env || {}) },
-        executablePath: config.executablePath || await ensureBrowser(chromium, log),
+        executablePath: config.executablePath || await ensureBrowser(browserType(), log),
         viewport: null,
         // Its own side panel is the only extension it loads.
         ignoreDefaultArgs: ["--disable-extensions"],
@@ -410,7 +419,7 @@ let switched = Promise.resolve();
   // The person asked to switch (the side panel's "Switch session..."): the picker opens again in a
   // new tab, and agents' next actions wait for the pick as at the start. Agents can't ask for it.
   async function reopenPicker() {
-    if (pick.state === "showing") { await pick.page?.bringToFront().catch(() => {}); return { text: "The session picker is open." }; }
+    if (pick.state === "showing") { await within(3000, Promise.resolve(pick.page?.bringToFront()).catch(() => {})); return { text: "The session picker is open." }; }
     const ctx = await getContext();
     pick.reopened = true;
     pick.text = "";
@@ -689,8 +698,32 @@ let switched = Promise.resolve();
     screen?.stop();
   }
 
+  // Before the browser runs: the config the next launch would use (the build chooseEngine would
+  // pick, without installing anything). Read from disk once per choice.
+  let predicted = null;
+  function predict() {
+    let next = config;
+    if (!(config.browserEngine === "pairbrowse" && config.executablePath)) {
+      try {
+        const choice = browserChoice(choiceConfig(), { native: !!pinnedAsset() });
+        if (choice.browser === "pairbrowse") next = { ...config, browserEngine: "pairbrowse", executablePath: choice.executablePath || nativeDirs().exec };
+      } catch {}
+    }
+    const sig = `${next.browserEngine}\u0001${next.executablePath}`;
+    if (predicted?.sig !== sig) {
+      const pages = !!chromePagesOf(next);
+      predicted = { sig, pages, capture: pages && !!capturePagesOf(next) };
+    }
+    return predicted;
+  }
+
   return {
     chromePages: () => chrome,
+    capturePages: () => capture,
+    // The same, before the browser has started too (what it will be once it runs): an invite made
+    // first says what the share will really carry.
+    willHaveChromePages: () => (contextPromise && chosen ? chrome : predict().pages),
+    willHaveCapturePages: () => (contextPromise && chosen ? capture : predict().capture),
     openForPerson, isPersonTab: (p) => personTabs.has(p),
     // The browser of the window open now ("pairbrowse", "chromium" or a path), null when none is.
     browserInUse: () => (contextPromise ? inUse : null),

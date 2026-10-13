@@ -25,7 +25,7 @@ test("scrub: emails, ~/.pairbrowse kept, other paths gone", () => {
   assert.equal(s("wrote ~/.pairbrowse/runs/x.json"), "wrote ~/.pairbrowse/runs/x.json");
   assert.equal(s(`saved ${home}/Downloads/tax.pdf`), "saved [path]");
   assert.equal(s("saved ~/Desktop/notes.txt"), "saved [path]");
-  assert.equal(s("at /Users/other/x and /home/bob/y and /tmp/z and /private/var/q and /Volumes/BACKUP/k and /opt/a"), "at [path] and [path] and [path] and [path] and [path] and [path]");
+  assert.equal(s("at /Users/other/x and /home/bob/y and /tmp/z and /private/var/q and /Volumes/Data/k and /opt/a"), "at [path] and [path] and [path] and [path] and [path] and [path]");
   assert.equal(s("C:\\Users\\bob\\file.txt is open"), "[path] is open");
   assert.equal(scrub("in /srv/me/data", { home: "/srv/me" }), "in [path]", "the home given, wherever it is");
 });

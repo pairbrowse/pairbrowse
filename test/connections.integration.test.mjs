@@ -10,14 +10,14 @@ import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { createInterface } from "node:readline";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
+import { testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+const shortBase = testBase();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const INIT = { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } };
@@ -74,17 +74,8 @@ function setup() {
   const helperOf = new Map(); // home -> the helper started last there
   // A session on the helper's socket, as a bridge opens one.
   const attach = async (h, name = "t") => {
-    // Until the helper listens: loading the browser runtime takes a while on a busy computer (the
-    // whole suite at once), so this waits for it to accept or to exit, not for a fixed time.
-    let sock;
-    for (const end = Date.now() + 90_000; ; await sleep(100)) {
-      const d = helperOf.get(h);
-      if (d && d.exitCode !== null) throw new Error(`the helper exited (${d.exitCode}) before listening on ${socketOf(h)}`);
-      sock = net.createConnection(socketOf(h));
-      if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
-      sock.destroy();
-      if (Date.now() > end) throw new Error(`couldn't connect to ${socketOf(h)}`);
-    }
+    // Until the helper listens or exits (attachDaemon: its stderr and log when it exits first).
+    const sock = await attachDaemon({ socketPath: socketOf(h), daemon: helperOf.get(h), home: h, ms: 90_000 });
     sock.on("error", () => {});
     socks.push(sock);
     const call = rpc((l) => !sock.destroyed && sock.write(l), sock, name);

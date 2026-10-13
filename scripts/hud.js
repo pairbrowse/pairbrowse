@@ -348,12 +348,13 @@
       .rec{display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 7px;border-radius:6px;background:#192A3D;color:#F1F5FA;font:600 11px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.06em}
       .rec[hidden]{display:none}
       .rec i{width:7px;height:7px;border-radius:50%;background:#EF6468}
-      ol{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:0;padding:0;list-style:none;min-width:0;flex:1;overflow:hidden;
-        -webkit-mask-image:linear-gradient(90deg,transparent,#000 40px);mask-image:linear-gradient(90deg,transparent,#000 40px)}
+      ol{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:0;padding:0;list-style:none;min-width:0;flex:1;overflow:hidden}
       li{display:flex;gap:6px;align-items:center;white-space:nowrap;flex:none}
       li.empty{margin-right:auto;color:#8699B1;font-size:12px}
       .chip{height:20px;padding:0 8px;border-radius:6px;background:#192A3D;font-size:12px;color:#A2B2C6}
-      .chip span{min-width:0;max-width:min(360px,40vw);overflow:hidden;text-overflow:ellipsis}
+      li.chip{flex:0 1 auto;min-width:44px;overflow:hidden}
+      li.chip:last-child{flex-shrink:0}
+      .chip span{min-width:0;max-width:min(360px,40vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .chip.now span{color:#F1F5FA}
       .g{display:flex;flex:none;width:12px;height:12px}
       .g svg{width:12px;height:12px}
@@ -1042,7 +1043,10 @@
     box.style.borderLeftColor = c;
     box.querySelector("svg").style.color = c;
     // kind "agent": the text names the agent itself ("Codex: ...").
-    box.querySelector("span").textContent = (kind === "you" ? "Your turn: " : kind === "done" ? "Done: " : kind === "agent" ? "" : "Claude: ") + String(label).slice(0, 140);
+    // A text that already starts with its own kind's word ("Your turn: sign in") isn't prefixed twice.
+    const own = kind === "you" ? /^your turn\b\s*[:\-–]?\s*/i : kind === "done" ? /^done\s*[:\-–]\s*/i : kind === "agent" ? null : /^claude\s*[:\-–]\s*/i;
+    const said = own ? String(label).replace(own, "") : String(label);
+    box.querySelector("span").textContent = (kind === "you" ? "Your turn: " : kind === "done" ? "Done: " : kind === "agent" ? "" : "Claude: ") + (said || String(label)).slice(0, 140);
     return true;
   }
 

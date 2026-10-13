@@ -5,11 +5,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { session } from "./live.mjs";
+import { session, testBase } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,7 +17,7 @@ const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n"
 
 test("sessions that came and went leave no listeners on the browser", { skip: !runtime, timeout: 240_000 }, async () => {
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+  const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "mem-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
@@ -58,7 +57,7 @@ test("sessions that came and went leave no listeners on the browser", { skip: !r
 // session that took pictures and left leaves none behind, whether it ended cleanly or was cut.
 test("sessions that took pictures and left leave no screenshot maps behind", { skip: !runtime, timeout: 240_000 }, async () => {
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+  const base = testBase();
   const h = mkdtempSync(join(base, "shot-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none" }));
@@ -117,7 +116,7 @@ test("sessions that took pictures and left leave no screenshot maps behind", { s
 // each with its handles and waits, for as long as the tab lived (scripts/daemon/contexts.mjs).
 test("a tab's navigations leave no execution contexts behind in the driver", { skip: !runtime, timeout: 240_000 }, async () => {
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+  const base = testBase();
   const h = mkdtempSync(join(base, "ctx-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));

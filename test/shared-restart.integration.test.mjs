@@ -6,19 +6,18 @@
 // PAIRBROWSE_TEST_RUNTIME.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import net from "node:net";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+const shortBase = testBase();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const APP = `<title>App</title><button>Tap</button><input aria-label="Note">`;
 
@@ -54,17 +53,11 @@ test("shared browser: the joiner stays in through a restart of the host's helper
   writeFileSync(join(joinHome, "config.json"), config("Alice"));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
   const daemons = [];
-  const start = (h) => { const out = openSync(join(h, "daemon.stderr.log"), "a"); const d = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }); daemons.push(d); return d; };
+  const daemonOf = new Map(); // home -> its latest helper
+  const start = (h) => { const out = openSync(join(h, "daemon.stderr.log"), "a"); const d = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }); daemons.push(d); daemonOf.set(h, d); return d; };
   const attach = async (h) => {
     const socketPath = join(h, "run", "browser.sock");
-    for (let i = 0; i < 100 && !existsSync(socketPath); i++) await sleep(50);
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await attachDaemon({ socketPath, daemon: daemonOf.get(h), home: h });
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");

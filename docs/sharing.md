@@ -114,6 +114,15 @@ are the same for everyone, because there is only one browser.
   turns per tab. Final actions (pay, delete, publish, send) still need you; it never uses your saved
   passwords or remembered details.
 - **Your logins never leave your computer.** Revoke the code and it ends at once.
+- **The PairBrowse build with its own pages** (no side panel, no capture page yet): as a host it
+  sends each tab as pictures through the tunnel (the slower route) from the start, with input back
+  the same way and no sound; the invite says so (made before the browser starts, too). Recording
+  isn't available there yet (the tool and the Record button say so; nothing is recorded). As a
+  joiner, each of the host's tabs shows in a `chrome://pairbrowse/screen/` tab of its own, the same
+  picture page as the extension's; one that can't connect directly takes the slower route at once.
+- **On the slower route** a picture comes only when the host's page changes, so a quiet page stays
+  as it is. "Reconnecting to …" over a dimmed picture shows only while the connection to the host
+  is really down, and goes when it's back.
 
 Ask Claude "make a join code for Sam" (shared browser), or "a follow code for Sam" for the older
 mode below, where each person has their own browser that follows your tabs.

@@ -11,11 +11,11 @@ const { createSharing } = await import("../scripts/daemon/sharing.mjs");
 
 // The helper's sharing part with stand-ins for the browser and a stand-in live view that keeps
 // what it was started with (the Share card's makeInvite among it).
-function sharingWith(config = {}) {
+function sharingWith(config = {}, extra = {}) {
   let live = null;
   const logs = [];
   const fakeLive = { url: "http://127.0.0.1:1/k/", port: 1, guestPort: 2, setStatus() {}, setSession() {}, setCollaboration() {}, setDev() {}, close() {} };
-  const view = { currentUrl: () => "about:blank", getContext: async () => ({ pages: () => [] }), status: () => ({}), session: () => null, collaboration: () => ({}), secretDomains: () => [] };
+  const view = { currentUrl: () => "about:blank", getContext: async () => ({ pages: () => [] }), status: () => ({}), session: () => null, collaboration: () => ({}), secretDomains: () => [], ...extra };
   const hostNote = () => {};
   hostNote.drop = () => {};
   const sharing = createSharing({ config, log: (l) => logs.push(String(l)), host: "Me", view, notify() {}, hostNote, startLive: async (opts) => { live = opts; return fakeLive; } });
@@ -65,4 +65,33 @@ test("the Share card makes invites through the same code as pairbrowse_invite cr
     const key = link.link.split("/").at(-2);
     assert.equal(logs.some((l) => l.includes(key) || l.includes(made.code)), false, "neither the link nor the code is logged");
   } finally { sharing.endAll(); }
+});
+
+// A native build without its capture page, before its browser has started: the invite already
+// says what the share will carry (the join channel, no sound), not the extension's picture and sound.
+test("an invite made before a native browser starts says the pictures go through the join channel", async () => {
+  const { createContext } = await import("../scripts/daemon/context.mjs");
+  const { createCaptureBackend } = await import("../scripts/daemon/capture.mjs");
+  const { createScreenShare } = await import("../scripts/daemon/screenshare.mjs");
+  const quiet = () => {};
+  const contextFor = (pages, capture) => createContext({
+    config: { browserEngine: "pairbrowse", executablePath: "/fake/PairBrowse", sessionPicker: false, display: "none" }, log: quiet, chromium: {},
+    hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
+    presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
+    shuttingDown: () => false, onStarted: quiet, onClosed: quiet, chromePagesOf: () => pages, capturePagesOf: () => capture,
+  });
+  const native = contextFor(true, false);
+  assert.equal(native.chromePages(), false, "nothing launched: the launched value isn't known yet");
+  assert.deepEqual([native.willHaveChromePages(), native.willHaveCapturePages()], [true, false], "what the next launch will be");
+  const backend = (context) => createCaptureBackend({ chromePages: () => context.willHaveChromePages(), capturePages: () => context.willHaveCapturePages(), panelCall: async () => null, channel: { ready: () => false }, env: {} });
+  assert.equal(backend(native).kind(), null, "a native build without its capture page: nowhere, before launch too");
+  const screens = createScreenShare({ call: async () => null, capture: backend(native) });
+  const { sharing } = sharingWith({}, { screens });
+  try {
+    const made = await sharing.inviteCommand({ action: "create", role: "drive", share: "code", name: "Bob" });
+    assert.match(made.text, /pictures through the join channel; no sound from this PairBrowse build yet/);
+    assert.doesNotMatch(made.text, /picture and sound, sent straight/);
+  } finally { sharing.endAll(); }
+  const chromium = contextFor(false, false);
+  assert.equal(backend(chromium).kind(), "extension", "Chromium: the extension, as before");
 });

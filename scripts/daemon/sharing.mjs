@@ -244,7 +244,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       onJoinRequest, secretDomains: view.secretDomains, onJoinerPerson: view.onJoinerPerson, onJoinerActivity: view.onJoinerActivity, shared: view.shared,
       onPause: view.onPause, pauseState: view.pauseState, onRecord: view.onRecord, recordState: view.recordState, picker: view.picker, joinHost: view.joinHost, screens: view.screens, remoteAgents: view.remoteAgents, devShare, devPanel, journal: view.journal, makeInvite: inviteFromPanel,
       timeline: view.timeline, mask: view.mask, layoutDefaults: view.layoutDefaults, settings: view.settings, clickApprovals: view.clickApprovals || null,
-      sessionOps: view.sessionOps || null, outlines: view.outlines || null, tools: view.tools || null,
+      sessionOps: view.sessionOps || null, outlines: view.outlines || null, tools: view.tools || null, capture: view.capture || null,
       onPagesKey: view.onPagesKey || (() => {}),
     });
     await restoring;
@@ -345,10 +345,13 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     try { invite = invites.create({ role: args.role, label: args.label, hours: args.hours, share, mode: args.mode || "shared" }); } catch (e) { return fail(e.message); }
     const live = await ensureLiveView();
     const port = live.port;
+    // How the picture goes: straight to their PairBrowse, or (a PairBrowse build without its
+    // capture page) through the join channel, without sound.
+    const how = view.screens?.available && !view.screens.available() ? "pictures through the join channel; no sound from this PairBrowse build yet" : "picture and sound, sent straight to their PairBrowse";
     const rights = share === "code" && invite.mode === "shared"
       ? (invite.role === "drive"
-        ? "Shared browser: they work in this browser itself, seeing your tabs live (picture and sound, sent straight to their PairBrowse), and can click, type and scroll in them, logged in as you are. Your logins, cookies and passwords never leave this computer; revoking ends it at once."
-        : "Shared browser: they see your tabs live (picture and sound, sent straight to their PairBrowse), without clicking or typing. Your logins, cookies and passwords never leave this computer.")
+        ? `Shared browser: they work in this browser itself, seeing your tabs live (${how}), and can click, type and scroll in them, logged in as you are. Your logins, cookies and passwords never leave this computer; revoking ends it at once.`
+        : `Shared browser: they see your tabs live (${how}), without clicking or typing. Your logins, cookies and passwords never leave this computer.`)
       : share === "code"
       ? (invite.role === "drive"
         ? "Their own PairBrowse browser opens your tabs and follows them; what they change in those tabs (another address, a new tab, closing one) happens here too, and you see each other's pointers and what's typed in shared tabs (sensitive fields only as filled). Never your logins, cookies, passwords or a picture of the page."

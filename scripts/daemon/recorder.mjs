@@ -6,10 +6,12 @@
 import { openSync, writeSync, closeSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { shortLabel } from "./tablabels.mjs";
+import { NO_CAPTURE_RECORD } from "./capture.mjs";
 
 const LABELS_EVERY_MS = 1500; // who works in which tab, while recording
 const DWELL_MS = 4000; // following agents: a tab stays in the video at least this long while they work there
-const CHUNK_BYTES = 4 * 1024 * 1024; // the file comes over in pieces this size
+const CHUNK_BYTES = 4 * 1024 * 1024; // the file comes over in pieces this size (from the extension)
+const PAGE_CHUNK_BYTES = 1024 * 1024; // from the browser's own capture page (its reply route takes at most 2 MB)
 const EXT = { "video/mp4": "mp4", "video/webm": "webm" };
 
 // The file's name, from when the recording started: "PairBrowse recording 2026-10-07 23.41.05".
@@ -30,14 +32,22 @@ const minutes = (ms) => {
 // changed(state): the side panels show it. onActivity(fn): fn(text, who, page) for each thing an
 // agent does (follow "agents"). onSaved({ path, at, ms, size }): a recording was saved (the Tools
 // tab's Recordings index, daemon/tools.mjs); a throw there never fails the save.
-export function createRecorder({ onSaved = () => {}, call, owners = () => [], dir, scale = async () => 1, log = () => {}, changed = () => {}, onActivity = () => () => {} }) {
+// capture: where tabs are captured (daemon/capture.mjs); without it, the extension as before.
+// Nowhere to capture (a PairBrowse build without its capture page): recording is refused.
+export function createRecorder({ onSaved = () => {}, call, owners = () => [], dir, scale = async () => 1, log = () => {}, changed = () => {}, onActivity = () => () => {}, capture = null }) {
   let on = null; // { since, timer, follow, shown, shownAt, next }
   let saving = null;
   const tabIds = new WeakMap(); // page -> the browser's tab id
-  const ext = (arg, ms = 15_000) => call((a) => { if (!globalThis.pbRecord) throw new Error("not ready"); return globalThis.pbRecord(a); }, arg, ms);
+  const ext = (arg, ms = 15_000) => (capture?.kind() === "page" ? capture.record(arg, ms) : call((a) => { if (!globalThis.pbRecord) throw new Error("not ready"); return globalThis.pbRecord(a); }, arg, ms));
+  const chunkBytes = () => (capture?.kind() === "page" ? PAGE_CHUNK_BYTES : CHUNK_BYTES);
 
   async function tabIdOf(page) {
     if (tabIds.has(page)) return tabIds.get(page);
+    if (capture) {
+      const ref = await capture.tabRef(page, 4000);
+      if (ref != null) tabIds.set(page, ref);
+      return ref;
+    }
     const cdp = await page.context().newCDPSession(page);
     let targetId;
     try { ({ targetInfo: { targetId } } = await cdp.send("Target.getTargetInfo")); } finally { cdp.detach().catch(() => {}); }
@@ -60,6 +70,7 @@ export function createRecorder({ onSaved = () => {}, call, owners = () => [], di
   // follow: "front" (the tab the person sees) or "agents" (the tab where agents are at work, held
   // DWELL_MS at least; the browser's own tabs stay as they are).
   async function start(follow = "front") {
+    if (capture && capture.kind() === null) return { text: NO_CAPTURE_RECORD, error: true };
     if (on) return { text: `Already recording (${minutes(Date.now() - on.since)} so far). Stop it with pairbrowse_record action "stop".` };
     follow = follow === "agents" ? "agents" : "front";
     const r = await ext({ op: "start", follow, labels: await labels().catch(() => ({})), scale: await scale().catch(() => 1) });
@@ -129,8 +140,9 @@ export function createRecorder({ onSaved = () => {}, call, owners = () => [], di
         catch (e) { if (e.code !== "EEXIST" || n > 500) throw e; }
       }
       try {
-        for (let offset = 0; offset < r.size; offset += CHUNK_BYTES) {
-          const b64 = await ext({ op: "chunk", offset, size: CHUNK_BYTES }, 30_000);
+        const piece = chunkBytes();
+        for (let offset = 0; offset < r.size; offset += piece) {
+          const b64 = await ext({ op: "chunk", offset, size: piece }, 30_000);
           if (typeof b64 !== "string") throw new Error(b64?.error || "a piece of the file didn't come");
           writeSync(fd, Buffer.from(b64, "base64"));
         }

@@ -35,7 +35,9 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./secrets.mjs";
-import { createFollow } from "./daemon/follow.mjs";
+import { createFollow, isScreenPage } from "./daemon/follow.mjs";
+import { createCaptureBackend } from "./daemon/capture.mjs";
+import { createCaptureChannel } from "./liveview/capture.mjs";
 import { createFacts } from "./facts.mjs";
 import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
 import { cleanName, displayName } from "./join.mjs";
@@ -78,8 +80,6 @@ import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mj
 import { engineDir } from "./native-pack.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
-const { createConnection } = require("@playwright/mcp");
-const { chromium: playwrightChromium } = require("playwright");
 
 // How long a stopping helper waits for the browser to close cleanly before killing it (shutdown).
 const SHUTDOWN_GRACE_MS = 5000;
@@ -87,7 +87,19 @@ const log = (...a) => appendFileSync(paths.daemonLog, `${new Date().toISOString(
 const config = loadConfig();
 // Patchright unless the config opts into Playwright, or this Node.js is too old for Patchright.
 const driverChoice = chooseBrowserDriver(config, process.versions.node, patchrightNodeMinimum(paths.runtime));
-const { chromium } = driverChoice.driver === "playwright" ? { chromium: playwrightChromium } : require("patchright");
+// The runtime (@playwright/mcp and the driver) takes seconds to load on a busy machine: it loads
+// right after the socket listens (main), so a bridge that connects meanwhile finds the helper up.
+// The first call that needs it before then loads it there and then.
+let loadedRuntime = null;
+function runtime() {
+  if (!loadedRuntime) {
+    const { createConnection } = require("@playwright/mcp");
+    const { chromium } = require(driverChoice.driver === "playwright" ? "playwright" : "patchright");
+    loadedRuntime = { createConnection, chromium };
+  }
+  return loadedRuntime;
+}
+const createConnection = (...a) => runtime().createConnection(...a);
 ensureDirs();
 
 // One helper at a time, settled before anything else starts: each Claude Code and Codex window
@@ -191,7 +203,7 @@ function labelsChanged() { try { tabLabels.changed(); } catch {} }
 // Per-tab turns (the default); the whole-browser lease above stays for pairbrowse_collaboration.
 const tabClaims = new TabClaims({ onChange: refreshTabs });
 
-const panel = createPanel({ context: () => context.current(), liveViewUrl: async () => (await sharing.ensureLiveView()).url, log, onStale: () => forgetPanelBuild(context.profile()), available: () => !context.chromePages() });
+const panel = createPanel({ context: () => context.current(), liveViewUrl: async () => (await sharing.ensureLiveView()).url, log, onStale: () => forgetPanelBuild(context.profile()), available: () => !context.willHaveChromePages() });
 // "Pause agents", session-wide: held here, or mirrored from the host of a session joined from
 // here (only a drive participant may press it there; a watcher sees it but can't).
 const canPause = () => !follow.joined() || follow.role() === "drive";
@@ -241,7 +253,7 @@ const popups = createPopups({
 });
 const context = createContext({
   personTabs,
-  config, log, chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
+  config, log, chromium: () => runtime().chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   // A person renamed the session: the timeline's last writes land first, then the goal log follows.
   beforeRename: () => timeline.settled(), onRenamed: (from, to) => journal.renamed(from, to),
   liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
@@ -273,6 +285,7 @@ const context = createContext({
     if (!shuttingDown) sharing.endAll();
     previews.clear(); // their tabs went with the browser
     recorder.browserClosed();
+    captureChannel.reset(); // the capture page went with the browser
     sharing.closeLiveView();
     // The agents' connections end a moment later: each session's browser server was bound to the
     // browser that closed (a fresh connection gets the next one), and the answer to a call that
@@ -377,12 +390,22 @@ const forms = {
   },
   apply: (page, fields, who) => applyFields(page, fields, who, secretDomains(), hud.key),
 };
-const tabOrder = createTabOrder({ call: (fn, arg, ms) => panel.call(fn, arg, ms), getContext: () => context.getContext(), log });
+// In a build with its own pages, the tab strip reports the tab order and moves tabs (POST
+// tab-order, the tab-order event): the side panel's worker isn't asked there.
+const tabOrder = createTabOrder({
+  call: (fn, arg, ms) => panel.call(fn, arg, ms), getContext: () => context.getContext(), log,
+  strip: { chrome: () => context.chromePages(), snapshot: () => liveView()?.stripTabs?.() ?? null, arrange: (targets) => liveView()?.sendToPages?.("tab-order", { op: "arrange", targets }) },
+});
 
+// Where tabs are captured for joiners and recordings (daemon/capture.mjs): the side panel
+// extension, the browser's own capture page (its channel: liveview/capture.mjs), or nowhere.
+const captureChannel = createCaptureChannel({ send: (data) => liveView()?.sendToPages?.("capture", data), log });
+const capture = createCaptureBackend({ chromePages: () => context.willHaveChromePages(), capturePages: () => context.willHaveCapturePages(), panelCall: (fn, arg, ms) => panel.call(fn, arg, ms), channel: captureChannel });
 // Shared browser mode: joiners see this browser's tabs live and work in them (daemon/screenshare.mjs).
-const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), getContext: () => context.getContext(), log, during: (who) => presence.remoteStart(who) });
+const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), getContext: () => context.getContext(), log, during: (who) => presence.remoteStart(who), capture });
 // Recording the browser to a video (pairbrowse_record, the side panel's Record button).
 const recorder = createRecorder({
+  capture,
   call: (fn, arg, ms) => panel.call(fn, arg, ms), log,
   owners: () => hud.sparkList().map((s) => ({ page: s.page, who: collaboration.participants.get(s.id)?.label || "Agent", color: s.color })),
   dir: () => config.downloadsDir || join(homedir(), "Downloads"),
@@ -400,7 +423,7 @@ const remoteAgents = createRemoteAgents({ serve: (sock, opts) => serve(sock, opt
 const sharing = createSharing({
   config, log, host: HOST, notify: panel.notify, hostNote, joinAlert: (entry) => joinPrompt.alert(entry),
   view: {
-    secretDomains, screens, remoteAgents,
+    secretDomains, screens, remoteAgents, capture: captureChannel,
     // The live view's Timeline (owner only). `journal` is declared further down: this runs only
     // when the route is hit, after startup, so it is always there by then.
     journal: () => journal.read(),
@@ -669,10 +692,12 @@ const serve = createServe({
     ...(process.env.PAIRBROWSE_TEST_SCREEN === "1" ? { pairbrowse_test_screen: async (args = {}) => { const { expr, type, choose } = args;
       // at: a picture page by its place among the tabs (list gives them); else the first one.
       const all = (await context.getContext()).pages();
-      const page = follow.pages().find((p) => !p.isClosed() && p.url().includes("/screen.html") && (!Number.isInteger(args.at) || all.indexOf(p) === args.at));
+      const page = follow.pages().find((p) => !p.isClosed() && isScreenPage(p.url()) && (!Number.isInteger(args.at) || all.indexOf(p) === args.at));
       if (!page) return { text: "no picture page", error: true };
       if (Array.isArray(choose)) { page.once("filechooser", (fc) => fc.setFiles(choose.map(String)).catch(() => {})); return { text: "will choose" }; }
       if (args.shot) { await page.screenshot({ path: String(args.shot) }); return { text: "saved" }; }
+      // clickAt: a person's click at that point of the picture page (CSS pixels of its window).
+      if (args.clickAt) { await within(5000, page.mouse.click(Number(args.clickAt.x) || 0, Number(args.clickAt.y) || 0)); return { text: "clicked" }; }
       // goto: an address typed into this tab's address bar; url: the tab's own address.
       if (args.goto) { await page.goto(String(args.goto), { waitUntil: "commit" }).catch(() => {}); return { text: "went" }; }
       if (args.url) return { text: JSON.stringify({ url: page.url() }) };
@@ -741,7 +766,14 @@ async function main() {
     onHook: (s, line) => clickApprovals.hook(s, line).catch((e) => { log("approval hook", e?.message || e); s.destroy(); }),
     onOther: (s) => serve(s).catch((e) => { log("session error", e?.stack || e); s.destroy(); }),
   }));
-  socketServer.listen(paths.socket, () => log(`listening on ${paths.socket}`));
+  socketServer.listen(paths.socket, () => {
+    log(`listening on ${paths.socket}`);
+    const socketAt = Math.round(performance.now());
+    setImmediate(() => {
+      try { runtime(); } catch (e) { log(`the runtime didn't load: ${e?.stack || e}`); shutdown(1); return; }
+      log(`startup: socket after ${socketAt} ms, runtime after ${Math.round(performance.now())} ms`);
+    });
+  });
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => shutdown(0));
   // A promise nobody caught (a page that closed under a background read, a joiner's channel
   // dropping mid-send) is logged and the helper goes on: Node would otherwise end the process,

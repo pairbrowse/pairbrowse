@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { panelExtensionId, panelBuild } from "../browser.mjs";
-import { sleep } from "../util.mjs";
+import { sleep, within } from "../util.mjs";
 
 const NOTIFY_TITLE = "PairBrowse needs you";
 
@@ -13,6 +13,13 @@ const NOTIFY_TITLE = "PairBrowse needs you";
 // disk declares (expected). A browser can keep running an old cached copy of the worker after an
 // update (it then lacks newer functions, such as the join notification's Allow and Deny): it's
 // replaced at the next browser start (checkBuild below).
+// From the system, when the side panel can't (text only). The text goes as an argument, never
+// into the script.
+function osNotify(say) {
+  if (process.platform === "darwin") execFile("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv) sound name \"Glass\"", "-e", "end run", NOTIFY_TITLE, say], () => {});
+  else if (process.platform === "linux") execFile("notify-send", [NOTIFY_TITLE, say], () => {});
+}
+
 export function workerFreshness({ running, expected }) {
   if (running === undefined) return "unknown"; // no answer yet: ask again later
   if (!expected || running === expected) return "current";
@@ -24,7 +31,8 @@ export function workerFreshness({ running, expected }) {
 // onStale(): the browser runs an old worker (its record is dropped, see checkBuild).
 // available(): false when the browser has no side panel (a build with its own pages): calls fail
 // at once, so notifications go to the system's without waiting out the retries.
-export function createPanel({ context, liveViewUrl, log, expectedBuild = () => panelBuild(), onStale = () => {}, available = () => true }) {
+// systemNotify(say): the system's own notification (tests pass a stand-in).
+export function createPanel({ context, liveViewUrl, log, expectedBuild = () => panelBuild(), onStale = () => {}, available = () => true, systemNotify = osNotify }) {
   let panelId = null; // the side panel's extension id as the browser runs it
   const origins = []; // its origin once connected (the live view lets it in)
   const checked = new WeakMap(); // browser context -> what checkBuild found
@@ -87,7 +95,10 @@ export function createPanel({ context, liveViewUrl, log, expectedBuild = () => p
     let last = "timed out";
     for (let tries = 0; tries === 0 || Date.now() < until; tries++) {
       // Each try gets at least 2 s (so a short timeoutMs still has one full try), at most 8 s.
-      const r = await workerEvaluate(`(${fn})(${JSON.stringify(arg)})`, Math.min(8000, Math.max(2000, until - Date.now()))).then((v) => ({ v }), (e) => { last = e?.message || String(e); return null; });
+      // Bounded as a whole: the debugging session's own calls (opening it, listing targets) wait on
+      // the browser, which may not answer (CLAUDE.md: every await on a page is bounded).
+      const ms = Math.min(8000, Math.max(2000, until - Date.now()));
+      const r = await within(ms + 1000, workerEvaluate(`(${fn})(${JSON.stringify(arg)})`, ms).then((v) => ({ v }), (e) => { last = e?.message || String(e); return null; }));
       if (r) return r.v;
       if (Date.now() < until) await sleep(Math.min(500, Math.max(0, until - Date.now())));
     }
@@ -118,18 +129,13 @@ export function createPanel({ context, liveViewUrl, log, expectedBuild = () => p
   // Tests only: the build is checked again.
   const recheck = async () => { const ctx = await context(); if (ctx) checked.delete(ctx); return checkBuild(); };
 
-  // From the system, when the side panel can't (text only). The text goes as an argument, never
-  // into the script.
-  function systemNotify(say) {
-    if (process.platform === "darwin") execFile("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv) sound name \"Glass\"", "-e", "end run", NOTIFY_TITLE, say], () => {});
-    else if (process.platform === "linux") execFile("notify-send", [NOTIFY_TITLE, say], () => {});
-  }
-
   // When the user is needed (sign-in, 2FA, CAPTCHA, an approval): a notification through the
   // side panel, else from the system.
   function notify(text) {
     const id = randomBytes(8).toString("hex"); // the same id on a retry: shown once
     const say = String(text).slice(0, 200);
+    // No side panel in this browser (its own pages): the system's at once.
+    if (!available()) { systemNotify(say); log("notification sent through the system's"); return; }
     call(([t, m, i]) => globalThis.pbNotify?.(t, m, i), [NOTIFY_TITLE, say, id], 5000)
       .then((r) => { if (r !== "queued" && r !== "already shown") throw new Error(`the side panel answered ${JSON.stringify(r)}`); log("notification sent"); })
       .catch((e) => {
@@ -144,6 +150,8 @@ export function createPanel({ context, liveViewUrl, log, expectedBuild = () => p
   // drive or watch; request: its id.
   function notifyJoin({ who, role, request }) {
     const head = `${String(who).slice(0, 80)} wants to join (${role === "drive" ? "drive" : "watch"}).`;
+    // A browser with its own pages answers join requests in its agent panel.
+    if (!available()) { systemNotify(`${head} Answer in PairBrowse's agent panel.`); log(`notification sent through the system's (join request ${request})`); return; }
     call(([t, m, r]) => (globalThis.pbNotifyJoin ? globalThis.pbNotifyJoin(t, m, r) : "no buttons"), [NOTIFY_TITLE, `${head} Allow or Deny here, or in the PairBrowse side panel.`, String(request)], 5000)
       .then((r) => { if (r !== "queued" && r !== "already shown") throw new Error(`the side panel answered ${JSON.stringify(r)}`); log(`notification sent (join request ${request}, with Allow and Deny)`); })
       .catch((e) => {
@@ -153,6 +161,7 @@ export function createPanel({ context, liveViewUrl, log, expectedBuild = () => p
   }
   // The request was answered or is gone: its notification goes (best effort).
   function clearJoin(request) {
+    if (!available()) return; // the system's notifications can't be taken back
     call((r) => globalThis.pbClearJoin?.(r) ?? false, String(request), 3000).catch(() => {});
   }
 

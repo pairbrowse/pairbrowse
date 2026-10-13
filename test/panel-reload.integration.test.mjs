@@ -10,18 +10,17 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { join, dirname } from "node:path";
-import net from "node:net";
 import { createInterface } from "node:readline";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync, openSync, cpSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { panelBuild } from "../scripts/browser.mjs";
+import { testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+const shortBase = testBase();
 
 function rpc(write, input) {
   const waiting = new Map();
@@ -71,15 +70,7 @@ test("after an update the browser runs the side panel's current worker, not its 
     const out = openSync(join(home, "daemon.stderr.log"), "a");
     const daemon = spawn(process.execPath, [join(from, "scripts", "daemon.mjs")], { cwd: from, env: { ...process.env, PAIRBROWSE_HOME: home, PAIRBROWSE_TEST_PANEL: "1" }, stdio: ["ignore", out, out] });
     const socketPath = join(home, "run", "browser.sock");
-    let sock;
-    for (let i = 0; ; i++) {
-      if (existsSync(socketPath)) {
-        sock = net.createConnection(socketPath);
-        if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) break;
-      }
-      if (i > 100) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await attachDaemon({ socketPath, daemon, home });
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");

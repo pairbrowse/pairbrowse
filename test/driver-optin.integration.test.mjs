@@ -7,11 +7,10 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { session } from "./live.mjs";
+import { session, testBase } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,7 +22,7 @@ test("the Playwright opt-in still launches the browser and works", { skip: !runt
   const executablePath = createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
   const server = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>Opt-in</title><button onclick="document.title='clicked'">Go</button>`); });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+  const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "pw-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");

@@ -100,3 +100,28 @@ test("following agents shows the tab an agent works in, holding each a few secon
     assert.equal(act, null, "it stops following when the recording ends");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("nothing to capture with (a PairBrowse build without its capture page): recording is refused, nothing asked", async () => {
+  let asked = 0;
+  const rec = createRecorder({ call: async () => { asked++; return null; }, dir: () => tmpdir(), capture: { kind: () => null, record: async () => { asked++; }, tabRef: async () => { asked++; } } });
+  const r = await rec.start();
+  assert.equal(r.error, true);
+  assert.equal(r.text, "Recording isn't available in this PairBrowse browser yet: it needs the browser's capture page, which comes with a later build. Nothing was recorded.");
+  assert.equal(asked, 0);
+  assert.equal(rec.state().recording, false);
+});
+
+test("with the browser's own capture page, the file comes over in 1 MB pieces", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rec-"));
+  try {
+    const bytes = Buffer.alloc(2 * 1024 * 1024 + 5, 3);
+    const { call, calls } = fakeBrowser(bytes);
+    let extension = 0;
+    const rec = createRecorder({ call: async () => { extension++; return null; }, dir: () => dir, capture: { kind: () => "page", record: (arg) => call(null, arg), tabRef: async () => "T1" } });
+    await rec.start();
+    const saved = await rec.stop();
+    assert.deepEqual(readFileSync(saved.path), bytes);
+    assert.deepEqual(calls.filter((c) => c.op === "chunk").map((c) => c.size), [1048576, 1048576, 1048576]);
+    assert.equal(extension, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

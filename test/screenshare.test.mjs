@@ -65,3 +65,44 @@ test("the slower route lets go of a tab that closed: nothing reopens on it, noth
   assert.equal(sessions, 1, "no new session on a closed tab");
   await share.close();
 });
+
+test("nothing to capture a tab with: an offer is refused as NO_CAPTURE, and the slower route still works", async () => {
+  const sent = [];
+  const cdp = { send: async (m) => { sent.push(m); return {}; }, on() {}, off() {}, detach: async () => {} };
+  const page = { isClosed: () => false, once() {}, context: () => ({ newCDPSession: async () => cdp }), evaluate: async () => [800, 600, 1, 0, 0] };
+  let asked = 0;
+  const share = createScreenShare({ call: async () => { asked++; return null; }, capture: { kind: () => null, share: async () => { asked++; }, tabRef: async () => { asked++; } } });
+  assert.equal(share.available(), false);
+  await assert.rejects(share.offer(page, "j|t|1", { role: "drive" }), (e) => e.code === "NO_CAPTURE");
+  assert.equal(asked, 0, "nothing asked of the extension or a capture page");
+  await share.frames(page, "joiner-a", () => {});
+  assert.ok(sent.includes("Page.startScreencast"), "pictures through the channel");
+  await share.frames(page, "joiner-a", null);
+  await share.close();
+  assert.equal(createScreenShare({ call: async () => null }).available(), true, "no capture given: as before");
+});
+
+test("with the browser's own capture page, share calls go to it with the tab's target id", async () => {
+  const shared = [];
+  const cdp = { send: async () => ({}), on() {}, off() {}, detach: async () => {} };
+  const page = { isClosed: () => false, once() {}, context: () => ({ newCDPSession: async () => cdp }), evaluate: async () => [800, 600, 1, 0, 0] };
+  let extension = 0;
+  const capture = { kind: () => "page", tabRef: async () => "0123456789ABCDEF0123456789ABCDEF", share: async (arg) => { shared.push(arg); return arg.op === "offer" ? { sdp: "v=0" } : arg.op === "take" ? [] : true; } };
+  const share = createScreenShare({ call: async () => { extension++; return null; }, capture });
+  const r = await share.offer(page, "j|t|1", { role: "watch" });
+  assert.equal(r.sdp, "v=0");
+  assert.equal(shared[0].op, "offer");
+  assert.equal(shared[0].tabId, "0123456789ABCDEF0123456789ABCDEF");
+  assert.equal(extension, 0);
+  await share.close();
+});
+
+test("the picture page's addresses: the extension's, the browser's own, and the name it shows", async () => {
+  const { isScreenPage } = await import("../scripts/daemon/follow.mjs");
+  assert.equal(isScreenPage(`chrome-extension://${"a".repeat(32)}/screen.html#ab12`), true);
+  assert.equal(isScreenPage("chrome://pairbrowse/screen/#ab12"), true);
+  assert.equal(isScreenPage("pairbrowse://screen/#ab12"), true);
+  assert.equal(isScreenPage("chrome://pairbrowse/settings"), false);
+  assert.equal(isScreenPage("https://evil.example/screen.html"), false);
+  assert.equal(isScreenPage("chrome-extension://xyz/screen.html"), false);
+});

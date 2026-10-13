@@ -5,19 +5,18 @@
 // Homes live on a short path: socket paths must stay short.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import net from "node:net";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync, chmodSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync, chmodSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+const shortBase = testBase();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The shared form: fields at fixed places (the joiner's person clicks them through its live
@@ -54,15 +53,7 @@ const tool = (call, name, args = {}) => call("tools/call", { name, arguments: ar
 // The helper's socket once it accepts: loading the browser runtime takes a while on a busy
 // computer (the whole suite at once), so this waits for the helper to listen or to exit, not for
 // a fixed time.
-async function reach(socketPath, daemon, h, ms = 90_000) {
-  for (const end = Date.now() + ms; ; await sleep(100)) {
-    if (daemon.exitCode !== null) throw new Error(`the helper exited (${daemon.exitCode}): ${(() => { try { return readFileSync(join(h, "daemon.stderr.log"), "utf8").slice(-1500); } catch { return ""; } })()}`);
-    const sock = net.createConnection(socketPath);
-    if (await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); })) return sock;
-    sock.destroy();
-    if (Date.now() > end) throw new Error(`couldn't connect to ${socketPath}`);
-  }
-}
+const reach = (socketPath, daemon, home, ms = 90_000) => attachDaemon({ socketPath, daemon, home, ms });
 
 function home(prefix) {
   mkdirSync(shortBase, { recursive: true });

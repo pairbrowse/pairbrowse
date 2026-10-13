@@ -6,11 +6,10 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { session } from "./live.mjs";
+import { session, testBase } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const native = process.env.PAIRBROWSE_TEST_NATIVE;
@@ -32,7 +31,7 @@ function show() { log.textContent = "down " + down + " up " + (up || "-") + " mo
 test("a stroke presses at its first point, goes through the rest and lets go at the last, quickly", { skip: !runtime, timeout: 180_000 }, async () => {
   const site = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(PAGE); });
   await new Promise((r) => site.listen(0, "127.0.0.1", r));
-  const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+  const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "draw-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");

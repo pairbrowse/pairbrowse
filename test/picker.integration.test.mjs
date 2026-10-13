@@ -2,20 +2,19 @@
 // chose first. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import net from "node:net";
 import http from "node:http";
 import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { panelExtensionId } from "../scripts/browser.mjs";
+import { testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const shortBase = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+const shortBase = testBase();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const EXTENSION = `chrome-extension://${panelExtensionId()}`;
@@ -57,16 +56,7 @@ function startDaemons() {
     const out = openSync(join(h, "daemon.stderr.log"), "a");
     daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", ...env }, stdio: ["ignore", out, out] }));
     const socketPath = join(h, "run", "browser.sock");
-    for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
-    // The socket file can show a moment before the helper listens on it (a busy machine): retry.
-    let sock;
-    for (let i = 0; ; i++) {
-      sock = net.createConnection(socketPath);
-      const ok = await new Promise((r) => { sock.once("connect", () => r(true)); sock.once("error", () => r(false)); });
-      if (ok) break;
-      if (i > 50) throw new Error(`couldn't connect to ${socketPath}`);
-      await sleep(200);
-    }
+    const sock = await attachDaemon({ socketPath, daemon: daemons.at(-1), home: h });
     const waiting = new Map();
     createInterface({ input: sock }).on("line", (line) => {
       let m;

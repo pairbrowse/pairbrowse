@@ -337,3 +337,15 @@ test("a joiner's malformed changes are refused, never thrown, and IPv6 local add
   assert.equal(stateForJoiner({ tabs: [{ id: "aaaaaaaa", url: "https://a.example/", did: [{ n: odd, who: "x", line: "y" }] }], people: [odd] }).tabs.length, 1);
   assert.equal(crossingText("Opened http://[::1]:8080/a and http://[fe80::1]/"), "Opened a local page and a local page");
 });
+
+test("a drive address keeps its query parts as written: no '=' added, encodings kept, sensitive parts still dropped", () => {
+  assert.equal(shareableUrl("https://a.example/x?after-pause", { full: true }), "https://a.example/x?after-pause", "a bare flag stays bare");
+  assert.equal(shareableUrl("https://a.example/x?a&b=1", { full: true }), "https://a.example/x?a&b=1");
+  assert.equal(shareableUrl("https://a.example/x?q=caf%C3%A9+au%20lait&tag=a%2Bb", { full: true }), "https://a.example/x?q=caf%C3%A9+au%20lait&tag=a%2Bb", "the page's own encoding");
+  assert.equal(shareableUrl("https://a.example/x?&&a=1&", { full: true }), "https://a.example/x?a=1", "empty parts go");
+  assert.equal(shareableUrl("https://a.example/x?after-pause&token=abc&code=123456&email=a%40b.example&q=1", { full: true }), "https://a.example/x?after-pause&q=1", "tokens, codes and personal details still go");
+  assert.equal(shareableUrl("https://a.example/x?%74oken=abc&q=1", { full: true }), "https://a.example/x?q=1", "a sensitive name is checked decoded");
+  // Twice through (the joiner's copy reports its address back): nothing gains an '='.
+  const once = shareableUrl("https://a.example/x?after-pause", { full: true });
+  assert.equal(shareableUrl(once, { full: true }), once);
+});

@@ -32,7 +32,7 @@ export function keyOk(given, key) {
 }
 
 // The most a request body may hold, per kind of request.
-export const BODY_MAX = { approve: 2_000, profile: 20_000, input: 200_000 };
+export const BODY_MAX = { approve: 2_000, profile: 20_000, input: 200_000, tabOrder: 64_000, capture: 2_000_000 };
 
 // The body as text, or null once it grows past max (the rest isn't read).
 export async function readBody(req, max) {

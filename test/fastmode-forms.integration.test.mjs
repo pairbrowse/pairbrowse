@@ -6,11 +6,10 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { session } from "./live.mjs";
+import { session, testBase } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -79,7 +78,7 @@ customElements.define("pb-color", class extends HTMLElement { connectedCallback(
 test("fast mode fills a form inside a frame, opens a styled dropdown, ticks a styled box, and leaves card frames alone", { skip: !runtime, timeout: 180_000 }, async () => {
   const site = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(PAGES[req.url] || ""); });
   await new Promise((r) => site.listen(0, "127.0.0.1", r));
-  const base = existsSync("/Volumes/BACKUP/PairBrowse") ? "/Volumes/BACKUP/PairBrowse" : tmpdir();
+  const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "forms-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");

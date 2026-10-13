@@ -460,3 +460,80 @@ test("reduced motion: no pulse, no card drop, the chevron turns at once", { skip
     await browser.close();
   }
 });
+
+test("no side panel in this browser (its own pages): notifications go to the system's at once, with no failure logged", async () => {
+  const { createPanel } = await import("../scripts/daemon/panel.mjs");
+  const logs = [], system = [];
+  let asked = 0;
+  const p = createPanel({ context: async () => { asked++; return null; }, liveViewUrl: async () => "", log: (...a) => logs.push(a.join(" ")), available: () => false, systemNotify: (say) => system.push(say) });
+  p.notify("Sign in on shop.example");
+  p.notifyJoin({ who: "Sam (Claude Code)", role: "drive", request: "r0a1b2c" });
+  p.clearJoin("r0a1b2c");
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(system, ["Sign in on shop.example", "Sam (Claude Code) wants to join (drive). Answer in PairBrowse's agent panel."]);
+  assert.equal(asked, 0, "the browser isn't asked for a side panel");
+  assert.ok(!logs.some((l) => /failed/.test(l)), logs.join("\n"));
+  await assert.rejects(p.call(() => 1, null, 100), /no side panel/, "other callers still get an error");
+});
+
+test("the card drives on its own agent's actions only: a joiner's line, a note or another browser's agent leave it idle", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const browser = await chromium.launch();
+  const lv = await fakeLiveView();
+  try {
+    const { page, errors } = await openPanel(browser, { base: lv.base });
+    await until(page, "the stream", () => document.body.dataset.s === "live");
+    for (let i = 0; i < 50 && !lv.streams.size; i++) await page.waitForTimeout(50);
+    const t = Date.now();
+    lv.push("board", { people: PEOPLE, messages: [] });
+    const lines = [{ t: t - 60_000, text: "Typed into **Email**", who: "Claude", tab: "Checkout" }];
+    lv.push("activity", lines);
+    await until(page, "the card", () => document.getElementById("agent-name").textContent === "Claude");
+    const driver = () => page.evaluate(() => document.getElementById("driver-text").textContent);
+    assert.equal(await driver(), "Claude is idle");
+    lines.push({ t: Date.now(), text: "Clicked **Next**", who: "Alice", tab: "Checkout", from: "inv:alice" },
+      { t: Date.now(), text: "Note: check the totals", who: "Bob", tab: "" },
+      { t: Date.now(), text: "Opened **Docs**", who: "Sam · Claude Code", tab: "Docs", from: "joined" });
+    lv.push("activity", lines);
+    await until(page, "the lines", () => document.getElementById("activity").children.length === 4);
+    assert.equal(await driver(), "Claude is idle", "listed, but not the card's agent's");
+    assert.equal(await page.evaluate(() => document.getElementById("agent-name").textContent), "Claude");
+    lv.push("activity", [...lines, { t: Date.now(), text: "Typed into **Name**", who: "Claude", tab: "Checkout" }]);
+    await until(page, "driving", () => document.getElementById("driver-text").textContent === "Claude is driving");
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    lv.close();
+  }
+});
+
+test("a second local agent's line moves the card to that agent, driving; the first's earlier line doesn't make it drive", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const browser = await chromium.launch();
+  const lv = await fakeLiveView();
+  try {
+    const { page, errors } = await openPanel(browser, { base: lv.base });
+    await until(page, "the stream", () => document.body.dataset.s === "live");
+    for (let i = 0; i < 50 && !lv.streams.size; i++) await page.waitForTimeout(50);
+    lv.push("board", { people: PEOPLE, messages: [] });
+    const driver = () => page.evaluate(() => document.getElementById("driver-text").textContent);
+    const lines = [{ t: Date.now() - 60_000, text: "Typed into **Email**", who: "Claude", tab: "Checkout" }];
+    lv.push("activity", lines);
+    await until(page, "the card", () => document.getElementById("agent-name").textContent === "Claude");
+    assert.equal(await driver(), "Claude is idle", "Claude acted a minute ago");
+    // Codex, an agent of this browser too (no from): the card names it, driving.
+    lines.push({ t: Date.now(), text: "Clicked **Next**", who: "Codex 1a2b", tab: "Checkout" });
+    lv.push("activity", lines);
+    await until(page, "Codex driving", () => /^Codex 1a2b\b.* is driving$/.test(document.getElementById("driver-text").textContent));
+    assert.match(await page.evaluate(() => document.getElementById("agent-name").textContent), /^Codex 1a2b/);
+    // The same list again (Claude's older line in it): still Codex's card, and Claude never drives.
+    lv.push("activity", [...lines]);
+    await page.waitForTimeout(200);
+    assert.match(await driver(), /^Codex 1a2b\b.* is driving$/);
+    assert.doesNotMatch(await driver(), /^Claude is driving/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    lv.close();
+  }
+});

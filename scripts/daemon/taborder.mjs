@@ -9,9 +9,40 @@ const ASK_MS = 3000;
 // an error, so panel.call asks again rather than taking "undefined" for "no tabs".
 
 // call(fn, arg, timeoutMs): runs fn(arg) in the side panel's worker (panel.mjs).
-export function createTabOrder({ call, getContext, log = () => {} }) {
+// strip: in a PairBrowse build with its own pages (no side panel), the tab strip's own report
+// instead: { chrome(): whether this browser has them, snapshot(): the strip's last report
+// ({ tabs: [{ target, window, index, active }], focused, last }) or null, arrange(targets): asks
+// the strip for that order }. There the worker is never asked, and without a report every answer
+// is "unknown", quietly.
+export function createTabOrder({ call, getContext, log = () => {}, strip = null }) {
+  const ownPages = () => !!strip?.chrome?.();
+  const targets = new WeakMap(); // page -> its CDP target id (a tab keeps it for its life)
+  async function targetOf(page) {
+    if (targets.has(page)) return targets.get(page);
+    const id = await within(1500, (async () => {
+      const cdp = await page.context().newCDPSession(page);
+      try { return (await cdp.send("Target.getTargetInfo"))?.targetInfo?.targetId || null; } finally { cdp.detach().catch(() => {}); }
+    })().catch(() => null));
+    if (typeof id === "string" && id) targets.set(page, id.toUpperCase());
+    return targets.get(page) ?? null;
+  }
+  // From the strip's report: page -> { id: its target, windowId, index, active }.
+  async function stripPlaces() {
+    const snap = strip.snapshot();
+    if (!snap || !Array.isArray(snap.tabs)) return null;
+    const byTarget = new Map(snap.tabs.map((t) => [t.target, t]));
+    const ctx = await getContext();
+    const out = new Map();
+    for (const p of ctx.pages()) {
+      if (p.isClosed()) continue;
+      const t = byTarget.get(await targetOf(p));
+      if (t) out.set(p, { id: t.target, windowId: t.window, index: t.index, active: t.active });
+    }
+    return out;
+  }
   // page -> { id, windowId, index }, for the pages that could be matched.
   async function places(ms = ASK_MS) {
+    if (ownPages()) return stripPlaces();
     const tabs = await within(ms + 500, call(() => { if (!globalThis.pbTabs) throw new Error("not ready"); return globalThis.pbTabs(); }, null, ms).catch((e) => { log("tab order", e?.message || e); return null; }));
     if (!Array.isArray(tabs)) return null;
     const ctx = await getContext();
@@ -30,6 +61,15 @@ export function createTabOrder({ call, getContext, log = () => {} }) {
     // The page in front (the active tab of the window last focused), or null when it can't be told.
     // ms: how long each question to the worker may take.
     async front(ms = ASK_MS) {
+      if (ownPages()) {
+        const snap = strip.snapshot();
+        if (!snap) return null;
+        const win = snap.focused !== -1 ? snap.focused : snap.last;
+        const tab = snap.tabs.find((t) => t.window === win && t.active);
+        if (!tab) return null;
+        for (const [page, t] of (await stripPlaces()) || []) if (t.id === tab.target) return page;
+        return null;
+      }
       const id = await within(ms + 500, call(() => { if (!globalThis.pbFront) throw new Error("not ready"); return globalThis.pbFront(); }, null, ms).catch(() => null));
       if (id === null || id === undefined) return null;
       const at = await places(ms);
@@ -39,6 +79,7 @@ export function createTabOrder({ call, getContext, log = () => {} }) {
     // Whether the browser window has the system's focus (not minimized, no other app in front):
     // true or false, or null when the side panel's worker can't say (pbFocused, background.js).
     async focused() {
+      if (ownPages()) { const snap = strip.snapshot(); return snap ? snap.focused !== -1 : null; }
       const v = await within(ASK_MS + 500, call(() => { if (!globalThis.pbFocused) throw new Error("not ready"); return globalThis.pbFocused(); }, null, ASK_MS).catch(() => null));
       return typeof v === "boolean" ? v : null;
     },
@@ -60,6 +101,7 @@ export function createTabOrder({ call, getContext, log = () => {} }) {
     async arrange(pages) {
       const at = await places();
       if (!at) return false;
+      if (ownPages()) { strip.arrange(pages.filter((p) => at.has(p)).map((p) => at.get(p).id)); return true; }
       const ids = pages.filter((p) => at.has(p)).map((p) => at.get(p).id);
       return !!(await within(ASK_MS + 500, call((list) => { if (!globalThis.pbArrange) throw new Error("not ready"); return globalThis.pbArrange(list); }, ids, ASK_MS).catch(() => null)));
     },
@@ -68,6 +110,13 @@ export function createTabOrder({ call, getContext, log = () => {} }) {
     // The functions passed to call() run in the side panel extension, where chrome is defined.
     /* global chrome */
     async testCommand({ action, url, before } = {}) {
+      // The browser's own pages: the strip's report, read only (moves are a person's, by hand).
+      if (ownPages()) {
+        if (action === "move" || action === "front") return { text: "not in a browser with its own pages", error: true };
+        const at = await stripPlaces();
+        if (!at) return { text: "no tab order from the strip yet", error: true };
+        return { text: JSON.stringify([...at].sort(([, a], [, b]) => (a.windowId - b.windowId) || (a.index - b.index)).map(([p]) => p.url())) };
+      }
       if (action === "move") {
         const moved = await call(([u, b]) => chrome.tabs.query({}).then((ts) => {
           const at = (x) => ts.find((t) => (t.url || t.pendingUrl) === x);

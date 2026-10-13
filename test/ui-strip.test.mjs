@@ -1059,3 +1059,36 @@ describe("the pill with a helper that never answers, then does", () => pageTest(
   assert.deepEqual(await inPage(pill), { s: "live", state: "local", text: "Local", title: "Local · work", muted: true });
   assert.deepEqual(errors, []);
 }));
+
+// 530 F1: a shared-browser joiner's pointer is never drawn in the host's tab (their picture would
+// show it back to them); the helper sends it to the strip, and the row's page passes it on to the
+// browser, which draws it over the page card outside the tab. Checked and bounded here as there;
+// a build without Pointers (no shim opt-in) is never asked; no timer for it.
+const T1 = "0123456789ABCDEF0123456789ABCDEF";
+describe("overlay-pointers go to the browser's Pointers, checked, from the row only", () => pageTest("strip", { viewport: ROW, shim: { pointers: true } }, async ({ page, helper, shim, inPage, until }) => {
+  await until("the stream", () => document.body.dataset.s === "live");
+  const shows = () => callsOf(shim, "pointers", "show");
+  const showsReach = async (n) => { for (let i = 0; i < 60 && (await shows()).length < n; i++) await page.waitForTimeout(50); assert.equal((await shows()).length, n); };
+  const alice = { k: "i1:a:me", who: "Alice", color: "#f472b6", x: 0.25, y: 0.5, fresh: 2900 };
+  helper.push("overlay-pointers", [{ target: T1, pointers: [alice, { ...alice, k: "bad", color: "red" }, { ...alice, k: "far", x: 1.5 }] }, { target: "nope", pointers: [alice] }]);
+  await showsReach(1);
+  assert.deepEqual((await shows())[0], [[{ targetId: T1, pointers: [{ key: "i1:a:me", name: "Alice", color: "#f472b6", x: 0.25, y: 0.5, freshMs: 2900 }] }]]);
+  helper.push("overlay-pointers", []);
+  await showsReach(2);
+  assert.deepEqual((await shows())[1], [[]], "nobody left: an empty list, the browser hides them");
+  // A nav fragment never passes them on (only the window's own row is honoured).
+  await inPage(() => { location.hash = "#nav-left"; });
+  await page.waitForTimeout(100);
+  helper.push("overlay-pointers", [{ target: T1, pointers: [alice] }]);
+  await page.waitForTimeout(150);
+  assert.equal((await shows()).length, 2, "a nav fragment passes nothing on");
+  const l = await inPage(() => window.__harness.live());
+  assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0);
+}));
+
+describe("a build without Pointers never gets overlay-pointers calls", () => pageTest("strip", { viewport: ROW }, async ({ page, helper, shim, until }) => {
+  await until("the stream", () => document.body.dataset.s === "live");
+  helper.push("overlay-pointers", [{ target: T1, pointers: [{ k: "i1:a:me", who: "Alice", color: "#f472b6", x: 0.25, y: 0.5, fresh: 2900 }] }]);
+  await page.waitForTimeout(150);
+  assert.deepEqual(await callsOf(shim, "pointers", "show"), []);
+}));

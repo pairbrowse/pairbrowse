@@ -745,8 +745,8 @@ export function askDock({ pb, layout, base, side, state, onFail }) {
 // event's `tab` (the right dock opening on a tab) and a record event's `op` ("saved", with its
 // item), so a late page neither jumps to a tab nor adds a recording from an old event. Without Web Locks or BroadcastChannel (or when the lock is refused) a page
 // opens its own stream as before. No timer, frame or observer anywhere here.
-export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "config", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "sessions", "invites", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs", "tab-order"];
-const STREAM_DELTAS = new Set(["approval", "timeline", "downloads", "handoffs", "tab-order"]);
+export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "config", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "sessions", "invites", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs", "tab-order", "overlay-pointers"];
+const STREAM_DELTAS = new Set(["approval", "timeline", "downloads", "handoffs", "tab-order", "overlay-pointers"]);
 // What the holder keeps of a state event for a late page: no delta, and no one-shot field.
 function replayable(name, v) {
   if (STREAM_DELTAS.has(name)) return undefined;

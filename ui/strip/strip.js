@@ -682,8 +682,33 @@ function connect(url) {
     // The row writes the owners and reports the order; a bubble's page (the same strip) does not.
     on("agent-tabs", applyAgentTabs);
     on("tab-order", (m) => { if (m?.op === "arrange" && Array.isArray(m.targets)) arrangeOrder(m.targets); });
+    if (typeof pb.pointers?.show === "function") on("overlay-pointers", showPointers);
     reportOrder();
   }
+}
+
+// ---- other people's pointers over the page card (530 F1): a shared-browser joiner's, which the
+// helper never draws in the tab (their picture of it would show it back to them). The browser
+// draws them over this window's active tab, outside it; the row's page alone passes them on, as
+// they come (no timer: each one fades by itself in the browser when it stops). ----
+function pointersFor(list) {
+  const tabs = [];
+  for (const t of Array.isArray(list) ? list.slice(0, 16) : []) {
+    if (typeof t?.target !== "string" || !/^[0-9A-F]{32}$/i.test(t.target) || !Array.isArray(t.pointers)) continue;
+    const pointers = [];
+    for (const p of t.pointers.slice(0, 12)) {
+      const x = Number(p?.x), y = Number(p?.y), fresh = Math.round(Number(p?.fresh));
+      if (typeof p?.k !== "string" || !p.k || typeof p.who !== "string" || !p.who || !/^#[0-9a-f]{6}$/i.test(p.color || "")) continue;
+      if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1 && fresh >= 1 && fresh <= 3000)) continue;
+      pointers.push({ key: p.k.slice(0, 100), name: [...p.who].slice(0, 40).join(""), color: p.color, x, y, freshMs: fresh });
+    }
+    tabs.push({ targetId: t.target, pointers });
+  }
+  return tabs;
+}
+function showPointers(list) {
+  if (!pb || mode !== "row") return;
+  pb.pointers.show(pointersFor(list)).catch(() => {});
 }
 
 // ---- the tab order, for the helper (scripts/daemon/taborder.mjs): every window's tabs by CDP

@@ -20,7 +20,7 @@ function tsEnum(names) {
 }
 
 // The fake bindings: what each remote was asked, how many remotes were made, the receivers bound.
-function fakeBindings({ owners = new Map([[11, "Claude"]]), throwOn = null, approval = true, bubbles = true } = {}) {
+function fakeBindings({ owners = new Map([[11, "Claude"]]), throwOn = null, approval = true, bubbles = true, pointers = true } = {}) {
   const log = { calls: [], remotes: {}, receivers: [] };
   const mod = {
     NetworkState: tsEnum(["kNone", "kWaiting", "kLoading", "kError"]),
@@ -60,6 +60,7 @@ function fakeBindings({ owners = new Map([[11, "Claude"]]), throwOn = null, appr
   remote("Files", { choose: () => Promise.resolve({ paths: [] }) });
   if (approval) remote("ApprovalHost", { setPending: null });
   if (bubbles) remote("Bubbles", { open: () => Promise.resolve({ shown: true }), close: null, addObserver });
+  if (pointers) remote("Pointers", { show: null });
   for (const name of ["TabsObserver", "WindowsObserver", "LayoutObserver", "OmniboxObserver", "AgentObserver", ...(bubbles ? ["BubblesObserver"] : [])]) observer(name);
   return { mod, log };
 }
@@ -86,7 +87,7 @@ test("no API off the browser's hosts or without bindings", () => {
 test("a slot page: every interface, the contract's shape, remotes made on first use", async () => {
   const { mod, log } = fakeBindings();
   const pb = adapt(mod, scope(TOP));
-  assert.deepEqual(Object.keys(pb).sort(), ["BubbleKind", "DockState", "NetworkState", "SecurityLevel", "agent", "approval", "bubbles", "files", "layout", "omnibox", "session", "tabs", "windows"]);
+  assert.deepEqual(Object.keys(pb).sort(), ["BubbleKind", "DockState", "NetworkState", "SecurityLevel", "agent", "approval", "bubbles", "files", "layout", "omnibox", "pointers", "session", "tabs", "windows"]);
   assert.ok(Object.isFrozen(pb) && Object.isFrozen(pb.tabs));
   assert.deepEqual(pb.DockState, { kHidden: 0, kRail: 1, kOpen: 2 }, "the names only");
   assert.deepEqual(log.remotes, {}, "nothing asked of the browser yet");
@@ -199,6 +200,20 @@ test("the cross-slot bubbles (530 E1): on the top-chrome host only, absent from 
   const old = adapt(fakeBindings({ bubbles: false }).mod, scope(TOP));
   assert.equal(typeof old.bubbles?.open, "undefined");
   assert.deepEqual(old.BubbleKind, {});
+});
+
+test("other people's pointers (530 F1): on the top-chrome host only, absent from a build without them", async () => {
+  const top = fakeBindings();
+  const pb = adapt(top.mod, scope(TOP));
+  assert.equal(typeof pb.pointers.show, "function");
+  const tabs = [{ targetId: "0123456789ABCDEF0123456789ABCDEF", pointers: [{ key: "i1:a:me", name: "Alice", color: "#f472b6", x: 0.25, y: 0.5, freshMs: 2900 }] }];
+  assert.equal(await pb.pointers.show(tabs), undefined);
+  assert.deepEqual(top.log.calls.at(-1), ["Pointers", "show", [tabs]]);
+  const tab = fakeBindings();
+  await assert.rejects(adapt(tab.mod, scope(TAB)).pointers.show([]), /not available on this page/);
+  assert.deepEqual(tab.log.remotes, {});
+  // A build without them compiles no Pointers: the strip never calls it.
+  assert.equal(typeof adapt(fakeBindings({ pointers: false }).mod, scope(TOP)).pointers?.show, "undefined");
 });
 
 test("plain(): maps, arrays and objects all the way down", () => {

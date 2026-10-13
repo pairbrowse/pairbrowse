@@ -6,7 +6,7 @@
 //
 // (1) window.pairbrowse is a plain object
 //       { tabs, windows, layout, omnibox, session, agent, files, approval, NetworkState, SecurityLevel, DockState,
-//         BubbleKind } and, with the fixture's bubbles: true, bubbles.
+//         BubbleKind } and, with the fixture's bubbles: true, bubbles; with pointers: true, pointers.
 //     It exists before the page's first script in the harness (the ui server inserts this file)
 //     and in the browser build (the 520 patch inserts the adapter the same way at pack time), and
 //     is absent in the extension and the live view: a page tests `window.pairbrowse` once and
@@ -17,7 +17,8 @@
 //     browser binds it only for its approval page, the harness records the calls), Bubbles
 //     (bubbles: open(kind, anchor, arg) -> { shown }, close(kind), addObserver; 530 E1, a build
 //     with the cross-slot bubbles; opt-in: the fixture's bubbles: true, so a page's tests without it
-//     see a build without them), BubblesObserver.
+//     see a build without them), BubblesObserver, Pointers (pointers: show(tabs), 530 F1, bound
+//     for the strip only; opt-in: the fixture's pointers: true; the harness records the calls).
 // (2) Mojom Interface.Method is interface.method (lowerCamel). Every method returns a Promise.
 //     A method with a reply `=> (a, b)` resolves to { a, b }, the reply names in lowerCamel:
 //       session.helper() -> { origin, key }        tabs.list() -> { tabs }
@@ -312,8 +313,13 @@ function install(F, E) {
     close: (kind) => { if (openBubble === kind) { openBubble = null; fire("bubbles", "onClosed", kind, false); } },
   });
 
+  // Other people's pointers over the page card (530 F1), opt-in: recorded in calls, nothing else.
+  const pointers = iface("pointers", null, {
+    show: () => {},
+  });
+
   window.pairbrowse = Object.freeze({
-    tabs, windows, layout, omnibox, session, agent, files, approval, ...(fx.bubbles ? { bubbles } : {}),
+    tabs, windows, layout, omnibox, session, agent, files, approval, ...(fx.bubbles ? { bubbles } : {}), ...(fx.pointers ? { pointers } : {}),
     NetworkState: Object.freeze({ ...E.NetworkState }), SecurityLevel: Object.freeze({ ...E.SecurityLevel }), DockState: Object.freeze({ ...E.DockState }),
     BubbleKind: Object.freeze({ ...E.BubbleKind }),
   });

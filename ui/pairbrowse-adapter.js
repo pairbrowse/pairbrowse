@@ -38,6 +38,9 @@ const INTERFACES = [
   // for the strip and the timeline only; a page checks bubbles.open is a function first (a build
   // without it compiles no Bubbles: no methods here, and the page keeps its in-dock fallback).
   ["bubbles", "Bubbles", "BubblesObserver", ["onClosed"]],
+  // Other people's pointers over the page card (530 F1): bound for the strip's page only; the
+  // strip checks pointers.show is a function first (a build without it: no methods here).
+  ["pointers", "Pointers", null, []],
 ];
 const TAB_PAGE_INTERFACES = new Set(["session"]);
 const ENUMS = ["NetworkState", "SecurityLevel", "DockState", "BubbleKind"];

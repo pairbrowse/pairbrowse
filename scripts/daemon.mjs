@@ -441,12 +441,15 @@ const sharing = createSharing({
     // The Page tab's outline (owner only); declared further down too.
     get outlines() { return outlines; },
     // The session card (owner only): rename and Save, and whether each is possible now. Rename
-    // restarts the browser on the renamed session; Save writes its tabs now (tabs.mjs saveNow,
+    // restarts the browser on the renamed session (a saved one that isn't open: no restart); Save writes its tabs now (tabs.mjs saveNow,
     // the write a person's session switch makes; run_save is the agent's tool and would merge
     // its goal log) and brings the goal log's pending write forward.
     sessionOps: {
-      state: () => { const name = context.sessionName(); return { canRename: name !== "default" && !isTemporary(name) && !follow.joined(), canSave: !isTemporary(name), savedAt: journal.savedAt() }; },
-      rename: (name) => (follow.joined() ? { error: "You joined another session from here; rename this one once you have left it." } : context.renameCurrent(name)),
+      state: () => { const name = context.sessionName(); return { canRename: name !== "default" && !isTemporary(name) && !follow.joined(), canSave: !isTemporary(name), savedAt: journal.savedAt(), canRenameSaved: true }; },
+      // from: a saved session that isn't open (the sessions page): renamed in place, nothing restarts.
+      current: () => context.sessionName(),
+      rename: (name, from) => (from !== undefined && from !== context.sessionName() ? context.renameSaved(from, name)
+        : follow.joined() ? { error: "You joined another session from here; rename this one once you have left it." } : context.renameCurrent(name)),
       save: async () => {
         const r = await context.saveTabs();
         if (r.error) return r;
@@ -717,7 +720,7 @@ const serve = createServe({
 });
 // The person's session choices from the browser's own pages (POST pick, POST joinhost): the
 // picker at start, the switcher and the new tab page's chips while a session is open (asking first
-// while other agents are at work), Settings' Delete (daemon/pick.mjs).
+// while other agents are at work), the sessions page's Delete (daemon/pick.mjs).
 const picks = createPick({
   context, follow, log, hostNote,
   activeAgents: () => serve.activeAgents(),

@@ -81,8 +81,8 @@ const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "scre
 const TIMELINE_ID = /^[0-9a-f]{12}$/;
 const TOOL_ID = /^[0-9a-f]{12}$/; // a download, recording or hand-off (daemon/tools.mjs): never a path
 const TIMELINE_OFF = "The timeline is off (timeline: false in ~/.pairbrowse/config.json).";
-const SESSION_OP = 'A session change is { op: "rename", name } or { op: "save" }.';
-const SESSION_FIELDS = ["canRename", "canSave", "savedAt"]; // the owner's streams only
+const SESSION_OP = 'A session change is { op: "rename", name, from? } or { op: "save" }.';
+const SESSION_FIELDS = ["canRename", "canSave", "savedAt", "canRenameSaved"]; // the owner's streams only
 const INVITE_ID = /^[0-9a-f]{8}$/;
 // The invites as Settings lists them (GET invites.json, the invites event): never a key or a code.
 const inviteItems = (list) => list.map((i) => ({ id: i.id, role: i.role, label: i.label, share: i.share, expires: i.expiresAt }));
@@ -146,8 +146,9 @@ async function release(cdp) {
 // timeline: the session's pictures (daemon/timeline.mjs), or null. layoutDefaults: config.layout,
 // or a function returning it (read whenever a session's layout starts). settings: the browser's
 // own Settings page's three fields ({ read(), write(given) }, liveview/settings.mjs), or null.
-// sessionOps: the session card ({ state() -> { canRename, canSave, savedAt }, rename(name),
-// save() }), or null. outlines: the Page tab's outlines (daemon/outline.mjs), or null.
+// sessionOps: the session card and the sessions page ({ state() -> { canRename, canSave, savedAt,
+// canRenameSaved (this helper renames saved sessions that aren't open: POST session's from) },
+// current() -> the open session's name, rename(name, from?), save() }), or null. outlines: the Page tab's outlines (daemon/outline.mjs), or null.
 // tools: the Tools tab ({ downloads, recordings, handoffs, diagnostics, open(path, how), marked(path)?,
 // openTab(url, onClose)?, preview(entry, kind)?, personTab(page)?, engine()?, platform? },
 // daemon/tools.mjs, daemon/preview.mjs and daemon/diagnostics.mjs), or null: files by id only,
@@ -812,7 +813,7 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
     // The session picker (an extension page, with the owner's key from the side panel's memory):
     // the saved sessions, and the person's pick. picker: { state(), pick(op) } from the helper.
     { method: "GET", path: "sessions.json", right: "session", handler: ({ res }) => picker ? json(res, 200, picker.state()) : plain(res, 404) },
-    // While a session is open too (the switcher, the new tab page's chips, Settings' Delete): the
+    // While a session is open too (the switcher, the new tab page's chips, the sessions page): the
     // helper decides (daemon/pick.mjs). 428 { confirm, agents } while other agents are at work and
     // the body has no confirm: true; 409 { text, error } for a refusal; the open pages hear the
     // sessions event after a change.
@@ -885,7 +886,8 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
       json(res, r.status, r.body);
     } },
     // The session card (the owner only): { op: "rename", name } restarts the browser on the renamed
-    // session, { op: "save" } writes its tabs now. sessionOps from the helper (daemon.mjs).
+    // session ({ op: "rename", name, from }: a saved one that isn't open, renamed without a
+    // restart; the sessions page), { op: "save" } writes its tabs now. sessionOps from the helper (daemon.mjs).
     { method: "POST", path: "session", right: "session", handler: async ({ req, res }) => {
       if (!sessionOps) return plain(res, 404);
       const body = await readBody(req, BODY_MAX.approve);
@@ -900,15 +902,24 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
         broadcast("session", ownerSession());
         return;
       }
-      if (linkGuests.size || joinersNow().length) return json(res, 409, { error: "People are in this session; rename it once they have left." });
-      if (recordState()?.recording) return json(res, 409, { error: "Stop the recording first." });
-      if (clickApprovals?.pending().length) return json(res, 409, { error: "An approval is waiting; answer it first." });
-      const r = await sessionOps.rename(String(op.name ?? "").trim());
+      // from: a saved session that isn't open (the sessions page): renamed in place, nothing
+      // restarts, so who is in this session, a recording or an approval don't hold it up.
+      if (op.from !== undefined && (typeof op.from !== "string" || !op.from.trim() || op.from.length > 40)) return json(res, 409, { error: "from is a saved session's name." });
+      const from = op.from === undefined ? undefined : op.from.trim();
+      const saved = from !== undefined && from !== sessionOps.current?.();
+      if (!saved) {
+        if (linkGuests.size || joinersNow().length) return json(res, 409, { error: "People are in this session; rename it once they have left." });
+        if (recordState()?.recording) return json(res, 409, { error: "Stop the recording first." });
+        if (clickApprovals?.pending().length) return json(res, 409, { error: "An approval is waiting; answer it first." });
+      }
+      const name = String(op.name ?? "").trim();
+      const r = await (saved ? sessionOps.rename(name, from) : sessionOps.rename(name));
       if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
-      if (r.restarting && r.from && r.from !== r.name && layouts.has(r.from)) { layouts.set(r.name, layouts.get(r.from)); layouts.delete(r.from); }
+      if (r.from && r.from !== r.name && layouts.has(r.from)) { layouts.set(r.name, layouts.get(r.from)); layouts.delete(r.from); }
       // Answered before the browser restarts: the dock that asked closes with the window.
       json(res, 200, { ok: true, name: r.name, restarting: !!r.restarting });
       broadcast("session", ownerSession());
+      if (saved && picker) { try { broadcast("sessions", picker.state()); } catch {} }
     } },
     // The Page tab: the whole-page snapshot an agent last got for a tab (?tab=<id>, else the
     // latest), its text masked again here; { outline: null } when there is none.

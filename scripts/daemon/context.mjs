@@ -11,7 +11,7 @@ import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "
 import { needsVirtualDisplay, startVirtualDisplay } from "../display.mjs";
 import { readSavedTabs, trackTabs, restoreTabs } from "../tabs.mjs";
 import { computerName } from "../join.mjs";
-import { validName, isTemporary, profileDir, tabsFile, currentSession, rememberSession, listSessions, createSession, deleteSession, renameSession, sessionFilesExist, sweepTemporary, readPeople, recordPerson } from "../sessions.mjs";
+import { validName, isTemporary, profileDir, tabsFile, currentSession, rememberSession, listSessions, createSession, deleteSession, renameSession, sessionFilesExist, profileInUse, sweepTemporary, readPeople, recordPerson } from "../sessions.mjs";
 import { renameRunsSession } from "../runs.mjs";
 import { keepFocus } from "../focus.mjs";
 import { sleep, readJson, within } from "../util.mjs";
@@ -660,6 +660,28 @@ let switched = Promise.resolve();
     return { ok: true, name: to, from, restarting: true };
   }
 
+  // A person renames a saved session that isn't open (the sessions page, POST session with from):
+  // its files move now, nothing restarts. Refused while the browser switches (it may be opening
+  // that one) and while a browser has its profile open (profileInUse); the open session goes
+  // through renameCurrent. Returns { ok, name, from, restarting: false } or { error }.
+  function renameSaved(fromGiven, given) {
+    const from = String(fromGiven ?? "").trim();
+    const to = String(given ?? "").trim();
+    if (from === session) return renameCurrent(to);
+    if (switching) return { error: "The browser is switching sessions; try again in a moment." };
+    if (from === "default") return { error: "The default session keeps its name; start a named session to name it." };
+    if (isTemporary(from)) return { error: "A clean session can't be renamed: it is deleted when you switch away." };
+    if (!validName(from) || !listSessions().some((s) => s.name === from)) return { error: `No session "${from}".` };
+    if (to === from) return { ok: true, name: from, from, restarting: false };
+    if (profileInUse(from)) return { error: `Session "${from}" is open in another browser; close it there, then rename it.` };
+    try { renameSession(from, to); } catch (e) { return { error: String(e?.message || e) }; }
+    try { renameRunsSession(from, to); } catch (e) { log(`rename: runs: ${e?.message || e}`); }
+    try { onRenamed(from, to); } catch {}
+    hostNote(`The person renamed the saved browser session "${from}" to "${to}" (pairbrowse_session use ${to}).`);
+    log(`saved session ${from} renamed to ${to} by the person`);
+    return { ok: true, name: to, from, restarting: false };
+  }
+
   // A person's Save on the session card: the open session's tabs written now (the same write a
   // person's session switch and the shutdown make). Returns { ok } or { error }.
   async function saveTabs() {
@@ -805,7 +827,7 @@ let switched = Promise.resolve();
     getContext, watchClose, current: () => contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
     isRestoring: () => restoring !== null, isSwitching: () => switching,
     currentUrl: () => lastCurrentUrl, setCurrentUrl: (url) => { lastCurrentUrl = url; },
-    sessionInfo, sessionCommand, startUp, close, sessionName: () => session, renameCurrent, saveTabs,
+    sessionInfo, sessionCommand, startUp, close, sessionName: () => session, renameSaved, renameCurrent, saveTabs,
     // The browser's pages used their key (or the helper stops): its file has done its job.
     dropHelperKey: () => dropHelperKey(),
     waitForPick, pickerState, pickSession, pickedJoin, switchForPerson, // In the session being opened, when the person just picked another.

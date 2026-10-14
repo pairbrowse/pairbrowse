@@ -128,3 +128,18 @@ test("a rename whose move fails puts back what it moved", () => {
   assert.equal(existsSync(s.profileDir("rb-y")), false);
   assert.equal(existsSync(s.tabsFile("rb-y")), false);
 });
+
+test("profileInUse: a live SingletonLock on this computer or another counts; one a gone process left doesn't", () => {
+  s.createSession("lock-a");
+  const dir = s.profileDir("lock-a");
+  assert.equal(s.profileInUse("lock-a"), false, "no lock");
+  fs.symlinkSync("here-4242", join(dir, "SingletonLock"));
+  assert.equal(s.profileInUse("lock-a", { host: "here", alive: (pid) => pid === 4242 }), true, "a live process here");
+  assert.equal(s.profileInUse("lock-a", { host: "here", alive: () => false }), false, "a gone process here");
+  assert.equal(s.profileInUse("lock-a", { host: "elsewhere", alive: () => false }), true, "another computer's lock");
+  rmSync(join(dir, "SingletonLock"));
+  mkdirSync(join(dir, "pairbrowse-native"));
+  fs.symlinkSync("garbled", join(dir, "pairbrowse-native", "SingletonLock"));
+  assert.equal(s.profileInUse("lock-a", { host: "here", alive: () => false }), true, "the native profile's lock, unreadable: in use");
+  assert.equal(s.profileInUse("no-such-session"), false);
+});

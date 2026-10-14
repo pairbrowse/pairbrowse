@@ -117,6 +117,56 @@ test("POST session: the owner renames and saves through the helper; refusals pas
   try { assert.equal((await request(bare.port, "POST", `/${bare.url.split("/").at(-2)}/session`, { body: { op: "save" } })).status, 404, "no sessionOps given"); } finally { bare.close(); }
 });
 
+test("POST session rename with from: a saved session that isn't open, renamed without the open session's checks", async () => {
+  const invites = createInvites();
+  const calls = [];
+  let listed = [{ name: "work" }, { name: "old-s" }];
+  const sessionOps = {
+    state: () => ({ canRename: true, canSave: true, savedAt: "", canRenameSaved: true }),
+    current: () => "work",
+    rename: async (name, from) => {
+      calls.push(from === undefined ? ["rename", name] : ["rename", name, from]);
+      if (from === "busy-s") return { error: "Session \"busy-s\" is open in another browser; close it there, then rename it." };
+      if (from !== undefined) listed = listed.map((s) => (s.name === from ? { name } : s));
+      return { ok: true, name, from: from ?? "work", restarting: from === undefined };
+    },
+    save: async () => ({ ok: true }),
+  };
+  const picker = { state: () => ({ picking: false, sessions: listed }), pick: async () => ({ text: "x" }) };
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites, sessionOps, picker,
+    recordState: () => ({ recording: true }), clickApprovals: { pending: () => [{ id: "x" }], onChange: () => () => {} }, layoutDefaults: { left: "open", right: "open", strip: 88 } });
+  const key = view.url.split("/").at(-2);
+  view.setSession({ name: "work", where: "Local" });
+  const owner = await readStream(view.port, `/${key}/events?page=left`);
+  try {
+    // The owner's session event says this helper renames saved sessions (the page offers Rename on them).
+    await sleep(50);
+    assert.equal(eventsIn(owner.text(), "session")[0]?.canRenameSaved, true);
+    // A recording and a waiting approval hold up the open session's rename, not a saved one's.
+    let r = await request(view.port, "POST", `/${key}/session`, { body: { op: "rename", name: "new-s", from: " old-s " } });
+    assert.deepEqual([r.status, JSON.parse(r.text)], [200, { ok: true, name: "new-s", restarting: false }]);
+    assert.deepEqual(calls.at(-1), ["rename", "new-s", "old-s"], "from trimmed");
+    await sleep(50);
+    assert.deepEqual(eventsIn(owner.text(), "sessions").at(-1)?.sessions.map((s) => s.name), ["work", "new-s"], "the open pages hear the new list");
+    // from naming the open session: today's rename, with its checks.
+    r = await request(view.port, "POST", `/${key}/session`, { body: { op: "rename", name: "work-2", from: "work" } });
+    assert.deepEqual([r.status, JSON.parse(r.text).error], [409, "Stop the recording first."]);
+    // The helper's refusal passes through.
+    r = await request(view.port, "POST", `/${key}/session`, { body: { op: "rename", name: "z", from: "busy-s" } });
+    assert.deepEqual([r.status, JSON.parse(r.text).error], [409, "Session \"busy-s\" is open in another browser; close it there, then rename it."]);
+    // A from that isn't a name: refused before the helper is asked.
+    const n = calls.length;
+    for (const bad of [5, "", "   ", null, "x".repeat(41), ["a"]]) {
+      r = await request(view.port, "POST", `/${key}/session`, { body: { op: "rename", name: "q", from: bad } });
+      assert.deepEqual([r.status, JSON.parse(r.text).error], [409, "from is a saved session's name."], JSON.stringify(bad));
+    }
+    assert.equal(calls.length, n);
+    // Only the owner.
+    const w = invites.create({ role: "drive", label: "D" });
+    assert.equal((await request(view.port, "POST", `/${w.key}/session`, { body: { op: "rename", name: "q", from: "new-s" } })).status, 403);
+  } finally { owner.close(); view.close(); }
+});
+
 // ---- the helper's own rename and save, with a fake browser ----
 const launched = [];
 let slowGoto = 0;
@@ -237,6 +287,57 @@ test("rename and save wait for tabs reopening; rename waits for the picker", { t
   await picking.getContext();
   assert.ok(picking.picking(), "the picker shows");
   assert.match(picking.renameCurrent("pick-q").error, /picker/);
+});
+
+test("renameSaved: a saved session that isn't open is renamed in place; nothing restarts", { timeout: 30_000 }, async () => {
+  const { hostname } = await import("node:os");
+  const { symlinkSync } = await import("node:fs");
+  sessions.createSession("open-o");
+  sessions.createSession("kept-a");
+  writeFileSync(sessions.tabsFile("kept-a"), JSON.stringify({ tabs: [{ url: "https://a.test/" }] }));
+  writeFileSync(sessions.peopleFile("kept-a"), JSON.stringify({ people: [] }));
+  mkdirSync(sessions.timelineDir("kept-a"), { recursive: true });
+  mkdirSync(join(home, "runs"), { recursive: true });
+  writeFileSync(join(home, "runs", "kept-run.json"), JSON.stringify({ name: "kept run", session: "kept-a" }));
+  sessions.createSession("other-z");
+  const notes = [], order = [];
+  const context = await makeContext({ notes, order });
+  await context.getContext();
+  await context.sessionCommand({ action: "use", name: "open-o" });
+  assert.ok(await until(() => !context.isSwitching() && !context.isRestoring()));
+  const before = launched.length;
+  for (const [from, to, why] of [
+    ["default", "x1", /default session keeps its name/], ["clean-7", "x1", /clean session/], ["nope", "x1", /No session "nope"/], ["../x", "x1", /No session/],
+    ["kept-a", "a b", /letters, numbers/], ["kept-a", "default", /keeps for itself/], ["kept-a", "clean-9", /keeps for itself/],
+    ["kept-a", "other-z", /already exists/], ["kept-a", "OPEN-O", /already exists/],
+  ]) assert.match(context.renameSaved(from, to).error || "", why, `${from} -> ${to}`);
+  assert.deepEqual(context.renameSaved("kept-a", "kept-a"), { ok: true, name: "kept-a", from: "kept-a", restarting: false });
+  // A browser has its profile open (a live lock on this computer): refused; a lock left by a
+  // process that is gone doesn't count.
+  const lock = join(sessions.profileDir("kept-a"), "SingletonLock");
+  symlinkSync(`${hostname()}-${process.pid}`, lock);
+  assert.match(context.renameSaved("kept-a", "kept-b").error || "", /open in another browser/);
+  rmSync(lock);
+  symlinkSync(`${hostname()}-999999999`, lock);
+  assert.deepEqual(context.renameSaved("kept-a", "kept-b"), { ok: true, name: "kept-b", from: "kept-a", restarting: false });
+  for (const of of [sessions.profileDir, sessions.tabsFile, sessions.peopleFile, sessions.timelineDir]) {
+    assert.equal(existsSync(of("kept-a")), false, `${of.name}: old gone`);
+    assert.equal(existsSync(of("kept-b")), true, `${of.name}: new there`);
+  }
+  assert.equal(JSON.parse(readFileSync(join(home, "runs", "kept-run.json"), "utf8")).session, "kept-b", "its runs follow");
+  assert.deepEqual(order.at(-1), ["renamed", "kept-a", "kept-b"]);
+  assert.match(notes.at(-1), /renamed the saved browser session "kept-a" to "kept-b".*pairbrowse_session use kept-b/);
+  assert.equal(context.sessionName(), "open-o", "the open session stays");
+  await sleep(100);
+  assert.equal(launched.length, before, "nothing restarted");
+  assert.equal(sessions.currentSession(), "open-o");
+  // The open session named as from: today's rename (the browser restarts on it).
+  assert.deepEqual(context.renameSaved("open-o", "open-p"), { ok: true, name: "open-p", from: "open-o", restarting: true });
+  assert.ok(await until(() => context.sessionName() === "open-p" && !context.isSwitching()));
+  // While the browser switches (it may be opening that very session): refused.
+  const going = context.sessionCommand({ action: "use", name: "kept-b" });
+  assert.match(context.renameSaved("kept-b", "kept-c").error || "", /switching sessions/);
+  await going;
 });
 
 // The helper's timers (tab memory, picker) keep running: the run ends here.

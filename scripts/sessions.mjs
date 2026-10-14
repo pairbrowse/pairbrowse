@@ -1,7 +1,8 @@
 // Browser sessions: separate Chrome profiles, each with its own logins, cookies and tabs.
 // "default" is the original ~/.pairbrowse/profile. Clean sessions start empty and, unless
 // they're given a name to keep, are deleted when you switch away or the browser shuts down.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, renameSync, readlinkSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { readJson } from "./util.mjs";
@@ -99,6 +100,29 @@ export function renameSession(from, to) {
     throw new Error(`Couldn't rename session "${from}": ${e?.message || e}`);
   }
   try { if (readFileSync(CURRENT, "utf8").trim() === from) rememberSession(to); } catch {}
+}
+
+// Whether a browser has a session's profile open now: Chromium's SingletonLock in the profile (or
+// the native browser's own profile inside it), a link to "<host>-<pid>". A lock this computer left
+// behind (its process gone, a crash) doesn't count; one from another host or an unreadable one
+// does. A saved session is renamed only while nothing has it open (context.mjs renameSaved).
+export function profileInUse(name, { host = hostname(), alive = pidAlive } = {}) {
+  for (const dir of [profileDir(name), join(profileDir(name), "pairbrowse-native")]) {
+    let target;
+    try { target = readlinkSync(join(dir, "SingletonLock")); } catch (e) {
+      if (e?.code === "ENOENT" || e?.code === "ENOTDIR") continue;
+      if (existsSync(join(dir, "SingletonLock"))) return true; // there, but not a link: in use
+      continue;
+    }
+    const m = /^(.*)-(\d+)$/.exec(String(target));
+    if (!m || m[1] !== host) return true;
+    if (alive(Number(m[2]))) return true;
+  }
+  return false;
+}
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e?.code === "EPERM"; }
 }
 
 const PEOPLE_MAX = 12;

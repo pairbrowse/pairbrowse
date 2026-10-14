@@ -1,6 +1,6 @@
 // The person's session choices from PairBrowse's own pages (the owner-only live view route POST
 // pick, liveview.mjs): the session picker at the browser's start, the session switcher and the new
-// tab page's chips while a session is open, and Settings' Delete on a saved session. The answer to
+// tab page's chips while a session is open, and the sessions page's Delete on a saved session. The answer to
 // an address question a join code raised there (POST joinhost) lands here too.
 //
 // readPick(body) -> { op } (only the fields that action takes) or { error }:
@@ -74,7 +74,7 @@ export function createPick({ context, follow, activeAgents = () => [], busy = ()
     if (op.action === "delete") {
       if (isTemporary(op.name)) return { text: "A clean session is deleted by itself when you switch away.", error: true };
       const r = await context.sessionCommand({ action: "delete", name: op.name });
-      if (!r.error) { hostNote(`The person deleted the browser session "${op.name}" in PairBrowse's settings.`); log(`session ${op.name} deleted by the person`); }
+      if (!r.error) { hostNote(`The person deleted the browser session "${op.name}" in PairBrowse's sessions page.`); log(`session ${op.name} deleted by the person`); }
       return r.error ? { text: r.text, error: true } : { text: r.text };
     }
     if (context.picking()) return context.pickSession({ action: op.action, name: op.name });

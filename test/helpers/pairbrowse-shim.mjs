@@ -28,6 +28,7 @@
 //       omnibox.getState() -> { state }            agent.getOwners() -> { agents, colors }
 //       files.choose(...) -> { paths }             files.saveAs(name) -> { path }
 //       session.grantTabCapture(targetId, audio) -> { streamId }
+//       session.searchEngine() -> { name, searchUrl } (570; the fixture's searchEngine, Google)
 //       windows.startTabDrag(tabId, offset) -> { moved }
 //     The nav row's calls: tabs.goBack(id), tabs.goForward(id), tabs.stop(id), windows.bookmark(id),
 //     windows.find(id); a tab's history in canGoBack / canGoForward, a window's own slot in current.
@@ -75,6 +76,7 @@ const tab = (id, index, title, url, active) => ({
 export function defaultFixture() {
   return {
     helper: { origin: "", key: "" },
+    searchEngine: { name: "Google", searchUrl: "https://www.google.com/search?q={searchTerms}" },
     tabs: [
       tab(11, 0, "Shop", "https://shop.example/checkout", true),
       tab(12, 1, "Docs", "https://docs.example/", false),
@@ -281,6 +283,7 @@ function install(F, E) {
   const session = iface("session", null, {
     helper: () => ({ origin: fx.helper.origin, key: fx.helper.key }),
     grantTabCapture: (targetId) => ({ streamId: has("grantTabCapture") ? fx.replies.grantTabCapture : `stream-${targetId}` }),
+    searchEngine: () => ({ name: fx.searchEngine.name, searchUrl: fx.searchEngine.searchUrl }),
   });
   const agent = iface("agent", "agent", {
     setTabOwner: (id, name, color) => { setOwner(id, name, color); },

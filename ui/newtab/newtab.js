@@ -1,17 +1,44 @@
-// The new tab page. The field, "Search Google or type a URL" as the omnibox: a web address (http or
-// https) opens, words search Google; other schemes stay and the line under it says so. The chips: your other recent sessions from the helper's sessions.json, one press
+// The new tab page. The field reads as the omnibox does, "Search <the default engine> or type a URL":
+// a web address (http or https) opens, words search with the browser's default search engine
+// (session.searchEngine(), 570; Google in the extension, which cannot ask); an engine that searches
+// nothing makes it "Type a URL". Other schemes stay and the line under it says so. The chips: your other recent sessions from the helper's sessions.json, one press
 // switches (POST pick; while agents are at work the helper asks first, and the page asks the
 // person in the page before the same pick goes again with confirm: true). One source for two hosts: in the browser build window.pairbrowse gives the helper's
 // address (session.helper()); as the extension page it is chrome.storage.session "view", as in the
 // session picker. One fetch at load; no timer, observer or poll.
 import { $, el, addressToUrl, askSwitch } from "../common.js";
 
+// Where words go: the default engine's address with "{searchTerms}" (http or https only), or "" when
+// it searches nothing. Google until the browser answers, and in the extension.
+const GOOGLE = { name: "Google", searchUrl: "https://www.google.com/search?q={searchTerms}" };
+let engine = GOOGLE;
+
+function showEngine() {
+  const label = engine.name && engine.searchUrl ? `Search ${engine.name} or type a URL` : "Type a URL";
+  $("q").placeholder = label;
+  $("q").setAttribute("aria-label", label);
+}
+
+// One question at load, in the browser only.
+async function readEngine() {
+  const session = globalThis.window?.pairbrowse?.session;
+  if (!session || typeof session.searchEngine !== "function") { showEngine(); return; }
+  const got = await Promise.resolve().then(() => session.searchEngine()).catch(() => null);
+  if (got && typeof got.name === "string") {
+    const url = typeof got.searchUrl === "string" ? got.searchUrl : "";
+    engine = { name: got.name, searchUrl: /^https?:\/\//i.test(url) && url.includes("{searchTerms}") ? url : "" };
+  }
+  showEngine();
+}
+
 $("search").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = $("q").value;
   if (!text.trim()) return;
-  // Words search Google; an address opens. Web pages only: file:, chrome: and javascript: open nothing.
-  const url = addressToUrl(text);
+  // An address opens; words search with the default engine. Web pages only: file:, chrome: and
+  // javascript: open nothing.
+  const address = addressToUrl(text, { search: false });
+  const url = address || (engine.searchUrl ? engine.searchUrl.replace("{searchTerms}", encodeURIComponent(text.trim().slice(0, 2000))) : null);
   if (!url || !/^https?:\/\//i.test(url)) { say(NOT_AN_ADDRESS, "error"); return; }
   location.href = url;
 });
@@ -95,6 +122,7 @@ export async function boot() {
   return true;
 }
 
+readEngine();
 boot().then((found) => {
   // The extension before the side panel's worker has stored the address: once, when it does.
   if (found || window.pairbrowse || !globalThis.chrome?.storage?.onChanged) return;

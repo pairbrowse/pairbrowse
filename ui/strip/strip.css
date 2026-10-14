@@ -19,22 +19,28 @@ body[data-host="native"] .row { padding-right: 8px; }
 .row button, .row a, .row input, .row label, #tabs li, .pop, .nav, .nav button { -webkit-app-region: no-drag; }
 
 /* The brand mark: the logo and the wordmark, a static mark (no hover, press or focus; the sessions'
-   door is the left dock's Sessions row), part of the window's drag region. The logo on the
-   favicons' centre line (the tabs, 42 px with a 1 px top edge, sit on the row's bottom edge):
-   (41 - 34) / 2 above it. The logo and wordmark keep their places; with the chevron gone (12 px and
-   its 1 px margin) the 11 px gap before it stays as padding, so the tabs move left by 13 px. */
-.brand { display: flex; align-items: center; gap: 11px; align-self: flex-end; margin-bottom: calc((41px - var(--ctl-strip)) / 2); height: var(--ctl-strip); padding: 0 calc(6px + 11px) 0 2px; flex: none; user-select: none; } /* mockup */
+   door is the left dock's Sessions row), part of the window's drag region. One centre line for the
+   whole row (the user, 2026-10-15: the tabs on the window buttons' line, a tab's contents centred
+   in the tab): 30 px from the top, where the shell centres the traffic lights and the "..."
+   (pairbrowse::kTabRowLine). The tabs, 47 px with a 1 px top edge, sit on the row's bottom edge, so
+   their contents' middle is 53 - 46 / 2 = 30; the logo, the wordmark, the + and the right end sit
+   on the same line through the same 46 px box. The logo and wordmark keep their places; with the
+   chevron gone (12 px and its 1 px margin) the 11 px gap before it stays as padding, so the tabs
+   move left by 13 px. */
+.brand { display: flex; align-items: center; gap: 11px; align-self: flex-end; margin-bottom: calc((46px - var(--ctl-strip)) / 2); height: var(--ctl-strip); padding: 0 calc(6px + 11px) 0 2px; flex: none; user-select: none; } /* mockup */
 .brand img { display: block; flex: none; }
 .brand .wordmark { font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.005em; color: var(--ink); white-space: nowrap; }
 
-/* The tabs sit on the row's bottom edge, 42 px tall; the padding keeps the active tab's feet unclipped. */
+/* The tabs sit on the row's bottom edge, 47 px tall from 6 px under the window's top (their outline
+   joins the nav row under them), their contents centred in them on the row's line; the padding
+   keeps the active tab's feet unclipped. */
 #tabs { display: flex; align-items: flex-end; flex: 0 1 auto; gap: 2px; min-width: 0; margin: 0 calc(-1 * var(--sp-3)); padding: 0 var(--sp-3); list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 /* Past the 160 px minimum the row scrolls (strip.js keeps the active tab in view): a 24 px fade at
    each edge that has hidden tabs, set by two classes from the scroll handler. Static, never animated. */
 #tabs.fade-start, #tabs.fade-end { --fade-s: 0px; --fade-e: 0px; mask-image: linear-gradient(90deg, transparent, #000 var(--fade-s), #000 calc(100% - var(--fade-e)), transparent); }
 #tabs.fade-start { --fade-s: 24px; }
 #tabs.fade-end { --fade-e: 24px; }
-#tabs li { position: relative; display: flex; align-items: center; gap: var(--sp-2); flex: 0 1 235px; width: 235px; min-width: 160px; max-width: 240px; height: 42px; padding: 0 7px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup */
+#tabs li { position: relative; display: flex; align-items: center; gap: var(--sp-2); flex: 0 1 235px; width: 235px; min-width: 160px; max-width: 240px; height: 47px; padding: 0 7px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup */
 #tabs li:not([aria-selected="true"]):hover { background-color: var(--elevated); }
 /* The active tab: lit at the top, fading into the centre column (--column: the nav row under it),
    blue whoever drives it (the user, 2026-10-12; the owner shows by its dot): a blue edge, its top
@@ -69,13 +75,13 @@ body[data-host="native"] .row { padding-right: 8px; }
 body[data-dragging] #tabs li { transition: background-color var(--t-hover), color var(--t-hover), transform var(--t); }
 body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: none; }
 
-/* On the tabs' centre line, not the row's: the tabs (42 px) sit on the row's bottom edge. */
-#new { display: grid; place-items: center; flex: none; align-self: flex-end; margin-bottom: 7px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup: (42 - 28) / 2 */
+/* On the row's line, with the tabs' contents and the window buttons: (46 - 28) / 2 above the edge. */
+#new { display: grid; place-items: center; flex: none; align-self: flex-end; margin-bottom: 9px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }
 #new svg { width: 16px; height: 16px; }
 #new:hover { background: var(--hover); color: var(--ink); }
 
 /* ---- the right end ---- */
-#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; }
+#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; align-self: flex-end; height: 46px; } /* on the row's line, as the tabs' contents */
 #pill { display: inline-flex; align-items: center; gap: 10px; height: var(--ctl-strip); padding: 0 14px; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; } /* mockup: the Live session pill */
 #pill .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); } /* mockup */
 #pill[data-state="reconnecting"] .dot { background: var(--warn); }

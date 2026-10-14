@@ -45,7 +45,8 @@ pageTest("newtab", { viewport: VIEW }, async ({ inPage }) => {
   assert.equal(r.h, "96");
   assert.ok(r.src.endsWith("/logo.svg"), r.src);
   assert.equal(r.h1, "PairBrowse");
-  assert.equal(r.placeholder, "Search Google or type a URL");
+  // The fixture's engine is Google, as the browser's would be (asked once at load).
+  assert.ok(["Search or type a URL", "Search Google or type a URL"].includes(r.placeholder), r.placeholder);
   assert.equal(await inPage(() => document.title), "New tab");
   assert.ok(!/chromium/i.test(await inPage(() => document.documentElement.outerHTML)), "no Chromium wording");
   assert.equal(r.pill, 560);
@@ -71,6 +72,27 @@ pageTest("newtab", { viewport: VIEW }, async ({ page, shim, inPage }) => {
   }
   await page.type("#q", "x");
   assert.equal(await inPage(() => document.getElementById("msg").textContent), "");
+});
+
+// 570: the field names the browser's default engine and words go to it; an engine that searches
+// nothing reads "Type a URL" and words open nothing.
+pageTest("newtab", { viewport: VIEW, shim: { searchEngine: { name: "DuckDuckGo", searchUrl: "https://duckduckgo.com/?q={searchTerms}" } } }, async ({ page, inPage, until }) => {
+  await until("the engine's name", () => document.getElementById("q").placeholder === "Search DuckDuckGo or type a URL");
+  assert.equal(await inPage(() => document.getElementById("q").getAttribute("aria-label")), "Search DuckDuckGo or type a URL");
+  await page.route("https://duckduckgo.com/**", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<title>results</title>" }));
+  await page.fill("#q", "hello world");
+  await page.press("#q", "Enter");
+  await page.waitForURL((u) => u.hostname === "duckduckgo.com");
+  assert.equal(page.url(), "https://duckduckgo.com/?q=hello%20world");
+});
+
+pageTest("newtab", { viewport: VIEW, shim: { searchEngine: { name: "", searchUrl: "" } } }, async ({ page, inPage, until }) => {
+  await until("no engine", () => document.getElementById("q").placeholder === "Type a URL");
+  const before = page.url();
+  await page.fill("#q", "hello world");
+  await page.press("#q", "Enter");
+  assert.equal(await inPage(() => document.getElementById("msg").textContent), "Type a web address, like example.com.");
+  assert.equal(page.url(), before);
 });
 
 pageTest("newtab", { viewport: VIEW }, async ({ page }) => {

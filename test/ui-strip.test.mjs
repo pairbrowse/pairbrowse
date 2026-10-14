@@ -40,7 +40,7 @@ describe("renders the tab list, its states and the drag region", () => pageTest(
   assert.deepEqual(await inPage(order), [11, 12, 13]);
   const [a, b, c] = [await inPage(tabInfo, 11), await inPage(tabInfo, 12), await inPage(tabInfo, 13)];
   for (const t of [a, b, c]) {
-    assert.equal(t.height, 42, "42 px tall");
+    assert.equal(t.height, 47, "47 px tall (570: from 6 px under the top to the row's bottom edge)");
     assert.equal(t.bottom, 53, "on the row's bottom edge");
     assert.ok(t.width >= 160 && t.width <= 240, `width ${t.width}`);
   }
@@ -262,9 +262,9 @@ describe("close and new tab", () => pageTest("strip", { viewport: ROW }, async (
   await until("two tabs", () => document.querySelectorAll("#tabs li").length === 2);
   assert.deepEqual(await callsOf(shim, "tabs", "close"), [[11]]);
   await until("tab 12 active", () => document.querySelector('#tabs li[data-id="12"]').getAttribute("aria-selected") === "true");
-  // The + sits on the tabs' centre line (the user saw it ride high on the row's).
-  const mid = await inPage(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); const t = r("#tabs li"), n = r("#new"); return [t.top + t.height / 2, n.top + n.height / 2]; });
-  assert.ok(Math.abs(mid[0] - mid[1]) <= 1, `+ centre ${mid[1]} vs tab centre ${mid[0]}`);
+  // The + sits on the row's one centre line with the tabs' contents (the user, 2026-10-15).
+  const mid = await inPage(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); const t = r("#tabs li .icon"), n = r("#new"); return [t.top + t.height / 2, n.top + n.height / 2]; });
+  assert.ok(Math.abs(mid[0] - mid[1]) <= 0.5, `+ centre ${mid[1]} vs the tab icon's centre ${mid[0]}`);
   await page.click("#new");
   await until("a new tab", () => document.querySelectorAll("#tabs li").length === 3);
   assert.deepEqual(await callsOf(shim, "tabs", "create"), [["", true, 1]]);
@@ -392,20 +392,34 @@ describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, sh
     tag: "DIV", role: null, tabIndex: -1, label: null, expanded: null, controls: 0, svgs: 0, oldSwitch: false,
     src: "../logo.svg", alt: "", size: [28, 28], word: "PairBrowse", bg: undefined, cursor: undefined, logoInset: 2, tabGap: 25,
   });
-  // On the favicons' line: the logo, the wordmark's text and the first tab's icon share one centre
-  // (32.5 px in the 53 px row: the tabs, 42 px with a 1 px top edge, sit on its bottom edge).
+  // One centre line for the row (the user, 2026-10-15: the tabs on the window buttons' line, a
+  // tab's contents centred in the tab): the logo, the wordmark's text, the first tab's icon, title
+  // and close, the + and the right end's controls share 30 px from the top, where the shell centres
+  // the traffic lights and the "..." (pairbrowse::kTabRowLine). The tab's outline, 47 px from 6 px
+  // down to the row's bottom edge, has its contents' middle there too.
   const line = await inPage(() => {
     const mid = (r) => r.top + r.height / 2;
     const img = document.querySelector("#brand img").getBoundingClientRect();
     const text = document.createRange();
     text.selectNodeContents(document.querySelector("#brand .wordmark"));
     const icon = document.querySelector("#tabs li .icon").getBoundingClientRect();
-    return { logo: mid(img), word: mid(text.getBoundingClientRect()), icon: mid(icon), size: [img.width, img.height] };
+    const tab = document.querySelector("#tabs li").getBoundingClientRect();
+    const title = document.createRange();
+    title.selectNodeContents(document.querySelector("#tabs li .title"));
+    const right = [...document.querySelectorAll("#right > :not([hidden])")].filter((e) => e.getBoundingClientRect().height > 0).map((e) => [e.id, mid(e.getBoundingClientRect())]);
+    return { logo: mid(img), word: mid(text.getBoundingClientRect()), icon: mid(icon), title: mid(title.getBoundingClientRect()),
+      close: mid(document.querySelector("#tabs li .close").getBoundingClientRect()), right, tab: [tab.top, tab.bottom, innerHeight], size: [img.width, img.height] };
   });
   assert.deepEqual(line.size, [28, 28], "the logo stays 28 x 28");
   assert.ok(Math.abs(line.logo - line.icon) <= 0.5, `logo ${line.logo} on the favicons' centre ${line.icon}`);
   assert.ok(Math.abs(line.word - line.icon) <= 0.5, `wordmark ${line.word} on the favicons' centre ${line.icon}`);
-  assert.ok(Math.abs(line.icon - 32.5) <= 0.5, `the favicons' centre ${line.icon}`);
+  assert.ok(Math.abs(line.icon - 30) <= 0.5, `the favicons' centre ${line.icon}`);
+  assert.ok(Math.abs(line.title - 30) <= 0.75, `the tab title's centre ${line.title}`);
+  assert.ok(Math.abs(line.close - 30) <= 0.5, `the tab close's centre ${line.close}`);
+  for (const [id, y] of line.right) assert.ok(Math.abs(y - 30) <= 0.5, `${id}'s centre ${y}`);
+  // The tab's contents centred in the tab's own box (below its 1 px top edge).
+  assert.ok(Math.abs((line.tab[0] + 1 + line.tab[1]) / 2 - line.icon) <= 0.5, `the icon ${line.icon} in the tab's middle`);
+  assert.deepEqual(line.tab.slice(0, 2), [6, 53], "the tab's outline: 47 px on the row's bottom edge");
   // No hover state: hovered, it looks as it did.
   await page.hover("#brand .wordmark");
   await page.waitForTimeout(250);

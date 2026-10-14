@@ -71,6 +71,37 @@ test("kept as the stream has it: names and sentences, masked, nothing else", () 
   assert.equal(createActivityLog({ mask: () => { throw new Error("x"); } }).add({ t: 1, text: "a" }), null);
 });
 
+test("a message between participants: a line of its own kind, by time with the others, masked, kept in the file", () => {
+  const now = clock();
+  const dir = mkdtempSync(join(tmpdir(), "pb-activity-msg-"));
+  const file = join(dir, "a.activity.json");
+  const log = createActivityLog({ now, where: () => ({ name: "m", file }), mask: (t) => t.replaceAll("hunter2", "••••") });
+  log.add(line(1));
+  now.add(5);
+  const long = `I'll take the checkout tab, hunter2 ${"x".repeat(600)}`;
+  const m = log.add({ kind: "message", who: "Claude 93ed · Claude Code", to: "Codex", text: long, tab: "", extra: 1 });
+  assert.equal(m.kind, "message");
+  assert.equal(m.to, "Codex");
+  assert.equal(m.who, "Claude 93ed · Claude Code");
+  assert.equal(m.text.length, 500, "a message keeps up to 500 characters (other lines 200)");
+  assert.doesNotMatch(m.text, /hunter2/, "masked like every line");
+  assert.equal(m.extra, undefined);
+  now.add(5);
+  log.add({ kind: "message", who: "Codex", text: "ok" });
+  now.add(5);
+  log.add(line(2));
+  const items = log.page().items;
+  assert.deepEqual(items.map((a) => a.kind || "action"), ["action", "message", "message", "action"], "interleaved by time");
+  assert.equal(items[1].to, "all", "no recipient: everyone");
+  // Read back from the owner-only file the same.
+  const again = createActivityLog({ now, where: () => ({ name: "m", file }) });
+  assert.deepEqual(again.page().items, items);
+  if (owner) assert.equal(statSync(file).mode & 0o777, owner);
+  // A message line needs a sender; an ordinary line never gets kind or to.
+  assert.equal(cleanLine({ t: 1, kind: "message", text: "hi" }), null);
+  assert.deepEqual(cleanLine({ t: 1, kind: "other", to: "x", text: "hi" }), { t: 1, text: "hi", who: "", tab: "" });
+});
+
 test("query: before and limit checked", () => {
   const q = (str) => readPageQuery(new URLSearchParams(str));
   assert.deepEqual(q(""), { before: Infinity, limit: PAGE_DEFAULT });

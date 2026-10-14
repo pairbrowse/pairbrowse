@@ -8,6 +8,9 @@
 // no timer), moved by a rename and removed with the session; a clean session's stays in memory.
 // Times are unique and rising within a log (a line in the same millisecond as the last gets the
 // next one), so `before` pages without losing a line on a boundary.
+// A message between participants (pairbrowse_collaboration message, daemon/session.mjs) is a
+// line too: { t, kind: "message", who (its sender), to (a label or "all"), text (up to 500,
+// already redacted, masked again here), tab: "" }, interleaved with the others by time.
 import { readJson, writeJsonAtomic } from "../util.mjs";
 
 export const LOG_MAX = 2000;
@@ -17,14 +20,17 @@ export const PAGE_DEFAULT = 50;
 const FILE_VERSION = 1;
 const TAB_ID = /^[0-9a-f]{8}$/;
 
+const MESSAGE_MAX = 500; // a message's text (session.mjs TEXT_MAX); other lines keep 200
 const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : "");
 // A line as it may be kept (from the stream's entry or the file), or null.
 export function cleanLine(a) {
   if (!a || typeof a !== "object" || !Number.isSafeInteger(a.t) || a.t <= 0) return null;
-  const text = str(a.text, 200);
-  if (!text) return null;
+  const message = a.kind === "message";
+  const text = str(a.text, message ? MESSAGE_MAX : 200);
+  if (!text || (message && !str(a.who, 60))) return null;
   return {
     t: a.t, text, who: str(a.who, 60), tab: str(a.tab, 80),
+    ...(message ? { kind: "message", to: str(a.to, 60) || "all" } : {}),
     ...(typeof a.tabId === "string" && TAB_ID.test(a.tabId) ? { tabId: a.tabId } : {}),
     ...(str(a.from, 80) ? { from: str(a.from, 80) } : {}),
   };

@@ -48,8 +48,11 @@ export function readMessage(m) {
 // locals(): this helper's agents and people, as entries. secrets(): { NAME: value } (redaction).
 // labelOf(participant). onChange(): something to show or send changed.
 // onRemoteTask(source, who, task): an agent on the other side took up a new task (for the bar).
+// onMessage(msg): each message sent here or received (the session's activity log); returns the
+// line as kept ({ t }) or nothing: the side panel's copy then has the log's time, so the Activity
+// page shows the two as one.
 const REMOTE_MS = 30_000; // the other side says who is there every 10 s; gone after this long
-export function createSession({ locals = () => [], secrets = () => ({}), labelOf = () => "", onChange = () => {}, onRemoteTask = () => {}, now = () => Date.now() }) {
+export function createSession({ locals = () => [], secrets = () => ({}), labelOf = () => "", onChange = () => {}, onRemoteTask = () => {}, onMessage = () => null, now = () => Date.now() }) {
   const status = new Map(); // participant -> { text, kind, t }
   const remote = new Map(); // source ("host", or a joiner's key) -> { where, entries }
   const inbox = new Map(); // participant -> [message]
@@ -59,7 +62,9 @@ export function createSession({ locals = () => [], secrets = () => ({}), labelOf
   const changed = () => { try { onChange(); } catch {} };
 
   function deliver(msg) {
-    recent.push(msg);
+    let kept = null;
+    try { kept = onMessage(msg); } catch {}
+    recent.push(Number.isSafeInteger(kept?.t) && kept.t !== msg.t ? { ...msg, t: kept.t } : msg);
     if (recent.length > RECENT_MAX) recent.shift();
     changed();
   }

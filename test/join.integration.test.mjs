@@ -461,6 +461,13 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     assert.doesNotMatch(got, /4242 4242/, "redacted");
     assert.match(text(await tool(joiner.call, "pairbrowse_collaboration", { action: "message", to: "all", text: "I'll take the second tab" })), /Sent/);
     await until("and back to Bob's", async () => /I'll take the second tab/.test(text(await tool(host.call, "pairbrowse_collaboration", { action: "messages" }))), 15_000);
+    // Both messages are lines in the host's Activity history (owner only), redacted, by time.
+    const hostLog = (await (await fetch(`${hostView}activity.json?limit=200`)).json()).items.filter((a) => a.kind === "message");
+    const sentLine = hostLog.find((a) => /Approve Dave/.test(a.text)), backLine = hostLog.find((a) => /second tab/.test(a.text));
+    assert.ok(sentLine && backLine, "both messages in the host's activity log");
+    assert.equal(sentLine.to, "all");
+    assert.doesNotMatch(sentLine.text, /4242 4242/, "redacted in the log too");
+    assert.ok(backLine.t > sentLine.t && backLine.who, "the reply later, with its sender");
     assert.match(text(await tool(host.call, "pairbrowse_invite", { action: "list" })), /Dave[^\n]*waiting/, "a message approves nothing");
     assert.equal(submitted, 0, "and clicks nothing");
 

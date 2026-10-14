@@ -62,3 +62,21 @@ test("who is doing what: the other side's agents in one line, only when it chang
   assert.equal(s.entries("host").length, 1, "nobody gets their own side back");
   assert.ok(s.note("a").length === 0 && readEntries(Array(50).fill({ who: "x" })).length <= 12);
 });
+
+test("each message, sent or received, goes to the activity log once; the panel's copy has the log's time", () => {
+  const logged = [];
+  const s = make({ onMessage: (m) => { logged.push(m); return { t: 1000 + logged.length }; } });
+  s.join("a");
+  s.join("b");
+  s.compose("a", "Bob", "I'll take the checkout tab");
+  s.receive(readMessage({ from: "Carol · Claude Code", to: "all", text: "<img src=x onerror=alert(1)>", t: 9e15 }));
+  assert.deepEqual(logged.map((m) => [m.from, m.to, m.text]), [["Alice · Claude Code", "Bob", "I'll take the checkout tab"], ["Carol · Claude Code", "all", "<img src=x onerror=alert(1)>"]]);
+  assert.deepEqual(s.recent().map((m) => m.t), [1001, 1002]);
+  // A log that throws or keeps nothing changes nothing else.
+  const t = make({ onMessage: () => { throw new Error("disk"); } });
+  t.join("a");
+  t.join("b");
+  assert.ok(t.compose("a", "all", "hi").msg);
+  assert.equal(t.recent().length, 1);
+  assert.equal(t.drain("b").length, 1);
+});

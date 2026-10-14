@@ -356,6 +356,10 @@ function localEntries() {
   }
   return out;
 }
+// The session's activity log (GET activity.json, owner only): kept as long as the helper runs,
+// so a browser restart keeps it; a kept session's in its folder, a clean session's in memory.
+// The bar's lines reach it through the live view; the session's messages from here (below).
+const activityLog = createActivityLog({ where: () => { const name = context.sessionName(); return { name, file: isTemporary(name) ? null : activityFile(name) }; }, mask: output.mask, log });
 const session = createSession({
   locals: localEntries,
   secrets: () => secrets.get().values || {},
@@ -363,6 +367,9 @@ const session = createSession({
   onChange: () => sessionChanged(),
   // What an agent on the other side took up shows in the bottom bar and activity here too.
   onRemoteTask: (source, who, task) => hud.addActivity(`Now: ${task}`, who, null, source === "host" ? "joined" : source),
+  // Each message, sent here or received, is a line in the Activity page's history too, at this
+  // helper's time (another side's clock never moves the log's rising times).
+  onMessage: (msg) => activityLog.add({ kind: "message", who: msg.from, to: msg.to, text: msg.text }),
 });
 let boardTimer = null;
 function sessionChanged() {
@@ -459,9 +466,8 @@ const sharing = createSharing({
       },
     },
     mask: output.mask, layoutDefaults: () => config.layout,
-    // The session's activity log (GET activity.json, owner only): kept as long as the helper runs,
-    // so a browser restart keeps it; a kept session's in its folder, a clean session's in memory.
-    activityLog: createActivityLog({ where: () => { const name = context.sessionName(); return { name, file: isTemporary(name) ? null : activityFile(name) }; }, mask: output.mask, log }),
+    // The session's activity log (GET activity.json, owner only; above).
+    activityLog,
     // The browser's Settings page: which browser runs, the timeline, the docks' default layout
     // (liveview/settings.mjs; written into config.json and the running config).
     settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), browserInUse: () => context.browserInUse() }),

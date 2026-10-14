@@ -348,9 +348,9 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   assert.deepEqual(order, ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "add-agent", "settings", "dock-collapse"]);
   await ctx.page.focus("#nav-sessions");
   await ctx.page.keyboard.press("Enter");
-  // In the browser without its bubbles the Sessions row opens the picker as a tab (a page of its
-  // own reaches the helper; a frame here gets no bindings): no frame, no picker route.
-  await until("the picker tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create" && c.args[0] === "pairbrowse://picker"));
+  // In the browser the Sessions row opens the sessions page as a tab (a page of its own reaches
+  // the helper; a frame here gets no bindings): no frame, no picker route.
+  await until("the sessions tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create" && c.args[0] === "pairbrowse://sessions"));
   assert.deepEqual(await inPage(() => ({ hidden: document.getElementById("switcher").hidden, src: document.getElementById("picker").getAttribute("src"), focus: document.activeElement?.id })),
     { hidden: true, src: null, focus: "nav-sessions" });
   assert.equal(pickerFrames(ctx.page), 0);
@@ -692,78 +692,44 @@ scenario("left: a helper that never answers, then does", { viewport: { width: 42
     { hash: "", title: "Which session?", sub: "Switch to another session, or start one.", rows: 3 });
   await clean(ctx);
 });
-
-// ---- in the browser: the Sessions row opens the browser's switcher bubble (530 E1-E2) ----
-// The same bubble as the strip's logo (the picker page itself, which reaches the helper), anchored to
-// the row (its rect in this page's pixels), beside it; never a frame here, which gets no bindings.
-const opens = async (ctx) => (await calls(ctx, "bubbles", "open")).map((c) => c.args);
-const closes = async (ctx) => (await calls(ctx, "bubbles", "close")).map((c) => c.args);
-scenario("left: the Sessions row opens the browser's switcher bubble", { viewport: OPEN, shim: { bubbles: true } }, async (ctx) => {
+// ---- in the browser: the Sessions row opens the sessions page in the contents (2026-10-14) ----
+// A page rather than a popup (the user's choice), as History and Activity: found or opened in this
+// dock's window, current while shown, from the open dock and the rail alike; no bubble, no frame.
+scenario("left: the Sessions row opens the sessions page", { viewport: OPEN, shim: { bubbles: true } }, async (ctx) => {
   const { page, until, inPage } = ctx;
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
-  assert.deepEqual(await inPage(() => [document.getElementById("nav-sessions").getAttribute("aria-haspopup"), document.getElementById("nav-sessions").hasAttribute("aria-controls")]), ["dialog", false]);
-  const row = await inPage(() => { const r = document.getElementById("nav-sessions").getBoundingClientRect(); return { x: Math.floor(r.left), y: Math.floor(r.top), width: Math.ceil(r.right) - Math.floor(r.left), height: Math.ceil(r.bottom) - Math.floor(r.top) }; });
+  assert.deepEqual(await inPage(() => ["aria-haspopup", "aria-controls", "aria-expanded"].map((a) => document.getElementById("nav-sessions").hasAttribute(a))), [false, false, false]);
   await page.click("#nav-sessions");
-  await until("pressed", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "true");
-  assert.deepEqual(await opens(ctx), [[0, row, ""]], "kSwitcher at the row's rect");
+  await until("a sessions tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://sessions", true, 1]], "in this dock's window");
+  assert.deepEqual(await calls(ctx, "bubbles", "open"), [], "no popup");
   assert.deepEqual(await inPage(() => [document.getElementById("switcher").hidden, document.getElementById("picker").getAttribute("src")]), [true, null], "no frame");
   assert.equal(pickerFrames(page), 0);
-  // A second click closes it; the row shows it at once.
+  await until("Sessions current", () => document.getElementById("nav-sessions").getAttribute("aria-current") === "page" && !document.getElementById("nav-browser").hasAttribute("aria-current"));
+  const sessionsId = await inPage(() => window.__pairbrowse.fixture.tabs.find((t) => t.url === "pairbrowse://sessions").id);
+  // Browser brings the last web tab back; Sessions again brings the open page forward, no second one.
+  await page.click("#nav-browser");
+  await until("Browser current", () => document.getElementById("nav-browser").getAttribute("aria-current") === "page" && !document.getElementById("nav-sessions").hasAttribute("aria-current"));
   await page.click("#nav-sessions");
-  await until("released", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "false");
-  assert.deepEqual(await closes(ctx), [[0]]);
-  // Escape inside the bubble (the browser says so): the focus comes back to the row.
-  await page.click("#nav-sessions");
-  await until("pressed again", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "true");
-  await inPage(() => { document.activeElement.blur(); window.__pairbrowse.bubbles.closed(0, true); });
-  await until("focus back on the row", () => document.activeElement?.id === "nav-sessions" && document.getElementById("nav-sessions").getAttribute("aria-expanded") === "false");
-  // A click outside that lands on the row is the close, not a new open.
-  await page.click("#nav-sessions");
-  await until("open", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "true");
-  const n = (await opens(ctx)).length;
-  await inPage(() => window.__pairbrowse.bubbles.closed(0, false));
-  await page.click("#nav-sessions");
-  await page.waitForTimeout(100);
-  assert.equal((await opens(ctx)).length, n, "no reopen on the closing click");
-  await page.waitForTimeout(400);
-  // Escape on the row closes it too.
-  await page.click("#nav-sessions");
-  await until("open once more", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "true");
-  await page.focus("#nav-sessions");
-  await page.keyboard.press("Escape");
-  await until("closed by Escape on the row", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "false");
-  assert.equal((await closes(ctx)).length, 2);
-  // The dock hidden: the bubble goes with it.
-  await page.click("#nav-sessions");
-  await until("open before hiding", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "true");
-  await ctx.shim.layout({ left: 0 });
-  await until("closed with the dock", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "false");
-  assert.equal((await closes(ctx)).length, 3);
-  assert.deepEqual(await calls(ctx, "tabs", "create"), [], "no picker tab while the bubble opens");
-  assert.equal(pickerFrames(page), 0, "never a frame");
+  await until("Sessions again", () => document.getElementById("nav-sessions").getAttribute("aria-current") === "page");
+  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [sessionsId]);
+  assert.equal((await calls(ctx, "tabs", "create")).length, 1, "no second sessions tab");
+  assert.equal((await calls(ctx, "layout", "set")).length, 0, "the dock's state stays");
   await clean(ctx);
 });
 
-scenario("left: in the rail the Sessions row's bubble opens beside the icon", { viewport: { width: 44, height: 936 }, shim: { bubbles: true, layout: { left: 1 } } }, async (ctx) => {
-  const { page, until } = ctx;
+scenario("left: Sessions from the rail opens the page, the dock stays a rail", { viewport: { width: 44, height: 936 }, shim: { layout: { left: 1 }, bubbles: true } }, async (ctx) => {
+  const { until, inPage } = ctx;
   await until("the rail", () => document.body.dataset.dock === "rail");
-  await page.click("#nav-sessions");
-  await until("pressed", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "true");
-  const [[kind, anchor]] = await opens(ctx);
-  assert.equal(kind, 0);
-  assert.ok(anchor.x >= 0 && anchor.x + anchor.width <= 44, `inside the rail: ${JSON.stringify(anchor)}`);
-  assert.deepEqual(await calls(ctx, "layout", "set"), [], "the dock stays a rail");
+  await ctx.page.click("#nav-sessions");
+  await until("a sessions tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://sessions", true, 1]]);
+  assert.deepEqual(await calls(ctx, "bubbles", "open"), [], "no popup");
+  assert.equal((await calls(ctx, "layout", "set")).length, 0, "no dock change");
+  assert.equal(await inPage(() => document.body.dataset.dock), "rail");
   await clean(ctx);
 });
 
-scenario("left: a refused bubble opens the picker as a tab", { viewport: OPEN, shim: { bubbles: true, replies: { open: false } } }, async (ctx) => {
-  const { page, until, inPage } = ctx;
-  await page.click("#nav-sessions");
-  await until("the picker tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create" && c.args[0] === "pairbrowse://picker"));
-  assert.equal(await inPage(() => document.getElementById("nav-sessions").getAttribute("aria-expanded")), "false");
-  assert.equal(pickerFrames(page), 0);
-  await clean(ctx);
-});
 
 // ---- the Sessions row names the open session (2026-10-14), live from the helper's session event ----
 const sessionRow = () => {
@@ -798,41 +764,6 @@ scenario("left: the Sessions row shows the open session", { viewport: OPEN, fixt
   await until("the rail's tooltip follows", () => document.getElementById("nav-sessions").title === "Sessions · work");
   const live = await ctx.harness.live();
   assert.equal(live.intervals, 0, "no polling");
-  await clean(ctx);
-});
-
-// "All sessions…" in the switcher bubble asks the dock whose Sessions row opened it (the bubble has
-// no Tabs): that dock finds or opens pairbrowse://sessions in its window and says so; with its row's
-// bubble closed it stays quiet.
-const askAll = (inPage) => inPage(() => new Promise((resolve) => {
-  const ch = new BroadcastChannel("pairbrowse-sessions");
-  const heard = [];
-  ch.onmessage = (e) => heard.push(e.data);
-  ch.postMessage({ open: "sessions" });
-  setTimeout(() => { ch.close(); resolve(heard); }, 300);
-}));
-scenario("left: All sessions opens the sessions page from the bubble", { viewport: OPEN, shim: { bubbles: true } }, async (ctx) => {
-  const { page, until, inPage } = ctx;
-  await until("the tabs", () => document.getElementById("tab-count").textContent === "3");
-  assert.deepEqual(await askAll(inPage), [], "no bubble of this row's open: nothing answers");
-  assert.deepEqual(await calls(ctx, "tabs", "create"), []);
-  const lockHeld = () => navigator.locks.query().then((q) => q.held.filter((l) => l.name === "pairbrowse-switcher-opener").length);
-  assert.equal(await inPage(lockHeld), 0);
-  await page.click("#nav-sessions");
-  await until("pressed", () => document.getElementById("nav-sessions").getAttribute("aria-expanded") === "true");
-  await until("the opener lock held while the bubble shows", () => navigator.locks.query().then((q) => q.held.some((l) => l.name === "pairbrowse-switcher-opener")));
-  assert.deepEqual(await askAll(inPage), [{ opened: "sessions" }]);
-  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://sessions", true, 1]], "in this dock's window");
-  // Asked again while the page is open: the open tab comes forward, no second one.
-  const id = await inPage(() => window.__pairbrowse.fixture.tabs.find((t) => t.url === "pairbrowse://sessions")?.id);
-  assert.ok(Number.isInteger(id), "the shim made the tab");
-  assert.deepEqual(await askAll(inPage), [{ opened: "sessions" }]);
-  assert.equal((await calls(ctx, "tabs", "create")).length, 1);
-  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [id]);
-  // The bubble closed: the lock goes with it, and the dock answers no more.
-  await inPage(() => window.__pairbrowse.bubbles.closed(0, false));
-  await until("released", () => navigator.locks.query().then((q) => !q.held.some((l) => l.name === "pairbrowse-switcher-opener")));
-  assert.deepEqual(await askAll(inPage), []);
   await clean(ctx);
 });
 

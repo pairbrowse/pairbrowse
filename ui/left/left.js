@@ -5,9 +5,10 @@
 // the dock's state: it sets it only from Tools (the right dock opens, on its Tools tab through
 // the helper's POST layout tab) and from the collapse and expand buttons. Tools is the agent panel's (its tab): no row here opens the other dock (DESIGN.md Part
 // I). The Sessions row is the one door to sessions (2026-10-14): it names the open session (the
-// helper's session event) and opens the switcher; the switcher's "All sessions…" asks this dock
-// (pairbrowse-sessions channel) to open the sessions page in the contents. History and Activity
-// open their pages in the contents (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
+// helper's session event); in the browser it opens the sessions page in the contents
+// (pairbrowse://sessions, a page rather than a popup, the user's choice), served without the
+// browser's API the framed switcher. History and Activity open their pages in the contents
+// (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
 import { $, el, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
 
@@ -41,8 +42,10 @@ let noHelperKnown = false; // the browser (or the host) said there is no helper 
 const isHistory = (url) => /^chrome:\/\/history(\/|$)/.test(url || "");
 // The activity page (ui/activity) as the browser shows its address.
 const isActivityPage = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)activity(\/|#|\?|$)/.test(url || "");
+// The sessions page (ui/sessions) as the browser shows its address.
+const isSessionsPage = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)sessions(\/|#|\?|$)/.test(url || "");
 // A tab that is not a web page the Browser row brings back.
-const isOwnPage = (url) => isHistory(url) || isActivityPage(url);
+const isOwnPage = (url) => isHistory(url) || isActivityPage(url) || isSessionsPage(url);
 const isSettings = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)settings(\/|$)/.test(url || "");
 const dock = () => document.body.dataset.dock;
 const icon = (id) => {
@@ -101,7 +104,7 @@ function setDock(name) {
   // Open and rail swap the dock's content: it comes in with the sheet's motion, not a jump (the
   // first state, on load, is only placed).
   if (was && was !== state && state !== "hidden") for (const n of [$("main"), document.querySelector(".foot")]) enter(n, { axis: "fade" });
-  if (hidden) { switcher.close(false); closeRowBubble(); }
+  if (hidden) switcher.close(false);
   // Nothing redraws rows nobody can see: the drive timer stops with the dock hidden.
   if (hidden) { clearTimeout(driveTimer); driveTimer = 0; } else armDrive();
   if (focusAfter && state !== was) {
@@ -124,9 +127,11 @@ function drawNav() {
   const active = [...tabs.values()].find((t) => t.active);
   const history = !!active && isHistory(active.url);
   const log = !!active && isActivityPage(active.url);
+  const sessions = !!pb && !!active && isSessionsPage(active.url);
   setCurrent($("nav-history"), history);
   setCurrent($("nav-activity"), log);
-  setCurrent($("nav-browser"), !history && !log);
+  setCurrent($("nav-sessions"), sessions);
+  setCurrent($("nav-browser"), !history && !log && !sessions);
 }
 
 // ---- agents: the board's agents, then every agent that owns a tab and is not on it, then you ----
@@ -244,15 +249,10 @@ function drawGuests() {
 }
 
 // ---- actions ----
-// The session switcher. In the browser (window.pairbrowse) the Sessions row, its one door, opens
-// the browser's own switcher bubble beside the row, its arrow at the row (530's Bubbles: the picker
-// page itself, which reaches the helper; a frame here gets no bindings and could not): its state shows on the row (pressed), a second click or Escape on the row closes it,
-// and Escape inside gives the focus back to the row. A build without Bubbles, or one that refuses,
-// opens the picker as a tab. Served without the browser's API (a plain browser, the pages'
+// The session switcher. In the browser (window.pairbrowse) the Sessions row opens the sessions
+// page in the contents (below). Served without the browser's API (a plain browser, the pages'
 // harness) the picker opens in a same-origin frame under the row, where it reads the extension's
 // storage for the helper's address.
-const SWITCHER_KIND = Number.isInteger(pb?.BubbleKind?.kSwitcher) ? pb.BubbleKind.kSwitcher : 0;
-const hasBubbles = () => typeof pb?.bubbles?.open === "function";
 // With no helper to ask (none at all, or one whose stream never opened) the switcher opens on the
 // picker's resting state, not its question.
 const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("nav-sessions")], noHelper: () => (base ? !everLive : noHelperKnown) });
@@ -266,97 +266,17 @@ function caretAt() {
   pop.style.setProperty("--caret-x", `${Math.round(Math.max(16, Math.min(x, window.innerWidth - 32)))}px`);
   pop.style.setProperty("--pop-top", `${Math.round(row.bottom + 8)}px`);
 }
-// ---- the browser's switcher bubble (530 E1-E2, from the Sessions row) ----
-let rowBubble = false; // the bubble this dock opened is showing
-// A click outside closes the bubble before that click lands: when it lands on the row itself it is
-// the close, not a new open. When the browser said so (not by Escape), and how recently: a
-// timestamp, no timer.
-const REOPEN_MS = 400;
-let rowClosedAt = -Infinity;
-let rowSelfClosed = false;
-let rowObserved = false;
-function rowState(open) {
-  rowBubble = open;
-  $("nav-sessions").setAttribute("aria-expanded", String(open));
-  holdOpener(open);
-}
-// While this dock's bubble shows it holds the pairbrowse-switcher-opener lock: the bubble's "All
-// sessions…" checks for it before asking over the channel, so it can say at once when no dock
-// would answer (no timer of its own). Released when the bubble closes.
-const OPENER_LOCK = "pairbrowse-switcher-opener";
-let wantOpener = false;
-let releaseOpener = null;
-function holdOpener(on) {
-  wantOpener = on;
-  if (!on) { releaseOpener?.(); releaseOpener = null; return; }
-  if (releaseOpener || typeof navigator.locks?.request !== "function") return;
-  navigator.locks.request(OPENER_LOCK, { ifAvailable: true }, (lock) => (lock && wantOpener ? new Promise((r) => { releaseOpener = r; }) : null)).catch(() => {});
-}
-function observeRowBubble() {
-  if (rowObserved) return;
-  rowObserved = true;
-  pb.bubbles.addObserver({
-    onClosed: (kind, byEscape) => {
-      if (kind !== SWITCHER_KIND || !rowBubble) return;
-      rowState(false);
-      if (!byEscape && !rowSelfClosed) rowClosedAt = performance.now();
-      rowSelfClosed = false;
-      // Escape, a pick or the picker's own close: the focus comes back to the row.
-      if (byEscape) $("nav-sessions").focus();
-    },
-  });
-}
-// The row's box in this page's CSS pixels, rounded outward and kept inside the page (the browser
-// refuses an anchor outside its slot).
-function anchorRect(node) {
-  const r = node.getBoundingClientRect();
-  const x = Math.max(0, Math.floor(r.left)), y = Math.max(0, Math.floor(r.top));
-  const right = Math.min(window.innerWidth, Math.ceil(r.right)), bottom = Math.min(window.innerHeight, Math.ceil(r.bottom));
-  return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
-}
-const isPicker = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)picker(\/|#|$)/.test(url || "");
-const openPickerTab = () => findOrOpen(isPicker, "pairbrowse://picker");
-// ---- "All sessions…" (the switcher's last item): the sessions page in the contents ----
-// The bubble gets Session and Bubbles only, so it cannot open a tab: it asks over the
-// pairbrowse-sessions channel (this origin only) with { open: "sessions" }, and the dock whose row
-// opened it (the one door: the strip's logo is a brand mark; it holds the opener lock meanwhile)
-// finds or opens pairbrowse://sessions in its window and answers { opened: "sessions" }; the bubble
-// then closes. Any other dock stays quiet.
-const isSessionsPage = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)sessions(\/|#|\?|$)/.test(url || "");
-let sessionsChannel = null;
-try { sessionsChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("pairbrowse-sessions") : null; } catch {}
-if (sessionsChannel) sessionsChannel.onmessage = (e) => {
-  if (e.data?.open !== "sessions" || !pb || !rowBubble) return;
-  findOrOpen(isSessionsPage, "pairbrowse://sessions");
-  sessionsChannel.postMessage({ opened: "sessions" });
-};
-function closeRowBubble() {
-  if (!rowBubble) return;
-  rowSelfClosed = true;
-  rowState(false);
-  pb.bubbles.close(SWITCHER_KIND).catch(() => {});
-}
-async function toggleRowSwitcher() {
-  if (rowBubble) { closeRowBubble(); return; }
-  if (performance.now() - rowClosedAt < REOPEN_MS) return;
-  if (!hasBubbles()) { openPickerTab(); return; }
-  observeRowBubble();
-  let shown = false;
-  try { ({ shown } = await pb.bubbles.open(SWITCHER_KIND, anchorRect($("nav-sessions")), "")); } catch {}
-  if (shown) rowState(true);
-  else openPickerTab();
-}
 if (pb) {
-  // The bubble is a dialog of the window: the row says so, and controls no element of this page.
-  $("nav-sessions").setAttribute("aria-haspopup", "dialog");
+  // A page in the contents, as History and Activity: the row controls no element of this page.
   $("nav-sessions").removeAttribute("aria-controls");
+  $("nav-sessions").removeAttribute("aria-expanded");
 }
 $("nav-sessions").addEventListener("click", (e) => {
   if (pb) {
-    // The browser's bubble (or the picker tab), from the open dock and the rail alike: never the
-    // frame, which gets no bindings in the browser.
+    // The sessions page (found or opened in this window), from the open dock and the rail alike;
+    // never the frame, which gets no bindings in the browser. The dock's state stays.
     e.stopImmediatePropagation();
-    toggleRowSwitcher();
+    findOrOpen(isSessionsPage, "pairbrowse://sessions");
     return;
   }
   if (dock() !== "rail") { if (!switcher.isOpen()) caretAt(); return; }
@@ -364,11 +284,6 @@ $("nav-sessions").addEventListener("click", (e) => {
   // switcher once the dock is open (Part H).
   e.stopImmediatePropagation();
   if (askDock({ pb, layout, base, side: "left", state: "open" })) switchAsked = true;
-}, true);
-$("nav-sessions").addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !rowBubble) return;
-  e.preventDefault();
-  closeRowBubble();
 }, true);
 // Find a tab whose address matches, else open one in the active tab's window.
 function findOrOpen(match, url) {

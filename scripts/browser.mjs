@@ -208,7 +208,10 @@ export function profilePreferences(prefs = {}, panelId = panelExtensionId(), old
   for (const k of ["notifications", "geolocation"]) if (defaults[k] === 2) delete defaults[k];
   const contentSettings = prefs.profile?.content_settings || {};
   prefs.profile = { ...(prefs.profile || {}), default_content_setting_values: defaults,
-    content_settings: { ...contentSettings, enable_quiet_permission_ui: { ...(contentSettings.enable_quiet_permission_ui || {}), notifications: true, geolocation: true } } };
+    content_settings: { ...contentSettings, enable_quiet_permission_ui: { ...(contentSettings.enable_quiet_permission_ui || {}), notifications: true, geolocation: true },
+      // Quiet prompts and Chrome's predicted prompts (CPSS, on by default) are one choice: both on
+      // at once is a state Chromium's own settings page refuses (it crashed opening Settings).
+      enable_cpss: { ...(contentSettings.enable_cpss || {}), notifications: false, geolocation: false } } };
   // No Energy Saver (its popup and leaf icon); PairBrowse needs full rendering for the live view.
   prefs.performance_tuning = { ...(prefs.performance_tuning || {}), battery_saver_mode: { ...(prefs.performance_tuning?.battery_saver_mode || {}), state: 0 } };
   // No footer under the PairBrowse new tab page (the extension link and "Customize" button).

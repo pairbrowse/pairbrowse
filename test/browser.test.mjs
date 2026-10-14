@@ -251,6 +251,8 @@ test("site notification and location requests are quiet, not denied", async () =
   const out = profilePreferences({ profile: { default_content_setting_values: { notifications: 2, geolocation: 2, cookies: 1 } } });
   assert.deepEqual(out.profile.default_content_setting_values, { cookies: 1 }, "the old block is removed, other settings stay");
   assert.deepEqual(out.profile.content_settings.enable_quiet_permission_ui, { notifications: true, geolocation: true });
+  // Never quiet and predicted prompts at once (Chromium's Settings page crashes on it).
+  assert.deepEqual(out.profile.content_settings.enable_cpss, { notifications: false, geolocation: false });
 });
 
 test("a profile's default name says PairBrowse; a chosen name stays", async () => {

@@ -8,7 +8,7 @@
 // one of those. Sizes: 525's window (DESIGN.md B1, the window preview's geometry): the strip's tab
 // row 1536 x 53; the docks 205 and 346 wide by 971 (1024 - 53), both rails 44 by 971; the contents
 // card 969 x 796; the timeline 985 x 125; the approve card 360; the nav fragments 3 x 28 + 2 x 4 +
-// 16 = 108; the switcher, Share and the menu their B widths. right-extension is the right dock as
+// 16 = 108; Share its B width. right-extension is the right dock as
 // plain Chromium's side panel shows it (no window.pairbrowse: the header, Share in the session
 // card, the Live pill, the You row, the profile sections in Tools); the *-empty shots have a
 // helper connected and nothing in the scene (no people, steps, cards or approvals; one new tab).
@@ -31,9 +31,7 @@ export const SHOTS = [
   { name: "strip", page: "strip", width: 1536, height: 53 },
   { name: "strip-nav-left", page: "strip", hash: "nav-left", width: 108, height: 44 },
   { name: "strip-nav-right", page: "strip", hash: "nav-right", width: 108, height: 44 },
-  { name: "strip-switcher", page: "strip", hash: "switcher", width: 360, height: 560 },
   { name: "strip-share", page: "strip", hash: "share", width: 320, height: 420 },
-  { name: "strip-menu", page: "strip", hash: "menu", width: 280, height: 320 },
   { name: "strip-empty", page: "strip", width: 1536, height: 53, fixtures: EMPTY },
   { name: "left", page: "left", width: 205, height: 971 },
   { name: "left-rail", page: "left", width: 44, height: 971, shim: { layout: { left: 1 } } },
@@ -48,6 +46,7 @@ export const SHOTS = [
   { name: "approve", page: "approve", width: 360, height: 300 },
   { name: "settings", page: "settings", width: 969, height: 796 },
   { name: "sessions", page: "sessions", width: 969, height: 796 },
+  { name: "activity", page: "activity", width: 969, height: 796 },
   { name: "timeline", page: "timeline", width: 985, height: 125 },
 ];
 const BAD = new Set(["error", "pageerror", "rejection", "csp"]);

@@ -219,7 +219,7 @@ test("every visible page has a review fixture and a shot", () => {
   assert.deepEqual(JSON.parse(read(join(look, "settings.json"))), JSON.parse(read(join(root, "test", "fixtures", "ui-settings.json"))));
   for (const shot of SHOTS) {
     assert.ok(Number.isInteger(shot.width) && shot.width > 0 && Number.isInteger(shot.height) && shot.height > 0, `${shot.name}: a size`);
-    if (shot.hash !== undefined) assert.ok(["nav-left", "nav-right", "switcher", "share", "menu"].includes(shot.hash), `${shot.name}: one of the strip's modes`);
+    if (shot.hash !== undefined) assert.ok(["nav-left", "nav-right", "share"].includes(shot.hash), `${shot.name}: one of the strip's modes`);
   }
 });
 
@@ -310,7 +310,7 @@ test("the shim: window.pairbrowse as the page contract says", async () => {
   assert.deepEqual(plainCopy(await pb.session.helper()), { origin: "http://127.0.0.1:9", key: "k" });
   assert.deepEqual(Object.keys(pb).sort(), ["BubbleKind", "DockState", "NetworkState", "SecurityLevel", "agent", "approval", "files", "layout", "omnibox", "session", "tabs", "windows"]);
   assert.equal(pb.DockState.kOpen, 2);
-  assert.deepEqual({ ...pb.BubbleKind }, { kSwitcher: 0, kShare: 1, kPicture: 2 });
+  assert.deepEqual({ ...pb.BubbleKind }, { kSwitcher: 0, kShare: 1, kPicture: 2, kAppMenu: 3 });
   // The approval bubble's host (530): setPending(count, targetId) is recorded, nothing more.
   assert.equal(await pb.approval.setPending(2, "T11"), undefined);
   assert.deepEqual(plainCopy(controls.calls.at(-1)), { iface: "approval", method: "setPending", args: [2, "T11"] });

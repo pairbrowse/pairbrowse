@@ -3,10 +3,11 @@
 // plan 560, D5). Each is a 1x render of a shipped ui/ page, over the pages' harness (the fake
 // helper and the ui server from test/helpers) with the window preview's scene
 // (scripts/dev/preview/fixtures.json), so a reference can't drift from the page it stands for:
-//   menu         the strip's session switcher popover (ui/strip, row mode, opened by the logo) over
-//                the framed session picker, its first session row hovered (the selected row);
-//                the popover plus PAD px of the strip around it (its 1 px ring, 10 px corners),
-//                the row's other parts hidden so the margin is the strip's --bg alone
+//   menu         the left dock's session switcher popover (ui/left served without the browser's API,
+//                opened by its Sessions row) over the framed session picker, its first session
+//                row hovered (the selected row); the popover plus PAD px of the dock around it (its
+//                1 px ring, 10 px corners, the caret at the row's icon above it), the dock's other
+//                parts hidden so the margin is the dock's own background alone
 //   bubble       the approval card in bubble mode (ui/approve on pairbrowse.top-chrome, be9327f),
 //                the scene's click approval; the whole card, as the native bubble shows it
 //   field        the share card's field (ui/strip#share, "Your first name" after the helper asked
@@ -51,7 +52,7 @@ export const REFERENCES = {
   bubble: { w: 364, h: null },
   field: { w: 296 + 2 * PAD, h: 32 + 2 * PAD },
   "field-focus": { w: 296 + 2 * PAD, h: 32 + 2 * PAD },
-  buttons: { w: 84 + 12 + 86 + 2 * PAD, h: 32 + 2 * PAD },
+  buttons: { w: 86 + 12 + 88 + 2 * PAD, h: 32 + 2 * PAD }, // Allow 86, Deny 88 (measured to the mockup, 3a0f824)
 };
 // The native harness's surfaces (560's table) and the page parts they are put beside (D5): menus
 // with the switcher popover, bubbles and dialogs with the approval card, text fields with the
@@ -63,7 +64,7 @@ export const SURFACES = {
   "dialog-leave": ["bubble", "buttons"], "page-info": ["bubble"], status: [], infobar: [], extensions: ["bubble"], fullscreen: [],
   settings: [], history: [], "downloads-page": [], "bookmarks-page": [],
 };
-// The session switcher's rows (the picker's own data shape, as the strip tests give it).
+// The session switcher's rows (the picker's own data shape, as the left dock's tests give it).
 const SESSIONS = { picking: false, sessions: [
   { name: "Notion Setup", tabs: 3, sites: ["notion.so", "github.com"], current: true,
     live: [{ who: "Claude", app: "Claude Code", kind: "agent" }],
@@ -155,14 +156,15 @@ async function newPage(browser, viewport, label, log) {
   return page;
 }
 
-// menu: the strip's switcher popover, opened in place (a page taller than the row), the picker
-// framed in it with its first session row hovered.
+// menu: the left dock's switcher popover, opened by its Sessions row (served without the browser's
+// API, a plain browser: in the browser the row opens the browser's own bubble), the picker framed
+// in it with its first session row hovered.
 async function renderMenu(browser, { ui, log }) {
-  const page = await newPage(browser, { width: 1200, height: 700 }, "strip (switcher)", log);
+  const page = await newPage(browser, { width: 420, height: 936 }, "left (switcher)", log);
   try {
-    await page.goto(ui.url("strip"), { waitUntil: "load" });
-    if (!await until(page, () => document.body.dataset.s === "live", 5000)) throw new Error("the strip did not connect");
-    await page.click("#switch");
+    await page.goto(ui.url("left"), { waitUntil: "load" });
+    if (!await until(page, () => document.body.dataset.dock === "open", 5000)) throw new Error("the left dock did not lay out");
+    await page.click("#nav-sessions");
     let frame = null;
     for (let i = 0; i < 100 && !frame; i++) {
       const f = page.frames().find((x) => x.url().includes("/picker/index.html"));
@@ -173,14 +175,14 @@ async function renderMenu(browser, { ui, log }) {
     const row = await frame.locator(".sessions .choice").first().boundingBox();
     if (!row) throw new Error("no session row in the picker");
     await page.mouse.move(row.x + row.width - 40, row.y + row.height / 2);
-    // The clip's margin shows the page under the popover only: the row's other parts (the logo
-    // button, the tabs) are hidden from the render, nothing else is touched.
-    await page.evaluate(() => { for (const el of document.getElementById("row").children) if (el.id !== "switcher") el.style.visibility = "hidden"; });
+    // The clip's margin shows the dock under the popover only: the dock's other parts (its rows and
+    // sections) are hidden from the render, nothing else is touched.
+    await page.evaluate(() => { for (const el of document.body.children) if (el.id !== "switcher" && el.tagName !== "SCRIPT") el.style.visibility = "hidden"; });
     await sleep(400);
     const pop = await rectIn(page, "#switcher");
     const result = await reference(browser, page, "menu", {
       clip: padded(pop), box: pop, radius: await radiusOf(page, "#switcher"),
-      page: "ui/strip: the session switcher popover (#switcher) over the framed ui/picker", state: "open; the first session row hovered; the row's other parts hidden",
+      page: "ui/left: the session switcher popover (#switcher, from the Sessions row) over the framed ui/picker", state: "open; the first session row hovered; the dock's other parts hidden",
       colors: {
         fill: { token: "--sidebar", at: [pop.x + 6, pop.y + pop.h / 2] },
         text: { token: "--ink", at: null },
@@ -188,7 +190,7 @@ async function renderMenu(browser, { ui, log }) {
         selectedRow: { token: "--hover", at: [row.x + 4, row.y + row.height / 2] },
       },
     });
-    await harnessLog(page, "strip (switcher)", log);
+    await harnessLog(page, "left (switcher)", log);
     await harnessLog(frame, "picker (framed)", log);
     return [["menu", result]];
   } finally {
@@ -278,17 +280,20 @@ export async function main(args) {
   mkdirSync(out, { recursive: true });
 
   const log = [];
-  let helper = null, ui = null, proxy = null, browser = null, failed = false;
+  let helper = null, ui = null, plain = null, proxy = null, browser = null, failed = false;
   try {
     helper = await startFakeHelper({ pageOrigin: null, fixtures: { ...fx.helper, sessions: SESSIONS } });
     ui = await startUiServer({ helper, fixture: { ...merge(defaultFixture(), fx.shim), owners: fx.shim.owners } });
+    // The pages without window.pairbrowse (a plain browser): the left dock's framed switcher.
+    plain = await startUiServer({ helper, native: false });
     proxy = await hostProxy(TOP_CHROME);
     proxy.to(ui.origin);
     browser = await patchright(runtime).chromium.launch({ args: proxy.args });
 
     const results = [];
+    helper.setPageOrigin(plain.origin);
+    results.push(...await renderMenu(browser, { ui: plain, log }));
     helper.setPageOrigin(ui.origin);
-    results.push(...await renderMenu(browser, { ui, log }));
     results.push(...await renderField(browser, { ui, log }));
     helper.setPageOrigin(`http://${TOP_CHROME}`);
     results.push(...await renderBubble(browser, { log }));
@@ -321,6 +326,7 @@ export async function main(args) {
     await browser?.close().catch(() => {});
     await proxy?.close();
     await ui?.close();
+    await plain?.close();
     await helper?.close();
   }
   return failed ? 1 : 0;

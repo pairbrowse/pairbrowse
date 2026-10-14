@@ -44,6 +44,10 @@
 // `invites` event, 404 for an id not out, 409 for any other body with an op).
 // POST capture/reply (the capture page's answers and hellos, plans/550 D4): recorded, 204, the
 // body up to the helper lane's 2 MB; the test pushes `capture` events itself.
+// GET activity.json?before=<t>&limit=<n> (the helper lane's daemon/activitylog.mjs): the session's
+// log (the `history` fixture; null: the activity fixture's lines; false: 404, a helper without the
+// route), newest first, lines strictly older than before, limit 1..200 (more is 200; none: 50; a
+// malformed one is 400), { items, more, kept }. Each query string is recorded in `activityQueries`.
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { hostOk, originOk, keyOk, pathParts, readBody, BODY_MAX, SECURITY_HEADERS, plain, listen } from "../../scripts/liveview/http.mjs";
@@ -75,6 +79,9 @@ export const defaultFixtures = () => ({
   session: { name: "", where: "Local" },
   collaboration: { participants: [], owner: null, active: null, guests: [] },
   activity: [],
+  // GET activity.json's log (null: the activity lines; false: 404) and what it says it keeps.
+  history: null,
+  kept: { lines: 2000, days: 7, saved: true },
   join: [],
   tabs: [],
   layout: { left: "open", right: "open", strip: 88 },
@@ -258,6 +265,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
   const posts = [];
   const gets = [];
   const deletes = [];
+  const activityQueries = [];
   const allReplies = { ...replies };
   let origin = pageOrigin;
 
@@ -442,6 +450,19 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
       if (req.method === "GET") {
         gets.push(route);
         if (route === "events") return events(req, res);
+        if (route === "activity.json" && !rest.length) {
+          const q = new URL(req.url, "http://x").searchParams;
+          activityQueries.push(q.toString());
+          if (fx.history === false) return plain(res, 404);
+          const b = q.get("before"), l = q.get("limit");
+          if ((b !== null && !/^\d{1,16}$/.test(b)) || (l !== null && (!/^\d{1,6}$/.test(l) || Number(l) < 1))) return json(res, 400, { error: "before is epoch ms; limit is 1 to 200." });
+          const before = b === null ? Infinity : Number(b), limit = Math.min(l === null ? 50 : Number(l), 200);
+          const log = (Array.isArray(fx.history) ? fx.history : fx.activity).filter((a) => a && Number.isFinite(a.t)).sort((x, y) => x.t - y.t);
+          let end = log.length;
+          while (end > 0 && log[end - 1].t >= before) end--;
+          const start = Math.max(0, end - limit);
+          return json(res, 200, { items: log.slice(start, end).reverse(), more: start > 0, kept: fx.kept });
+        }
         if (Object.prototype.hasOwnProperty.call(GETS, route) && !rest.length) {
           const value = GETS[route]();
           if (value === null && route !== "journal.json") return plain(res, 404);
@@ -495,6 +516,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     set,
     posts,
     gets,
+    activityQueries,
     deletes,
     streams,
     replies: allReplies,

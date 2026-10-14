@@ -1,0 +1,20 @@
+{
+  "helper": {
+    "session": { "name": "work", "where": "Local" },
+    "board": {
+      "people": [
+        { "who": "Claude", "kind": "agent", "color": "#e9763f", "status": "working" },
+        { "who": "Alice · Codex", "kind": "agent", "color": "#4fd1e8", "status": "idle" },
+        { "who": "You", "kind": "person", "status": "idle" }
+      ]
+    },
+    "collaboration": { "participants": [], "owner": { "label": "You" }, "active": null, "guests": [{ "label": "Dana", "role": "watch" }] },
+    "activity": [
+      { "t": 1791820800000, "who": "Claude", "tab": "Docs", "text": "Opened `docs.example`" },
+      { "t": 1791907200000, "who": "You", "tab": "Shop", "text": "Took over" },
+      { "t": 1791907260000, "who": "Alice · Codex", "tab": "", "text": "Typed into **Email**" },
+      { "t": 1791993540000, "who": "Dana", "tab": "Shop", "text": "Joined", "from": "k1" },
+      { "t": 1791993600000, "who": "Claude", "tab": "Shop", "text": "Clicked **Pay**" }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 // The left dock (ui/left, DESIGN.md B3) over the pages' harness: the dock state reflected from the
 // layout, the nav rows and what they open, the tab count, the agents and who it is shared with,
-// the activity list, no Storage row (PairBrowse Pro's), the Share card the strip's Share opens, the
+// the Activity row (its page), no Storage row (PairBrowse Pro's), the Share card the strip's Share opens, the
 // Sessions row (the one door to sessions: the open session's name, the switcher, "All sessions…"),
 // the collapse and expand buttons at the foot (native and over the helper's route) and the keyboard.
 // The common checks are in test/ui.test.mjs.
@@ -206,28 +206,69 @@ scenario("left: agents rows with their state in words", { viewport: OPEN, fixtur
   await clean(ctx);
 });
 
-scenario("left: the Activity list", { viewport: OPEN, fixtures: { board: { people: [{ who: "Claude", kind: "agent", status: "idle" }] } } }, async (ctx) => {
+// Activity opens the session's activity page in the contents (pairbrowse://activity), as History
+// opens chrome://history: found or opened in this window, the row current while it is the active
+// tab; the list itself is the page's (test/ui-activity.test.mjs). The dock still counts an agent's
+// last action for "Working".
+scenario("left: Activity opens the activity page", { viewport: OPEN, fixtures: { board: { people: [{ who: "Claude", kind: "agent", status: "idle" }] } } }, async (ctx) => {
   const { until, inPage } = ctx;
   await until("Idle", () => /^Idle/.test(document.querySelector("#agents li small")?.textContent || ""));
+  assert.deepEqual(await inPage(() => { const r = document.getElementById("nav-activity"); return [r.getAttribute("aria-expanded"), r.getAttribute("aria-controls"), !!document.getElementById("activity-list"), !!document.querySelector(".activity")]; }),
+    [null, null, false, false], "no inline fold");
   await ctx.page.focus("#nav-activity");
   await ctx.page.keyboard.press("Enter");
-  await until("expanded, empty", () => document.getElementById("nav-activity").getAttribute("aria-expanded") === "true" && !document.getElementById("activity-list").hidden);
-  assert.equal(await inPage(() => document.querySelector("#activity-list li.empty")?.textContent), "Nothing yet");
-  const token = (name) => { const s = document.createElement("span"); s.style.color = `var(${name})`; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; };
-  assert.equal(await inPage(() => getComputedStyle(document.querySelector("#activity-list li.empty")).color), await inPage(token, "--muted"), "the placeholder in --muted");
+  await until("an activity tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://activity", true, 1]], "in this dock's window");
+  await until("Activity current", () => document.getElementById("nav-activity").getAttribute("aria-current") === "page" && !document.getElementById("nav-browser").hasAttribute("aria-current") && !document.getElementById("nav-history").hasAttribute("aria-current"));
+  const activityId = await inPage(() => window.__pairbrowse.fixture.tabs.find((t) => t.url === "pairbrowse://activity").id);
+  // Browser brings the last web tab back, not the activity page.
+  await ctx.page.click("#nav-browser");
+  await until("Browser current", () => document.getElementById("nav-browser").getAttribute("aria-current") === "page" && !document.getElementById("nav-activity").hasAttribute("aria-current"));
+  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [11]);
+  // Again: the open page comes forward, no second one.
+  await ctx.page.click("#nav-activity");
+  await until("Activity again", () => document.getElementById("nav-activity").getAttribute("aria-current") === "page");
+  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [activityId]);
+  assert.equal((await calls(ctx, "tabs", "create")).length, 1, "no second activity tab");
+  // The page as the browser may show its address internally counts the same.
+  await ctx.shim.change({ id: activityId, url: "chrome://pairbrowse/activity/" });
+  await ctx.page.waitForTimeout(150);
+  assert.equal(await inPage(() => document.getElementById("nav-activity").getAttribute("aria-current")), "page");
+  // An agent's fresh line still makes it "Working" here, with the one drive timer.
   ctx.helper.push("activity", [{ t: Date.now(), who: "Claude", tab: "Shop", text: "clicked **Pay**" }]);
   await until("working", () => document.querySelector("#agents li")?.dataset.state === "working");
   assert.equal((await ctx.harness.live()).timeouts, 1);
-  const li = await inPage(() => { const l = document.querySelector("#activity-list li"); return { n: document.querySelectorAll("#activity-list li").length, time: l.querySelector("time").textContent, strong: [...l.querySelectorAll("strong")].map((s) => s.textContent) }; });
-  assert.equal(li.n, 1);
-  assert.match(li.time, /\d/);
-  assert.deepEqual(li.strong, ["Claude in Shop: ", "Pay"]);
   await ctx.harness.setHidden(true);
   assert.equal((await ctx.harness.live()).timeouts, 0);
   await ctx.harness.setHidden(false);
   assert.match(await inPage(() => document.querySelector("#agents li small").textContent), /^Working/);
-  await ctx.page.keyboard.press("Enter");
-  await until("folded", () => document.getElementById("activity-list").hidden);
+  assert.equal((await calls(ctx, "layout", "set")).length, 0, "the dock's state stays");
+  await clean(ctx);
+});
+
+scenario("left: Activity from the rail opens the page, the dock stays a rail", { viewport: { width: 44, height: 936 }, shim: { layout: { left: 1 } } }, async (ctx) => {
+  const { until, inPage } = ctx;
+  await until("the rail", () => document.body.dataset.dock === "rail");
+  assert.equal(await inPage(() => document.getElementById("nav-activity").title), "Activity");
+  await ctx.page.click("#nav-activity");
+  await until("an activity tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://activity", true, 1]]);
+  assert.equal((await calls(ctx, "layout", "set")).length, 0, "no dock change");
+  assert.equal(ctx.helper.posts.some((p) => p.route === "layout"), false);
+  assert.equal(await inPage(() => document.body.dataset.dock), "rail");
+  await clean(ctx);
+});
+
+// Served without the browser's API: the activity page's file in a new tab.
+scenario("left: Activity served without the browser's API", { viewport: OPEN, native: false }, async (ctx) => {
+  const { page, inPage } = ctx;
+  assert.equal(await inPage(() => document.getElementById("nav-activity").disabled), false);
+  const opened = page.context().waitForEvent("page");
+  await page.click("#nav-activity");
+  const tab = await opened;
+  await tab.waitForLoadState("load");
+  assert.match(tab.url(), /\/activity\/index\.html$/);
+  await tab.close();
   await clean(ctx);
 });
 
@@ -440,7 +481,7 @@ scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { 
   await until("the rail", () => document.body.dataset.dock === "rail");
   await until("the agents", () => document.querySelectorAll("#agents li[data-state]").length === 3);
   const seen = await inPage(() => ({
-    labels: [...document.querySelectorAll(".label, .current, .badge, h2, .add, .hint, .conn, .activity, #storage, .empty-note, .share-card")].filter((n) => n.checkVisibility()).length,
+    labels: [...document.querySelectorAll(".label, .current, .badge, h2, .add, .hint, .conn, #storage, .empty-note, .share-card")].filter((n) => n.checkVisibility()).length,
     clipped: [...document.querySelectorAll(".people strong, .people small")].map((n) => n.getBoundingClientRect().width <= 1),
     width: document.documentElement.scrollWidth,
     gear: document.getElementById("settings").checkVisibility(),

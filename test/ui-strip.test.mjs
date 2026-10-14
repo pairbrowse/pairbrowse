@@ -1,40 +1,18 @@
 // The browser build's top strip (ui/strip): the tab row from window.pairbrowse, the pill, avatars,
-// Share and the menu from the helper's stream, the switcher, the nav fragments and bubbles by
-// hash, keyboard paths, drag reorder and motion. The common checks (CSP, names, Tab ring, hidden
+// Share and the menu from the helper's stream, the static brand mark, the nav fragments and the
+// Share bubble by hash, the browser's bubbles (Share, the app menu), keyboard paths, drag reorder
+// and motion. The framed session switcher is the left dock's (its Sessions row,
+// test/ui-left.test.mjs); the strip has none. The common checks (CSP, names, Tab ring, hidden
 // timers, reduced motion) are in test/ui.test.mjs.
 import assert from "node:assert/strict";
 import { describe } from "node:test";
 import { pageTest } from "./helpers/ui-page.mjs";
-import { inPage as inFrame } from "./live.mjs";
 
 const ROW = { width: 1536, height: 53 };
 const TALL = { width: 1536, height: 480 };
 const ACCENT = "rgb(50, 133, 246)";
 // A 1x1 PNG, a favicon the page may show under its CSP.
 const FAVICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-// Three of the picker's sessions (test/ui-picker.test.mjs STATE), a session already open.
-const SWITCHER_SESSIONS = { picking: false, sessions: [
-  { name: "work", tabs: 3, sites: ["shop.example", "docs.example"], current: true,
-    live: [{ who: "Sam", app: "Claude Code", kind: "guest" }],
-    people: [{ who: "You", kind: "you", computer: "Mac" }, { who: "Sam", app: "Claude Code", kind: "guest" }] },
-  { name: "shop", tabs: 1, sites: ["shop.example"],
-    people: [{ who: "You", kind: "you", computer: "Mac" }, { who: "Claude", app: "Claude Code", kind: "agent" }, { who: "Alice", computer: "Linux", kind: "guest" }] },
-  { name: "default", tabs: 0, sites: [], people: [] },
-] };
-
-// The framed picker once it knows it is framed (and, with s, once body[data-s] is s).
-async function framedPicker(page, s = null) {
-  for (let i = 0; i < 100; i++) {
-    const frame = page.frames().find((f) => f.url().includes("/picker/index.html"));
-    if (frame) {
-      const st = await inFrame(frame, () => ({ host: document.documentElement.dataset.host, s: document.body?.dataset.s })).catch(() => null);
-      if (st?.host === "frame" && (!s || st.s === s)) return frame;
-    }
-    await page.waitForTimeout(50);
-  }
-  return assert.fail("the framed picker did not load");
-}
-
 // In the page: a tab's box and state by id.
 const tabInfo = (id) => {
   const li = document.querySelector(`#tabs li[data-id="${id}"]`);
@@ -344,9 +322,10 @@ describe("keyboard paths", () => pageTest("strip", { viewport: ROW }, async ({ p
   await inPage(focusBody);
   const seen = [];
   // In the 53 px row the menu is not shown (it has nowhere to open): Share ends the order. In a
-  // taller host the menu button follows Share (the menu test).
+  // taller host the menu button follows Share (the menu test). The brand mark is no stop: the
+  // first tab is the row's first.
   assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), false);
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 4; i++) {
     await page.keyboard.press("Tab");
     seen.push(await inPage(() => {
       const a = document.activeElement;
@@ -354,7 +333,7 @@ describe("keyboard paths", () => pageTest("strip", { viewport: ROW }, async ({ p
       return { id: a.id || (a.dataset.id ? `tab:${a.dataset.id}` : a.classList.contains("close") ? `close:${a.closest("li").dataset.id}` : a.tagName), ring: `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor}` };
     }));
   }
-  assert.deepEqual(seen.map((s) => s.id), ["switch", "tab:11", "close:11", "new", "share-btn"]);
+  assert.deepEqual(seen.map((s) => s.id), ["tab:11", "close:11", "new", "share-btn"]);
   for (const s of seen) assert.equal(s.ring, `solid 2px ${ACCENT}`, s.id);
   // arrows move focus, not the selection
   await page.focus('#tabs li[data-id="11"]');
@@ -388,6 +367,67 @@ describe("keyboard paths", () => pageTest("strip", { viewport: ROW }, async ({ p
   await page.keyboard.press("Delete");
   await until("13 gone", () => !document.querySelector('#tabs li[data-id="13"]'));
   assert.deepEqual(await callsOf(shim, "tabs", "close"), [[11], [13]]);
+}));
+
+// The logo and the wordmark are a plain brand mark (the user, 2026-10-14): no control, no hover
+// or press state, no focus stop and no chevron; a click on it opens nothing. The sessions' door is
+// the left dock's Sessions row. The logo sits 2 px into the row's padding as before; the first
+// tab 25 px after the wordmark (the 17 px end padding and the row's 8 px gap).
+describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, shim: { bubbles: true } }, async ({ page, shim, inPage }) => {
+  const look = () => {
+    const b = document.getElementById("brand");
+    const img = b.querySelector("img"), word = b.querySelector(".wordmark");
+    const row = document.getElementById("row"), first = document.querySelector("#tabs li");
+    return {
+      tag: b.tagName, role: b.getAttribute("role"), tabIndex: b.tabIndex, label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded"),
+      controls: b.querySelectorAll("button, a, [tabindex]").length, svgs: b.querySelectorAll("svg").length, oldSwitch: !!document.getElementById("switch"),
+      src: img.getAttribute("src"), alt: img.getAttribute("alt"), size: [img.width, img.height], word: word.textContent,
+      bg: getComputedStyle(b).backgroundColor, cursor: getComputedStyle(b).cursor,
+      logoInset: Math.round(img.getBoundingClientRect().left - row.getBoundingClientRect().left - parseFloat(getComputedStyle(row).paddingLeft)),
+      tabGap: Math.round(first.getBoundingClientRect().left - word.getBoundingClientRect().right),
+    };
+  };
+  const before = await inPage(look);
+  assert.deepEqual({ ...before, bg: undefined, cursor: undefined }, {
+    tag: "DIV", role: null, tabIndex: -1, label: null, expanded: null, controls: 0, svgs: 0, oldSwitch: false,
+    src: "../logo.svg", alt: "", size: [28, 28], word: "PairBrowse", bg: undefined, cursor: undefined, logoInset: 2, tabGap: 25,
+  });
+  // On the favicons' line: the logo, the wordmark's text and the first tab's icon share one centre
+  // (32.5 px in the 53 px row: the tabs, 42 px with a 1 px top edge, sit on its bottom edge).
+  const line = await inPage(() => {
+    const mid = (r) => r.top + r.height / 2;
+    const img = document.querySelector("#brand img").getBoundingClientRect();
+    const text = document.createRange();
+    text.selectNodeContents(document.querySelector("#brand .wordmark"));
+    const icon = document.querySelector("#tabs li .icon").getBoundingClientRect();
+    return { logo: mid(img), word: mid(text.getBoundingClientRect()), icon: mid(icon), size: [img.width, img.height] };
+  });
+  assert.deepEqual(line.size, [28, 28], "the logo stays 28 x 28");
+  assert.ok(Math.abs(line.logo - line.icon) <= 0.5, `logo ${line.logo} on the favicons' centre ${line.icon}`);
+  assert.ok(Math.abs(line.word - line.icon) <= 0.5, `wordmark ${line.word} on the favicons' centre ${line.icon}`);
+  assert.ok(Math.abs(line.icon - 32.5) <= 0.5, `the favicons' centre ${line.icon}`);
+  // No hover state: hovered, it looks as it did.
+  await page.hover("#brand .wordmark");
+  await page.waitForTimeout(250);
+  const hovered = await inPage(look);
+  assert.equal(hovered.bg, before.bg, "no hover background");
+  assert.equal(hovered.bg, "rgba(0, 0, 0, 0)");
+  assert.notEqual(hovered.cursor, "pointer");
+  // A click opens nothing, asks the browser nothing and takes no focus.
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.click("#brand img");
+  await page.waitForTimeout(150);
+  assert.deepEqual(await callsOf(shim, "bubbles", "open"), []);
+  assert.deepEqual(await callsOf(shim, "tabs", "create"), []);
+  assert.deepEqual(await callsOf(shim, "layout", "set"), []);
+  assert.notEqual(await inPage(() => document.activeElement?.closest?.("#brand") ? "brand" : "elsewhere"), "brand");
+  // Not reachable by Tab, forwards or backwards: the first tab is the row's first stop.
+  await inPage(focusBody);
+  await page.keyboard.press("Tab");
+  assert.equal(await inPage(active), "tab:11");
+  await page.keyboard.press("Shift+Tab");
+  assert.notEqual(await inPage(() => document.activeElement?.closest?.("#brand") ? "brand" : "elsewhere"), "brand");
 }));
 
 // Thirty tabs in the mockup's 1494 px window: the tabs keep B2's 160 px minimum and the row
@@ -611,80 +651,19 @@ describe("menu: PairBrowse settings, found or opened", () => pageTest("strip", {
   }
 }));
 
-describe("switcher opens the picker in an iframe", () => pageTest("strip", { viewport: TALL }, async ({ page, inPage, harness, until, settle }) => {
-  // the switcher opens the picker in an iframe
-  assert.equal(await inPage(() => document.getElementById("picker").getAttribute("src")), null);
-  await page.click("#switch");
-  await settle();
-  const s = await inPage(() => {
-    const d = document.getElementById("switcher");
-    const f = document.getElementById("picker");
-    return { hidden: d.hidden, role: d.getAttribute("role"), label: d.getAttribute("aria-label"), w: d.getBoundingClientRect().width, src: f.src, title: f.title, expanded: document.getElementById("switch").getAttribute("aria-expanded") };
-  });
-  assert.equal(s.hidden, false);
-  assert.equal(s.role, "dialog");
-  assert.equal(s.label, "Switch session");
-  assert.equal(s.w, 360);
-  assert.ok(s.src.endsWith("/picker/index.html"), s.src);
-  assert.equal(s.title, "Session picker");
-  assert.equal(s.expanded, "true");
-  // The picker loads in the frame (same origin, frame-src 'self') and knows it is framed.
-  const frame = await framedPicker(page);
-  assert.equal(await inFrame(frame, () => window.innerWidth), 360);
-  await page.focus("#switch");
-  await page.keyboard.press("Escape");
-  // The frame unloads once the popover has faded out (DESIGN.md Part I).
-  await until("unloaded", () => document.getElementById("picker").getAttribute("src") === null);
-  assert.deepEqual(await inPage(() => [document.getElementById("switcher").hidden, document.getElementById("picker").getAttribute("src"), document.activeElement.id]), [true, null, "switch"]);
-  assert.equal(page.frames().some((f) => f.url().includes("/picker/index.html")), false, "the picker unloaded");
-  assert.deepEqual(await harness.log(), []);
-}));
-
-describe("the picker's notices close the switcher; the bubble keeps it", () => pageTest("strip", { viewport: TALL, fixtures: { sessions: SWITCHER_SESSIONS } }, async (ctx) => {
-  const { page, inPage, until, harness } = ctx;
-  const state = () => ({ hidden: document.getElementById("switcher").hidden, src: document.getElementById("picker").getAttribute("src"), focus: document.activeElement?.id || "" });
-  // (a) Escape in the framed picker: its "close" notice closes the switcher, focus on the chevron.
-  await page.click("#switch");
-  await framedPicker(page, "ready");
-  await page.keyboard.press("Escape");
-  await until("closed by the notice", () => document.getElementById("switcher").hidden && document.getElementById("picker").getAttribute("src") === null);
-  assert.deepEqual(await inPage(state), { hidden: true, src: null, focus: "switch" });
-  // (b) A notice that is not from the frame (the strip itself posts it) does nothing.
-  await page.click("#switch");
-  await framedPicker(page, "ready");
-  await inPage(() => window.postMessage({ source: "pairbrowse-picker", op: "close" }, location.origin));
-  await page.waitForTimeout(100);
-  assert.equal((await inPage(state)).hidden, false, "a notice not from the frame does nothing");
-  // (c) In the #switcher bubble the host owns dismissal: Escape in the picker leaves it open.
-  await inPage(() => { location.hash = "#switcher"; });
-  await until("the bubble", () => document.body.dataset.mode === "switcher");
-  const frame = await framedPicker(page, "ready");
-  await frame.click("h1");
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(200);
-  assert.equal((await inPage(state)).hidden, false, "the host owns dismissal");
-  // (d) Leaving the mode unloads the picker.
-  await inPage(() => { location.hash = ""; });
-  await until("the row", () => document.body.dataset.mode === "row");
-  await until("unloaded once faded", () => document.getElementById("picker").getAttribute("src") === null);
-  // (e)
-  assert.deepEqual(await harness.log(), []);
-  assert.deepEqual(ctx.errors, []);
-}));
-
 describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ page, shim, inPage, until, settle }) => {
   // the hash modes, never a reload
   await inPage(() => { window.__sameDocument = true; });
   const shown = () => ({
     row: document.getElementById("row").checkVisibility(), left: document.getElementById("nav-left").checkVisibility(), right: document.getElementById("nav-right").checkVisibility(),
-    tabs: document.getElementById("tabs").checkVisibility(), share: document.getElementById("share-card").checkVisibility(), switcher: document.getElementById("switcher").checkVisibility(), menu: document.getElementById("menu").checkVisibility(),
+    tabs: document.getElementById("tabs").checkVisibility(), share: document.getElementById("share-card").checkVisibility(), menu: document.getElementById("menu").checkVisibility(),
     mode: document.body.dataset.mode, same: window.__sameDocument === true,
   });
   // A popover closing fades out first (DESIGN.md Part I): each mode is read once that has settled.
   const go = async (h) => { await inPage((x) => { location.hash = x; }, h); await page.waitForTimeout(20); await settle(); };
   await go("#nav-left");
   await until("nav-left", () => document.body.dataset.mode === "nav-left");
-  assert.deepEqual(await inPage(shown), { row: false, left: true, right: false, tabs: false, share: false, switcher: false, menu: false, mode: "nav-left", same: true });
+  assert.deepEqual(await inPage(shown), { row: false, left: true, right: false, tabs: false, share: false, menu: false, mode: "nav-left", same: true });
   const nav = await inPage(() => ["back", "forward", "reload"].map((id) => { const b = document.getElementById(id); return [id, b.disabled, getComputedStyle(b).color]; }));
   assert.deepEqual(nav, [["back", true, "rgb(134, 153, 177)"], ["forward", true, "rgb(134, 153, 177)"], ["reload", false, "rgb(241, 245, 250)"]]);
   await page.click("#reload");
@@ -721,20 +700,25 @@ describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ 
   await shim.layout({ right: 2 });
   await until("sparkle on", () => document.getElementById("sparkle").getAttribute("aria-pressed") === "true");
 
-  for (const [hash, key] of [["#share", "share"], ["#switcher", "switcher"], ["#menu", "menu"]]) {
+  await go("#share");
+  await until("#share", () => document.body.dataset.mode === "share");
+  const s = await inPage(shown);
+  assert.equal(s.share, true, "#share shows its card");
+  for (const other of ["left", "right", "tabs", "menu"]) assert.equal(s[other], false, `#share hides ${other}`);
+  // the bubble host owns dismissal
+  await page.keyboard.press("Escape");
+  assert.equal((await inPage(shown)).share, true, "#share stays open on Escape");
+  // The strip has no switcher or menu bubble of its own (the browser opens picker/#bubble and its
+  // own app menu): those hashes are the row.
+  for (const hash of ["#switcher", "#menu"]) {
     await go(hash);
-    await until(hash, (m) => document.body.dataset.mode === m, key);
-    const s = await inPage(shown);
-    assert.equal(s[key], true, `${hash} shows its popover`);
-    for (const other of ["left", "right", "tabs", "share", "switcher", "menu"]) if (other !== key) assert.equal(s[other], false, `${hash} hides ${other}`);
-    // the bubble host owns dismissal
-    await page.keyboard.press("Escape");
-    assert.equal((await inPage(shown))[key], true, `${hash} stays open on Escape`);
+    await until("row", () => document.body.dataset.mode === "row");
+    assert.deepEqual(await inPage(shown), { row: true, left: false, right: false, tabs: true, share: false, menu: false, mode: "row", same: true }, hash);
   }
   await go("");
   await until("row", () => document.body.dataset.mode === "row");
-  assert.deepEqual(await inPage(shown), { row: true, left: false, right: false, tabs: true, share: false, switcher: false, menu: false, mode: "row", same: true });
-  assert.equal(await inPage(() => document.getElementById("picker").getAttribute("src")), null, "the picker unloads with its bubble");
+  assert.deepEqual(await inPage(shown), { row: true, left: false, right: false, tabs: true, share: false, menu: false, mode: "row", same: true });
+  assert.equal(await inPage(() => !!document.getElementById("switcher") || !!document.getElementById("picker")), false, "no switcher or picker frame in the strip");
 }));
 
 describe("reduced motion and no timers", () => pageTest("strip", { viewport: ROW, reducedMotion: "reduce", fixtures: { collaboration: { guests: [{ label: "Ana", role: "drive" }] } } }, async ({ page, inPage, harness }) => {
@@ -749,34 +733,18 @@ describe("reduced motion and no timers", () => pageTest("strip", { viewport: ROW
 }));
 
 // The browser's tab-row slot is 53 px tall and clips the rest: a popover under the row would open
-// unseen and take the keyboard focus with it. In a build without the browser's bubbles the logo
-// opens the session picker as a tab (a page of its own reaches the helper; the left dock's frame
-// gets no bindings), and Share's card opens at the top of the agent panel, under Share, asked with
-// Share's place for its caret (DESIGN.md Part I); Share shows the state the dock reports, and a
-// second click or Escape on it closes it. The menu is not shown, and nothing under the row ever opens.
+// unseen and take the keyboard focus with it. In a build without the browser's bubbles Share's
+// card opens at the top of the agent panel, under Share, asked with Share's place for its caret
+// (DESIGN.md Part I); Share shows the state the dock reports, and a second click or Escape on it
+// closes it. The menu is not shown, and nothing under the row ever opens.
 describe("in the 53 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1, right: 1 } } }, async ({ page, shim, inPage, until }) => {
-  const under = () => ["switcher", "share-card", "menu"].filter((id) => !document.getElementById(id).hidden);
-  const insidePopover = () => !!document.activeElement?.closest?.("#switcher, #share-card, #menu");
+  const under = () => ["share-card", "menu"].filter((id) => !document.getElementById(id).hidden);
+  const insidePopover = () => !!document.activeElement?.closest?.("#share-card, #menu");
   const asked = () => window.__asked.map(({ anchor, ...m }) => ({ ...m, anchor: anchor ? Object.keys(anchor).join() : null }));
   assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), false, "no menu without room for it");
-  for (const id of ["switch", "share-btn"]) {
-    assert.equal(await page.getAttribute(`#${id}`, "aria-expanded"), "false", `${id}: says its popover is closed`);
-    assert.equal(await page.getAttribute(`#${id}`, "aria-controls"), null, `${id}: the popover is another page's`);
-  }
-  assert.equal(await page.getAttribute("#switch", "aria-label"), "PairBrowse: switch session (opens the session picker in a tab)");
+  assert.equal(await page.getAttribute("#share-btn", "aria-expanded"), "false", "says its card is closed");
+  assert.equal(await page.getAttribute("#share-btn", "aria-controls"), null, "the card is another page's");
   assert.equal(await page.getAttribute("#share-btn", "title"), "Share this session (opens under Share, in the agent panel)");
-  // The logo (DESIGN.md Part G: the one switch-session home): the picker as a tab at once, no ask of
-  // the left dock and no dock opened.
-  await inPage(() => { window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => window.__asked.push(e.data); });
-  await page.click("#switch");
-  await until("the picker tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
-  assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://picker", true, 1]]);
-  await page.waitForTimeout(100);
-  assert.deepEqual(await inPage(() => (window.__dock.close(), window.__asked)), [], "no ask of the left dock");
-  assert.deepEqual(await callsOf(shim, "layout", "set"), [], "no dock opened for it");
-  assert.equal(await page.getAttribute("#switch", "aria-expanded"), "false");
-  assert.deepEqual(await inPage(under), []);
-  assert.equal(await inPage(insidePopover), false);
   // Share: the agent panel opens (it was a rail), then its Share card is asked for this window
   // with Share's place, measured from the window's right edge. A stand-in for the agent panel
   // answers that it opened the card (another window's answer is not this strip's).
@@ -806,8 +774,7 @@ describe("in the 53 px row no popover opens under the row", () => pageTest("stri
   // A taller host (the harness, a later bubble host) gets the popovers back.
   await page.setViewportSize(TALL);
   await until("menu back", () => document.getElementById("menu-btn").checkVisibility());
-  assert.equal(await page.getAttribute("#switch", "aria-expanded"), "false");
-  assert.equal(await page.getAttribute("#switch", "aria-controls"), "switcher");
+  assert.equal(await page.getAttribute("#share-btn", "aria-controls"), "share-card");
   await page.click("#menu-btn");
   assert.deepEqual(await inPage(under), ["menu"]);
 }));
@@ -980,57 +947,105 @@ describe("reports the tab order and arranges this window's tabs", () => pageTest
   assert.equal((await harness.live()).timeouts ?? 0, 0, "no timer");
 }));
 
-// 530 E1/E2 B1, B2: with the browser's bubbles the logo and Share in the 53 px row open the switcher
-// and the Share card in a bubble anchored to the trigger (bubbles.open with its rect), never over
-// the docks' channel and never as a picker tab; the trigger shows it open, a second click closes it,
-// OnClosed by Escape gives the focus back to the trigger, and a click outside that lands on the
-// trigger is that close, not a new open.
-describe("in the 53 px row the logo and Share open the browser's bubbles", () => pageTest("strip", { viewport: ROW, shim: { bubbles: true } }, async ({ page, shim, inPage, until }) => {
+// 530 E1/E2 B2: with the browser's bubbles Share in the 53 px row opens the Share card in a bubble
+// anchored to Share (bubbles.open with its rect), never over the docks' channel; Share shows it
+// open, a second click closes it, OnClosed by Escape gives the focus back to Share, and a click
+// outside that lands on Share is that close, not a new open. The ⋯ stays hidden in the slot (the
+// browser draws its own beside it).
+describe("in the 53 px row Share opens the browser's bubble", () => pageTest("strip", { viewport: ROW, shim: { bubbles: true } }, async ({ page, shim, inPage, until }) => {
   await inPage(() => { window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => window.__asked.push(e.data); });
   const opens = () => callsOf(shim, "bubbles", "open");
   const boxOf = (id) => inPage((x) => { const r = document.getElementById(x).getBoundingClientRect(); const left = Math.floor(r.left), top = Math.max(0, Math.floor(r.top)); return { x: left, y: top, width: Math.ceil(r.right) - left, height: Math.min(innerHeight, Math.ceil(r.bottom)) - top }; }, id);
-  assert.equal(await page.getAttribute("#switch", "aria-label"), "PairBrowse: switch session");
-  assert.equal(await page.getAttribute("#switch", "aria-haspopup"), "dialog");
-  await page.click("#switch");
-  await until("the switcher open", () => document.getElementById("switch").getAttribute("aria-expanded") === "true");
-  assert.deepEqual(await opens(), [[0, await boxOf("switch"), ""]], "B1 with the logo's rect");
-  // The second click closes it.
-  await page.click("#switch");
-  await until("closed", () => document.getElementById("switch").getAttribute("aria-expanded") === "false");
-  assert.deepEqual(await callsOf(shim, "bubbles", "close"), [[0]]);
-  // Share: B2 with Share's rect; the browser closes it by Escape and the focus comes back to Share.
+  assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), false, "the browser's own ⋯ is beside the slot");
+  assert.equal(await page.getAttribute("#share-btn", "aria-haspopup"), "dialog");
   await page.click("#share-btn");
   await until("the share card open", () => document.getElementById("share-btn").getAttribute("aria-expanded") === "true");
-  assert.deepEqual((await opens()).at(-1), [1, await boxOf("share-btn"), ""]);
+  assert.deepEqual(await opens(), [[1, await boxOf("share-btn"), ""]], "B2 with Share's rect");
+  // The second click closes it.
+  await page.click("#share-btn");
+  await until("closed", () => document.getElementById("share-btn").getAttribute("aria-expanded") === "false");
+  assert.deepEqual(await callsOf(shim, "bubbles", "close"), [[1]]);
+  // The browser closes it by Escape and the focus comes back to Share.
+  await page.click("#share-btn");
+  await until("the share card open", () => document.getElementById("share-btn").getAttribute("aria-expanded") === "true");
   await inPage(() => { document.activeElement.blur(); window.__pairbrowse.bubbles.closed(1, true); });
   await until("focus on Share", () => document.activeElement?.id === "share-btn" && document.getElementById("share-btn").getAttribute("aria-expanded") === "false");
-  // Opening one closes the other: the logo's bubble replaces Share's.
+  // A click outside closed it: the click that lands on Share then is that close.
   await page.click("#share-btn");
   await until("share open", () => document.getElementById("share-btn").getAttribute("aria-expanded") === "true");
-  await page.click("#switch");
-  await until("only the switcher", () => document.getElementById("switch").getAttribute("aria-expanded") === "true" && document.getElementById("share-btn").getAttribute("aria-expanded") === "false");
-  // A click outside closed it: the click that lands on the logo then is that close.
   const n = (await opens()).length;
-  await inPage(() => window.__pairbrowse.bubbles.closed(0, false));
-  await page.click("#switch");
+  await inPage(() => window.__pairbrowse.bubbles.closed(1, false));
+  await page.click("#share-btn");
   await page.waitForTimeout(100);
   assert.equal((await opens()).length, n, "the closing click opens nothing");
   await page.waitForTimeout(450);
-  await page.click("#switch");
+  await page.click("#share-btn");
   await until("opens again later", (k) => window.__pairbrowse.calls.filter((c) => c.iface === "bubbles" && c.method === "open").length === k, n + 1);
-  // Never the docks' channel, never the picker tab, nothing under the row.
+  // Never the docks' channel, never a tab, nothing under the row.
   await page.waitForTimeout(1200);
   assert.deepEqual(await inPage(() => window.__asked), []);
   assert.deepEqual(await callsOf(shim, "tabs", "create"), []);
-  assert.deepEqual(await inPage(() => ["switcher", "share-card", "menu"].filter((id) => !document.getElementById(id).hidden)), []);
-  // The browser says it showed nothing (a minimized window): the trigger stays closed.
-  await page.click("#switch");
-  await until("closed", () => document.getElementById("switch").getAttribute("aria-expanded") === "false");
+  assert.deepEqual(await inPage(() => ["share-card", "menu"].filter((id) => !document.getElementById(id).hidden)), []);
+  // The browser says it showed nothing (a minimized window): Share stays closed.
+  await page.click("#share-btn");
+  await until("closed", () => document.getElementById("share-btn").getAttribute("aria-expanded") === "false");
   await shim.reply("open", false);
   await page.waitForTimeout(450);
   await page.click("#share-btn");
   await page.waitForTimeout(100);
   assert.equal(await page.getAttribute("#share-btn", "aria-expanded"), "false");
+}));
+
+// Where the ⋯ shows (a host taller than the slot) and the browser offers its app menu as a bubble
+// (Bubbles kAppMenu): a click, Enter, Space or ArrowDown opens the browser's own menu anchored to
+// the ⋯, never the page's #menu; the ⋯ shows it open, a second click closes it, OnClosed by Escape
+// gives the focus back to the ⋯, and a click right after a close by a click outside is that close.
+describe("the ⋯ opens the browser's app menu", () => pageTest("strip", { viewport: TALL, shim: { bubbles: true } }, async ({ page, shim, inPage, until }) => {
+  const opens = () => callsOf(shim, "bubbles", "open");
+  const expanded = () => document.getElementById("menu-btn").getAttribute("aria-expanded");
+  const boxOf = () => inPage(() => { const r = document.getElementById("menu-btn").getBoundingClientRect(); const left = Math.floor(r.left), top = Math.max(0, Math.floor(r.top)); return { x: left, y: top, width: Math.ceil(r.right) - left, height: Math.min(innerHeight, Math.ceil(r.bottom)) - top }; });
+  assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), true);
+  assert.deepEqual(await inPage(() => { const b = document.getElementById("menu-btn"); return [b.getAttribute("aria-haspopup"), b.getAttribute("aria-expanded"), b.getAttribute("aria-controls")]; }), ["menu", "false", null]);
+  // A click: the app menu with the ⋯'s rect; the second click closes it.
+  await page.click("#menu-btn");
+  await until("open", () => document.getElementById("menu-btn").getAttribute("aria-expanded") === "true");
+  assert.deepEqual(await opens(), [[3, await boxOf(), ""]], "kAppMenu with the ⋯'s rect");
+  assert.equal(await inPage(() => document.getElementById("menu").hidden), true, "never the page's popover");
+  await page.click("#menu-btn");
+  await until("closed", () => document.getElementById("menu-btn").getAttribute("aria-expanded") === "false");
+  assert.deepEqual(await callsOf(shim, "bubbles", "close"), [[3]]);
+  // Enter, then Escape in the browser's menu: the focus back on the ⋯.
+  await page.focus("#menu-btn");
+  await page.keyboard.press("Enter");
+  await until("open by Enter", () => document.getElementById("menu-btn").getAttribute("aria-expanded") === "true");
+  await inPage(() => { document.activeElement.blur(); window.__pairbrowse.bubbles.closed(3, true); });
+  await until("focus on the ⋯", () => document.activeElement?.id === "menu-btn" && document.getElementById("menu-btn").getAttribute("aria-expanded") === "false");
+  // Space and ArrowDown open it too.
+  await page.keyboard.press(" ");
+  await until("open by Space", () => document.getElementById("menu-btn").getAttribute("aria-expanded") === "true");
+  await page.click("#menu-btn");
+  await until("closed", () => document.getElementById("menu-btn").getAttribute("aria-expanded") === "false");
+  await page.focus("#menu-btn");
+  await page.keyboard.press("ArrowDown");
+  await until("open by ArrowDown", () => document.getElementById("menu-btn").getAttribute("aria-expanded") === "true");
+  assert.equal((await opens()).length, 4);
+  // A click outside closed it (not by Escape): the click that lands on the ⋯ then is that close.
+  await inPage(() => window.__pairbrowse.bubbles.closed(3, false));
+  await until("closed", () => document.getElementById("menu-btn").getAttribute("aria-expanded") === "false");
+  await page.click("#menu-btn");
+  await page.waitForTimeout(100);
+  assert.equal((await opens()).length, 4, "the closing click opens nothing");
+  assert.equal(await inPage(expanded), "false");
+  await page.waitForTimeout(450);
+  await page.click("#menu-btn");
+  await until("opens again later", () => document.getElementById("menu-btn").getAttribute("aria-expanded") === "true");
+  assert.equal((await opens()).length, 5);
+  assert.ok((await opens()).every((c) => c[0] === 3), "only the app menu");
+  // The browser closed it for another bubble: the ⋯ shows it closed.
+  await inPage(() => window.__pairbrowse.bubbles.closed(3, false));
+  await until("closed", () => document.getElementById("menu-btn").getAttribute("aria-expanded") === "false");
+  assert.equal(await inPage(() => document.getElementById("menu").hidden), true, "the page's popover never opened");
+  assert.deepEqual(await callsOf(shim, "tabs", "create"), []);
 }));
 
 // The Share bubble's own page (strip/#share) in the browser's bubble: framed by the browser

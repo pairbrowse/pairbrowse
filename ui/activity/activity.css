@@ -1,0 +1,56 @@
+/* Activity (pairbrowse://activity): the sessions page's card, wider for a log; the day headings as
+   its section headings, each line a time, a who dot and the line itself. Colors and type from
+   tokens.css. */
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { display: grid; justify-items: center; align-content: start; min-height: 100vh; padding: 48px 16px 32px; background: var(--bg); color: var(--ink); font: var(--fs-3)/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+main { width: min(720px, 100%); padding: var(--sp-6) var(--sp-6) var(--sp-4); border-radius: var(--r-3); background: var(--sidebar); border: 1px solid var(--edge); box-shadow: 0 24px 60px rgb(0 0 0 / 0.35); }
+header { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.logo { flex: none; }
+.brand { margin: 0 0 2px; font-size: var(--fs-3); font-weight: 700; letter-spacing: -0.01em; }
+h1 { margin: 0; font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.02em; line-height: 1.25; }
+.sub { margin: 2px 0 0; color: var(--ink-2); font-size: var(--fs-3); }
+.sub:empty { display: none; }
+
+/* Who to show: one pressed chip at a time. */
+.filter { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0 0 var(--sp-2); }
+.filter[hidden] { display: none; }
+.chip { height: var(--ctl-sm); max-width: 240px; padding: 0 var(--sp-3); border-radius: 999px; border: 1px solid var(--edge); background: transparent; color: var(--ink-2); font: var(--fw-name) var(--fs-2) var(--sans); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background var(--t-hover), color var(--t-hover), border-color var(--t-hover); }
+.chip:hover { background: var(--hover); color: var(--ink); }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent-ink); }
+
+/* A day: its heading, then its lines, the newest first. */
+h2 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-1); font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.lines li { display: grid; grid-template-columns: auto 8px minmax(0, 1fr); align-items: baseline; gap: 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-2); background: var(--elevated); color: var(--ink-2); }
+.lines time { font-family: var(--mono); font-size: var(--fs-1); color: var(--muted); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); align-self: center; }
+.dot.none { background: transparent; }
+.what { min-width: 0; overflow-wrap: anywhere; }
+.what strong { font-weight: var(--fw-name); color: var(--ink); }
+.what code { font-family: var(--mono); font-size: var(--fs-1); padding: 0 var(--sp-1); border: 1px solid var(--edge); border-radius: var(--r-1); }
+
+/* The next older page: a quiet full-width control under the oldest line. */
+.earlier { display: block; width: 100%; height: var(--ctl-sm); margin: var(--sp-3) 0 0; border-radius: var(--r-2); border: 1px solid var(--edge); background: transparent; color: var(--ink-2); font: var(--fw-name) var(--fs-2) var(--sans); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
+.earlier:hover { background: var(--hover); color: var(--ink); }
+
+.empty { margin: var(--sp-4) 0 var(--sp-2); color: var(--muted); }
+.empty[hidden], .note[hidden], .earlier[hidden] { display: none; }
+.note { margin: var(--sp-4) 0 0; color: var(--muted); font-size: var(--fs-2); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+
+.msg { margin: var(--sp-3) 0 0; color: var(--muted); }
+.msg:empty { display: none; }
+body[data-s="connecting"] .msg:empty { display: block; }
+body[data-s="connecting"] .msg:empty::before { content: "Connecting to PairBrowse…"; }
+body[data-s="connecting"] .empty { display: none; }
+/* No helper: the resting line says it; nothing to list. */
+body[data-s="none"] .filter, body[data-s="none"] .log, body[data-s="none"] .empty, body[data-s="none"] .note, body[data-s="none"] .earlier { display: none; }
+
+@media (max-width: 520px) {
+  .lines li { grid-template-columns: 8px minmax(0, 1fr); }
+  .lines time { grid-column: 2; grid-row: 1; }
+  .dot { grid-column: 1; grid-row: 2; }
+  .what { grid-column: 2; grid-row: 2; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

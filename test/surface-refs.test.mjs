@@ -21,7 +21,7 @@ function png(file) {
 
 test("surface references: the names, sizes and the native harness's surfaces", () => {
   assert.deepEqual(Object.keys(REFERENCES), ["menu", "bubble", "field", "field-focus", "buttons"]);
-  assert.deepEqual(REFERENCES.menu, { w: 360 + 2 * PAD, h: 560 + 2 * PAD }, "the switcher popover, 360 x 560");
+  assert.deepEqual(REFERENCES.menu, { w: 360 + 2 * PAD, h: 560 + 2 * PAD }, "the left dock's switcher popover, 360 x 560");
   assert.equal(REFERENCES.bubble.w, 364, "the approval bubble, 364 px");
   // 560's --surface names, each mapped to known references only.
   const names = ["app-menu", "context-menu", "omnibox-popup", "permission", "download", "bookmark", "find", "tooltip", "dialog-alert", "dialog-auth",

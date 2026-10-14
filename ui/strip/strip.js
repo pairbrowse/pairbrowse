@@ -1,14 +1,15 @@
 // The browser build's top strip (DESIGN.md B2). One document, three hosts by location hash: the
 // 53 px tab row (no hash), the nav fragments beside the native address bar (#nav-left,
-// #nav-right), and each popover alone (#switcher, #share, #menu) for the shell's bubbles, which
-// cannot draw outside a 53 px slot. Tabs, owners and the dock layout come from window.pairbrowse
+// #nav-right), and the Share card alone (#share) for the browser's Share bubble, which the 53 px
+// slot cannot draw. The logo and wordmark are a static brand mark: the sessions' door is the left
+// dock's Sessions row. Tabs, owners and the dock layout come from window.pairbrowse
 // (the browser's own API); people and sharing from the helper's event stream, and the
 // helper's agent-tabs, which this page writes into the browser's owners for its window's tabs (the
 // owner dots of every page read those). Without window.pairbrowse the row shows the helper's tabs
 // event, read only. Nothing here starts a timer,
 // a frame loop or a DOM observer: observers of the browser API and the one shared helper stream
 // (common.js helperStream) only. The nav fragments read no stream at all.
-import { $, el, avatar, shareCard, isColor, pickerPopover, helperStream, servedByBrowser, enter, leave, calm } from "../common.js";
+import { $, el, avatar, shareCard, isColor, helperStream, servedByBrowser, enter, leave, calm } from "../common.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
@@ -42,8 +43,8 @@ let shownActive = null, shownWidth = -1, wheelOn = false, revealed = false;
 const SPARE = 24; // px kept clear beside the active tab: the edge fade's width
 
 // ---- modes ----
-const MODES = new Set(["row", "nav-left", "nav-right", "switcher", "share", "menu"]);
-const BUBBLES = new Set(["switcher", "share", "menu"]);
+const MODES = new Set(["row", "nav-left", "nav-right", "share"]);
+const BUBBLES = new Set(["share"]);
 let mode = "";
 const bubble = () => BUBBLES.has(mode);
 // The nav fragments open no stream: a page per window, and nothing on them reads the helper.
@@ -51,14 +52,11 @@ const navMode = () => mode === "nav-left" || mode === "nav-right";
 let stream = null; // the shared helper stream (common.js), once start() has run outside a nav mode
 let started = false, streamAsked = false;
 
-// ---- the switcher: the session picker in a same-origin iframe, loaded only while open
-// (common.js pickerPopover); in the #switcher bubble the host owns dismissal ----
-const switcher = pickerPopover({ pop: $("switcher"), frame: $("picker"), openers: [$("switch")], dismissable: () => !bubble() });
-
 // ---- Share: the side panel's card (common.js) ----
 const share = shareCard({ btn: $("share-btn"), card: $("share-card"), base: () => base, dismissable: () => !bubble() });
 
-// ---- the ⋯ menu ----
+// ---- the ⋯ menu: the browser's own app menu when it offers one (Bubbles kAppMenu, below), else
+// this page's popover with PairBrowse settings ----
 const menuBtn = $("menu-btn"), menu = $("menu");
 const items = () => [...menu.querySelectorAll('[role="menuitem"]')].filter((b) => !b.disabled && !b.hidden);
 const outsideMenu = (e) => { if (!menu.contains(e.target) && !menuBtn.contains(e.target)) closeMenu(false); };
@@ -66,19 +64,29 @@ function openMenu() {
   if (menu.hidden) {
     menu.hidden = false;
     menuBtn.setAttribute("aria-expanded", "true");
-    if (!bubble()) document.addEventListener("pointerdown", outsideMenu, true);
+    document.addEventListener("pointerdown", outsideMenu, true);
   }
   items()[0]?.focus();
 }
-function closeMenu(refocus = true, force = false) {
-  if (menu.hidden || (bubble() && mode === "menu" && !force)) return;
+function closeMenu(refocus = true) {
+  if (menu.hidden) return;
   menu.hidden = true;
   menuBtn.setAttribute("aria-expanded", "false");
   document.removeEventListener("pointerdown", outsideMenu, true);
   if (refocus) menuBtn.focus();
 }
-menuBtn.addEventListener("click", () => (menu.hidden ? openMenu() : closeMenu()));
+// With the browser's app menu a click (Enter and Space are the button's own click) or ArrowDown
+// opens it anchored to the button, and a second click closes it (toggleBubble, below).
+menuBtn.addEventListener("click", () => {
+  if (hasAppMenu()) { toggleBubble("menu"); return; }
+  if (menu.hidden) openMenu(); else closeMenu();
+});
 menuBtn.addEventListener("keydown", (e) => {
+  if (hasAppMenu()) {
+    if (e.key === "ArrowDown" && !remote.menu) { e.preventDefault(); toggleBubble("menu"); }
+    else if (e.key === "Escape" && remote.menu) { e.preventDefault(); toggleBubble("menu"); }
+    return;
+  }
   if (e.key === "ArrowDown" && menu.hidden) { e.preventDefault(); openMenu(); }
   else if (e.key === "Escape" && !menu.hidden) { e.preventDefault(); closeMenu(); }
 });
@@ -111,39 +119,39 @@ menuItem("settings", async () => {
 if (!pb) menuBtn.hidden = true;
 
 // ---- a page no taller than the row (the browser's 53 px tab-row slot, which clips the rest):
-// nothing can open under the row. With the browser's bubbles (530 E1, pairbrowse.bubbles) the
-// logo's switcher and Share's card open in a bubble of the window anchored to the trigger (B1, B2):
-// the picker page (picker/#bubble) or this page in its #share mode, framed by the browser, which owns
-// its dismissal and says when it closed (OnClosed; by Escape, or closed by its own page, the focus
-// comes back to the trigger). Without them (a build before 530) the logo opens the session picker
-// as a tab (a page of its own reaches the helper; a frame in a dock gets no bindings), and Share's
-// card opens at the top of the agent panel, right under Share, with a caret at it (DESIGN.md Part
-// I); the panel opens first if it is not. The trigger shows the popover's state (pressed,
-// aria-expanded) and a second click or Escape on it closes it. The menu, which has
-// no surface there, is not shown. Each runs in the capture phase, ahead of the popover's own click
-// handler, so no popover opens unseen and no focus moves into one. ----
+// nothing can open under the row. With the browser's bubbles (530 E1, pairbrowse.bubbles) Share's
+// card opens in a bubble of the window anchored to Share (B2): this page in its #share mode, framed
+// by the browser, which owns its dismissal and says when it closed (OnClosed; by Escape, or closed
+// by its own page, the focus comes back to Share). Without them (a build before 530) the card opens
+// at the top of the agent panel, right under Share, with a caret at it (DESIGN.md Part I); the
+// panel opens first if it is not. Share shows the card's state (pressed, aria-expanded) and a
+// second click or Escape on it closes it. The ⋯, which the browser draws beside the slot, is not
+// shown. Each runs in the capture phase, ahead of the card's own click handler, so no popover opens
+// unseen and no focus moves into one. ----
 const ROW_ONLY = 60; // px: taller than the 53 px row, shorter than any popover
 // Without the browser API there is no dock to ask: the popovers open in place.
 const inSlot = () => !!pb && !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
 const SHARE_CHANNEL = "pairbrowse-share";
-const SLOT_LABELS = { switch: "PairBrowse: switch session (opens the session picker in a tab)", share: "Share this session (opens under Share, in the agent panel)" };
+const SHARE_SLOT_LABEL = "Share this session (opens under Share, in the agent panel)";
 // Chromium's own ⋯ (32 px, 16 px from the window's edge) sits after this page in the browser: the
 // docks measure from the window's edge (native: B2).
 const APP_MENU = nativeHost ? 48 : 0;
-// What each dock (or the browser's bubble) said it shows for this window: { switch, share } open or not.
-const remote = { switch: false, share: false };
+// What the dock or the browser's bubble said it shows for this window: Share's card, the app menu.
+const remote = { share: false, menu: false };
 // ---- the browser's bubbles (530 E1) ----
 const hasBubbles = () => typeof pb?.bubbles?.open === "function";
-const KINDS = pb?.BubbleKind && Number.isInteger(pb.BubbleKind.kSwitcher) ? pb.BubbleKind : { kSwitcher: 0, kShare: 1, kPicture: 2 };
-const BUBBLE_OF = { switch: KINDS.kSwitcher, share: KINDS.kShare };
-const TRIGGER_OF = { switch: "switch", share: "share-btn" };
-const keyOfKind = (kind) => (kind === KINDS.kSwitcher ? "switch" : kind === KINDS.kShare ? "share" : null);
+const KINDS = pb?.BubbleKind && Number.isInteger(pb.BubbleKind.kShare) ? pb.BubbleKind : { kSwitcher: 0, kShare: 1, kPicture: 2 };
+// The browser's own app menu as a bubble kind (a newer browser): the ⋯ opens it, not the page's popover.
+const hasAppMenu = () => Number.isInteger(pb?.BubbleKind?.kAppMenu) && hasBubbles();
+const BUBBLE_OF = { share: KINDS.kShare, menu: KINDS.kAppMenu };
+const TRIGGER_OF = { share: "share-btn", menu: "menu-btn" };
+const keyOfKind = (kind) => (kind === KINDS.kShare ? "share" : Number.isInteger(KINDS.kAppMenu) && kind === KINDS.kAppMenu ? "menu" : null);
 // A click outside closes a bubble before that click lands: when it lands on the bubble's own trigger
 // it is the close, not a new open. When the browser said so (OnClosed, not by Escape), and how
 // recently: a timestamp, no timer.
 const REOPEN_MS = 400;
-const closedAt = { switch: -Infinity, share: -Infinity };
-const selfClosed = { switch: false, share: false }; // closed by this page (its trigger): no guard then
+const closedAt = { share: -Infinity, menu: -Infinity };
+const selfClosed = { share: false, menu: false }; // closed by this page (its trigger): no guard then
 let bubblesObserved = false;
 function observeBubbles() {
   if (bubblesObserved) return;
@@ -187,19 +195,20 @@ async function toggleBubble(key) {
 }
 function slotControls() {
   const slot = inSlot();
-  for (const [id, popover, key] of [["switch", "switcher", "switch"], ["share-btn", "share-card", "share"]]) {
-    const b = $(id);
-    // In the slot the popover is in another page: its state shows here (pressed), never its id.
-    if (slot) { b.setAttribute("aria-expanded", String(remote[key])); b.removeAttribute("aria-controls"); b.dataset.remote = String(remote[key]); }
-    else { b.setAttribute("aria-expanded", String(id === "switch" ? switcher.isOpen() : !$("share-card").hidden)); b.setAttribute("aria-controls", popover); delete b.dataset.remote; }
-  }
-  if (slot && hasBubbles()) { $("switch").setAttribute("aria-label", "PairBrowse: switch session"); $("share-btn").removeAttribute("title"); for (const id of ["switch", "share-btn"]) $(id).setAttribute("aria-haspopup", "dialog"); }
-  else if (slot) { $("switch").setAttribute("aria-label", SLOT_LABELS.switch); $("share-btn").title = SLOT_LABELS.share; }
-  else { $("switch").setAttribute("aria-label", "PairBrowse: switch session"); $("share-btn").removeAttribute("title"); }
+  const b = $("share-btn");
+  // In the slot the card is in another page: its state shows here (pressed), never its id.
+  if (slot) { b.setAttribute("aria-expanded", String(remote.share)); b.removeAttribute("aria-controls"); b.dataset.remote = String(remote.share); }
+  else { b.setAttribute("aria-expanded", String(!$("share-card").hidden)); b.setAttribute("aria-controls", "share-card"); delete b.dataset.remote; }
+  if (slot && hasBubbles()) { b.removeAttribute("title"); b.setAttribute("aria-haspopup", "dialog"); }
+  else if (slot) b.title = SHARE_SLOT_LABEL;
+  else b.removeAttribute("title");
   menuBtn.hidden = slot || !pb;
+  // The browser's app menu is its own: the ⋯ shows it open, never this page's #menu.
+  if (hasAppMenu()) { menuBtn.setAttribute("aria-expanded", String(remote.menu)); menuBtn.removeAttribute("aria-controls"); }
+  else { menuBtn.setAttribute("aria-expanded", String(!menu.hidden)); menuBtn.setAttribute("aria-controls", "menu"); }
   inView();
 }
-// Opens a dock (the left for the switcher, the right for Share) before it asks over the channel.
+// Opens a dock (the right for Share) before it asks over the channel.
 async function openDock(side) {
   if (!pb) return;
   try {
@@ -208,20 +217,11 @@ async function openDock(side) {
   } catch {}
 }
 const ask = (msg) => { try { shareChannel?.postMessage({ ...msg, window: myWindow }); } catch {} };
-// Where the trigger is, so the dock puts its caret under it: the logo's centre from the window's
-// left edge, Share's from the window's right edge.
+// Where Share is, so the dock puts its caret under it: its centre from the window's right edge.
 function anchorOf(id) {
   const r = $(id).getBoundingClientRect();
-  return id === "switch" ? { left: Math.round(r.left + r.width / 2) } : { right: Math.round(window.innerWidth - r.right + r.width / 2 + APP_MENU) };
+  return { right: Math.round(window.innerWidth - r.right + r.width / 2 + APP_MENU) };
 }
-$("switch").addEventListener("click", async (e) => {
-  if (!inSlot()) return;
-  e.stopImmediatePropagation();
-  if (hasBubbles()) { toggleBubble("switch"); return; }
-  // A build without the browser's bubbles: the picker as a tab (a page of its own, which reaches the
-  // helper; the left dock's frame gets no bindings in the browser and could not).
-  pb.tabs.create("pairbrowse://picker", true, myWindow).catch(() => {});
-}, true);
 $("share-btn").addEventListener("click", async (e) => {
   if (!inSlot()) return;
   $("share-note").textContent = "";
@@ -235,16 +235,14 @@ $("share-btn").addEventListener("click", async (e) => {
   shareWait = setTimeout(() => { shareWait = 0; $("share-note").textContent = "Open the agent panel (the sparkle beside the address bar) to share"; }, pb ? SHARE_WAIT_MS : 0);
   ask({ open: "share", anchor: anchorOf("share-btn") });
 }, true);
-// Escape on the trigger closes what it opened in the dock (the focus stays on the trigger).
-for (const [id, key] of [["switch", "switch"], ["share-btn", "share"]]) {
-  $(id).addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || !inSlot() || !remote[key]) return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    if (hasBubbles()) { toggleBubble(key); return; }
-    ask({ close: key });
-  }, true);
-}
+// Escape on Share closes what it opened in the dock (the focus stays on Share).
+$("share-btn").addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !inSlot() || !remote.share) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (hasBubbles()) { toggleBubble("share"); return; }
+  ask({ close: "share" });
+}, true);
 let shareChannel = null, shareWait = 0;
 const SHARE_WAIT_MS = 1000;
 try {
@@ -252,9 +250,8 @@ try {
   shareChannel.onmessage = (e) => {
     if (e.data?.window !== myWindow || myWindow === -1) return;
     const opened = e.data?.opened, closed = e.data?.closed;
-    if (opened === "share") { clearTimeout(shareWait); shareWait = 0; $("share-note").textContent = "Share card opened under Share, in the agent panel (F6)"; }
-    if (opened === "switch" || opened === "share") remote[opened] = true;
-    else if (closed === "switch" || closed === "share") remote[closed] = false;
+    if (opened === "share") { clearTimeout(shareWait); shareWait = 0; $("share-note").textContent = "Share card opened under Share, in the agent panel (F6)"; remote.share = true; }
+    else if (closed === "share") remote.share = false;
     else return;
     slotControls();
   };
@@ -262,19 +259,15 @@ try {
 
 // ---- in the browser's own Share bubble (530 E2 B2): the card's x closes it; the browser then gives
 // the focus back to Share. (B1, the switcher, is the picker page itself: ui/picker #bubble.) ----
-const inNativeBubble = () => hasBubbles() && (mode === "switcher" || mode === "share");
+const inNativeBubble = () => hasBubbles() && mode === "share";
 $("share-close").addEventListener("click", () => { if (inNativeBubble()) pb.bubbles.close(KINDS.kShare).catch(() => {}); });
 
 // ---- hash modes (no reload: the hash only picks what shows) ----
 function openBubble(m) {
-  if (m === "switcher") switcher.open($("switch"));
-  else if (m === "share") { if ($("share-card").hidden) share.open(); }
-  else if (m === "menu") openMenu();
+  if (m === "share" && $("share-card").hidden) share.open();
 }
 function closeBubble(m) {
-  if (m === "switcher") switcher.close(false);
-  else if (m === "share") { if (!$("share-card").hidden) share.close(false); }
-  else if (m === "menu") closeMenu(false, true);
+  if (m === "share" && !$("share-card").hidden) share.close(false);
 }
 function applyMode() {
   const given = location.hash.slice(1);
@@ -294,8 +287,8 @@ function applyMode() {
   slotControls();
   ensureStream();
 }
-// In a bubble the host owns dismissal: no outside-click listener is registered and Escape
-// closes nothing (the switcher, the menu, the share card and their Escape paths check bubble()).
+// In the bubble the host owns dismissal: no outside-click listener is registered and Escape
+// closes nothing (the share card's Escape paths check bubble()).
 window.addEventListener("hashchange", applyMode);
 window.addEventListener("resize", () => { if (mode === "row") slotControls(); });
 applyMode();

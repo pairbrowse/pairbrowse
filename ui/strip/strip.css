@@ -18,11 +18,14 @@ body[data-platform="mac"] .row { padding-left: 92px; } /* the traffic lights end
 body[data-host="native"] .row { padding-right: 8px; }
 .row button, .row a, .row input, .row label, #tabs li, .pop, .nav, .nav button { -webkit-app-region: no-drag; }
 
-#switch { display: flex; align-items: center; gap: 11px; align-self: center; height: var(--ctl-strip); padding: 0 6px 0 2px; border: 0; border-radius: var(--r-2); background: transparent; cursor: default; flex: none; transition: background-color var(--t-hover); } /* mockup */
-#switch img { display: block; flex: none; }
-#switch .wordmark { font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.005em; color: var(--ink); white-space: nowrap; }
-#switch .chevron { width: 12px; height: 12px; margin-left: 1px; color: var(--ink-2); }
-#switch:hover, #switch[aria-expanded="true"] { background: var(--hover); }
+/* The brand mark: the logo and the wordmark, a static mark (no hover, press or focus; the sessions'
+   door is the left dock's Sessions row), part of the window's drag region. The logo on the
+   favicons' centre line (the tabs, 42 px with a 1 px top edge, sit on the row's bottom edge):
+   (41 - 34) / 2 above it. The logo and wordmark keep their places; with the chevron gone (12 px and
+   its 1 px margin) the 11 px gap before it stays as padding, so the tabs move left by 13 px. */
+.brand { display: flex; align-items: center; gap: 11px; align-self: flex-end; margin-bottom: calc((41px - var(--ctl-strip)) / 2); height: var(--ctl-strip); padding: 0 calc(6px + 11px) 0 2px; flex: none; user-select: none; } /* mockup */
+.brand img { display: block; flex: none; }
+.brand .wordmark { font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.005em; color: var(--ink); white-space: nowrap; }
 
 /* The tabs sit on the row's bottom edge, 42 px tall; the padding keeps the active tab's feet unclipped. */
 #tabs { display: flex; align-items: flex-end; flex: 0 1 auto; gap: 2px; min-width: 0; margin: 0 calc(-1 * var(--sp-3)); padding: 0 var(--sp-3); list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
@@ -96,13 +99,10 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 #menu-btn svg { width: 18px; height: 18px; } /* mockup */
 #menu-btn:hover, #menu-btn[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
 
-/* ---- popovers: under the row (a taller host), or alone in a bubble (#switcher, #share, #menu) ---- */
+/* ---- popovers: under the row (a taller host), or alone in the browser's Share bubble (#share) ---- */
 /* They open and close with the sheet's motion (tokens.css .m-pop): down from the row, the right
    end's from their top right corner. */
 .share-card, #menu { --origin: top right; }
-#switcher { position: absolute; top: 53px; left: 12px; z-index: 3; width: 360px; height: 560px; border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); overflow: hidden; } /* mockup: under the 53 px row */
-body[data-platform="mac"] #switcher { left: 92px; }
-#picker { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
 
 /* The Share card (DESIGN.md B8, the side panel's markup and styles). */
 .share-card { position: absolute; top: 53px; right: 12px; z-index: 3; width: 320px; display: grid; gap: var(--sp-3); padding: calc(var(--sp-3) - 1px); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); line-height: 1.45; } /* mockup: under the 53 px row */
@@ -149,21 +149,18 @@ body[data-mode="nav-right"] .nav { gap: 12px; padding-left: 8px; }
 .nav button:disabled { color: var(--muted); }
 #sparkle[aria-pressed="true"] { color: var(--ink); }
 
-/* ---- modes: the bubbles show their popover alone ---- */
-body[data-mode="switcher"] .row, body[data-mode="share"] .row, body[data-mode="menu"] .row { display: block; height: auto; padding: 0; -webkit-app-region: no-drag; }
-body[data-mode="switcher"] .row > :not(#switcher), body[data-mode="share"] .row > :not(#right), body[data-mode="menu"] .row > :not(#right) { display: none; }
-body[data-mode="share"] #right > :not(#share-card), body[data-mode="menu"] #right > :not(#menu) { display: none; }
-body[data-mode="share"] #right, body[data-mode="menu"] #right { display: block; }
-body[data-mode="switcher"] #switcher, body[data-mode="share"] #share-card, body[data-mode="menu"] #menu { position: static; width: 100%; }
-body[data-mode="switcher"] #switcher { height: 100vh; }
+/* ---- modes: the Share bubble shows its card alone ---- */
+body[data-mode="share"] .row { display: block; height: auto; padding: 0; -webkit-app-region: no-drag; }
+body[data-mode="share"] .row > :not(#right) { display: none; }
+body[data-mode="share"] #right > :not(#share-card) { display: none; }
+body[data-mode="share"] #right { display: block; }
+body[data-mode="share"] #share-card { position: static; width: 100%; }
 /* A host wider than the card never stretches it (B8: 320 px), left-aligned at the page edge. */
 body[data-mode="share"] #share-card { max-width: 320px; }
-body[data-mode="menu"] #menu { max-width: 280px; }
-/* In the browser's own bubble (530 E2: B1 under the logo, B2 under Share) the card is the bubble: it
-   fills the page at the bubble's width (360 and 320), the browser draws the corners, the shadow, the
-   arrow and the motion, so the page draws no shadow or entrance of its own. The x closes B2. */
+/* In the browser's own bubble (530 E2: B2 under Share) the card is the bubble: it fills the page at
+   the bubble's width (320), the browser draws the corners, the shadow, the arrow and the motion, so
+   the page draws no shadow or entrance of its own. The x closes B2. */
 body[data-bubble="native"] { background: var(--elevated); }
-body[data-bubble="native"] #switcher { border: 1px solid var(--edge); box-shadow: inset 0 1px 0 var(--edge-light); }
 body[data-bubble="native"][data-mode="share"] #share-card { position: relative; top: auto; right: auto; max-width: none; padding-right: calc(var(--sp-3) + 24px); box-shadow: inset 0 1px 0 var(--edge-light); }
 body[data-bubble="native"] .m-pop { transition: none; }
 #share-close { position: absolute; top: calc(var(--sp-3) - 5px); right: calc(var(--sp-3) - 5px); display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }

@@ -39,20 +39,6 @@ body > svg[hidden] { display: none; }
 #nav-sessions .label { flex: none; }
 .row .current { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--muted); font-size: var(--fs-2); }
 .row .current:empty { display: none; }
-/* Activity's fold mark shows on hover, keyboard focus and while open (the mockup draws none). */
-#nav-activity:not(:hover):not(:focus-visible):not([aria-expanded="true"])::after { visibility: hidden; }
-#nav-activity::after { content: ""; flex: none; width: 8px; height: 8px; margin-right: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform var(--t); }
-#nav-activity[aria-expanded="true"]::after { transform: translateY(2px) rotate(-135deg); }
-
-/* The activity list, under its row (the helper's own lines, newest first). */
-.activity { list-style: none; margin: 2px 0 var(--sp-1); padding: 0 var(--dock-inset); }
-.activity[hidden] { display: none; }
-.activity li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-2); padding: var(--sp-1) 0; border-bottom: 1px solid var(--edge); font-size: var(--fs-2); color: var(--ink-2); overflow-wrap: anywhere; }
-.activity li:first-child { color: var(--ink); }
-.activity time { font-family: var(--mono); font-size: var(--fs-1); color: var(--muted); padding-top: 1px; }
-.activity strong { font-weight: var(--fw-name); color: var(--ink); }
-.activity code { font-family: var(--mono); font-size: var(--fs-1); padding: 0 var(--sp-1); border-radius: var(--r-1); background: var(--hover); }
-.activity li.empty { display: block; color: var(--muted); }
 
 /* Sections: Agents (with the + hint) and Shared with; 16 px between groups, the divider from
    gutter to gutter, the heading and its "+" on the shared edges. */
@@ -126,8 +112,8 @@ li[data-state="idle"] .dot { background: var(--muted); }
 
 /* Rail: 44 px, icons, avatars with their dots and the gear; every word moves to a tooltip. */
 body[data-dock="rail"] .row .label, body[data-dock="rail"] .row .current, body[data-dock="rail"] .badge, body[data-dock="rail"] #tab-count-words,
-body[data-dock="rail"] #nav-activity::after, body[data-dock="rail"] .sec-head h2, body[data-dock="rail"] .add,
-body[data-dock="rail"] .hint, body[data-dock="rail"] .conn, body[data-dock="rail"] .activity,
+body[data-dock="rail"] .sec-head h2, body[data-dock="rail"] .add,
+body[data-dock="rail"] .hint, body[data-dock="rail"] .conn,
 body[data-dock="rail"] .people li.empty,
 body[data-dock="rail"] #shared h2, body[data-dock="rail"] .empty-note { display: none; }
 /* The agents' names and states leave the eye but stay in the accessibility tree (the .sr recipe). */

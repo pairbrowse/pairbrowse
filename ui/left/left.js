@@ -3,13 +3,13 @@
 // the helper's layout, tabs and agent-tabs events do. Both read the helper's stream for the
 // agents (board), the activity, who it is shared with and the session. The page only reflects
 // the dock's state: it sets it only from Tools (the right dock opens, on its Tools tab through
-// the helper's POST layout tab), from Activity in the rail and from the collapse and expand
-// buttons. Tools is the agent panel's (its tab): no row here opens the other dock (DESIGN.md Part
+// the helper's POST layout tab) and from the collapse and expand buttons. Tools is the agent panel's (its tab): no row here opens the other dock (DESIGN.md Part
 // I). The Sessions row is the one door to sessions (2026-10-14): it names the open session (the
 // helper's session event) and opens the switcher; the switcher's "All sessions…" asks this dock
-// (pairbrowse-sessions channel) to open the sessions page in the contents. Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
+// (pairbrowse-sessions channel) to open the sessions page in the contents. History and Activity
+// open their pages in the contents (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
-import { $, el, rich, clock, activityHead, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
+import { $, el, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
 
 const pb = window.pairbrowse ?? null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -17,7 +17,6 @@ const pb = window.pairbrowse ?? null;
 document.documentElement.dataset.host = pb || servedByBrowser() ? "native" : "extension";
 const DOCK = ["hidden", "rail", "open"]; // DockState order
 const DRIVING_MS = 8000; // "working" for this long after an agent's last action (the panel's)
-const ACTIVITY_SHOWN = 12;
 const SVG = "http://www.w3.org/2000/svg";
 
 let layout = null; // the last LayoutState (native) or { left, right, strip } (served)
@@ -40,6 +39,10 @@ let paused = false; // agents paused session-wide (the helper's pause event)
 let noHelperKnown = false; // the browser (or the host) said there is no helper to ask
 
 const isHistory = (url) => /^chrome:\/\/history(\/|$)/.test(url || "");
+// The activity page (ui/activity) as the browser shows its address.
+const isActivityPage = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)activity(\/|#|\?|$)/.test(url || "");
+// A tab that is not a web page the Browser row brings back.
+const isOwnPage = (url) => isHistory(url) || isActivityPage(url);
 const isSettings = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)settings(\/|$)/.test(url || "");
 const dock = () => document.body.dataset.dock;
 const icon = (id) => {
@@ -93,7 +96,7 @@ function setDock(name) {
   // The buttons show only once the layout is known (a host that cannot set it shows none).
   $("dock-collapse").hidden = !layout || state !== "open";
   $("dock-expand").hidden = !layout || state !== "rail";
-  if (state !== "open") { closeHint(false); setActivity(false); }
+  if (state !== "open") closeHint(false);
   else if (switchAsked) { switchAsked = false; caretAt(); switcher.open($("nav-sessions")); }
   // Open and rail swap the dock's content: it comes in with the sheet's motion, not a jump (the
   // first state, on load, is only placed).
@@ -120,8 +123,10 @@ const setCurrent = (row, on) => (on ? row.setAttribute("aria-current", "page") :
 function drawNav() {
   const active = [...tabs.values()].find((t) => t.active);
   const history = !!active && isHistory(active.url);
+  const log = !!active && isActivityPage(active.url);
   setCurrent($("nav-history"), history);
-  setCurrent($("nav-browser"), !history);
+  setCurrent($("nav-activity"), log);
+  setCurrent($("nav-browser"), !history && !log);
 }
 
 // ---- agents: the board's agents, then every agent that owns a tab and is not on it, then you ----
@@ -187,12 +192,7 @@ function drawStorage() {
   document.querySelector(".foot-row").before(box);
 }
 
-// ---- activity ----
-function drawActivity() {
-  const items = activity.slice(-ACTIVITY_SHOWN).reverse();
-  $("activity-list").replaceChildren(...(items.length ? items.map((a) => el("li", {}, el("time", { textContent: clock(a.t) }),
-    el("span", {}, ...(activityHead(a) ? [el("strong", { textContent: `${activityHead(a)}: ` })] : []), rich(a.text)))) : [el("li", { className: "empty", textContent: "Nothing yet" })]));
-}
+// ---- activity: the agents' last actions (the list itself is the activity page's) ----
 // When an agent acted last (its own action: not a joiner's line, not a note), as the right dock
 // counts it.
 function actedAt(who) {
@@ -383,15 +383,12 @@ const openSettings = () => findOrOpen(isSettings, "pairbrowse://settings");
 function openBrowser() {
   if (pb && lastWebTab >= 0 && tabs.has(lastWebTab) && !tabs.get(lastWebTab).active) pb.tabs.activate(lastWebTab).catch(() => {});
 }
-function setActivity(open) {
-  $("nav-activity").setAttribute("aria-expanded", String(open));
-  $("activity-list").hidden = !open;
-}
-function toggleActivity() {
-  const open = $("nav-activity").getAttribute("aria-expanded") !== "true";
-  if (open && dock() === "rail" && !askDock({ pb, layout, base, side: "left", state: "open" })) return;
-  if (open) drawActivity();
-  setActivity(open);
+// Activity: the session's activity page in the contents (pairbrowse://activity), found or opened
+// in this window, from the open dock and the rail alike. Served without the browser's API, the
+// page's file in a new tab (it reads the helper's address as this dock does).
+function openActivity() {
+  if (pb) { findOrOpen(isActivityPage, "pairbrowse://activity"); return; }
+  window.open("../activity/index.html", "_blank", "noopener");
 }
 
 // The "+" hint: a card under the Agents heading, closed with Escape, a click outside or focus
@@ -435,7 +432,7 @@ function tabsFrom(list) {
   tabs.clear();
   for (const t of list) if (ours(t)) tabs.set(t.id, t);
   const a = list.find((t) => t.active);
-  if (a && !isHistory(a.url)) lastWebTab = a.id;
+  if (a && !isOwnPage(a.url)) lastWebTab = a.id;
   drawCount();
   drawNav();
   drawAgents();
@@ -465,7 +462,7 @@ if (pb) {
       if (myWindow !== -1 && window !== undefined && window !== myWindow) return; // another window's
       for (const t of tabs.values()) t.active = t.id === id;
       const t = tabs.get(id);
-      if (t && !isHistory(t.url)) lastWebTab = id;
+      if (t && !isOwnPage(t.url)) lastWebTab = id;
       drawNav();
     },
   });
@@ -506,7 +503,6 @@ function connect(url) {
   });
   on("activity", (list) => {
     activity = Array.isArray(list) ? list.filter((a) => a && Number.isFinite(a.t)) : [];
-    if ($("nav-activity").getAttribute("aria-expanded") === "true") drawActivity();
     drawAgents();
     armDrive();
   });
@@ -551,7 +547,7 @@ else {
 // ---- wiring ----
 $("nav-browser").addEventListener("click", openBrowser);
 $("nav-history").addEventListener("click", openHistory);
-$("nav-activity").addEventListener("click", toggleActivity);
+$("nav-activity").addEventListener("click", openActivity);
 $("add-agent").addEventListener("click", toggleHint);
 // The strip's logo is a brand mark: the Sessions row above is the one door to the switcher.
 $("settings").addEventListener("click", openSettings);

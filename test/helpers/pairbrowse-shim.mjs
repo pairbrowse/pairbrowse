@@ -62,7 +62,7 @@ export const ENUMS = {
   NetworkState: { kNone: 0, kWaiting: 1, kLoading: 2, kError: 3 },
   SecurityLevel: { kNone: 0, kSecure: 1, kWarning: 2, kDangerous: 3 },
   DockState: { kHidden: 0, kRail: 1, kOpen: 2 },
-  BubbleKind: { kSwitcher: 0, kShare: 1, kPicture: 2 },
+  BubbleKind: { kSwitcher: 0, kShare: 1, kPicture: 2, kAppMenu: 3 },
 };
 
 const tab = (id, index, title, url, active) => ({

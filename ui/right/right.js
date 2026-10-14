@@ -122,10 +122,13 @@ function countRequests() {
   const open = (id) => [...$(id).children].filter((c) => !c.dataset.leaving).length;
   const n = open("joins") + open("dev-asks") + open("host-asks");
   const words = `${n} request${n === 1 ? "" : "s"}`;
+  // The count is a figure for the eye (aria-hidden); its words name the tab, as on the rail: a name
+  // on the span itself is a name on a generic, which Chromium refuses in its own pages.
   const c = $("agent-count");
   c.hidden = !n || document.body.dataset.tab === "agent";
   c.textContent = n ? String(n) : "";
-  c.setAttribute("aria-label", words);
+  if (c.hidden) $("tab-agent").removeAttribute("aria-label");
+  else $("tab-agent").setAttribute("aria-label", `Agent, ${words}`);
   const r = $("rail-count");
   r.hidden = !n;
   r.textContent = n ? String(n) : "";

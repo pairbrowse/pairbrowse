@@ -50,7 +50,7 @@ body[data-driving="true"] .card:has(.face[aria-current="true"]) { box-shadow: 0 
 @starting-style { #note-form:not([hidden]) { opacity: 0; } }
 .card.add form { box-sizing: border-box; width: 100%; padding: var(--sp-2); }
 .field { box-sizing: border-box; width: 100%; height: var(--ctl-sm); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
-.field::placeholder { color: var(--muted); }
+.field::placeholder { color: var(--muted); opacity: 1; }
 .hint { display: block; margin-top: 4px; font-size: var(--fs-1); line-height: 13px; color: var(--ink-2); }
 
 .menu { position: absolute; z-index: 2; box-sizing: border-box; min-width: 140px; padding: 4px; border: 1px solid var(--edge); border-radius: var(--r-2); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); --origin: top right; } /* opens with the sheet's .m-pop from its More button */

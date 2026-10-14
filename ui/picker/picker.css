@@ -113,7 +113,7 @@ input {
   outline: none; transition: border-color var(--t);
 }
 #code { font-family: var(--mono); }
-input::placeholder { color: var(--muted); opacity: 0.8; }
+input::placeholder { color: var(--muted); opacity: 1; } /* the full --muted: 4.5:1 on the field (WCAG 1.4.3) */
 input:focus { border-color: var(--accent); }
 input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; box-shadow: var(--glow-focus); }
 .primary { height: var(--ctl); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font: 650 var(--fs-3) var(--sans); cursor: pointer; }

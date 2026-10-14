@@ -19,7 +19,7 @@
 
   <div class="tabs">
     <div class="tabset" role="tablist" aria-label="Dock">
-      <div class="tab" role="tab" id="tab-agent" aria-selected="true" aria-controls="pane-agent" tabindex="0">Agent<span class="count" id="agent-count" hidden></span></div>
+      <div class="tab" role="tab" id="tab-agent" aria-selected="true" aria-controls="pane-agent" tabindex="0">Agent<span class="count" id="agent-count" aria-hidden="true" hidden></span></div>
       <div class="tab" role="tab" id="tab-page" aria-selected="false" aria-controls="pane-page" tabindex="-1">Page</div>
       <div class="tab" role="tab" id="tab-pictures" aria-selected="false" aria-controls="pane-pictures" tabindex="-1">Screenshots</div>
       <div class="tab" role="tab" id="tab-tools" aria-selected="false" aria-controls="pane-tools" tabindex="-1">Tools</div>
@@ -213,12 +213,12 @@
         <section class="sec" id="sec-diag" data-key="diagnostics">
           <h2><button class="disclose" type="button" aria-expanded="false" aria-controls="diag-body">Diagnostics</button></h2>
           <div class="body m-fold" id="diag-body" hidden>
-            <dl class="diag" id="diag" hidden>
-              <dt>Helper</dt><dd id="diag-helper"></dd>
-              <dt>Browser</dt><dd id="diag-browser"></dd>
-              <dt>Connections</dt><dd id="diag-conn"></dd>
-              <dt>Joined</dt><dd id="diag-joined"></dd>
-            </dl>
+            <div class="diag" id="diag" hidden>
+              <div class="fact"><span class="fact-k">Helper</span> <span class="fact-v" id="diag-helper"></span></div>
+              <div class="fact"><span class="fact-k">Browser</span> <span class="fact-v" id="diag-browser"></span></div>
+              <div class="fact"><span class="fact-k">Connections</span> <span class="fact-v" id="diag-conn"></span></div>
+              <div class="fact"><span class="fact-k">Joined</span> <span class="fact-v" id="diag-joined"></span></div>
+            </div>
             <h3 class="k" id="diag-errors-head" hidden>Last errors</h3>
             <ol class="diag-errors" id="diag-errors" aria-labelledby="diag-errors-head" hidden></ol>
             <p class="empty-row" id="diag-errors-empty" hidden>No errors logged.</p>

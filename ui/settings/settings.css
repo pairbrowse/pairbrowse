@@ -111,10 +111,11 @@ fieldset[disabled] .seg label, fieldset[disabled] .choice, form[disabled] { opac
 
 /* About: facts, errors. */
 .facts { display: grid; grid-template-columns: 160px minmax(0, 1fr); margin: 0; }
-.facts dt, .facts dd { margin: 0; padding: var(--sp-2) 0; border-top: 1px solid var(--edge); }
-.facts dt:first-of-type, .facts dt:first-of-type + dd { border-top: 0; }
-.facts dt { color: var(--ink-2); }
-.facts dd { color: var(--ink); overflow-wrap: anywhere; }
+.facts .fact { display: contents; } /* rows of spans, not dt/dd: Chromium refuses a name on a term in its own pages */
+.facts .fact > span { margin: 0; padding: var(--sp-2) 0; border-top: 1px solid var(--edge); }
+.facts .fact:first-child > span { border-top: 0; }
+.facts .fact-k { color: var(--ink-2); }
+.facts .fact-v { color: var(--ink); overflow-wrap: anywhere; }
 /* Not connected is the resting state (DESIGN.md B2): the muted dot, never --warn or --bad. */
 .state::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: var(--sp-2); border-radius: 50%; background: var(--muted); vertical-align: 1px; }
 .state[data-s="live"]::before { background: var(--ok); }

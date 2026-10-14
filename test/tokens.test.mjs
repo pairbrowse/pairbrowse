@@ -71,6 +71,10 @@ test("text colors meet WCAG AA on every surface, in both schemes", () => {
       const r = contrast(t["edge-input"], t[bg]);
       assert.ok(r >= 3, `${scheme}: a text field's border (--edge-input) on --${bg} is ${r.toFixed(2)}:1`);
     }
+    for (const bg of ["bg", "chrome", "sidebar", "panel"]) {
+      const r = contrast(t["edge-btn"], t[bg]);
+      assert.ok(r >= 3, `${scheme}: a plain button's ring (--edge-btn) on --${bg} is ${r.toFixed(2)}:1`);
+    }
     const r = contrast(t.bg, t.accent);
     assert.ok(r >= 4.5, `${scheme}: primary button text (--bg on --accent) is ${r.toFixed(2)}:1`);
     for (const bg of ["bg", "chrome", "sidebar"]) {
@@ -144,6 +148,23 @@ test("the active tab's colors and the 10 px size are the mockup's", () => {
   // B11's scale: 10 (the timeline's time and caption) to 20 (page titles).
   assert.deepEqual(sizes, ["10px", "11px", "12px", "13px", "14px", "17px", "20px"]);
   assert.ok(contrast(dark["ink-2"], dark["tab-top"]) >= 4.5 && contrast(dark.ink, dark["tab-top"]) >= 4.5, "the active tab's text stays AA");
+});
+// A placeholder is text: a sheet text color at full opacity (a faded --muted fell to 4.46:1 on --bg),
+// so the AA check above holds for it too.
+test("every placeholder is a sheet text color at full opacity", () => {
+  for (const f of ALL_CSS) {
+    const css = read(f).replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const [, sel, body] of css.matchAll(/([^{}]*::placeholder[^{}]*)\{([^}]*)\}/g)) {
+      const color = body.match(/(?:^|;)\s*color\s*:\s*var\(--([a-z0-9-]+)\)/)?.[1];
+      assert.ok(["ink", "ink-2", "muted"].includes(color), `${f}: ${sel.trim()} takes --ink, --ink-2 or --muted (${color})`);
+      const opacity = body.match(/(?:^|;)\s*opacity\s*:\s*([\d.]+)/)?.[1];
+      assert.equal(opacity, "1", `${f}: ${sel.trim()} sets opacity: 1`);
+      for (const [scheme, t] of [["dark", dark], ["light", light]]) for (const bg of ["bg", "chrome", "elevated"]) {
+        const r = contrast(t[color], t[bg]);
+        assert.ok(r >= 4.5, `${scheme}: ${f} placeholder (--${color}) on --${bg} is ${r.toFixed(2)}:1`);
+      }
+    }
+  }
 });
 
 test("the static light keeps text at AA", () => {

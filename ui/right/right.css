@@ -349,8 +349,9 @@ body[data-recording="true"] #record-btn::before { border-radius: 2px; background
 
 /* Diagnostics: what the helper reports, then a report to copy or save (nothing is sent). */
 .diag { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); margin: 0 0 var(--sp-3); font-size: var(--fs-2); }
-.diag dt { color: var(--ink-2); }
-.diag dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.diag .fact { display: contents; } /* rows of spans, not dt/dd: Chromium refuses a name on a term in its own pages */
+.diag .fact-k { color: var(--ink-2); }
+.diag .fact-v { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 #sec-diag h3.k { margin: var(--sp-3) 0 var(--sp-1); }
 .diag-errors { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); font: var(--fs-1)/1.45 var(--mono); color: var(--ink-2); }
 .diag-errors li { overflow-wrap: anywhere; }

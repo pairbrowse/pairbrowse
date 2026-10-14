@@ -1171,9 +1171,12 @@ describe("requests count", () => pageTest("right", opts(), async ({ page, helper
   await page.click("#tab-tools");
   helper.push("join", [{ id: "r1", name: "Sam", app: "Claude Code", role: "drive", state: "pending" }]);
   await until("the count", () => document.getElementById("agent-count").textContent === "1" && !document.getElementById("agent-count").hidden);
-  assert.equal(await page.getAttribute("#agent-count", "aria-label"), "1 request");
+  assert.equal(await page.getAttribute("#agent-count", "aria-label"), null, "no name on the figure (a generic)");
+  assert.equal(await page.getAttribute("#agent-count", "aria-hidden"), "true");
+  assert.equal(await page.getAttribute("#tab-agent", "aria-label"), "Agent, 1 request");
   await page.click("#tab-agent");
   assert.equal(await inPage(visible, "#agent-count"), false, "hidden on the Agent tab");
+  assert.equal(await page.getAttribute("#tab-agent", "aria-label"), null, "the tab's own text names it again");
   await inPage(() => document.querySelector("#joins .join .primary").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
   await sleep(300);
   assert.equal(helper.posts.filter((p) => p.route === "approve").length, 0, "a synthetic click allows nothing");

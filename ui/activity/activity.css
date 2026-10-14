@@ -23,7 +23,7 @@ h1 { margin: 0; font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.02e
 h2 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-1); font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
 .lines li { display: grid; grid-template-columns: auto 8px minmax(0, 1fr); align-items: baseline; gap: 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-2); background: var(--elevated); color: var(--ink-2); }
-.lines time { font-family: var(--mono); font-size: var(--fs-1); color: var(--muted); white-space: nowrap; }
+.lines time { font-variant-numeric: tabular-nums; font-size: var(--fs-1); color: var(--muted); white-space: nowrap; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); align-self: center; }
 .dot.none { background: transparent; }
 .what { min-width: 0; overflow-wrap: anywhere; }

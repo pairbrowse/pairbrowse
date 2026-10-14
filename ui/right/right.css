@@ -247,7 +247,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-2); }
 .activity { list-style: none; margin: 0; padding: 0; }
 .activity li { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-2); padding: var(--sp-2) 0; border-bottom: 1px solid var(--edge); color: var(--ink-2); font-size: var(--fs-2); animation: enter var(--t); }
 .activity li:first-child { color: var(--ink); }
-.activity time { font-family: var(--mono); font-size: var(--fs-1); color: var(--muted); padding-top: 1px; }
+.activity time { font-variant-numeric: tabular-nums; font-size: var(--fs-1); color: var(--muted); padding-top: 1px; }
 .activity strong { font-weight: var(--fw-name); color: var(--ink); }
 .activity code { font-family: var(--mono); font-size: var(--fs-1); padding: 0 var(--sp-1); border-radius: var(--r-1); background: var(--hover); }
 .activity .empty { display: block; color: var(--muted); }
@@ -436,7 +436,7 @@ html[data-host="native"] #share-card.dock-share .share-close { display: grid; }
 .picture[hidden] { display: none; }
 .picture img { display: block; width: 100%; height: auto; border-radius: var(--r-2); border: 1px solid var(--edge); }
 figcaption { margin-top: var(--sp-2); font-size: var(--fs-2); color: var(--ink-2); overflow-wrap: anywhere; }
-figcaption time { font-family: var(--mono); font-size: var(--fs-1); color: var(--muted); }
+figcaption time { font-variant-numeric: tabular-nums; font-size: var(--fs-1); color: var(--muted); }
 .pane > .empty { margin: 0; padding: var(--sp-4) var(--sp-5); font-size: var(--fs-2); color: var(--muted); }
 .pane > .empty[hidden] { display: none; }
 

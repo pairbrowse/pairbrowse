@@ -93,6 +93,9 @@ function drawSession() {
 function setDock(name) {
   const state = DOCK.includes(name) ? name : "open";
   const was = dock();
+  // The control that had the focus: the window narrowing or widening changes the state with no
+  // click (the browser's narrow-window rule), and the focus must not fall to the page's body.
+  const had = document.activeElement !== document.body ? document.activeElement : null;
   document.body.dataset.dock = state;
   const hidden = state === "hidden";
   for (const id of ["main", "settings", "dock-collapse", "dock-expand"]) $(id).inert = hidden;
@@ -111,6 +114,10 @@ function setDock(name) {
     const wanted = focusAfter;
     focusAfter = "";
     if (wanted === state) $(state === "rail" ? "dock-expand" : "dock-collapse").focus();
+  }
+  // A focused control the new state no longer shows hands the focus to the dock's own button.
+  if (had && state !== was && state !== "hidden" && (document.activeElement === had || document.activeElement === document.body) && !had.checkVisibility()) {
+    $(state === "rail" ? "dock-expand" : "dock-collapse").focus();
   }
   railTitles();
 }

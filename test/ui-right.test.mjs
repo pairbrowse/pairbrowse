@@ -1182,6 +1182,24 @@ describe("requests count", () => pageTest("right", opts(), async ({ page, helper
   assert.deepEqual(errors, []);
 }));
 
+// The browser narrows the dock to a rail as the window narrows, and opens it again as it widens
+// (native 565), with no click: a focused control the new state no longer shows hands the focus to
+// the dock's own button, and nothing is asked of the layout.
+describe("the window narrows and widens the dock with the focus in it", () => pageTest("right", opts(), async ({ page, shim, inPage, until, errors }) => {
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  await page.focus("#dock-collapse");
+  await shim.layout({ right: 1 });
+  await until("the rail, focus on expand", () => document.documentElement.dataset.dock === "rail" && document.activeElement?.id === "dock-expand");
+  await shim.layout({ right: 2 });
+  await until("open, focus on collapse", () => document.documentElement.dataset.dock === "open" && document.activeElement?.id === "dock-collapse");
+  await inPage(() => document.activeElement.blur());
+  await shim.layout({ right: 1 });
+  await until("the rail", () => document.documentElement.dataset.dock === "rail");
+  assert.equal(await inPage(() => document.activeElement === document.body), true, "no focus taken");
+  assert.deepEqual((await shim.calls()).filter((c) => c.iface === "layout" && c.method === "set"), []);
+  assert.deepEqual(errors, []);
+}));
+
 describe("collapse and expand", () => pageTest("right", opts(), async ({ page, shim, harness, inPage, until, errors }) => {
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
   const live = await harness.live();

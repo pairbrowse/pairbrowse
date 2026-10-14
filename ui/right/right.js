@@ -141,6 +141,9 @@ let tabFocusAfter = ""; // a rail button's tab, focused once the dock is open
 function applyDock(s) {
   const name = ["hidden", "rail", "open"][s?.right] || "open";
   const was = document.documentElement.dataset.dock;
+  // The control that had the focus: the window narrowing or widening changes the state with no
+  // click (the browser's narrow-window rule), and the focus must not fall to the page's body.
+  const had = document.activeElement !== document.body ? document.activeElement : null;
   document.documentElement.dataset.dock = name;
   $("rail").hidden = name !== "rail";
   $("dock-collapse").hidden = name !== "open";
@@ -155,6 +158,10 @@ function applyDock(s) {
     const wanted = focusAfter;
     focusAfter = "";
     if (wanted === name) $(name === "rail" ? "dock-expand" : "dock-collapse").focus();
+  }
+  // A focused control the new state no longer shows hands the focus to the dock's own button.
+  if (had && name !== "hidden" && (document.activeElement === had || document.activeElement === document.body) && !had.checkVisibility()) {
+    $(name === "rail" ? "dock-expand" : "dock-collapse").focus();
   }
   // A hidden dock or a rail runs no timer, whether or not its document reports hidden; open
   // again, each is re-armed from the state it left. Open on Pictures again: the newest picture.

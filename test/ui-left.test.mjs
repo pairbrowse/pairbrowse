@@ -520,6 +520,31 @@ scenario("left: reduced motion", { viewport: OPEN, reducedMotion: "reduce" }, as
   await clean(ctx);
 });
 
+// The browser narrows the dock to a rail as the window narrows, and opens it again as it widens
+// (native 565), with no click: a focused control the new state no longer shows hands the focus to
+// the dock's own button, and nothing is asked of the layout.
+scenario("left: the window narrows and widens the dock with the focus in it", { viewport: OPEN }, async (ctx) => {
+  const { until, inPage, page } = ctx;
+  await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  await page.focus("#dock-collapse");
+  await ctx.shim.layout({ left: 1 });
+  await until("the rail, focus on expand", () => document.body.dataset.dock === "rail" && document.activeElement?.id === "dock-expand");
+  await ctx.shim.layout({ left: 2 });
+  await until("open, focus on collapse", () => document.body.dataset.dock === "open" && document.activeElement?.id === "dock-collapse");
+  // A control both states show keeps the focus.
+  await page.focus("#nav-browser");
+  await ctx.shim.layout({ left: 1 });
+  await until("the rail", () => document.body.dataset.dock === "rail");
+  assert.equal(await inPage(() => document.activeElement?.id), "nav-browser");
+  // Focus nowhere in the dock: none is taken.
+  await inPage(() => document.activeElement.blur());
+  await ctx.shim.layout({ left: 2 });
+  await until("open", () => document.body.dataset.dock === "open");
+  assert.equal(await inPage(() => document.activeElement === document.body), true);
+  assert.deepEqual(await calls(ctx, "layout", "set"), []);
+  await clean(ctx);
+});
+
 scenario("left: collapse and expand", { viewport: OPEN }, async (ctx) => {
   const { until, inPage, page } = ctx;
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
@@ -585,6 +610,9 @@ scenario("left: a failed collapse takes no focus later", { viewport: OPEN, nativ
   await page.click("#dock-collapse");
   assert.equal((await answered).status(), 500);
   assert.equal(await inPage(() => document.body.dataset.dock), "open", "a refused collapse leaves the dock open");
+  // The focus leaves the collapse button first: one that is still focused when the dock becomes a
+  // rail hands it to the expand button (the window's narrowing, native 565), which is not this.
+  await inPage(() => document.activeElement.blur());
   helper.set("layout", { left: "rail", right: "open", strip: 88 });
   await until("the rail", () => document.body.dataset.dock === "rail");
   assert.notEqual(await inPage(() => document.activeElement?.id), "dock-expand", "a later rail never pulls focus onto the expand button");

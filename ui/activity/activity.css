@@ -29,6 +29,12 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-1); font-weight: 650
 .what { min-width: 0; overflow-wrap: anywhere; }
 .what strong { font-weight: var(--fw-name); color: var(--ink); }
 .what code { font-family: var(--mono); font-size: var(--fs-1); padding: 0 var(--sp-1); border: 1px solid var(--edge); border-radius: var(--r-1); }
+/* A message between participants: the sender to whom, then their words, quoted, as written. */
+.said { color: var(--ink); }
+.said::before { content: "\201C"; }
+.said::after { content: "\201D"; }
+.clip { padding: 0; border: 0; background: transparent; color: var(--accent-ink); font: var(--fw-name) var(--fs-2) var(--sans); cursor: pointer; border-radius: var(--r-1); transition: color var(--t-hover); }
+.clip:hover { color: var(--ink); }
 
 /* The next older page: a quiet full-width control under the oldest line. */
 .earlier { display: block; width: 100%; height: var(--ctl-sm); margin: var(--sp-3) 0 0; border-radius: var(--r-2); border: 1px solid var(--edge); background: transparent; color: var(--ink-2); font: var(--fw-name) var(--fs-2) var(--sans); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }

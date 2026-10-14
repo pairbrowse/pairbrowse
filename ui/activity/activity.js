@@ -5,6 +5,11 @@
 // gives them on the board or in the collaboration), what (common.js rich: **bold** and `code` as
 // text nodes, never markup) and the tab it was in (activityHead). A filter by who: All, each agent
 // with a line here, People. Nothing is made up: a line is one the helper sent.
+// Messages between participants (pairbrowse_collaboration message) are lines too, by time with
+// the rest: in the log as { t, kind: "message", who (the sender), to (a label or "all"), text },
+// live from the board event's messages ({ from, to, text, t }, the helper giving each the log's
+// time, so the two are one line). Shown as "<sender> to <who>:" and the text, as text only (it is
+// another participant's words, never markup), a long one clipped with "Show all".
 // The session's history: GET activity.json (the helper's log of the session, newest first, a page
 // at a time: { items, more, kept: { lines, days, saved } }) read when the stream goes live, and
 // the next older page on "Show earlier"; merged with the stream's lines by the same key, so a line
@@ -18,15 +23,18 @@ const KEPT = 3000; // lines this page keeps while open, newest (the helper's log
 const FIRST = 100; // lines in the first page of history
 const EARLIER = 200; // lines per "Show earlier" (the route's most)
 const DAY = 86_400_000;
+const CLIP = 280; // a message's characters shown before "Show all" (the helper keeps up to 500)
 
 let base = null;
 let stream = null;
 let seq = 0; // arrival order, for lines with the same time
-const lines = new Map(); // key -> { t, who, tab, text, from, seq }
+const lines = new Map(); // key -> { t, who, tab, text, from, kind, to, seq }
+const unclipped = new Set(); // the keys of long messages shown whole
 let board = [];
 let collab = null;
 let only = "all"; // "all", "people" or "agent:<who>"
 let drawn = false; // the first draw only places the lines
+let boardSeen = false; // the stream's first board since it went live: its messages only placed
 // The history read so far: older (the oldest time read, the next page's before), more (the helper
 // has older lines), kept (what it says it keeps), or null before the first answer or without one.
 let history = null;
@@ -51,19 +59,25 @@ function colorOf(who) {
 }
 
 // ---- the lines ----
-const keyOf = (a) => [a.t, a.who, a.tab, a.text, a.from].join("\u0000");
+// A message is one by its time and sender (the log's times are unique; the board's copy has the
+// log's time, its text maybe masked differently).
+const keyOf = (a) => (a.kind === "message" ? ["message", a.t, a.who] : [a.t, a.who, a.tab, a.text, a.from]).join("\u0000");
 function take(list, { quiet = false } = {}) {
   if (!Array.isArray(list)) return;
   for (const a of list) {
     if (!a || typeof a !== "object" || !Number.isFinite(a.t) || typeof a.text !== "string" || !a.text) continue;
-    const line = { t: a.t, who: text(a.who), tab: text(a.tab), text: a.text, from: text(a.from) };
+    const message = a.kind === "message";
+    if (message && !text(a.who)) continue;
+    const line = { t: a.t, who: text(a.who), tab: message ? "" : text(a.tab), text: a.text, from: message ? "" : text(a.from), ...(message ? { kind: "message", to: text(a.to) || "all" } : {}) };
     const k = keyOf(line);
     if (!lines.has(k)) lines.set(k, { ...line, seq: seq++ });
   }
   // Only the newest KEPT stay.
-  if (lines.size > KEPT) for (const [k] of [...lines].sort((x, y) => x[1].t - y[1].t || x[1].seq - y[1].seq).slice(0, lines.size - KEPT)) lines.delete(k);
+  if (lines.size > KEPT) for (const [k] of [...lines].sort((x, y) => x[1].t - y[1].t || x[1].seq - y[1].seq).slice(0, lines.size - KEPT)) { lines.delete(k); unclipped.delete(k); }
   draw({ quiet });
 }
+// The board's messages ({ from, to, text, t }) as lines.
+const boardMessages = (list) => (Array.isArray(list) ? list : []).map((m) => (m && typeof m === "object" ? { t: m.t, kind: "message", who: m.from, to: m.to, text: m.text } : null));
 
 // "Today", "Yesterday", else the day's date, worked out when drawn (nothing ticks).
 function dayName(t, now = new Date()) {
@@ -82,13 +96,37 @@ function row(a, isPerson) {
   if (color) dot.style.background = color;
   else if (!a.who) dot.classList.add("none");
   const head = activityHead(a);
-  const what = el("span", { className: "what" }, ...(head ? [el("strong", { className: "who", textContent: `${head}: ` })] : []), rich(a.text));
+  const what = a.kind === "message" ? said(a) : el("span", { className: "what" }, ...(head ? [el("strong", { className: "who", textContent: `${head}: ` })] : []), rich(a.text));
   const time = el("time", { dateTime: new Date(a.t).toISOString(), textContent: clock(a.t) });
   const li = el("li", {}, time, dot, what);
   li.dataset.key = keyOf(a);
   li.dataset.kind = !a.who ? "" : isPerson ? "person" : "agent";
+  if (a.kind === "message") li.dataset.type = "message";
   if (a.who) li.dataset.who = a.who;
   return li;
+}
+
+// A message: "<sender> to <who>: " and its words as one text node (no rich(): nothing in another
+// participant's words is styled); past CLIP, cut with "Show all" / "Show less".
+function said(a) {
+  const k = keyOf(a);
+  const long = a.text.length > CLIP;
+  const whole = !long || unclipped.has(k);
+  const words = el("span", { className: "said", textContent: whole ? a.text : `${a.text.slice(0, CLIP).trimEnd()}…` });
+  const what = el("span", { className: "what" }, el("strong", { className: "who", textContent: `${a.who} to ${a.to === "all" ? "everyone" : a.to}: ` }), words);
+  if (long) {
+    const b = el("button", { type: "button", className: "clip", textContent: whole ? "Show less" : "Show all" });
+    b.setAttribute("aria-expanded", String(whole));
+    b.addEventListener("click", () => {
+      const open = !unclipped.has(k);
+      if (open) unclipped.add(k); else unclipped.delete(k);
+      words.textContent = open ? a.text : `${a.text.slice(0, CLIP).trimEnd()}…`;
+      b.textContent = open ? "Show less" : "Show all";
+      b.setAttribute("aria-expanded", String(open));
+    });
+    what.append(" ", b);
+  }
+  return what;
 }
 
 function chips(agents, anyPerson) {
@@ -206,7 +244,7 @@ const SUB = $("sub").textContent;
 function connect(url) {
   if (!url || url === base) return;
   // Another helper (a restart, another key): its lines are its own.
-  if (base) { lines.clear(); drawn = false; }
+  if (base) { lines.clear(); unclipped.clear(); drawn = false; }
   history = null;
   loading = null;
   base = url;
@@ -215,13 +253,18 @@ function connect(url) {
     onState: (s) => {
       // Live (first, or back after a drop): the newest page of the log, which also covers what
       // the stream said while it was away (it sends only its latest 30).
-      if (s === "live") { document.body.dataset.s = "live"; $("sub").textContent = SUB; say(""); draw(); loadNewest(); }
+      if (s === "live") { boardSeen = false; document.body.dataset.s = "live"; $("sub").textContent = SUB; say(""); draw(); loadNewest(); }
       else if (s === "closed") none();
       else if (document.body.dataset.s !== "none") document.body.dataset.s = "connecting";
     },
   });
   stream.on("activity", take);
-  stream.on("board", (b) => { board = Array.isArray(b?.people) ? b.people : []; draw(); });
+  stream.on("board", (b) => {
+    board = Array.isArray(b?.people) ? b.people : [];
+    const quiet = !boardSeen;
+    boardSeen = true;
+    take(boardMessages(b?.messages), { quiet });
+  });
   stream.on("collaboration", (c) => { collab = c && typeof c === "object" ? c : null; draw(); });
 }
 function helperBase() {

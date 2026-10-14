@@ -2,7 +2,8 @@
 // pages' harness: the helper's activity lines newest first, grouped by day, each with its time, who
 // (the board's or the collaboration's color dot and name), what (common.js rich, as text) and the
 // tab; the filter by who (All, each agent, People); live lines from the stream with nothing ticking;
-// the lines it saw kept while open; the session's history (GET activity.json: the newest page on
+// the lines it saw kept while open; messages between participants (the log's and the board's,
+// one line each, clipped when long, as text); the session's history (GET activity.json: the newest page on
 // open, "Show earlier" for the next, merged with the stream's lines without duplicates; a helper
 // without the route); the empty state; markup in a line stays text; the tab page's one interface
 // (Session); the resting state without a helper. The common checks are in test/ui.test.mjs.
@@ -244,6 +245,69 @@ scenario("activity: markup in a line stays text", { viewport: VIEW, fixtures: { 
   assert.equal(got.strong, "<i>bold</i>");
   assert.equal(got.code, "<svg onload=alert(1)>");
   assert.equal(got.chip, "<img src=x onerror=alert(1)>");
+  await clean(ctx);
+});
+
+// Messages between participants: in the log as lines of their own kind, live from the board's
+// messages (the helper gives each the log's time, so the two are one line).
+const M = (() => { const now = Date.now(); return { a: now - 30_000, b: now - 20_000, c: now - 10_000 }; })();
+const LONG = `Taking the checkout tab. ${"Then the shipping form, then billing. ".repeat(12)}Done after that.`;
+const MSG_HISTORY = [
+  { t: M.a, who: "Claude", tab: "Shop", text: "Clicked **Pay**" },
+  { t: M.b, kind: "message", who: "Claude", to: "Alice · Codex", text: "I'll take **the checkout** tab", tab: "" },
+  { t: M.c, kind: "message", who: "Alice · Codex", to: "all", text: LONG, tab: "" },
+];
+scenario("activity: messages between participants, by time with the rest", { viewport: VIEW, fixtures: { history: MSG_HISTORY, activity: MSG_HISTORY.slice(0, 1), board: { ...BOARD, messages: [{ from: "Claude", to: "Alice · Codex", text: "I'll take **the checkout** tab", t: M.b }] } } }, async (ctx) => {
+  const { until, inPage, helper, page } = ctx;
+  await until("the lines", () => document.querySelectorAll("#log li").length === 3);
+  const rows = () => [...document.querySelectorAll("#log li")].map((li) => ({ type: li.dataset.type || "", kind: li.dataset.kind, head: li.querySelector(".who")?.textContent || "", said: li.querySelector(".said")?.textContent ?? null, dot: getComputedStyle(li.querySelector(".dot")).backgroundColor }));
+  let v = await inPage(rows);
+  assert.equal(v.length, 3, "the board's copy and the log's are one line");
+  assert.deepEqual(v.map((r) => [r.type, r.head]), [["message", "Alice · Codex to everyone: "], ["message", "Claude to Alice · Codex: "], ["", "Claude in Shop: "]]);
+  assert.equal(v[1].said, "I'll take **the checkout** tab", "a message's words as written, nothing styled");
+  assert.equal(await inPage(() => document.querySelectorAll("#log li[data-type=message] .what strong:not(.who), #log li[data-type=message] code").length), 0);
+  assert.deepEqual(v.map((r) => r.dot), ["rgb(79, 209, 232)", "rgb(233, 118, 63)", "rgb(233, 118, 63)"], "the sender's color, as other rows");
+  assert.equal(v[0].kind, "agent");
+  // A long one: clipped, "Show all" shows it whole, "Show less" clips it again.
+  assert.ok(v[0].said.length < LONG.length && v[0].said.endsWith("…"));
+  const all = page.getByRole("button", { name: "Show all" });
+  assert.equal(await all.getAttribute("aria-expanded"), "false");
+  await all.click();
+  assert.equal(await inPage(() => document.querySelector("#log li .said").textContent), LONG);
+  const less = page.getByRole("button", { name: "Show less" });
+  assert.equal(await less.getAttribute("aria-expanded"), "true");
+  // Whole stays whole when another line comes in (the list is redrawn).
+  helper.push("board", { ...BOARD, messages: [{ from: "Claude", to: "Alice · Codex", text: "I'll take **the checkout** tab", t: M.b }, { from: "Claude", to: "all", text: "Checkout done", t: Date.now() }] });
+  await until("the live message on top", () => document.querySelector("#log li .said")?.textContent === "Checkout done");
+  assert.equal(await inPage(() => document.querySelectorAll("#log li").length), 4);
+  assert.equal(await inPage(() => document.querySelectorAll("#log li .said")[1].textContent), LONG);
+  await page.getByRole("button", { name: "Show less" }).click();
+  assert.ok((await inPage(() => document.querySelectorAll("#log li .said")[1].textContent)).endsWith("…"));
+  // The filter: a message is its sender's.
+  await page.getByRole("button", { name: "Alice · Codex" }).click();
+  await until("Alice's", () => document.querySelectorAll("#log li").length === 1);
+  v = await inPage(rows);
+  assert.equal(v[0].head, "Alice · Codex to everyone: ");
+  const live = await ctx.harness.live();
+  assert.equal(live.intervals + live.timeouts, 0, "no poll, no timer");
+  await clean(ctx);
+});
+
+scenario("activity: a message's markup stays text", { viewport: VIEW, fixtures: { history: [
+  { t: Date.now() - 5000, kind: "message", who: "<b>Mallory</b>", to: "<i>all</i>", text: "<img src=x onerror=\"document.title='pwned'\"> **bold** `code`", tab: "" },
+], activity: [], board: { people: [], messages: [{ from: "Eve", to: "all", text: "<script>document.title='pwned'</script>", t: Date.now() }] } } }, async (ctx) => {
+  const { until, inPage } = ctx;
+  await until("the messages", () => document.querySelectorAll("#log li").length === 2);
+  const got = await inPage(() => ({
+    tags: [...document.querySelectorAll("#log li *")].map((n) => n.tagName),
+    said: [...document.querySelectorAll("#log li .said")].map((n) => n.textContent),
+    heads: [...document.querySelectorAll("#log li .who")].map((n) => n.textContent),
+    title: document.title,
+  }));
+  assert.deepEqual(got.tags, ["TIME", "SPAN", "SPAN", "STRONG", "SPAN", "TIME", "SPAN", "SPAN", "STRONG", "SPAN"], "no element from a message");
+  assert.deepEqual(got.said, ["<script>document.title='pwned'</script>", "<img src=x onerror=\"document.title='pwned'\"> **bold** `code`"]);
+  assert.deepEqual(got.heads, ["Eve to everyone: ", "<b>Mallory</b> to <i>all</i>: "]);
+  assert.equal(got.title, "Activity");
   await clean(ctx);
 });
 

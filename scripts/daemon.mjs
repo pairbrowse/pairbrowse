@@ -68,7 +68,8 @@ import { createSettings } from "./liveview/settings.mjs";
 import { createReporter } from "./liveview/report.mjs";
 import { createPick } from "./daemon/pick.mjs";
 import { nativeDirs, pinnedAsset } from "./native-install.mjs";
-import { timelineDir, isTemporary } from "./sessions.mjs";
+import { timelineDir, activityFile, isTemporary } from "./sessions.mjs";
+import { createActivityLog } from "./daemon/activitylog.mjs";
 import { readFields, applyFields } from "./daemon/forms.mjs";
 import { createTabOrder } from "./daemon/taborder.mjs";
 import { createCobrowse } from "./daemon/cobrowse.mjs";
@@ -458,6 +459,9 @@ const sharing = createSharing({
       },
     },
     mask: output.mask, layoutDefaults: () => config.layout,
+    // The session's activity log (GET activity.json, owner only): kept as long as the helper runs,
+    // so a browser restart keeps it; a kept session's in its folder, a clean session's in memory.
+    activityLog: createActivityLog({ where: () => { const name = context.sessionName(); return { name, file: isTemporary(name) ? null : activityFile(name) }; }, mask: output.mask, log }),
     // The browser's Settings page: which browser runs, the timeline, the docks' default layout
     // (liveview/settings.mjs; written into config.json and the running config).
     settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), browserInUse: () => context.browserInUse() }),

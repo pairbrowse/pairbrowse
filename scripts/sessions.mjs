@@ -39,6 +39,9 @@ export const peopleFile = (name) => (name === "default" ? join(paths.home, "peop
 export const tabsFile = (name) => (name === "default" ? join(paths.home, "tabs.json") : join(SESSIONS, `${name}.tabs.json`));
 // The session's timeline (daemon/timeline.mjs): pictures already sent to agents, and their index.
 export const timelineDir = (name) => (name === "default" ? join(paths.home, "timeline") : join(SESSIONS, `${name}.timeline`));
+// The session's activity log (daemon/activitylog.mjs): the bar's lines, owner-only. A clean
+// session's stays in memory.
+export const activityFile = (name) => (name === "default" ? join(paths.home, "activity.json") : join(SESSIONS, `${name}.activity.json`));
 
 export function currentSession() {
   try {
@@ -70,14 +73,16 @@ export function deleteSession(name) {
   rmSync(tabsFile(name), { force: true });
   rmSync(peopleFile(name), { force: true });
   rmSync(timelineDir(name), { recursive: true, force: true });
+  rmSync(activityFile(name), { force: true });
+  rmSync(`${activityFile(name)}.tmp`, { force: true });
 }
 
 // A kept session's new name (the person's rename on the session card; the browser is closed
-// meanwhile): its profile folder, tabs, people and timeline move. Throws with a plain sentence.
+// meanwhile): its profile folder, tabs, people, timeline and activity log move. Throws with a plain sentence.
 // A move that fails puts back the ones already made.
-// Whether anything of a session by this name is on disk (its profile, tabs, people or timeline),
+// Whether anything of a session by this name is on disk (its profile, tabs, people, timeline or activity),
 // listed or not: a rename never moves onto it.
-export const sessionFilesExist = (name) => [profileDir, tabsFile, peopleFile, timelineDir].some((of) => existsSync(of(name)));
+export const sessionFilesExist = (name) => [profileDir, tabsFile, peopleFile, timelineDir, activityFile].some((of) => existsSync(of(name)));
 export function renameSession(from, to) {
   if (from === "default") throw new Error("The default session keeps its name; start a named session to name it.");
   if (isTemporary(from)) throw new Error("A clean session can't be renamed: it is deleted when you switch away.");
@@ -90,7 +95,7 @@ export function renameSession(from, to) {
   if (!caseOnly && sessionFilesExist(to)) throw new Error(`Session "${to}" already exists; choose another name.`);
   const moved = [];
   try {
-    for (const of of [profileDir, tabsFile, peopleFile, timelineDir]) {
+    for (const of of [profileDir, tabsFile, peopleFile, timelineDir, activityFile]) {
       if (!existsSync(of(from))) continue;
       renameSync(of(from), of(to));
       moved.push(of);

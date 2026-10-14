@@ -34,6 +34,7 @@ import { within } from "./util.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { readPick } from "./daemon/pick.mjs";
 import { REPORT_BODY_MAX } from "./liveview/report.mjs";
+import { createActivityLog, readPageQuery } from "./daemon/activitylog.mjs";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
@@ -47,7 +48,7 @@ const FRAME_EVERY_MS = 33;
 const SHARP_QUALITY = 90;
 const THUMB_QUALITY = { min: 20, max: 80, default: 50 };
 const JOINER_NAV_MS = 15_000; // a joiner's change: until the host's tab starts loading it
-const ACTIVITY_MAX = 30;
+const ACTIVITY_MAX = 30; // the activity event's lines; the session's log (activityLog) keeps more
 const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
@@ -156,13 +157,16 @@ async function release(cdp) {
 // the owner sees it (personal: true); guests never list, pick, close or type into it.
 // onPagesKey(): called on every request authenticated with the browser's own pages' key under a
 // loopback host; the receiver makes it idempotent (the helper deletes the key file).
+// activityLog: the session's activity log (daemon/activitylog.mjs), for GET activity.json; by
+// default one in memory for as long as this live view runs.
 // reporter: Report a problem's relay ({ enabled(), relay(body) -> { status, body } },
 // liveview/report.mjs), or null.
-export async function startLiveView({ reporter = null, tools = null, onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+export async function startLiveView({ activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null, capture = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
+  const history = activityLog || createActivityLog({ mask });
   const key = randomBytes(32).toString("base64url");
   // A second owner key, for the browser's own pages (a native build's chrome://pairbrowse pages,
   // handed to them in an owner-only key file, never the command line): never in the owner's link,
@@ -725,6 +729,15 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
       const tabs = withoutIcons(await tabsInfo());
       const recent = activity.slice(-STATE_ACTIVITY);
       json(res, 200, { status, session: sessionInfo, collaboration: collaborationNow(), tabs: invite ? guestList(tabs) : tabs, activity: invite ? guestActivity(recent) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
+    } },
+    // The session's activity log, newest first, a page at a time (the Activity page's history; the
+    // activity event has the latest 30): ?before=<epoch ms> (lines strictly older) &limit=<1..200>
+    // -> { items, more, kept: { lines, days, saved } }. The owner's alone (either owner key).
+    { method: "GET", path: "activity.json", right: "activity", handler: ({ req, res, rest }) => {
+      if (rest.length) return plain(res, 404);
+      const q = readPageQuery(new URL(req.url, "http://x").searchParams);
+      if (q.error) return json(res, 400, { error: q.error });
+      json(res, 200, history.page(q));
     } },
     // People asking to join with a code, for the owner to let in or not.
     { method: "GET", path: "joins.json", right: "approve", handler: ({ res }) => json(res, 200, approvals.pending()) },
@@ -1380,7 +1393,12 @@ export async function startLiveView({ reporter = null, tools = null, onPagesKey 
     // One plain-English line per browser action, whose Claude took it, and in which tab.
     addActivity(text, who = "", tab = "", page = null, from = "") {
       if (!text) return;
-      activity.push({ t: Date.now(), text: String(text).slice(0, 200), who: String(who || "").slice(0, 60), tab: String(tab || "").slice(0, 80), ...(page ? { tabId: idOf(page) } : {}), ...(from ? { from } : {}) });
+      const entry = { t: Date.now(), text: String(text).slice(0, 200), who: String(who || "").slice(0, 60), tab: String(tab || "").slice(0, 80), ...(page ? { tabId: idOf(page) } : {}), ...(from ? { from } : {}) };
+      // The session's log keeps it too; the stream sends the line as kept there (its time made
+      // unique, masked as the log is), so the Activity page's two sources agree.
+      let kept = null;
+      try { kept = history.add(entry); } catch (e) { log("activity log", e?.message || e); }
+      activity.push(kept ? { ...entry, t: kept.t, text: kept.text, tab: kept.tab } : entry);
       if (activity.length > ACTIVITY_MAX) activity.shift();
       broadcast("activity", activity);
       push.changed();

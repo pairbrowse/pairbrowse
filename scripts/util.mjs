@@ -1,7 +1,7 @@
 // Small helpers shared by the helper, the hooks and the install steps (Node's standard library only).
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { basename, dirname } from "node:path";
 import { Readable } from "node:stream";
@@ -15,11 +15,16 @@ export function readJson(file, fallback = null) {
 }
 
 // Writes `value` as JSON through a .tmp file and a rename, so another process reading the file
-// (the helper and the runs server share the run files) never sees half of it.
-export function writeJsonAtomic(file, value) {
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2));
-  renameSync(`${file}.tmp`, file);
+// (the helper and the runs server share the run files) never sees half of it. mode: the file's
+// permissions (0o600: owner-only), set on the .tmp file before it takes the name; the folder it
+// makes gets 0o700 then too.
+export function writeJsonAtomic(file, value, { mode } = {}) {
+  mkdirSync(dirname(file), { recursive: true, ...(mode !== undefined ? { mode: 0o700 } : {}) });
+  const tmp = `${file}.tmp`;
+  if (mode !== undefined) rmSync(tmp, { force: true }); // a leftover .tmp keeps its own mode otherwise
+  writeFileSync(tmp, JSON.stringify(value, null, 2), mode !== undefined ? { mode } : undefined);
+  if (mode !== undefined) chmodSync(tmp, mode); // the umask can't widen or narrow it
+  renameSync(tmp, file);
 }
 
 export const sha256 = (data) => createHash("sha256").update(data).digest("hex");

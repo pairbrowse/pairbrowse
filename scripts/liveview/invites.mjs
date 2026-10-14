@@ -111,9 +111,10 @@ export function createInvites({ now = () => Date.now() } = {}) {
 // "session" also covers renaming and saving the session (POST session), the owner's alone.
 // "tools" (the Tools tab: this session's downloads, the helper's recordings, hand-offs and
 // diagnostics, with Open, Reveal and Delete by id) is the owner's alone too, as is "capture" (the
-// browser's own capture page answering the helper: liveview/capture.mjs).
+// browser's own capture page answering the helper: liveview/capture.mjs), as is "activity" (the
+// session's activity log, GET activity.json: the whole history, where guests get the latest lines).
 const RIGHTS = {
-  owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline", "config", "outline", "tools", "capture"]),
+  owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline", "config", "outline", "tools", "capture", "activity"]),
   drive: new Set(["page", "events", "thumb", "state", "input", "tab"]),
   watch: new Set(["page", "events", "thumb", "state"]),
 };

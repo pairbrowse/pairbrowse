@@ -45,7 +45,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-1); font-weight: 650
 .choice + .choice { margin-top: var(--sp-2); }
 .icon { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink); font: 700 var(--fs-3)/1 var(--sans); }
 details.choice { display: block; cursor: default; }
-summary { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 0 var(--sp-3); min-height: 38px; list-style: none; cursor: pointer; border-radius: var(--r-2); }
+summary { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 0 var(--sp-3); min-height: 40px; list-style: none; cursor: pointer; border-radius: var(--r-2); }
 summary::-webkit-details-marker { display: none; }
 #join-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0 var(--sp-2) 36px; }
 #join-form #code { flex: 2 1 200px; font-family: var(--mono); }

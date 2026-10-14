@@ -5,12 +5,12 @@
 // owner route with the owner's key: config.json / config (the browser, the docks at a session's
 // start, the timeline, the session question at start, downloads, pictures with results, cookie
 // banners, open tabs, your name), profile.json / profile (passwords, remembered details), the
-// joinhost event / joinhost (join addresses), sessions.json / pick { action: "delete" } (saved
-// sessions), invites.json / invite { op: "revoke" } (invites out now), diagnostics.json and
-// diagnostics/report, and report (Report a problem; shown only while the helper says it relays
-// reports). The config, sessions and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
+// joinhost event / joinhost (join addresses), invites.json / invite { op: "revoke" } (invites out
+// now), diagnostics.json and diagnostics/report, and report (Report a problem; shown only while the
+// helper says it relays reports). Saved sessions link to the sessions page, their one home. The
+// config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
-import { $, el, ago, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
 
 const NATIVE = !!window.pairbrowse;
 const HOST = NATIVE ? "The PairBrowse browser" : "Chromium with the PairBrowse extension";
@@ -250,83 +250,7 @@ function hostsChanged(s) {
 // ---- Your data: passwords and remembered details (profile.json / profile) ----------------------
 const profile = profilePanel(() => base);
 
-// ---- Your data: saved sessions (sessions.json, the sessions event; Delete posts pick) -----------
-// Delete only for a saved session that isn't open and isn't "default" (the helper refuses those
-// too), after a question in the row: pages in a window slot get no confirm() dialog.
-async function deleteSession(name, shown) {
-  if (!base || conn !== "live") return say($("sessions-msg"), "Not connected to PairBrowse.", "error");
-  say($("sessions-msg"), `Deleting ${shown}…`);
-  const r = await postJson("pick", { action: "delete", name });
-  if (r.status === 200 && r.body && !r.body.error) {
-    say($("sessions-msg"), r.body.text || `Deleted ${shown}.`, "ok");
-    loadSessions(false);
-    return true;
-  }
-  say($("sessions-msg"), r.body?.text || r.body?.error || (r.status === 0 ? "Couldn't reach PairBrowse." : "That didn't work."), "error");
-  return false;
-}
-function sessionRow(s) {
-  const name = s.name === "default" ? "Default" : String(s.name);
-  const live = Array.isArray(s.live) ? s.live : [];
-  const sites = Array.isArray(s.sites) ? s.sites : [];
-  const face = el("span", { className: "avatar plain", textContent: initialOf(name) });
-  face.setAttribute("aria-hidden", "true");
-  const head = el("strong", {}, el("span", { className: "name", textContent: name, title: name }));
-  if (s.current) head.append(el("em", { textContent: "This session" }));
-  if (live.length) head.append(el("em", { className: "live", textContent: `Live · ${live.length} ${live.length === 1 ? "other" : "others"}` }));
-  const tabs = Number(s.tabs) || 0;
-  const meta = [
-    tabs ? `${tabs} ${tabs === 1 ? "tab" : "tabs"}${sites.length ? ` · ${sites.join(", ")}` : ""}` : "No saved tabs",
-    s.used ? `used ${ago(new Date(s.used).toISOString())}` : "",
-  ].filter(Boolean).join(" · ");
-  const li = el("li", {}, face, head, el("small", { textContent: meta }));
-  li.dataset.name = String(s.name);
-  if (s.current || s.name === "default") return li;
-  const del = el("button", { className: "mini needs-live", type: "button", textContent: "Delete", ariaLabel: `Delete session ${name}`, disabled: conn !== "live" });
-  const acts = el("span", { className: "acts-row" }, del);
-  del.addEventListener("click", (ev) => {
-    if (!ev.isTrusted) return;
-    const yes = el("button", { className: "mini bad needs-live", type: "button", textContent: "Delete", ariaLabel: `Yes, delete session ${name}` });
-    const keep = el("button", { className: "mini", type: "button", textContent: "Keep" });
-    const back = () => { acts.replaceChildren(del); del.focus(); };
-    keep.addEventListener("click", back);
-    yes.addEventListener("click", async (e) => {
-      if (!e.isTrusted) return;
-      yes.disabled = keep.disabled = true;
-      if (!(await deleteSession(s.name, name)) && acts.isConnected) back();
-    });
-    acts.replaceChildren(el("small", { className: "ask", textContent: "Delete it with its logins?" }), yes, keep);
-    keep.focus();
-  });
-  li.append(acts);
-  li.classList.add("has-acts");
-  return li;
-}
-function drawSessions(state) {
-  if (!state || typeof state !== "object") return;
-  const list = Array.isArray(state.sessions) ? state.sessions.filter((s) => s && typeof s.name === "string" && s.name) : [];
-  // A row asking its question keeps it while the list redraws for something else.
-  const asking = [...$("session-list").querySelectorAll("li")].find((li) => li.querySelector(".ask"))?.dataset.name;
-  const rows = list.map(sessionRow);
-  if (asking) {
-    const i = rows.findIndex((li) => li.dataset.name === asking);
-    const old = [...$("session-list").children].find((li) => li.dataset.name === asking);
-    if (i >= 0 && old) rows[i] = old;
-  }
-  $("session-list").replaceChildren(...(rows.length ? rows : [el("li", { className: "empty", textContent: "No saved sessions yet." })]));
-  applySearch();
-}
-async function loadSessions(clear = true) {
-  const r = await getJson("sessions.json");
-  if (r.status !== 200 || !r.body) {
-    $("session-list").replaceChildren();
-    // Not reached at all: the banner says so and the list loads again on the next open; no red.
-    if (r.status === 0) return say($("sessions-msg"), "");
-    return say($("sessions-msg"), r.status === 404 ? "This PairBrowse doesn't list sessions." : "Couldn't read the sessions. They load again when PairBrowse reconnects.", "error");
-  }
-  drawSessions(r.body);
-  if (clear) say($("sessions-msg"), "");
-}
+// Saved sessions: one home, the sessions page (DESIGN.md Part G); Settings links to it (index.html).
 
 // ---- Sharing: invites out now (invites.json, the invites event; Revoke posts invite) ----------
 const INVITE_ID = /^[0-9a-f]{8}$/;
@@ -608,7 +532,7 @@ function connect(url) {
     },
     onOpen: async () => {
       await loadConfig();
-      loadSessions(); loadInvites(); profile.load(); loadTimelineCount(); loadDiag();
+      loadInvites(); profile.load(); loadTimelineCount(); loadDiag();
       if (location.hash === "#report" && config?.report === true) openReport();
     },
   });
@@ -617,7 +541,6 @@ function connect(url) {
   on("joinhost", hostsChanged);
   on("config", (c) => { const { restart, ...rest } = c || {}; drawConfig({ ...rest, ...(restart !== undefined ? { restart } : {}) }); });
   on("timeline", () => loadTimelineCount());
-  on("sessions", drawSessions);
   on("invites", drawInvites);
 }
 

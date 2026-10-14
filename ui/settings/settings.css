@@ -152,6 +152,8 @@ button { font: inherit; }
 .primary:hover { background: var(--accent-fill-top); }
 .action { justify-self: start; height: var(--ctl); padding: 0 var(--sp-3); border: 1px solid var(--edge-btn); border-radius: var(--r-2); background: var(--btn); color: var(--ink); font-size: var(--fs-2); font-weight: var(--fw-name); cursor: pointer; transition: background var(--t-hover); }
 .action:hover { background: var(--hover); }
+/* A link drawn as an action (Saved sessions: Manage sessions…). */
+a.action { display: inline-flex; align-items: center; text-decoration: none; }
 button:disabled { opacity: 0.5; cursor: default; }
 .msg { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
 .msg:empty { display: none; }

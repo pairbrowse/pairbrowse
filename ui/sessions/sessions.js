@@ -3,8 +3,10 @@
 // and what the helper honours for each (DESIGN.md Part H: nothing else is offered).
 // - Switch: POST pick { action: "use", name } (428 while agents are at work: asked here, then sent
 //   again with confirm: true). Not on the open session.
-// - Rename: POST session { op: "rename", name }, the open session only (the helper renames only the
-//   one in use and reopens the browser on it; never "default", never a fresh session).
+// - Rename: POST session { op: "rename", name } on the open session (the helper reopens the browser
+//   on it), and { op: "rename", name, from } on a saved one that isn't open (renamed in place,
+//   nothing restarts), only while the helper's session event says it takes from (canRenameSaved:
+//   an older helper would rename the open one instead). Never "default", never a fresh session.
 // - Delete: POST pick { action: "delete", name }, after a question in the row; never the open session
 //   or "default" (the helper refuses those too).
 // - Start a fresh session (POST pick { action: "new" }) and Join a shared session (POST pick
@@ -66,10 +68,12 @@ function row(s) {
     sw.addEventListener("click", (ev) => { if (real(ev)) send({ action: "use", name: s.name }, `Opening ${name}…`); });
     buttons.push(sw);
   }
-  // Rename: the open session only, while the helper allows it (its session event's canRename).
-  if (s.current && s.name !== "default" && session?.temporary !== true && session?.canRename !== false) {
+  // Rename: the open session while the helper allows it (its session event's canRename); another
+  // saved session while the helper takes from (canRenameSaved). Never "default".
+  const renames = s.name !== "default" && (s.current ? session?.temporary !== true && session?.canRename !== false : session?.canRenameSaved === true);
+  if (renames) {
     const rn = el("button", { className: "secondary", type: "button", textContent: "Rename", ariaLabel: `Rename ${name}` });
-    rn.addEventListener("click", (ev) => { if (real(ev)) renameIn(li, s.name); });
+    rn.addEventListener("click", (ev) => { if (real(ev)) renameIn(li, s.name, !!s.current); });
     buttons.push(rn);
   }
   if (!s.current && s.name !== "default") {
@@ -136,8 +140,9 @@ function askDelete(li, acts, buttons, name) {
   keep.focus();
 }
 
-// ---- rename, in the row (the open session: the helper reopens the browser on the new name) ----
-function renameIn(li, name) {
+// ---- rename, in the row (the open session: the helper reopens the browser on the new name; a
+// saved one that isn't open: renamed in place) ----
+function renameIn(li, name, open) {
   const text = li.querySelector(".text"), acts = li.querySelector(".acts");
   const before = [...acts.children];
   const input = el("input", { type: "text", value: name, maxLength: 40, ariaLabel: `New name for ${shownName(name)}`, spellcheck: false, autocomplete: "off" });
@@ -156,7 +161,7 @@ function renameIn(li, name) {
     save.disabled = cancel.disabled = input.disabled = true;
     save.setAttribute("aria-busy", "true");
     say(`Renaming to ${to}…`);
-    const r = await postJson("session", { op: "rename", name: to });
+    const r = await postJson("session", open ? { op: "rename", name: to } : { op: "rename", name: to, from: name });
     if (r.status === 200 && r.body?.ok) {
       say(r.body.restarting ? `Renamed to ${r.body.name || to}. The browser reopens on it.` : `Renamed to ${r.body.name || to}.`, "ok");
       li.dataset.asking = "false";

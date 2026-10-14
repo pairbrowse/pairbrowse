@@ -381,6 +381,16 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     }
     if (route === "session") {
       if (body?.op === "save") return { status: 200, body: { ok: true, savedAt: new Date().toISOString() } };
+      // { op: "rename", name, from }: a saved session that isn't open, renamed in place (the
+      // helper's sessions event follows; the open session stays).
+      if (body?.op === "rename" && typeof body.from === "string" && body.from !== fx.session?.name && typeof body.name === "string" && body.name.trim()) {
+        const list = Array.isArray(fx.sessions?.sessions) ? fx.sessions.sessions : [];
+        if (!list.some((s) => s?.name === body.from)) return { status: 409, body: { error: `No session "${body.from}".` } };
+        if (list.some((s) => s?.name === body.name)) return { status: 409, body: { error: `Session "${body.name}" already exists; choose another name.` } };
+        fx.sessions = { ...fx.sessions, sessions: list.map((s) => (s?.name === body.from ? { ...s, name: body.name } : s)) };
+        push("sessions", fx.sessions);
+        return { status: 200, body: { ok: true, name: body.name, restarting: false } };
+      }
       if (body?.op === "rename" && typeof body.name === "string" && body.name.trim() && body.name.length <= 60) {
         fx.session = { ...fx.session, name: body.name };
         push("session", fx.session);

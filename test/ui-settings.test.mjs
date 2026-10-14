@@ -1,6 +1,6 @@
 // The settings page (ui/settings, DESIGN.md Part H): every control reads the helper's current value
-// and writes through a real owner route (config, profile, joinhost, pick, invite, diagnostics/report,
-// report), and the config, sessions and invites events keep it current.
+// and writes through a real owner route (config, profile, joinhost, invite, diagnostics/report,
+// report), and the config and invites events keep it current; saved sessions link to the sessions page.
 // The common checks (CSP, names, Tab ring, hidden, reduced motion) stay in test/ui.test.mjs.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -42,12 +42,9 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPag
   assert.equal(top.appearance, false, "no placeholder section");
   assert.equal(top.report, false, "the helper relays reports: Report a problem shows");
 
-  await until("two session rows", () => document.querySelectorAll("#session-list li").length === 2);
-  const rows = await inPage(() => [...document.querySelectorAll("#session-list li")].map((li) => ({
-    name: li.querySelector(".name").textContent, badges: [...li.querySelectorAll("em")].map((e) => e.textContent), controls: li.querySelectorAll("button, input, a").length,
-  })));
-  assert.deepEqual(rows.map((r) => [r.name, r.badges]), [["Default", ["This session"]], ["checkout-test", ["Live · 1 other"]]]);
-  assert.deepEqual(rows.map((r) => r.controls), [0, 1], "Delete only on a saved session that isn't open");
+  // Saved sessions: one link to their one home, the sessions page; no list or Delete of its own.
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#sessions a, #sessions button, #sessions input, #sessions ul")].map((n) => [n.tagName, n.textContent.trim(), n.getAttribute("href")])),
+    [["A", "Manage sessions…", "../sessions/index.html"]]);
 
   await until("the profile", () => document.querySelectorAll("#details .row").length === 2);
   await until("the host rows", () => document.querySelectorAll("#host-list li").length === 1);
@@ -188,7 +185,7 @@ pageTest("settings", { fixtures: { ...fixtures, timeline: null, config: null }, 
   const cfg = await inPage(() => [...document.querySelectorAll(".cfg-item")].map((n) => n.hidden));
   assert.ok(cfg.length >= 9 && cfg.every(Boolean), JSON.stringify(cfg));
   assert.equal(await inPage(() => document.getElementById("report-open").hidden), true, "no report relay: no button");
-  await page.hover("#session-list li:first-child");
+  await page.hover("#manage-sessions");
   assert.deepEqual(await harness.animations(), []);
   const fires0 = await harness.hiddenFires();
   await harness.setHidden(true);
@@ -349,31 +346,22 @@ pageTest("settings", { fixtures, viewport: VIEW, replies: {} }, async ({ helper,
     [true, true, true, true, true, true, false, false]);
 });
 
-// 12. Saved sessions: Delete after a question in the row (never the open session or Default),
-// POST pick { action: "delete" }; a refusal puts the row back; the sessions event redraws the list.
+// 12. Saved sessions: one home, the sessions page (DESIGN.md Part G). Settings links to it in this
+// tab; it asks the helper nothing about sessions (no sessions.json, no pick).
 pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
-  await until("two session rows", () => document.querySelectorAll("#session-list li").length === 2);
-  await page.click("button[aria-label='Delete session checkout-test']");
-  assert.equal(await inPage(() => document.activeElement.textContent), "Keep", "the question starts on Keep");
-  assert.equal(await inPage(() => document.querySelector("#session-list .ask").textContent), "Delete it with its logins?");
-  await page.keyboard.press("Enter");
-  assert.equal(await inPage(() => document.activeElement.getAttribute("aria-label")), "Delete session checkout-test", "Keep puts focus back");
-  assert.equal(helper.posts.some((p) => p.route === "pick"), false, "Keep sends nothing");
-  await page.click("button[aria-label='Delete session checkout-test']");
-  await page.click("button[aria-label='Yes, delete session checkout-test']");
-  await posted(helper, page, "delete", "pick", { action: "delete", name: "checkout-test" });
-  await until("gone", () => document.querySelectorAll("#session-list li").length === 1);
-  assert.equal(await inPage(text, "sessions-msg"), 'Deleted session "checkout-test" and its logins.');
-
-  // A session saved elsewhere arrives with the sessions event; a refused delete keeps its row.
-  helper.set("sessions", { sessions: [...helper.fixtures.sessions.sessions, { name: "travel", tabs: 2, sites: ["trips.example"], current: false, people: [], live: [] }] });
-  await until("travel", () => !!document.querySelector("button[aria-label='Delete session travel']"));
-  helper.replies.pick = () => ({ status: 409, body: { text: "People are in this session; try once they have left.", error: true } });
-  await page.click("button[aria-label='Delete session travel']");
-  await page.click("button[aria-label='Yes, delete session travel']");
-  await until("the refusal", () => document.getElementById("sessions-msg").textContent === "People are in this session; try once they have left.");
-  await until("the row back", () => document.activeElement?.getAttribute("aria-label") === "Delete session travel");
-  assert.equal(await inPage(() => document.querySelectorAll("#session-list li").length), 2);
+  await until("the stream", live);
+  assert.equal(await inPage(() => document.getElementById("sessions").querySelector(".help").textContent),
+    "Each session is a browser of its own, with its own logins and tabs. Switch, rename or delete them on the sessions page.");
+  const box = await inPage(() => { const r = document.getElementById("manage-sessions").getBoundingClientRect(); return { h: Math.round(r.height), display: getComputedStyle(document.getElementById("manage-sessions")).display }; });
+  assert.deepEqual(box, { h: 32, display: "inline-flex" }, "drawn as the page's other actions");
+  // The search finds it by what people come for.
+  await page.fill("#search", "rename");
+  await until("found", () => !document.getElementById("sessions").hidden && document.getElementById("sessions").checkVisibility());
+  await page.fill("#search", "");
+  assert.equal(helper.posts.some((p) => p.route === "pick"), false);
+  await page.click("#manage-sessions");
+  await page.waitForURL(/\/sessions\/index\.html$/);
+  await until("the sessions page", () => document.querySelector("h1")?.textContent === "Sessions");
   assert.deepEqual(errors, []);
 });
 

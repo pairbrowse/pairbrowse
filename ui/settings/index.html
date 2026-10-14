@@ -228,11 +228,13 @@
           <p class="msg" id="pictures-msg" role="status" aria-live="polite"></p>
         </div>
 
-        <div class="item" id="sessions" data-k="session sessions profile logins tabs saved">
+        <!-- Saved sessions have one home, the sessions page (DESIGN.md Part G): switch, rename and
+             delete there; Settings only points to it, in this tab (index.html: the extension serves files,
+             the browser serves both the folder and its index.html). -->
+        <div class="item" id="sessions" data-k="session sessions profile logins tabs saved switch rename delete manage">
           <h3 class="item-h">Saved sessions</h3>
-          <p class="help">Each session is a browser of its own, with its own logins and tabs. Switch with the PairBrowse logo. Deleting one removes its logins and tabs for good; the open session can't be deleted.</p>
-          <ul class="rows" id="session-list" aria-label="Saved sessions"></ul>
-          <p class="msg" id="sessions-msg" role="status" aria-live="polite"></p>
+          <p class="help">Each session is a browser of its own, with its own logins and tabs. Switch, rename or delete them on the sessions page.</p>
+          <a class="action" id="manage-sessions" href="../sessions/index.html">Manage sessions…</a>
         </div>
 
         <div class="item" id="browsing-data" data-k="cookies history cache clear browsing data site data">

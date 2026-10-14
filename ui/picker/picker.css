@@ -128,6 +128,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; box
 .report-offer { color: var(--accent-ink); font-weight: 500; }
 .msg[data-kind="ok"] { color: var(--ok); }
 body[data-s="connecting"] .choices, body[data-s="done"] .choices { display: none; }
+/* A session is open and this is a tab: only "All sessions…" (the sessions page) stays. */
+body[data-s="open"] .choices > :not(#all) { display: none; }
 /* No helper to ask: the resting state (the title and the line say it), no list, nothing in red. */
 body[data-s="none"] .choices, body[data-s="none"] .switch-ask { display: none; }
 .sub:empty { display: none; }

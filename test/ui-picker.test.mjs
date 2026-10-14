@@ -1,17 +1,11 @@
 // The session picker (ui/picker/) over the pages' harness: the 44 px rows with the people as a
 // stack at the right end, More sessions and its search, start fresh, the join form and the
 // address question (B6 card), a pick in the browser build (window.pairbrowse, no chrome.*), the
-// refresh paused while hidden and run at once on return, the keyboard path, reduced motion, and
-// framed as the session switcher in the real strip (the harness lets same-origin pages frame the
-// picker only, as the native build will), where the parent gets only a same-origin "picked" or
-// "close" notice and closes the switcher on it.
+// refresh paused while hidden and run at once on return, the keyboard path and reduced motion.
 // The common checks (names, focus ring, nothing while hidden, CSP) stay in test/ui.test.mjs;
 // test/picker.test.mjs keeps pinning the markup, the sheet's rules and the extension host.
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pageTest, runtime, openPage } from "./helpers/ui-page.mjs";
-import { startFakeHelper } from "./helpers/fake-helper.mjs";
-import { patchright, inPage } from "./live.mjs";
+import { pageTest } from "./helpers/ui-page.mjs";
 
 // The helper's picker data (as test/picker.test.mjs): five sessions, most recently used first.
 const STATE = {
@@ -261,126 +255,7 @@ pageTest("picker", { fixtures: { sessions: STATE }, reducedMotion: "reduce" }, a
   assert.deepEqual(await harness.animations(), []);
 });
 
-// Framed: the switcher in the real strip's same-origin frame, a session already open. The
-// strip's main world records every same-origin notice it gets (window.__notes).
-test("picker framed as the session switcher", { skip: !runtime, timeout: 90_000 }, async () => {
-  const browser = await patchright(runtime).chromium.launch();
-  const helper = await startFakeHelper({ fixtures: { sessions: { ...STATE, picking: false } } });
-  let ctx = null;
-  try {
-    ctx = await openPage(browser, "strip", { helper, viewport: { width: 1536, height: 640 } });
-    const { page } = ctx;
-    await inPage(page, () => { window.__notes = []; addEventListener("message", (e) => { if (e.origin === location.origin) window.__notes.push(e.data); }); });
-    const notes = () => inPage(page, () => window.__notes);
-    const closed = () => inPage(page, () => ({ hidden: document.getElementById("switcher").hidden, src: document.getElementById("picker").getAttribute("src"), focus: document.activeElement?.id || "" }));
-    const openSwitcher = async () => {
-      if (await inPage(page, () => document.getElementById("switcher").hidden)) await page.click("#switch");
-      let frame = null;
-      for (let i = 0; i < 100; i++) {
-        frame = page.frames().find((f) => f.url().includes("/picker/index.html")) || null;
-        if (frame && (await inPage(frame, () => document.body?.dataset.s).catch(() => null)) === "ready") break;
-        await sleep(50);
-      }
-      assert.ok(frame, "the frame loaded");
-      assert.equal(await inPage(frame, () => document.body.dataset.s), "ready", "the list shows with a session open");
-      return frame;
-    };
-    const closeSwitcher = async () => { if (!(await inPage(page, () => document.getElementById("switcher").hidden))) await page.click("#switch"); };
-
-    const frame = await openSwitcher();
-    const look = await inPage(frame, () => {
-      const main = document.querySelector("main"), s = getComputedStyle(main);
-      return {
-        host: document.documentElement.dataset.host, padding: getComputedStyle(document.body).padding,
-        width: main.getBoundingClientRect().width, border: s.borderTopStyle, shadow: s.boxShadow,
-        logo: document.querySelector(".logo").checkVisibility(), brand: document.querySelector(".brand").checkVisibility(),
-        sub: document.getElementById("sub").textContent, rows: document.querySelectorAll("#sessions > li").length,
-        scroll: document.documentElement.scrollWidth,
-        clipped: [...document.querySelectorAll("#fresh small, #join summary small")].some((e) => e.scrollWidth > e.clientWidth),
-      };
-    });
-    assert.deepEqual(look, { host: "frame", padding: "0px", width: 360, border: "none", shadow: "none", logo: false, brand: false,
-      sub: "Switch to another session, or start one.", rows: 3, scroll: 360, clipped: false });
-    assert.deepEqual(bad(await inPage(frame, () => window.__harness.log)), []);
-    await frame.click("#sessions > li:first-child button");
-    for (let i = 0; i < 60 && !posted(helper, "pick").length; i++) await sleep(50);
-    assert.deepEqual(posted(helper, "pick"), [{ action: "use", name: "work" }]);
-    const afterPick = await inPage(frame, () => window.__harness.log).catch(() => []);
-    assert.deepEqual(bad(afterPick), [], "the framed picker logged nothing on the pick");
-    for (let i = 0; i < 60 && !(await notes()).length; i++) await sleep(50);
-    assert.deepEqual(await notes(), [{ source: "pairbrowse-picker", op: "picked" }], "the parent told, nothing more");
-    // The frame unloads once the switcher has faded out (DESIGN.md Part I).
-    for (let i = 0; i < 60 && ((await closed()).src !== null || !(await closed()).hidden); i++) await sleep(50);
-    assert.deepEqual(await closed(), { hidden: true, src: null, focus: "switch" }, "the strip closed the switcher");
-
-    await inPage(page, () => { window.__notes = []; });
-    const second = await openSwitcher();
-    await second.click("h1");
-    await page.keyboard.press("Escape");
-    for (let i = 0; i < 20 && !(await notes()).length; i++) await sleep(50);
-    assert.deepEqual(await notes(), [{ source: "pairbrowse-picker", op: "close" }], "Escape closes the switcher");
-    for (let i = 0; i < 60 && ((await closed()).src !== null || !(await closed()).hidden); i++) await sleep(50);
-    assert.deepEqual(await closed(), { hidden: true, src: null, focus: "switch" });
-    const again = await openSwitcher();
-    await again.click("#more-btn");
-    await page.keyboard.type("sho");
-    await page.keyboard.press("Escape");
-    await sleep(100);
-    assert.equal((await notes()).length, 1, "the first Escape clears the search");
-    assert.equal((await closed()).hidden, false, "and the switcher stays open");
-    assert.deepEqual(bad(await inPage(again, () => window.__harness.log)), []);
-
-    // Escape on the address question is its Cancel: the question answered, the switcher kept.
-    helper.replies.pick = { error: true, hostAsk: { id: "a1", host: "share.example" } };
-    helper.replies.joinhost = {};
-    await closeSwitcher();
-    await inPage(page, () => { window.__notes = []; });
-    const third = await openSwitcher();
-    await third.click("#join summary");
-    await third.fill("#code", "pb-join:https://share.example/abc");
-    await third.click("#join-form .primary");
-    for (let i = 0; i < 60 && (await inPage(third, () => document.getElementById("host-ask").hidden)); i++) await sleep(50);
-    assert.equal(await inPage(third, () => document.getElementById("host-ask").hidden), false, "the address question shows");
-    await page.keyboard.press("Escape");
-    for (let i = 0; i < 60 && !posted(helper, "joinhost").length; i++) await sleep(50);
-    assert.deepEqual(posted(helper, "joinhost"), [{ op: "cancel", id: "a1" }], "Escape cancels the question");
-    await sleep(200);
-    assert.deepEqual(await notes(), [], "and does not close the switcher");
-    assert.equal((await closed()).hidden, false);
-    assert.deepEqual(bad(await inPage(third, () => window.__harness.log)), []);
-
-    // The tight row: Last used and Live with three people at 360 px. No pill fragments: Last used
-    // moves to the start of the meta line, Live keeps its pill whole, the name keeps ten
-    // characters and more, the stack shows the people in it now and "+N", and nothing reaches
-    // into the stack's column.
-    helper.fixtures.sessions = TIGHT;
-    await closeSwitcher();
-    const fourth = await openSwitcher();
-    const tight = await inPage(fourth, () => [...document.querySelectorAll("#sessions .choice")].map((b) => {
-      const name = b.querySelector(".name"), strong = b.querySelector("strong");
-      const font = parseFloat(getComputedStyle(name).fontSize);
-      return {
-        // Whole, or at least ten characters shown when the name is longer.
-        text: name.textContent, whole: name.scrollWidth <= name.clientWidth, tenChars: name.scrollWidth <= name.clientWidth || name.clientWidth >= 10 * font * 0.5,
-        badges: [...b.querySelectorAll("strong em")].map((e) => e.textContent),
-        pills: [...b.querySelectorAll("strong em")].every((e) => e.scrollWidth <= e.clientWidth),
-        lastUsed: b.querySelector("small").textContent.startsWith("Last used · "),
-        clear: b.querySelector(".chips").getBoundingClientRect().left >= strong.getBoundingClientRect().right,
-        chips: [...b.querySelectorAll(".chips > .chip")].map((c) => c.classList.contains("more-chip") ? c.textContent : "o"),
-      };
-    }));
-    assert.deepEqual(tight, [
-      { text: "research", whole: true, tenChars: true, badges: ["Live · 1 other"], pills: true, lastUsed: true, clear: true, chips: ["o", "+2"] },
-      { text: "quarterly-planning-session", whole: false, tenChars: true, badges: ["Live · 1 other"], pills: true, lastUsed: true, clear: true, chips: ["o", "+3"] },
-    ]);
-    assert.deepEqual(bad(await inPage(fourth, () => window.__harness.log)), []);
-    assert.deepEqual(ctx.errors, []);
-  } finally {
-    await ctx?.close();
-    await helper.close();
-    await browser.close();
-  }
-});
+// The framed switcher (the picker in its parent's same-origin frame) is the left dock's Sessions row's: test/ui-left.test.mjs.
 
 // ---- no helper, or none reached: the resting state, never the question nor an error ----
 // The words of DESIGN.md B4 (common.js NO_AGENT and noAgentLine), muted: no list, no wait claimed
@@ -417,13 +292,22 @@ pageTest("picker", { fixtures: { sessions: STATE }, native: false, bridge: false
   assert.deepEqual(bad(await harness.log()), []);
 });
 
-// The wait is said only while the helper reports a pick pending; with a session open the page is
-// done and claims no wait.
-pageTest("picker", { fixtures: { sessions: { ...STATE, picking: false } } }, async ({ until, inPage: run }) => {
-  await until("done", () => document.body.dataset.s === "done");
+// The wait is said only while the helper reports a pick pending. With a session open the picker as
+// a tab (a build without the switcher bubble) claims no wait and is no dead end: "All sessions…"
+// alone, the sessions page in this tab.
+pageTest("picker", { fixtures: { sessions: { ...STATE, picking: false } } }, async ({ page, helper, until, inPage: run }) => {
+  await until("open", () => document.body.dataset.s === "open");
   assert.deepEqual(await run(() => ({ title: document.getElementById("title").textContent, sub: document.getElementById("sub").textContent, waits: document.body.textContent.includes("Your agent waits") })),
-    { title: "Which session?", sub: "", waits: false });
+    { title: "Which session?", sub: "A session is already open.", waits: false });
+  const shown = await run(() => [...document.querySelectorAll(".choices > *, .choices li")].filter((n) => n.checkVisibility()).map((n) => n.id));
+  assert.deepEqual(shown, ["all"], "only All sessions…");
+  assert.deepEqual(await run(() => { const a = document.getElementById("all"); return [a.getAttribute("href"), a.target, a.querySelector("strong").textContent]; }), ["../sessions/index.html", "", "All sessions…"]);
+  await page.click("#all");
+  await page.waitForURL(/\/sessions\/index\.html$/);
+  await until("the sessions page", () => document.querySelector("h1")?.textContent === "Sessions");
+  assert.deepEqual(helper.posts.filter((p) => p.route === "pick"), [], "nothing picked");
 });
+// As the first tab's question while an agent waits, nothing but the question changes.
 pageTest("picker", { fixtures: { sessions: STATE } }, async ({ until, inPage: run }) => {
   await until("the rows", ready);
   assert.deepEqual(await run(() => [document.getElementById("title").textContent, document.getElementById("sub").textContent]), ["Which session?", "Your agent waits until you pick one."]);
@@ -491,7 +375,7 @@ pageTest("picker", { fixtures: { sessions: { ...STATE, picking: false } }, shim:
   await until("the rows", ready);
   const item = await run(() => { const a = document.getElementById("all"), r = a.getBoundingClientRect(), last = [...document.querySelectorAll(".choices > *")].filter((n) => n.checkVisibility()).at(-1);
     return { shown: a.checkVisibility(), href: a.getAttribute("href"), text: a.querySelector("strong").textContent, last: last === a, height: r.height >= 44 }; });
-  assert.deepEqual(item, { shown: true, href: "../sessions/", text: "All sessions…", last: true, height: true });
+  assert.deepEqual(item, { shown: true, href: "../sessions/index.html", text: "All sessions…", last: true, height: true });
   const closes = () => run(() => window.__pairbrowse.calls.filter((c) => c.iface === "bubbles" && c.method === "close").length);
   // No dock holds the opener lock: the item says so where it was clicked; the bubble stays.
   await run(() => { const ch = new BroadcastChannel("pairbrowse-sessions"); window.__unheld = []; ch.onmessage = (e) => window.__unheld.push(e.data); window.__quiet = ch; });

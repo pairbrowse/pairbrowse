@@ -1,6 +1,7 @@
 // All sessions (ui/sessions/, pairbrowse://sessions; opened from the switcher's "All sessions…") over
 // the pages' harness: every saved session with when it was last used and only the actions the helper
-// honours (Switch on the others, Rename on the open one, Delete on the others but "default"), the
+// honours (Switch on the others, Rename on the open one and, with a helper that takes from, on the
+// others but "default", Delete on the others but "default"), the
 // in-row questions, the switch question while agents are at work, start fresh and join, the open
 // session's line from the helper's event, the live list, the tab page's one interface (Session) and
 // the resting state without a helper. The common checks are in test/ui.test.mjs.
@@ -118,6 +119,35 @@ scenario("sessions: rename the open session", { viewport: VIEW, fixtures: { sess
   assert.deepEqual(posted(helper, "session"), [{ op: "rename", name: "work-2026" }]);
   assert.deepEqual(await inPage(msg), { text: "Renamed to work-2026.", kind: "ok" });
   await until("the line follows the helper", () => document.getElementById("sub").textContent === "You're in work-2026.");
+  await clean(ctx);
+});
+
+scenario("sessions: rename a saved session that isn't open (a helper that takes from)", { viewport: VIEW, fixtures: { sessions: SESSIONS(), session: { ...OPEN, canRenameSaved: true } } }, async (ctx) => {
+  const { until, inPage, helper, page } = ctx;
+  await until("the rows", () => document.querySelectorAll("#list > li[data-name]").length === 4);
+  // Rename on every session the helper renames: the open one and the saved ones, never "default".
+  assert.deepEqual((await inPage(rows)).map((r) => r.acts), [["Rename"], ["Switch", "Rename", "Delete"], ["Switch"], ["Switch", "Rename", "Delete"]]);
+  await row(ctx, "shop").getByRole("button", { name: "Rename shop" }).click();
+  assert.deepEqual(await inPage(() => [document.activeElement.getAttribute("aria-label"), document.activeElement.value]), ["New name for shop", "shop"]);
+  // A name another session has: the helper's sentence, the field stays.
+  await page.fill("#list .rename input", "travel");
+  await page.keyboard.press("Enter");
+  await until("refused", () => document.getElementById("msg").dataset.kind === "error");
+  assert.deepEqual(await inPage(msg), { text: "Session \"travel\" already exists; choose another name.", kind: "error" });
+  assert.equal(await inPage(() => document.activeElement?.getAttribute("aria-label")), "New name for shop");
+  await page.fill("#list .rename input", "shop-old");
+  await page.keyboard.press("Enter");
+  await until("renamed", () => document.getElementById("msg").dataset.kind === "ok");
+  assert.deepEqual(posted(helper, "session"), [{ op: "rename", name: "travel", from: "shop" }, { op: "rename", name: "shop-old", from: "shop" }]);
+  assert.deepEqual(await inPage(msg), { text: "Renamed to shop-old.", kind: "ok" });
+  await until("the list follows the helper", () => !!document.querySelector('#list > li[data-name="shop-old"]') && !document.querySelector('#list > li[data-name="shop"]'));
+  assert.equal(await inPage(() => document.getElementById("sub").textContent), "You're in work.", "the open session stays");
+  // The open one still goes without from (the browser reopens on it).
+  await row(ctx, "work").getByRole("button", { name: "Rename work" }).click();
+  await page.fill("#list .rename input", "work-2");
+  await page.keyboard.press("Enter");
+  await until("the line follows", () => document.getElementById("sub").textContent === "You're in work-2.");
+  assert.deepEqual(posted(helper, "session").at(-1), { op: "rename", name: "work-2" });
   await clean(ctx);
 });
 

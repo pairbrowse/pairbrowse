@@ -801,12 +801,12 @@ scenario("left: All sessions from the framed switcher", { viewport: { width: 420
   const { page, until } = ctx;
   await page.click("#nav-sessions");
   const frame = await framedPicker(page, "ready");
-  assert.deepEqual(await inFrame(frame, () => { const a = document.getElementById("all"); return [a.checkVisibility(), a.getAttribute("href"), a.target]; }), [true, "../sessions/", "_blank"]);
+  assert.deepEqual(await inFrame(frame, () => { const a = document.getElementById("all"); return [a.checkVisibility(), a.getAttribute("href"), a.target]; }), [true, "../sessions/index.html", "_blank"]);
   const opened = page.context().waitForEvent("page");
   await clickInFrame(page, frame, "#all");
   const tab = await opened;
   await tab.waitForLoadState("load");
-  assert.match(tab.url(), /\/sessions\/$/);
+  assert.match(tab.url(), /\/sessions\/index\.html$/);
   await until("the switcher closed", () => document.getElementById("switcher").hidden);
   await tab.close();
   await clean(ctx);

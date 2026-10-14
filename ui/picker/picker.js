@@ -156,11 +156,13 @@ async function load() {
   const state = await fetch(base + "sessions.json").then((r) => (r.ok ? r.json() : null), () => null);
   if (busy || document.body.dataset.s === "done" || document.body.dataset.s === "picking") return;
   if (!state) return none();
-  // A session is open: the first tab is done; the switcher still lists them to switch to.
+  // A session is open: the first tab's question is over; the switcher still lists them to switch
+  // to. As a tab (a build without the switcher bubble, or the first tab once a session is chosen)
+  // it offers "All sessions…" in place of a dead end: the sessions page, in this tab.
   if (!state.picking && !framed) {
-    document.body.dataset.s = "done";
-    head(QUESTION, "");
-    if (!$("msg").textContent) say("A session is already open. You can close this tab.", "ok");
+    document.body.dataset.s = "open";
+    head(QUESTION, "A session is already open.");
+    $("all").hidden = false;
     return;
   }
   head(QUESTION, state.picking ? WAITS : SWITCH);

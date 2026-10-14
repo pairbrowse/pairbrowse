@@ -24,6 +24,7 @@ import { RUN_TOOL, SCROLL_TOOL, enterButtonLabel, riskAt, contextAt, riskReason,
 import { sleep, within, pageLoaded } from "../util.mjs";
 import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel, settle } from "./page.mjs";
+import { scanReveal, revealNote, foldedLine } from "./reveal.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 import { dragBetween, reason as dragReason } from "./drag.mjs";
@@ -489,6 +490,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const text = notes();
         trace.mark("notes");
         if (text && msg.result) (msg.result.content ||= []).push({ type: "text", text });
+        // What a narrow window folded away (a search box behind a button, a menu behind a hamburger).
+        const foldPage = ownPage || (seenUrl ? await context.pageAt(seenUrl).catch(() => null) : null);
+        const folded = foldPage && !personTab(foldPage) ? await within(3500, foldedNote(msg, tool, foldPage, args, fullSnapshot)).catch(() => "") : "";
+        if (folded && msg.result) (msg.result.content ||= []).push({ type: "text", text: refNames.toPlain(folded) });
+        trace.mark("folded");
       }
       // The person's own tabs: their lines say only that (indices from the open tabs, read once).
       let personIdx = null;
@@ -521,6 +527,32 @@ export function createServe({ config, log, host, createConnection, clients, coll
       toClient(msg);
       finish(msg.id);
       if (outlineText) setImmediate(() => { try { outlines.record(ownPage, { text: outlineText, who: myLabel() || "" }); } catch (e) { log("outline", e?.message || e); } });
+    }
+
+    // Compact layouts (daemon/reveal.mjs): a browser_find that found nothing, or an action on a ref
+    // that's hidden or out of view, names the collapsed controls that may unfold it (with refs); a
+    // whole-page snapshot of a narrow page names the controls its menus are folded behind. "" else.
+    const NARROW_PX = 1024;
+    async function foldedNote(msg, tool, page, args, fullSnapshot) {
+      if (!msg.result || page.isClosed()) return "";
+      const said = (msg.result.content || []).map((c) => c.text || "").join("\n");
+      if (tool === "browser_find" && !msg.result.isError && /No matches found/i.test(said)) {
+        const note = revealNote(await scanReveal(page, typeof args?.text === "string" ? args.text : ""));
+        return note ? `\n### PairBrowse\n-${note}` : "";
+      }
+      if (FIELD_TOOLS.has(tool) || tool === "browser_click" || tool === "browser_hover") {
+        if (!msg.result.isError || !isRef(args?.target) || !/hidden|into view|not visible|outside of the viewport|didn't become ready/i.test(said)) return "";
+        const target = page.locator(`aria-ref=${args.target}`).first();
+        const note = revealNote(await scanReveal(page, String(args.element || ""), { target }));
+        return note ? `\n### PairBrowse\n-${note}` : "";
+      }
+      if (tool === "browser_snapshot" && fullSnapshot && !msg.result.isError) {
+        const width = await within(800, page.evaluate(() => innerWidth).catch(() => null));
+        if (!width || width >= NARROW_PX) return "";
+        const line = foldedLine(await scanReveal(page, ""));
+        return line ? `\n### PairBrowse\n${line}` : "";
+      }
+      return "";
     }
 
     // Enter after typing (browser_type with submit): on the field that has the focus now. Returns

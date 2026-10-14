@@ -141,6 +141,10 @@ It reports these in a "### PairBrowse" block in the next result. Read it.
 - While the user clicks or types in the tab, your next action there waits, then the result says
   what they did (scrolling and moving the mouse don't hold you up). Take a fresh snapshot and carry on from where the page is now.
 - Site notification and location requests never pop up; leave them alone.
+- Narrow windows fold search boxes and menus into buttons (a "Search" icon, a hamburger). Fast mode
+  opens the one control that clearly holds what a step names; otherwise the result names the
+  controls that may (with refs), and a link only the wide layout shows comes with its address. Open
+  one and retry, or go to that address; never settle for a different control that only shares the name.
 
 ## Uploads
 

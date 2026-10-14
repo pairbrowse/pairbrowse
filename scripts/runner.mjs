@@ -16,6 +16,7 @@ import { uploadProblem, uploadFiles } from "./upload.mjs";
 import { slug } from "./runs.mjs";
 import { readJson, sleep, within } from "./util.mjs";
 import { withHelpers, buttonLabel, isVisible, nearbyText, clickRisk, clickContext, settle } from "./daemon/page.mjs";
+import { scanReveal, revealNote } from "./daemon/reveal.mjs";
 
 // A stroke's pace: one small move this often (a steady hand drawing).
 const STROKE_STEP_MS = 8;
@@ -558,6 +559,51 @@ async function openSectionOf(page, label) {
   return null;
 }
 
+// Something looked for that the page's compact layout folded away (a narrow window turns a search
+// box into a "Search" button, a menu into a hamburger): the one control that clearly unfolds it
+// (daemon/reveal.mjs) is opened, as a person would, only when the click checks call that click safe
+// (a disclosure, never a submit or a final action), then look() runs again. Returns { el } when it
+// was found then, else { note }: the controls that may unfold it, for the failure's message. A
+// control opened for nothing is folded back.
+async function unfold(page, want, look, hooks, { exact = false } = {}) {
+  const mark = `r${Math.random().toString(36).slice(2, 10)}`;
+  const scan = await scanReveal(page, want, { mark, exact });
+  const note = revealNote(scan);
+  if (!scan || scan.auto < 0) return { note, scan };
+  const pick = scan.list[scan.auto];
+  const loc = page.locator(`[data-pb-reveal="${mark}"]`).first();
+  const handle = await within(1500, loc.elementHandle({ timeout: 1000 }).catch(() => null));
+  await within(1000, loc.evaluate((n) => n.removeAttribute("data-pb-reveal"), null, { timeout: 800 }).catch(() => {}));
+  if (!handle) return { note, scan };
+  try {
+    const { risk } = await contextAt(page, handle, "click");
+    // Only a click the checks call safe and whose effect the markup says (a disclosure, a link):
+    // never one that submits, commits, or only runs the page's scripts.
+    if (risk?.level !== "safe" || risk.unclear || strongSignal(risk)) return { note, scan };
+    await hooks.beforeStep?.("click", handle);
+    await hooks.cursor?.(handle, "click");
+    if (!(await within(6000, handle.click({ timeout: 5000 }).then(() => true, () => false)))) return { note, scan };
+    await within(5000, page.waitForLoadState("domcontentloaded", { timeout: 4500 }).catch(() => {}));
+    await settle(page, 1500);
+    const el = await look();
+    if (el) {
+      hooks.activity(`Opened **${pick.name || "the menu"}** first: the page had folded it away`);
+      return { el };
+    }
+    const open = await within(1000, handle.evaluate((n) => {
+      const b = n.matches("label[for]") ? n.control : n;
+      return b?.getAttribute("aria-expanded") === "true" || (b?.type === "checkbox" && b.checked) || !!n.closest("details[open]");
+    }).catch(() => false));
+    if (open) await within(4000, handle.click({ timeout: 3000 }).catch(() => {}));
+    // The control just tried isn't offered again.
+    const after = (await scanReveal(page, want, { exact })) || scan;
+    const rest = { ...after, list: after.list.filter((c) => !(c.name === pick.name && c.ref === pick.ref)) };
+    return { note: `${revealNote(rest)} (Opening ${pick.name ? `"${pick.name}"` : "the page's menu"} didn't show it.)`, scan: rest };
+  } finally {
+    handle.dispose().catch(() => {});
+  }
+}
+
 // Whether the form has a field by that name that it hides at the moment.
 async function hiddenNow(page, label) {
   for (const root of await formRoots(page)) {
@@ -680,6 +726,12 @@ async function onlyOne(page, selector, label = "") {
   return named ? null : shown[0];
 }
 
+const exactlyClickable = (page, name) => find(page, [
+  (root) => root.getByRole("button", { name, exact: true }),
+  (root) => root.getByRole("link", { name, exact: true }),
+  (root) => root.getByRole("tab", { name, exact: true }),
+  (root) => root.getByRole("menuitem", { name, exact: true }),
+], { frames: false });
 const clickable = (page, name) => find(page, [
   (root) => root.getByRole("button", { name, exact: true }),
   (root) => root.getByRole("link", { name, exact: true }),
@@ -1023,6 +1075,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
   // Background tabs aren't slowed down anyway (the browser starts with throttling switched off).
   // hooks.trace(text): where the run is now, for the word on a run that gets stuck (serve.mjs).
   const trace = (t) => { try { hooks.trace?.(t); } catch {} };
+  let lastTyped = null; // the field a fill step typed last (an Enter right after it goes there)
   for (const [i, step] of steps.entries()) {
     const [kind, arg] = Object.entries(step)[0];
     const fail = (why) => ({ ok: false, done, skipped, stoppedAt: i + 1, why });
@@ -1050,11 +1103,14 @@ async function stepsIn(page, steps, hooks, touched = []) {
           trace(`step ${i + 1}: finding "${label}"`);
           let el = await field(page, label);
           if (!el && (await openSectionOf(page, label))) el = await field(page, label);
+          // Folded away by a compact layout (a search box behind a "Search" button): unfolded once.
+          const u = el ? null : await unfold(page, label, () => field(page, label), hooks);
+          if (u?.el) el = u.el;
           if (!el) {
             // Its input hidden inside a box a person clicks: a styled dropdown, picked with select.
             const box = await hiddenDropdown(page, label);
             if (box) { await box.evaluate((n) => n.removeAttribute("data-pb-dropdown"), null, { timeout: 1000 }).catch(() => {}); return fail(`"${label}" is a dropdown: use a select step with the option's text ({"select": {"${label}": "..."}}).`); }
-            return fail(await hiddenNow(page, label) ? `"${label}" is hidden right now: the form shows it only for some answers. Leave it, or change the answer it depends on.` : `No field "${label}".${gone()}`);
+            return fail(u.note ? `No field "${label}" shows.${u.note}${gone()}` : await hiddenNow(page, label) ? `"${label}" is hidden right now: the form shows it only for some answers. Leave it, or change the answer it depends on.` : `No field "${label}".${gone()}`);
           }
           if (await theirs(el, label)) continue;
           // The element itself is held from here: a field named by text that goes away once it holds
@@ -1174,6 +1230,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
           }
         }
         for (const f of filled) touched.push({ el: f.el, label: f.label, note: f.note, secret: f.secret, value: f.secret ? undefined : String(f.value) });
+        lastTyped = filled.at(-1)?.el || null;
         if (filled.length) hooks.activity(`Filled ${filled.map((f) => `**${f.label}**`).join(", ")}`);
       } else if (kind === "check" || kind === "uncheck") {
         // Also a bare box followed by its text, with no label element ("<input> checkbox 1").
@@ -1193,7 +1250,16 @@ async function stepsIn(page, steps, hooks, touched = []) {
           const want = kind === "check";
           const was = hidden ? await hidden.isChecked({ timeout: 1500 }).catch(() => null) : null;
           const text = was === null ? null : await find(page, [(root) => root.getByText(String(arg), { exact: true }), (root) => root.getByText(String(arg))]);
-          if (!text) return fail(`No checkbox "${arg}".${gone()}`);
+          if (!text) {
+            const u = await unfold(page, String(arg), () => find(page, [(root) => root.getByLabel(arg, { exact: true }), (root) => root.getByRole("checkbox", { name: arg }), (root) => root.getByRole("radio", { name: arg }), (root) => root.getByLabel(arg)]), hooks);
+            if (!u.el) return fail(`No checkbox "${arg}"${u.note ? " shows." : "."}${u.note}${gone()}`);
+            await hooks.cursor?.(u.el, "click");
+            await (kind === "check" ? u.el.check({ timeout: 3000 }) : u.el.uncheck({ timeout: 3000 }));
+            touched.push({ el: u.el, label: String(arg) });
+            hooks.activity(`${kind === "check" ? "Ticked" : "Unticked"} **${arg}**`);
+            done.push(kind);
+            continue;
+          }
           if (was !== want) {
             await hooks.cursor?.(text, "click");
             await text.click({ timeout: 5000 });
@@ -1260,7 +1326,11 @@ async function stepsIn(page, steps, hooks, touched = []) {
             touched.push({ el: control.field, label });
             continue;
           }
-          if (!el) return fail(await hiddenNow(page, label) ? `"${label}" is hidden right now: the form shows it only for some answers. Leave it, or change the answer it depends on.` : `No dropdown "${label}".${gone()}`);
+          if (!el) {
+            const u = await unfold(page, label, () => find(page, [(root) => root.getByLabel(label, { exact: true }), (root) => root.getByRole("combobox", { name: label, exact: true }), (root) => root.getByRole("button", { name: label, exact: true }), (root) => root.getByRole("combobox", { name: label }), (root) => root.getByLabel(label)]), hooks);
+            if (u.el) el = u.el;
+            else return fail(u.note ? `No dropdown "${label}" shows.${u.note}${gone()}` : await hiddenNow(page, label) ? `"${label}" is hidden right now: the form shows it only for some answers. Leave it, or change the answer it depends on.` : `No dropdown "${label}".${gone()}`);
+          }
           if (await theirs(el, label)) continue;
           await hooks.cursor?.(el, "click");
           const isSelect = await el.evaluate((n) => n.tagName === "SELECT").catch(() => false);
@@ -1295,8 +1365,22 @@ async function stepsIn(page, steps, hooks, touched = []) {
       } else if (kind === "click") {
         // A step the agent named as a final action ("Send: Reply") goes through browser_click, which asks the user.
         if (clickClass(arg)) return fail(`"${arg}" is named as a final action. Run the steps before it, then use browser_click on it so the user confirms.`);
-        const el = await clickable(page, String(arg));
-        if (!el) return fail(`Nothing to click named "${arg}".`);
+        // Named exactly first. One named exactly but folded away (in a narrow window's hamburger
+        // menu) is unfolded and clicked, never traded for a shown control that only holds the name
+        // ("Installing Python modules" for "modules").
+        let el = await exactlyClickable(page, String(arg));
+        let u = null;
+        if (!el) {
+          u = await unfold(page, String(arg), () => exactlyClickable(page, String(arg)), hooks, { exact: true });
+          el = u.el || null;
+          if (!el && u.scan?.hidden) return fail(`"${arg}" doesn't show${u.note ? `.${u.note}` : " at this window size, and nothing on the page opens it."}${u.scan.href ? ` Its link goes to ${u.scan.href}: open that with browser_navigate.` : ""}`);
+        }
+        if (!el) el = await clickable(page, String(arg));
+        if (!el) {
+          u = await unfold(page, String(arg), () => clickable(page, String(arg)), hooks);
+          if (!u.el) return fail(`Nothing to click named "${arg}"${u.note ? " shows." : "."}${u.note}`);
+          el = u.el;
+        }
         await hooks.beforeStep?.("click", el);
         // What the matched element does, by the page's structure, whatever it says: strong signals
         // (payment, danger, DELETE, unreadable) make it the user's to confirm; ordinary submits go.
@@ -1321,6 +1405,9 @@ async function stepsIn(page, steps, hooks, touched = []) {
         hooks.activity(`Clicked **${arg}**`);
       } else if (kind === "press") {
         const key = activatingKey(arg);
+        // Enter right after a fill goes to the field typed last, as a person's would: the run's own
+        // Tab (leaving each field to check it kept its value) moved the focus on.
+        if (key === "enter" && lastTyped && Object.keys(steps[i - 1] || {})[0] === "fill") await within(2000, lastTyped.focus({ timeout: 1500 }).catch(() => {}));
         if (key) {
           const risk = await riskAt(page, null, key);
           if (strongSignal(risk)) {

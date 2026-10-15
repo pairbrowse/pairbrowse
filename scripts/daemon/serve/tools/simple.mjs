@@ -1,6 +1,6 @@
 // The helper's own tools that hand over to one of its parts: sessions, remembered details, the
 // live view, recording, invites, joining, and uploads.
-import { appName } from "../../../join.mjs";
+import { appName } from "../../../sharing/join.mjs";
 import { paths } from "../../../paths.mjs";
 import { uploadFiles } from "../../../upload.mjs";
 

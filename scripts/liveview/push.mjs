@@ -3,8 +3,8 @@
 // form values, pointers, who is doing what, and messages between participants. Nothing is polled
 // over the tunnel and nothing is a picture: helper to helper, and page to helper through the page
 // script. What may cross is decided in tabsync.mjs, per joiner.
-import { shareableUrl, onSecretDomain, readPointers, personColor, formForJoiner, VIEW_FRESH_MS, TABS_MAX } from "../tabsync.mjs";
-import { cleanName } from "../join.mjs";
+import { shareableUrl, onSecretDomain, readPointers, personColor, formForJoiner, VIEW_FRESH_MS, TABS_MAX } from "../sharing/tabsync.mjs";
+import { cleanName } from "../sharing/join.mjs";
 import { AGENT_COLOR } from "../../ui/vocab.js";
 import { FRAME_SKIP_BYTES, STALLED_BYTES } from "../../ui/limits.js";
 import { stateAgo } from "../daemon/presence.mjs";
@@ -35,7 +35,7 @@ const HEARTBEAT_MS = 1000; // keeps the tunnel from closing an idle stream, and 
 // the tunnel keeps the socket open (their helper killed): a slow computer may miss a few.
 const SILENT_MS = Number(process.env.PAIRBROWSE_TEST_SILENT_MS) || 10_000;
 // A joiner whose channel closed and didn't come back within this is gone. A reconnect takes a
-// second or two; one through another tunnel address (relay.mjs, when one went down) a few more,
+// second or two; one through another tunnel address (sharing/join-client.mjs, when one went down) a few more,
 // so this leaves room for that: the joiner comes back on the same key and nothing is lost.
 export const GONE_MS = Number(process.env.PAIRBROWSE_TEST_GONE_MS) || 25_000;
 const STREAMS_PER_JOINER = 2;

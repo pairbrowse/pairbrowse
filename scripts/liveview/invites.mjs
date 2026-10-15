@@ -2,7 +2,7 @@
 // and can click, type and switch tabs; "watch" (view-only, when asked for) only looks. Neither ever reaches the Profile panel (remembered details,
 // password names). Each has its own key, expires, and can be revoked; links live in memory only.
 import { randomBytes } from "node:crypto";
-import { cleanName } from "../join.mjs";
+import { cleanName } from "../sharing/join.mjs";
 import { keyOk } from "./http.mjs";
 import { ROLES, SHARE_MODES } from "../../ui/vocab.js";
 

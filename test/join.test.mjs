@@ -3,9 +3,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { EventEmitter } from "node:events";
-import { encodeJoinCode, parseJoinCode, createApprovals, stripUrl, stripText, newJoinerId, personLabel, appName, displayName, cleanName } from "../scripts/join.mjs";
+import { encodeJoinCode, parseJoinCode, createApprovals, stripUrl, stripText, newJoinerId, personLabel, appName, displayName, cleanName } from "../scripts/sharing/join.mjs";
 import { readAccount } from "../scripts/util.mjs";
-import { startJoin } from "../scripts/relay.mjs";
+import { startJoin } from "../scripts/sharing/join-client.mjs";
 import { acceptKey } from "../scripts/ws.mjs";
 
 // A dead joiner is noticed in a few seconds here (push.mjs reads these as it loads).
@@ -425,7 +425,7 @@ test("letting a joiner in through Claude always asks; turning one away doesn't",
 });
 
 test("the host's other tunnel addresses: Quick Tunnels or the code's own only", async () => {
-  const { relayUrl } = await import("../scripts/relay.mjs");
+  const { relayUrl } = await import("../scripts/sharing/join-client.mjs");
   const code = "https://one-two.trycloudflare.com";
   assert.equal(relayUrl("https://three-four.trycloudflare.com", code), "https://three-four.trycloudflare.com");
   assert.equal(relayUrl(code, code), code);
@@ -436,7 +436,7 @@ test("the host's other tunnel addresses: Quick Tunnels or the code's own only", 
 });
 
 test("a code's address: Quick Tunnels and exactly the hosts the person allowed; any other is theirs to decide", async () => {
-  const { hostAllowed, cleanHost, joinHostsOf } = await import("../scripts/join.mjs");
+  const { hostAllowed, cleanHost, joinHostsOf } = await import("../scripts/sharing/join.mjs");
   const ok = { v: 1, u: "https://share.example.org", k: KEY, r: "watch", l: "Bob" };
   const thrown = (fn) => { try { fn(); } catch (e) { return e; } assert.fail("didn't throw"); };
   // Allowed: the code reads as usual.
@@ -465,7 +465,7 @@ test("a code's address: Quick Tunnels and exactly the hosts the person allowed; 
 });
 
 test("Always allow writes the exact host into joinHosts in config.json and keeps the rest; Remove takes it out", async () => {
-  const { saveJoinHosts } = await import("../scripts/join.mjs");
+  const { saveJoinHosts } = await import("../scripts/sharing/join.mjs");
   const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -490,7 +490,7 @@ test("Always allow writes the exact host into joinHosts in config.json and keeps
 });
 
 test("the person's questions about a code's address: one per code, few at once, ten minutes each", async () => {
-  const { createHostAsks } = await import("../scripts/join.mjs");
+  const { createHostAsks } = await import("../scripts/sharing/join.mjs");
   let t = 1_000_000;
   const asks = createHostAsks({ now: () => t, maxPending: 2 });
   let changes = 0;

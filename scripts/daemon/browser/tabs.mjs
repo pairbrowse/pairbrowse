@@ -1,7 +1,7 @@
 // The browser's tabs: finding them, the tab cap, what watches each page, the saved tabs coming
 // back (and which page each tab came back as), and a file opened in a tab of the person's own.
 // st: the browser's state (browser/state.mjs); api: the other parts' functions, read when called.
-import { computerName } from "../../join.mjs";
+import { computerName } from "../../sharing/join.mjs";
 import { keepFocus } from "../../focus.mjs";
 import { readSavedTabs, trackTabs, restoreTabs } from "../../tabs.mjs";
 import { recordPerson, tabsFile } from "../../sessions.mjs";

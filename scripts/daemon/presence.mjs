@@ -4,7 +4,7 @@
 // a person fills are theirs (daemon/fields.mjs). An agent is told afterwards what people did:
 // which button or field, never what they typed.
 import { sleep } from "../util.mjs";
-import { cleanName } from "../join.mjs";
+import { cleanName } from "../sharing/join.mjs";
 
 const LATE_NEWS_MAX_MS = 15_000; // how late a person's news from the other browser can say it is
 const USER_IDLE_MS = 2000; // a person counts as busy in a tab until this long after their last input

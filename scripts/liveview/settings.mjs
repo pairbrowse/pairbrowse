@@ -29,7 +29,7 @@ import { execFile } from "node:child_process";
 import { within } from "../util.mjs";
 import { browserChoice } from "../browser.mjs";
 import { saveConfig, paths } from "../paths.mjs";
-import { cleanName } from "../join.mjs";
+import { cleanName } from "../sharing/join.mjs";
 import { readLayout, layoutFrom } from "./layout.mjs";
 import { reportUrlFrom } from "./report.mjs";
 

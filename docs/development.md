@@ -20,7 +20,7 @@ shadow roots), `ui/capture/record.js` (a canvas) and the "Opening tabs" page in 
 sheet value or a `SPARK_COLORS` entry and checks WCAG AA contrast in both schemes. Agent
 colors are `SPARK_COLORS` in `scripts/daemon/hud.mjs`, by app (Claude Code orange, Codex purple,
 Gemini blue; a second agent of one app, or an app without a color, takes the first free of
-`AGENT_FALLBACKS`, cyan first). People's colors are `PEOPLE_COLORS` in `scripts/tabsync.mjs`,
+`AGENT_FALLBACKS`, cyan first). People's colors are `PEOPLE_COLORS` in `scripts/sharing/tabsync.mjs`,
 never near an agent's (`test/colors.test.mjs` checks hue, distance and the tags' AA contrast). The window frame follows `THEME_COLOR` in
 `scripts/browser.mjs` (the sheet's chrome navy) unless the user picked a theme.
 
@@ -136,7 +136,7 @@ The plugin is small:
 | `scripts/liveview.mjs`, `scripts/liveview/` | Live view server for the Claude workspace (dock and Browser pane), the side panel's data: request checks and body reading (`http.mjs`), invites, input replay, shared tabs for joiners and their server |
 | `scripts/liveview/routes/` | The live view's routes by audience: `viewer` (page, events, thumb, state, input, pause), `owner` (approvals, dev, join hosts, profile, invites, record), `sessions`, `pages` (the browser's own pages: activity, layout, config, report, outline, strip, tab order, capture), `timeline`, `tools` |
 | `scripts/liveview.html`, `.css`, `.js`, `ui/common.js`, `ui/tokens.css` | The live view page, and the code and design tokens it shares with the side panel |
-| `scripts/join.mjs`, `scripts/relay.mjs`, `scripts/tabsync.mjs`, `scripts/daemon/follow.mjs` (+ `scripts/daemon/join/`) | Join codes and host approvals; the joiner's connection to the host (one WebSocket both ways); which addresses, field values, pointers and tab orders cross and the loop-safe bookkeeping; the joiner's browser following the shared tabs |
+| `scripts/sharing/join.mjs`, `scripts/sharing/join-client.mjs`, `scripts/sharing/tabsync.mjs`, `scripts/daemon/follow.mjs` (+ `scripts/daemon/join/`) | Join codes and host approvals; the joiner's connection to the host (one WebSocket both ways); which addresses, field values, pointers and tab orders cross and the loop-safe bookkeeping; the joiner's browser following the shared tabs |
 | `scripts/liveview/push.mjs`, `scripts/liveview/joiner-server.mjs`, `scripts/ws.mjs` | The host's push channel (one WebSocket per approved joiner: tabs, form values, pointers, session, messages), the guest port with its limits, and the small standard-library WebSocket both sides use |
 | `scripts/daemon/forms.mjs`, `scripts/daemon/cobrowse.mjs`, `scripts/daemon/taborder.mjs`, `scripts/daemon/board.mjs` | Reading and filling shared form fields; watching shared tabs for pointer moves and field changes; tab order through the side panel extension; who is doing what and messages between participants |
 | `scripts/tunnel.mjs` | The pinned Cloudflare Quick Tunnel |

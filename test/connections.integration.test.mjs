@@ -345,7 +345,7 @@ test("a joiner's link to the host drops, stalls or the host's helper crashes: ba
 
     stage = "the link stalls (open, nothing crosses)";
     // Once the joiner has had a few of the host's heartbeats (1 s apart), three missed in a row
-    // drop the link (relay.mjs); before that it waits for 40 s of silence.
+    // drop the link (sharing/join-client.mjs); before that it waits for 40 s of silence.
     await sleep(3500);
     proxy.set("stall");
     await until("the joiner notices the silence", async () => /dropped|reach|Retrying|Reconnecting/i.test(await status(joiner)), 10_000, () => status(joiner));

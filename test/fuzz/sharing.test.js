@@ -6,8 +6,8 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
-import { cleanName, parseJoinCode, encodeJoinCode, createApprovals, stripUrl, stripText } from "../../scripts/join.mjs";
-import { shareableUrl, stateForJoiner, readOps, createMirror, createOrderSync, shareFields, readForm, formForJoiner, readPointers, crossingText, TABS_MAX, OPS_MAX, ACTIVITY_MAX, URL_MAX, FIELDS_MAX, VALUE_MAX, POINTER_MAX } from "../../scripts/tabsync.mjs";
+import { cleanName, parseJoinCode, encodeJoinCode, createApprovals, stripUrl, stripText } from "../../scripts/sharing/join.mjs";
+import { shareableUrl, stateForJoiner, readOps, createMirror, createOrderSync, shareFields, readForm, formForJoiner, readPointers, crossingText, TABS_MAX, OPS_MAX, ACTIVITY_MAX, URL_MAX, FIELDS_MAX, VALUE_MAX, POINTER_MAX } from "../../scripts/sharing/tabsync.mjs";
 import { forJoiner } from "../../scripts/daemon/serve.mjs";
 import { guestTabs, guestActivity } from "../../scripts/liveview/tabs.mjs";
 

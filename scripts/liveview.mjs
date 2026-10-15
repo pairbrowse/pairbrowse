@@ -16,8 +16,8 @@ import { resolve, sep } from "node:path";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { keepFocus } from "./focus.mjs";
-import { createApprovals, personLabel, cleanName } from "./join.mjs";
-import { stateForJoiner, readOps, shareableUrl, onSecretDomain, activityBudget } from "./tabsync.mjs";
+import { createApprovals, personLabel, cleanName } from "./sharing/join.mjs";
+import { stateForJoiner, readOps, shareableUrl, onSecretDomain, activityBudget } from "./sharing/tabsync.mjs";
 import { createPush } from "./liveview/push.mjs";
 import { hostOk, originOk, keyOk, sse, SECURITY_HEADERS, plain, pathParts, listen } from "./liveview/http.mjs";
 import { createInvites, roleMay } from "./liveview/invites.mjs";
@@ -318,7 +318,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     const state = stateForJoiner({ tabs, activity, people }, { drive: j.invite.role === "drive", secretDomains: secretDomains(), name: j.name, from: joinerKey(j), mapUrl: devUrl });
     // Shared dev servers (devshare.mjs): their addresses and this joiner's own token for them.
     const dev = devShare?.forJoiner(joinerKey(j), j.invite.role) || [];
-    // Every tunnel address to this session (relay.mjs moves to another when one goes down).
+    // Every tunnel address to this session (sharing/join-client.mjs moves to another when one goes down).
     const urls = relays();
     return { ...state, ...(dev.length ? { dev } : {}), ...(urls.length > 1 ? { relays: urls } : {}) };
   }

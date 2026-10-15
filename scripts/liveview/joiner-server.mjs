@@ -4,7 +4,7 @@
 // (mode "shared") the setup of a direct connection that shows them a tab live and takes their
 // input there (daemon/screenshare.mjs). Never the owner's key or the viewer page.
 import http from "node:http";
-import { JOINER_ID, cleanName, appName, cleanComputer } from "../join.mjs";
+import { JOINER_ID, cleanName, appName, cleanComputer } from "../sharing/join.mjs";
 import { LOOPBACK, keyOk, readBody, parseJson, BODY_MAX, listen } from "./http.mjs";
 import { acceptUpgrade, refuseUpgrade } from "../ws.mjs";
 import { stateAgo } from "../daemon/presence.mjs";

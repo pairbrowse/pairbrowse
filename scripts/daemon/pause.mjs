@@ -7,7 +7,7 @@
 // resumes it, or presses the global Resume, which resumes every agent paused this way too, pressed
 // here or in a session joined from here (where the host decides the shared pause); an agent never
 // resumes itself.
-import { cleanName } from "../join.mjs";
+import { cleanName } from "../sharing/join.mjs";
 
 export const PAUSE_REPLY_MS = 60_000; // a paused agent hears back after this, so it isn't stuck
 const POLL_MS = 200;

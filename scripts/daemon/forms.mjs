@@ -4,7 +4,7 @@
 // site's own handlers that send a form never run because of it. Sensitive fields here never take
 // a value from there; they show "filled by ..." in their placeholder instead.
 import { randomBytes } from "node:crypto";
-import { formUrl, onSecretDomain, FIELDS_MAX } from "../tabsync.mjs";
+import { formUrl, onSecretDomain, FIELDS_MAX } from "../sharing/tabsync.mjs";
 import { within } from "../util.mjs";
 
 const FRAMES_MAX = 6;

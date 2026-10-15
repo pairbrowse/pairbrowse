@@ -1,6 +1,6 @@
 // pairbrowse_collaboration: who the agent is, taking or releasing the whole browser, sharing a
 // tab with another agent, messages between agents, and the state of it all.
-import { personLabel, appName } from "../../join.mjs";
+import { personLabel, appName } from "../../sharing/join.mjs";
 import { PERSON_TAB_RULE } from "../output.mjs";
 
 export function createCollaborationTool(conn, api) {

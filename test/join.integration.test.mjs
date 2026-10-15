@@ -280,7 +280,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code, name: "Alice" })), /Asked Bob to let Alice in/);
     const aliceReq = await until("Alice's request", async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" })).match(/request (r[0-9a-f]{6}): Alice/)?.[1]);
     await tool(host.call, "pairbrowse_invite", { action: "approve", id: aliceReq });
-    const { parseJoinCode } = await import("../scripts/join.mjs");
+    const { parseJoinCode } = await import("../scripts/sharing/join.mjs");
     const carolCode = parseJoinCode(codeOf(text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "watch", label: "Carol", share: "code", mode: "follow" }))), { allowLocal: true });
     const carolHeaders = { "x-pairbrowse-joiner": "c".repeat(32), "x-pairbrowse-name": "Carol", "x-pairbrowse-app": "" };
     const carol = (path, body) => fetch(`${carolCode.url}/${carolCode.key}/${path}`, { method: body ? "POST" : "GET", body: body && JSON.stringify(body), headers: carolHeaders });

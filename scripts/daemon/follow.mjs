@@ -5,8 +5,8 @@
 // (tabsync.mjs), never cookies or pictures; everyone stays signed in as themselves. What happens in the host's
 // session shows here like local activity: in the bar at the bottom of each page, the side panel
 // and the tab overview.
-import { parseJoinCode, cleanName, displayName, appName } from "../join.mjs";
-import { startJoin } from "../relay.mjs";
+import { parseJoinCode, cleanName, displayName, appName } from "../sharing/join.mjs";
+import { startJoin } from "../sharing/join-client.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
 import { sleep, currentAccount } from "../util.mjs";
 import { toolsWith } from "../tools/catalog.mjs";

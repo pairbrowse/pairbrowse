@@ -1,7 +1,7 @@
 // Fields people are filling: a field a person edits is theirs for a while, here or in the other
 // browser of a shared tab. Agents leave it as the person wrote it (serve.mjs refuses typing,
 // filling, choosing or ticking there; fast mode skips it), and people never wait for each other.
-import { cleanName } from "../join.mjs";
+import { cleanName } from "../sharing/join.mjs";
 import { within } from "../util.mjs";
 
 export const OWN_MS = 5_000; // a field a person edited stays theirs this long

@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import net from "node:net";
 
-const { createDevShare, devAddress, readDevEntry, toDevHeaders, fromDevHeaders, DEV_COOKIE } = await import("../scripts/devshare.mjs");
-const { stateForJoiner } = await import("../scripts/tabsync.mjs");
+const { createDevShare, devAddress, readDevEntry, toDevHeaders, fromDevHeaders, DEV_COOKIE } = await import("../scripts/sharing/devshare.mjs");
+const { stateForJoiner } = await import("../scripts/sharing/tabsync.mjs");
 
 // A stand-in dev server: records what it was sent; answers a redirect, a cookie and a WebSocket.
 async function devServer() {

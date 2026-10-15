@@ -4,9 +4,9 @@
 // mode the same rounds carry the picture pages' addresses (api: join/screens.mjs).
 // live: the session joined now (join/state.mjs newFollowState).
 import { sentAgo } from "../presence.mjs";
-import { readForm, readPointer, readView, ownPointer, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, tabWho, personColor, sameOrder, TABS_MAX, OPS_MAX } from "../../tabsync.mjs";
+import { readForm, readPointer, readView, ownPointer, formUrl, VIEW_FRESH_MS, onSecretDomain, shareableUrl, crossingText, turnLeft, tabWho, personColor, sameOrder, TABS_MAX, OPS_MAX } from "../../sharing/tabsync.mjs";
 import { keepFocus } from "../../focus.mjs";
-import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../../devshare.mjs";
+import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../../sharing/devshare.mjs";
 import { sleep } from "../../util.mjs";
 import { AGENT_COLOR, isColor } from "../../../ui/vocab.js";
 import { JOINER_POINTER_EVERY_MS } from "../../../ui/limits.js";

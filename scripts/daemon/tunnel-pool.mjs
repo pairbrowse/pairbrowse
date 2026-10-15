@@ -8,7 +8,7 @@ import { startOwnTunnel } from "../tunnels/start.mjs";
 export function createTunnelPool({ config, log, hostNote, save }) {
   // Quick Tunnels to the live view's guest port (which takes join code keys and nothing else),
   // while join codes are out: two at once. Codes carry the first's address; approved joiners learn
-  // every address (relay.mjs), so when one tunnel goes down their PairBrowse moves to the other
+  // every address (sharing/join-client.mjs), so when one tunnel goes down their PairBrowse moves to the other
   // and nothing drops, and a replacement starts here. Stopped when the last code ends
   // (revoked, expired, revoke_all) or the helper shuts down.
   const direct = process.env.PAIRBROWSE_TEST_TUNNEL === "direct"; // tests: the guest port stands in
@@ -67,7 +67,7 @@ export function createTunnelPool({ config, log, hostNote, save }) {
     return wire(t, port);
   }
   // A tunnel in the pool: watched from outside, and replaced when it ends. Joiners already in
-  // move to the standby by themselves (relay.mjs); a code not yet used carries the first live
+  // move to the standby by themselves (sharing/join-client.mjs); a code not yet used carries the first live
   // address at the time it's read (list), so its string may change: fine, nobody has it yet.
   function wire(t, port) {
     // Not answering: stopped, and replaced below. The watcher ends with the tunnel's time in the

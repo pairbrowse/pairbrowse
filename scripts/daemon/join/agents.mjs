@@ -4,7 +4,7 @@
 // live: the session joined now (join/state.mjs newFollowState).
 import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { FAILOVER_MS } from "../../relay.mjs";
+import { FAILOVER_MS } from "../../sharing/join-client.mjs";
 import { paths } from "../../paths.mjs";
 import { sleep } from "../../util.mjs";
 import { pathsIn, withPaths, uploadProblem } from "../../upload.mjs";

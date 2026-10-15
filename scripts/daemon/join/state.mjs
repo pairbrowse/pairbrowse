@@ -1,7 +1,7 @@
 // One session joined from here (pairbrowse_join): everything the joiner side keeps about it, in
 // one place. daemon/follow.mjs makes one per join; its parts (join/*.mjs) read and change it.
-import { newJoinerId } from "../../join.mjs";
-import { createMirror, createFormSync, createOrderSync } from "../../tabsync.mjs";
+import { newJoinerId } from "../../sharing/join.mjs";
+import { createMirror, createFormSync, createOrderSync } from "../../sharing/tabsync.mjs";
 
 // A tab opened or sent somewhere here: its first answer within this.
 export const OPEN_MS = 15_000;
@@ -14,7 +14,7 @@ export const newFollowState = () => ({ cur: null, ended: null });
 // owner: the connection that joined (leaving ends with it).
 export function newJoinState({ shared, owner }) {
   return {
-    join: null, // the connection to the host (relay.mjs startJoin), set once started
+    join: null, // the connection to the host (sharing/join-client.mjs startJoin), set once started
     queue: null, // the host's changes and this side's, one at a time (serially)
     owner,
     shared,

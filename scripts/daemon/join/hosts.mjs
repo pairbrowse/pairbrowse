@@ -2,7 +2,7 @@
 // Tunnel or one they allowed is a question for the person alone (the side panel, the session
 // picker): Allow once (this run), Always allow (joinHosts in config.json) or Cancel.
 // api.command(args, { owner, app }): pairbrowse_join (daemon/follow.mjs), for the join a yes starts.
-import { joinHostsOf, cleanHost, saveJoinHosts, createHostAsks } from "../../join.mjs";
+import { joinHostsOf, cleanHost, saveJoinHosts, createHostAsks } from "../../sharing/join.mjs";
 
 export function createJoinHosts({ config, log, note, onHostChange, configFile }, api) {
   // A code whose address isn't a Quick Tunnel or one they allowed is a question for the person

@@ -12,7 +12,7 @@ process.env.PAIRBROWSE_TEST_SILENT_MS = "1500";
 process.env.PAIRBROWSE_TEST_FAILOVER_MS = "4000"; // every address down this long: offline shows
 // GONE_MS keeps its real value: the host must not lose a joiner that is only switching address.
 const { startLiveView, createInvites } = await import("../scripts/liveview.mjs");
-const { startJoin } = await import("../scripts/relay.mjs");
+const { startJoin } = await import("../scripts/sharing/join-client.mjs");
 
 const until = async (what, cond, ms = 10_000) => { for (const end = Date.now() + ms; Date.now() < end;) { if (await cond()) return; await new Promise((r) => setTimeout(r, 50)); } throw new Error(`timed out: ${what}`); };
 

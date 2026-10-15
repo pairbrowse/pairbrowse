@@ -387,7 +387,7 @@ test("a join code that leads elsewhere than a PairBrowse address asks the person
   const h = home("pa-");
   writeFileSync(join(h, "config.json"), config(executablePath, site.address().port, { participantName: "Alice" }));
   const { connect, stop } = startDaemons();
-  const { encodeJoinCode } = await import("../scripts/join.mjs");
+  const { encodeJoinCode } = await import("../scripts/sharing/join.mjs");
   // A host sharing through a tunnel of their own: the code's address is theirs, not Cloudflare's.
   const code = encodeJoinCode({ url: "https://share.pbtest.example", key: "b".repeat(64), role: "watch", label: "Bob" });
   const other = encodeJoinCode({ url: "https://other.pbtest.example", key: "c".repeat(64), role: "watch", label: "Bob" });

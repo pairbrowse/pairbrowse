@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
 import { paths } from "../paths.mjs";
 import { BLOCKED_TOOLS, HIDDEN_TOOLS } from "../rules/policy.mjs";
-import { appName, personLabel, computerName } from "../join.mjs";
+import { appName, personLabel, computerName } from "../sharing/join.mjs";
 import { describe } from "../log.mjs";
 import { decide, approvalAsk } from "../rules/decide.mjs";
 import { keepFocus } from "../focus.mjs";

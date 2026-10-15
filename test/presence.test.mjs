@@ -2,7 +2,7 @@ import "./helpers/home.mjs";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createPresence, sentAgo, stateAgo } from "../scripts/daemon/presence.mjs";
-import { stateForJoiner } from "../scripts/tabsync.mjs";
+import { stateForJoiner } from "../scripts/sharing/tabsync.mjs";
 import { hostPeople } from "../scripts/daemon/follow.mjs";
 
 test("an agent's own input read late is still the agent's, a person's is a person's", () => {

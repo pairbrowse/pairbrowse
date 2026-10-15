@@ -15,7 +15,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { personColor } from "../scripts/tabsync.mjs";
+import { personColor } from "../scripts/sharing/tabsync.mjs";
 import { testBase, attachDaemon } from "./live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;

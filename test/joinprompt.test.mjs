@@ -3,7 +3,7 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createApprovals, newJoinerId } from "../scripts/join.mjs";
+import { createApprovals, newJoinerId } from "../scripts/sharing/join.mjs";
 import { createJoinPrompt, shouldNotify, ARM_MS, FOCUS_POLL_MS } from "../scripts/daemon/joinprompt.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

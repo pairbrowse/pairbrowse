@@ -1,7 +1,7 @@
 import "./helpers/home.mjs";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { shareableUrl, stateForJoiner, readOps, createMirror, createFormSync, createOrderSync, shareFields, readForm, formForJoiner, readPointers, sameOrder, tabWho, personColor, PERSON_SHOWN_MS, TABS_MAX, OPS_MAX, FIELDS_MAX, VALUE_MAX } from "../scripts/tabsync.mjs";
+import { shareableUrl, stateForJoiner, readOps, createMirror, createFormSync, createOrderSync, shareFields, readForm, formForJoiner, readPointers, sameOrder, tabWho, personColor, PERSON_SHOWN_MS, TABS_MAX, OPS_MAX, FIELDS_MAX, VALUE_MAX } from "../scripts/sharing/tabsync.mjs";
 import { createPresence, stateAgo } from "../scripts/daemon/presence.mjs";
 
 test("only public web addresses cross, and only the safe parts of them", () => {
@@ -281,7 +281,7 @@ test("who filled a field crosses with it (a name, never more), and whether a per
 });
 
 test("what someone did, as it crosses: no query strings, local addresses, card numbers, JWTs or saved passwords", async () => {
-  const { crossingText, stateForJoiner } = await import("../scripts/tabsync.mjs");
+  const { crossingText, stateForJoiner } = await import("../scripts/sharing/tabsync.mjs");
   assert.equal(crossingText("Opened https://shop.example.com/login?next=%2Fa&session=abc123"), "Opened https://shop.example.com/login");
   assert.equal(crossingText("Opened http://127.0.0.1:8080/admin"), "Opened a local page");
   assert.equal(crossingText("Opened http://router/setup and http://192.168.1.1/"), "Opened a local page and a local page");
@@ -328,7 +328,7 @@ test("shared browser: an address typed in a picture tab goes to the host even wh
 });
 
 test("a joiner's malformed changes are refused, never thrown, and IPv6 local addresses aren't named", async () => {
-  const { crossingText } = await import("../scripts/tabsync.mjs");
+  const { crossingText } = await import("../scripts/sharing/tabsync.mjs");
   const odd = JSON.parse('{"toString":""}');
   const ids = new Set(["aaaaaaaa"]);
   assert.deepEqual(readOps({ ops: [{ op: "open", ref: ["n1"], url: "https://a.example/" }] }, ids), { problem: "Unknown change." });
@@ -372,7 +372,7 @@ test("the host's state for a joiner: an acting person's time and each did entry'
 // The host keys a joiner's pointers "<invite>:<joiner id>:me" / ":a<n>" / ":view": the joiner's
 // side never draws one keyed by its own id, whatever the host sends.
 test("ownPointer: a pointer keyed by this joiner's id is theirs, nothing else is", async () => {
-  const { ownPointer } = await import("../scripts/tabsync.mjs");
+  const { ownPointer } = await import("../scripts/sharing/tabsync.mjs");
   const me = "0123456789abcdef0123456789abcdef";
   assert.equal(ownPointer(`inv:${me}:me`, me), true);
   assert.equal(ownPointer(`inv:${me}:a2`, me), true, "their agents' too");

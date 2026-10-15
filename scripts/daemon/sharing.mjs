@@ -3,14 +3,14 @@
 import { RECORD_READY_MS } from "./capture.mjs";
 import { ownTitle } from "./tablabels.mjs";
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
-import { createApprovals, encodeJoinCode, cleanName } from "../join.mjs";
+import { createApprovals, encodeJoinCode, cleanName } from "../sharing/join.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
 import { readJson } from "../util.mjs";
 import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { adoptTunnel, helperAlive } from "../tunnel.mjs";
 import { randomBytes } from "node:crypto";
-import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../devshare.mjs";
+import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../sharing/devshare.mjs";
 import { where } from "./where.mjs";
 import { createTunnelPool } from "./tunnel-pool.mjs";
 

@@ -13,7 +13,7 @@ const read = (f) => readFileSync(join(root, f), "utf8");
 
 test("the helper's color and word lists are vocab.js's own", async () => {
   const hud = await import("../scripts/daemon/hud.mjs");
-  const tabsync = await import("../scripts/tabsync.mjs");
+  const tabsync = await import("../scripts/sharing/tabsync.mjs");
   const common = await import("../ui/common.js");
   assert.equal(hud.APP_COLORS, vocab.APP_COLORS);
   assert.equal(hud.AGENT_FALLBACKS, vocab.AGENT_FALLBACKS);

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { APP_COLORS, AGENT_FALLBACKS, SPARK_COLORS, appKey, appColor, pickAgentColor, createHud } from "../scripts/daemon/hud.mjs";
-import { PEOPLE_COLORS, personColor } from "../scripts/tabsync.mjs";
+import { PEOPLE_COLORS, personColor } from "../scripts/sharing/tabsync.mjs";
 
 const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };

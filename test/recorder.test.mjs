@@ -7,8 +7,8 @@ import { mkdtempSync, readFileSync, writeFileSync, readdirSync, statSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRecorder, recordingName, pixelRatio } from "../scripts/daemon/recorder.mjs";
+import { sleep } from "./helpers/util.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // A stand-in for the extension's worker: pbRecord answers as record.js does.
 function fakeBrowser(bytes) {

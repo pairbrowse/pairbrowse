@@ -4,8 +4,8 @@ import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
 import { existsSync, openSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-export const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
+import { sleep } from "../../helpers/util.mjs";
+export { sleep, text } from "../../helpers/util.mjs";
 // The two sides talk through a shared folder (PB_MAIL), whichever machine hosts.
 const mail = process.env.PB_MAIL || "/tmp/pbmail";
 export const post = (name, value = "") => writeFileSync(join(mail, name), String(value));

@@ -4,12 +4,12 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sleep } from "./helpers/util.mjs";
 
 const home = mkdtempSync(join(tmpdir(), "pb-tunnel-"));
 process.env.PAIRBROWSE_HOME = home;
 process.env.PAIRBROWSE_TEST_KEEP_GRACE_MS = "1500";
 const { tunnelExitReason, tunnelUrl, CLOUDFLARED, ensureCloudflared, startQuickTunnel, adoptTunnel, heartbeatFile, helperAlive, watchTunnel, tunnelEnded } = await import("../scripts/tunnels/quick.mjs");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 test("the Quick Tunnel address is read from cloudflared's output, nothing else", () => {

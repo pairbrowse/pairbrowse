@@ -9,16 +9,16 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { join, dirname } from "node:path";
-import { createInterface } from "node:readline";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, readFileSync, rmSync, openSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { hudScript } from "../../scripts/browser.mjs";
 import { ensureHud, inPage, testBase, attachDaemon } from "../helpers/live.mjs";
+import { rpc, sleep, text } from "../helpers/util.mjs";
+import { stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ID = (c) => `ap-${c.repeat(32)}`;
 
 // A page that tries what a page can: find the card, click it, fake an answer.
@@ -194,22 +194,6 @@ test("the approval card in the bottom bar: above its right end, takes only a per
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const shortBase = testBase();
-function rpc(write, input) {
-  const waiting = new Map();
-  createInterface({ input }).on("line", (line) => {
-    let m;
-    try { m = JSON.parse(line); } catch { return; }
-    if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
-  });
-  let seq = 0;
-  return (method, params = {}, ms = 60_000) => new Promise((resolve, reject) => {
-    const id = `t${++seq}`;
-    const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms);
-    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
-    write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
-}
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const tool = (call, name, args = {}) => call("tools/call", { name, arguments: args });
 const refOf = (snap, label) => snap.match(new RegExp(`button "${label}"[^\\n]*?\\[ref=(\\w+)\\]`))?.[1];
 
@@ -403,7 +387,7 @@ test("a named click asked in the browser and the terminal at once: the first ans
     claude?.sock.destroy();
     codex?.sock.destroy();
     fixture.close();
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
     rmSync(home, { recursive: true, force: true });
   }
 });

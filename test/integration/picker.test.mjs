@@ -6,18 +6,15 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { panelExtensionId } from "../../scripts/browser.mjs";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
+import { sleep, text, until } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const shortBase = testBase();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const EXTENSION = `chrome-extension://${panelExtensionId()}`;
 
 // A home with something to go back to: the default session (with a saved tab) and "work".
@@ -54,8 +51,7 @@ function post(url, body, origin = null) {
 function startDaemons() {
   const daemons = [];
   const connect = async (h, env = {}) => {
-    const out = openSync(join(h, "daemon.stderr.log"), "a");
-    daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", ...env }, stdio: ["ignore", out, out] }));
+    daemons.push(spawnDaemon(h, { env: { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", ...env } }));
     const socketPath = join(h, "run", "browser.sock");
     const sock = await attachDaemon({ socketPath, daemon: daemons.at(-1), home: h });
     const waiting = new Map();
@@ -77,15 +73,10 @@ function startDaemons() {
     const live = async () => text(await tool("pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)[0];
     return { sock, tool, live };
   };
-  const stop = () => Promise.all(daemons.map(async (d) => { if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); } }));
+  const stop = () => Promise.all(daemons.map(async (d) => { await stopDaemon(d); }));
   return { connect, stop };
 }
 
-const until = async (what, check, ms = 30_000) => {
-  let last;
-  for (const end = Date.now() + ms; Date.now() < end; await sleep(300)) if ((last = await check())) return last;
-  throw new Error(`timed out: ${what}`);
-};
 // The live view lets the extension's origin in once the side panel connected (just after launch).
 const panelConnected = (live) => until("the side panel connected", async () => (await post(`${live}pick`, { action: "noop" }, EXTENSION)).status === 409);
 const logOf = (h) => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2500); } catch { return ""; } };

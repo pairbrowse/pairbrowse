@@ -11,37 +11,21 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync, copyFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, readFileSync, copyFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
+import { rpc, sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const shortBase = testBase();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const SHOP = `<title>Shop</title><main><h1>Checkout</h1><p id="s">Cart: 1 item</p><button type="button" onclick="document.getElementById('s').textContent='Ordered'">Place order</button></main>`;
 
-function rpc(write, input) {
-  const waiting = new Map();
-  createInterface({ input }).on("line", (line) => {
-    let m;
-    try { m = JSON.parse(line); } catch { return; }
-    if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
-  });
-  let seq = 0;
-  return (method, params = {}, ms = 90_000) => new Promise((resolve, reject) => {
-    const id = `t${++seq}`;
-    const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms);
-    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
-    write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
-}
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const tool = (call, name, args = {}) => call("tools/call", { name, arguments: args });
 const refOf = (snap, label) => snap.match(new RegExp(`button "${label}"[^\\n]*?\\[ref=(\\w+)\\]`))?.[1];
 
@@ -65,14 +49,13 @@ test("approve role: a joiner allows the host's agent's Pay click by their own cl
   const daemons = new Map();
   const attach = async (h, app = "claude-code") => {
     const sock = await attachDaemon({ socketPath: join(h, "run", "browser.sock"), daemon: daemons.get(h), home: h });
-    const call = rpc((l) => sock.write(l), sock);
+    const call = rpc((l) => sock.write(l), sock, { ms: 90_000 });
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: app, version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
     return { sock, call };
   };
   const start = (h) => {
-    const out = openSync(join(h, "daemon.stderr.log"), "a");
-    daemons.set(h, spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
+    daemons.set(h, spawnDaemon(h, { env: env(h) }));
     return attach(h);
   };
   const until = async (what, check, ms = 30_000) => {
@@ -162,7 +145,7 @@ test("approve role: a joiner allows the host's agent's Pay click by their own cl
     if (hook && hook.exitCode === null) hook.kill("SIGKILL");
     for (const cn of conns) cn.sock.destroy();
     fixture.close();
-    for (const d of daemons.values()) if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); }
+    for (const d of daemons.values()) await stopDaemon(d);
     for (const hm of [hostHome, joinHome]) rmSync(hm, { recursive: true, force: true });
   }
 });

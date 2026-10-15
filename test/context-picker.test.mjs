@@ -8,8 +8,8 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { EventEmitter } from "node:events";
+import { sleep } from "./helpers/util.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (check, ms = 10_000) => { for (let i = 0; i < ms / 50 && !check(); i++) await sleep(50); return check(); };
 
 test("an agent choosing the open session while the picker shows resolves the pick and reopens its tabs", { timeout: 30_000 }, async () => {

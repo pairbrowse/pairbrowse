@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { readFileSync } from "node:fs";
 import net from "node:net";
 import { createInterface } from "node:readline";
+import { sleep } from "./util.mjs";
 
 // Where live tests make their helper homes: the system's temporary folder, on the machine's own
 // disk (an external disk a build saturates holds every helper up for seconds), or /tmp when the
@@ -44,7 +45,6 @@ export async function ensureHud(page, source, name) {
 // Reads what the page's own scripts set (window.sent and the like): in the page's world.
 export const inPage = (target, fn, arg) => target.evaluate(fn, arg, undefined, false);
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // A session on the helper's socket, as Claude Code would open one.
 export async function session(socketPath, name) {

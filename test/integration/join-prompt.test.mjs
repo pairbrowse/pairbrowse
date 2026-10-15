@@ -8,16 +8,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { join, dirname } from "node:path";
-import { createInterface } from "node:readline";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync, openSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { join } from "node:path";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { hudScript } from "../../scripts/browser.mjs";
 import { ensureHud, inPage, testBase, attachDaemon } from "../helpers/live.mjs";
+import { rpc, sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // A page that tries everything a page can: find the prompt, click it, fake one. It patches
 // attachShadow and click() as early as it can (its scripts run after PairBrowse's, so the
@@ -174,25 +172,7 @@ test("the join request in the bottom bar: shows as a card above its right end, g
 });
 
 // ---- end to end: a host helper and a joiner's, each with its own headless browser -------------
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const shortBase = testBase();
-function rpc(write, input) {
-  const waiting = new Map();
-  createInterface({ input }).on("line", (line) => {
-    let m;
-    try { m = JSON.parse(line); } catch { return; }
-    if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
-  });
-  let seq = 0;
-  return (method, params = {}, ms = 60_000) => new Promise((resolve, reject) => {
-    const id = `t${++seq}`;
-    const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms);
-    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
-    write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
-}
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const tool = (call, name, args = {}) => call("tools/call", { name, arguments: args });
 
 test("a join request: the bar in the host's tab in front when the browser has the focus (no notification), else a notification; only the person's own click answers", { skip: !runtime, timeout: 240_000 }, async () => {
@@ -212,8 +192,7 @@ test("a join request: the bar in the host's tab in front when the browser has th
   };
   const daemons = [];
   const connect = async (h) => {
-    const out = openSync(join(h, "daemon.stderr.log"), "a");
-    daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_JOIN_PROMPT: "1" }, stdio: ["ignore", out, out] }));
+    daemons.push(spawnDaemon(h, { env: { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_JOIN_PROMPT: "1" } }));
     const socketPath = join(h, "run", "browser.sock");
     const sock = await attachDaemon({ socketPath, daemon: daemons.at(-1), home: h });
     const call = rpc((l) => sock.write(l), sock);
@@ -352,7 +331,7 @@ test("a join request: the bar in the host's tab in front when the browser has th
     host?.sock.destroy();
     joiner?.sock.destroy();
     fixture.close();
-    await Promise.all(daemons.map(async (d) => { if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); } }));
+    await Promise.all(daemons.map(async (d) => { await stopDaemon(d); }));
     for (const h of homes) rmSync(h, { recursive: true, force: true });
   }
 });

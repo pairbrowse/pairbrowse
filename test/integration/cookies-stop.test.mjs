@@ -8,17 +8,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { createRequire } from "node:module";
-import { mkdtempSync, symlinkSync, writeFileSync, existsSync, openSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { join } from "node:path";
 import { session } from "../helpers/live.mjs";
+import { sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const cookieLine = (r) => text(r).match(/cookies: [^\n"]*/)?.[0] || "(no cookie line)";
 
 // A site that sets a persistent cookie (a login) and shows what came back.
@@ -39,8 +36,7 @@ function makeHome() {
 }
 
 async function startDaemon(home) {
-  const out = openSync(join(home, "daemon.stderr.log"), "a");
-  const child = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home }, stdio: ["ignore", out, out] });
+  const child = spawnDaemon(home);
   const socketPath = join(home, "run", "browser.sock");
   for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
   return { child, socketPath };

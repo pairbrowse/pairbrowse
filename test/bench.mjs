@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { session } from "./helpers/live.mjs";
+import { sleep, text } from "./helpers/util.mjs";
+import { stopDaemon } from "./helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 if (!runtime) { console.error("PAIRBROWSE_TEST_RUNTIME is required"); process.exit(2); }
@@ -25,8 +27,6 @@ const args = process.argv.slice(2);
 const opt = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
 const OPS = Number(opt("--ops", 60));
 const JSON_OUT = opt("--json", "");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const hasImage = (r) => (r.result?.content || []).some((c) => c.type === "image");
 
 // The process tree under pid: rss (KB) and cumulative CPU seconds, from ps.
@@ -71,7 +71,7 @@ async function startHelper({ screenshots }) {
   const [tabsAt] = await timed(() => s.tool("browser_tabs", { action: "list" }, 120_000));
   const stop = async () => {
     s.sock.destroy();
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
     rmSync(h, { recursive: true, force: true });
   };
   return { daemon, s, home: h, startup: { socketMs: socketAt, sessionNewMs: firstAnswer, firstTabsMs: tabsAt, totalMs: Date.now() - t0 }, stop, log: () => { try { return readFileSync(join(h, "daemon.log"), "utf8"); } catch { return ""; } } };
@@ -360,7 +360,7 @@ async function joinerSoak(rounds) {
   } finally {
     for (const c of [host, joiner]) c?.sock.destroy();
     fixture.close();
-    for (const d of daemons) if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); }
+    for (const d of daemons) await stopDaemon(d);
     for (const h of [hostHome, joinHome]) rmSync(h, { recursive: true, force: true });
   }
   return out;

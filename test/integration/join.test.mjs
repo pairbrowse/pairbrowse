@@ -8,17 +8,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync, chmodSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, readFileSync, chmodSync } from "node:fs";
+import { join } from "node:path";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
+import { rpc, sleep, text, until } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const shortBase = testBase();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The shared form: fields at fixed places (the joiner's person clicks them through its live
 // view). A "change" handler or a submit would show (the title, the fixture's count).
@@ -33,22 +30,6 @@ const FORM = `<title>Order form</title><main><h1>Order</h1>
 <script>let n = 0; addEventListener("change", () => { document.title = "changed " + ++n; });</script>`;
 
 // One JSON-RPC line protocol client over a socket or a child's stdio.
-function rpc(write, input) {
-  const waiting = new Map();
-  createInterface({ input }).on("line", (line) => {
-    let m;
-    try { m = JSON.parse(line); } catch { return; }
-    if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
-  });
-  let seq = 0;
-  return (method, params = {}, ms = 60_000) => new Promise((resolve, reject) => {
-    const id = `t${++seq}`;
-    const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms);
-    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
-    write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
-}
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const tool = (call, name, args = {}) => call("tools/call", { name, arguments: args });
 
 // The helper's socket once it accepts: loading the browser runtime takes a while on a busy
@@ -80,8 +61,7 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
   const daemons = [];
   const connect = async (h) => {
-    const out = openSync(join(h, "daemon.stderr.log"), "a");
-    daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
+    daemons.push(spawnDaemon(h, { env: env(h) }));
     const sock = await reach(join(h, "run", "browser.sock"), daemons.at(-1), h);
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
@@ -89,11 +69,6 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     return { sock, call };
   };
   const tabs = async (call) => [...text(await tool(call, "browser_tabs", { action: "list" })).matchAll(/^- (\d+):( \(current\))? \[[^\n]*\]\(([^)\s]*)\)/gm)].map((m) => ({ index: Number(m[1]), url: m[3] }));
-  const until = async (what, check, ms = 30_000) => {
-    let last;
-    for (const end = Date.now() + ms; Date.now() < end; await sleep(300)) if ((last = await check())) return last;
-    throw new Error(`timed out: ${what}`);
-  };
   const urls = async (call) => (await tabs(call)).map((t) => t.url);
   const go = async (call, re, url) => {
     const t = (await tabs(call)).find((x) => re.test(x.url));
@@ -213,7 +188,7 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
     host?.sock.destroy();
     joiner?.sock.destroy();
     fixture.close();
-    await Promise.all(daemons.map(async (d) => { if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); } }));
+    await Promise.all(daemons.map(async (d) => { await stopDaemon(d); }));
     rmSync(hostHome, { recursive: true, force: true });
     rmSync(joinHome, { recursive: true, force: true });
   }
@@ -241,8 +216,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_PARTICIPANT: h === hostHome ? "Bob" : "" });
   const daemons = [];
   const connect = async (h) => {
-    const out = openSync(join(h, "daemon.stderr.log"), "a");
-    daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
+    daemons.push(spawnDaemon(h, { env: env(h) }));
     const sock = await reach(join(h, "run", "browser.sock"), daemons.at(-1), h);
     const call = rpc((l) => sock.write(l), sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
@@ -250,11 +224,6 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     return { sock, call };
   };
   const tabs = async (call) => [...text(await tool(call, "browser_tabs", { action: "list" })).matchAll(/^- (\d+):( \(current\))? \[([^\n]*)\]\(([^)\s]*)\)/gm)].map((m) => ({ index: Number(m[1]), title: m[3], url: m[4] }));
-  const until = async (what, check, ms = 30_000) => {
-    let last;
-    for (const end = Date.now() + ms; Date.now() < end; await sleep(300)) if ((last = await check())) return last;
-    throw new Error(`timed out: ${what}`);
-  };
   const select = async (call, re) => {
     const t = (await tabs(call)).find((x) => re.test(x.url));
     assert.ok(t, `a tab matching ${re}`);
@@ -494,7 +463,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     host?.sock.destroy();
     joiner?.sock.destroy();
     fixture.close();
-    await Promise.all(daemons.map(async (d) => { if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); } }));
+    await Promise.all(daemons.map(async (d) => { await stopDaemon(d); }));
     rmSync(hostHome, { recursive: true, force: true });
     rmSync(joinHome, { recursive: true, force: true });
   }

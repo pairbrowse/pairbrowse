@@ -9,8 +9,8 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
+import { sleep } from "./helpers/util.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (check, ms = 5000) => { for (let i = 0; i < ms / 20 && !check(); i++) await sleep(20); return check(); };
 
 test("a person's switch from an open session: checked at once, the browser restarts on the other one", { timeout: 30_000 }, async () => {

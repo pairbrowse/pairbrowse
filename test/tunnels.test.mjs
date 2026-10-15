@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sleep } from "./helpers/util.mjs";
 
 const home = mkdtempSync(join(tmpdir(), "pb-tunnels-"));
 process.env.PAIRBROWSE_HOME = home;
@@ -20,7 +21,6 @@ const { tunnelConfig, splitCommand, maskSecrets } = await import("../scripts/tun
 const { startOwnTunnel, findOnPath, planFor } = await import("../scripts/tunnels/start.mjs");
 const { createSharing } = await import("../scripts/daemon/sharing.mjs");
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (what, cond, ms = 10_000) => { for (const end = Date.now() + ms; Date.now() < end;) { if (await cond()) return; await sleep(50); } throw new Error(`timed out: ${what}`); };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 // A stand-in program: a Node script on our PATH.

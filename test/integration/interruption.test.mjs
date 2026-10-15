@@ -5,18 +5,16 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn, execFileSync } from "node:child_process";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { session } from "../helpers/live.mjs";
+import { sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 
 // The browser process under the helper: the helper's child that isn't a node process.
 function browserPid(helperPid) {
@@ -30,8 +28,7 @@ test("the browser killed under a session: the call is answered, pictures are for
   const h = mkdtempSync(join(tmpdir(), "pb-crash-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", sessionPicker: false }));
-  const out = openSync(join(h, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_MEMORY: "1" }, stdio: ["ignore", out, out] });
+  const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TEST_MEMORY: "1" } });
   const server = createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end(`<!doctype html><title>Page ${req.url}</title><h1>${req.url}</h1><button id="b">Go</button>`); });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const url = (p) => `http://127.0.0.1:${server.address().port}${p}`;
@@ -75,7 +72,7 @@ test("the browser killed under a session: the call is answered, pictures are for
   } finally {
     for (const s of open) s.sock.destroy();
     server.close();
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
     rmSync(h, { recursive: true, force: true });
   }
 });

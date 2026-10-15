@@ -9,8 +9,8 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
+import { sleep } from "./helpers/util.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test("a session switch opens one browser, whoever asks for it meanwhile", { timeout: 30_000 }, async () => {
   const home = mkdtempSync(join(tmpdir(), "pb-ctx-"));

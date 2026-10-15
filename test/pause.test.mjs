@@ -3,6 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createPause, pressPause } from "../scripts/daemon/pause.mjs";
 import { fieldOwner, leftAlone, OWN_MS } from "../scripts/daemon/fields.mjs";
+import { sleep } from "./helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "./helpers/daemon.mjs";
 
 test("pause agents: people pause and resume, agents hear who, and a long pause answers instead of hanging", async () => {
   const changes = [];
@@ -213,15 +215,11 @@ test("in a session joined from here, the global Resume also clears this helper's
 import net from "node:net";
 import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
-import { spawn } from "node:child_process";
-import { mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const textOf = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 
 async function agent(sockPath, name) {
@@ -255,8 +253,7 @@ test("pause this agent through the live view: only that agent's next acting call
   const home = mkdtempSync(join(tmpdir(), "pb-pa-"));
   symlinkSync(runtime, join(home, "runtime"), "dir");
   writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
-  const out = openSync(join(home, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home }, stdio: ["ignore", out, out] });
+  const daemon = spawnDaemon(home);
   const agents = [];
   try {
     const a = await agent(join(home, "run", "browser.sock"), "Ann");
@@ -313,7 +310,7 @@ test("pause this agent through the live view: only that agent's next acting call
     assert.ok(Date.now() - again < 3000, "resumed by name: Ann goes on at once");
   } finally {
     for (const s of agents) s.sock.destroy();
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
     rmSync(home, { recursive: true, force: true });
   }
 });

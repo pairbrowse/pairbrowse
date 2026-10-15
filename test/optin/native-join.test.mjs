@@ -11,21 +11,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync, cpSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, readFileSync, cpSync, existsSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { homedir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
 import { chromePages, nativeManifest } from "../../scripts/native-engine.mjs";
-
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+import { sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon } from "../helpers/daemon.mjs";
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const engine = process.env.PAIRBROWSE_TEST_ENGINE;
 const nativeExe = process.env.PAIRBROWSE_TEST_EXECUTABLE;
 const native = (() => { try { return !!(runtime && engine && nativeExe && chromePages(nativeManifest(nativeExe))); } catch { return false; } })();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const NO_RECORD = /Recording isn't available in this PairBrowse browser yet/;
 const APP = "<!doctype html><title>app</title><button id=tap style='position:fixed;left:0;top:0;width:100vw;height:40vh;font-size:40px' onclick=\"document.title='clicked'\">Tap</button>";
 
@@ -40,7 +37,6 @@ function rpc(sock) {
     sock.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
   });
 }
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const until = async (what, check, ms = 30_000) => {
   let last;
   for (const end = Date.now() + ms; Date.now() < end; await sleep(500)) if ((last = await check())) return last;
@@ -69,8 +65,7 @@ async function run({ nativeHost, nativeJoiner }) {
     return h;
   };
   const connect = async (h) => {
-    const out = openSync(join(h, "daemon.stderr.log"), "a");
-    const d = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_SCREEN: "1" }, stdio: ["ignore", out, out] });
+    const d = spawnDaemon(h, { env: { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_SCREEN: "1" } });
     daemons.push(d);
     const sock = await attachDaemon({ socketPath: join(h, "run", "browser.sock"), daemon: d, home: h, ms: 90_000 });
     socks.push(sock);

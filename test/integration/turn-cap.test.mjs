@@ -5,16 +5,13 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { session, testBase } from "../helpers/live.mjs";
+import { sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 
 test("a call that runs past the cap is answered, the browser resets, and the next agent goes on", { skip: !runtime, timeout: 240_000 }, async () => {
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
@@ -23,8 +20,7 @@ test("a call that runs past the cap is answered, the browser resets, and the nex
   const h = mkdtempSync(join(base, "cap-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
-  const out = openSync(join(h, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TURN_MAX_MS: "20000" }, stdio: ["ignore", out, out] });
+  const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TURN_MAX_MS: "20000" } });
   const a = [];
   try {
     const socketPath = join(h, "run", "browser.sock");
@@ -71,7 +67,7 @@ test("a call that runs past the cap is answered, the browser resets, and the nex
   } finally {
     if (process.env.PB_DEBUG) console.log("LOG\n" + (() => { try { return readFileSync(join(h, "daemon.log"), "utf8") + readFileSync(join(h, "daemon.stderr.log"), "utf8").slice(-3000); } catch { return ""; } })());
     for (const s of a) s.sock.destroy();
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
     rmSync(h, { recursive: true, force: true });
   }
 });

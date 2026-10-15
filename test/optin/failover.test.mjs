@@ -11,38 +11,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn, execFileSync } from "node:child_process";
-import { createInterface } from "node:readline";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
+import { rpc, sleep, text, until } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const real = process.env.PAIRBROWSE_TEST_REAL_TUNNEL === "1";
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const shortBase = testBase();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const APP = `<title>Form</title><body style="margin:0"><form><label>Note <input id="i" name="note" style="display:block;width:100vw;height:20vh;font-size:30px"></label></form></body>`;
 
-function rpc(write, input) {
-  const waiting = new Map();
-  createInterface({ input }).on("line", (line) => {
-    let m;
-    try { m = JSON.parse(line); } catch { return; }
-    if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
-  });
-  let seq = 0;
-  return (method, params = {}, ms = 60_000) => new Promise((resolve, reject) => {
-    const id = `t${++seq}`;
-    const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms);
-    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
-    write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
-}
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 
 function home(prefix) {
   mkdirSync(shortBase, { recursive: true });
@@ -72,8 +54,7 @@ test("sharing failover: the tunnel the joiner uses dies; they move to the standb
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1" });
   const daemons = [];
   const connect = async (h) => {
-    const out = openSync(join(h, "daemon.stderr.log"), "a");
-    daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
+    daemons.push(spawnDaemon(h, { env: env(h) }));
     const socketPath = join(h, "run", "browser.sock");
     const sock = await attachDaemon({ socketPath, daemon: daemons.at(-1), home: h });
     const call = rpc((l) => sock.write(l), sock);
@@ -83,11 +64,6 @@ test("sharing failover: the tunnel the joiner uses dies; they move to the standb
   };
   const results = { host: [], joiner: [] }; // every result's text, by side
   const tool = async (side, name, args = {}) => { const r = await side.call("tools/call", { name, arguments: args }); results[side.who].push(text(r)); return r; };
-  const until = async (what, check, ms = 30_000, every = 300) => {
-    let last;
-    for (const end = Date.now() + ms; Date.now() < end; await sleep(every)) if ((last = await check())) return last;
-    throw new Error(`timed out: ${what}`);
-  };
   const evaluate = async (side, fn) => {
     const r = text(await tool(side, "browser_evaluate", { function: fn }));
     const m = r.match(/### Result\n([\s\S]*?)(\n###|$)/);
@@ -205,7 +181,7 @@ test("sharing failover: the tunnel the joiner uses dies; they move to the standb
     host?.sock.destroy();
     joiner?.sock.destroy();
     fixture.close();
-    await Promise.all(daemons.map(async (d) => { if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); } }));
+    await Promise.all(daemons.map(async (d) => { await stopDaemon(d); }));
     // The host's helper stops its tunnels on SIGTERM; make sure no keeper of these homes outlives the test.
     for (const t of [...keepers, ...(stateOf(hostHome)?.tunnels || [])]) { for (const c of children(t.pid)) kill9(c); kill9(t.pid); }
     rmSync(hostHome, { recursive: true, force: true });

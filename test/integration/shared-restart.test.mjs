@@ -13,31 +13,15 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync,
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
+import { rpc, sleep, text } from "../helpers/util.mjs";
+import { stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const shortBase = testBase();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const APP = `<title>App</title><button>Tap</button><input aria-label="Note">`;
 
-function rpc(write, input) {
-  const waiting = new Map();
-  createInterface({ input }).on("line", (line) => {
-    let m;
-    try { m = JSON.parse(line); } catch { return; }
-    if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
-  });
-  let seq = 0;
-  return (method, params = {}, ms = 60_000) => new Promise((resolve, reject) => {
-    const id = `t${++seq}`;
-    const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms);
-    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
-    write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
-}
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const tool = (call, name, args = {}) => call("tools/call", { name, arguments: args });
 
 test("shared browser: the joiner stays in through a restart of the host's helper, and revoking ends it", { skip: !runtime, timeout: 240_000 }, async () => {
@@ -122,7 +106,7 @@ test("shared browser: the joiner stays in through a restart of the host's helper
     host?.sock.destroy();
     joiner?.sock.destroy();
     fixture.close();
-    await Promise.all(daemons.map(async (d) => { if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); } }));
+    await Promise.all(daemons.map(async (d) => { await stopDaemon(d); }));
     rmSync(hostHome, { recursive: true, force: true });
     rmSync(joinHome, { recursive: true, force: true });
   }

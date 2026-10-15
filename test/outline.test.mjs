@@ -7,13 +7,12 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
-import { mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { join } from "node:path";
 import { createOutlines, yamlOf, OUTLINE_MAX } from "../scripts/daemon/outline.mjs";
 import { startLiveView, createInvites } from "../scripts/liveview.mjs";
+import { spawnDaemon } from "./helpers/daemon.mjs";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // A tab that fails the test if anything but url() and isClosed() is asked of it (strict), or a
@@ -154,7 +153,6 @@ test("outline.json and the outline event: the owner's only, masked on read, meta
 
 // ---- live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME) ----
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME?.replace(/^~/, process.env.HOME);
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const text = (r) => (r.result?.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("\n") || r.error?.message || "";
 
 test("live: the outline is the yaml the agent got, read without touching the page, gone with the tab", { skip: !runtime, timeout: 240_000 }, async () => {
@@ -163,8 +161,7 @@ test("live: the outline is the yaml the agent got, read without touching the pag
   const h = mkdtempSync(join(tmpdir(), "pb-outline-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
-  const out = openSync(join(h, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h }, stdio: ["ignore", out, out] });
+  const daemon = spawnDaemon(h);
   const server = http.createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end("<!doctype html><title>Outline</title><h1>Sign up</h1><label>Email <input name=email></label><button>Continue</button>"); });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   let agent;

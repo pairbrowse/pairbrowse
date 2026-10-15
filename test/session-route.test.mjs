@@ -9,6 +9,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readFileSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
+import { sleep } from "./helpers/util.mjs";
 
 const home = mkdtempSync(join(tmpdir(), "pb-sr-"));
 process.env.PAIRBROWSE_HOME = home;
@@ -17,7 +18,6 @@ mkdirSync(join(home, "run"), { recursive: true });
 const { startLiveView, createInvites } = await import("../scripts/liveview.mjs");
 const sessions = await import("../scripts/sessions.mjs");
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function request(port, method, path, { body, raw, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: "127.0.0.1", port, method, path, headers: { host: `127.0.0.1:${port}`, ...headers, ...(body !== undefined || raw !== undefined ? { "content-type": "application/json" } : {}) } }, (res) => {

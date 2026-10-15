@@ -8,8 +8,8 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createClickApprovals, routeConnection, APPROVAL_ID, ARM_MS } from "../scripts/daemon/approvals.mjs";
 import { approvalAsk, HOOK_MARK } from "../scripts/guard.mjs";
+import { sleep } from "./helpers/util.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Every store a test made: what it left waiting is withdrawn after it (no reading left running).
 const made = [];
 afterEach(() => { for (const ca of made.splice(0)) for (const it of ca.pending()) ca.withdraw(it.id, "test over"); });

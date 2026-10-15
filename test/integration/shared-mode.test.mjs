@@ -10,18 +10,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, openSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { personColor } from "../../scripts/sharing/tabsync.mjs";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
+import { rpc, sleep, text, until } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const shortBase = testBase();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // The picture page's own address: the extension's screen/index.html on Playwright's Chromium; with
 // another build on either side, the browser's own chrome://pairbrowse/screen/ page may be it.
 const otherBuild = !!(process.env.PAIRBROWSE_TEST_EXECUTABLE || process.env.PAIRBROWSE_TEST_JOINER_EXECUTABLE);
@@ -66,22 +63,6 @@ c.addEventListener("pointermove", (e) => { if (!down) return; g.lineWidth = 8; g
 addEventListener("pointerup", () => { down = false; });
 </script>`;
 
-function rpc(write, input) {
-  const waiting = new Map();
-  createInterface({ input }).on("line", (line) => {
-    let m;
-    try { m = JSON.parse(line); } catch { return; }
-    if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
-  });
-  let seq = 0;
-  return (method, params = {}, ms = 60_000) => new Promise((resolve, reject) => {
-    const id = `t${++seq}`;
-    const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms);
-    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
-    write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
-}
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const tool = (call, name, args = {}) => call("tools/call", { name, arguments: args });
 
 // A PairBrowse build (its Contents/Resources/PairBrowse-build.json beside the program) runs as the
@@ -119,8 +100,7 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
   const daemons = [];
   const daemonOf = new Map(); // home -> its helper
   const connect = async (h, app = "claude-code") => {
-    const out = openSync(join(h, "daemon.stderr.log"), "a");
-    daemons.push(spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: env(h), stdio: ["ignore", out, out] }));
+    daemons.push(spawnDaemon(h, { env: env(h) }));
     daemonOf.set(h, daemons.at(-1));
     return attach(h, app);
   };
@@ -134,11 +114,6 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     return { sock, call };
   };
   const tabs = async (call) => [...text(await tool(call, "browser_tabs", { action: "list" })).matchAll(/^- (\d+):( \(current\))? \[[^\n]*\]\(([^)\s]*)\)/gm)].map((m) => ({ index: Number(m[1]), url: m[3] }));
-  const until = async (what, check, ms = 30_000) => {
-    let last;
-    for (const end = Date.now() + ms; Date.now() < end; await sleep(300)) if ((last = await check())) return last;
-    throw new Error(`timed out: ${what}`);
-  };
   const notes = []; // what the host's agent was told along the way
   const evaluate = async (call, fn) => {
     const r = text(await tool(call, "browser_evaluate", { function: fn }));
@@ -415,7 +390,7 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     host?.sock.destroy();
     joiner?.sock.destroy();
     fixture.close();
-    await Promise.all(daemons.map(async (d) => { if (d.exitCode === null) { d.kill("SIGTERM"); await Promise.race([new Promise((r) => d.once("exit", r)), sleep(10_000)]); } }));
+    await Promise.all(daemons.map(async (d) => { await stopDaemon(d); }));
     rmSync(hostHome, { recursive: true, force: true });
     rmSync(joinHome, { recursive: true, force: true });
   }

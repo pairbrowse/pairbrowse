@@ -5,8 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApprovals, newJoinerId } from "../scripts/sharing/join.mjs";
 import { createJoinPrompt, shouldNotify, ARM_MS, FOCUS_POLL_MS } from "../scripts/daemon/joinprompt.mjs";
+import { sleep } from "./helpers/util.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fakePage = (name) => ({ name, closed: false, isClosed() { return this.closed; } });
 
 function setup({ front = null, byPerson = () => true, focus = { now: true } } = {}) {

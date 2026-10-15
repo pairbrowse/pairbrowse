@@ -10,17 +10,17 @@ import net from "node:net";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { createInterface } from "node:readline";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
+import { sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const shortBase = testBase();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 const INIT = { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } };
 const STALLED_MS = 30_000; // serve.mjs: a disconnected participant's action may run this long
 
@@ -66,8 +66,7 @@ function setup() {
   };
   const socketOf = (h) => join(h, "run", "browser.sock");
   const start = (h, env = {}) => {
-    const out = openSync(join(h, "daemon.stderr.log"), "a");
-    const d = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_FAILOVER_MS: "2000", ...env }, stdio: ["ignore", out, out] });
+    const d = spawnDaemon(h, { env: { PAIRBROWSE_TEST_FAILOVER_MS: "2000", ...env } });
     daemons.push(d);
     helperOf.set(h, d);
     return d;

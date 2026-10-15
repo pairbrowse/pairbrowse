@@ -6,17 +6,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { session, testBase } from "../helpers/live.mjs";
+import { sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const native = process.env.PAIRBROWSE_TEST_NATIVE;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 
 // The page writes what the mouse did into its title-free text, so a snapshot can read it.
 const PAGE = `<!doctype html><body style="margin:0"><canvas id=c style="position:fixed;inset:0;width:100vw;height:100vh"></canvas>
@@ -38,8 +35,7 @@ test("a stroke presses at its first point, goes through the rest and lets go at 
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = native || createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, ...(native ? { browserEngine: "pairbrowse" } : { chromeArgs: ["--headless=new"] }), display: "none", screenshots: false }));
-  const out = openSync(join(h, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h }, stdio: ["ignore", out, out] });
+  const daemon = spawnDaemon(h);
   let a;
   try {
     const socketPath = join(h, "run", "browser.sock");
@@ -76,7 +72,7 @@ test("a stroke presses at its first point, goes through the rest and lets go at 
     throw new Error(`${e.message}\n${(() => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-1500); } catch { return ""; } })()}`);
   } finally {
     a?.sock.destroy();
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
     site.close();
     rmSync(h, { recursive: true, force: true });
   }

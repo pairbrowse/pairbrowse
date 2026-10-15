@@ -4,23 +4,22 @@
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 import { session } from "../helpers/live.mjs";
+import { sleep } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function toolsOf(home) {
   symlinkSync(runtime, join(home, "runtime"), "dir");
   const { createRequire } = await import("node:module");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
-  const out = openSync(join(home, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home, PAIRBROWSE_TEST_APPROVAL: "1" }, stdio: ["ignore", out, out] });
+  const daemon = spawnDaemon(home, { env: { PAIRBROWSE_TEST_APPROVAL: "1" } });
   const socketPath = join(home, "run", "browser.sock");
   try {
     for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
@@ -30,7 +29,7 @@ async function toolsOf(home) {
     a.sock.destroy();
     return list;
   } finally {
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
   }
 }
 

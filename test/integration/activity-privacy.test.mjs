@@ -6,16 +6,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { session, testBase } from "../helpers/live.mjs";
+import { sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 
 test("a typed email, a chosen option and an address's query never reach activity.json", { skip: !runtime, timeout: 120_000 }, async () => {
   const site = createServer((req, res) => {
@@ -29,8 +26,7 @@ test("a typed email, a chosen option and an address's query never reach activity
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
-  const out = openSync(join(h, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h }, stdio: ["ignore", out, out] });
+  const daemon = spawnDaemon(h);
   const socketPath = join(h, "run", "browser.sock");
   for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);
   const a = await session(socketPath, "w");
@@ -52,7 +48,7 @@ test("a typed email, a chosen option and an address's query never reach activity
     for (const v of ["ada.secret", "grace.typed", "Gold-7731", "QX-55910", "tok_8812", "frag-7", "code="]) assert.ok(!kept.includes(v), `${v} in activity.json:\n${kept}`);
   } finally {
     a.sock.destroy();
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
     rmSync(h, { recursive: true, force: true });
     site.close();
   }

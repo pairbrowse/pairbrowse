@@ -9,15 +9,13 @@ import net from "node:net";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { createInterface } from "node:readline";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { join } from "node:path";
+import { sleep } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const page = (title, body) => `<!doctype html><title>${title}</title><style>body{font-family:sans-serif} .danger{background:#d93025;color:#fff;border:0;padding:6px}</style>
 <div id="cookies" role="dialog" aria-label="Cookies"><p>We use cookies.</p><button type="button" style="background:#1a73e8;color:#fff" onclick="this.parentElement.remove()">Accept all</button><button type="button" onclick="this.parentElement.remove()">Reject</button></div>
@@ -93,8 +91,7 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
   symlinkSync(runtime, join(home, "runtime"), "dir");
   const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
   writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false }));
-  const out = openSync(join(home, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home, PAIRBROWSE_APPROVAL_WAIT_MS: "1500" }, stdio: ["ignore", out, out] });
+  const daemon = spawnDaemon(home, { env: { PAIRBROWSE_APPROVAL_WAIT_MS: "1500" } });
   const socketPath = join(home, "run", "browser.sock");
   const site = "http://shop.pbtest.example";
   let stage = "start", claude, codex;
@@ -213,7 +210,7 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
     claude?.sock.destroy();
     codex?.sock.destroy();
     fixture.close();
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
     rmSync(home, { recursive: true, force: true });
   }
 });

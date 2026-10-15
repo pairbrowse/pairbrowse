@@ -8,16 +8,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 import { session, testBase } from "../helpers/live.mjs";
+import { sleep, text } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 
 // A form whose email field shows its own error once left, a dropdown, and something that moves.
 const PAGE = `<!doctype html><title>Form</title><body>
@@ -48,8 +45,7 @@ test("the page's own errors come back with the run, and a recording is saved as 
   const native = existsSync(join(dirname(executablePath), "..", "Resources", "PairBrowse-build.json"));
   const engine = native ? { browserEngine: "pairbrowse", chromeArgs: ["--headless=new", "--use-mock-keychain", "--password-store=basic"] } : { chromeArgs: ["--headless=new"] };
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, ...engine, display: "none", screenshots: false, downloadsDir: downloads }));
-  const out = openSync(join(h, "daemon.stderr.log"), "a");
-  const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: h }, stdio: ["ignore", out, out] });
+  const daemon = spawnDaemon(h);
   let a;
   try {
     const socketPath = join(h, "run", "browser.sock");
@@ -111,7 +107,7 @@ test("the page's own errors come back with the run, and a recording is saved as 
     throw new Error(`${e.message}\n${(() => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2000); } catch { return ""; } })()}`);
   } finally {
     a?.sock.destroy();
-    if (daemon.exitCode === null) { daemon.kill("SIGTERM"); await Promise.race([new Promise((r) => daemon.once("exit", r)), sleep(10_000)]); }
+    await stopDaemon(daemon);
     site.close();
     rmSync(h, { recursive: true, force: true });
   }

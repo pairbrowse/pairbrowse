@@ -3,7 +3,8 @@
 // event { n, to: "share" | "record", op, ... } on this page's own event stream
 // (events?panel=1&page=capture, never the pages' shared one) and gets its answer on
 // POST capture/reply { n, value } or { n, error }; on every open the page says hello with what it
-// can do. Tabs are named by their DevTools target id (the helper's tabRef in page mode). What the
+// can do. A build whose manifest says "capture": 2 gives this page a key of its own
+// (session.captureKey), sent as ck on that stream and on every reply. Tabs are named by their DevTools target id (the helper's tabRef in page mode). What the
 // extension's worker does for the offscreen document is done here: a tab's stream id comes from
 // the browser (session.grantTabCapture, only for this page and only for ordinary web tabs), and a
 // recording follows the tab in front through the browser's Tabs and Windows observers, held only
@@ -227,12 +228,54 @@ export function createNativeCapture(pb) {
   return { call, share, record: rec, recording: () => !!recording };
 }
 
-// The page's channel to the helper: its own stream (common.js helperStream, kind "capture": never
-// the shared one), the hello on each open, the answers posted. Returns { core, close() }.
-export async function startNative(pb, { scope = globalThis, onState = () => {}, stream = helperStream } = {}) {
+// The capture page's own key (a build whose manifest says "capture": 2): the browser hands it to
+// this page only (session.captureKey), and the helper then takes the capture stream and every
+// reply only with it (ck), so no other page of the browser's own can take or answer its calls.
+// "" from a build without it (no captureKey: the pages' key alone, as before) or a key of
+// another form.
+const KEY = /^[A-Za-z0-9_-]{1,256}$/;
+export async function captureKey(pb) {
+  if (typeof pb?.session?.captureKey !== "function") return "";
+  try { const { key } = (await pb.session.captureKey()) || {}; return typeof key === "string" && KEY.test(key) ? key : ""; } catch { return ""; }
+}
+
+// The capture page's own stream with its key on the address: what common.js helperStream does for
+// a page's own stream (openStream: events?panel=1&page=capture, the states, onOpen when it goes
+// live), with &ck=<key> added, which helperStream has no place for. Only the capture event is
+// relayed; nothing else is ever sent on this stream. Returns { on(name, fn), close() }.
+export function keyedStream(base, { ck, onState = () => {}, onOpen = () => {}, scope = globalThis } = {}) {
+  const handlers = [];
+  let state = "connecting";
+  const set = (s) => {
+    const was = state;
+    state = s;
+    onState(s);
+    if (s === "live" && was !== "live") onOpen();
+  };
+  const es = new scope.EventSource(`${base}events?panel=1&page=capture&ck=${encodeURIComponent(ck)}`);
+  es.onopen = () => set("live");
+  es.onerror = () => set(es.readyState === scope.EventSource.CLOSED ? "closed" : "connecting");
+  es.addEventListener("capture", (e) => {
+    let v;
+    try { v = JSON.parse(e.data); } catch { return; }
+    for (const fn of handlers) { try { fn(v); } catch {} } // one handler never stops the relay
+  });
+  return { on(name, fn) { if (name === "capture") handlers.push(fn); }, close() { es.close(); } };
+}
+
+// The stream for this page: the keyed one when the browser gave a key, else helperStream's own.
+const pageStream = (url, opts) => (opts.ck ? keyedStream(url, opts) : helperStream(url, opts));
+
+// The page's channel to the helper: its own stream (kind "capture": never the shared one), the
+// hello on each open, the answers posted (with the page's key, ck, when it has one). Returns
+// { core, close() }.
+export async function startNative(pb, { scope = globalThis, onState = () => {}, stream = pageStream } = {}) {
   const core = createNativeCapture(pb);
   let current = null, base = null, closed = false;
-  const post = (body) => scope.fetch(base + "capture/reply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
+  // Read once: the browser reads its file once, and a page never outlives its browser's launch.
+  const ck = await captureKey(pb);
+  const reply = ck ? `capture/reply?ck=${encodeURIComponent(ck)}` : "capture/reply";
+  const post = (body) => scope.fetch(base + reply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
   async function helper() {
     try { const { origin, key } = (await pb.session.helper()) || {}; return origin && key ? `${origin}/${key}/` : null; } catch { return null; }
   }
@@ -246,6 +289,8 @@ export async function startNative(pb, { scope = globalThis, onState = () => {}, 
     mine = stream(url, {
       kind: "capture",
       shared: false,
+      ck,
+      scope,
       onState: (s) => {
         onState(s);
         if (s === "closed") helper().then((next) => { if (current === mine && next && next !== url) { mine.close(); open(next); } });

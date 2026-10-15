@@ -216,6 +216,65 @@ test("record calls with nothing recording: the record core's answers, the ask bo
   assert.equal(core.recording(), false);
 });
 
+// A build with "capture": 2 hands this page a key of its own (session.captureKey); the helper then
+// takes the capture stream and every reply only with it (ck). Without one: the pages' key alone.
+test("the capture key rides on the page's own stream and on every reply", async () => {
+  class FakeEventSource {
+    static CLOSED = 2;
+    static made = [];
+    constructor(url) { this.url = url; this.readyState = 0; this.listeners = {}; this.closed = false; FakeEventSource.made.push(this); }
+    addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
+    close() { this.closed = true; }
+  }
+  const posts = [];
+  const scope = { EventSource: FakeEventSource, fetch: async (url, init) => { posts.push([url, JSON.parse(init.body)]); return {}; } };
+  const helperPb = (captureKey) => {
+    const { pb } = fakePb();
+    pb.session.helper = async () => ({ origin: "http://127.0.0.1:4711", key: "pages_key" });
+    if (captureKey) pb.session.captureKey = captureKey;
+    return pb;
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  // The key, as the browser hands it, read once.
+  let asked = 0;
+  const pb = helperPb(async () => { asked++; return { key: "ck_1-A" }; });
+  assert.equal(await native.captureKey(pb), "ck_1-A");
+  const { close } = await native.startNative(pb, { scope });
+  const es = FakeEventSource.made.at(-1);
+  assert.equal(es.url, "http://127.0.0.1:4711/pages_key/events?panel=1&page=capture&ck=ck_1-A");
+  assert.deepEqual(Object.keys(es.listeners), ["capture"], "only the capture event on this stream");
+  es.onopen();
+  await settle();
+  assert.deepEqual(posts.shift(), ["http://127.0.0.1:4711/pages_key/capture/reply?ck=ck_1-A", { hello: true, caps: native.caps(pb, scope) }]);
+  es.listeners.capture[0]({ data: JSON.stringify({ n: 7, to: "share", op: "peers" }) });
+  await settle();
+  assert.deepEqual(posts.shift(), ["http://127.0.0.1:4711/pages_key/capture/reply?ck=ck_1-A", { n: 7, value: [] }]);
+  es.listeners.capture[0]({ data: "not json" });
+  await settle();
+  assert.equal(posts.length, 0);
+  assert.equal(asked, 2, "captureKey() above and startNative's one read");
+  close();
+  assert.equal(es.closed, true);
+
+  // No key from the browser (an older build: no captureKey, or an empty or malformed key): no ck,
+  // the page's stream as before (common.js helperStream).
+  for (const pbNoKey of [helperPb(null), helperPb(async () => ({ key: "" })), helperPb(async () => ({ key: "a b" })), helperPb(async () => { throw new Error("x"); })]) {
+    assert.equal(await native.captureKey(pbNoKey), "");
+    let opened = null;
+    const stream = (url, opts) => { opened = { url, opts }; return { on() {}, close() {} }; };
+    const started = await native.startNative(pbNoKey, { scope, stream });
+    assert.equal(opened.url, "http://127.0.0.1:4711/pages_key/");
+    assert.equal(opened.opts.ck, "");
+    assert.equal(opened.opts.kind, "capture");
+    assert.equal(opened.opts.shared, false);
+    opened.opts.onOpen();
+    await settle();
+    assert.equal(posts.shift()[0], "http://127.0.0.1:4711/pages_key/capture/reply");
+    started.close();
+  }
+});
+
 // The extension's offscreen document: the worker's message shapes, answered as before the split.
 test("the extension transport answers today's { to: \"share\", op } messages", async () => {
   let listener = null;

@@ -109,7 +109,7 @@ export function createDiagnostics({ version = "", browser = async () => ({ engin
     reportText(diag = {}) {
       const c = diag.connections || {};
       const roles = { drive: 0, watch: 0 };
-      for (const j of diag.joined || []) if (j?.role in roles) roles[j.role]++;
+      for (const j of diag.joined || []) { const r = j?.role === "approve" ? "drive" : j?.role; if (r in roles) roles[r]++; } // approve is drive, plus answering approvals
       const lines = [
         "PairBrowse diagnostics report",
         `Created: ${new Date().toISOString()}`,

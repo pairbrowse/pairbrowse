@@ -20,7 +20,7 @@ import { createApprovals, personLabel, cleanName } from "./join.mjs";
 import { stateForJoiner, readOps, shareableUrl, onSecretDomain, activityBudget } from "./tabsync.mjs";
 import { createPush } from "./liveview/push.mjs";
 import { hostOk, originOk, keyOk, sse, SECURITY_HEADERS, plain, pathParts, listen } from "./liveview/http.mjs";
-import { createInvites, roleMay } from "./liveview/invites.mjs";
+import { createInvites, roleMay, roleOf } from "./liveview/invites.mjs";
 import { createInputReplayer, readViewerInput, inputBudget } from "./liveview/input.mjs";
 import { createJoinerServer, recentlySeen, joinerKeyOf } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, hostOf } from "./liveview/tabs.mjs";
@@ -243,7 +243,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   const guests = () => {
     const seen = new Map();
     for (const invite of linkGuests.values()) seen.set(invite.id, { label: invite.label, role: invite.role });
-    for (const j of joiners.values()) if (recentlySeen(j)) seen.set(joinerKeyOf(j.invite.id, j.joinerId), { label: personLabel(j.name, j.app), role: j.invite.role });
+    for (const j of joiners.values()) if (recentlySeen(j)) seen.set(joinerKeyOf(j.invite.id, j.joinerId), { label: personLabel(j.name, j.app), role: roleOf(invites.get?.(j.invite.id) || j.invite) });
     for (const r of remote) seen.set(`remote:${r.label}`, r);
     return [...seen.values()];
   };

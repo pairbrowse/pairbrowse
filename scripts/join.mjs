@@ -199,7 +199,8 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
       recent.push(t);
       let id;
       do id = `r${randomBytes(3).toString("hex")}`; while (find(id));
-      const entry = { id, inviteId: invite.id, joinerId, name: cleanName(name), app: app ? appName(app) : "", computer: cleanComputer(computer), role: invite.role, state: "pending", at: t };
+      // role: as the host reads it ("approve": drive, and may answer the host's approval cards).
+      const entry = { id, inviteId: invite.id, joinerId, name: cleanName(name), app: app ? appName(app) : "", computer: cleanComputer(computer), role: invite.approve === true && invite.role === "drive" ? "approve" : invite.role, state: "pending", at: t };
       all.set(k, entry);
       changed();
       return { state: "pending", entry: publicView(entry), isNew: true };
@@ -238,7 +239,7 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
         if (e.state !== "approved" && e.state !== "removed") continue;
         const k = `${e.inviteId}:${e.joinerId}`;
         if (all.has(k) || find(e.id)) continue;
-        all.set(k, { id: e.id, inviteId: textOf(e.inviteId), joinerId: e.joinerId, name: cleanName(e.name), app: e.app ? appName(e.app) : "", computer: cleanComputer(e.computer), role: e.role === "drive" ? "drive" : "watch", state: e.state, at: numOf(e.at) || now() });
+        all.set(k, { id: e.id, inviteId: textOf(e.inviteId), joinerId: e.joinerId, name: cleanName(e.name), app: e.app ? appName(e.app) : "", computer: cleanComputer(e.computer), role: e.role === "drive" || e.role === "approve" ? e.role : "watch", state: e.state, at: numOf(e.at) || now() });
       }
       changed();
     },

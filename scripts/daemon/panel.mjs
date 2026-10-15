@@ -150,7 +150,7 @@ export function createPanel({ context, liveViewUrl, log, expectedBuild = () => p
   // else the system's, text only, pointing to the side panel. who: "Sam (Claude Code)"; role:
   // drive or watch; request: its id.
   function notifyJoin({ who, role, request }) {
-    const head = `${String(who).slice(0, 80)} wants to join (${role === "drive" ? "drive" : "watch"}).`;
+    const head = `${String(who).slice(0, 80)} wants to join (${role === "approve" ? "drive and approve" : role === "drive" ? "drive" : "watch"}).`;
     // A browser with its own pages answers join requests in its agent panel.
     if (!available()) { systemNotify(`${head} Answer in PairBrowse's agent panel.`); log(`notification sent through the system's (join request ${request})`); return; }
     call(([t, m, r]) => (globalThis.pbNotifyJoin ? globalThis.pbNotifyJoin(t, m, r) : "no buttons"), [NOTIFY_TITLE, `${head} Allow or Deny here, or in the PairBrowse side panel.`, String(request)], 5000)

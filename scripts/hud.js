@@ -680,7 +680,7 @@
     ensureBar();
     if (!wasBar) { drawBar(); placeBadge(); }
     while (joins.size >= JOIN_KEEP) { const old = joins.keys().next().value; dismissed = `${dismissed},${old}`.slice(-200); joinOff(old); }
-    joins.set(id, { timer: 0, who: String(r.who || "Someone").slice(0, 60), role: r.role === "drive" ? "drive" : "watch" });
+    joins.set(id, { timer: 0, who: String(r.who || "Someone").slice(0, 60), role: r.role === "approve" ? "drive and approve" : r.role === "drive" ? "drive" : "watch" });
     joinLater(id, JOIN_SHOWN_MS);
     joinDraw();
     return true;

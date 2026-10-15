@@ -336,3 +336,16 @@ test("a joiner's side: no card on the picture pages while someone else looks at 
   assert.equal(s.ca.pending().length, 1, "still listed for this browser's own approve page");
   s.ca.fromHost(null);
 });
+
+test("a join request says approve when the code can approve: the host knows what they let in", () => {
+  const invites = createInvites();
+  const requests = createApprovals();
+  const a = invites.create({ role: "approve", label: "Alex", share: "code" });
+  const d = invites.create({ role: "drive", label: "Dee", share: "code" });
+  assert.equal(requests.check(invites.match(a.key), newJoinerId(), "Alex").entry.role, "approve");
+  assert.equal(requests.check(invites.match(d.key), newJoinerId(), "Dee").entry.role, "drive");
+  for (const e of requests.pending()) requests.approve(e.id);
+  const again = createApprovals();
+  again.restore(requests.saved());
+  assert.deepEqual(again.list().map((e) => e.role).sort(), ["approve", "drive"], "kept across a restart");
+});

@@ -190,8 +190,8 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       if (!done) return fail(`No join request ${args.id}${action === "approve" ? " waiting (or it was turned away)" : ""}. Use list to see them.`);
       const shared = invites.list().find((i) => i.id === done.inviteId)?.mode === "shared";
       const opens = shared
-        ? `They now see your tabs live in their PairBrowse${done.role === "drive" ? " and can click, type and scroll in them, here in this browser" : ""}`
-        : `Their own PairBrowse browser opens your tabs now${done.role === "drive" ? " (and their changes in them come back here)" : ""}`;
+        ? `They now see your tabs live in their PairBrowse${done.role !== "watch" ? " and can click, type and scroll in them, here in this browser" : ""}`
+        : `Their own PairBrowse browser opens your tabs now${done.role !== "watch" ? " (and their changes in them come back here)" : ""}`;
       return { text: action === "approve" ? `Let ${done.name} in (${done.role}${shared ? ", shared browser" : ""}). ${opens}; revoke the invite to end it.` : `Turned ${done.name} away. If they try that code again, the user is asked again; revoke the invite to stop it working.` };
     }
     if (action === "set_role") {

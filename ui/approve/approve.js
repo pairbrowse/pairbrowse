@@ -151,7 +151,7 @@ function normalize(kind, raw) {
   } else if (kind === "join") {
     Object.assign(it, {
       who: `${raw.name || "Someone"}${raw.app ? ` (${raw.app})` : ""}`, verb: "wants to join",
-      target: raw.role === "drive" ? "Shared browser, can drive" : "Watch only",
+      target: raw.role === "approve" ? "Shared browser, can drive and approve" : raw.role === "drive" ? "Shared browser, can drive" : "Watch only",
     });
   } else if (kind === "dev") {
     Object.assign(it, { who: String(raw.who || "An agent"), verb: "wants to share a dev server", target: `localhost:${Number(raw.port)}`, reason: "With the people in your session." });

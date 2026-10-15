@@ -439,6 +439,27 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
   assert.deepEqual(errors, []);
 });
 
+// 14. The approve role: a shared browser code's row has "Can approve" (a toggle, pressed when the
+// joiner may answer approval cards); a person's click posts invite { op: "role" }; a script's
+// click posts nothing; links and follow codes have no such button.
+pageTest("settings", { fixtures: { ...fixtures, invites: { items: [
+  { id: "0a1b2c3d", role: "drive", label: "Bob", share: "code", mode: "shared", expires: Date.now() + 3600_000 },
+  { id: "1a1b2c3d", role: "approve", label: "Alex", share: "code", mode: "shared", expires: Date.now() + 3600_000 },
+  { id: "2a1b2c3d", role: "drive", label: "Fay", share: "code", mode: "follow", expires: Date.now() + 3600_000 },
+  { id: "3a1b2c3d", role: "watch", label: "Wendy", share: "link", mode: "", expires: Date.now() + 3600_000 },
+] } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("four invites", () => document.querySelectorAll("#invite-list li").length === 4);
+  const rows = () => inPage(() => [...document.querySelectorAll("#invite-list li")].map((li) => [li.querySelector(".name").textContent, li.querySelector("small").textContent.split(" · ").slice(0, 2).join(" · "), [...li.querySelectorAll("button")].find((b) => b.textContent === "Can approve")?.getAttribute("aria-pressed") ?? null]));
+  assert.deepEqual(await rows(), [["Bob", "Join code · can drive", "false"], ["Alex", "Join code · can drive and approve", "true"], ["Fay", "Join code · can drive", null], ["Wendy", "Link · can watch", null]]);
+  await inPage(() => [...document.querySelectorAll("#invite-list li")][0].querySelector("button").click());
+  assert.equal(helper.posts.some((p) => p.route === "invite"), false, "a script's click posts nothing");
+  await page.locator("#invite-list li").first().getByRole("button", { name: "Can approve" }).click();
+  await posted(helper, page, "role", "invite", { op: "role", id: "0a1b2c3d", role: "approve" });
+  await until("Bob can approve", () => document.getElementById("invites-msg").textContent === "Bob can now also answer your approval cards.");
+  await until("redrawn", () => [...document.querySelectorAll("#invite-list li")][0].querySelector("small").textContent.startsWith("Join code · can drive and approve"));
+  assert.deepEqual(errors, []);
+});
+
 // ---- no helper, or none reached: the resting state, not an error ----
 // The banner says it in every page's words (DESIGN.md B4: common.js NO_AGENT and noAgentLine), in
 // --ink-2; About's connection reads "No agent connected" with the muted dot; nothing in red.

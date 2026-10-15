@@ -237,3 +237,119 @@ test("liveViewHosts and inviteBaseUrl are validated strictly", () => {
     assert.ok(r.problem, bad);
   }
 });
+
+// ---- the invite store on its own (scripts/liveview/invites.mjs), on an injected clock ----
+
+test("invite lifetime: 24 h by default, hours as given, capped at 7 days; bad hours, shares and modes refused", () => {
+  let t = 5_000_000;
+  const invites = createInvites({ now: () => t });
+  const H = 3_600_000;
+  for (const hours of [undefined, null, ""]) assert.equal(((i) => i.expiresAt - i.createdAt)(invites.create({ hours })), 24 * H, `default for ${JSON.stringify(hours)}`);
+  assert.equal(((i) => i.expiresAt - i.createdAt)(invites.create({ hours: "2" })), 2 * H, "a number as text");
+  assert.equal(((i) => i.expiresAt - i.createdAt)(invites.create({ hours: 0.5 })), H / 2);
+  assert.equal(((i) => i.expiresAt - i.createdAt)(invites.create({ hours: 24 * 7 })), 168 * H);
+  assert.equal(((i) => i.expiresAt - i.createdAt)(invites.create({ hours: 24 * 7 + 1 })), 168 * H, "over the cap: the cap");
+  for (const hours of [0, -1, "abc", NaN, Infinity, {}]) assert.throws(() => invites.create({ hours }), /hours/, String(hours));
+  assert.throws(() => invites.create({ share: "public" }), /share/);
+  assert.throws(() => invites.create({ share: "code", mode: "mirror" }), /mode/);
+  // Expiry is exact: valid up to the last millisecond before expiresAt.
+  const a = invites.create({ hours: 1 });
+  t = a.expiresAt - 1;
+  assert.equal(invites.match(a.key)?.id, a.id);
+  t = a.expiresAt;
+  assert.equal(invites.match(a.key), null, "at expiresAt it no longer works");
+  assert.equal(invites.get(a.id), null);
+});
+
+test("key compare: only the whole key, as given; ids and keys are random and distinct", () => {
+  const invites = createInvites();
+  const a = invites.create({ role: "watch" });
+  const b = invites.create({ role: "drive" });
+  assert.notEqual(a.id, b.id);
+  assert.notEqual(a.key, b.key);
+  assert.match(a.id, /^[0-9a-f]{8}$/);
+  assert.equal(invites.match(a.key).id, a.id);
+  for (const wrong of [a.key.toUpperCase(), `${a.key}0`, a.key.slice(0, -1), ` ${a.key}`, a.id, null, undefined, 0, b.key.slice(0, 32) + a.key.slice(32)]) {
+    const got = invites.match(wrong);
+    assert.ok(got === null || got.id === b.id && wrong === b.key, `matched ${String(wrong).slice(0, 20)}`);
+  }
+  assert.equal(invites.match(a.key.toUpperCase()), null, "case matters");
+  // What match, get and list hand out never carries the key.
+  for (const view of [invites.match(a.key), invites.get(a.id), ...invites.list()]) assert.ok(!("key" in view), JSON.stringify(view));
+});
+
+test("ended invites are announced: revoke, revokeAll and expiry, each once", () => {
+  let t = 1_000_000;
+  const invites = createInvites({ now: () => t });
+  const ended = [];
+  const stop = invites.onEnd((ids) => ended.push(...ids));
+  const a = invites.create({ hours: 1 });
+  const b = invites.create({ hours: 2 });
+  const c = invites.create({ hours: 3 });
+  invites.revoke(a.id);
+  t += 2 * 3_600_000;
+  invites.sweep();
+  invites.sweep();
+  assert.deepEqual(ended, [a.id, b.id]);
+  assert.equal(invites.revokeAll(), 1);
+  assert.deepEqual(ended, [a.id, b.id, c.id]);
+  stop();
+  invites.create();
+  invites.revokeAll();
+  assert.equal(ended.length, 3, "a listener removed hears nothing more");
+});
+
+test("saved join codes: links never saved; restore takes back only well-formed, live, capped codes", () => {
+  const t = 10_000_000;
+  const H = 3_600_000;
+  const invites = createInvites({ now: () => t });
+  invites.create({ role: "drive", label: "Link" });
+  const code = invites.create({ role: "watch", share: "code", label: "Code" });
+  const saved = invites.savedCodes();
+  assert.deepEqual(saved.map((i) => i.id), [code.id], "only join codes");
+  assert.equal(saved[0].key, code.key, "whole, with the key");
+  const good = saved[0];
+  const id = (n) => n.toString(16).padStart(8, "0");
+  const bad = [
+    null, "x", 5,
+    { ...good, id: "XYZ" }, // id not hex
+    { ...good, id: id(1), key: "short" },
+    { ...good, id: id(2), key: good.key.toUpperCase() },
+    { ...good, id: id(3), share: "link" }, // links never come back
+    { ...good, id: id(4), role: "owner" },
+    { ...good, id: id(5), role: "approve" }, // kept as drive + approve, never as a role of its own
+    { ...good, id: id(6), mode: "mirror" },
+    { ...good, id: id(7), expiresAt: t }, // expired
+    { ...good, id: id(8), expiresAt: "soon" },
+    { ...good, id: id(9), createdAt: t - H, expiresAt: t - H + 168 * H + 1 }, // longer than 7 days
+    { ...good, id: id(10), createdAt: undefined },
+  ];
+  const again = createInvites({ now: () => t });
+  assert.equal(again.restore([...bad, good, { ...good }]), 1, "the good one once, its copy refused");
+  assert.equal(again.restore("not a list"), 0);
+  assert.equal(again.restore(undefined), 0);
+  assert.deepEqual(again.list().map((i) => i.id), [code.id]);
+  assert.equal(again.match(good.key).role, "watch");
+  // A label comes back cleaned like a new one.
+  const third = createInvites({ now: () => t });
+  assert.equal(third.restore([{ ...good, label: "<b>Eve</b>‮" }]), 1);
+  assert.equal(third.get(good.id).label, "bEve/b");
+  // Exactly 7 days long is fine.
+  const fourth = createInvites({ now: () => t });
+  assert.equal(fourth.restore([{ ...good, createdAt: t - H, expiresAt: t - H + 168 * H }]), 1);
+});
+
+test("role rights: every right named, only the owner's beyond page, events, thumb, state, input and tab", () => {
+  const guest = ["page", "events", "thumb", "state", "input", "tab"];
+  const ownerOnly = ["profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline", "config", "outline", "tools", "capture", "activity"];
+  for (const r of [...guest, ...ownerOnly]) assert.equal(roleMay("owner", r), true, r);
+  for (const r of ownerOnly) for (const role of ["drive", "watch", "approve"]) assert.equal(roleMay(role, r), false, `${role} ${r}`);
+  // "approve" is no rights role of its own: an approve invite is checked as the drive it is.
+  for (const r of guest) assert.equal(roleMay("approve", r), false, r);
+  // Names from outside never reach the object's own properties.
+  for (const role of ["__proto__", "constructor", "hasOwnProperty", "toString"]) assert.equal(roleMay(role, "page"), false, role);
+  assert.equal(roleMay("owner", "constructor"), false);
+  assert.equal(roleOf(null), "watch");
+  assert.equal(roleOf({ role: "watch", approve: true }), "watch", "approve only on top of drive");
+  assert.equal(roleOf({ role: "drive", approve: "yes" }), "drive", "approve must be true itself");
+});

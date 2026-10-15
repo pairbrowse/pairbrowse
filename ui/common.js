@@ -10,9 +10,8 @@ import { SHARED_STREAM_EVENTS, DELTA_EVENTS, OWN_EVENTS } from "./events.js";
 import { addressToUrl, servedByBrowser, REPORT_URL, TOP_CHROME_HOST, ownPage } from "./urls.js";
 import { postJson, UNREACHABLE_RETRY, UNREACHABLE } from "./helper.js";
 export { STATE_WORDS, isColor, addressToUrl, servedByBrowser, REPORT_URL };
-
-export const $ = (id) => document.getElementById(id);
-export function el(tag, props = {}, ...kids) { const n = document.createElement(tag); Object.assign(n, props); n.append(...kids); return n; }
+import { $, el } from "./dom.js";
+export * from "./dom.js";
 
 // ---- motion (DESIGN.md Part I): the sheet's tokens (tokens.css), the same for every page ----
 // Rows, cards and tabs that join or leave a list move in and out instead of jumping; a page that is
@@ -166,22 +165,6 @@ export const activityHead = (a) => [a.who, a.tab ? `in ${a.tab}` : ""].filter(Bo
 // agent starts ("Its task, checklist and status", "Your sessions").
 export const NO_AGENT = "No agent connected";
 export const noAgentLine = (what) => `Ask Claude Code or Codex to use PairBrowse. ${what} show here.`;
-
-// Claude's orange spark, as an icon.
-const SPARK = "M8 0.8c.5 0 .8.4.9.9l.5 4 3.3-2.3c.4-.3 1-.2 1.3.2.3.4.2 1-.2 1.3L10.6 7.3l4 .6c.5.1.9.5.8 1-.1.5-.5.8-1 .7l-4-.5 2.3 3.3c.3.4.2 1-.2 1.3-.4.3-1 .2-1.3-.2L8.9 10.2l-.5 4c-.1.5-.5.9-1 .8-.5 0-.8-.5-.8-1l.6-4-3.3 2.3c-.4.3-1 .2-1.3-.2-.3-.4-.2-1 .2-1.3l3.2-2.4-4-.5c-.5-.1-.9-.5-.8-1 .1-.5.5-.8 1-.8l4 .6L3.9 3.5c-.3-.4-.2-1 .2-1.3.4-.3 1-.2 1.3.2l2.4 3.3.5-4c0-.5.4-.9.9-.9Z";
-export function sparkIcon(className, label = "") {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("class", className);
-  if (label) svg.setAttribute("aria-label", label);
-  else svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS(ns, "path");
-  path.setAttribute("fill", "currentColor");
-  path.setAttribute("d", SPARK);
-  svg.append(path);
-  return svg;
-}
 
 // A request row's failure, said in the row (DESIGN.md Part I: nothing silent); the next answer
 // clears it.
@@ -747,7 +730,6 @@ export function askSwitch(box, r, { yes, no }) {
   cancel.focus();
   return () => finish(no);
 }
-
 
 // Asks for one dock's state: the browser's Layout.Set in the build (the last state with one side
 // changed), else the helper's POST layout; false when neither channel is there (nothing asked).

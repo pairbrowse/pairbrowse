@@ -173,14 +173,22 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     // Plain rows in a scrolling box (no roles); choices that unfold in place in a panel; a list
     // drawn in advance but invisible until opened; a dropdown the page leaves marked invalid after
     // a valid choice (no error to show) isn't reported.
-    // Timed: four ordinary picks are the measure of this machine right now (the suite runs many
-    // browsers at once), and the speed checks below are relative to it.
-    const p0 = Date.now();
-    r = await run([{ select: { "Home country": "Canada", "Product line": "Delta", Plan: "Team", Department: "Sales" } }]);
-    const plain = Date.now() - p0;
-    assert.match(r, /^Done: 1 steps/, r);
-    assert.deepEqual([await shows("plo"), await shows("ipo"), await shows("vho"), await value("dep")], ["Canada", "Delta", "Team", "Sales"]);
-    assert.doesNotMatch(r, /"Department": marked as not valid/, r);
+    // Timed: four ordinary picks, taken three times (other choices in between, then back), are the
+    // measure of this machine right now (the suite runs many browsers at once). The speed checks
+    // below are relative to the median, so one slow sample (a GC, a spike in another browser)
+    // moves nothing.
+    const fourPicks = async (choices) => {
+      const p0 = Date.now();
+      r = await run([{ select: { "Home country": choices[0], "Product line": choices[1], Plan: choices[2], Department: choices[3] } }]);
+      const ms = Date.now() - p0;
+      assert.match(r, /^Done: 1 steps/, r);
+      assert.deepEqual([await shows("plo"), await shows("ipo"), await shows("vho"), await value("dep")], choices);
+      assert.doesNotMatch(r, /"Department": marked as not valid/, r);
+      return ms;
+    };
+    const samples = [];
+    for (const choices of [["Canada", "Delta", "Team", "Sales"], ["Place 149", "Gamma", "Starter", "Sales"], ["Canada", "Delta", "Team", "Sales"]]) samples.push(await fourPicks(choices));
+    const plain = [...samples].sort((x, y) => x - y)[1];
     // A list that fills in only after a while: opened again and given longer.
     r = await run([{ select: { "Sales region": "West" } }]);
     assert.match(r, /^Done: 1 steps/, r);
@@ -193,8 +201,8 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     const took = Date.now() - t0;
     assert.match(r, /^Done: 1 steps/, r);
     assert.equal(await shows("tk"), "Single");
-    // Waiting on the stale name would add seconds, whatever the load: one pick allowed what the four took, or 5 s if that's more, never more than 20 s.
-    t.diagnostic(`styled pick on a big page: ${took} ms (four plain picks: ${plain} ms)`);
+    // Waiting on the stale name would add seconds, whatever the load: one pick allowed what four took (the median), or 5 s if that's more, never more than 20 s.
+    t.diagnostic(`styled pick on a big page: ${took} ms (four plain picks, median: ${plain} ms of ${samples.join(", ")})`);
     assert.ok(took < Math.min(20_000, Math.max(5000, plain)), `a styled pick on a big page took ${took} ms (four plain picks: ${plain} ms)`);
     r = await run([{ fill: { "Leaving on": "Nov 20, 2026" } }]);
     assert.match(r, /^Done: 1 steps/, r);
@@ -207,7 +215,7 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     const tookGone = Date.now() - t1;
     assert.match(r, /^Done: 1 steps/, r);
     assert.deepEqual([await value("nk"), await value("tn")], ["Riv", "Rivera Labs"]);
-    t.diagnostic(`fields whose names go away once filled: ${tookGone} ms`);
+    t.diagnostic(`fields whose names go away once filled: ${tookGone} ms (four plain picks, median: ${plain} ms)`);
     assert.ok(tookGone < Math.min(20_000, Math.max(6000, plain)), `fields whose names go away once filled took ${tookGone} ms (four plain picks: ${plain} ms)`);
     // A suggestion picked by the run is the agent's click: never taken for a person's.
     r = await run([{ fill: { "Street address": "500 Howard Ave" } }]);

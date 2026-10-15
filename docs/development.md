@@ -125,7 +125,8 @@ more browsers at once for about three minutes on a 12-core machine. Knobs:
 
 Speed checks (the smooth scroll in `integration/scroll`, the styled pick on a big page and the
 fields whose names go away in `integration/form-patterns`) are relative: each test first times
-a plain action of the same kind on the same page, allows the step under test a multiple of
+a plain action of the same kind on the same page (`integration/form-patterns` takes the median of three
+samples, so one slow sample moves nothing), allows the step under test a multiple of
 that (with a floor at the quiet-machine limit and an absolute ceiling), and prints both as a
 diagnostic (`ℹ` lines with the spec reporter). A regression that waits on a stale name or a
 glide that stops being a glide still fails; a loaded machine doesn't. The long fixed waits in

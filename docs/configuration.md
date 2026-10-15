@@ -27,7 +27,12 @@
   (optional opt-in: plain Playwright, easier for sites to detect). On a Node.js too old for
   Patchright, PairBrowse uses Playwright by itself and says so once (see [Install](install.md)); the
   pinned Playwright also requires Node.js 20+, so Node.js 20 or newer is effectively required either way.
-- `chromeArgs`: extra Chromium flags.
+- `chromeArgs`: extra Chromium flags. Switches that would open a debugging surface or weaken the
+  browser are dropped, named once in the helper log and as a warning in `pairbrowse_status`:
+  `--remote-debugging-*` (port, address, pipe), `--remote-allow-origins`, `--disable-web-security`,
+  `--disable-site-isolation-trials`, `--user-data-dir`, `--load-extension`,
+  `--disable-extensions-except` and `--allowlisted-extension-id`. `--no-sandbox` here works as
+  `"chromeSandbox": false`.
 - `chromeSandbox`: `false` turns off Chromium's own sandbox (default `true`). PairBrowse turns it off
   by itself only where it can't run: as root on Linux, and where the system has no user namespaces
   (Docker's default seccomp profile or Ubuntu's AppArmor rule blocks them); the helper log says so once. In a container, run

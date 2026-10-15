@@ -27,13 +27,18 @@ drive that logged-in browser with no key. Browser automation tools commonly open
 - The helper must own the browser's lifetime; it can't attach to an already running browser, so a
   hand-opened PairBrowse window goes through the opener (`scripts/open.mjs`).
 - Tools that expect a CDP endpoint can't be pointed at the PairBrowse browser.
-- `chromeArgs` in the user's own `config.json` is passed through as given; the guarantee is that
-  PairBrowse adds no port, not that the user can't.
+- `chromeArgs` in the user's own `config.json` can't add one either: a remote debugging switch
+  (port, address, pipe), `--remote-allow-origins` and the other switches that would weaken the
+  browser are dropped before launch, with a log line and a `pairbrowse_status` warning naming them
+  (`scripts/chrome-args.mjs`). Before this, `chromeArgs` were passed through as given and the
+  guarantee was only that PairBrowse adds no port. The driver's own pipe comes from its launch
+  options, not from these args, and is unaffected.
 
 ## In code
 
 - `scripts/daemon.mjs` (header: the security model; the socket server)
 - `scripts/engine.mjs`: `launchEngine` (`launchPersistentContext`)
 - `scripts/browser.mjs`: `launchOptions`, `launchArgs` (no debugging switch)
+- `scripts/chrome-args.mjs`: `screenChromeArgs` (the user's chromeArgs screened; `paths.mjs` `loadConfig` warns)
 - `scripts/daemon/browser/launch.mjs` (the helper's launch)
 - `scripts/opener.mjs`, `scripts/open.mjs` (a hand-opened browser reaches the helper's socket)

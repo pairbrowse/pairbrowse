@@ -17,6 +17,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, readdirSync
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
+import { launchableChromeArgs } from "./chrome-args.mjs";
 import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createMotion } from "./motion.mjs";
 import { hudSource } from "./hud/assemble.mjs";
@@ -314,7 +315,9 @@ export function dropHelperKeyFile(path) {
 // the live view's address goes in --pairbrowse-helper and the path of the owner-only file holding
 // the pages' key in --pairbrowse-helper-key-file. The key itself is never on the command line.
 export function launchArgs(config = {}, { firstRun = false, chromePages = false, helper = null } = {}) {
-  const extra = config.chromeArgs || [];
+  // The user's chromeArgs, screened (chrome-args.mjs): no debugging surface, no other profile or
+  // extension, no web security off; --no-sandbox goes through sandboxDecision instead.
+  const extra = launchableChromeArgs(config.chromeArgs || []);
   const features = [...FEATURES, ...extra.filter((a) => a.startsWith(ENABLE)).flatMap((a) => a.slice(ENABLE.length).split(","))];
   return [
     "--window-size=1366,900", "--hide-crash-restore-bubble",

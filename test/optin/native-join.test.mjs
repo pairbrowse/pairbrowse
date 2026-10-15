@@ -132,7 +132,7 @@ async function run({ nativeHost, nativeJoiner }) {
     const [fw, fh] = shown.size, [vw, vh] = shown.win;
     const k = Math.min(vw / fw, vh / fh), ox = (vw - fw * k) / 2, oy = (vh - fh * k) / 2;
     assert.equal(await joiner("pairbrowse_test_screen", { clickAt: { x: Math.round(ox + 0.5 * fw * k), y: Math.round(oy + 0.2 * fh * k) } }), "clicked");
-    await until("the host's page clicked", async () => /clicked/.test(await host("browser_evaluate", { function: "() => document.title" })), 15_000);
+    await until("the host's page clicked", async () => /^- Page Title: .*clicked$/m.test(await host("browser_snapshot")), 15_000);
 
     stage = "the native side's log";
     const log = readFileSync(join(nativeHome, "daemon.log"), "utf8");

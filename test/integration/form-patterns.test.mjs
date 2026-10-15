@@ -84,10 +84,33 @@ const PAGE = `<!doctype html><title>Patterns</title><body>
 <h2>Wizard</h2>
 <div id=s1><label for=w1>Company</label> <input id=w1> <button type=button onclick="s1.hidden = true; s2.hidden = false">Next</button></div>
 <div id=s2 hidden><label for=w2>Team size</label> <input id=w2 type=number> <button type=button>Submit</button></div>
+<script>(function poll() {
+  // The test reads what the page holds through its own server (the helper offers no page scripts):
+  // each answered /poll sends back every field's value and short text, then waits again.
+  fetch("/poll").then(() => {
+    const s = {};
+    for (const e of document.querySelectorAll("[id]")) s[e.id] = { v: e.value, t: e.textContent.length < 200 ? e.textContent : "" };
+    s["fr/fo"] = { t: document.getElementById("fr").contentDocument?.getElementById("fo")?.textContent };
+    s.ctry = { v: document.querySelector("select[name=ctry]").value };
+    s.globe = { v: document.querySelector("[role=button][aria-label]").dataset.opened || "" };
+    return fetch("/state", { method: "POST", body: JSON.stringify(s) });
+  }).then(poll, () => setTimeout(poll, 200));
+})();</script>
 </body>`;
 
 test("fast mode fills common form patterns and the page holds every value", { skip: !runtime, timeout: 300_000 }, async (t) => {
-  const site = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(PAGE); });
+  // The page answers a read through this server: a held /poll is released, the page posts its state.
+  let held = null, want = false, got = null;
+  const site = createServer((req, res) => {
+    if (req.url === "/poll") { if (want) { want = false; res.end(); } else held = res; return; }
+    if (req.url === "/state") { let b = ""; req.on("data", (c) => { b += c; }); req.on("end", () => { res.end(); got?.(JSON.parse(b)); got = null; }); return; }
+    res.writeHead(200, { "content-type": "text/html" }); res.end(PAGE);
+  });
+  const pageState = () => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("the page didn't report its state")), 10_000);
+    got = (s) => { clearTimeout(timer); resolve(s); };
+    if (held) { held.end(); held = null; } else want = true;
+  });
   await new Promise((r) => site.listen(0, "127.0.0.1", r));
   const base = testBase();
   mkdirSync(base, { recursive: true });
@@ -104,7 +127,7 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     assert.match(text(await a.tool("pairbrowse_session", { action: "new", clean: true })), /clean/);
     assert.ok(!(await a.tool("browser_navigate", { url: `http://127.0.0.1:${site.address().port}/` })).result?.isError);
     const run = async (steps) => text(await a.tool("pairbrowse_run", { steps }));
-    const value = async (id) => text(await a.tool("browser_evaluate", { function: `() => document.getElementById(${JSON.stringify(id)}).value` })).match(/### Result\n"?([^"\n]*)/)?.[1];
+    const value = async (id) => (await pageState())[id]?.v;
 
     // Dates: a native date field takes the date however it's written; a typed one as given; a
     // day/month/year trio by its choices.
@@ -142,7 +165,7 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     // box that shows a few matches at a time: found by typing there.
     r = await run([{ select: { "Country list": "United States" } }, { select: { Nation: "Uruguay" } }]);
     assert.match(r, /^Done: 2 steps/, r);
-    const shows = async (id) => text(await a.tool("browser_evaluate", { function: `() => document.getElementById(${JSON.stringify(id)}).textContent` })).match(/### Result\n"?([^"\n]*)/)?.[1];
+    const shows = async (id) => (await pageState())[id]?.t;
     assert.equal(await shows("lo"), "United States");
     assert.equal(await shows("no"), "Uruguay");
     // A label pointing at the hidden input that keeps the answer, the list opened by the box beside
@@ -162,13 +185,13 @@ test("fast mode fills common form patterns and the page holds every value", { sk
     assert.match(r, /^Done: 2 steps/, r);
     assert.match(r, /Country\/Region \[select\] = US - United States/, r);
     assert.deepEqual([await value("cs"), await value("st"), await value("csz")], ["us", "United States", "0 - 500"]);
-    assert.equal(text(await a.tool("browser_evaluate", { function: "() => document.getElementById('fr').contentDocument.getElementById('fo').textContent" })).match(/### Result\n"?([^"\n]*)/)?.[1], "Pacific Northwest");
+    assert.equal(await shows("fr/fo"), "Pacific Northwest");
     // Fields named by text after them, while a menu button up top carries a similar name; a red
     // required mark isn't a page error; a number too long with its spaces is filled in one piece.
     r = await run([{ select: { Country: "United States" } }, { fill: { Employer: "Rivera Labs", "Given name": "Alex", "Phone number": "+1 415 555 0142" } }]);
     assert.match(r, /^Done: 2 steps/, r);
     assert.doesNotMatch(r, /"Given name": \*/, r);
-    assert.equal(text(await a.tool("browser_evaluate", { function: "() => document.querySelector('select[name=ctry]').value + '|' + (document.querySelector('[role=button][aria-label]').dataset.opened || '')" })).match(/### Result\n"?([^"\n]*)/)?.[1], "United States|");
+    assert.equal(`${await value("ctry")}|${await value("globe")}`, "United States|");
     assert.deepEqual([await value("cpy"), await value("gn"), await value("tel2")], ["Rivera Labs", "Alex", "+14155550142"]);
     // Plain rows in a scrolling box (no roles); choices that unfold in place in a panel; a list
     // drawn in advance but invisible until opened; a dropdown the page leaves marked invalid after
@@ -235,7 +258,7 @@ test("fast mode fills common form patterns and the page holds every value", { sk
   } finally {
     a?.sock.destroy();
     await stopDaemon(daemon);
-    site.close();
+    site.closeAllConnections(); site.close();
     rmSync(h, { recursive: true, force: true });
   }
 });

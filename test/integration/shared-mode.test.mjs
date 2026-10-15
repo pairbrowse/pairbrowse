@@ -16,6 +16,7 @@ import { personColor } from "../../scripts/sharing/tabsync.mjs";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
 import { rpc, sleep, text, until } from "../helpers/util.mjs";
 import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
+import { probeServer, PROBE_SCRIPT } from "../helpers/page-probe.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const shortBase = testBase();
@@ -89,13 +90,17 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
   // PAIRBROWSE_TEST_JOINER_EXECUTABLE: the joiner on a build of its own (the acceptance matrix:
   // native host with extension joiner, extension host with native joiner).
   const joinerExecutablePath = process.env.PAIRBROWSE_TEST_JOINER_EXECUTABLE || executablePath;
-  const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP); });
+  // Each side's browser gets the app from its own server; the host's lets the test read its page
+  // (page-probe.mjs), the helper having no page scripts.
+  const { server: fixture, probe } = probeServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP + PROBE_SCRIPT); });
+  const joinFixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
-  const port = fixture.address().port;
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
+  await new Promise((r) => joinFixture.listen(0, "127.0.0.1", r));
+  const sideArgs = (server) => ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${server.address().port}`];
+  const chromeArgs = [...sideArgs(fixture), "--disable-features=LocalNetworkAccessChecks"], joinChromeArgs = sideArgs(joinFixture);
   const hostHome = home("sh-"), joinHome = home("sj-");
   writeFileSync(join(hostHome, "config.json"), JSON.stringify({ ...sideConfig(executablePath, chromeArgs), display: "none", screenshots: false, participantName: "Bob" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ ...sideConfig(joinerExecutablePath, chromeArgs), display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ ...sideConfig(joinerExecutablePath, joinChromeArgs), display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", ...(realTunnel ? {} : { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" }), ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}), ...(noCapture && h === hostHome ? { PAIRBROWSE_TEST_NO_CAPTURE: "1" } : {}) });
   const daemons = [];
   const daemonOf = new Map(); // home -> its helper
@@ -115,11 +120,12 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
   };
   const tabs = async (call) => [...text(await tool(call, "browser_tabs", { action: "list" })).matchAll(/^- (\d+):( \(current\))? \[[^\n]*\]\(([^)\s]*)\)/gm)].map((m) => ({ index: Number(m[1]), url: m[3] }));
   const notes = []; // what the host's agent was told along the way
+  // Reads (and the one write) in the host agent's current tab, through the host's fixture server
+  // (the helper has no page scripts); asking for the tabs is the agent's call, as the script was.
   const evaluate = async (call, fn) => {
-    const r = text(await tool(call, "browser_evaluate", { function: fn }));
+    const r = text(await tool(call, "browser_tabs", { action: "list" }));
     notes.push(r);
-    const m = r.match(/### Result\n([\s\S]*?)(\n###|$)/);
-    try { return JSON.parse(m ? m[1].trim() : r); } catch { return m ? m[1].trim() : r; }
+    return probe(fn, r.match(/^- \d+: \(current\) \[[^\n]*\]\(([^)\s]*)\)/m)?.[1]);
   };
   let host, joiner, stage = "start";
   try {
@@ -389,7 +395,8 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
   } finally {
     host?.sock.destroy();
     joiner?.sock.destroy();
-    fixture.close();
+    fixture.closeAllConnections(); fixture.close();
+    joinFixture.closeAllConnections(); joinFixture.close();
     await Promise.all(daemons.map(async (d) => { await stopDaemon(d); }));
     rmSync(hostHome, { recursive: true, force: true });
     rmSync(joinHome, { recursive: true, force: true });

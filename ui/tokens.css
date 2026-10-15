@@ -1,5 +1,5 @@
 /* The PairBrowse design tokens: one sheet for every surface PairBrowse styles itself (side panel,
-   session picker, new tab page, a joiner's picture page and the live view). scripts/hud.js and
+   session picker, new tab page, a joiner's picture page and the live view). scripts/hud/ and
    record.js carry the same values inline (closed shadow roots and a canvas take no variables);
    test/tokens.test.mjs keeps them equal and checks the contrast. Navy surfaces with a static light (no motion, no blur); color is for state. */
 :root {

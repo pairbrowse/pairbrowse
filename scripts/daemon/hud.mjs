@@ -1,4 +1,4 @@
-// What PairBrowse shows inside the pages (scripts/hud.js): the status badge, the bottom bar with
+// What PairBrowse shows inside the pages (scripts/hud/): the status badge, the bottom bar with
 // the last actions, the spark on each agent's tab icon (a dot for a person from the other browser
 // of a shared tab), and Claude's cursor.
 import { hudScript } from "../browser.mjs";
@@ -55,7 +55,7 @@ const PERSON_MARK_MS = 8000; // a person from the other browser stays marked thi
 // empty: nobody) and whether the person here may pause and resume (daemon/pause.mjs).
 // onStatus(participant, status | null): an agent's status set or taken down (the Tools tab's hand-offs).
 // docked(): true while the browser is a PairBrowse build with its own pages (the window's docks
-// carry the bar's duties; scripts/hud.js "docked").
+// carry the bar's duties; scripts/hud/ "docked").
 export function createHud({ pages, waiting, liveView, notify, pause = () => ({ by: "", can: true }), onStatus = () => {}, docked = () => false }) {
   // The page script, with names and a key that are new each time the helper starts.
   const { source, name: HUD_NAME, token: HUD_TOKEN } = hudScript();
@@ -341,11 +341,11 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
   }
   // Each page as it loads: the script, then the badge, spark and bar. Inside the PairBrowse
   // browser's own window (docked()), the page first learns that the window's agent panel carries
-  // the bar and the agent's status (scripts/hud.js "docked"); elsewhere no call is made.
+  // the bar and the agent's status (scripts/hud/ "docked"); elsewhere no call is made.
   async function onPageLoad(page) {
     await ensure(page);
     // Inside the PairBrowse browser's own window (docked()), the page first learns that the
-    // window's agent panel carries the bar and the agent's status (scripts/hud.js "docked");
+    // window's agent panel carries the bar and the agent's status (scripts/hud/ "docked");
     // elsewhere no call is made.
     if (docked()) await quietly(page, JSON.stringify({ on: true }), "docked");
     if (badge.text) applyBadge(page);

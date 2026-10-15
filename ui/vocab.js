@@ -1,4 +1,4 @@
-// The words and colors the helper, the in-page script (scripts/hud.js, which browser.mjs
+// The words and colors the helper, the in-page script (scripts/hud/, which browser.mjs
 // hudScript fills in from here) and the pages share: one copy of each. Pure data and tiny pure
 // functions: no DOM, no Node API, nothing runs on import. The helper imports it in Node, the
 // live view serves it (scripts/liveview/http.mjs), the extension and the native build ship it as

@@ -115,7 +115,7 @@ what each boundary protects against, see [security.md](security.md) and the
   Cloudflare Quick Tunnel, kept by `tunnels/keeper.mjs` (entry `scripts/tunnel-keeper.mjs`);
   `tunnels/config.mjs` and `tunnels/start.mjs` run the user's own tunnel instead.
 - **Side panel and page script** (`ui/`, the extension and the browser's own pages, one folder per
-  page; `scripts/browser/` keeps the icon files; `scripts/hud.js`): the extension and in-page bar
+  page; `scripts/browser/` keeps the icon files; `scripts/hud/`): the extension and in-page bar
   that show people what agents are doing; names and keys are random per run.
 - **Test gate** (`scripts/testenv.mjs`, `scripts/test-gate.mjs`): every `PAIRBROWSE_TEST_*` switch
   the helper reads is listed in one place, and `daemon.mjs` imports the gate first, so unless the

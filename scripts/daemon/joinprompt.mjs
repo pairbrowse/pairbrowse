@@ -2,7 +2,7 @@
 // lists it). One alert at a time:
 // - The browser window has the focus (the person is looking at it) and its tab in front is a web
 //   page: the bottom bar there asks, "Sam (Claude Code) wants to join (drive) · Allow · Deny · ×"
-//   (scripts/hud.js draws it). It goes by itself after a while; the request stays pending.
+//   (scripts/hud/ draws it). It goes by itself after a while; the request stays pending.
 // - Otherwise (another app in front, the window minimized, no web page in front): a notification
 //   with Allow and Deny (daemon/panel.mjs notifyJoin), once per request; the bar asks when the
 //   person comes back to the browser while the request still waits. A request whose time in the

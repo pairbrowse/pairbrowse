@@ -9,7 +9,7 @@
 // tremor adds the small shake of a hand at rest.
 //
 // createMotion() is self-contained (it uses nothing from outside its own body), so the page script
-// (scripts/hud.js) gets the same code: browser.mjs puts createMotion's source into it.
+// (scripts/hud/) gets the same code: browser.mjs puts createMotion's source into it.
 // Everything random comes from the rng passed in; with a seeded rng (rng(seed)) a plan is the same
 // every time.
 

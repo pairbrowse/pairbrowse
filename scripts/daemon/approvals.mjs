@@ -20,7 +20,7 @@
 // handed to the user at once rather than left waiting where nothing can answer it. The card's text is the rule's own reason (guard.mjs approvalAsk), masked
 // like titles; its id is random (128 bits). An answer from the in-page card counts only when it was
 // a person's own click (presence.byPerson) in that very tab, ARM_MS or more after it showed; the
-// page script checks the same first (scripts/hud.js).
+// page script checks the same first (scripts/hud/).
 import { randomBytes } from "node:crypto";
 import { approvalAsk, approvalKey, APPROVAL_TOOLS } from "../rules/decide.mjs";
 import { APPROVAL_WAIT_MS } from "../guard.mjs";

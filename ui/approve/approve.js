@@ -1,5 +1,5 @@
 // The approval card as a page: the bubble the PairBrowse browser shows when no web page is in
-// front (DESIGN.md B6); the in-page card stays scripts/hud.js's. One source for two hosts: with
+// front (DESIGN.md B6); the in-page card stays the page script's (scripts/hud/). One source for two hosts: with
 // window.pairbrowse (the native build) the helper's address comes from session.helper();
 // otherwise from chrome.storage.session "view" (the extension): ui/helper.js.
 //
@@ -38,7 +38,7 @@
 // The page sets body[data-pending] to the number of open requests and body[data-driving]; the
 // browser reads nothing of the page but what setPending tells it.
 //
-// Gating, as the in-page join card (scripts/hud.js joinWire/joinWatch): trusted events only;
+// Gating, as the in-page join card (scripts/hud/ joinWire/joinWatch): trusted events only;
 // Allow-type answers by a pointer click (detail > 0), Deny-type answers by any trusted click (so
 // Enter on the focused Deny works); nothing while an agent drives; and only ARM_MS after
 // IntersectionObserver v2 reports the card fully visible. The observer lives only while a card

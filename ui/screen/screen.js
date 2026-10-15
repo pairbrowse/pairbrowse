@@ -197,7 +197,7 @@ function pointers(list, self = "") {
     if (own(k)) continue;
     keep.add(k);
     // An agent's pointer (host-agent:<id>, <joiner>:a<n>) is white, edged in its color, at the agent
-    // cursor's size (as scripts/hud.js draws it); a person's is filled with their color. The agent's
+    // cursor's size (as scripts/hud/ draws it); a person's is filled with their color. The agent's
     // edge is 1.53 units of a 24-unit box drawn at 22 px: the 1.4 px edge hud.js draws (B5).
     const agent = AGENT_KEY.test(k);
     let el = drawn.get(k);

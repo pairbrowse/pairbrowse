@@ -7,7 +7,7 @@
 // --no-helper: the browser started without a helper (session.helper() answers no address): every
 // dock and page in its resting state (DESIGN.md B2-B4, "No agent connected").
 // The scene is scripts/dev/preview/fixtures.json. The contents card is the stand-in page in
-// scripts/dev/preview/ with scripts/hud.js added the way the helper adds it, rendered as its own
+// scripts/dev/preview/ with scripts/hud/ added the way the helper adds it, rendered as its own
 // top-level page (as the build's contents is a WebContents of its own) and shown as an image.
 // The scene's page is docked (hud.docked: the helper tells pages inside the PairBrowse browser's
 // window that its docks carry the bottom bar, DESIGN.md Part G) before the bar it sends every page;
@@ -212,7 +212,7 @@ export async function renderPictures(browser, { proxy, geo, fx, helper, out, red
   }
 }
 
-// The contents card: the sample page filled, with scripts/hud.js added and called the helper's
+// The contents card: the sample page filled, with scripts/hud/ added and called the helper's
 // way (scripts/daemon/hud.mjs: ensure, then window[name](token, value, kind)). -> PNG buffer.
 export async function renderContents(browser, { proxy, geo, raw, scale, reducedMotion, log, plain = false }) {
   const page = await browser.newPage({ viewport: { width: geo.card.w, height: geo.card.h }, deviceScaleFactor: scale, reducedMotion });

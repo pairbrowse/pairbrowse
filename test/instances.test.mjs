@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { resolveHome, projectInstance, INSTANCE_RE } from "../scripts/home.mjs";
+import { resolveHome, projectInstance, selectHome, INSTANCE_RE } from "../scripts/home.mjs";
 import { helperEnv } from "../scripts/launcher/daemon-connect.mjs";
 import { withInstallLock, withInstallLockSync } from "../scripts/install-lock.mjs";
 
@@ -128,4 +128,11 @@ test("pairbrowse_status names the instance and its home, and a project file it c
   assert.equal(statusLine({ instance: "work", source: "project", home: "/h/.pairbrowse/instances/work" }), 'ok; PairBrowse instance "work" (/h/.pairbrowse/instances/work)');
   assert.equal(statusLine({ instance: null, source: "PAIRBROWSE_HOME", home: "/x" }), "ok; PairBrowse home /x");
   assert.match(statusLine({ instance: null, source: "default", home: "/h", warning: "/p/.pairbrowse.json is not JSON" }), /^ok; ignored: .*not JSON/);
+});
+
+test("open.mjs's home: the record's, else the one the environment names, else the default (never a project file)", () => {
+  assert.deepEqual(selectHome({ PAIRBROWSE_HOME: "/a", X: "1" }, { PAIRBROWSE_INSTANCE: "work" }), { X: "1", PAIRBROWSE_INSTANCE: "work" });
+  assert.deepEqual(selectHome({ PAIRBROWSE_INSTANCE: "a" }, { PAIRBROWSE_HOME: "/h" }), { PAIRBROWSE_HOME: "/h" });
+  assert.deepEqual(selectHome({ PAIRBROWSE_HOME: "/a" }, null), { PAIRBROWSE_HOME: "/a" });
+  assert.deepEqual(selectHome({}, null), { PAIRBROWSE_INSTANCE: "default" });
 });

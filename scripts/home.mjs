@@ -75,3 +75,17 @@ export function resolveHome({ env = process.env, cwd = process.cwd(), account = 
   if (found?.name) return { home: instanceHome(found.name, account), instance: found.name, shared: base, source: "project" };
   return { home: base, instance: null, shared: base, source: found?.name === null ? "project" : "default", ...(found?.warning ? { warning: found.warning } : {}) };
 }
+
+// Points env at a chosen home ({ PAIRBROWSE_HOME } or { PAIRBROWSE_INSTANCE }, replacing both);
+// with none chosen, a home the environment already names stays, else the default home (never a
+// project file in the folder this runs in). For scripts/open.mjs, before paths.mjs loads.
+export function selectHome(env, chosen) {
+  if (chosen) {
+    delete env.PAIRBROWSE_HOME;
+    delete env.PAIRBROWSE_INSTANCE;
+    Object.assign(env, chosen);
+  } else if (!env.PAIRBROWSE_HOME && !env.PAIRBROWSE_INSTANCE) {
+    env.PAIRBROWSE_INSTANCE = "default";
+  }
+  return env;
+}

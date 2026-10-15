@@ -12,6 +12,7 @@
 import { fileURLToPath } from "node:url";
 import { HOOK_MARK, requestLine } from "./hookline.mjs";
 import { openerEnv, programOf } from "./openers.mjs";
+import { selectHome } from "./home.mjs";
 import { within } from "./util.mjs";
 
 const OPEN_ANSWER_MS = 12_000; // opener.mjs's (it loads after the home is chosen); its test checks they agree
@@ -27,13 +28,7 @@ export async function askOpen(sock, waitMs = OPEN_ANSWER_MS) {
 
 async function main() {
   const chosen = process.platform === "darwin" ? openerEnv({ parentExe: programOf(process.ppid), script: fileURLToPath(import.meta.url) }) : null;
-  if (chosen) {
-    delete process.env.PAIRBROWSE_HOME;
-    delete process.env.PAIRBROWSE_INSTANCE;
-    Object.assign(process.env, chosen);
-  } else if (!process.env.PAIRBROWSE_HOME && !process.env.PAIRBROWSE_INSTANCE) {
-    process.env.PAIRBROWSE_INSTANCE = "default"; // opener.json's helper, whatever folder this runs in
-  }
+  selectHome(process.env, chosen); // else opener.json's helper, whatever folder this runs in
   const { connectOnce, connectLocal } = await import("./launcher/daemon-connect.mjs");
   // A running helper first (nothing to prepare); else the bridge's way: prepare, start, connect.
   const sock = await connectOnce().catch(() => within(OPEN_ANSWER_MS, connectLocal(say)).catch((e) => { say(e?.message || String(e)); return null; }));

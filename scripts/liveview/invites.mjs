@@ -22,7 +22,7 @@ export function liveViewHostsFrom(value) {
   const problems = [];
   for (const raw of Array.isArray(value) ? value : value == null ? [] : [value]) {
     const h = typeof raw === "string" ? raw.trim().toLowerCase().replace(/\.$/, "") : "";
-    if (!HOST_NAME.test(h) || LOOPBACK_NAMES.has(h)) problems.push(`liveViewHosts: "${String(raw).slice(0, 80)}" isn't a plain host name, ignored.`);
+    if (!HOST_NAME.test(h) || LOOPBACK_NAMES.has(h)) problems.push(`liveViewHosts: "${String(raw).slice(0, 80)}" isn't a plain host name, ignored. Fix it in config.json.`);
     else if (!hosts.includes(h)) hosts.push(h);
   }
   return { hosts, problems };
@@ -33,10 +33,10 @@ export function liveViewHostsFrom(value) {
 export function inviteBaseFrom(value, hosts = []) {
   if (value == null || value === "") return { base: null, problem: null };
   let u;
-  try { u = new URL(String(value)); } catch { return { base: null, problem: `inviteBaseUrl "${String(value).slice(0, 80)}" isn't a URL, ignored.` }; }
-  if (u.protocol !== "https:" && u.protocol !== "http:") return { base: null, problem: "inviteBaseUrl must start with https:// (or http://), ignored." };
-  if (u.username || u.password || (u.pathname !== "/" && u.pathname !== "") || u.search || u.hash) return { base: null, problem: "inviteBaseUrl must be just the address, like https://myhost.example.ts.net, ignored." };
-  if (!hosts.includes(u.hostname)) return { base: null, problem: `inviteBaseUrl's host ${u.hostname} must also be listed in liveViewHosts, ignored.` };
+  try { u = new URL(String(value)); } catch { return { base: null, problem: `inviteBaseUrl "${String(value).slice(0, 80)}" isn't a URL, ignored. Fix it in config.json.` }; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return { base: null, problem: "inviteBaseUrl must start with https:// (or http://), ignored. Fix it in config.json." };
+  if (u.username || u.password || (u.pathname !== "/" && u.pathname !== "") || u.search || u.hash) return { base: null, problem: "inviteBaseUrl must be just the address, like https://myhost.example.ts.net, ignored. Fix it in config.json." };
+  if (!hosts.includes(u.hostname)) return { base: null, problem: `inviteBaseUrl's host ${u.hostname} must also be listed in liveViewHosts, ignored. Fix it in config.json.` };
   return { base: u.origin, problem: null };
 }
 

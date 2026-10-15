@@ -46,17 +46,17 @@ export function uploadProblem(file, uploadsDir) {
   try {
     full = realPath(file);
   } catch {
-    return `${file}: not found`;
+    return `${file}: not found. Check the path: an absolute path to a file on this computer.`;
   }
   let home = homedir();
   try { home = realPath(home); } catch {}
   let uploads = resolve(uploadsDir);
   try { uploads = realPath(uploads); } catch {}
   const inUploads = full.startsWith(uploads + sep);
-  if (!inUploads && SECRET_DIRS.some((d) => full.startsWith(join(home, d) + sep))) return `${file}: in a folder with keys or credentials; never uploaded`;
-  if (SECRET_NAME.test(full)) return `${file}: looks like a key or credentials file; never uploaded`;
-  if (secretInside(full)) return `${file}: contains a private key or password; never uploaded`;
-  if (!MEDIA.test(full)) return `${file}: only images, video and documents upload here. For anything else use browser_file_upload, which asks the user`;
+  if (!inUploads && SECRET_DIRS.some((d) => full.startsWith(join(home, d) + sep))) return `${file}: in a folder with keys or credentials; never uploaded. Choose another file.`;
+  if (SECRET_NAME.test(full)) return `${file}: looks like a key or credentials file; never uploaded. Choose another file.`;
+  if (secretInside(full)) return `${file}: contains a private key or password; never uploaded. Choose another file.`;
+  if (!MEDIA.test(full)) return `${file}: only images, video and documents upload here. For anything else, use browser_file_upload, which asks the user`;
   return null;
 }
 

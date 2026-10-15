@@ -83,15 +83,15 @@ export function createApprovalShare({ clickApprovals, invites, joinRequests, joi
     // One answer from joiner j's channel ({ id, answer }). Returns { code, body }.
     answer(body, j) {
       const role = standing(j);
-      if (!role) return { code: 403, body: { error: "Only someone in a shared browser session can answer the host's approvals." } };
-      if (role !== "approve") return { code: 403, body: { error: "Your invite can't answer the host's approvals (any more)." } };
+      if (!role) return { code: 403, body: { error: "Only someone in a shared browser session can answer the host's approvals. Ask the host for an invite that can approve." } };
+      if (role !== "approve") return { code: 403, body: { error: "Your invite can't answer the host's approvals (any more). Ask the host to let it approve again." } };
       if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => k !== "id" && k !== "answer")) return { code: 400, body: { error: "An answer is { id, answer }." } };
       if (typeof body.id !== "string" || !ALIAS.test(body.id) || !ANSWERS.has(body.answer)) return { code: 400, body: { error: "An answer is { id, answer: \"allow\" | \"deny\" }." } };
       const key = keyOf(j);
       const it = (clickApprovals?.shareable?.() || []).find((x) => aliasFor(key, x) === body.id);
-      if (!it) return { code: 404, body: { gone: true, error: "That request is gone (answered, or it timed out)." } };
+      if (!it) return { code: 404, body: { gone: true, error: "That request is gone (answered, or it timed out). Wait for the host's next one." } };
       const by = cleanName(j.name);
-      if (!clickApprovals.answerShared(it.id, body.answer, { by })) return { code: 404, body: { gone: true, error: "That request is gone (answered, or it timed out)." } };
+      if (!clickApprovals.answerShared(it.id, body.answer, { by })) return { code: 404, body: { gone: true, error: "That request is gone (answered, or it timed out). Wait for the host's next one." } };
       log(`approval: ${body.answer} by ${by}, who joined with invite ${j.invite.id} (can approve)`);
       return { code: 200, body: { ok: true } };
     },

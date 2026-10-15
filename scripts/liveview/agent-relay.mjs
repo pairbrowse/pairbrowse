@@ -28,8 +28,8 @@ export function createAgentRelay({ push, remoteAgents, getContext, idOf, crosses
   // A joiner's own agent at work in this browser (daemon/remote-agents.mjs): its MCP messages,
   // its answers back on the channel; files it sends over for an upload.
   async function remoteAgent(body, j) {
-    if (!remoteAgents) return { problem: "Shared browser mode isn't available here." };
-    if (j.invite.role !== "drive") return { problem: "This code is for watching only: your agent can't act in the host's browser." };
+    if (!remoteAgents) return { problem: "Shared browser mode isn't available here. Ask the host for a shared browser invite." };
+    if (j.invite.role !== "drive") return { problem: "This code is for watching only: your agent can't act in the host's browser. Ask the host for one that can drive." };
     const key = joinerKey(j);
     // The tab they look at: only one whose picture goes to joiners.
     const start = typeof body?.tab === "string" ? (await getContext()).pages().find((p) => idOf(p) === body.tab && crossesWhole(p) && !personTab(p)) || null : null;
@@ -37,8 +37,8 @@ export function createAgentRelay({ push, remoteAgents, getContext, idOf, crosses
     return ok ? { ok: true } : { problem: "Bad message." };
   }
   function remoteFile(body, j) {
-    if (!remoteAgents) return { problem: "Shared browser mode isn't available here." };
-    if (j.invite.role !== "drive") return { problem: "This code is for watching only." };
+    if (!remoteAgents) return { problem: "Shared browser mode isn't available here. Ask the host for a shared browser invite." };
+    if (j.invite.role !== "drive") return { problem: "This code is for watching only. Ask the host for one that can drive." };
     return remoteAgents.file({ key: joinerKey(j) }, body);
   }
   // A joiner gone: their kept answers with them.

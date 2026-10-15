@@ -111,21 +111,21 @@ export function postReport(url, text, { request = https.request, timeoutMs = REP
     let done = false;
     let req = null;
     const finish = (v) => { if (done) return; done = true; clearTimeout(timer); resolve(v); };
-    const timer = setTimeout(() => { req?.destroy(); finish({ error: `The report server didn't answer within ${Math.round(timeoutMs / 1000)} seconds.` }); }, timeoutMs);
+    const timer = setTimeout(() => { req?.destroy(); finish({ error: `The report server didn't answer within ${Math.round(timeoutMs / 1000)} seconds. Try again later, or copy the report instead.` }); }, timeoutMs);
     let u;
-    try { u = new URL(url); } catch { return finish({ error: "The report address isn't valid." }); }
-    if (u.protocol !== "https:") return finish({ error: "The report address isn't https." });
+    try { u = new URL(url); } catch { return finish({ error: "The report address isn't valid. Fix reportUrl in config.json, or copy the report instead." }); }
+    if (u.protocol !== "https:") return finish({ error: "The report address isn't https. Fix reportUrl in config.json, or copy the report instead." });
     try {
       req = request(u, { method: "POST", headers: { "content-type": "application/json", accept: "application/json", "content-length": Buffer.byteLength(text) } }, (res) => {
         let body = "";
         res.setEncoding("utf8");
-        res.on("data", (c) => { body += c; if (body.length > ANSWER_MAX) { req.destroy(); finish({ error: "The report server's answer was too long." }); } });
+        res.on("data", (c) => { body += c; if (body.length > ANSWER_MAX) { req.destroy(); finish({ error: "The report server's answer was too long. Try again later, or copy the report instead." }); } });
         res.on("end", () => finish({ status: res.statusCode, body }));
-        res.on("error", () => finish({ error: "The report server's answer broke off." }));
+        res.on("error", () => finish({ error: "The report server's answer broke off. Try again later, or copy the report instead." }));
       });
-      req.on("error", () => finish({ error: "Couldn't reach the report server." }));
+      req.on("error", () => finish({ error: "Couldn't reach the report server. Try again later, or copy the report instead." }));
       req.end(text);
-    } catch { finish({ error: "Couldn't reach the report server." }); }
+    } catch { finish({ error: "Couldn't reach the report server. Try again later, or copy the report instead." }); }
   });
 }
 
@@ -146,12 +146,12 @@ export function createReporter({ url = () => null, home = homedir(), mask = (t) 
       while (sent.length && now() - sent[0] >= HOUR_MS) sent.shift();
       if (sent.length >= REPORTS_PER_HOUR) return { status: 429, body: { error: `${REPORTS_PER_HOUR} reports went out in the last hour; try again later, or copy it instead.` } };
       sent.push(now());
-      const answer = await Promise.resolve().then(() => send(to, JSON.stringify(scrubReport(r.report, { home, mask })))).catch(() => ({ error: "Couldn't reach the report server." }));
+      const answer = await Promise.resolve().then(() => send(to, JSON.stringify(scrubReport(r.report, { home, mask })))).catch(() => ({ error: "Couldn't reach the report server. Try again later, or copy the report instead." }));
       if (answer?.error) { log(`report not sent: ${answer.error}`); return { status: 502, body: { error: answer.error } }; }
       const status = Number(answer?.status) || 0;
       if (status < 200 || status > 299) {
         log(`report not sent: the server answered ${status}`);
-        return { status: 502, body: { error: status >= 300 && status < 400 ? "The report server answered with a redirect; nothing was sent on." : `The report server didn't take it (HTTP ${status}).` } };
+        return { status: 502, body: { error: status >= 300 && status < 400 ? "The report server answered with a redirect; nothing was sent on. Copy the report instead." : `The report server didn't take it (HTTP ${status}). Try again later, or copy the report instead.` } };
       }
       let id = null;
       try { const j = JSON.parse(answer.body); if (typeof j?.id === "string" && REPORT_ID.test(j.id)) id = j.id; } catch {}

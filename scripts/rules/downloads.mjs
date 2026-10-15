@@ -22,20 +22,20 @@ export function downloadsProblem(real, user = homedir()) {
   const h = folderOf(user) || resolve(user);
   if (real === h) return "Downloads can't go straight into your home folder: choose a folder in it.";
   const rel = relative(h, real);
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return "Downloads go to a folder inside your home folder.";
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return "Downloads go to a folder inside your home folder: choose one there.";
   const parts = rel.split(sep);
-  if (parts.some((p) => p.startsWith("."))) return "Downloads can't go into a hidden folder (its name starts with a dot).";
-  if (SYSTEM_DIRS.some((d) => parts[0].toLowerCase() === d.toLowerCase())) return `Downloads can't go into ~${sep}${parts[0]} (apps and the system read from it).`;
+  if (parts.some((p) => p.startsWith("."))) return "Downloads can't go into a hidden folder (its name starts with a dot). Choose another folder.";
+  if (SYSTEM_DIRS.some((d) => parts[0].toLowerCase() === d.toLowerCase())) return `Downloads can't go into ~${sep}${parts[0]} (apps and the system read from it). Choose another folder.`;
   return "";
 }
 
 // A chosen downloads folder (a path as written): its real folder when it may hold downloads, else
 // { problem }. home: the helper's home. folder: folderOf (a stand-in in tests).
 export function checkDownloads(path, { home, user = homedir(), folder = folderOf } = {}) {
-  if (typeof path !== "string" || !isAbsolute(path)) return { problem: "downloads is an absolute path to a folder." };
+  if (typeof path !== "string" || !isAbsolute(path)) return { problem: "Set downloads to an absolute path to a folder." };
   const real = folder(path);
-  if (!real) return { problem: `${path} isn't a folder` };
-  if (home && inHelperHome(real, home)) return { problem: "Downloads can't go inside PairBrowse's own folder (~/.pairbrowse)." };
+  if (!real) return { problem: `${path} isn't a folder. Choose an existing folder.` };
+  if (home && inHelperHome(real, home)) return { problem: "Downloads can't go inside PairBrowse's own folder (~/.pairbrowse). Choose another folder." };
   const why = downloadsProblem(real, user);
   return why ? { problem: why } : { real };
 }

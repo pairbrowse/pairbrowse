@@ -68,7 +68,7 @@ export function createPagesRoutes({ history, layoutNow, layouts, sessionName, br
       const given = await readJsonBody(req, res, BODY_MAX.approve);
       if (given === undefined) return;
       const r = await settings.write(given);
-      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
+      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work. Try again." });
       broadcast("config", r);
       json(res, 200, r);
     } },

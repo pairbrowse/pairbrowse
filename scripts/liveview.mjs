@@ -376,7 +376,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     };
   }
   async function screen(body, j) {
-    if (!screens) return { problem: "Shared browser mode isn't available here." };
+    if (!screens) return { problem: "Shared browser mode isn't available here. Ask the host for a shared browser invite." };
     const key = joinerKey(j);
     const op = String(body?.op || "");
     const peerOk = (peer) => typeof peer === "string" && peer.startsWith(`${key}|`) && peer.length < 200;
@@ -385,7 +385,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       // side goes to the pictures through the channel at once.
       if (screens.available && !screens.available()) return { problem: NO_CAPTURE_SHARE, route: "frames" };
       const page = await pageById(String(body?.id || ""));
-      if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared." };
+      if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared. Choose a shared tab." };
       const id = idOf(page);
       const peer = `${key}|${id}|${randomBytes(4).toString("hex")}`;
       const r = await screens.offer(page, peer, {
@@ -394,12 +394,12 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       });
       return { peer, id, sdp: r.sdp };
     }
-    if (op === "answer") return peerOk(body.peer) && await screens.answer(body.peer, body.sdp) ? { ok: true } : { problem: "No such connection." };
+    if (op === "answer") return peerOk(body.peer) && await screens.answer(body.peer, body.sdp) ? { ok: true } : { problem: "No such connection. Reload the picture to connect again." };
     if (op === "stop") { if (peerOk(body.peer)) await screens.stop(body.peer); return { ok: true }; }
     // The slower route: pictures of the tab through the channel, and input back.
     if (op === "frames") {
       const page = await pageById(String(body?.id || ""));
-      if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared." };
+      if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared. Choose a shared tab." };
       const id = idOf(page);
       if (body.on) await screens.frames(page, key, (img) => push.broadcast("screen", { op: "frame", id, img }, { to: key }));
       else await screens.frames(page, key, null);
@@ -407,19 +407,19 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     }
     if (op === "input") {
       const page = await pageById(String(body?.id || ""));
-      if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared." };
-      if (j.invite.role !== "drive") return { problem: "This code is for watching only." };
+      if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared. Choose a shared tab." };
+      if (j.invite.role !== "drive") return { problem: "This code is for watching only. Ask the host for one that can drive." };
       await screens.input(page, (Array.isArray(body.events) ? body.events : []).slice(0, 200), onScreenInput(page, j, idOf(page)), j.name, onScreenPick(page, j, idOf(page)));
       return { ok: true };
     }
     // The files they picked for that dialog: only from their own folder here (sent over just before).
     if (op === "picked") {
       const p = picks.get(String(body?.token || ""));
-      if (!p || p.key !== key || p.page.isClosed()) return { problem: "That file request is over." };
+      if (!p || p.key !== key || p.page.isClosed()) return { problem: "That file request is over. Choose the files again when the page asks." };
       picks.delete(body.token);
       const mine = remoteAgents?.folder(key);
       const files = (Array.isArray(body.files) ? body.files : []).slice(0, 20).map(String);
-      if (!mine || files.some((f) => !resolve(f).startsWith(resolve(mine) + sep))) return { problem: "Those files didn't come from you." };
+      if (!mine || files.some((f) => !resolve(f).startsWith(resolve(mine) + sep))) return { problem: "Those files didn't come from you. Choose files on your own computer." };
       await screens.setFiles(p.chooser, files);
       return { ok: true };
     }

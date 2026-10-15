@@ -52,25 +52,25 @@ export function createRefusals(conn, api) {
   function argProblem(name, args) {
     const needs = { browser_click: ["target"], browser_type: ["target"], browser_hover: ["target"], browser_select_option: ["target"], browser_drag: ["startTarget", "endTarget"], browser_drop: ["target"] }[name] || [];
     for (const k of needs) {
-      if (typeof args[k] !== "string" || !args[k].trim()) return `${name} needs ${k}: a ref from a browser_snapshot (like e12), or a selector.`;
-      if (args[k].length > 2000) return `${name}: ${k} is far too long for a ref or a selector.`;
+      if (typeof args[k] !== "string" || !args[k].trim()) return `${name} needs ${k}: pass a ref from a browser_snapshot (like e12), or a selector.`;
+      if (args[k].length > 2000) return `${name}: ${k} is far too long for a ref or a selector. Take a browser_snapshot and pass a ref from it.`;
     }
     if (name === "browser_fill_form") {
       if (!Array.isArray(args.fields) || !args.fields.length) return "browser_fill_form needs fields: a list of { name, type, target, value }.";
-      if (args.fields.some((f) => !f || typeof f !== "object" || typeof f.target !== "string" || !f.target.trim())) return "browser_fill_form: every field needs a target, a ref from a browser_snapshot (like e12).";
+      if (args.fields.some((f) => !f || typeof f !== "object" || typeof f.target !== "string" || !f.target.trim())) return "browser_fill_form: give every field a target, a ref from a browser_snapshot (like e12).";
     }
-    if ((name === "browser_file_upload" || name === "browser_drop") && args.paths !== undefined && !(Array.isArray(args.paths) && args.paths.every((x) => typeof x === "string"))) return `${name}: paths is a list of file paths (text); [] closes an open file chooser.`;
-    if (name === "browser_select_option" && !(Array.isArray(args.values) && args.values.length && args.values.every((x) => typeof x === "string"))) return "browser_select_option needs values: a list of the option texts (or values) to choose.";
-    if (name === "browser_tabs" && ["select", "close"].includes(args.action) && args.index !== undefined && !(Number.isInteger(Number(args.index)) && Number(args.index) >= 0)) return "browser_tabs: index is a tab's number from browser_tabs list (0 is the first).";
-    if (name === "pairbrowse_upload" && !(Array.isArray(args.files) && args.files.length && args.files.every((x) => typeof x === "string"))) return "pairbrowse_upload needs files: a list of absolute paths.";
-    if (name === "pairbrowse_facts" && args.action === "forget" && !(Array.isArray(args.labels) && args.labels.every((x) => typeof x === "string"))) return "pairbrowse_facts forget needs labels: a list of the details' labels.";
+    if ((name === "browser_file_upload" || name === "browser_drop") && args.paths !== undefined && !(Array.isArray(args.paths) && args.paths.every((x) => typeof x === "string"))) return `${name}: pass paths as a list of file paths (text), or [] to close an open file chooser.`;
+    if (name === "browser_select_option" && !(Array.isArray(args.values) && args.values.length && args.values.every((x) => typeof x === "string"))) return "browser_select_option needs values: pass a list of the option texts (or values) to choose.";
+    if (name === "browser_tabs" && ["select", "close"].includes(args.action) && args.index !== undefined && !(Number.isInteger(Number(args.index)) && Number(args.index) >= 0)) return "browser_tabs: pass index as a tab's number from browser_tabs list (0 is the first).";
+    if (name === "pairbrowse_upload" && !(Array.isArray(args.files) && args.files.length && args.files.every((x) => typeof x === "string"))) return "pairbrowse_upload needs files: pass a list of absolute paths.";
+    if (name === "pairbrowse_facts" && args.action === "forget" && !(Array.isArray(args.labels) && args.labels.every((x) => typeof x === "string"))) return "pairbrowse_facts forget needs labels: pass a list of the details' labels.";
     if (name === "pairbrowse_status") {
-      if (!STATUS_KINDS.includes(args.kind)) return 'pairbrowse_status: kind is "claude", "you", "done" or "clear".';
-      if (args.text !== undefined && (typeof args.text !== "string" || args.text.length > 140)) return "pairbrowse_status: text is up to 140 characters.";
+      if (!STATUS_KINDS.includes(args.kind)) return 'pairbrowse_status: set kind to "claude", "you", "done" or "clear".';
+      if (args.text !== undefined && (typeof args.text !== "string" || args.text.length > 140)) return "pairbrowse_status: text is up to 140 characters; shorten it.";
     }
     if (name === "browser_wait_for") {
-      if (args.time !== undefined && !(Number.isFinite(Number(args.time)) && Number(args.time) >= 0 && Number(args.time) <= 120)) return "browser_wait_for: time is 0 to 120 seconds.";
-      if (args.text === undefined && args.textGone === undefined && args.time === undefined) return "browser_wait_for takes time (seconds), text (to appear) or textGone (to disappear).";
+      if (args.time !== undefined && !(Number.isFinite(Number(args.time)) && Number(args.time) >= 0 && Number(args.time) <= 120)) return "browser_wait_for: time is 0 to 120 seconds; pass a time in that range.";
+      if (args.text === undefined && args.textGone === undefined && args.time === undefined) return "browser_wait_for: pass time (seconds), text (to appear) or textGone (to disappear).";
     }
     return null;
   }
@@ -81,10 +81,10 @@ export function createRefusals(conn, api) {
     const off = toolRefused(name);
     if (off) return off;
     if (remote) {
-      if (!name.startsWith("browser_") && !REMOTE_TOOLS.has(name)) return `${name} isn't available to a joiner's agent: it works in the host's tabs only.`;
+      if (!name.startsWith("browser_") && !REMOTE_TOOLS.has(name)) return `${name} isn't available to a joiner's agent. Use the browser_ tools, which work in the host's tabs.`;
       if (secretNamesIn(name, args, secretNames()).length) return "The host's saved passwords stay with the host. Ask the host to sign in, or use your own details.";
       const outside = pathsIn(name, args).find((p) => !resolvePath(p).startsWith(resolvePath(remote.files) + pathSep));
-      if (outside) return "Files for an upload come from your own computer (your PairBrowse sends them over); this computer's files aren't yours to send.";
+      if (outside) return "Files for an upload come from your own computer (your PairBrowse sends them over); this computer's files aren't yours to send. Pass paths of files on your own computer.";
     }
     // The PairBrowse safety rules (guard.mjs), here as well as in the hook: what they block stays
     // blocked for every app, even with hooks off or the server added without the plugin. Claude

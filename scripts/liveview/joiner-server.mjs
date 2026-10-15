@@ -61,7 +61,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
 
   // Nothing of the session before the host said yes.
   function admit(invite, who) {
-    if (!JOINER_ID.test(who.joinerId)) return { code: 400, body: { error: "This request doesn't say who is joining." } };
+    if (!JOINER_ID.test(who.joinerId)) return { code: 400, body: { error: "This request doesn't say who is joining. Open the join link again in PairBrowse." } };
     const r = approvals.check(invite, who.joinerId, who.name, who.app, who.computer);
     if (r.isNew) {
       try { onJoinRequest(r.entry); } catch {}
@@ -78,9 +78,9 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       if (fresh) live.changed();
       return { j };
     }
-    if (r.state === "pending") return { code: 403, body: { waiting: true, error: "Waiting for the host to approve. They see a request to let you in." } };
-    if (r.state === "denied") return { code: 403, body: { denied: true, error: "The host didn't let you in." } };
-    if (r.state === "removed") return { code: 403, body: { denied: true, removed: true, error: "The host removed you from this session." } };
+    if (r.state === "pending") return { code: 403, body: { waiting: true, error: "Waiting for the host to approve. They see a request to let you in; keep this open." } };
+    if (r.state === "denied") return { code: 403, body: { denied: true, error: "The host didn't let you in. Ask the host for a new invite if you should join." } };
+    if (r.state === "removed") return { code: 403, body: { denied: true, removed: true, error: "The host removed you from this session. Ask the host if you should join again." } };
     return { code: 429, body: { error: "Too many people are asking to join right now. Try again in a few minutes." } };
   }
 
@@ -104,7 +104,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       return { code: 200, body: await live.pointersFor(parsed, j) };
     }
     if (route === "tabs") {
-      if (invite.role !== "drive") return { code: 403, body: { error: "This code is for watching only." } };
+      if (invite.role !== "drive") return { code: 403, body: { error: "This code is for watching only. Ask the host for one that can drive." } };
       if (size > BODY_MAX.input) return { code: 413, body: { error: "Too large." } };
       const n = Array.isArray(parsed?.ops) ? parsed.ops.length : 0;
       if (!spend(j, "ops", OPS_PER_WINDOW, { t, n, windowMs: OPS_WINDOW_MS })) return { code: 429, body: { error: "Too many tab changes at once. Slow down." } };
@@ -121,7 +121,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
     // Shared browser mode: the tab's picture straight to them (setup only through here), or on the
     // slower route pictures and input through here.
     if (route === "screen") {
-      if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself." } };
+      if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself. Ask the host for a shared browser invite." } };
       if (!spend(j, "screens", SCREEN_PER_SECOND, { t })) return { code: 429, body: { error: "Too many requests. Slow down." } };
       if (size > SCREEN_BODY_MAX) return { code: 413, body: { error: "Too large." } };
       const r = await live.screen(parsed, j);
@@ -132,7 +132,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
     // Shared browser mode: their own agent's messages for its participant here, and the files it
     // sends over for an upload (in parts).
     if (route === "agent" || route === "file") {
-      if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself." } };
+      if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself. Ask the host for a shared browser invite." } };
       if (!spend(j, "agentCalls", SCREEN_PER_SECOND, { t })) return { code: 429, body: { error: "Too many requests. Slow down." } };
       if (size > BODY_MAX.input) return { code: 413, body: { error: "Too large." } };
       const r = route === "agent" ? await live.agent(parsed, j) : live.file(parsed, j);
@@ -141,7 +141,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
     // The approve role: an answer to one of the host's approval cards. Shared browser codes only;
     // the role is read again where it's answered (it may have changed since this channel opened).
     if (route === "approval") {
-      if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself." } };
+      if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself. Ask the host for a shared browser invite." } };
       if (!spend(j, "approvalAnswers", APPROVALS_PER_MINUTE, { t, windowMs: 60_000 })) return { code: 429, body: { error: "Too many answers. Slow down." } };
       if (size > APPROVAL_BODY_MAX) return { code: 413, body: { error: "Too large." } };
       if (!live.approval) return { code: 404, body: { error: "Unknown request." } };
@@ -216,7 +216,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
         try { m = JSON.parse(raw); } catch { return; }
         j.seen = Date.now();
         const run = async () => {
-          const r = await act(String(m?.route || ""), m?.body, Buffer.byteLength(raw), c.invite, j).catch((e) => { log("liveview guest", e?.message || e); return { code: 500, body: { error: "Something went wrong on the host's side." } }; });
+          const r = await act(String(m?.route || ""), m?.body, Buffer.byteLength(raw), c.invite, j).catch((e) => { log("liveview guest", e?.message || e); return { code: 500, body: { error: "Something went wrong on the host's side. Try again in a moment." } }; });
           if (m?.n !== undefined) conn.send(JSON.stringify({ event: "reply", data: { n: m.n, code: r.code, body: r.body } }));
         };
         if (m?.route === "pointer") run();

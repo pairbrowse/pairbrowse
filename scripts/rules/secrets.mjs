@@ -83,7 +83,7 @@ export function cleanDomains(list) {
   for (const raw of String(list ?? "").split(/[\s,]+/)) {
     const d = raw.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^\*?\./, "");
     if (!d) continue;
-    if (!/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(d)) return { error: `"${raw}" isn't a site name like accounts.shopify.com` };
+    if (!/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(d)) return { error: `"${raw}" isn't a site name. Enter one like accounts.shopify.com.` };
     out.push(d);
   }
   if (!out.length) return { error: "Add at least one site where this password may be used." };
@@ -110,7 +110,7 @@ export function setSecret(current, { name, value, domains }) {
   if (!validSecretName(name)) return { error: "Use a name like SHOPIFY_PASSWORD." };
   const v = String(value ?? "");
   if (!v && !(name in current.values)) return { error: "Enter the password." };
-  if (v.length > 4096 || /[\r\n\u0000]/.test(v)) return { error: "Passwords can't contain line breaks." };
+  if (v.length > 4096 || /[\r\n\u0000]/.test(v)) return { error: "Passwords can't contain line breaks. Paste it again on one line." };
   const d = cleanDomains(domains);
   if (d.error) return d;
   return {

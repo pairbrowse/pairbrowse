@@ -1156,7 +1156,7 @@ test("a person's tab never crosses to joiners, even at a web address; screen req
     for (const op of ["want", "frames", "input"]) {
       const s = await request(view.guestPort, "POST", `/${code.key}/screen`, { headers, body: { op, id, on: true, events: [] } });
       assert.equal(s.status, 400, op);
-      assert.equal(JSON.parse(s.text).error, "That tab isn't shared.", op);
+      assert.equal(JSON.parse(s.text).error, "That tab isn't shared. Choose a shared tab.", op);
     }
   } finally { view.close(); }
 });

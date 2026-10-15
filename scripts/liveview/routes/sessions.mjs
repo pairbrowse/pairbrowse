@@ -23,7 +23,7 @@ export function createSessionRoutes({ picker, sessionOps, broadcast, ownerSessio
       if (given === undefined) return;
       const { op, error } = readPick(given);
       if (error) return json(res, 409, { text: error, error: true });
-      const r = (await picker.pick(op)) || { text: "That didn't work.", error: true };
+      const r = (await picker.pick(op)) || { text: "That didn't work. Try again.", error: true };
       json(res, r.confirm ? 428 : r.error ? 409 : 200, r);
       if (!r.error) { try { broadcast("sessions", picker.state()); } catch {} }
     } },
@@ -40,7 +40,7 @@ export function createSessionRoutes({ picker, sessionOps, broadcast, ownerSessio
       if (!op || typeof op !== "object" || Array.isArray(op) || (op.op !== "rename" && op.op !== "save")) return json(res, 409, { error: SESSION_OP });
       if (op.op === "save") {
         const r = await sessionOps.save();
-        if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
+        if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work. Try again." });
         json(res, 200, { ok: true, savedAt: r.savedAt || "" });
         broadcast("session", ownerSession());
         return;
@@ -57,7 +57,7 @@ export function createSessionRoutes({ picker, sessionOps, broadcast, ownerSessio
       }
       const name = String(op.name ?? "").trim();
       const r = await (saved ? sessionOps.rename(name, from) : sessionOps.rename(name));
-      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
+      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work. Try again." });
       if (r.from && r.from !== r.name && layouts.has(r.from)) { layouts.set(r.name, layouts.get(r.from)); layouts.delete(r.from); }
       // Answered before the browser restarts: the dock that asked closes with the window.
       json(res, 200, { ok: true, name: r.name, restarting: !!r.restarting });

@@ -344,7 +344,7 @@ test("a named click asked in the browser and the terminal at once: the first ans
     assert.equal(answer.status, 200);
     await h.done;
     assert.equal(JSON.parse(h.out).hookSpecificOutput.decision.behavior, "deny");
-    assert.equal(JSON.parse(h.out).hookSpecificOutput.decision.message, "pairbrowse: Denied in the PairBrowse browser.");
+    assert.equal(JSON.parse(h.out).hookSpecificOutput.decision.message, "pairbrowse: Denied in the PairBrowse browser. Nothing was done; ask the user what to do.");
     await until("the card goes", async () => (await cards()).length === 0, 5000);
 
     stage = "(f) Codex: the click waits for the card";

@@ -9,7 +9,7 @@ const OWN = ["chrome://pairbrowse/picker", "chrome://pairbrowse.top-chrome/strip
 
 test("the browser's own pages are refused with the sentence naming their rule", () => {
   for (const url of OWN) assert.match(navigationProblem(url), /browser's own/, url);
-  assert.equal(navigationProblem("chrome://pairbrowse/picker"), CHROME_PAGE_RULE);
+  assert.equal(navigationProblem("chrome://pairbrowse/picker"), `${CHROME_PAGE_RULE} Open a web page (http or https) instead.`);
   // Every other chrome: address stays refused as not a web page, as before.
   const settings = navigationProblem("chrome://settings");
   assert.notEqual(settings, null);
@@ -32,7 +32,7 @@ test("the live view keeps out the browser's own pages, a joiner's picture page e
   for (const url of ["chrome://pairbrowse/screenx/", "chrome://pairbrowse/screen", "chrome://pairbrowse.top-chrome/screen/", "chrome://pairbrowse/picker#screen/"]) assert.equal(hiddenFromLiveView(url), true, url);
   for (const url of ["https://x.com/", "about:blank"]) assert.equal(hiddenFromLiveView(url), false, url);
   // Agents' rules are unchanged: the picture page is still the browser's own page to them.
-  assert.equal(navigationProblem("chrome://pairbrowse/screen/#0a1b2c3d"), CHROME_PAGE_RULE);
+  assert.equal(navigationProblem("chrome://pairbrowse/screen/#0a1b2c3d"), `${CHROME_PAGE_RULE} Open a web page (http or https) instead.`);
 });
 
 test("browser_tabs lists without the browser's own pages, every other tab keeping its number", () => {
@@ -60,7 +60,7 @@ test("pairbrowse:// addresses are the browser's own, as chrome://pairbrowse ones
   for (const u of ["pairbrowse://settings", "pairbrowse://browser-settings", "PAIRBROWSE://about", " pairbrowse://newtab/", "pairbrowse:sessions"]) {
     assert.equal(isChromePage(u), true, u);
     assert.equal(hiddenFromLiveView(u), true, u);
-    assert.equal(navigationProblem(u.trim()), CHROME_PAGE_RULE, u);
+    assert.equal(navigationProblem(u.trim()), `${CHROME_PAGE_RULE} Open a web page (http or https) instead.`, u);
   }
   assert.equal(isChromeScreenPage("pairbrowse://screen/"), true);
   assert.equal(hiddenFromLiveView("pairbrowse://screen/"), false, "a joiner's picture page shows, as chrome://pairbrowse/screen/ does");

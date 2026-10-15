@@ -129,9 +129,9 @@ test("the reporter: 404 without an address, 409 for a bad report, 502 when the s
   answer = { status: 200, body: '{"id":"not ok!"}' };
   assert.deepEqual((await rep.relay(sample())).body, { ok: true }, "a malformed id isn't passed on");
   answer = { status: 302, body: "" };
-  assert.deepEqual(await rep.relay(sample()), { status: 502, body: { error: "The report server answered with a redirect; nothing was sent on." } });
+  assert.deepEqual(await rep.relay(sample()), { status: 502, body: { error: "The report server answered with a redirect; nothing was sent on. Copy the report instead." } });
   answer = { status: 500, body: "boom" };
-  assert.deepEqual(await rep.relay(sample()), { status: 502, body: { error: "The report server didn't take it (HTTP 500)." } });
+  assert.deepEqual(await rep.relay(sample()), { status: 502, body: { error: "The report server didn't take it (HTTP 500). Try again later, or copy the report instead." } });
   answer = { error: "Couldn't reach the report server." };
   assert.deepEqual(await rep.relay(sample()), { status: 502, body: { error: "Couldn't reach the report server." } });
   assert.equal(sent.length, REPORTS_PER_HOUR);

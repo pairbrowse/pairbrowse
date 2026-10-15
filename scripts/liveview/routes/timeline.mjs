@@ -39,12 +39,12 @@ export function createTimelineRoutes({ timeline, mask, broadcast }) {
       if (isShow) {
         const card = (timeline.cards() || []).find((c) => c.id === rest[0]);
         if (!card) return plain(res, 404);
-        if (card.note === true) return json(res, 409, { error: "That card is a note; it has no picture to show." });
+        if (card.note === true) return json(res, 409, { error: "That card is a note; it has no picture to show. Read its text instead." });
         broadcast("timeline", { op: "show", id: card.id, card: maskedCard(card) });
         return json(res, 200, { ok: true });
       }
       const r = isNote ? await timeline.note(typeof op?.text === "string" ? op.text : "") : await timeline.pin(rest[0], op?.on !== false);
-      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
+      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work. Try again." });
       json(res, 200, maskedCard(r));
     } },
   ];

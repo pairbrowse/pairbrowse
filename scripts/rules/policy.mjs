@@ -19,10 +19,10 @@ export const HIDDEN_TOOLS = toolsWith("hidden");
 const KNOWN_TOOLS = new Set(Object.keys(CATALOG));
 export function toolRefused(name) {
   const n = String(name ?? "");
-  if (BLOCKED_TOOLS.has(n)) return `${n} is disabled by PairBrowse.`;
+  if (BLOCKED_TOOLS.has(n)) return `${n} is disabled by PairBrowse. Use another tool, or ask the user to do this step.`;
   if (n === "browser_evaluate") return "browser_evaluate isn't available in PairBrowse: page scripts can read what was typed, passwords included. Read the page with browser_snapshot or browser_find instead.";
   if (HIDDEN_TOOLS.has(n)) return `${n} isn't available in PairBrowse. Use the tools it offers (browser_snapshot reads the page).`;
-  if (n.startsWith("browser_") && !KNOWN_TOOLS.has(n)) return `${n} isn't available in PairBrowse.`;
+  if (n.startsWith("browser_") && !KNOWN_TOOLS.has(n)) return `${n} isn't available in PairBrowse. Use the tools it offers (browser_snapshot reads the page).`;
   return "";
 }
 
@@ -81,11 +81,11 @@ export function navigationProblem(url) {
   try {
     u = new URL(String(url));
   } catch {
-    return `Not a valid URL: ${url}`;
+    return `Not a valid URL: ${url}. Pass a full address, like https://example.com/.`;
   }
-  if (isChromePage(u.href)) return CHROME_PAGE_RULE;
+  if (isChromePage(u.href)) return `${CHROME_PAGE_RULE} Open a web page (http or https) instead.`;
   if (u.protocol === "http:" || u.protocol === "https:" || u.href === "about:blank") return null;
-  return `pairbrowse only opens web pages (http/https), not ${u.protocol} URLs.`;
+  return `pairbrowse only opens web pages (http/https), not ${u.protocol} URLs. Open an http or https address instead.`;
 }
 
 // Fields whose values never show in the activity line, the bottom bar or the run log, and are

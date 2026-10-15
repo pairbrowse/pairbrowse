@@ -105,10 +105,10 @@ export function applySettings(given, config, { native = false, exists, executabl
     const b = given.browser;
     if (typeof b !== "string") return { error: 'browser is "pairbrowse", "chromium" or an absolute path.' };
     if (b === "pairbrowse") {
-      if (!native) return { error: "There's no PairBrowse browser build for this computer yet" };
+      if (!native) return { error: "There's no PairBrowse browser build for this computer yet. Choose Chromium for now." };
     } else if (b !== "chromium") {
       if (!isAbsolute(b) || b.length > PATH_MAX || CONTROL.test(b)) return { error: 'browser is "pairbrowse", "chromium" or an absolute path.' };
-      if (browserChoice({ browser: b }, checksOf(exists, executable)).browser !== b) return { error: `${b} isn't an executable file` };
+      if (browserChoice({ browser: b }, checksOf(exists, executable)).browser !== b) return { error: `${b} isn't an executable file. Choose the browser app itself.` };
     }
     fields.browser = b;
   }
@@ -185,7 +185,7 @@ export function createSettings({ config, choiceConfig = () => config, native = f
       // whatever passed the checks above still never writes a value loadConfig would refuse.
       const problem = configProblem(r.fields);
       if (problem) return { error: problem };
-      try { save(r.fields); } catch (e) { return { error: `Couldn't write config.json: ${e?.message || e}` }; }
+      try { save(r.fields); } catch (e) { return { error: `Couldn't write config.json: ${e?.message || e}. Check that PairBrowse's folder can be written, then save again.` }; }
       Object.assign(config, r.fields);
       try { onChange(r.fields); } catch {}
       const body = read();

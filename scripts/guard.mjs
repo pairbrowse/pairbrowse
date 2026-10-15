@@ -72,7 +72,7 @@ export async function permissionRequest(input, { socketPath = paths.socket, wait
     let answer = "";
     try { answer = JSON.parse(line || "null")?.answer; } catch {}
     if (answer === "allow" || answer === "site") return JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } });
-    if (answer === "deny") return JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "pairbrowse: Denied in the PairBrowse browser." } } });
+    if (answer === "deny") return JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "pairbrowse: Denied in the PairBrowse browser. Nothing was done; ask the user what to do." } } });
     return "";
   } catch {
     return "";

@@ -41,7 +41,7 @@ test("files in credential folders are refused even if they look like images", ()
   // Only checks the path rule; the folder may not hold such a file.
   const p = join(ssh, "not-really.png");
   const problem = uploadProblem(p, uploads);
-  assert.ok(problem === `${p}: not found` || /never uploaded/.test(problem));
+  assert.ok(problem.startsWith(`${p}: not found.`) || /never uploaded/.test(problem));
 });
 
 test("a credential folder spelled in other casing is the same folder on a case-insensitive disk", () => {

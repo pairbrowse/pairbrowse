@@ -103,7 +103,7 @@ export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, st
         if (op.op === "role") {
           if (Object.keys(op).some((k) => k !== "op" && k !== "id" && k !== "role") || (op.role !== "drive" && op.role !== "approve")) return json(res, 409, { error: 'A role change is { op: "role", id, role: "drive" | "approve" }.' });
           if (typeof op.id !== "string" || !INVITE_ID.test(op.id)) return json(res, 409, { error: "id is an invite's id, as invites.json lists it." });
-          if (!invites.get(op.id)) return json(res, 404, { error: "No such invite (it may have expired or been revoked already)." });
+          if (!invites.get(op.id)) return json(res, 404, { error: "No such invite (it may have expired or been revoked already). Reload the invite list." });
           let i;
           try { i = invites.setRole(op.id, op.role); } catch (e) { return json(res, 409, { error: e.message }); }
           log(`invite ${op.id} set to ${roleOf(i)} from PairBrowse's settings`);
@@ -113,7 +113,7 @@ export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, st
         }
         if (op.op !== "revoke" || Object.keys(op).some((k) => k !== "op" && k !== "id")) return json(res, 409, { error: 'An invite change is { op: "revoke", id } or { op: "role", id, role }.' });
         if (typeof op.id !== "string" || !INVITE_ID.test(op.id)) return json(res, 409, { error: "id is an invite's id, as invites.json lists it." });
-        if (!invites.revoke(op.id)) return json(res, 404, { error: "No such invite (it may have expired or been revoked already)." });
+        if (!invites.revoke(op.id)) return json(res, 404, { error: "No such invite (it may have expired or been revoked already). Reload the invite list." });
         log(`invite ${op.id} revoked from PairBrowse's settings`);
         return json(res, 200, { ok: true, id: op.id });
       }

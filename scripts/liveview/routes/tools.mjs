@@ -36,7 +36,7 @@ export function createToolsRoutes({ tools, mask, recordState, idOf, bringTabForw
     if (body === null) return;
     const e = store.entry(rest[0]);
     if (!e) return plain(res, 404);
-    if (isDownload && e.state !== "done") return json(res, 409, { error: e.state === "failed" ? "That download failed; there is no file to show." : "That download hasn't finished yet." });
+    if (isDownload && e.state !== "done") return json(res, 409, { error: e.state === "failed" ? "That download failed; there is no file to show. Download it again." : "That download hasn't finished yet. Wait for it, then try again." });
     if (!fileStill(e)) return json(res, 410, { error: FILE_CHANGED });
     if (rest[1] === "open" && !isDownload && !openable(e.path)) return json(res, 409, { error: "This kind of file isn't opened from here: it could run as a program. Use Reveal to show it in its folder." });
     if (isDownload && rest[1] !== "reveal") {
@@ -45,19 +45,19 @@ export function createToolsRoutes({ tools, mask, recordState, idOf, bringTabForw
       if (rest[1] === "open-app") {
         if (!isDocument(e.path)) return json(res, 409, { error: "Open in Word is for documents (.doc, .docx, .rtf, .odt). Use Open." });
         const r = await tools.open(e.path, "open");
-        return r?.ok ? json(res, 200, { ok: true, opened: "app" }) : json(res, 409, { error: "The file couldn't be shown: the system's opener didn't start." });
+        return r?.ok ? json(res, 200, { ok: true, opened: "app" }) : json(res, 409, { error: "The file couldn't be shown: the system's opener didn't start. Use Reveal to show it in its folder." });
       }
       const way = openWay(e.path, { platform: tools.platform ?? process.platform, engine: tools.engine?.() ?? null, size: e.size,
         tab: typeof tools.openTab === "function", preview: typeof tools.preview === "function" });
       if (way === "tab") {
         const r = await tools.openTab(pathToFileURL(e.path).href);
-        return r?.ok ? json(res, 200, { opened: "tab" }) : json(res, 409, { error: r?.error || "The file couldn't be shown in a tab." });
+        return r?.ok ? json(res, 200, { opened: "tab" }) : json(res, 409, { error: r?.error || "The file couldn't be shown in a tab. Use Open or Reveal instead." });
       }
       if (way === "text" || way === "document") {
         const p = await tools.preview(e, way);
-        if (!p || p.error) return json(res, 409, { error: p?.error || "PairBrowse couldn't make a preview of this file." });
+        if (!p || p.error) return json(res, 409, { error: p?.error || "PairBrowse couldn't make a preview of this file. Use Open to see it." });
         const r = await tools.openTab(pathToFileURL(p.path).href, p.drop);
-        if (!r?.ok) { try { p.drop(); } catch {} return json(res, 409, { error: r?.error || "The file couldn't be shown in a tab." }); }
+        if (!r?.ok) { try { p.drop(); } catch {} return json(res, 409, { error: r?.error || "The file couldn't be shown in a tab. Use Open or Reveal instead." }); }
         if (way === "document" && r.page && typeof r.page === "object") previewOf.set(r.page, e.id);
         return json(res, 200, { opened: "preview" });
       }
@@ -68,7 +68,7 @@ export function createToolsRoutes({ tools, mask, recordState, idOf, bringTabForw
     }
     // A download opened with its app says so ({ ok: true, opened: "app" }); Reveal and recordings: { ok: true }.
     const r = await tools.open(e.path, rest[1]);
-    return r?.ok ? json(res, 200, isDownload && rest[1] === "open" ? { ok: true, opened: "app" } : { ok: true }) : json(res, 409, { error: "The file couldn't be shown: the system's opener didn't start." });
+    return r?.ok ? json(res, 200, isDownload && rest[1] === "open" ? { ok: true, opened: "app" } : { ok: true }) : json(res, 409, { error: "The file couldn't be shown: the system's opener didn't start. Use Reveal to show it in its folder." });
   }
   // What diagnostics.json answers: the helper's parts plus who is connected here.
   async function diagnosticsNow() {
@@ -104,8 +104,8 @@ export function createToolsRoutes({ tools, mask, recordState, idOf, bringTabForw
       if ((await readCapped(req, res, BODY_MAX.approve)) === null) return;
       const h = tools.handoffs.entry(rest[0]);
       if (!h) return plain(res, 404);
-      if (!h.page) return json(res, 409, { error: "This hand-off isn't about a tab, so there is nothing to show." });
-      if (h.page.isClosed()) return json(res, 409, { error: "That tab is closed." });
+      if (!h.page) return json(res, 409, { error: "This hand-off isn't about a tab, so there is nothing to show. Read its text instead." });
+      if (h.page.isClosed()) return json(res, 409, { error: "That tab is closed. Choose another tab." });
       await within(3000, bringTabForward(h.page));
       json(res, 200, { ok: true });
     } },

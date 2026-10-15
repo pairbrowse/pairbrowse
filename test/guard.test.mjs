@@ -266,7 +266,7 @@ test("the PermissionRequest hook in a real process: the browser's answer, or not
 
     respond = (s) => s.end('{"answer":"deny"}\n');
     r = await runHook(pay);
-    assert.deepEqual(JSON.parse(r.out), { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "pairbrowse: Denied in the PairBrowse browser." } } });
+    assert.deepEqual(JSON.parse(r.out), { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "pairbrowse: Denied in the PairBrowse browser. Nothing was done; ask the user what to do." } } });
 
     for (const a of ["terminal", "withdrawn", "expired", "none", "site?"]) {
       respond = (s) => s.end(`{"answer":"${a}"}\n`);

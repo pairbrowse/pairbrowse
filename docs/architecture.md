@@ -37,9 +37,11 @@ what each boundary protects against, see [security.md](security.md) and the
 - **Helper** (`scripts/daemon.mjs` and `scripts/daemon/`): one long-running process per user. It
   owns the browser and serves every tool call. Each part is a `createX(deps)` factory:
   `serve` (one connection per agent: its state, its tab and turns, refusal checks, its own tools by
-  family, then each result; parts in `daemon/serve/`), `context` (browser, sessions, downloads, tabs),
+  family, then each result; parts in `daemon/serve/`), `context` (browser, sessions, downloads, tabs;
+  parts in `daemon/browser/` and `daemon/sessions/`), `follow` (joining someone else's session; parts
+  in `daemon/join/`), `board` (who does what in a shared session, messages), `toolstab` (the Tools tab),
   `presence` (people using the browser), `hud` (badge, bar, cursor), `screenshot`, `output`
-  (masking what the agent reads), `panel` (side panel), `sharing` (invites, join codes, tunnel),
+  (masking what the agent reads), `panel` (side panel), `sharing` (invites, join codes; `tunnel-pool` the tunnels),
   `timeline` (the session's pictures already sent to agents: local, capped, off by config),
   `outline` (the last whole-page snapshot an agent got per tab, in memory, dropped with the tab).
   With a native build that has its own pages, those `chrome://pairbrowse` pages are live view

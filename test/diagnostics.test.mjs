@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scrub, lastErrors, createDiagnostics, pinnedBrowserVersion } from "../scripts/daemon/diagnostics.mjs";
-import { handoffKind } from "../scripts/daemon/tools.mjs";
+import { handoffKind } from "../scripts/daemon/toolstab.mjs";
 
 const home = "/Users/tester";
 const s = (t, mask) => scrub(t, { home, mask });

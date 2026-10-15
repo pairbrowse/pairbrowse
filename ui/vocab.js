@@ -28,7 +28,7 @@ export const isColor = (c) => COLOR.test(c || "");
 // pairbrowse_status kinds: the badge's ("claude": working, "you": the user's turn, "done", and
 // "clear" to take it down).
 export const STATUS_KINDS = Object.freeze(["claude", "you", "done", "clear"]);
-// The session board's status per participant (daemon/session.mjs), and its words, so a state
+// The session board's status per participant (daemon/board.mjs), and its words, so a state
 // never shows by color alone.
 export const BOARD_STATES = Object.freeze(["working", "you", "done", "idle"]);
 export const STATE_WORDS = Object.freeze({ working: "working", you: "waiting for their person", done: "done", idle: "idle" });

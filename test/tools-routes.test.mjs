@@ -1,4 +1,4 @@
-// The Tools tab's routes (liveview.mjs, with daemon/tools.mjs and daemon/diagnostics.mjs): owner
+// The Tools tab's routes (liveview.mjs, with daemon/toolstab.mjs and daemon/diagnostics.mjs): owner
 // only, files by id, never a path in an answer or event, the OS opener only for the stored file,
 // file identity checked before every action, and the diagnostics scrubbed.
 import "./helpers/home.mjs";
@@ -11,7 +11,7 @@ import { tmpdir, homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { startLiveView, createInvites } from "../scripts/liveview.mjs";
-import { createDownloads, createRecordings, createHandoffs, openFile, downloadMarked, keepDownloadMark, fileStill, handoffKind, createPersonTabs } from "../scripts/daemon/tools.mjs";
+import { createDownloads, createRecordings, createHandoffs, openFile, downloadMarked, keepDownloadMark, fileStill, handoffKind, createPersonTabs } from "../scripts/daemon/toolstab.mjs";
 import { createPreviews } from "../scripts/daemon/preview.mjs";
 import { createDiagnostics } from "../scripts/daemon/diagnostics.mjs";
 
@@ -825,7 +825,7 @@ test("open-app: documents only, with their app, after the same checks", async ()
 });
 
 test("confirm wording by kind; openWay's choices", async () => {
-  const { confirmFor, openWay, PROGRAMS, WEB_FILES } = await import("../scripts/daemon/tools.mjs");
+  const { confirmFor, openWay, PROGRAMS, WEB_FILES } = await import("../scripts/daemon/toolstab.mjs");
   for (const x of ["html", "htm", "xhtml", "svg", "svgz", "shtml", "mht", "mhtml", "webarchive", "url", "webloc", "inetloc"]) {
     assert.equal(confirmFor(`a.${x}`), "This is a web page saved to your computer. It opens in your web browser and can run its own scripts. Open it anyway?", x);
     assert.ok(PROGRAMS.has(x) && WEB_FILES.has(x));

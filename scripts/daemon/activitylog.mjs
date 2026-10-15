@@ -9,7 +9,7 @@
 // rename and removed with the session; a clean session's stays in memory.
 // Times are unique and rising within a log (a line in the same millisecond as the last gets the
 // next one), so `before` pages without losing a line on a boundary.
-// A message between participants (pairbrowse_collaboration message, daemon/session.mjs) is a
+// A message between participants (pairbrowse_collaboration message, daemon/board.mjs) is a
 // line too: { t, kind: "message", who (its sender), to (a label or "all"), text (up to 500,
 // already redacted, masked again here), tab: "" }, interleaved with the others by time.
 import { readJson, writeJsonAtomic } from "../util.mjs";
@@ -25,7 +25,7 @@ const TAB_ID = /^[0-9a-f]{8}$/;
 // codes and tokens, whoever wrote the line (an agent here, a joiner, a session joined).
 const URL_REST = /\b((?:https?|wss?|ftp):\/\/[^\s?#<>"'`]+)[?#][^\s<>"'`)]*/gi;
 export const cutAddresses = (t) => String(t).replace(URL_REST, "$1");
-const MESSAGE_MAX = 500; // a message's text (session.mjs TEXT_MAX); other lines keep 200
+const MESSAGE_MAX = 500; // a message's text (board.mjs TEXT_MAX); other lines keep 200
 const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : "");
 // A line as it may be kept (from the stream's entry or the file), or null.
 export function cleanLine(a) {

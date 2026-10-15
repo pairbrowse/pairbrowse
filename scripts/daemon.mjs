@@ -10,21 +10,23 @@
 // - Arbitrary-code and non-web navigation tools are refused here as well as in the hook.
 //
 // This file wires the parts in scripts/daemon/ together and runs the socket server:
-//   context.mjs   the browser, its tabs, downloads and sessions
+//   context.mjs   the browser, its tabs, downloads and sessions (browser/, sessions/)
 //   hud.mjs       the badge, bar, spark and cursor inside the pages
 //   presence.mjs  you, using the browser by hand
 //   pause.mjs     "Pause agents": people stop every agent in the session until someone resumes
 //   fields.mjs    fields people fill are theirs: agents leave them alone
 //   panel.mjs     the side panel and notifications
 //   screenshare.mjs  shared browser mode: joiners see the tabs live and work in them
-//   sharing.mjs   the live view, invites and joiners
+//   sharing.mjs   the live view, invites and joiners (tunnel-pool.mjs: the sharing tunnels)
+//   follow.mjs    joining someone else's session (join/: hosts, agents, picture pages, the mirror)
+//   board.mjs     who does what across a shared session, and messages
 //   output.mjs    password masking and long snapshots in results
 //   screenshot.mjs  the screenshots in results, and clicking on them
 //   serve.mjs     one connected agent: the rules before each call, the notes after
 //   approvals.mjs a named final click asked in the browser as well (the card, the hook's line)
 //   timeline.mjs  the pictures already sent to agents, kept per session
 //   outline.mjs   the last whole-page snapshot an agent got per tab, in memory (the Page tab)
-//   tools.mjs     the Tools tab: downloads, recordings, hand-offs, the OS opener (files by id), the person's own tabs
+//   toolstab.mjs  the Tools tab: downloads, recordings, hand-offs, the OS opener (files by id), the person's own tabs
 //   preview.mjs   read-only previews of downloads (text; Word-type documents on macOS) for the person's tab
 //   diagnostics.mjs  the Tools tab's diagnostics and its scrubbed report (nothing is sent)
 // First: the test switches go unless the test harness started this helper (test-gate.mjs).
@@ -47,7 +49,7 @@ import { currentAccount, within, readJson } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
-import { contextCount } from "./daemon/contexts.mjs";
+import { contextCount } from "./daemon/exec-contexts.mjs";
 import { createHud, appColor, APP_COLORS } from "./daemon/hud.mjs";
 import { createPresence } from "./daemon/presence.mjs";
 import { createPause, pressPause as pressPauseIn } from "./daemon/pause.mjs";
@@ -76,10 +78,10 @@ import { readFields, applyFields } from "./daemon/forms.mjs";
 import { createTabOrder } from "./daemon/taborder.mjs";
 import { createCobrowse } from "./daemon/cobrowse.mjs";
 import { shareFields, shareableUrl, crossingText, onSecretDomain, personColor } from "./tabsync.mjs";
-import { createSession, readEntries, readMessage } from "./daemon/session.mjs";
+import { createBoard, readEntries, readMessage } from "./daemon/board.mjs";
 import { createJoinPrompt } from "./daemon/joinprompt.mjs";
 import { createClickApprovals, routeConnection } from "./daemon/approvals.mjs";
-import { createDownloads, createRecordings, createHandoffs, openFile, createPersonTabs } from "./daemon/tools.mjs";
+import { createDownloads, createRecordings, createHandoffs, openFile, createPersonTabs } from "./daemon/toolstab.mjs";
 import { createPreviews } from "./daemon/preview.mjs";
 import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mjs";
 import { engineDir } from "./native-pack.mjs";
@@ -151,7 +153,7 @@ const hostNote = (text) => { hostNotes.push(text); if (hostNotes.length > 50) ho
 hostNote.drop = (keep) => { const left = hostNotes.filter((n) => keep(n)); hostNotes.splice(0, hostNotes.length, ...left); };
 const clients = new Map(); // participant -> socket
 
-// The Tools tab (the browser's own pages, the owner only; daemon/tools.mjs): this session's
+// The Tools tab (the browser's own pages, the owner only; daemon/toolstab.mjs): this session's
 // downloads (in memory), the recordings this helper saved (an owner-only index), the hand-offs
 // waiting for the person, and diagnostics. Fed from what the helper already sees.
 const hostOfUrl = (url) => { try { return new URL(url).host; } catch { return ""; } };
@@ -363,7 +365,7 @@ function localEntries() {
 // so a browser restart keeps it; a kept session's in its folder, a clean session's in memory.
 // The bar's lines reach it through the live view; the session's messages from here (below).
 const activityLog = createActivityLog({ where: () => { const name = context.sessionName(); return { name, file: isTemporary(name) ? null : activityFile(name) }; }, mask: output.mask, log });
-const session = createSession({
+const session = createBoard({
   locals: localEntries,
   secrets: () => secrets.get().values || {},
   labelOf: (p) => collaboration.participants.get(p)?.label || "Agent",

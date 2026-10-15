@@ -2,7 +2,7 @@
 // tabs it brings back, downloads, the tab cap, and switching between browser sessions. This is
 // the facade over its parts: browser/{state,launch,downloads,tabs}.mjs, sessions/{picker,switch}.mjs.
 import { currentSession } from "../sessions.mjs";
-import { createPersonTabs } from "./tools.mjs";
+import { createPersonTabs } from "./toolstab.mjs";
 import { where } from "./where.mjs";
 import { createDownloads } from "./browser/downloads.mjs";
 import { createBrowserState } from "./browser/state.mjs";
@@ -26,8 +26,8 @@ export { where };
 // beforeRename(): awaited before a rename moves the session's files (the timeline's last writes).
 // onRenamed(from, to): the session was renamed (the goal log follows).
 // onDownload({ op: "start", name, page }) -> id, then { op: "done", id, path } or { op: "failed", id }:
-// the Tools tab's Downloads (daemon/tools.mjs), in memory only.
-// personTabs: the person's own tabs (daemon/tools.mjs createPersonTabs), shared with serve.mjs:
+// the Tools tab's Downloads (daemon/toolstab.mjs), in memory only.
+// personTabs: the person's own tabs (daemon/toolstab.mjs createPersonTabs), shared with serve.mjs:
 // openForPerson opens one, and no agent's fallback tab is ever one.
 export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, helperFor = async () => null,
   beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null }) {

@@ -20,7 +20,7 @@ import { $, el, avatar, splitLabel, shortClock, enter, leave, revealed } from ".
 const MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
 const REVEAL = MAC ? "Show in Finder" : "Show in folder";
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
-// Names the page can hint about, as the helper's openWay (scripts/daemon/tools.mjs) decides from the
+// Names the page can hint about, as the helper's openWay (scripts/daemon/toolstab.mjs) decides from the
 // name alone: IN_TAB is its TAB_TYPES (always a tab), TEXT its TEXT_TYPES (an escaped preview in a
 // tab), WORD its DOCUMENT_TYPES (Open in app; a preview on macOS). No hint for mp4, m4v and m4a
 // (a tab only in the macOS PairBrowse build) or mov and aac (their app). Titles only: what really

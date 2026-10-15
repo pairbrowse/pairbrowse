@@ -114,7 +114,7 @@ test("sessions that took pictures and left leave no screenshot maps behind", { s
 });
 
 // The driver (Patchright) kept every execution context a tab ever had: a few per navigation,
-// each with its handles and waits, for as long as the tab lived (scripts/daemon/contexts.mjs).
+// each with its handles and waits, for as long as the tab lived (scripts/daemon/exec-contexts.mjs).
 test("a tab's navigations leave no execution contexts behind in the driver", { skip: !runtime, timeout: 240_000 }, async () => {
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const base = testBase();

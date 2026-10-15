@@ -1,12 +1,12 @@
 // The person's own tabs (a file they opened from Downloads): agents never read their address,
 // title or content, and never act in, select or close them (daemon/output.mjs hidePersonTabs,
-// daemon/serve.mjs tabRefusal, daemon/tools.mjs createPersonTabs).
+// daemon/serve.mjs tabRefusal, daemon/toolstab.mjs createPersonTabs).
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hidePersonTabs, PERSON_TAB_RULE, PERSON_TAB_LINE } from "../scripts/daemon/output.mjs";
 import { tabRefusal } from "../scripts/daemon/serve.mjs";
-import { createPersonTabs } from "../scripts/daemon/tools.mjs";
+import { createPersonTabs } from "../scripts/daemon/toolstab.mjs";
 import { CHROME_PAGE_RULE } from "../scripts/policy.mjs";
 
 const page = (url) => ({ url: () => url });

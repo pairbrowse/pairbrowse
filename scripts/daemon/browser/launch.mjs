@@ -12,7 +12,7 @@ import { within } from "../../util.mjs";
 import { MEASURING } from "../../native-engine.mjs";
 import { OPEN_ACCEPT_MS } from "../../opener.mjs";
 import { isChromePage, CHROME_PICKER, extensionUrl } from "../../../ui/urls.js";
-import { pruneStaleContexts } from "../contexts.mjs";
+import { pruneStaleContexts } from "../exec-contexts.mjs";
 
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
 // A build with its own pages shows its own picker instead (CHROME_PICKER, ui/urls.js).

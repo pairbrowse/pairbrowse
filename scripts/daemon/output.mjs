@@ -125,7 +125,7 @@ export function hideChromeTabs(text) {
   }).join("\n");
 }
 
-// The person's own tabs (a file they opened from Downloads; daemon/tools.mjs createPersonTabs):
+// The person's own tabs (a file they opened from Downloads; daemon/toolstab.mjs createPersonTabs):
 // no agent reads their address, title or content. hidePersonTabs(text, indices): a result's text
 // with each such tab's line said as the person's tab (by its number in indices, or a file: link),
 // and a page block about one (its file: URL) without its address and title. Other lines unchanged.

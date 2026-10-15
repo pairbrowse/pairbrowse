@@ -28,7 +28,7 @@ import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/
 import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
 import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "../ui/urls.js";
 import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
-import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } from "./daemon/tools.mjs";
+import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } from "./daemon/toolstab.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";
 import { within } from "./util.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
@@ -81,7 +81,7 @@ export function readTabOrder(body) {
 // name for counting them, nothing more; they get no frame stream.
 const PAGE_KINDS = new Set(PAGE_KIND_LIST);
 const TIMELINE_ID = /^[0-9a-f]{12}$/;
-const TOOL_ID = /^[0-9a-f]{12}$/; // a download, recording or hand-off (daemon/tools.mjs): never a path
+const TOOL_ID = /^[0-9a-f]{12}$/; // a download, recording or hand-off (daemon/toolstab.mjs): never a path
 const TIMELINE_OFF = "The timeline is off (timeline: false in ~/.pairbrowse/config.json).";
 const SESSION_OP = 'A session change is { op: "rename", name, from? } or { op: "save" }.';
 const SESSION_FIELDS = ["canRename", "canSave", "savedAt", "canRenameSaved"]; // the owner's streams only
@@ -153,7 +153,7 @@ async function release(cdp) {
 // current() -> the open session's name, rename(name, from?), save() }), or null. outlines: the Page tab's outlines (daemon/outline.mjs), or null.
 // tools: the Tools tab ({ downloads, recordings, handoffs, diagnostics, open(path, how), marked(path)?,
 // openTab(url, onClose)?, preview(entry, kind)?, personTab(page)?, engine()?, platform? },
-// daemon/tools.mjs, daemon/preview.mjs and daemon/diagnostics.mjs), or null: files by id only,
+// daemon/toolstab.mjs, daemon/preview.mjs and daemon/diagnostics.mjs), or null: files by id only,
 // opened by the helper. personTab(page): a person's own tab (a file they opened from Downloads):
 // the owner sees it (personal: true); guests never list, pick, close or type into it.
 // onPagesKey(): called on every request authenticated with the browser's own pages' key under a
@@ -1023,7 +1023,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       json(res, 200, maskedCard(r));
     } },
     // The Tools tab (the owner only): this session's downloads, the recordings this helper saved,
-    // the hand-offs waiting for the person, and diagnostics. Files go by id (daemon/tools.mjs);
+    // the hand-offs waiting for the person, and diagnostics. Files go by id (daemon/toolstab.mjs);
     // request bodies are capped and otherwise ignored (but a download's Open reads { confirm: true }),
     // so nothing in them names a file.
     { method: "GET", path: "downloads.json", right: "tools", handler: ({ res }) => (toolsOff(res) ? null : json(res, 200, { items: tools.downloads.list().map(maskedDownload) })) },
@@ -1225,7 +1225,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     return { id: h.id, kind: h.kind, text: mask(h.text), tab: page ? { id: idOf(page), host: hostOf(page.url()), title: await tabTitle(page) } : null, by: h.by, at: h.at };
   };
   // POST downloads|recordings/<id>/open|reveal (and downloads/<id>/open-app): the stored file,
-  // checked. A download opens in a person's own tab where the browser renders it (daemon/tools.mjs
+  // checked. A download opens in a person's own tab where the browser renders it (daemon/toolstab.mjs
   // openWay), as a read-only preview there (daemon/preview.mjs), or with the OS opener; open-app
   // opens a document with its app. Recordings: the OS opener only.
   async function fileAction({ req, res, rest }, store, isDownload) {

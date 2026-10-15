@@ -1,4 +1,4 @@
-// Read-only previews of downloads the browser doesn't show itself (daemon/tools.mjs openWay): a
+// Read-only previews of downloads the browser doesn't show itself (daemon/toolstab.mjs openWay): a
 // .csv or .log as escaped plain text, and on macOS a Word-type document (.doc, .docx, .rtf, .odt)
 // converted by textutil to HTML, rebuilt from an allowlist of tags and attributes, under a content
 // security policy that runs no script and loads nothing. The page opens in a person's tab (no

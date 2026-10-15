@@ -11,7 +11,7 @@
 import { SENSITIVE, looksLikeCard } from "./policy.mjs";
 import { isLocalNetwork } from "./guard.mjs";
 import { stripText, eachUrl, textOf, numOf } from "./join.mjs";
-import { redact } from "./daemon/session.mjs";
+import { redact } from "./daemon/board.mjs";
 import { PEOPLE_COLORS, AGENT_COLOR, COLOR } from "../ui/vocab.js";
 
 export const TABS_MAX = 40; // tabs that cross, in order

@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
 import { basename, join } from "node:path";
-import { keepDownloadMark } from "../tools.mjs";
+import { keepDownloadMark } from "../toolstab.mjs";
 
 export function createDownloads({ personTabs, config, hostNote, log, onDownload, profile }) {
   // Files a site hands over (invoices, exported keys) go to the Downloads folder, as in any

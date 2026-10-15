@@ -46,7 +46,7 @@ const minutes = (ms) => {
 // (pixelRatio), null when no tab told it: the last one told stands.
 // changed(state): the side panels show it. onActivity(fn): fn(text, who, page) for each thing an
 // agent does (follow "agents"). onSaved({ path, at, ms, size }): a recording was saved (the Tools
-// tab's Recordings index, daemon/tools.mjs); a throw there never fails the save.
+// tab's Recordings index, daemon/toolstab.mjs); a throw there never fails the save.
 // capture: where tabs are captured (daemon/capture.mjs); without it, the extension as before.
 // Nowhere to capture (a PairBrowse build without its capture page): recording is refused.
 export function createRecorder({ onSaved = () => {}, call, owners = () => [], dir, scale = async () => 1, log = () => {}, changed = () => {}, onActivity = () => () => {}, capture = null }) {

@@ -16,6 +16,8 @@ import { resolve, sep } from "node:path";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { keepFocus } from "./focus.mjs";
+import { createCast, bringTabForward, serially } from "./liveview/cast.mjs";
+import { createAgentRelay } from "./liveview/agent-relay.mjs";
 import { createApprovals, personLabel, cleanName } from "./sharing/join.mjs";
 import { stateForJoiner, readOps, shareableUrl, onSecretDomain, activityBudget } from "./sharing/tabsync.mjs";
 import { createPush } from "./liveview/push.mjs";
@@ -36,7 +38,7 @@ import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { createActivityLog } from "./daemon/activitylog.mjs";
 import { createApprovalShare } from "./liveview/approval-share.mjs";
-import { FRAME_EVERY_MS, FRAME_SKIP_BYTES, STALLED_BYTES } from "../ui/limits.js";
+import { FRAME_SKIP_BYTES, STALLED_BYTES } from "../ui/limits.js";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
@@ -44,10 +46,6 @@ export { addressToUrl } from "./liveview/input.mjs";
 export { readTabOrder } from "./liveview/routes/pages.mjs";
 
 const TICK_MS = 1500; // following Claude's tab, and the tab strip
-const SETTLE_MS = 180; // the page is still this long: send one sharp frame
-// Frames come as fast as they're acknowledged: at most one every FRAME_EVERY_MS (ui/limits.js; a
-// form being filled or a page scrolling reads fine at 30; unpaced, a busy page encodes 60 a second).
-const SHARP_QUALITY = 90;
 const JOINER_NAV_MS = 15_000; // a joiner's change: until the host's tab starts loading it
 const ACTIVITY_MAX = 30; // the activity event's lines; the session's log (activityLog) keeps more
 const INPUT_BATCH_MAX = 500;
@@ -73,26 +71,6 @@ const SESSION_FIELDS = ["canRename", "canSave", "savedAt", "canRenameSaved"]; //
 // what on a joiner's side, or a message from there (text only; any role).
 const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, onJoinerAgent: () => {}, arrange: async () => {}, order: async () => null, showPointers: () => {}, sessionFor: () => null, onJoinerSay: () => {}, onJoinerGone: () => {}, onJoinerLost: () => {} };
 
-// Shows a tab in its browser window. (document.visibilityState can't tell: Playwright emulates focus.)
-const bringTabForward = (page) => keepFocus(() => page.bringToFront().catch(() => {}));
-
-// Runs tasks one at a time, in order; a failed task doesn't stop the next.
-function serially() {
-  let last = Promise.resolve();
-  return (task) => {
-    const run = last.then(task);
-    last = run.catch(() => {});
-    return run;
-  };
-}
-
-
-// Stops a tab's screencast and gives its window its normal size back.
-async function release(cdp) {
-  await cdp.send("Page.stopScreencast").catch(() => {});
-  await cdp.send("Emulation.clearDeviceMetricsOverride").catch(() => {});
-  await cdp.detach().catch(() => {});
-}
 
 // getContext(): the Playwright BrowserContext. currentUrl(): URL of the tab Claude is working in.
 // hosts: extra host names from liveViewHosts. inviteOrigin: inviteBaseUrl's origin, where drive
@@ -160,22 +138,19 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   const owners = new Set(); // event streams opened with the owner's key (the Profile panel's updates go only there)
   const viewers = new Set(); // the ones that show the page (the PairBrowse side panel doesn't)
   const joiners = new Map(); // `${inviteId}:${joinerId}` -> { invite, joinerId, name, app, seen, inflight, ops }
-  let shown = null; // the tab on screen: { page, cdp }
-  let lastFrame = null;
-  let lastFrameFrom = null; // the tab lastFrame came from (guests never get a person's tab's)
   let devState = null; // dev servers, for the owner's side panel
   let status = { text: "", kind: "clear" };
   let sessionInfo = { name: "", where: "" };
-  let followed; // URL of the tab Claude is working in
-  let followedPage = null;
   const activity = []; // newest last, at most ACTIVITY_MAX
   let collaboration = { participants: [], owner: null, active: null, humanUntil: 0 };
   let closed = false;
   let board = null; // who is doing what across a shared session, and its messages
   let driving = false; // an agent is acting (presence onActing), for the owner's pages while an approval waits
   const humanQueue = serially(); // people's input, in order
-  const showQueue = serially(); // switching the shown tab: one CDP session at a time
   const replayer = createInputReplayer();
+  // The picture: the tab on screen, its screencast, following Claude's tab (liveview/cast.mjs).
+  const cast = createCast({ getContext, currentUrl, personTab: (p) => personTab(p), replayer, broadcast: (e, d) => broadcast(e, d), tabsInfo: () => tabsInfo(), viewers, watching: () => watching(), isClosed: () => closed, log });
+  const { show, follow, stopIfIdle } = cast;
   const iconFor = createIcons();
   const kinds = new Map(); // event stream -> the browser page's kind (?page=), owner streams only
   const tabOrder = { sig: "", order: null }; // the tab strip's last report (POST tab-order); gone with this live view
@@ -212,7 +187,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     return Promise.all(webPages(ctx.pages()).map(async ([p, i]) => {
       let meta = {};
       try { meta = tabMeta(p) || {}; } catch {}
-      return { i, title: (await ownTitle(p)) || p.url(), url: p.url(), icon: await iconFor(p), shown: p === shown?.page, claude: p === followedPage,
+      return { i, title: (await ownTitle(p)) || p.url(), url: p.url(), icon: await iconFor(p), shown: p === cast.state.shown?.page, claude: p === cast.state.followedPage,
         agent: meta.agent || null, person: meta.person || null, waiting: !!meta.waiting, last: meta.last || null, ...personal(p) };
     }));
   };
@@ -269,7 +244,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       // otherwise collect every frame in memory: frames wait for it, and one far behind is cut.
       if (res.writableLength > STALLED_BYTES) { res.destroy(); continue; }
       if (event === "frame" && res.writableLength > FRAME_SKIP_BYTES) continue;
-      if (event === "frame" && linkGuests.has(res) && personTab(lastFrameFrom)) continue; // a person's own tab: never to guests
+      if (event === "frame" && linkGuests.has(res) && personTab(cast.state.lastFrameFrom)) continue; // a person's own tab: never to guests
       res.write(linkGuests.has(res) ? sse(event, forGuest(event, data)) : msg);
     }
   };
@@ -348,7 +323,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       while (overlayNext) {
         const list = overlayNext;
         overlayNext = null;
-        const here = (list.find((x) => x.page === shown?.page)?.pointers || []).slice(0, 12);
+        const here = (list.find((x) => x.page === cast.state.shown?.page)?.pointers || []).slice(0, 12);
         const sig = JSON.stringify(here.map(({ fresh, ...p }) => p));
         if (sig !== viewerPointersSig) { viewerPointersSig = sig; broadcast("joiner-pointers", here); }
         if (!kinds.size) continue;
@@ -450,42 +425,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     }
     return { problem: "Unknown request." };
   }
-  // A joiner's agent's answers, kept for a while: their channel can drop and reconnect (a busy
-  // computer, the tunnel), and an answer sent just then would be lost, leaving their agent waiting
-  // for it. Each goes again when a channel opens; their side takes each answer once.
-  const AGENT_KEEP_MS = 120_000;
-  const agentOutbox = new Map(); // joiner key -> [{ msg, t }]
-  function toJoinerAgent(key, msg) {
-    const now = Date.now();
-    const list = (agentOutbox.get(key) || []).filter((x) => now - x.t < AGENT_KEEP_MS).slice(-49);
-    list.push({ msg, t: now });
-    agentOutbox.set(key, list);
-    push.broadcast("agent", msg, { to: key });
-  }
-  function resendAgent(key) {
-    const now = Date.now();
-    const list = (agentOutbox.get(key) || []).filter((x) => now - x.t < AGENT_KEEP_MS);
-    if (!list.length) { agentOutbox.delete(key); return; }
-    agentOutbox.set(key, list);
-    for (const { msg } of list) push.broadcast("agent", msg, { to: key });
-  }
-
-  // A joiner's own agent at work in this browser (daemon/remote-agents.mjs): its MCP messages,
-  // its answers back on the channel; files it sends over for an upload.
-  async function remoteAgent(body, j) {
-    if (!remoteAgents) return { problem: "Shared browser mode isn't available here." };
-    if (j.invite.role !== "drive") return { problem: "This code is for watching only: your agent can't act in the host's browser." };
-    const key = joinerKey(j);
-    // The tab they look at: only one whose picture goes to joiners.
-    const start = typeof body?.tab === "string" ? (await getContext()).pages().find((p) => idOf(p) === body.tab && crossesWhole(p) && !personTab(p)) || null : null;
-    const ok = remoteAgents.line({ name: j.name, app: j.app, key }, String(body?.a || ""), body?.line, (line) => toJoinerAgent(key, { a: String(body.a), line }), start);
-    return ok ? { ok: true } : { problem: "Bad message." };
-  }
-  function remoteFile(body, j) {
-    if (!remoteAgents) return { problem: "Shared browser mode isn't available here." };
-    if (j.invite.role !== "drive") return { problem: "This code is for watching only." };
-    return remoteAgents.file({ key: joinerKey(j) }, body);
-  }
+  // A joiner's own agent at work here and its answers back (liveview/agent-relay.mjs).
+  const agentRelay = createAgentRelay({ push, remoteAgents, getContext, idOf, crossesWhole: (p) => crossesWhole(p), personTab, joinerKey });
   // A tab whose picture may go to joiners: any web page, never the browser's own pages.
   const crossesWhole = (page) => /^(https?:|about:blank)/.test(page.url());
   // Tabs opening, closing and going elsewhere reach joiners at once, not on the next round
@@ -575,112 +516,6 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     broadcast("invites", { items: inviteItems(invites.list()) });
   });
 
-  // Light frames while the page moves (scrolling, animations), then one sharp still at the viewer's
-  // real pixel size once it settles, like a remote desktop. Smooth in motion, crisp at rest.
-  let settleTimer = null;
-  let frameSeq = 0;
-  function sharpenSoon(cdp) {
-    clearTimeout(settleTimer);
-    const seq = frameSeq;
-    settleTimer = setTimeout(async () => {
-      if (!viewers.size || shown?.cdp !== cdp) return; // the sharp still is for the owner's viewers
-      try {
-        const { data } = await cdp.send("Page.captureScreenshot", { format: "jpeg", quality: SHARP_QUALITY });
-        if (seq !== frameSeq || shown?.cdp !== cdp || !lastFrame) return; // the page moved again meanwhile
-        lastFrame = { img: data, w: lastFrame.w, h: lastFrame.h };
-        broadcast("frame", lastFrame);
-      } catch {}
-    }, SETTLE_MS);
-  }
-
-  // Shows a tab: its own CDP session and screencast. One switch at a time, so two callers (the
-  // follow tick and a tab click) never leave a session behind.
-  const wired = new WeakSet(); // tabs whose closing is watched
-  // Switches in progress: while one runs no tab is shown for a moment, which isn't "nothing shown"
-  // (follow() would otherwise pull the viewer back to Claude's tab mid-switch).
-  let switching = 0;
-  let casting = null; // the CDP session whose frames are taken (set before its cast starts)
-  const show = (page) => { switching++; return showQueue(() => showNow(page)).finally(() => { switching--; }); };
-  async function showNow(page) {
-    if (closed || shown?.page === page || hiddenFromLiveView(page.url())) return;
-    if (shown) {
-      const old = shown.cdp;
-      // Switching away from a person's own tab: its last picture goes with it.
-      if (personTab(shown.page)) { lastFrame = null; lastFrameFrom = null; }
-      shown = null;
-      casting = null;
-      await release(old);
-    }
-    const cdp = await page.context().newCDPSession(page);
-    casting = cdp;
-    try {
-      let lastAt = 0;
-      cdp.on("Page.screencastFrame", ({ data, metadata, sessionId }) => {
-        // The next frame comes once this one is acknowledged: paced to FRAME_EVERY_MS.
-        const wait = Math.max(0, FRAME_EVERY_MS - (Date.now() - lastAt));
-        lastAt = Date.now() + wait;
-        const ack = () => cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
-        if (wait) setTimeout(ack, wait).unref(); else ack();
-        // A frame still in flight from a session already released (a switch away): dropped.
-        if (casting !== cdp) return;
-        frameSeq++;
-        lastFrame = { img: data, w: metadata.deviceWidth, h: metadata.deviceHeight };
-        lastFrameFrom = page;
-        broadcast("frame", lastFrame);
-        sharpenSoon(cdp);
-      });
-      await bringTabForward(page);
-      // A clean, browser-like view: no classic scrollbars (scroll with the wheel or trackpad).
-      await cdp.send("Emulation.setScrollbarsHidden", { hidden: true }).catch(() => {});
-      await replayer.attach(cdp);
-      await replayer.startCast(cdp);
-    } catch (e) {
-      if (casting === cdp) casting = null;
-      await release(cdp);
-      throw e;
-    }
-    if (closed) { casting = null; return release(cdp); }
-    shown = { page, cdp };
-    if (!wired.has(page)) {
-      wired.add(page);
-      page.once("close", () => { if (lastFrameFrom === page) { lastFrame = null; lastFrameFrom = null; } if (shown?.page === page) { shown = null; casting = null; } if (watching()) follow(); });
-    }
-    broadcast("tabs", await tabsInfo());
-  }
-
-  // Follow the tab Claude is working in, whenever that changes. Between changes, the tab you
-  // picked in the viewer stays put.
-  async function follow() {
-    try {
-      const ctx = await getContext();
-      const url = await currentUrl();
-      if ((shown || switching) && url === followed) return;
-      followed = url;
-      // The browser's own pages are never shown; followedPage stays the agents' page (a chrome
-      // page is never listed, so no tab is marked as Claude's).
-      const at = ctx.pages().find((p) => p.url() === url);
-      const page = (at && !hiddenFromLiveView(at.url()) ? at : null) || shown?.page || ctx.pages().filter((p) => !hiddenFromLiveView(p.url()) && !personTab(p)).at(-1);
-      if (url) followedPage = at || page;
-      if (page) await show(page);
-    } catch (e) {
-      log("liveview follow", e?.message || e);
-    }
-  }
-
-  // Nobody watching: stop the page streams and give the real window its normal size back.
-  function stopIfIdle() {
-    if (watching() || !shown) return;
-    showQueue(async () => {
-      if (watching() || !shown) return;
-      const { cdp } = shown;
-      shown = null;
-      casting = null;
-      followed = undefined;
-      replayer.resetFit();
-      await release(cdp);
-    });
-  }
-
   // A person's clicks, typing and tab changes, from a viewer. who: their name for the others
   // (null: the owner). Only the owner may resize the shared page ("Fit to pane").
   const guestBudgets = new Map(); // invite id -> its input budget (inputBudget)
@@ -688,7 +523,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     if (route === "input") {
       // Each event checked (kinds, places inside the picture, modifiers, no clipboard for an invited
       // viewer); an invited viewer's input paced per invite.
-      const frame = lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null;
+      const frame = cast.state.lastFrame ? { w: cast.state.lastFrame.w, h: cast.state.lastFrame.h } : null;
       let batch = (Array.isArray(ev) ? ev : [ev]).slice(0, INPUT_BATCH_MAX).map((one) => readViewerInput(one, { frame, role })).filter(Boolean);
       if (role !== "owner" && inviteKey) {
         if (!guestBudgets.has(inviteKey)) guestBudgets.set(inviteKey, inputBudget());
@@ -696,15 +531,15 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       }
       if (!batch.length) return;
       return humanQueue(async () => {
-        if (role !== "owner" && personTab(shown?.page)) return; // a person's own tab: never a guest's input
+        if (role !== "owner" && personTab(cast.state.shown?.page)) return; // a person's own tab: never a guest's input
         // Only moving the pointer (or the wheel) changes nothing an agent's refs point at.
-        if (batch.some((one) => one?.type !== "viewport")) await onHumanInput(shown?.page || null, who, batch.some((one) => !["viewport", "wheel"].includes(one?.type) && !(one?.type === "mouse" && one.action === "mouseMoved")));
+        if (batch.some((one) => one?.type !== "viewport")) await onHumanInput(cast.state.shown?.page || null, who, batch.some((one) => !["viewport", "wheel"].includes(one?.type) && !(one?.type === "mouse" && one.action === "mouseMoved")));
         const done = onReplay(who);
-        try { for (const one of batch) await replayer.replay(shown, one, role).catch((e) => log("liveview input", e?.message || e)); } finally { done(); }
+        try { for (const one of batch) await replayer.replay(cast.state.shown, one, role).catch((e) => log("liveview input", e?.message || e)); } finally { done(); }
       });
     }
     return humanQueue(async () => {
-      await onHumanInput(shown?.page || null, who);
+      await onHumanInput(cast.state.shown?.page || null, who);
       const ctx = await getContext();
       if (ev.new) await show(await keepFocus(() => ctx.newPage()));
       else if (ev.close !== undefined) {
@@ -735,7 +570,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   // What the viewer's routes read, as each request comes (liveview/routes/viewer.mjs).
   const lv = {
     clients, viewers, owners, kinds, linkGuests, activity, approvals, joinHost, clickApprovals,
-    get shown() { return shown; }, get lastFrame() { return lastFrame; }, get lastFrameFrom() { return lastFrameFrom; },
+    get shown() { return cast.state.shown; }, get lastFrame() { return cast.state.lastFrame; }, get lastFrameFrom() { return cast.state.lastFrameFrom; },
     get status() { return status; }, get sessionInfo() { return sessionInfo; }, get devState() { return devState; },
     get board() { return board; }, get driving() { return driving; },
     captureOk, collaborationChanged, stopIfIdle, follow, tabsInfo, forGuest, ownerSession, collaborationNow, layoutNow,
@@ -796,7 +631,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
 
   // A joiner gone (left or removed): their agent here and their pictures stop.
   // What they said about their side's agents goes too.
-  async function stopJoinerKey(key) { agentOutbox.delete(key); remoteAgents?.stop(key); shared.onJoinerGone(key); await screens?.stopAll(`${key}|`); }
+  async function stopJoinerKey(key) { agentRelay.forget(key); remoteAgents?.stop(key); shared.onJoinerGone(key); await screens?.stopAll(`${key}|`); }
   const stopJoiner = (j) => stopJoinerKey(joinerKey(j));
   // Their helper died or lost the network (no pong, no reconnect): out like one who left, their
   // agent's tab turns released; a rejoin asks nothing new (the approval stands).
@@ -812,8 +647,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   }
   const joinerServer = createJoinerServer({
     key, invites, approvals, joiners, tunnelHost, onJoinRequest, log,
-    live: { tabsFor, applyTabs, screen, agent: remoteAgent, file: remoteFile,
-      stopScreens: stopJoiner, openStream: (j, conn) => { watchPages(); return push.open(j, conn).then(() => { resendAgent(joinerKey(j)); approvalShare?.opened(j); }).catch((e) => log("push", e?.message || e)); },
+    live: { tabsFor, applyTabs, screen, agent: agentRelay.remoteAgent, file: agentRelay.remoteFile,
+      stopScreens: stopJoiner, openStream: (j, conn) => { watchPages(); return push.open(j, conn).then(() => { agentRelay.resend(joinerKey(j)); approvalShare?.opened(j); }).catch((e) => log("push", e?.message || e)); },
       approval: (body, j) => (approvalShare ? approvalShare.answer(body, j) : { code: 404, body: { error: "Unknown request." } }), pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
   });
 
@@ -958,14 +793,13 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     close: () => {
       closed = true;
       clearInterval(timer);
-      clearTimeout(settleTimer);
       stopEnded(); stopApprovals(); stopRoles(); stopTimeline(); stopOutlines(); stopClickApprovals();
       for (const stop of stopTools) stop();
       server.close();
       for (const r of clients) r.end();
       joinerServer.close();
       push.close();
-      if (shown) { release(shown.cdp); shown = null; }
+      cast.close();
     },
   };
 }

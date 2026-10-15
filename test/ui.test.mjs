@@ -224,14 +224,14 @@ test("every visible page has a review fixture and a shot", () => {
   }
 });
 
-// ---- one event stream per origin (common.js helperStream) ----
+// ---- one event stream per origin (stream.js helperStream) ----
 const uiScripts = () => readdirSync(UI_ROOT, { withFileTypes: true }).filter((d) => d.isDirectory())
   .flatMap((d) => readdirSync(join(UI_ROOT, d.name)).filter((f) => f.endsWith(".js")).map((f) => join(UI_ROOT, d.name, f)))
-  .concat(readdirSync(UI_ROOT).filter((f) => f.endsWith(".js") && f !== "common.js").map((f) => join(UI_ROOT, f)));
+  .concat(readdirSync(UI_ROOT).filter((f) => f.endsWith(".js") && f !== "stream.js").map((f) => join(UI_ROOT, f)));
 
-test("only ui/common.js opens an event stream to the helper", () => {
-  const common = read(join(UI_ROOT, "common.js"));
-  assert.match(common, /new EventSource\(/, "common.js holds the one stream");
+test("only ui/stream.js opens an event stream to the helper", () => {
+  const stream = read(join(UI_ROOT, "stream.js"));
+  assert.match(stream, /new EventSource\(/, "stream.js holds the one stream");
   for (const f of uiScripts()) {
     // The code only: a comment may name the route the shared stream opens.
     const js = read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
@@ -269,10 +269,23 @@ test("own-stream events stay off the shared stream", async () => {
   assert.deepEqual(Object.keys(OWN_STREAM_EVENTS), ["capture"]);
   assert.deepEqual(OWN_STREAM_EVENTS.capture, ["capture"]);
   for (const names of Object.values(OWN_STREAM_EVENTS)) for (const n of names) assert.ok(!STREAM_EVENTS.includes(n), `${n} is in STREAM_EVENTS`);
-  const common = read(join(UI_ROOT, "common.js"));
-  assert.match(common, /if \(ownEvents\.length\) shared = false;/, "a kind with own events always gets its own stream");
-  assert.match(common, /es = openStream\(base, ownKind, \{ event: deliver, state: setState \}, ownEvents\);/, "only the page's own stream listens for them");
-  assert.equal([...common.matchAll(/ownEvents\)/g)].length, 1, "the shared stream (openHeld) never does");
+  const stream = read(join(UI_ROOT, "stream.js"));
+  assert.match(stream, /if \(ownEvents\.length\) shared = false;/, "a kind with own events always gets its own stream");
+  assert.match(stream, /es = openStream\(base, ownKind, \{ event: deliver, state: setState \}, ownEvents\);/, "only the page's own stream listens for them");
+  assert.equal([...stream.matchAll(/ownEvents\)/g)].length, 1, "the shared stream (openHeld) never does");
+});
+
+// common.js is a list of flat modules at the ui/ root: each is served to the live view, and none
+// spells the browser's own hosts (urls.js says them once; test/vocab.test.mjs checks common.js).
+test("common.js's parts are served and spell no host of the browser's own", async () => {
+  const { ASSET_FILES } = await import("../scripts/liveview/http.mjs");
+  const parts = [...read(join(UI_ROOT, "common.js")).matchAll(/^export \* from "\.\/([a-z-]+\.js)";$/gm)].map(([, f]) => f);
+  assert.ok(parts.length >= 9, `common.js names its parts (${parts})`);
+  for (const f of parts) {
+    assert.ok(Object.hasOwn(ASSET_FILES, f), `${f} is served to the live view`);
+    const code = read(join(UI_ROOT, f)).replace(/^\s*\/\/.*$/gm, "");
+    assert.equal(code.match(/chrome:\/\/pairbrowse|"pairbrowse\.top-chrome"|(HOST|host) = "pairbrowse"/)?.[0], undefined, f);
+  }
 });
 
 test("the strip's nav fragments never connect", () => {

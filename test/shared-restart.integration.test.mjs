@@ -4,6 +4,7 @@
 // code and no new approval, and their agent works in the host's browser again. Revoking ends it,
 // saved state and all. The sharing tunnel is skipped (PAIRBROWSE_TEST_TUNNEL=direct). Needs
 // PAIRBROWSE_TEST_RUNTIME.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

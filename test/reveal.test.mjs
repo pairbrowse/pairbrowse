@@ -1,5 +1,6 @@
 // Compact layouts (scripts/daemon/reveal.mjs): how the controls that unfold a folded search box or
 // menu are named to the agent. The page scan itself runs in a browser (narrow.integration.test.mjs).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { revealItem, revealNote, foldedLine, revealScan, REVEAL_MAX } from "../scripts/daemon/reveal.mjs";

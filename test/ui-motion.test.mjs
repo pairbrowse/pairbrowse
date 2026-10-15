@@ -2,6 +2,7 @@
 // one motion language from ui/tokens.css, feedback within 100 ms, focus into what opened and back
 // to the trigger, Escape closes the topmost. The sheet's tokens and rules are read as text; the
 // rest runs the pages in the harness (test/helpers/ui-page.mjs), one page at a time.
+import "./helpers/home.mjs";
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

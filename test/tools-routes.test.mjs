@@ -1,6 +1,7 @@
 // The Tools tab's routes (liveview.mjs, with daemon/tools.mjs and daemon/diagnostics.mjs): owner
 // only, files by id, never a path in an answer or event, the OS opener only for the stored file,
 // file identity checked before every action, and the diagnostics scrubbed.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";

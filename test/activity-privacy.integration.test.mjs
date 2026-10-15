@@ -1,6 +1,7 @@
 // What the session's activity log keeps on disk (activity.json): field names, never what was typed
 // or chosen, and addresses as origin and path only. Live: a real helper and browser
 // (PAIRBROWSE_TEST_RUNTIME), headless, on its default (kept) session.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

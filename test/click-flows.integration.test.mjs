@@ -2,6 +2,7 @@
 // refusal; a card checkout, a red delete button and a click the agent names "Send:" still ask.
 // A prompt is what the PreToolUse hook (scripts/guard.mjs decide) asks Claude Code's user about;
 // a refusal is the helper sending the call back.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";

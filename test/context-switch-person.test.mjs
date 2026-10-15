@@ -2,6 +2,7 @@
 // switcher, the new tab page's chips: POST pick while no picker shows, daemon/pick.mjs): the
 // answer comes at once, and the browser restarts on the other session after it went out, with no
 // picker tab. context.mjs switchForPerson.
+import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";

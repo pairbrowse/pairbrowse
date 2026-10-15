@@ -1,4 +1,5 @@
 // The browser's own pages (chrome://pairbrowse...): never an agent's to open, list or act in.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { navigationProblem, isChromePage, hiddenFromLiveView, CHROME_PAGE_RULE, CHROME_PAGE_ORIGINS } from "../scripts/policy.mjs";

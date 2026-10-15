@@ -2,6 +2,7 @@
 // masked (saved passwords, card numbers, sensitive fields) and which clicks need the user's OK.
 // Each property runs on thousands of generated inputs, including attacker-shaped ones.
 // Run with: npm ci && npm run test:fuzz
+import "../helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, realpathSync, rmSync } from "node:fs";

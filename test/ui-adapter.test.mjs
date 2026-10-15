@@ -4,6 +4,7 @@
 // FooObserverReceiver over an impl, receiver.$.bindNewPipeAndPassRemote() and .close(), TS
 // enums with reverse names and MIN_VALUE / MAX_VALUE, map replies as a Map). Also which pages are
 // the browser's own (common.js servedByBrowser) and how ui/pairbrowse-api.js installs it.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

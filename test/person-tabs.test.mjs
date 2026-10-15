@@ -1,6 +1,7 @@
 // The person's own tabs (a file they opened from Downloads): agents never read their address,
 // title or content, and never act in, select or close them (daemon/output.mjs hidePersonTabs,
 // daemon/serve.mjs tabRefusal, daemon/tools.mjs createPersonTabs).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hidePersonTabs, PERSON_TAB_RULE, PERSON_TAB_LINE } from "../scripts/daemon/output.mjs";

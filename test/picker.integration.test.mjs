@@ -1,5 +1,6 @@
 // The session picker: the browser's first tab asks the person which session, unless an agent
 // chose first. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";

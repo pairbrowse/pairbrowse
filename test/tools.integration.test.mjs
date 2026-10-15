@@ -1,6 +1,7 @@
 // The Tools tab's lists fed by a real helper: a hand-off from pairbrowse_status "you" and from a
 // run's handoff step, cleared by the agent's next click or the step ending; a download listed done
 // with the page it came from. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

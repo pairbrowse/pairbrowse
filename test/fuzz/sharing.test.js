@@ -2,6 +2,7 @@
 // join codes, tab addresses, activity, form values, a drive joiner's changes and the results a
 // joiner's agent reads. Each property runs on thousands of generated inputs, attacker-shaped too.
 // Run with: npm ci && npm run test:fuzz
+import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";

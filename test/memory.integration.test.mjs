@@ -1,6 +1,7 @@
 // Sessions that come and go leave nothing behind: each session's browser server listens for the
 // browser's end, and those listeners (and with them the whole server, about 1 MB) used to stay
 // for as long as the browser ran. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

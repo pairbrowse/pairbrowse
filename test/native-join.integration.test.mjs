@@ -6,6 +6,7 @@
 // Needs PAIRBROWSE_TEST_RUNTIME, PAIRBROWSE_TEST_ENGINE and PAIRBROWSE_TEST_EXECUTABLE naming a
 // build whose manifest declares its own pages; skipped otherwise. Headed: real windows open and
 // close on this screen.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

@@ -2,6 +2,7 @@
 // native build's small app with an identity of its own (app.pairbrowse.agent), so privacy
 // prompts the helper raises name PairBrowse and never use the browser's grants; elsewhere, or
 // without a native build, on Node as before.
+import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from "node:fs";

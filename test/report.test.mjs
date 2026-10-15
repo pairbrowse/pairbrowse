@@ -1,5 +1,6 @@
 // Report a problem (liveview/report.mjs): the report checked against the pages' schema, scrubbed
 // again, relayed over HTTPS without credentials, bounded in time, size and rate.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";

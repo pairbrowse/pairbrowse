@@ -2,6 +2,7 @@
 // and other parts ask for the browser all along (the live view, the side panel, new sessions):
 // none of them may start a browser in between, which would be left running unknown to the helper
 // (a second window, and the next start failing on its profile in use).
+import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";

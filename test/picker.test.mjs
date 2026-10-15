@@ -3,6 +3,7 @@
 // rely on, the script keeps its one timer; with the runtime, the page is rendered as the
 // extension serves it over a fake chrome.storage and a fake sessions.json, and checked for its
 // rows, the "More sessions" disclosure, the join form and the address question, by keyboard.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

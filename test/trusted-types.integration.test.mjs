@@ -1,5 +1,6 @@
 // Pages that require Trusted Types (YouTube, Google's apps) refuse plain strings as HTML: the page
 // script must still draw people's pointers and the agent's cursor there. Needs PAIRBROWSE_TEST_RUNTIME.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

@@ -1,6 +1,7 @@
 // The session picker is up in the browser's first tab. An agent that chooses the open session
 // (pairbrowse_session use) answers it for everyone: the picker goes, and the session's saved tabs
 // come back as they would after the person's pick.
+import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync, statSync, readdirSync } from "node:fs";

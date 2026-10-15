@@ -5,6 +5,7 @@
 // in-row questions, the switch question while agents are at work, start fresh and join, the open
 // session's line from the helper's event, the live list, the tab page's one interface (Session) and
 // the resting state without a helper. The common checks are in test/ui.test.mjs.
+import "./helpers/home.mjs";
 import { describe } from "node:test";
 import assert from "node:assert/strict";
 import { pageTest } from "./helpers/ui-page.mjs";

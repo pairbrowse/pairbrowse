@@ -2,6 +2,7 @@
 // scripts and the helper look up, the sections fold, the logo is untouched; with the runtime, the
 // page is rendered as the extension serves it, fed by a fake owner event stream, and checked for
 // what it shows, what a click sends and that a synthetic click sends nothing.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

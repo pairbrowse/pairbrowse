@@ -1,3 +1,4 @@
+import "./helpers/home.mjs";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createPresence, sentAgo, stateAgo } from "../scripts/daemon/presence.mjs";

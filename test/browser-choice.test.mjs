@@ -1,6 +1,7 @@
 // Which browser the helper launches (scripts/browser/choice.mjs): one pure choice of binary and
 // shell, never written back into config; the launch options built once (browser.mjs launchOptions)
 // for the helper and the install self-check; and "something to go back to" seen in either profile.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";

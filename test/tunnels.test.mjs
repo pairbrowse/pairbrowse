@@ -3,6 +3,7 @@
 // it, credentials kept out of the command line and of everything logged or quoted, a plain
 // message when the program is missing or turns the credentials down, and one connection
 // started again on its address when it ends.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync } from "node:fs";

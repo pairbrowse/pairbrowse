@@ -1,6 +1,7 @@
 // The session card's routes (POST session: rename and save) over the live view, and the helper's
 // own rename and save of the open session (scripts/daemon/context.mjs renameCurrent, saveTabs)
 // with a fake browser in a throwaway home.
+import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";

@@ -3,6 +3,7 @@
 // fetched with the owner key for the visible cards and released when scrolled away or hidden,
 // notes, the card menu (pin, delete in words), the keyboard, and the off state. The common checks
 // stay in test/ui.test.mjs.
+import "./helpers/home.mjs";
 import assert from "node:assert/strict";
 import { pageTest } from "./helpers/ui-page.mjs";
 

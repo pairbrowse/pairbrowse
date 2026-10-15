@@ -1,5 +1,6 @@
 // Recording the browser (daemon/recorder.mjs): starting, following agents, and saving the file the
 // browser encoded, piece by piece, under a new name in Downloads.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync, readdirSync, statSync, rmSync } from "node:fs";

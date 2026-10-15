@@ -1,5 +1,6 @@
 // The goal log the helper keeps by itself (scripts/daemon/journal.mjs): fake bar activities in,
 // a run file in run_save's shape out; a run_save takes it over; finished closes it.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";

@@ -1,6 +1,7 @@
 // One call can't hold the shared queue forever: past the cap (PAIRBROWSE_TURN_MAX_MS) the helper
 // answers it, resets the browser and lets the next agent go on. Live: a real helper and browser
 // (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

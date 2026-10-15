@@ -5,6 +5,7 @@
 // rail and the hidden dock, the collapse and expand buttons, and the request count. The common
 // checks stay in test/ui.test.mjs; the extension host (no shim) is covered by its own scenario
 // here (native: false) and by test/right.test.mjs (fake chrome).
+import "./helpers/home.mjs";
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

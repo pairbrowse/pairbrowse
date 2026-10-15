@@ -2,6 +2,7 @@
 // pointer move and carried by the ones after (most libraries), and an HTML5 drag-and-drop card.
 // The main frame's snapshot refs read plain after navigations; a frame's keep its number. Live:
 // a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

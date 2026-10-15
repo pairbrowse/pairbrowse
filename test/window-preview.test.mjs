@@ -1,5 +1,6 @@
 // The window preview (scripts/dev/window-preview.mjs), a dev tool: its geometry and scene always;
 // with PAIRBROWSE_TEST_RUNTIME, two real runs (default; --rail --reduced-motion) and their outputs.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

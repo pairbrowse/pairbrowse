@@ -4,6 +4,7 @@
 // and motion. The framed session switcher is the left dock's (its Sessions row,
 // test/ui-left.test.mjs); the strip has none. The common checks (CSP, names, Tab ring, hidden
 // timers, reduced motion) are in test/ui.test.mjs.
+import "./helpers/home.mjs";
 import assert from "node:assert/strict";
 import { describe } from "node:test";
 import { pageTest } from "./helpers/ui-page.mjs";

@@ -5,6 +5,7 @@
 // (PAIRBROWSE_TEST_TUNNEL=direct). Needs PAIRBROWSE_TEST_RUNTIME. PAIRBROWSE_TEST_EXECUTABLE runs
 // both sides on another build; PAIRBROWSE_TEST_JOINER_EXECUTABLE runs the joiner on its own build
 // (a native host with an extension joiner, or the other way round).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

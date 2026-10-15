@@ -11,6 +11,7 @@
 // Part 1, static (every machine): every ui/<page>/index.html and the names its scripts set.
 // Part 2, rendered (PAIRBROWSE_TEST_RUNTIME): every review shot and every page over the default
 // fixtures, with every hidden element shown, read through the accessibility tree Chromium builds.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";

@@ -2,6 +2,7 @@
 // mode click takes the control named so, not one that only contains the name; the dock's "your
 // turn" goes with the bar's; a dismissed dialog says so. Live: a real helper and browser
 // (PAIRBROWSE_TEST_RUNTIME), headless.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";

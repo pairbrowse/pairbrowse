@@ -1,5 +1,6 @@
 // The capture page's channel (liveview/capture.mjs) and where tabs are captured
 // (daemon/capture.mjs): the extension, the browser's own capture page, or nowhere.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCaptureChannel, CAPTURE_WAITING_MAX, CAPTURE_SDP_MAX, CAPTURE_ERROR_MAX } from "../scripts/liveview/capture.mjs";

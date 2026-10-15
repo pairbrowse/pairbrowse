@@ -6,6 +6,7 @@
 // in the host's tab, and the host starts a replacement tunnel. Needs the network, cloudflared and
 // PAIRBROWSE_TEST_RUNTIME; opt in with PAIRBROWSE_TEST_REAL_TUNNEL=1. Cloudflare allows only so
 // many fresh Quick Tunnels from one machine in a while (this test opens three): run it sparingly.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

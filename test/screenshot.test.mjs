@@ -2,6 +2,7 @@
 // page: the password reading runs only with saved passwords, an unchanged picture isn't sent
 // twice, a stale picture (another address, a scroll, a closed tab, too old) can't be clicked on,
 // the debugger session is let go every time, and nothing of a participant or a tab stays.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createScreenshots } from "../scripts/daemon/screenshot.mjs";

@@ -3,6 +3,7 @@
 // tunnel is skipped with PAIRBROWSE_TEST_TUNNEL=direct). The tab strip is read and moved through
 // the side panel extension's worker, the same way the helpers mirror it, by a tool that exists only
 // with PAIRBROWSE_TEST_TAB_ORDER=1. Needs PAIRBROWSE_TEST_RUNTIME.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

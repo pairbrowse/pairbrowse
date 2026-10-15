@@ -1,5 +1,6 @@
 // Shared browser mode's checks: the picture's size, what a joiner's input may be, the files a
 // joiner's agent may name, and whose a field is after a joiner typed in it.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { frameFor, readInput, createScreenShare } from "../scripts/daemon/screenshare.mjs";

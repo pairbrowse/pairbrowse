@@ -3,6 +3,7 @@
 // in the terminal, ×), answered only by a person's own click; and end to end, with the helper, its
 // PermissionRequest hook (scripts/guard.mjs, as Claude Code runs it) and a Codex session. Needs
 // PAIRBROWSE_TEST_RUNTIME.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

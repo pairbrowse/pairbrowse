@@ -2,6 +2,7 @@
 // clicking pause agents, moving and scrolling never; where each person reads shows on the other
 // side; a payment form's submit is a final action by structure; card values never leave a stale
 // or echoed value. Pure parts here; the in-page parts in a headless browser (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

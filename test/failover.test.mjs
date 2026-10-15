@@ -1,6 +1,7 @@
 // A sharing tunnel dies with a standby up: the joiner moves to the other address by itself, with
 // the same key, and stays "in"; the host never counts them as lost. Two TCP proxies to the guest
 // port stand in for the two tunnels (a real tunnel is just that: a public address to that port).
+import "./helpers/home.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";

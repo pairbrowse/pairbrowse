@@ -2,6 +2,7 @@
 // styles itself. hud.js and record.js carry the same values inline; this keeps every literal color
 // in those files and the page sheets equal to a sheet value or a participant color, and checks
 // WCAG AA contrast for the text colors in both schemes.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";

@@ -3,6 +3,7 @@
 // Delete), GET invites.json and POST invite { op: "revoke" }, and POST report. Each is the owner's
 // alone (invite links 403, the join-code port never), bodies are bounded and checked, and open
 // pages hear what changed.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";

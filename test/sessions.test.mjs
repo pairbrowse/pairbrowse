@@ -1,3 +1,4 @@
+import "./helpers/home.mjs";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";

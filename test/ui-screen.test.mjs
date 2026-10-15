@@ -4,6 +4,7 @@
 // dialog; the Live dot is the one pulse, still under reduced motion. Driven through
 // window.pbScreen, as the joiner's helper drives it. The common checks stay in test/ui.test.mjs.
 // Built as test/ui-panel.test.mjs's pageTest is, with a name for each case.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";

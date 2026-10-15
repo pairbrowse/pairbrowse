@@ -2,6 +2,7 @@
 // show or are spoken (placeholder, title, aria-*, alt, value, label), CSS content and the strings in
 // the scripts that reach the page. chrome:// addresses and code identifiers (chrome.storage,
 // chromeMediaSource, the "chromium" engine value, the top-chrome host) are not text and pass.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";

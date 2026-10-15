@@ -1,6 +1,7 @@
 // The PairBrowse browser opened by hand hands its bare start to the helper (plans/555 item 6):
 // the record it finds the opener by, the opener itself (scripts/open.mjs) against a helper's
 // socket, the helper's answer, and the context's openByHand.
+import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";

@@ -9,6 +9,7 @@
 // reaches every control with the 2 px --accent ring; nothing ticks while hidden; nothing moves
 // under reduced motion.
 // A page subset adds its own test/ui-<page>.test.mjs (test/ui-right.test.mjs is the template).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";

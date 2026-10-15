@@ -1,6 +1,7 @@
 // Read-only previews (daemon/preview.mjs): textutil's HTML rebuilt from an allowlist, the page
 // under a CSP that runs no script and loads nothing, plain text escaped, and the previews folder
 // emptied without following a symlink.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, symlinkSync, realpathSync } from "node:fs";

@@ -1,6 +1,7 @@
 // The Page tab's outline (scripts/daemon/outline.mjs): the whole-page snapshot an agent last got
 // for a tab, kept in memory from the result's text, never asked of the page; served to the owner
 // only (GET outline.json, the `outline` event without the text), dropped when the tab closes.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";

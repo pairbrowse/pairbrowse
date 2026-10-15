@@ -1,3 +1,4 @@
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSession, redact, readEntries, readMessage } from "../scripts/daemon/session.mjs";

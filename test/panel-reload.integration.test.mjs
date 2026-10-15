@@ -5,6 +5,7 @@
 // profile, and the worker is the current one, with the live view handed over and join
 // notifications with their buttons. Then a worker found old while running: its record goes, so
 // the next start loads it anew. Headless, in a temporary home. Needs PAIRBROWSE_TEST_RUNTIME.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

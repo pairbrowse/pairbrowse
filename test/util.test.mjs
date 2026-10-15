@@ -1,4 +1,5 @@
 // Shared helpers (scripts/util.mjs) with behaviour worth a check of their own.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pageLoaded } from "../scripts/util.mjs";

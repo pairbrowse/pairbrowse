@@ -1,5 +1,6 @@
 // One copy of each shared truth (ui/vocab.js, ui/urls.js, ui/limits.js): the helper, the page
 // script and the pages read the same values, and the live view serves every module its page imports.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

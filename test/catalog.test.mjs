@@ -1,6 +1,7 @@
 // The tool catalog (scripts/tools/catalog.mjs): every tool's definition and rules in one place,
 // read by serve.mjs, guard.mjs, policy.mjs, launch.mjs, runs.mjs and validate-skills.mjs.
 // (shared-browser.integration checks the live tools/list against it.)
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

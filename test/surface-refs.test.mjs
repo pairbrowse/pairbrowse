@@ -1,6 +1,7 @@
 // The surface references (scripts/dev/surface-refs.mjs), a dev tool: its names and the native
 // harness's surfaces always; with PAIRBROWSE_TEST_RUNTIME, a real run: every named reference
 // written at its size, references.json saying the same, and every sampled color on its token.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

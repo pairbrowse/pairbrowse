@@ -1,6 +1,7 @@
 // A helper the test harness didn't start (its home outside the temp folder, as an installed one's)
 // drops PAIRBROWSE_TEST_* from its environment: PAIRBROWSE_TEST_APPROVAL=1 handed down by a
 // project's settings never adds the tool that answers approval cards as a person.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync } from "node:fs";

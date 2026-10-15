@@ -1,5 +1,6 @@
 // The session's timeline (scripts/daemon/timeline.mjs): the pictures already sent to agents,
 // kept per session in a folder, capped with pins kept, notes, deletion, off by one switch.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";

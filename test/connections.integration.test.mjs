@@ -3,6 +3,7 @@
 // Live: real helpers and headless browsers in temporary homes (PAIRBROWSE_TEST_RUNTIME); join
 // codes skip the tunnel (PAIRBROWSE_TEST_TUNNEL=direct) and go through a proxy here that can cut
 // or stall the joiner's connection.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";

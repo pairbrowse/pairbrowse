@@ -1,3 +1,4 @@
+import "./helpers/home.mjs";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { shareableUrl, stateForJoiner, readOps, createMirror, createFormSync, createOrderSync, shareFields, readForm, formForJoiner, readPointers, sameOrder, tabWho, personColor, PERSON_SHOWN_MS, TABS_MAX, OPS_MAX, FIELDS_MAX, VALUE_MAX } from "../scripts/tabsync.mjs";

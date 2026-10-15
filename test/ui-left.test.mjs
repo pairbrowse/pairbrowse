@@ -4,6 +4,7 @@
 // Sessions row (the one door to sessions: the open session's name, the switcher, "All sessions…"),
 // the collapse and expand buttons at the foot (native and over the helper's route) and the keyboard.
 // The common checks are in test/ui.test.mjs.
+import "./helpers/home.mjs";
 import { describe } from "node:test";
 import assert from "node:assert/strict";
 import { pageTest } from "./helpers/ui-page.mjs";

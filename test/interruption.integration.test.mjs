@@ -1,6 +1,7 @@
 // The browser is killed under a session (a crash): the call in flight is answered, nothing of the
 // session's pictures stays, the helper lives on and the next action reopens the browser with the
 // tabs back. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

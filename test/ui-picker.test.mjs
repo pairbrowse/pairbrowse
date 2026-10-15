@@ -4,6 +4,7 @@
 // refresh paused while hidden and run at once on return, the keyboard path and reduced motion.
 // The common checks (names, focus ring, nothing while hidden, CSP) stay in test/ui.test.mjs;
 // test/picker.test.mjs keeps pinning the markup, the sheet's rules and the extension host.
+import "./helpers/home.mjs";
 import assert from "node:assert/strict";
 import { pageTest } from "./helpers/ui-page.mjs";
 

@@ -2,6 +2,7 @@
 // typed, what gets masked, which addresses the browser opens and who reaches the live view.
 // Each property runs on thousands of generated inputs, including attacker-shaped ones.
 // Run with: npm ci && npm run test:fuzz
+import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";

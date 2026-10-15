@@ -5,6 +5,7 @@
 // answered them. Part 2 renders the page over the fake helper and the window.pairbrowse shim
 // (PAIRBROWSE_TEST_RUNTIME): the hello, a share's offer and a recording, end to end in a browser,
 // with tab capture stood in by a canvas.
+import "./helpers/home.mjs";
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

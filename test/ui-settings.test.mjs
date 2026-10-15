@@ -2,6 +2,7 @@
 // and writes through a real owner route (config, profile, joinhost, invite, diagnostics/report,
 // report), and the config and invites events keep it current; saved sessions link to the sessions page.
 // The common checks (CSP, names, Tab ring, hidden, reduced motion) stay in test/ui.test.mjs.
+import "./helpers/home.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { pageTest } from "./helpers/ui-page.mjs";

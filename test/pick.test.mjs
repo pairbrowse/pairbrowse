@@ -1,6 +1,7 @@
 // The person's session choices from PairBrowse's own pages (daemon/pick.mjs): the picker at start,
 // the switcher and the new tab page's chips while a session is open, Settings' Delete, and the
 // answer to a join code's address question.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createPick, readPick } from "../scripts/daemon/pick.mjs";

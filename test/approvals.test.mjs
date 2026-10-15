@@ -1,3 +1,4 @@
+import "./helpers/home.mjs";
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";

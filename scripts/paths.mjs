@@ -8,6 +8,12 @@ import { writeJsonAtomic } from "./util.mjs";
 process.umask(0o077);
 
 export const HOME = process.env.PAIRBROWSE_HOME || join(homedir(), ".pairbrowse");
+// Under the test runner (node --test sets NODE_TEST_CONTEXT, which the processes a test starts
+// inherit) the person's own home is never used: a test without a home of its own stops here.
+// The account's own home (userInfo reads the system's record; a test may point $HOME elsewhere).
+if (process.env.NODE_TEST_CONTEXT && HOME === join(userInfo().homedir, ".pairbrowse")) {
+  throw new Error("A test reached the real ~/.pairbrowse: set PAIRBROWSE_HOME to a folder under the temp folder first (test/helpers/home.mjs).");
+}
 
 export const paths = {
   home: HOME,

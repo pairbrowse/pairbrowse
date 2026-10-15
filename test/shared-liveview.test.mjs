@@ -1,3 +1,4 @@
+import "./helpers/home.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { startLiveView, createInvites } from "../scripts/liveview.mjs";

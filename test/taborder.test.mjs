@@ -1,5 +1,6 @@
 // The tab order in a PairBrowse build with its own pages (daemon/taborder.mjs, strip source):
 // read from the tab strip's report, never from the side panel's worker.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTabOrder } from "../scripts/daemon/taborder.mjs";

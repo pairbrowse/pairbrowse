@@ -1,6 +1,7 @@
 // Agent and people colors: an agent's is its app's (Claude Code orange, Codex purple, Gemini blue),
 // a second agent of the same app takes a fallback no agent here has, and people's colors are never
 // near any agent's, so a tag's color alone says agent or person.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

@@ -2,6 +2,7 @@
 // with (key, code, key code) and whatever modifiers, nothing that reads or writes the host's
 // clipboard reaches the page.
 // Run with: npm ci && npm run test:fuzz
+import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";

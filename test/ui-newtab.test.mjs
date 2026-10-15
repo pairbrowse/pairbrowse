@@ -2,6 +2,7 @@
 // helper's sessions.json (one press: the pick itself; while agents are at work the helper's 428
 // question is asked in the page, then the same pick goes again with confirm: true). The common checks (clean
 // console, names, Tab ring, hidden, reduced motion) stay in test/ui.test.mjs.
+import "./helpers/home.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import http from "node:http";

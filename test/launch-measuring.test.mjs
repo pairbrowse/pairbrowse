@@ -1,6 +1,7 @@
 // The first launch of a browser version on a Mac measures it once (native-engine.mjs MEASURING),
 // up to a minute with no browser to show anything: the live view's status line and a notification
 // say so, and the status line goes back to the badge when the launch ends.
+import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";

@@ -1,5 +1,6 @@
 // Fast mode's scroll step: the page glides down with the agent's cursor on it, and the agent's
 // wheel never counts as a person scrolling. Needs PAIRBROWSE_TEST_RUNTIME.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

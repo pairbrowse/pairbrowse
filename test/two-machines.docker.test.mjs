@@ -4,6 +4,7 @@
 // agent of the joiner's starts on the host tab the joiner looks at (or looked at last), not the first free one, and its
 // "release" frees that tab in the host's browser at once. Needs Docker, the network,
 // PAIRBROWSE_TEST_RUNTIME and PAIRBROWSE_TEST_DOCKER=1.
+import "./helpers/home.mjs";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";

@@ -1,6 +1,7 @@
 // Agents wait while a sharing connection switches (scripts/daemon/linkwait.mjs), on both sides:
 // the joiner's call (follow.mjs: the relay's `switching`) and the host's tab tools (serve.mjs:
 // the live view's `reconnecting()`), with fakes standing in for either.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { waitForLink, waitedLine, NOTE_AFTER_MS } from "../scripts/daemon/linkwait.mjs";

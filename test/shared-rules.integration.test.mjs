@@ -4,6 +4,7 @@
 // person reads crosses; a payment form's "Submit order" is a final action by structure; a card
 // number replacing a plain value leaves no stale value and echoes nothing. Like
 // join.integration.test.mjs: PAIRBROWSE_TEST_RUNTIME, Patchright, no tunnel.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

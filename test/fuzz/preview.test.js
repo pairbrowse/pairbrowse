@@ -2,6 +2,7 @@
 // textutil hands over, the rebuilt body holds only allowlisted tags and attributes, no link or
 // event handler, no raw "<" in its text, and the page's <head> starts with the CSP meta.
 // Run with: npm ci && npm run test:fuzz
+import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";

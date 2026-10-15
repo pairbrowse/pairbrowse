@@ -3,6 +3,7 @@
 // clearly unfolds what it looks for, never a form's own answers or a submit; browser_find and a
 // narrow page's snapshot name the folded controls with their refs. The same pages wide need none
 // of it. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME), headless.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

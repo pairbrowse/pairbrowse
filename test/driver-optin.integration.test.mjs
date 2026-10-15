@@ -2,6 +2,7 @@
 // stays an explicit opt-in: a real helper launches with it, clicks and reads a page, and says
 // nothing of a fallback (that note is only for a Node.js too old for Patchright).
 // Live: PAIRBROWSE_TEST_RUNTIME.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

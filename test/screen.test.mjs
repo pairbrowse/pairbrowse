@@ -1,6 +1,7 @@
 // The joiner's picture page (shared browser mode, ui/screen/): what the
 // person sees while the pictures stop coming because the connection to the host is moving to
 // another address.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

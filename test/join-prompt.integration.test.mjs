@@ -3,6 +3,7 @@
 // with a host helper and a joiner's (PAIRBROWSE_TEST_TUNNEL=direct, as in
 // join.integration.test.mjs): the bar while the browser has the focus, else a notification with
 // Allow / Deny, one at a time. Needs PAIRBROWSE_TEST_RUNTIME.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

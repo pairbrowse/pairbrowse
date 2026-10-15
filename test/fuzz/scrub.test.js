@@ -1,6 +1,7 @@
 // Property-based fuzzing of the diagnostics scrub (daemon/diagnostics.mjs): whatever surrounds
 // them, the home folder, a key, a full address and a saved secret never survive it.
 // Run with: npm ci && npm run test:fuzz
+import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";

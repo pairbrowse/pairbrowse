@@ -1,4 +1,5 @@
 // The agent names on the tab strip (daemon/tablabels.mjs): short, one per tab, gone when it leaves.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { shortLabel, createTabLabels } from "../scripts/daemon/tablabels.mjs";

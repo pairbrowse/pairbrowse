@@ -3,6 +3,7 @@
 // PAIRBROWSE_TEST_EXECUTABLE runs it on another build (the PairBrowse browser, a native build with
 // its capture page); PAIRBROWSE_TEST_JOINER_EXECUTABLE is taken as that build too when only it is
 // set (the acceptance matrix sets the native build there).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

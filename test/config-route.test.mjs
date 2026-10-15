@@ -1,6 +1,7 @@
 // The browser's Settings page's routes (GET config.json, POST config; liveview.mjs over
 // liveview/settings.mjs): the owner's only, three fields of config.json and nothing else, each
 // validated, written through a temp file and a rename, applied to the running config at once.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";

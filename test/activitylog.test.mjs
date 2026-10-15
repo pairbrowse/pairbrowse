@@ -1,6 +1,7 @@
 // The session's activity log (daemon/activitylog.mjs) and GET activity.json (liveview.mjs): bounds,
 // paging, masking, the owner-only file (a rename moves it, deleting the session removes it), a
 // clean session in memory only, and the route's rights.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";

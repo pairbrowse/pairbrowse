@@ -2,6 +2,7 @@
 // that only a person's armed click answers. The data contract is approve.js's header; the two
 // click items come from test/fixtures/ui-approve.json (its review copy is scripts/dev/look/approve.json,
 // kept equal by test/ui.test.mjs). The common checks stay in test/ui.test.mjs.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

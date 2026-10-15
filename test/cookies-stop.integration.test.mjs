@@ -3,6 +3,7 @@
 // exit: the helper closes the browser cleanly on SIGTERM, SIGINT and a session switch, and only
 // then exits (daemon.mjs shutdown, context.mjs close and switchTo). Live: a real helper and
 // browser (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";

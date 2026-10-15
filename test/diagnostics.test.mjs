@@ -1,5 +1,6 @@
 // The Tools tab's diagnostics (daemon/diagnostics.mjs): the scrub every line goes through, the
 // helper's last error lines read from the log's tail only, and the plain-text report.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";

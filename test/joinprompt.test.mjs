@@ -1,5 +1,6 @@
 // A join request's alert, the helper side (daemon/joinprompt.mjs): the bottom bar or a
 // notification (one at a time), where the bar asks, and which answers count.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApprovals, newJoinerId } from "../scripts/join.mjs";

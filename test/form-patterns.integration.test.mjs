@@ -3,6 +3,7 @@
 // labels in another language, fields inside a closed section, a value a script rewrites late, a
 // date the field shows its own way, and a styled dropdown on a big page that renames itself.
 // Every check reads the values the page really holds. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

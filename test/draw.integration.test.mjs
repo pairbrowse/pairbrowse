@@ -1,6 +1,7 @@
 // A drawn stroke lands where it's meant to: pressed at its first point, through the others, let go
 // at the last, at a drawing pace. Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME); with
 // PAIRBROWSE_TEST_NATIVE=<PairBrowse browser> the native one, with its humanized mouse.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

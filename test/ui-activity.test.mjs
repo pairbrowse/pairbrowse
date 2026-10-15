@@ -7,6 +7,7 @@
 // open, "Show earlier" for the next, merged with the stream's lines without duplicates; a helper
 // without the route); the empty state; markup in a line stays text; the tab page's one interface
 // (Session); the resting state without a helper. The common checks are in test/ui.test.mjs.
+import "./helpers/home.mjs";
 import { describe } from "node:test";
 import assert from "node:assert/strict";
 import { pageTest } from "./helpers/ui-page.mjs";

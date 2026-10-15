@@ -1,6 +1,7 @@
 // Fast mode on forms as popular sites build them: a form embedded in a frame, a styled dropdown
 // whose own input is hidden, a styled checkbox. A payment provider's card frame is left alone.
 // Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";

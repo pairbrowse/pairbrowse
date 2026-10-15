@@ -3,7 +3,6 @@
    Spacing (545): row highlights, cards and dividers stop --dock-gutter (8 px) from the dock's
    edges and their content --dock-inset (12 px) further in, so every icon, avatar and heading
    starts 20 px from the dock's outer edge. */
-* { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 /* The dock's inner side: 1 px --edge from the nav row to the bottom (DESIGN.md B3), open and rail;
    none when hidden. */
@@ -104,7 +103,6 @@ li[data-state="idle"] .dot { background: var(--muted); }
 .gear svg { width: 20px; height: 20px; }
 .gear:hover { background: var(--hover); color: var(--ink); }
 
-.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 .add:focus-visible { box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--glow-focus); }
 /* Focus keeps the active row's own edge and light first, then the halo. */

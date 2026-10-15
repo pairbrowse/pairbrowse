@@ -7,6 +7,8 @@
 // the page is first visible; while hidden it fetches nothing and holds no picture.
 import { $, el, shortClock, helperStream, enter, leave, busy } from "../common.js";
 import { DRIVING_MS } from "../limits.js";
+import { hasBubbles, anchorRect, reopenGuard } from "../bubbles.js";
+import { followHelper, helperAddress, postJson, UNREACHABLE } from "../helper.js";
 
 const PITCH = 114; // a card (104 px) and its gap (10 px)
 const PAD = 15; // the strip's left padding
@@ -38,7 +40,6 @@ if (PICTURE) { document.body.dataset.mode = "picture"; $("picture").hidden = fal
 
 const strip = $("strip"), list = $("cards"), addLi = $("add"), addBtn = $("add-btn"), form = $("note-form"), note = $("note"), menu = $("menu");
 const visible = () => document.visibilityState === "visible";
-const post = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 const say = (text) => { $("said").textContent = text; };
 
 // ---- what the helper says ----
@@ -76,7 +77,7 @@ async function load() {
   if (!body || !Array.isArray(body.cards)) {
     document.body.dataset.state = "error";
     addLi.hidden = true;
-    showLine("Couldn't reach PairBrowse.");
+    showLine(UNREACHABLE);
     return;
   }
   const seen = new Set();
@@ -158,7 +159,7 @@ function node(card) {
   // aria-current and the roving tabindex. The More button is its sibling, not inside it, and roves
   // with the face: only the focused card's face and More are Tab stops.
   const face = el("button", { className: "face", type: "button", tabIndex: -1 }, thumb, el("span", { className: "time" }), el("span", { className: "cap" }));
-  if (hasBubbles() && !card.note) { face.setAttribute("aria-haspopup", "dialog"); face.setAttribute("aria-expanded", "false"); }
+  if (hasBubbles(pb) && !card.note) { face.setAttribute("aria-haspopup", "dialog"); face.setAttribute("aria-expanded", "false"); }
   const li = el("li", { className: "card" }, face, el("span", { className: "pin-chip", hidden: true, textContent: "Pinned" }), pill, more);
   li.setAttribute("role", "listitem");
   li.dataset.id = card.id;
@@ -382,16 +383,15 @@ function focusStop(target) {
 function show(id) {
   // A note has no picture to show (the helper answers 409): nothing to ask for.
   if (cards.find((c) => c.id === id)?.note === true) return;
-  if (hasBubbles()) return togglePicture(id);
+  if (hasBubbles(pb)) return togglePicture(id);
   // The helper's show route (the right dock shows the picture); a 404 from a helper without it is
   // silent and nothing is marked shown; another failure says so under the cards. The agent panel opens first when it is not (Part H).
-  const pb = window.pairbrowse;
   if (pb) {
     pb.layout.get().then(({ state }) => {
       if (state && state.right !== pb.DockState.kOpen) return pb.layout.set({ ...state, right: pb.DockState.kOpen });
     }).catch(() => {});
   }
-  if (base) post(base + `timeline/${id}/show`, {}).then((r) => { if (r.ok) setShown(id); else if (r.status !== 404) problem("Couldn't show it in the agent panel."); }).catch(() => problem("Couldn't reach PairBrowse."));
+  if (base) postJson(base + `timeline/${id}/show`, {}).then((r) => { if (r.ok) setShown(id); else if (r.status !== 404) problem("Couldn't show it in the agent panel."); }).catch(() => problem(UNREACHABLE));
 }
 // The picture shows large in another part of the window (the agent panel) until 530's bubble can
 // show it here: the card says so where it was clicked, a ring on it and a line under it, until
@@ -410,15 +410,11 @@ function setShown(id) {
 
 // ---- the picture in the browser's bubble above its card (530 E1, E2 B3) ----
 const pb = window.pairbrowse || null;
-const hasBubbles = () => typeof pb?.bubbles?.open === "function";
 const PICTURE_KIND = Number.isInteger(pb?.BubbleKind?.kPicture) ? pb.BubbleKind.kPicture : 2;
-// A click outside closes the bubble before that click lands: on the same card's face it is that
-// close, not a new open (OnClosed, not by Escape, this recently; a timestamp, no timer).
-const REOPEN_MS = 400;
+// A click outside that lands on the same card's face is the bubble's close, not a new open (bubbles.js).
+const guard = reopenGuard();
 let pictureOpen = null; // the card whose picture the bubble shows
-let lastClosed = { id: null, at: -Infinity };
 let staleCloses = 0; // a bubble replaced by another: its OnClosed still comes, once
-let selfClosed = false; // closed by this page (a second click on its card): no guard then
 let observing = false;
 function observePicture() {
   if (observing) return;
@@ -430,9 +426,8 @@ function observePicture() {
       const id = pictureOpen;
       pictureOpen = null;
       if (id) nodes.get(id)?.querySelector(".face")?.setAttribute("aria-expanded", "false");
-      const mine = selfClosed;
-      selfClosed = false;
-      if (!byEscape) { if (!mine) lastClosed = { id, at: performance.now() }; return; }
+      guard.closed(id, byEscape);
+      if (!byEscape) return;
       // Escape, the bubble's x or a delete there: the focus comes back to the card (or, deleted, the next).
       const face = faceOf(nodes.get(id));
       if (face) focusStop(face);
@@ -440,17 +435,10 @@ function observePicture() {
     },
   });
 }
-// The face's box in this page's CSS pixels, rounded outward and kept inside the page.
-function anchorRect(node) {
-  const r = node.getBoundingClientRect();
-  const x = Math.max(0, Math.floor(r.left)), y = Math.max(0, Math.floor(r.top));
-  const right = Math.min(window.innerWidth, Math.ceil(r.right)), bottom = Math.min(window.innerHeight, Math.ceil(r.bottom));
-  return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
-}
 async function togglePicture(id) {
   observePicture();
   if (pictureOpen === id) { closePicture(); return; }
-  if (lastClosed.id === id && performance.now() - lastClosed.at < REOPEN_MS) return;
+  if (guard.blocked(id)) return;
   const face = faceOf(nodes.get(id));
   if (!face) return;
   if (pictureOpen) { nodes.get(pictureOpen)?.querySelector(".face")?.setAttribute("aria-expanded", "false"); staleCloses++; }
@@ -462,7 +450,7 @@ async function togglePicture(id) {
 }
 function closePicture() {
   if (!pictureOpen) return;
-  selfClosed = true;
+  guard.closing(pictureOpen);
   pb.bubbles.close(PICTURE_KIND).catch(() => {});
 }
 
@@ -573,11 +561,11 @@ menu.addEventListener("keydown", (e) => {
 // The menu item pressed says busy while its request is out (tokens.css draws the bar after 300 ms).
 const pressed = () => (menu.contains(document.activeElement) ? document.activeElement : null);
 async function pin(card) {
-  const r = await busy(pressed(), () => post(base + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
+  const r = await busy(pressed(), () => postJson(base + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
   const body = await r?.json().catch(() => null);
   const next = r?.ok ? valid(body) : null;
   closeMenu(true);
-  if (!next) return problem(body?.error || "Couldn't reach PairBrowse.");
+  if (!next) return problem(body?.error || UNREACHABLE);
   replace(next);
   say(next.pinned ? "Pinned" : "Unpinned");
 }
@@ -628,12 +616,12 @@ note.addEventListener("keydown", async (e) => {
   const text = note.value.trim();
   if (!text || !base) return closeNote();
   note.disabled = true;
-  const r = await post(base + "timeline/note", { text }).catch(() => null);
+  const r = await postJson(base + "timeline/note", { text }).catch(() => null);
   const body = await r?.json().catch(() => null);
   note.disabled = false;
   const card = r?.ok ? valid(body) : null;
   closeNote();
-  if (!card) return problem(body?.error || "Couldn't reach PairBrowse.");
+  if (!card) return problem(body?.error || UNREACHABLE);
   if (cards.length === 0) showLine("");
   add(card); // once: the stream's add may have come first
   say("Note added");
@@ -643,26 +631,17 @@ note.addEventListener("keydown", async (e) => {
 
 // No helper to ask (the browser has no helper address, or neither the browser API nor the
 // extension's storage is there, or it has no address yet): the right dock's words, the resting
-// state; an address that arrives later connects (storage.onChanged below).
+// state; an address that arrives later connects (followHelper below).
 const NO_HELPER = "No agent connected";
 // No stream to wait for: the page says so in body[data-s] too (as the docks do), not "connecting".
 const noHelper = () => { document.body.dataset.s = "none"; showLine(NO_HELPER); };
 if (PICTURE) {
   // The picture bubble's page: only the browser opens it (its own host, its API).
   pictureMode();
-} else if (window.pairbrowse) {
-  // The browser build: the helper's address from the browser itself.
-  window.pairbrowse.session.helper().then(({ origin, key } = {}) => {
-    if (origin && key) connect(`${origin}/${key}/`);
-    else noHelper();
-  }).catch(noHelper);
 } else {
-  // The extension: the address the daemon handed to background.js, as the side panel reads it.
-  let area = null;
-  try { area = globalThis.chrome?.storage?.session || null; } catch {}
-  if (!area) noHelper();
-  else area.get("view").then(({ view }) => (view ? connect(view) : noHelper())).catch(noHelper);
-  try { globalThis.chrome?.storage?.onChanged?.addListener((changes, a) => { if (a === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
+  // The browser's helper, or the address the daemon handed to background.js (the extension), as
+  // the side panel reads it; each new one the extension's worker stores (ui/helper.js).
+  followHelper({ connect, none: noHelper });
 }
 
 // ---- #picture=<id>: the picture large in the browser's bubble (530 E2 B3) ----
@@ -671,7 +650,7 @@ if (PICTURE) {
 // timeline events keep it current; its card deleted, the bubble closes. Escape is the browser's.
 // The focus starts on the x.
 async function pictureMode() {
-  const close = () => { if (hasBubbles()) pb.bubbles.close(PICTURE_KIND).catch(() => {}); };
+  const close = () => { if (hasBubbles(pb)) pb.bubbles.close(PICTURE_KIND).catch(() => {}); };
   const msg = (text) => { $("pic-msg").textContent = text; };
   let pbase = null, card = null, blobUrl = null, picStream = null;
   $("pic-close").addEventListener("click", close);
@@ -690,10 +669,10 @@ async function pictureMode() {
   };
   $("pic-pin").addEventListener("click", async () => {
     if (!card || !pbase) return;
-    const r = await busy($("pic-pin"), () => post(pbase + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
+    const r = await busy($("pic-pin"), () => postJson(pbase + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
     const body = await r?.json().catch(() => null);
     const next = r?.ok ? valid(body) : null;
-    if (!next) return msg(body?.error || "Couldn't reach PairBrowse.");
+    if (!next) return msg(body?.error || UNREACHABLE);
     msg("");
     draw(next);
   });
@@ -705,10 +684,8 @@ async function pictureMode() {
     if (!r?.ok) { const body = await r?.json().catch(() => null); ask(false); return msg(body?.error || "Couldn't delete it."); }
     close();
   });
-  let helper = null;
-  try { helper = await pb?.session.helper(); } catch {}
-  if (!helper?.origin || !helper?.key) return msg(NO_HELPER);
-  pbase = `${helper.origin}/${helper.key}/`;
+  pbase = await helperAddress();
+  if (!pbase) return msg(NO_HELPER);
   const r = await fetch(pbase + "timeline.json", { signal: AbortSignal.timeout(8000) }).catch(() => null);
   const body = r?.ok ? await r.json().catch(() => null) : null;
   const found = Array.isArray(body?.cards) ? body.cards.map(valid).find((c) => c?.id === PICTURE) : null;

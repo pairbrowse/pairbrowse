@@ -10,9 +10,10 @@
 // browser's API the framed switcher. History and Activity open their pages in the contents
 // (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
-import { $, el, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
-import { isOwnTabPage, ownPage } from "../urls.js";
+import { $, el, avatar, agentWords, ownAgentLine, isColor, splitLabel, pickerPopover, askDock, helperConnection, servedByBrowser, syncList, enter } from "../common.js";
+import { isOwnTabPage, isSettingsPage, ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
+import { followHelper } from "../helper.js";
 
 const pb = window.pairbrowse ?? null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -33,7 +34,6 @@ let ownerLabel = "You"; // the collaboration's owner label: the one person row u
 let lastWebTab = -1; // the last active tab that is not History
 let myWindow = -1; // this dock's window (pb.windows.list), -1 until known
 let base = null;
-let stream = null; // the shared helper stream (common.js helperStream)
 let everLive = false;
 let driveTimer = 0;
 let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
@@ -48,7 +48,6 @@ const isActivityPage = (url) => isOwnTabPage("activity", url);
 const isSessionsPage = (url) => isOwnTabPage("sessions", url);
 // A tab that is not a web page the Browser row brings back.
 const isOwnPage = (url) => isHistory(url) || isActivityPage(url) || isSessionsPage(url);
-const isSettings = (url) => isOwnTabPage("settings", url, "\\/|$");
 const dock = () => document.body.dataset.dock;
 const icon = (id) => {
   const svg = document.createElementNS(SVG, "svg");
@@ -169,10 +168,7 @@ function drawAgents() {
     const { state, words } = agentWords(p, { tabs: n, driving, paused: paused && p.kind === "agent" });
     const { name, app } = splitLabel(p.who);
     const color = isColor(p.color) ? p.color : colorOf(p.who);
-    const face = el("span", { className: "avatar", textContent: initialOf(name) });
-    face.setAttribute("aria-hidden", "true");
-    if (color) { face.style.background = color; face.style.color = inkOn(color); } // the initial's ink passes AA (B11)
-    else face.classList.add("plain");
+    const face = avatar(name, color, { decorative: true }); // the initial's ink passes AA (B11)
     face.append(el("i", { className: "dot" }));
     const li = el("li", { title: `${p.who} · ${words}` }, face,
       el("strong", { textContent: name }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])),
@@ -303,7 +299,7 @@ function findOrOpen(match, url) {
   pb.tabs.create(url, true, w).catch(() => {});
 }
 const openHistory = () => findOrOpen(isHistory, "chrome://history");
-const openSettings = () => findOrOpen(isSettings, ownPage("settings"));
+const openSettings = () => findOrOpen(isSettingsPage, ownPage("settings"));
 function openBrowser() {
   if (pb && lastWebTab >= 0 && tabs.has(lastWebTab) && !tabs.get(lastWebTab).active) pb.tabs.activate(lastWebTab).catch(() => {});
 }
@@ -401,21 +397,19 @@ if (pb) {
 }
 
 // ---- the helper's stream ----
-function connect(url) {
-  if (!url || url === base) return;
+// panel=1 always (stream.js): today's helper never counts the dock as a viewer (no screencast for
+// it). One stream per address (helperConnection).
+const connect = helperConnection({
+  kind: "left",
+  onState: (s) => {
+    document.body.dataset.s = s;
+    $("conn").hidden = s === "live";
+    if (s === "live") everLive = true;
+    // Before the first open the line keeps saying it is connecting.
+    else if (s === "closed" || everLive) $("conn").textContent = s === "closed" ? "PairBrowse is closed" : "Reconnecting to PairBrowse…";
+  },
+}, (stream, url) => {
   base = url;
-  stream?.close();
-  // panel=1 always (common.js): today's helper never counts the dock as a viewer (no screencast for it).
-  stream = helperStream(base, {
-    kind: "left",
-    onState: (s) => {
-      document.body.dataset.s = s;
-      $("conn").hidden = s === "live";
-      if (s === "live") everLive = true;
-      // Before the first open the line keeps saying it is connecting.
-      else if (s === "closed" || everLive) $("conn").textContent = s === "closed" ? "PairBrowse is closed" : "Reconnecting to PairBrowse…";
-    },
-  });
   const on = stream.on;
   // The open session's name follows every switch and rename as the helper says it (no polling).
   on("session", (s) => { session = s && typeof s === "object" ? s : null; drawSession(); drawStorage(); });
@@ -448,7 +442,7 @@ function connect(url) {
       drawAgents();
     });
   }
-}
+});
 // No helper to ask (no browser API and no extension storage, or the browser has no helper
 // address): no connection line (the strip's pill says Local, the right dock says what to do);
 // the Agents section keeps only its label and its + button.
@@ -458,15 +452,9 @@ function noHelper() {
   document.body.dataset.s = "closed";
   $("conn").hidden = true;
 }
-if (pb) pb.session.helper().then(({ origin, key }) => { if (origin && key) connect(`${origin}/${key}/`); else noHelper(); }).catch(noHelper);
-else {
-  // The extension's storage (the bridge period); null on a page opened without it.
-  let area = null;
-  try { area = globalThis.chrome?.storage?.session || null; } catch {}
-  if (!area) noHelper();
-  else area.get("view").then(({ view }) => (view ? connect(view) : null)).catch(() => {});
-  try { globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-}
+// The helper's address (ui/helper.js), and each new one the extension's worker stores; the
+// extension's storage without one yet waits for it.
+followHelper({ connect, none: noHelper, wait: true });
 
 // ---- wiring ----
 $("nav-browser").addEventListener("click", openBrowser);

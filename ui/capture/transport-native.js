@@ -15,6 +15,7 @@
 import { has, offer, answer, stopPeer, stopTab, resize, take, peers } from "./capture.js";
 import { record } from "./record.js";
 import { helperStream } from "../common.js";
+import { helperAddress, postJson } from "../helper.js";
 import { CAPTURE_VALUE_MAX, CAPTURE_SDP_MAX, CAPTURE_ERROR_MAX, PAGE_CHUNK_BYTES } from "../limits.js";
 
 export { CAPTURE_VALUE_MAX, CAPTURE_SDP_MAX, CAPTURE_ERROR_MAX, PAGE_CHUNK_BYTES };
@@ -273,10 +274,8 @@ export async function startNative(pb, { scope = globalThis, onState = () => {}, 
   // Read once: the browser reads its file once, and a page never outlives its browser's launch.
   const ck = await captureKey(pb);
   const reply = ck ? `capture/reply?ck=${encodeURIComponent(ck)}` : "capture/reply";
-  const post = (body) => scope.fetch(base + reply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
-  async function helper() {
-    try { const { origin, key } = (await pb.session.helper()) || {}; return origin && key ? `${origin}/${key}/` : null; } catch { return null; }
-  }
+  const post = (body) => postJson(base + reply, body, scope).catch(() => {});
+  const helper = () => helperAddress({ pairbrowse: pb }); // ui/helper.js, over the browser API given
   // A stream that ended for good (the helper restarted on a new key): the address is asked once
   // again, and the stream reopened only on a new one. No retry timer.
   function open(url) {

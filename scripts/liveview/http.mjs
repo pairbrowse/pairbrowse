@@ -99,7 +99,7 @@ const viewerHtml = readFileSync(new URL("liveview.html", scripts), "utf8");
 // live in ui/, the extension's root, and are served to the live view from there; so do the flat
 // modules common.js and liveview.js import (vocab.js: the words and colors the helper shares;
 // urls.js: the browser's own addresses; limits.js: the limits both sides keep; events.js: the
-// helper's events and who gets them).
+// helper's events and who gets them; helper.js: finding and asking the helper).
 const ASSETS = new Map(Object.entries({
   "liveview.css": ["liveview.css", "text/css; charset=utf-8"],
   "liveview.js": ["liveview.js", "text/javascript; charset=utf-8"],
@@ -109,6 +109,16 @@ const ASSETS = new Map(Object.entries({
   "urls.js": ["../ui/urls.js", "text/javascript; charset=utf-8"],
   "limits.js": ["../ui/limits.js", "text/javascript; charset=utf-8"],
   "events.js": ["../ui/events.js", "text/javascript; charset=utf-8"],
+  "helper.js": ["../ui/helper.js", "text/javascript; charset=utf-8"],
+  "dom.js": ["../ui/dom.js", "text/javascript; charset=utf-8"],
+  "motion.js": ["../ui/motion.js", "text/javascript; charset=utf-8"],
+  "words.js": ["../ui/words.js", "text/javascript; charset=utf-8"],
+  "people.js": ["../ui/people.js", "text/javascript; charset=utf-8"],
+  "checklist.js": ["../ui/checklist.js", "text/javascript; charset=utf-8"],
+  "report.js": ["../ui/report.js", "text/javascript; charset=utf-8"],
+  "panels.js": ["../ui/panels.js", "text/javascript; charset=utf-8"],
+  "popover.js": ["../ui/popover.js", "text/javascript; charset=utf-8"],
+  "stream.js": ["../ui/stream.js", "text/javascript; charset=utf-8"],
 }).map(([name, [file, type]]) => [name, { file, body: readFileSync(new URL(file, scripts)), type }]));
 // Each served name and the file it is read from (relative to scripts/), for the test that every
 // module the page imports is served.

@@ -6,11 +6,13 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
+import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperConnection, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
+import { createPictures } from "./pictures.js";
 import { AGENT_COLOR } from "../vocab.js";
 import { ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
+import { followHelper, postJson, UNREACHABLE } from "../helper.js";
 
 const pb = globalThis.pairbrowse || null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -24,10 +26,10 @@ const native = () => document.documentElement.dataset.host === "native";
 
 // DRIVING_MS (ui/limits.js): "Working…" for this long after the agent's last action.
 const ACTIVITY_SHOWN = 12;
-const PICTURE_ID = /^[0-9a-f]{12}$/;
 let base = null;
+// The Pictures tab (pictures.js).
+const pictures = createPictures({ base: () => base });
 let everLive = false; // the helper's stream has opened at least once (an address that never answers is no helper)
-let stream = null; // the shared helper stream (common.js helperStream)
 // When each agent of this browser acted last (who -> time; the newest 50): the card says its own
 // agent is working on that agent's actions only, never on a joiner's line, a note or another
 // browser's agent.
@@ -53,7 +55,7 @@ const asleep = () => document.hidden || document.documentElement.dataset.dock ==
 const unseen = () => asleep() || document.documentElement.dataset.dock === "rail";
 // The agent card is on screen: the page and the dock shown, open (not a rail), on the Agent tab.
 const agentShown = () => !unseen() && document.body.dataset.tab === "agent";
-const post = (route, body) => fetch(base + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const post = (route, body) => postJson(base + route, body);
 
 // ---- tabs: Agent, Page, Pictures, Tools (roving tabindex; arrows, Home and End move it) ----
 const TABS = ["agent", "page", "pictures", "tools"];
@@ -78,7 +80,7 @@ function selectTab(name) {
   // The goal log is read only while the Agent tab is in front: another tab drops its pending read.
   if (name === "agent") { if (checklistStale) scheduleChecklist(); }
   else { clearTimeout(checklistTimer); checklistTimer = 0; checklistPending = false; }
-  if (name === "pictures") showPictures();
+  if (name === "pictures") pictures.show();
   if (name === "page") showOutline();
   if (name === "tools") tools.show();
   revealed($(`pane-${name}`)); // what it holds is drawn as it was (open sections open), only the pane moves
@@ -103,7 +105,7 @@ async function showOutline() {
     $("outline").hidden = true; $("outline-head").hidden = true; empty.hidden = false;
     // Not reached while the stream is down too: the resting line, not an error (it reads again on open).
     const away = r.status === 0 && document.body.dataset.s !== "live";
-    empty.textContent = r.status === 200 || r.status === 404 || away ? (r.status === 404 ? "This PairBrowse doesn't share the page outline yet." : "No outline yet: it shows once an agent reads a page.") : "Couldn't reach PairBrowse.";
+    empty.textContent = r.status === 200 || r.status === 404 || away ? (r.status === 404 ? "This PairBrowse doesn't share the page outline yet." : "No outline yet: it shows once an agent reads a page.") : UNREACHABLE;
   }
   if (outlineAgain) { outlineAgain = false; showOutline(); }
 }
@@ -175,7 +177,7 @@ function applyDock(s) {
   if (name !== "open") share.close(false);
   if (name === "hidden" || name === "rail") sleepTimers();
   else if (was === "hidden" || was === "rail") wakeTimers();
-  else if (name === "open" && document.body.dataset.tab === "pictures") showPictures();
+  else if (name === "open" && document.body.dataset.tab === "pictures") pictures.show();
 }
 if (pb) {
   pb.layout.get().then(({ state }) => { lastLayout = state; applyDock(state); }).catch(() => {});
@@ -248,7 +250,7 @@ async function pauseAsk(btn, body, what) {
   if (btn.getAttribute("aria-busy") === "true") return;
   agentSay("");
   const r = await busy(btn, () => post("pause", body).then(async (x) => ({ ok: x.ok, body: await x.json().catch(() => null) }), () => null));
-  if (!r?.ok) agentSay(`${what}: ${r?.body?.error || "Couldn't reach PairBrowse."}`);
+  if (!r?.ok) agentSay(`${what}: ${r?.body?.error || UNREACHABLE}`);
 }
 $("pause-btn").addEventListener("click", (ev) => {
   if (ev.isTrusted && base) pauseAsk($("pause-btn"), { paused: !paused }, paused ? "Couldn't resume" : "Couldn't pause");
@@ -351,7 +353,7 @@ async function loadChecklist() {
   checklistBusy = false;
   // Not reached: the next show of the Agent tab, page or dock reads once more.
   if (r === undefined) checklistStale = true;
-  drawChecklist(r === undefined ? [el("li", { className: "empty", textContent: "Couldn't reach PairBrowse." })] : checklistItems(r, { driving: document.body.dataset.driving === "true" }));
+  drawChecklist(r === undefined ? [el("li", { className: "empty", textContent: UNREACHABLE })] : checklistItems(r, { driving: document.body.dataset.driving === "true" }));
   if (r && typeof r === "object") {
     $("task").hidden = !r.name;
     $("task-name").textContent = r.name || "";
@@ -423,7 +425,7 @@ $("session-save").addEventListener("click", async (ev) => {
     return;
   }
   const r = res ? await res.json().catch(() => null) : null;
-  if (!r?.ok) return sessionSay(r?.error || "Couldn't reach PairBrowse.", "error");
+  if (!r?.ok) return sessionSay(r?.error || UNREACHABLE, "error");
   const when = typeof r.savedAt === "string" ? ago(r.savedAt) : "";
   if (when) { $("session-saved").hidden = false; $("session-saved").textContent = `Saved ${when}`; } else sessionSay("Saved.", "ok");
 });
@@ -446,7 +448,7 @@ $("session-name-input").addEventListener("keydown", async (ev) => {
     return;
   }
   const r = res ? await res.json().catch(() => null) : null;
-  if (!r?.ok) return sessionSay(r?.error || "Couldn't reach PairBrowse.", "error");
+  if (!r?.ok) return sessionSay(r?.error || UNREACHABLE, "error");
   if (typeof r.name === "string") $("session-name").textContent = r.name;
   editName(false, true);
 });
@@ -585,10 +587,7 @@ function drawPeople() {
   const perAgent = !!(pauseInfo?.perAgent && pauseInfo?.can);
   const rows = people.map((p, i) => {
     const { name, app } = splitLabel(p.who);
-    const face = avatar(name, p.color);
-    face.removeAttribute("role");
-    face.removeAttribute("aria-label");
-    face.setAttribute("aria-hidden", "true");
+    const face = avatar(name, p.color, { decorative: true });
     // Two lines: the name, then its part in the session in words (the mockup's "Observing",
     // "Helping", "Active") with what it does and whose browser; the tab stays in the title.
     // Held on its own (Take control): the helper's pause event lists it by name (Part H).
@@ -643,84 +642,15 @@ function drawPeople() {
   syncList($("people"), [...rows, ...(idle ? [quietLine] : [])]);
 }
 
-// ---- Pictures: the picture last sent to the agent, fetched only while the tab is in front and
-// the page is visible, held as a blob: URL until the next replaces it. ----
-const known = new Map(); // id -> card, from timeline.json and the timeline events (newest 50)
-let newest = null, shownId = null, pictureUrl = null, timelineKnown = false, timelineBusy = false, pictureSeq = 0;
-const picturesShown = () => !document.hidden && document.body.dataset.tab === "pictures" && !["rail", "hidden"].includes(document.documentElement.dataset.dock);
-const remember = (card) => {
-  if (!card || !PICTURE_ID.test(card.id || "")) return;
-  known.delete(card.id);
-  known.set(card.id, card);
-  if (known.size > 50) known.delete(known.keys().next().value);
-};
-async function showPictures() {
-  if (!base || !picturesShown()) return;
-  if (!timelineKnown) {
-    if (timelineBusy) return;
-    timelineBusy = true;
-    const from = base;
-    // null: no timeline (404, timeline off); undefined: not reached, asked again next time.
-    const r = await fetch(base + "timeline.json", { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.json() : x.status === 404 ? null : undefined)).catch(() => undefined);
-    timelineBusy = false;
-    if (from !== base || r === undefined) return;
-    timelineKnown = true;
-    const cards = Array.isArray(r?.cards) ? r.cards.filter((c) => c && c.note !== true && PICTURE_ID.test(c.id || "")) : [];
-    for (const c of cards) remember(c);
-    if (!newest && cards.length) newest = cards.reduce((a, b) => ((Number(b.t) || 0) >= (Number(a.t) || 0) ? b : a));
-  }
-  if (newest && newest.id !== shownId) drawPicture(newest);
-}
-function showCard(card) {
-  if (!card || !PICTURE_ID.test(card.id || "")) return;
-  newest = card;
-  if (base && picturesShown()) drawPicture(card);
-}
-async function drawPicture(card) {
-  if (!picturesShown()) return;
-  const seq = ++pictureSeq;
-  const blob = await fetch(`${base}timeline/${card.id}.jpg`, { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.blob() : null)).catch(() => null);
-  if (seq !== pictureSeq || !blob) return;
-  const url = URL.createObjectURL(blob);
-  const img = $("picture-img");
-  img.src = url;
-  img.alt = card.caption || "Picture sent to the agent";
-  const t = Number(card.t);
-  const time = $("picture-time");
-  time.textContent = Number.isFinite(t) && t > 0 ? clock(t) : "";
-  if (Number.isFinite(t) && t > 0) time.dateTime = new Date(t).toISOString(); else time.removeAttribute("datetime");
-  $("picture-caption").textContent = card.caption || "";
-  if (pictureUrl) URL.revokeObjectURL(pictureUrl);
-  pictureUrl = url;
-  shownId = card.id;
-  $("picture").hidden = false;
-  $("pictures-empty").hidden = true;
-}
-
-// Another helper: nothing of the last one's pictures stays on screen as if current.
-function forgetPictures() {
-  known.clear();
-  newest = null;
-  shownId = null;
-  timelineKnown = false;
-  pictureSeq++;
-  if (pictureUrl) URL.revokeObjectURL(pictureUrl);
-  pictureUrl = null;
-  $("picture-img").removeAttribute("src");
-  $("picture").hidden = true;
-  $("pictures-empty").hidden = false;
-}
-
-function connect(url) {
-  if (!url || url === base) return;
-  if (base) { forgetPictures(); forgetSessionTools(); tools.forget(); }
+// One stream per address (stream.js helperConnection); another helper's pictures and session
+// tools are its own.
+const connect = helperConnection({
+  kind: pb ? "right" : "",
+  onState: (s) => { if (s === "live") everLive = true; document.body.dataset.s = s; setDriver(); drawSessionCard(); },
+  onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") pictures.show(); showOutline(); tools.stale(); },
+}, (stream, url, was) => {
+  if (was) { pictures.forget(); forgetSessionTools(); tools.forget(); }
   base = url;
-  stream?.close();
-  stream = helperStream(base, {
-    kind: pb ? "right" : "",
-    onState: (s) => { if (s === "live") everLive = true; document.body.dataset.s = s; setDriver(); drawSessionCard(); },
-    onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); showOutline(); tools.stale(); },
-  });
   const on = stream.on;
   on("status", (s) => {
     document.body.dataset.turn = String(s.kind === "you" && !!s.text);
@@ -810,19 +740,8 @@ function connect(url) {
     recording = r?.recording ? { since: r.since || Date.now() } : null;
     if (was !== !!recording || recording) drawRecord();
   });
-  // The timeline (pictures sent to the agent): a new card replaces the one shown; "show" brings
-  // one to the front. Notes carry no picture.
-  on("timeline", (e) => {
-    if (e?.op === "add" && e.card && e.card.note !== true) { remember(e.card); showCard(e.card); }
-    else if (e?.op === "show" && PICTURE_ID.test(e.id || "")) {
-      const card = e.card || known.get(e.id) || { id: e.id, caption: "" };
-      newest = card;
-      // selectTab draws `newest` itself; fetch once, and not again for the card on screen.
-      if (document.body.dataset.tab !== "pictures") selectTab("pictures");
-      else if (shownId !== card.id) showCard(card);
-    }
-    // "remove": the picture shown stays until the next replaces it.
-  });
+  // The timeline (pictures sent to the agent): pictures.js.
+  on("timeline", (e) => pictures.timeline(e, () => selectTab("pictures")));
   on("downloads", tools.downloads);
   on("handoffs", tools.handoffs);
   // The tab the left dock's Tools row asked for (POST layout's tab, relayed, never kept). The
@@ -832,7 +751,7 @@ function connect(url) {
   on("join", drawJoins);
   on("dev", drawDev);
   on("joinhost", drawHosts);
-}
+});
 
 // The session card (name, Save, Share, End session) only for a session the helper named, and
 // not while there is no helper or its stream has closed: never controls for a session that is
@@ -842,9 +761,7 @@ function drawSessionCard() {
   $("session-card").hidden = !lastSession?.name || s === "none" || s === "closed";
 }
 
-// The helper's address: from the browser in the build, else from the extension's storage (null
-// on a page opened without it, a plain file, which then renders with its defaults and connects
-// to nothing).
+// The extension's storage areas (null on a page opened without it, a plain file).
 const store = (area) => { try { return globalThis.chrome?.storage?.[area] || null; } catch { return null; } };
 // No helper to ask (no browser API and no extension storage, or the browser has no helper
 // address): the strip's words, not a wait for something that is not coming.
@@ -854,13 +771,9 @@ function noHelper() {
   setDriver();
   drawSessionCard();
 }
-if (pb) pb.session.helper().then(({ origin, key }) => { if (origin && key) connect(`${origin}/${key}/`); else noHelper(); }).catch(noHelper);
-else {
-  const area = store("session");
-  if (!area) noHelper();
-  else area.get("view").then(({ view }) => connect(view)).catch(() => {});
-  try { globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-}
+// The helper's address (ui/helper.js), and each new one the extension's worker stores; the
+// extension's storage without one yet waits for it.
+followHelper({ connect, none: noHelper, wait: true });
 
 // Hidden (the page, or the dock in the browser build): no timer runs (the driving re-check, the
 // checklist's pending read, the recording clock); back in front, each is re-armed from the state
@@ -877,7 +790,7 @@ function wakeTimers() {
   if (Date.now() - cardActedAt() < DRIVING_MS) armDrive();
   if (checklistStale) scheduleChecklist();
   if (recording) drawRecord();
-  if (document.body.dataset.tab === "pictures") showPictures();
+  if (document.body.dataset.tab === "pictures") pictures.show();
   if (document.body.dataset.tab === "tools") tools.show();
 }
 document.addEventListener("visibilitychange", () => (document.hidden ? sleepTimers() : wakeTimers()));

@@ -1,5 +1,4 @@
 /* The PairBrowse new tab page: flat navy, the logo unchanged; colors and type from tokens.css. */
-* { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
   display: grid; place-items: center;

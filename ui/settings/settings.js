@@ -10,9 +10,10 @@
 // helper says it relays reports). Saved sessions link to the sessions page, their one home. The
 // config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
-import { $, el, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
+import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
 
-const NATIVE = !!window.pairbrowse;
+const NATIVE = hostKind() === "native";
 const HOST = NATIVE ? "The PairBrowse browser" : "PairBrowse extension in a test browser";
 document.body.dataset.host = NATIVE ? "pairbrowse" : "chromium";
 $("about-host").textContent = HOST;
@@ -25,15 +26,13 @@ if (!NATIVE) {
 }
 
 let base = null;
-let stream = null;
 let conn = "connecting";
 let config = null; // GET config.json, null until read (or the helper has no such route)
 let diag = null; // GET diagnostics.json
 
 const say = (node, text, kind = "") => { node.textContent = text; node.dataset.kind = kind; };
 const getJson = (path) => fetch(base + path).then(async (r) => ({ status: r.status, body: r.ok ? await r.json().catch(() => null) : await r.text().catch(() => "") })).catch(() => ({ status: 0, body: null }));
-const postJson = (path, body) => fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  .then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) })).catch(() => ({ status: 0, body: null }));
+const postJson = (path, body) => postReply(base + path, body);
 
 // ---- connection ------------------------------------------------------------------------------
 const CONN_TEXT = { live: "Connected", connecting: "Connecting…", closed: NO_AGENT };
@@ -51,19 +50,6 @@ function setConn(state, text) {
   for (const b of document.querySelectorAll("#tl-on, #ask-on, #pics-on, #dl-reset, #diag-copy, #report-open, .needs-live")) b.disabled = state !== "live";
 }
 
-// The live view's address with the owner's key: from the browser, or from the extension's session
-// storage (in memory, never on disk), as the side panel gets it.
-function helperBase() {
-  if (NATIVE) {
-    return Promise.resolve().then(() => window.pairbrowse.session.helper())
-      .then((h) => (h && h.origin && h.key ? `${h.origin}/${h.key}/` : null)).catch(() => null);
-  }
-  try {
-    const store = globalThis.chrome?.storage?.session;
-    if (!store) return Promise.resolve(null);
-    return store.get("view").then((r) => r?.view || null).catch(() => null);
-  } catch { return Promise.resolve(null); }
-}
 
 // ---- General: the browser, the docks (config.json / config) ----------------------------------
 function drawConfig(c) {
@@ -123,7 +109,7 @@ async function writeConfig(body, msg) {
     drawConfig(r.body);
     return "";
   }
-  const text = r.body?.error || (r.status === 0 ? "Couldn't reach PairBrowse." : "That didn't save.");
+  const text = r.body?.error || (r.status === 0 ? UNREACHABLE : "That didn't save.");
   say(msg, text, "error");
   drawConfig(config); // back to the value the helper holds
   return text;
@@ -232,7 +218,7 @@ async function loadTimelineCount() {
     const n = Array.isArray(r.body?.cards) ? r.body.cards.filter((c) => c && c.note !== true).length : 0;
     text = `${n} ${n === 1 ? "picture" : "pictures"} kept in this session`;
   } else if (off) text = "Off";
-  else if (r.status === 0) text = "Couldn't reach PairBrowse.";
+  else if (r.status === 0) text = UNREACHABLE;
   else text = "This PairBrowse keeps no timeline.";
   $("tl-state").textContent = text;
 }
@@ -273,15 +259,14 @@ async function revokeInvite(id, shown) {
     return true;
   }
   if (r.status === 404) { say($("invites-msg"), r.body?.error || "That invite had already ended.", "error"); loadInvites(); return true; }
-  say($("invites-msg"), r.body?.error || (r.status === 0 ? "Couldn't reach PairBrowse." : "That didn't work."), "error");
+  say($("invites-msg"), r.body?.error || (r.status === 0 ? UNREACHABLE : "That didn't work."), "error");
   return false;
 }
 function inviteRow(i) {
   const shown = i.label ? String(i.label) : i.role === "watch" ? "a watch invite" : "a drive invite";
   const kind = i.share === "code" ? "Join code" : "Link";
   const rights = i.role === "watch" ? "can watch" : "can drive";
-  const face = el("span", { className: "avatar plain", textContent: initialOf(i.label || kind) });
-  face.setAttribute("aria-hidden", "true");
+  const face = avatar(i.label || kind, null, { decorative: true });
   const head = el("strong", {}, el("span", { className: "name", textContent: i.label ? String(i.label) : kind, title: i.label ? String(i.label) : kind }));
   const meta = [kind, rights, endsIn(i.expires)].filter(Boolean).join(" · ");
   const li = el("li", { className: "has-acts" }, face, head, el("small", { textContent: meta }));
@@ -523,35 +508,32 @@ document.querySelector(".nav").addEventListener("keydown", (e) => {
 });
 
 // ---- the helper stream -------------------------------------------------------------------------
-function connect(url) {
-  if (!url || url === base) return;
+// The owner's stream without the page screencast (panel=1, no page kind), shared with the other
+// pages; one per address (stream.js helperConnection).
+const connect = helperConnection({
+  onState: (s) => {
+    if (s === "live") setConn("live", "");
+    else if (s === "closed") setConn("closed", NO_HELPER);
+    else setConn("connecting", "Connecting to PairBrowse…");
+  },
+  onOpen: async () => {
+    await loadConfig();
+    loadInvites(); profile.load(); loadTimelineCount(); loadDiag();
+    if (location.hash === "#report") openReport();
+  },
+}, (stream, url) => {
   base = url;
-  stream?.close();
-  // The owner's stream without the page screencast (panel=1, no page kind), shared with the other pages.
-  stream = helperStream(base, {
-    onState: (s) => {
-      if (s === "live") setConn("live", "");
-      else if (s === "closed") setConn("closed", NO_HELPER);
-      else setConn("connecting", "Connecting to PairBrowse…");
-    },
-    onOpen: async () => {
-      await loadConfig();
-      loadInvites(); profile.load(); loadTimelineCount(); loadDiag();
-      if (location.hash === "#report") openReport();
-    },
-  });
   const on = stream.on;
   on("profile", profile.draw);
   on("joinhost", hostsChanged);
   on("config", (c) => { const { restart, ...rest } = c || {}; drawConfig({ ...rest, ...(restart !== undefined ? { restart } : {}) }); });
   on("timeline", () => loadTimelineCount());
   on("invites", drawInvites);
-}
+});
 
 setConn("connecting", "Connecting to PairBrowse…");
 drawDiag(null);
 $("errors-empty").textContent = "Checking…";
-if (!NATIVE) {
-  try { globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-}
-helperBase().then((b) => (b ? connect(b) : setConn("closed", NO_HELPER)));
+// The live view's address with the owner's key (ui/helper.js), and each new one the extension's
+// worker stores.
+followHelper({ connect, none: () => setConn("closed", NO_HELPER) });

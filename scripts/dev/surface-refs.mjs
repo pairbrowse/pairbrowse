@@ -168,7 +168,7 @@ async function renderMenu(browser, { ui, log }) {
     let frame = null;
     for (let i = 0; i < 100 && !frame; i++) {
       const f = page.frames().find((x) => x.url().includes("/picker/index.html"));
-      if (f && await inPage(f, () => document.documentElement.dataset.host === "frame" && document.body?.dataset.s === "ready").catch(() => false)) frame = f;
+      if (f && await inPage(f, () => document.documentElement.dataset.mount === "frame" && document.body?.dataset.s === "ready").catch(() => false)) frame = f;
       else await sleep(50);
     }
     if (!frame) throw new Error("the framed picker did not load");

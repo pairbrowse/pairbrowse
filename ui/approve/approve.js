@@ -1,7 +1,7 @@
 // The approval card as a page: the bubble the PairBrowse browser shows when no web page is in
 // front (DESIGN.md B6); the in-page card stays scripts/hud.js's. One source for two hosts: with
 // window.pairbrowse (the native build) the helper's address comes from session.helper();
-// otherwise from chrome.storage.session "view" (the extension).
+// otherwise from chrome.storage.session "view" (the extension): ui/helper.js.
 //
 // Two modes. On the top-chrome host (chrome://pairbrowse.top-chrome/approve/) it is the window's
 // click-approval bubble (530): click approvals only (join, dev and host asks stay in the agent
@@ -40,8 +40,9 @@
 // IntersectionObserver v2 reports the card fully visible. The observer lives only while a card
 // shows and the page is visible. No timer: arming is a timestamp compared at click time. The
 // helper checks the answer again.
-import { $, el, avatar, splitLabel, helperStream } from "../common.js";
+import { $, el, avatar, splitLabel, helperConnection } from "../common.js";
 import { TOP_CHROME_HOST } from "../urls.js";
+import { followHelper, postJson, UNREACHABLE_RETRY } from "../helper.js";
 
 const ARM_MS = 600;
 const POINTER = new Set(["allow", "site", "always"]);
@@ -52,7 +53,7 @@ const SAY = {
   covered: "Something is over the card: answer in the terminal.",
   offline: "Not connected to PairBrowse yet.",
   gone: "That request is gone (answered, or it timed out).",
-  failed: "Couldn't reach PairBrowse. Try again.",
+  failed: UNREACHABLE_RETRY,
 };
 
 let base = null;
@@ -75,24 +76,10 @@ if (BUBBLE) document.documentElement.dataset.mode = "bubble";
 let told = null; // the last [count, target id] told to the browser
 
 // ---- the helper's address and stream ----
-async function findBase() {
-  const pb = globalThis.pairbrowse;
-  if (typeof pb?.session?.helper === "function") {
-    try {
-      const { origin, key } = (await pb.session.helper()) || {};
-      return origin && key ? `${origin}/${key}/` : null;
-    } catch { return null; }
-  }
-  try { return (await globalThis.chrome?.storage?.session?.get("view"))?.view || null; } catch { return null; }
-}
-
-let stream = null; // the shared helper stream (common.js helperStream)
-function connect(url) {
-  if (!url || url === base) return;
-  stream?.close();
+// panel=1 always (stream.js): the bubble is never a viewer. approvals.json is the snapshot on each
+// open. One stream per address (helperConnection).
+const connect = helperConnection({ kind: "approve", shared: !BUBBLE, onState: (s) => { document.body.dataset.s = s; }, onOpen: () => load() }, (stream, url) => {
   base = url;
-  // panel=1 always (common.js): the bubble is never a viewer. approvals.json is the snapshot on each open.
-  stream = helperStream(base, { kind: "approve", shared: !BUBBLE, onState: (s) => { document.body.dataset.s = s; }, onOpen: () => load() });
   const on = stream.on;
   on("approval", (d) => {
     const id = d?.item?.id;
@@ -112,7 +99,7 @@ function connect(url) {
   });
   on("dev", (d) => replace("dev", d?.asks));
   on("joinhost", (d) => replace("host", d?.asks));
-}
+});
 
 // The pending clicks from approvals.json; a 404 or a failure leaves the list as the stream made it.
 async function load() {
@@ -288,7 +275,7 @@ async function post(it, name) {
         : ["joinhost", name === "deny" ? { op: "cancel", id: it.id } : { op: "allow", id: it.id, always: name === "always" }];
   let status = 0;
   try {
-    const r = await fetch(base + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await postJson(base + route, body);
     status = r.ok ? 200 : r.status;
   } catch {}
   if (shownKey !== it.key) return; // withdrawn or dismissed meanwhile
@@ -332,4 +319,5 @@ card.addEventListener("focusout", (e) => {
 });
 
 draw();
-findBase().then((url) => { if (url) connect(url); else document.body.dataset.s = "closed"; });
+// The helper's address (ui/helper.js), and each new one the extension's worker stores.
+followHelper({ connect, none: () => { document.body.dataset.s = "closed"; } });

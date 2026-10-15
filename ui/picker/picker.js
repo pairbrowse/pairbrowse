@@ -4,8 +4,9 @@
 // the live view with the owner's key: in the build from the browser's Session API
 // (window.pairbrowse), in the extension from the side panel's worker (chrome.storage.session).
 // The live view takes these requests only from the page's own origin.
-import { $, el, avatar, initialOf, reportOffer, askSwitch, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, joinHostAsk, avatar, initialOf, reportOffer, askSwitch, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
+import { followHelper, postJson, UNREACHABLE_RETRY, UNREACHABLE } from "../helper.js";
 
 // Framed: the switcher popover. No page chrome of its own, the list even when a session is open,
 // and the parent told (same origin only) when to close; the pick itself goes only to the helper.
@@ -15,7 +16,7 @@ import { JOIN_NAME_MAX } from "../limits.js";
 const pb = window.pairbrowse || null;
 const bubbled = location.hash === "#bubble" && typeof pb?.bubbles?.close === "function";
 const framed = window.top !== window || bubbled;
-document.documentElement.dataset.host = framed ? "frame" : "page";
+document.documentElement.dataset.mount = framed ? "frame" : "page";
 if (bubbled) document.documentElement.dataset.bubble = "native";
 const SWITCHER = Number.isInteger(pb?.BubbleKind?.kSwitcher) ? pb.BubbleKind.kSwitcher : 0;
 const notify = (op) => {
@@ -59,9 +60,9 @@ async function send(op, label) {
   busy = true;
   document.body.dataset.s = "picking";
   say(label);
-  const r = await fetch(base + "pick", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(op) })
-    .then((x) => x.json(), () => ({ text: "Couldn't reach PairBrowse. Try again.", error: true }))
-    .catch(() => ({ text: "Couldn't reach PairBrowse. Try again.", error: true }));
+  const r = await postJson(base + "pick", op)
+    .then((x) => x.json(), () => ({ text: UNREACHABLE_RETRY, error: true }))
+    .catch(() => ({ text: UNREACHABLE_RETRY, error: true }));
   busy = false;
   if (r.error) {
     document.body.dataset.s = "ready";
@@ -234,39 +235,24 @@ $("join-form").addEventListener("submit", (ev) => {
 $("join").addEventListener("toggle", () => { if ($("join").open) $("code").focus(); });
 // The address question (the same one the side panel shows): Allow once, Always allow (kept in
 // joinHosts) or Cancel, by a real click here; a yes starts the join with the code pasted above.
-function showHostAsk({ id, host }) {
-  const box = $("host-ask");
-  const once = el("button", { className: "primary", type: "button", textContent: "Allow once" });
-  const always = el("button", { className: "secondary", type: "button", textContent: "Always allow", title: "Remember this address in your config (joinHosts)." });
-  const cancel = el("button", { className: "secondary", type: "button", textContent: "Cancel" });
-  const buttons = [once, always, cancel];
-  async function answer(op, label) {
-    if (!base || busy) return;
-    busy = true;
-    for (const b of buttons) b.disabled = true;
-    document.body.dataset.s = "picking";
-    say(label);
-    const r = await fetch(base + "joinhost", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(op) })
-      .then((x) => x.json(), () => ({ error: "Couldn't reach PairBrowse. Try again." }))
-      .catch(() => ({ error: "Couldn't reach PairBrowse. Try again." }));
-    busy = false;
-    askCancel = null;
-    box.hidden = true;
-    box.replaceChildren();
-    if (r.error || (op.op === "allow" && !r.joined)) { document.body.dataset.s = "ready"; say(r.error || r.text || "That didn't work.", "error"); return; }
-    if (op.op === "cancel") { document.body.dataset.s = "ready"; say("Not joined.", ""); return; }
-    document.body.dataset.s = "done";
-    say(r.text || "Done.", "ok");
-    notify("picked");
-  }
-  once.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: false }, "Asking to join..."); });
-  always.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: true }, "Asking to join..."); });
-  cancel.addEventListener("click", (ev) => { if (real(ev)) answer({ op: "cancel", id }, ""); });
-  askCancel = () => answer({ op: "cancel", id }, "");
-  const question = el("strong", {}, "This code leads to ", el("code", { className: "host", textContent: String(host) }), ", not a PairBrowse address. Join through it?");
-  box.replaceChildren(question, el("span", { className: "buttons" }, ...buttons));
-  box.hidden = false;
-  once.focus();
+function showHostAsk(ask) {
+  askCancel = joinHostAsk($("host-ask"), ask, {
+    canSend: () => !!base && !busy,
+    send: async (op, label) => {
+      busy = true;
+      document.body.dataset.s = "picking";
+      say(label);
+      const r = await postJson(base + "joinhost", op).then((x) => x.json(), () => null).catch(() => null);
+      busy = false;
+      askCancel = null;
+      return r;
+    },
+    done: (op, { kind, text }) => {
+      document.body.dataset.s = kind === "ok" ? "done" : "ready";
+      say(text, kind);
+      if (kind === "ok") notify("picked");
+    },
+  });
 }
 function setMoreLabel() {
   const open = $("more").dataset.open === "true";
@@ -318,14 +304,8 @@ function connect(url) {
 // A frame whose parent knows there is no helper (#none, common.js pickerPopover) shows the resting
 // state at once. A frame given no binding of its own while its parent has a helper (DESIGN.md
 // H4.1) says it couldn't reach PairBrowse: the switcher the person opened failed (Part H).
-const lost = () => { if (framed) say("Couldn't reach PairBrowse.", "error"); else none(); };
-let store = null;
-try { store = globalThis.chrome?.storage?.session || null; } catch {}
+const lost = () => { if (framed) say(UNREACHABLE, "error"); else none(); };
+// The browser answers with no address when it was started without a helper: nothing to reach. The
+// extension's storage without one yet: the page waits for the worker to store it (ui/helper.js).
 if (framed && location.hash === "#none") none();
-else if (window.pairbrowse) {
-  // The browser answers with no address when it was started without a helper: nothing to reach.
-  window.pairbrowse.session.helper().then((r) => { const { origin, key } = r || {}; if (origin && key) connect(`${origin}/${key}/`); else none(); }, lost);
-} else if (store) {
-  store.get("view").then(({ view } = {}) => connect(view), lost);
-  try { chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-} else lost();
+else followHelper({ connect, none, failed: lost, wait: true });

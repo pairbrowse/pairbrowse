@@ -7,6 +7,7 @@
 // address (session.helper()); as the extension page it is chrome.storage.session "view", as in the
 // session picker. One fetch at load; no timer, observer or poll.
 import { $, el, addressToUrl, askSwitch } from "../common.js";
+import { hostKind, helperAddress, onHelperAddress, postJson, UNREACHABLE_RETRY } from "../helper.js";
 
 // Where words go: the default engine's address with "{searchTerms}" (http or https only), or "" when
 // it searches nothing. Google until the browser answers, and in the extension.
@@ -47,31 +48,20 @@ $("q").addEventListener("input", () => { if ($("msg").textContent === NOT_AN_ADD
 // A person's click or key press only, never a script's synthetic event.
 const real = (ev) => ev.isTrusted;
 const CHIPS = 3;
-const UNREACHABLE = { text: "Couldn't reach PairBrowse. Try again.", error: true };
+const NO_REACH = { text: UNREACHABLE_RETRY, error: true };
 const NOT_AN_ADDRESS = "Type a web address, like example.com.";
 let busy = false;
 let askCancel = null; // the open switch question's Cancel path
 
 const say = (text, kind = "") => { $("msg").textContent = text; $("msg").dataset.kind = kind; };
 
-// The helper's address with its key, or null when PairBrowse is not running.
-async function helperBase() {
-  const build = globalThis.window?.pairbrowse?.session;
-  if (build && typeof build.helper === "function") {
-    document.body.dataset.host = "build";
-    const h = await Promise.resolve().then(() => build.helper()).catch(() => null);
-    return h && typeof h.origin === "string" && h.origin && typeof h.key === "string" && h.key ? `${h.origin}/${h.key}/` : null;
-  }
-  const store = globalThis.chrome?.storage?.session;
-  if (!store) return null;
-  document.body.dataset.host = "extension";
-  const got = await Promise.resolve().then(() => store.get("view")).catch(() => null);
-  return typeof got?.view === "string" && got.view ? got.view : null;
-}
+// The page's host, once (ui/helper.js hostKind); neither, a plain file.
+const HOST = hostKind();
+if (HOST) document.body.dataset.host = HOST; // "native" or "extension", as the docks say it
 
-const post = (base, route, body) => fetch(base + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  .then((x) => x.json(), () => UNREACHABLE)
-  .catch(() => UNREACHABLE);
+const post = (base, route, body) => postJson(base + route, body)
+  .then((x) => x.json(), () => NO_REACH)
+  .catch(() => NO_REACH);
 
 // One press: the pick itself (the helper switches with a session open). Agents at work: 428
 // { confirm, agents }, asked here; Switch anyway sends the same pick with confirm: true.
@@ -112,8 +102,8 @@ function chip(base, s) {
 }
 
 // The helper's own order (most recently used first), the session you are in left out, at most three.
-export async function boot() {
-  const base = await helperBase();
+async function boot() {
+  const base = await helperAddress();
   if (!base) return false;
   const state = await fetch(base + "sessions.json").then((r) => (r.ok ? r.json() : null), () => null).catch(() => null);
   const list = Array.isArray(state?.sessions) ? state.sessions.filter((s) => s && typeof s.name === "string" && s.name && !s.current).slice(0, CHIPS) : [];
@@ -123,8 +113,7 @@ export async function boot() {
 }
 
 readEngine();
-boot().then((found) => {
-  // The extension before the side panel's worker has stored the address: once, when it does.
-  if (found || window.pairbrowse || !globalThis.chrome?.storage?.onChanged) return;
-  chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) boot(); });
-});
+boot();
+// The extension's worker stores an address (the first, or a helper restarted on a new key): the
+// chips again, from that helper.
+onHelperAddress(() => boot());

@@ -155,7 +155,10 @@ for (const page of pages()) {
       const sheets = attrs(html, "link").filter((a) => /stylesheet/i.test(attr(a, "rel") || "")).map((a) => attr(a, "href"));
       if (!sheets.length) return;
       assert.equal(sheets[0], "../tokens.css", `${page}: tokens.css comes before the page's own sheet`);
-      for (const href of sheets.slice(1)) assert.equal(dirname(resolve(dir, href)), dir, `${page}: ${href} is not ui/${page}/*.css`);
+      // ui/base.css (the rules the pages share) only right after it.
+      const own = sheets[1] === "../base.css" ? sheets.slice(2) : sheets.slice(1);
+      assert.ok(!own.includes("../base.css"), `${page}: base.css comes right after tokens.css`);
+      for (const href of own) assert.equal(dirname(resolve(dir, href)), dir, `${page}: ${href} is not ui/${page}/*.css`);
       for (const f of cssFiles) {
         const css = noComments(read(f));
         for (const k of TOKEN_NAMES) assert.doesNotMatch(css, new RegExp(`--${k}\\s*:`), `${relative(root, f)} redefines --${k}`);
@@ -224,14 +227,14 @@ test("every visible page has a review fixture and a shot", () => {
   }
 });
 
-// ---- one event stream per origin (common.js helperStream) ----
+// ---- one event stream per origin (stream.js helperStream) ----
 const uiScripts = () => readdirSync(UI_ROOT, { withFileTypes: true }).filter((d) => d.isDirectory())
   .flatMap((d) => readdirSync(join(UI_ROOT, d.name)).filter((f) => f.endsWith(".js")).map((f) => join(UI_ROOT, d.name, f)))
-  .concat(readdirSync(UI_ROOT).filter((f) => f.endsWith(".js") && f !== "common.js").map((f) => join(UI_ROOT, f)));
+  .concat(readdirSync(UI_ROOT).filter((f) => f.endsWith(".js") && f !== "stream.js").map((f) => join(UI_ROOT, f)));
 
-test("only ui/common.js opens an event stream to the helper", () => {
-  const common = read(join(UI_ROOT, "common.js"));
-  assert.match(common, /new EventSource\(/, "common.js holds the one stream");
+test("only ui/stream.js opens an event stream to the helper", () => {
+  const stream = read(join(UI_ROOT, "stream.js"));
+  assert.match(stream, /new EventSource\(/, "stream.js holds the one stream");
   for (const f of uiScripts()) {
     // The code only: a comment may name the route the shared stream opens.
     const js = read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
@@ -250,7 +253,7 @@ test("every event a page listens to on the shared stream is in STREAM_EVENTS", a
   let checked = 0;
   for (const f of uiScripts()) {
     const js = read(f);
-    if (!/\bhelperStream\b/.test(js)) continue;
+    if (!/\bhelper(Stream|Connection)\b/.test(js)) continue;
     // A page kind's own events (the capture page's calls) only in a file whose stream is of that kind.
     const kinds = [...js.matchAll(/\bkind:\s*["']([a-z]+)["']/g)].map(([, k]) => k);
     for (const [, name] of js.matchAll(/\bon\(\s*["']([^"']+)["']/g)) {
@@ -269,15 +272,28 @@ test("own-stream events stay off the shared stream", async () => {
   assert.deepEqual(Object.keys(OWN_STREAM_EVENTS), ["capture"]);
   assert.deepEqual(OWN_STREAM_EVENTS.capture, ["capture"]);
   for (const names of Object.values(OWN_STREAM_EVENTS)) for (const n of names) assert.ok(!STREAM_EVENTS.includes(n), `${n} is in STREAM_EVENTS`);
-  const common = read(join(UI_ROOT, "common.js"));
-  assert.match(common, /if \(ownEvents\.length\) shared = false;/, "a kind with own events always gets its own stream");
-  assert.match(common, /es = openStream\(base, ownKind, \{ event: deliver, state: setState \}, ownEvents\);/, "only the page's own stream listens for them");
-  assert.equal([...common.matchAll(/ownEvents\)/g)].length, 1, "the shared stream (openHeld) never does");
+  const stream = read(join(UI_ROOT, "stream.js"));
+  assert.match(stream, /if \(ownEvents\.length\) shared = false;/, "a kind with own events always gets its own stream");
+  assert.match(stream, /es = openStream\(base, ownKind, \{ event: deliver, state: setState \}, ownEvents\);/, "only the page's own stream listens for them");
+  assert.equal([...stream.matchAll(/ownEvents\)/g)].length, 1, "the shared stream (openHeld) never does");
+});
+
+// common.js is a list of flat modules at the ui/ root: each is served to the live view, and none
+// spells the browser's own hosts (urls.js says them once; test/vocab.test.mjs checks common.js).
+test("common.js's parts are served and spell no host of the browser's own", async () => {
+  const { ASSET_FILES } = await import("../scripts/liveview/http.mjs");
+  const parts = [...read(join(UI_ROOT, "common.js")).matchAll(/^export \* from "\.\/([a-z-]+\.js)";$/gm)].map(([, f]) => f);
+  assert.ok(parts.length >= 9, `common.js names its parts (${parts})`);
+  for (const f of parts) {
+    assert.ok(Object.hasOwn(ASSET_FILES, f), `${f} is served to the live view`);
+    const code = read(join(UI_ROOT, f)).replace(/^\s*\/\/.*$/gm, "");
+    assert.equal(code.match(/chrome:\/\/pairbrowse|"pairbrowse\.top-chrome"|(HOST|host) = "pairbrowse"/)?.[0], undefined, f);
+  }
 });
 
 test("the strip's nav fragments never connect", () => {
   const js = read(join(UI_ROOT, "strip", "strip.js"));
-  const ensure = js.match(/async function ensureStream\(\) \{([\s\S]*?)\n\}/);
+  const ensure = js.match(/async function ensureStream\([^)]*\) \{([\s\S]*?)\n\}/);
   assert.ok(ensure, "ensureStream guards the stream");
   assert.match(ensure[1], /^\s*if \(navMode\(\)\) \{/, "the nav check comes first");
   assert.match(js, /const navMode = \(\) => mode === "nav-left" \|\| mode === "nav-right";/);
@@ -758,7 +774,7 @@ test("only same-origin pages frame the picker, and no other page can be framed",
     const probe = () => ctx.inPage(() => {
       const read = (id, fn) => { try { return fn(document.getElementById(id).contentDocument); } catch { return false; } };
       return {
-        picker: read("t-picker", (d) => d?.documentElement?.dataset.host === "frame"),
+        picker: read("t-picker", (d) => d?.documentElement?.dataset.mount === "frame"),
         right: read("t-right", (d) => !!d?.querySelector('script[src="right.js"]')),
       };
     });
@@ -771,7 +787,7 @@ test("only same-origin pages frame the picker, and no other page can be framed",
     await foreign.setContent(`<iframe src="${ctx.ui.url("picker")}"></iframe>`);
     await foreign.waitForTimeout(2000);
     const framed = [];
-    for (const f of foreign.frames()) framed.push(await f.evaluate(() => document.documentElement?.dataset.host === "frame").catch(() => false));
+    for (const f of foreign.frames()) framed.push(await f.evaluate(() => document.documentElement?.dataset.mount === "frame").catch(() => false));
     assert.deepEqual(framed.filter(Boolean), [], "a foreign origin never renders the picker");
   } finally {
     await foreign?.close();

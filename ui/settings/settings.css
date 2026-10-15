@@ -1,5 +1,4 @@
 /* PairBrowse Settings (pairbrowse://settings): colors and type from tokens.css only, spacing on its one scale. */
-* { box-sizing: border-box; }
 html, body { margin: 0; }
 html { scroll-padding-top: 72px; }
 body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1.45 var(--sans); -webkit-font-smoothing: antialiased; }

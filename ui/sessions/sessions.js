@@ -14,16 +14,14 @@
 // A tab page: in the browser only window.pairbrowse.session exists here, so nothing else is called.
 // The list is GET sessions.json on every (re)connect, then the helper's sessions and session events:
 // no timer, no poll, no observer.
-import { $, el, ago, initialOf, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, avatar, joinHostAsk, ago, helperConnection, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
+import { followHelper, postReply, UNREACHABLE_RETRY } from "../helper.js";
 
-const NATIVE = !!window.pairbrowse;
 const FILTER_FROM = 6; // the search shows from this many saved sessions
 const NAME = /^[A-Za-z0-9_-]{1,40}$/; // the helper's session names (scripts/sessions.mjs validName)
-const NO_REACH = "Couldn't reach PairBrowse. Try again.";
 
 let base = null;
-let stream = null;
 let session = null; // the helper's session event: { name, temporary, canRename, ... }
 let state = null; // the last sessions.json / sessions event
 let busy = false;
@@ -33,8 +31,7 @@ let askCancel = null; // the open address question's Cancel path (Escape)
 const say = (text, kind = "") => { $("msg").textContent = text; $("msg").dataset.kind = kind; };
 const real = (ev) => ev.isTrusted;
 const shownName = (name) => (name === "default" ? "Default" : String(name));
-const postJson = (path, body) => fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  .then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }), () => ({ status: 0, body: null }));
+const postJson = (path, body) => postReply(base + path, body);
 
 // ---- the line under the title: the open session, as the helper says it ----
 function drawSub() {
@@ -54,8 +51,7 @@ function meta(s) {
 function row(s) {
   const name = shownName(s.name);
   const live = Array.isArray(s.live) ? s.live : [];
-  const face = el("span", { className: "avatar", textContent: initialOf(name) });
-  face.setAttribute("aria-hidden", "true");
+  const face = avatar(name, null, { decorative: true });
   const head = el("strong", {}, el("span", { className: "name", textContent: name, title: name }));
   if (s.current) head.append(el("em", { className: "open", textContent: "Open now" }));
   if (live.length) head.append(el("em", { className: "live", textContent: `Live · ${live.length} ${live.length === 1 ? "other" : "others"}` }));
@@ -134,7 +130,7 @@ function askDelete(li, acts, buttons, name) {
     const r = await postJson("pick", { action: "delete", name });
     li.dataset.asking = "false";
     if (r.status === 200 && r.body && !r.body.error) { say(r.body.text || `Deleted ${shown}.`, "ok"); load(); return; }
-    say(r.body?.text || r.body?.error || (r.status === 0 ? NO_REACH : "That didn't work."), "error");
+    say(r.body?.text || r.body?.error || (r.status === 0 ? UNREACHABLE_RETRY : "That didn't work."), "error");
     if (li.isConnected) back();
   });
   li.dataset.asking = "true";
@@ -172,7 +168,7 @@ function renameIn(li, name, open) {
     }
     save.disabled = cancel.disabled = input.disabled = false;
     save.removeAttribute("aria-busy");
-    say(r.body?.error || r.body?.text || (r.status === 0 ? NO_REACH : "That didn't work."), "error");
+    say(r.body?.error || r.body?.text || (r.status === 0 ? UNREACHABLE_RETRY : "That didn't work."), "error");
     input.focus();
   });
   li.dataset.asking = "true";
@@ -192,7 +188,7 @@ async function send(op, label) {
   const r = await postJson("pick", op);
   busy = false;
   document.body.dataset.s = "live";
-  const body = r.body || { text: NO_REACH, error: true };
+  const body = r.body || { text: UNREACHABLE_RETRY, error: true };
   if (body.error || r.status !== 200) {
     if (body.hostAsk?.id && body.hostAsk.host) { showHostAsk(body.hostAsk); say(""); return; }
     if (body.confirm && op.confirm !== true && (op.action === "use" || op.action === "new")) {
@@ -219,34 +215,19 @@ $("join-form").addEventListener("submit", (ev) => {
 });
 $("join").addEventListener("toggle", () => { if ($("join").open) $("code").focus(); });
 // The address question (the picker's): Allow once, Always allow or Cancel, by a person's click.
-function showHostAsk({ id, host }) {
-  const box = $("host-ask");
-  const once = el("button", { className: "primary", type: "button", textContent: "Allow once" });
-  const always = el("button", { className: "secondary", type: "button", textContent: "Always allow", title: "Remember this address in your config (joinHosts)." });
-  const cancel = el("button", { className: "secondary", type: "button", textContent: "Cancel" });
-  const all = [once, always, cancel];
-  async function answer(op, label) {
-    if (!base || busy) return;
-    busy = true;
-    for (const b of all) b.disabled = true;
-    say(label);
-    const r = await postJson("joinhost", op);
-    busy = false;
-    askCancel = null;
-    box.hidden = true;
-    box.replaceChildren();
-    const body = r.body || { error: NO_REACH };
-    if (body.error || (op.op === "allow" && !body.joined)) { say(body.error || body.text || "That didn't work.", "error"); return; }
-    if (op.op === "cancel") { say("Not joined."); return; }
-    say(body.text || "Done.", "ok");
-  }
-  once.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: false }, "Asking to join…"); });
-  always.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: true }, "Asking to join…"); });
-  cancel.addEventListener("click", (ev) => { if (real(ev)) answer({ op: "cancel", id }, ""); });
-  askCancel = () => answer({ op: "cancel", id }, "");
-  box.replaceChildren(el("strong", {}, "This code leads to ", el("code", { className: "host", textContent: String(host) }), ", not a PairBrowse address. Join through it?"), el("span", { className: "buttons" }, ...all));
-  box.hidden = false;
-  once.focus();
+function showHostAsk(ask) {
+  askCancel = joinHostAsk($("host-ask"), ask, {
+    canSend: () => !!base && !busy,
+    send: async (op, label) => {
+      busy = true;
+      say(label);
+      const r = await postJson("joinhost", op);
+      busy = false;
+      askCancel = null;
+      return r.body;
+    },
+    done: (op, { kind, text }) => say(text, kind),
+  });
 }
 $("filter").addEventListener("input", filter);
 // Escape answers the open question with its Cancel; a filled search clears first, as the field does.
@@ -262,35 +243,22 @@ function none() {
   document.body.dataset.s = "none";
   $("sub").textContent = `${NO_AGENT}. ${noAgentLine("Your sessions")}`;
 }
-function connect(url) {
-  if (!url || url === base) return;
+// The helper's stream, one per address (stream.js helperConnection).
+const connect = helperConnection({
+  onState: (s) => {
+    if (s === "live") { if (!busy) document.body.dataset.s = "live"; drawSub(); }
+    else if (s === "closed") none();
+    else if (document.body.dataset.s !== "none") document.body.dataset.s = "connecting";
+  },
+  onOpen: () => load(),
+}, (stream, url) => {
   base = url;
-  stream?.close();
-  stream = helperStream(base, {
-    onState: (s) => {
-      if (s === "live") { if (!busy) document.body.dataset.s = "live"; drawSub(); }
-      else if (s === "closed") none();
-      else if (document.body.dataset.s !== "none") document.body.dataset.s = "connecting";
-    },
-    onOpen: load,
-  });
   stream.on("sessions", draw);
   stream.on("session", (s) => {
     session = s && typeof s === "object" ? s : null;
     drawSub();
     if (state) draw(state); // Rename follows canRename and the open session
   });
-}
-function helperBase() {
-  if (NATIVE) {
-    return Promise.resolve().then(() => window.pairbrowse.session.helper())
-      .then((h) => (h && h.origin && h.key ? `${h.origin}/${h.key}/` : null)).catch(() => null);
-  }
-  try {
-    const store = globalThis.chrome?.storage?.session;
-    if (!store) return Promise.resolve(null);
-    try { globalThis.chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-    return store.get("view").then((r) => r?.view || null).catch(() => null);
-  } catch { return Promise.resolve(null); }
-}
-helperBase().then((b) => (b ? connect(b) : none()));
+});
+// The helper's address (ui/helper.js), and each new one the extension's worker stores.
+followHelper({ connect, none });

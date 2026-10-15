@@ -1,5 +1,5 @@
 // Compact layouts (scripts/daemon/reveal.mjs): how the controls that unfold a folded search box or
-// menu are named to the agent. The page scan itself runs in a browser (narrow.integration.test.mjs).
+// menu are named to the agent. The page scan itself runs in a browser (test/integration/narrow.test.mjs).
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -42,7 +42,7 @@ test("the page scan is self-contained: it names no site and no word list", () =>
 // ---- the page scan itself, on a small stand-in for a page's DOM ----
 // Enough of the DOM for revealScan: elements with attributes, text, visibility ("hidden": not
 // displayed, with everything inside), a box's place, and selectors (tags, [attr], [attr=value],
-// :not(), lists and descendants). Real pages: narrow.integration.test.mjs.
+// :not(), lists and descendants). Real pages: test/integration/narrow.test.mjs.
 
 const splitTop = (s, sep) => {
   const out = [];

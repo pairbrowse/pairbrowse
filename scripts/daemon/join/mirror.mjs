@@ -221,9 +221,9 @@ export function createJoinMirror(live, { context, log, hud, presence, liveView, 
   // A move made here goes there (drive); else the host's order applies here.
   async function checkOrder(cur) {
     cur.orderAt = Date.now();
-    const live = [...cur.pages].filter(([, p]) => !p.isClosed());
-    if (live.length < 2) return;
-    const sorted = await tabOrder.order(live.map(([, p]) => p)).catch(() => null);
+    const open = [...cur.pages].filter(([, p]) => !p.isClosed());
+    if (open.length < 2) return;
+    const sorted = await tabOrder.order(open.map(([, p]) => p)).catch(() => null);
     if (!sorted || live.cur !== cur) return;
     const ids = sorted.map((p) => idOf(cur, p));
     const r = cur.order.fromLocal(ids);

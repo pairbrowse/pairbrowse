@@ -67,7 +67,8 @@ function wrap(socket, { client, head, maxMessage = MESSAGE_MAX }) {
       for (const fn of on.message) try { fn(text); } catch {}
     }
   }
-  socket.on("data", (d) => { buf = buf.length ? Buffer.concat([buf, d]) : d; if (buf.length > maxMessage + 14) return end(); parse(); });
+  // Whole frames in one chunk are read first; only what is left (one unfinished frame) is held to the cap.
+  socket.on("data", (d) => { buf = buf.length ? Buffer.concat([buf, d]) : d; parse(); if (!closed && buf.length > maxMessage + 14) end(); });
   socket.on("close", end);
   socket.on("end", end);
   socket.on("error", end);

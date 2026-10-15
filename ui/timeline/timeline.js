@@ -386,7 +386,6 @@ function show(id) {
   if (hasBubbles(pb)) return togglePicture(id);
   // The helper's show route (the right dock shows the picture); a 404 from a helper without it is
   // silent and nothing is marked shown; another failure says so under the cards. The agent panel opens first when it is not (Part H).
-  const pb = window.pairbrowse;
   if (pb) {
     pb.layout.get().then(({ state }) => {
       if (state && state.right !== pb.DockState.kOpen) return pb.layout.set({ ...state, right: pb.DockState.kOpen });

@@ -10,7 +10,7 @@
 // browser's API the framed switcher. History and Activity open their pages in the contents
 // (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
-import { $, el, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
+import { $, el, avatar, agentWords, ownAgentLine, isColor, splitLabel, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
 import { isOwnTabPage, isSettingsPage, ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
 import { followHelper } from "../helper.js";
@@ -169,10 +169,7 @@ function drawAgents() {
     const { state, words } = agentWords(p, { tabs: n, driving, paused: paused && p.kind === "agent" });
     const { name, app } = splitLabel(p.who);
     const color = isColor(p.color) ? p.color : colorOf(p.who);
-    const face = el("span", { className: "avatar", textContent: initialOf(name) });
-    face.setAttribute("aria-hidden", "true");
-    if (color) { face.style.background = color; face.style.color = inkOn(color); } // the initial's ink passes AA (B11)
-    else face.classList.add("plain");
+    const face = avatar(name, color, { decorative: true }); // the initial's ink passes AA (B11)
     face.append(el("i", { className: "dot" }));
     const li = el("li", { title: `${p.who} · ${words}` }, face,
       el("strong", { textContent: name }, ...(app ? [el("span", { className: "app", textContent: ` · ${app}` })] : [])),

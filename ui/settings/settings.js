@@ -10,7 +10,7 @@
 // helper says it relays reports). Saved sessions link to the sessions page, their one home. The
 // config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
-import { $, el, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, avatar, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
 import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
 
 const NATIVE = hostKind() === "native";
@@ -267,8 +267,7 @@ function inviteRow(i) {
   const shown = i.label ? String(i.label) : i.role === "watch" ? "a watch invite" : "a drive invite";
   const kind = i.share === "code" ? "Join code" : "Link";
   const rights = i.role === "watch" ? "can watch" : "can drive";
-  const face = el("span", { className: "avatar plain", textContent: initialOf(i.label || kind) });
-  face.setAttribute("aria-hidden", "true");
+  const face = avatar(i.label || kind, null, { decorative: true });
   const head = el("strong", {}, el("span", { className: "name", textContent: i.label ? String(i.label) : kind, title: i.label ? String(i.label) : kind }));
   const meta = [kind, rights, endsIn(i.expires)].filter(Boolean).join(" · ");
   const li = el("li", { className: "has-acts" }, face, head, el("small", { textContent: meta }));

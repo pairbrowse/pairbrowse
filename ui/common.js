@@ -519,10 +519,16 @@ export function inkOn(color) {
   const light = 1.05 / (l + 0.05), dark = (l + 0.05) / (luminance(INK_DARK) + 0.05);
   return light > dark ? INK_LIGHT : INK_DARK;
 }
-export function avatar(name, color, tag = "span") {
-  const a = el(tag, { className: "avatar", textContent: initialOf(name), title: String(name || "") });
-  a.setAttribute("role", "img");
-  a.setAttribute("aria-label", String(name || ""));
+// decorative: beside the name in words (a row, a card): hidden from assistive tech, no role, label
+// or tooltip of its own.
+export function avatar(name, color, { tag = "span", decorative = false } = {}) {
+  const a = el(tag, { className: "avatar", textContent: initialOf(name) });
+  if (decorative) a.setAttribute("aria-hidden", "true");
+  else {
+    a.title = String(name || "");
+    a.setAttribute("role", "img");
+    a.setAttribute("aria-label", String(name || ""));
+  }
   if (isColor(color)) { a.style.background = color; a.style.color = inkOn(color); }
   else a.classList.add("plain");
   return a;

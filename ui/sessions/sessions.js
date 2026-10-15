@@ -14,7 +14,7 @@
 // A tab page: in the browser only window.pairbrowse.session exists here, so nothing else is called.
 // The list is GET sessions.json on every (re)connect, then the helper's sessions and session events:
 // no timer, no poll, no observer.
-import { $, el, joinHostAsk, ago, initialOf, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, avatar, joinHostAsk, ago, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
 import { followHelper, postReply, UNREACHABLE_RETRY } from "../helper.js";
 
@@ -52,8 +52,7 @@ function meta(s) {
 function row(s) {
   const name = shownName(s.name);
   const live = Array.isArray(s.live) ? s.live : [];
-  const face = el("span", { className: "avatar", textContent: initialOf(name) });
-  face.setAttribute("aria-hidden", "true");
+  const face = avatar(name, null, { decorative: true });
   const head = el("strong", {}, el("span", { className: "name", textContent: name, title: name }));
   if (s.current) head.append(el("em", { className: "open", textContent: "Open now" }));
   if (live.length) head.append(el("em", { className: "live", textContent: `Live · ${live.length} ${live.length === 1 ? "other" : "others"}` }));

@@ -586,10 +586,7 @@ function drawPeople() {
   const perAgent = !!(pauseInfo?.perAgent && pauseInfo?.can);
   const rows = people.map((p, i) => {
     const { name, app } = splitLabel(p.who);
-    const face = avatar(name, p.color);
-    face.removeAttribute("role");
-    face.removeAttribute("aria-label");
-    face.setAttribute("aria-hidden", "true");
+    const face = avatar(name, p.color, { decorative: true });
     // Two lines: the name, then its part in the session in words (the mockup's "Observing",
     // "Helping", "Active") with what it does and whose browser; the tab stays in the title.
     // Held on its own (Take control): the helper's pause event lists it by name (Part H).

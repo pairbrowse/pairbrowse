@@ -1,0 +1,16 @@
+{
+  "details": [
+    {
+      "label": "Legal name",
+      "value": "Example Shop B.V.",
+      "source": "you",
+      "updatedAt": "2026-05-01T10:00:00.000Z"
+    },
+    {
+      "label": "City",
+      "value": "Utrecht",
+      "source": "claude",
+      "updatedAt": "2026-05-01T10:01:00.000Z"
+    }
+  ]
+}

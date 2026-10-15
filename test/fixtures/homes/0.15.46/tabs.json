@@ -1,0 +1,14 @@
+{
+  "tabs": [
+    {
+      "url": "https://shop.example.com/admin",
+      "title": "Admin"
+    },
+    {
+      "url": "https://docs.example.com/start",
+      "title": "Start"
+    }
+  ],
+  "active": 1,
+  "savedAt": "2026-05-01T10:02:00.000Z"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "Shop setup",
+  "status": "in progress",
+  "createdAt": "2026-05-01T10:00:00.000Z",
+  "updatedAt": "2026-05-01T10:30:00.000Z",
+  "goal": "Set up the example shop",
+  "done": [
+    "Opened the admin"
+  ],
+  "left": [
+    "Shipping rates"
+  ],
+  "yourTurn": [
+    "Confirm the e-mail"
+  ],
+  "drafted": []
+}

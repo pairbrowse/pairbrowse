@@ -1,0 +1,11 @@
+{
+  "site": "shop.example.com",
+  "passed": true,
+  "checks": [
+    {
+      "rule": "Every required field filled",
+      "pass": true
+    }
+  ],
+  "at": "2026-05-01T10:31:00.000Z"
+}

@@ -1,0 +1,24 @@
+{
+  "browserEngine": "auto",
+  "browserDriver": "patchright",
+  "participantName": "Ann Example",
+  "maxTabs": 12,
+  "screenshots": false,
+  "chromeArgs": [
+    "--lang=en-US"
+  ],
+  "liveViewPort": 4321,
+  "joinHosts": [
+    "share.example.org"
+  ],
+  "sharing": {
+    "tunnel": {
+      "kind": "quick"
+    },
+    "guestPort": 0
+  },
+  "pairbrowse": {
+    "humanize": true,
+    "typingPace": 0.35
+  }
+}

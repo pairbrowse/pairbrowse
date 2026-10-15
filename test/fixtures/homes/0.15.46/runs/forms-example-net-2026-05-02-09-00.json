@@ -1,0 +1,15 @@
+{
+  "name": "forms.example.net 2026-05-02 09:00",
+  "status": "in progress",
+  "source": "auto",
+  "session": "work",
+  "createdAt": "2026-05-02T09:00:00.000Z",
+  "updatedAt": "2026-05-02T09:05:00.000Z",
+  "done": [
+    "Apply <https://forms.example.net/apply>: Typed the name"
+  ],
+  "left": [],
+  "yourTurn": [],
+  "drafted": [],
+  "tabs": []
+}

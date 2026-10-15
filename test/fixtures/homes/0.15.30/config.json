@@ -1,0 +1,14 @@
+{
+  "browserEngine": "auto",
+  "browserDriver": "patchright",
+  "participantName": "Ann Example",
+  "maxTabs": 12,
+  "screenshots": false,
+  "chromeArgs": [
+    "--lang=en-US"
+  ],
+  "liveViewPort": 4321,
+  "joinHosts": [
+    "share.example.org"
+  ]
+}

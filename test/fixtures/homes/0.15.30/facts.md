@@ -1,0 +1,2 @@
+- Legal name: Example Shop B.V.
+- City: Utrecht

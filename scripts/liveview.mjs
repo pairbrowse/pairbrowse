@@ -29,9 +29,9 @@ import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "../ui/urls.js";
 import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
 import { createToolsRoutes } from "./liveview/routes/tools.mjs";
 import { createTimelineRoutes } from "./liveview/routes/timeline.mjs";
+import { createSessionRoutes } from "./liveview/routes/sessions.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
-import { readPick } from "./daemon/pick.mjs";
 import { REPORT_BODY_MAX } from "./liveview/report.mjs";
 import { createActivityLog, readPageQuery } from "./daemon/activitylog.mjs";
 import { PAGE_KINDS as PAGE_KIND_LIST } from "../ui/vocab.js";
@@ -79,7 +79,6 @@ export function readTabOrder(body) {
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
 const PAGE_KINDS = new Set(PAGE_KIND_LIST);
-const SESSION_OP = 'A session change is { op: "rename", name, from? } or { op: "save" }.';
 const SESSION_FIELDS = ["canRename", "canSave", "savedAt", "canRenameSaved"]; // the owner's streams only
 const INVITE_ID = /^[0-9a-f]{8}$/;
 // The invites as Settings lists them (GET invites.json, the invites event): never a key or a code.
@@ -850,26 +849,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // The invites out now, for Settings (Sharing, Invites): id, role, label, link or code, when it
     // ends (epoch ms). Never a key, a code or a link.
     { method: "GET", path: "invites.json", right: "invite", handler: ({ res }) => json(res, 200, { items: inviteItems(invites.list()) }) },
-    // The session picker (an extension page, with the owner's key from the side panel's memory):
-    // the saved sessions, and the person's pick. picker: { state(), pick(op) } from the helper.
-    { method: "GET", path: "sessions.json", right: "session", needs: () => picker, handler: ({ res }) => json(res, 200, picker.state()) },
-    // While a session is open too (the switcher, the new tab page's chips, the sessions page): the
-    // helper decides (daemon/pick.mjs). 428 { confirm, agents } while other agents are at work and
-    // the body has no confirm: true; 409 { text, error } for a refusal; the open pages hear the
-    // sessions event after a change.
-    { method: "POST", path: "pick", right: "session", needs: () => picker, handler: async ({ req, res }) => {
-      const given = await readJsonBody(req, res, BODY_MAX.approve);
-      if (given === undefined) return;
-      const { op, error } = readPick(given);
-      if (error) return json(res, 409, { text: error, error: true });
-      const r = (await picker.pick(op)) || { text: "That didn't work.", error: true };
-      json(res, r.confirm ? 428 : r.error ? 409 : 200, r);
-      if (!r.error) { try { broadcast("sessions", picker.state()); } catch {} }
-    } },
-    // "End session" in the side panel (the right dock in the browser): the picker again, in a new tab (the owner only).
-    { method: "POST", path: "picker", right: "session", needs: () => picker?.open, handler: async ({ res }) => {
-      json(res, 200, await picker.open());
-    } },
+    ...createSessionRoutes({ picker, sessionOps, broadcast, ownerSession, linkGuests, layouts, joinersNow, recordState, clickApprovals }),
     // The browser's own pages (the owner only): the docks' layout, the tab strip's list, and the
     // session's timeline of pictures already sent to agents (daemon/timeline.mjs).
     { method: "GET", path: "layout.json", right: "layout", handler: ({ res }) => json(res, 200, layoutNow()) },
@@ -912,39 +892,6 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       const r = await reporter.relay(given);
       if (r.status === 404) return plain(res, 404);
       json(res, r.status, r.body);
-    } },
-    // The session card (the owner only): { op: "rename", name } restarts the browser on the renamed
-    // session ({ op: "rename", name, from }: a saved one that isn't open, renamed without a
-    // restart; the sessions page), { op: "save" } writes its tabs now. sessionOps from the helper (daemon.mjs).
-    { method: "POST", path: "session", right: "session", needs: () => sessionOps, handler: async ({ req, res }) => {
-      const op = await readJsonBody(req, res, BODY_MAX.approve);
-      if (op === undefined) return;
-      if (!op || typeof op !== "object" || Array.isArray(op) || (op.op !== "rename" && op.op !== "save")) return json(res, 409, { error: SESSION_OP });
-      if (op.op === "save") {
-        const r = await sessionOps.save();
-        if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
-        json(res, 200, { ok: true, savedAt: r.savedAt || "" });
-        broadcast("session", ownerSession());
-        return;
-      }
-      // from: a saved session that isn't open (the sessions page): renamed in place, nothing
-      // restarts, so who is in this session, a recording or an approval don't hold it up.
-      if (op.from !== undefined && (typeof op.from !== "string" || !op.from.trim() || op.from.length > 40)) return json(res, 409, { error: "from is a saved session's name." });
-      const from = op.from === undefined ? undefined : op.from.trim();
-      const saved = from !== undefined && from !== sessionOps.current?.();
-      if (!saved) {
-        if (linkGuests.size || joinersNow().length) return json(res, 409, { error: "People are in this session; rename it once they have left." });
-        if (recordState()?.recording) return json(res, 409, { error: "Stop the recording first." });
-        if (clickApprovals?.pending().length) return json(res, 409, { error: "An approval is waiting; answer it first." });
-      }
-      const name = String(op.name ?? "").trim();
-      const r = await (saved ? sessionOps.rename(name, from) : sessionOps.rename(name));
-      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
-      if (r.from && r.from !== r.name && layouts.has(r.from)) { layouts.set(r.name, layouts.get(r.from)); layouts.delete(r.from); }
-      // Answered before the browser restarts: the dock that asked closes with the window.
-      json(res, 200, { ok: true, name: r.name, restarting: !!r.restarting });
-      broadcast("session", ownerSession());
-      if (saved && picker) { try { broadcast("sessions", picker.state()); } catch {} }
     } },
     // The Page tab: the whole-page snapshot an agent last got for a tab (?tab=<id>, else the
     // latest), its text masked again here; { outline: null } when there is none.

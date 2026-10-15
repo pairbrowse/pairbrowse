@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --ignore-scripts
+      # Known high or critical advisories in what ships, and the registry signatures of what npm ci installed.
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm audit signatures
       - run: npm run lint
       - run: npm test
       - run: npm run test:fuzz
@@ -47,7 +50,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Pinned browser runtime, as the plugin installs it
         working-directory: runtime
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm audit --omit=dev --audit-level=high
+          npm audit signatures
       - name: Patchright's Chromium (the driver PairBrowse ships with), and a virtual screen
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q xvfb

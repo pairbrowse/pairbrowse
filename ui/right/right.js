@@ -11,6 +11,7 @@ import { toolsPanel } from "./tools.js";
 import { AGENT_COLOR } from "../vocab.js";
 import { ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
+import { followHelper } from "../helper.js";
 
 const pb = globalThis.pairbrowse || null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -842,9 +843,7 @@ function drawSessionCard() {
   $("session-card").hidden = !lastSession?.name || s === "none" || s === "closed";
 }
 
-// The helper's address: from the browser in the build, else from the extension's storage (null
-// on a page opened without it, a plain file, which then renders with its defaults and connects
-// to nothing).
+// The extension's storage areas (null on a page opened without it, a plain file).
 const store = (area) => { try { return globalThis.chrome?.storage?.[area] || null; } catch { return null; } };
 // No helper to ask (no browser API and no extension storage, or the browser has no helper
 // address): the strip's words, not a wait for something that is not coming.
@@ -854,13 +853,9 @@ function noHelper() {
   setDriver();
   drawSessionCard();
 }
-if (pb) pb.session.helper().then(({ origin, key }) => { if (origin && key) connect(`${origin}/${key}/`); else noHelper(); }).catch(noHelper);
-else {
-  const area = store("session");
-  if (!area) noHelper();
-  else area.get("view").then(({ view }) => connect(view)).catch(() => {});
-  try { globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-}
+// The helper's address (ui/helper.js), and each new one the extension's worker stores; the
+// extension's storage without one yet waits for it.
+followHelper({ connect, none: noHelper, wait: true });
 
 // Hidden (the page, or the dock in the browser build): no timer runs (the driving re-check, the
 // checklist's pending read, the recording clock); back in front, each is re-armed from the state

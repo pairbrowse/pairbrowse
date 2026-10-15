@@ -21,6 +21,7 @@ import { MEASURING } from "../native-engine.mjs";
 import { isChromePage, CHROME_PICKER, extensionUrl } from "../../ui/urls.js";
 import { createPersonTabs, keepDownloadMark } from "./tools.mjs";
 import { OPEN_ACCEPT_MS } from "../opener.mjs";
+import { where } from "./where.mjs";
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
@@ -44,9 +45,8 @@ const chromePagesIn = (engine) => shellOf(engine).ownPages;
 const capturePagesIn = (engine) => shellOf(engine).capturePage;
 const captureKeyedIn = (engine) => shellOf(engine).captureKeyed;
 
-// Started in an SSH session (say, the desktop app's SSH sessions) means the browser runs on that
-// machine, not the user's: its live view needs an SSH tunnel.
-export const where = () => (process.env.SSH_CONNECTION ? "Server" : "Local");
+// Where the browser runs ("Local", or "Server" over SSH): daemon/where.mjs.
+export { where };
 
 // This Mac's one-time capture (native-engine.mjs MEASURING): the first launch of a browser version
 // waits up to a minute for it, and says so in the live view's status line and a notification (no

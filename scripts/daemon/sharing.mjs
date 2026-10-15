@@ -13,7 +13,7 @@ import { tunnelConfig } from "../tunnels/config.mjs";
 import { startOwnTunnel } from "../tunnels/start.mjs";
 import { randomBytes } from "node:crypto";
 import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../devshare.mjs";
-import { where } from "./context.mjs";
+import { where } from "./where.mjs";
 
 const formatTime = (t) => new Date(t).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 

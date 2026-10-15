@@ -749,6 +749,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
 
   // ---- the owner's port: your own link, the side panel, and invite links -------------------
   // Each route names the right it needs (invites.mjs); a route that isn't listed is refused.
+  // needs(): the part of the helper a route works with; falsy, the route answers 404 (a string: 404
+  // with that sentence), checked after the right, as each route did first thing.
   const ROUTES = [
     { method: "GET", path: "", right: "page", handler: ({ req, res, role }) => serveViewer(req, res, { role }) },
     { method: "GET", path: "assets", right: "page", handler: ({ res, rest }) => serveAsset(res, rest) },
@@ -774,7 +776,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     { method: "GET", path: "joins.json", right: "approve", handler: ({ res }) => json(res, 200, approvals.pending()) },
     // Named final clicks waiting for an answer (daemon/approvals.mjs), for the owner only: the
     // browser's own pages list them and answer with POST approve { id, answer }.
-    { method: "GET", path: "approvals.json", right: "approve", handler: ({ res }) => (clickApprovals ? json(res, 200, { pending: clickApprovals.pending() }) : plain(res, 404)) },
+    { method: "GET", path: "approvals.json", right: "approve", needs: () => clickApprovals, handler: ({ res }) => json(res, 200, { pending: clickApprovals.pending() }) },
     { method: "POST", path: "approve", right: "approve", handler: async ({ req, res }) => {
       const given = await readJsonBody(req, res, BODY_MAX.approve);
       if (given === undefined) return;
@@ -804,8 +806,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     } },
     // Dev servers (devshare.mjs), for the owner only: what's open on localhost and shared, an
     // agent's question to share one; and the owner's answer, Share or Stop (a real click).
-    { method: "POST", path: "dev", right: "approve", handler: async ({ req, res }) => {
-      if (!devPanel) return plain(res, 404);
+    { method: "POST", path: "dev", right: "approve", needs: () => devPanel, handler: async ({ req, res }) => {
       const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });
       if (v === undefined) return;
       const r = await devPanel.act(v);
@@ -814,19 +815,18 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // A join code whose address this person hasn't allowed (daemon/follow.mjs): their Allow once,
     // Always allow or Cancel, and Remove for an allowed address. The owner only (the side panel,
     // the session picker), with a real click; agents have no tool for it.
-    { method: "POST", path: "joinhost", right: "approve", handler: async ({ req, res }) => {
-      if (!joinHost) return plain(res, 404);
+    { method: "POST", path: "joinhost", right: "approve", needs: () => joinHost, handler: async ({ req, res }) => {
       const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });
       if (v === undefined) return;
       const r = await joinHost.act(v);
       json(res, r.error ? 409 : 200, r);
     } },
     // The Profile panel: remembered details in full, passwords by name and sites only.
-    { method: "GET", path: "profile.json", right: "profile", handler: ({ res }) => profile ? json(res, 200, profile.get()) : plain(res, 404) },
-    { method: "POST", path: "profile", right: "profile", handler: changeProfile },
+    { method: "GET", path: "profile.json", right: "profile", needs: () => profile, handler: ({ res }) => json(res, 200, profile.get()) },
+    { method: "POST", path: "profile", right: "profile", needs: () => profile, handler: changeProfile },
     // The Timeline: the goal log's lines (journal.mjs read, masked again there), read when the
     // owner opens it or presses Refresh; null while no run is open.
-    { method: "GET", path: "journal.json", right: "journal", handler: ({ res }) => journal ? json(res, 200, journal() ?? null) : plain(res, 404) },
+    { method: "GET", path: "journal.json", right: "journal", needs: () => journal, handler: ({ res }) => json(res, 200, journal() ?? null) },
     // The Share card (the side panel, the live view toolbar): the owner makes a join code or a
     // watch link with a real click, through the helper's own invite code. The code or link is in
     // this answer only: never broadcast, logged or kept in state.json.
@@ -854,13 +854,12 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     { method: "GET", path: "invites.json", right: "invite", handler: ({ res }) => json(res, 200, { items: inviteItems(invites.list()) }) },
     // The session picker (an extension page, with the owner's key from the side panel's memory):
     // the saved sessions, and the person's pick. picker: { state(), pick(op) } from the helper.
-    { method: "GET", path: "sessions.json", right: "session", handler: ({ res }) => picker ? json(res, 200, picker.state()) : plain(res, 404) },
+    { method: "GET", path: "sessions.json", right: "session", needs: () => picker, handler: ({ res }) => json(res, 200, picker.state()) },
     // While a session is open too (the switcher, the new tab page's chips, the sessions page): the
     // helper decides (daemon/pick.mjs). 428 { confirm, agents } while other agents are at work and
     // the body has no confirm: true; 409 { text, error } for a refusal; the open pages hear the
     // sessions event after a change.
-    { method: "POST", path: "pick", right: "session", handler: async ({ req, res }) => {
-      if (!picker) return plain(res, 404);
+    { method: "POST", path: "pick", right: "session", needs: () => picker, handler: async ({ req, res }) => {
       const given = await readJsonBody(req, res, BODY_MAX.approve);
       if (given === undefined) return;
       const { op, error } = readPick(given);
@@ -870,8 +869,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       if (!r.error) { try { broadcast("sessions", picker.state()); } catch {} }
     } },
     // "End session" in the side panel (the right dock in the browser): the picker again, in a new tab (the owner only).
-    { method: "POST", path: "picker", right: "session", handler: async ({ res }) => {
-      if (!picker?.open) return plain(res, 404);
+    { method: "POST", path: "picker", right: "session", needs: () => picker?.open, handler: async ({ res }) => {
       json(res, 200, await picker.open());
     } },
     // The browser's own pages (the owner only): the docks' layout, the tab strip's list, and the
@@ -898,9 +896,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // chosen: boolean (a person recorded the choice) }. POST: any subset of browser / timeline /
     // layout; answers the GET body plus restart: true while "browser" differs from the browser in
     // use (it takes effect at the next start); written into config.json, broadcast as "config".
-    { method: "GET", path: "config.json", right: "config", handler: ({ res }) => (settings ? json(res, 200, settings.read()) : plain(res, 404)) },
-    { method: "POST", path: "config", right: "config", handler: async ({ req, res }) => {
-      if (!settings) return plain(res, 404);
+    { method: "GET", path: "config.json", right: "config", needs: () => settings, handler: ({ res }) => json(res, 200, settings.read()) },
+    { method: "POST", path: "config", right: "config", needs: () => settings, handler: async ({ req, res }) => {
       const given = await readJsonBody(req, res, BODY_MAX.approve);
       if (given === undefined) return;
       const r = await settings.write(given);
@@ -911,8 +908,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // Report a problem (Settings, on the person's click after they saw the JSON): relayed over
     // HTTPS to config.json's reportUrl (liveview/report.mjs: checked, scrubbed again, 5 an hour).
     // 404 without a report address; the address itself is never in an answer.
-    { method: "POST", path: "report", right: "config", handler: async ({ req, res }) => {
-      if (!reporter?.enabled()) return plain(res, 404);
+    { method: "POST", path: "report", right: "config", needs: () => reporter?.enabled(), handler: async ({ req, res }) => {
       const given = await readJsonBody(req, res, REPORT_BODY_MAX);
       if (given === undefined) return;
       const r = await reporter.relay(given);
@@ -922,8 +918,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // The session card (the owner only): { op: "rename", name } restarts the browser on the renamed
     // session ({ op: "rename", name, from }: a saved one that isn't open, renamed without a
     // restart; the sessions page), { op: "save" } writes its tabs now. sessionOps from the helper (daemon.mjs).
-    { method: "POST", path: "session", right: "session", handler: async ({ req, res }) => {
-      if (!sessionOps) return plain(res, 404);
+    { method: "POST", path: "session", right: "session", needs: () => sessionOps, handler: async ({ req, res }) => {
       const op = await readJsonBody(req, res, BODY_MAX.approve);
       if (op === undefined) return;
       if (!op || typeof op !== "object" || Array.isArray(op) || (op.op !== "rename" && op.op !== "save")) return json(res, 409, { error: SESSION_OP });
@@ -955,8 +950,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     } },
     // The Page tab: the whole-page snapshot an agent last got for a tab (?tab=<id>, else the
     // latest), its text masked again here; { outline: null } when there is none.
-    { method: "GET", path: "outline.json", right: "outline", handler: async ({ req, res }) => {
-      if (!outlines) return plain(res, 404);
+    { method: "GET", path: "outline.json", right: "outline", needs: () => outlines, handler: async ({ req, res }) => {
       const want = new URL(req.url, "http://x").searchParams.get("tab");
       const page = want ? webPages((await getContext()).pages()).map(([p]) => p).find((p) => !p.isClosed() && idOf(p) === want) || null : outlines.latest();
       const o = page ? outlines.get(page) : null;
@@ -964,27 +958,23 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     } },
     { method: "GET", path: "tabs.json", right: "strip", handler: async ({ res }) => { watchPages(); json(res, 200, await tabsStrip()); } },
     { method: "GET", path: "agent-tabs.json", right: "strip", handler: async ({ res }) => json(res, 200, await agentTabs()) },
-    { method: "GET", path: "timeline.json", right: "timeline", handler: ({ res }) => {
-      if (timelineOff(res)) return;
+    { method: "GET", path: "timeline.json", right: "timeline", needs: timelineOn, handler: ({ res }) => {
       json(res, 200, { cards: (timeline.cards() || []).map(maskedCard) });
     } },
-    { method: "GET", path: "timeline", right: "timeline", handler: async ({ res, rest }) => {
-      if (timelineOff(res)) return;
+    { method: "GET", path: "timeline", right: "timeline", needs: timelineOn, handler: async ({ res, rest }) => {
       const m = rest.length === 1 ? /^([0-9a-f]{12})\.jpg$/.exec(rest[0]) : null;
       const bytes = m ? await timeline.picture(m[1]) : null;
       if (!bytes) return plain(res, 404);
       res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "image/jpeg" });
       res.end(bytes);
     } },
-    { method: "DELETE", path: "timeline", right: "timeline", handler: async ({ res, rest }) => {
-      if (timelineOff(res)) return;
+    { method: "DELETE", path: "timeline", right: "timeline", needs: timelineOn, handler: async ({ res, rest }) => {
       if (rest.length !== 1 || !TIMELINE_ID.test(rest[0])) return plain(res, 404);
       return (await timeline.remove(rest[0])) === true ? json(res, 200, { ok: true }) : plain(res, 404);
     } },
     // note, <id>/pin, and <id>/show: the Pictures tab shows that card (an event to the owner's
     // streams with the card; nothing new kept).
-    { method: "POST", path: "timeline", right: "timeline", handler: async ({ req, res, rest }) => {
-      if (timelineOff(res)) return;
+    { method: "POST", path: "timeline", right: "timeline", needs: timelineOn, handler: async ({ req, res, rest }) => {
       const isNote = rest.length === 1 && rest[0] === "note";
       const isPin = rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "pin";
       const isShow = rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "show";
@@ -1006,28 +996,24 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // the hand-offs waiting for the person, and diagnostics. Files go by id (daemon/toolstab.mjs);
     // request bodies are capped and otherwise ignored (but a download's Open reads { confirm: true }),
     // so nothing in them names a file.
-    { method: "GET", path: "downloads.json", right: "tools", handler: ({ res }) => (toolsOff(res) ? null : json(res, 200, { items: tools.downloads.list().map(maskedDownload) })) },
-    { method: "POST", path: "downloads", right: "tools", handler: (ctx) => fileAction(ctx, tools?.downloads, true) },
-    { method: "GET", path: "recordings.json", right: "tools", handler: ({ res }) => {
-      if (toolsOff(res)) return;
+    { method: "GET", path: "downloads.json", right: "tools", needs: toolsOn, handler: ({ res }) => json(res, 200, { items: tools.downloads.list().map(maskedDownload) }) },
+    { method: "POST", path: "downloads", right: "tools", needs: toolsOn, handler: (ctx) => fileAction(ctx, tools?.downloads, true) },
+    { method: "GET", path: "recordings.json", right: "tools", needs: toolsOn, handler: ({ res }) => {
       const st = recordState() || {};
       json(res, 200, { recording: { on: !!st.recording, since: st.since || 0 }, items: tools.recordings.list() });
     } },
-    { method: "POST", path: "recordings", right: "tools", handler: (ctx) => fileAction(ctx, tools?.recordings, false) },
-    { method: "DELETE", path: "recordings", right: "tools", handler: async ({ req, res, rest }) => {
-      if (toolsOff(res)) return;
+    { method: "POST", path: "recordings", right: "tools", needs: toolsOn, handler: (ctx) => fileAction(ctx, tools?.recordings, false) },
+    { method: "DELETE", path: "recordings", right: "tools", needs: toolsOn, handler: async ({ req, res, rest }) => {
       if (rest.length !== 1 || !TOOL_ID.test(rest[0])) return plain(res, 404);
       if ((await readCapped(req, res, BODY_MAX.approve)) === null) return;
       const r = tools.recordings.remove(rest[0]);
       if (r?.ok) return json(res, 200, { ok: true });
       return r?.status === 410 ? json(res, 410, { error: FILE_CHANGED }) : plain(res, 404);
     } },
-    { method: "GET", path: "handoffs.json", right: "tools", handler: async ({ res }) => {
-      if (toolsOff(res)) return;
+    { method: "GET", path: "handoffs.json", right: "tools", needs: toolsOn, handler: async ({ res }) => {
       json(res, 200, { items: await Promise.all(tools.handoffs.list().map(handoffItem)) });
     } },
-    { method: "POST", path: "handoffs", right: "tools", handler: async ({ req, res, rest }) => {
-      if (toolsOff(res)) return;
+    { method: "POST", path: "handoffs", right: "tools", needs: toolsOn, handler: async ({ req, res, rest }) => {
       if (rest.length !== 2 || !TOOL_ID.test(rest[0]) || rest[1] !== "show") return plain(res, 404);
       if ((await readCapped(req, res, BODY_MAX.approve)) === null) return;
       const h = tools.handoffs.entry(rest[0]);
@@ -1037,9 +1023,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       await within(3000, bringTabForward(h.page));
       json(res, 200, { ok: true });
     } },
-    { method: "GET", path: "diagnostics.json", right: "tools", handler: async ({ res }) => (toolsOff(res) ? null : json(res, 200, await diagnosticsNow())) },
-    { method: "POST", path: "diagnostics", right: "tools", handler: async ({ req, res, rest }) => {
-      if (toolsOff(res)) return;
+    { method: "GET", path: "diagnostics.json", right: "tools", needs: toolsOn, handler: async ({ res }) => json(res, 200, await diagnosticsNow()) },
+    { method: "POST", path: "diagnostics", right: "tools", needs: toolsOn, handler: async ({ req, res, rest }) => {
       if (rest.length !== 1 || rest[0] !== "report") return plain(res, 404);
       if ((await readCapped(req, res, BODY_MAX.approve)) === null) return;
       json(res, 200, { text: tools.diagnostics.reportText(await diagnosticsNow()) });
@@ -1064,8 +1049,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     } },
     // The browser's own capture page answering the helper (liveview/capture.mjs): an offer, an
     // answer, a recording's piece, or its hello.
-    { method: "POST", path: "capture", right: "capture", handler: async ({ req, res, rest, byPages }) => {
-      if (!capture || rest.length !== 1 || rest[0] !== "reply") return plain(res, 404);
+    { method: "POST", path: "capture", right: "capture", needs: () => capture, handler: async ({ req, res, rest, byPages }) => {
+      if (rest.length !== 1 || rest[0] !== "reply") return plain(res, 404);
       if (!captureOk(req, byPages)) return plain(res, 403);
       const body = await readCapped(req, res, BODY_MAX.capture);
       if (body === null) return;
@@ -1168,7 +1153,6 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   }
 
   async function changeProfile({ req, res }) {
-    if (!profile) return plain(res, 404);
     const op = await readJsonBody(req, res, BODY_MAX.profile, { object: true });
     if (op === undefined) return;
     let error = null;
@@ -1183,14 +1167,10 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   }
 
   // The timeline's routes: 404 without a store, 404 with a plain sentence when it's switched off.
-  function timelineOff(res) {
-    if (!timeline) { plain(res, 404); return true; }
-    if (!timeline.enabled) { plain(res, 404, TIMELINE_OFF); return true; }
-    return false;
-  }
+  function timelineOn() { return !timeline ? false : timeline.enabled ? true : TIMELINE_OFF; }
   const maskedCard = (c) => ({ ...c, caption: mask(String(c.caption || "")) });
   // The Tools tab's routes: 404 without the helper's tools.
-  function toolsOff(res) { if (!tools) { plain(res, 404); return true; } return false; }
+  function toolsOn() { return !!tools; }
   const FILE_CHANGED = "That file was moved, replaced or deleted since it was saved.";
   const maskedDownload = (d) => ({ ...d, from: { host: d.from?.host || "", title: mask(String(d.from?.title || "")) } });
   const tabTitle = async (page) => mask(String((await within(1000, Promise.resolve(ownTitle(page)).catch(() => ""))) ?? ""));
@@ -1203,7 +1183,6 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   // openWay), as a read-only preview there (daemon/preview.mjs), or with the OS opener; open-app
   // opens a document with its app. Recordings: the OS opener only.
   async function fileAction({ req, res, rest }, store, isDownload) {
-    if (toolsOff(res)) return;
     const verbs = isDownload ? ["open", "reveal", "open-app"] : ["open", "reveal"];
     if (rest.length !== 2 || !TOOL_ID.test(rest[0]) || !verbs.includes(rest[1])) return plain(res, 404);
     const body = await readCapped(req, res, BODY_MAX.approve);
@@ -1292,6 +1271,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     if (!r) return plain(res, 404);
     if (!roleMay(role, r.right)) return plain(res, 403);
     try {
+      const has = r.needs ? r.needs() : true;
+      if (!has) return plain(res, 404);
+      if (typeof has === "string") return plain(res, 404, has);
       await r.handler({ req, res, route, rest, role, invite, byPages });
     } catch (e) {
       log("liveview", e?.message || e);

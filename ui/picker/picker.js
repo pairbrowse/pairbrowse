@@ -6,6 +6,7 @@
 // The live view takes these requests only from the page's own origin.
 import { $, el, avatar, initialOf, reportOffer, askSwitch, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
+import { followHelper } from "../helper.js";
 
 // Framed: the switcher popover. No page chrome of its own, the list even when a session is open,
 // and the parent told (same origin only) when to close; the pick itself goes only to the helper.
@@ -319,13 +320,7 @@ function connect(url) {
 // state at once. A frame given no binding of its own while its parent has a helper (DESIGN.md
 // H4.1) says it couldn't reach PairBrowse: the switcher the person opened failed (Part H).
 const lost = () => { if (framed) say("Couldn't reach PairBrowse.", "error"); else none(); };
-let store = null;
-try { store = globalThis.chrome?.storage?.session || null; } catch {}
+// The browser answers with no address when it was started without a helper: nothing to reach. The
+// extension's storage without one yet: the page waits for the worker to store it (ui/helper.js).
 if (framed && location.hash === "#none") none();
-else if (window.pairbrowse) {
-  // The browser answers with no address when it was started without a helper: nothing to reach.
-  window.pairbrowse.session.helper().then((r) => { const { origin, key } = r || {}; if (origin && key) connect(`${origin}/${key}/`); else none(); }, lost);
-} else if (store) {
-  store.get("view").then(({ view } = {}) => connect(view), lost);
-  try { chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-} else lost();
+else followHelper({ connect, none, failed: lost, wait: true });

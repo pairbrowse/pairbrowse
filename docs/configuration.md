@@ -79,4 +79,6 @@ SHOPIFY_PASSWORD=...
 SHOPIFY_PASSWORD_DOMAINS=accounts.shopify.com
 ```
 
-Set `PAIRBROWSE_HOME` to keep everything somewhere other than `~/.pairbrowse`.
+Set `PAIRBROWSE_HOME` to keep everything somewhere other than `~/.pairbrowse`, or run several
+browsers side by side as named instances (`PAIRBROWSE_INSTANCE`, or a project's `.pairbrowse.json`:
+[Several browsers: instances](using.md#several-browsers-instances)).

@@ -667,7 +667,7 @@ const connect = helperConnection({
     $("session-name").textContent = s.name;
     $("session-line").hidden = editing;
     $("session-card").dataset.clean = String(!!s.temporary);
-    $("session-card").title = `${s.where} · ${s.name}`;
+    $("session-card").title = `${s.where} · ${s.name}${typeof s.instance === "string" && s.instance ? ` · instance ${s.instance.slice(0, 32)}` : ""}`;
     drawSessionCard();
     drawHeader();
   });

@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { paths } from "../paths.mjs";
 import { downloadPinned, readJson, sha256, sha256File, writeJsonAtomic } from "../util.mjs";
 import { NATIVE } from "../native-pack.mjs";
+import { withInstallLock } from "../install-lock.mjs";
 
 const run = promisify(execFile);
 // The by-hand install step's fixed entry.
@@ -79,13 +80,18 @@ export async function installEngine(archive, { sha256: want = NATIVE.engine.sha2
 // The pinned engine pack, installed (downloaded first when needed). Returns its folder.
 export async function ensureEngine(log = () => {}) {
   const dir = engineDir();
-  if (readJson(join(dir, "installed.json"))?.sha256 === NATIVE.engine.sha256) return dir;
-  const archive = await pinnedArchive(NATIVE.engine, log, "the PairBrowse engine (under 1 MB, once)").catch((e) => {
-    throw new Error(`the PairBrowse engine isn't installed (${e.message}). Install it with: ${installHint(NATIVE.engine)}`);
-  });
-  const installed = await installEngine(archive, { log });
-  rmSync(archive, { force: true }); // installed and checked: the download isn't needed any more
-  return installed;
+  const current = () => readJson(join(dir, "installed.json"))?.sha256 === NATIVE.engine.sha256;
+  if (current()) return dir;
+  // One install at a time in the shared installs' home (instances share the pack).
+  return withInstallLock(async () => {
+    if (current()) return dir;
+    const archive = await pinnedArchive(NATIVE.engine, log, "the PairBrowse engine (under 1 MB, once)").catch((e) => {
+      throw new Error(`the PairBrowse engine isn't installed (${e.message}). Install it with: ${installHint(NATIVE.engine)}`);
+    });
+    const installed = await installEngine(archive, { log });
+    rmSync(archive, { force: true }); // installed and checked: the download isn't needed any more
+    return installed;
+  }, { say: log });
 }
 
 // Loads an installed engine pack: its launch helpers, plus the host fingerprint collector's source.

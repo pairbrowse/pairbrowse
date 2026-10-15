@@ -21,6 +21,7 @@ import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createMotion } from "./motion.mjs";
 import { ICON, rebrandInterfaceText, registerApp } from "./native/macos-app.mjs";
 import { downloadPinned, readJson, writeJsonAtomic, sha256 } from "./util.mjs";
+import { withInstallLock } from "./install-lock.mjs";
 import { layoutFrom } from "./liveview/layout.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
 
@@ -421,6 +422,11 @@ export async function ensureBrowser(chromium, log = () => {}) {
     }
     return chromium.executablePath();
   }
+  // One install at a time in the shared installs' home (instances share the app).
+  return withInstallLock(() => brandedApp(log), { say: log });
+}
+
+async function brandedApp(log) {
   const sourceApp = await ungoogledApp(log);
   // The native PairBrowse build (scripts/native-install.mjs) lives at the usual place; this one
   // then goes next to it, so switching "browser" to chromium never overwrites the native app.

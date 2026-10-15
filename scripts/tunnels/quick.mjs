@@ -13,6 +13,7 @@ import { join, dirname } from "node:path";
 import { paths } from "../paths.mjs";
 import { downloadPinned, isQuickTunnelHost, pidAlive, sleep } from "../util.mjs";
 import { testMs } from "../testenv.mjs";
+import { withInstallLock } from "../install-lock.mjs";
 
 const run = promisify(execFile);
 
@@ -35,6 +36,11 @@ export async function ensureCloudflared(log = () => {}, platform = process.platf
   const dir = join(paths.tools, `cloudflared-${CLOUDFLARED.version}`);
   const exe = join(dir, platform === "win32" ? "cloudflared.exe" : "cloudflared");
   if (existsSync(exe)) return exe;
+  // One install at a time in the shared installs' home (instances share the program).
+  return withInstallLock(() => existsSync(exe) ? exe : installCloudflared(asset, dir, exe, log, platform), { say: log });
+}
+
+async function installCloudflared(asset, dir, exe, log, platform) {
   const download = join(dir, asset.file);
   try {
     if (!existsSync(download)) log(`downloading cloudflared ${CLOUDFLARED.version} for sharing (about 20-55 MB, once)`);

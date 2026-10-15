@@ -1,8 +1,19 @@
 // pairbrowse_status: what the agent says it is doing, in the side panels, the docks and the badge
 // in every tab (bounded per tab), and the goal log.
 import { within } from "../../../util.mjs";
+import { SELECTED } from "../../../paths.mjs";
 
 const BADGE_MS = 4000; // pairbrowse_status waits this long at most for the badge in every tab
+
+// "ok", naming this helper's instance and home when it isn't the default one (several PairBrowse
+// helpers on one computer: home.mjs), and a project file that couldn't be used.
+export function statusLine(selected = SELECTED) {
+  const parts = ["ok"];
+  if (selected.instance) parts.push(`PairBrowse instance "${selected.instance}" (${selected.home})`);
+  else if (selected.source === "PAIRBROWSE_HOME") parts.push(`PairBrowse home ${selected.home}`);
+  if (selected.warning) parts.push(`ignored: ${selected.warning}`);
+  return parts.join("; ");
+}
 
 export function createStatusTool(conn, api) {
   const { context, hud, journal, myLabel, session } = api;
@@ -17,7 +28,7 @@ export function createStatusTool(conn, api) {
       await within(BADGE_MS, hud.setBadgeFor(participant, args.text, args.kind, myLabel()).catch(() => {}));
       if (args.kind === "done" || args.kind === "clear") await within(BADGE_MS, Promise.resolve(hud.hideCursor(hud.sparkPage(participant))).catch(() => {}));
       journal.status(args.kind, args.text); // a hand-off goes to the goal log's yourTurn
-      return { text: "ok" };
+      return { text: statusLine() };
     },
   };
 }

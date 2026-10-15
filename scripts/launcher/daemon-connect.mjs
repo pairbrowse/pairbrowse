@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { existsSync, copyFileSync, chmodSync, openSync, statSync, accessSync, constants as fsConstants } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { paths, ensureDirs, loadConfig } from "../paths.mjs";
+import { paths, ensureDirs, loadConfig, SELECTED } from "../paths.mjs";
 import { ensureRuntime } from "../runtime.mjs";
 import { withoutTestSwitches } from "../testenv.mjs";
 import { sleep } from "../util.mjs";
@@ -36,9 +36,10 @@ export const AGENT = ["Contents", "Helpers", "PairBrowse Agent.app", "Contents",
 const isExecutableFile = (p) => { try { accessSync(p, fsConstants.X_OK); return statSync(p).isFile(); } catch { return false; } };
 const appOf = (exe) => /^(\/.+?\.app)\/Contents\/MacOS\/[^/]+$/.exec(exe)?.[1] || null;
 // The agent to run the helper on: the one in the browser config names (a path to a PairBrowse
-// app's program), else in the PairBrowse browser installed under the helper's home; null
-// elsewhere than macOS, or with neither (then the helper runs on Node directly, as before).
-export function agentProgram(config = loadConfig(), { platform = process.platform, usable = isExecutableFile, home = paths.home } = {}) {
+// app's program), else in the PairBrowse browser installed in the shared installs' home (an
+// instance runs the same agent); null elsewhere than macOS, or with neither (then the helper runs
+// on Node directly, as before).
+export function agentProgram(config = loadConfig(), { platform = process.platform, usable = isExecutableFile, home = paths.shared } = {}) {
   if (platform !== "darwin") return null;
   const named = [config?.browser, config?.executablePath].find((p) => typeof p === "string" && isAbsolute(p));
   const apps = [named && appOf(named), join(home, "browser", "PairBrowse.app")].filter(Boolean);
@@ -49,13 +50,22 @@ export function agentProgram(config = loadConfig(), { platform = process.platfor
   return null;
 }
 
+// The helper's environment: this process's without the test switches, and the instance this
+// process chose from its project's .pairbrowse.json named outright, so the helper (and the tunnel
+// keepers it starts) use the same home whatever folder they run in.
+export function helperEnv(env = process.env, selected = SELECTED) {
+  const out = withoutTestSwitches(env);
+  if (selected.source === "project") out.PAIRBROWSE_INSTANCE = selected.instance || "default";
+  return out;
+}
+
 // Starts the helper, detached: on PairBrowse Agent when there is one (agentProgram), else on Node.
 // Returns the child (the agent, or the helper itself).
 export function startDaemon({ agent = agentProgram(), run = spawn } = {}) {
   const out = openSync(paths.daemonLog, "a");
   const script = join(root, "scripts", "daemon.mjs");
   const [file, args] = agent ? [agent, [process.execPath, script]] : [process.execPath, [script]];
-  const child = run(file, args, { detached: true, stdio: ["ignore", out, out], env: withoutTestSwitches(process.env) });
+  const child = run(file, args, { detached: true, stdio: ["ignore", out, out], env: helperEnv() });
   child.unref?.();
   return child;
 }

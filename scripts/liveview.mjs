@@ -257,7 +257,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   // never a person's own tab, the session without the owner's fields, the pause without "Pause
   // this agent". broadcast, the events stream's first writes and state.json all use it.
   const forGuest = (event, data) => event === "tabs" ? guestList(data) : event === "activity" ? guestActivity(data)
-    : event === "session" ? sessionInfo : event === "pause" ? guestPause(data) : data;
+    : event === "session" ? guestSession() : event === "pause" ? guestPause(data) : data;
+  // The session as a guest sees it: without this helper's instance name (the owner's own label).
+  const guestSession = () => { const { instance: _instance, ...rest } = sessionInfo; return rest; };
   const broadcast = (event, data) => {
     const msg = sse(event, data);
     for (const res of event === "frame" ? viewers : OWNER_ONLY.has(event) ? owners : clients) {

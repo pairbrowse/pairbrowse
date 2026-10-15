@@ -65,6 +65,31 @@ Tabs: PairBrowse remembers each session's tabs, in order. When Chrome restarts, 
 Logins with "remember me" survive restarts; session-only logins last while the PairBrowse Chrome
 stays open (it keeps running between Claude Code sessions), and end when Chrome itself quits.
 
+## Several browsers: instances
+
+One PairBrowse helper runs one browser with one profile; every Claude Code or Codex window on the
+computer shares it (one tab per agent). To keep separate browsers side by side (work and personal
+logins, one per client, a development build next to the release), give each its own **instance**:
+
+- `PAIRBROWSE_INSTANCE=work claude` starts Claude Code on the `work` instance, or
+- put a `.pairbrowse.json` in the project folder: `{ "instance": "work" }`. Claude Code and the
+  Claude desktop app read it from the folder the session runs in (only that folder, not its
+  parents); the file must be yours and is ignored otherwise (`pairbrowse_status` says why).
+
+A name is 1 to 32 of `a-z`, `0-9` and `-`; `"default"` is the usual `~/.pairbrowse`, and
+`PAIRBROWSE_HOME` still wins over both. An instance lives in `~/.pairbrowse/instances/<name>`
+with its own profile and sessions, `config.json`, `secrets.env`, facts, runs and logs, and its own
+helper and browser window. The browser itself, its runtime, the engine pack and cloudflared are
+installed once in `~/.pairbrowse` and shared (about 150 MB each would otherwise be downloaded
+again), one install at a time. Your existing `~/.pairbrowse` keeps working as it is: it is the
+default instance.
+
+`pairbrowse_status` names the instance and its home, and the browser's left dock leads the
+Sessions row with it ("work · Default"), so two PairBrowse windows are told apart. On macOS, the
+PairBrowse browser opened by hand (the Dock, Finder) goes to the running helper that launches that
+build (the first to claim it; the default one when none did), and a tab change in one instance
+gives focus back to whatever you were using, another PairBrowse window included.
+
 ## Settings
 
 Which browser PairBrowse runs (the native PairBrowse browser, Chromium, or a Chromium-based

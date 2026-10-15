@@ -120,6 +120,7 @@ Chromium elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse
 - [Working together](docs/sharing.md): invites, join codes, several agents on one browser, your own tunnel
 - [Skills](docs/skills.md)
 - [Configuration](docs/configuration.md)
+- [Troubleshooting](docs/troubleshooting.md)
 - [Security](docs/security.md), the [assurance case](docs/assurance-case.md) and [reporting a vulnerability](SECURITY.md)
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md) and [Contributing](CONTRIBUTING.md)

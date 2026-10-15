@@ -34,6 +34,15 @@ export const isScreenPage = (url) => {
   return /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html(?:[#?]|$)/.test(u) || u.startsWith(CHROME_SCREEN) || isShownScreenPage(u);
 };
 
+// The approve role: the host's approval card on a picture page (screen.js approval, approvalOff,
+// approvalAnswers), as daemon/approvals.mjs calls the in-page card (hud.call's kinds). Bounded.
+export function screenCard(page, arg, kind) {
+  if (kind === "approval") return inScreen(page, (v) => window.pbScreen?.approval?.(v) === true, arg, 2000);
+  if (kind === "approval-off") return inScreen(page, (id) => window.pbScreen?.approvalOff?.(id) === true, String(arg || ""), 2000);
+  if (kind === "approval-answers") return inScreen(page, () => window.pbScreen?.approvalAnswers?.() ?? null, undefined, 2000);
+  return Promise.resolve(null);
+}
+
 export function createJoinScreens(live, { context, log }) {
   const screenBase = () => screenBaseFor(!!context.chromePages?.());
 
@@ -74,6 +83,20 @@ export function createJoinScreens(live, { context, log }) {
     inScreen(page, (x) => window.pbScreen?.who(x) === true, shown).then((ok) => { if (!ok) w.sig = ""; }, () => { w.sig = ""; });
   }
 
+  // The approve role's notice for the people who can't answer ("Waiting for Bob to approve: Pay:
+  // Place order"), on every picture page; said again only when it changed (cur.notice).
+  const noticeSaid = new WeakMap(); // page -> the notice it shows
+  function showNotice(cur, page) {
+    const text = String(cur.notice || "");
+    if (!page || page.isClosed() || !isScreen(page) || noticeSaid.get(page) === text) return;
+    noticeSaid.set(page, text);
+    inScreen(page, (t) => window.pbScreen?.notice?.(t) === true, text).then((ok) => { if (!ok) noticeSaid.delete(page); }, () => noticeSaid.delete(page));
+  }
+  function setNotice(cur, text) {
+    cur.notice = String(text || "");
+    for (const page of cur.pages.values()) showNotice(cur, page);
+  }
+
   // Shared browser mode, each round: a picture page that was sent somewhere else (an address typed
   // in its address bar: that already went to the host as the tab's new address) shows the picture
   // again; the tab in sight gets its direct connection (offer from the host, answer from the
@@ -93,6 +116,7 @@ export function createJoinScreens(live, { context, log }) {
       if (!st) continue;
       showInfo(cur, id);
       showWho(cur, id);
+      showNotice(cur, page);
       // One record per document: a picture page reloaded (or sent somewhere and back) starts afresh,
       // and the connection asked for the one before it is let go (the slower route, once found, stays).
       let sc = cur.screens.get(page), was = null;
@@ -253,5 +277,5 @@ export function createJoinScreens(live, { context, log }) {
     }
   }
 
-  return { screenBase, screenUrl, isScreen, showInfo, showWho, screensRound, sayLink, startScreenInput, onScreen };
+  return { screenBase, screenUrl, isScreen, showInfo, showWho, screensRound, sayLink, startScreenInput, onScreen, setNotice };
 }

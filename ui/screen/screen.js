@@ -110,7 +110,7 @@ function shown() {
 }
 // The page's own controls (the file request, the sound button) take their clicks and keys. While
 // the file card is up nothing reaches the host's page: no click, wheel, key or paste.
-const ours = (e) => !!e.target?.closest?.("#pick, #sound");
+const ours = (e) => !!e.target?.closest?.("#pick, #sound, #approval");
 const carded = () => !$("pick").hidden;
 const norm = (e) => {
   if (ours(e) || carded()) return null;
@@ -382,6 +382,98 @@ document.addEventListener("visibilitychange", () => {
 
 soundButton.addEventListener("click", () => { video.muted = false; video.play().catch(() => {}); soundButton.hidden = true; });
 
+// ---- the host's approval cards (the approve role), and a notice for the others ----
+// A joiner whose invite can approve gets the host's agent's named final click here (pay, delete,
+// send, submit, publish): the helper calls approval() (daemon/approvals.mjs on this side), and the
+// answer goes to the host on this joiner's own channel, where the first answer wins. Allow takes
+// only a trusted pointer click (detail > 0), Deny a trusted click; each armed AP_ARM_MS after the
+// card was reported fully visible (IntersectionObserver v2) and after what it shows changed.
+// Nothing typed reaches it (keys on it never go to the host's page either: ours), and nothing the
+// host's page sends can (it is this page's own, outside the picture). Answers wait in a chain the
+// helper reads (approvalAnswers) and checks again (a person's own click here, the time); × hides
+// it here only (the host can still answer). Anyone else in the session gets notice(): words only.
+const AP_ARM_MS = 600, AP_ID = /^ap-[0-9a-f]{32}$/, AP_KEEP = 5;
+const aps = new Map(); // id -> { who, color, target, reason, site }, oldest first
+let apShown = "", apAt = 0, apVisibleSince = 0, apSeen = null;
+let apAnswered = null, apCount = 0, apDismissed = "";
+const apCard = $("approval");
+const apButtons = () => [...apCard.querySelectorAll(".row button")];
+function apHint(text) { $("ap-hint").textContent = text; } // its line is kept (min-height): the buttons never move under a click
+function apWatch(on) {
+  if (!on || document.visibilityState === "hidden") { apSeen?.disconnect(); apSeen = null; apVisibleSince = 0; return; }
+  if (apSeen) return;
+  try {
+    apSeen = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        const v = "isVisible" in en ? en.isVisible : en.isIntersecting;
+        if (!v) apVisibleSince = 0;
+        else if (!apVisibleSince) apVisibleSince = Date.now();
+      }
+    }, { trackVisibility: true, delay: 100 });
+    apSeen.observe(apCard);
+  } catch { apVisibleSince = Date.now(); }
+}
+function apDraw() {
+  const id = [...aps.keys()][0] || "";
+  apCard.hidden = !id;
+  if (!id) { apShown = ""; apWatch(false); return; }
+  if (id === apShown) return;
+  apShown = id;
+  apAt = Date.now(); // what a click lands on changed: armed anew
+  const a = aps.get(id);
+  $("ap-avatar").textContent = (a.who.trim().charAt(0) || "A").toUpperCase();
+  $("ap-avatar").style.setProperty("--c", a.color);
+  $("ap-who").textContent = a.who;
+  $("ap-target").textContent = a.target;
+  $("ap-site").textContent = a.site ? `In ${a.host ? `${a.host}'s` : "the host's"} tab on ${a.site}` : a.host ? `In ${a.host}'s browser` : "";
+  $("ap-site").hidden = !$("ap-site").textContent;
+  $("ap-reason").textContent = a.reason;
+  $("ap-reason").hidden = !a.reason;
+  for (const b of apButtons()) b.disabled = false;
+  apHint(aps.size > 1 ? `${aps.size - 1} more waiting` : "");
+  apWatch(false);
+  apWatch(true);
+}
+const apAnswer = (kind) => (e) => {
+  const id = apShown;
+  if (!e.isTrusted || !id || !aps.has(id)) return;
+  if (kind === "approval-allow" && !(e.detail > 0)) return apHint("Allow with a click: a key press can't allow.");
+  const now = Date.now();
+  if (!apVisibleSince || now - apVisibleSince < AP_ARM_MS || now - apAt < AP_ARM_MS) return apHint("Not yet: the card just appeared. Click again.");
+  if (apCount < 5) { apAnswered = { t: now, kind, what: id, next: apAnswered }; apCount++; }
+  for (const b of apButtons()) b.disabled = true;
+  apHint(kind === "approval-allow" ? "Allowing…" : "Denying…");
+  // Not taken (the helper didn't count it as your own click): the buttons come back.
+  setTimeout(() => { if (apShown === id && aps.has(id)) { for (const b of apButtons()) b.disabled = false; apHint("Didn't go through: click again."); } }, 3000);
+};
+for (const b of [...apButtons(), $("ap-x")]) b.addEventListener("mousedown", (e) => e.preventDefault()); // never takes the focus from the picture
+$("ap-allow").addEventListener("click", apAnswer("approval-allow"));
+$("ap-deny").addEventListener("click", apAnswer("approval-deny"));
+$("ap-x").addEventListener("click", (e) => { if (e.isTrusted && apShown) { apDismissed = `${apDismissed},${apShown}`.slice(-400); aps.delete(apShown); apDraw(); } });
+document.addEventListener("visibilitychange", () => apWatch(!document.hidden && !!apShown));
+// v: { id, who, color, target, reason, site, host }. True when shown (or already).
+function approval(v) {
+  if (!v || typeof v !== "object") return false;
+  const id = String(v.id || "");
+  if (!AP_ID.test(id)) return false;
+  if (aps.has(id)) return true;
+  while (aps.size >= AP_KEEP) { const old = aps.keys().next().value; apDismissed = `${apDismissed},${old}`.slice(-400); aps.delete(old); }
+  aps.set(id, { who: String(v.who || "The host's agent").slice(0, 60), color: COLOR.test(String(v.color || "")) ? String(v.color) : AGENT_COLOR, target: String(v.target || "").slice(0, 120), reason: String(v.reason || "").slice(0, 300), site: String(v.site || "").slice(0, 120), host: String(v.host || "").slice(0, 40) });
+  apDraw();
+  return true;
+}
+function approvalOff(id) {
+  if (!aps.delete(String(id || ""))) return false;
+  apDraw();
+  return true;
+}
+function notice(text) {
+  const t = String(text || "").slice(0, 200);
+  $("notice-text").textContent = t;
+  $("notice").hidden = !t;
+  return true;
+}
+
 // A file field you clicked in the host's tab: you pick the files on your own computer (the host's
 // file dialog never opens). Resolves to [{ name, b64 }] (empty: cancelled). Everything picked goes
 // to the helper in one answer, so it is bounded: FILE_MAX a file, PICK_MAX in all, FILES_MAX files.
@@ -441,6 +533,20 @@ function pick({ multiple = false } = {}) {
 window.pbScreen = {
   offer,
   pick,
+  approval,
+  approvalOff,
+  // The answers since the last read (a chain, newest first), the ids still shown, and the ones
+  // hidden here with × (the helper stops reading them: the host can still answer).
+  approvalAnswers() { const a = apAnswered, d = apDismissed; apAnswered = null; apCount = 0; apDismissed = ""; return { a, ids: [...aps.keys()].join(","), dismissed: d }; },
+  // Tests only: the card as the person sees it, and where its buttons are.
+  approvalState() {
+    if (!apShown || apCard.hidden) return [];
+    const at = (id) => { const b = $(id).getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; };
+    const a = aps.get(apShown);
+    return [{ id: apShown, who: a.who, target: a.target, site: $("ap-site").textContent, reason: a.reason, visible: !!apVisibleSince, allow: at("ap-allow"), deny: at("ap-deny"), close: at("ap-x") }];
+  },
+  notice,
+  noticeText: () => ($("notice").hidden ? "" : $("notice-text").textContent),
   close,
   frame,
   pointers,

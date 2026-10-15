@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./secrets.mjs";
-import { createFollow, isScreenPage } from "./daemon/follow.mjs";
+import { createFollow, isScreenPage, screenCard } from "./daemon/follow.mjs";
 import { createCaptureBackend, targetIdOf } from "./daemon/capture.mjs";
 import { createCaptureChannel } from "./liveview/capture.mjs";
 import { createFacts } from "./facts.mjs";
@@ -550,6 +550,8 @@ const follow = createFollow({
   note: hostNote,
   onMessage: (data) => session.receive(readMessage(data)),
   onHostChange: (state) => liveView()?.setJoinHost(state),
+  // The approve role: the host's approval cards this side may answer (declared below; called later).
+  onApprovals: (data) => clickApprovals.fromHost(data),
 });
 // A join request: the bottom bar in the host's tab in front asks (Allow / Deny) while the browser
 // has the focus, else a notification with Allow / Deny (daemon/joinprompt.mjs).
@@ -570,7 +572,9 @@ const joinPrompt = createJoinPrompt({
 // A named final click asked in the browser as well as in the agent's app (daemon/approvals.mjs).
 // Docked (the browser's own pages), its approve page is the window's approval card; the tab's
 // target id says which window.
-const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, docked: () => !!context.chromePages?.(), targetOf: targetIdOf, mask: output.mask, log, hostName: () => HOST });
+const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, docked: () => !!context.chromePages?.(), targetOf: targetIdOf, mask: output.mask, log, hostName: () => HOST,
+  // A session joined from here with the approve role: the host's asks on its picture pages, answers sent back on the channel.
+  screen: { pages: () => follow.screenPages(), call: screenCard }, sendAnswer: (id, answer) => follow.answerApproval(id, answer) });
 // Who used each session, for the session picker: joiners the host let in. A joiner let in also
 // takes any approval card in the page down at once (approvals.mjs cover).
 sharing.approvals.onChange(() => {

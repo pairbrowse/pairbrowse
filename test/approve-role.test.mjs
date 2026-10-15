@@ -216,3 +216,110 @@ test("the joiner port's approval route: shared browser codes only, approve only,
     view.close();
   }
 });
+
+// ---- a joiner's side ----
+function joinerSide({ docked = false, surfaces = {}, person = () => true, sharing = false } = {}) {
+  let t = 1_000_000;
+  const sent = [];
+  const pages = [];
+  const page = () => { const p = { calls: [], answers: null, closed: false, isClosed: () => p.closed, url: () => "chrome-extension://x/screen/index.html#a" }; pages.push(p); return p; };
+  const screen = {
+    pages: () => pages,
+    call: async (p, arg, kind) => {
+      p.calls.push([kind, arg]);
+      if (kind === "approval") return true;
+      if (kind === "approval-answers") { const a = p.answers; p.answers = null; return a || { a: null, ids: p.calls.filter(([k]) => k === "approval").map(([, v]) => v.id).filter((id) => !p.calls.some(([k, x]) => k === "approval-off" && x === id)).join(","), dismissed: "" }; }
+      return true;
+    },
+  };
+  const lv = { pageClients: () => surfaces, sharing: () => sharing, guestViewers: () => 0 };
+  const intervals = new Set();
+  const hud = { call: async () => true, sparkColor: () => "#20c997", sparkPage: () => null };
+  const ca = createClickApprovals({ hud, presence: { byPerson: person }, collaboration: { participants: new Map() }, liveView: () => lv, docked: () => docked, now: () => t,
+    screen, sendAnswer: async (id, answer) => { sent.push({ id, answer }); return { code: 200, body: { ok: true } }; },
+    setInterval: (fn, ms) => { const h = setInterval(fn, ms); intervals.add(h); return h; }, clearInterval: (h) => { intervals.delete(h); clearInterval(h); } });
+  made.push(ca);
+  return { ca, sent, page, pages, intervals, tick: (ms) => { t += ms; }, now: () => t };
+}
+const hostAsk = (id = `ap-${"a".repeat(32)}`) => ({ id, agent: { label: "Claude Code", color: "#e9763f" }, target: "Place order", reason: '"Pay: Place order" pays: a final action (pay)', site: "shop.example", at: 1 });
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("a joiner's side: the host's ask on the picture pages, Allow by a person's click goes back on the channel", async () => {
+  const s = joinerSide();
+  const p = s.page();
+  const changes = [];
+  s.ca.onChange((c) => changes.push(c));
+  s.ca.fromHost({ host: "Bob", items: [hostAsk()] });
+  await wait(20);
+  const shown = p.calls.find(([k]) => k === "approval")?.[1];
+  assert.deepEqual(shown, { id: hostAsk().id, who: "Bob's Claude Code", color: "#e9763f", target: "Place order", reason: hostAsk().reason, site: "shop.example", host: "Bob" });
+  assert.equal(changes[0].op, "add");
+  assert.equal(changes[0].item.from, "Bob", "the approve page hears whose ask it is");
+  assert.equal(changes[0].item.agent.label, "Bob's Claude Code");
+  // Too soon after it showed: refused, nothing sent.
+  p.answers = { a: { kind: "approval-allow", what: hostAsk().id, t: s.now() + 100 }, ids: hostAsk().id, dismissed: "" };
+  s.tick(150);
+  await wait(400);
+  assert.deepEqual(s.sent, []);
+  s.tick(1000);
+  p.answers = { a: { kind: "approval-allow", what: hostAsk().id, t: s.now() }, ids: hostAsk().id, dismissed: "" };
+  await wait(400);
+  assert.deepEqual(s.sent, [{ id: hostAsk().id, answer: "allow" }]);
+  assert.ok(p.calls.some(([k, v]) => k === "approval-off" && v === hostAsk().id), "the card goes here at once");
+  assert.deepEqual(s.ca.pending(), []);
+  // The host still lists it a moment: not shown again.
+  s.ca.fromHost({ host: "Bob", items: [hostAsk()] });
+  assert.deepEqual(s.ca.pending(), []);
+  s.ca.fromHost({ host: "Bob", items: [] });
+});
+
+test("a joiner's side: not a person's click (an agent here acting) counts for nothing; the host ending it takes the card down", async () => {
+  const s = joinerSide({ person: () => false });
+  const p = s.page();
+  s.ca.fromHost({ host: "Bob", items: [hostAsk()] });
+  await wait(20);
+  s.tick(1000);
+  p.answers = { a: { kind: "approval-allow", what: hostAsk().id, t: s.now() }, ids: hostAsk().id, dismissed: "" };
+  await wait(400);
+  assert.deepEqual(s.sent, [], "an agent's click never answers");
+  assert.equal(s.ca.pending().length, 1);
+  // Answered on the host's side (or by another approver): gone here.
+  s.ca.fromHost({ host: "Bob", items: [] });
+  assert.deepEqual(s.ca.pending(), []);
+  assert.ok(p.calls.some(([k]) => k === "approval-off"));
+  // Out of the session: everything goes.
+  s.ca.fromHost({ host: "Bob", items: [hostAsk(`ap-${"b".repeat(32)}`)] });
+  s.ca.fromHost(null);
+  assert.deepEqual(s.ca.pending(), []);
+  await wait(350);
+  assert.equal(s.intervals.size, 0, "nothing left reading");
+});
+
+test("a joiner's side: the browser's own approval card is the place when it's there; the approve page's answers go to the host; × only hides", async () => {
+  const s = joinerSide({ docked: true, surfaces: { approve: 1 } });
+  const p = s.page();
+  s.ca.fromHost({ host: "Bob", items: [hostAsk(), hostAsk(`ap-${"c".repeat(32)}`)] });
+  await wait(20);
+  assert.equal(p.calls.filter(([k]) => k === "approval").length, 0, "no card on the picture pages: the bubble lists it");
+  assert.equal(s.ca.pending().length, 2);
+  assert.equal(s.ca.answer(hostAsk().id, "site", "the live view"), true, "the bubble's answer");
+  await wait(10);
+  assert.deepEqual(s.sent, [{ id: hostAsk().id, answer: "allow" }], "site is a plain allow");
+  assert.equal(s.ca.answer(`ap-${"c".repeat(32)}`, "terminal", "the live view"), true);
+  await wait(10);
+  assert.equal(s.sent.length, 1, "hidden here only: nothing sent");
+  assert.deepEqual(s.ca.pending(), []);
+  // Nobody can answer the host's ask as if it were this side's own.
+  assert.equal(s.ca.answerShared(`ap-${"c".repeat(32)}`, "allow", { by: "x" }), false);
+  assert.equal(s.ca.arrived("browser_click", PAY), null);
+});
+
+test("a joiner's side: no card on the picture pages while someone else looks at this browser", async () => {
+  const s = joinerSide({ sharing: true });
+  const p = s.page();
+  s.ca.fromHost({ host: "Bob", items: [hostAsk()] });
+  await wait(400);
+  assert.equal(p.calls.filter(([k]) => k === "approval").length, 0);
+  assert.equal(s.ca.pending().length, 1, "still listed for this browser's own approve page");
+  s.ca.fromHost(null);
+});

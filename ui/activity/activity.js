@@ -17,8 +17,8 @@
 // A tab page: in the browser only window.pairbrowse.session exists here, so nothing else is called.
 // The stream's events (activity, board, collaboration) and that one route: no timer, no poll.
 import { $, el, rich, clock, activityHead, isColor, helperStream, enter, busy, NO_AGENT, noAgentLine } from "../common.js";
+import { followHelper } from "../helper.js";
 
-const NATIVE = !!window.pairbrowse;
 const KEPT = 3000; // lines this page keeps while open, newest (the helper's log holds 2,000)
 const FIRST = 100; // lines in the first page of history
 const EARLIER = 200; // lines per "Show earlier" (the route's most)
@@ -267,16 +267,5 @@ function connect(url) {
   });
   stream.on("collaboration", (c) => { collab = c && typeof c === "object" ? c : null; draw(); });
 }
-function helperBase() {
-  if (NATIVE) {
-    return Promise.resolve().then(() => window.pairbrowse.session.helper())
-      .then((h) => (h && h.origin && h.key ? `${h.origin}/${h.key}/` : null)).catch(() => null);
-  }
-  try {
-    const store = globalThis.chrome?.storage?.session;
-    if (!store) return Promise.resolve(null);
-    try { globalThis.chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-    return store.get("view").then((r) => r?.view || null).catch(() => null);
-  } catch { return Promise.resolve(null); }
-}
-helperBase().then((b) => (b ? connect(b) : none()));
+// The helper's address (ui/helper.js), and each new one the extension's worker stores.
+followHelper({ connect, none });

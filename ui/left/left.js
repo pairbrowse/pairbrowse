@@ -11,7 +11,7 @@
 // (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
 import { $, el, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
-import { isOwnTabPage, ownPage } from "../urls.js";
+import { isOwnTabPage, isSettingsPage, ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
 import { followHelper } from "../helper.js";
 
@@ -49,7 +49,6 @@ const isActivityPage = (url) => isOwnTabPage("activity", url);
 const isSessionsPage = (url) => isOwnTabPage("sessions", url);
 // A tab that is not a web page the Browser row brings back.
 const isOwnPage = (url) => isHistory(url) || isActivityPage(url) || isSessionsPage(url);
-const isSettings = (url) => isOwnTabPage("settings", url, "\\/|$");
 const dock = () => document.body.dataset.dock;
 const icon = (id) => {
   const svg = document.createElementNS(SVG, "svg");
@@ -304,7 +303,7 @@ function findOrOpen(match, url) {
   pb.tabs.create(url, true, w).catch(() => {});
 }
 const openHistory = () => findOrOpen(isHistory, "chrome://history");
-const openSettings = () => findOrOpen(isSettings, ownPage("settings"));
+const openSettings = () => findOrOpen(isSettingsPage, ownPage("settings"));
 function openBrowser() {
   if (pb && lastWebTab >= 0 && tabs.has(lastWebTab) && !tabs.get(lastWebTab).active) pb.tabs.activate(lastWebTab).catch(() => {});
 }

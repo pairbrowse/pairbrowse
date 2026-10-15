@@ -34,6 +34,8 @@ export const hiddenFromLiveView = (url) => isChromePage(url) && !isChromeScreenP
 // One of the browser's tab pages by its name ("sessions"), under either spelling. ends: what may
 // follow the name (a regular expression's alternatives).
 export const isOwnTabPage = (name, url, ends = "\\/|#|\\?|$") => new RegExp(`^(pairbrowse:\\/\\/|chrome:\\/\\/pairbrowse\\/)${name}(${ends})`).test(url || "");
+// Settings at any of its sections ("settings#report"): the tab the docks bring forward.
+export const isSettingsPage = (url) => isOwnTabPage("settings", url, "\\/|#|$");
 // The picture page under the name the browser shows for it.
 export const isShownScreenPage = (url) => /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(String(url || ""));
 

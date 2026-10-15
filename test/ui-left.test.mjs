@@ -145,6 +145,19 @@ scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }
   await clean(ctx);
 });
 
+// Settings is found by its address under either spelling, with or without a section after "#"
+// (pairbrowse://settings#report, the report offer's link): the tab comes forward, none is opened.
+scenario("left: Settings finds a Settings tab open at a section", { viewport: OPEN }, async (ctx) => {
+  const { until } = ctx;
+  const id = await ctx.shim.createTab({ url: "pairbrowse://settings#report", title: "Settings", active: false });
+  await until("the tab", (u) => window.__pairbrowse.fixture.tabs.some((t) => t.url === u), "pairbrowse://settings#report");
+  await ctx.page.click("#settings");
+  await until("Settings forward", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "activate"));
+  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [id]);
+  assert.equal((await calls(ctx, "tabs", "create")).length, 0, "no second Settings tab");
+  await clean(ctx);
+});
+
 scenario("left: tab count", { viewport: OPEN }, async (ctx) => {
   const { until, inPage } = ctx;
   const count = () => [document.getElementById("tab-count").textContent, document.getElementById("tab-count-words").textContent];

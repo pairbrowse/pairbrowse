@@ -11,6 +11,7 @@
 // (common.js helperStream) only. The nav fragments read no stream at all.
 import { $, el, avatar, shareCard, isColor, helperStream, servedByBrowser, enter, leave, calm } from "../common.js";
 import { isOwnTabPage, ownPage } from "../urls.js";
+import { helperAddress, onHelperAddress } from "../helper.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
@@ -834,16 +835,13 @@ async function ensureStream() {
   }
   if (streamAsked || !started) return;
   streamAsked = true;
-  const url = await helperBase();
+  const url = await helperAddress();
   if (navMode()) { streamAsked = false; return; }
   connect(url);
 }
-async function helperBase() {
-  if (pb) {
-    try { const { origin, key } = await pb.session.helper(); return origin && key ? `${origin}/${key}/` : null; } catch { return null; }
-  }
-  try { return (await globalThis.chrome?.storage?.session?.get("view"))?.view || null; } catch { return null; }
-}
+// A new address from the extension's worker (a helper restarted on a new key), once connecting:
+// the stream moves to it. The browser's helper keeps one address (ui/helper.js).
+onHelperAddress((url) => { if (streamAsked && !navMode()) connect(url); });
 
 // ---- the browser API: this window's tabs, their owners, the dock layout ----
 async function start() {

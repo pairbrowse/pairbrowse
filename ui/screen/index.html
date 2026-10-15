@@ -17,6 +17,15 @@
     <div id="who" hidden><span class="dot" aria-hidden="true"></span><span id="who-text"></span></div>
     <div id="addr" hidden><span id="addr-state"></span><span id="addr-text"><span id="addr-host"></span><span id="addr-rest"></span></span></div>
   </div>
+  <div id="notice" role="status" hidden><span class="dot" aria-hidden="true"></span><span id="notice-text"></span></div>
+  <section id="approval" role="alertdialog" aria-labelledby="ap-title" aria-describedby="ap-site ap-reason" hidden>
+    <header><span id="ap-avatar" aria-hidden="true"></span><h2 id="ap-title"><b id="ap-who"></b> wants to click</h2><button id="ap-x" type="button" aria-label="Hide here; the host can still answer"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5 12.5 12.5M12.5 3.5 3.5 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></header>
+    <p id="ap-target"></p>
+    <p id="ap-site"></p>
+    <p id="ap-reason"></p>
+    <div class="row"><button id="ap-allow" type="button">Allow</button><button id="ap-deny" class="ghost" type="button">Deny</button></div>
+    <p id="ap-hint" role="status"></p>
+  </section>
   <button id="sound" hidden>Turn on sound</button>
   <div id="pick" role="dialog" aria-modal="true" aria-labelledby="pick-text" hidden><p id="pick-text">The page asks for a file.</p><p id="pick-msg" role="alert" hidden></p><div class="row"><button id="pick-go">Choose files</button><button id="pick-no" class="ghost">Cancel</button></div><input type="file" id="pick-input" hidden></div>
   <script type="module" src="screen.js"></script>

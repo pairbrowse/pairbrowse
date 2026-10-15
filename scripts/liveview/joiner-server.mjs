@@ -21,6 +21,10 @@ const SAYS_PER_SECOND = 4;
 const SAY_BODY_MAX = 20_000;
 const SCREEN_PER_SECOND = 40; // shared browser mode: connection setup, and input on the slower route
 const SCREEN_BODY_MAX = 120_000;
+// The approve role: answers to the host's approval cards (liveview/approval-share.mjs), at most
+// this many a minute per joiner, each a few bytes.
+const APPROVALS_PER_MINUTE = 10;
+const APPROVAL_BODY_MAX = 1000;
 const HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff", "content-type": "application/json" };
 
 // One joiner's key in the live view's joiner map (and everywhere their agent, pictures and
@@ -40,7 +44,8 @@ const joinerOf = (req) => ({
 
 // key: the owner's key (it never works here). joiners: the live view's joiner map, filled here.
 // live: the coordinator's { tabsFor(j), openStream(j, conn), applyTabs(body, j, heardAt), pointersFor(body, j), say(body, j), screen(body, j),
-// stopScreens(j), changed } (changed: the participant list changed; screen: shared browser mode, invites with mode "shared" only).
+// stopScreens(j), changed, approval(body, j) } (changed: the participant list changed; screen: shared browser mode, invites with mode "shared" only;
+// approval: an answer to one of the host's approval cards, the approve role only, its role read again there).
 export function createJoinerServer({ key, invites, approvals, joiners, tunnelHost, live, onJoinRequest, log }) {
   // Answers to the tunnels' public names (tunnelHost(): one or a list), or to loopback
   // (cloudflared may pass either).
@@ -132,6 +137,15 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       if (size > BODY_MAX.input) return { code: 413, body: { error: "Too large." } };
       const r = route === "agent" ? await live.agent(parsed, j) : live.file(parsed, j);
       return r?.problem ? { code: 400, body: { error: r.problem } } : { code: 200, body: r };
+    }
+    // The approve role: an answer to one of the host's approval cards. Shared browser codes only;
+    // the role is read again where it's answered (it may have changed since this channel opened).
+    if (route === "approval") {
+      if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself." } };
+      if (!spend(j, "approvalAnswers", APPROVALS_PER_MINUTE, { t, windowMs: 60_000 })) return { code: 429, body: { error: "Too many answers. Slow down." } };
+      if (size > APPROVAL_BODY_MAX) return { code: 413, body: { error: "Too large." } };
+      if (!live.approval) return { code: 404, body: { error: "Unknown request." } };
+      return live.approval(parsed, j);
     }
     return { code: 404, body: { error: "Unknown request." } };
   }

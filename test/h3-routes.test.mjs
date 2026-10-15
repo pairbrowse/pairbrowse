@@ -116,10 +116,24 @@ test("GET invites.json and POST invite { op: revoke }: no keys or codes; a revok
     let r = await request(view.port, "GET", `/${key}/invites.json`);
     assert.equal(r.status, 200);
     const items = JSON.parse(r.text).items;
-    assert.deepEqual(items.find((i) => i.id === bob.id), { id: bob.id, role: "drive", label: "Bob", share: "code", expires: bob.expiresAt });
-    for (const i of items) assert.deepEqual(Object.keys(i).sort(), ["expires", "id", "label", "role", "share"]);
+    assert.deepEqual(items.find((i) => i.id === bob.id), { id: bob.id, role: "drive", label: "Bob", share: "code", mode: "shared", expires: bob.expiresAt });
+    for (const i of items) assert.deepEqual(Object.keys(i).sort(), ["expires", "id", "label", "mode", "role", "share"]);
     for (const i of [bob, watcher]) assert.ok(!r.text.includes(i.key), "never a key");
-    for (const bad of [{ op: "revoke" }, { op: "revoke", id: "XYZ" }, { op: "revoke", id: bob.id, also: 1 }, { op: "revoke_all" }, { op: "delete", id: bob.id }]) {
+    // A shared browser code switched to approve and back (the owner only); a watch link never.
+    for (const role of ["watch", "drive"]) {
+      const k = invites.create({ role, label: `${role} guest 2` }).key;
+      assert.equal((await request(view.port, "POST", `/${k}/invite`, { body: { op: "role", id: bob.id, role: "approve" } })).status, 403, role);
+    }
+    r = await request(view.port, "POST", `/${key}/invite`, { body: { op: "role", id: bob.id, role: "approve" } });
+    assert.deepEqual([r.status, JSON.parse(r.text)], [200, { ok: true, id: bob.id, role: "approve" }]);
+    assert.equal(invites.get(bob.id).approve, true);
+    assert.equal(JSON.parse((await request(view.port, "GET", `/${key}/invites.json`)).text).items.find((i) => i.id === bob.id).role, "approve");
+    assert.equal((await request(view.port, "POST", `/${key}/invite`, { body: { op: "role", id: watcher.id, role: "approve" } })).status, 409, "a watch link can't approve");
+    assert.equal((await request(view.port, "POST", `/${key}/invite`, { body: { op: "role", id: "0badc0de", role: "approve" } })).status, 404);
+    r = await request(view.port, "POST", `/${key}/invite`, { body: { op: "role", id: bob.id, role: "drive" } });
+    assert.equal(r.status, 200);
+    assert.equal(invites.get(bob.id).approve, false);
+    for (const bad of [{ op: "revoke" }, { op: "revoke", id: "XYZ" }, { op: "revoke", id: bob.id, also: 1 }, { op: "revoke_all" }, { op: "delete", id: bob.id }, { op: "role", id: bob.id, role: "watch" }, { op: "role", id: bob.id, role: "approve", also: 1 }]) {
       assert.equal((await request(view.port, "POST", `/${key}/invite`, { body: bad })).status, 409, JSON.stringify(bad));
     }
     assert.equal((await request(view.port, "POST", `/${key}/invite`, { raw: "{" })).status, 400);

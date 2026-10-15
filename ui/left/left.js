@@ -234,12 +234,13 @@ function drawGuests() {
     const e = byName.get(g.label) || { n: 0, drive: false, color: "" };
     e.n++;
     e.color ||= isColor(g.color) ? g.color : "";
-    e.drive ||= g.role === "drive";
+    e.drive ||= g.role === "drive" || g.role === "approve";
+    e.approve ||= g.role === "approve";
     byName.set(g.label, e);
   }
-  syncList($("guests"), [...byName].map(([label, { n, drive, color }]) => {
+  syncList($("guests"), [...byName].map(([label, { n, drive, approve, color }]) => {
     // "N online" on screen; the role stays in the row's title and, for readers, in words.
-    const role = drive ? "can drive" : "watching";
+    const role = approve ? "can drive and approve" : drive ? "can drive" : "watching";
     const face = el("span", { className: "avatar guest" }, icon("i-people"));
     face.setAttribute("aria-hidden", "true");
     if (color) face.style.background = color;

@@ -349,6 +349,15 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     if (route === "diagnostics") return fx.report === null ? { status: 404, body: { ok: false } } : { status: 200, body: fx.report };
     if (route === "pick") return pickAnswer(body, fx, push);
     if (route === "invite" && plainObject(body) && body.op !== undefined) {
+      // Settings' Can approve (liveview/routes/owner.mjs): { op: "role", id, role: "drive" | "approve" }.
+      if (body.op === "role") {
+        if (Object.keys(body).some((k) => k !== "op" && k !== "id" && k !== "role") || (body.role !== "drive" && body.role !== "approve")) return { status: 409, body: { error: 'A role change is { op: "role", id, role: "drive" | "approve" }.' } };
+        const items = Array.isArray(fx.invites?.items) ? fx.invites.items : [];
+        if (!items.some((i) => i?.id === body.id)) return { status: 404, body: { error: "No such invite (it may have expired or been revoked already)." } };
+        fx.invites = { ...fx.invites, items: items.map((i) => (i?.id === body.id ? { ...i, role: body.role } : i)) };
+        push("invites", fx.invites);
+        return { status: 200, body: { ok: true, id: body.id, role: body.role } };
+      }
       // Settings' Revoke (liveview.mjs): { op: "revoke", id } and nothing else.
       if (body.op !== "revoke" || Object.keys(body).some((k) => k !== "op" && k !== "id")) return { status: 409, body: { error: 'An invite change is { op: "revoke", id }.' } };
       if (typeof body.id !== "string" || !/^[0-9a-f]{8}$/.test(body.id)) return { status: 409, body: { error: "id is an invite's id, as invites.json lists it." } };

@@ -41,7 +41,7 @@ export function joinBanners(container, base) {
       const k = keyOf(r);
       if (rows.has(k)) continue;
       const who = `${r.name || "Someone"}${r.app ? ` (${r.app})` : ""}`;
-      const role = r.role === "drive" ? "can drive" : "watch";
+      const role = r.role === "approve" ? "can drive and approve" : r.role === "drive" ? "can drive" : "watch";
       let row;
       if (r.state === "approved") {
         const remove = el("button", { className: "mini", type: "button", textContent: "Remove", title: "Take them out now. If they try their code again, you're asked again." });

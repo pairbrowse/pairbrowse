@@ -242,10 +242,17 @@ filled, drafted, left for the user, and remembered. Every action is also logged 
 
 ## Invites and join codes
 
-- `pairbrowse_invite` `create`: `role` "drive" (the default; asks the user) or "watch" (only when the user asks for view-only), `label`, `name`
+- `pairbrowse_invite` `create`: `role` "drive" (the default; asks the user), "watch" (only when the user asks for view-only) or "approve" (below), `label`, `name`
   (the user's own first name, as joiners see it: required the first time, refused without it,
   then remembered), `hours` (default 24, at most 168), `share` "code" (pb-join code over a Cloudflare Quick Tunnel; the default without
   `inviteBaseUrl`) or "link" (Tailscale or SSH). Pass on the code and the steps from the result.
+- `role` "approve" (a shared browser code only; only when the user asks): a drive joiner who may also
+  answer the user's approval cards (Pay, Delete, Send, Submit, Publish) in their own PairBrowse,
+  by their own click there; the first answer wins, theirs or the user's, and the card says who
+  ("Allowed by Alex"). Drive and watch joiners only see "Waiting for <host> to approve". Making one
+  asks the user; so does `set_role` with the invite `id` and `role` "approve" ("drive" takes it
+  back, no prompt). A joiner's agent never answers a card, and neither do you: never tell a joiner
+  to "just allow it" for you.
 - `list` (invites, join requests and shared dev servers, no keys), `approve` / `deny` with the request
   `id` (approve asks the user), `revoke` with the invite `id`, `revoke_all` (no code works from then on;
   also stops sharing dev servers).

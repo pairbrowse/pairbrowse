@@ -13,12 +13,12 @@ import { toolsWith } from "../tools/catalog.mjs";
 import { newFollowState, newJoinState } from "./join/state.mjs";
 import { createJoinHosts } from "./join/hosts.mjs";
 import { createJoinAgents } from "./join/agents.mjs";
-import { createJoinScreens, isScreenPage } from "./join/screens.mjs";
+import { createJoinScreens, isScreenPage, screenCard } from "./join/screens.mjs";
 import { OPEN_MS } from "./join/state.mjs";
 import { createJoinMirror, hostPeople } from "./join/mirror.mjs";
 import { testOn } from "../testenv.mjs";
 
-export { isScreenPage, hostPeople };
+export { isScreenPage, hostPeople, screenCard };
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
 function serially() {
@@ -44,7 +44,9 @@ const JOIN_ANSWER_MS = 5000; // join waits this long for the host's first answer
 // note(text): for the agents here, in their next result (the host said no, ended the sharing).
 // onHostChange(state): the join addresses the person is asked about or allowed changed (for the
 // side panel, hostState()). configFile: where "Always allow" is written (paths.config).
-export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {}, onHostChange = () => {}, configFile = paths.config }) {
+// onApprovals({ host, items } | null): the host's approval cards this side may answer (the approve
+// role, shared browser codes; daemon/approvals.mjs fromHost), or null when out of the session.
+export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {}, onHostChange = () => {}, onApprovals = null, configFile = paths.config }) {
   // The session joined now (live.cur: join/state.mjs newJoinState) and how the last one ended (live.ended).
   const live = newFollowState();
 
@@ -54,14 +56,30 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   // An agent here working in the host's browser (shared browser mode: join/agents.mjs).
   const { onAgent, tabInSight, remoteCall, agentGone, forgetAgents } = createJoinAgents(live, { log });
   // Shared browser mode's picture pages (join/screens.mjs).
-  const { screenUrl, isScreen, showInfo, showWho, screensRound, sayLink, onScreen } = createJoinScreens(live, { context, log });
+  const { screenUrl, isScreen, showInfo, showWho, screensRound, sayLink, onScreen, setNotice } = createJoinScreens(live, { context, log });
   // Follow mode's mirror: the host's tabs here and this side's changes there, forms, order, pointers
   // (join/mirror.mjs). Picture pages stand in for the tabs in shared browser mode.
   const { outbound, applyHost, onForm, sendPointers, drawPointers } = createJoinMirror(live, { context, log, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent },
     { screenUrl, showInfo, showWho, screensRound });
 
+  // The host's approval cards (shared browser codes): with the approve role, cards to answer here
+  // (approvals.mjs fromHost: the bubble, or the card on the picture pages); else a notice on the
+  // picture pages while the host decides. The host's name is the code's, never what the host sends.
+  function onHostApprovals(data, cur) {
+    if (live.cur !== cur || !cur.shared) return;
+    const Host = cur.join.host.charAt(0).toUpperCase() + cur.join.host.slice(1);
+    const approve = data?.role === "approve";
+    const waiting = !approve && Array.isArray(data?.waiting) ? data.waiting : [];
+    const first = waiting[0];
+    setNotice(cur, first ? `Waiting for ${Host} to approve: ${String(first.what || "a final step").slice(0, 120)}${waiting.length > 1 ? ` (+${waiting.length - 1} more)` : ""}` : "");
+    // (fromHost takes the first few only.)
+    try { onApprovals?.({ host: Host, items: approve && Array.isArray(data?.items) ? data.items : [] }); } catch (e) { log("approvals", e?.message || e); }
+  }
+
   // Out of the session (left, denied, revoked): the shared tabs here are this browser's own again.
   function release(cur) {
+    try { onApprovals?.(null); } catch {}
+    cur.notice = "";
     liveView()?.setRemote([]);
     onLeft?.();
     for (const page of cur.pages.values()) if (!page.isClosed()) { hud.setSharedSpark(page, ""); hud.setPersonMark(page, ""); }
@@ -129,6 +147,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         pointers: (list) => drawPointers(list, cur),
         screen: (data) => onScreen(data, cur),
         agent: (data) => onAgent(data, cur),
+        approvals: (data) => onHostApprovals(data, cur),
         session: (data) => onSession?.(data, cur.join),
         message: (data) => onMessage?.(data, cur.join),
       },
@@ -216,5 +235,14 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     host: () => live.cur?.join.host || "",
     // "drive" or "watch" while in a session joined from here, else null.
     role: () => (live.cur?.join.phase === "in" ? live.cur.join.role : null),
+    // The approve role: a person's answer here to one of the host's approval cards, sent on this
+    // joiner's own channel (sharing/join-client.mjs approval). Resolves to { code, body } or { error }.
+    answerApproval: (id, answer) => {
+      const cur = live.cur;
+      if (!cur?.shared || !cur.join?.approval) return Promise.resolve({ error: "not in a shared browser session" });
+      return cur.join.approval({ id, answer });
+    },
+    // The picture pages of the session joined now (where the host's approval card shows here).
+    screenPages: () => (live.cur?.shared ? [...live.cur.pages.values()].filter((p) => !p.isClosed() && isScreen(p)) : []),
   };
 }

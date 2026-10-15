@@ -292,7 +292,7 @@ function renderCollaboration(next) {
   const active = c.active?.label || c.active?.id;
   const lines = [`${count} ${count === 1 ? "person" : "people"} here`];
   for (const p of people) if (p?.label || p?.id) lines.push(`  ${p.label || p.id}`);
-  for (const g of guests) lines.push(`  ${g.label} (guest, ${g.role === "drive" ? "can drive" : "watching"})`);
+  for (const g of guests) lines.push(`  ${g.label} (guest, ${g.role === "approve" ? "can drive and approve" : g.role === "drive" ? "can drive" : "watching"})`);
   if (owner) lines.push(`Owner: ${owner}`);
   if (active) lines.push(`Acting now: ${active}`);
   if (left > 0) lines.push(`A person has control: agents wait ${left}s`);
@@ -375,7 +375,7 @@ const side = {
     $("side-count-guests").textContent = list.length ? String(list.length) : "";
     if (!view.sections.guests) return;
     $("side-guests").replaceChildren(...(list.length ? list.map((g) => el("li", { className: "guest" }, el("i"),
-      el("span", { textContent: g.label, title: g.label }), el("small", { textContent: g.role === "drive" ? "(can drive)" : "(watching)" })))
+      el("span", { textContent: g.label, title: g.label }), el("small", { textContent: g.role === "approve" ? "(can drive and approve)" : g.role === "drive" ? "(can drive)" : "(watching)" })))
       : [empty("Nobody invited.")]));
   },
   session() {

@@ -377,7 +377,9 @@ test("the picture page keeps its ids, its words, its timers and a flat sheet", (
   assert.ok(hold.includes("rgb(11 20 33 / 0.35)") && hold.includes("pointer-events: none"), "the hold scrim never takes a click");
   for (const text of ["`Reconnecting to ${who}…`", "`Still reconnecting to ${who}…`", "`${host}'s tab · live`", '"Shared tab · live"', "`Connecting to ${host || \"the host\"}'s tab…`"]) assert.ok(js.includes(text), text);
   const n = (w) => js.split(w).length - 1;
-  assert.deepEqual([n("setTimeout("), n("setInterval("), n("requestAnimationFrame("), n("Observer")], [2, 1, 1, 0], "no new timer");
+  // The approval card (the approve role): one observer (fully visible before it arms) and one timer
+  // (its buttons back when the helper didn't take a click).
+  assert.deepEqual([n("setTimeout("), n("setInterval("), n("requestAnimationFrame("), n("new IntersectionObserver(")], [3, 1, 1, 1], "no new timer");
   assert.doesNotMatch(css, /backdrop-filter|gradient\(/);
   // B11 allows one endless animation, the Live dot's 2 s pulse; the connecting dot is static and
   // the hold spinner became a warn dot with the words.
@@ -416,4 +418,59 @@ screenTest("who works in the host's tab shows in words on the picture, with a do
   await inPage(() => window.pbScreen.pointers([{ k: "sam", who: "Sam", color: "#2fb6d9", nx: 0.5, ny: 0.5 }]));
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".p span")).color), "rgb(11, 20, 33)", "dark ink on a pointer's name");
   assert.deepEqual(ctx.errors, []);
+});
+
+// The approve role: the host's approval card on the picture page. Allow takes only a person's
+// pointer click once the card was fully visible for 600 ms; nothing on the card reaches the host's
+// page; a key press never allows; × hides it here only. The others get a notice in words.
+screenTest("the host's approval card: armed person clicks only, nothing of it reaches the host's page", PLAIN, async (ctx) => {
+  const { page, inPage } = ctx;
+  await sendFrame(ctx);
+  const ID = `ap-${"a".repeat(32)}`;
+  assert.equal(await inPage((id) => window.pbScreen.approval({ id, who: "Bob's Claude Code", color: "#e9763f", target: "Place order", reason: "\"Pay: Place order\" pays: a final action (pay)", site: "shop.example", host: "Bob" }), ID), true);
+  assert.equal(await inPage(() => window.pbScreen.approval({ id: "nope" })), false, "a malformed id shows nothing");
+  const st = (await inPage(() => window.pbScreen.approvalState()))[0];
+  await shot(ctx, "screen-approval.png");
+  assert.equal(st.who, "Bob's Claude Code");
+  assert.equal(st.site, "In Bob's tab on shop.example");
+  await inPage(() => window.pbScreen.takeInput()); // whatever the frame left
+  // At once: not armed.
+  await page.mouse.click(st.allow.x, st.allow.y);
+  let got = await inPage(() => window.pbScreen.approvalAnswers());
+  assert.equal(got.a, null, "too soon after it showed");
+  await page.waitForTimeout(900);
+  // A script's click: nothing.
+  await inPage(() => document.getElementById("ap-allow").click());
+  // Enter on Allow: never an Allow.
+  await page.focus("#ap-allow");
+  await page.keyboard.press("Enter");
+  got = await inPage(() => window.pbScreen.approvalAnswers());
+  assert.equal(got.a, null, "neither a script's click nor a key press allows");
+  assert.match(await inPage(() => document.getElementById("ap-hint").textContent), /a key press can't allow/);
+  assert.deepEqual((await inPage(() => window.pbScreen.approvalState()))[0].allow, st.allow, "the hint moved nothing");
+  await page.mouse.click(st.allow.x, st.allow.y);
+  got = await inPage(() => window.pbScreen.approvalAnswers());
+  assert.equal(got.a?.kind, "approval-allow");
+  assert.equal(got.a?.what, ID);
+  assert.equal(got.ids, ID);
+  assert.deepEqual(await inPage(() => window.pbScreen.takeInput()), [], "no click or key on the card reached the host's page");
+  assert.equal(await inPage((id) => window.pbScreen.approvalOff(id), ID), true);
+  assert.deepEqual(await inPage(() => window.pbScreen.approvalState()), []);
+  // × hides it here only, and says so to the helper.
+  const ID2 = `ap-${"b".repeat(32)}`;
+  await inPage((id) => window.pbScreen.approval({ id, who: "Bob's Claude Code", target: "Send", host: "Bob" }), ID2);
+  const st2 = (await inPage(() => window.pbScreen.approvalState()))[0];
+  await page.mouse.click(st2.close.x, st2.close.y);
+  got = await inPage(() => window.pbScreen.approvalAnswers());
+  assert.equal(got.dismissed, `,${ID2}`);
+  assert.equal(got.a, null);
+  // The notice for those who can't answer: words only, takes no click.
+  await inPage(() => window.pbScreen.notice("Waiting for Bob to approve: Pay: Place order"));
+  assert.equal(await inPage(() => window.pbScreen.noticeText()), "Waiting for Bob to approve: Pay: Place order");
+  await shot(ctx, "screen-notice.png");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("notice")).pointerEvents), "none");
+  await inPage(() => window.pbScreen.notice(""));
+  assert.equal(await inPage(() => window.pbScreen.noticeText()), "");
+  assert.deepEqual(ctx.errors, []);
+  assert.deepEqual(await bad(ctx), []);
 });

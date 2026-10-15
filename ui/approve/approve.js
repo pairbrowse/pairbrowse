@@ -17,7 +17,9 @@
 //   GET <base>approvals.json -> { pending: Item[] } (owner key; 404 or a failure = none pending,
 //     the stream then carries everything).
 //   SSE <base>events?panel=1&page=approve (the shared stream, common.js helperStream):
-//     event "approval" { op: "add", item: Item } | { op: "withdraw", item: { id } };
+//     event "approval" { op: "add", item: Item } | { op: "withdraw", item: { id, answer?, by? } }
+//     (answer "allow" | "deny" and by, a name: answered in a browser, here or by a joiner who can
+//     approve; the card says "Allowed by Alex" for a moment before it goes);
 //     event "driving" { on: boolean } (an agent's input is under way: no answer counts while on);
 //     events "join" (Request[] as joins.json), "dev" ({ asks: [{ id, who, port }] }) and
 //     "joinhost" ({ asks: [{ id, host, who }] }) exactly as the side panel receives them.
@@ -30,7 +32,9 @@
 //     target: string (the button's label with its glyph), reason: string (the click rule's
 //     reason as the helper sends it; empty hides the line), tab: { id: number, host: string,
 //     target?: string (the tab's DevTools target id, passed through to the browser) },
-//     at: number (ms epoch; the oldest shows first) }.
+//     at: number (ms epoch; the oldest shows first), from?: string (a joiner's side, the approve
+//     role: the host whose agent asks; agent.label already names them, "Bob's Claude Code").
+//     A host's ask has no terminal here: no "Ask in the terminal only", and × only hides it.
 // The page sets body[data-pending] to the number of open requests and body[data-driving]; the
 // browser reads nothing of the page but what setPending tells it.
 //
@@ -67,6 +71,8 @@ let visibleSince = 0;        // performance.now() when the card was last reporte
 let covered = false;         // the observer has reported the card not fully visible
 let driving = false;
 let busy = false;
+const SAID_MS = 2500; // "Allowed by Alex" stays this long on the card it answered
+const said = new Map(); // key -> "Allowed by Alex": answered elsewhere, shown before it goes
 
 const card = $("card"), menu = $("menu"), more = $("more");
 
@@ -85,7 +91,21 @@ const connect = helperConnection({ kind: "approve", shared: !BUBBLE, onState: (s
     const id = d?.item?.id;
     if (typeof id !== "string" || !id) return;
     if (d.op === "add") upsert(normalize("click", d.item));
-    else if (d.op === "withdraw") { items = items.filter((it) => it.key !== `click:${id}`); prune(); }
+    else if (d.op === "withdraw") {
+      const key = `click:${id}`;
+      const by = typeof d.item.by === "string" ? d.item.by.slice(0, 60) : "";
+      // Answered by someone else (a joiner who can approve, or here on another page): the card
+      // says who before it goes; nothing on it answers any more.
+      if (by && (d.item.answer === "allow" || d.item.answer === "deny") && key === shownKey && items.some((it) => it.key === key)) {
+        said.set(key, `${d.item.answer === "allow" ? "Allowed" : "Denied"} by ${by}`);
+        busy = true;
+        for (const b of buttons()) b.disabled = true;
+        hint(said.get(key), "ok");
+        setTimeout(() => { said.delete(key); items = items.filter((it) => it.key !== key); prune(); if (shownKey === key) busy = false; draw(); }, SAID_MS);
+        return;
+      }
+      items = items.filter((it) => it.key !== key); prune();
+    }
     draw();
   });
   on("driving", (d) => {
@@ -116,20 +136,22 @@ async function load() {
 function normalize(kind, raw) {
   const key = `${kind}:${raw.id}`;
   if (!ats.has(key)) ats.set(key, Date.now());
-  const it = { key, kind, id: raw.id, who: "", color: "", verb: "", target: "", host: "", tabTarget: "", reason: "", labels: {}, menu: [], at: ats.get(key) };
+  const it = { key, kind, id: raw.id, who: "", color: "", verb: "", target: "", host: "", tabTarget: "", from: "", reason: "", labels: {}, menu: [], at: ats.get(key) };
   if (kind === "click") {
     Object.assign(it, {
       who: String(raw.agent?.label || "Claude"), color: raw.agent?.color || "", verb: "wants to click",
       target: String(raw.target || ""), host: raw.tab?.host ? String(raw.tab.host) : "", reason: String(raw.reason || ""),
       tabTarget: typeof raw.tab?.target === "string" ? raw.tab.target : "",
+      from: typeof raw.from === "string" ? raw.from.slice(0, 40) : "",
       // No "Allow for <site>" (Part H): the helper keeps no per-site memory, so it was a plain Allow.
-      menu: [{ answer: "terminal", label: "Ask in the terminal only" }],
+      // A host's ask (the approve role) has no terminal here.
+      menu: typeof raw.from === "string" && raw.from ? [] : [{ answer: "terminal", label: "Ask in the terminal only" }],
       at: Number(raw.at) || it.at,
     });
   } else if (kind === "join") {
     Object.assign(it, {
       who: `${raw.name || "Someone"}${raw.app ? ` (${raw.app})` : ""}`, verb: "wants to join",
-      target: raw.role === "drive" ? "Shared browser, can drive" : "Watch only",
+      target: raw.role === "approve" ? "Shared browser, can drive and approve" : raw.role === "drive" ? "Shared browser, can drive" : "Watch only",
     });
   } else if (kind === "dev") {
     Object.assign(it, { who: String(raw.who || "An agent"), verb: "wants to share a dev server", target: `localhost:${Number(raw.port)}`, reason: "With the people in your session." });
@@ -196,7 +218,7 @@ function render(open) {
   if (n) count.setAttribute("aria-label", `${n} more waiting`); else count.removeAttribute("aria-label");
   // The same request with the same words: nothing to draw. The same request updated (a join now
   // asking to drive, not watch): drawn again and armed afresh, so what you answer is what it says.
-  const sig = JSON.stringify([it.kind, it.who, it.color, it.verb, it.target, it.host, it.reason, it.labels, it.menu]);
+  const sig = JSON.stringify([it.kind, it.who, it.color, it.verb, it.target, it.host, it.from, it.reason, it.labels, it.menu]);
   if (it.key === shownKey && sig === shownSig) return;
   const same = it.key === shownKey;
   shownKey = it.key;
@@ -212,12 +234,13 @@ function render(open) {
   $("target").textContent = it.target;
   // The tab's host is the target's title, not a visible line (the compact header); #host, visually
   // hidden, gives it to readers through the card's description.
-  $("target").title = it.host ? `In the tab on ${it.host}` : "";
-  $("host").textContent = it.host ? `In the tab on ${it.host}` : "";
+  const where = it.host ? `In ${it.from ? `${it.from}'s ` : "the "}tab on ${it.host}` : it.from ? `In ${it.from}'s browser` : "";
+  $("target").title = where;
+  $("host").textContent = where;
   $("reason").textContent = it.reason;
   $("reason").hidden = !it.reason;
   // × says where the request stays: a click in the terminal, the others in the agent panel (Part H).
-  $("dismiss").setAttribute("aria-label", it.kind === "click" ? "Dismiss; it stays in the terminal" : "Dismiss; it stays in the agent panel");
+  $("dismiss").setAttribute("aria-label", it.from ? `Dismiss; ${it.from} can still answer` : it.kind === "click" ? "Dismiss; it stays in the terminal" : "Dismiss; it stays in the agent panel");
   $("allow").textContent = it.labels.allow || "Allow";
   $("deny").textContent = it.labels.deny || "Deny";
   more.hidden = !it.menu.length;

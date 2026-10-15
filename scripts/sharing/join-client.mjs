@@ -229,6 +229,14 @@ export function startJoin({ join: code, name, app = "", joinerId = newJoinerId()
       const r = await ask("file", part);
       return r?.code === 200 ? r.body : { error: r?.body?.error || "no answer" };
     },
+    // The approve role (shared browser codes): an answer to one of the host's approval cards,
+    // { id, answer: "allow" | "deny" }, made by a person's click here. Resolves to { code, body }
+    // as the host answered (it reads the role again), or { error }.
+    async approval(body) {
+      if (phase !== "in" || code.mode !== "shared") return { error: "not in a shared browser session" };
+      const r = await ask("approval", body);
+      return r ? { code: r.code, body: r.body } : { error: "no answer" };
+    },
     // Who is doing what here, or a message: text only, both roles.
     async say(op) {
       const r = await ask("say", op);

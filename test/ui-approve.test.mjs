@@ -648,3 +648,38 @@ test("approve bubble: its own stream (page=approve) beside the strip's shared on
     await proxy.close();
   }
 });
+
+// The approve role: the host's card says who answered (a joiner who can approve) before it goes;
+// on a joiner's side the host's ask shows whose it is, has no terminal, and × leaves it to the host.
+named("answered by a joiner: the card says who, takes no click, then goes", async (ctx) => {
+  const { helper, inPage, page } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  helper.push("approval", { op: "withdraw", item: { id: OLDER.id, answer: "allow", by: "Alex" } });
+  await ctx.until("the card names who allowed it", () => document.getElementById("hint").textContent === "Allowed by Alex");
+  assert.equal(await inPage(() => document.getElementById("allow").disabled), true, "nothing on it answers any more");
+  await realClick(page, "#allow");
+  assert.deepEqual(bodies(helper, "approve"), [], "a click on it now sends nothing");
+  await ctx.until("then it goes", () => document.getElementById("card").hidden && document.body.dataset.pending === "0", null, 5000);
+  // Withdrawn with no one named (the terminal answered): it goes at once.
+  add(helper, NEWER);
+  await shown(ctx, NEWER.target);
+  helper.push("approval", { op: "withdraw", item: { id: NEWER.id } });
+  await ctx.until("gone at once", () => document.getElementById("card").hidden);
+});
+
+named("a host's ask on a joiner's side: whose it is, no terminal, × leaves it to the host", async (ctx) => {
+  const { helper, inPage, page } = ctx;
+  add(helper, { ...OLDER, agent: { label: "Bob's Claude Code", color: "#e9763f" }, tab: { id: -1, host: "shop.example", target: "" }, from: "Bob" });
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  assert.equal(await text(ctx, "who"), "Bob's Claude Code");
+  assert.equal(await text(ctx, "host"), "In Bob's tab on shop.example");
+  assert.equal(await inPage(() => document.getElementById("more").hidden), true, "no Ask in the terminal only");
+  assert.equal(await inPage(() => document.getElementById("dismiss").getAttribute("aria-label")), "Dismiss; Bob can still answer");
+  await realClick(page, "#allow");
+  await ctx.until("the answer posted", () => true);
+  await sleep(300);
+  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "allow" }], "the same route: the helper sends it to the host");
+});

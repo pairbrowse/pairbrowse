@@ -6,7 +6,7 @@ import { el } from "./dom.js";
 import { busy } from "./motion.js";
 
 // Share (the side panel's header, the live view's toolbar): a card under btn that makes a join
-// code (shared browser, can drive) or a watch link with the owner's own key, through the
+// code (shared browser, can drive; or can drive and approve: role "approve") or a watch link with the owner's own key, through the
 // helper's own invite code. The code or link is shown once, in a read-only field, and cleared
 // when the card closes. Asks the owner's first name once (the helper says when). card holds
 // the ids share-name-row, share-name, share-make, share-result, share-code, share-copy,
@@ -57,11 +57,14 @@ export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = ()
   async function makeInvite() {
     if (make.disabled) return;
     if (!base()) return say("Not connected to PairBrowse yet.", "error");
-    const share = radios().find((r) => r.checked)?.value === "link" ? "link" : "code";
+    const picked = radios().find((r) => r.checked)?.value;
+    const share = picked === "link" ? "link" : "code";
+    // The third choice: a join code whose joiner may also answer approval cards (role approve).
+    const role = picked === "approve" ? { role: "approve" } : {};
     const given = name.value.trim();
     make.disabled = true;
     say("");
-    const r = await busy(make, () => postJson(base() + "invite", { share, ...(given ? { name: given } : {}) }).then((x) => x.json()).catch(() => ({ error: UNREACHABLE })));
+    const r = await busy(make, () => postJson(base() + "invite", { share, ...role, ...(given ? { name: given } : {}) }).then((x) => x.json()).catch(() => ({ error: UNREACHABLE })));
     make.disabled = false;
     if (r?.needName) { nameRow.hidden = false; name.focus(); return say(r.error || "Your first name, please.", "error"); }
     if (!r?.ok) return say(r?.error || "Couldn't make the invite.", "error");

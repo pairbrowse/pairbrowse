@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { startLiveView, createInvites, hostOk, liveViewHostsFrom, inviteBaseFrom, inviteLabel, roleMay } from "../scripts/liveview.mjs";
+import { roleOf } from "../scripts/liveview/invites.mjs";
 
 const context = { pages: () => [] };
 const profile = { get: () => ({ details: [{ label: "Email", value: "me@example.com" }], secrets: [], problem: null }), setDetail: () => null, forgetDetail() {}, setSecret: () => null, deleteSecret() {} };
@@ -58,7 +59,7 @@ test("rights per role: watch only watches, drive also drives, neither reaches th
 test("invite store: roles, labels, expiry and limits", () => {
   let t = 1_000_000;
   const invites = createInvites({ now: () => t });
-  assert.throws(() => invites.create({ role: "admin" }), /watch.*drive/);
+  assert.throws(() => invites.create({ role: "admin" }), /watch.*drive.*approve/);
   assert.throws(() => invites.create({ role: "watch", hours: -1 }), /hours/);
   assert.equal(invites.create({ label: "Dee" }).role, "drive", "drive unless watch is asked for");
   const a = invites.create({ role: "watch", label: "  Alice <script>‮  " });
@@ -80,6 +81,42 @@ test("invite store: roles, labels, expiry and limits", () => {
   assert.equal(invites.revoke(b.id), true);
   assert.equal(invites.match(b.key), null, "revoked");
   assert.equal(invites.revoke(b.id), false);
+});
+
+test("the approve role: shared browser codes only, drive underneath, switched between drive and approve", () => {
+  let t = 1_000_000;
+  const invites = createInvites({ now: () => t });
+  const a = invites.create({ role: "approve", label: "Alex", share: "code" });
+  // Underneath it is a drive invite (every drive right and check holds as it is), approve on top.
+  assert.deepEqual([a.role, a.approve, roleOf(a)], ["drive", true, "approve"]);
+  assert.equal(invites.match(a.key).approve, true);
+  assert.equal(roleOf(invites.get(a.id)), "approve");
+  assert.equal(roleMay(invites.match(a.key).role, "input"), true);
+  assert.throws(() => invites.create({ role: "approve" }), /shared browser join codes only/, "a link can't approve");
+  assert.throws(() => invites.create({ role: "approve", share: "code", mode: "follow" }), /shared browser join codes only/, "nor a follow code");
+  const d = invites.create({ role: "drive", share: "code", label: "Dee" });
+  const w = invites.create({ role: "watch", share: "code", label: "Wes" });
+  const f = invites.create({ role: "drive", share: "code", mode: "follow", label: "Fay" });
+  const heard = [];
+  invites.onRole((id) => heard.push(id));
+  assert.equal(roleOf(invites.setRole(d.id, "approve")), "approve");
+  assert.equal(roleOf(invites.setRole(d.id, "approve")), "approve", "the same role again: nothing changes");
+  assert.equal(roleOf(invites.setRole(a.id, "drive")), "drive");
+  assert.deepEqual(heard, [d.id, a.id], "each change heard once");
+  assert.throws(() => invites.setRole(w.id, "approve"), /watch only/);
+  assert.throws(() => invites.setRole(d.id, "watch"), /drive.*approve/);
+  assert.throws(() => invites.setRole(f.id, "approve"), /shared browser join codes only/);
+  assert.throws(() => invites.setRole("0badc0de", "approve"), /No such invite/);
+  // Saved and restored with the code: approve survives a restart only where it may hold.
+  const saved = invites.savedCodes();
+  const again = createInvites({ now: () => t });
+  assert.equal(again.restore([...saved, { ...saved.find((i) => i.id === f.id), id: "0000aaaa", approve: true }, { ...saved.find((i) => i.id === w.id), id: "0000bbbb", approve: true }]), 6);
+  assert.equal(roleOf(again.get(d.id)), "approve");
+  assert.equal(roleOf(again.get(a.id)), "drive");
+  assert.equal(roleOf(again.get("0000aaaa")), "drive", "a follow code never comes back as approve");
+  assert.equal(roleOf(again.get("0000bbbb")), "watch", "a watch code never comes back as approve");
+  t += 25 * 3_600_000;
+  assert.equal(invites.get(d.id), null, "expired");
 });
 
 test("watch links: page and events, no input, tabs or profile", async () => {

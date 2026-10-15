@@ -20,7 +20,7 @@ import { createApprovals, personLabel, cleanName } from "./sharing/join.mjs";
 import { stateForJoiner, readOps, shareableUrl, onSecretDomain, activityBudget } from "./sharing/tabsync.mjs";
 import { createPush } from "./liveview/push.mjs";
 import { hostOk, originOk, keyOk, sse, SECURITY_HEADERS, plain, pathParts, listen } from "./liveview/http.mjs";
-import { createInvites, roleMay } from "./liveview/invites.mjs";
+import { createInvites, roleMay, roleOf } from "./liveview/invites.mjs";
 import { createInputReplayer, readViewerInput, inputBudget } from "./liveview/input.mjs";
 import { createJoinerServer, recentlySeen, joinerKeyOf } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, hostOf } from "./liveview/tabs.mjs";
@@ -35,6 +35,7 @@ import { createOwnerRoutes, inviteItems } from "./liveview/routes/owner.mjs";
 import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { createActivityLog } from "./daemon/activitylog.mjs";
+import { createApprovalShare } from "./liveview/approval-share.mjs";
 import { FRAME_EVERY_MS, FRAME_SKIP_BYTES, STALLED_BYTES } from "../ui/limits.js";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
@@ -242,7 +243,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   const guests = () => {
     const seen = new Map();
     for (const invite of linkGuests.values()) seen.set(invite.id, { label: invite.label, role: invite.role });
-    for (const j of joiners.values()) if (recentlySeen(j)) seen.set(joinerKeyOf(j.invite.id, j.joinerId), { label: personLabel(j.name, j.app), role: j.invite.role });
+    for (const j of joiners.values()) if (recentlySeen(j)) seen.set(joinerKeyOf(j.invite.id, j.joinerId), { label: personLabel(j.name, j.app), role: roleOf(invites.get?.(j.invite.id) || j.invite) });
     for (const r of remote) seen.set(`remote:${r.label}`, r);
     return [...seen.values()];
   };
@@ -361,6 +362,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     }
   }
   const push = createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains, shared: { ...shared, toView: (page, x, y) => screens?.viewCached(page, x, y) || null, overlay: (entries) => { overlayPointers(entries).catch((e) => log("overlay", e?.message || e)); } }, tabMeta, isIn: (key) => joiners.has(key), sessionFor: (j) => shared.sessionFor(j), mapUrl: devUrl, onLost: (j) => lostJoiner(j), log });
+  // The host's approval cards for joiners with the approve role (and a notice for the others).
+  const approvalShare = clickApprovals ? createApprovalShare({ clickApprovals, invites, joinRequests: approvals, joiners, push, host: () => shared.host, log }) : null;
 
   // Shared browser mode (invites with mode "shared", daemon/screenshare.mjs): a joiner sees the
   // tabs live and works in them. Here: setting up the direct connection for one tab (its offer
@@ -543,7 +546,10 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     return { ok: true, opened };
   }
 
-  const stopApprovals = approvals.onChange(() => broadcast("join", approvals.open()));
+  const stopApprovals = approvals.onChange(() => { broadcast("join", approvals.open()); approvalShare?.changed(); });
+  // An invite switched between drive and approve: Settings hears it, the joiners get their cards
+  // (or lose them) at once.
+  const stopRoles = invites.onRole ? invites.onRole(() => { approvalShare?.changed(); broadcast("invites", { items: inviteItems(invites.list()) }); }) : () => {};
   // A revoked or expired link stops at once, including a page already open with it.
   const stopEnded = invites.onEnd((ids) => {
     let changed = false;
@@ -805,14 +811,15 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   const joinerServer = createJoinerServer({
     key, invites, approvals, joiners, tunnelHost, onJoinRequest, log,
     live: { tabsFor, applyTabs, screen, agent: remoteAgent, file: remoteFile,
-      stopScreens: stopJoiner, openStream: (j, conn) => { watchPages(); return push.open(j, conn).then(() => resendAgent(joinerKey(j))).catch((e) => log("push", e?.message || e)); }, pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
+      stopScreens: stopJoiner, openStream: (j, conn) => { watchPages(); return push.open(j, conn).then(() => { resendAgent(joinerKey(j)); approvalShare?.opened(j); }).catch((e) => log("push", e?.message || e)); },
+      approval: (body, j) => (approvalShare ? approvalShare.answer(body, j) : { code: 404, body: { error: "Unknown request." } }), pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
   });
 
   try {
     await listen(server, wantPort);
     await joinerServer.listen(wantGuestPort);
   } catch (e) {
-    stopEnded(); stopApprovals(); server.close();
+    stopEnded(); stopApprovals(); stopRoles(); server.close();
     throw e;
   }
 
@@ -820,6 +827,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   // one waits, they also hear whether an agent is acting (driving), so a card can say so.
   const stopClickApprovals = clickApprovals?.onChange ? clickApprovals.onChange((change) => {
     broadcast("approval", change);
+    approvalShare?.changed();
     if (change?.op === "add" && clickApprovals.pending().length === 1) broadcast("driving", { on: driving });
   }) : () => {};
   // The timeline changed (a picture kept, a card removed or pinned, a note): the owner's pages.
@@ -938,6 +946,10 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     },
     // People watching through an invite link right now (an approval card isn't drawn in the page then).
     guestViewers: () => linkGuests.size,
+    // Joiners with the approve role in a shared browser session now: they can answer an approval.
+    approveJoiners: () => approvalShare?.approvers() || 0,
+    // Anyone in a shared browser session now: they see "Waiting for <host> to approve" while the terminal asks.
+    sharedJoiners: () => approvalShare?.inSession() || 0,
     // A tab's number, as the browser's own pages and browser_tabs count them.
     tabIndex: async (page) => (await getContext()).pages().indexOf(page),
     layout: layoutNow,
@@ -945,7 +957,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       closed = true;
       clearInterval(timer);
       clearTimeout(settleTimer);
-      stopEnded(); stopApprovals(); stopTimeline(); stopOutlines(); stopClickApprovals();
+      stopEnded(); stopApprovals(); stopRoles(); stopTimeline(); stopOutlines(); stopClickApprovals();
       for (const stop of stopTools) stop();
       server.close();
       for (const r of clients) r.end();

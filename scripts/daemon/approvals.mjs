@@ -25,7 +25,7 @@ import { randomBytes } from "node:crypto";
 import { approvalAsk, approvalKey, APPROVAL_TOOLS } from "../rules/decide.mjs";
 import { APPROVAL_WAIT_MS } from "../guard.mjs";
 import { HOOK_MARK } from "../hookline.mjs";
-import { within } from "../util.mjs";
+import { within, sha256 } from "../util.mjs";
 import { AGENT_COLOR } from "../../ui/vocab.js";
 
 export const APPROVAL_ID = /^ap-[0-9a-f]{32}$/;
@@ -85,12 +85,30 @@ export function routeConnection(sock, { onHook, onOther }) {
   sock.on("error", () => {});
 }
 
-// deps: hud (call, sparkColor, sparkPage), presence (byPerson), collaboration (its participants
+// Joiners with the approve role (liveview/approval-share.mjs) are a place to answer too: while
+// one is in a shared browser session here, an ask is shown and waits as it does for the browser's
+// approve page, and the first answer wins, the host's or a joiner's (answer, by: the joiner's
+// name as the host knows it). Their answer arrives on their own channel, checked there (role read
+// again, rate, binding); here it counts only for one of this helper's own agents' asks.
+//
+// On a joiner's side (the approve role), the host's asks come in too (fromHost): kept here as
+// remote items, listed where this browser lists approvals (its approve page: the native build's
+// approval bubble) and otherwise shown as a card on the session's picture pages (screen.js), on
+// the same rules as the in-page card (a person's own click, ARM_MS after it showed, checked here
+// again). An answer goes back to the host on this joiner's channel (sendAnswer); this side's own
+// agents can't answer (no tool reaches the card or the approve route; their input is never a
+// person's click). Remote items never wait on anything here: the host ends them.
+//
+// deps: hud (call, sparkColor, sparkPage, addActivity), presence (byPerson), collaboration (its participants
 // Map, for labels), liveView() (the live view or null: sharing, guestViewers, pageClients,
-// tabIndex), frontPage() (the tab in front, or null), docked() (the browser has its own pages:
+// tabIndex, approveJoiners), frontPage() (the tab in front, or null), docked() (the browser has its own pages:
 // its approve page is the window's approval card), targetOf(page, ms) (the tab's CDP target id or
-// null; capture.mjs targetIdOf), mask(text), log(text).
-export function createClickApprovals({ hud, presence, collaboration, liveView = () => null, frontPage = async () => null, docked = () => false, targetOf = async () => null, mask = (t) => t, log = () => {},
+// null; capture.mjs targetIdOf), mask(text), log(text), hostName() (the person here, as the
+// Activity log names who answered). A joiner's side: screen ({ pages(): the picture pages,
+// call(page, arg, kind): the card there, join/screens.mjs screenCard }) and sendAnswer(id, answer)
+// (follow.mjs answerApproval: resolves to the host's { code, body } or { error }).
+export function createClickApprovals({ hud, presence, collaboration, liveView = () => null, frontPage = async () => null, docked = () => false, targetOf = async () => null, mask = (t) => t, log = () => {}, hostName = () => "The host",
+  screen = null, sendAnswer = null,
   now = Date.now, waitMs = APPROVAL_WAIT_MS, random = randomBytes, setInterval: every = setInterval, clearInterval: stopEvery = clearInterval }) {
   const items = new Map(); // id -> item
   const answered = new Map(); // key -> { answer, at }
@@ -102,7 +120,8 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   let movedFrom = null; // the last Allow refused as "moved": where it was asked (lastWhere)
 
   const emit = (change) => { for (const fn of listeners) { try { fn(change); } catch {} } };
-  const publicItem = (it) => ({ id: it.id, agent: { label: it.agent.label, color: it.agent.color }, kind: it.kind, target: it.target, reason: it.reason, tab: { id: it.tab.id, host: it.tab.host, target: it.tab.target }, at: it.at });
+  const publicItem = (it) => ({ id: it.id, agent: { label: it.agent.label, color: it.agent.color }, kind: it.kind, target: it.target, reason: it.reason, tab: { id: it.tab.id, host: it.tab.host, target: it.tab.target }, at: it.at, ...(it.remote ? { from: it.from } : {}) });
+  const remoteDone = new Set(); // the host's asks answered or hidden here, while the host still lists them
   const short = (id) => String(id).slice(0, 11);
   const remember = (key, answer, where = null) => {
     const t = now();
@@ -135,15 +154,20 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     return only(client);
   }
 
-  // Ends an item: resolves its answer, takes the card down, tells the streams.
-  function end(it, result) {
+  // Ends an item: resolves its answer, takes the card down, tells the streams (said: { answer, by }
+  // when someone answered it in a browser, so the cards that go can say who).
+  function end(it, result, said = null) {
     if (!items.has(it.id)) return false;
     items.delete(it.id);
     clearTimeout(it.timer);
     const page = it.page;
     it.page = null;
     if (page && !page.isClosed?.()) within(2000, hud.call(page, it.id, "approval-off").catch(() => {})).catch(() => {});
-    emit({ op: "withdraw", item: { id: it.id } });
+    if (it.remote) {
+      for (const p of it.pages.keys()) if (!p.isClosed?.()) Promise.resolve(screen?.call(p, it.id, "approval-off")).catch(() => {});
+      it.pages.clear();
+    }
+    emit({ op: "withdraw", item: { id: it.id, ...(said ? { answer: said.answer, by: said.by } : {}) } });
     it.resolve(result);
     watch();
     return true;
@@ -176,6 +200,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     }
     const target = String(mask(String(ask?.target || ""))).slice(0, 120);
     const reason = String(mask(String(ask?.reason || ""))).slice(0, 300);
+    const what = String(mask(String(ask?.what || ask?.target || ""))).slice(0, 140);
     const id = `ap-${random(16).toString("hex")}`;
     const at = now();
     // The in-page card: on the agent's tab in front, with nobody else looking, and only where the
@@ -191,30 +216,119 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
         if (ok === true) shownIn = page;
       }
     }
-    if (!shownIn && !surface()) return { shown: false };
+    // Nowhere to answer in a browser: nothing kept, nothing waits; except Claude Code's ask while
+    // people are in a shared browser session here: the terminal answers it, and they see that the
+    // host is deciding meanwhile (approval-share.mjs: a notice, never a way to answer).
+    const noticeOnly = !shownIn && !surface() && client === "claude-code" && Number(lv?.sharedJoiners?.()) > 0;
+    if (!shownIn && !surface() && !noticeOnly) return { shown: false };
     let resolve;
     const answer = new Promise((r) => { resolve = r; });
     // The tab and its origin as asked: an Allow holds only there (sameWhere).
     let origin = "";
     try { origin = page ? originOf(page.url()) : ""; } catch {}
     const where = page ? { page, origin } : null;
-    const it = { id, key, client, participant: p, agent, kind: "click", target, reason, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0, where };
+    const it = { id, key, client, participant: p, agent, kind: "click", target, reason, what, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0, where };
     items.set(id, it);
     it.timer = setTimeout(() => { if (end(it, "expired")) log(`approval ${short(id)}: no answer in ${Math.round(waitMs / 1000)} s`); }, waitMs);
     it.timer.unref?.();
     emit({ op: "add", item: publicItem(it) });
-    log(`approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : bubble ? "in the browser's approval card" : "in the browser's pages"})`);
+    const joinersToo = Number(lv?.approveJoiners?.()) > 0 ? " and by the joiners who can approve" : "";
+    log(noticeOnly ? `approval ${short(id)}: asked in the terminal; the people in the session see that it waits` : `approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : bubble ? "in the browser's approval card" : "in the browser's pages"}${joinersToo})`);
     watch();
     return { item: publicItem(it), shown: true, answer, where };
   }
 
-  function answer(id, a, from) {
+  // by: who answered, by name (a joiner with the approve role; the person here otherwise), for
+  // the cards that go and the Activity log ("Allowed by Alex"). "terminal" names nobody.
+  function answer(id, a, from, by = "") {
     const it = items.get(String(id));
     if (!it || !ANSWERS.has(a)) return false;
+    if (it.remote) return answerRemote(it, a, from);
     remember(it.key, a === "site" ? "allow" : a, it.where);
-    end(it, a);
+    const said = a === "site" || a === "allow" ? "allow" : a === "deny" ? "deny" : "";
+    const who = said ? String(by || hostName() || "The host").slice(0, 60) : "";
+    end(it, a, said ? { answer: said, by: who } : null);
     log(`approval ${short(id)}: ${a} from ${from}${a === "site" ? " (no per-site memory exists: treated as Allow)" : ""}`);
+    if (said) {
+      try { hud.addActivity?.(`${said === "allow" ? "Allowed" : "Denied"} by ${who}: ${it.target || "a final step"}${it.tab.host ? ` on ${it.tab.host}` : ""}`, who, null, "approval"); } catch {}
+    }
     return true;
+  }
+  // ---- a joiner's side: the host's asks (the approve role) ----
+  // The host's list of asks this side may answer ({ host, items } from follow.mjs, or null when
+  // out of the session): new ones added, gone ones ended. Their text is masked here as titles are.
+  function fromHost(data) {
+    const list = data && Array.isArray(data.items) ? data.items.slice(0, 20) : [];
+    const host = String(data?.host || "The host").slice(0, 40);
+    const ids = new Set();
+    for (const raw of list) {
+      const id = String(raw?.id || "");
+      if (!APPROVAL_ID.test(id)) continue;
+      ids.add(id);
+      if (items.has(id) || remoteDone.has(id)) continue;
+      const label = String(raw.agent?.label || "Agent").slice(0, 60);
+      const color = /^#[0-9a-fA-F]{6}$/.test(String(raw.agent?.color || "")) ? String(raw.agent.color) : DEFAULT_COLOR;
+      const site = /^[\w.-]{0,253}(:\d{1,5})?$/.test(String(raw.site || "")) ? String(raw.site || "") : "";
+      const it = { id, key: `remote:${id}`, remote: true, from: host, client: "", participant: null, agent: { label: `${host}'s ${label}`, color }, kind: "click",
+        target: String(mask(String(raw.target || ""))).slice(0, 120), reason: String(mask(String(raw.reason || ""))).slice(0, 300),
+        tab: { id: -1, host: site, target: "" }, at: now(), resolve: () => {}, timer: null, page: null, pages: new Map(), hidden: new Set(), where: null };
+      items.set(id, it);
+      emit({ op: "add", item: publicItem(it) });
+      log(`approval ${short(id)}: ${host}'s, asked here too (this side can approve)`);
+    }
+    for (const it of [...items.values()]) if (it.remote && !ids.has(it.id)) end(it, "withdrawn");
+    for (const id of remoteDone) if (!ids.has(id)) remoteDone.delete(id);
+    showRemote().catch(() => {});
+    watch();
+  }
+  // The host's asks as a card on each picture page that hasn't got it yet: never while the
+  // browser's own approval card is the place (docked with its approve page open), and never while
+  // someone else looks at this browser (cover).
+  let showing = false;
+  async function showRemote() {
+    if (showing || !screen) return;
+    const lv = liveView();
+    if ((docked() && surface()) || lv?.sharing?.() || lv?.guestViewers?.()) return;
+    const remote = [...items.values()].filter((it) => it.remote);
+    if (!remote.length) return;
+    showing = true;
+    try {
+      const pages = (screen.pages?.() || []).filter((p) => !p.isClosed?.());
+      for (const it of remote) {
+        for (const p of pages) {
+          if (!items.has(it.id) || it.pages.has(p) || it.hidden.has(p)) continue;
+          const ok = await within(2000, Promise.resolve(screen.call(p, { id: it.id, who: it.agent.label, color: it.agent.color, target: it.target, reason: it.reason, site: it.tab.host, host: it.from }, "approval")).catch(() => false));
+          if (ok === true && items.has(it.id)) it.pages.set(p, now());
+        }
+      }
+    } finally { showing = false; }
+  }
+  // A person's answer here to one of the host's asks: it goes to the host (whose first answer
+  // wins); the card goes here at once either way. "terminal" (the bubble's "Ask in the terminal
+  // only") only hides it here: there is no terminal of this side's in it.
+  function answerRemote(it, a, from) {
+    remoteDone.add(it.id);
+    if (a === "terminal") { end(it, "hidden"); log(`approval ${short(it.id)}: hidden here (${from}); ${it.from} can still answer`); return true; }
+    const said = a === "site" ? "allow" : a;
+    end(it, "sent");
+    log(`approval ${short(it.id)}: ${said} from ${from}, sent to ${it.from}`);
+    Promise.resolve(sendAnswer ? sendAnswer(it.id, said) : { error: "not in a shared browser session" })
+      .then((r) => { if (r?.code !== 200) log(`approval ${short(it.id)}: ${it.from}'s side didn't take it (${r?.body?.error || r?.error || r?.code})`); }, (e) => log(`approval ${short(it.id)}: not sent (${e?.message || e})`));
+    return true;
+  }
+
+  // The asks a joiner with the approve role may see and answer: this helper's own agents' only
+  // (never a joiner's agent's: those are never asked here). bind: the call's own key, hashed (an
+  // answer is bound to the ask's id and its call, approval-share.mjs).
+  function shareable() {
+    return [...items.values()].filter((it) => !it.remote && !participants.get(it.participant)?.remote)
+      .map((it) => ({ ...publicItem(it), what: it.what, bind: sha256(it.key).slice(0, 32) }));
+  }
+  // A joiner's answer (approval-share.mjs checked who and the role): allow or deny only.
+  function answerShared(id, a, { by = "" } = {}) {
+    const it = items.get(String(id));
+    if (!it || it.remote || participants.get(it.participant)?.remote || (a !== "allow" && a !== "deny")) return false;
+    return answer(it.id, a, `${by || "a joiner"} (joined, can approve)`, by);
   }
 
   function withdraw(id, why) {
@@ -225,10 +339,11 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     return true;
   }
 
-  // A browser page that lists approvals is open.
+  // A browser page that lists approvals is open, or a joiner who can approve is in.
   function surface() {
-    const counts = liveView()?.pageClients?.() || {};
-    return SURFACES.some((k) => Number(counts[k]) > 0);
+    const lv = liveView();
+    const counts = lv?.pageClients?.() || {};
+    return SURFACES.some((k) => Number(counts[k]) > 0) || Number(lv?.approveJoiners?.()) > 0;
   }
 
   // The call itself arrived (Claude Code: the terminal's yes, or the browser's Allow passed on).
@@ -255,7 +370,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
 
   // The in-page cards' answers, read while one is shown (and only then).
   function watch() {
-    const any = [...items.values()].some((it) => it.page);
+    const any = [...items.values()].some((it) => it.page || (it.remote && screen));
     if (any && !poll) { poll = every(read, POLL_MS); poll?.unref?.(); }
     if (!any && poll) { stopEvery(poll); poll = null; }
   }
@@ -274,6 +389,11 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   // as the backstop.
   function cover() {
     for (const it of [...items.values()]) {
+      if (it.remote && it.pages.size) {
+        for (const p of it.pages.keys()) if (!p.isClosed?.()) Promise.resolve(screen?.call(p, it.id, "approval-off")).catch(() => {});
+        it.pages.clear();
+        log(`approval ${short(it.id)}: card taken down (someone else is looking at this browser)`);
+      }
       if (!it.page) continue;
       const p = it.page;
       if (!p.isClosed?.()) within(2000, Promise.resolve(hud.call(p, it.id, "approval-off")).catch(() => {})).catch(() => {});
@@ -288,9 +408,22 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     try {
       const lv = liveView();
       if (lv?.sharing?.() || lv?.guestViewers?.()) return cover();
+      await showRemote();
       const pages = new Set([...items.values()].map((it) => it.page).filter(Boolean));
+      const remotePages = new Set([...items.values()].flatMap((it) => (it.remote ? [...it.pages.keys()] : [])));
       // Each page with a card is read every tick, as the join card is: a card on a tab behind
       // can't be clicked anyway (hud.js requires the card fully visible), so its answers are empty.
+      for (const page of remotePages) {
+        if (page.isClosed?.()) { for (const it of items.values()) if (it.remote) it.pages.delete(page); continue; }
+        const got = await within(2000, Promise.resolve(screen.call(page, "", "approval-answers")).catch(() => null));
+        if (!got || typeof got !== "object") continue;
+        let a = got.a;
+        for (let n = 0; a && typeof a === "object" && n < 5; n++, a = a.next) pageAnswer(a.kind, a.what, page, Number(a.t));
+        const open = typeof got.ids === "string" ? new Set(got.ids.split(",").filter(Boolean)) : null;
+        const dismissed = new Set(String(got.dismissed || "").split(",").filter(Boolean));
+        // Hidden there with × (or gone from the page): not shown on that page again.
+        for (const it of items.values()) if (it.remote && it.pages.has(page) && ((open && !open.has(it.id)) || dismissed.has(it.id))) { it.pages.delete(page); it.hidden.add(page); }
+      }
       for (const page of pages) {
         if (page.isClosed?.()) { for (const it of [...items.values()]) if (it.page === page) lost(it); continue; }
         const got = await within(2000, Promise.resolve(hud.call(page, "", "approval-answers")).catch(() => null));
@@ -314,10 +447,11 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     const at = now();
     t = Math.min(at, Number.isFinite(t) ? t : at); // a time from the page is never later than now
     const it = items.get(String(id));
-    const refused = !it ? "not waiting" : it.page !== page ? "another tab" : t < it.shownAt + ARM_MS ? "too soon after it showed"
+    const shownAt = it?.remote ? it.pages.get(page) : it?.page === page ? it.shownAt : undefined;
+    const refused = !it ? "not waiting" : shownAt === undefined ? "another tab" : t < shownAt + ARM_MS ? "too soon after it showed"
       : !presence.byPerson(t) ? "not a person's own click (an agent or replayed input then)" : "";
     if (refused) { log(`approval ${short(id)}: a click on the card didn't count (${refused})`); return false; }
-    return answer(it.id, a, "the page");
+    return answer(it.id, a, it.remote ? "the picture page" : "the page");
   }
 
   // A PermissionRequest hook's line (guard.mjs): ask, wait, answer one line.
@@ -348,7 +482,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   }
 
   return {
-    participant, gone, only, whose, open, answer, withdraw, arrived, hook, cover,
+    participant, gone, only, whose, open, answer, withdraw, arrived, hook, cover, shareable, answerShared, fromHost,
     lastWhere: () => (movedFrom ? { origin: movedFrom.origin } : null),
     pending: () => [...items.values()].map(publicItem),
     onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },

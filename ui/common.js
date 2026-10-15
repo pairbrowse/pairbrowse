@@ -8,6 +8,7 @@
 import { STATE_WORDS, PAGE_KINDS, isColor } from "./vocab.js";
 import { SHARED_STREAM_EVENTS, DELTA_EVENTS, OWN_EVENTS } from "./events.js";
 import { addressToUrl, servedByBrowser, REPORT_URL, TOP_CHROME_HOST, ownPage } from "./urls.js";
+import { postJson } from "./helper.js";
 export { STATE_WORDS, isColor, addressToUrl, servedByBrowser, REPORT_URL };
 
 export const $ = (id) => document.getElementById(id);
@@ -181,8 +182,6 @@ export function sparkIcon(className, label = "") {
   svg.append(path);
   return svg;
 }
-
-const postJson = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 // A request row's failure, said in the row (DESIGN.md Part I: nothing silent); the next answer
 // clears it.
@@ -443,7 +442,7 @@ export async function sendReport(base, payload) {
   if (!base) return { ok: false, error: "PairBrowse isn't connected." };
   let r;
   try {
-    r = await fetch(base + "report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    r = await postJson(base + "report", payload);
   } catch {
     return { ok: false, error: "Couldn't reach PairBrowse." };
   }
@@ -723,7 +722,7 @@ export function askDock({ pb, layout, base, side, state, onFail }) {
     return true;
   }
   if (!base) return false;
-  fetch(base + "layout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ [side]: state }) }).then((r) => { if (!r.ok) onFail?.(); }, () => onFail?.());
+  postJson(base + "layout", { [side]: state }).then((r) => { if (!r.ok) onFail?.(); }, () => onFail?.());
   return true;
 }
 

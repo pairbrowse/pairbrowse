@@ -59,3 +59,11 @@ export function followHelper({ connect, none = () => {}, failed = none, wait = f
   }, () => { if (!stopped) failed(); });
   return () => { stopped = true; stop(); };
 }
+
+// ---- asking the helper ----
+// A JSON body POSTed (the owner's routes take JSON only). -> the fetch's promise (a Response).
+export const postJson = (url, body, scope = globalThis) => scope.fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+// The same, as { status, body } (body: the reply's JSON, else null); status 0 when the helper
+// couldn't be reached. Never rejects.
+export const postReply = (url, body, scope = globalThis) => postJson(url, body, scope)
+  .then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }), () => ({ status: 0, body: null }));

@@ -14,7 +14,7 @@
 // A tab page: in the browser only window.pairbrowse.session exists here, so nothing else is called.
 // The list is GET sessions.json on every (re)connect, then the helper's sessions and session events:
 // no timer, no poll, no observer.
-import { $, el, ago, initialOf, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, joinHostAsk, ago, initialOf, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
 import { followHelper, postReply, UNREACHABLE_RETRY } from "../helper.js";
 
@@ -217,34 +217,19 @@ $("join-form").addEventListener("submit", (ev) => {
 });
 $("join").addEventListener("toggle", () => { if ($("join").open) $("code").focus(); });
 // The address question (the picker's): Allow once, Always allow or Cancel, by a person's click.
-function showHostAsk({ id, host }) {
-  const box = $("host-ask");
-  const once = el("button", { className: "primary", type: "button", textContent: "Allow once" });
-  const always = el("button", { className: "secondary", type: "button", textContent: "Always allow", title: "Remember this address in your config (joinHosts)." });
-  const cancel = el("button", { className: "secondary", type: "button", textContent: "Cancel" });
-  const all = [once, always, cancel];
-  async function answer(op, label) {
-    if (!base || busy) return;
-    busy = true;
-    for (const b of all) b.disabled = true;
-    say(label);
-    const r = await postJson("joinhost", op);
-    busy = false;
-    askCancel = null;
-    box.hidden = true;
-    box.replaceChildren();
-    const body = r.body || { error: UNREACHABLE_RETRY };
-    if (body.error || (op.op === "allow" && !body.joined)) { say(body.error || body.text || "That didn't work.", "error"); return; }
-    if (op.op === "cancel") { say("Not joined."); return; }
-    say(body.text || "Done.", "ok");
-  }
-  once.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: false }, "Asking to join…"); });
-  always.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: true }, "Asking to join…"); });
-  cancel.addEventListener("click", (ev) => { if (real(ev)) answer({ op: "cancel", id }, ""); });
-  askCancel = () => answer({ op: "cancel", id }, "");
-  box.replaceChildren(el("strong", {}, "This code leads to ", el("code", { className: "host", textContent: String(host) }), ", not a PairBrowse address. Join through it?"), el("span", { className: "buttons" }, ...all));
-  box.hidden = false;
-  once.focus();
+function showHostAsk(ask) {
+  askCancel = joinHostAsk($("host-ask"), ask, {
+    canSend: () => !!base && !busy,
+    send: async (op, label) => {
+      busy = true;
+      say(label);
+      const r = await postJson("joinhost", op);
+      busy = false;
+      askCancel = null;
+      return r.body;
+    },
+    done: (op, { kind, text }) => say(text, kind),
+  });
 }
 $("filter").addEventListener("input", filter);
 // Escape answers the open question with its Cancel; a filled search clears first, as the field does.

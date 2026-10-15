@@ -4,7 +4,7 @@
 // the live view with the owner's key: in the build from the browser's Session API
 // (window.pairbrowse), in the extension from the side panel's worker (chrome.storage.session).
 // The live view takes these requests only from the page's own origin.
-import { $, el, avatar, initialOf, reportOffer, askSwitch, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, joinHostAsk, avatar, initialOf, reportOffer, askSwitch, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
 import { followHelper, postJson, UNREACHABLE_RETRY, UNREACHABLE } from "../helper.js";
 
@@ -235,39 +235,24 @@ $("join-form").addEventListener("submit", (ev) => {
 $("join").addEventListener("toggle", () => { if ($("join").open) $("code").focus(); });
 // The address question (the same one the side panel shows): Allow once, Always allow (kept in
 // joinHosts) or Cancel, by a real click here; a yes starts the join with the code pasted above.
-function showHostAsk({ id, host }) {
-  const box = $("host-ask");
-  const once = el("button", { className: "primary", type: "button", textContent: "Allow once" });
-  const always = el("button", { className: "secondary", type: "button", textContent: "Always allow", title: "Remember this address in your config (joinHosts)." });
-  const cancel = el("button", { className: "secondary", type: "button", textContent: "Cancel" });
-  const buttons = [once, always, cancel];
-  async function answer(op, label) {
-    if (!base || busy) return;
-    busy = true;
-    for (const b of buttons) b.disabled = true;
-    document.body.dataset.s = "picking";
-    say(label);
-    const r = await postJson(base + "joinhost", op)
-      .then((x) => x.json(), () => ({ error: UNREACHABLE_RETRY }))
-      .catch(() => ({ error: UNREACHABLE_RETRY }));
-    busy = false;
-    askCancel = null;
-    box.hidden = true;
-    box.replaceChildren();
-    if (r.error || (op.op === "allow" && !r.joined)) { document.body.dataset.s = "ready"; say(r.error || r.text || "That didn't work.", "error"); return; }
-    if (op.op === "cancel") { document.body.dataset.s = "ready"; say("Not joined.", ""); return; }
-    document.body.dataset.s = "done";
-    say(r.text || "Done.", "ok");
-    notify("picked");
-  }
-  once.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: false }, "Asking to join..."); });
-  always.addEventListener("click", (ev) => { if (real(ev) && ev.detail > 0) answer({ op: "allow", id, always: true }, "Asking to join..."); });
-  cancel.addEventListener("click", (ev) => { if (real(ev)) answer({ op: "cancel", id }, ""); });
-  askCancel = () => answer({ op: "cancel", id }, "");
-  const question = el("strong", {}, "This code leads to ", el("code", { className: "host", textContent: String(host) }), ", not a PairBrowse address. Join through it?");
-  box.replaceChildren(question, el("span", { className: "buttons" }, ...buttons));
-  box.hidden = false;
-  once.focus();
+function showHostAsk(ask) {
+  askCancel = joinHostAsk($("host-ask"), ask, {
+    canSend: () => !!base && !busy,
+    send: async (op, label) => {
+      busy = true;
+      document.body.dataset.s = "picking";
+      say(label);
+      const r = await postJson(base + "joinhost", op).then((x) => x.json(), () => null).catch(() => null);
+      busy = false;
+      askCancel = null;
+      return r;
+    },
+    done: (op, { kind, text }) => {
+      document.body.dataset.s = kind === "ok" ? "done" : "ready";
+      say(text, kind);
+      if (kind === "ok") notify("picked");
+    },
+  });
 }
 function setMoreLabel() {
   const open = $("more").dataset.open === "true";

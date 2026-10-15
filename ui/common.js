@@ -281,6 +281,37 @@ export function hostPanel(asks, list, section, base) {
   };
 }
 
+// The same question on the session picker and the sessions page, after a join code whose address
+// isn't a PairBrowse one: Allow once / Always allow / Cancel in box, a person's own click only
+// (Allow: a pointer's). send(op, label) posts op to joinhost (the page shows label meanwhile and
+// keeps its own busy state) -> the reply's JSON; canSend(): false while the page can't send.
+// done(op, { kind, text }) says how it ended ("error", "" for a cancel, "ok"). -> the Cancel path
+// (Escape).
+export function joinHostAsk(box, { id, host }, { canSend, send, done }) {
+  const once = el("button", { className: "primary", type: "button", textContent: "Allow once" });
+  const always = el("button", { className: "secondary", type: "button", textContent: "Always allow", title: "Remember this address in your config (joinHosts)." });
+  const cancel = el("button", { className: "secondary", type: "button", textContent: "Cancel" });
+  const buttons = [once, always, cancel];
+  async function answer(op, label) {
+    if (!canSend()) return;
+    for (const b of buttons) b.disabled = true;
+    const r = (await send(op, label)) || { error: UNREACHABLE_RETRY };
+    box.hidden = true;
+    box.replaceChildren();
+    if (r.error || (op.op === "allow" && !r.joined)) done(op, { kind: "error", text: r.error || r.text || "That didn't work." });
+    else if (op.op === "cancel") done(op, { kind: "", text: "Not joined." });
+    else done(op, { kind: "ok", text: r.text || "Done." });
+  }
+  const asking = "Asking to join…";
+  once.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer({ op: "allow", id, always: false }, asking); });
+  always.addEventListener("click", (ev) => { if (ev.isTrusted && ev.detail > 0) answer({ op: "allow", id, always: true }, asking); });
+  cancel.addEventListener("click", (ev) => { if (ev.isTrusted) answer({ op: "cancel", id }, ""); });
+  box.replaceChildren(el("strong", {}, "This code leads to ", el("code", { className: "host", textContent: String(host) }), ", not a PairBrowse address. Join through it?"), el("span", { className: "buttons" }, ...buttons));
+  box.hidden = false;
+  once.focus();
+  return () => answer({ op: "cancel", id }, "");
+}
+
 // Dev servers (the helper's devshare): an agent's question to share one (Yes / No) in asks, and
 // in list the localhost dev servers open in tabs (Share) and those shared (Stop), for the people
 // in the session. Only real clicks answer. section: shown when there is something to show.

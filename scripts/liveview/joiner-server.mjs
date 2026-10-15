@@ -23,6 +23,10 @@ const SCREEN_PER_SECOND = 40; // shared browser mode: connection setup, and inpu
 const SCREEN_BODY_MAX = 120_000;
 const HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff", "content-type": "application/json" };
 
+// One joiner's key in the live view's joiner map (and everywhere their agent, pictures and
+// changes are kept): their join code's invite and their PairBrowse's random id.
+export const joinerKeyOf = (inviteId, joinerId) => `${inviteId}:${joinerId}`;
+
 // Whether a joiner is still there: a recent poll.
 export const recentlySeen = (j) => Date.now() - j.seen < SEEN_MS;
 
@@ -58,7 +62,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
       try { onJoinRequest(r.entry); } catch {}
     }
     if (r.state === "approved") {
-      const k = `${invite.id}:${who.joinerId}`;
+      const k = joinerKeyOf(invite.id, who.joinerId);
       let j = joiners.get(k);
       if (!j) {
         j = { invite, joinerId: who.joinerId, name: r.entry.name, app: who.app ? appName(who.app) : r.entry.app, computer: r.entry.computer || "", seen: 0, inflight: 0, ops: [] };
@@ -76,7 +80,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
   }
 
   function dropJoiner(invite, joinerId) {
-    const k = `${invite.id}:${joinerId}`;
+    const k = joinerKeyOf(invite.id, joinerId);
     const j = joiners.get(k);
     joiners.delete(k);
     approvals.leave(invite.id, joinerId);

@@ -23,7 +23,7 @@ import { createPush } from "./liveview/push.mjs";
 import { hostOk, originOk, keyOk, readCapped, readJsonBody, parseJson, json, NOT_JSON, BODY_MAX, SECURITY_HEADERS, serveViewer, serveAsset, plain, pathParts, listen } from "./liveview/http.mjs";
 import { createInvites, roleMay } from "./liveview/invites.mjs";
 import { createInputReplayer, readViewerInput, inputBudget } from "./liveview/input.mjs";
-import { createJoinerServer, recentlySeen } from "./liveview/joiner-server.mjs";
+import { createJoinerServer, recentlySeen, joinerKeyOf } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/tabs.mjs";
 import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
 import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "../ui/urls.js";
@@ -54,7 +54,7 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 // A reader FRAME_SKIP_BYTES behind gets no new frames until it catches up; STALLED_BYTES behind,
 // the connection is cut (the page reconnects). ui/limits.js.
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites", "overlay-pointers", "joiner-pointers"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["record", "profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites", "overlay-pointers", "joiner-pointers"]); // events only the owner's streams get
 // Events for the browser's own pages alone (streams opened with ?page=): the capture page's calls
 // (liveview/capture.mjs), the tab strip's order requests and the pointers its browser draws over
 // the page card (overlay-pointers). Never the live view page, a viewer
@@ -271,7 +271,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   const guests = () => {
     const seen = new Map();
     for (const invite of linkGuests.values()) seen.set(invite.id, { label: invite.label, role: invite.role });
-    for (const j of joiners.values()) if (recentlySeen(j)) seen.set(`${j.invite.id}:${j.joinerId}`, { label: personLabel(j.name, j.app), role: j.invite.role });
+    for (const j of joiners.values()) if (recentlySeen(j)) seen.set(joinerKeyOf(j.invite.id, j.joinerId), { label: personLabel(j.name, j.app), role: j.invite.role });
     for (const r of remote) seen.set(`remote:${r.label}`, r);
     return [...seen.values()];
   };
@@ -281,6 +281,11 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
 
   // The pause as guests get it: without who is paused on their own (the owner's only).
   const guestPause = (p) => { if (!p || typeof p !== "object") return p; const { perAgent, agents, ...rest } = p; return rest; };
+  // An event as an invite link's guest gets it: addresses without query strings (like joiners),
+  // never a person's own tab, the session without the owner's fields, the pause without "Pause
+  // this agent". broadcast, the events stream's first writes and state.json all use it.
+  const forGuest = (event, data) => event === "tabs" ? guestList(data) : event === "activity" ? guestActivity(data)
+    : event === "session" ? sessionInfo : event === "pause" ? guestPause(data) : data;
   const broadcast = (event, data) => {
     const msg = sse(event, data);
     for (const res of event === "frame" ? viewers : OWNER_ONLY.has(event) ? owners : clients) {
@@ -291,12 +296,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       if (res.writableLength > STALLED_BYTES) { res.destroy(); continue; }
       if (event === "frame" && res.writableLength > FRAME_SKIP_BYTES) continue;
       if (event === "frame" && linkGuests.has(res) && personTab(lastFrameFrom)) continue; // a person's own tab: never to guests
-      // Link guests get addresses without query strings, like joiners.
-      if (linkGuests.has(res) && event === "tabs") res.write(sse(event, guestList(data)));
-      else if (linkGuests.has(res) && event === "activity") res.write(sse(event, guestActivity(data)));
-      else if (linkGuests.has(res) && event === "session") res.write(sse(event, sessionInfo)); // never the owner's fields
-      else if (linkGuests.has(res) && event === "pause") res.write(sse(event, guestPause(data))); // "Pause this agent" is the owner's
-      else res.write(msg);
+      res.write(linkGuests.has(res) ? sse(event, forGuest(event, data)) : msg);
     }
   };
   const collaborationChanged = () => { broadcast("collaboration", collaborationNow()); agentTabsChanged(); };
@@ -355,7 +355,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   // A drive joiner's changes in the shared tabs: opened, moved to another address, closed, as if
   // by hand (presence pauses agents in that tab). Only addresses that may cross (never the host's
   // local network); ids the joiner can know.
-  const joinerKey = (j) => `${j.invite.id}:${j.joinerId}`;
+  const joinerKey = (j) => joinerKeyOf(j.invite.id, j.joinerId);
   // A tab on a shared dev server, as its shared address (null: not one).
   const devUrl = (url) => devShare?.toPublic(url) || null;
   devShare?.members((key) => joiners.has(key));
@@ -761,7 +761,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     { method: "GET", path: "state.json", right: "state", handler: async ({ res, invite }) => {
       const tabs = withoutIcons(await tabsInfo());
       const recent = activity.slice(-STATE_ACTIVITY);
-      json(res, 200, { status, session: sessionInfo, collaboration: collaborationNow(), tabs: invite ? guestList(tabs) : tabs, activity: invite ? guestActivity(recent) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
+      json(res, 200, { status, session: sessionInfo, collaboration: collaborationNow(), tabs: invite ? forGuest("tabs", tabs) : tabs, activity: invite ? forGuest("activity", recent) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
     } },
     // The session's activity log, newest first, a page at a time (the Activity page's history; the
     // activity event has the latest 30): ?before=<epoch ms> (lines strictly older) &limit=<1..200>
@@ -1109,11 +1109,11 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     });
     if (viewer) await follow();
     const tabs = await tabsInfo();
-    res.write(sse("tabs", invite ? guestList(tabs) : tabs));
+    res.write(sse("tabs", invite ? forGuest("tabs", tabs) : tabs));
     res.write(sse("status", status));
-    res.write(sse("session", invite ? sessionInfo : ownerSession()));
+    res.write(sse("session", invite ? forGuest("session") : ownerSession()));
     res.write(sse("collaboration", collaborationNow()));
-    res.write(sse("activity", invite ? guestActivity(activity) : activity));
+    res.write(sse("activity", invite ? forGuest("activity", activity) : activity));
     if (!invite) res.write(sse("join", approvals.open()));
     if (!invite && devState) res.write(sse("dev", devState));
     if (!invite && joinHost) res.write(sse("joinhost", joinHost.state()));
@@ -1122,7 +1122,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     if (kind) { watchPages(); res.write(sse("agent-tabs", await agentTabs())); }
     if (!invite && clickApprovals?.pending().length) res.write(sse("driving", { on: driving }));
     const paused = pauseState();
-    if (paused) res.write(sse("pause", invite ? guestPause(paused) : paused));
+    if (paused) res.write(sse("pause", invite ? forGuest("pause", paused) : paused));
     if (!invite && recordState()) res.write(sse("record", recordState()));
     if (viewer && lastFrame && !(invite && personTab(lastFrameFrom))) res.write(sse("frame", lastFrame));
   }
@@ -1331,7 +1331,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   const stopTools = tools ? [
     tools.downloads?.onChange?.((c) => broadcast("downloads", { op: c.op, item: maskedDownload(c.item) })),
     tools.handoffs?.onChange?.((c) => toolEvents(async () => broadcast("handoffs", c.op === "remove" ? { op: "remove", id: c.id, item: { id: c.id } } : { op: c.op, item: await handoffItem(c.item) })).catch(() => {})),
-    tools.recordings?.onChange?.((c) => { const msg = sse("record", { ...(recordState() || {}), op: c.op, ...(c.op === "removed" ? { id: c.id } : { item: c.item }) }); for (const r of owners) r.write(msg); }),
+    tools.recordings?.onChange?.((c) => broadcast("record", { ...(recordState() || {}), op: c.op, ...(c.op === "removed" ? { id: c.id } : { item: c.item }) })),
   ].filter((f) => typeof f === "function") : [];
 
   async function tick() {
@@ -1421,7 +1421,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // Agents paused or resumed by a person (daemon/pause.mjs), with whether the owner may press it.
     setPause: () => broadcast("pause", pauseState()),
     // A recording started or stopped (daemon/recorder.mjs): the owner's side panels show it.
-    setRecord: (state) => { for (const r of owners) r.write(sse("record", state)); },
+    setRecord: (state) => broadcast("record", state),
     // Who is doing what across the session, and its messages: the side panel's Session section.
     setBoard: (next) => { board = next; broadcast("board", board); },
     // The browser's pages with a stream open, counted by kind; the docks' layout now (tests).

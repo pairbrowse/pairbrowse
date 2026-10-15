@@ -25,13 +25,14 @@ import { scanReveal, revealNote, foldedLine } from "./reveal.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
 import { dragBetween, reason as dragReason } from "./drag.mjs";
-import { createRefNames, plainError, hideChromeTabs, hidePersonTabs, PERSON_TAB_RULE } from "./output.mjs";
+import { plainError, hideChromeTabs, hidePersonTabs, PERSON_TAB_RULE } from "./output.mjs";
 import { humanFill, humanType, fillSettings } from "../native-engine.mjs";
 import { STATUS_KINDS } from "../../ui/vocab.js";
 import { PAIRBROWSE_TOOLS, SCREENSHOT_TOOLS, LOADING_TOOLS, INLINE_SNAPSHOT_TOOLS, INLINE_SHORT_TOOLS, CLICKING_TOOLS, TAB_TOOLS, FIELD_TOOLS, PAGE_READ_TOOLS, NO_WAIT, NO_PICK_WAIT, DECORATED, REMOTE_TOOLS, changesPage,
   wellFormed, withDialogLabel, containsRef, urlIn, forJoiner, pictureless, dropClosedAlerts } from "./serve/wire.mjs";
 import { realLabel, sensitiveTarget, arrivedAt } from "./serve/pageread.mjs";
 import { tabRefusal, isFileTab } from "./serve/refuse.mjs";
+import { createConnectionState } from "./serve/connection.mjs";
 // The pure parts live in serve/; kept here for one release (tests and older imports name serve.mjs).
 export { wellFormed, forJoiner, pictureless, dropClosedAlerts } from "./serve/wire.mjs";
 export { arrivedAt } from "./serve/pageread.mjs";
@@ -122,15 +123,17 @@ export function createServe({ config, log, host, createConnection, clients, coll
 
   async function serve(sock, { remote = null } = {}) {
     const participant = randomBytes(8).toString("hex");
-    let initialized = false;
-    let clientName = ""; // the app on this connection, from its MCP initialize ("claude-code", "codex-mcp-client", ...)
-    const disconnected = new AbortController();
+    // Its state (serve/connection.mjs): the values below change as it works, read as conn.x; the
+    // collections and helpers never change identity, so they go by their own names here.
+    const conn = createConnectionState(participant, { remote, pauseSeen: pause.seq() });
+    const { disconnected, risks, used, homes, approvedArgs, approvedWhere, fieldNotes, refNames, submitAfter, serverListeners,
+      pending, completed, calls, traces, callArgs, tabActions, refused, late, openMine, ownTab, recentRisk, lostWhy, noTab } = conn;
     clients.set(participant, sock);
     // The other sessions using the browser: a call in the last ACTIVE_MS, or holding it (acquire).
     const inUse = () => {
       const { owner, participants } = collaboration.state();
       const label = (id) => participants.find((p) => p.id === id)?.label || "an agent";
-      // Active: the owner, an agent that acted lately, or one holding a tab now (its claim lasts
+      // Active: the owner, an agent that conn.acted lately, or one holding a tab now (its claim lasts
       // across its quiet spells: switching would close the tab it holds).
       const holds = (id) => hud.sparkList().some((s) => s.id === id && s.page && !s.page.isClosed() && tabClaims.holder(s.page)?.id === id);
       return [...clients.keys()].filter((id) => id !== participant && (owner?.id === id || Date.now() - (lastCall.get(id) || 0) < ACTIVE_MS || holds(id))).map(label);
@@ -152,32 +155,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
       pause.forget(participant); // "Pause this agent" ends with its connection
     });
     collaboration.register(participant, `Claude ${participant.slice(0, 4)}`);
-    let actingIn = null; // the tab this participant's current call acts in
-    // What this participant's last click in a tab committed ("delete", "pay"), for a minute: the
-    // confirmation it opens counts as the same action (daemon/page.mjs clickRisk prev).
-    const risks = new WeakMap(); // tab -> { kind, t } | null
-    const recentRisk = (page) => { const r = page && risks.get(page); return r && Date.now() - r.t < 60_000 ? r.kind : ""; };
     const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
-    // The tab this participant works in, as a page: other agents' new and closed tabs shift the
-    // numbers, and two tabs can show the same URL. Its browser server's current tab follows it.
-    let mine = null;
-    // Its own tab while open; the tab its current call acts in, else that.
-    const openMine = () => (mine && !mine.isClosed() ? mine : null);
-    const ownTab = () => actingIn || openMine();
-    let serverAt = null; // the page its browser server has current, when known
-    let lostTab = false; // it closed its tab and every other tab was another agent's
-    // Why it has no tab, for the answer it then gets.
-    let closedByMe = false; // it closed its own tab itself (else a person or the page did)
-    let othersOpen = 0; // the web tabs open besides this agent's, as freeTab last counted them
-    const lostWhy = () => `${closedByMe ? "you closed yours" : "your tab was closed (by a person, the page or the browser)"} and ${othersOpen ? "the others are in use by other agents" : "no other tab is open"}`;
-    let noTabWhy = lostWhy();
-    const noTab = () => `You have no tab of your own: ${noTabWhy}. Open one with browser_tabs new.`;
-    const used = []; // tabs it worked in before, latest last: where it goes back to
     const myLabel = () => collaboration.participants.get(participant)?.label;
-    // Calls whose named final action the user allowed in the browser (Codex and other apps: the
-    // approval card, daemon/approvals.mjs): the hand-off below doesn't apply to them.
-    const approvedArgs = new WeakSet();
-    const approvedWhere = new WeakMap(); // args -> the tab and origin that Allow was for (approvals.mjs sameWhere)
     // What needs the user's OK in an app that can't ask for it: handed to the user. denied: the
     // user said Deny in the browser.
     const handOff = (reason, denied = false) => `${denied ? "Denied in the PairBrowse browser. " : ""}${reason} This needs the user's OK, which this app can't ask for. ` +
@@ -188,13 +167,6 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (!timeline?.enabled || !shot?.data || !page) return;
       setImmediate(() => timeline.record({ data: shot.data, who: myLabel() || "", caption: hud.lastIn(page)?.text || describe(tool, args || {}) || "Looked at the page" }).catch((e) => log("timeline", e?.message || e)));
     };
-    let pauseSeen = pause.seq(); // pauses before it connected aren't news
-    const fieldNotes = []; // fields left to the people filling them, for the next result
-    const refNames = createRefNames(); // the main frame's refs plain for Claude (output.mjs)
-    const submitAfter = new Set(); // browser_type calls whose Enter PairBrowse presses itself
-    let recorded = false; // in the session's list of who used it
-
-    const serverListeners = []; // its browser server's listeners on the browser (contextFor)
     const mcpServer = await createConnection({
       browser: { isolated: false },
       webmcp: false, // passwords are swapped in and masked by PairBrowse itself (see handle and finishResult)
@@ -212,19 +184,6 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (config.screenshots === false && Array.isArray(msg?.result?.content)) for (const c of msg.result.content) if (c?.type === "text" && typeof c.text === "string") c.text = pictureless(c.text);
       return !sock.destroyed && sock.write(JSON.stringify(msg) + "\n");
     };
-    const pending = new Map(); // the helper's own calls to the server, by id
-    const completed = new Map(); // calls in flight: resolved once their result went out
-    const calls = new Map(); // request id -> tool name, for the result
-    const traces = new Map(); // request id -> its phase trace (PAIRBROWSE_TRACE)
-    const callArgs = new Map(); // request id -> the call's arguments (Claude's: secret names, never values)
-    const tabActions = new Map(); // request id -> browser_tabs action
-    const refused = new Set(); // calls the helper itself turned down: they changed nothing in the browser
-    const late = new Set(); // calls answered for running too long: a result that still comes is dropped
-    let observedRevision = -1;
-    let acted = false; // a call of this participant's got past the session picker
-    let tabsListed = false; // this session's browser server has seen the tab list
-    let snapshotReturned = false;
-    let seq = 0;
     const finish = (id) => { const done = completed.get(id); completed.delete(id); done?.(); };
     const reply = (id, text, isError = false) => {
       if (isError) refused.add(id);
@@ -273,10 +232,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const handled = popups.drain(ownTab());
       // Messages from other participants, and one line on what the other side's agents are
       // doing when it changed: coordination information only, marked as from someone else.
-      const paused = pause.noteAfter(pauseSeen, participant);
-      pauseSeen = paused.n;
+      const paused = pause.noteAfter(conn.pauseSeen, participant);
+      conn.pauseSeen = paused.n;
       // The host's notes (join requests, downloads) are for the host's own agents, never a joiner's.
-      const lines = [...(remote ? [] : drainHostNotes()).map((n) => `- ${n}`), paused.text, ...fieldNotes.splice(0).map((n) => `- ${n}`), presence.userNote(actingIn || hud.sparkPage(participant), remote?.name), sharedNote(), session.messagesNote(participant), session.note(participant)].filter(Boolean).join("\n");
+      const lines = [...(remote ? [] : drainHostNotes()).map((n) => `- ${n}`), paused.text, ...fieldNotes.splice(0).map((n) => `- ${n}`), presence.userNote(conn.actingIn || hud.sparkPage(participant), remote?.name), sharedNote(), session.messagesNote(participant), session.note(participant)].filter(Boolean).join("\n");
       return handled && lines ? `${handled}\n${lines}` : handled || (lines && `\n### PairBrowse\n${lines}`);
     }
 
@@ -296,8 +255,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (tool === "browser_tabs" && msg.result && !msg.result.isError) await followTabs(msg, action).catch((e) => log("tab follow", e?.message || e));
         // The browser tools act in this participant's own tab (see syncServer): the result is about
         // that page, whatever URL another tab shows.
-        ownPage = mine && !mine.isClosed() && (tool.startsWith("browser_") || DECORATED.has(tool)) ? mine : null;
-        snapshotReturned = tool === "browser_snapshot" || content().some((part) => /\[ref=|\]\([^)\s]*page-[^)\s]*\.ya?ml\)/.test(part.text || ""));
+        ownPage = conn.mine && !conn.mine.isClosed() && (tool.startsWith("browser_") || DECORATED.has(tool)) ? conn.mine : null;
+        conn.snapshotReturned = tool === "browser_snapshot" || content().some((part) => /\[ref=|\]\([^)\s]*page-[^)\s]*\.ya?ml\)/.test(part.text || ""));
         const seenUrl = ownPage ? ownPage.url() : knownUrl || urlIn(content());
         shotUrl = seenUrl;
         if (seenUrl) {
@@ -308,7 +267,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           // only looked, and the tab may be another agent's (whose name it carries).
           const read = PAGE_READ_TOOLS.has(tool) || (tool === "browser_tabs" && action === "list");
           const owner = ownPage && hud.sparkOwner(ownPage);
-          if (!(read && (!ownPage || (owner && owner.id !== participant)))) hud.moveSpark(participant, ownPage || (lostTab || (remote && !mine) ? null : seenUrl)).catch(() => {});
+          if (!(read && (!ownPage || (owner && owner.id !== participant)))) hud.moveSpark(participant, ownPage || (conn.lostTab || (remote && !conn.mine) ? null : seenUrl)).catch(() => {});
         }
         for (const part of content()) if (part.type === "text") part.text = dropClosedAlerts(trimResult(tool, part.text));
         if (tool === "browser_handle_dialog" && msg.result && !msg.result.isError && !content().some((c) => /### Result|Accepted|Dismissed/.test(c.text || ""))) {
@@ -331,7 +290,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (INLINE_SNAPSHOT_TOOLS.has(tool) && msg.result && !msg.result.isError) {
           for (const part of content()) if (part.type === "text") part.text = output.inlineSnapshot(part.text, { short: INLINE_SHORT_TOOLS.has(tool) });
           inlined = content().some((part) => /^```yaml$/m.test(part.text || ""));
-          snapshotReturned ||= inlined;
+          conn.snapshotReturned ||= inlined;
         }
         const tidying = context.current() ? context.openPages().then((pages) => tidy(tool, ownPage || pages.find((p) => p.url() === seenUrl), seenUrl)).catch(() => {}) : null;
         if (tidying && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false) await within(TIDY_MAX_MS, tidying);
@@ -474,14 +433,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
     };
     // A call of the helper's own to this participant's server (never shown to the client).
     const internal = (name, args) => new Promise((resolve) => {
-      const id = `pb-${randomBytes(16).toString("hex")}-${++seq}`;
+      const id = `pb-${randomBytes(16).toString("hex")}-${++conn.seq}`;
       pending.set(id, resolve);
       transport.onmessage?.({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
     });
     const tabList = async () => ((await internal("browser_tabs", { action: "list" })).result?.content || []).map((c) => c.text || "").join("\n");
     // The URL of this participant's server's current tab.
     const serverUrl = async () => (await tabList()).match(/\(current\)[^\n]*?\]\(([^)\s]+)\)/)?.[1] || null;
-    const serverPage = async () => (mine && !mine.isClosed() && serverAt === mine ? mine : context.pageAt(await serverUrl()));
+    const serverPage = async () => (conn.mine && !conn.mine.isClosed() && conn.serverAt === conn.mine ? conn.mine : context.pageAt(await serverUrl()));
     const openTabs = async () => (await context.ready()).pages();
     // The page a tab list marks current. Its numbers are the browser server's, which lists the
     // tabs in the order the browser opened them, as context.pages() does.
@@ -490,16 +449,15 @@ export function createServe({ config, log, host, createConnection, clients, coll
       return index === undefined ? null : (await openTabs())[Number(index)] || null;
     }
     function setMine(page) {
-      if (mine && mine !== page) {
-        const before = used.indexOf(mine);
+      if (conn.mine && conn.mine !== page) {
+        const before = used.indexOf(conn.mine);
         if (before >= 0) used.splice(before, 1);
-        used.push(mine);
+        used.push(conn.mine);
       }
-      mine = page;
-      lostTab = false;
+      conn.mine = page;
+      conn.lostTab = false;
       try { homes.set(context.sessionName(), page); } catch {}
     }
-    const homes = new Map(); // browser session -> this agent's tab there last (successorOf finds it again)
     // A tab no other agent is working in (its spark or turn), for when this one's tab closed.
     const othersTab = (page) => {
       const held = tabClaims.holder(page);
@@ -512,38 +470,38 @@ export function createServe({ config, log, host, createConnection, clients, coll
     async function freeTab() {
       for (const page of [...used].reverse()) if (!page.isClosed() && !othersTab(page) && !isChromePage(page.url()) && !personTab(page)) return page;
       const open = (await openTabs()).filter((page) => !page.isClosed() && !isChromePage(page.url()));
-      othersOpen = open.length;
+      conn.othersOpen = open.length;
       return open.find((page) => !othersTab(page) && !personTab(page)) || null;
     }
     // Moves this participant's browser server to its own tab, by that tab's number right now.
     async function syncServer() {
-      if (!mine || mine.isClosed() || serverAt === mine) return;
+      if (!conn.mine || conn.mine.isClosed() || conn.serverAt === conn.mine) return;
       // Unknown, or a tab of a browser that has since closed (a session switch): the server lists
       // the tabs anew first (a select by number before that finds no such tab).
-      if (!serverAt || serverAt.isClosed?.()) {
-        serverAt = await currentIn(await tabList());
-        tabsListed = true;
-        if (serverAt === mine) return;
+      if (!conn.serverAt || conn.serverAt.isClosed?.()) {
+        conn.serverAt = await currentIn(await tabList());
+        conn.tabsListed = true;
+        if (conn.serverAt === conn.mine) return;
       }
-      const index = (await openTabs()).indexOf(mine);
+      const index = (await openTabs()).indexOf(conn.mine);
       if (index < 0) return;
       const r = await keepFocus(() => internal("browser_tabs", { action: "select", index }));
-      serverAt = r.result?.isError ? null : mine;
+      conn.serverAt = r.result?.isError ? null : conn.mine;
     }
     // After browser_tabs: the tab it opened or selected is its own; after closing its own tab it
     // goes back to the one it used before, or a tab no agent holds, never another agent's.
     async function followTabs(msg, action) {
       const text = () => msg.result.content.map((c) => c.text || "").join("\n");
-      serverAt = (await currentIn(text())) || (await currentIn(await tabList()));
+      conn.serverAt = (await currentIn(text())) || (await currentIn(await tabList()));
       if (action === "new" || action === "select") {
-        if (serverAt) setMine(serverAt);
+        if (conn.serverAt) setMine(conn.serverAt);
         return;
       }
       if (action === "close") {
-        if (!mine || mine.isClosed()) {
+        if (!conn.mine || conn.mine.isClosed()) {
           const next = await freeTab();
           if (next) setMine(next);
-          else { mine = null; lostTab = true; noTabWhy = lostWhy(); }
+          else { conn.mine = null; conn.lostTab = true; conn.noTabWhy = lostWhy(); }
         }
         await syncServer();
         // The list in the result shows the tab it now has, not the one the browser server picked.
@@ -553,7 +511,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         }
       }
       // Without a tab of its own, none is its current one (its server's is another agent's).
-      if (!lostTab && !(remote && !mine)) return;
+      if (!conn.lostTab && !(remote && !conn.mine)) return;
       for (const part of msg.result.content) if (part.type === "text") part.text = part.text.replace(/^(- \d+:) \(current\)/gm, "$1");
       msg.result.content.push({ type: "text", text: `\n### PairBrowse\n- ${noTab()}` });
     }
@@ -600,8 +558,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const verdict = decide({ tool_name: `mcp__plugin_pairbrowse_browser__${name}`, tool_input: args }).hookSpecificOutput;
       const reason = verdict.permissionDecisionReason?.replace(/\.?$/, ".");
       if (verdict.permissionDecision === "deny") return verdict.permissionDecisionReason;
-      if (verdict.permissionDecision === "ask" && clientName !== "claude-code" && !approvedArgs.has(args)) {
-        log(`handed to the user (${clientName || "unknown app"}): ${name}`);
+      if (verdict.permissionDecision === "ask" && conn.clientName !== "claude-code" && !approvedArgs.has(args)) {
+        log(`handed to the user (${conn.clientName || "unknown app"}): ${name}`);
         return handOff(reason);
       }
       // (Claude Code's answer from the browser is checked once the call's tab is known: approvalProblem.)
@@ -626,12 +584,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (!clickApprovals || !APPROVAL_TOOLS.has(name)) return null;
       const ask = approvalAsk(name, args);
       if (!ask) return null;
-      if (clientName !== "claude-code" && !approvedWhere.has(args)) return null;
+      if (conn.clientName !== "claude-code" && !approvedWhere.has(args)) return null;
       const page = await within(3000, serverPage().catch(() => null));
       const here = { page, url: page && !page.isClosed() ? page.url() : "" };
       const moved = (where) => `Not done: the user allowed this in the PairBrowse browser for ${where?.origin || "another page"}, but the tab has changed since (it is now on ${originOf(here.url) || "another page"}). ` +
         "Take a browser_snapshot, check this is still the right step, and call again: the user is asked again.";
-      if (clientName === "claude-code") {
+      if (conn.clientName === "claude-code") {
         const r = clickApprovals.arrived(name, args, here);
         if (r === "denied") return `Denied in the PairBrowse browser: ${ask.reason.replace(/\.$/, "")}. Nothing was done; ask the user what to do.`;
         if (r === "moved") { log(`approval: refused ${name}: the tab changed after the browser's Allow`); return moved(clickApprovals.lastWhere?.()); }
@@ -742,7 +700,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const want = context.takeRestoredActive();
       if (!want) return;
       const index = (await tabList()).split("\n").find((l) => l.includes(`](${want})`))?.match(/^- (\d+):/)?.[1];
-      if (index !== undefined) { await internal("browser_tabs", { action: "select", index: Number(index) }); serverAt = null; }
+      if (index !== undefined) { await internal("browser_tabs", { action: "select", index: Number(index) }); conn.serverAt = null; }
     }
 
     async function runCommand(args) {
@@ -834,9 +792,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
         await context.getContext();
         return recorder ? recorder.command(args) : { text: "Recording isn't available here.", error: true };
       },
-      pairbrowse_invite: (args) => sharing.inviteCommand(args, { who: appName(clientName) }),
+      pairbrowse_invite: (args) => sharing.inviteCommand(args, { who: appName(conn.clientName) }),
       async pairbrowse_join(args) {
-        const r = await follow.command(args, { owner: participant, app: clientName });
+        const r = await follow.command(args, { owner: participant, app: conn.clientName });
         if (args?.action === "join" && !r.error) context.agentChose("An agent joined a shared session (pairbrowse_join).");
         return r;
       },
@@ -873,7 +831,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // named as a final action at either end asked the user. The result carries a fresh snapshot,
       // as Playwright's would.
       async browser_drag(args) {
-        const page = actingIn || await serverPage();
+        const page = conn.actingIn || await serverPage();
         if (!page) return { text: "No page open to drag in.", error: true };
         const named = (el, target) => String(el || target || "").slice(0, 80);
         const what = `**${named(args.startElement, args.startTarget)}** to **${named(args.endElement, args.endTarget)}**`;
@@ -900,7 +858,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // often lives in one; Playwright's own looks at the page alone, so a wall "was gone" while
       // it stood). Bounded: time at most 120 s, text at most WAIT_FOR_MS.
       async browser_wait_for(args) {
-        const page = actingIn || await serverPage();
+        const page = conn.actingIn || await serverPage();
         if (!page) return { text: "No page open to wait on.", error: true };
         const time = args.time === undefined ? 0 : Math.min(120, Math.max(0, Number(args.time) || 0));
         // The wait ends with the browser (closed, or reset by the turn cap) or the agent leaving:
@@ -1007,7 +965,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // The browser's own pages (chrome://pairbrowse...) and the person's own tabs are never a
       // tab an agent acts in, selects or closes (tabRefusal).
       {
-        const here = ownTab() || (serverAt && !serverAt.isClosed() ? serverAt : null);
+        const here = ownTab() || (conn.serverAt && !conn.serverAt.isClosed() ? conn.serverAt : null);
         const byIndex = name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined;
         const tabNo = tabRefusal(name, args, { here, pages: byIndex ? await openTabs() : [], personTab });
         if (tabNo) return reply(msg.id, tabNo, true);
@@ -1020,7 +978,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (target && owner && owner.id !== participant && !tabClaims.members(target).some((m) => m.id === participant)) {
           return reply(msg.id, `Tab ${tabs.indexOf(target)} is ${collaboration.participants.get(owner.id)?.label || "another agent"}'s: their agent works there. Leave it, and close only your own tabs (browser_tabs close without index).`, true);
         }
-        if (target && target === mine) closedByMe = true;
+        if (target && target === conn.mine) conn.closedByMe = true;
       }
       if (Object.hasOwn(ownTools, name) && name !== "browser_drag") return respond(msg.id, name, await ownTools[name](args), args);
 
@@ -1034,7 +992,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       // A field a person is filling (here or in the other browser) is theirs: left unchanged.
       if (FIELD_TOOLS.has(name)) {
-        const page = actingIn || await serverPage();
+        const page = conn.actingIn || await serverPage();
         // A field can only be a person's where a person has just been: elsewhere the read (slow on
         // a busy page) is skipped, so a quiet page never turns typing away as "too busy".
         const ownerAt = (target) => (page && isRef(target) && presence.personWithin(page, 15_000) ? ownerOf(page.locator(`aria-ref=${target}`).first(), hud.key, { host, byAgent: presence.typedByAgent, byRemote: presence.byRemote, log }) : null);
@@ -1060,7 +1018,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // itself, a date in another spelling turned into YYYY-MM-DD when it can only mean one day.
       // A form PairBrowse fills itself (ownFill, below) sets its date fields in their turn; a single
       // browser_type it types itself (ownType) sets a date field here, as before.
-      const typingPage = name === "browser_type" || name === "browser_fill_form" ? actingIn || await serverPage() : null;
+      const typingPage = name === "browser_type" || name === "browser_fill_form" ? conn.actingIn || await serverPage() : null;
       const humanized = typingPage?._pairbrowseHumanized === true;
       const ownFill = name === "browser_fill_form" && Array.isArray(args.fields) && args.fields.every((f) => isRef(f?.target)) && humanized;
       const ownType = name === "browser_type" && isRef(args.target) && humanized;
@@ -1121,17 +1079,17 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       // A new session's browser server learns the open tabs when it first lists them: do that
       // before a select or close by number, which would otherwise find no such tab.
-      if (name === "browser_tabs" && ["select", "close"].includes(args.action) && !tabsListed) await internal("browser_tabs", { action: "list" });
-      if (name === "browser_tabs") tabsListed = true;
+      if (name === "browser_tabs" && ["select", "close"].includes(args.action) && !conn.tabsListed) await internal("browser_tabs", { action: "list" });
+      if (name === "browser_tabs") conn.tabsListed = true;
       // Claude's args: names, never values; a value typed into a field that is sensitive by its
       // own kind shows masked, however Claude names it.
       let shown = args;
-      if (name === "browser_type" && !secretNamesIn(name, args, secretNames()).length && await sensitiveTarget(actingIn || await context.pageAt(context.currentUrl()), args.target)) shown = { ...args, text: "••••" };
+      if (name === "browser_type" && !secretNamesIn(name, args, secretNames()).length && await sensitiveTarget(conn.actingIn || await context.pageAt(context.currentUrl()), args.target)) shown = { ...args, text: "••••" };
       if (name === "browser_fill_form" && Array.isArray(args.fields)) {
-        const page = actingIn || await context.pageAt(context.currentUrl());
+        const page = conn.actingIn || await context.pageAt(context.currentUrl());
         shown = { ...args, fields: await Promise.all(args.fields.map(async (f) => (await sensitiveTarget(page, f.target) ? { ...f, value: "••••" } : f))) };
       }
-      hud.addActivity(describe(name, shown, { values: false }), myLabel(), actingIn);
+      hud.addActivity(describe(name, shown, { values: false }), myLabel(), conn.actingIn);
       await hud.showCursor(name, args, async () => ownTab() || context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
       traces.get(msg.id)?.mark("cursor");
       if (name === "browser_fill_form") await hud.markTargets(ownTab(), args.fields.map((f) => f.target)).catch(() => {});
@@ -1141,7 +1099,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // engine's own pace: over 2 s a field. Values come from the swapped copy (real secrets), what the
       // result says from Claude's (names, masked).
       if (ownFill) {
-        const page = actingIn || await serverPage();
+        const page = conn.actingIn || await serverPage();
         const items = msg.params.arguments.fields.map((f, i) => ({ ...f, shown: shown.fields[i]?.value }));
         const { lines, failed } = await humanFill(page, items, fillSettings(config), { trace: log, isoDate });
         return reply(msg.id, [...lines, ...fieldNotes.splice(0)].join("\n"), failed);
@@ -1164,26 +1122,26 @@ export function createServe({ config, log, host, createConnection, clients, coll
       transport.onmessage?.(msg);
     }
 
-    // The tab this participant acts in: its own (see mine). Closed by someone else: the one it
+    // The tab this participant acts in: its own (see conn.mine). Closed by someone else: the one it
     // used before or a free one. None yet: the tab its browser server starts on.
     async function myTab() {
-      if (mine && !mine.isClosed() && !personTab(mine)) return mine;
-      if (lostTab) return null;
-      if (mine) {
+      if (conn.mine && !conn.mine.isClosed() && !personTab(conn.mine)) return conn.mine;
+      if (conn.lostTab) return null;
+      if (conn.mine) {
         // Its own tab came back as a new page (its session's browser restarted: a switch and
         // back): that one, the same tab, never another agent's on the same address.
         let session = "";
         try { session = context.sessionName(); } catch {}
-        const back = [homes.get(session), mine].map((p) => (p && !p.isClosed() ? p : context.successorOf?.(p))).find(Boolean);
-        if (back && !takenByOther(back) && !personTab(back)) { setMine(back); return mine; }
+        const back = [homes.get(session), conn.mine].map((p) => (p && !p.isClosed() ? p : context.successorOf?.(p))).find(Boolean);
+        if (back && !takenByOther(back) && !personTab(back)) { setMine(back); return conn.mine; }
         const next = await freeTab();
         if (next) setMine(next);
-        else { mine = null; lostTab = true; noTabWhy = lostWhy(); }
-        return mine;
+        else { conn.mine = null; conn.lostTab = true; conn.noTabWhy = lostWhy(); }
+        return conn.mine;
       }
       await whenReady();
-      serverAt = await currentIn(await tabList());
-      tabsListed = true;
+      conn.serverAt = await currentIn(await tabList());
+      conn.tabsListed = true;
       // A joiner's agent starts on the tab its person looks at, and takes its turn there like any
       // agent (it waits, or hears the tab is in use, and tries that tab again next time). Without
       // one, a tab no other agent is in, else one no agent holds now; never its browser server's
@@ -1193,17 +1151,17 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const unheld = (page) => !page.isClosed() && !isChromePage(page.url()) && !personTab(page) && !(tabClaims.holder(page) && tabClaims.holder(page).id !== participant);
         const page = start || await freeTab() || (await openTabs()).findLast(unheld);
         if (page) { remote.startPage = null; remote.started = true; setMine(page); }
-        else noTabWhy = "every tab here is in use by another agent";
-        return mine;
+        else conn.noTabWhy = "every tab here is in use by another agent";
+        return conn.mine;
       }
       // Its first tab: the one the person looks at (or looked at last), unless another agent is
       // in it; else its browser server's tab when free, else any free tab. Every tab taken: its
       // browser server's, where it hears "in use".
       const looked = await within(FRONT_WAIT_MS, front().catch(() => null));
-      const start = [looked, serverAt].find((p) => p && !p.isClosed() && !takenByOther(p) && !isChromePage(p.url()) && !personTab(p))
-        || (await openTabs()).find((p) => !p.isClosed() && !takenByOther(p) && !isChromePage(p.url()) && !personTab(p)) || (serverAt && !personTab(serverAt) ? serverAt : null);
+      const start = [looked, conn.serverAt].find((p) => p && !p.isClosed() && !takenByOther(p) && !isChromePage(p.url()) && !personTab(p))
+        || (await openTabs()).find((p) => !p.isClosed() && !takenByOther(p) && !isChromePage(p.url()) && !personTab(p)) || (conn.serverAt && !personTab(conn.serverAt) ? conn.serverAt : null);
       if (start) setMine(start);
-      return mine;
+      return conn.mine;
     }
     // Per-tab turns. A person clicking or typing in the tab goes first (moving the pointer or
     // scrolling holds nobody up): wait outside the shared queue, so agents in other tabs carry
@@ -1213,7 +1171,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       for (let round = 0; ; round++) {
         const page = await myTab();
         // A joiner's agent never acts without a tab of its own (it would act in someone else's).
-        if (!page && (lostTab || remote)) { reply(id, noTab(), true); return; }
+        if (!page && (conn.lostTab || remote)) { reply(id, noTab(), true); return; }
         // A joiner's connection is moving to another address: the agents here hold their tab work
         // until it's back (a few seconds, as a rule), so nothing happens while that person can't see.
         // A longer hold is said in one line; reads never come here. Never a joiner's own call
@@ -1250,9 +1208,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
             busy(c.holder.label);
             return { done: true };
           }
-          actingIn = page;
+          conn.actingIn = page;
           traces.get(id)?.mark("turn");
-          try { await dispatch(); } finally { actingIn = null; }
+          try { await dispatch(); } finally { conn.actingIn = null; }
           return { done: true };
         }, page); // its tab's lane: agents in other tabs go on at the same time
         if (r.done) return;
@@ -1264,7 +1222,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // Shared browser mode, joined from here: the call goes to the host's browser over the join
     // channel (follow.mjs), as this agent's, and its answer comes back as the host gave it.
     async function forwardToHost(msg) {
-      const out = await follow.remoteCall(participant, msg, { app: clientName, label: myLabel() });
+      const out = await follow.remoteCall(participant, msg, { app: conn.clientName, label: myLabel() });
       if (msg.id !== undefined) toClient({ jsonrpc: "2.0", ...out, id: msg.id });
     }
 
@@ -1275,29 +1233,29 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (sock.destroyed) return;
       if (msg.method === "initialize") {
         // The first initialize names the app for good: a later one can't relabel the connection.
-        if (!initialized) {
-          initialized = true;
-          clientName = String(msg.params?.clientInfo?.name || "").slice(0, 60);
-          hud.setApp?.(participant, clientName); // its color: its app's (a joiner's agent's too), unless another agent here has it
+        if (!conn.initialized) {
+          conn.initialized = true;
+          conn.clientName = String(msg.params?.clientInfo?.name || "").slice(0, 60);
+          hud.setApp?.(participant, conn.clientName); // its color: its app's (a joiner's agent's too), unless another agent here has it
           // A joiner's agent: its app's OK (its own user's) never counts as the host's.
-          if (remote) { collaboration.register(participant, personLabel(remote.name, appName(clientName))); clientName = `remote:${clientName}`; }
-          log(`participant ${participant} is ${clientName || "an unnamed app"}`);
+          if (remote) { collaboration.register(participant, personLabel(remote.name, appName(conn.clientName))); conn.clientName = `remote:${conn.clientName}`; }
+          log(`participant ${participant} is ${conn.clientName || "an unnamed app"}`);
           // The process that started its bridge (launch.mjs: the app's own): which agent a
           // PermissionRequest hook asks for (approvals.mjs whose).
           const parent = Number(msg.params?.clientInfo?.pairbrowseParent);
-          clickApprovals?.participant(participant, { client: clientName, remote: !!remote, parent: !remote && Number.isSafeInteger(parent) && parent > 1 ? parent : 0, tab: openMine });
+          clickApprovals?.participant(participant, { client: conn.clientName, remote: !!remote, parent: !remote && Number.isSafeInteger(parent) && parent > 1 ? parent : 0, tab: openMine });
         }
         // "<person> · Claude Code", "<person> · Codex".
         const label = msg.params?.clientInfo?.pairbrowseParticipant;
-        if (remote) { /* named by the host's side, above */ } else if (label) collaboration.register(participant, personLabel(label, appName(clientName)));
-        else if (clientName !== "claude-code") collaboration.register(participant, `${clientName === "codex-mcp-client" ? "Codex" : "Agent"} ${participant.slice(0, 4)}`);
+        if (remote) { /* named by the host's side, above */ } else if (label) collaboration.register(participant, personLabel(label, appName(conn.clientName)));
+        else if (conn.clientName !== "claude-code") collaboration.register(participant, `${conn.clientName === "codex-mcp-client" ? "Codex" : "Agent"} ${participant.slice(0, 4)}`);
       }
       if (msg.method === "tools/call" && msg.params?.name === "pairbrowse_collaboration") {
         const { action, label } = msg.params.arguments || {};
         if (action === "identify" && !remote) {
           const given = String(label ?? "").replace(/\s*·\s*/g, " - ").replace(/\s+/g, " ").trim();
           if (!given) return reply(msg.id, "identify needs label: your user's first name (the app's name is added by PairBrowse).", true);
-          collaboration.register(participant, personLabel(given, appName(clientName)));
+          collaboration.register(participant, personLabel(given, appName(conn.clientName)));
         }
         else if (action === "acquire" && (remote || follow.forwards?.("browser_tabs"))) return reply(msg.id, "Only the host's own agents can take the whole browser. Work tab by tab.", true);
         else if (action === "acquire") await collaboration.run(participant, () => collaboration.acquire(participant));
@@ -1305,7 +1263,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           collaboration.release(participant); tabClaims.release(participant);
           hud.moveSpark(participant, null).catch(() => {}); // its tab is free: no spark says otherwise
           // Shared browser mode, joined from here: this agent's turns are held in the host's browser.
-          if (!remote && follow.forwards?.("browser_tabs")) await follow.remoteCall(participant, { params: { name: "pairbrowse_collaboration", arguments: { action: "release" } } }, { app: clientName, label: myLabel() }).catch(() => {});
+          if (!remote && follow.forwards?.("browser_tabs")) await follow.remoteCall(participant, { params: { name: "pairbrowse_collaboration", arguments: { action: "release" } } }, { app: conn.clientName, label: myLabel() }).catch(() => {});
         }
         else if (action === "share") {
           // Joining a tab another agent works in, on the user's word: both act there, one call at
@@ -1353,11 +1311,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const dispatchNow = async () => {
         // Refs are good for this agent's own tab: what people or other agents do in that tab
         // makes them stale, work in other tabs never does.
-        if (msg.method === "tools/call" && containsRef(msg.params?.arguments) && observedRevision !== revision(ownTab())) {
-          return reply(msg.id, "This tab changed since your last snapshot (a person used it, or another agent acted in it). Call browser_snapshot and use its fresh refs before retrying.", true);
+        if (msg.method === "tools/call" && containsRef(msg.params?.arguments) && conn.observedRevision !== revision(ownTab())) {
+          return reply(msg.id, "This tab changed since your last snapshot (a person used it, or another agent conn.acted in it). Call browser_snapshot and use its fresh refs before retrying.", true);
         }
-        snapshotReturned = false;
-        const upToDate = observedRevision === revision(ownTab());
+        conn.snapshotReturned = false;
+        const upToDate = conn.observedRevision === revision(ownTab());
         const response = msg.id === undefined ? Promise.resolve() : new Promise((r) => completed.set(msg.id, r));
         const overran = msg.id === undefined ? null : setTimeout(async () => {
           log(`${tool || msg.method} held the browser for ${TURN_MAX}; resetting the browser so other agents can go on`);
@@ -1384,7 +1342,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
             bumpRevision(["pairbrowse_session", "browser_tabs"].includes(tool) ? null : ownTab());
             // Your own action doesn't make your refs stale (Playwright tells you if one is gone);
             // the user's or another agent's in your tab does, until you take a snapshot.
-            if (snapshotReturned || upToDate) observedRevision = revision(ownTab());
+            if (conn.snapshotReturned || upToDate) conn.observedRevision = revision(ownTab());
           }
         } catch (e) {
           clearTimeout(overran);
@@ -1416,14 +1374,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const r = await context.waitForPick(disconnected.signal);
         // A call the picker turned away did nothing: it doesn't make this agent one that uses the
         // browser (which would stop the others from choosing a session for everyone).
-        if (r?.waiting) { if (!acted) lastCall.delete(participant); return reply(msg.id, PICK_WAITING, true); }
-        acted = true;
+        if (r?.waiting) { if (!conn.acted) lastCall.delete(participant); return reply(msg.id, PICK_WAITING, true); }
+        conn.acted = true;
         if (r) fieldNotes.push(r);
         // Who used this session, for the session picker: "Alice · Claude Code" -> Alice, Claude Code.
-        if (!recorded) {
-          recorded = true;
+        if (!conn.recorded) {
+          conn.recorded = true;
           const [who, app] = String(myLabel() || "Claude").split(" · ");
-          context.recordPerson({ who: who.replace(/ [0-9a-f]{4}$/, ""), app: app || appName(clientName), computer: computerName(), kind: "agent" });
+          context.recordPerson({ who: who.replace(/ [0-9a-f]{4}$/, ""), app: app || appName(conn.clientName), computer: computerName(), kind: "agent" });
         }
       }
       // Paused by a person: wait before the shared queue (it never holds other work up), and
@@ -1436,10 +1394,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // in the browser and waits for the answer, before the turn (no tab or busy span held while
       // it waits, so the person's click is never taken for the agent's). Allow lets it go on;
       // anything else is the hand-off, as when the browser can't ask (nothing waits then).
-      if (msg.method === "tools/call" && !remote && clientName !== "claude-code" && clickApprovals) {
+      if (msg.method === "tools/call" && !remote && conn.clientName !== "claude-code" && clickApprovals) {
         const args = msg.params?.arguments;
         const ask = args && typeof args === "object" && !Array.isArray(args) && !argProblem(tool, args) ? approvalAsk(tool, args) : null;
-        const r = ask ? await clickApprovals.open({ tool, input: args, ask, participant, client: clientName }) : null;
+        const r = ask ? await clickApprovals.open({ tool, input: args, ask, participant, client: conn.clientName }) : null;
         if (r?.shown) {
           let onAbort = () => {};
           const left = new Promise((resolve) => {
@@ -1450,7 +1408,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           disconnected.signal.removeEventListener("abort", onAbort);
           if (a === "allow" || a === "site") { approvedArgs.add(args); approvedWhere.set(args, r.where || null); }
           else {
-            log(`handed to the user (${clientName || "unknown app"}): ${tool}, after the browser's ${a}`);
+            log(`handed to the user (${conn.clientName || "unknown app"}): ${tool}, after the browser's ${a}`);
             const reason = String(decide({ tool_name: `mcp__plugin_pairbrowse_browser__${tool}`, tool_input: args }).hookSpecificOutput.permissionDecisionReason || "").replace(/\.?$/, ".");
             return reply(msg.id, handOff(reason, a === "deny"), true);
           }
@@ -1458,7 +1416,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       if (msg.method === "tools/call" && TAB_TOOLS.has(tool)) return takeTurn(dispatch, msg.id, tool, msg.params?.arguments || {});
       // An agent without a tab of its own reads nothing: it would be reading another agent's tab.
-      if (msg.method === "tools/call" && PAGE_READ_TOOLS.has(tool) && !(await myTab()) && (lostTab || remote)) {
+      if (msg.method === "tools/call" && PAGE_READ_TOOLS.has(tool) && !(await myTab()) && (conn.lostTab || remote)) {
         return reply(msg.id, noTab(), true);
       }
       if (msg.method === "tools/call") return collaboration.run(participant, dispatch);

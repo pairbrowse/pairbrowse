@@ -49,3 +49,14 @@ test("a body that isn't JSON: 400 on every route that reads one, never 500", asy
     view.close();
   }
 });
+
+test("a body whose character is cut across two chunks reads back whole", async () => {
+  const { readBody, readJsonBody } = await import("../scripts/liveview/http.mjs");
+  const bytes = Buffer.from(JSON.stringify({ name: "José 😀" }), "utf8");
+  const at = bytes.indexOf(0xf0) + 1; // inside the emoji's four bytes
+  const req = () => ({ async *[Symbol.asyncIterator]() { yield bytes.subarray(0, at); yield bytes.subarray(at); } });
+  assert.equal(await readBody(req(), 100), JSON.stringify({ name: "José 😀" }));
+  const res = { writeHead() { throw new Error("must not answer"); }, end() {} };
+  assert.deepEqual(await readJsonBody(req(), res, 100), { name: "José 😀" });
+  assert.equal(await readBody(req(), 5), null, "the cap still holds");
+});

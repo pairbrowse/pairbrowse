@@ -2,6 +2,7 @@
 // size cap, the security headers, and the viewer page with its few asset files (liveview.mjs).
 import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 
 // Loopback names only, any port: an SSH tunnel may use a different local port. Other host
 // names (DNS rebinding) are refused; the key in the URL is what grants access.
@@ -34,14 +35,17 @@ export function keyOk(given, key) {
 // The most a request body may hold, per kind of request.
 export const BODY_MAX = { approve: 2_000, profile: 20_000, input: 200_000, tabOrder: 64_000, capture: 2_000_000 };
 
-// The body as text, or null once it grows past max (the rest isn't read).
+// The body as text, or null once it grows past max characters (the rest isn't read). Decoded
+// across chunks: a character whose bytes arrive in two chunks stays one character.
 export async function readBody(req, max) {
+  const utf8 = new StringDecoder("utf8");
   let body = "";
   for await (const chunk of req) {
-    body += chunk;
+    body += typeof chunk === "string" ? chunk : utf8.write(chunk);
     if (body.length > max) return null;
   }
-  return body;
+  body += utf8.end();
+  return body.length > max ? null : body;
 }
 
 // A body that isn't JSON: undefined (JSON itself never parses to undefined).

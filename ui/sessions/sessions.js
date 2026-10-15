@@ -16,11 +16,10 @@
 // no timer, no poll, no observer.
 import { $, el, ago, initialOf, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
-import { followHelper, postReply } from "../helper.js";
+import { followHelper, postReply, UNREACHABLE_RETRY } from "../helper.js";
 
 const FILTER_FROM = 6; // the search shows from this many saved sessions
 const NAME = /^[A-Za-z0-9_-]{1,40}$/; // the helper's session names (scripts/sessions.mjs validName)
-const NO_REACH = "Couldn't reach PairBrowse. Try again.";
 
 let base = null;
 let stream = null;
@@ -133,7 +132,7 @@ function askDelete(li, acts, buttons, name) {
     const r = await postJson("pick", { action: "delete", name });
     li.dataset.asking = "false";
     if (r.status === 200 && r.body && !r.body.error) { say(r.body.text || `Deleted ${shown}.`, "ok"); load(); return; }
-    say(r.body?.text || r.body?.error || (r.status === 0 ? NO_REACH : "That didn't work."), "error");
+    say(r.body?.text || r.body?.error || (r.status === 0 ? UNREACHABLE_RETRY : "That didn't work."), "error");
     if (li.isConnected) back();
   });
   li.dataset.asking = "true";
@@ -171,7 +170,7 @@ function renameIn(li, name, open) {
     }
     save.disabled = cancel.disabled = input.disabled = false;
     save.removeAttribute("aria-busy");
-    say(r.body?.error || r.body?.text || (r.status === 0 ? NO_REACH : "That didn't work."), "error");
+    say(r.body?.error || r.body?.text || (r.status === 0 ? UNREACHABLE_RETRY : "That didn't work."), "error");
     input.focus();
   });
   li.dataset.asking = "true";
@@ -191,7 +190,7 @@ async function send(op, label) {
   const r = await postJson("pick", op);
   busy = false;
   document.body.dataset.s = "live";
-  const body = r.body || { text: NO_REACH, error: true };
+  const body = r.body || { text: UNREACHABLE_RETRY, error: true };
   if (body.error || r.status !== 200) {
     if (body.hostAsk?.id && body.hostAsk.host) { showHostAsk(body.hostAsk); say(""); return; }
     if (body.confirm && op.confirm !== true && (op.action === "use" || op.action === "new")) {
@@ -234,7 +233,7 @@ function showHostAsk({ id, host }) {
     askCancel = null;
     box.hidden = true;
     box.replaceChildren();
-    const body = r.body || { error: NO_REACH };
+    const body = r.body || { error: UNREACHABLE_RETRY };
     if (body.error || (op.op === "allow" && !body.joined)) { say(body.error || body.text || "That didn't work.", "error"); return; }
     if (op.op === "cancel") { say("Not joined."); return; }
     say(body.text || "Done.", "ok");

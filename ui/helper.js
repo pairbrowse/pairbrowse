@@ -61,6 +61,10 @@ export function followHelper({ connect, none = () => {}, failed = none, wait = f
 }
 
 // ---- asking the helper ----
+// The words when the helper couldn't be reached, the same on every page; _RETRY where a press can
+// simply go again.
+export const UNREACHABLE = "Couldn't reach PairBrowse.";
+export const UNREACHABLE_RETRY = `${UNREACHABLE} Try again.`;
 // A JSON body POSTed (the owner's routes take JSON only). -> the fetch's promise (a Response).
 export const postJson = (url, body, scope = globalThis) => scope.fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 // The same, as { status, body } (body: the reply's JSON, else null); status 0 when the helper

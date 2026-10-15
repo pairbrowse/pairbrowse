@@ -11,7 +11,7 @@ import { toolsPanel } from "./tools.js";
 import { AGENT_COLOR } from "../vocab.js";
 import { ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
-import { followHelper, postJson } from "../helper.js";
+import { followHelper, postJson, UNREACHABLE } from "../helper.js";
 
 const pb = globalThis.pairbrowse || null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -104,7 +104,7 @@ async function showOutline() {
     $("outline").hidden = true; $("outline-head").hidden = true; empty.hidden = false;
     // Not reached while the stream is down too: the resting line, not an error (it reads again on open).
     const away = r.status === 0 && document.body.dataset.s !== "live";
-    empty.textContent = r.status === 200 || r.status === 404 || away ? (r.status === 404 ? "This PairBrowse doesn't share the page outline yet." : "No outline yet: it shows once an agent reads a page.") : "Couldn't reach PairBrowse.";
+    empty.textContent = r.status === 200 || r.status === 404 || away ? (r.status === 404 ? "This PairBrowse doesn't share the page outline yet." : "No outline yet: it shows once an agent reads a page.") : UNREACHABLE;
   }
   if (outlineAgain) { outlineAgain = false; showOutline(); }
 }
@@ -249,7 +249,7 @@ async function pauseAsk(btn, body, what) {
   if (btn.getAttribute("aria-busy") === "true") return;
   agentSay("");
   const r = await busy(btn, () => post("pause", body).then(async (x) => ({ ok: x.ok, body: await x.json().catch(() => null) }), () => null));
-  if (!r?.ok) agentSay(`${what}: ${r?.body?.error || "Couldn't reach PairBrowse."}`);
+  if (!r?.ok) agentSay(`${what}: ${r?.body?.error || UNREACHABLE}`);
 }
 $("pause-btn").addEventListener("click", (ev) => {
   if (ev.isTrusted && base) pauseAsk($("pause-btn"), { paused: !paused }, paused ? "Couldn't resume" : "Couldn't pause");
@@ -352,7 +352,7 @@ async function loadChecklist() {
   checklistBusy = false;
   // Not reached: the next show of the Agent tab, page or dock reads once more.
   if (r === undefined) checklistStale = true;
-  drawChecklist(r === undefined ? [el("li", { className: "empty", textContent: "Couldn't reach PairBrowse." })] : checklistItems(r, { driving: document.body.dataset.driving === "true" }));
+  drawChecklist(r === undefined ? [el("li", { className: "empty", textContent: UNREACHABLE })] : checklistItems(r, { driving: document.body.dataset.driving === "true" }));
   if (r && typeof r === "object") {
     $("task").hidden = !r.name;
     $("task-name").textContent = r.name || "";
@@ -424,7 +424,7 @@ $("session-save").addEventListener("click", async (ev) => {
     return;
   }
   const r = res ? await res.json().catch(() => null) : null;
-  if (!r?.ok) return sessionSay(r?.error || "Couldn't reach PairBrowse.", "error");
+  if (!r?.ok) return sessionSay(r?.error || UNREACHABLE, "error");
   const when = typeof r.savedAt === "string" ? ago(r.savedAt) : "";
   if (when) { $("session-saved").hidden = false; $("session-saved").textContent = `Saved ${when}`; } else sessionSay("Saved.", "ok");
 });
@@ -447,7 +447,7 @@ $("session-name-input").addEventListener("keydown", async (ev) => {
     return;
   }
   const r = res ? await res.json().catch(() => null) : null;
-  if (!r?.ok) return sessionSay(r?.error || "Couldn't reach PairBrowse.", "error");
+  if (!r?.ok) return sessionSay(r?.error || UNREACHABLE, "error");
   if (typeof r.name === "string") $("session-name").textContent = r.name;
   editName(false, true);
 });

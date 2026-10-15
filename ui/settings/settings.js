@@ -11,7 +11,7 @@
 // config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
 import { $, el, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
-import { hostKind, followHelper, postReply } from "../helper.js";
+import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
 
 const NATIVE = hostKind() === "native";
 const HOST = NATIVE ? "The PairBrowse browser" : "PairBrowse extension in a test browser";
@@ -110,7 +110,7 @@ async function writeConfig(body, msg) {
     drawConfig(r.body);
     return "";
   }
-  const text = r.body?.error || (r.status === 0 ? "Couldn't reach PairBrowse." : "That didn't save.");
+  const text = r.body?.error || (r.status === 0 ? UNREACHABLE : "That didn't save.");
   say(msg, text, "error");
   drawConfig(config); // back to the value the helper holds
   return text;
@@ -219,7 +219,7 @@ async function loadTimelineCount() {
     const n = Array.isArray(r.body?.cards) ? r.body.cards.filter((c) => c && c.note !== true).length : 0;
     text = `${n} ${n === 1 ? "picture" : "pictures"} kept in this session`;
   } else if (off) text = "Off";
-  else if (r.status === 0) text = "Couldn't reach PairBrowse.";
+  else if (r.status === 0) text = UNREACHABLE;
   else text = "This PairBrowse keeps no timeline.";
   $("tl-state").textContent = text;
 }
@@ -260,7 +260,7 @@ async function revokeInvite(id, shown) {
     return true;
   }
   if (r.status === 404) { say($("invites-msg"), r.body?.error || "That invite had already ended.", "error"); loadInvites(); return true; }
-  say($("invites-msg"), r.body?.error || (r.status === 0 ? "Couldn't reach PairBrowse." : "That didn't work."), "error");
+  say($("invites-msg"), r.body?.error || (r.status === 0 ? UNREACHABLE : "That didn't work."), "error");
   return false;
 }
 function inviteRow(i) {

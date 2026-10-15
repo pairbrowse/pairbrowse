@@ -7,7 +7,7 @@
 // the page is first visible; while hidden it fetches nothing and holds no picture.
 import { $, el, shortClock, helperStream, enter, leave, busy } from "../common.js";
 import { DRIVING_MS } from "../limits.js";
-import { followHelper, helperAddress, postJson } from "../helper.js";
+import { followHelper, helperAddress, postJson, UNREACHABLE } from "../helper.js";
 
 const PITCH = 114; // a card (104 px) and its gap (10 px)
 const PAD = 15; // the strip's left padding
@@ -76,7 +76,7 @@ async function load() {
   if (!body || !Array.isArray(body.cards)) {
     document.body.dataset.state = "error";
     addLi.hidden = true;
-    showLine("Couldn't reach PairBrowse.");
+    showLine(UNREACHABLE);
     return;
   }
   const seen = new Set();
@@ -391,7 +391,7 @@ function show(id) {
       if (state && state.right !== pb.DockState.kOpen) return pb.layout.set({ ...state, right: pb.DockState.kOpen });
     }).catch(() => {});
   }
-  if (base) postJson(base + `timeline/${id}/show`, {}).then((r) => { if (r.ok) setShown(id); else if (r.status !== 404) problem("Couldn't show it in the agent panel."); }).catch(() => problem("Couldn't reach PairBrowse."));
+  if (base) postJson(base + `timeline/${id}/show`, {}).then((r) => { if (r.ok) setShown(id); else if (r.status !== 404) problem("Couldn't show it in the agent panel."); }).catch(() => problem(UNREACHABLE));
 }
 // The picture shows large in another part of the window (the agent panel) until 530's bubble can
 // show it here: the card says so where it was clicked, a ring on it and a line under it, until
@@ -577,7 +577,7 @@ async function pin(card) {
   const body = await r?.json().catch(() => null);
   const next = r?.ok ? valid(body) : null;
   closeMenu(true);
-  if (!next) return problem(body?.error || "Couldn't reach PairBrowse.");
+  if (!next) return problem(body?.error || UNREACHABLE);
   replace(next);
   say(next.pinned ? "Pinned" : "Unpinned");
 }
@@ -633,7 +633,7 @@ note.addEventListener("keydown", async (e) => {
   note.disabled = false;
   const card = r?.ok ? valid(body) : null;
   closeNote();
-  if (!card) return problem(body?.error || "Couldn't reach PairBrowse.");
+  if (!card) return problem(body?.error || UNREACHABLE);
   if (cards.length === 0) showLine("");
   add(card); // once: the stream's add may have come first
   say("Note added");
@@ -684,7 +684,7 @@ async function pictureMode() {
     const r = await busy($("pic-pin"), () => postJson(pbase + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
     const body = await r?.json().catch(() => null);
     const next = r?.ok ? valid(body) : null;
-    if (!next) return msg(body?.error || "Couldn't reach PairBrowse.");
+    if (!next) return msg(body?.error || UNREACHABLE);
     msg("");
     draw(next);
   });

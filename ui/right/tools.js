@@ -16,6 +16,7 @@
 // Nothing is sent anywhere: Prepare report shows the helper's text, Copy uses the clipboard and
 // Save is a download made in the page. No timer, observer or frame loop here; no markup strings.
 import { $, el, avatar, splitLabel, shortClock, enter, leave, revealed } from "../common.js";
+import { UNREACHABLE } from "../helper.js";
 
 const MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
 const REVEAL = MAC ? "Show in Finder" : "Show in folder";
@@ -179,7 +180,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
         say("handoffs-msg", "");
         const r = await send(`handoffs/${encodeURIComponent(id)}/show`);
         if (r.status === 404) { handoffs.remove(id); return say("handoffs-msg", "That step is no longer waiting."); }
-        if (!ok(r)) say("handoffs-msg", r.body?.error || "Couldn't reach PairBrowse.", "error");
+        if (!ok(r)) say("handoffs-msg", r.body?.error || UNREACHABLE, "error");
       }));
       li.append(...kids,
         el("div", { className: "head" }, el("strong", { className: "kind", textContent: KIND[it.kind] }), el("small", { className: "meta", textContent: [host, label].filter(Boolean).join(" · "), title: str(it.tab?.title) })),

@@ -8,7 +8,7 @@
 import { STATE_WORDS, PAGE_KINDS, isColor } from "./vocab.js";
 import { SHARED_STREAM_EVENTS, DELTA_EVENTS, OWN_EVENTS } from "./events.js";
 import { addressToUrl, servedByBrowser, REPORT_URL, TOP_CHROME_HOST, ownPage } from "./urls.js";
-import { postJson } from "./helper.js";
+import { postJson, UNREACHABLE_RETRY, UNREACHABLE } from "./helper.js";
 export { STATE_WORDS, isColor, addressToUrl, servedByBrowser, REPORT_URL };
 
 export const $ = (id) => document.getElementById(id);
@@ -206,7 +206,7 @@ export function joinBanners(container, base) {
         // Gone meanwhile (answered elsewhere, timed out after 10 minutes): say so, rather than a button that does nothing.
         if (r?.status === 404) { const t = row.querySelector("strong"); t.textContent = t.title = "That request is gone (answered, or it timed out)."; return; }
         for (const b of row.querySelectorAll("button")) b.disabled = false;
-        rowSay(row, r?.status ? "That didn't go through. Try again." : "Couldn't reach PairBrowse. Try again.");
+        rowSay(row, r?.status ? "That didn't go through. Try again." : UNREACHABLE_RETRY);
       });
   }
   return function draw(list) {
@@ -252,7 +252,7 @@ export function hostPanel(asks, list, section, base) {
     pressed?.setAttribute("aria-busy", "true");
     const row = pressed?.closest(".join, li");
     postJson(base() + "joinhost", body).then((r) => { if (!r.ok) throw r; if (row) rowSay(row, ""); })
-      .catch((r) => { if (row) rowSay(row, r?.status ? "That didn't go through. Try again." : "Couldn't reach PairBrowse. Try again."); })
+      .catch((r) => { if (row) rowSay(row, r?.status ? "That didn't go through. Try again." : UNREACHABLE_RETRY); })
       .finally(() => { pressed?.removeAttribute("aria-busy"); for (const b of buttons) b.disabled = false; });
   };
   const real = (fn) => (ev) => { if (ev.isTrusted && ev.detail > 0) fn(); };
@@ -292,7 +292,7 @@ export function devPanel(asks, list, section, base) {
     pressed?.setAttribute("aria-busy", "true");
     const row = pressed?.closest(".join, li");
     postJson(base() + "dev", body).then((r) => { if (!r.ok) throw r; if (row) rowSay(row, ""); })
-      .catch((r) => { if (row) rowSay(row, r?.status ? "That didn't go through. Try again." : "Couldn't reach PairBrowse. Try again."); })
+      .catch((r) => { if (row) rowSay(row, r?.status ? "That didn't go through. Try again." : UNREACHABLE_RETRY); })
       .finally(() => { pressed?.removeAttribute("aria-busy"); for (const b of buttons) b.disabled = false; });
   };
   const real = (fn) => (ev) => { if (ev.isTrusted && ev.detail > 0) fn(); };
@@ -337,7 +337,7 @@ export function profilePanel(base) {
     const r = await postJson(base() + "profile", op).then(async (x) => {
       const b = await x.json().catch(() => null);
       return b && typeof b === "object" ? (x.ok || b.error ? b : { error: "That didn't save." }) : { error: x.ok ? null : "That didn't save." };
-    }, () => ({ error: "Couldn't reach PairBrowse." }));
+    }, () => ({ error: UNREACHABLE }));
     if (r.profile && typeof r.profile === "object") draw(r.profile);
     return r.error ? String(r.error) : null;
   }
@@ -444,7 +444,7 @@ export async function sendReport(base, payload) {
   try {
     r = await postJson(base + "report", payload);
   } catch {
-    return { ok: false, error: "Couldn't reach PairBrowse." };
+    return { ok: false, error: UNREACHABLE };
   }
   const body = await r.json().catch(() => null);
   if (r.ok && body?.ok !== false) return { ok: true, ...(typeof body?.id === "string" && /^[A-Za-z0-9._-]{1,40}$/.test(body.id) ? { id: body.id } : {}) };
@@ -598,7 +598,7 @@ export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = ()
     const given = name.value.trim();
     make.disabled = true;
     say("");
-    const r = await busy(make, () => postJson(base() + "invite", { share, ...(given ? { name: given } : {}) }).then((x) => x.json()).catch(() => ({ error: "Couldn't reach PairBrowse." })));
+    const r = await busy(make, () => postJson(base() + "invite", { share, ...(given ? { name: given } : {}) }).then((x) => x.json()).catch(() => ({ error: UNREACHABLE })));
     make.disabled = false;
     if (r?.needName) { nameRow.hidden = false; name.focus(); return say(r.error || "Your first name, please.", "error"); }
     if (!r?.ok) return say(r?.error || "Couldn't make the invite.", "error");

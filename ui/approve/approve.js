@@ -42,7 +42,7 @@
 // helper checks the answer again.
 import { $, el, avatar, splitLabel, helperStream } from "../common.js";
 import { TOP_CHROME_HOST } from "../urls.js";
-import { followHelper, postJson } from "../helper.js";
+import { followHelper, postJson, UNREACHABLE_RETRY } from "../helper.js";
 
 const ARM_MS = 600;
 const POINTER = new Set(["allow", "site", "always"]);
@@ -53,7 +53,7 @@ const SAY = {
   covered: "Something is over the card: answer in the terminal.",
   offline: "Not connected to PairBrowse yet.",
   gone: "That request is gone (answered, or it timed out).",
-  failed: "Couldn't reach PairBrowse. Try again.",
+  failed: UNREACHABLE_RETRY,
 };
 
 let base = null;

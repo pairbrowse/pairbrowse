@@ -7,7 +7,7 @@
 // address (session.helper()); as the extension page it is chrome.storage.session "view", as in the
 // session picker. One fetch at load; no timer, observer or poll.
 import { $, el, addressToUrl, askSwitch } from "../common.js";
-import { hostKind, helperAddress, onHelperAddress, postJson } from "../helper.js";
+import { hostKind, helperAddress, onHelperAddress, postJson, UNREACHABLE_RETRY } from "../helper.js";
 
 // Where words go: the default engine's address with "{searchTerms}" (http or https only), or "" when
 // it searches nothing. Google until the browser answers, and in the extension.
@@ -48,7 +48,7 @@ $("q").addEventListener("input", () => { if ($("msg").textContent === NOT_AN_ADD
 // A person's click or key press only, never a script's synthetic event.
 const real = (ev) => ev.isTrusted;
 const CHIPS = 3;
-const UNREACHABLE = { text: "Couldn't reach PairBrowse. Try again.", error: true };
+const NO_REACH = { text: UNREACHABLE_RETRY, error: true };
 const NOT_AN_ADDRESS = "Type a web address, like example.com.";
 let busy = false;
 let askCancel = null; // the open switch question's Cancel path
@@ -60,8 +60,8 @@ const HOST = hostKind();
 if (HOST) document.body.dataset.host = HOST === "native" ? "build" : "extension";
 
 const post = (base, route, body) => postJson(base + route, body)
-  .then((x) => x.json(), () => UNREACHABLE)
-  .catch(() => UNREACHABLE);
+  .then((x) => x.json(), () => NO_REACH)
+  .catch(() => NO_REACH);
 
 // One press: the pick itself (the helper switches with a session open). Agents at work: 428
 // { confirm, agents }, asked here; Switch anyway sends the same pick with confirm: true.

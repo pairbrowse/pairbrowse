@@ -4,7 +4,7 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { hudSource } from "../scripts/hud/assemble.mjs";
 import { APP_COLORS, AGENT_FALLBACKS, SPARK_COLORS, appKey, appColor, pickAgentColor, createHud } from "../scripts/daemon/hud.mjs";
 import { PEOPLE_COLORS, personColor } from "../scripts/sharing/tabsync.mjs";
 
@@ -65,7 +65,7 @@ test("the helper gives each connected agent its color for as long as it's connec
 });
 
 test("people's colors are never near an agent's, nor each other's, and carry the tags' dark ink at WCAG AA", () => {
-  const ink = readFileSync(new URL("../scripts/hud.js", import.meta.url), "utf8").match(/const PILL = ".*?;color:(#[0-9A-Fa-f]{6})/)[1];
+  const ink = hudSource().match(/const PILL = ".*?;color:(#[0-9A-Fa-f]{6})/)[1];
   assert.equal(ink.toLowerCase(), "#0b1421");
   assert.ok(PEOPLE_COLORS.length >= 5);
   for (const p of PEOPLE_COLORS) {

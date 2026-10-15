@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
+import { hudSource } from "../scripts/hud/assemble.mjs";
 import { ensureHud } from "./helpers/live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
@@ -737,7 +737,7 @@ test("with reduced motion the cursor jumps and the click leaves a static dot", {
 });
 
 test("the bar's chips end in an ellipsis when long, the newest never shrinks, and nothing fades the left edge", () => {
-  const src = readFileSync(new URL("../scripts/hud.js", import.meta.url), "utf8");
+  const src = hudSource();
   const ol = src.match(/\n\s*ol\{[^}]*\}/)?.[0] || "";
   assert.ok(ol, "the chips' list rule");
   assert.doesNotMatch(ol, /mask-image/, "no left fade mask on the list");

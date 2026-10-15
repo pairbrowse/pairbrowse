@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
 import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createMotion } from "./motion.mjs";
+import { hudSource } from "./hud/assemble.mjs";
 import { ICON, rebrandInterfaceText, registerApp } from "./native/macos-app.mjs";
 import { downloadPinned, readJson, writeJsonAtomic, sha256 } from "./util.mjs";
 import { withInstallLock } from "./install-lock.mjs";
@@ -356,7 +357,7 @@ export function launchOptions(config = {}, { shell, firstRun = false, helper = n
   };
 }
 
-// The page script (scripts/hud.js: bottom bar, badge, cursor, tab spark, your-activity recorder)
+// The page script (scripts/hud/, joined into one: bottom bar, badge, cursor, tab spark, your-activity recorder)
 // with fresh random names: the window function it answers on, the key it needs, and the names
 // of its three page elements. New ones each time the helper starts, so no fixed name gives
 // PairBrowse away to a page (and a page can't drive the badge).
@@ -372,7 +373,7 @@ export function hudScript() {
     used.add(tag);
     tags[k] = tag;
   }
-  const source = readFileSync(join(here, "hud.js"), "utf8").replaceAll("__PB_NAME__", name).replaceAll("__PB_TOKEN__", token)
+  const source = hudSource().replaceAll("__PB_NAME__", name).replaceAll("__PB_TOKEN__", token)
     .replaceAll("__PB_TAG_HUD__", tags.hud).replaceAll("__PB_TAG_BAR__", tags.bar).replaceAll("__PB_TAG_CURSOR__", tags.cursor)
     // Claude's own orange, from ui/vocab.js (the one copy the helper and the pages read too).
     .replaceAll("__PB_AGENT_COLOR__", AGENT_COLOR)

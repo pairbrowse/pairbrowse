@@ -7,9 +7,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as vocab from "../ui/vocab.js";
+import { hudSource } from "../scripts/hud/assemble.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const read = (f) => readFileSync(join(root, f), "utf8");
+// The page script is read joined, as the helper injects it (scripts/hud/).
+const read = (f) => f === "scripts/hud/" ? hudSource() : readFileSync(join(root, f), "utf8");
 
 test("the helper's color and word lists are vocab.js's own", async () => {
   const hud = await import("../scripts/daemon/hud.mjs");
@@ -30,7 +32,7 @@ test("Claude's orange is written once: the page script and the sheets take it fr
   const { source } = hudScript();
   assert.ok(source.includes(vocab.AGENT_COLOR) && !source.includes("__PB_AGENT_COLOR__"));
   assert.match(read("ui/tokens.css"), new RegExp(`--spark: ${vocab.AGENT_COLOR};`));
-  const files = ["scripts/hud.js", "scripts/liveview.js", "scripts/tabsync.mjs", "scripts/daemon.mjs", "scripts/daemon/follow.mjs", "scripts/daemon/approvals.mjs",
+  const files = ["scripts/hud/", "scripts/liveview.js", "scripts/tabsync.mjs", "scripts/daemon.mjs", "scripts/daemon/follow.mjs", "scripts/daemon/approvals.mjs",
     "scripts/liveview/push.mjs", "ui/right/right.js", "ui/screen/screen.js", "ui/capture/record.js"];
   for (const f of files) assert.ok(!read(f).toLowerCase().includes(vocab.AGENT_COLOR), `${f} names the color itself`);
 });

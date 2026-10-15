@@ -1,5 +1,5 @@
 // The design tokens (ui/tokens.css): one sheet for every surface PairBrowse
-// styles itself. hud.js and record.js carry the same values inline; this keeps every literal color
+// styles itself. scripts/hud/ and record.js carry the same values inline; this keeps every literal color
 // in those files and the page sheets equal to a sheet value or a participant color, and checks
 // WCAG AA contrast for the text colors in both schemes.
 import "./helpers/home.mjs";
@@ -7,9 +7,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { hudSource } from "../scripts/hud/assemble.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const read = (p) => readFileSync(root + p, "utf8");
+// The page script is read joined, as the helper injects it (scripts/hud/).
+const read = (p) => p === "scripts/hud/" ? hudSource() : readFileSync(root + p, "utf8");
 const UI = "ui/";
 const sheet = read(UI + "tokens.css");
 
@@ -111,7 +113,7 @@ test("every literal color in the styled files is a sheet value, a participant co
   const allowed = new Set(["#ffffff", "#000000", ...SPARK_COLORS.map(norm)]);
   for (const t of [dark, light]) for (const v of Object.values(t)) { const n = norm(v); if (n) allowed.add(n); }
   assert.equal(norm(dark.spark), norm(SPARK_COLORS[0]), "--spark is Claude's own spark color");
-  const files = [UI + "right/right.css", UI + "picker/picker.css", UI + "newtab/newtab.css", UI + "screen/screen.css", UI + "settings/settings.css", "scripts/liveview.css", "scripts/hud.js", UI + "capture/record.js", "scripts/tabs.mjs", "scripts/daemon/preview.mjs"];
+  const files = [UI + "right/right.css", UI + "picker/picker.css", UI + "newtab/newtab.css", UI + "screen/screen.css", UI + "settings/settings.css", "scripts/liveview.css", "scripts/hud/", UI + "capture/record.js", "scripts/tabs.mjs", "scripts/daemon/preview.mjs"];
   for (const f of files) {
     const text = read(f).replace(/%23([0-9a-fA-F]{3,8})\b/g, "#$1");
     const found = [...text.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|oklch\((?:[^()]|\([^()]*\))*\)/g)].map(([m]) => m);

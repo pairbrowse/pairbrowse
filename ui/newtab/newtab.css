@@ -55,7 +55,7 @@ body[data-s="picking"] .chips { opacity: 0.55; pointer-events: none; }
 .ask .agents { font-size: var(--fs-2); color: var(--ink-2); }
 .ask .buttons { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .ask button { height: var(--ctl); padding: 0 var(--sp-4); border-radius: var(--r-2); font: 600 var(--fs-3) var(--sans); cursor: pointer; }
-.ask .primary { border: 0; background: var(--accent-fill); color: var(--ink); }
+.ask .primary { border: 0; background: var(--accent-fill); color: #fff; } /* white on the fill: 4.6:1 (--ink is 4.2) */
 .ask .primary:hover { background: var(--accent-fill-top); }
 .ask .secondary { border: 1px solid var(--edge); background: transparent; color: inherit; font-weight: 500; }
 .ask .secondary:hover { background: var(--hover); }

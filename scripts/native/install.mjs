@@ -14,7 +14,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, renameSync, readdirSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { paths, loadConfig, saveConfig } from "../paths.mjs";
 import { prepareProfile, browserChoice } from "../browser.mjs";
 import { engineProfile } from "../engine.mjs";
@@ -23,6 +23,7 @@ import { engineConfig, shellFrom } from "../browser/choice.mjs";
 import { selfCheck } from "./check.mjs";
 import { NATIVE } from "../native-pack.mjs";
 import { installHint, pinnedArchive, ensureEngine, installEngine } from "./pack.mjs";
+import { withInstallLock } from "../install-lock.mjs";
 import { BRANDING, brandNativeApp, registerApp, verifySignature } from "./macos-app.mjs";
 import { currentSession, profileDir } from "../sessions.mjs";
 import { readJson, sha256File, within, writeJsonAtomic, pidAlive } from "../util.mjs";
@@ -139,8 +140,10 @@ function recoverInterrupted(log, d = nativeDirs()) {
     rmSync(d.app, { recursive: true, force: true });
     renameSync(d.rollback, d.app);
   } else if (!pending.hadOld) rmSync(d.app, { recursive: true, force: true });
-  if (pending.config === null) rmSync(paths.config, { force: true });
-  else if (typeof pending.config === "string") writeFileSync(paths.config, pending.config);
+  // The settings of the home that ran that install (the browser folder is shared by instances).
+  const configFile = typeof pending.configFile === "string" && isAbsolute(pending.configFile) && basename(pending.configFile) === "config.json" ? pending.configFile : paths.config;
+  if (pending.config === null) rmSync(configFile, { force: true });
+  else if (typeof pending.config === "string") writeFileSync(configFile, pending.config);
   rmSync(d.pending, { force: true });
   return true;
 }
@@ -149,7 +152,7 @@ function recoverInterrupted(log, d = nativeDirs()) {
 // written first, so a swap cut short anywhere from here is undone by the next install or start.
 async function swapIn(d, app, configBefore) {
   if (await runningFrom(d.app)) throw new Error("the PairBrowse browser is open: quit it (or stop the PairBrowse helper) and try again");
-  writeJsonAtomic(d.pending, { hadOld: existsSync(d.app), config: configBefore, startedAt: new Date().toISOString() });
+  writeJsonAtomic(d.pending, { hadOld: existsSync(d.app), config: configBefore, configFile: paths.config, startedAt: new Date().toISOString() });
   rmSync(d.rollback, { recursive: true, force: true });
   if (existsSync(d.app)) renameSync(d.app, d.rollback);
   renameSync(app, d.app);
@@ -317,9 +320,13 @@ async function ensureNativeBrowser(log, { pinned, asset, config }) {
 // (tests pass stand-ins). config: the settings (default: config.json, read after an earlier
 // install cut short is undone); with "browser" set to "chromium" or a path, null and nothing done.
 export async function ensureNative(log = () => {}, { pinned = pinnedArchive, engine = ensureEngine, asset = pinnedAsset(), config = undefined } = {}) {
-  const exec = await ensureNativeBrowser(log, { pinned, asset, config });
-  if (exec) await engine(log);
-  return exec;
+  // One install at a time in the shared installs' home: an instance waits for another's install
+  // of the same build instead of failing on its lock (install-lock.mjs).
+  return withInstallLock(async () => {
+    const exec = await ensureNativeBrowser(log, { pinned, asset, config });
+    if (exec) await engine(log);
+    return exec;
+  }, { say: log });
 }
 
 export const BROWSER_QUESTION = "Which browser should PairBrowse use?\n" +

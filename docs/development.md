@@ -92,6 +92,49 @@ mockup is read in place and never committed.
 `test/bench.mjs` is not a test: it times the helper's tool calls on a real browser
 (`node test/bench.mjs`, `PAIRBROWSE_TEST_RUNTIME` set) and prints the numbers.
 
+### The test switches
+
+Every `PAIRBROWSE_TEST_*` variable. A gate is read by the test files only: you set it when you run
+the tests, and it decides whether a test runs or which browser it uses. A knob is read by the
+helper (listed in `SWITCHES` in `scripts/testenv.mjs`, read through `testOn`/`testMs`/`testValue`):
+a test sets it in the environment of the helper it starts, or in its own process for a module it
+loads. The helper drops every knob unless the test harness started it (`applyTestGate`: its home
+is under the temp folder with a linked runtime), so none reaches an installed helper.
+
+| Switch | Kind | Who sets it | What it does |
+|--------|------|-------------|--------------|
+| `RUNTIME` | gate | you: `~/.pairbrowse/runtime` | The pinned runtime; every live test (integration, the live cases in unit files, the pages' harness) skips without it |
+| `ENGINE` | gate | you: `~/.pairbrowse/engine` | The engine pack, for the native launch tests in `native-engine` and for `optin/native-join` |
+| `EXECUTABLE` | gate | you: a browser binary | Runs the browsers of `connections`, `shared-mode`, `shared-restart`, `record` and `optin/failover` on another build (the PairBrowse browser); `optin/native-join` needs a native build here |
+| `JOINER_EXECUTABLE` | gate | you: a browser binary | The joiner's browser in `shared-mode` and `record` |
+| `NATIVE` | gate | you: the PairBrowse browser | Also runs `draw` and a `picker` case on the native build |
+| `REAL_TUNNEL` | gate | you: `1` | Real Cloudflare Quick Tunnels: `optin/failover` and one `shared-mode` case |
+| `YOUTUBE` | gate | you: `1` | The `shared-mode` case on youtube.com |
+| `EXCALIDRAW` | gate | you: `1` | The `shared-mode` case on excalidraw.com |
+| `DOCKER` | gate | you: `1` | `optin/two-machines`: this machine and a Linux container (needs Docker and the network) |
+| `SHOTS` | gate | you: a folder | `ui-screen` and `ui-right` save screenshots there |
+| `ACTIVE_MS` | knob | `integration/tour-fixes` | How long an agent's connection counts as active |
+| `APPROVAL` | knob | `integration/approval`, `integration/test-gate` | Adds `pairbrowse_test_approval`: the approval card, clicked as a person would |
+| `FAILOVER_MS` | knob | `failover`, `integration/connections` | How long a joiner waits on a silent tunnel before the standby |
+| `GONE_MS` | knob | `join` | When a silent joiner counts as gone |
+| `JOIN_LOCAL` | knob | the join tests, `picker`, `taborder`, `bench` | Join codes may point at `http://127.0.0.1` (no tunnel) |
+| `JOIN_PROMPT` | knob | `integration/join-prompt` | Adds `pairbrowse_test_join_prompt`: the join request in the bottom bar |
+| `KEEP_GRACE_MS` | knob | `tunnel` | How long a tunnel keeper outlives a quiet helper |
+| `MEMORY` | knob | `integration/memory`, `integration/interruption`, `bench` | Adds `pairbrowse_test_memory`: listener counts |
+| `NO_CAPTURE` | knob | `capture`, `integration/shared-mode` (host only) | Acts as a build without a capture page: no direct connection, no recording |
+| `NO_DIRECT` | knob | `integration/shared-mode` | A network where no direct screen connection can be made |
+| `PANEL` | knob | `integration/panel-reload` | Adds `pairbrowse_test_panel`: the side panel's worker |
+| `PICK_WAIT_MS` | knob | `integration/picker` | How long the session picker waits |
+| `RESTART_MS` | knob | `tunnels` | The tunnel pool's restart pause |
+| `SCREEN` | knob | the sharing tests, `bench` | Adds `pairbrowse_test_screen`: the shared browser picture page |
+| `SILENT_MS` | knob | `failover`, `join` | When a joiner's stream counts as silent |
+| `TAB_ORDER` | knob | `integration/taborder` | Adds `pairbrowse_test_tab_order`: read and move tabs in the strip |
+| `TUNNEL` | knob | the sharing tests, `bench` | `direct`: the guest port stands in for a tunnel |
+
+Not switches: `PAIRBROWSE_FUZZ_RUNS` sets the runs per fuzz property (CI uses 20000), `PB_DEBUG`
+prints a helper's log in a few live tests, and `PB_MAIL`/`PB_RUNTIME` are how
+`optin/two-machines` hands its two sides their shared folder and runtime.
+
 ### The live tests
 
 Each integration file starts its own helper and browser (two or three for joining), and

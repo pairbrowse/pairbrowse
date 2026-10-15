@@ -5,7 +5,7 @@
 // input there (daemon/screenshare.mjs). Never the owner's key or the viewer page.
 import http from "node:http";
 import { JOINER_ID, cleanName, appName, cleanComputer } from "../join.mjs";
-import { LOOPBACK, keyOk, readBody, BODY_MAX, listen } from "./http.mjs";
+import { LOOPBACK, keyOk, readBody, parseJson, BODY_MAX, listen } from "./http.mjs";
 import { acceptUpgrade, refuseUpgrade } from "../ws.mjs";
 import { stateAgo } from "../daemon/presence.mjs";
 import { JOINER_POINTERS_PER_SECOND as POINTERS_PER_SECOND } from "../../ui/limits.js";
@@ -147,8 +147,8 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
     if (req.method !== "POST") return answer(404, { error: "Unknown request." });
     const body = await readBody(req, BODY_MAX.input);
     if (body === null) return answer(413, { error: "Too large." });
-    let parsed;
-    try { parsed = JSON.parse(body); } catch { return answer(400, { error: "Not JSON." }); }
+    const parsed = parseJson(body);
+    if (parsed === undefined) return answer(400, { error: "Not JSON." });
     const r = await act(route, parsed, Buffer.byteLength(body), invite, j);
     return answer(r.code, r.body);
   }

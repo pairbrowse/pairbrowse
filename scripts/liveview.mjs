@@ -20,7 +20,7 @@ import { keepFocus } from "./focus.mjs";
 import { createApprovals, personLabel, cleanName } from "./join.mjs";
 import { stateForJoiner, readOps, shareableUrl, onSecretDomain, activityBudget } from "./tabsync.mjs";
 import { createPush } from "./liveview/push.mjs";
-import { hostOk, originOk, keyOk, readBody, BODY_MAX, SECURITY_HEADERS, serveViewer, serveAsset, plain, pathParts, listen } from "./liveview/http.mjs";
+import { hostOk, originOk, keyOk, readCapped, readJsonBody, parseJson, json, NOT_JSON, BODY_MAX, SECURITY_HEADERS, serveViewer, serveAsset, plain, pathParts, listen } from "./liveview/http.mjs";
 import { createInvites, roleMay } from "./liveview/invites.mjs";
 import { createInputReplayer, readViewerInput, inputBudget } from "./liveview/input.mjs";
 import { createJoinerServer, recentlySeen } from "./liveview/joiner-server.mjs";
@@ -114,7 +114,6 @@ function serially() {
 }
 
 const sse = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-const json = (res, code, data) => { res.writeHead(code, { ...SECURITY_HEADERS, "content-type": "application/json" }); res.end(JSON.stringify(data)); };
 
 // Stops a tab's screencast and gives its window its normal size back.
 async function release(cdp) {
@@ -777,9 +776,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // browser's own pages list them and answer with POST approve { id, answer }.
     { method: "GET", path: "approvals.json", right: "approve", handler: ({ res }) => (clickApprovals ? json(res, 200, { pending: clickApprovals.pending() }) : plain(res, 404)) },
     { method: "POST", path: "approve", right: "approve", handler: async ({ req, res }) => {
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const given = parsed(body);
+      const given = await readJsonBody(req, res, BODY_MAX.approve);
+      if (given === undefined) return;
       if (given && typeof given === "object" && typeof given.answer === "string") {
         if (!(typeof given.id === "string" && APPROVAL_ID.test(given.id) && ANSWERS.has(given.answer))) return json(res, 400, { error: "An approval answer is { id, answer: allow, deny, terminal or site }." });
         if (!clickApprovals) return plain(res, 404);
@@ -808,10 +806,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // agent's question to share one; and the owner's answer, Share or Stop (a real click).
     { method: "POST", path: "dev", right: "approve", handler: async ({ req, res }) => {
       if (!devPanel) return plain(res, 404);
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const v = objectBody(body);
-      if (!v) return json(res, 400, { error: NOT_JSON });
+      const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });
+      if (v === undefined) return;
       const r = await devPanel.act(v);
       json(res, r.error ? 409 : 200, r);
     } },
@@ -820,10 +816,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // the session picker), with a real click; agents have no tool for it.
     { method: "POST", path: "joinhost", right: "approve", handler: async ({ req, res }) => {
       if (!joinHost) return plain(res, 404);
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const v = objectBody(body);
-      if (!v) return json(res, 400, { error: NOT_JSON });
+      const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });
+      if (v === undefined) return;
       const r = await joinHost.act(v);
       json(res, r.error ? 409 : 200, r);
     } },
@@ -839,10 +833,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // { op: "revoke", id } (Settings' Invites, Revoke): that invite stops at once, as with
     // pairbrowse_invite revoke (anyone using it is out; a join code's tunnel goes with the last code).
     { method: "POST", path: "invite", right: "invite", handler: async ({ req, res }) => {
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const op = parsed(body);
-      if (op === undefined) return json(res, 400, { error: NOT_JSON });
+      const op = await readJsonBody(req, res, BODY_MAX.approve);
+      if (op === undefined) return;
       if (op && typeof op === "object" && !Array.isArray(op) && op.op !== undefined) {
         if (op.op !== "revoke" || Object.keys(op).some((k) => k !== "op" && k !== "id")) return json(res, 409, { error: 'An invite change is { op: "revoke", id }.' });
         if (typeof op.id !== "string" || !INVITE_ID.test(op.id)) return json(res, 409, { error: "id is an invite's id, as invites.json lists it." });
@@ -869,10 +861,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // sessions event after a change.
     { method: "POST", path: "pick", right: "session", handler: async ({ req, res }) => {
       if (!picker) return plain(res, 404);
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const given = parsed(body);
-      if (given === undefined) return json(res, 400, { error: NOT_JSON });
+      const given = await readJsonBody(req, res, BODY_MAX.approve);
+      if (given === undefined) return;
       const { op, error } = readPick(given);
       if (error) return json(res, 409, { text: error, error: true });
       const r = (await picker.pick(op)) || { text: "That didn't work.", error: true };
@@ -888,10 +878,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // session's timeline of pictures already sent to agents (daemon/timeline.mjs).
     { method: "GET", path: "layout.json", right: "layout", handler: ({ res }) => json(res, 200, layoutNow()) },
     { method: "POST", path: "layout", right: "layout", handler: async ({ req, res }) => {
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const given = parsed(body);
-      if (given === undefined) return json(res, 400, { error: NOT_JSON });
+      const given = await readJsonBody(req, res, BODY_MAX.approve);
+      if (given === undefined) return;
       // tab: the right dock's tab to open on, relayed in this answer and its event only (never kept).
       const t = readDockTab(given);
       if (t.error) return json(res, 409, { error: t.error });
@@ -913,10 +901,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     { method: "GET", path: "config.json", right: "config", handler: ({ res }) => (settings ? json(res, 200, settings.read()) : plain(res, 404)) },
     { method: "POST", path: "config", right: "config", handler: async ({ req, res }) => {
       if (!settings) return plain(res, 404);
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const given = parsed(body);
-      if (given === undefined) return json(res, 400, { error: NOT_JSON });
+      const given = await readJsonBody(req, res, BODY_MAX.approve);
+      if (given === undefined) return;
       const r = await settings.write(given);
       if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
       broadcast("config", r);
@@ -927,10 +913,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // 404 without a report address; the address itself is never in an answer.
     { method: "POST", path: "report", right: "config", handler: async ({ req, res }) => {
       if (!reporter?.enabled()) return plain(res, 404);
-      const body = await readBody(req, REPORT_BODY_MAX);
-      if (body === null) return plain(res, 413);
-      const given = parsed(body);
-      if (given === undefined) return json(res, 400, { error: NOT_JSON });
+      const given = await readJsonBody(req, res, REPORT_BODY_MAX);
+      if (given === undefined) return;
       const r = await reporter.relay(given);
       if (r.status === 404) return plain(res, 404);
       json(res, r.status, r.body);
@@ -940,10 +924,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // restart; the sessions page), { op: "save" } writes its tabs now. sessionOps from the helper (daemon.mjs).
     { method: "POST", path: "session", right: "session", handler: async ({ req, res }) => {
       if (!sessionOps) return plain(res, 404);
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const op = parsed(body);
-      if (op === undefined) return json(res, 400, { error: NOT_JSON });
+      const op = await readJsonBody(req, res, BODY_MAX.approve);
+      if (op === undefined) return;
       if (!op || typeof op !== "object" || Array.isArray(op) || (op.op !== "rename" && op.op !== "save")) return json(res, 409, { error: SESSION_OP });
       if (op.op === "save") {
         const r = await sessionOps.save();
@@ -1007,10 +989,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       const isPin = rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "pin";
       const isShow = rest.length === 2 && TIMELINE_ID.test(rest[0]) && rest[1] === "show";
       if (!isNote && !isPin && !isShow) return plain(res, 404);
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const op = parsed(body);
-      if (op === undefined) return json(res, 400, { error: NOT_JSON });
+      const op = await readJsonBody(req, res, BODY_MAX.approve);
+      if (op === undefined) return;
       if (isShow) {
         const card = (timeline.cards() || []).find((c) => c.id === rest[0]);
         if (!card) return plain(res, 404);
@@ -1037,7 +1017,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     { method: "DELETE", path: "recordings", right: "tools", handler: async ({ req, res, rest }) => {
       if (toolsOff(res)) return;
       if (rest.length !== 1 || !TOOL_ID.test(rest[0])) return plain(res, 404);
-      if ((await readBody(req, BODY_MAX.approve)) === null) return plain(res, 413);
+      if ((await readCapped(req, res, BODY_MAX.approve)) === null) return;
       const r = tools.recordings.remove(rest[0]);
       if (r?.ok) return json(res, 200, { ok: true });
       return r?.status === 410 ? json(res, 410, { error: FILE_CHANGED }) : plain(res, 404);
@@ -1049,7 +1029,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     { method: "POST", path: "handoffs", right: "tools", handler: async ({ req, res, rest }) => {
       if (toolsOff(res)) return;
       if (rest.length !== 2 || !TOOL_ID.test(rest[0]) || rest[1] !== "show") return plain(res, 404);
-      if ((await readBody(req, BODY_MAX.approve)) === null) return plain(res, 413);
+      if ((await readCapped(req, res, BODY_MAX.approve)) === null) return;
       const h = tools.handoffs.entry(rest[0]);
       if (!h) return plain(res, 404);
       if (!h.page) return json(res, 409, { error: "This hand-off isn't about a tab, so there is nothing to show." });
@@ -1061,7 +1041,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     { method: "POST", path: "diagnostics", right: "tools", handler: async ({ req, res, rest }) => {
       if (toolsOff(res)) return;
       if (rest.length !== 1 || rest[0] !== "report") return plain(res, 404);
-      if ((await readBody(req, BODY_MAX.approve)) === null) return plain(res, 413);
+      if ((await readCapped(req, res, BODY_MAX.approve)) === null) return;
       json(res, 200, { text: tools.diagnostics.reportText(await diagnosticsNow()) });
     } },
     { method: "POST", path: "input", right: "input", handler: human },
@@ -1073,9 +1053,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // The tab strip's report of every window's tabs by CDP target (the browser's own pages): kept
     // for the helper's tab order (daemon/taborder.mjs), the last one only.
     { method: "POST", path: "tab-order", right: "strip", handler: async ({ req, res }) => {
-      const body = await readBody(req, BODY_MAX.tabOrder);
-      if (body === null) return plain(res, 413);
-      const order = readTabOrder(parsed(body));
+      const body = await readCapped(req, res, BODY_MAX.tabOrder);
+      if (body === null) return;
+      const order = readTabOrder(parseJson(body));
       if (!order) return json(res, 400, { error: "Not a tab order." });
       const sig = JSON.stringify(order);
       if (sig !== stripOrder.sig) stripOrder = { sig, order };
@@ -1087,17 +1067,15 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     { method: "POST", path: "capture", right: "capture", handler: async ({ req, res, rest, byPages }) => {
       if (!capture || rest.length !== 1 || rest[0] !== "reply") return plain(res, 404);
       if (!captureOk(req, byPages)) return plain(res, 403);
-      const body = await readBody(req, BODY_MAX.capture);
-      if (body === null) return plain(res, 413);
-      if (!capture.reply(parsed(body))) return json(res, 400, { error: "Not a capture reply." });
+      const body = await readCapped(req, res, BODY_MAX.capture);
+      if (body === null) return;
+      if (!capture.reply(parseJson(body))) return json(res, 400, { error: "Not a capture reply." });
       res.writeHead(204, SECURITY_HEADERS);
       res.end();
     } },
     { method: "POST", path: "record", right: "record", handler: async ({ req, res }) => {
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const v = objectBody(body);
-      if (!v) return json(res, 400, { error: NOT_JSON });
+      const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });
+      if (v === undefined) return;
       const r = await onRecord(v.on === true);
       // The file's name, never its folder or path (the Recordings list opens it by id).
       const item = r?.path ? tools?.recordings?.itemFor?.(r.path) || null : null;
@@ -1106,10 +1084,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       json(res, r?.error ? 409 : 200, { ...recordState(), text, ...(item ? { item } : {}) });
     } },
     { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite, role }) => {
-      const body = await readBody(req, BODY_MAX.approve);
-      if (body === null) return plain(res, 413);
-      const op = parsed(body);
-      if (op === undefined) return json(res, 400, { error: NOT_JSON });
+      const op = await readJsonBody(req, res, BODY_MAX.approve);
+      if (op === undefined) return;
       if (op && typeof op === "object" && op.who !== undefined) {
         if (role !== "owner") return plain(res, 403);
         if (typeof op.who !== "string" || !op.who.trim() || op.who.length > 80) return json(res, 409, { error: "who is an agent's name as the session list shows it." });
@@ -1193,10 +1169,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
 
   async function changeProfile({ req, res }) {
     if (!profile) return plain(res, 404);
-    const body = await readBody(req, BODY_MAX.profile);
-    if (body === null) return plain(res, 413);
-    const op = objectBody(body);
-    if (!op) return json(res, 400, { error: NOT_JSON });
+    const op = await readJsonBody(req, res, BODY_MAX.profile, { object: true });
+    if (op === undefined) return;
     let error = null;
     if (op.op === "setDetail") error = profile.setDetail(op.label, op.value);
     else if (op.op === "forgetDetail") profile.forgetDetail(String(op.label || ""));
@@ -1232,8 +1206,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     if (toolsOff(res)) return;
     const verbs = isDownload ? ["open", "reveal", "open-app"] : ["open", "reveal"];
     if (rest.length !== 2 || !TOOL_ID.test(rest[0]) || !verbs.includes(rest[1])) return plain(res, 404);
-    const body = await readBody(req, BODY_MAX.approve);
-    if (body === null) return plain(res, 413);
+    const body = await readCapped(req, res, BODY_MAX.approve);
+    if (body === null) return;
     const e = store.entry(rest[0]);
     if (!e) return plain(res, 404);
     if (isDownload && e.state !== "done") return json(res, 409, { error: e.state === "failed" ? "That download failed; there is no file to show." : "That download hasn't finished yet." });
@@ -1264,7 +1238,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       // With its app: a program, script or web page only after the person confirms ({ confirm: true },
       // the only field read).
       const confirm = confirmFor(e.path);
-      if (confirm && parsed(body)?.confirm !== true) return json(res, 428, { confirm });
+      if (confirm && parseJson(body)?.confirm !== true) return json(res, 428, { confirm });
     }
     // A download opened with its app says so ({ ok: true, opened: "app" }); Reveal and recordings: { ok: true }.
     const r = await tools.open(e.path, rest[1]);
@@ -1277,17 +1251,10 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       joined: guests().map(({ label, role }) => ({ label, role })), errors: d.errors };
   }
 
-  // A body that isn't JSON: undefined, so the chrome pages' routes answer 400 without logging it.
-  const parsed = (body) => { try { return JSON.parse(body); } catch { return undefined; } };
-  // A body that must be a JSON object: it, or null (the route answers 400).
-  const objectBody = (body) => { const v = parsed(body); return v && typeof v === "object" && !Array.isArray(v) ? v : null; };
-  const NOT_JSON = "The body is not JSON.";
-
   async function human({ req, res, route, role, invite }) {
-    const body = await readBody(req, BODY_MAX.input);
-    if (body === null) return plain(res, 413);
-    const ev = parsed(body);
-    if (ev === undefined || ev === null || typeof ev !== "object") return json(res, 400, { error: NOT_JSON });
+    const ev = await readJsonBody(req, res, BODY_MAX.input);
+    if (ev === undefined) return;
+    if (ev === null || typeof ev !== "object") return json(res, 400, { error: NOT_JSON });
     // Moving tabs around the strip is the owner's (a drive guest switches, opens and closes them).
     if (route === "tab" && ev?.order !== undefined && role !== "owner") return plain(res, 403);
     await humanPost(route, ev, role, invite ? `${invite.label} (by hand)` : null, invite?.id || null);

@@ -44,6 +44,28 @@ export async function readBody(req, max) {
   return body;
 }
 
+// A body that isn't JSON: undefined (JSON itself never parses to undefined).
+export const parseJson = (text) => { try { return JSON.parse(text); } catch { return undefined; } };
+export const isPlainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+export const NOT_JSON = "The body is not JSON.";
+
+// The body as text, or null once it was too large and 413 has answered.
+export async function readCapped(req, res, max) {
+  const body = await readBody(req, max);
+  if (body === null) plain(res, 413);
+  return body;
+}
+
+// A route's JSON body: the value, or undefined once the answer went out (413 past max; 400
+// NOT_JSON when it isn't JSON, or with object: true isn't a JSON object). Never a 500.
+export async function readJsonBody(req, res, max, { object = false } = {}) {
+  const body = await readCapped(req, res, max);
+  if (body === null) return undefined;
+  const v = parseJson(body);
+  if (v === undefined || (object && !isPlainObject(v))) { json(res, 400, { error: NOT_JSON }); return undefined; }
+  return v;
+}
+
 // The request path, as sent, and its parts: /<key>/<route>/<rest...>.
 const pathOf = (req) => String(req.url).split("?")[0];
 export const pathParts = (req) => {
@@ -62,6 +84,8 @@ export const listen = (server, port) => new Promise((resolve, reject) => {
   server.once("error", reject);
   server.listen(port, "127.0.0.1", () => { server.off("error", reject); resolve(); });
 });
+
+export const json = (res, code, data) => { res.writeHead(code, { ...SECURITY_HEADERS, "content-type": "application/json" }); res.end(JSON.stringify(data)); };
 
 // text: a plain sentence for the answer instead of the bare code.
 export const plain = (res, code, text = String(code)) => { res.writeHead(code, { "content-type": "text/plain" }); res.end(text); };

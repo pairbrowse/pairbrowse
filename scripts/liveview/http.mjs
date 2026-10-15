@@ -70,13 +70,18 @@ const scripts = new URL("../", import.meta.url);
 const viewerHtml = readFileSync(new URL("liveview.html", scripts), "utf8");
 // The page's files, read once at start from a fixed list (never a path taken from a URL). The
 // side panel shares common.js and tokens.css, and an extension loads only its own files, so they
-// live in ui/, the extension's root, and are served to the live view from there.
+// live in ui/, the extension's root, and are served to the live view from there; so do the flat
+// modules common.js and liveview.js import (vocab.js: the words and colors the helper shares).
 const ASSETS = new Map(Object.entries({
   "liveview.css": ["liveview.css", "text/css; charset=utf-8"],
   "liveview.js": ["liveview.js", "text/javascript; charset=utf-8"],
   "tokens.css": ["../ui/tokens.css", "text/css; charset=utf-8"],
   "common.js": ["../ui/common.js", "text/javascript; charset=utf-8"],
-}).map(([name, [file, type]]) => [name, { body: readFileSync(new URL(file, scripts)), type }]));
+  "vocab.js": ["../ui/vocab.js", "text/javascript; charset=utf-8"],
+}).map(([name, [file, type]]) => [name, { file, body: readFileSync(new URL(file, scripts)), type }]));
+// Each served name and the file it is read from (relative to scripts/), for the test that every
+// module the page imports is served.
+export const ASSET_FILES = Object.freeze(Object.fromEntries([...ASSETS].map(([name, a]) => [name, a.file])));
 
 const attr = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 

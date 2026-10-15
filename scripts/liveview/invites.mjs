@@ -4,6 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { cleanName } from "../join.mjs";
 import { keyOk } from "./http.mjs";
+import { ROLES, SHARE_MODES } from "../../ui/vocab.js";
 
 const HOST_NAME = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 const LOOPBACK_NAMES = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
@@ -92,7 +93,7 @@ export function createInvites({ now = () => Date.now() } = {}) {
       let n = 0;
       for (const i of Array.isArray(list) ? list : []) {
         if (!i || !/^[0-9a-f]{8}$/.test(i.id) || !/^[0-9a-f]{64}$/.test(i.key) || i.share !== "code" || all.has(i.id)) continue;
-        if (!["watch", "drive"].includes(i.role) || !["shared", "follow"].includes(i.mode)) continue;
+        if (!ROLES.includes(i.role) || !SHARE_MODES.includes(i.mode)) continue;
         const createdAt = Number(i.createdAt), expiresAt = Number(i.expiresAt);
         if (!Number.isFinite(createdAt) || !Number.isFinite(expiresAt) || expiresAt <= now() || expiresAt - createdAt > INVITE_MAX_HOURS * HOUR_MS) continue;
         all.set(i.id, { id: i.id, role: i.role, share: "code", mode: i.mode, label: inviteLabel(i.label), key: i.key, createdAt, expiresAt });

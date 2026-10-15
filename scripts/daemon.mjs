@@ -84,6 +84,7 @@ import { createPreviews } from "./daemon/preview.mjs";
 import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mjs";
 import { engineDir } from "./native-pack.mjs";
 import { answerOpen, writeOpener } from "./opener.mjs";
+import { AGENT_COLOR } from "../ui/vocab.js";
 
 const require = createRequire(join(paths.runtime, "package.json"));
 
@@ -336,7 +337,7 @@ function tabMeta(page) {
   const remote = follow.agentIn(page); // an agent in the other browser of a joined session
   const theirs = joinedAgents.get(page);
   const agent = localAgent(page) || (remote ? { label: remote.label, color: remote.color || appColor(remote.label) || APP_COLORS.claude, joined: true } :
-    theirs && Date.now() < theirs.until ? { label: theirs.label, color: theirs.color || "#e9763f", joined: true, from: theirs.from, until: theirs.turnUntil } : null);
+    theirs && Date.now() < theirs.until ? { label: theirs.label, color: theirs.color || AGENT_COLOR, joined: true, from: theirs.from, until: theirs.turnUntil } : null);
   return { agent, person: presence.recentPerson(page), waiting: !!presence.waiting(page), last: hud.lastIn(page),
     sharedPerson: presence.sharedPerson(page), did: presence.feedAfter(page) };
 }
@@ -517,7 +518,7 @@ const sharing = createSharing({
       },
       onJoinerAgent: (page, who, color, left = 0, from = "", where = "") => {
         if (who) { joinedAgents.set(page, { label: who, color, until: Date.now() + JOINED_AGENT_MS, turnUntil: left > 0 ? Date.now() + left : 0, from, where }); context.touch(page); } else joinedAgents.delete(page);
-        hud.setSharedSpark(page, who ? color || "#e9763f" : "");
+        hud.setSharedSpark(page, who ? color || AGENT_COLOR : "");
         refreshTabs();
       },
     },

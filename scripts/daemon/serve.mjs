@@ -31,6 +31,7 @@ import { ownerOf, leftAlone } from "./fields.mjs";
 import { dragBetween, reason as dragReason } from "./drag.mjs";
 import { createRefNames, plainError, hideChromeTabs, hidePersonTabs, PERSON_TAB_RULE } from "./output.mjs";
 import { humanFill, humanType, fillSettings } from "../native-engine.mjs";
+import { STATUS_KINDS } from "../../ui/vocab.js";
 
 const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
 // A small picture of the page goes with each result that changes what's on screen, taken once
@@ -772,7 +773,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (name === "pairbrowse_upload" && !(Array.isArray(args.files) && args.files.length && args.files.every((x) => typeof x === "string"))) return "pairbrowse_upload needs files: a list of absolute paths.";
       if (name === "pairbrowse_facts" && args.action === "forget" && !(Array.isArray(args.labels) && args.labels.every((x) => typeof x === "string"))) return "pairbrowse_facts forget needs labels: a list of the details' labels.";
       if (name === "pairbrowse_status") {
-        if (!["claude", "you", "done", "clear"].includes(args.kind)) return 'pairbrowse_status: kind is "claude", "you", "done" or "clear".';
+        if (!STATUS_KINDS.includes(args.kind)) return 'pairbrowse_status: kind is "claude", "you", "done" or "clear".';
         if (args.text !== undefined && (typeof args.text !== "string" || args.text.length > 140)) return "pairbrowse_status: text is up to 140 characters.";
       }
       if (name === "browser_wait_for") {

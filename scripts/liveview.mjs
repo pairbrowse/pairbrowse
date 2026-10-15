@@ -35,6 +35,7 @@ import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { readPick } from "./daemon/pick.mjs";
 import { REPORT_BODY_MAX } from "./liveview/report.mjs";
 import { createActivityLog, readPageQuery } from "./daemon/activitylog.mjs";
+import { PAGE_KINDS as PAGE_KIND_LIST } from "../ui/vocab.js";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
@@ -78,7 +79,7 @@ export function readTabOrder(body) {
 }
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
-const PAGE_KINDS = new Set(["strip", "left", "right", "picker", "approve", "screen", "capture", "timeline"]);
+const PAGE_KINDS = new Set(PAGE_KIND_LIST);
 const TIMELINE_ID = /^[0-9a-f]{12}$/;
 const TOOL_ID = /^[0-9a-f]{12}$/; // a download, recording or hand-off (daemon/tools.mjs): never a path
 const TIMELINE_OFF = "The timeline is off (timeline: false in ~/.pairbrowse/config.json).";

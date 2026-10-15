@@ -8,6 +8,7 @@
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
 import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
+import { AGENT_COLOR } from "../vocab.js";
 
 const pb = globalThis.pairbrowse || null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -539,7 +540,7 @@ function drawAgent() {
   const a = $("agent-avatar");
   a.textContent = initialOf(splitLabel(lastWho || entry?.who || "Claude").name);
   a.style.background = isColor(entry?.color) ? entry.color : "var(--spark)";
-  a.style.color = inkOn(isColor(entry?.color) ? entry.color : "#e9763f"); // the initial's ink passes AA (B11)
+  a.style.color = inkOn(isColor(entry?.color) ? entry.color : AGENT_COLOR); // the initial's ink passes AA (B11)
   // A hand-off ("your turn") is the turn line's: the board's task then holds the hand-off text,
   // so the box keeps that agent's last task that was not one.
   if (entry && entry.status !== "you") lastTask.set(entry.who, entry.task || "");

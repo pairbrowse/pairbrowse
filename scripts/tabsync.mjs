@@ -12,6 +12,7 @@ import { SENSITIVE, looksLikeCard } from "./policy.mjs";
 import { isLocalNetwork } from "./guard.mjs";
 import { stripText, eachUrl, textOf, numOf } from "./join.mjs";
 import { redact } from "./daemon/session.mjs";
+import { PEOPLE_COLORS, AGENT_COLOR, COLOR } from "../ui/vocab.js";
 
 export const TABS_MAX = 40; // tabs that cross, in order
 export const URL_MAX = 2048;
@@ -34,7 +35,6 @@ export function activityBudget({ burst = ACTIVITY_BURST, everyMs = ACTIVITY_EVER
 export const ACTIVITY_MAX = 12; // activity lines that cross
 const TEXT_MAX = 200;
 const ID = /^[0-9a-f]{8}$/;
-const COLOR = /^#[0-9a-f]{6}$/i;
 const REF = /^[a-z0-9]{1,16}$/;
 // Query parameters that sign someone in or confirm something, besides SENSITIVE's.
 const CREDENTIAL = /auth|key|sig|session|sid$|state|nonce|ticket|jwt|saml|assertion|credential|login|magic|invite|reset|verif|confirm|email|mail|phone/i;
@@ -442,10 +442,8 @@ export function readPointers(body, ids) {
     agents: (Array.isArray(body?.agents) ? body.agents : []).slice(0, 8).map((p) => readPointer(p, ids)).filter((p) => p && p.who),
   };
 }
-// A stable color per name, for people's pointers and tags: pink, yellow, lime, green, fuchsia.
-// None is near an agent's color (daemon/hud.mjs SPARK_COLORS: orange, purple, blue, cyan), so a
-// tag's color alone says person or agent, and each carries the tags' dark ink (#0B1421) at WCAG AA.
-export const PEOPLE_COLORS = ["#f472b6", "#fde047", "#a3e635", "#4ade80", "#ee78f0"];
+// A stable color per name, for people's pointers and tags, from ui/vocab.js PEOPLE_COLORS.
+export { PEOPLE_COLORS };
 export function personColor(name) {
   let h = 0;
   for (const c of textOf(name)) h = (h * 31 + c.codePointAt(0)) >>> 0;
@@ -462,5 +460,5 @@ export function tabWho(t, prev = null, now = Date.now()) {
   const until = t?.person ? now + PERSON_SHOWN_MS : person ? prev.until : 0;
   // An agent's label is "Name · App": the name is enough next to its spark.
   const agent = t?.agent ? clean(textOf(t.agent).split(" · ")[0], 40) : "";
-  return { person, until, personColor: person ? personColor(person) : "", agent, agentColor: agent ? (COLOR.test(textOf(t.color)) ? t.color : "#e9763f") : "" };
+  return { person, until, personColor: person ? personColor(person) : "", agent, agentColor: agent ? (COLOR.test(textOf(t.color)) ? t.color : AGENT_COLOR) : "" };
 }

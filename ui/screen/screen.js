@@ -4,6 +4,8 @@
 // host's own browser, logged in as they are. When no direct connection can be made, pictures
 // come through the helper instead (frame()) and so does input (takeInput()). Driven only by this
 // PairBrowse's helper, through window.pbScreen.
+import { AGENT_COLOR, COLOR } from "../vocab.js";
+
 const ICE = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const MOD = (e) => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
 const $ = (id) => document.getElementById(id);
@@ -207,7 +209,7 @@ function pointers(list, self = "") {
       $("pointers").appendChild(el);
       drawn.set(k, el);
     }
-    const color = /^#[0-9a-f]{6}$/i.test(p.color || "") ? p.color : "#e9763f";
+    const color = COLOR.test(p.color || "") ? p.color : AGENT_COLOR;
     el.querySelector("path").setAttribute(agent ? "stroke" : "fill", color);
     const label = el.querySelector("span");
     label.style.background = color;
@@ -221,7 +223,6 @@ function pointers(list, self = "") {
 // A person using it by hand: a dot in their color. An agent holding it: the spark in its color
 // (with the person's dot in a corner when both are there).
 const SPARK = "M8 0.8c.5 0 .8.4.9.9l.5 4 3.3-2.3c.4-.3 1-.2 1.3.2.3.4.2 1-.2 1.3L10.6 7.3l4 .6c.5.1.9.5.8 1-.1.5-.5.8-1 .7l-4-.5 2.3 3.3c.3.4.2 1-.2 1.3-.4.3-1 .2-1.3-.2L8.9 10.2l-.5 4c-.1.5-.5.9-1 .8-.5 0-.8-.5-.8-1l.6-4-3.3 2.3c-.4.3-1 .2-1.3-.2-.3-.4-.2-1 .2-1.3l3.2-2.4-4-.5c-.5-.1-.9-.5-.8-1 .1-.5.5-.8 1-.8l4 .6L3.9 3.5c-.3-.4-.2-1 .2-1.3.4-.3 1-.2 1.3.2l2.4 3.3.5-4c0-.5.4-.9.9-.9Z";
-const COLOR = /^#[0-9a-f]{6}$/i;
 let baseTitle = "Shared tab";
 let inTab = { person: "", personColor: "", agent: "", agentColor: "" };
 function dot(ctx, x, y, r, color) {

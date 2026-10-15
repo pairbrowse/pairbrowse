@@ -256,8 +256,11 @@ test("text that sits on --hover takes --ink-2, which keeps AA there (muted does 
 
 test("Claude's owner dot in the live view is the sheet's --spark, like the spark beside it", async () => {
   const { SPARK_COLORS } = await import("../scripts/daemon/hud.mjs");
+  const { AGENT_COLOR } = await import("../ui/vocab.js");
   const js = read("scripts/liveview.js");
-  assert.ok(js.toLowerCase().includes(`=== "${SPARK_COLORS[0].toLowerCase()}" ? "var(--spark)"`));
+  assert.equal(AGENT_COLOR, SPARK_COLORS[0]);
+  assert.match(js, /^import \{ AGENT_COLOR \} from "\.\/vocab\.js";$/m);
+  assert.ok(js.includes('=== AGENT_COLOR ? "var(--spark)"'));
 });
 
 test("the Opening tabs page says each row's state in text, not by color alone", async () => {

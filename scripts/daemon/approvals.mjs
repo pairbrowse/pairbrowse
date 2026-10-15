@@ -24,6 +24,7 @@
 import { randomBytes } from "node:crypto";
 import { approvalAsk, approvalKey, APPROVAL_TOOLS, APPROVAL_WAIT_MS, HOOK_MARK } from "../guard.mjs";
 import { within } from "../util.mjs";
+import { AGENT_COLOR } from "../../ui/vocab.js";
 
 export const APPROVAL_ID = /^ap-[0-9a-f]{32}$/;
 export const ANSWERS = new Set(["allow", "deny", "terminal", "site"]);
@@ -33,7 +34,7 @@ const LINE_MAX = 64 * 1024;
 const PAGE_KINDS = { "approval-allow": "allow", "approval-deny": "deny", "approval-terminal": "terminal" };
 const SURFACES = ["approve"];
 const EARLY_MS = 10_000; // a call that arrived before its hook's line: that ask is no longer real
-const DEFAULT_COLOR = "#e9763f";
+const DEFAULT_COLOR = AGENT_COLOR;
 const UNKNOWN_COLOR = "#8699b1"; // no agent's spark color (the muted ink)
 
 // The private socket carries two kinds of connection: an MCP client's (an agent) and a hook's

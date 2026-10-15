@@ -218,10 +218,10 @@
       :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;right:12px !important;bottom:12px !important}
       .b{display:flex;align-items:center;gap:9px;font:600 12px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;color:#F1F5FA;
          padding:9px 14px 9px 10px;border-radius:10px;max-width:min(440px,62vw);cursor:default;
-         background:rgba(25,42,61,.97);border-left:3px solid #e9763f;
+         background:rgba(25,42,61,.97);border-left:3px solid __PB_AGENT_COLOR__;
          box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35)}
       .b span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      svg{flex:none;width:15px;height:15px;color:#e9763f}
+      svg{flex:none;width:15px;height:15px;color:__PB_AGENT_COLOR__}
       .you{animation:g 1.8s ease-in-out 3}
       .you svg{animation:s 1.8s ease-in-out 3}
       .x{flex:none;margin-left:2px;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:0 2px}
@@ -244,7 +244,7 @@
   let sparkColor = null; // kept here, not on the link: nothing extra for a page to see
   let sparkAgent = ""; // the agent spark's color alone: the bar's driver dot
   let savedIcons = [];
-  function drawSpark(ctx, x, y, size, color = "#e9763f") {
+  function drawSpark(ctx, x, y, size, color = "__PB_AGENT_COLOR__") {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(size / 16, size / 16);
@@ -365,7 +365,7 @@
       .bar.away{opacity:0;transform:translateY(8px)}
       .who{display:flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
       .who b{color:#F1F5FA;font-weight:600}
-      .dot{flex:none;width:8px;height:8px;border-radius:50%;background:#e9763f}
+      .dot{flex:none;width:8px;height:8px;border-radius:50%;background:__PB_AGENT_COLOR__}
       .rec{display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 7px;border-radius:6px;background:#192A3D;color:#F1F5FA;font:600 11px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.06em}
       .rec[hidden]{display:none}
       .rec i{width:7px;height:7px;border-radius:50%;background:#EF6468}
@@ -404,7 +404,7 @@
         pointer-events:auto;cursor:default;font:600 12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#F1F5FA}
       .jq[hidden]{display:none}
       .jq .hd{display:flex;align-items:center;gap:8px;min-width:0}
-      .jq .av{flex:none;width:8px;height:8px;border-radius:50%;background:#e9763f}
+      .jq .av{flex:none;width:8px;height:8px;border-radius:50%;background:__PB_AGENT_COLOR__}
       .jq .t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .jq .t b{color:#F1F5FA}
       .jq .r{color:#A2B2C6}
@@ -426,7 +426,7 @@
       .jq.ap.ph{display:none}
       .ab{display:flex;flex-direction:column;gap:10px;min-width:0;font:500 13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#A2B2C6}
       .ab .ah{display:flex;align-items:center;gap:10px;min-width:0;padding-right:22px}
-      .ab .ai{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#e9763f;color:#0B1421;font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif}
+      .ab .ai{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:__PB_AGENT_COLOR__;color:#0B1421;font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif}
       .ab .aw{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .ab .aw b{color:#F1F5FA;font-weight:600}
       .ab .ac{margin-bottom:-6px;font-size:12px;color:#A2B2C6}
@@ -480,7 +480,7 @@
   // The driver dot: the tab's spark color (orange until one is set), muted while reconnecting.
   function paintDot() {
     const d = bar?.querySelector(".dot");
-    if (d) d.style.background = barReconnecting && !barPause ? "#8699B1" : sparkAgent || "#e9763f";
+    if (d) d.style.background = barReconnecting && !barPause ? "#8699B1" : sparkAgent || "__PB_AGENT_COLOR__";
   }
   function drawBar() {
     bar.classList.toggle("docked", docked);
@@ -764,7 +764,7 @@
     if (!wasBar) { drawBar(); placeBadge(); }
     for (const j of joins.values()) clearTimeout(j.timer); // the join requests wait unseen: no time runs out (joinLater)
     while (aps.size >= AP_KEEP) { const old = aps.keys().next().value; apDismissed = `${apDismissed},${old}`.slice(-400); aps.delete(old); }
-    const color = /^#[0-9a-fA-F]{6}$/.test(String(v.color || "")) ? String(v.color) : "#e9763f";
+    const color = /^#[0-9a-fA-F]{6}$/.test(String(v.color || "")) ? String(v.color) : "__PB_AGENT_COLOR__";
     aps.set(id, { who: String(v.who || "Agent").slice(0, 60), color, target: String(v.target || "").slice(0, 120), reason: String(v.reason || "").slice(0, 300), terminal: typeof v.terminal === "boolean" ? v.terminal : true });
     joinDraw();
     return true;
@@ -821,11 +821,11 @@
         .r{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(11,20,33,.5);opacity:0}
         .c.click .r{animation:p .45s ease-out}
         @keyframes p{from{opacity:.9;transform:scale(.4)}to{opacity:0;transform:scale(1.4)}}
-        span{position:absolute;left:16px;top:18px;${PILL};background:#e9763f}
-        .f{position:fixed;left:0;top:0;box-sizing:border-box;border:2px solid #e9763f;border-radius:4px;opacity:0;transition:opacity .15s;pointer-events:none}
+        span{position:absolute;left:16px;top:18px;${PILL};background:__PB_AGENT_COLOR__}
+        .f{position:fixed;left:0;top:0;box-sizing:border-box;border:2px solid __PB_AGENT_COLOR__;border-radius:4px;opacity:0;transition:opacity .15s;pointer-events:none}
         .f.on{opacity:1}
         @media (prefers-reduced-motion:reduce){.c,.f{transition:none}.c.click .r{animation:none;opacity:.9;transform:scale(.4);background:#fff}}
-      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="1 1 22 22"><path d="${POINTER}" fill="#fff" stroke="#e9763f" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span></div><div class="f" aria-hidden="true"></div>`);
+      </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="1 1 22 22"><path d="${POINTER}" fill="#fff" stroke="__PB_AGENT_COLOR__" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span></div><div class="f" aria-hidden="true"></div>`);
       cur = shadow.querySelector(".c");
       outlineEl = shadow.querySelector(".f");
       outline = null;
@@ -834,7 +834,7 @@
     }
     const tag = cur.querySelector("span");
     tag.textContent = shortWho(who);
-    const col = /^#[0-9a-f]{6}$/i.test(color) ? color : "#e9763f";
+    const col = /^#[0-9a-f]{6}$/i.test(color) ? color : "__PB_AGENT_COLOR__";
     tag.style.background = col;
     cur.querySelector("path").setAttribute("stroke", col); // a white pointer edged in the agent's color; the pill names it
     outlineEl.style.borderColor = col;
@@ -951,7 +951,7 @@
     const keep = new Set();
     for (const c of list.slice(0, 16)) {
       if (!c || typeof c.k !== "string") continue;
-      const color = /^#[0-9a-f]{6}$/i.test(c.color || "") ? c.color : "#e9763f";
+      const color = /^#[0-9a-f]{6}$/i.test(c.color || "") ? c.color : "__PB_AGENT_COLOR__";
       if (c.v) {
         keep.add(c.k);
         let v = views.get(c.k);
@@ -1108,7 +1108,7 @@
     ensure();
     const look = kind === "you" || kind === "done" ? kind : "claude";
     box.className = "b " + look;
-    const c = look === "you" ? "#3285F6" : look === "done" ? "#20C997" : edge || "#e9763f";
+    const c = look === "you" ? "#3285F6" : look === "done" ? "#20C997" : edge || "__PB_AGENT_COLOR__";
     box.style.borderLeftColor = c;
     box.querySelector("svg").style.color = c;
     // kind "agent": the text names the agent itself ("Codex: ...").

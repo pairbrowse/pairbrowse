@@ -2,7 +2,10 @@
 // approval bubble, settings), the new tab page and the live view (which serves this file from
 // here: an extension can load only its own files). It also holds helperStream, the one owner
 // event stream those pages share per origin. The live view's server imports addressToUrl too, so
-// this module must stay free of side effects: definitions only, nothing runs on import.
+// this module must stay free of side effects: definitions only, nothing runs on import. The words
+// and colors the helper shares with the pages are in vocab.js, re-exported here.
+import { STATE_WORDS, PAGE_KINDS, isColor } from "./vocab.js";
+export { STATE_WORDS, isColor };
 
 export const $ = (id) => document.getElementById(id);
 export function el(tag, props = {}, ...kids) { const n = document.createElement(tag); Object.assign(n, props); n.append(...kids); return n; }
@@ -128,8 +131,7 @@ export function ago(iso, now = Date.now()) {
   if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
   return new Date(t).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
 }
-// An agent's status (pairbrowse_status kinds) in words, so it never shows by color alone.
-export const STATE_WORDS = { working: "working", you: "waiting for their person", done: "done", idle: "idle" };
+// An agent's status in words (STATE_WORDS, vocab.js), so it never shows by color alone.
 export const stateWord = (s) => (Object.hasOwn(STATE_WORDS, s) ? STATE_WORDS[s] : "idle");
 // One vocabulary for an agent's or a person's state, the left dock's and the right dock's alike
 // (545): agents "Working", "Waiting for you" ("Waiting for their person" for an agent in another
@@ -482,7 +484,6 @@ export async function reportOffer(base) {
 // Participants as the side panel shows them: a color only when it is a plain #rrggbb (board
 // colors cross from other computers), "Name · App" split in two, and a round avatar with the
 // name's initial and the name as its accessible name.
-export const isColor = (c) => /^#[0-9a-f]{6}$/i.test(c || "");
 export const splitLabel = (who) => { const [name, app] = String(who || "").split(" · "); return { name: name || "", app: app || "" }; };
 export const initialOf = (name) => (String(name || "").trim()[0] || "?").toUpperCase();
 // The ink for text on a #rrggbb fill: white or the sheet's dark ink (--bg), whichever has the higher
@@ -779,7 +780,7 @@ export const OWN_STREAM_EVENTS = Object.freeze({ capture: Object.freeze(["captur
 
 // The helper's page kinds: one of them on the stream gets the browser pages' initial burst
 // (agent-tabs); the helper sends the same burst to every kind, so one kind stands for all.
-const STREAM_KINDS = new Set(["strip", "left", "right", "timeline", "approve", "picker", "screen", "capture"]);
+const STREAM_KINDS = new Set(PAGE_KINDS);
 
 // One EventSource to the helper: event(name, parsed data) for every STREAM_EVENTS name (a body
 // that is not JSON is dropped), state("live" | "connecting" | "closed").

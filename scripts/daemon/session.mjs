@@ -7,6 +7,7 @@
 // instructions: nothing here acts on one; it is only shown, and handed to the agent marked as such.
 import { maskCards } from "../policy.mjs";
 import { redact as redactSecrets } from "../secrets.mjs";
+import { BOARD_STATES } from "../../ui/vocab.js";
 
 const ENTRIES_MAX = 12;
 const TEXT_MAX = 500;
@@ -32,7 +33,7 @@ export function readEntry(e) {
   if (!e || !e.who) return null;
   return {
     who: clean(e.who, 60), kind: e.kind === "person" ? "person" : "agent", ...(COLOR.test(e.color || "") ? { color: e.color } : {}),
-    tab: clean(e.tab, 80), task: clean(e.task, 140), status: ["working", "you", "done", "idle"].includes(e.status) ? e.status : "idle", last: clean(e.last, 140),
+    tab: clean(e.tab, 80), task: clean(e.task, 140), status: BOARD_STATES.includes(e.status) ? e.status : "idle", last: clean(e.last, 140),
     ...(e.where ? { where: clean(e.where, 60) } : {}),
   };
 }

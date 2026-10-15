@@ -5,6 +5,7 @@ import { hudScript } from "../browser.mjs";
 import { isRef } from "../policy.mjs";
 import { within } from "../util.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
+import { APP_COLORS, AGENT_FALLBACKS } from "../../ui/vocab.js";
 
 const CALL_MS = 3000; // one call into a page script, at most
 
@@ -13,11 +14,9 @@ const CALL_MS = 3000; // one call into a page script, at most
 // Gemini blue. An agent whose app has none, or whose app's color another agent here already has
 // (two Claude Codes), takes the first of AGENT_FALLBACKS no agent here has (cyan first), so two
 // cursors never look the same; with all four taken it repeats. A color stays an agent's while it
-// is connected. People's colors (tabsync.mjs PEOPLE_COLORS) are never any of these.
-export const APP_COLORS = { claude: "#e9763f", codex: "#9b7bfa", gemini: "#4b8ffb" };
-export const AGENT_FALLBACKS = ["#4fd1e8", APP_COLORS.claude, APP_COLORS.codex, APP_COLORS.gemini];
-// Every color an agent can have; [0] is Claude's own (the sheets' --spark).
-export const SPARK_COLORS = [...new Set([...Object.values(APP_COLORS), ...AGENT_FALLBACKS])];
+// is connected. People's colors (PEOPLE_COLORS) are never any of these.
+// The colors themselves live in ui/vocab.js (one copy for the helper, hud.js and the pages).
+export { APP_COLORS, AGENT_FALLBACKS, SPARK_COLORS } from "../../ui/vocab.js";
 // Which app: its MCP clientInfo.name ("claude-code", "codex-mcp-client", a joiner's agent's
 // "remote:..."), or the app part of a label ("Alice · Codex"). "" for any other.
 export function appKey(name) {

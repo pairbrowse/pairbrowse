@@ -20,6 +20,7 @@ import { uploadProblem } from "../upload.mjs";
 import { AGENT_GONE } from "./remote-agents.mjs";
 import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { AGENT_COLOR, isColor } from "../../ui/vocab.js";
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
 function serially() {
@@ -405,7 +406,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       // Their agent's spark, in its color, on the copy here too; else a person using it there, as a
       // dot in their color. A picture page (shared browser) shows both in its own tab (showWho).
       if (!cur.shared) {
-        hud.setSharedSpark(page, t.agent ? (/^#[0-9a-f]{6}$/i.test(t.color || "") ? t.color : "#e9763f") : "");
+        hud.setSharedSpark(page, t.agent ? (isColor(t.color) ? t.color : AGENT_COLOR) : "");
         if (t.person) hud.setPersonMark(page, personColor(t.person));
       }
       const first = !cur.heard.has(t.id);
@@ -680,7 +681,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       // Never this person's own pointer (or their agents'), whatever the host sends.
       if (!page || page.isClosed() || !p.who || typeof raw.k !== "string" || ownPointer(raw.k, cur.joinerId)) continue;
       if (latencyLog && Number(raw.t) && !p.v) log(`latency pointer ${Date.now() - Number(raw.t)} ms`);
-      byPage.set(page, [...(byPage.get(page) || []), { k: raw.k.slice(0, 100), who: p.who, color: p.color || "#e9763f", x: p.x, y: p.y, ...(p.v ? { v: 1, h: p.h } : {}) }]);
+      byPage.set(page, [...(byPage.get(page) || []), { k: raw.k.slice(0, 100), who: p.who, color: p.color || AGENT_COLOR, x: p.x, y: p.y, ...(p.v ? { v: 1, h: p.h } : {}) }]);
     }
     for (const page of cur.drawn) if (!byPage.has(page) && !page.isClosed()) hud.showPointers(page, []);
     cur.drawn = new Set(byPage.keys());

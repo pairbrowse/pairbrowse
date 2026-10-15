@@ -5,6 +5,7 @@
 // saves it; nothing here talks to a page or the network. Asked only by the helper, through a
 // transport (transport-extension.js or transport-native.js): record(m) takes today's rec* ops.
 import { captured, has, capturing, capture, stopTab, onTabStopped } from "./capture.js";
+import { AGENT_COLOR, isColor } from "../vocab.js";
 
 const STRIP = 40; // the tab strip's height, in CSS pixels
 const RECORD_TYPES = ["video/mp4;codecs=avc1.640028", "video/mp4", "video/webm;codecs=vp9", "video/webm"];
@@ -118,7 +119,7 @@ function strip() {
     const label = rec.labels[t.id];
     const room = x + tw - 12 * scale;
     if (label?.who) {
-      ctx.fillStyle = /^#[0-9a-f]{6}$/i.test(label.color || "") ? label.color : "#e9763f";
+      ctx.fillStyle = isColor(label.color) ? label.color : AGENT_COLOR;
       ctx.beginPath();
       ctx.arc(tx + 4 * scale, h / 2 + 3 * scale, 4.5 * scale, 0, Math.PI * 2);
       ctx.fill();

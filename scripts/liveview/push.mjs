@@ -5,6 +5,7 @@
 // script. What may cross is decided in tabsync.mjs, per joiner.
 import { shareableUrl, onSecretDomain, readPointers, personColor, formForJoiner, VIEW_FRESH_MS, TABS_MAX } from "../tabsync.mjs";
 import { cleanName } from "../join.mjs";
+import { AGENT_COLOR } from "../../ui/vocab.js";
 import { stateAgo } from "../daemon/presence.mjs";
 import { createHmac, randomBytes } from "node:crypto";
 
@@ -153,7 +154,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       try { meta = tabMeta(page) || {}; } catch {}
       // An agent's cursor here is drawn in the tab (hud.js), so a shared browser joiner sees it in
       // their picture of the tab already: sent on its own only to joiners with copies of the tab.
-      if (r?.agent && Date.now() - Number(r.agent.t) < AGENT_POINTER_MS && meta.agent && !meta.agent.joined && st.j?.invite?.mode !== "shared") out.push({ id, x: r.agent.x, y: r.agent.y, t: r.agent.t, who: meta.agent.label, color: meta.agent.color || "#e9763f", k: `host-agent:${id}` });
+      if (r?.agent && Date.now() - Number(r.agent.t) < AGENT_POINTER_MS && meta.agent && !meta.agent.joined && st.j?.invite?.mode !== "shared") out.push({ id, x: r.agent.x, y: r.agent.y, t: r.agent.t, who: meta.agent.label, color: meta.agent.color || AGENT_COLOR, k: `host-agent:${id}` });
     }
     // Never a joiner's own (theirs is the mouse they hold); to a shared browser joiner, never what
     // their picture of the tab shows already (follow joiners' pointers, drawn in the tab here).
@@ -295,7 +296,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       const list = [];
       const place = at && [at.x, at.y].every((n) => Number.isFinite(n) && n >= 0 && n <= 1) ? { vx: Math.round(at.x * 10000) / 10000, vy: Math.round(at.y * 10000) / 10000 } : {};
       if (me) list.push({ ...me, ...place, t, who: cleanName(j.name), color: personColor(j.name), k: `${key}:me` });
-      agents.forEach((a, i) => list.push({ ...a, t, color: a.color || "#e9763f", k: `${key}:a${i}` }));
+      agents.forEach((a, i) => list.push({ ...a, t, color: a.color || AGENT_COLOR, k: `${key}:a${i}` }));
       joinerPointers.set(key, { t: Date.now(), list });
       // Where they read stays shown while they stay put (a pointer fades after a few seconds).
       if (view) { const was = joinerViews.get(key); joinerViews.set(key, { ...view, who: cleanName(j.name), color: personColor(j.name), k: `${key}:view`, t: was && was.id === view.id && was.y === view.y && was.h === view.h ? was.t : Date.now() }); }

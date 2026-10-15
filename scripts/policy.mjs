@@ -1,4 +1,5 @@
 // Rules the daemon enforces on every tool call, whatever the hooks or permission mode say.
+import { STATUS_KINDS, ROLES, SHARE_MODES } from "../ui/vocab.js";
 
 // run_code_unsafe runs arbitrary code in the helper. The webmcp tools let web pages register
 // their own tools for Claude to call, which hands a hostile page a direct line to Claude.
@@ -36,7 +37,7 @@ export const STATUS_TOOL = {
   inputSchema: {
     type: "object",
     required: ["kind"],
-    properties: { text: { type: "string", maxLength: 140 }, kind: { type: "string", enum: ["claude", "you", "done", "clear"] } },
+    properties: { text: { type: "string", maxLength: 140 }, kind: { type: "string", enum: [...STATUS_KINDS] } },
   },
 };
 
@@ -60,11 +61,11 @@ export const INVITE_TOOL = {
     required: ["action"],
     properties: {
       action: { type: "string", enum: ["create", "list", "approve", "deny", "revoke", "revoke_all", "share_port", "unshare_port"] },
-      role: { type: "string", enum: ["watch", "drive"] },
+      role: { type: "string", enum: [...ROLES] },
       label: { type: "string", maxLength: 40 },
       hours: { type: "number", exclusiveMinimum: 0, maximum: 168 },
       share: { type: "string", enum: ["code", "link"] },
-      mode: { type: "string", enum: ["shared", "follow"], description: "Join codes: 'shared' (the default: they work in this browser itself, seeing every tab live with sound, logged in as the user; nothing of the logins leaves this computer) or 'follow' (their own browser opens these tabs and follows them; only when the user asks)." },
+      mode: { type: "string", enum: [...SHARE_MODES], description: "Join codes: 'shared' (the default: they work in this browser itself, seeing every tab live with sound, logged in as the user; nothing of the logins leaves this computer) or 'follow' (their own browser opens these tabs and follows them; only when the user asks)." },
       name: { type: "string", maxLength: 40, description: "create: the user's own name as joiners see it (asked once when none is saved, then remembered)." },
       id: { type: "string", maxLength: 40, description: "An invite id (revoke) or a join request id (approve, deny)." },
       port: { type: "integer", minimum: 1, maximum: 65535, description: "share_port, unshare_port: the dev server's port on this computer (for example 3000)." },

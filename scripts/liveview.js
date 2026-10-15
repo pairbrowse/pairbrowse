@@ -2,6 +2,7 @@
 // typing sent back. Served by liveview.mjs under the page's key, with no inline code allowed.
 // body data-role is "owner" (your own link), "drive" or "watch" (invite links): the server
 // enforces it; this only keeps refused controls out of sight.
+import { AGENT_COLOR } from "./vocab.js";
 import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose, avatar, splitLabel, stateWord, ago, doneLine, shareCard } from "./common.js";
 
 const base = location.pathname.replace(/\/?$/, "/");
@@ -176,9 +177,9 @@ on("joiner-pointers", (list) => {
 
 // An agent's spark color, only if it is a plain color value.
 const agentColor = (c) => /^#[0-9a-f]{3,8}$|^(rgb|hsl|oklch)a?\([\d.,%\s/]+\)$/i.test(String(c || "")) ? c : "";
-// Claude's own orange (SPARK_COLORS[0]) is the sheet's --spark, which darkens in the light scheme:
+// Claude's own orange (AGENT_COLOR) is the sheet's --spark, which darkens in the light scheme:
 // the owner dot then matches the spark beside it.
-const dotColor = (c) => { const v = agentColor(c); return v.toLowerCase() === "#e9763f" ? "var(--spark)" : v; };
+const dotColor = (c) => { const v = agentColor(c); return v.toLowerCase() === AGENT_COLOR ? "var(--spark)" : v; };
 const tabName = (t) => t.title && t.title !== "about:blank" ? t.title : "New tab";
 
 // ---- tab overview: who is in each tab ----

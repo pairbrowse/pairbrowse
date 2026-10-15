@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { hidePersonTabs, PERSON_TAB_RULE, PERSON_TAB_LINE } from "../scripts/daemon/output.mjs";
 import { tabRefusal } from "../scripts/daemon/serve.mjs";
 import { createPersonTabs } from "../scripts/daemon/toolstab.mjs";
-import { CHROME_PAGE_RULE } from "../scripts/policy.mjs";
+import { CHROME_PAGE_RULE } from "../scripts/rules/policy.mjs";
 
 const page = (url) => ({ url: () => url });
 
@@ -84,7 +84,7 @@ test("createPersonTabs: add, has, delete; any file: tab counts", () => {
 });
 
 test("the four cases: a file: tab the person opened, by index, an agent's tab navigated to file:, and the tabs list", async () => {
-  const { HIDDEN_TOOLS } = await import("../scripts/policy.mjs");
+  const { HIDDEN_TOOLS } = await import("../scripts/rules/policy.mjs");
   const set = createPersonTabs(); // the helper never added any of these tabs
   const personTab = (p) => set.has(p);
   const refusal = `${PERSON_TAB_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;

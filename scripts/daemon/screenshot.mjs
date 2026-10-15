@@ -8,9 +8,9 @@
 // that changed nothing costs no image. The map goes stale with the page: another address, a
 // scroll, a resize or a tab that closed, and a click on the old picture is refused.
 import { createHash } from "node:crypto";
-import { redact } from "../secrets.mjs";
+import { redact } from "../rules/secrets.mjs";
 import { sleep, within, pageLoaded } from "../util.mjs";
-import { strongSignal } from "../clickrule.mjs";
+import { strongSignal } from "../rules/clicks.mjs";
 import { withHelpers, buttonLabel, clickRisk, clickContext } from "./page.mjs";
 
 const LOAD_WAIT_MS = 4000;

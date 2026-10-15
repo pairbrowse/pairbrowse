@@ -38,7 +38,7 @@ import { join, dirname, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
-import { secretStore } from "./secrets.mjs";
+import { secretStore } from "./rules/secrets.mjs";
 import { createFollow, isScreenPage } from "./daemon/follow.mjs";
 import { createCaptureBackend, targetIdOf } from "./daemon/capture.mjs";
 import { createCaptureChannel } from "./liveview/capture.mjs";

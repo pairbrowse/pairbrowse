@@ -1,7 +1,7 @@
 // Every tool result on its way to the agent: popups closed and the page settled, notes (popups
 // handled, people, messages, pauses), what a narrow window folded away, masking, the person's
 // tabs hidden, and a small picture of the page.
-import { isRef, trimResult } from "../../policy.mjs";
+import { isRef, trimResult } from "../../rules/policy.mjs";
 import { pageLoaded, within } from "../../util.mjs";
 import { hideChromeTabs, hidePersonTabs } from "../output.mjs";
 import { settle } from "../page.mjs";

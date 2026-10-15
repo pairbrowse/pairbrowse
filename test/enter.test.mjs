@@ -152,7 +152,7 @@ test("waitFor also finds a field by its placeholder", { skip: !runtime, timeout:
 test("Enter in a payment field inside a cross-site frame is judged in the frame and refused", { skip: !runtime, timeout: 60_000 }, async () => {
   const { createServer } = await import("node:http");
   const { riskAt, focusedFrame } = await import("../scripts/runner.mjs");
-  const { strongSignal } = await import("../scripts/clickrule.mjs");
+  const { strongSignal } = await import("../scripts/rules/clicks.mjs");
   const site = createServer((req, res) => {
     res.writeHead(200, { "content-type": "text/html" });
     res.end(req.url.startsWith("/frame") ? `<form onsubmit="parent.postMessage('sent','*');return false"><label>Card number <input id="cc" autocomplete="cc-number"></label><button>Pay $49</button></form>`

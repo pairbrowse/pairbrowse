@@ -36,7 +36,7 @@ test("Claude's orange is written once: the page script and the sheets take it fr
 });
 
 test("the tools' enums are the vocabulary's", async () => {
-  const { STATUS_TOOL, INVITE_TOOL } = await import("../scripts/policy.mjs");
+  const { STATUS_TOOL, INVITE_TOOL } = await import("../scripts/rules/policy.mjs");
   assert.deepEqual(STATUS_TOOL.inputSchema.properties.kind.enum, [...vocab.STATUS_KINDS]);
   assert.deepEqual(INVITE_TOOL.inputSchema.properties.role.enum, [...vocab.ROLES]);
   assert.deepEqual(INVITE_TOOL.inputSchema.properties.mode.enum, [...vocab.SHARE_MODES]);
@@ -44,7 +44,7 @@ test("the tools' enums are the vocabulary's", async () => {
 
 test("the browser's own addresses have one set of rules, for the helper and the pages", async () => {
   const urls = await import("../ui/urls.js");
-  const policy = await import("../scripts/policy.mjs");
+  const policy = await import("../scripts/rules/policy.mjs");
   const common = await import("../ui/common.js");
   for (const name of ["isChromePage", "isChromeScreenPage", "hiddenFromLiveView", "CHROME_PAGE_ORIGINS"]) assert.equal(policy[name], urls[name], name);
   for (const name of ["addressToUrl", "servedByBrowser", "REPORT_URL"]) assert.equal(common[name], urls[name], name);

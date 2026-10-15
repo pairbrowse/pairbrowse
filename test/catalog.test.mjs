@@ -38,7 +38,7 @@ test("rules that go together do", () => {
 });
 
 test("policy, guard and validate-skills read their lists from the catalog", async () => {
-  const policy = await import("../scripts/policy.mjs");
+  const policy = await import("../scripts/rules/policy.mjs");
   const guard = await import("../scripts/guard.mjs");
   assert.deepEqual([...policy.BLOCKED_TOOLS], ["browser_run_code_unsafe", "browser_webmcp_list", "browser_webmcp_call"]);
   assert.ok(policy.HIDDEN_TOOLS.has("browser_take_screenshot") && policy.HIDDEN_TOOLS.has("browser_evaluate"));

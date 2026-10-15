@@ -22,7 +22,8 @@
 // a person's own click (presence.byPerson) in that very tab, ARM_MS or more after it showed; the
 // page script checks the same first (scripts/hud.js).
 import { randomBytes } from "node:crypto";
-import { approvalAsk, approvalKey, APPROVAL_TOOLS, APPROVAL_WAIT_MS, HOOK_MARK } from "../guard.mjs";
+import { approvalAsk, approvalKey, APPROVAL_TOOLS } from "../rules/decide.mjs";
+import { APPROVAL_WAIT_MS, HOOK_MARK } from "../guard.mjs";
 import { within } from "../util.mjs";
 import { AGENT_COLOR } from "../../ui/vocab.js";
 

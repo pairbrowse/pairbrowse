@@ -2,7 +2,7 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hostOk, originOk, keyOk, addressToUrl } from "../scripts/liveview.mjs";
-import { navigationProblem } from "../scripts/policy.mjs";
+import { navigationProblem } from "../scripts/rules/policy.mjs";
 
 test("live view answers only to loopback addresses (any port, for SSH tunnels)", () => {
   assert.equal(hostOk("127.0.0.1:4000"), true);

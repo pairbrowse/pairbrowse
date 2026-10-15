@@ -20,10 +20,10 @@ process.env.PAIRBROWSE_HOME = join(home, ".pairbrowse");
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const { uploadProblem, secretInside, MEDIA } = await import("../../scripts/upload.mjs");
-const { looksLikeCard, shownValue, SENSITIVE, secretNamesIn, looksLikeSecretName, isRef, trimResult } = await import("../../scripts/policy.mjs");
-const { redact, cleanDomains, validSecretName, nameFromLabel, parseSecrets, writeSecrets, setSecret } = await import("../../scripts/secrets.mjs");
+const { looksLikeCard, shownValue, SENSITIVE, secretNamesIn, looksLikeSecretName, isRef, trimResult } = await import("../../scripts/rules/policy.mjs");
+const { redact, cleanDomains, validSecretName, nameFromLabel, parseSecrets, writeSecrets, setSecret } = await import("../../scripts/rules/secrets.mjs");
 const { decide, clickClass, uploadAllowed, CLICK_CLASSES } = await import("../../scripts/guard.mjs");
-const { clickRule, dialogRule, strongSignal } = await import("../../scripts/clickrule.mjs");
+const { clickRule, dialogRule, strongSignal } = await import("../../scripts/rules/clicks.mjs");
 
 // Values a tool's JSON arguments can carry where a string is expected.
 const loose = fc.oneof(fc.string(), fc.integer(), fc.double(), fc.boolean(), fc.constant(null), fc.constant(undefined), fc.array(fc.string(), { maxLength: 3 }));

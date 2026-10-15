@@ -7,8 +7,8 @@ import { join } from "node:path";
 
 process.env.PAIRBROWSE_HOME = mkdtempSync(join(tmpdir(), "pb-profile-"));
 const { setFact, forgetFact, importMarkdown, loadFacts, saveFacts } = await import("../scripts/facts.mjs");
-const { setSecret, deleteSecret, writeSecrets, loadSecrets, cleanDomains, validSecretName } = await import("../scripts/secrets.mjs");
-const { SENSITIVE } = await import("../scripts/policy.mjs");
+const { setSecret, deleteSecret, writeSecrets, loadSecrets, cleanDomains, validSecretName } = await import("../scripts/rules/secrets.mjs");
+const { SENSITIVE } = await import("../scripts/rules/policy.mjs");
 
 test("what you set beats what Claude was told or a form showed", () => {
   let d = setFact([], { label: "VAT number", value: "NL001", source: "form", site: "a.test" }).details;

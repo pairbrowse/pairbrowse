@@ -1,5 +1,5 @@
 // browser_drag, run by PairBrowse itself (daemon/drag.mjs).
-import { isRef } from "../../../policy.mjs";
+import { isRef } from "../../../rules/policy.mjs";
 import { dragBetween, reason as dragReason } from "../../drag.mjs";
 import { settle } from "../../page.mjs";
 import { CLICK_SETTLE_MS } from "../result.mjs";

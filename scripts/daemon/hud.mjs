@@ -2,7 +2,7 @@
 // the last actions, the spark on each agent's tab icon (a dot for a person from the other browser
 // of a shared tab), and Claude's cursor.
 import { hudScript } from "../browser.mjs";
-import { isRef } from "../policy.mjs";
+import { isRef } from "../rules/policy.mjs";
 import { within } from "../util.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 import { APP_COLORS, AGENT_FALLBACKS } from "../../ui/vocab.js";

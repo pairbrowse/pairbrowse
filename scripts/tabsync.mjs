@@ -8,8 +8,8 @@
 //
 // This file has no side effects: which addresses may cross, the requests' limits, and the
 // bookkeeping that keeps an update applied on one side from bouncing back.
-import { SENSITIVE, looksLikeCard } from "./policy.mjs";
-import { isLocalNetwork } from "./guard.mjs";
+import { SENSITIVE, looksLikeCard } from "./rules/policy.mjs";
+import { isLocalNetwork } from "./rules/network.mjs";
 import { stripText, eachUrl, textOf, numOf } from "./join.mjs";
 import { redact } from "./daemon/board.mjs";
 import { PEOPLE_COLORS, AGENT_COLOR, COLOR } from "../ui/vocab.js";

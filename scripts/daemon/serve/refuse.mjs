@@ -2,15 +2,16 @@
 // never a person's own tab), its arguments, the PairBrowse safety rules (guard.mjs), approvals
 // given in the browser, and the browser tools' own checks (web pages only, passwords only on their
 // sites, no final action pressed under a milder name). Each returns a refusal's text, or null.
-import { isChromePage, CHROME_PAGE_RULE, BLOCKED_TOOLS, isRef, looksLikeSecretName, navigationProblem, secretNamesIn } from "../../policy.mjs";
+import { isChromePage, CHROME_PAGE_RULE, BLOCKED_TOOLS, isRef, looksLikeSecretName, navigationProblem, secretNamesIn } from "../../rules/policy.mjs";
 import { isUntouchedStart } from "../../tabs.mjs";
 import { PERSON_TAB_RULE } from "../output.mjs";
 import { CHROME_GUARDED, REMOTE_TOOLS } from "./wire.mjs";
 import { STATUS_KINDS } from "../../../ui/vocab.js";
-import { clickRule, dialogRule, strongSignal } from "../../clickrule.mjs";
-import { APPROVAL_TOOLS, approvalAsk, clickClass, decide } from "../../guard.mjs";
+import { clickRule, dialogRule, strongSignal } from "../../rules/clicks.mjs";
+import { APPROVAL_TOOLS, approvalAsk, decide } from "../../rules/decide.mjs";
+import { clickClass } from "../../rules/clicks.mjs";
 import { activatingKey, contextAt, enterButtonLabel, riskAt, riskReason } from "../../runner.mjs";
-import { hostAllowed } from "../../secrets.mjs";
+import { hostAllowed } from "../../rules/secrets.mjs";
 import { pathsIn } from "../../upload.mjs";
 import { within } from "../../util.mjs";
 import { originOf, sameWhere } from "../approvals.mjs";
@@ -201,7 +202,7 @@ export function createRefusals(conn, api) {
       popups.dialogAnswered(page);
     }
     // A click, judged by what it does (the page's structure, never its words; daemon/page.mjs
-    // clickRisk) and then by scripts/clickrule.mjs: a final action by strong signals is refused
+    // clickRisk) and then by scripts/rules/clicks.mjs: a final action by strong signals is refused
     // until element names its class; everything else goes, and the hook asks about any class
     // the agent named from its task.
     if (name === "browser_click") {

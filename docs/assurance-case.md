@@ -58,7 +58,7 @@ software can stop, such as a person the user deliberately let drive their browse
   the helper's checks, whichever app sent it (apps that can't ask the user get the same decisions
   in the helper).
 - **Economy of mechanism.** Hooks and the helper use only Node's standard library; checks are small
-  pure functions (`policy.mjs`, `secrets.mjs`, `liveview/http.mjs`) that are unit-tested and fuzzed.
+  pure functions (`scripts/rules/policy.mjs`, `scripts/rules/secrets.mjs`, `liveview/http.mjs`) that are unit-tested and fuzzed.
 - **Separation of privilege.** A final action needs the agent to name it *and* the user to confirm
   it; a joiner needs a key *and* the user's Allow.
 - **Open design.** Everything except the optional native browser builds is public; security does

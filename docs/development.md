@@ -123,7 +123,7 @@ The plugin is small:
 | `.claude-plugin/`, `.codex-plugin/` | Plugin manifests for Claude Code and Codex (same skill, servers and hooks; `.codex-plugin/mcp.json` names Codex's servers) |
 | `.mcp.json` (Claude Code), `.codex-plugin/mcp.json` (Codex), `scripts/launch.mjs` | Bridge both apps run: installs the pinned runtime, starts or reconnects to the helper |
 | `scripts/daemon.mjs`, `scripts/daemon/` | The helper: owns Chrome over a pipe, serves shared clients over a private socket, enforces policy (tool calls, browser and sessions, people at the browser, the in-page badge and bar, screenshots, masking, side panel, sharing) |
-| `scripts/policy.mjs`, `scripts/secrets.mjs` | Rules the helper enforces: blocked tools, navigation, secret domains |
+| `scripts/rules/policy.mjs`, `scripts/rules/secrets.mjs` | Rules the helper enforces: blocked tools, navigation, secret domains |
 | `scripts/browser/choice.mjs` | Which browser launches: the binary (Chromium, a path of your own, the native build) and the shell (the side panel extension, or the build's own pages), chosen in one pure function and never written into config |
 | `scripts/tools/catalog.mjs` | Every tool's definition and rules, in one place (serve, guard, policy, launch, runs and the skill check read it) |
 | `ui/vocab.js`, `ui/urls.js`, `ui/limits.js`, `ui/events.js` | What the helper and the pages share: words and colors, the browser's own addresses, limits both sides keep, the live view's events and who gets each |

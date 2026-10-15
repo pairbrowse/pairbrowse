@@ -1,7 +1,7 @@
 // Popups the browser handles by itself, so Claude (and Codex) don't get stuck on them:
 // - Page dialogs: alerts and "leave this page?" are answered right away and reported. A confirm
 //   (a page asks one before something it treats as consequential) and a prompt are left for Claude
-//   (browser_handle_dialog), whose OK goes unless it's a final action the user confirms (scripts/clickrule.mjs).
+//   (browser_handle_dialog), whose OK goes unless it's a final action the user confirms (scripts/rules/clicks.mjs).
 // - New tabs a page opens (sign-in and consent popups, target=_blank links): Claude is told which
 //   tab opened, and when it closes again. Tabs brought back at startup aren't announced.
 // - Overlays inside the page that interrupt (cookie banners, newsletter, discount and app

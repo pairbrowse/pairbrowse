@@ -1,7 +1,7 @@
 // Replays a viewer's mouse, touch, keys and navigation on the shown tab through its CDP session,
 // and keeps the page's screencast at the viewer's size ("Fit to pane").
-import { navigationProblem } from "../policy.mjs";
-import { isLocalNetwork } from "../guard.mjs";
+import { navigationProblem } from "../rules/policy.mjs";
+import { isLocalNetwork } from "../rules/network.mjs";
 // The one address bar rule, shared with the new tab page and the viewer.
 import { addressToUrl } from "../../ui/urls.js";
 

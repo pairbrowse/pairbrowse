@@ -4,7 +4,7 @@
 // saved passwords swapped in, a form filled by hand in the native browser).
 import { describe } from "../../log.mjs";
 import { fillSettings, humanFill, humanType } from "../../native-engine.mjs";
-import { isRef, secretNamesIn } from "../../policy.mjs";
+import { isRef, secretNamesIn } from "../../rules/policy.mjs";
 import { isoDate } from "../../runner.mjs";
 import { within } from "../../util.mjs";
 import { reason as dragReason } from "../drag.mjs";

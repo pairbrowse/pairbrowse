@@ -1,5 +1,5 @@
 // pairbrowse_click_at: a click at a spot in the agent's last screenshot (screenshot.mjs clickAt).
-import { clickClass } from "../../../guard.mjs";
+import { clickClass } from "../../../rules/clicks.mjs";
 import { settle } from "../../page.mjs";
 import { SAME_PICTURE, SETTLE_MS, image } from "../result.mjs";
 

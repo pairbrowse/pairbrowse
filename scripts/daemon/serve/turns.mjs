@@ -3,7 +3,7 @@
 // another agent holding it is waited for briefly, else the call is refused).
 import { keepFocus } from "../../focus.mjs";
 import { GONE_MS } from "../../liveview/push.mjs";
-import { isChromePage } from "../../policy.mjs";
+import { isChromePage } from "../../rules/policy.mjs";
 import { sleep, within } from "../../util.mjs";
 import { waitForLink, waitedLine } from "../linkwait.mjs";
 

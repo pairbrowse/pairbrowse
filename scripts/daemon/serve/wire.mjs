@@ -3,7 +3,7 @@
 // an app without pictures). Pure: no state, no page.
 import { homedir, tmpdir } from "node:os";
 import { paths } from "../../paths.mjs";
-import { isRef } from "../../policy.mjs";
+import { isRef } from "../../rules/policy.mjs";
 import { HELPER_TOOLS, toolsWith } from "../../tools/catalog.mjs";
 
 // The helper's own tools, listed after the browser's, and each tool's rules below: the catalog's.

@@ -2,7 +2,7 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { navigationProblem, isChromePage, hiddenFromLiveView, CHROME_PAGE_RULE, CHROME_PAGE_ORIGINS } from "../scripts/policy.mjs";
+import { navigationProblem, isChromePage, hiddenFromLiveView, CHROME_PAGE_RULE, CHROME_PAGE_ORIGINS } from "../scripts/rules/policy.mjs";
 import { hideChromeTabs } from "../scripts/daemon/output.mjs";
 
 const OWN = ["chrome://pairbrowse/picker", "chrome://pairbrowse.top-chrome/strip", "chrome://PairBrowse/x?y#z", "  chrome://pairbrowse"];
@@ -55,7 +55,7 @@ test("agents never open file: addresses, a downloaded file's included", () => {
 });
 
 test("pairbrowse:// addresses are the browser's own, as chrome://pairbrowse ones: refused, hidden, never an agent's", async () => {
-  const { isChromePage, isChromeScreenPage, hiddenFromLiveView, navigationProblem, CHROME_PAGE_RULE } = await import("../scripts/policy.mjs");
+  const { isChromePage, isChromeScreenPage, hiddenFromLiveView, navigationProblem, CHROME_PAGE_RULE } = await import("../scripts/rules/policy.mjs");
   const { hideChromeTabs } = await import("../scripts/daemon/output.mjs");
   for (const u of ["pairbrowse://settings", "pairbrowse://browser-settings", "PAIRBROWSE://about", " pairbrowse://newtab/", "pairbrowse:sessions"]) {
     assert.equal(isChromePage(u), true, u);

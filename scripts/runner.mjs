@@ -8,10 +8,11 @@
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
-import { navigationProblem, isRef, SENSITIVE } from "./policy.mjs";
-import { hostAllowed } from "./secrets.mjs";
-import { isLocalNetwork, clickClass } from "./guard.mjs";
-import { strongSignal } from "./clickrule.mjs";
+import { navigationProblem, isRef, SENSITIVE } from "./rules/policy.mjs";
+import { hostAllowed } from "./rules/secrets.mjs";
+import { isLocalNetwork } from "./rules/network.mjs";
+import { clickClass } from "./rules/clicks.mjs";
+import { strongSignal } from "./rules/clicks.mjs";
 import { uploadProblem, uploadFiles } from "./upload.mjs";
 import { slug } from "./runs.mjs";
 import { addressOnly } from "./log.mjs";

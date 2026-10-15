@@ -6,7 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { writeJsonAtomic } from "./util.mjs";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
-import { setSecret, deleteSecret } from "./secrets.mjs";
+import { setSecret, deleteSecret } from "./rules/secrets.mjs";
 
 export const FACTS_FILE = join(paths.home, "facts.json");
 const MAX = 400;

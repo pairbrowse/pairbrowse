@@ -3,7 +3,7 @@
 // swept up after a while.
 import { readFileSync, writeFileSync, rmSync, existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { redact } from "../secrets.mjs";
+import { redact } from "../rules/secrets.mjs";
 import { isChromePage } from "../../ui/urls.js";
 
 // Playwright's own snapshot and console files in the files folder; never your own files there.

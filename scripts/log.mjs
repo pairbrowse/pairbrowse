@@ -5,7 +5,7 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
-import { shownValue, BROWSER_PREFIX } from "./policy.mjs";
+import { shownValue, BROWSER_PREFIX } from "./rules/policy.mjs";
 
 // values: false (the activity line, kept in the session's activity log): field names without what
 // was typed or chosen, and addresses as origin and path only (no query or fragment, which carry

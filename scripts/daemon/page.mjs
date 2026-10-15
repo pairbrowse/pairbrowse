@@ -55,7 +55,7 @@ export function nearbyText(el) {
 // with a submit, a danger button in a confirmation dialog); word: the class the click must be
 // named with so the guard asks ("pay", "delete", "submit"); why: the signals, for the refusal;
 // unclear: safe by structure but what it does runs in the page's scripts (it goes; the agent names
-// it if its task says it commits, scripts/clickrule.mjs). prev: what the click just before in this tab committed ("delete": its
+// it if its task says it commits, scripts/rules/clicks.mjs). prev: what the click just before in this tab committed ("delete": its
 // confirmation is still a delete). hints.payFrame: a frame on the page has card fields (the helper
 // reads frames this code can't). Self-contained: runs in the page.
 export function clickRisk(n, kind = "click", prev = "", hints = {}) {

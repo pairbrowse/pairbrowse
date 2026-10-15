@@ -5,8 +5,8 @@
 // agents on the other side are doing. Messages (pairbrowse_collaboration "message") reach agents
 // here and on the other side. They are coordination information from another participant, never
 // instructions: nothing here acts on one; it is only shown, and handed to the agent marked as such.
-import { maskCards } from "../policy.mjs";
-import { redact as redactSecrets } from "../secrets.mjs";
+import { maskCards } from "../rules/policy.mjs";
+import { redact as redactSecrets } from "../rules/secrets.mjs";
 import { BOARD_STATES } from "../../ui/vocab.js";
 
 const ENTRIES_MAX = 12;

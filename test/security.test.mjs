@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, chmodSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseSecrets, loadSecrets, hostAllowed, redact } from "../scripts/secrets.mjs";
-import { secretNamesIn, navigationProblem, looksLikeSecretName, BLOCKED_TOOLS } from "../scripts/policy.mjs";
+import { parseSecrets, loadSecrets, hostAllowed, redact } from "../scripts/rules/secrets.mjs";
+import { secretNamesIn, navigationProblem, looksLikeSecretName, BLOCKED_TOOLS } from "../scripts/rules/policy.mjs";
 
 test("secrets carry their allowed domains", () => {
   const s = parseSecrets("# c\nSHOP_PW='p@ss'\nSHOP_PW_DOMAINS=accounts.shopify.com, *.example.com\nLOOSE_PW=x\nEMPTY=\n");
@@ -77,7 +77,7 @@ test("files PairBrowse creates are private", { skip: process.platform === "win32
 });
 
 test("tool results are trimmed to what Claude needs", async () => {
-  const { trimResult, HIDDEN_TOOLS } = await import("../scripts/policy.mjs");
+  const { trimResult, HIDDEN_TOOLS } = await import("../scripts/rules/policy.mjs");
   const raw = "### Ran Playwright code\n```js\nawait page.goto('x');\n```\n### Open tabs\n- 0: (current) [A](https://a)\n- 1: [B](https://b)\n### Page\n- Page URL: https://a\n- Console: 1 errors, 0 warnings\n### Events\n- New console entries: x.log\n";
   const navigate = trimResult("browser_navigate", raw);
   assert.ok(!navigate.includes("Open tabs") && !navigate.includes("Events") && !navigate.includes("Console:"));
@@ -99,7 +99,7 @@ test("servers without a screen get a private virtual screen", async () => {
 });
 
 test("only snapshot refs count as refs, not numbers or short words", async () => {
-  const { isRef } = await import("../scripts/policy.mjs");
+  const { isRef } = await import("../scripts/rules/policy.mjs");
   for (const ref of ["e42", "f1e7"]) assert.ok(isRef(ref), ref);
   for (const other of ["2024", "x9", "E42", "#e42", "button", "", undefined]) assert.ok(!isRef(other), String(other));
 });
@@ -122,7 +122,7 @@ test("the launch self-check's virtual screen has its own X cookie, so a running 
 });
 
 test("a tab list comes once: the open-tabs section is dropped when browser_tabs already lists them", async () => {
-  const { trimResult } = await import("../scripts/policy.mjs");
+  const { trimResult } = await import("../scripts/rules/policy.mjs");
   const out = trimResult("browser_tabs", "### Result\n- 0: [A](http://a/)\n- 1: (current) [B](http://b/)\n### Open tabs\n- 0: [A](http://a/)\n- 1: (current) [B](http://b/)\n");
   assert.equal((out.match(/^- \d+: /gm) || []).length, 2, out);
   // A tab change (new, close) without its own list still shows the open tabs.

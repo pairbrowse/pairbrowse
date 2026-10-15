@@ -46,7 +46,7 @@ what each boundary protects against, see [security.md](security.md) and the
   `outline` (the last whole-page snapshot an agent got per tab, in memory, dropped with the tab).
   With a native build that has its own pages, those `chrome://pairbrowse` pages are live view
   clients with a key of their own from an owner-only key file named in the launch switches; the picker's pick comes over `POST pick`.
-- **Policy and secrets** (`scripts/policy.mjs`, `scripts/secrets.mjs`): which addresses open,
+- **Policy and secrets** (`scripts/rules/policy.mjs`, `scripts/rules/secrets.mjs`): which addresses open,
   which clicks need the user, where a password may be typed and how it is masked. Which tools exist
   and each tool's rules (blocked, hidden, approval, turn-taking, screenshots) are the tool catalog's
   (`scripts/tools/catalog.mjs`), which the helper, the hooks and the skill check all read.

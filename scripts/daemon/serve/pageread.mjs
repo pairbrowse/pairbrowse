@@ -1,6 +1,6 @@
 // What the tool server reads in a page for its checks: a button's own label, whether a field is
 // sensitive by its own kind, and whether a navigation got where it was asked to. Each read bounded.
-import { isRef, sensitiveLabel } from "../../policy.mjs";
+import { isRef, sensitiveLabel } from "../../rules/policy.mjs";
 import { within } from "../../util.mjs";
 import { buttonLabel } from "../page.mjs";
 

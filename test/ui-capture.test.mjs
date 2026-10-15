@@ -282,12 +282,16 @@ function fakeTabCapture() {
 const replies = (helper) => helper.posts.filter((p) => p.route === "capture" && p.rest[0] === "reply").map((p) => p.body);
 async function ask(helper, n, data, ms = 8000) {
   helper.push("capture", { n, ...data });
+  return replyTo(helper, n, ms, data.op);
+}
+// The answer to a call already sent.
+async function replyTo(helper, n, ms = 8000, op = "") {
   for (let i = 0; i < ms / 50; i++) {
     const r = replies(helper).find((b) => b.n === n);
     if (r) return r;
     await sleep(50);
   }
-  return assert.fail(`no reply to capture call ${n} (${data.op})`);
+  return assert.fail(`no reply to capture call ${n} (${op})`);
 }
 
 describe("capture: hello on its own stream", () => pageTest("capture", async ({ helper, errors }) => {
@@ -354,4 +358,62 @@ describe("capture: a browser page in front is not recorded", () => pageTest("cap
   const r = await ask(helper, 1, { to: "record", op: "start" });
   assert.deepEqual(r.value, { error: "the tab in front can't be recorded" });
   assert.deepEqual(await inPage(() => window.__gum), []);
+}));
+
+// Capturing a tab takes a moment (stood in by a delay): the recorder starts only once the tab's
+// picture is on the canvas, so the video never opens on black. Its pixel is read the instant the
+// recorder starts.
+function slowCaptureAndWatchRecorder(ms) {
+  const gum = navigator.mediaDevices.getUserMedia;
+  navigator.mediaDevices.getUserMedia = async (c) => { await new Promise((r) => setTimeout(r, ms)); window.__gumAt = performance.now(); return gum(c); };
+  window.__recs = [];
+  const start = MediaRecorder.prototype.start;
+  MediaRecorder.prototype.start = function (...a) {
+    window.__recs.push(this);
+    const out = start.apply(this, a);
+    const canvas = this.stream.getVideoTracks()[0].canvas;
+    window.__startAt = performance.now();
+    queueMicrotask(() => { window.__startPx = [...canvas.getContext("2d").getImageData(canvas.width / 2, Math.round(canvas.height * 0.6), 1, 1).data]; });
+    return out;
+  };
+  return true;
+}
+
+describe("capture: a recording opens on the tab's picture, not on black", () => pageTest("capture", { timeout: 60_000 }, async ({ helper, inPage }) => {
+  await inPage(fakeTabCapture);
+  await inPage(slowCaptureAndWatchRecorder, 700);
+  const start = await ask(helper, 1, { to: "record", op: "start", follow: "front", labels: {}, scale: 1 });
+  assert.match(start.value?.type || "", /^video\//, JSON.stringify(start));
+  const seen = await inPage(() => ({ gum: window.__gumAt, start: window.__startAt, px: window.__startPx }));
+  assert.ok(seen.start >= seen.gum, `the recorder started ${Math.round(seen.gum - seen.start)} ms before the tab was captured`);
+  // The stand-in tab paints #123 (17, 34, 51); the empty canvas is black.
+  assert.ok(seen.px[2] > 30, `first picture ${seen.px}: black`);
+  const stop = await ask(helper, 2, { to: "record", op: "stop" }, 15_000);
+  assert.ok(stop.value?.size > 0, JSON.stringify(stop));
+  assert.ok(stop.value.ms < 3000, `${stop.value.ms} ms: counted from the recorder's start, not the ask`);
+}));
+
+describe("capture: a stop or a clear while the start waits for the tab leaves nothing running", () => pageTest("capture", { timeout: 60_000 }, async ({ helper, inPage }) => {
+  await inPage(fakeTabCapture);
+  await inPage(slowCaptureAndWatchRecorder, 700);
+  // Cleared (the helper restarted) before the tab was captured: the start says so, no recorder
+  // ever runs and the capture it made ends.
+  helper.push("capture", { n: 1, to: "record", op: "start", labels: {}, scale: 1 });
+  await sleep(100);
+  assert.equal((await ask(helper, 2, { to: "record", op: "clear" })).value, true);
+  const first = await replyTo(helper, 1);
+  assert.deepEqual(first.value, { error: "the recording was stopped before it began" });
+  assert.equal(await inPage(() => window.__recs.length), 0, "no recorder started");
+  assert.equal((await ask(helper, 3, { to: "share", op: "has", tabId: "T11" })).value, false, "its capture ended");
+  // Stopped before the tab was captured: the stop waits for the start, then ends it whole.
+  helper.push("capture", { n: 4, to: "record", op: "start", labels: {}, scale: 1 });
+  await sleep(100);
+  helper.push("capture", { n: 5, to: "record", op: "stop" });
+  const started = await replyTo(helper, 4);
+  assert.match(started.value?.type || "", /^video\//, JSON.stringify(started));
+  const stopped = await replyTo(helper, 5, 15_000);
+  assert.equal(typeof stopped.value?.size, "number", JSON.stringify(stopped));
+  assert.deepEqual(await inPage(() => window.__recs.map((r) => r.state)), ["inactive"]);
+  assert.equal((await ask(helper, 6, { to: "share", op: "has", tabId: "T11" })).value, false);
+  assert.deepEqual((await ask(helper, 7, { to: "record", op: "state" })).value.recording, false);
 }));

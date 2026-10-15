@@ -11,9 +11,13 @@ const RECORD_TYPES = ["video/mp4;codecs=avc1.640028", "video/mp4", "video/webm;c
 const RECORD_MAX_MS = 60 * 60_000; // past an hour the helper saves the recording and stops
 const RECORD_MAX_WIDTH = 2560;
 const RECORD_BITRATE = 8_000_000;
-let rec = null; // { canvas, ctx, w, h, scale, type, recorder, chunks, front, tabs, labels, started, mine, blob }
+const FIRST_FRAME_MS = 1500; // a start waits this long at most for the tab's first picture
+const STOPPED_EARLY = "the recording was stopped before it began";
+let rec = null; // { canvas, ctx, w, h, scale, type, recorder, chunks, front, seq, tabs, labels, started, mine, ready, blob }
 const latest = new Map(); // tabId -> the newest picture of each captured tab (a VideoFrame)
 const readers = new Map(); // tabId -> { reader, track }
+const pending = new Map(); // tabId -> its capture being made (one per tab, however often asked)
+const waiting = new Set(); // { tabId, done } for a tab's first picture
 
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
 
@@ -32,9 +36,24 @@ function follow(tabId) {
       if (done) break;
       latest.get(tabId)?.close();
       latest.set(tabId, value);
+      seen(tabId);
       if (rec && !rec.blob && rec.front === tabId) draw();
     }
   })();
+}
+
+// The tab's first picture came (or its capture ended): whoever waits for it goes on.
+function seen(tabId) {
+  for (const w of waiting) if (w.tabId === tabId) { waiting.delete(w); w.done(); }
+}
+// Resolves once the tab has a picture, or after ms (a tab that doesn't change may send none).
+function firstFrame(tabId, ms) {
+  if (latest.has(tabId) || !readers.has(tabId)) return Promise.resolve();
+  return new Promise((done) => {
+    const w = { tabId, done: () => { clearTimeout(timer); done(); } };
+    const timer = setTimeout(() => { waiting.delete(w); done(); }, ms);
+    waiting.add(w);
+  });
 }
 
 // A tab's capture ended (capture.js stopTab): its reader and picture go.
@@ -43,6 +62,20 @@ function forgetRecorded(tabId) {
   if (r) { readers.delete(tabId); r.reader.cancel().catch(() => {}); r.track.stop(); }
   latest.get(tabId)?.close();
   latest.delete(tabId);
+  seen(tabId);
+}
+
+// A recording that is over, or never began: the captures only it needed end (tabs joiners still
+// watch stay), and its canvas stops sending pictures.
+function release(r) {
+  for (const id of r.mine) {
+    const t = captured(id);
+    if (!t || (rec && rec !== r && rec.mine.has(id))) continue; // a newer recording uses it
+    t.rec = false;
+    if (!t.peers.size) stopTab(id);
+  }
+  r.mine.clear();
+  for (const track of r.recorder.stream.getTracks()) track.stop();
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -136,31 +169,63 @@ async function recordStart(m) {
   // A new picture of the video each time the canvas changes (up to 60 a second): smooth while
   // something moves, nothing while all is still.
   const recorder = new MediaRecorder(canvas.captureStream(60), { mimeType: type, videoBitsPerSecond: RECORD_BITRATE });
-  rec = { canvas, ctx, w, h, scale, type, recorder, chunks: [], front: null, tabs: Array.isArray(m.tabs) ? m.tabs : [], labels: m.labels || {}, started: Date.now(), mine: new Set(), blob: null };
+  let began;
+  const ready = new Promise((done) => { began = done; });
+  rec = { canvas, ctx, w, h, scale, type, recorder, chunks: [], front: null, seq: 0, tabs: Array.isArray(m.tabs) ? m.tabs : [], labels: m.labels || {}, started: Date.now(), mine: new Set(), ready, blob: null };
   const mine = rec;
   recorder.ondataavailable = (e) => { if (e.data.size) mine.chunks.push(e.data); };
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, w, h);
-  recorder.start(1000);
-  // A capture that fails (the tab closed under it) ends the start, never a recording left running.
-  const r = await recordFront(m).catch((e) => ({ error: String(e?.message || e) }));
-  if (r?.error) { recorder.stop(); rec = null; return r; }
-  return { type: type.split(";")[0], w, h };
+  // The recorder starts once the tab in front is captured and its first picture came (capturing
+  // takes a moment): started first, the video opened on seconds of black. A capture that fails
+  // (the tab closed under it) ends the start, never a recording left running; so does a stop or
+  // a clear that came meanwhile (recordStop waits for `ready`).
+  try {
+    const r = await recordFront(m).catch((e) => ({ error: String(e?.message || e) }));
+    if (r?.error) return fail(rec !== mine ? STOPPED_EARLY : r.error);
+    if (mine.front != null) await firstFrame(mine.front, FIRST_FRAME_MS);
+    if (rec !== mine || mine.blob) return fail(STOPPED_EARLY);
+    mine.started = Date.now();
+    recorder.start(1000);
+    draw(); // the first picture, even of a tab that doesn't change
+    return { type: type.split(";")[0], w, h };
+  } catch (e) {
+    return fail(String(e?.message || e));
+  } finally {
+    began();
+  }
+  function fail(error) {
+    release(mine);
+    if (rec === mine) rec = null;
+    return { error };
+  }
 }
 
-// The tab in front changed: capture it (once) and show it.
+// The tab in front changed: capture it (once) and show it. Asks that overlap (tab switches while
+// a capture is made) end with the last one asked in front.
 async function recordFront({ tabId, streamId, frame, tabs: list }) {
-  if (!rec || rec.blob) return { error: "not recording" };
-  if (Array.isArray(list)) rec.tabs = list;
+  const r = rec;
+  if (!r || r.blob) return { error: "not recording" };
+  if (Array.isArray(list)) r.tabs = list;
+  const n = ++r.seq;
   if (!has(tabId)) {
-    if (!streamId) return { need: true };
-    const f = frame || { w: rec.w / rec.scale, h: rec.h / rec.scale - STRIP };
-    await capture(tabId, streamId, { w: even(f.w * rec.scale), h: even(f.h * rec.scale) });
+    if (!pending.has(tabId)) {
+      if (!streamId) return { need: true };
+      const f = frame || { w: r.w / r.scale, h: r.h / r.scale - STRIP };
+      pending.set(tabId, capture(tabId, streamId, { w: even(f.w * r.scale), h: even(f.h * r.scale) }).finally(() => pending.delete(tabId)));
+    }
+    await pending.get(tabId);
   }
   const t = captured(tabId);
-  if (!t.rec) { t.rec = true; rec.mine.add(tabId); }
+  if (!t) return { error: "the tab's capture ended" };
+  if (rec !== r || r.blob) { // the recording ended meanwhile: a capture only it wanted ends too
+    if (!t.rec && !t.peers.size) stopTab(tabId);
+    return { error: "not recording" };
+  }
+  t.rec = true;
+  r.mine.add(tabId);
   follow(tabId);
-  rec.front = tabId;
+  if (n === r.seq || r.front == null) r.front = tabId; // a later ask that failed leaves this one
   draw();
   return true;
 }
@@ -168,16 +233,12 @@ async function recordFront({ tabId, streamId, frame, tabs: list }) {
 async function recordStop() {
   if (!rec || rec.blob) return { error: "not recording" };
   const r = rec;
+  await r.ready; // a stop while the start still waits for the tab: the start ends first
+  if (rec !== r || r.blob || r.recorder.state === "inactive") return { error: "not recording" };
   await new Promise((done) => { r.recorder.onstop = done; r.recorder.stop(); });
   r.blob = new Blob(r.chunks, { type: r.type.split(";")[0] });
   r.chunks = [];
-  // The captures only the recording needed end; tabs joiners still watch stay.
-  for (const id of r.mine) {
-    const t = captured(id);
-    if (!t) continue;
-    t.rec = false;
-    if (!t.peers.size) stopTab(id);
-  }
+  release(r);
   return { size: r.blob.size, type: r.blob.type, ms: Date.now() - r.started };
 }
 
@@ -201,7 +262,12 @@ export function record(m) {
   }
   if (m.op === "recStop") return recordStop();
   if (m.op === "recChunk") return recordChunk(m);
-  if (m.op === "recClear") { rec = null; return true; }
+  if (m.op === "recClear") {
+    // Cleared while recording (the helper restarted on it): nothing keeps running unseen.
+    if (rec && !rec.blob && rec.recorder.state !== "inactive") { rec.recorder.onstop = null; rec.recorder.stop(); release(rec); }
+    rec = null;
+    return true;
+  }
   if (m.op === "recState") return rec ? { recording: !rec.blob, ms: Date.now() - rec.started, front: rec.front } : { recording: false };
   return { error: "unknown" };
 }

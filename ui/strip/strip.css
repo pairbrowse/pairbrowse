@@ -76,12 +76,12 @@ body[data-dragging] #tabs li { transition: background-color var(--t-hover), colo
 body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: none; }
 
 /* On the row's line, with the tabs' contents and the window buttons: (46 - 28) / 2 above the edge. */
-#new { display: grid; place-items: center; flex: none; align-self: flex-end; margin-bottom: 9px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }
+#new { display: grid; place-items: center; flex: none; align-self: flex-end; margin-bottom: 9px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); } /* native: the window buttons' line */
 #new svg { width: 16px; height: 16px; }
 #new:hover { background: var(--hover); color: var(--ink); }
 
 /* ---- the right end ---- */
-#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; align-self: flex-end; height: 46px; } /* on the row's line, as the tabs' contents */
+#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; align-self: flex-end; height: 46px; } /* native: on the row's line, as the tabs' contents */
 #pill { display: inline-flex; align-items: center; gap: 10px; height: var(--ctl-strip); padding: 0 14px; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; } /* mockup: the Live session pill */
 #pill .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); } /* mockup */
 #pill[data-state="reconnecting"] .dot { background: var(--warn); }

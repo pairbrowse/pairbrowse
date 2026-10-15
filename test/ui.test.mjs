@@ -253,7 +253,7 @@ test("every event a page listens to on the shared stream is in STREAM_EVENTS", a
   let checked = 0;
   for (const f of uiScripts()) {
     const js = read(f);
-    if (!/\bhelperStream\b/.test(js)) continue;
+    if (!/\bhelper(Stream|Connection)\b/.test(js)) continue;
     // A page kind's own events (the capture page's calls) only in a file whose stream is of that kind.
     const kinds = [...js.matchAll(/\bkind:\s*["']([a-z]+)["']/g)].map(([, k]) => k);
     for (const [, name] of js.matchAll(/\bon\(\s*["']([^"']+)["']/g)) {

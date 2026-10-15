@@ -10,7 +10,7 @@
 // helper says it relays reports). Saved sessions link to the sessions page, their one home. The
 // config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
-import { $, el, avatar, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
 import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
 
 const NATIVE = hostKind() === "native";
@@ -26,7 +26,6 @@ if (!NATIVE) {
 }
 
 let base = null;
-let stream = null;
 let conn = "connecting";
 let config = null; // GET config.json, null until read (or the helper has no such route)
 let diag = null; // GET diagnostics.json
@@ -509,30 +508,28 @@ document.querySelector(".nav").addEventListener("keydown", (e) => {
 });
 
 // ---- the helper stream -------------------------------------------------------------------------
-function connect(url) {
-  if (!url || url === base) return;
+// The owner's stream without the page screencast (panel=1, no page kind), shared with the other
+// pages; one per address (stream.js helperConnection).
+const connect = helperConnection({
+  onState: (s) => {
+    if (s === "live") setConn("live", "");
+    else if (s === "closed") setConn("closed", NO_HELPER);
+    else setConn("connecting", "Connecting to PairBrowse…");
+  },
+  onOpen: async () => {
+    await loadConfig();
+    loadInvites(); profile.load(); loadTimelineCount(); loadDiag();
+    if (location.hash === "#report") openReport();
+  },
+}, (stream, url) => {
   base = url;
-  stream?.close();
-  // The owner's stream without the page screencast (panel=1, no page kind), shared with the other pages.
-  stream = helperStream(base, {
-    onState: (s) => {
-      if (s === "live") setConn("live", "");
-      else if (s === "closed") setConn("closed", NO_HELPER);
-      else setConn("connecting", "Connecting to PairBrowse…");
-    },
-    onOpen: async () => {
-      await loadConfig();
-      loadInvites(); profile.load(); loadTimelineCount(); loadDiag();
-      if (location.hash === "#report") openReport();
-    },
-  });
   const on = stream.on;
   on("profile", profile.draw);
   on("joinhost", hostsChanged);
   on("config", (c) => { const { restart, ...rest } = c || {}; drawConfig({ ...rest, ...(restart !== undefined ? { restart } : {}) }); });
   on("timeline", () => loadTimelineCount());
   on("invites", drawInvites);
-}
+});
 
 setConn("connecting", "Connecting to PairBrowse…");
 drawDiag(null);

@@ -16,7 +16,7 @@
 // in both shows once. A helper without the route (404, an older one): the stream's lines alone.
 // A tab page: in the browser only window.pairbrowse.session exists here, so nothing else is called.
 // The stream's events (activity, board, collaboration) and that one route: no timer, no poll.
-import { $, el, rich, clock, activityHead, isColor, helperStream, enter, busy, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, rich, clock, activityHead, isColor, helperConnection, enter, busy, NO_AGENT, noAgentLine } from "../common.js";
 import { followHelper } from "../helper.js";
 
 const KEPT = 3000; // lines this page keeps while open, newest (the helper's log holds 2,000)
@@ -26,7 +26,6 @@ const DAY = 86_400_000;
 const CLIP = 280; // a message's characters shown before "Show all" (the helper keeps up to 500)
 
 let base = null;
-let stream = null;
 let seq = 0; // arrival order, for lines with the same time
 const lines = new Map(); // key -> { t, who, tab, text, from, kind, to, seq }
 const unclipped = new Set(); // the keys of long messages shown whole
@@ -241,23 +240,21 @@ function none() {
 }
 const say = (t) => { $("msg").textContent = t; };
 const SUB = $("sub").textContent;
-function connect(url) {
-  if (!url || url === base) return;
+// The helper's stream, one per address (stream.js helperConnection).
+const connect = helperConnection({
+  onState: (s) => {
+    // Live (first, or back after a drop): the newest page of the log, which also covers what
+    // the stream said while it was away (it sends only its latest 30).
+    if (s === "live") { boardSeen = false; document.body.dataset.s = "live"; $("sub").textContent = SUB; say(""); draw(); loadNewest(); }
+    else if (s === "closed") none();
+    else if (document.body.dataset.s !== "none") document.body.dataset.s = "connecting";
+  },
+}, (stream, url, was) => {
   // Another helper (a restart, another key): its lines are its own.
-  if (base) { lines.clear(); unclipped.clear(); drawn = false; }
+  if (was) { lines.clear(); unclipped.clear(); drawn = false; }
   history = null;
   loading = null;
   base = url;
-  stream?.close();
-  stream = helperStream(base, {
-    onState: (s) => {
-      // Live (first, or back after a drop): the newest page of the log, which also covers what
-      // the stream said while it was away (it sends only its latest 30).
-      if (s === "live") { boardSeen = false; document.body.dataset.s = "live"; $("sub").textContent = SUB; say(""); draw(); loadNewest(); }
-      else if (s === "closed") none();
-      else if (document.body.dataset.s !== "none") document.body.dataset.s = "connecting";
-    },
-  });
   stream.on("activity", take);
   stream.on("board", (b) => {
     board = Array.isArray(b?.people) ? b.people : [];
@@ -266,6 +263,6 @@ function connect(url) {
     take(boardMessages(b?.messages), { quiet });
   });
   stream.on("collaboration", (c) => { collab = c && typeof c === "object" ? c : null; draw(); });
-}
+});
 // The helper's address (ui/helper.js), and each new one the extension's worker stores.
 followHelper({ connect, none });

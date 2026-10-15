@@ -14,7 +14,7 @@
 // A tab page: in the browser only window.pairbrowse.session exists here, so nothing else is called.
 // The list is GET sessions.json on every (re)connect, then the helper's sessions and session events:
 // no timer, no poll, no observer.
-import { $, el, avatar, joinHostAsk, ago, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, avatar, joinHostAsk, ago, helperConnection, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
 import { followHelper, postReply, UNREACHABLE_RETRY } from "../helper.js";
 
@@ -22,7 +22,6 @@ const FILTER_FROM = 6; // the search shows from this many saved sessions
 const NAME = /^[A-Za-z0-9_-]{1,40}$/; // the helper's session names (scripts/sessions.mjs validName)
 
 let base = null;
-let stream = null;
 let session = null; // the helper's session event: { name, temporary, canRename, ... }
 let state = null; // the last sessions.json / sessions event
 let busy = false;
@@ -244,24 +243,22 @@ function none() {
   document.body.dataset.s = "none";
   $("sub").textContent = `${NO_AGENT}. ${noAgentLine("Your sessions")}`;
 }
-function connect(url) {
-  if (!url || url === base) return;
+// The helper's stream, one per address (stream.js helperConnection).
+const connect = helperConnection({
+  onState: (s) => {
+    if (s === "live") { if (!busy) document.body.dataset.s = "live"; drawSub(); }
+    else if (s === "closed") none();
+    else if (document.body.dataset.s !== "none") document.body.dataset.s = "connecting";
+  },
+  onOpen: () => load(),
+}, (stream, url) => {
   base = url;
-  stream?.close();
-  stream = helperStream(base, {
-    onState: (s) => {
-      if (s === "live") { if (!busy) document.body.dataset.s = "live"; drawSub(); }
-      else if (s === "closed") none();
-      else if (document.body.dataset.s !== "none") document.body.dataset.s = "connecting";
-    },
-    onOpen: load,
-  });
   stream.on("sessions", draw);
   stream.on("session", (s) => {
     session = s && typeof s === "object" ? s : null;
     drawSub();
     if (state) draw(state); // Rename follows canRename and the open session
   });
-}
+});
 // The helper's address (ui/helper.js), and each new one the extension's worker stores.
 followHelper({ connect, none });

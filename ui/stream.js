@@ -226,3 +226,21 @@ export function helperStream(base, { kind = "", shared = true, onState = () => {
     },
   };
 }
+
+// A page's one connection to its helper: connect(url) opens the stream to a new address (an empty
+// one, or the address it has, changes nothing), closing the stream to the old one first, with the
+// page's helperStream options; opened(stream, url, was) then adds the page's handlers (was: the
+// address before, null the first time: a page drops what it kept from the old helper). -> connect,
+// true when it connected.
+export function helperConnection(options, opened) {
+  let base = null, stream = null;
+  return function connect(url) {
+    if (!url || url === base) return false;
+    const was = base;
+    base = url;
+    stream?.close();
+    stream = helperStream(url, options);
+    opened(stream, url, was);
+    return true;
+  };
+}

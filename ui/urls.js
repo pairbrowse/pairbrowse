@@ -44,7 +44,7 @@ export const servedByBrowser = (loc = globalThis.location) => loc?.protocol === 
 // The side panel extension's pages: chrome-extension://<id>/<path>, and the origin such a page
 // sends (URL.origin is "null" for chrome-extension: URLs).
 export const extensionUrl = (id, path = "") => `chrome-extension://${id}/${path}`;
-export const extensionOrigin = (url) => `chrome-extension://${new URL(url).host}`;
+export const extensionOrigin = (url) => { const { host } = new URL(url); return `chrome-extension://${host}`; };
 
 // What you type in an address bar, as a URL: a web address, or a Google search (the live view's
 // bar, over Playwright's Chromium). { search: false }: a web address only, else null (PairBrowse's

@@ -192,17 +192,10 @@ pageTest("newtab", { viewport: VIEW }, async ({ page, helper, harness, errors, i
   assert.deepEqual(errors, []);
 });
 
-pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS } }, async ({ page, helper, until, inPage }) => {
+// The extension's page (no window.pairbrowse): the address from chrome.storage.session.
+pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS }, native: false }, async ({ page, helper, until, inPage }) => {
   await until("the chips", () => !document.getElementById("sessions").hidden);
-  const host = await inPage(async () => {
-    window.pairbrowse = undefined;
-    document.getElementById("sessions").replaceChildren();
-    document.getElementById("sessions").hidden = true;
-    const m = await import("/newtab/newtab.js");
-    await m.boot();
-    return document.body.dataset.host;
-  });
-  assert.equal(host, "extension");
+  assert.equal(await inPage(() => document.body.dataset.host), "extension");
   assert.deepEqual(await chipTexts(inPage), CHIP_TEXTS);
   await page.click("#sessions .chip >> nth=1");
   await until("the posts", () => document.body.dataset.s === "done" || document.body.dataset.s === "ready");

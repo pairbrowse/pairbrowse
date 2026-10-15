@@ -15,6 +15,7 @@
 // The list is GET sessions.json on every (re)connect, then the helper's sessions and session events:
 // no timer, no poll, no observer.
 import { $, el, ago, initialOf, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
+import { JOIN_NAME_MAX } from "../limits.js";
 
 const NATIVE = !!window.pairbrowse;
 const FILTER_FROM = 6; // the search shows from this many saved sessions
@@ -214,7 +215,7 @@ $("join-form").addEventListener("submit", (ev) => {
   if (!ev.isTrusted) return;
   const code = $("code").value.trim();
   if (!/^pb-join:\S+$/.test(code)) { say("A join code starts with pb-join:", "error"); return; }
-  send({ action: "join", code, joinName: $("join-name").value.trim().slice(0, 40) }, "Asking to join…");
+  send({ action: "join", code, joinName: $("join-name").value.trim().slice(0, JOIN_NAME_MAX) }, "Asking to join…");
 });
 $("join").addEventListener("toggle", () => { if ($("join").open) $("code").focus(); });
 // The address question (the picker's): Allow once, Always allow or Cancel, by a person's click.

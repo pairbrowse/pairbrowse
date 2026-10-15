@@ -8,12 +8,13 @@ import { JOINER_ID, cleanName, appName, cleanComputer } from "../join.mjs";
 import { LOOPBACK, keyOk, readBody, BODY_MAX, listen } from "./http.mjs";
 import { acceptUpgrade, refuseUpgrade } from "../ws.mjs";
 import { stateAgo } from "../daemon/presence.mjs";
+import { JOINER_POINTERS_PER_SECOND as POINTERS_PER_SECOND } from "../../ui/limits.js";
 
 const SEEN_MS = 5000; // a joiner who polled this recently still counts as there
 const INFLIGHT_MAX = 4; // requests at once per joiner: the tunnel carries a limited number
 const OPS_WINDOW_MS = 60_000;
 const OPS_PER_WINDOW = 3000; // changes per joiner per minute (typing sends one about every 30 ms)
-const POINTERS_PER_SECOND = 40; // a pointer is sent up to 25 times a second while it moves
+// POINTERS_PER_SECOND: a joiner's helper sends a pointer up to 25 times a second while it moves.
 const POINTER_BODY_MAX = 4000;
 const SAYS_PER_SECOND = 4;
 const SAY_BODY_MAX = 20_000;

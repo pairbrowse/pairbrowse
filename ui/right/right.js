@@ -10,6 +10,7 @@ import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead,
 import { toolsPanel } from "./tools.js";
 import { AGENT_COLOR } from "../vocab.js";
 import { ownPage } from "../urls.js";
+import { DRIVING_MS } from "../limits.js";
 
 const pb = globalThis.pairbrowse || null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -21,7 +22,7 @@ document.documentElement.dataset.host = pb || servedByBrowser() ? "native" : "ex
 if (pb) document.documentElement.dataset.profileHome = "settings";
 const native = () => document.documentElement.dataset.host === "native";
 
-const DRIVING_MS = 8000; // "Working…" for this long after the agent's last action
+// DRIVING_MS (ui/limits.js): "Working…" for this long after the agent's last action.
 const ACTIVITY_SHOWN = 12;
 const PICTURE_ID = /^[0-9a-f]{12}$/;
 let base = null;

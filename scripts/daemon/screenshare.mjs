@@ -7,10 +7,10 @@
 // call(fn, arg, ms): runs fn(arg) in the side panel extension's worker (panel.mjs).
 import { createInputReplayer } from "../liveview/input.mjs";
 import { within } from "../util.mjs";
+import { FRAME_EVERY_MS } from "../../ui/limits.js";
 
 export const ICE_SERVERS = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const FRAME_MAX = 1920; // the picture's longer side, in pixels
-const FRAME_EVERY_MS = 33; // the slower route's pictures: at most this many a second
 const VIEW_EVERY_MS = 250; // the tab's size and scroll are read again this often (pointers follow scrolling)
 const TAKE_MS = 1000;
 const REPLAY_MS = 5000; // one input event replayed in the tab, at most (a navigation waits its own bound inside)

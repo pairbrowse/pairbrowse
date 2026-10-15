@@ -36,6 +36,7 @@ import { readPick } from "./daemon/pick.mjs";
 import { REPORT_BODY_MAX } from "./liveview/report.mjs";
 import { createActivityLog, readPageQuery } from "./daemon/activitylog.mjs";
 import { PAGE_KINDS as PAGE_KIND_LIST } from "../ui/vocab.js";
+import { FRAME_EVERY_MS, FRAME_SKIP_BYTES, STALLED_BYTES } from "../ui/limits.js";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
@@ -43,17 +44,16 @@ export { addressToUrl } from "./liveview/input.mjs";
 
 const TICK_MS = 1500; // following Claude's tab, and the tab strip
 const SETTLE_MS = 180; // the page is still this long: send one sharp frame
-// Frames come as fast as they're acknowledged: at most this many a second (a form being filled
-// or a page scrolling reads fine at 30; unpaced, a busy page encodes 60 a second for the viewers).
-const FRAME_EVERY_MS = 33;
+// Frames come as fast as they're acknowledged: at most one every FRAME_EVERY_MS (ui/limits.js; a
+// form being filled or a page scrolling reads fine at 30; unpaced, a busy page encodes 60 a second).
 const SHARP_QUALITY = 90;
 const THUMB_QUALITY = { min: 20, max: 80, default: 50 };
 const JOINER_NAV_MS = 15_000; // a joiner's change: until the host's tab starts loading it
 const ACTIVITY_MAX = 30; // the activity event's lines; the session's log (activityLog) keeps more
 const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
-const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
-const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
+// A reader FRAME_SKIP_BYTES behind gets no new frames until it catches up; STALLED_BYTES behind,
+// the connection is cut (the page reconnects). ui/limits.js.
 const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites", "overlay-pointers", "joiner-pointers"]); // events only the owner's streams get
 // Events for the browser's own pages alone (streams opened with ?page=): the capture page's calls
 // (liveview/capture.mjs), the tab strip's order requests and the pointers its browser draws over

@@ -8,11 +8,12 @@ import { join } from "node:path";
 import { shortLabel } from "./tablabels.mjs";
 import { NO_CAPTURE_RECORD, RECORD_READY_MS } from "./capture.mjs";
 import { within } from "../util.mjs";
+import { PAGE_CHUNK_BYTES } from "../../ui/limits.js";
 
 const LABELS_EVERY_MS = 1500; // who works in which tab, while recording
 const DWELL_MS = 4000; // following agents: a tab stays in the video at least this long while they work there
 const CHUNK_BYTES = 4 * 1024 * 1024; // the file comes over in pieces this size (from the extension)
-const PAGE_CHUNK_BYTES = 1024 * 1024; // from the browser's own capture page (its reply route takes at most 2 MB)
+// From the browser's own capture page: PAGE_CHUNK_BYTES (ui/limits.js; its reply route takes at most 2 MB).
 const EXT = { "video/mp4": "mp4", "video/webm": "webm" };
 
 // The screen's pixel ratio, asked of the open tabs in turn, each within ms: a tab whose renderer

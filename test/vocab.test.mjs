@@ -64,6 +64,28 @@ test("the browser's own addresses have one set of rules, for the helper and the 
   }
 });
 
+test("the limits two sides keep are stated once and fit together", async () => {
+  const limits = await import("../ui/limits.js");
+  const { BODY_MAX } = await import("../scripts/liveview/http.mjs");
+  const channel = await import("../scripts/liveview/capture.mjs");
+  for (const name of ["CAPTURE_VALUE_MAX", "CAPTURE_SDP_MAX", "CAPTURE_ERROR_MAX"]) assert.equal(channel[name], limits[name], name);
+  // The capture page's reply route holds its largest answer: a value, or a recording's piece as base64.
+  assert.ok(BODY_MAX.capture > limits.CAPTURE_VALUE_MAX + 1000);
+  assert.ok(Math.ceil(limits.PAGE_CHUNK_BYTES / 3) * 4 < limits.CAPTURE_VALUE_MAX, "a piece as base64 is an answer's value");
+  assert.ok(limits.CAPTURE_SDP_MAX < limits.CAPTURE_VALUE_MAX);
+  // A joiner's helper sends pointers more slowly than the host's takes them.
+  assert.ok(1000 / limits.JOINER_POINTER_EVERY_MS < limits.JOINER_POINTERS_PER_SECOND);
+  assert.ok(limits.PICK_FILE_MAX <= limits.PICK_TOTAL_MAX && limits.FRAME_SKIP_BYTES < limits.STALLED_BYTES);
+  // The pages' join name fields hold what the helper takes.
+  for (const page of ["picker", "sessions"]) assert.match(read(`ui/${page}/index.html`), new RegExp(`id="join-name"[^>]*maxlength="${limits.JOIN_NAME_MAX}"`), page);
+  // No page or helper module restates them.
+  for (const [f, re] of [["ui/capture/transport-native.js", /CAPTURE_\w+_MAX = |CHUNK_BYTES = /], ["ui/screen/screen.js", /50 \* 1024 \* 1024/], ["scripts/daemon/follow.mjs", /50 \* 1024 \* 1024|slice\(0, 20\)/],
+    ["scripts/liveview.mjs", /FRAME_EVERY_MS = |_BYTES = \d/], ["scripts/liveview/push.mjs", /_BYTES = \d/], ["scripts/daemon/screenshare.mjs", /FRAME_EVERY_MS = /],
+    ["ui/left/left.js", /DRIVING_MS = /], ["ui/right/right.js", /DRIVING_MS = /], ["ui/timeline/timeline.js", /DRIVING_MS = /], ["scripts/daemon/pick.mjs", /_MAX = \d/]]) {
+    assert.doesNotMatch(read(f), re, f);
+  }
+});
+
 // Every relative import of a served module is itself served (the live view serves a fixed list).
 test("the live view serves every module its page imports", async () => {
   const { ASSET_FILES } = await import("../scripts/liveview/http.mjs");

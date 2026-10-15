@@ -13,9 +13,9 @@
 // (at most CAPTURE_WAITING_MAX wait; one more resolves false at once). reset(): the browser
 // closed: every waiting call is rejected, every hello wait ends false and the hello is forgotten.
 export const CAPTURE_WAITING_MAX = 64;
-export const CAPTURE_ERROR_MAX = 300;
-export const CAPTURE_SDP_MAX = 100_000;
-export const CAPTURE_VALUE_MAX = 1_500_000;
+// The channel's limits are the capture page's too: ui/limits.js holds them for both sides.
+import { CAPTURE_ERROR_MAX, CAPTURE_SDP_MAX, CAPTURE_VALUE_MAX } from "../../ui/limits.js";
+export { CAPTURE_ERROR_MAX, CAPTURE_SDP_MAX, CAPTURE_VALUE_MAX };
 const TARGETS = new Set(["share", "record"]);
 
 export function createCaptureChannel({ send, log = () => {} }) {

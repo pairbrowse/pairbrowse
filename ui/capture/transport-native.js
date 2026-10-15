@@ -8,18 +8,16 @@
 // extension's worker does for the offscreen document is done here: a tab's stream id comes from
 // the browser (session.grantTabCapture, only for this page and only for ordinary web tabs), and a
 // recording follows the tab in front through the browser's Tabs and Windows observers, held only
-// while a recording runs. Answers stay inside the helper's limits (liveview/capture.mjs): a value
+// while a recording runs. Answers stay inside the helper's limits (ui/limits.js, both sides'): a value
 // up to CAPTURE_VALUE_MAX as JSON, an offer's SDP up to CAPTURE_SDP_MAX, an error up to
 // CAPTURE_ERROR_MAX characters; a recording's pieces at most PAGE_CHUNK_BYTES (daemon/recorder.mjs).
 // No timer but the 150 ms strip refresh while recording (as the extension's worker has), no poll.
 import { has, offer, answer, stopPeer, stopTab, resize, take, peers } from "./capture.js";
 import { record } from "./record.js";
 import { helperStream } from "../common.js";
+import { CAPTURE_VALUE_MAX, CAPTURE_SDP_MAX, CAPTURE_ERROR_MAX, PAGE_CHUNK_BYTES } from "../limits.js";
 
-export const CAPTURE_VALUE_MAX = 1_500_000;
-export const CAPTURE_SDP_MAX = 100_000;
-export const CAPTURE_ERROR_MAX = 300;
-export const PAGE_CHUNK_BYTES = 1024 * 1024;
+export { CAPTURE_VALUE_MAX, CAPTURE_SDP_MAX, CAPTURE_ERROR_MAX, PAGE_CHUNK_BYTES };
 const TAKE_ROOM = CAPTURE_VALUE_MAX - 4096; // what joiners did, as JSON, with room to spare
 const TAKE_MS_MAX = 10_000;
 const FRAME_MAX = 4096;

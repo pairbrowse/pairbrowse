@@ -22,6 +22,7 @@ import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { AGENT_COLOR, isColor } from "../../ui/vocab.js";
 import { CHROME_SCREEN, extensionUrl, isShownScreenPage } from "../../ui/urls.js";
+import { PICK_FILE_MAX, PICK_FILES_MAX, JOINER_POINTER_EVERY_MS } from "../../ui/limits.js";
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
 function serially() {
@@ -43,7 +44,7 @@ const FIRST_ACTIVITY = 3; // on joining, the last few things that happened
 const FORM_BYTES = 60_000; // form values read here in one round, before it's sent
 const AGENT_AGAIN_MS = 10_000; // an agent here is said again this often (the other side forgets it)
 const POINTER_FRESH_MS = 3000; // a pointer still for this long fades out
-const POINTER_MS = 40; // pointers go out at most 25 times a second
+const POINTER_MS = JOINER_POINTER_EVERY_MS; // pointers go out at most 25 times a second
 const PERSON_AGAIN_MS = 500;
 const LATE_NEWS_MS = 15_000; // what a person here did, still sent when a round comes this late
 const FORMS_ALL_MS = 2000; // every field is read again this often, in case a change went unannounced
@@ -595,7 +596,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
         log(`shared browser: ${Array.isArray(picked) ? picked.length : 0} file(s) picked for the host's page`);
         if (!Array.isArray(picked) || !picked.length) return;
         const files = [];
-        for (const f of picked.slice(0, 20)) {
+        for (const f of picked.slice(0, PICK_FILES_MAX)) {
           const bytes = Buffer.from(String(f.b64 || ""), "base64");
           const token = randomBytes(8).toString("hex");
           const parts = Math.max(1, Math.ceil(bytes.length / FILE_PART));
@@ -902,7 +903,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const fd = openSync(path, "r");
     let data;
     try {
-      if (fstatSync(fd).size > 50 * 1024 * 1024) throw new Error(`${path} is too large to send (50 MB at most).`);
+      if (fstatSync(fd).size > PICK_FILE_MAX) throw new Error(`${path} is too large to send (50 MB at most).`);
       data = readFileSync(fd);
     } finally { closeSync(fd); }
     const token = randomBytes(8).toString("hex");

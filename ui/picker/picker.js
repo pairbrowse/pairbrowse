@@ -5,6 +5,7 @@
 // (window.pairbrowse), in the extension from the side panel's worker (chrome.storage.session).
 // The live view takes these requests only from the page's own origin.
 import { $, el, avatar, initialOf, reportOffer, askSwitch, NO_AGENT, noAgentLine } from "../common.js";
+import { JOIN_NAME_MAX } from "../limits.js";
 
 // Framed: the switcher popover. No page chrome of its own, the list even when a session is open,
 // and the parent told (same origin only) when to close; the pick itself goes only to the helper.
@@ -228,7 +229,7 @@ $("join-form").addEventListener("submit", (ev) => {
   if (!ev.isTrusted) return;
   const code = $("code").value.trim();
   if (!/^pb-join:\S+$/.test(code)) { say("A join code starts with pb-join:", "error"); return; }
-  send({ action: "join", code, joinName: $("join-name").value.trim().slice(0, 40) }, "Asking to join...");
+  send({ action: "join", code, joinName: $("join-name").value.trim().slice(0, JOIN_NAME_MAX) }, "Asking to join...");
 });
 $("join").addEventListener("toggle", () => { if ($("join").open) $("code").focus(); });
 // The address question (the same one the side panel shows): Allow once, Always allow (kept in

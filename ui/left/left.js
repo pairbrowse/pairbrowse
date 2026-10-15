@@ -12,13 +12,14 @@
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
 import { $, el, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
 import { isOwnTabPage, ownPage } from "../urls.js";
+import { DRIVING_MS } from "../limits.js";
 
 const pb = window.pairbrowse ?? null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
 // API; anything else is a page in a plain browser.
 document.documentElement.dataset.host = pb || servedByBrowser() ? "native" : "extension";
 const DOCK = ["hidden", "rail", "open"]; // DockState order
-const DRIVING_MS = 8000; // "working" for this long after an agent's last action (the panel's)
+// DRIVING_MS (ui/limits.js): "working" for this long after an agent's last action (the panel's).
 const SVG = "http://www.w3.org/2000/svg";
 
 let layout = null; // the last LayoutState (native) or { left, right, strip } (served)

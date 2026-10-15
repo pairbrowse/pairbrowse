@@ -6,10 +6,11 @@
 // else in the agent panel, which it opens when it is a rail or hidden (Part H). Nothing runs before
 // the page is first visible; while hidden it fetches nothing and holds no picture.
 import { $, el, shortClock, helperStream, enter, leave, busy } from "../common.js";
+import { DRIVING_MS } from "../limits.js";
 
 const PITCH = 114; // a card (104 px) and its gap (10 px)
 const PAD = 15; // the strip's left padding
-const DRIVING_MS = 8000; // "is driving" for this long after the agent's last action (as the side panel)
+// DRIVING_MS (ui/limits.js): "is driving" for this long after the agent's last action.
 const FETCH_MARGIN = 3; // pictures fetched this many cards beyond the visible ones
 const RELEASE_MARGIN = 10; // and released beyond this many
 const ID = /^[0-9a-f]{12}$/;

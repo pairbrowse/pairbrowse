@@ -5,6 +5,7 @@
 // come through the helper instead (frame()) and so does input (takeInput()). Driven only by this
 // PairBrowse's helper, through window.pbScreen.
 import { AGENT_COLOR, COLOR } from "../vocab.js";
+import { PICK_FILE_MAX as FILE_MAX, PICK_TOTAL_MAX as PICK_MAX, PICK_FILES_MAX as FILES_MAX } from "../limits.js";
 
 const ICE = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const MOD = (e) => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
@@ -385,9 +386,6 @@ soundButton.addEventListener("click", () => { video.muted = false; video.play().
 // file dialog never opens). Resolves to [{ name, b64 }] (empty: cancelled). Everything picked goes
 // to the helper in one answer, so it is bounded: FILE_MAX a file, PICK_MAX in all, FILES_MAX files.
 // A pick past them is refused on the card, which stays up to choose again or cancel.
-const FILE_MAX = 50 * 1024 * 1024;
-const PICK_MAX = 50 * 1024 * 1024;
-const FILES_MAX = 20;
 const mb = (n) => `${Math.round(n / (1024 * 1024))} MB`;
 function tooMuch(list) {
   const big = list.find((f) => f.size > FILE_MAX);

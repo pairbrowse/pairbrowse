@@ -72,7 +72,7 @@ const viewerHtml = readFileSync(new URL("liveview.html", scripts), "utf8");
 // side panel shares common.js and tokens.css, and an extension loads only its own files, so they
 // live in ui/, the extension's root, and are served to the live view from there; so do the flat
 // modules common.js and liveview.js import (vocab.js: the words and colors the helper shares;
-// urls.js: the browser's own addresses).
+// urls.js: the browser's own addresses; limits.js: the limits both sides keep).
 const ASSETS = new Map(Object.entries({
   "liveview.css": ["liveview.css", "text/css; charset=utf-8"],
   "liveview.js": ["liveview.js", "text/javascript; charset=utf-8"],
@@ -80,6 +80,7 @@ const ASSETS = new Map(Object.entries({
   "common.js": ["../ui/common.js", "text/javascript; charset=utf-8"],
   "vocab.js": ["../ui/vocab.js", "text/javascript; charset=utf-8"],
   "urls.js": ["../ui/urls.js", "text/javascript; charset=utf-8"],
+  "limits.js": ["../ui/limits.js", "text/javascript; charset=utf-8"],
 }).map(([name, [file, type]]) => [name, { file, body: readFileSync(new URL(file, scripts)), type }]));
 // Each served name and the file it is read from (relative to scripts/), for the test that every
 // module the page imports is served.

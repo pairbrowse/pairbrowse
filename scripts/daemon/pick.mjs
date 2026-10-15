@@ -20,9 +20,8 @@
 // agents waiting for the pick go on. hostDecision(op): follow.decideHost, and a join it started for
 // the picker answers the pick the same way.
 import { validName, isTemporary } from "../sessions.mjs";
+import { JOIN_CODE_MAX as CODE_MAX, JOIN_NAME_MAX } from "../../ui/limits.js";
 
-const CODE_MAX = 4000;
-const JOIN_NAME_MAX = 40;
 const KEYS = { use: ["action", "name", "confirm"], new: ["action", "confirm"], join: ["action", "code", "joinName"], delete: ["action", "name"] };
 const SHAPE = 'A pick is { action: "use", name }, { action: "new" }, { action: "join", code, joinName } or { action: "delete", name }.';
 

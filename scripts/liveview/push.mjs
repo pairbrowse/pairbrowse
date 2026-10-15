@@ -6,6 +6,7 @@
 import { shareableUrl, onSecretDomain, readPointers, personColor, formForJoiner, VIEW_FRESH_MS, TABS_MAX } from "../tabsync.mjs";
 import { cleanName } from "../join.mjs";
 import { AGENT_COLOR } from "../../ui/vocab.js";
+import { FRAME_SKIP_BYTES, STALLED_BYTES } from "../../ui/limits.js";
 import { stateAgo } from "../daemon/presence.mjs";
 import { createHmac, randomBytes } from "node:crypto";
 
@@ -38,8 +39,8 @@ const SILENT_MS = Number(process.env.PAIRBROWSE_TEST_SILENT_MS) || 10_000;
 // so this leaves room for that: the joiner comes back on the same key and nothing is lost.
 export const GONE_MS = Number(process.env.PAIRBROWSE_TEST_GONE_MS) || 25_000;
 const STREAMS_PER_JOINER = 2;
-const FRAME_SKIP_BYTES = 1 << 20; // a joiner this far behind gets no new pictures until it catches up
-const STALLED_BYTES = 16 << 20; // this far behind: the stream is cut (the joiner reconnects)
+// A joiner FRAME_SKIP_BYTES behind gets no new pictures until it catches up; STALLED_BYTES behind,
+// the stream is cut (the joiner reconnects). ui/limits.js.
 // Logs how long a joiner's pointer took from their page (for the live check).
 const latencyLog = process.env.PAIRBROWSE_LATENCY_LOG === "1";
 

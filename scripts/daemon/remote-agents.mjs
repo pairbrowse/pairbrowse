@@ -8,9 +8,10 @@ import { Duplex } from "node:stream";
 import { mkdirSync, writeFileSync, appendFileSync, statSync, rmSync } from "node:fs";
 import { join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
+import { PICK_FILE_MAX, PICK_FILES_MAX } from "../../ui/limits.js";
 
-const FILE_MAX = 50 * 1024 * 1024; // one file sent over by a joiner's agent
-const FILES_MAX = 20; // files kept per joiner at once
+const FILE_MAX = PICK_FILE_MAX; // one file sent over by a joiner's agent, or picked by the joiner
+const FILES_MAX = PICK_FILES_MAX; // files kept per joiner at once
 const LINE_MAX = 200_000;
 // Sent by the joiner's side when one of its agents went away (its Claude Code window closed).
 export const AGENT_GONE = "pairbrowse/agent_gone";

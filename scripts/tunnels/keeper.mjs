@@ -24,9 +24,21 @@ export function runKeeper([exe, port, alive, graceArg]) {
   process.on("SIGHUP", () => {}); // a closed terminal isn't the helper going away
   child.on("error", () => process.exit(1));
   child.on("exit", (code) => process.exit(code ?? 0));
-  setInterval(() => {
-    let at = 0;
-    try { at = statSync(alive).mtimeMs; } catch {}
-    if (Date.now() - at > grace) end();
-  }, 5000);
+  const gone = heartbeatWatch({ grace, touched: () => { try { return statSync(alive).mtimeMs; } catch { return 0; } } });
+  setInterval(() => { if (gone()) end(); }, 5000);
+}
+
+// Whether the helper is gone: its heartbeat file hasn't been touched for grace ms. Measured on a
+// clock that never jumps (mono): the file's time is only compared with its own last value, so a
+// wall clock set forward doesn't end a tunnel whose helper is fine, nor one set back keep a
+// tunnel whose helper is gone. A heartbeat already stale (or missing) when the keeper starts
+// counts as last touched then. touched(): the file's time (0: none).
+export function heartbeatWatch({ grace, touched, mono = () => performance.now() }) {
+  let last = touched();
+  let since = mono();
+  return () => {
+    const at = touched();
+    if (at !== last) { last = at; if (at) since = mono(); }
+    return mono() - since > grace;
+  };
 }

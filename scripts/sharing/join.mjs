@@ -203,6 +203,7 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
       if (again) return { state: again.state, entry: publicView(again) };
       const t = now();
       while (recent.length && recent[0] <= t - windowMs) recent.shift();
+      while (recent.length && recent.at(-1) > t) recent.pop(); // the clock went back: those no longer count
       if ([...all.values()].filter((x) => x.state === "pending").length >= maxPending) return { state: "full" };
       if (recent.length >= maxNew) return { state: "busy" };
       recent.push(t);

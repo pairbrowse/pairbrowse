@@ -18,16 +18,46 @@ export function pidAlive(pid) {
 // A sliding-window rate limit kept on an object (a joiner, say): true when n more fit among the
 // last windowMs' (and counts them, at t), false when they don't (nothing counted).
 export function spend(holder, field, max, { t = Date.now(), n = 1, windowMs = 1000 } = {}) {
-  const times = (Array.isArray(holder[field]) ? holder[field] : []).filter((x) => x > t - windowMs);
+  // (A time after t: the clock went back. It no longer counts, or the limit would hold until the
+  // clock caught up.)
+  const times = (Array.isArray(holder[field]) ? holder[field] : []).filter((x) => x > t - windowMs && x <= t);
   holder[field] = times;
   if (times.length + n > max) return false;
   for (let i = 0; i < n; i++) times.push(t);
   return true;
 }
 
-// A JSON file's contents, or `fallback` when it's missing or not valid JSON.
+// A JSON file's contents, or `fallback` when it's missing or not valid JSON. A file that is there
+// but isn't valid JSON (cut short by a full disk, edited by hand) is copied aside first, as
+// <file>.corrupt (or <file>.corrupt-<time> when another, different copy holds that name; owner-only),
+// so the writer that follows, which starts from the fallback, never loses what it held; then
+// reported once per copy (onCorruptJson: the helper logs it).
 export function readJson(file, fallback = null) {
-  try { return JSON.parse(readFileSync(file, "utf8")); } catch { return fallback; }
+  let text;
+  try { text = readFileSync(file, "utf8"); } catch { return fallback; }
+  try { return JSON.parse(text); } catch {
+    keepCorrupt(file, text);
+    return fallback;
+  }
+}
+
+// The log line for such a file.
+export const corruptLine = (file, copy) => `${file} wasn't valid JSON: what it held is kept in ${copy}, and PairBrowse goes on without it`;
+let corruptReporter = () => {};
+// fn(file, copy): a file readJson couldn't parse, and where its contents were kept. keepCorrupt(file,
+// text): the same for a reader that parses a file itself.
+export function onCorruptJson(fn) { corruptReporter = typeof fn === "function" ? fn : () => {}; }
+export function keepCorrupt(file, text) {
+  if (!text.trim()) return; // nothing in it to keep
+  try {
+    let copy = `${file}.corrupt`;
+    if (existsSync(copy)) {
+      if (readFileSync(copy, "utf8") === text) return; // kept already
+      copy = `${file}.corrupt-${Date.now()}`;
+    }
+    writeFileSync(copy, text, { mode: 0o600, flag: "wx" });
+    try { corruptReporter(file, copy); } catch {}
+  } catch {}
 }
 
 // Writes `value` as JSON through a .tmp file and a rename, so another process reading the file
@@ -40,9 +70,16 @@ export function writeJsonAtomic(file, value, { mode, indent = 2 } = {}) {
   // Per process: two processes writing the same file (the runs server of two agents) never share one.
   const tmp = `${file}.${process.pid}.tmp`;
   if (mode !== undefined) rmSync(tmp, { force: true }); // a leftover .tmp keeps its own mode otherwise
-  writeFileSync(tmp, JSON.stringify(value, null, indent || undefined), mode !== undefined ? { mode } : undefined);
-  if (mode !== undefined) chmodSync(tmp, mode); // the umask can't widen or narrow it
-  renameSync(tmp, file);
+  // A write that fails (a full disk, a read-only folder) leaves the file as it was and no half
+  // written .tmp beside it; the error goes to the caller.
+  try {
+    writeFileSync(tmp, JSON.stringify(value, null, indent || undefined), mode !== undefined ? { mode } : undefined);
+    if (mode !== undefined) chmodSync(tmp, mode); // the umask can't widen or narrow it
+    renameSync(tmp, file);
+  } catch (e) {
+    try { rmSync(tmp, { force: true }); } catch {}
+    throw e;
+  }
 }
 
 // A URL's host (with its port) or origin; fallback when it isn't a URL.

@@ -1,7 +1,7 @@
 import { userInfo } from "node:os";
 import { join, sep } from "node:path";
-import { mkdirSync, chmodSync } from "node:fs";
-import { writeJsonAtomic, sha256, readJson } from "./util.mjs";
+import { mkdirSync, chmodSync, appendFileSync } from "node:fs";
+import { writeJsonAtomic, sha256, readJson, onCorruptJson, corruptLine } from "./util.mjs";
 import { resolveHome, gateProjectEnv } from "./home.mjs";
 import { checkDownloads } from "./rules/downloads.mjs";
 import { checkConfig, configProblem, configWarnings } from "./config-schema.mjs";
@@ -84,6 +84,10 @@ export const paths = {
     ? `\\\\.\\pipe\\pairbrowse-${sha256(`${userInfo().username}:${HOME}`).slice(0, 16)}`
     : join(HOME, "run", "browser.sock"),
 };
+
+// A state file that isn't valid JSON is copied aside before anything starts it afresh (util.mjs
+// readJson); whichever process found it (the helper, the runs server, a hook) says so in daemon.log.
+onCorruptJson((file, copy) => { try { appendFileSync(paths.daemonLog, `${new Date().toISOString()} ${corruptLine(file, copy)}\n`); } catch {} });
 
 // A browser session's profile and its own files: the default session's are the originals in the
 // home; a named one's sit in sessions/ (file: "people.json", "tabs.json", "timeline", "activity.json").
@@ -175,10 +179,12 @@ export const CONFIG_WARNINGS = [];
 // config.json checked against the one schema (config-schema.mjs) over the defaults. A downloads
 // folder written into config.json by hand gets Settings' check (rules/downloads.mjs); one that
 // fails it is read as none (your Downloads folder). Every save checks again.
-export function loadConfig(file = paths.config) {
+// log(line): each warning, once per load (the helper's log; nothing by default).
+export function loadConfig(file = paths.config, log = () => {}) {
   const checked = checkConfig(readJson(file, {}));
   CONFIG_WARNINGS.length = 0;
   CONFIG_WARNINGS.push(...configWarnings(checked, file));
+  for (const w of CONFIG_WARNINGS) try { log(w); } catch {}
   const config = { ...DEFAULT_CONFIG, ...checked.config };
   if (config.downloadsDir != null && (typeof config.downloadsDir !== "string" || (config.downloadsDir && checkDownloads(config.downloadsDir, { home: paths.home }).problem))) config.downloadsDir = null;
   return config;

@@ -7,6 +7,7 @@
 // may be functions, read at each call: a change in Settings takes effect at once.
 import { mkdir, writeFile, rename, readFile, rm } from "node:fs/promises";
 import { readFileSync } from "node:fs";
+import { keepCorrupt } from "../util.mjs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 
@@ -57,6 +58,7 @@ export function createTimeline({ dir, enabled = true, mask = (t) => t, step = ()
       const list = JSON.parse(raw)?.cards;
       cards = (Array.isArray(list) ? list : []).map(cardFrom).filter(Boolean);
     } catch (e) {
+      keepCorrupt(join(d, "index.json"), raw); // copied aside before the next save starts it afresh
       log("timeline", `index unreadable, starting empty: ${e?.message || e}`);
     }
     return d;

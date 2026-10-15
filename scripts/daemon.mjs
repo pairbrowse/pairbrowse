@@ -36,7 +36,7 @@ import { createRequire } from "node:module";
 import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { paths, loadConfig, ensureDirs, CONFIG_WARNINGS } from "./paths.mjs";
+import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./rules/secrets.mjs";
 import { createFollow, isScreenPage, screenCard } from "./daemon/follow.mjs";
 import { createCaptureBackend, targetIdOf } from "./daemon/capture.mjs";
@@ -96,7 +96,7 @@ const require = createRequire(join(paths.runtime, "package.json"));
 // How long a stopping helper waits for the browser to close cleanly before killing it (shutdown).
 const SHUTDOWN_GRACE_MS = 5000;
 const log = (...a) => appendFileSync(paths.daemonLog, `${new Date().toISOString()} ${a.join(" ")}\n`);
-const config = loadConfig();
+const config = loadConfig(paths.config, log); // unknown keys and refused values: logged, and in pairbrowse_status
 // Patchright unless the config opts into Playwright, or this Node.js is too old for Patchright.
 const driverChoice = chooseBrowserDriver(config, process.versions.node, patchrightNodeMinimum(paths.runtime));
 // The runtime (@playwright/mcp and the driver) takes seconds to load on a busy machine: it loads
@@ -113,8 +113,6 @@ function runtime() {
 }
 const createConnection = (...a) => runtime().createConnection(...a);
 ensureDirs();
-// config.json's unknown keys and refused values (config-schema.mjs): one line each; pairbrowse_status names them too.
-for (const w of CONFIG_WARNINGS) log(w);
 
 // One helper at a time, settled before anything else starts: each Claude Code and Codex window
 // starts one when there's none (after an update, a crash), often several at once, and a second

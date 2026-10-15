@@ -53,12 +53,17 @@ const APPROVE_ONLY = 'role "approve" is for shared browser join codes only (shar
 
 // The invites, for as long as the helper runs (the live view may restart with the browser). Join
 // codes are also saved (sharing.mjs) so they outlive a restart of the helper; links never are.
-export function createInvites({ now = () => Date.now() } = {}) {
+// now: the wall clock (expiresAt, as people read it); mono: a clock that never jumps (performance.now).
+// An invite ends at expiresAt, or once its whole lifetime has passed on mono, whichever comes first:
+// a clock set back never stretches an invite past the hours it was made for.
+export function createInvites({ now = () => Date.now(), mono = () => performance.now() } = {}) {
   const all = new Map(); // id -> invite
+  const monoEnd = new Map(); // id -> the mono time its lifetime is over
   const listeners = new Set(); // called with the ids that stopped working
-  const ended = (ids) => { if (ids.length) for (const fn of listeners) fn(ids); };
+  const ended = (ids) => { for (const id of ids) monoEnd.delete(id); if (ids.length) for (const fn of listeners) fn(ids); };
   const sweep = () => {
-    const gone = [...all.values()].filter((i) => i.expiresAt <= now()).map((i) => i.id);
+    const t = now(), m = mono();
+    const gone = [...all.values()].filter((i) => i.expiresAt <= t || (monoEnd.get(i.id) ?? Infinity) <= m).map((i) => i.id);
     for (const id of gone) all.delete(id);
     ended(gone);
   };
@@ -81,6 +86,7 @@ export function createInvites({ now = () => Date.now() } = {}) {
       if (role === "approve" && !mayApprove(share, mode)) throw new Error(APPROVE_ONLY);
       const invite = { id, role: role === "approve" ? "drive" : role, approve: role === "approve", share, mode, label: inviteLabel(label), key: randomBytes(32).toString("hex"), createdAt, expiresAt: createdAt + Math.min(h, INVITE_MAX_HOURS) * HOUR_MS };
       all.set(id, invite);
+      monoEnd.set(id, mono() + (invite.expiresAt - createdAt));
       return { ...invite };
     },
     list() { sweep(); return [...all.values()].map(publicView); },
@@ -130,6 +136,7 @@ export function createInvites({ now = () => Date.now() } = {}) {
         const createdAt = Number(i.createdAt), expiresAt = Number(i.expiresAt);
         if (!Number.isFinite(createdAt) || !Number.isFinite(expiresAt) || expiresAt <= now() || expiresAt - createdAt > INVITE_MAX_HOURS * HOUR_MS) continue;
         all.set(i.id, { id: i.id, role: i.role, approve: i.approve === true && i.role === "drive" && mayApprove("code", i.mode), share: "code", mode: i.mode, label: inviteLabel(i.label), key: i.key, createdAt, expiresAt });
+        monoEnd.set(i.id, mono() + (expiresAt - now())); // what's left of it, from here on
         n++;
       }
       return n;

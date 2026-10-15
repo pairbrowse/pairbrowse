@@ -7,6 +7,7 @@
 // the page is first visible; while hidden it fetches nothing and holds no picture.
 import { $, el, shortClock, helperStream, enter, leave, busy } from "../common.js";
 import { DRIVING_MS } from "../limits.js";
+import { hasBubbles, anchorRect, reopenGuard } from "../bubbles.js";
 import { followHelper, helperAddress, postJson, UNREACHABLE } from "../helper.js";
 
 const PITCH = 114; // a card (104 px) and its gap (10 px)
@@ -158,7 +159,7 @@ function node(card) {
   // aria-current and the roving tabindex. The More button is its sibling, not inside it, and roves
   // with the face: only the focused card's face and More are Tab stops.
   const face = el("button", { className: "face", type: "button", tabIndex: -1 }, thumb, el("span", { className: "time" }), el("span", { className: "cap" }));
-  if (hasBubbles() && !card.note) { face.setAttribute("aria-haspopup", "dialog"); face.setAttribute("aria-expanded", "false"); }
+  if (hasBubbles(pb) && !card.note) { face.setAttribute("aria-haspopup", "dialog"); face.setAttribute("aria-expanded", "false"); }
   const li = el("li", { className: "card" }, face, el("span", { className: "pin-chip", hidden: true, textContent: "Pinned" }), pill, more);
   li.setAttribute("role", "listitem");
   li.dataset.id = card.id;
@@ -382,7 +383,7 @@ function focusStop(target) {
 function show(id) {
   // A note has no picture to show (the helper answers 409): nothing to ask for.
   if (cards.find((c) => c.id === id)?.note === true) return;
-  if (hasBubbles()) return togglePicture(id);
+  if (hasBubbles(pb)) return togglePicture(id);
   // The helper's show route (the right dock shows the picture); a 404 from a helper without it is
   // silent and nothing is marked shown; another failure says so under the cards. The agent panel opens first when it is not (Part H).
   const pb = window.pairbrowse;
@@ -410,15 +411,11 @@ function setShown(id) {
 
 // ---- the picture in the browser's bubble above its card (530 E1, E2 B3) ----
 const pb = window.pairbrowse || null;
-const hasBubbles = () => typeof pb?.bubbles?.open === "function";
 const PICTURE_KIND = Number.isInteger(pb?.BubbleKind?.kPicture) ? pb.BubbleKind.kPicture : 2;
-// A click outside closes the bubble before that click lands: on the same card's face it is that
-// close, not a new open (OnClosed, not by Escape, this recently; a timestamp, no timer).
-const REOPEN_MS = 400;
+// A click outside that lands on the same card's face is the bubble's close, not a new open (bubbles.js).
+const guard = reopenGuard();
 let pictureOpen = null; // the card whose picture the bubble shows
-let lastClosed = { id: null, at: -Infinity };
 let staleCloses = 0; // a bubble replaced by another: its OnClosed still comes, once
-let selfClosed = false; // closed by this page (a second click on its card): no guard then
 let observing = false;
 function observePicture() {
   if (observing) return;
@@ -430,9 +427,8 @@ function observePicture() {
       const id = pictureOpen;
       pictureOpen = null;
       if (id) nodes.get(id)?.querySelector(".face")?.setAttribute("aria-expanded", "false");
-      const mine = selfClosed;
-      selfClosed = false;
-      if (!byEscape) { if (!mine) lastClosed = { id, at: performance.now() }; return; }
+      guard.closed(id, byEscape);
+      if (!byEscape) return;
       // Escape, the bubble's x or a delete there: the focus comes back to the card (or, deleted, the next).
       const face = faceOf(nodes.get(id));
       if (face) focusStop(face);
@@ -440,17 +436,10 @@ function observePicture() {
     },
   });
 }
-// The face's box in this page's CSS pixels, rounded outward and kept inside the page.
-function anchorRect(node) {
-  const r = node.getBoundingClientRect();
-  const x = Math.max(0, Math.floor(r.left)), y = Math.max(0, Math.floor(r.top));
-  const right = Math.min(window.innerWidth, Math.ceil(r.right)), bottom = Math.min(window.innerHeight, Math.ceil(r.bottom));
-  return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
-}
 async function togglePicture(id) {
   observePicture();
   if (pictureOpen === id) { closePicture(); return; }
-  if (lastClosed.id === id && performance.now() - lastClosed.at < REOPEN_MS) return;
+  if (guard.blocked(id)) return;
   const face = faceOf(nodes.get(id));
   if (!face) return;
   if (pictureOpen) { nodes.get(pictureOpen)?.querySelector(".face")?.setAttribute("aria-expanded", "false"); staleCloses++; }
@@ -462,7 +451,7 @@ async function togglePicture(id) {
 }
 function closePicture() {
   if (!pictureOpen) return;
-  selfClosed = true;
+  guard.closing(pictureOpen);
   pb.bubbles.close(PICTURE_KIND).catch(() => {});
 }
 
@@ -662,7 +651,7 @@ if (PICTURE) {
 // timeline events keep it current; its card deleted, the bubble closes. Escape is the browser's.
 // The focus starts on the x.
 async function pictureMode() {
-  const close = () => { if (hasBubbles()) pb.bubbles.close(PICTURE_KIND).catch(() => {}); };
+  const close = () => { if (hasBubbles(pb)) pb.bubbles.close(PICTURE_KIND).catch(() => {}); };
   const msg = (text) => { $("pic-msg").textContent = text; };
   let pbase = null, card = null, blobUrl = null, picStream = null;
   $("pic-close").addEventListener("click", close);

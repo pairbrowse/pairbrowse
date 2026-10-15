@@ -11,6 +11,7 @@
 // (common.js helperStream) only. The nav fragments read no stream at all.
 import { $, el, avatar, shareCard, isColor, helperStream, servedByBrowser, enter, leave, calm } from "../common.js";
 import { isSettingsPage, ownPage } from "../urls.js";
+import { hasBubbles, anchorRect, reopenGuard } from "../bubbles.js";
 import { helperAddress, onHelperAddress, postJson } from "../helper.js";
 
 const pb = window.pairbrowse || null;
@@ -139,19 +140,14 @@ const APP_MENU = nativeHost ? 48 : 0;
 // What the dock or the browser's bubble said it shows for this window: Share's card, the app menu.
 const remote = { share: false, menu: false };
 // ---- the browser's bubbles (530 E1) ----
-const hasBubbles = () => typeof pb?.bubbles?.open === "function";
 const KINDS = pb?.BubbleKind && Number.isInteger(pb.BubbleKind.kShare) ? pb.BubbleKind : { kSwitcher: 0, kShare: 1, kPicture: 2 };
 // The browser's own app menu as a bubble kind (a newer browser): the ⋯ opens it, not the page's popover.
-const hasAppMenu = () => Number.isInteger(pb?.BubbleKind?.kAppMenu) && hasBubbles();
+const hasAppMenu = () => Number.isInteger(pb?.BubbleKind?.kAppMenu) && hasBubbles(pb);
 const BUBBLE_OF = { share: KINDS.kShare, menu: KINDS.kAppMenu };
 const TRIGGER_OF = { share: "share-btn", menu: "menu-btn" };
 const keyOfKind = (kind) => (kind === KINDS.kShare ? "share" : Number.isInteger(KINDS.kAppMenu) && kind === KINDS.kAppMenu ? "menu" : null);
-// A click outside closes a bubble before that click lands: when it lands on the bubble's own trigger
-// it is the close, not a new open. When the browser said so (OnClosed, not by Escape), and how
-// recently: a timestamp, no timer.
-const REOPEN_MS = 400;
-const closedAt = { share: -Infinity, menu: -Infinity };
-const selfClosed = { share: false, menu: false }; // closed by this page (its trigger): no guard then
+// A click outside that lands on the bubble's own trigger is its close, not a new open (bubbles.js).
+const guard = reopenGuard();
 let bubblesObserved = false;
 function observeBubbles() {
   if (bubblesObserved) return;
@@ -161,32 +157,23 @@ function observeBubbles() {
       const key = keyOfKind(kind);
       if (!key) return;
       remote[key] = false;
-      if (!byEscape && !selfClosed[key]) closedAt[key] = performance.now();
-      selfClosed[key] = false;
+      guard.closed(key, byEscape);
       slotControls();
       // Escape, a pick or the bubble's own x: the focus comes back to the trigger.
       if (byEscape) $(TRIGGER_OF[key]).focus();
     },
   });
 }
-// The trigger's box in this page's CSS pixels, rounded outward and kept inside the page (the browser
-// refuses an anchor outside its slot).
-function anchorRect(node) {
-  const r = node.getBoundingClientRect();
-  const x = Math.max(0, Math.floor(r.left)), y = Math.max(0, Math.floor(r.top));
-  const right = Math.min(window.innerWidth, Math.ceil(r.right)), bottom = Math.min(window.innerHeight, Math.ceil(r.bottom));
-  return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
-}
 async function toggleBubble(key) {
   observeBubbles();
   if (remote[key]) {
     remote[key] = false;
-    selfClosed[key] = true;
+    guard.closing(key);
     slotControls();
     pb.bubbles.close(BUBBLE_OF[key]).catch(() => {});
     return;
   }
-  if (performance.now() - closedAt[key] < REOPEN_MS) return;
+  if (guard.blocked(key)) return;
   let shown = false;
   try { ({ shown } = await pb.bubbles.open(BUBBLE_OF[key], anchorRect($(TRIGGER_OF[key])), "")); } catch {}
   // One bubble per window: opening one closed the other.
@@ -199,7 +186,7 @@ function slotControls() {
   // In the slot the card is in another page: its state shows here (pressed), never its id.
   if (slot) { b.setAttribute("aria-expanded", String(remote.share)); b.removeAttribute("aria-controls"); b.dataset.remote = String(remote.share); }
   else { b.setAttribute("aria-expanded", String(!$("share-card").hidden)); b.setAttribute("aria-controls", "share-card"); delete b.dataset.remote; }
-  if (slot && hasBubbles()) { b.removeAttribute("title"); b.setAttribute("aria-haspopup", "dialog"); }
+  if (slot && hasBubbles(pb)) { b.removeAttribute("title"); b.setAttribute("aria-haspopup", "dialog"); }
   else if (slot) b.title = SHARE_SLOT_LABEL;
   else b.removeAttribute("title");
   menuBtn.hidden = slot || !pb;
@@ -226,7 +213,7 @@ $("share-btn").addEventListener("click", async (e) => {
   if (!inSlot()) return;
   $("share-note").textContent = "";
   e.stopImmediatePropagation();
-  if (hasBubbles()) { toggleBubble("share"); return; }
+  if (hasBubbles(pb)) { toggleBubble("share"); return; }
   if (remote.share) { ask({ close: "share" }); return; }
   await openDock("right");
   // The card opens under Share in the agent panel: said only once the dock says it opened it (the
@@ -240,7 +227,7 @@ $("share-btn").addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !inSlot() || !remote.share) return;
   e.preventDefault();
   e.stopImmediatePropagation();
-  if (hasBubbles()) { toggleBubble("share"); return; }
+  if (hasBubbles(pb)) { toggleBubble("share"); return; }
   ask({ close: "share" });
 }, true);
 let shareChannel = null, shareWait = 0;
@@ -259,7 +246,7 @@ try {
 
 // ---- in the browser's own Share bubble (530 E2 B2): the card's x closes it; the browser then gives
 // the focus back to Share. (B1, the switcher, is the picker page itself: ui/picker #bubble.) ----
-const inNativeBubble = () => hasBubbles() && mode === "share";
+const inNativeBubble = () => hasBubbles(pb) && mode === "share";
 $("share-close").addEventListener("click", () => { if (inNativeBubble()) pb.bubbles.close(KINDS.kShare).catch(() => {}); });
 
 // ---- hash modes (no reload: the hash only picks what shows) ----
@@ -278,7 +265,7 @@ function applyMode() {
   if (BUBBLES.has(was)) closeBubble(was);
   document.body.dataset.mode = mode;
   // The browser frames the bubble modes (its corners, shadow and motion): the card fills the page.
-  if (hasBubbles() && BUBBLES.has(mode)) document.body.dataset.bubble = "native"; else delete document.body.dataset.bubble;
+  if (hasBubbles(pb) && BUBBLES.has(mode)) document.body.dataset.bubble = "native"; else delete document.body.dataset.bubble;
   $("share-close").hidden = !inNativeBubble() || mode !== "share";
   $("row").hidden = !(mode === "row" || BUBBLES.has(mode));
   $("nav-left").hidden = mode !== "nav-left";

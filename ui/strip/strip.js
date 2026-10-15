@@ -812,21 +812,22 @@ async function applyAgentTabs(list) {
 }
 const remapAgentTabs = () => { if (lastAgentTabs) applyAgentTabs(lastAgentTabs); };
 // Connects once, outside the nav modes; a nav mode reads no stream and keeps no state attribute.
-async function ensureStream() {
+// moved: a new address from the extension's worker (a helper restarted on a new key) once
+// connected, which the stream moves to.
+async function ensureStream(moved = null) {
   if (navMode()) {
     if (stream) { stream.close(); stream = null; base = null; streamAsked = false; }
     delete document.body.dataset.s;
     return;
   }
-  if (streamAsked || !started) return;
+  if ((streamAsked && !moved) || !started) return;
   streamAsked = true;
-  const url = await helperAddress();
+  const url = moved || await helperAddress();
   if (navMode()) { streamAsked = false; return; }
   connect(url);
 }
-// A new address from the extension's worker (a helper restarted on a new key), once connecting:
-// the stream moves to it. The browser's helper keeps one address (ui/helper.js).
-onHelperAddress((url) => { if (streamAsked && !navMode()) connect(url); });
+// The browser's helper keeps one address (ui/helper.js): only the extension's can move.
+onHelperAddress((url) => { if (streamAsked) ensureStream(url); });
 
 // ---- the browser API: this window's tabs, their owners, the dock layout ----
 async function start() {

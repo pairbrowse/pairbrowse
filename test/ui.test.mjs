@@ -293,7 +293,7 @@ test("common.js's parts are served and spell no host of the browser's own", asyn
 
 test("the strip's nav fragments never connect", () => {
   const js = read(join(UI_ROOT, "strip", "strip.js"));
-  const ensure = js.match(/async function ensureStream\(\) \{([\s\S]*?)\n\}/);
+  const ensure = js.match(/async function ensureStream\([^)]*\) \{([\s\S]*?)\n\}/);
   assert.ok(ensure, "ensureStream guards the stream");
   assert.match(ensure[1], /^\s*if \(navMode\(\)\) \{/, "the nav check comes first");
   assert.match(js, /const navMode = \(\) => mode === "nav-left" \|\| mode === "nav-right";/);

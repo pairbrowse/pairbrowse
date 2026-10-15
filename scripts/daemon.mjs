@@ -570,7 +570,7 @@ const joinPrompt = createJoinPrompt({
 // A named final click asked in the browser as well as in the agent's app (daemon/approvals.mjs).
 // Docked (the browser's own pages), its approve page is the window's approval card; the tab's
 // target id says which window.
-const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, docked: () => !!context.chromePages?.(), targetOf: targetIdOf, mask: output.mask, log });
+const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, docked: () => !!context.chromePages?.(), targetOf: targetIdOf, mask: output.mask, log, hostName: () => HOST });
 // Who used each session, for the session picker: joiners the host let in. A joiner let in also
 // takes any approval card in the page down at once (approvals.mjs cover).
 sharing.approvals.onChange(() => {

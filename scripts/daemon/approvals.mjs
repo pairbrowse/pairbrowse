@@ -21,7 +21,7 @@
 // like titles; its id is random (128 bits). An answer from the in-page card counts only when it was
 // a person's own click (presence.byPerson) in that very tab, ARM_MS or more after it showed; the
 // page script checks the same first (scripts/hud.js).
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { approvalAsk, approvalKey, APPROVAL_TOOLS, APPROVAL_WAIT_MS, HOOK_MARK } from "../guard.mjs";
 import { within } from "../util.mjs";
 import { AGENT_COLOR } from "../../ui/vocab.js";
@@ -83,12 +83,19 @@ export function routeConnection(sock, { onHook, onOther }) {
   sock.on("error", () => {});
 }
 
-// deps: hud (call, sparkColor, sparkPage), presence (byPerson), collaboration (its participants
+// Joiners with the approve role (liveview/approval-share.mjs) are a place to answer too: while
+// one is in a shared browser session here, an ask is shown and waits as it does for the browser's
+// approve page, and the first answer wins, the host's or a joiner's (answer, by: the joiner's
+// name as the host knows it). Their answer arrives on their own channel, checked there (role read
+// again, rate, binding); here it counts only for one of this helper's own agents' asks.
+//
+// deps: hud (call, sparkColor, sparkPage, addActivity), presence (byPerson), collaboration (its participants
 // Map, for labels), liveView() (the live view or null: sharing, guestViewers, pageClients,
-// tabIndex), frontPage() (the tab in front, or null), docked() (the browser has its own pages:
+// tabIndex, approveJoiners), frontPage() (the tab in front, or null), docked() (the browser has its own pages:
 // its approve page is the window's approval card), targetOf(page, ms) (the tab's CDP target id or
-// null; capture.mjs targetIdOf), mask(text), log(text).
-export function createClickApprovals({ hud, presence, collaboration, liveView = () => null, frontPage = async () => null, docked = () => false, targetOf = async () => null, mask = (t) => t, log = () => {},
+// null; capture.mjs targetIdOf), mask(text), log(text), hostName() (the person here, as the
+// Activity log names who answered).
+export function createClickApprovals({ hud, presence, collaboration, liveView = () => null, frontPage = async () => null, docked = () => false, targetOf = async () => null, mask = (t) => t, log = () => {}, hostName = () => "The host",
   now = Date.now, waitMs = APPROVAL_WAIT_MS, random = randomBytes, setInterval: every = setInterval, clearInterval: stopEvery = clearInterval }) {
   const items = new Map(); // id -> item
   const answered = new Map(); // key -> { answer, at }
@@ -133,15 +140,16 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     return only(client);
   }
 
-  // Ends an item: resolves its answer, takes the card down, tells the streams.
-  function end(it, result) {
+  // Ends an item: resolves its answer, takes the card down, tells the streams (said: { answer, by }
+  // when someone answered it in a browser, so the cards that go can say who).
+  function end(it, result, said = null) {
     if (!items.has(it.id)) return false;
     items.delete(it.id);
     clearTimeout(it.timer);
     const page = it.page;
     it.page = null;
     if (page && !page.isClosed?.()) within(2000, hud.call(page, it.id, "approval-off").catch(() => {})).catch(() => {});
-    emit({ op: "withdraw", item: { id: it.id } });
+    emit({ op: "withdraw", item: { id: it.id, ...(said ? { answer: said.answer, by: said.by } : {}) } });
     it.resolve(result);
     watch();
     return true;
@@ -174,6 +182,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     }
     const target = String(mask(String(ask?.target || ""))).slice(0, 120);
     const reason = String(mask(String(ask?.reason || ""))).slice(0, 300);
+    const what = String(mask(String(ask?.what || ask?.target || ""))).slice(0, 140);
     const id = `ap-${random(16).toString("hex")}`;
     const at = now();
     // The in-page card: on the agent's tab in front, with nobody else looking, and only where the
@@ -196,23 +205,44 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     let origin = "";
     try { origin = page ? originOf(page.url()) : ""; } catch {}
     const where = page ? { page, origin } : null;
-    const it = { id, key, client, participant: p, agent, kind: "click", target, reason, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0, where };
+    const it = { id, key, client, participant: p, agent, kind: "click", target, reason, what, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0, where };
     items.set(id, it);
     it.timer = setTimeout(() => { if (end(it, "expired")) log(`approval ${short(id)}: no answer in ${Math.round(waitMs / 1000)} s`); }, waitMs);
     it.timer.unref?.();
     emit({ op: "add", item: publicItem(it) });
-    log(`approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : bubble ? "in the browser's approval card" : "in the browser's pages"})`);
+    const joinersToo = Number(lv?.approveJoiners?.()) > 0 ? " and by the joiners who can approve" : "";
+    log(`approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : bubble ? "in the browser's approval card" : "in the browser's pages"}${joinersToo})`);
     watch();
     return { item: publicItem(it), shown: true, answer, where };
   }
 
-  function answer(id, a, from) {
+  // by: who answered, by name (a joiner with the approve role; the person here otherwise), for
+  // the cards that go and the Activity log ("Allowed by Alex"). "terminal" names nobody.
+  function answer(id, a, from, by = "") {
     const it = items.get(String(id));
     if (!it || !ANSWERS.has(a)) return false;
     remember(it.key, a === "site" ? "allow" : a, it.where);
-    end(it, a);
+    const said = a === "site" || a === "allow" ? "allow" : a === "deny" ? "deny" : "";
+    const who = said ? String(by || hostName() || "The host").slice(0, 60) : "";
+    end(it, a, said ? { answer: said, by: who } : null);
     log(`approval ${short(id)}: ${a} from ${from}${a === "site" ? " (no per-site memory exists: treated as Allow)" : ""}`);
+    if (said) {
+      try { hud.addActivity?.(`${said === "allow" ? "Allowed" : "Denied"} by ${who}: ${it.target || "a final step"}${it.tab.host ? ` on ${it.tab.host}` : ""}`, who, null, "approval"); } catch {}
+    }
     return true;
+  }
+  // The asks a joiner with the approve role may see and answer: this helper's own agents' only
+  // (never a joiner's agent's: those are never asked here). bind: the call's own key, hashed (an
+  // answer is bound to the ask's id and its call, approval-share.mjs).
+  function shareable() {
+    return [...items.values()].filter((it) => !it.remote && !participants.get(it.participant)?.remote)
+      .map((it) => ({ ...publicItem(it), what: it.what, bind: createHash("sha256").update(it.key).digest("hex").slice(0, 32) }));
+  }
+  // A joiner's answer (approval-share.mjs checked who and the role): allow or deny only.
+  function answerShared(id, a, { by = "" } = {}) {
+    const it = items.get(String(id));
+    if (!it || it.remote || participants.get(it.participant)?.remote || (a !== "allow" && a !== "deny")) return false;
+    return answer(it.id, a, `${by || "a joiner"} (joined, can approve)`, by);
   }
 
   function withdraw(id, why) {
@@ -223,10 +253,11 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     return true;
   }
 
-  // A browser page that lists approvals is open.
+  // A browser page that lists approvals is open, or a joiner who can approve is in.
   function surface() {
-    const counts = liveView()?.pageClients?.() || {};
-    return SURFACES.some((k) => Number(counts[k]) > 0);
+    const lv = liveView();
+    const counts = lv?.pageClients?.() || {};
+    return SURFACES.some((k) => Number(counts[k]) > 0) || Number(lv?.approveJoiners?.()) > 0;
   }
 
   // The call itself arrived (Claude Code: the terminal's yes, or the browser's Allow passed on).
@@ -346,7 +377,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   }
 
   return {
-    participant, gone, only, whose, open, answer, withdraw, arrived, hook, cover,
+    participant, gone, only, whose, open, answer, withdraw, arrived, hook, cover, shareable, answerShared,
     lastWhere: () => (movedFrom ? { origin: movedFrom.origin } : null),
     pending: () => [...items.values()].map(publicItem),
     onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },

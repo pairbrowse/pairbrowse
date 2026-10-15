@@ -200,7 +200,7 @@ test("in bypass-permissions mode an ask becomes an allow; a deny stays", () => {
 
 test("approvalAsk: what the browser's card says for a named click or dialog OK, else null", async () => {
   const { approvalAsk } = await import("../scripts/guard.mjs");
-  assert.deepEqual(approvalAsk("browser_click", { element: "Pay: Place order", target: "e5" }, null, NOW), { reason: '"Pay: Place order" pays: a final action (pay)', target: "Place order" });
+  assert.deepEqual(approvalAsk("browser_click", { element: "Pay: Place order", target: "e5" }, null, NOW), { reason: '"Pay: Place order" pays: a final action (pay)', target: "Place order", what: "Pay: Place order" });
   assert.equal(approvalAsk("browser_drag", { startElement: "Invoice row", endElement: "Delete: Trash", startTarget: "e1", endTarget: "e2" }, null, NOW).target, "Trash", "a drag: its classed end");
   assert.equal(approvalAsk("browser_handle_dialog", { accept: true, element: "Delete: OK" }, null, NOW).target, "OK");
   assert.equal(approvalAsk("mcp__plugin_pairbrowse_browser__browser_click", { element: "Send: Reply", target: "e1" }, null, NOW).target, "Reply", "the full name works too");

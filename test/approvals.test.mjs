@@ -148,7 +148,7 @@ test("answers: once only; site counts as Allow and says there is no per-site mem
   assert.equal(await r.answer, "site");
   assert.ok(logs.some((l) => /site from the live view \(no per-site memory exists: treated as Allow\)/.test(l)));
   assert.deepEqual(changes.map((c) => c.op), ["add", "withdraw"]);
-  assert.deepEqual(changes[1].item, { id: r.item.id });
+  assert.deepEqual(changes[1].item, { id: r.item.id, answer: "allow", by: "The host" }, "the cards that go hear who answered");
   assert.equal(ca.arrived("browser_click", { target: "e5", element: "Pay: Place order" }), null, "an allow lets the call through");
 
   // Denied in the browser: the same call arriving anyway is refused.

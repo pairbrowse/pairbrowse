@@ -192,7 +192,9 @@ export function approvalAsk(tool, input, review = latestReview(), now = Date.now
   const raw = ends.find(clickClass);
   if (!raw) return null;
   const target = raw.replace(CLICK_PREFIX, "").trim().slice(0, 120) || raw.slice(0, 120);
-  return { reason: String(verdict.permissionDecisionReason || "").replace(/^pairbrowse: /, ""), target };
+  // what: the element as the agent named it, its class first ("Pay: Place order"): a joiner's
+  // notice while the host decides (liveview/approval-share.mjs).
+  return { reason: String(verdict.permissionDecisionReason || "").replace(/^pairbrowse: /, ""), target, what: raw.trim().slice(0, 140) };
 }
 
 // The same call, however its keys are ordered: what the browser's card and the call that arrives

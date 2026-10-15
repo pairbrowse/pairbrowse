@@ -50,8 +50,9 @@ what each boundary protects against, see [security.md](security.md) and the
   which clicks need the user, where a password may be typed and how it is masked. Which tools exist
   and each tool's rules (blocked, hidden, approval, turn-taking, screenshots) are the tool catalog's
   (`scripts/tools/catalog.mjs`), which the helper, the hooks and the skill check all read.
-- **Shared truths** (`ui/vocab.js`, `ui/urls.js`, `ui/limits.js`): the words and colors, the
-  browser's own addresses and the limits that the helper, the in-page script and the pages share,
+- **Shared truths** (`ui/vocab.js`, `ui/urls.js`, `ui/limits.js`, `ui/events.js`): the words and
+  colors, the browser's own addresses, the limits, and the live view's events with who gets each,
+  that the helper, the in-page script and the pages share,
   as flat files at the `ui/` root (the live view serves them; the native build ships them).
 - **Hooks** (`scripts/guard.mjs`, `scripts/log.mjs`, `scripts/session-start.mjs`): the PreToolUse
   hook asks the user before final actions; the PostToolUse hook writes the run log; session start
@@ -69,7 +70,9 @@ what each boundary protects against, see [security.md](security.md) and the
   every install.
 - **Live view and sharing** (`scripts/liveview.mjs`, `scripts/liveview/`, `scripts/tunnel.mjs`,
   `scripts/devshare.mjs`): a key-protected page on loopback, and, only when the user invites
-  someone, a Cloudflare Quick Tunnel that joiners reach with a key and the user's Allow.
+  someone, a Cloudflare Quick Tunnel that joiners reach with a key and the user's Allow. The
+  server's routes are tables in `scripts/liveview/routes/` (each names the right it needs and the
+  part of the helper it works with); bodies are read once, capped, in `scripts/liveview/http.mjs`.
 - **Side panel and page script** (`ui/`, the extension; `scripts/browser/` keeps the icon files; `scripts/hud.js`): the extension and in-page
   bar that show people what agents are doing; names and keys are random per run.
 

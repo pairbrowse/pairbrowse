@@ -126,14 +126,15 @@ The plugin is small:
 | `scripts/policy.mjs`, `scripts/secrets.mjs` | Rules the helper enforces: blocked tools, navigation, secret domains |
 | `scripts/browser/choice.mjs` | Which browser launches: the binary (Chromium, a path of your own, the native build) and the shell (the side panel extension, or the build's own pages), chosen in one pure function and never written into config |
 | `scripts/tools/catalog.mjs` | Every tool's definition and rules, in one place (serve, guard, policy, launch, runs and the skill check read it) |
-| `ui/vocab.js`, `ui/urls.js`, `ui/limits.js` | What the helper and the pages share: words and colors, the browser's own addresses, limits both sides keep |
+| `ui/vocab.js`, `ui/urls.js`, `ui/limits.js`, `ui/events.js` | What the helper and the pages share: words and colors, the browser's own addresses, limits both sides keep, the live view's events and who gets each |
 | `runtime/` | Pinned Playwright MCP version and lockfile |
 | `scripts/runs.mjs` | `runs` MCP server: saved runs (resume) and pre-submit reviews |
 | `scripts/guard.mjs` | PreToolUse hook: auto-allows browser actions, enforces the review, asks before final ones (in Codex, which can't ask from a hook, it hands them to you; the helper applies the same rules for every app but Claude Code) |
 | `scripts/session-start.mjs` | SessionStart hook: tells Claude about unfinished runs |
 | `scripts/log.mjs` | PostToolUse hook: plain-English activity log per session in `~/.pairbrowse/log/` |
 | `scripts/hud.js` | In-page status badge, driven only with a per-start random key |
-| `scripts/liveview.mjs`, `scripts/liveview/` | Live view server for the Claude workspace (dock and Browser pane), the side panel's data: request checks, invites, input replay, shared tabs for joiners and their server |
+| `scripts/liveview.mjs`, `scripts/liveview/` | Live view server for the Claude workspace (dock and Browser pane), the side panel's data: request checks and body reading (`http.mjs`), invites, input replay, shared tabs for joiners and their server |
+| `scripts/liveview/routes/` | The live view's routes by audience: `viewer` (page, events, thumb, state, input, pause), `owner` (approvals, dev, join hosts, profile, invites, record), `sessions`, `pages` (the browser's own pages: activity, layout, config, report, outline, strip, tab order, capture), `timeline`, `tools` |
 | `scripts/liveview.html`, `.css`, `.js`, `ui/common.js`, `ui/tokens.css` | The live view page, and the code and design tokens it shares with the side panel |
 | `scripts/join.mjs`, `scripts/relay.mjs`, `scripts/tabsync.mjs`, `scripts/daemon/follow.mjs` (+ `scripts/daemon/join/`) | Join codes and host approvals; the joiner's connection to the host (one WebSocket both ways); which addresses, field values, pointers and tab orders cross and the loop-safe bookkeeping; the joiner's browser following the shared tabs |
 | `scripts/liveview/push.mjs`, `scripts/liveview/joiner-server.mjs`, `scripts/ws.mjs` | The host's push channel (one WebSocket per approved joiner: tabs, form values, pointers, session, messages), the guest port with its limits, and the small standard-library WebSocket both sides use |

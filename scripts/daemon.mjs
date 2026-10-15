@@ -45,7 +45,7 @@ import { createCaptureChannel } from "./liveview/capture.mjs";
 import { createFacts } from "./facts.mjs";
 import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
 import { cleanName, displayName } from "./sharing/join.mjs";
-import { currentAccount, within, readJson, spend, pidAlive } from "./util.mjs";
+import { currentAccount, within, readJson, spend, pidAlive, urlHost } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
@@ -156,7 +156,7 @@ const clients = new Map(); // participant -> socket
 // The Tools tab (the browser's own pages, the owner only; daemon/toolstab.mjs): this session's
 // downloads (in memory), the recordings this helper saved (an owner-only index), the hand-offs
 // waiting for the person, and diagnostics. Fed from what the helper already sees.
-const hostOfUrl = (url) => { try { return new URL(url).host; } catch { return ""; } };
+const hostOfUrl = (url) => urlHost(url);
 const downloads = createDownloads({ session: () => context.sessionName() });
 const recordings = createRecordings();
 const handoffs = createHandoffs();

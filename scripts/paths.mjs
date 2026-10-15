@@ -1,8 +1,7 @@
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
-import { readFileSync, mkdirSync, chmodSync } from "node:fs";
-import { writeJsonAtomic } from "./util.mjs";
+import { mkdirSync, chmodSync } from "node:fs";
+import { writeJsonAtomic, sha256, readJson } from "./util.mjs";
 
 // Everything PairBrowse writes is private to your user account.
 process.umask(0o077);
@@ -62,7 +61,7 @@ export const paths = {
   recordings: join(HOME, "recordings.json"),
   // The only way into the browser: a socket file only you can open (a named pipe on Windows).
   socket: process.platform === "win32"
-    ? `\\\\.\\pipe\\pairbrowse-${createHash("sha256").update(`${userInfo().username}:${HOME}`).digest("hex").slice(0, 16)}`
+    ? `\\\\.\\pipe\\pairbrowse-${sha256(`${userInfo().username}:${HOME}`).slice(0, 16)}`
     : join(HOME, "run", "browser.sock"),
 };
 
@@ -149,11 +148,7 @@ export const DEFAULT_CONFIG = {
 };
 
 export function loadConfig() {
-  try {
-    return { ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(paths.config, "utf8")) };
-  } catch {
-    return { ...DEFAULT_CONFIG };
-  }
+  return { ...DEFAULT_CONFIG, ...readJson(paths.config, {}) };
 }
 
 // The name people in a shared session see for this person: set in config (participantName) or
@@ -169,7 +164,8 @@ export function saveParticipantName(config, name) {
 // short leaves the old file. Returns what the file holds now.
 export function saveConfig(fields, file = paths.config) {
   let saved = {};
-  try { const read = JSON.parse(readFileSync(file, "utf8")); if (read && typeof read === "object" && !Array.isArray(read)) saved = read; } catch {}
+  const read = readJson(file);
+  if (read && typeof read === "object" && !Array.isArray(read)) saved = read;
   for (const [k, v] of Object.entries(fields || {})) if (v !== undefined) saved[k] = v;
   writeJsonAtomic(file, saved);
   return saved;

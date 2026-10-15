@@ -33,16 +33,21 @@ export function readJson(file, fallback = null) {
 // Writes `value` as JSON through a .tmp file and a rename, so another process reading the file
 // (the helper and the runs server share the run files) never sees half of it. mode: the file's
 // permissions (0o600: owner-only), set on the .tmp file before it takes the name; the folder it
-// makes gets 0o700 then too.
-export function writeJsonAtomic(file, value, { mode } = {}) {
+// makes gets 0o700 then too. indent: JSON.stringify's (0: on one line, as Chromium writes its own
+// profile files).
+export function writeJsonAtomic(file, value, { mode, indent = 2 } = {}) {
   mkdirSync(dirname(file), { recursive: true, ...(mode !== undefined ? { mode: 0o700 } : {}) });
   // Per process: two processes writing the same file (the runs server of two agents) never share one.
   const tmp = `${file}.${process.pid}.tmp`;
   if (mode !== undefined) rmSync(tmp, { force: true }); // a leftover .tmp keeps its own mode otherwise
-  writeFileSync(tmp, JSON.stringify(value, null, 2), mode !== undefined ? { mode } : undefined);
+  writeFileSync(tmp, JSON.stringify(value, null, indent || undefined), mode !== undefined ? { mode } : undefined);
   if (mode !== undefined) chmodSync(tmp, mode); // the umask can't widen or narrow it
   renameSync(tmp, file);
 }
+
+// A URL's host (with its port) or origin; fallback when it isn't a URL.
+export const urlHost = (url, fallback = "") => { try { return new URL(url).host; } catch { return fallback; } };
+export const urlOrigin = (url, fallback = "") => { try { return new URL(url).origin; } catch { return fallback; } };
 
 export const sha256 = (data) => createHash("sha256").update(data).digest("hex");
 

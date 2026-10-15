@@ -1,7 +1,7 @@
 // Humanized input in the native browser: typing with a person's rhythm (humanType) and form fills
 // field by field (humanFill), paced by "pairbrowse" typingPace and formMove in config.json. Used for
 // every engine by daemon/serve.mjs; the engine pack's own humanize covers mouse moves.
-import { within } from "../util.mjs";
+import { within, sleep } from "../util.mjs";
 
 // typingPace: how fast humanized typing goes, 0.2 (fastest) to 1 (the engine's own, about 60 words a
 // minute); the gaps between keys scale, how long each key is held doesn't. For a single browser_type
@@ -62,7 +62,7 @@ export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
 
 // browser_type with slowly: a slower hand, about 90 ms a key (a slower typingPace stays slower).
 export const SLOW_TYPE_PACE = 0.7;
-const defaultWait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const defaultWait = sleep;
 
 // Types text on the page's keyboard: each key down and up when the schedule says.
 async function typeKeys(keys, text, pace, rng, wait) {

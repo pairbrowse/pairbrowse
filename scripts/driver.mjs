@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readJson } from "./util.mjs";
 import { join } from "node:path";
 
 // The oldest Node.js major the pinned Patchright runs on: its package.json "engines" field
@@ -7,7 +7,7 @@ export const PATCHRIGHT_NODE_MINIMUM = 20;
 
 export function patchrightNodeMinimum(runtime) {
   try {
-    const engines = JSON.parse(readFileSync(join(runtime, "node_modules", "patchright", "package.json"), "utf8")).engines?.node;
+    const engines = readJson(join(runtime, "node_modules", "patchright", "package.json"))?.engines?.node;
     const m = /^\s*>=?\s*(\d+)/.exec(engines || "");
     if (m) return Number(m[1]);
   } catch {}

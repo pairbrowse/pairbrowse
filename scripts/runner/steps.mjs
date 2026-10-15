@@ -437,7 +437,7 @@ export async function stepsIn(page, steps, hooks, touched = []) {
           for (let k = 1; k <= n; k++) {
             const e = (1 - Math.cos((Math.PI * k) / n)) / 2, bend = 0.08 * Math.sin(Math.PI * e);
             await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(from.x + dx * e - dy * bend), y: Math.round(from.y + dy * e + dx * bend), button: "none", buttons: 0 });
-            await new Promise((r) => setTimeout(r, glide / n));
+            await sleep(glide / n);
           }
         }
         let at = pts[0];
@@ -452,7 +452,7 @@ export async function stepsIn(page, steps, hooks, touched = []) {
               const n = Math.max(2, Math.min(12, Math.round(Math.hypot(p.x - at.x, p.y - at.y) / 12)));
               for (let k = 1; k <= n; k++) {
                 await send("mouseMoved", { x: Math.round(at.x + (p.x - at.x) * k / n), y: Math.round(at.y + (p.y - at.y) * k / n) });
-                await new Promise((r) => setTimeout(r, STROKE_STEP_MS));
+                await sleep(STROKE_STEP_MS);
               }
               at = p;
               await mark(p);
@@ -482,9 +482,9 @@ export async function stepsIn(page, steps, hooks, touched = []) {
           await page.mouse.wheel(0, eased - sent);
           sent = eased;
           if (k % 10 === 0) await hooks.cursor?.({ boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, ""); // still the agent's
-          if (hooks.smooth) await new Promise((r) => setTimeout(r, 16));
+          if (hooks.smooth) await sleep(16);
         }
-        await new Promise((r) => setTimeout(r, 60)); // the page catches up with the last turn of the wheel
+        await sleep(60); // the page catches up with the last turn of the wheel
         hooks.activity(`Scrolled ${total > 0 ? "down" : "up"}`);
       } else if (kind === "upload") {
         // Like pairbrowse_upload: files from anywhere (checked, copied into the uploads folder),

@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
+import { sleep } from "./util.mjs";
 
 // Is a program on the PATH?
 export const hasCommand = (bin) => spawnSync("sh", ["-c", `command -v ${bin}`]).status === 0;
@@ -35,7 +36,7 @@ export async function startVirtualDisplay(log = () => {}, { name = "Xauthority" 
         log(`virtual screen :${n} started`);
         return { env: { DISPLAY: `:${n}`, XAUTHORITY: auth }, stop: () => xvfb.kill() };
       }
-      await new Promise((r) => setTimeout(r, 100));
+      await sleep(100);
     }
     xvfb.kill();
   }

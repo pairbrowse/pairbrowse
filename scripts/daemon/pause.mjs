@@ -8,6 +8,7 @@
 // here or in a session joined from here (where the host decides the shared pause); an agent never
 // resumes itself.
 import { cleanName } from "../sharing/join.mjs";
+import { sleep } from "../util.mjs";
 
 export const PAUSE_REPLY_MS = 60_000; // a paused agent hears back after this, so it isn't stuck
 const POLL_MS = 200;
@@ -106,7 +107,7 @@ export function createPause({ onChange = () => {}, now = () => Date.now(), reply
     async wait(signal = null, id = null) {
       const held = () => state || (id ? own.get(id) : null);
       const until = now() + replyMs;
-      while (held() && now() < until && !signal?.aborted) await new Promise((r) => setTimeout(r, POLL_MS));
+      while (held() && now() < until && !signal?.aborted) await sleep(POLL_MS);
       const h = held();
       return h ? { by: h.by } : null;
     },

@@ -7,11 +7,11 @@
 // it's loaded), and kept in ~/.pairbrowse/engine.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, mkdirSync, mkdtempSync, renameSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { paths } from "../paths.mjs";
-import { downloadPinned, readJson, sha256, sha256File } from "../util.mjs";
+import { downloadPinned, readJson, sha256, sha256File, writeJsonAtomic } from "../util.mjs";
 import { NATIVE } from "../native-pack.mjs";
 
 const run = promisify(execFile);
@@ -60,7 +60,7 @@ export async function installEngine(archive, { sha256: want = NATIVE.engine.sha2
     checkEngineFiles(unpacked, pins);
     const manifest = readJson(join(unpacked, "engine.json"));
     if (manifest?.product !== "PairBrowse engine") throw new Error("not a PairBrowse engine pack");
-    writeFileSync(join(unpacked, "installed.json"), JSON.stringify({ version: manifest.version, sha256: got, archive: basename(archive), installedAt: new Date().toISOString() }, null, 2) + "\n");
+    writeJsonAtomic(join(unpacked, "installed.json"), { version: manifest.version, sha256: got, archive: basename(archive), installedAt: new Date().toISOString() });
     const previous = join(staging, "previous");
     if (existsSync(dir)) renameSync(dir, previous);
     try {

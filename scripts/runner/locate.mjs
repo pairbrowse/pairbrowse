@@ -1,7 +1,7 @@
 // Fast mode's field finding: a field by its label, placeholder or nearby text, in the page and its
 // frames; folded sections opened; buttons and links found by name.
 import { strongSignal } from "../rules/clicks.mjs";
-import { sleep, within, bounded } from "../util.mjs";
+import { sleep, within, bounded, urlOrigin } from "../util.mjs";
 import { withHelpers, isVisible, nearbyText, settle } from "../daemon/page.mjs";
 import { scanReveal, pickReveal, revealNote } from "../daemon/reveal.mjs";
 import { contextAt } from "./risk.mjs";
@@ -199,7 +199,7 @@ export async function unfold(page, want, look, hooks, { exact = false } = {}) {
     handle.dispose().catch(() => {});
   }
 }
-const originOf = (url) => { try { return new URL(url).origin; } catch { return ""; } };
+const originOf = (url) => urlOrigin(url);
 
 // Whether fast mode may click a control to unfold something: only a click the checks call safe
 // and whose effect the markup says (a disclosure, a link on this site): never one that submits a

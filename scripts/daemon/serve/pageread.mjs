@@ -1,7 +1,7 @@
 // What the tool server reads in a page for its checks: a button's own label, whether a field is
 // sensitive by its own kind, and whether a navigation got where it was asked to. Each read bounded.
 import { isRef, sensitiveLabel } from "../../rules/policy.mjs";
-import { within } from "../../util.mjs";
+import { within, sleep } from "../../util.mjs";
 import { buttonLabel } from "../page.mjs";
 
 // The button's own label, as the page shows it (the click guard only sees what Claude calls it).
@@ -44,7 +44,7 @@ export async function arrivedAt(page, wanted, ms = 5000) {
   const key = (u) => { try { const x = new URL(u); x.hash = ""; return x.href; } catch { return null; } };
   const want = key(wanted);
   if (!want) return null;
-  for (const end = Date.now() + ms; ; await new Promise((r) => setTimeout(r, 100))) {
+  for (const end = Date.now() + ms; ; await sleep(100)) {
     if (page.isClosed?.()) return null;
     if (key(page.url()) === want) return page;
     if (Date.now() >= end) return null;

@@ -6,7 +6,7 @@
 // through CDP, like the live view's input (liveview/input.mjs).
 // call(fn, arg, ms): runs fn(arg) in the side panel extension's worker (panel.mjs).
 import { createInputReplayer } from "../liveview/input.mjs";
-import { within } from "../util.mjs";
+import { within, sleep } from "../util.mjs";
 import { FRAME_EVERY_MS } from "../../ui/limits.js";
 
 export const ICE_SERVERS = [{ urls: "stun:stun.cloudflare.com:3478" }];
@@ -181,7 +181,7 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     try {
       while (peers.size) {
         const items = await within(TAKE_MS + 3000, ext((a) => globalThis.pbShare(a), { op: "take", ms: TAKE_MS }, TAKE_MS + 2000)).catch(() => null);
-        if (!Array.isArray(items)) { await new Promise((r) => setTimeout(r, 300)); continue; }
+        if (!Array.isArray(items)) { await sleep(300); continue; }
         for (const item of items) await handle(item).catch((e) => log("shared screen", e?.message || e));
         await resizeAll().catch(() => {});
       }

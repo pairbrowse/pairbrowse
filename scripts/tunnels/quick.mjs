@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { join, dirname } from "node:path";
 import { paths } from "../paths.mjs";
-import { downloadPinned, isQuickTunnelHost, pidAlive } from "../util.mjs";
+import { downloadPinned, isQuickTunnelHost, pidAlive, sleep } from "../util.mjs";
 import { testMs } from "../testenv.mjs";
 
 const run = promisify(execFile);
@@ -129,10 +129,10 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
         no(new Error(tunnelExitReason(code, seen)));
       });
     });
-    for (const end = Date.now() + DNS_WAIT_MS; !(await resolves(new URL(url).host)) && Date.now() < end;) await new Promise((r) => setTimeout(r, 500));
+    for (const end = Date.now() + DNS_WAIT_MS; !(await resolves(new URL(url).host)) && Date.now() < end;) await sleep(500);
     // The code goes out only once this computer's resolver sees the name too: a joiner asking
     // too early gets "no such name", cached for a minute.
-    for (const end = Date.now() + LOCAL_DNS_WAIT_MS; !(await resolvesLocally(new URL(url).host)) && Date.now() < end;) await new Promise((r) => setTimeout(r, 500));
+    for (const end = Date.now() + LOCAL_DNS_WAIT_MS; !(await resolvesLocally(new URL(url).host)) && Date.now() < end;) await sleep(500);
     log(`sharing tunnel up: ${new URL(url).host}`);
     t.url = url;
     t.host = new URL(url).host;

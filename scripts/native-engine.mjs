@@ -3,12 +3,11 @@
 // in config.json. Its path is fixed: the Pro repo's engine test reads the pack calls made here.
 import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { NATIVE } from "./native-pack.mjs";
 import { paths } from "./paths.mjs";
-import { within, writeJsonAtomic } from "./util.mjs";
+import { within, writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
@@ -163,11 +162,9 @@ export function hostCachePath() {
 let capturing = null; // { key, promise }
 export async function macHostProfile(chromium, executablePath, pack, directory, version, hardware = macHardware, onCapture = () => {}) {
   const file = hostCachePath();
-  const key = createHash("sha256").update(JSON.stringify({ version, hardware: await hardware() })).digest("hex");
-  try {
-    const cached = JSON.parse(readFileSync(file, "utf8"));
-    if (cached.key === key && cached.profile && typeof cached.profile === "object") return cached.profile;
-  } catch {}
+  const key = sha256(JSON.stringify({ version, hardware: await hardware() }));
+  const cached = readJson(file);
+  if (cached?.key === key && cached.profile && typeof cached.profile === "object") return cached.profile;
   if (capturing?.key === `${file}\n${key}`) return capturing.promise;
   try { onCapture(); } catch {}
   const promise = captureAndKeep(chromium, executablePath, pack, directory, file, key, version);
@@ -226,7 +223,7 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   }
   let hostCapture = false;
   if (fingerprint.fingerprintProfile === undefined) {
-    fingerprint.fingerprint ??= createHash("sha256").update(directory).digest("hex");
+    fingerprint.fingerprint ??= sha256(directory);
     if (process.platform === "darwin") {
       const hostAt = Date.now();
       fingerprint.fingerprintProfile = await macHostProfile(chromium, options.executablePath, pack, directory, version, macHardware, () => log(MEASURING));

@@ -1,9 +1,10 @@
 // The tab strip and overview: favicons, and what people other than the owner see of tabs and
 // activity (addresses without query strings or fragments).
 import { stripUrl, stripText } from "../sharing/join.mjs";
+import { urlHost } from "../util.mjs";
 
 // A web address's host (with its port), or "" for anything else.
-export const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
+export const hostOf = (url) => urlHost(url);
 
 const ICON_TIMEOUT_MS = 3000;
 const ICON_MAX_BYTES = 64_000;

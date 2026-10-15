@@ -12,7 +12,7 @@
 // (never on the command line), and the build draws its own colors.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, readdirSync, chmodSync, copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ import { paths, loadConfig } from "./paths.mjs";
 import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createMotion } from "./motion.mjs";
 import { ICON, rebrandInterfaceText, registerApp } from "./native/macos-app.mjs";
-import { downloadPinned, readJson } from "./util.mjs";
+import { downloadPinned, readJson, writeJsonAtomic, sha256 } from "./util.mjs";
 import { layoutFrom } from "./liveview/layout.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
 
@@ -39,7 +39,7 @@ export const PANEL_DIR = join(here, "..", "ui");
 export { extensionOrigin } from "../ui/urls.js";
 
 // Chromium's extension ID scheme: SHA-256 of the input, first 32 hex digits written as a-p.
-const idFrom = (data) => [...createHash("sha256").update(data).digest("hex").slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
+const idFrom = (data) => [...sha256(data).slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
 
 // The side panel's extension ID. Its manifest carries a public "key", so Chromium derives the ID
 // from that key (SHA-256 of the DER public key) rather than from the folder path. Plugin installs
@@ -63,7 +63,7 @@ export function panelExtensionId(dir = PANEL_DIR) {
 // stored worker registrations go (resetPanelWorker). The value is a hash of background.js with
 // the value itself blanked (test/browser.test.mjs keeps it true).
 const BUILD_LINE = /(const PB_BUILD = ")([0-9a-f]*)(";)/;
-export const panelBuildOf = (source) => createHash("sha256").update(String(source).replace(BUILD_LINE, "$1$3")).digest("hex").slice(0, 16);
+export const panelBuildOf = (source) => sha256(String(source).replace(BUILD_LINE, "$1$3")).slice(0, 16);
 // The build the file on disk declares (null: none, an earlier version's file).
 export const panelBuild = (dir = PANEL_DIR) => {
   try { return readFileSync(join(dir, "background.js"), "utf8").match(BUILD_LINE)?.[2] || null; } catch { return null; }
@@ -262,14 +262,14 @@ export function prepareProfile(profile, panelId = panelExtensionId(), { chromePa
   const prefs = readJson(file, {});
   const secure = readJson(secureFile, null);
   const oldPanels = oldPanelIds(secure, panelId);
-  if (chromePages) writeFileSync(file, JSON.stringify(profilePreferences(prefs, panelId, oldPanels, { chromePages, layout })));
+  if (chromePages) writeJsonAtomic(file, profilePreferences(prefs, panelId, oldPanels, { chromePages, layout }), { indent: 0 });
   else {
-    if (secure && profileSecurePreferences(secure, panelId)) writeFileSync(secureFile, JSON.stringify(secure));
-    writeFileSync(file, JSON.stringify(acknowledgeNewTabPage(profilePreferences(prefs, panelId, oldPanels), secure, panelId)));
+    if (secure && profileSecurePreferences(secure, panelId)) writeJsonAtomic(secureFile, secure, { indent: 0 });
+    writeJsonAtomic(file, acknowledgeNewTabPage(profilePreferences(prefs, panelId, oldPanels), secure, panelId), { indent: 0 });
   }
   const localStateFile = join(profile, "Local State");
   const localState = readJson(localStateFile, null);
-  if (localState && localStatePreferences(localState)) writeFileSync(localStateFile, JSON.stringify(localState));
+  if (localState && localStatePreferences(localState)) writeJsonAtomic(localStateFile, localState, { indent: 0 });
   return firstRun;
 }
 
@@ -426,7 +426,7 @@ export async function ensureBrowser(chromium, log = () => {}) {
   // then goes next to it, so switching "browser" to chromium never overwrites the native app.
   const target = existsSync(join(nativeTarget, "Contents", "Resources", "PairBrowse-build.json")) ? join(dirname(nativeTarget), "PairBrowse Chromium.app") : nativeTarget;
   const exec = join(target, "Contents", "MacOS", "pairbrowse");
-  const stamp = createHash("sha256").update(`branding v6 ${sourceApp} ${target}` + readFileSync(ICON).toString("base64")).digest("hex");
+  const stamp = sha256(`branding v6 ${sourceApp} ${target}` + readFileSync(ICON).toString("base64"));
   const stampFile = paths.buildStamp;
   if (existsSync(exec) && existsSync(stampFile) && readFileSync(stampFile, "utf8") === stamp) return exec;
 

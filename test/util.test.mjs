@@ -76,7 +76,11 @@ test("bounded: a page read gives up quietly with its fallback", async () => {
 // through the one atomic write: a reader sees the old file or the new one, never half of one.
 test("state files are written atomically, through writeJsonAtomic", async () => {
   const { readFileSync } = await import("node:fs");
-  for (const f of ["tabs.mjs", "sessions.mjs", "runs.mjs", "runner.mjs", "facts.mjs", "native/install.mjs", "native-engine.mjs"]) {
+  // Every module (macos-app.mjs writes an app bundle's own strings file, util.mjs is the one write).
+  const { readdirSync } = await import("node:fs");
+  const all = readdirSync(new URL("../scripts/", import.meta.url), { recursive: true }).filter((f) => /\.(mjs|js)$/.test(f) && !f.startsWith("dev/") && !["util.mjs", "native/macos-app.mjs"].includes(f));
+  assert.ok(all.includes("runner/playbooks.mjs") && all.includes("native/install.mjs"));
+  for (const f of all) {
     const src = readFileSync(new URL(`../scripts/${f}`, import.meta.url), "utf8");
     assert.doesNotMatch(src, /writeFileSync\([^;]*JSON\.stringify/, `${f} writes JSON in place`);
   }

@@ -7,9 +7,8 @@
 // not sent again (the result says the page looks the same): a wait, a key press or a tab list
 // that changed nothing costs no image. The map goes stale with the page: another address, a
 // scroll, a resize or a tab that closed, and a click on the old picture is refused.
-import { createHash } from "node:crypto";
 import { redact } from "../rules/secrets.mjs";
-import { sleep, within, pageLoaded } from "../util.mjs";
+import { sleep, within, pageLoaded, sha256 } from "../util.mjs";
 import { strongSignal } from "../rules/clicks.mjs";
 import { withHelpers, buttonLabel, clickRisk, clickContext } from "./page.mjs";
 
@@ -141,7 +140,7 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {}, no
     const width = jpegWidth(bytes);
     if (!width) return null;
     const m = f.metadata || {};
-    const hash = createHash("sha256").update(bytes).digest("hex");
+    const hash = sha256(bytes);
     const prev = shots.get(participant);
     // What pairbrowse_click_at maps onto: the page as it stood when this picture was drawn.
     shots.set(participant, { page, toCss: m.deviceWidth / width, url: page.url(), scrollX: Math.round(m.scrollOffsetX ?? 0), scrollY: Math.round(m.scrollOffsetY ?? 0), width: m.deviceWidth, height: m.deviceHeight, at: now(), hash });

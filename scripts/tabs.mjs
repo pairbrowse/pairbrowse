@@ -2,7 +2,7 @@
 // starts, behind an "Opening tabs" screen. Chrome's own restore reloads every tab at once
 // during startup, which made the first action wait many seconds.
 import { ownTitle } from "./daemon/tablabels.mjs";
-import { readJson, sleep, writeJsonAtomic } from "./util.mjs";
+import { readJson, sleep, writeJsonAtomic, urlHost } from "./util.mjs";
 
 const restorable = (url) => /^https?:\/\//i.test(url);
 
@@ -86,7 +86,7 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const host = (url) => { try { return new URL(url).host; } catch { return url; } };
+const host = (url) => urlHost(url, url);
 
 // The side column's row: the site's initial on a plain avatar (the panel's .avatar.plain; no favicon
 // yet, the tabs have not loaded), the title over the host, a state mark at the right. The words

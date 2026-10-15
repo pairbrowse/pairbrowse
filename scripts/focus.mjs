@@ -3,6 +3,7 @@
 // of seconds, puts the app you were in back in front each time the browser jumps up.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { sleep } from "./util.mjs";
 
 const run = promisify(execFile);
 // macOS: which app is in front ("pid bundle-id"), and bringing an app back to the front.
@@ -25,7 +26,7 @@ export async function keepFocus(change) {
   if (pid && !BROWSER_IDS.has(id)) {
     (async () => { // in the background: the change itself is done
       for (let i = 0; i < 20; i++) {
-        await new Promise((r) => setTimeout(r, 125));
+        await sleep(125);
         if (isBrowser(await jxa(FRONT).catch(() => ""))) await jxa(ACTIVATE(pid)).catch(() => {});
       }
     })();

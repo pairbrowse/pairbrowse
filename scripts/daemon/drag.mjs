@@ -5,7 +5,7 @@
 // the drag, then steps across to the target (the page sees the card move, drop targets light
 // up), a moment's hold, and the release. Playwright's mouse keeps HTML5 drags in the page (no
 // system drag); in the PairBrowse browser the moves take human paths.
-import { within } from "../util.mjs";
+import { within, sleep } from "../util.mjs";
 
 const STEPS = 12; // moves across to the target
 const START_NUDGE_PX = 8; // past any library's "did the pointer really move" threshold
@@ -49,7 +49,6 @@ async function box(el, what) {
   if (!r || !(r.width > 0 && r.height > 0)) throw new Error(`couldn't find ${what} on the page (hidden, gone, or a stale ref: take a browser_snapshot)`);
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 }
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // A plain reason from Playwright's error.
 export function reason(e) {
   const m = String(e?.message || e || "");

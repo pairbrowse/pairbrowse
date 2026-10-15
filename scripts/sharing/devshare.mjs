@@ -11,7 +11,7 @@ import http from "node:http";
 import net from "node:net";
 import { randomBytes } from "node:crypto";
 import { startQuickTunnel, watchTunnel } from "../tunnels/quick.mjs";
-import { isQuickTunnelHost } from "../util.mjs";
+import { isQuickTunnelHost, sleep } from "../util.mjs";
 import { testValue } from "../testenv.mjs";
 
 export const DEV_COOKIE = "__pairbrowse_dev";
@@ -208,7 +208,7 @@ export function createDevShare({ log = () => {}, startTunnel = (port) => startQu
   function fill(entry) {
     entry.filling ??= (async () => {
       for (let tries = 0; shares.get(entry.port) === entry && entry.tunnels.length < POOL && tries < 3; tries++) {
-        try { entry.tunnels.push(await connect(entry)); } catch { await new Promise((r) => setTimeout(r, 2000 * (tries + 1))); }
+        try { entry.tunnels.push(await connect(entry)); } catch { await sleep(2000 * (tries + 1)); }
       }
     })().finally(() => { entry.filling = null; });
     return entry.filling;

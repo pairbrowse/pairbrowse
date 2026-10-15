@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { paths, ensureDirs, loadConfig } from "../paths.mjs";
 import { ensureRuntime } from "../runtime.mjs";
 import { withoutTestSwitches } from "../testenv.mjs";
+import { sleep } from "../util.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -76,7 +77,7 @@ export async function connectLocal(say = () => {}) {
   let agent = agentProgram();
   let child = startDaemon({ agent });
   for (let i = 0; i < 100; i++) {
-    await new Promise((r) => setTimeout(r, 150));
+    await sleep(150);
     try {
       return await connectOnce();
     } catch {}

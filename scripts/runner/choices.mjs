@@ -1,6 +1,6 @@
 // Fast mode's dropdowns: native selects, styled dropdowns and suggestion lists, opened and chosen
 // in as a person would, the choice matched to what was asked.
-import { within, bounded } from "../util.mjs";
+import { within, bounded, sleep } from "../util.mjs";
 import { findIn, formRoots } from "./locate.mjs";
 
 // What a click or typing opens: the short texts that show now and didn't before (a dropdown's
@@ -119,7 +119,7 @@ export async function pickFromOpened(page, opener, option, label, hooks) {
     for (const until = Date.now() + SUGGEST_MS; Date.now() < until;) {
       choices = await choicesAfter(page, mark, near);
       if (bestChoice(choices, option) || (choices.length && Date.now() > until - SUGGEST_MS + 400)) break;
-      await new Promise((r) => setTimeout(r, 80));
+      await sleep(80);
     }
     let best = bestChoice(choices, option);
     // A long list with its own search box (focused when it opens): type the option there, as a person would.
@@ -130,7 +130,7 @@ export async function pickFromOpened(page, opener, option, label, hooks) {
       const same = typed && await bounded(opener.evaluate((n) => n === document.activeElement || n.contains(document.activeElement)), true);
       if (typed && !same) {
         await within(8000, page.keyboard.type(String(option), { delay: 10 }).catch(() => {}));
-        for (const until = Date.now() + SUGGEST_MS; Date.now() < until && !best; await new Promise((r) => setTimeout(r, 80))) best = bestChoice(await choicesAfter(page, mark, near), option);
+        for (const until = Date.now() + SUGGEST_MS; Date.now() < until && !best; await sleep(80)) best = bestChoice(await choicesAfter(page, mark, near), option);
       }
     }
     // A list that filled in late or redrew while it was read (a form in a frame from another site):
@@ -141,7 +141,7 @@ export async function pickFromOpened(page, opener, option, label, hooks) {
       const again = await choicesBefore(page);
       await hooks.cursor?.(opener, "click"); // declared once more: the first declaration may have run out
       if (await opener.click({ timeout: 2500 }).then(() => true, () => false)) {
-        for (const until = Date.now() + 2 * SUGGEST_MS; Date.now() < until && !best; await new Promise((r) => setTimeout(r, 100))) {
+        for (const until = Date.now() + 2 * SUGGEST_MS; Date.now() < until && !best; await sleep(100)) {
           choices = await choicesAfter(page, again, near);
           best = bestChoice(choices, option);
         }
@@ -189,7 +189,7 @@ export async function pickSuggestion(page, el, value, mark, typed = "", hooks = 
       await choiceAt(best, mark).click({ timeout: 3000 }).catch(() => {});
       return { picked: best.text, seen: choices };
     }
-    await new Promise((r) => setTimeout(r, 80));
+    await sleep(80);
   }
   return { picked: "", seen: choices };
 }

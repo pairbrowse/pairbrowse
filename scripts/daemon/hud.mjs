@@ -3,7 +3,7 @@
 // of a shared tab), and Claude's cursor.
 import { hudScript } from "../browser.mjs";
 import { isRef } from "../rules/policy.mjs";
-import { within } from "../util.mjs";
+import { within, sleep } from "../util.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 import { APP_COLORS, AGENT_FALLBACKS } from "../../ui/vocab.js";
 
@@ -329,7 +329,7 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     // The press that follows is the agent's: declared before the action goes on.
     await declarePress(page, [box || await pressBox(el, asked, since)]);
     // The action waits for the cursor to arrive, so it is there when the click happens.
-    if (ms) await new Promise((resolve) => setTimeout(resolve, ms));
+    if (ms) await sleep(ms);
   }
 
   // What a form fill will act on, all of it (document pixels), so the page script knows the

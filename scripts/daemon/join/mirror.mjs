@@ -96,7 +96,7 @@ export function createJoinMirror(live, { context, log, hud, presence, liveView, 
           live.cur.window = true;
           return p;
         }
-        await new Promise((r) => setTimeout(r, 100));
+        await sleep(100);
       }
       throw new Error("the new tab didn't show up");
     } catch (e) {

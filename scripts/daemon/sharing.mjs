@@ -5,8 +5,8 @@ import { ownTitle } from "./tablabels.mjs";
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
 import { createApprovals, encodeJoinCode, cleanName } from "../sharing/join.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
-import { readJson } from "../util.mjs";
-import { writeFileSync, rmSync } from "node:fs";
+import { readJson, writeJsonAtomic } from "../util.mjs";
+import { rmSync } from "node:fs";
 import { adoptTunnel, helperAlive } from "../tunnels/quick.mjs";
 import { randomBytes } from "node:crypto";
 import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../sharing/devshare.mjs";
@@ -79,7 +79,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       // Only Quick Tunnels are kept across a restart (their keeper outlives the helper); the
       // user's own ends with the helper and the next run starts it again on the same address.
       const tunnels = tun.pool.filter((t) => !t.own && Number.isInteger(t.pid) && t.port).map((t) => ({ url: t.url, pid: t.pid, port: t.port, log: t.log || null }));
-      writeFileSync(stateFile, JSON.stringify({ v: 1, at: Date.now(), guestPort: tun.guestPortWanted, invites: codes, approvals: approvals.saved(), tunnels }), { mode: 0o600 });
+      writeJsonAtomic(stateFile, { v: 1, at: Date.now(), guestPort: tun.guestPortWanted, invites: codes, approvals: approvals.saved(), tunnels }, { mode: 0o600 });
     } catch (e) { log(`sharing state not saved: ${e?.message || e}`); }
   }
   let restoring = null;

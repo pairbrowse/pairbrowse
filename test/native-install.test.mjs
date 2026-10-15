@@ -9,9 +9,9 @@ import { dirname, join } from "node:path";
 
 const home = mkdtempSync(join(tmpdir(), "pb-install-"));
 process.env.PAIRBROWSE_HOME = home;
-const { installNative, expectedSha256, nativeDirs, ensureNative, nativeLayout, pinnedAsset } = await import("../scripts/native-install.mjs");
+const { installNative, expectedSha256, nativeDirs, ensureNative, nativeLayout, pinnedAsset } = await import("../scripts/native/install.mjs");
 const { NATIVE } = await import("../scripts/native-pack.mjs");
-const { BRANDING, rebrandPak, attributionIds } = await import("../scripts/macos-app.mjs");
+const { BRANDING, rebrandPak, attributionIds } = await import("../scripts/native/macos-app.mjs");
 const { nativeManifest } = await import("../scripts/native-engine.mjs");
 // Nothing is downloaded in these tests: the pinned build can't be fetched, the engine pack is there.
 const offline = { pinned: async () => { throw new Error("offline"); }, engine: async () => {}, asset: { file: "pairbrowse-test.zip", sha256: "ab".repeat(32) } };
@@ -326,7 +326,7 @@ test("with browser: chromium (or a path) nothing is downloaded or installed", as
 });
 
 test("the first-setup question: asked once, Enter is PairBrowse, 2 is Chromium, recorded in config.json", async () => {
-  const { askBrowserChoice, BROWSER_QUESTION, skipMessage } = await import("../scripts/native-install.mjs");
+  const { askBrowserChoice, BROWSER_QUESTION, skipMessage } = await import("../scripts/native/install.mjs");
   const configFile = join(home, "config.json");
   const saved = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
   try {

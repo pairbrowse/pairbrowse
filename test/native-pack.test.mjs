@@ -10,7 +10,8 @@ import { basename, join } from "node:path";
 
 const home = mkdtempSync(join(tmpdir(), "pb-pack-"));
 process.env.PAIRBROWSE_HOME = home;
-const { installEngine, loadEngine, engineDir, ensureEngine, NATIVE } = await import("../scripts/native-pack.mjs");
+const { NATIVE } = await import("../scripts/native-pack.mjs");
+const { installEngine, loadEngine, engineDir, ensureEngine } = await import("../scripts/native/pack.mjs");
 const { downloadPinned } = await import("../scripts/util.mjs");
 const sha256 = (data) => createHash("sha256").update(data).digest("hex");
 

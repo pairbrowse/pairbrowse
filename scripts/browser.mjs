@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
 import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createMotion } from "./motion.mjs";
-import { ICON, rebrandInterfaceText, registerApp } from "./macos-app.mjs";
+import { ICON, rebrandInterfaceText, registerApp } from "./native/macos-app.mjs";
 import { downloadPinned, readJson } from "./util.mjs";
 import { layoutFrom } from "./liveview/layout.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
@@ -337,7 +337,7 @@ export function launchArgs(config = {}, { firstRun = false, chromePages = false,
 
 // The launch options every launch of the PairBrowse browser shares, built once here: the helper's
 // (daemon/context.mjs, which adds its own signal handling) and the install self-check's
-// (native-check.mjs). shell: the browser's (browser/choice.mjs). Its own side panel is the only
+// (native/check.mjs). shell: the browser's (browser/choice.mjs). Its own side panel is the only
 // extension a browser loads; a build with its own pages loads none and opens its startup page
 // (PairBrowse's new tab page), not the driver's about:blank (plans/555 D1.2), unless blankStart
 // (the self-check, which drives its first tab to a page of its own). firstRun: a new profile

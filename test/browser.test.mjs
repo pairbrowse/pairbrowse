@@ -2,7 +2,7 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { panelExtensionId, browserChoice } from "../scripts/browser.mjs";
-import { rebrandPak } from "../scripts/macos-app.mjs";
+import { rebrandPak } from "../scripts/native/macos-app.mjs";
 
 // A minimal version 5 pak: two strings and one alias.
 function pak(strings) {

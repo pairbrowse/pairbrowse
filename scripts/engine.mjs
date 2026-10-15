@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join, isAbsolute } from "node:path";
 import { launchNative, nativeManifest } from "./native-engine.mjs";
-import { ensureEngine, loadEngine } from "./native-pack.mjs";
+import { ensureEngine, loadEngine } from "./native/pack.mjs";
 import { PATCHRIGHT_NODE_MINIMUM } from "./driver.mjs";
 
 export function validateEngine(config, nodeVersion = process.versions.node) {

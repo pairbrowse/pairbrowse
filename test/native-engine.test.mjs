@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchNative, nativeManifest, chromePages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
-import { loadEngine } from "../scripts/native-pack.mjs";
+import { loadEngine } from "../scripts/native/pack.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
 process.env.PAIRBROWSE_HOME = mkdtempSync(join(tmpdir(), "pairbrowse-home-test-"));

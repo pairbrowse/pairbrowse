@@ -185,7 +185,7 @@ test("a build with its own pages still opens when the live view cannot start", {
 // form test/native-install.test.mjs checks), and a second launch doesn't repeat it.
 test("a recorded browser of your own logs once that nothing is downloaded or installed", { timeout: 30_000 }, async () => {
   const { createContext } = await import("../scripts/daemon/context.mjs");
-  const { notChosen } = await import("../scripts/native-install.mjs");
+  const { notChosen } = await import("../scripts/native/install.mjs");
   assert.equal(notChosen({ browser: "chromium" }, true), "browser is chromium in ~/.pairbrowse/config.json: nothing to download or install");
   assert.equal(notChosen({ browser: "pairbrowse" }, true), null);
   assert.equal(notChosen({}, true), null);

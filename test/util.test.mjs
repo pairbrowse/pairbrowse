@@ -76,7 +76,7 @@ test("bounded: a page read gives up quietly with its fallback", async () => {
 // through the one atomic write: a reader sees the old file or the new one, never half of one.
 test("state files are written atomically, through writeJsonAtomic", async () => {
   const { readFileSync } = await import("node:fs");
-  for (const f of ["tabs.mjs", "sessions.mjs", "runs.mjs", "runner.mjs", "facts.mjs", "native-install.mjs", "native-engine.mjs"]) {
+  for (const f of ["tabs.mjs", "sessions.mjs", "runs.mjs", "runner.mjs", "facts.mjs", "native/install.mjs", "native-engine.mjs"]) {
     const src = readFileSync(new URL(`../scripts/${f}`, import.meta.url), "utf8");
     assert.doesNotMatch(src, /writeFileSync\([^;]*JSON\.stringify/, `${f} writes JSON in place`);
   }
@@ -95,7 +95,7 @@ test("every config.json key the code reads has its default (or is one of the old
   const { join } = await import("node:path");
   const { DEFAULT_CONFIG } = await import("../scripts/paths.mjs");
   const dir = new URL("../scripts/", import.meta.url).pathname;
-  const files = [...readdirSync(dir).filter((f) => f.endsWith(".mjs")).map((f) => join(dir, f)), ...readdirSync(join(dir, "daemon")).filter((f) => f.endsWith(".mjs")).map((f) => join(dir, "daemon", f))];
+  const files = readdirSync(dir, { recursive: true }).filter((f) => f.endsWith(".mjs") && !f.startsWith("dev/")).map((f) => join(dir, f));
   const read = new Set();
   for (const f of files) for (const m of readFileSync(f, "utf8").matchAll(/\bconfig\??\.([a-zA-Z]+)\b/g)) read.add(m[1]);
   const older = new Set(["browserEngine", "executablePath", "json", "mjs"]); // still read, never written (browser.mjs browserChoice)

@@ -5,7 +5,7 @@
 import { ensureBrowser, launchOptions, prepareProfile, panelExtensionId, resetPanelWorker, writeHelperKeyFile, dropHelperKeyFile, CAPTURE_KEY_PREFIX } from "../../browser.mjs";
 import { chooseBrowser, engineConfig, shellOf } from "../../browser/choice.mjs";
 import { engineProfile, launchEngine, validateEngine } from "../../engine.mjs";
-import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../../native-install.mjs";
+import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../../native/install.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "../../display.mjs";
 import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
 import { within } from "../../util.mjs";

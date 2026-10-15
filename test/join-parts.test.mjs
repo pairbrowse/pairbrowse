@@ -1,6 +1,7 @@
 // follow.mjs's parts (daemon/join/*.mjs) share the session joined now as live.cur. A local named
 // live inside one of them hides it: live.cur reads undefined and the check after an await quietly
 // returns (a joiner stopped taking the host's tab order that way).
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";

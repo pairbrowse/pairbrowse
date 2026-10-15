@@ -1,5 +1,6 @@
 // The helper's events in one list (ui/events.js): every event the live view sends on its stream is
 // there, with who gets it, and the pages' lists (common.js) and the helper's sets come from it.
+import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";

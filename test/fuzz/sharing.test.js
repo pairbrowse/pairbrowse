@@ -28,7 +28,7 @@ const pathSeg = fc.oneof(label, fc.constantFrom("tmp", "home", "Users", "private
 const webUrl = fc.tuple(fc.constantFrom("http", "https"), domain, fc.array(pathSeg, { maxLength: 4 })).map(([s, d, p]) => `${s}://${d}/${p.join("/")}`);
 const localUrl = fc.oneof(
   fc.tuple(fc.constantFrom("http://localhost", "http://127.0.0.1", "http://127.1", "http://0x7f.1", "http://2130706433", "http://10.1.2.3", "http://192.168.0.1", "http://172.20.1.1", "http://169.254.1.1",
-    "http://0.0.0.0", "http://[::1]", "http://[::ffff:127.0.0.1]", "http://[fe80::1]", "http://router", "http://printer.local", "http://app.localhost", "http://example.com.", "https://a@example.com", "https://a:b@example.com"),
+    "http://0.0.0.0", "http://[::1]", "http://[::ffff:127.0.0.1]", "http://[fe80::1]", "http://100.64.0.1", "http://100.101.102.103", "http://localhost.", "http://0x64.0x40.0.1", "http://router", "http://printer.local", "http://app.localhost", "http://example.com.", "https://a@example.com", "https://a:b@example.com"),
   fc.constantFrom("", ":3000", ":8080"), fc.constantFrom("/", "/x?y=1", "/a#b")).map((p) => p.join("")),
   fc.constantFrom("file:///etc/passwd", "chrome://settings", "javascript:alert(1)", "data:text/html,x", "about:blank", "view-source:https://a.com", "blob:https://a.com/x", "ftp://a.com/"));
 const anyUrl = fc.oneof(webUrl, localUrl, junk, fc.webUrl({ withQueryParameters: true, withFragments: true }));
@@ -128,7 +128,10 @@ test("the live view's guests get tabs and activity without query strings or frag
 
 // ---- tabsync.mjs ----
 
-const isLocal = (url) => { try { const u = new URL(url); return !/^https?:$/.test(u.protocol) || !!u.username || !!u.password || u.hostname.startsWith("[") || !u.hostname.includes(".") || u.hostname.endsWith(".") || /^(127|10|0|169\.254|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(u.hostname) || /(^|\.)(localhost|local)$/.test(u.hostname); } catch { return true; } };
+// A dotted-quad host (the URL parser writes every IPv4 form as one) in a local range: 0/8, 10/8,
+// 100.64/10 (CGNAT, Tailscale), 127/8, 169.254/16, 172.16/12, 192.168/16.
+const localQuad = (h) => { const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h); if (!m) return false; const [a, b] = [Number(m[1]), Number(m[2])]; return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b < 128) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b < 32) || (a === 192 && b === 168); };
+const isLocal = (url) => { try { const u = new URL(url); return !/^https?:$/.test(u.protocol) || !!u.username || !!u.password || u.hostname.startsWith("[") || !u.hostname.includes(".") || u.hostname.endsWith(".") || localQuad(u.hostname) || /(^|\.)(localhost|local)$/.test(u.hostname); } catch { return true; } };
 
 test("a tab's address crosses only as a public web address, within its size, and without secrets", () => {
   check(fc.property(fc.oneof(anyUrl, localUrl), fc.boolean(), fc.array(domain, { maxLength: 2 }), (raw, full, secretDomains) => {

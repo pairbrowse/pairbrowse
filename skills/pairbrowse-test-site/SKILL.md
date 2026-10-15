@@ -26,7 +26,7 @@ PairBrowse plugin. PairBrowse is the browser; code changes happen in the project
    settings), and which test account. Use a clean session for first-visit flows:
    `pairbrowse_session` `new` with `clean: true`.
 2. `run_save` with `name` (for example `test-localhost-signup`) and `goal`.
-3. Local addresses (`localhost`, `127.0.0.1`, `*.local`, `192.168.*`, `10.*`) ask the user
+3. Local addresses (`localhost`, `127.0.0.1`, `*.local`, `192.168.*`, `10.*`, `100.64.*` to `100.127.*`) ask the user
    before `browser_navigate` opens them; that is expected, say why you are opening it. In
    Codex the navigation is refused with a note: ask the user to open the address in the
    PairBrowse window themselves, then continue from `browser_tabs` `list`. A `pairbrowse_run`

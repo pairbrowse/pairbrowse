@@ -24,14 +24,15 @@ const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const DROP = /^(x-forwarded-|x-real-ip$|forwarded$|cf-|cdn-loop$|true-client-ip$)/i;
 
 // A dev server address on this computer: http on localhost, 127.0.0.1, [::1] or *.localhost.
-// Returns { hostname, port } or null (other networks never qualify).
+// Returns { hostname, port } or null (other networks, and port 0, never qualify).
 export function devAddress(raw) {
   let u;
   try { u = new URL(String(raw ?? "")); } catch { return null; }
   if (u.protocol !== "http:" || u.username || u.password) return null;
   const hostname = u.hostname.toLowerCase();
   if (!LOOPBACK.has(hostname) && !hostname.endsWith(".localhost")) return null;
-  return { hostname, port: Number(u.port || 80) };
+  const port = Number(u.port || 80);
+  return validPort(port) ? { hostname, port } : null; // port 0 is no server's
 }
 
 export const validPort = (p) => Number.isInteger(p) && p >= 1 && p <= 65535;

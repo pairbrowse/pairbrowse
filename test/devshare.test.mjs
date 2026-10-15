@@ -54,6 +54,7 @@ test("dev addresses: http on this computer only", () => {
   assert.equal(devAddress("https://localhost:3000/"), null);
   assert.equal(devAddress("http://user:pw@localhost:3000/"), null);
   assert.equal(devAddress("https://example.com/"), null);
+  assert.equal(devAddress("http://localhost:0/"), null, "port 0 is no dev server (the side panel offered it)");
 });
 
 test("headers: the dev server sees a local visit, the visitor sees the shared address", () => {

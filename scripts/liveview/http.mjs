@@ -85,6 +85,8 @@ export const listen = (server, port) => new Promise((resolve, reject) => {
   server.listen(port, "127.0.0.1", () => { server.off("error", reject); resolve(); });
 });
 
+// One server-sent event.
+export const sse = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 export const json = (res, code, data) => { res.writeHead(code, { ...SECURITY_HEADERS, "content-type": "application/json" }); res.end(JSON.stringify(data)); };
 
 // text: a plain sentence for the answer instead of the bare code.

@@ -19,11 +19,11 @@ import { keepFocus } from "./focus.mjs";
 import { createApprovals, personLabel, cleanName } from "./join.mjs";
 import { stateForJoiner, readOps, shareableUrl, onSecretDomain, activityBudget } from "./tabsync.mjs";
 import { createPush } from "./liveview/push.mjs";
-import { hostOk, originOk, keyOk, readJsonBody, json, NOT_JSON, BODY_MAX, SECURITY_HEADERS, serveViewer, serveAsset, plain, pathParts, listen } from "./liveview/http.mjs";
+import { hostOk, originOk, keyOk, sse, SECURITY_HEADERS, plain, pathParts, listen } from "./liveview/http.mjs";
 import { createInvites, roleMay } from "./liveview/invites.mjs";
 import { createInputReplayer, readViewerInput, inputBudget } from "./liveview/input.mjs";
 import { createJoinerServer, recentlySeen, joinerKeyOf } from "./liveview/joiner-server.mjs";
-import { createIcons, guestTabs, guestActivity, withoutIcons, hostOf } from "./liveview/tabs.mjs";
+import { createIcons, guestTabs, guestActivity, hostOf } from "./liveview/tabs.mjs";
 import { layoutFrom } from "./liveview/layout.mjs";
 import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "../ui/urls.js";
 import { createToolsRoutes } from "./liveview/routes/tools.mjs";
@@ -31,9 +31,9 @@ import { createTimelineRoutes } from "./liveview/routes/timeline.mjs";
 import { createSessionRoutes } from "./liveview/routes/sessions.mjs";
 import { createPagesRoutes } from "./liveview/routes/pages.mjs";
 import { createOwnerRoutes, inviteItems } from "./liveview/routes/owner.mjs";
+import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { createActivityLog } from "./daemon/activitylog.mjs";
-import { PAGE_KINDS as PAGE_KIND_LIST } from "../ui/vocab.js";
 import { FRAME_EVERY_MS, FRAME_SKIP_BYTES, STALLED_BYTES } from "../ui/limits.js";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
@@ -46,10 +46,8 @@ const SETTLE_MS = 180; // the page is still this long: send one sharp frame
 // Frames come as fast as they're acknowledged: at most one every FRAME_EVERY_MS (ui/limits.js; a
 // form being filled or a page scrolling reads fine at 30; unpaced, a busy page encodes 60 a second).
 const SHARP_QUALITY = 90;
-const THUMB_QUALITY = { min: 20, max: 80, default: 50 };
 const JOINER_NAV_MS = 15_000; // a joiner's change: until the host's tab starts loading it
 const ACTIVITY_MAX = 30; // the activity event's lines; the session's log (activityLog) keeps more
-const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 // A reader FRAME_SKIP_BYTES behind gets no new frames until it catches up; STALLED_BYTES behind,
 // the connection is cut (the page reconnects). ui/limits.js.
@@ -62,9 +60,6 @@ const OWNER_ONLY = new Set(["record", "profile", "join", "board", "dev", "joinho
 // page stream.
 const PAGES_ONLY = new Set(["capture", "tab-order", "overlay-pointers"]);
 const PAGE_EVENT_KIND = new Map([["capture", "capture"]]);
-// The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
-// name for counting them, nothing more; they get no frame stream.
-const PAGE_KINDS = new Set(PAGE_KIND_LIST);
 const SESSION_FIELDS = ["canRename", "canSave", "savedAt", "canRenameSaved"]; // the owner's streams only
 
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
@@ -90,7 +85,6 @@ function serially() {
   };
 }
 
-const sse = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
 // Stops a tab's screencast and gives its window its normal size back.
 async function release(cdp) {
@@ -730,124 +724,27 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   // with that sentence), checked after the right, as each route did first thing.
   const toolRoutes = createToolsRoutes({ tools, mask, recordState, idOf, bringTabForward, previewOf, viewers, clients, joinersNow, guests });
   const timelineRoutes = createTimelineRoutes({ timeline, mask, broadcast });
+  // What the viewer's routes read, as each request comes (liveview/routes/viewer.mjs).
+  const lv = {
+    clients, viewers, owners, kinds, linkGuests, activity, approvals, joinHost, clickApprovals,
+    get shown() { return shown; }, get lastFrame() { return lastFrame; }, get lastFrameFrom() { return lastFrameFrom; },
+    get status() { return status; }, get sessionInfo() { return sessionInfo; }, get devState() { return devState; },
+    get board() { return board; }, get driving() { return driving; },
+    captureOk, collaborationChanged, stopIfIdle, follow, tabsInfo, forGuest, ownerSession, collaborationNow, layoutNow,
+    watchPages, agentTabs, pauseState, recordState, personTab, getContext, currentUrl, humanPost, onPause,
+  };
   const ROUTES = [
-    { method: "GET", path: "", right: "page", handler: ({ req, res, role }) => serveViewer(req, res, { role }) },
-    { method: "GET", path: "assets", right: "page", handler: ({ res, rest }) => serveAsset(res, rest) },
-    { method: "GET", path: "events", right: "events", handler: events },
-    // A small still of the page and a status summary, for panes that can't hold a live stream
-    // (the Claude app's plugin panes). Same key, same checks.
-    { method: "GET", path: "thumb.jpg", right: "thumb", handler: thumb },
-    { method: "GET", path: "state.json", right: "state", handler: async ({ res, invite }) => {
-      const tabs = withoutIcons(await tabsInfo());
-      const recent = activity.slice(-STATE_ACTIVITY);
-      json(res, 200, { status, session: sessionInfo, collaboration: collaborationNow(), tabs: invite ? forGuest("tabs", tabs) : tabs, activity: invite ? forGuest("activity", recent) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
-    } },
+    ...createViewerRoutes(lv),
     ...createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState }),
     ...createSessionRoutes({ picker, sessionOps, broadcast, ownerSession, linkGuests, layouts, joinersNow, recordState, clickApprovals }),
     ...createPagesRoutes({ history, layoutNow, layouts, sessionName: () => sessionInfo.name, broadcast, settings, reporter, outlines, webPages, getContext, idOf, mask, watchPages, tabsStrip, agentTabs, tabOrder, capture, captureOk }),
     ...timelineRoutes.routes,
     ...toolRoutes.routes,
-    { method: "POST", path: "input", right: "input", handler: human },
-    { method: "POST", path: "tab", right: "tab", handler: human },
-    // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
-    // who may drive. who: the guest's name (null: the owner). With `who` in the body: "Pause this
-    // agent" / "Resume this agent" for the agent of that name, the owner's only.
-    { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite, role }) => {
-      const op = await readJsonBody(req, res, BODY_MAX.approve);
-      if (op === undefined) return;
-      if (op && typeof op === "object" && op.who !== undefined) {
-        if (role !== "owner") return plain(res, 403);
-        if (typeof op.who !== "string" || !op.who.trim() || op.who.length > 80) return json(res, 409, { error: "who is an agent's name as the session list shows it." });
-        const r = onPause(op.paused === true, null, op.who) || {};
-        return json(res, r.problem ? 409 : 200, r);
-      }
-      const r = onPause(op?.paused === true, invite ? invite.label : null) || {};
-      json(res, r.problem ? 409 : 200, r);
-    } },
   ];
 
-  async function events({ req, res, invite, byPages }) {
-    // ?panel: status, activity and profile only (the PairBrowse side panel): no page stream.
-    // ?page=<kind>: one of the browser's own pages, with the owner's key (a guest's is ignored):
-    // no page stream either. The capture page's stream: the pages' key and its own (captureOk).
-    const q = new URL(req.url, "http://x").searchParams;
-    const kind = !invite && PAGE_KINDS.has(q.get("page")) ? q.get("page") : null;
-    if (kind === "capture" && !captureOk(req, byPages)) return plain(res, 403);
-    res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/event-stream", connection: "keep-alive" });
-    const viewer = !q.has("panel") && !kind;
-    clients.add(res);
-    if (viewer) viewers.add(res);
-    if (kind) kinds.set(res, kind);
-    if (invite) {
-      linkGuests.set(res, invite);
-      clickApprovals?.cover?.(); // an approval card in the page comes down at once
-    } else owners.add(res);
-    if (invite) collaborationChanged();
-    req.on("close", () => {
-      clients.delete(res);
-      viewers.delete(res);
-      owners.delete(res);
-      kinds.delete(res);
-      if (linkGuests.delete(res)) collaborationChanged();
-      stopIfIdle();
-    });
-    if (viewer) await follow();
-    const tabs = await tabsInfo();
-    res.write(sse("tabs", invite ? forGuest("tabs", tabs) : tabs));
-    res.write(sse("status", status));
-    res.write(sse("session", invite ? forGuest("session") : ownerSession()));
-    res.write(sse("collaboration", collaborationNow()));
-    res.write(sse("activity", invite ? forGuest("activity", activity) : activity));
-    if (!invite) res.write(sse("join", approvals.open()));
-    if (!invite && devState) res.write(sse("dev", devState));
-    if (!invite && joinHost) res.write(sse("joinhost", joinHost.state()));
-    if (!invite && board) res.write(sse("board", board));
-    if (!invite) res.write(sse("layout", layoutNow()));
-    if (kind) { watchPages(); res.write(sse("agent-tabs", await agentTabs())); }
-    if (!invite && clickApprovals?.pending().length) res.write(sse("driving", { on: driving }));
-    const paused = pauseState();
-    if (paused) res.write(sse("pause", invite ? forGuest("pause", paused) : paused));
-    if (!invite && recordState()) res.write(sse("record", recordState()));
-    if (viewer && lastFrame && !(invite && personTab(lastFrameFrom))) res.write(sse("frame", lastFrame));
-  }
-
-  // A still of the tab on screen. With viewers it comes from the shown tab's session; without,
-  // from a session of its own, let go at once: a thumbnail polled by a pane never starts (or
-  // leaves running) the screencast that only viewers need.
-  async function thumb({ req, res, invite }) {
-    const q = Number(new URL(req.url, "http://x").searchParams.get("q")) || THUMB_QUALITY.default;
-    const quality = Math.min(THUMB_QUALITY.max, Math.max(THUMB_QUALITY.min, q));
-    // What's on screen, unscaled: a clip or scale makes Chromium re-lay out the page (it flickers).
-    const still = (cdp) => cdp.send("Page.captureScreenshot", { format: "jpeg", quality, optimizeForSpeed: true, captureBeyondViewport: false });
-    let data;
-    if (invite && personTab(shown?.page)) return plain(res, 404); // a person's own tab: never to guests
-    if (shown) ({ data } = await still(shown.cdp));
-    else {
-      const ctx = await getContext();
-      const url = await currentUrl();
-      if (hiddenFromLiveView(url)) return plain(res, 404); // never the browser's own pages
-      const web = ctx.pages().filter((p) => !hiddenFromLiveView(p.url()));
-      const page = web.find((p) => p.url() === url && !(invite && personTab(p))) || web.filter((p) => !personTab(p)).at(-1);
-      if (!page) return plain(res, 404);
-      const cdp = await page.context().newCDPSession(page);
-      try { ({ data } = await still(cdp)); } finally { cdp.detach().catch(() => {}); }
-    }
-    res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "image/jpeg" });
-    res.end(Buffer.from(data, "base64"));
-  }
 
 
 
-  async function human({ req, res, route, role, invite }) {
-    const ev = await readJsonBody(req, res, BODY_MAX.input);
-    if (ev === undefined) return;
-    if (ev === null || typeof ev !== "object") return json(res, 400, { error: NOT_JSON });
-    // Moving tabs around the strip is the owner's (a drive guest switches, opens and closes them).
-    if (route === "tab" && ev?.order !== undefined && role !== "owner") return plain(res, 403);
-    await humanPost(route, ev, role, invite ? `${invite.label} (by hand)` : null, invite?.id || null);
-    res.writeHead(204, SECURITY_HEADERS);
-    res.end();
-  }
 
   const chromeOrigin = (o) => !!o && CHROME_PAGE_ORIGINS.includes(o) && extraOrigins.includes(o);
   const server = http.createServer(async (req, res) => {

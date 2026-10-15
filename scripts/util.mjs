@@ -9,6 +9,16 @@ import { pipeline } from "node:stream/promises";
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// A sliding-window rate limit kept on an object (a joiner, say): true when n more fit among the
+// last windowMs' (and counts them, at t), false when they don't (nothing counted).
+export function spend(holder, field, max, { t = Date.now(), n = 1, windowMs = 1000 } = {}) {
+  const times = (Array.isArray(holder[field]) ? holder[field] : []).filter((x) => x > t - windowMs);
+  holder[field] = times;
+  if (times.length + n > max) return false;
+  for (let i = 0; i < n; i++) times.push(t);
+  return true;
+}
+
 // A JSON file's contents, or `fallback` when it's missing or not valid JSON.
 export function readJson(file, fallback = null) {
   try { return JSON.parse(readFileSync(file, "utf8")); } catch { return fallback; }

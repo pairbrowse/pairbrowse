@@ -2,7 +2,7 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pageLoaded } from "../scripts/util.mjs";
+import { pageLoaded, spend } from "../scripts/util.mjs";
 
 // A stand-in page: readyState answers in turn (a function throws or hangs), load states as given.
 function fakePage(answers, states = {}) {
@@ -100,4 +100,16 @@ test("every config.json key the code reads has its default (or is one of the old
   for (const f of files) for (const m of readFileSync(f, "utf8").matchAll(/\bconfig\??\.([a-zA-Z]+)\b/g)) read.add(m[1]);
   const older = new Set(["browserEngine", "executablePath", "json", "mjs"]); // still read, never written (browser.mjs browserChoice)
   for (const k of read) assert.ok(Object.hasOwn(DEFAULT_CONFIG, k) || older.has(k), `config.${k} has no default in DEFAULT_CONFIG`);
+});
+
+test("spend: a sliding window per holder, n at once, nothing counted when refused", () => {
+  const j = {};
+  for (let i = 0; i < 3; i++) assert.equal(spend(j, "x", 3, { t: 1000 + i }), true);
+  assert.equal(spend(j, "x", 3, { t: 1500 }), false, "the fourth in a second");
+  assert.equal(j.x.length, 3);
+  assert.equal(spend(j, "x", 3, { t: 2001 }), true, "the first has left the window");
+  assert.equal(spend(j, "ops", 5, { t: 0, n: 5, windowMs: 60_000 }), true);
+  assert.equal(spend(j, "ops", 5, { t: 1, n: 1, windowMs: 60_000 }), false);
+  assert.equal(spend(j, "ops", 5, { t: 60_001, n: 5, windowMs: 60_000 }), true);
+  assert.equal(spend({ y: "junk" }, "y", 1), true, "a field that isn't a list starts empty");
 });

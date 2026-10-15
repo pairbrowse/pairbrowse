@@ -45,7 +45,7 @@ import { createCaptureChannel } from "./liveview/capture.mjs";
 import { createFacts } from "./facts.mjs";
 import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
 import { cleanName, displayName } from "./join.mjs";
-import { currentAccount, within, readJson } from "./util.mjs";
+import { currentAccount, within, readJson, spend } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
@@ -509,10 +509,7 @@ const sharing = createSharing({
         else if (body?.op === "message") {
           const msg = readMessage(body);
           if (!msg) return { problem: "Not a message." };
-          const t = Date.now();
-          j.messages = (j.messages || []).filter((x) => x > t - 60_000);
-          if (j.messages.length >= 10) return { problem: "At most 10 messages a minute." };
-          j.messages.push(t);
+          if (!spend(j, "messages", 10, { windowMs: 60_000 })) return { problem: "At most 10 messages a minute." };
           session.receive(msg);
           liveView()?.pushToJoiners("message", msg, { except: key });
         }

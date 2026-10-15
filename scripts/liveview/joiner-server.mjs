@@ -8,6 +8,7 @@ import { JOINER_ID, cleanName, appName, cleanComputer } from "../join.mjs";
 import { LOOPBACK, keyOk, readBody, parseJson, BODY_MAX, listen } from "./http.mjs";
 import { acceptUpgrade, refuseUpgrade } from "../ws.mjs";
 import { stateAgo } from "../daemon/presence.mjs";
+import { spend } from "../util.mjs";
 import { JOINER_POINTERS_PER_SECOND as POINTERS_PER_SECOND } from "../../ui/limits.js";
 
 const SEEN_MS = 5000; // a joiner who polled this recently still counts as there
@@ -89,27 +90,21 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
     const t = Date.now();
     // Pointers, both roles: a watcher's pointer shows here too, and moves or pauses nothing.
     if (route === "pointer") {
-      j.pointers = (j.pointers || []).filter((x) => x > t - 1000);
-      if (j.pointers.length >= POINTERS_PER_SECOND) return { code: 429, body: { error: "Too many pointer updates. Slow down." } };
-      j.pointers.push(t);
+      if (!spend(j, "pointers", POINTERS_PER_SECOND, { t })) return { code: 429, body: { error: "Too many pointer updates. Slow down." } };
       if (size > POINTER_BODY_MAX) return { code: 413, body: { error: "Too large." } };
       return { code: 200, body: await live.pointersFor(parsed, j) };
     }
     if (route === "tabs") {
       if (invite.role !== "drive") return { code: 403, body: { error: "This code is for watching only." } };
       if (size > BODY_MAX.input) return { code: 413, body: { error: "Too large." } };
-      j.ops = (j.ops || []).filter((x) => x > t - OPS_WINDOW_MS);
       const n = Array.isArray(parsed?.ops) ? parsed.ops.length : 0;
-      if (j.ops.length + n > OPS_PER_WINDOW) return { code: 429, body: { error: "Too many tab changes at once. Slow down." } };
-      for (let i = 0; i < n; i++) j.ops.push(t);
+      if (!spend(j, "ops", OPS_PER_WINDOW, { t, n, windowMs: OPS_WINDOW_MS })) return { code: 429, body: { error: "Too many tab changes at once. Slow down." } };
       const r = await live.applyTabs(parsed, j, t); // t: when it arrived (what a person did counts from then back)
       return r.problem ? { code: 400, body: { error: r.problem } } : { code: 200, body: r };
     }
     // Who is doing what on their side, and messages: text only, both roles (a watcher may talk).
     if (route === "say") {
-      j.says = (j.says || []).filter((x) => x > t - 1000);
-      if (j.says.length >= SAYS_PER_SECOND) return { code: 429, body: { error: "Too many updates. Slow down." } };
-      j.says.push(t);
+      if (!spend(j, "says", SAYS_PER_SECOND, { t })) return { code: 429, body: { error: "Too many updates. Slow down." } };
       if (size > SAY_BODY_MAX) return { code: 413, body: { error: "Too large." } };
       const r = live.say(parsed, j);
       return r?.problem ? { code: 429, body: { error: r.problem } } : { code: 200, body: { ok: true } };
@@ -118,9 +113,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
     // slower route pictures and input through here.
     if (route === "screen") {
       if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself." } };
-      j.screens = (j.screens || []).filter((x) => x > t - 1000);
-      if (j.screens.length >= SCREEN_PER_SECOND) return { code: 429, body: { error: "Too many requests. Slow down." } };
-      j.screens.push(t);
+      if (!spend(j, "screens", SCREEN_PER_SECOND, { t })) return { code: 429, body: { error: "Too many requests. Slow down." } };
       if (size > SCREEN_BODY_MAX) return { code: 413, body: { error: "Too large." } };
       const r = await live.screen(parsed, j);
       // route: where the joiner's side goes instead ("frames": this host sends pictures through the
@@ -131,9 +124,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
     // sends over for an upload (in parts).
     if (route === "agent" || route === "file") {
       if (invite.mode !== "shared") return { code: 403, body: { error: "This code doesn't share the browser itself." } };
-      j.agentCalls = (j.agentCalls || []).filter((x) => x > t - 1000);
-      if (j.agentCalls.length >= SCREEN_PER_SECOND) return { code: 429, body: { error: "Too many requests. Slow down." } };
-      j.agentCalls.push(t);
+      if (!spend(j, "agentCalls", SCREEN_PER_SECOND, { t })) return { code: 429, body: { error: "Too many requests. Slow down." } };
       if (size > BODY_MAX.input) return { code: 413, body: { error: "Too large." } };
       const r = route === "agent" ? await live.agent(parsed, j) : live.file(parsed, j);
       return r?.problem ? { code: 400, body: { error: r.problem } } : { code: 200, body: r };

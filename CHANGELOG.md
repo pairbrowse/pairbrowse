@@ -5,6 +5,49 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased
+
+The native browser track merged into the plugin: the PairBrowse browser's own pages and shell, an approve role for joiners, named instances that coexist on one computer, and the helper and pages restructured into folders. `docs/security.md` has a row for each new behaviour.
+
+**Security**
+
+- **The pages' key never rides the command line.** A native build with its own pages gets a second owner key through a fresh owner-only file under `~/.pairbrowse/run` that it reads once; the file goes on the first request, when the browser closes and when the helper stops.
+- **Test switches only in the test harness.** The helper's `PAIRBROWSE_TEST_*` variables (among them a tool that clicks an approval card) work only in a helper the harness started (a home in the temp folder with a linked runtime); any other helper drops them before anything reads them, and the bridge never passes them on.
+- **Only PairBrowse's own sharing pages connect directly.** In a PairBrowse build web pages never use WebRTC outside a proxy, so a page can't learn your IP addresses; the capture page and a joiner's screen page are the only exceptions.
+- **Prompts name PairBrowse, never Node.** On macOS the helper runs inside PairBrowse Agent, an identity of its own, so it never uses the browser's camera, microphone or screen grants and its folder prompts name PairBrowse.
+- **A joiner's keys are checked whole.** A key code worked out from a typed character goes through the same check as one sent outright.
+- **Downloads keep their mark.** A finished download the helper saves keeps the browser's own download mark (`com.apple.quarantine`), so Gatekeeper and Office's Protected View still apply.
+- **Downloads open like a browser's.** Files open in a tab that is yours alone (no agent reads or acts in it), Word-type documents as a sanitized read-only preview on macOS, and programs, scripts and saved web pages only after a confirm.
+- Review fixes across the helper and pages: joiner input, test gates, reveal limits, activity privacy, approvals and bounded waits; one capture per tab and bounded picks.
+
+**Approve role for joiners**
+
+- A shared browser join code can carry the approve role: drive, plus answering your agents' named final clicks (pay, delete, publish, send, submit) from the joiner's own browser. Making one or switching an invite to it (`pairbrowse_invite` role "approve", `set_role`, the Share card's third choice, Settings' "Can approve") asks you first.
+- Each joiner gets its own id for each ask, the first answer wins (yours or theirs), and your card and the Activity log say who answered. The role is read again at every answer, so revoking or switching back to drive ends it at once. Drive and watch joiners see only who is deciding.
+- Named final clicks are asked in the terminal and in the browser at once in Claude Code; the first answer wins. In Codex and other apps the browser's card is the place to answer.
+
+**Named instances and coexistence**
+
+- `PAIRBROWSE_INSTANCE` or a project's `.pairbrowse.json` (`"instance"`) picks a helper home under `~/.pairbrowse/instances/<name>`, with its own profile, logins, config and secrets. `pairbrowse_status` and the browser's docks name the instance.
+- Instances share one install of the runtime, browser apps, engine pack and cloudflared, installed one at a time under a lock.
+- An opener registry: each helper records the build it launches, so a PairBrowse browser you open yourself (Dock, Finder, Spotlight) reaches the right helper instead of opening a window no helper drives.
+- Focus follows this helper's own browser by its process, not by bundle id, so one instance's helper brings forward its own window, not another's.
+
+**The PairBrowse browser's own shell and pages**
+
+- With a native build that declares them, the browser's own pages replace the side panel: the tab strip, left and right docks, the new tab page, Settings, the sessions page and switcher, the Activity page, the timeline, the approval card and the capture page. Agents can never open, read or drive them.
+- The browser is a setting (`pairbrowse`, `chromium` or your own app), asked once; Settings edits only what the helper honors.
+- The right dock's Tools tab: hand-offs, downloads, recordings and diagnostics. Report a problem goes to PairBrowse's own address by default, after you review the exact report.
+- Sessions can be renamed (also a saved one that isn't open) and saved from the session card; one agent can be paused on its own; the Activity page keeps the session's log, agent messages included.
+- Shared joiners' pointers are drawn by the browser over the page card, never inside your tab, and your own pointer never comes back to you.
+- Fast mode opens what a narrow layout folded (a search box behind a link, a menu behind a toggle) when the page's markup ties it to the step.
+
+**Restructure**
+
+- The helper is split into folders by job: `scripts/rules/` (the guard's rules, clicks, policy, secrets, uploads, local addresses), `runner/` (fast mode), `sharing/` (join, the joiner's client, tab sync, dev server sharing), `launcher/`, `native/`, `tunnels/`, `liveview/routes/`, the daemon's `serve/`, `join/`, `browser/` and `sessions/` parts, one tool catalog (`scripts/tools/catalog.mjs`), every path under `~/.pairbrowse` from one module, and every test switch read in one place. The old paths re-export the new ones.
+- The pages share `ui/` modules (helper address, POST, events, limits, URL rules, vocabulary) and `common.js` is split into its parts.
+- Tests: page suites folded together, and no test reaches the real `~/.pairbrowse`.
+
 ## 0.15.46 (2026-10-14)
 
 A security fix release, from the native browser work (both fixes land unchanged on that branch).

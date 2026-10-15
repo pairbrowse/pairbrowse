@@ -1,6 +1,6 @@
 // The downloads folder (rules/downloads.mjs): checked when chosen, when config.json is read, and
 // again at every save, on the folder's real path at that moment.
-import { testHome } from "./helpers/home.mjs";
+import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readdirSync, realpathSync, existsSync } from "node:fs";
@@ -10,6 +10,8 @@ import { EventEmitter } from "node:events";
 import { checkDownloads, downloadsFolderNow } from "../scripts/rules/downloads.mjs";
 import { loadConfig, paths } from "../scripts/paths.mjs";
 import { createDownloads } from "../scripts/daemon/browser/downloads.mjs";
+
+const testHome = process.env.PAIRBROWSE_HOME;
 
 const user = realpathSync(mkdtempSync(join(tmpdir(), "pb-dl-user-")));
 after(() => rmSync(user, { recursive: true, force: true }));

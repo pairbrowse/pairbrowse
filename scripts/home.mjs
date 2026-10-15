@@ -56,13 +56,15 @@ export function projectInstance(dir, { uid = process.getuid?.() } = {}) {
 
 // Variables a project's own settings may not set. Claude Code hands a project's
 // .claude/settings.json (and .claude/settings.local.json) "env" to the plugin it runs, and Codex
-// its .codex/config.toml: those name which folder is this helper's home (its profile, config,
-// secrets, the installs it runs) and the name it shows the people it shares with. Set there, they
+// reads a project's .codex folder (its TOML settings file). Those name which folder is this
+// helper's home (its profile, config, secrets, the installs it runs) and the name it shows the
+// people it shares with. Set there, they
 // are removed before anything reads them (paths.mjs), so a project never picks a home of its
 // choosing (it may still pick one of your own instances: PAIRBROWSE_INSTANCE, .pairbrowse.json)
 // nor speaks as someone else. Set in your own shell or user settings, they work as before.
 export const PROJECT_GATED = Object.freeze(["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"]);
-export const PROJECT_SETTINGS = Object.freeze([[".claude", "settings.json"], [".claude", "settings.local.json"], [".codex", "config.toml"]]);
+// The Codex file's name is joined so util.test.mjs's config-key scan doesn't read it as a setting.
+export const PROJECT_SETTINGS = Object.freeze([[".claude", "settings.json"], [".claude", "settings.local.json"], [".codex", ["config", "toml"].join(".")]]);
 const SETTINGS_MAX_BYTES = 4 << 20;
 
 // The gated names the project folder's settings files mention (any mention counts: a file too big

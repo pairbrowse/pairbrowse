@@ -54,6 +54,20 @@
   without any request.
 - `sessionPicker`: `false` turns off the session picker the browser shows when it starts (Claude
   asks in the chat instead). Default `true`.
+- `cookieChoice`: what agents press on a site's cookie banner: `"accept"` (default) or `"reject"`.
+- `participantName`: the name people in a shared session see for you (or `PAIRBROWSE_PARTICIPANT`).
+  Unset, you're asked once, and the answer is saved here.
+- `display`: on a Linux machine without a screen, the browser runs headed on a private virtual
+  screen (Xvfb): `"auto"` (default) uses one when there's no screen, `"xvfb"` always, `"none"` never.
+- `reportUrl`: where a problem report you send yourself goes (default
+  `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
+  `null`: no report is ever sent, and Settings doesn't offer it.
+- `dockWidth`, `dockHost`, `dockTop` and `dockMakeRoom`: the live view docked beside Claude (the
+  desktop pane): its width in pixels (`null`: the pane's own), the app it docks to (default
+  `"Claude"`), its distance from the screen's top (default 52), and whether that app's window
+  makes room for it (default `false`).
+- `pairbrowse`: the native PairBrowse build's own settings (`humanize`, `typingPace`, `formMove`,
+  `motion` and others): see [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser).
 - `downloadsDir`: where site downloads and recordings are saved (default: your Downloads folder): an ordinary folder inside your home folder, checked as Settings checks it when the file is read and again at every save; one that fails is not used.
 - `liveViewPort`: a fixed live view port (default: a random one each start).
 - `liveViewHosts`: extra host names the live view answers to, for invite links only, such as
@@ -68,9 +82,13 @@
   `tailscale` or `command` (run, url, env). `sharing.guestPort` pins the port join codes are served
   on, for a tunnel routed on the provider's side. See [Using your own tunnel](sharing.md#using-your-own-tunnel).
 
-The browser's own Settings page reads and changes `browser`, `timeline` with `timelineCap`, and
-`layout` (nothing else) through the live view's owner-only `config.json` route; a change to the
-timeline or the layout applies at once, a change of browser at its next start.
+The browser's own Settings page reads and changes `browser`, `timeline` with `timelineCap`,
+`layout`, `participantName`, `downloadsDir`, `screenshots`, `cookieChoice`, `maxTabs` (2 to 50)
+and `sessionPicker` (nothing else) through the live view's owner-only `config.json` route. A
+change to the timeline, the layout, the downloads folder, screenshots, the cookie choice or
+`maxTabs` applies at once; your name applies to joins at once and to your label in this browser
+from the helper's next start; `sessionPicker` from the next start; a change of browser when the
+browser next starts.
 
 Passwords go in `~/.pairbrowse/secrets.env` (kept at `chmod 600`; PairBrowse refuses to use it otherwise):
 

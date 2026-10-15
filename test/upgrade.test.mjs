@@ -7,7 +7,7 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, chmodSync, rmSync, readFileSync, mkdirSync } from "node:fs";
+import { cpSync, mkdtempSync, chmodSync, rmSync, readFileSync, mkdirSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -17,10 +17,12 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const READ = join(ROOT, "test", "helpers", "home-read.mjs");
 const VERSIONS = ["0.15.30", "0.15.40", "0.15.46"];
 
-// A fresh home holding the fixture (secrets.env owner-only, as PairBrowse requires).
+// A fresh home holding the fixture: secrets.env is kept as secrets.env.fixture (the repo never
+// tracks a .env file), and made owner-only, as PairBrowse requires.
 function homeFor(version) {
   const home = mkdtempSync(join(tmpdir(), `pb-upgrade-${version}-`));
   cpSync(join(ROOT, "test", "fixtures", "homes", version), home, { recursive: true });
+  renameSync(join(home, "secrets.env.fixture"), join(home, "secrets.env"));
   chmodSync(join(home, "secrets.env"), 0o600);
   return home;
 }

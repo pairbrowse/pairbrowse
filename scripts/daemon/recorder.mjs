@@ -100,7 +100,7 @@ export function createRecorder({ onSaved = () => {}, call, owners = () => [], di
     if (follow === "agents") on.stopFollowing = onActivity((_text, _who, page) => { if (page && !page.isClosed()) show(page).catch(() => {}); });
     log(`recording started (${r.type}, ${r.w}x${r.h}, following ${follow === "agents" ? "the agents" : "the tab in front"})`);
     changed(state());
-    return { text: `Recording the browser (${r.w}x${r.h}): ${follow === "agents" ? "the tabs where agents work, switching as they do" : "the tab in front, following tab switches"}. Stop with pairbrowse_record action "stop"; the video is saved in ${dir()}.` };
+    return { text: `Recording the browser (${r.w}x${r.h}): ${follow === "agents" ? "the tabs where agents work, switching as they do" : "the tab in front, following tab switches"}. Stop with pairbrowse_record action "stop"; the video is saved in ${(() => { try { return dir(); } catch { return "your downloads folder, once one qualifies"; } })()}.` };
   }
 
   // Following agents: an agent did something in page. Shown now if the tab in the video has been

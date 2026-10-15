@@ -36,7 +36,6 @@ import { createRequire } from "node:module";
 import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./rules/secrets.mjs";
 import { createFollow, isScreenPage, screenCard } from "./daemon/follow.mjs";
@@ -81,6 +80,7 @@ import { shareFields, shareableUrl, crossingText, onSecretDomain, personColor } 
 import { createBoard, readEntries, readMessage } from "./daemon/board.mjs";
 import { createJoinPrompt } from "./daemon/joinprompt.mjs";
 import { createClickApprovals, routeConnection } from "./daemon/approvals.mjs";
+import { saveFolder } from "./daemon/browser/downloads.mjs";
 import { createDownloads, createRecordings, createHandoffs, openFile, createPersonTabs } from "./daemon/toolstab.mjs";
 import { createPreviews } from "./daemon/preview.mjs";
 import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mjs";
@@ -430,7 +430,7 @@ const recorder = createRecorder({
   capture,
   call: (fn, arg, ms) => panel.call(fn, arg, ms), log,
   owners: () => hud.sparkList().map((s) => ({ page: s.page, who: collaboration.participants.get(s.id)?.label || "Agent", color: s.color })),
-  dir: () => config.downloadsDir || join(homedir(), "Downloads"),
+  dir: () => { const { dir, problem } = saveFolder(config); if (problem) log(`recordings folder: ${problem}`); if (!dir) throw new Error(`no folder recordings may go to (${problem})`); return dir; },
   scale: async () => pixelRatio(await context.openPages()),
   changed: () => { const s = recorder.state(); liveView()?.setRecord(s); hud.setRecording(s.recording); },
   onSaved: (saved) => recordings.add(saved), // the Tools tab's Recordings (an owner-only index)

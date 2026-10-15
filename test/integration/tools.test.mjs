@@ -31,8 +31,12 @@ async function startHelper(handler, prefix, { headed = false } = {}) {
   const h = mkdtempSync(join(base, prefix));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: headed ? [] : ["--headless=new"], display: "none", screenshots: false, downloadsDir: join(h, "downloads") }));
-  const daemon = spawnDaemon(h);
+  // Downloads go to an ordinary folder in the home folder (rules/downloads.mjs): the helper gets a
+  // home folder of its own, never the account's.
+  const user = mkdtempSync(join(base, "user-"));
+  mkdirSync(join(user, "downloads"));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: headed ? [] : ["--headless=new"], display: "none", screenshots: false, downloadsDir: join(user, "downloads") }));
+  const daemon = spawnDaemon(h, { env: { HOME: user } });
   const socketPath = join(h, "run", "browser.sock");
   const ready = async () => { (await attachDaemon({ socketPath, daemon, home: h })).destroy(); };
   const log = () => { try { return readFileSync(join(h, "daemon.log"), "utf8").slice(-2000); } catch { return ""; } };
@@ -40,8 +44,9 @@ async function startHelper(handler, prefix, { headed = false } = {}) {
     await stopDaemon(daemon);
     site.close();
     rmSync(h, { recursive: true, force: true });
+    rmSync(user, { recursive: true, force: true });
   };
-  return { site, h, socketPath, ready, log, stop };
+  return { site, h, user, socketPath, ready, log, stop };
 }
 const until = async (fn, what, ms = 15_000) => {
   let last;
@@ -51,7 +56,7 @@ const until = async (fn, what, ms = 15_000) => {
 
 test("hand-offs and downloads reach the Tools tab's lists", { skip: !runtime, timeout: 180_000 }, async () => {
   let state = "waiting";
-  const { site, h, socketPath, ready, log, stop } = await startHelper((req, res) => {
+  const { site, user, socketPath, ready, log, stop } = await startHelper((req, res) => {
     if (req.url === "/file") { res.writeHead(200, { "content-type": "text/plain", "content-disposition": "attachment; filename=note.txt" }); return res.end("hello"); }
     if (req.url === "/state") { res.writeHead(200, { "content-type": "text/plain" }); return res.end(state); }
     res.writeHead(200, { "content-type": "text/html" }); res.end(PAGE);
@@ -80,7 +85,7 @@ test("hand-offs and downloads reach the Tools tab's lists", { skip: !runtime, ti
     const d = await until(async () => (await get("downloads.json")).items.find((x) => x.state === "done"), "a finished download");
     assert.equal(d.from.host, host);
     assert.equal(d.name, "note.txt");
-    assert.equal(readFileSync(join(h, "downloads", "note.txt"), "utf8"), "hello");
+    assert.equal(readFileSync(join(user, "downloads", "note.txt"), "utf8"), "hello");
 
     // A run's handoff step: one hand-off while it waits, none once the page shows it's done.
     const run = a.tool("pairbrowse_run", { steps: [{ handoff: { say: "Solve the check", until: "Welcome back" } }] });
@@ -112,7 +117,7 @@ test("a downloaded PDF and .txt open in the person's tab; agents can't reach it"
     rmSync(dir, { recursive: true, force: true });
   }
   const attach = (res, type, name, body) => { res.writeHead(200, { "content-type": type, "content-disposition": `attachment; filename=${name}` }); res.end(body); };
-  const { site, h, socketPath, ready, log, stop } = await startHelper((req, res) => {
+  const { site, h, user, socketPath, ready, log, stop } = await startHelper((req, res) => {
     if (req.url === "/doc.pdf") return attach(res, "application/pdf", "doc.pdf", PDF);
     if (req.url === "/note.txt") return attach(res, "text/plain", "note.txt", `Only for the person: ${MARKER}\n`);
     if (req.url === "/plan.docx" && docx) return attach(res, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "plan.docx", docx);
@@ -142,7 +147,7 @@ test("a downloaded PDF and .txt open in the person's tab; agents can't reach it"
     // macOS's download mark, as a browser's download would carry it.
     if (process.platform === "darwin") {
       for (const n of names) {
-        const f = join(h, "downloads", n);
+        const f = join(user, "downloads", n);
         try { execFileSync("/usr/bin/xattr", ["-p", "com.apple.quarantine", f], { stdio: "ignore" }); } catch { execFileSync("/usr/bin/xattr", ["-w", "com.apple.quarantine", "0081;68a1b2c3;Chromium;", f]); }
       }
     }
@@ -203,7 +208,7 @@ test("a downloaded PDF and .txt open in the person's tab; agents can't reach it"
 // Headed on purpose: Chromium under --headless=new writes no mark at all (checked with a probe
 // before writing this test), so this one test opens a window, and closes it at the end.
 test("a real download keeps the browser's own download mark, and opens", { skip: !runtime || process.platform !== "darwin", timeout: 180_000 }, async () => {
-  const { site, h, socketPath, ready, log, stop } = await startHelper((req, res) => {
+  const { site, user, socketPath, ready, log, stop } = await startHelper((req, res) => {
     if (req.url === "/note.txt") { res.writeHead(200, { "content-type": "text/plain", "content-disposition": "attachment; filename=note.txt" }); return res.end("marked by the browser\n"); }
     res.writeHead(200, { "content-type": "text/html" }); res.end('<!doctype html><title>Mark</title><a href="/note.txt">Get the note</a>');
   }, "mark-", { headed: true });
@@ -219,7 +224,7 @@ test("a real download keeps the browser's own download mark, and opens", { skip:
     assert.ok(ref, "the link's ref");
     assert.ok(!(await a.tool("browser_click", { element: "Get the note link", target: ref })).result?.isError);
     const d = await until(async () => (await get("downloads.json")).items.find((x) => x.state === "done" && x.name === "note.txt"), "the download, done");
-    const file = join(h, "downloads", "note.txt");
+    const file = join(user, "downloads", "note.txt");
     const mark = execFileSync("/usr/bin/xattr", ["-p", "com.apple.quarantine", file], { encoding: "utf8" }).trim();
     assert.match(mark, /^[0-9a-f]{4};[0-9a-f]+;/i, `the browser's own mark: ${mark}`);
     const r = await fetch(`${live}downloads/${d.id}/open`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });

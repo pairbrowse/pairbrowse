@@ -3,6 +3,7 @@ import { join, sep } from "node:path";
 import { mkdirSync, chmodSync } from "node:fs";
 import { writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { resolveHome, gateProjectEnv } from "./home.mjs";
+import { checkDownloads } from "./rules/downloads.mjs";
 
 // Everything PairBrowse writes is private to your user account.
 process.umask(0o077);
@@ -163,8 +164,12 @@ export const DEFAULT_CONFIG = {
   pairbrowse: {},
 };
 
+// A downloads folder written into config.json by hand gets Settings' check (rules/downloads.mjs);
+// one that fails it is read as none (your Downloads folder). Every save checks again.
 export function loadConfig() {
-  return { ...DEFAULT_CONFIG, ...readJson(paths.config, {}) };
+  const config = { ...DEFAULT_CONFIG, ...readJson(paths.config, {}) };
+  if (config.downloadsDir != null && (typeof config.downloadsDir !== "string" || (config.downloadsDir && checkDownloads(config.downloadsDir, { home: paths.home }).problem))) config.downloadsDir = null;
+  return config;
 }
 
 // The name people in a shared session see for this person: set in config (participantName) or

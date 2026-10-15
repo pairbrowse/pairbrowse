@@ -37,7 +37,11 @@ test("the page's own errors come back with the run, and a recording is saved as 
   const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "rec-"));
-  const downloads = join(h, "downloads");
+  // Downloads go to an ordinary folder in the home folder (rules/downloads.mjs): the helper gets a
+  // home folder of its own, never the account's.
+  const user = mkdtempSync(join(base, "user-"));
+  const downloads = join(user, "downloads");
+  mkdirSync(downloads);
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || process.env.PAIRBROWSE_TEST_JOINER_EXECUTABLE || createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   // A PairBrowse build (its PairBrowse-build.json beside the program) runs as the PairBrowse
@@ -45,7 +49,7 @@ test("the page's own errors come back with the run, and a recording is saved as 
   const native = existsSync(join(dirname(executablePath), "..", "Resources", "PairBrowse-build.json"));
   const engine = native ? { browserEngine: "pairbrowse", chromeArgs: ["--headless=new", "--use-mock-keychain", "--password-store=basic"] } : { chromeArgs: ["--headless=new"] };
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, ...engine, display: "none", screenshots: false, downloadsDir: downloads }));
-  const daemon = spawnDaemon(h);
+  const daemon = spawnDaemon(h, { env: { HOME: user } });
   let a;
   try {
     const socketPath = join(h, "run", "browser.sock");
@@ -110,5 +114,6 @@ test("the page's own errors come back with the run, and a recording is saved as 
     await stopDaemon(daemon);
     site.close();
     rmSync(h, { recursive: true, force: true });
+    rmSync(user, { recursive: true, force: true });
   }
 });

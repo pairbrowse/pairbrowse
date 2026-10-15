@@ -2,27 +2,41 @@
 // file), with the mark Open and Office's Protected View read, and the Tools tab told (onDownload);
 // and the browser's history forgetting Playwright's temporary ones before a launch.
 // profile(): the profile folder of the browser about to launch.
-import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, copyFileSync, constants as fsConstants } from "node:fs";
+import { basename, join, resolve } from "node:path";
+import { homedir, userInfo } from "node:os";
 import { keepDownloadMark } from "../toolstab.mjs";
+import { downloadsFolderNow } from "../../rules/downloads.mjs";
+import { paths } from "../../paths.mjs";
 
-export function createDownloads({ personTabs, config, hostNote, log, onDownload, profile }) {
+// The folder a save goes to, checked at the time of the save (rules/downloads.mjs): the chosen
+// one's real path while it still qualifies, else your Downloads folder; { dir, problem? }.
+// Under the test runner (NODE_TEST_CONTEXT, as paths.mjs) a save never reaches the account's own
+// home: a test helper gives its own HOME.
+export function saveFolder(config, home = paths.home, user = homedir()) {
+  if (process.env.NODE_TEST_CONTEXT && resolve(user) === resolve(userInfo().homedir)) return { dir: null, problem: "a test never saves into your own home folder (give the helper a HOME of its own)" };
+  return downloadsFolderNow(config.downloadsDir, { home, user });
+}
+
+export function createDownloads({ personTabs, config, hostNote, log, onDownload, profile, folderNow = () => saveFolder(config) }) {
   // Files a site hands over (invoices, exported keys) go to the Downloads folder, as in any
   // browser; Playwright would otherwise keep them under a random name and delete them on close.
   function keepDownloads(page) {
     page.on("download", async (download) => {
       // A download started in the person's own tab is theirs: no note for the agents.
       const personal = personTabs.has(page);
-      const dir = config.downloadsDir || join(homedir(), "Downloads");
       // The site picks the name: keep it to a plain file name.
       const name = basename(download.suggestedFilename() || "download").replace(/[\u0000-\u001f\u007f/\\:]/g, "_").replace(/^\.+/, "_").slice(0, 120) || "download";
       const dot = name.lastIndexOf(".") > 0 ? name.lastIndexOf(".") : name.length;
       let id = null;
       try { id = onDownload({ op: "start", name, page }); } catch {}
       try {
-        mkdirSync(dir, { recursive: true });
+        // Resolved and checked now, not when it was chosen: a folder since swapped for a link
+        // elsewhere is never written to.
+        const { dir, problem } = folderNow();
+        if (problem) log(`downloads folder not used: ${problem}`);
+        if (!dir) throw new Error(`no folder downloads may go to (${problem})`);
         const from = await download.path(); // finished, in Playwright's temporary folder
         let dest;
         for (let i = 0; ; i++) {

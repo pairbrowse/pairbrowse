@@ -54,7 +54,7 @@
   without any request.
 - `sessionPicker`: `false` turns off the session picker the browser shows when it starts (Claude
   asks in the chat instead). Default `true`.
-- `downloadsDir`: where site downloads are saved (default: your Downloads folder).
+- `downloadsDir`: where site downloads and recordings are saved (default: your Downloads folder): an ordinary folder inside your home folder, checked as Settings checks it when the file is read and again at every save; one that fails is not used.
 - `liveViewPort`: a fixed live view port (default: a random one each start).
 - `liveViewHosts`: extra host names the live view answers to, for invite links only, such as
   your Tailscale name. Plain host names only. It still listens on `127.0.0.1` only.

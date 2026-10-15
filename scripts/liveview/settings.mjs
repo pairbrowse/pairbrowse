@@ -22,11 +22,12 @@
 // the helper's next start; askSession from the next start. Anything else in the body, or an
 // invalid value, is refused (409, { error }) and nothing is written. Tunnel tokens, join
 // addresses, the report address and every other setting are never in an answer.
-import { isAbsolute, resolve, sep, dirname, basename, relative } from "node:path";
-import { statSync, realpathSync } from "node:fs";
+import { isAbsolute, dirname, basename } from "node:path";
+import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { within } from "../util.mjs";
+import { folderOf, checkDownloads, downloadsProblem } from "../rules/downloads.mjs";
 import { browserChoice } from "../browser.mjs";
 import { saveConfig, paths } from "../paths.mjs";
 import { cleanName } from "../sharing/join.mjs";
@@ -46,27 +47,8 @@ const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 // File checks for a path (tests pass stand-ins; browserChoice's own by default).
 const checksOf = (exists, executable) => ({ ...(exists ? { exists } : {}), ...(executable ? { executable } : {}) });
 
-// A folder that exists (stat follows links; the stand-in in tests). The real folder, or null.
-const folderOf = (p) => { try { return statSync(p).isDirectory() ? realpathSync(p) : null; } catch { return null; } };
-// Inside the helper's own home (~/.pairbrowse: the profile, secrets, keys): never a downloads folder,
-// so a site's file can't land beside them.
-const inHelperHome = (real, home) => { const h = folderOf(home) || resolve(home); return real === h || real.startsWith(h + sep); };
-
-// Where downloads may go: an ordinary folder inside your home folder, never the home folder itself
-// (where a file named like a shell's startup file would be read), never inside a hidden folder (.ssh,
-// .config, ...: settings and keys) or the folders apps and the system read from (macOS ~/Library:
-// LaunchAgents among them; Windows AppData). user: your home folder. A reason, or "" when it may.
-const SYSTEM_DIRS = ["Library", "AppData", "Applications"];
-export function downloadsProblem(real, user = homedir()) {
-  const h = folderOf(user) || resolve(user);
-  if (real === h) return "Downloads can't go straight into your home folder: choose a folder in it.";
-  const rel = relative(h, real);
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return "Downloads go to a folder inside your home folder.";
-  const parts = rel.split(sep);
-  if (parts.some((p) => p.startsWith("."))) return "Downloads can't go into a hidden folder (its name starts with a dot).";
-  if (SYSTEM_DIRS.some((d) => parts[0].toLowerCase() === d.toLowerCase())) return `Downloads can't go into ~${sep}${parts[0]} (apps and the system read from it).`;
-  return "";
-}
+// The downloads folder's checks live in rules/downloads.mjs (folderOf is the stand-in in tests).
+export { downloadsProblem };
 
 // A browser of your own chosen in Settings: one this computer vouches for. On macOS an app (the
 // path inside a .app bundle's Contents/MacOS) whose code signature verifies; elsewhere a file only
@@ -152,11 +134,8 @@ export function applySettings(given, config, { native = false, exists, executabl
     if (d === null || d === "") fields.downloadsDir = null;
     else {
       if (typeof d !== "string" || !isAbsolute(d) || d.length > PATH_MAX || CONTROL.test(d)) return { error: "downloads is an absolute path to a folder, or null for your Downloads folder." };
-      const real = folder(d);
-      if (!real) return { error: `${d} isn't a folder` };
-      if (inHelperHome(real, home)) return { error: "Downloads can't go inside PairBrowse's own folder (~/.pairbrowse)." };
-      const why = downloadsProblem(real, user);
-      if (why) return { error: why };
+      const { problem } = checkDownloads(d, { home, user, folder });
+      if (problem) return { error: problem };
       fields.downloadsDir = d;
     }
   }

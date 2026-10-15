@@ -71,7 +71,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const waiting = !approve && Array.isArray(data?.waiting) ? data.waiting : [];
     const first = waiting[0];
     setNotice(cur, first ? `Waiting for ${Host} to approve: ${String(first.what || "a final step").slice(0, 120)}${waiting.length > 1 ? ` (+${waiting.length - 1} more)` : ""}` : "");
-    try { onApprovals?.({ host: Host, items: approve && Array.isArray(data?.items) ? data.items : [] }); // fromHost takes the first few } catch (e) { log("approvals", e?.message || e); }
+    // (fromHost takes the first few only.)
+    try { onApprovals?.({ host: Host, items: approve && Array.isArray(data?.items) ? data.items : [] }); } catch (e) { log("approvals", e?.message || e); }
   }
 
   // Out of the session (left, denied, revoked): the shared tabs here are this browser's own again.

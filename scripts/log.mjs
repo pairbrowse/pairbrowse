@@ -6,6 +6,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { shownValue, BROWSER_PREFIX } from "./rules/policy.mjs";
+import { loadSecrets, redact } from "./rules/secrets.mjs";
 
 // values: false (the activity line, kept in the session's activity log): field names without what
 // was typed or chosen, and addresses as origin and path only (no query or fragment, which carry
@@ -47,8 +48,10 @@ if (process.argv[1]?.endsWith("log.mjs")) {
       const input = JSON.parse(raw);
       if (!BROWSER_PREFIX.test(String(input.tool_name || ""))) return;
       const tool = input.tool_name.replace(BROWSER_PREFIX, "");
-      const line = describe(tool, input.tool_input);
-      if (!line) return;
+      const said = describe(tool, input.tool_input);
+      if (!said) return;
+      // A saved password typed as itself (not by its name) is written as its name all the same.
+      const line = redact(said, loadSecrets(paths.secrets).values, { as: (name) => name });
       mkdirSync(paths.log, { recursive: true });
       const day = new Date().toISOString().slice(0, 10);
       const file = join(paths.log, `${day}-${String(input.session_id || "session").slice(0, 8)}.md`);

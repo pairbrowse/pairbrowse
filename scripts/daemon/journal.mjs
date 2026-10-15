@@ -5,7 +5,8 @@
 // to `tabs`, what a fast-mode run left empty to `left`. So a bigger task survives a context reset,
 // a new Claude Code session or a helper restart even when the agent never called run_save.
 // Written at most every few seconds, from a timer: it never holds up a call. Values never
-// reach it beyond what the bar shows (names for passwords; card numbers and codes masked).
+// reach it beyond what the bar shows (names for passwords; card numbers and codes masked), and
+// addresses keep their origin and path only (no query or fragment).
 // read() gives the live view's Timeline the current run, every line masked again on read (a
 // run_save can take the file over with lines the journal never masked), capped, never polled.
 import { runFile, readRuns, currentFile, STALE_MS, liveAutoRun } from "../runs.mjs";
@@ -25,6 +26,9 @@ const siteOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, "
 const webUrl = (url) => /^https?:\/\//.test(String(url || ""));
 // A page's key: its address without the fragment (a single-page form stays one page).
 const keyOf = (url) => String(url).split("#")[0];
+// An address as it is kept: origin and path, no query or fragment (they carry search terms,
+// one-time codes and sign-in tokens), as the activity log keeps them.
+const bare = (url) => String(url).replace(/[?#][\s\S]*$/, "");
 // The run's name: "shopify.com 2026-10-10 14:05", local time.
 function stamp(t) {
   const d = new Date(t);
@@ -131,7 +135,7 @@ export function createJournal({ session = () => "default", openPages = async () 
       // The page before, still without a title: now, while the tab still shows it (an opening is
       // said before the tab moves). Without a tab known yet (the first navigation): this tab was it.
       if (current && !current.title) { if (!current.page && page) current.page = page; entitle(current); }
-      current = { key: keyOf(url), url: url.slice(0, 200), title: "", page, acts: [], written: "" };
+      current = { key: keyOf(url), url: bare(url).slice(0, 200), title: "", page, acts: [], written: "" };
       entries.push(current);
     }
     if (page && !page.isClosed()) current.page = page;
@@ -165,7 +169,7 @@ export function createJournal({ session = () => "default", openPages = async () 
 
   async function tabs() {
     const pages = (await openPages().catch(() => [])).filter((p) => !p.isClosed() && webUrl(p.url())).slice(0, MAX_TABS);
-    return Promise.all(pages.map(async (p) => ({ title: await titleOf(p), url: p.url().slice(0, 500) })));
+    return Promise.all(pages.map(async (p) => ({ title: await titleOf(p), url: bare(p.url()).slice(0, 500) })));
   }
 
   const lineOf = (c) => `${c.title ? `${c.title} <${c.url}>` : c.url}${c.acts.length ? `: ${c.acts.join("; ")}` : ""}`;

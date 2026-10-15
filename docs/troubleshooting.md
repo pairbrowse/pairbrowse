@@ -14,6 +14,14 @@ check yourself.
 - **Diagnostics**: the Tools tab in the side panel shows the helper's version, the browser in use
   and the last error lines of `daemon.log`, scrubbed of keys, paths and addresses
   (`scripts/daemon/diagnostics.mjs`).
+- **A diagnostics bundle for a bug report**: `node scripts/diagnostics-bundle.mjs [--out <folder>]`
+  (from the plugin's folder) writes `pairbrowse-diagnostics-<time>/` (default under
+  `~/.pairbrowse/diagnostics`): `summary.json` (the helper's, both plugin manifests' and the pinned
+  runtime's versions, Node and the OS, the native build and engine pack installed, `config.json`
+  with values scrubbed and secret-sounding settings such as `proxy` hidden, how many passwords are
+  saved, the last uncaught exception with its stack) and `daemon-log.txt` (the last 400 lines of
+  `daemon.log`). Every line goes through the same scrub as the Tools tab's diagnostics; nothing is
+  sent anywhere. Look it over, then attach it yourself.
 - **Which helper is running**: `~/.pairbrowse/daemon.lock` holds its process id (`claimHelper` in
   `scripts/daemon.mjs`). `ps -o pid=,command= -p "$(cat ~/.pairbrowse/daemon.lock)"` prints the
   `daemon.mjs` it runs from.

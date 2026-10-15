@@ -42,6 +42,8 @@ export const paths = {
   log: join(HOME, "log"),
   runtime: join(SHARED, "runtime"),
   daemonLog: join(HOME, "daemon.log"),
+  // Diagnostics bundles (scripts/diagnostics-bundle.mjs), when no other folder is given.
+  diagnostics: join(HOME, "diagnostics"),
   // Playwright may read files only inside this folder (and the project).
   files: join(HOME, "files"),
   uploads: join(HOME, "files", "uploads"),

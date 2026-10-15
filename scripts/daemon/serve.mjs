@@ -132,7 +132,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // result went out: the same bytes, nothing captured or encoded again, nothing on the result's way.
     const rememberPicture = (shot, page, tool, args) => {
       if (!timeline?.enabled || !shot?.data || !page) return;
-      setImmediate(() => timeline.record({ data: shot.data, who: myLabel() || "", caption: hud.lastIn(page)?.text || describe(tool, args || {}) || "Looked at the page" }).catch((e) => log("timeline", e?.message || e)));
+      setImmediate(() => timeline.record({ data: shot.data, who: myLabel() || "", caption: hud.lastIn(page)?.text || describe(tool, args || {}, { values: false }) || "Looked at the page" }).catch((e) => log("timeline", e?.message || e)));
     };
     const mcpServer = await createConnection({
       browser: { isolated: false },

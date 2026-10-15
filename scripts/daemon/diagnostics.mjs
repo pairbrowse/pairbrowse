@@ -1,6 +1,6 @@
 // The Tools tab's Diagnostics (the owner only): the helper's version, the browser in use, who is
 // connected, and the last error lines of daemon.log, scrubbed of saved secrets, keys, paths beyond
-// ~/.pairbrowse, full addresses, emails and quoted page text. The plain-text report is what a
+// ~/.pairbrowse, full addresses, emails, cookies and quoted page text. The plain-text report is what a
 // later, person-clicked send would carry; nothing here sends anything. Node's standard library only.
 import { open, stat } from "node:fs/promises";
 import { homedir, platform, arch, release } from "node:os";
@@ -43,6 +43,8 @@ export function scrub(text, { home = homedir(), mask = (t) => t, quotes = true, 
   s = s.replace(/~(?!\/\.pairbrowse)\/[^\s"'<>]*/g, "[path]");
   s = s.replace(/(?<![\w.~-])\/(?:Users|home|private|var|tmp|Volumes|opt)\/[^\s"'<>]*/g, "[path]");
   s = s.replace(/\b[A-Za-z]:\\[^\s"'<>]*/g, "[path]");
+  // A Cookie or Set-Cookie header: every cookie in it, to the end of the line.
+  s = s.replace(/\b(set-cookie|cookie)\s*[=:]\s*[^\n]*/gi, "$1=[hidden]");
   s = s.replace(/\b(key|token|secret|password|passwd|authorization)(?:\s*[=:]\s*(?:bearer\s+|basic\s+)?|\s+(?:bearer|basic)\s+)\S+/gi, "$1=[hidden]");
   s = s.replace(/[A-Za-z0-9_-]{32,}/g, "[key]");
   if (quotes) s = s.replace(/"[^"\n]*"/g, "\"…\"");

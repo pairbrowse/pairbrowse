@@ -222,7 +222,10 @@ test("a join request: the bar in the host's tab in front when the browser has th
     const requests = async () => text(await tool(host.call, "pairbrowse_invite", { action: "list" }));
     // The person looks at the browser (a headless browser has no window focus to read: set here).
     assert.equal(await click({ focus: true }), "focus true");
-    const code = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code", mode: "follow" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
+    // A no stays for that invite (Alice asking again on it is turned away at once): after each
+    // no, a new code.
+    const newCode = async () => text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code", mode: "follow" })).match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
+    let code = await newCode();
     assert.ok(code);
     const ask = async () => {
       await tool(host.call, "pairbrowse_test_join_prompt", { move: true }); // the pointer away from the bar
@@ -271,6 +274,8 @@ test("a join request: the bar in the host's tab in front when the browser has th
     const fourth = await ask();
     assert.match(text(await tool(host.call, "pairbrowse_invite", { action: "deny", id: fourth })), /Turned Alice away/);
     await until("gone when answered elsewhere", async () => (await rowsIn(/two\.pbtest/)).length === 0, 5000);
+    assert.match(text(await tool(joiner.call, "pairbrowse_join", { action: "join", code })), /didn't let you in/, "asking again on that invite: the same no");
+    code = await newCode();
 
     // Deny by the person's click.
     const fifth = await ask();
@@ -278,6 +283,7 @@ test("a join request: the bar in the host's tab in front when the browser has th
     await click({ click: "deny" });
     await until("turned away", async () => new RegExp(`request ${fifth}: Alice \\(Claude Code\\), turned away`).test(await requests()));
     await until("the prompt goes", async () => (await rowsIn(/two\.pbtest/)).length === 0, 4000);
+    code = await newCode();
 
     // One alert at a time: none of those sent a notification.
     assert.equal(notifiedAny(), false, "no notification while the bar asked");

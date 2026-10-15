@@ -157,9 +157,12 @@ test("nothing of the session before the host says yes: waiting, denied, removed,
     h.approvals.remove(joinerId);
     const removed = await h.call("GET", `/${i2.key}/tabs`, { headers });
     assert.deepEqual([removed.status, removed.json.removed], [403, true]);
-    // An approval is bound to the joiner's id: the same code from another id asks anew.
-    const other = await h.call("GET", `/${i2.key}/tabs`, { headers: h.who(newId()) });
+    // An approval is bound to the joiner's id: the same code from another id asks anew; from
+    // another id under the removed joiner's name and computer it gets the same answer.
+    const other = await h.call("GET", `/${i2.key}/tabs`, { headers: h.who(newId(), "Sam") });
     assert.equal(other.json.waiting, true);
+    const sameName = await h.call("GET", `/${i2.key}/tabs`, { headers: h.who(newId()) });
+    assert.deepEqual([sameName.status, sameName.json.removed], [403, true]);
   } finally { h.close(); }
 });
 
@@ -292,6 +295,19 @@ test("leave: the joiner and their approval go, their screens stop; joining again
     assert.equal((await h.call("GET", `/${d.invite.key}/tabs`, { headers: d.headers })).json.waiting, true);
     // Leave with the owner's key: refused like any other route.
     assert.equal((await h.call("POST", `/${h.key}/leave`, { headers: d.headers })).status, 404);
+  } finally { h.close(); }
+});
+
+test("leave after a removal or a no: still out, asking again gets the same answer", async () => {
+  const h = await start();
+  try {
+    const d = await h.admitted({ role: "drive", share: "code" });
+    assert.ok(h.approvals.remove(d.joinerId));
+    assert.equal((await h.call("POST", `/${d.invite.key}/leave`, { headers: d.headers })).status, 200);
+    const back = await h.call("GET", `/${d.invite.key}/tabs`, { headers: d.headers });
+    assert.equal(back.status, 403);
+    assert.equal(back.json.removed, true, "the removal stays");
+    assert.equal(h.approvals.get(d.invite.id, d.joinerId).state, "removed");
   } finally { h.close(); }
 });
 

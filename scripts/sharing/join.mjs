@@ -176,6 +176,11 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
     const r = textOf(ref);
     return [...all.values()].find((e) => e.id === r || e.joinerId === r) || null;
   };
+  // A denied or removed entry on this invite with this name (and computer, when either gave one).
+  // A joiner without a name of their own (read as "Guest") is never matched by name alone.
+  const sameName = (a, b) => { const x = cleanName(a, ""), y = cleanName(b, ""); return !!x && x.toLowerCase() === y.toLowerCase(); };
+  const closedTo = (inviteId, name, computer) => [...all.values()].find((x) => x.inviteId === inviteId && (x.state === "denied" || x.state === "removed") &&
+    sameName(x.name, name) && (x.computer || "").toLowerCase() === cleanComputer(computer).toLowerCase()) || null;
   const settle = (ref, state) => {
     sweep();
     const e = find(ref);
@@ -192,6 +197,10 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
       const k = `${invite.id}:${joinerId}`;
       const e = all.get(k);
       if (e) return { state: e.state, entry: publicView(e) };
+      // Turned away or removed on this invite, asking again under a fresh joiner id with the same
+      // name from the same computer: the same answer, no new request (nothing is stored for it).
+      const again = closedTo(invite.id, name, computer);
+      if (again) return { state: again.state, entry: publicView(again) };
       const t = now();
       while (recent.length && recent[0] <= t - windowMs) recent.shift();
       if ([...all.values()].filter((x) => x.state === "pending").length >= maxPending) return { state: "full" };
@@ -216,8 +225,14 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
       changed();
       return { ...publicView(e), key: `${e.inviteId}:${e.joinerId}` };
     },
-    // The joiner left: their approval ends with them (joining again asks again).
-    leave(inviteId, joinerId) { if (all.delete(`${inviteId}:${joinerId}`)) changed(); },
+    // The joiner left: their approval (or their waiting request) ends with them, and joining again
+    // asks again. A host's no stays: a denied or removed joiner leaving clears nothing, so leave
+    // can't be used to ask anew.
+    leave(inviteId, joinerId) {
+      const k = `${inviteId}:${joinerId}`;
+      const e = all.get(k);
+      if (e && (e.state === "approved" || e.state === "pending") && all.delete(k)) changed();
+    },
     get(inviteId, joinerId) { const e = all.get(`${inviteId}:${joinerId}`); return e ? publicView(e) : null; },
     pending() { sweep(); return [...all.values()].filter((e) => e.state === "pending").map(publicView); },
     // Asking and let in, for the owner's Allow / Deny and Remove.
@@ -230,13 +245,14 @@ export function createApprovals({ now = () => Date.now(), maxPending = 5, maxNew
       if (gone) changed();
     },
     onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
-    // The yeses (and removals), whole, for the helper's saved sharing state.
-    saved() { return [...all.values()].filter((e) => e.state === "approved" || e.state === "removed").map((e) => ({ ...e })); },
+    // The yeses, removals and noes, whole, for the helper's saved sharing state (a no outlives a
+    // restart of the helper as long as its invite does).
+    saved() { return [...all.values()].filter((e) => e.state !== "pending").map((e) => ({ ...e })); },
     // From that saved state, each checked; only for invites that came back (validInvite(id)).
     restore(list, validInvite = () => true) {
       for (const e of Array.isArray(list) ? list : []) {
         if (!e || !JOINER_ID.test(textOf(e.joinerId || "")) || !/^r[0-9a-f]{6}$/.test(textOf(e.id || "")) || !validInvite(textOf(e.inviteId))) continue;
-        if (e.state !== "approved" && e.state !== "removed") continue;
+        if (e.state !== "approved" && e.state !== "removed" && e.state !== "denied") continue;
         const k = `${e.inviteId}:${e.joinerId}`;
         if (all.has(k) || find(e.id)) continue;
         all.set(k, { id: e.id, inviteId: textOf(e.inviteId), joinerId: e.joinerId, name: cleanName(e.name), app: e.app ? appName(e.app) : "", computer: cleanComputer(e.computer), role: e.role === "drive" || e.role === "approve" ? e.role : "watch", state: e.state, at: numOf(e.at) || now() });

@@ -69,7 +69,7 @@ test("approvals: pending until the host says yes, bound to that joiner, capped a
   assert.equal(a.approve(first.entry.id).state, "approved");
   assert.equal(a.check(inv, alice, "Alice").state, "approved");
   const mallory = newJoinerId();
-  assert.equal(a.check(inv, mallory, "Alice").state, "pending", "the same code from someone else asks again");
+  assert.equal(a.check(inv, mallory, "Mal").state, "pending", "the same code from someone else asks again");
   assert.equal(a.check({ id: "i2", role: "watch" }, alice, "Alice").state, "pending", "an approval is per invite");
   assert.equal(a.check(inv, newJoinerId(), "C").state, "full", "at most maxPending waiting");
   a.deny(mallory);
@@ -78,10 +78,45 @@ test("approvals: pending until the host says yes, bound to that joiner, capped a
   assert.equal(a.check(inv, newJoinerId(), "D").state, "busy", "rate-limited after maxNew requests");
   t += 61_000;
   assert.equal(a.check(inv, newJoinerId(), "E").state, "pending");
+  a.leave("i1", mallory);
+  assert.equal(a.check(inv, mallory, "M").state, "denied", "leaving doesn't clear a no");
   a.leave("i1", alice);
   assert.equal(a.check(inv, alice, "Alice").state, "full", "leaving ends the approval");
   a.forget(["i1", "i2"]);
   assert.deepEqual(a.list(), []);
+});
+
+test("a host's no or removal stays: leave doesn't clear it, a fresh id with the same name gets the same answer, a restart keeps it", () => {
+  const a = createApprovals({ maxPending: 5, maxNew: 50 });
+  const inv = { id: "i1", role: "drive" };
+  const bob = newJoinerId(), eve = newJoinerId();
+  a.approve(a.check(inv, bob, "Bob", "claude-code", "mac").entry.id);
+  a.deny(a.check(inv, eve, "Eve", "codex", "mac").entry.id);
+  assert.ok(a.remove(bob));
+  for (const [id, name, state] of [[bob, "Bob", "removed"], [eve, "Eve", "denied"]]) {
+    a.leave("i1", id);
+    assert.equal(a.check(inv, id, name).state, state, `${name}: leave clears nothing`);
+    // A fresh joiner id, the same name (any case) and computer: the same answer, no new request.
+    const again = a.check(inv, newJoinerId(), name.toUpperCase(), "", "mac");
+    assert.equal(again.state, state, `${name}: a fresh id`);
+    assert.equal(again.isNew, undefined);
+  }
+  assert.equal(a.pending().length, 0, "no request reached the host");
+  // Someone else, or the same name on another invite, asks as before; a nameless joiner is never
+  // matched by name.
+  assert.equal(a.check(inv, newJoinerId(), "Carol", "", "mac").state, "pending");
+  assert.equal(a.check({ id: "i2", role: "drive" }, newJoinerId(), "Eve", "", "mac").state, "pending");
+  const anon = createApprovals();
+  const x = newJoinerId();
+  anon.deny(anon.check(inv, x, "").entry.id);
+  assert.equal(anon.check(inv, newJoinerId(), "").state, "pending");
+  // Saved and restored (a helper restart): the no and the removal come back.
+  const b = createApprovals();
+  b.restore(JSON.parse(JSON.stringify(a.saved())));
+  assert.equal(b.check(inv, eve, "Eve").state, "denied");
+  assert.equal(b.check(inv, bob, "Bob").state, "removed");
+  b.leave("i1", eve);
+  assert.equal(b.check(inv, eve, "Eve").state, "denied");
 });
 
 test("joiners see addresses without query strings or fragments", () => {

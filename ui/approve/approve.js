@@ -1,7 +1,7 @@
 // The approval card as a page: the bubble the PairBrowse browser shows when no web page is in
 // front (DESIGN.md B6); the in-page card stays scripts/hud.js's. One source for two hosts: with
 // window.pairbrowse (the native build) the helper's address comes from session.helper();
-// otherwise from chrome.storage.session "view" (the extension).
+// otherwise from chrome.storage.session "view" (the extension): ui/helper.js.
 //
 // Two modes. On the top-chrome host (chrome://pairbrowse.top-chrome/approve/) it is the window's
 // click-approval bubble (530): click approvals only (join, dev and host asks stay in the agent
@@ -42,6 +42,7 @@
 // helper checks the answer again.
 import { $, el, avatar, splitLabel, helperStream } from "../common.js";
 import { TOP_CHROME_HOST } from "../urls.js";
+import { followHelper } from "../helper.js";
 
 const ARM_MS = 600;
 const POINTER = new Set(["allow", "site", "always"]);
@@ -75,17 +76,6 @@ if (BUBBLE) document.documentElement.dataset.mode = "bubble";
 let told = null; // the last [count, target id] told to the browser
 
 // ---- the helper's address and stream ----
-async function findBase() {
-  const pb = globalThis.pairbrowse;
-  if (typeof pb?.session?.helper === "function") {
-    try {
-      const { origin, key } = (await pb.session.helper()) || {};
-      return origin && key ? `${origin}/${key}/` : null;
-    } catch { return null; }
-  }
-  try { return (await globalThis.chrome?.storage?.session?.get("view"))?.view || null; } catch { return null; }
-}
-
 let stream = null; // the shared helper stream (common.js helperStream)
 function connect(url) {
   if (!url || url === base) return;
@@ -332,4 +322,5 @@ card.addEventListener("focusout", (e) => {
 });
 
 draw();
-findBase().then((url) => { if (url) connect(url); else document.body.dataset.s = "closed"; });
+// The helper's address (ui/helper.js), and each new one the extension's worker stores.
+followHelper({ connect, none: () => { document.body.dataset.s = "closed"; } });

@@ -85,9 +85,11 @@ import { createDownloads, createRecordings, createHandoffs, openFile, createPers
 import { createPreviews } from "./daemon/preview.mjs";
 import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mjs";
 import { engineDir } from "./native/pack.mjs";
-import { answerOpen, writeOpener } from "./opener.mjs";
+import { answerOpen, writeOpener, claimOpener, releaseOpener, registryDir } from "./opener.mjs";
+import { bundleIdOfApp } from "./openers.mjs";
+import { chooseBrowser } from "./browser/choice.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
-import { testOn } from "./testenv.mjs";
+import { testOn, harnessStarted } from "./testenv.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
 
@@ -284,6 +286,7 @@ const context = createContext({
     } catch (e) { log("live view", e?.message || e); return null; }
   },
   onStarted: () => {
+    registerOpener();
     liveView()?.setSession(context.sessionInfo());
     // The side panel extension gets the live view's address through its worker; the browser's own
     // pages already have the address in its switch and their own key in an owner-only file.
@@ -746,8 +749,35 @@ const picks = createPick({
 });
 output.start();
 
+// The opener registry (plans/555 D6.2a, opener.mjs claimOpener): this helper's record for the
+// native build it launches, named by that build's bundle id, so that build opened by hand comes
+// to this helper (an instance, another home) and not the default home's. Written once the socket
+// listens and again after each launch (a first install, a changed "browser"); another running
+// helper's record is left alone; removed at a clean stop.
+const openScript = join(dirname(fileURLToPath(import.meta.url)), "open.mjs");
+const registry = { name: null, dir: null };
+function launchedBundleId() {
+  const choice = context.choiceConfig?.() || config;
+  const spec = chooseBrowser(choice, { native: !!pinnedAsset(), pinnedExec: () => nativeDirs().exec });
+  const exec = spec.binary === "native" ? (spec.executablePath || nativeDirs().exec) : spec.executablePath;
+  return exec ? bundleIdOfApp(exec) : null;
+}
+async function registerOpener() {
+  if (process.platform !== "darwin" || shuttingDown) return;
+  try {
+    const name = launchedBundleId();
+    registry.dir ??= registryDir({ harness: harnessStarted() });
+    if (registry.name && registry.name !== name) { releaseOpener(registry.name, { dir: registry.dir }); registry.name = null; }
+    if (!name) return;
+    const r = await claimOpener(name, { dir: registry.dir, script: openScript });
+    if (r === "written") registry.name = name;
+    else if (r === "kept" && registry.name !== name) log(`opener: another running helper holds the ${name} record; that build opened by hand goes to it`);
+  } catch (e) { log(`opener registry: ${e?.code || e?.message || e}`); }
+}
+
 async function shutdown(code) {
   if (shuttingDown) return;
+  if (registry.name) { try { releaseOpener(registry.name, { dir: registry.dir }); } catch {} }
   // No new connections and no new browser while closing: a client that reconnects at once
   // would otherwise start the browser again inside a helper that's on its way out.
   shuttingDown = true;
@@ -796,7 +826,8 @@ async function main() {
     // The PairBrowse browser opened by hand runs this helper's opener (scripts/opener.mjs): the
     // record names this Node and this copy's script, rewritten at each start.
     if (process.platform !== "win32") {
-      try { writeOpener({ script: join(dirname(fileURLToPath(import.meta.url)), "open.mjs") }); } catch (e) { log(`opener: ${e?.code || e?.message || e}`); }
+      try { writeOpener({ script: openScript }); } catch (e) { log(`opener: ${e?.code || e?.message || e}`); }
+      registerOpener();
     }
     const socketAt = Math.round(performance.now());
     setImmediate(() => {

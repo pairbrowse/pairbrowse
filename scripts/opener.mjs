@@ -7,14 +7,21 @@
 // window. The helper then launches the browser as it always does (its pipe, its profile, its
 // persona), and an agent that starts later finds that browser already there.
 //
-// The record: ~/.pairbrowse/run/opener.json, { "v": 1, "node": <absolute Node>, "script":
-// <absolute .../scripts/open.mjs> }, written by the helper at each start, readable only by this
-// account (0600 in a 0700 folder). parseOpener() is the browser's rule, mirrored for the tests:
-// the browser checks the same again on its side, plus each file's owner and mode.
+// The record: <home>/run/opener.json, { "v": 1, "node": <absolute Node>, "script":
+// <absolute .../scripts/open.mjs>, "home", "instance"? }, written by the helper at each start,
+// readable only by this account (0600 in a 0700 folder); the browser reads the default home's.
+// Several helpers (named instances, other homes) also write the record of the build each launches
+// into the account's registry, ~/.pairbrowse/run/openers/<bundle id>.json, which the browser reads
+// first (claimOpener below; the rules and the reading side: openers.mjs). parseOpener() is the
+// browser's rule, mirrored for the tests: the browser checks the same again on its side, plus
+// each file's owner and mode.
 import { mkdirSync, writeFileSync, renameSync, rmSync, chmodSync } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
-import { paths } from "./paths.mjs";
+import net from "node:net";
+import { userInfo } from "node:os";
+import { paths, INSTANCE } from "./paths.mjs";
+import { isRecordName, openersDir, readRecord, recordFile } from "./openers.mjs";
 
 export const OPENER_FILE = "opener.json";
 export const OPENER_VERSION = 1;
@@ -47,16 +54,26 @@ export function parseOpener(text) {
   return { node: v.node, script: v.script };
 }
 
+// The record's text: opener.json's fields, plus the helper's home and instance (the browser
+// ignores both; scripts/open.mjs reads them from an app's own record, openers.mjs).
+export function openerText({ node = process.execPath, script, home = paths.home, instance = INSTANCE } = {}) {
+  const text = JSON.stringify({ v: OPENER_VERSION, node, script, home, ...(instance ? { instance } : {}) });
+  if (!parseOpener(text)) throw new Error("the opener record has a form the browser refuses");
+  return text;
+}
+
 // Writes the record (atomically: a reader sees the old one or the new one, never half). Returns its
 // path. Throws on a record the browser would refuse.
-export function writeOpener({ node = process.execPath, script, home = paths.home } = {}) {
-  const text = JSON.stringify({ v: OPENER_VERSION, node, script });
-  if (!parseOpener(text)) throw new Error("the opener record has a form the browser refuses");
-  const dir = join(home, "run");
+export function writeOpener({ node = process.execPath, script, home = paths.home, instance = INSTANCE } = {}) {
+  return writeRecordAt(join(home, "run"), OPENER_FILE, openerText({ node, script, home, instance }));
+}
+
+// One owner-only record file in an owner-only folder, written through a temp file and a rename.
+function writeRecordAt(dir, name, text) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (process.platform !== "win32") chmodSync(dir, 0o700); // the browser refuses a folder others can open
-  const file = join(dir, OPENER_FILE);
-  const tmp = join(dir, `.${OPENER_FILE}.${randomBytes(6).toString("hex")}`);
+  const file = join(dir, name);
+  const tmp = join(dir, `.${name}.${randomBytes(6).toString("hex")}`);
   try {
     writeFileSync(tmp, text, { mode: 0o600, flag: "wx" });
     if (process.platform !== "win32") chmodSync(tmp, 0o600); // a umask can strip owner bits
@@ -66,6 +83,49 @@ export function writeOpener({ node = process.execPath, script, home = paths.home
     throw e;
   }
   return file;
+}
+
+// ---- the opener registry (plans/555 D6.2a; the reading side and the rules: openers.mjs) ----
+
+// Whether a home's helper answers on its socket (a record naming it is then that helper's).
+export const homeAnswers = (home, waitMs = 1000) => new Promise((resolve) => {
+  const s = net.connect(join(home, "run", "browser.sock"));
+  const done = (v) => { s.destroy(); resolve(v); };
+  s.setTimeout(waitMs, () => done(false));
+  s.once("connect", () => done(true));
+  s.once("error", () => done(false));
+});
+
+// The registry folder this helper writes to: the account's ~/.pairbrowse/run/openers; for a
+// helper the test harness started (a home under the temp folder), its own home's, so a test never
+// writes into the person's registry. dir is given by tests.
+export function registryDir({ harness = false } = {}) {
+  if (harness) return join(paths.run, "openers");
+  const dir = openersDir();
+  const real = join(userInfo().homedir, ".pairbrowse");
+  if (process.env.NODE_TEST_CONTEXT && (dir === real || dir.startsWith(real + sep))) throw new Error("A test reached the real ~/.pairbrowse opener registry");
+  return dir;
+}
+
+// Writes this helper's record for the build it launches (bundle id name, isRecordName) unless
+// another helper's record is there and that helper answers. Returns "written", "kept" (another
+// live helper's) or "skipped" (no usable name).
+export async function claimOpener(name, { dir, script, node = process.execPath, home = paths.home, instance = INSTANCE, answers = homeAnswers } = {}) {
+  if (!isRecordName(name)) return "skipped";
+  const text = openerText({ node, script, home, instance });
+  const there = readRecord(recordFile(name, dir));
+  if (there?.home && there.home !== home && await answers(there.home)) return "kept";
+  writeRecordAt(dir, `${name}.json`, text);
+  return "written";
+}
+
+// Removes this helper's own record at a clean stop (another helper's stays).
+export function releaseOpener(name, { dir, home = paths.home } = {}) {
+  if (!isRecordName(name)) return false;
+  const file = recordFile(name, dir);
+  if (readRecord(file)?.home !== home) return false;
+  rmSync(file, { force: true });
+  return true;
 }
 
 // The socket line scripts/open.mjs sends (mark: hookline.mjs HOOK_MARK, the private socket's

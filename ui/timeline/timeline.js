@@ -7,6 +7,7 @@
 // the page is first visible; while hidden it fetches nothing and holds no picture.
 import { $, el, shortClock, helperStream, enter, leave, busy } from "../common.js";
 import { DRIVING_MS } from "../limits.js";
+import { followHelper, helperAddress } from "../helper.js";
 
 const PITCH = 114; // a card (104 px) and its gap (10 px)
 const PAD = 15; // the strip's left padding
@@ -643,26 +644,17 @@ note.addEventListener("keydown", async (e) => {
 
 // No helper to ask (the browser has no helper address, or neither the browser API nor the
 // extension's storage is there, or it has no address yet): the right dock's words, the resting
-// state; an address that arrives later connects (storage.onChanged below).
+// state; an address that arrives later connects (followHelper below).
 const NO_HELPER = "No agent connected";
 // No stream to wait for: the page says so in body[data-s] too (as the docks do), not "connecting".
 const noHelper = () => { document.body.dataset.s = "none"; showLine(NO_HELPER); };
 if (PICTURE) {
   // The picture bubble's page: only the browser opens it (its own host, its API).
   pictureMode();
-} else if (window.pairbrowse) {
-  // The browser build: the helper's address from the browser itself.
-  window.pairbrowse.session.helper().then(({ origin, key } = {}) => {
-    if (origin && key) connect(`${origin}/${key}/`);
-    else noHelper();
-  }).catch(noHelper);
 } else {
-  // The extension: the address the daemon handed to background.js, as the side panel reads it.
-  let area = null;
-  try { area = globalThis.chrome?.storage?.session || null; } catch {}
-  if (!area) noHelper();
-  else area.get("view").then(({ view }) => (view ? connect(view) : noHelper())).catch(noHelper);
-  try { globalThis.chrome?.storage?.onChanged?.addListener((changes, a) => { if (a === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
+  // The browser's helper, or the address the daemon handed to background.js (the extension), as
+  // the side panel reads it; each new one the extension's worker stores (ui/helper.js).
+  followHelper({ connect, none: noHelper });
 }
 
 // ---- #picture=<id>: the picture large in the browser's bubble (530 E2 B3) ----
@@ -705,10 +697,8 @@ async function pictureMode() {
     if (!r?.ok) { const body = await r?.json().catch(() => null); ask(false); return msg(body?.error || "Couldn't delete it."); }
     close();
   });
-  let helper = null;
-  try { helper = await pb?.session.helper(); } catch {}
-  if (!helper?.origin || !helper?.key) return msg(NO_HELPER);
-  pbase = `${helper.origin}/${helper.key}/`;
+  pbase = await helperAddress();
+  if (!pbase) return msg(NO_HELPER);
   const r = await fetch(pbase + "timeline.json", { signal: AbortSignal.timeout(8000) }).catch(() => null);
   const body = r?.ok ? await r.json().catch(() => null) : null;
   const found = Array.isArray(body?.cards) ? body.cards.map(valid).find((c) => c?.id === PICTURE) : null;

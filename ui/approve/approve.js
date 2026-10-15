@@ -41,6 +41,7 @@
 // shows and the page is visible. No timer: arming is a timestamp compared at click time. The
 // helper checks the answer again.
 import { $, el, avatar, splitLabel, helperStream } from "../common.js";
+import { TOP_CHROME_HOST } from "../urls.js";
 
 const ARM_MS = 600;
 const POINTER = new Set(["allow", "site", "always"]);
@@ -69,7 +70,7 @@ let busy = false;
 const card = $("card"), menu = $("menu"), more = $("more");
 
 // The window's approval bubble (530), not the tab page: set before the first paint.
-const BUBBLE = location.host === "pairbrowse.top-chrome";
+const BUBBLE = location.host === TOP_CHROME_HOST;
 if (BUBBLE) document.documentElement.dataset.mode = "bubble";
 let told = null; // the last [count, target id] told to the browser
 

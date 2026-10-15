@@ -21,6 +21,7 @@ import { AGENT_GONE } from "./remote-agents.mjs";
 import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { AGENT_COLOR, isColor } from "../../ui/vocab.js";
+import { CHROME_SCREEN, extensionUrl, isShownScreenPage } from "../../ui/urls.js";
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
 function serially() {
@@ -56,13 +57,12 @@ const SCREEN_CONNECT_MS = process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" ? 3000 :
 const SCREEN_INPUT_MS = 30; // on the slower route, input goes to the host this often
 // The picture page: the extension's screen/index.html, or in a PairBrowse build with its own pages
 // its chrome://pairbrowse/screen/ tab (the same page, driven the same way through window.pbScreen).
-const CHROME_SCREEN = "chrome://pairbrowse/screen/";
-const screenBaseFor = (chrome) => (chrome ? CHROME_SCREEN : `chrome-extension://${panelExtensionId()}/screen/index.html`);
+const screenBaseFor = (chrome) => (chrome ? CHROME_SCREEN : extensionUrl(panelExtensionId(), "screen/index.html"));
 // Any of the picture page's addresses (the extension's, the browser's own, and the name the
 // browser shows for it).
 export const isScreenPage = (url) => {
   const u = String(url || "");
-  return /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html(?:[#?]|$)/.test(u) || u.startsWith(CHROME_SCREEN) || /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(u);
+  return /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html(?:[#?]|$)/.test(u) || u.startsWith(CHROME_SCREEN) || isShownScreenPage(u);
 };
 // The tools an agent here uses in the host's browser while in a shared browser session (the rest,
 // such as its status, remembered details and sessions, stay here).
@@ -103,7 +103,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   // host tab's real address and title (screen.js).
   const screenUrl = (id) => `${screenBase()}#${encodeURIComponent(id)}`;
   // The browser's own picture tab may show under its pairbrowse:// name too.
-  const isScreen = (page) => page.url().startsWith(screenBase()) || (!!context.chromePages?.() && /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(page.url()));
+  const isScreen = (page) => page.url().startsWith(screenBase()) || (!!context.chromePages?.() && isShownScreenPage(page.url()));
   let s = null;
   let ended = null; // { text }: how the last session ended without a leave (denied, revoked), for status // { join, mirror, pages: Map id -> page, owner, window, windowId, lastT, candidates, seen, heard, told, agents, outbox }
   const idOf = (cur, page) => { for (const [id, p] of cur.pages) if (p === page) return id; return null; };

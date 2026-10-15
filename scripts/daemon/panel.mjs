@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { panelExtensionId, panelBuild } from "../browser.mjs";
 import { sleep, within } from "../util.mjs";
+import { extensionUrl, extensionOrigin } from "../../ui/urls.js";
 
 const NOTIFY_TITLE = "PairBrowse needs you";
 
@@ -60,7 +61,7 @@ export function createPanel({ context, liveViewUrl, log, expectedBuild = () => p
         // An extension's worker only runs on demand and stops when idle: start it, then wait for
         // it to show (a busy computer can take seconds, so poll rather than a fixed pause).
         await cdp.send("ServiceWorker.enable").catch(() => {});
-        await cdp.send("ServiceWorker.startWorker", { scopeURL: `chrome-extension://${panelId || panelExtensionId()}/` }).catch(() => {});
+        await cdp.send("ServiceWorker.startWorker", { scopeURL: extensionUrl(panelId || panelExtensionId()) }).catch(() => {});
         while (!sw && Date.now() < until) { await sleep(150); ({ sw, targetInfos } = await find()); }
       }
       if (!sw) throw new Error(`side panel worker not running (${targetInfos.filter((t) => t.type === "service_worker").map((t) => t.url.slice(0, 60)).join(", ") || "no workers"})`);
@@ -170,7 +171,7 @@ export function createPanel({ context, liveViewUrl, log, expectedBuild = () => p
   async function connect() {
     const url = await liveViewUrl();
     await call((u) => globalThis.pbSetView(u), url, 30_000);
-    const origin = `chrome-extension://${panelId || panelExtensionId()}`;
+    const origin = extensionOrigin(extensionUrl(panelId || panelExtensionId()));
     if (!origins.includes(origin)) origins.push(origin);
     log(`side panel connected (${origin})`);
     await checkBuild().catch(() => {});

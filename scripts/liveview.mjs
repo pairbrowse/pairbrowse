@@ -26,7 +26,7 @@ import { createInputReplayer, readViewerInput, inputBudget } from "./liveview/in
 import { createJoinerServer, recentlySeen } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/tabs.mjs";
 import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
-import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "./policy.mjs";
+import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "../ui/urls.js";
 import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
 import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } from "./daemon/tools.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";

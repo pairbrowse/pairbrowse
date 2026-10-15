@@ -1,11 +1,13 @@
 // Shared by the side panel, the browser's own pages (the strip, the docks, the timeline, the
 // approval bubble, settings), the new tab page and the live view (which serves this file from
 // here: an extension can load only its own files). It also holds helperStream, the one owner
-// event stream those pages share per origin. The live view's server imports addressToUrl too, so
+// event stream those pages share per origin. The live view's server imports it in tests, so
 // this module must stay free of side effects: definitions only, nothing runs on import. The words
-// and colors the helper shares with the pages are in vocab.js, re-exported here.
+// and colors the helper shares with the pages are in vocab.js, the browser's own addresses in
+// urls.js (addressToUrl, servedByBrowser), re-exported here.
 import { STATE_WORDS, PAGE_KINDS, isColor } from "./vocab.js";
-export { STATE_WORDS, isColor };
+import { addressToUrl, servedByBrowser, REPORT_URL, TOP_CHROME_HOST, ownPage } from "./urls.js";
+export { STATE_WORDS, isColor, addressToUrl, servedByBrowser, REPORT_URL };
 
 export const $ = (id) => document.getElementById(id);
 export function el(tag, props = {}, ...kids) { const n = document.createElement(tag); Object.assign(n, props); n.append(...kids); return n; }
@@ -162,18 +164,6 @@ export const activityHead = (a) => [a.who, a.tab ? `in ${a.tab}` : ""].filter(Bo
 // agent starts ("Its task, checklist and status", "Your sessions").
 export const NO_AGENT = "No agent connected";
 export const noAgentLine = (what) => `Ask Claude Code or Codex to use PairBrowse. ${what} show here.`;
-
-// What you type in an address bar, as a URL: a web address, or a Google search (the live view's
-// bar, over Playwright's Chromium). { search: false }: a web address only, else null (PairBrowse's
-// own new tab page, which never sends words to a search engine: the omnibox's "Type a URL").
-export function addressToUrl(text, { search = true } = {}) {
-  const t = String(text || "").trim().slice(0, 2000);
-  if (!t) return null;
-  if (/^(localhost|\d{1,3}(\.\d{1,3}){3})(:\d+)?([/?#]|$)/i.test(t)) return `http://${t}`;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(t) && !/^[^/\s]+:\d+([/?#]|$)/.test(t)) return t;
-  if (!/\s/.test(t) && /^[^/?#]+\.[a-z]{2,}([:/?#]|$)/i.test(t)) return `https://${t}`;
-  return search ? `https://www.google.com/search?q=${encodeURIComponent(t)}` : null;
-}
 
 // Claude's orange spark, as an icon.
 const SPARK = "M8 0.8c.5 0 .8.4.9.9l.5 4 3.3-2.3c.4-.3 1-.2 1.3.2.3.4.2 1-.2 1.3L10.6 7.3l4 .6c.5.1.9.5.8 1-.1.5-.5.8-1 .7l-4-.5 2.3 3.3c.3.4.2 1-.2 1.3-.4.3-1 .2-1.3-.2L8.9 10.2l-.5 4c-.1.5-.5.9-1 .8-.5 0-.8-.5-.8-1l.6-4-3.3 2.3c-.4.3-1 .2-1.3-.2-.3-.4-.2-1 .2-1.3l3.2-2.4-4-.5c-.5-.1-.9-.5-.8-1 .1-.5.5-.8 1-.8l4 .6L3.9 3.5c-.3-.4-.2-1 .2-1.3.4-.3 1-.2 1.3.2l2.4 3.3.5-4c0-.5.4-.9.9-.9Z";
@@ -465,7 +455,6 @@ export async function sendReport(base, payload) {
 // while the helper relays reports (config.json report). -> the element, or null. A window slot
 // page opens Settings with the browser's tabs; a tab page of the browser follows the link itself;
 // the extension opens its own settings page.
-export const REPORT_URL = "chrome://pairbrowse/settings#report";
 export async function reportOffer(base) {
   if (!base) return null;
   const c = await fetch(base + "config.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -473,7 +462,7 @@ export async function reportOffer(base) {
   const a = el("a", { className: "report-offer", href: REPORT_URL, textContent: "Report a problem", target: "_blank", rel: "noopener" });
   a.addEventListener("click", (ev) => {
     const pb = globalThis.pairbrowse;
-    if (pb && location.host === "pairbrowse.top-chrome") { ev.preventDefault(); pb.tabs.create("pairbrowse://settings#report", true, -1).catch(() => {}); return; }
+    if (pb && location.host === TOP_CHROME_HOST) { ev.preventDefault(); pb.tabs.create(ownPage("settings#report"), true, -1).catch(() => {}); return; }
     if (pb) return; // a tab page: the link itself
     const tabs = globalThis.chrome?.tabs, runtime = globalThis.chrome?.runtime;
     if (tabs?.create && runtime?.getURL) { ev.preventDefault(); tabs.create({ url: runtime.getURL("settings/index.html#report") }); }
@@ -722,10 +711,6 @@ export function askSwitch(box, r, { yes, no }) {
   return () => finish(no);
 }
 
-// The page is served by the PairBrowse browser itself, on its own hosts (the window's slots on
-// chrome://pairbrowse.top-chrome, the tab pages on chrome://pairbrowse), with or without
-// window.pairbrowse; anything else is a page in a plain browser (the extension, the harness).
-export const servedByBrowser = (loc = globalThis.location) => loc?.protocol === "chrome:" && (loc.host === "pairbrowse.top-chrome" || loc.host === "pairbrowse");
 
 // Asks for one dock's state: the browser's Layout.Set in the build (the last state with one side
 // changed), else the helper's POST layout; false when neither channel is there (nothing asked).

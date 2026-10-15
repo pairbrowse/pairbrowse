@@ -34,8 +34,8 @@ const OLD_THEME_DIR = join(here, "browser", "theme");
 const isOldThemePath = (p) => typeof p === "string" && /[/\\]scripts[/\\]browser[/\\]theme([/\\](Cached Theme\.pak)?)?$/.test(p);
 export const PANEL_DIR = join(here, "..", "ui");
 
-// The origin a page of the extension sends (URL.origin is "null" for chrome-extension: URLs).
-export const extensionOrigin = (url) => `chrome-extension://${new URL(url).host}`;
+// The origin a page of the extension sends (URL.origin is "null" for chrome-extension: URLs): ui/urls.js.
+export { extensionOrigin } from "../ui/urls.js";
 
 // Chromium's extension ID scheme: SHA-256 of the input, first 32 hex digits written as a-p.
 const idFrom = (data) => [...createHash("sha256").update(data).digest("hex").slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");

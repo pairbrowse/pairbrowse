@@ -11,6 +11,7 @@
 // (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
 import { $, el, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
+import { isOwnTabPage, ownPage } from "../urls.js";
 
 const pb = window.pairbrowse ?? null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -41,12 +42,12 @@ let noHelperKnown = false; // the browser (or the host) said there is no helper 
 
 const isHistory = (url) => /^chrome:\/\/history(\/|$)/.test(url || "");
 // The activity page (ui/activity) as the browser shows its address.
-const isActivityPage = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)activity(\/|#|\?|$)/.test(url || "");
+const isActivityPage = (url) => isOwnTabPage("activity", url);
 // The sessions page (ui/sessions) as the browser shows its address.
-const isSessionsPage = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)sessions(\/|#|\?|$)/.test(url || "");
+const isSessionsPage = (url) => isOwnTabPage("sessions", url);
 // A tab that is not a web page the Browser row brings back.
 const isOwnPage = (url) => isHistory(url) || isActivityPage(url) || isSessionsPage(url);
-const isSettings = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)settings(\/|$)/.test(url || "");
+const isSettings = (url) => isOwnTabPage("settings", url, "\\/|$");
 const dock = () => document.body.dataset.dock;
 const icon = (id) => {
   const svg = document.createElementNS(SVG, "svg");
@@ -283,7 +284,7 @@ $("nav-sessions").addEventListener("click", (e) => {
     // The sessions page (found or opened in this window), from the open dock and the rail alike;
     // never the frame, which gets no bindings in the browser. The dock's state stays.
     e.stopImmediatePropagation();
-    findOrOpen(isSessionsPage, "pairbrowse://sessions");
+    findOrOpen(isSessionsPage, ownPage("sessions"));
     return;
   }
   if (dock() !== "rail") { if (!switcher.isOpen()) caretAt(); return; }
@@ -301,7 +302,7 @@ function findOrOpen(match, url) {
   pb.tabs.create(url, true, w).catch(() => {});
 }
 const openHistory = () => findOrOpen(isHistory, "chrome://history");
-const openSettings = () => findOrOpen(isSettings, "pairbrowse://settings");
+const openSettings = () => findOrOpen(isSettings, ownPage("settings"));
 function openBrowser() {
   if (pb && lastWebTab >= 0 && tabs.has(lastWebTab) && !tabs.get(lastWebTab).active) pb.tabs.activate(lastWebTab).catch(() => {});
 }
@@ -309,7 +310,7 @@ function openBrowser() {
 // in this window, from the open dock and the rail alike. Served without the browser's API, the
 // page's file in a new tab (it reads the helper's address as this dock does).
 function openActivity() {
-  if (pb) { findOrOpen(isActivityPage, "pairbrowse://activity"); return; }
+  if (pb) { findOrOpen(isActivityPage, ownPage("activity")); return; }
   window.open("../activity/index.html", "_blank", "noopener");
 }
 

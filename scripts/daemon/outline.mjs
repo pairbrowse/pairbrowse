@@ -4,7 +4,7 @@
 // for it and no page is asked anything (only url() and isClosed() are read). Read by the owner's
 // live view routes (GET outline.json, masked again there) and their `outline` event (metadata
 // only, never the text).
-import { isChromePage } from "../policy.mjs";
+import { isChromePage } from "../../ui/urls.js";
 
 export const OUTLINE_MAX = 32_000;
 const CUT_NOTE = "This page's snapshot is long"; // output.mjs capSnapshot's note

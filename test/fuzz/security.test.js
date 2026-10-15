@@ -9,7 +9,7 @@ import { hostAllowed, redact } from "../../scripts/secrets.mjs";
 import { navigationProblem, isChromePage } from "../../scripts/policy.mjs";
 import { hideChromeTabs } from "../../scripts/daemon/output.mjs";
 import { hostOk, originOk, keyOk } from "../../scripts/liveview/http.mjs";
-import { addressToUrl } from "../../ui/common.js";
+import { addressToUrl } from "../../ui/urls.js";
 
 const RUNS = Number(process.env.PAIRBROWSE_FUZZ_RUNS) || 5000;
 const check = (property) => fc.assert(property, { numRuns: RUNS });

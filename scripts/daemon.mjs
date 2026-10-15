@@ -53,7 +53,7 @@ import { createPresence } from "./daemon/presence.mjs";
 import { createPause, pressPause as pressPauseIn } from "./daemon/pause.mjs";
 import { fieldOwner } from "./daemon/fields.mjs";
 import { createPanel } from "./daemon/panel.mjs";
-import { CHROME_PAGE_ORIGINS } from "./policy.mjs";
+import { CHROME_PAGE_ORIGINS } from "../ui/urls.js";
 import { forgetPanelBuild, UNGOOGLED } from "./browser.mjs";
 import { createScreenShare } from "./daemon/screenshare.mjs";
 import { createRecorder, pixelRatio } from "./daemon/recorder.mjs";

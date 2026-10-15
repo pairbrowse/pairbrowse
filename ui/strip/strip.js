@@ -10,6 +10,7 @@
 // a frame loop or a DOM observer: observers of the browser API and the one shared helper stream
 // (common.js helperStream) only. The nav fragments read no stream at all.
 import { $, el, avatar, shareCard, isColor, helperStream, servedByBrowser, enter, leave, calm } from "../common.js";
+import { isOwnTabPage, ownPage } from "../urls.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
@@ -105,14 +106,14 @@ const menuItem = (id, fn) => $(id).addEventListener("click", () => { closeMenu()
 // Part H: the menu holds what has no other door in a page host: PairBrowse settings (found if open,
 // else a new tab). New window, Zoom (it maximized the window) and Record (one home: the agent
 // panel's Tools) are gone; the browser's own menu and shortcuts do the window's.
-const isSettings = (url) => /^(pairbrowse:\/\/|chrome:\/\/pairbrowse\/)settings(\/|#|$)/.test(url || "");
+const isSettings = (url) => isOwnTabPage("settings", url, "\\/|#|$");
 menuItem("settings", async () => {
   if (!pb) return;
   try {
     const { tabs } = await pb.tabs.list();
     const open = (tabs || []).find((t) => t.window === myWindow && isSettings(t.url));
     if (open) await pb.tabs.activate(open.id);
-    else await pb.tabs.create("pairbrowse://settings", true, myWindow);
+    else await pb.tabs.create(ownPage("settings"), true, myWindow);
   } catch {}
 });
 // Without the browser's API the menu has nothing to call.

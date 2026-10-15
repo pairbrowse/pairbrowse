@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, rmSync, existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { redact } from "../secrets.mjs";
-import { isChromePage } from "../policy.mjs";
+import { isChromePage } from "../../ui/urls.js";
 
 // Playwright's own snapshot and console files in the files folder; never your own files there.
 const PLAYWRIGHT_OUTPUT = /^(page|console|network)-[\dT:.Z-]+\.(ya?ml|log|md|txt)$/;

@@ -16,8 +16,7 @@
 //   rethrown into the bindings.
 // Nothing here starts a timer, a poll or a DOM observer.
 
-const TOP_CHROME_HOST = "pairbrowse.top-chrome";
-const TAB_HOST = "pairbrowse";
+import { TOP_CHROME_HOST, TAB_HOST } from "./urls.js";
 
 // The interfaces: the page's name, the mojom interface, its observer interface and the observer's
 // methods (lowerCamel, in mojom order).

@@ -17,7 +17,7 @@ import { keepFocus } from "../focus.mjs";
 import { sleep, readJson, within } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
 import { chromePages, capturePages, captureKeyed, nativeManifest, MEASURING } from "../native-engine.mjs";
-import { isChromePage } from "../policy.mjs";
+import { isChromePage, CHROME_PICKER, extensionUrl } from "../../ui/urls.js";
 import { createPersonTabs, keepDownloadMark } from "./tools.mjs";
 import { OPEN_ACCEPT_MS } from "../opener.mjs";
 
@@ -35,8 +35,7 @@ const NETWORK_EVENTS = ["request", "response", "requestfailed", "requestfinished
 // says what it waits for, so the agent tells them in chat instead of hanging silently.
 const PICK_WAIT_MS = Number(process.env.PAIRBROWSE_TEST_PICK_WAIT_MS) || 15_000;
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
-// A build with its own pages shows its own picker instead (chrome://pairbrowse/picker).
-const CHROME_PICKER = "chrome://pairbrowse/picker";
+// A build with its own pages shows its own picker instead (CHROME_PICKER, ui/urls.js).
 // Whether the browser config launches is a native build that declares its own pages (its
 // manifest's `chrome` field).
 const chromePagesIn = (config) => { try { return config.browserEngine === "pairbrowse" && chromePages(nativeManifest(config.executablePath)); } catch { return false; } };
@@ -107,7 +106,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     dropHelperKeyFile(path);
     if (path === helperKeyPath) helperKeyPath = null;
   }
-  const pickerUrl = () => (chrome ? CHROME_PICKER : `chrome-extension://${panelExtensionId()}/picker/index.html`);
+  const pickerUrl = () => (chrome ? CHROME_PICKER : extensionUrl(panelExtensionId(), "picker/index.html"));
   // The PairBrowse browser is being downloaded and installed (first start, or a new version):
   // the user hears of it, and actions say so at once rather than waiting for minutes.
   let installing = false;

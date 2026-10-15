@@ -9,6 +9,7 @@
 import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
 import { AGENT_COLOR } from "../vocab.js";
+import { ownPage } from "../urls.js";
 
 const pb = globalThis.pairbrowse || null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -256,7 +257,7 @@ $("pause-btn").addEventListener("click", (ev) => {
 // anchor). Without the browser's API there is nothing to open it with, so the row stays hidden.
 if (pb) {
   $("sec-settings-link").hidden = false;
-  $("open-settings").addEventListener("click", () => { pb.tabs.create("pairbrowse://settings#passwords", true, -1).catch(() => {}); });
+  $("open-settings").addEventListener("click", () => { pb.tabs.create(ownPage("settings#passwords"), true, -1).catch(() => {}); });
 }
 
 // The requests, then the count on the Agent tab.

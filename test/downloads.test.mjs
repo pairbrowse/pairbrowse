@@ -3,9 +3,9 @@
 import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readdirSync, realpathSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readdirSync, realpathSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { EventEmitter } from "node:events";
 import { checkDownloads, downloadsFolderNow } from "../scripts/rules/downloads.mjs";
 import { loadConfig, paths } from "../scripts/paths.mjs";
@@ -93,4 +93,34 @@ test("a save resolves the folder at that moment: one swapped for a link after lo
   assert.deepEqual(readdirSync(at("Library", "LaunchAgents")), [], "nothing lands in LaunchAgents");
   assert.ok(readdirSync(at("Downloads")).includes("evil.plist"), "it goes to your Downloads folder instead");
   assert.equal(done.at(-1).op, "done");
+});
+
+// The Security table's Downloads row: a site's name for a file is a plain name in the chosen
+// folder (no folder parts, no leading dots, no control characters) and never replaces a file there.
+test("a site's file name stays a plain name in the folder, and a save never goes over a file", async () => {
+  mkdirSync(at("Plain"));
+  writeFileSync(at("Plain", "report.pdf"), "mine");
+  const config = { downloadsDir: at("Plain") };
+  const fake = (name) => {
+    const src = join(user, `src-plain-${done.length}`);
+    writeFileSync(src, "site");
+    return { suggestedFilename: () => name, path: async () => src, failure: async () => null };
+  };
+  const done = [];
+  const { keepDownloads } = createDownloads({
+    personTabs: { has: () => false }, config, hostNote: () => {}, log: () => {}, profile: () => user,
+    onDownload: (e) => { if (e.op !== "start") done.push(e); return 1; },
+    folderNow: () => downloadsFolderNow(config.downloadsDir, { home: testHome, user }),
+  });
+  const page = new EventEmitter();
+  keepDownloads(page);
+  const save = async (name) => { const n = done.length; page.emit("download", fake(name)); for (let i = 0; i < 200 && done.length === n; i++) await new Promise((r) => setTimeout(r, 10)); return done.at(-1); };
+  for (const name of ["../../escape.sh", "..\\up.txt", ".bashrc", "a:b\u0001c.txt", "report.pdf", "report.pdf"]) {
+    const r = await save(name);
+    assert.equal(r.op, "done", name);
+    assert.equal(join(at("Plain"), basename(r.path)), r.path, `${name} lands in the chosen folder itself`);
+  }
+  assert.deepEqual(readdirSync(at("Plain")).sort(), ["__up.txt", "_bashrc", "a_b_c.txt", "escape.sh", "report (1).pdf", "report (2).pdf", "report.pdf"].sort());
+  assert.equal(readFileSync(at("Plain", "report.pdf"), "utf8"), "mine", "the file already there is untouched");
+  assert.ok(!existsSync(join(user, "escape.sh")) && !existsSync(join(user, "..", "escape.sh")));
 });

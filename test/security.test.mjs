@@ -187,3 +187,45 @@ test("paths under the home come from paths.mjs", async () => {
     assert.doesNotMatch(src, /env\.PAIRBROWSE_HOME\b/, `${f} reads PAIRBROWSE_HOME itself`);
   }
 });
+
+// The Security table's first row: no remote-debugging port. The browser is launched over
+// Playwright's pipe with flags of PairBrowse's own (browser.mjs launchOptions), and no script
+// attaches to a browser over CDP or opens a debugging port.
+test("the browser has no remote-debugging port: launched over the pipe, never attached over CDP", async () => {
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { join: j } = await import("node:path");
+  const { launchOptions } = await import("../scripts/browser.mjs");
+  const { shellFrom, EXTENSION_SHELL } = await import("../scripts/browser/choice.mjs");
+  const helper = { origin: "http://127.0.0.1:4000", keyFile: "/run/helper-key-x" };
+  for (const shell of [shellFrom({ chrome: 1 }), EXTENSION_SHELL]) {
+    const opts = launchOptions({}, { shell, helper, env: {}, executablePath: "/b" });
+    assert.ok(!opts.args.some((a) => /^--remote-debugging-(port|address)/.test(a)), "no debugging port flag");
+    assert.ok(!("cdpPort" in opts) && !("port" in opts));
+  }
+  const dir = new URL("../scripts/", import.meta.url).pathname;
+  for (const f of readdirSync(dir, { recursive: true }).filter((f) => /\.(mjs|js)$/.test(f) && !f.startsWith("dev/"))) {
+    const code = readFileSync(j(dir, f), "utf8").replace(/^\s*\/\/.*$/gm, "");
+    assert.doesNotMatch(code, /connectOverCDP|remote-debugging-port|remote-debugging-address/, `${f} attaches over CDP or opens a debugging port`);
+  }
+});
+
+// The Security table's Diagnostics row: nothing but a report you send leaves the computer
+// unasked. The Node modules that can reach another computer (fetch, node:https, node:tls) are
+// these, each for its one purpose; a new one is a decision made here.
+test("only known modules reach beyond this computer", async () => {
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { join: j } = await import("node:path");
+  const KNOWN = {
+    "liveview/report.mjs": "a problem report you send yourself, to reportUrl",
+    "sharing/join-client.mjs": "the host of a join code you entered",
+    "tunnels/quick.mjs": "checks that this helper's own tunnel answers",
+    "util.mjs": "pinned downloads (runtime, browser build, engine pack), checked by SHA-256",
+    "ws.mjs": "the push channel of a join code you entered",
+  };
+  const dir = new URL("../scripts/", import.meta.url).pathname;
+  const found = readdirSync(dir, { recursive: true })
+    .filter((f) => f.endsWith(".mjs") && !f.startsWith("dev/"))
+    .filter((f) => /\bfetch\(|from "node:(https|tls)"/.test(readFileSync(j(dir, f), "utf8").replace(/^\s*\/\/.*$/gm, "")))
+    .sort();
+  assert.deepEqual(found, Object.keys(KNOWN).sort());
+});

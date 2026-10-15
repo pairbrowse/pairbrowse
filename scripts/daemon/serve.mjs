@@ -7,11 +7,9 @@ import { waitForLink, waitedLine } from "./linkwait.mjs";
 import { createInterface } from "node:readline";
 import { paths } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
-import { BLOCKED_TOOLS, HIDDEN_TOOLS, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, sensitiveLabel, isChromePage, CHROME_PAGE_RULE } from "../policy.mjs";
-import { isUntouchedStart } from "../tabs.mjs";
+import { BLOCKED_TOOLS, HIDDEN_TOOLS, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, isChromePage } from "../policy.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
-import { homedir, tmpdir } from "node:os";
 import { describe } from "../log.mjs";
 import { decide, clickClass, approvalAsk, APPROVAL_TOOLS } from "../guard.mjs";
 import { sameWhere, originOf } from "./approvals.mjs";
@@ -22,7 +20,7 @@ import { uploadFiles, pathsIn } from "../upload.mjs";
 export { pathsIn, withPaths } from "../upload.mjs";
 import { enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks, isoDate } from "../runner.mjs";
 import { sleep, within, pageLoaded } from "../util.mjs";
-import { buttonLabel, settle } from "./page.mjs";
+import { settle } from "./page.mjs";
 import { scanReveal, revealNote, foldedLine } from "./reveal.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
@@ -30,46 +28,19 @@ import { dragBetween, reason as dragReason } from "./drag.mjs";
 import { createRefNames, plainError, hideChromeTabs, hidePersonTabs, PERSON_TAB_RULE } from "./output.mjs";
 import { humanFill, humanType, fillSettings } from "../native-engine.mjs";
 import { STATUS_KINDS } from "../../ui/vocab.js";
-import { HELPER_TOOLS, toolsWith } from "../tools/catalog.mjs";
+import { PAIRBROWSE_TOOLS, SCREENSHOT_TOOLS, LOADING_TOOLS, INLINE_SNAPSHOT_TOOLS, INLINE_SHORT_TOOLS, CLICKING_TOOLS, TAB_TOOLS, FIELD_TOOLS, PAGE_READ_TOOLS, NO_WAIT, NO_PICK_WAIT, DECORATED, REMOTE_TOOLS, changesPage,
+  wellFormed, withDialogLabel, containsRef, urlIn, forJoiner, pictureless, dropClosedAlerts } from "./serve/wire.mjs";
+import { realLabel, sensitiveTarget, arrivedAt } from "./serve/pageread.mjs";
+import { tabRefusal, isFileTab } from "./serve/refuse.mjs";
+// The pure parts live in serve/; kept here for one release (tests and older imports name serve.mjs).
+export { wellFormed, forJoiner, pictureless, dropClosedAlerts } from "./serve/wire.mjs";
+export { arrivedAt } from "./serve/pageread.mjs";
+export { tabRefusal } from "./serve/refuse.mjs";
 
-// The helper's own tools, listed after the browser's, and each tool's rules below: the catalog's.
-const PAIRBROWSE_TOOLS = HELPER_TOOLS;
-// A small picture of the page goes with each result that changes what's on screen, taken once
-// the page has loaded and settled for a second: the layout, overlays and images the text
-// snapshot can't show. config.screenshots = false turns it off.
-const SCREENSHOT_TOOLS = toolsWith("screenshot");
-// Results after which the page may load new popups (checked again a few seconds later); after
-// Claude's clicks, overlays already on screen count as Claude's own and stay.
-const LOADING_TOOLS = toolsWith("loading");
-// Actions whose result links the page's snapshot in a file: the snapshot comes in the result
-// instead (output.inlineSnapshot), so the next action needs no browser_snapshot first. Typing and
-// hovering get theirs only when short (INLINE_SHORT_TOOLS).
-const INLINE_SNAPSHOT_TOOLS = toolsWith("inline");
-const INLINE_SHORT_TOOLS = toolsWith("inlineShort");
-const CLICKING_TOOLS = toolsWith("clicking");
-// Tools that act in the participant's tab: they take turns per tab (TabClaims) and wait for a
-// person using that tab.
-const TAB_TOOLS = toolsWith("tab");
-// Tools that fill a field: a field a person is filling is left to them (daemon/fields.mjs).
-const FIELD_TOOLS = toolsWith("field");
-// Tools that read the current tab without taking its turn (anyone may watch any tab).
-const PAGE_READ_TOOLS = toolsWith("pageRead");
-// PairBrowse's own tools that answer before (or without) the browser being ready.
-const NO_WAIT = toolsWith("noWait");
-// Tools that don't wait for the session picker: they choose a session themselves or only talk.
-const NO_PICK_WAIT = toolsWith("noPickWait");
 const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for the person to pick a session (its first tab asks: continue a saved session, start a fresh one, or join a shared one). " +
   "Ask them in chat which they want, then use pairbrowse_session (use, or new with clean: true) or pairbrowse_join; or retry once they've picked.";
-// Its own tools that act in a page: their results get the same notes and screenshot as the
-// browser tools'. browser_drag is the helper's own too (daemon/drag.mjs): a drag as a hand does
-// it, where Playwright's makes one move and most boards put the card back.
-const DECORATED = toolsWith("decorated");
-// Helper tools that act in the agent's tab, refused there when it is one of the browser's own pages.
-const CHROME_GUARDED = toolsWith("chromeGuarded");
 const WAIT_FOR_MS = 8000; // browser_wait_for: how long text gets to appear or go
 const RUN_MAX_MS = 120_000; // a fast-mode run stops between steps past this
-// Calls after which other participants' refs may be stale.
-const changesPage = (tool) => tool?.startsWith("browser_") || tool?.startsWith("pairbrowse_click") || ["pairbrowse_run", "pairbrowse_upload", "pairbrowse_session"].includes(tool);
 
 // PAIRBROWSE_TRACE=1: each result's phases (tidy, notes, screenshot) and their time, in the log.
 const TRACING = process.env.PAIRBROWSE_TRACE === "1";
@@ -99,159 +70,6 @@ const STALLED_MS = 30_000; // a disconnected participant's action may run this l
 const TURN_MAX_MS = Number(process.env.PAIRBROWSE_TURN_MAX_MS) || 10 * 60_000;
 const TURN_MAX = TURN_MAX_MS >= 60_000 ? `${Math.round(TURN_MAX_MS / 60_000)} minutes` : `${Math.round(TURN_MAX_MS / 1000)} seconds`;
 const image = (data) => ({ type: "image", data, mimeType: "image/jpeg" });
-
-// A client's message as the browser server reads it, or null. The server drops a message it can't
-// read (another jsonrpc, an object id, params that aren't an object, a field it doesn't know, a
-// malformed _meta) without answering, and a tool call waiting for that answer would hold the
-// shared queue until the turn cap. So only the fields it knows go on, and _meta's typed ones only
-// when they're the right type.
-const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
-const RELATED_TASK = "io.modelcontextprotocol/related-task";
-export function wellFormed(msg) {
-  if (!isObject(msg) || msg.jsonrpc !== "2.0") return null;
-  const { id, method, params } = msg;
-  if (id !== undefined && typeof id !== "string" && typeof id !== "number") return null;
-  // An answer to one of the server's own requests (roots/list, elicitation).
-  if (method === undefined) return id === undefined ? null : "error" in msg ? { jsonrpc: "2.0", id, error: Number.isInteger(msg.error?.code) && typeof msg.error.message === "string" ? msg.error : { code: -32603, message: "Malformed error" } } : { jsonrpc: "2.0", id, result: isObject(msg.result) ? msg.result : {} };
-  if (typeof method !== "string" || (params !== undefined && !isObject(params))) return null;
-  let p = params;
-  if (p && "_meta" in p) {
-    const { _meta, ...rest } = p;
-    const meta = isObject(_meta) ? { ..._meta } : null;
-    if (meta && meta.progressToken !== undefined && typeof meta.progressToken !== "string" && typeof meta.progressToken !== "number") delete meta.progressToken;
-    if (meta && meta[RELATED_TASK] !== undefined && typeof meta[RELATED_TASK]?.taskId !== "string") delete meta[RELATED_TASK];
-    p = meta ? { ...rest, _meta: meta } : rest;
-  }
-  return { jsonrpc: "2.0", ...(id !== undefined ? { id } : {}), method, ...(p !== undefined ? { params: p } : {}) };
-}
-
-// browser_handle_dialog gets an element, like a click: what OK confirms, named with its class
-// ("Delete: OK") when it's a final action. The helper reads it and drops it before the browser server.
-function withDialogLabel(t) {
-  if (t.name !== "browser_handle_dialog" || !t.inputSchema?.properties) return t;
-  const element = { type: "string", description: 'What OK confirms. Start with its class when it pays, deletes, publishes, sends or submits for review ("Delete: OK"): the user confirms.' };
-  return { ...t, inputSchema: { ...t.inputSchema, properties: { ...t.inputSchema.properties, element } } };
-}
-
-// Playwright MCP calls it target (ref in older versions); only snapshot refs go stale, not selectors.
-function containsRef(value) {
-  if (!value || typeof value !== "object") return false;
-  return Object.entries(value).some(([key, v]) => ((key === "ref" || key === "target") && typeof v === "string" && isRef(v)) || containsRef(v));
-}
-
-// The tab a result is about: its "- Page URL:" line, or the current tab in a tab list.
-const urlIn = (content) => content.map((c) => c.text || "").join("\n").match(/^- Page URL: (\S+)|\(current\)[^\n]*?\]\(([^)\s]+)\)/m)?.slice(1).find(Boolean);
-
-// The button's own label, as the page shows it (the click guard only sees what Claude calls it).
-// null when a snapshot ref can't be found (the click would fail anyway).
-async function realLabel(page, target) {
-  if (!page || !target) return "";
-  let el;
-  try {
-    el = page.locator(isRef(target) ? `aria-ref=${target}` : String(target)).first();
-  } catch {
-    return undefined; // not a ref, not a selector Playwright reads
-  }
-  // A selector (not a ref) that matches nothing on the page, or that Playwright can't read.
-  if (!isRef(target)) {
-    const n = await within(1500, el.count()).catch(() => undefined);
-    if (n === undefined) return undefined;
-    if (n === 0) return null;
-  }
-  // Read in the page: ariaSnapshot() would renumber the refs Claude just got.
-  const got = await within(2000, el.evaluate(buttonLabel, undefined, { timeout: 1500 }).then(String, () => null));
-  if (got === null) return isRef(target) ? null : "";
-  return got;
-}
-
-// Whether a field Claude types into is sensitive by its own kind (a password, card or one-time
-// code field), whatever Claude calls it: its value is then masked in the activity line, which
-// joiners of a shared session see too.
-async function sensitiveTarget(page, target) {
-  if (!page || !isRef(target)) return false;
-  const read = page.locator(`aria-ref=${target}`).first().evaluate((el) => [el.type, el.getAttribute("autocomplete"), el.getAttribute("name"), el.id, el.getAttribute("aria-label"), el.labels?.[0]?.innerText].join(" "), undefined, { timeout: 1000 }).catch(() => "");
-  const hints = String(await within(1500, read) || "");
-  return /^password\b/.test(hints) || /cc-(?!name)|one-time-code|current-password|new-password/i.test(hints) || sensitiveLabel(hints);
-}
-
-// Shared browser mode: what a joiner's agent (a remote participant, daemon/remote-agents.mjs) may
-// use here, and the paths that name files it sent over.
-const REMOTE_TOOLS = toolsWith("remote");
-// A result on its way to a joiner's agent: nothing of this computer's folders. Links to files
-// saved here (snapshots, downloads) keep their name only; this computer's home becomes "~".
-export function forJoiner(text, homes = [paths.home, homedir(), tmpdir()]) {
-  const t = String(text ?? "").replace(/\]\(((?:\.{1,2}[\\/]|[\\/]|~[\\/]|[A-Za-z]:[\\/]|file:)[^)\s]*)\)/g, (_m, p) => `](on the host's computer: ${String(p).split(/[\\/]/).pop()})`)
-    // A long snapshot's note (output.mjs capSnapshot) names the whole snapshot's file: as the link does.
-    .replace(/\bis in ((?:[\\/]|~[\\/]|[A-Za-z]:[\\/])[^\s]*?page-[^\s)]*\.ya?ml)(?=[.\s]|$)/g, (_m, p) => `is on the host's computer: ${String(p).split(/[\\/]/).pop()}`);
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const byLength = homes.filter(Boolean).map(String).sort((a, b) => b.length - a.length);
-  // A home only as a whole path ("/tmp" is not in "/private/tmp", "/tmp-files" or "/tmp.txt").
-  const end = "(?![\\w-]|\\.\\w)";
-  const homeAt = byLength.map((h) => new RegExp(`(?<![\\w.~-])${esc(h)}${end}`, "g"));
-  // In a web address, only where a value starts (after "=", "?", "&" or "#"; also percent-encoded),
-  // so its own path ("https://a.example/Foo_(b)/tmp") is never touched.
-  const homeInUrl = byLength.flatMap((h) => [new RegExp(`(?<=[=?&#])${esc(h)}${end}`, "g"), new RegExp(`(?<=[=?&#])${esc(h).replace(/\//g, "%2F")}(?![\\w-]|\\.\\w|%(?!2F))`, "gi")]);
-  return t.split(/(https?:\/\/[^\s"'`<>]+)/i).map((part, i) => (i % 2 ? homeInUrl.reduce((s, re) => s.replace(re, "~"), part) : homeAt.reduce((s, re) => s.replace(re, "~"), part)
-    // Other places on this computer (accounts, temp and system folders, other disks): the name only.
-    .replace(/(?<![\w.~-])(?:\/(?:Users|home|root|private|tmp|var\/folders|Volumes|mnt|media)|[A-Za-z]:\\(?:Users|Windows|Temp))[\\/][^\s"'`)\]]+/g, (m) => `~/${m.split(/[\\/]/).pop()}`))).join("");
-}
-// A result's words for an agent that gets no pictures: "the screenshot" becomes a snapshot.
-export function pictureless(text) {
-  return String(text ?? "")
-    .replace(/\b([Ll])ook at the screenshot\b/g, (_, l) => `${l === "L" ? "T" : "t"}ake a browser_snapshot`)
-    .replace(/\b([Cc])heck the screenshot\b/g, (_, c) => `${c === "C" ? "T" : "t"}ake a browser_snapshot`)
-    .replace(/\bthe screenshot\b/g, "a browser_snapshot");
-}
-
-// An alert (or a leave-page question) PairBrowse closes at once (popups.mjs): the browser server's
-// "Modal state" still lists it as waiting for browser_handle_dialog. Only the true statement stays
-// (PairBrowse's note that it closed it); a confirm or prompt the page waits on stays listed.
-export function dropClosedAlerts(text) {
-  const t = String(text ?? "");
-  if (!/### Modal state/.test(t)) return t;
-  const out = t.replace(/^- \["(alert|beforeunload)" dialog with message [^\n]*\]: can be handled by browser_handle_dialog\n?/gm, "");
-  return out.replace(/### Modal state\n(?=###|\s*$)/g, "");
-}
-
-// The tab came to the address asked for (its committed URL: the same document, whatever the
-// fragment), within ms: the page, or null. A navigation the browser "interrupted" with its own
-// error page may still get there (serve.mjs, browser_navigate).
-export async function arrivedAt(page, wanted, ms = 5000) {
-  if (!page || typeof wanted !== "string") return null;
-  const key = (u) => { try { const x = new URL(u); x.hash = ""; return x.href; } catch { return null; } };
-  const want = key(wanted);
-  if (!want) return null;
-  for (const end = Date.now() + ms; ; await new Promise((r) => setTimeout(r, 100))) {
-    if (page.isClosed?.()) return null;
-    if (key(page.url()) === want) return page;
-    if (Date.now() >= end) return null;
-  }
-}
-
-// Whether a tool call may go on in the tab it would act in. here: the tab the call acts in (or
-// null); pages: the open tabs, for browser_tabs select or close by index; personTab(page): a
-// person's own tab (a file they opened from Downloads; any file: tab counts). Returns the refusal's
-// text, or null. Pure. The browser's own pages (chrome://pairbrowse) and the person's tabs are
-// never a tab an agent acts in, selects or closes.
-const isFileTab = (page) => { try { return /^file:/i.test(String(page?.url?.() ?? "")); } catch { return false; } };
-export function tabRefusal(name, args = {}, { here = null, pages = [], personTab = () => false } = {}) {
-  const person = (page) => !!page && (!!personTab(page) || isFileTab(page));
-  if ((name.startsWith("browser_") && name !== "browser_tabs" && name !== "browser_close") || CHROME_GUARDED.has(name)) {
-    // The one exception: browser_navigate may take an untouched new tab page (the start tab, a fresh
-    // Cmd+T) to a web page, as it took the about:blank start tab before the build had its own new
-    // tab page (plans/555 Risk 1); nothing reads or acts in the page itself, and navigationProblem
-    // still refuses every browser page as a target.
-    const leavingNewTab = name === "browser_navigate" && here && isUntouchedStart(here.url());
-    if (here && isChromePage(here.url()) && !leavingNewTab) return `${CHROME_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
-    if (person(here)) return `${PERSON_TAB_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
-  }
-  if (name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined) {
-    const page = pages[Number(args.index)];
-    if (page && isChromePage(page.url())) return `Tab ${args.index} is the browser's own page. ${CHROME_PAGE_RULE} Use browser_tabs list.`;
-    if (person(page)) return `Tab ${args.index} is the person's own tab (a downloaded file they opened). ${PERSON_TAB_RULE} Use browser_tabs list.`;
-  }
-  return null;
-}
 
 // deps: the helper's parts (see daemon.mjs). Returns serve(sock, { remote }): runs one participant
 // on a socket until it closes. remote ({ name, key, files, startPage }): a joiner's agent working

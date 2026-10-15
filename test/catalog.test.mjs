@@ -60,8 +60,10 @@ test("the helper lists its own tools in the catalog's order, after the browser's
   assert.deepEqual([...toolsFrom("launch")].sort(), ["pairbrowse_dock", "pairbrowse_join"]);
   assert.deepEqual([...toolsFrom("runs")], RUNS_TOOLS.map((t) => t.name));
   assert.ok(!OFFERED_PLAYWRIGHT.has("browser_evaluate") && OFFERED_PLAYWRIGHT.has("browser_click"));
-  const serve = readFileSync(join(root, "scripts", "daemon", "serve.mjs"), "utf8");
-  assert.doesNotMatch(serve, /^const [A-Z_]+ = new Set\(\["(browser|pairbrowse)_/m, "serve.mjs keeps no tool list of its own");
+  for (const f of ["serve.mjs", ...readdirSync(join(root, "scripts", "daemon", "serve"), { recursive: true }).filter((n) => n.endsWith(".mjs")).map((n) => join("serve", n))]) {
+    const serve = readFileSync(join(root, "scripts", "daemon", f), "utf8");
+    assert.doesNotMatch(serve, /^(export )?const [A-Z_]+ = new Set\(\["(browser|pairbrowse)_/m, `${f} keeps no tool list of its own`);
+  }
 });
 
 // The pinned @playwright/mcp still has each tool the catalog names (PAIRBROWSE_TEST_RUNTIME).

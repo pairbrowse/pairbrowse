@@ -7,17 +7,15 @@ import { paths } from "../paths.mjs";
 import { BLOCKED_TOOLS, HIDDEN_TOOLS, secretNamesIn, isRef } from "../policy.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { describe } from "../log.mjs";
-import { decide, clickClass, approvalAsk } from "../guard.mjs";
+import { decide, approvalAsk } from "../guard.mjs";
 import { keepFocus } from "../focus.mjs";
-import { uploadFiles } from "../upload.mjs";
 // pathsIn and withPaths live in upload.mjs now; kept here for one release.
 export { pathsIn, withPaths } from "../upload.mjs";
-import { runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks, isoDate } from "../runner.mjs";
-import { sleep, within } from "../util.mjs";
-import { settle } from "./page.mjs";
+import { isoDate } from "../runner.mjs";
+import { within } from "../util.mjs";
 import { stopRequestMirroring } from "./context.mjs";
 import { ownerOf, leftAlone } from "./fields.mjs";
-import { dragBetween, reason as dragReason } from "./drag.mjs";
+import { reason as dragReason } from "./drag.mjs";
 import { plainError, PERSON_TAB_RULE } from "./output.mjs";
 import { humanFill, humanType, fillSettings } from "../native-engine.mjs";
 import { PAIRBROWSE_TOOLS, CLICKING_TOOLS, TAB_TOOLS, FIELD_TOOLS, PAGE_READ_TOOLS, NO_WAIT, NO_PICK_WAIT, DECORATED, changesPage, wellFormed, withDialogLabel, containsRef, pictureless } from "./serve/wire.mjs";
@@ -25,7 +23,8 @@ import { sensitiveTarget, arrivedAt } from "./serve/pageread.mjs";
 import { tabRefusal, isFileTab, createRefusals } from "./serve/refuse.mjs";
 import { createConnectionState } from "./serve/connection.mjs";
 import { createTurns } from "./serve/turns.mjs";
-import { createResult, TRACING, phaseTrace, SAME_PICTURE, SETTLE_MS, CLICK_SETTLE_MS, image } from "./serve/result.mjs";
+import { createOwnTools } from "./serve/tools/index.mjs";
+import { createResult, TRACING, phaseTrace } from "./serve/result.mjs";
 // The pure parts live in serve/; kept here for one release (tests and older imports name serve.mjs).
 export { wellFormed, forJoiner, pictureless, dropClosedAlerts } from "./serve/wire.mjs";
 export { arrivedAt } from "./serve/pageread.mjs";
@@ -33,12 +32,9 @@ export { tabRefusal } from "./serve/refuse.mjs";
 
 const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for the person to pick a session (its first tab asks: continue a saved session, start a fresh one, or join a shared one). " +
   "Ask them in chat which they want, then use pairbrowse_session (use, or new with clean: true) or pairbrowse_join; or retry once they've picked.";
-const WAIT_FOR_MS = 8000; // browser_wait_for: how long text gets to appear or go
-const RUN_MAX_MS = 120_000; // a fast-mode run stops between steps past this
 
 // Playwright MCP's own pause after each action (see createConnection): config.settleMs overrides.
 const MCP_SETTLE_DEFAULT_MS = 200;
-const BADGE_MS = 4000; // pairbrowse_status waits this long at most for the badge in every tab
 const STALLED_MS = 30_000; // a disconnected participant's action may run this long
 // The most one call may hold the shared queue. Past it the browser is reset (as for a stalled
 // client that left), so one stuck call can't keep every other agent on this computer waiting.
@@ -176,7 +172,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // The helper's parts and this connection's own helpers, for the tool server's parts (serve/):
     // each adds what it makes (createTurns, createResult, ...).
     const api = { config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder, reconnecting, front, revision, bumpRevision, session, shareMessage, recorder, tabNames, journal, timeline, testTools, clickApprovals, outlines, onRunStatus, personTabs,
-      secretNames, personTab, closing, lastCall, ACTIVE_MS, inUse, cap, myLabel, handOff, rememberPicture, toClient, finish, reply, internal };
+      sock, secretNames, personTab, closing, lastCall, ACTIVE_MS, inUse, cap, myLabel, handOff, rememberPicture, toClient, finish, reply, internal };
 
     Object.assign(api, createTurns(conn, api));
     const { myTab, openTabs, serverPage, setMine, syncServer, takeTurn, whenReady } = api;
@@ -238,221 +234,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
       },
     };
 
-    async function runCommand(args) {
-      if (args.list) return { text: listPlaybooks().join("\n") || "No saved playbooks yet." };
-      let steps;
-      try {
-        steps = args.playbook ? loadPlaybook(args.playbook) : args.steps;
-      } catch {
-        return { text: `No playbook "${args.playbook}". Saved: ${listPlaybooks().join(", ") || "none"}.`, error: true };
-      }
-      let resolved;
-      try {
-        resolved = substitute(steps, args.vars || {});
-      } catch (e) {
-        return { text: `${e.message}. Pass it in vars.`, error: true };
-      }
-      const problem = preflight(resolved, paths.uploads);
-      if (problem) return { text: problem, error: true };
-      const page = (await serverPage()) || (await (await context.getContext()).newPage());
-      // A page that answers nothing (its scripts never pause, or it froze): said at once.
-      if ((await within(4000, page.evaluate(() => 1).catch(() => null))) === null) return { text: "The page isn't answering right now (its scripts are busy without pause, or it froze): nothing was done. Wait a moment and try again, or reload it with browser_navigate.", error: true, url: page.url() };
-      // A run gets RUN_MAX_MS; past that it stops between steps and says so, and a run stuck
-      // inside a step on a page that stopped answering is given up on a little later (never the
-      // browser's 10-minute reset for everyone waiting behind it).
-      const stuck = Symbol("stuck");
-      let lastTrace = "";
-      const result = await Promise.race([sleep(RUN_MAX_MS + 15_000).then(() => stuck), runSteps(page, resolved, {
-        trace: (t) => { lastTrace = String(t); },
-        uploadsDir: paths.uploads,
-        secrets: secrets.get(),
-        signal: AbortSignal.any([disconnected.signal, AbortSignal.timeout(RUN_MAX_MS)]),
-        beforeStep: async () => {
-          if (sock.destroyed) throw new Error("Participant disconnected. Refresh the browser before continuing.");
-          // Paused by a person: stop here (never waiting inside the shared queue).
-          const held = pause.heldFor(participant);
-          if (held.paused) throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`);
-          // A person clicking or typing in this tab: every step waits until they're idle, then
-          // stops so Claude looks at the page again before the remaining steps.
-          const who = presence.actingIn(page);
-          if (!who) return;
-          await presence.waitForUser(page);
-          throw new Error(`${who === host ? "The user" : who} used this tab (${presence.didIn(page) || "clicked"}). Take a snapshot, then run the remaining steps.`);
-        },
-        owner: (el) => ownerOf(el, hud.key, { host, log, byAgent: presence.typedByAgent, byRemote: presence.byRemote }),
-        // Between two fields: paused agents stop; a person using the tab is waited for.
-        holdForPeople: async () => {
-          const held = pause.heldFor(participant);
-          if (held.paused) throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`);
-          if (presence.actingIn(page)) await presence.waitForUser(page);
-        },
-        // Mid-step (a long stroke): a person acting in this tab or pausing agents stops it at once.
-        interrupted: () => {
-          const held = pause.heldFor(participant);
-          if (held.paused) return `Paused by ${held.by} mid-step: stopped there. Run the remaining steps once someone resumes.`;
-          const who = presence.actingIn(page);
-          return who ? `${who === host ? "The user" : who} took over this tab mid-step (${presence.didIn(page) || "clicked"}): stopped there. Take a snapshot, then go on.` : "";
-        },
-        status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); try { onRunStatus(participant, text, kind, page, myLabel()); } catch {} },
-        activity: (text) => hud.addActivity(text, myLabel(), page),
-        cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
-        remember: facts.seenInForm,
-        dialogOpen: () => popups.waitingDialog(page),
-      })]);
-      if (result === stuck) {
-        log(`run given up on at: ${lastTrace || "?"} (${page.url()})`);
-        hud.addActivity("That didn't work: the page stopped answering", myLabel(), page);
-        return { text: `Stopped: the page stopped answering during this run (its scripts run without pause, or it froze), so the run was given up on after ${Math.round((RUN_MAX_MS + 15_000) / 60_000)} minutes${lastTrace ? `, at ${lastTrace}` : ""}. Take a browser_snapshot; if the page is still stuck, reload it with browser_navigate.`, error: true, url: page.url() };
-      }
-      const saving = result.ok && args.saveAs && !args.playbook;
-      if (saving) savePlaybook(args.saveAs, steps);
-      const left = result.skipped?.length ? ` Left to the people filling them: ${result.skipped.map((x) => `${x.label} (${x.who})`).join(", ")}.` : "";
-      const head = result.ok
-        ? `Done: ${result.done.length} steps in ${(result.ms / 1000).toFixed(1)}s.${left}${saving ? ` Saved as playbook "${args.saveAs}".` : ""}`
-        : `Stopped at step ${result.stoppedAt} of ${resolved.length}: ${result.why}${left}`;
-      // The page says something it filled is wrong: the agent fixes it before going on.
-      const checks = result.checks?.length ? `\nCheck before going on, the page says: ${result.checks.join("; ")}. Fix these (look at the screenshot), then continue.` : "";
-      journal.ranLeft(result); // the goal log: what this page still lacks
-      // A page waiting on its dialog answers nothing: its outline would hang until it's answered.
-      const out = popups.waitingDialog(page) ? `Page: ${page.url()}` : await within(10_000, outline(page)).catch(() => `Page: ${page.url()}`);
-      return { text: `${head}${checks}\n${out}`, error: !result.ok, url: page.url() };
-    }
-
-    // PairBrowse's own tools. Each returns { text, error, url } (or { content } with a picture).
-    const ownTools = {
-      pairbrowse_session: (args) => context.sessionCommand(args),
-      pairbrowse_facts: (args) => facts.command(args),
-      pairbrowse_liveview: () => sharing.liveViewCommand(),
-      async pairbrowse_record(args) {
-        await context.getContext();
-        return recorder ? recorder.command(args) : { text: "Recording isn't available here.", error: true };
-      },
-      pairbrowse_invite: (args) => sharing.inviteCommand(args, { who: appName(conn.clientName) }),
-      async pairbrowse_join(args) {
-        const r = await follow.command(args, { owner: participant, app: conn.clientName });
-        if (args?.action === "join" && !r.error) context.agentChose("An agent joined a shared session (pairbrowse_join).");
-        return r;
-      },
-      pairbrowse_run: runCommand,
-      async pairbrowse_status(args) {
-        await context.getContext();
-        // The side panels and docks (session) and the badge in the tabs (hud) say the same. The
-        // badge goes to every tab: bounded, so one frozen tab never holds this agent (nor the
-        // others behind the shared queue).
-        session.setStatus(participant, args.text, args.kind); // the side panels in a shared session show it
-        await within(BADGE_MS, hud.setBadgeFor(participant, args.text, args.kind, myLabel()).catch(() => {}));
-        if (args.kind === "done" || args.kind === "clear") await within(BADGE_MS, Promise.resolve(hud.hideCursor(hud.sparkPage(participant))).catch(() => {}));
-        journal.status(args.kind, args.text); // a hand-off goes to the goal log's yourTurn
-        return { text: "ok" };
-      },
-      async pairbrowse_upload(args) {
-        const page = await serverPage();
-        if (!page) return { text: "No page open to upload into.", error: true };
-        const result = await uploadFiles(page, args, { uploadsDir: paths.uploads, activity: (text) => hud.addActivity(text, myLabel(), page) });
-        return { text: result.text, error: !result.ok, url: page.url() };
-      },
-      async pairbrowse_scroll(args) {
-        const step = { scroll: args.pixels ?? args.direction ?? "down" };
-        const problem = preflight([step], paths.uploads);
-        if (problem) return { text: problem.replace(/^Step 1 \(scroll\): /, ""), error: true };
-        const page = await serverPage();
-        if (!page) return { text: "No page open to scroll.", error: true };
-        const r = await runSteps(page, [step], { smooth: true, signal: disconnected.signal,
-          cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()), activity: (text) => hud.addActivity(text, myLabel(), page) });
-        return r.ok === false ? { text: r.why, error: true } : { text: `Scrolled. ${(await within(2000, page.evaluate(() => `Now ${Math.min(Math.round(scrollY), Math.max(0, Math.round(document.documentElement.scrollHeight - innerHeight)))} of ${Math.max(0, Math.round(document.documentElement.scrollHeight - innerHeight))} px down.`).catch(() => ""))) ?? ""}`, url: page.url() };
-      },
-      // browser_drag: press on the first element, a short move that starts the drag, steps across
-      // to the second, let go (daemon/drag.mjs). The guard's rules ran first (refusal): a drag
-      // named as a final action at either end asked the user. The result carries a fresh snapshot,
-      // as Playwright's would.
-      async browser_drag(args) {
-        const page = conn.actingIn || await serverPage();
-        if (!page) return { text: "No page open to drag in.", error: true };
-        const named = (el, target) => String(el || target || "").slice(0, 80);
-        const what = `**${named(args.startElement, args.startTarget)}** to **${named(args.endElement, args.endTarget)}**`;
-        const locate = (t) => { if (typeof t !== "string" || !t) return null; try { return page.locator(isRef(t) ? `aria-ref=${t}` : t).first(); } catch { return null; } };
-        const from = locate(args.startTarget), to = locate(args.endTarget);
-        if (!from || !to) return { text: "browser_drag takes startTarget and endTarget: refs from a browser_snapshot (or selectors), with startElement and endElement saying what they are.", error: true };
-        hud.addActivity(`Dragging ${what}`, myLabel(), page);
-        try {
-          await dragBetween(page, from, to, {
-            cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
-            interrupted: () => { const held = pause.heldFor(participant); if (held.paused) return `Paused by ${held.by} mid-drag: let go where it was.`; const who = presence.actingIn(page); return who ? `${who === host ? "The user" : who} took over this tab mid-drag: let go where it was.` : ""; },
-          });
-        } catch (e) {
-          const why = dragReason(e);
-          hud.addActivity(`That didn't work: ${why}`, myLabel(), page);
-          return { text: `Couldn't drag ${what.replace(/\*\*/g, "")}: ${why}. Look at the screenshot, take a browser_snapshot, then try again.`, error: true, url: page.url() };
-        }
-        hud.addActivity(`Dragged ${what}`, myLabel(), page);
-        await settle(page, CLICK_SETTLE_MS).catch(() => {});
-        const snap = ((await internal("browser_snapshot", {})).result?.content || []).map((c) => c.text || "").join("\n");
-        return { text: `Dragged ${what.replace(/\*\*/g, "")}. Check the picture: the card or item should be where you meant it.\n${snap}`, url: page.url() };
-      },
-      // browser_wait_for, looking in the page and its frames (a consent wall or a sign-in box
-      // often lives in one; Playwright's own looks at the page alone, so a wall "was gone" while
-      // it stood). Bounded: time at most 120 s, text at most WAIT_FOR_MS.
-      async browser_wait_for(args) {
-        const page = conn.actingIn || await serverPage();
-        if (!page) return { text: "No page open to wait on.", error: true };
-        const time = args.time === undefined ? 0 : Math.min(120, Math.max(0, Number(args.time) || 0));
-        // The wait ends with the browser (closed, or reset by the turn cap) or the agent leaving:
-        // it never holds the shared queue after that.
-        let unwatch = () => {};
-        const over = new Promise((resolve) => { unwatch = context.watchClose(() => resolve("closed")); disconnected.signal.addEventListener("abort", () => resolve("left"), { once: true }); });
-        const ended = () => (page.isClosed() ? { text: "The tab closed while waiting. browser_tabs list shows what's open.", error: true } : null);
-        try {
-          if (time) { const w = await Promise.race([sleep(time * 1000).then(() => "ok"), over]); if (w === "closed") return { text: "The browser closed while waiting.", error: true }; if (w === "left") return { text: "Stopped waiting.", error: true }; }
-          const want = typeof args.text === "string" && args.text ? args.text : null;
-          const gone = typeof args.textGone === "string" && args.textGone ? args.textGone : null;
-          const seen = async (t) => {
-            for (const f of page.frames()) if (await within(500, f.getByText(t).first().isVisible()).catch(() => false)) return true;
-            return false;
-          };
-          const deadline = Date.now() + WAIT_FOR_MS;
-          const found = [];
-          if (gone) {
-            while (!ended() && !disconnected.signal.aborted && await seen(gone)) {
-              if (Date.now() > deadline) return { text: `"${gone.slice(0, 80)}" is still on the page after ${WAIT_FOR_MS / 1000} s (in the page or one of its frames). Look at the screenshot: a dialog or banner has its own buttons (browser_find finds them).`, error: true, url: page.url() };
-              await sleep(150);
-            }
-            if (ended()) return ended();
-            found.push(`"${gone.slice(0, 80)}" is gone`);
-          }
-          if (want) {
-            while (!ended() && !disconnected.signal.aborted && !(await seen(want))) {
-              if (Date.now() > deadline) return { text: `Didn't see "${want.slice(0, 80)}" within ${WAIT_FOR_MS / 1000} s (looked in the page and its frames). Take a browser_snapshot to see what's there.`, error: true, url: page.url() };
-              await sleep(150);
-            }
-            if (ended()) return ended();
-            found.push(`"${want.slice(0, 80)}" is on the page`);
-          }
-          return { text: `Waited${time ? ` ${time} s` : ""}${found.length ? `${time ? ";" : ":"} ${found.join("; ")}` : ""}.`, url: page.url() };
-        } finally {
-          unwatch();
-        }
-      },
-      async pairbrowse_click_at(args) {
-        // A final action the agent names (Pay, Delete, Publish, Send, Submit) goes through
-        // browser_click, where the user confirms it (and a publish needs its review).
-        const cls = clickClass(args.element);
-        if (cls) return { text: `Refused: "${String(args.element).slice(0, 60)}" names a final action (${cls}). Take a browser_snapshot and use browser_click with its ref, so the user confirms it.`, error: true };
-        const here = ownTab();
-        const r = await screenshots.clickAt(args, participant, { current: here, cursor: (x, y) => hud.cursorTo(here || hud.sparkPage(participant), { boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, "click", myLabel()) });
-        if (r.error) return r;
-        hud.addActivity(`Clicked ${String(args.element || "a spot").slice(0, 80)}`, myLabel(), r.page);
-        await popups.dismissOverlay(r.page, { markOwn: true, ...closing });
-        await settle(r.page, SETTLE_MS);
-        await popups.dismissOverlay(r.page, { closeOffers: true, ...closing });
-        const content = [{ type: "text", text: r.text + popups.drain(r.page) }];
-        const shot = config.screenshots !== false ? await screenshots.take(r.page, participant) : null;
-        if (shot?.data) { content.push(image(shot.data)); rememberPicture(shot, r.page, "pairbrowse_click_at", args); }
-        else if (shot?.same) content.push({ type: "text", text: SAME_PICTURE });
-        return { content };
-      },
-      ...testTools, // only with a test switch set (daemon.mjs); empty otherwise
-    };
-
+    Object.assign(api, createOwnTools(conn, api));
+    const { ownTools } = api;
     async function handle(msg) {
       if (msg.method !== "tools/call") return transport.onmessage?.(msg);
       const { name } = msg.params || {};

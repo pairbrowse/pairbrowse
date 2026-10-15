@@ -17,7 +17,9 @@ import { decide, clickClass, approvalAsk, APPROVAL_TOOLS } from "../guard.mjs";
 import { sameWhere, originOf } from "./approvals.mjs";
 import { clickRule, dialogRule, strongSignal } from "../clickrule.mjs";
 import { keepFocus } from "../focus.mjs";
-import { uploadFiles } from "../upload.mjs";
+import { uploadFiles, pathsIn } from "../upload.mjs";
+// pathsIn and withPaths live in upload.mjs now; kept here for one release.
+export { pathsIn, withPaths } from "../upload.mjs";
 import { enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks, isoDate } from "../runner.mjs";
 import { sleep, within, pageLoaded } from "../util.mjs";
 import { buttonLabel, settle } from "./page.mjs";
@@ -193,15 +195,6 @@ export function forJoiner(text, homes = [paths.home, homedir(), tmpdir()]) {
     // Other places on this computer (accounts, temp and system folders, other disks): the name only.
     .replace(/(?<![\w.~-])(?:\/(?:Users|home|root|private|tmp|var\/folders|Volumes|mnt|media)|[A-Za-z]:\\(?:Users|Windows|Temp))[\\/][^\s"'`)\]]+/g, (m) => `~/${m.split(/[\\/]/).pop()}`))).join("");
 }
-// The same call with its file paths swapped (map: path -> new path).
-export function withPaths(name, args = {}, map) {
-  const swap = (p) => map.get(String(p)) ?? p;
-  if (name === "pairbrowse_upload") return { ...args, files: (args.files || []).map(swap) };
-  if (name === "browser_file_upload" || name === "browser_drop") return { ...args, paths: (args.paths || []).map(swap) };
-  if (name === "pairbrowse_run") return { ...args, steps: (args.steps || []).map((s) => (s && typeof s.upload === "object" ? { ...s, upload: Object.fromEntries(Object.entries(s.upload).map(([k, v]) => [k, swap(v)])) } : s)) };
-  return args;
-}
-// The file paths a call names (uploads, drops, fast mode's upload steps).
 // A result's words for an agent that gets no pictures: "the screenshot" becomes a snapshot.
 export function pictureless(text) {
   return String(text ?? "")
@@ -233,13 +226,6 @@ export async function arrivedAt(page, wanted, ms = 5000) {
     if (key(page.url()) === want) return page;
     if (Date.now() >= end) return null;
   }
-}
-
-export function pathsIn(name, args = {}) {
-  if (name === "pairbrowse_upload") return Array.isArray(args.files) ? args.files.map(String) : [];
-  if (name === "browser_file_upload" || name === "browser_drop") return Array.isArray(args.paths) ? args.paths.map(String) : [];
-  if (name === "pairbrowse_run") return (Array.isArray(args.steps) ? args.steps : []).flatMap((s) => (s && typeof s.upload === "object" ? Object.values(s.upload).map(String) : []));
-  return [];
 }
 
 // Whether a tool call may go on in the tab it would act in. here: the tab the call acts in (or

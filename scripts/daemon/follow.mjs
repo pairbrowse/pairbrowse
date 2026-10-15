@@ -15,7 +15,7 @@ import { readDevEntry, DEV_COOKIE, DEV_PORTS_MAX } from "../devshare.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
 import { sleep, currentAccount, within } from "../util.mjs";
 import { panelExtensionId } from "../browser.mjs";
-import { pathsIn, withPaths } from "./serve.mjs";
+import { pathsIn, withPaths } from "../upload.mjs";
 import { uploadProblem } from "../upload.mjs";
 import { AGENT_GONE } from "./remote-agents.mjs";
 import { closeSync, fstatSync, openSync, readFileSync } from "node:fs";

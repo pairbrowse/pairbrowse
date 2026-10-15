@@ -4,7 +4,7 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { frameFor, readInput, createScreenShare } from "../scripts/daemon/screenshare.mjs";
-import { pathsIn, withPaths } from "../scripts/daemon/serve.mjs";
+import { pathsIn, withPaths } from "../scripts/upload.mjs";
 import { fieldOwner } from "../scripts/daemon/fields.mjs";
 import { preflight } from "../scripts/runner.mjs";
 

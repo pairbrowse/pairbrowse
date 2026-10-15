@@ -215,3 +215,19 @@ export async function uploadFiles(page, { files = [], target } = {}, { uploadsDi
     return { ok: false, text: `Couldn't upload: ${String(e?.message || e).split("\n")[0]}` };
   }
 }
+
+// Shared browser mode: the file paths a call names (uploads, drops, fast mode's upload steps).
+export function pathsIn(name, args = {}) {
+  if (name === "pairbrowse_upload") return Array.isArray(args.files) ? args.files.map(String) : [];
+  if (name === "browser_file_upload" || name === "browser_drop") return Array.isArray(args.paths) ? args.paths.map(String) : [];
+  if (name === "pairbrowse_run") return (Array.isArray(args.steps) ? args.steps : []).flatMap((s) => (s && typeof s.upload === "object" ? Object.values(s.upload).map(String) : []));
+  return [];
+}
+// The same call with its file paths swapped (map: path -> new path).
+export function withPaths(name, args = {}, map) {
+  const swap = (p) => map.get(String(p)) ?? p;
+  if (name === "pairbrowse_upload") return { ...args, files: (args.files || []).map(swap) };
+  if (name === "browser_file_upload" || name === "browser_drop") return { ...args, paths: (args.paths || []).map(swap) };
+  if (name === "pairbrowse_run") return { ...args, steps: (args.steps || []).map((s) => (s && typeof s.upload === "object" ? { ...s, upload: Object.fromEntries(Object.entries(s.upload).map(([k, v]) => [k, swap(v)])) } : s)) };
+  return args;
+}

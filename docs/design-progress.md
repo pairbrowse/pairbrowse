@@ -6,6 +6,10 @@ hidden-by-default timeline; Focus, Collaborate and Inspect modes). The rule abov
 nothing of 0.15.42's measured performance, security or behaviour regresses (its numbers are in
 `docs/engineering-progress.md`; the bench is `test/bench.mjs`). The logo is never changed.
 
+File names in the entries below are as they were on their date: the side panel's `panel.html`,
+`panel.css` and `panel.js` are now `ui/right/` (`index.html`, `right.css`, `right.js`), and the
+other extension pages sit in `ui/<page>/` (`ui/newtab/`, `ui/picker/`, `ui/screen/`, `ui/capture/`).
+
 ## Git state
 
 - Started 2026-10-11 from `da3fb9f` (0.15.42 shipped on main, working tree clean).
@@ -144,7 +148,7 @@ constraints, the tests that pin them) is `docs/design-surfaces.md`, written by t
 | Hidden-by-default timeline | 4 live view, 6 state | NEW drawer like `#drawer` (`liveview.css:187-195`), loads on open, fed by the journal event/route |
 | Modes Focus / Collaborate / Inspect | 1, 2, 4 | EXISTS as which surface is open (side panel toggle `background.js:18-21`; live view page); NEW per-viewer persistence (`chrome.storage` / `localStorage`, like `pb-fit` `liveview.js:72,96`) |
 | Shared token sheet | 2, 4, 5 (`hud.js` inlined) | REFINE: `panel.css:2-11`, `liveview.css:4-18`, `picker.css:2-8`, `newtab.css`, `screen.css:1`, `record.js:70-99`; `hud.js` via inline values or a `__PB_` substitution in `browser.mjs:271-288` |
-| Joiner's picture page overlays | 5 screen | REFINE colors only; `#hold` rgba and texts pinned (`test/screen.test.mjs:47-57`) |
+| Joiner's picture page overlays | 5 screen | REFINE colors only; `#hold` rgba and texts pinned (`test/ui-screen.test.mjs:47-57`) |
 | Agent cursors drawn over the live view stage | 4 live view | UNSUITABLE (already in the streamed frame; a per-frame overlay) |
 | Hold countdown "agents wait Ns" | 4 live view, 6 state | UNSUITABLE as drawn: `humanUntil` never produced (`collaboration.mjs:32-39`); per-tab `waiting`/`person` EXISTS (`liveview.mjs:131`) |
 Decisions taken from it: the color theme seed moves to navy (next start, a user's own theme
@@ -160,10 +164,10 @@ Starting values from the brief, to be refined for contrast: background `#0B1421`
 `#A2B2C6` / muted `#71869F`, border `#293B50`, accent `#3285F6`, success `#20C997`, warning
 `#F4B45D`, error `#EF6468`. Participant colors stay PairBrowse's (`SPARK_COLORS` in
 `scripts/daemon/hud.mjs`: orange, cyan, purple, green). One token sheet shared by the side
-panel, the live view and the in-page script (`scripts/browser/panel/common.js` is the shared
+panel, the live view and the in-page script (`ui/common.js` is the shared
 code today).
 
-Built (tokens subset): `scripts/browser/panel/tokens.css`, linked by the side panel, picker, new
+Built (tokens subset): `ui/tokens.css`, linked by the side panel, picker, new
 tab page and joiner's picture page and served to the live view as `assets/tokens.css`. Refined
 for WCAG AA: muted `#8699B1` (was `#71869F`: 3.9:1 on elevated); accent `#3285F6` stays for
 fills, rings and borders, and as text it is `--accent-ink` `#6AA6F9`; primary buttons put `--bg`
@@ -196,7 +200,7 @@ presentation preferences; nothing restarts).
 ## Subset briefs
 
 **hud** (`scripts/hud.js`, `scripts/daemon/hud.mjs`; tests `test/hud.test.mjs`,
-`test/hud-*.integration`, `native-check.mjs` pins the bar payload shape). The bottom bar
+`scripts/native/check.mjs` pins the bar payload shape). The bottom bar
 becomes the reference's: at the left an avatar dot in the driver's color and "Claude is
 driving" / "Paused by Sam" / "Reconnecting to Bob…"; then the last actions as chips, each with a
 state glyph (done ✓ for actions already in the bar's `items`; the chip text is the bar's own
@@ -212,8 +216,8 @@ box, never by touching the page's DOM). Peers' pointers the same pill style. No 
 everything keyed to the existing calls and the existing rAF loops; `prefers-reduced-motion`
 turns the cursor glide into a jump and the ring into a static dot.
 
-**panel** (`scripts/browser/panel/panel.html`, `panel.css`, `panel.js`, `common.js`;
-`test/panel-*.integration`, `test/join-prompt.integration`, `docs/using.md` screenshots of the
+**panel** (then `panel.html`, `panel.css`, `panel.js`; now `ui/right/index.html`, `right.css`, `right.js`; `common.js`;
+`test/integration/panel-reload.test.mjs`, `test/integration/join-prompt.test.mjs`, `docs/using.md` screenshots of the
 panel mentioned?). The side panel becomes the agent panel: header with the logo (unchanged),
 "PairBrowse", the session pill ("● Live session" when sharing, else the session's name) and an
 avatar stack of the participants (colors from the board, initials, "+N"). Then the active
@@ -227,7 +231,7 @@ buttons in a compact row. All existing ids, event handlers and text the tests as
 collapsed state of sections persists in `chrome.storage.local` under one key. No new polling:
 the panel already listens to the live view's SSE.
 
-**liveview** (`scripts/liveview.html/.css/.js`, `scripts/liveview.mjs` events;
+**liveview** (`scripts/liveview.html`, `.css`, `.js`, `scripts/liveview.mjs` events;
 `test/liveview.test.mjs`, `test/shared-liveview.test.mjs`). The Inspect workspace: a left
 column (collapsible to a rail, hidden with a key, remembered in `localStorage` like `pb-fit`)
 with Browser (open tabs, who is in each, from `tabs`), Agents (from `collaboration` and
@@ -247,8 +251,7 @@ Docs: `docs/using.md` gets a short "Three ways to look at it" paragraph.
 ## Done
 
 **tokens** (2026-10-11, `design-subset` run wf_523d6638: plan Fable, build Opus, review pass
-in one round; tests 381 unit pass, 50 live pass on the touched suites). `scripts/browser/panel/
-tokens.css` is the one sheet (dark values from the brief with contrast fixes: muted `#8699B1`,
+in one round; tests 381 unit pass, 50 live pass on the touched suites). `ui/tokens.css` is the one sheet (dark values from the brief with contrast fixes: muted `#8699B1`,
 accent as text `#6AA6F9`, primary buttons dark text on accent; a light block only for the live
 view under the system scheme); linked by the side panel, picker, new tab page, joiner's picture
 page and the live view (served from the fixed asset list, CSP unchanged). `scripts/hud.js` and
@@ -304,7 +307,7 @@ driver line, the agent's own status named "Status", the tab it holds, Pause/Resu
 participants as compact rows in Session; Switch session… and Record in one row; Session, Dev
 servers, Join addresses, Activity (open), Remembered details and Passwords as disclosures with
 aria-expanded, remembered in `chrome.storage.local` under `pb-panel`. No new state, route or
-timer (the two existing timers stay); `test/panel.test.mjs` pins the markup, the logo hash, the
+timer (the two existing timers stay); `test/ui-right.test.mjs` pins the markup, the logo hash, the
 timer count and, with the runtime, renders the panel over a fake SSE feed.
 
 **liveview + modes** (2026-10-11, `design-subset` run wf_3a381cca: review pass in round three;
@@ -328,7 +331,7 @@ round; 401 unit pass, the picker, screen and tokens suites green). The session p
 compact navy card with the unchanged logo, the recent sessions as rows (avatar initial in the
 person's color, name, tabs, who used it, a Live pill), More sessions as a disclosure, the two
 secondary actions, the join-code form unchanged, the host-ask as an approval card; the one
-4 s timer stays the only timer; every id, text and keyboard path kept (`test/picker.test.mjs`
+4 s timer stays the only timer; every id, text and keyboard path kept (`test/ui-picker.test.mjs`
 pins them and the logo hash). The joiner's picture page overlays are compact navy pills, with a
 "who is in this tab" pill in words and the person's color (neutral when none); the pinned hold
 scrim and texts byte for byte; nothing per frame, no new timer. The watch-link tab rows in the
@@ -417,7 +420,7 @@ all sections open, reduced motion with keyboard focus, and without `chrome` at a
 error); the logo unchanged (sha256 415a3f8e…bffd8a). Deviations: the agent card's name falls
 back to the first working local agent only when there is no activity yet; with activity from
 an agent not on the board, the card shows no status rather than another agent's; the request
-cards sit above the "Your turn" card. Tests: new `test/panel.test.mjs` (markup ids, folding
+cards sit above the "Your turn" card. Tests: new `test/ui-right.test.mjs` (markup ids, folding
 markup, logo hashes, two timers, one storage key, sheet rules; live: rendered over a fake
 stream, header, card, rows, pause click, join card gating, folding and its persistence,
 no interval, no page error with and without `chrome`, reduced motion). `docs/security.md`,
@@ -430,7 +433,7 @@ and the test demanded an image. The test now accepts the same-picture note (gate
 wf_8b5157bb bisected it to fdab983).
 
 **picker** (2026-10-11, `design-subset`, built by Opus; the lead commits). The session picker
-(`scripts/browser/panel/picker.*`) is a compact card (min(480px, 100%), `--sidebar`, 1 px edge)
+(`ui/picker/`) is a compact card (min(480px, 100%), `--sidebar`, 1 px edge)
 on flat `--bg`: the unchanged 56 px logo, a "PairBrowse" wordmark over the kept "Which session?"
 and its line. The three recent sessions are the panel's rows: a 24 px round avatar (`avatar()`
 from `common.js`, `role=img`, named) with the initial of the person in it now, else who used it
@@ -459,10 +462,10 @@ over the dimmed frame, the connecting pill. Logo files unchanged (sha256 415a3f8
 Deviations: the row grid has two columns (the brief's third "auto" column had nothing to hold;
 the badges stay beside the name); "Last used" is an edge pill in `--ok` text instead of a tinted
 fill (no literal colors). `docs/security.md` needs no change: no route, gating, capture or
-input path changed. Tests: new `test/picker.test.mjs` (markup, texts, logo, one timer, no new
+input path changed. Tests: new `test/ui-picker.test.mjs` (markup, texts, logo, one timer, no new
 route, sheet rules; live over a fake chrome and sessions.json: rows, avatars, disclosure,
 filter, keyboard paths, the bad-code message, the address card, reduced motion);
-`test/screen.test.mjs` gains a markup/timer test and a live who-pill test.
+`test/ui-screen.test.mjs` gains a markup/timer test and a live who-pill test.
 
 ## Gate (hud + panel), 2026-10-11, run wf_8b5157bb
 

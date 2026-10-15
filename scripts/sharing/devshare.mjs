@@ -10,7 +10,7 @@
 import http from "node:http";
 import net from "node:net";
 import { randomBytes } from "node:crypto";
-import { startQuickTunnel, watchTunnel } from "../tunnel.mjs";
+import { startQuickTunnel, watchTunnel } from "../tunnels/quick.mjs";
 import { isQuickTunnelHost } from "../util.mjs";
 
 export const DEV_COOKIE = "__pairbrowse_dev";

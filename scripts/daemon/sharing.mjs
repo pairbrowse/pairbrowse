@@ -8,7 +8,7 @@ import { savedName, saveParticipantName, paths } from "../paths.mjs";
 import { readJson } from "../util.mjs";
 import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { adoptTunnel, helperAlive } from "../tunnel.mjs";
+import { adoptTunnel, helperAlive } from "../tunnels/quick.mjs";
 import { randomBytes } from "node:crypto";
 import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../sharing/devshare.mjs";
 import { where } from "./where.mjs";

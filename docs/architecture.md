@@ -68,7 +68,7 @@ what each boundary protects against, see [security.md](security.md) and the
 - **Browser** (`scripts/browser.mjs`, `scripts/native-*.mjs`): a Chromium of its own with its own
   profile under `~/.pairbrowse`, always visible. Builds are pinned by SHA-256 and checked before
   every install.
-- **Live view and sharing** (`scripts/liveview.mjs`, `scripts/liveview/`, `scripts/tunnel.mjs`,
+- **Live view and sharing** (`scripts/liveview.mjs`, `scripts/liveview/`, `scripts/tunnels/quick.mjs`,
   `scripts/sharing/devshare.mjs`): a key-protected page on loopback, and, only when the user invites
   someone, a Cloudflare Quick Tunnel that joiners reach with a key and the user's Allow. The
   server's routes are tables in `scripts/liveview/routes/` (each names the right it needs and the

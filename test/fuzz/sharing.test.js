@@ -323,7 +323,7 @@ test("a joiner's agent's results name no folder on the host's computer, and web 
 // own address): words joined by single hyphens, then .trycloudflare.com, nothing else.
 test("Quick Tunnel host names: one strict rule everywhere", async () => {
   const { isQuickTunnelHost } = await import("../../scripts/util.mjs");
-  const { tunnelUrl } = await import("../../scripts/tunnel.mjs");
+  const { tunnelUrl } = await import("../../scripts/tunnels/quick.mjs");
   const word = fc.stringMatching(/^[a-z0-9]{1,10}$/);
   fc.assert(fc.property(fc.array(word, { minLength: 1, maxLength: 5 }), (words) => {
     const h = `${words.join("-")}.trycloudflare.com`;

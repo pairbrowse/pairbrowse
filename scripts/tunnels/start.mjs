@@ -8,7 +8,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { ensureCloudflared } from "../tunnel.mjs";
+import { ensureCloudflared } from "./quick.mjs";
 import { maskSecrets } from "./config.mjs";
 
 // The program `name` on PATH (tests pass their own PATH), or null.

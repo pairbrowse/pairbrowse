@@ -1,7 +1,7 @@
 // The sharing tunnels: Quick Tunnels (a pool of two) or the user's own tunnel to the live view's
 // guest port while join codes are out, replaced when one ends, kept idle a while after the last
 // code ends. save(): the sharing state is written again (daemon/sharing.mjs, its codes and tunnels).
-import { startQuickTunnel, watchTunnel, onTunnelExit, tunnelEnded } from "../tunnel.mjs";
+import { startQuickTunnel, watchTunnel, onTunnelExit, tunnelEnded } from "../tunnels/quick.mjs";
 import { tunnelConfig } from "../tunnels/config.mjs";
 import { startOwnTunnel } from "../tunnels/start.mjs";
 

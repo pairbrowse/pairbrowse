@@ -209,7 +209,7 @@ test("a dev server keeps a standby tunnel: when one goes down the other takes ov
 });
 
 test("a tunnel that stops answering is stopped (and so replaced by its owner)", async () => {
-  const { watchTunnel } = await import("../scripts/tunnel.mjs");
+  const { watchTunnel } = await import("../scripts/tunnels/quick.mjs");
   let stopped = false;
   const answers = [true, false, false];
   const stop = watchTunnel({ host: "x", child: { exitCode: null }, stop: () => { stopped = true; } }, { everyMs: 10, misses: 2, probe: async () => answers.shift() ?? false });

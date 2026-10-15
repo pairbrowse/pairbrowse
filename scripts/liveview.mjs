@@ -948,6 +948,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     guestViewers: () => linkGuests.size,
     // Joiners with the approve role in a shared browser session now: they can answer an approval.
     approveJoiners: () => approvalShare?.approvers() || 0,
+    // Anyone in a shared browser session now: they see "Waiting for <host> to approve" while the terminal asks.
+    sharedJoiners: () => approvalShare?.inSession() || 0,
     // A tab's number, as the browser's own pages and browser_tabs count them.
     tabIndex: async (page) => (await getContext()).pages().indexOf(page),
     layout: layoutNow,

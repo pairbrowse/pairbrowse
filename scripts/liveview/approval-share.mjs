@@ -74,6 +74,12 @@ export function createApprovalShare({ clickApprovals, invites, joinRequests, joi
       for (const j of joiners.values()) if (recentlySeen(j) && standing(j) === "approve") n++;
       return n;
     },
+    // Anyone in a shared browser session now, whatever their role (they see that the host decides).
+    inSession() {
+      let n = 0;
+      for (const j of joiners.values()) if (recentlySeen(j) && standing(j)) n++;
+      return n;
+    },
     // One answer from joiner j's channel ({ id, answer }). Returns { code, body }.
     answer(body, j) {
       const role = standing(j);

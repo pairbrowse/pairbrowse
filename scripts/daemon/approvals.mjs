@@ -214,7 +214,11 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
         if (ok === true) shownIn = page;
       }
     }
-    if (!shownIn && !surface()) return { shown: false };
+    // Nowhere to answer in a browser: nothing kept, nothing waits; except Claude Code's ask while
+    // people are in a shared browser session here: the terminal answers it, and they see that the
+    // host is deciding meanwhile (approval-share.mjs: a notice, never a way to answer).
+    const noticeOnly = !shownIn && !surface() && client === "claude-code" && Number(lv?.sharedJoiners?.()) > 0;
+    if (!shownIn && !surface() && !noticeOnly) return { shown: false };
     let resolve;
     const answer = new Promise((r) => { resolve = r; });
     // The tab and its origin as asked: an Allow holds only there (sameWhere).
@@ -227,7 +231,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     it.timer.unref?.();
     emit({ op: "add", item: publicItem(it) });
     const joinersToo = Number(lv?.approveJoiners?.()) > 0 ? " and by the joiners who can approve" : "";
-    log(`approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : bubble ? "in the browser's approval card" : "in the browser's pages"}${joinersToo})`);
+    log(noticeOnly ? `approval ${short(id)}: asked in the terminal; the people in the session see that it waits` : `approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : bubble ? "in the browser's approval card" : "in the browser's pages"}${joinersToo})`);
     watch();
     return { item: publicItem(it), shown: true, answer, where };
   }

@@ -26,7 +26,7 @@ function setup() {
   const push = { broadcast: (event, data, { to = null } = {}) => pushed.push({ to, event, data: JSON.parse(JSON.stringify(data)) }) };
   const activity = [];
   let share = null;
-  const lv = { pageClients: () => ({}), approveJoiners: () => share.approvers(), sharing: () => true, guestViewers: () => 0 };
+  const lv = { pageClients: () => ({}), approveJoiners: () => share.approvers(), sharedJoiners: () => share.inSession(), sharing: () => true, guestViewers: () => 0 };
   const hud = { call: async () => true, sparkColor: () => "#20c997", sparkPage: () => null, addActivity: (text, who, page, from) => activity.push({ text, who, from }) };
   const ca = createClickApprovals({ hud, presence: { byPerson: () => true }, collaboration: { participants: new Map() }, liveView: () => lv, hostName: () => "Bob" });
   made.push(ca);
@@ -73,6 +73,19 @@ test("approve joiners get the host's asks to answer; drive and watch joiners a n
   }
   assert.deepEqual(s.last(fay), { role: null, host: "Bob", items: [] }, "a follow code's joiner gets nothing");
   assert.ok(!JSON.stringify(s.pushed).includes(r.item.id), "the host's own ids never cross");
+});
+
+test("with no one to answer in a browser: Claude Code's ask still shows drive joiners it waits (the terminal answers); Codex's isn't kept", async () => {
+  const s = setup();
+  const dee = s.join(s.invites.create({ role: "drive", label: "Dee", share: "code" }), "Dee");
+  assert.equal(s.share.approvers(), 0);
+  const codex = await s.ask(PAY, { client: "codex" });
+  assert.equal(codex.shown, false, "nothing waits for Codex where no one can answer");
+  const claude = await s.ask(PAY, { client: "claude-code" });
+  assert.equal(claude.shown, true);
+  assert.deepEqual(s.last(dee).waiting.map((w) => w.what), ["Pay: Place order"]);
+  s.ca.withdraw(claude.item.id, "the terminal answered");
+  assert.deepEqual(s.last(dee).waiting, []);
 });
 
 test("first answer wins: a joiner's Allow ends the ask, names them, and the card goes for everyone", async () => {

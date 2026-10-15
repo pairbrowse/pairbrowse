@@ -1,4 +1,4 @@
-// Starting the helper (scripts/daemon-connect.mjs): on macOS it runs on PairBrowse Agent, the
+// Starting the helper (scripts/launcher/daemon-connect.mjs): on macOS it runs on PairBrowse Agent, the
 // native build's small app with an identity of its own (app.pairbrowse.agent), so privacy
 // prompts the helper raises name PairBrowse and never use the browser's grants; elsewhere, or
 // without a native build, on Node as before.
@@ -15,7 +15,7 @@ process.env.PAIRBROWSE_HOME = home;
 after(() => rmSync(home, { recursive: true, force: true }));
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const { agentProgram, startDaemon, AGENT } = await import("../scripts/daemon-connect.mjs");
+const { agentProgram, startDaemon, AGENT } = await import("../scripts/launcher/daemon-connect.mjs");
 const { paths } = await import("../scripts/paths.mjs");
 
 const AGENT_TAIL = "Contents/Helpers/PairBrowse Agent.app/Contents/MacOS/PairBrowse Agent";

@@ -6,7 +6,7 @@
 // time, the helper declined, no helper could start) and the browser opens as a plain window, as
 // before. Prints nothing secret; the reason for a no goes to stderr.
 import { HOOK_MARK } from "./guard.mjs";
-import { connectOnce, connectLocal } from "./daemon-connect.mjs";
+import { connectOnce, connectLocal } from "./launcher/daemon-connect.mjs";
 import { openLine, OPEN_ANSWER_MS } from "./opener.mjs";
 import { within } from "./util.mjs";
 

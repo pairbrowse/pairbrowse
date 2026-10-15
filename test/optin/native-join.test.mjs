@@ -60,12 +60,19 @@ async function run({ nativeHost, nativeJoiner }) {
       const profile = join(homedir(), ".pairbrowse", "mac-host-profile.json");
       if (existsSync(profile)) cpSync(profile, join(h, "mac-host-profile.json"));
     }
-    mkdirSync(join(h, "dl"));
-    writeFileSync(join(h, "config.json"), JSON.stringify({ browserEngine: isNative ? "pairbrowse" : "chromium", executablePath: isNative ? nativeExe : cft, participantName: who, downloadsDir: join(h, "dl"), sessionPicker: false, screenshots: false, chromeArgs: [rules] }));
+    // Saves (recordings, downloads) go to an ordinary folder in the home folder, never inside the
+    // helper's own home (rules/downloads.mjs), and a test never into the account's own home
+    // folder (daemon/browser/downloads.mjs): each helper gets a home folder of its own as HOME.
+    const user = mkdtempSync(join(base, `${prefix}u-`));
+    homes.push(user);
+    users.set(h, user);
+    mkdirSync(join(user, "Downloads"));
+    writeFileSync(join(h, "config.json"), JSON.stringify({ browserEngine: isNative ? "pairbrowse" : "chromium", executablePath: isNative ? nativeExe : cft, participantName: who, downloadsDir: join(user, "Downloads"), sessionPicker: false, screenshots: false, chromeArgs: [rules] }));
     return h;
   };
+  const users = new Map();
   const connect = async (h) => {
-    const d = spawnDaemon(h, { env: { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_SCREEN: "1" } });
+    const d = spawnDaemon(h, { env: { HOME: users.get(h), PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_SCREEN: "1" } });
     daemons.push(d);
     const sock = await attachDaemon({ socketPath: join(h, "run", "browser.sock"), daemon: d, home: h, ms: 90_000 });
     socks.push(sock);
@@ -81,7 +88,18 @@ async function run({ nativeHost, nativeJoiner }) {
     const host = await connect(hostHome), joiner = await connect(joinHome);
     const nativeTool = nativeHost ? host : joiner;
     stage = "the host opens the app";
-    assert.match(await host("browser_navigate", { url: "http://one.pbtest.example/app" }, 300_000), /app/);
+    // The agent's tab on the app, checked by its address (a launch error's text can say "app" too).
+    // The first launch of a build just copied out (test_native.py copies out/Dev afresh each run)
+    // can outlast Playwright's 180 s launch timeout while macOS checks every library the bundle
+    // loads; the helper launches again on the next call, as it does for anyone, so the navigation
+    // gets a second go.
+    const APP_URL = /- Page URL: http:\/\/one\.pbtest\.example\/app\b/;
+    let opened = await host("browser_navigate", { url: "http://one.pbtest.example/app" }, 300_000);
+    if (!APP_URL.test(opened)) {
+      console.error(`the host's first navigation didn't reach the app (a cold launch?): ${opened.slice(0, 400)}`);
+      opened = await host("browser_navigate", { url: "http://one.pbtest.example/app" }, 300_000);
+    }
+    assert.match(opened, APP_URL, opened);
     await joiner("browser_navigate", { url: "about:blank" }, 300_000).catch(() => "");
 
     stage = "recording on the native side records (its capture page) and saves a file";
@@ -91,9 +109,10 @@ async function run({ nativeHost, nativeJoiner }) {
     await sleep(1500);
     const saved = await nativeTool("pairbrowse_record", { action: "stop" }, 90_000);
     assert.match(saved, /Saved the recording \(\d+ s, [\d.]+ MB\) to /, saved);
-    const files = readdirSync(join(nativeHome, "dl"));
+    const saves = join(users.get(nativeHome), "Downloads");
+    const files = readdirSync(saves);
     assert.equal(files.length, 1, files.join(", "));
-    assert.ok(statSync(join(nativeHome, "dl", files[0])).size > 0, "a recording with something in it");
+    assert.ok(statSync(join(saves, files[0])).size > 0, "a recording with something in it");
 
     stage = "invite (drive, code), join, approve";
     const made = await host("pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" });
@@ -112,7 +131,7 @@ async function run({ nativeHost, nativeJoiner }) {
     const screen = await until("the picture page", async () => { const s = await onScreen({}); return s?.index >= 0 && s; }, 60_000);
     const own = (await onScreen({ url: true }))?.url || "";
     if (nativeJoiner) assert.match(own, /^(chrome:\/\/pairbrowse\/screen\/|pairbrowse:\/\/screen)/, own);
-    else assert.match(own, /^chrome-extension:\/\/[a-p]{32}\/screen\.html#/, own);
+    else assert.match(own, /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html#/, own);
     const live = (await joiner("pairbrowse_liveview")).match(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\//)?.[0];
     if (live) await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: screen.index }) }).catch(() => {});
 
@@ -139,7 +158,10 @@ async function run({ nativeHost, nativeJoiner }) {
     assert.doesNotMatch(log, /no side panel/);
     if (nativeHost) assert.doesNotMatch(log, /liveview guest/);
   } catch (e) {
+    const tail = (() => { try { return readFileSync(join(nativeHome, "daemon.log"), "utf8").split("\n").slice(-60).join("\n"); } catch { return ""; } })();
     e.message = `${stage}: ${e.message}`;
+    // An AssertionError keeps its own message in the report: the stage and the log go to stderr.
+    console.error(`${stage}: ${e.message}${tail ? `\nthe native side's log, last lines:\n${tail}` : ""}`);
     throw e;
   } finally {
     for (const s of socks) s.destroy();

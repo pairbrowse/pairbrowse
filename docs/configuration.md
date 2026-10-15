@@ -82,6 +82,19 @@
   `tailscale` or `command` (run, url, env). `sharing.guestPort` pins the port join codes are served
   on, for a tunnel routed on the provider's side. See [Using your own tunnel](sharing.md#using-your-own-tunnel).
 
+**Checked when read.** Every key above has one declared type and, where it has them, its allowed
+values (`scripts/config-schema.mjs`; the `pairbrowse` block's own keys too, while its other keys are
+the engine's and checked at launch). When the helper starts, a key it doesn't know (a misspelling,
+say) is named in one line of `daemon.log` and in what `pairbrowse_status` answers, and otherwise
+ignored. A value of the wrong type or out of range (`"maxTabs": "20"`, `"display": "always"`) is
+refused: the helper uses that key's default, and says so the same two ways, naming the key, what it
+takes, the value it found and the file to fix, for example
+`config.json: maxTabs is a whole number of 1 or more, not "20" (a string); using the default for it until it is fixed in ~/.pairbrowse/config.json`.
+The file is never rewritten for it. A file that isn't a JSON object is read as all defaults, with
+the same warning. Anything PairBrowse writes into `config.json` (Settings, **Always allow**, your
+name) is checked the same way first, and a wrong value is refused with that message: nothing is
+written.
+
 The browser's own Settings page reads and changes `browser`, `timeline` with `timelineCap`,
 `layout`, `participantName`, `downloadsDir`, `screenshots`, `cookieChoice`, `maxTabs` (2 to 50)
 and `sessionPicker` (nothing else) through the live view's owner-only `config.json` route. A

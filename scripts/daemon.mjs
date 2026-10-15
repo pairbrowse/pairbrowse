@@ -36,7 +36,7 @@ import { createRequire } from "node:module";
 import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { paths, loadConfig, ensureDirs } from "./paths.mjs";
+import { paths, loadConfig, ensureDirs, CONFIG_WARNINGS } from "./paths.mjs";
 import { secretStore } from "./rules/secrets.mjs";
 import { createFollow, isScreenPage, screenCard } from "./daemon/follow.mjs";
 import { createCaptureBackend, targetIdOf } from "./daemon/capture.mjs";
@@ -113,6 +113,8 @@ function runtime() {
 }
 const createConnection = (...a) => runtime().createConnection(...a);
 ensureDirs();
+// config.json's unknown keys and refused values (config-schema.mjs): one line each; pairbrowse_status names them too.
+for (const w of CONFIG_WARNINGS) log(w);
 
 // One helper at a time, settled before anything else starts: each Claude Code and Codex window
 // starts one when there's none (after an update, a crash), often several at once, and a second

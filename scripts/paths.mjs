@@ -4,6 +4,7 @@ import { mkdirSync, chmodSync } from "node:fs";
 import { writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { resolveHome, gateProjectEnv } from "./home.mjs";
 import { checkDownloads } from "./rules/downloads.mjs";
+import { checkConfig, configProblem, configWarnings } from "./config-schema.mjs";
 
 // Everything PairBrowse writes is private to your user account.
 process.umask(0o077);
@@ -166,10 +167,19 @@ export const DEFAULT_CONFIG = {
   pairbrowse: {},
 };
 
-// A downloads folder written into config.json by hand gets Settings' check (rules/downloads.mjs);
-// one that fails it is read as none (your Downloads folder). Every save checks again.
-export function loadConfig() {
-  const config = { ...DEFAULT_CONFIG, ...readJson(paths.config, {}) };
+// The last loadConfig's warnings (config-schema.mjs): a key it doesn't know, a value of the wrong
+// type (refused: the default is used for that key). The helper logs each once and pairbrowse_status
+// names them (serve/tools/status.mjs statusLine).
+export const CONFIG_WARNINGS = [];
+
+// config.json checked against the one schema (config-schema.mjs) over the defaults. A downloads
+// folder written into config.json by hand gets Settings' check (rules/downloads.mjs); one that
+// fails it is read as none (your Downloads folder). Every save checks again.
+export function loadConfig(file = paths.config) {
+  const checked = checkConfig(readJson(file, {}));
+  CONFIG_WARNINGS.length = 0;
+  CONFIG_WARNINGS.push(...configWarnings(checked, file));
+  const config = { ...DEFAULT_CONFIG, ...checked.config };
   if (config.downloadsDir != null && (typeof config.downloadsDir !== "string" || (config.downloadsDir && checkDownloads(config.downloadsDir, { home: paths.home }).problem))) config.downloadsDir = null;
   return config;
 }
@@ -184,8 +194,11 @@ export function saveParticipantName(config, name) {
 
 // Merges fields into config.json (the file's own keys, not the defaults), keeping everything else
 // it holds; undefined values are skipped. Written through a temp file and a rename, so a write cut
-// short leaves the old file. Returns what the file holds now.
+// short leaves the old file. A value of the wrong type (config-schema.mjs) is refused, nothing
+// written: it throws that message. Returns what the file holds now.
 export function saveConfig(fields, file = paths.config) {
+  const problem = configProblem(fields);
+  if (problem) throw new Error(problem);
   let saved = {};
   const read = readJson(file);
   if (read && typeof read === "object" && !Array.isArray(read)) saved = read;

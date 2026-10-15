@@ -30,6 +30,7 @@ import { within } from "../util.mjs";
 import { folderOf, checkDownloads, downloadsProblem } from "../rules/downloads.mjs";
 import { browserChoice } from "../browser.mjs";
 import { saveConfig, paths } from "../paths.mjs";
+import { configProblem, wrongValue } from "../config-schema.mjs";
 import { cleanName } from "../sharing/join.mjs";
 import { readLayout, layoutFrom } from "./layout.mjs";
 import { reportUrlFrom } from "./report.mjs";
@@ -40,6 +41,9 @@ export const TABS_MIN = 2, TABS_MAX = 50;
 export const NAME_MAX = 40;
 const PATH_MAX = 1024;
 const CONTROL = /[\u0000-\u001f\u007f]/;
+// The route's own ranges, worded as config-schema.mjs words a refused config.json value.
+const BOOL = { type: "boolean" }, COOKIES = { values: ["accept", "reject"] };
+const CAP = { type: "integer", min: CAP_MIN, max: CAP_MAX }, TABS = { type: "integer", min: TABS_MIN, max: TABS_MAX };
 
 const capOf = (v) => (Number.isInteger(v) && v >= CAP_MIN && v <= CAP_MAX ? v : CAP_MAX);
 const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -112,8 +116,8 @@ export function applySettings(given, config, { native = false, exists, executabl
     const t = given.timeline;
     if (!plainObject(t)) return { error: "timeline is { on, cap }." };
     for (const k of Object.keys(t)) if (k !== "on" && k !== "cap") return { error: `Unknown setting "timeline.${k}"` };
-    if (t.on !== undefined && typeof t.on !== "boolean") return { error: "timeline.on is true or false." };
-    if (t.cap !== undefined && (!Number.isInteger(t.cap) || t.cap < CAP_MIN || t.cap > CAP_MAX)) return { error: `timeline.cap is a whole number from ${CAP_MIN} to ${CAP_MAX}.` };
+    if (t.on !== undefined && typeof t.on !== "boolean") return { error: `${wrongValue("timeline.on", BOOL, t.on)}.` };
+    if (t.cap !== undefined && (!Number.isInteger(t.cap) || t.cap < CAP_MIN || t.cap > CAP_MAX)) return { error: `${wrongValue("timeline.cap", CAP, t.cap)}.` };
     if (t.on !== undefined) fields.timeline = t.on;
     if (t.cap !== undefined) fields.timelineCap = t.cap;
   }
@@ -140,19 +144,19 @@ export function applySettings(given, config, { native = false, exists, executabl
     }
   }
   if (given.pictures !== undefined) {
-    if (typeof given.pictures !== "boolean") return { error: "pictures is true or false." };
+    if (typeof given.pictures !== "boolean") return { error: `${wrongValue("pictures", BOOL, given.pictures)}.` };
     fields.screenshots = given.pictures;
   }
   if (given.cookies !== undefined) {
-    if (given.cookies !== "accept" && given.cookies !== "reject") return { error: 'cookies is "accept" or "reject".' };
+    if (given.cookies !== "accept" && given.cookies !== "reject") return { error: `${wrongValue("cookies", COOKIES, given.cookies)}.` };
     fields.cookieChoice = given.cookies;
   }
   if (given.maxTabs !== undefined) {
-    if (!Number.isInteger(given.maxTabs) || given.maxTabs < TABS_MIN || given.maxTabs > TABS_MAX) return { error: `maxTabs is a whole number from ${TABS_MIN} to ${TABS_MAX}.` };
+    if (!Number.isInteger(given.maxTabs) || given.maxTabs < TABS_MIN || given.maxTabs > TABS_MAX) return { error: `${wrongValue("maxTabs", TABS, given.maxTabs)}.` };
     fields.maxTabs = given.maxTabs;
   }
   if (given.askSession !== undefined) {
-    if (typeof given.askSession !== "boolean") return { error: "askSession is true or false." };
+    if (typeof given.askSession !== "boolean") return { error: `${wrongValue("askSession", BOOL, given.askSession)}.` };
     fields.sessionPicker = given.askSession;
   }
   return { fields };
@@ -177,6 +181,10 @@ export function createSettings({ config, choiceConfig = () => config, native = f
         const why = await vouch(r.fields.browser);
         if (why) return { error: why };
       }
+      // The schema config.json is read with (config-schema.mjs), with the same message as a load's:
+      // whatever passed the checks above still never writes a value loadConfig would refuse.
+      const problem = configProblem(r.fields);
+      if (problem) return { error: problem };
       try { save(r.fields); } catch (e) { return { error: `Couldn't write config.json: ${e?.message || e}` }; }
       Object.assign(config, r.fields);
       try { onChange(r.fields); } catch {}

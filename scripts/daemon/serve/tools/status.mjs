@@ -1,17 +1,19 @@
 // pairbrowse_status: what the agent says it is doing, in the side panels, the docks and the badge
 // in every tab (bounded per tab), and the goal log.
 import { within } from "../../../util.mjs";
-import { SELECTED } from "../../../paths.mjs";
+import { SELECTED, CONFIG_WARNINGS } from "../../../paths.mjs";
 
 const BADGE_MS = 4000; // pairbrowse_status waits this long at most for the badge in every tab
 
 // "ok", naming this helper's instance and home when it isn't the default one (several PairBrowse
-// helpers on one computer: home.mjs), and a project file that couldn't be used.
-export function statusLine(selected = SELECTED) {
+// helpers on one computer: home.mjs), a project file that couldn't be used, and config.json's
+// unknown keys and refused values (paths.mjs loadConfig).
+export function statusLine(selected = SELECTED, configWarnings = CONFIG_WARNINGS) {
   const parts = ["ok"];
   if (selected.instance) parts.push(`PairBrowse instance "${selected.instance}" (${selected.home})`);
   else if (selected.source === "PAIRBROWSE_HOME") parts.push(`PairBrowse home ${selected.home}`);
   if (selected.warning) parts.push(`ignored: ${selected.warning}`);
+  for (const w of configWarnings) parts.push(`warning: ${w}`);
   return parts.join("; ");
 }
 

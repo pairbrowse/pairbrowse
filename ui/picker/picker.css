@@ -2,7 +2,6 @@
    rows (avatar, name with its pills, meta, the people as a stack at the right end), the join
    address question as an approval card (B6). Framed (the browser strip's session switcher), the
    card is the whole frame and the strip's logo and wordmark are not repeated. */
-* { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body {
   display: grid; place-items: center; min-height: 100vh; padding: 32px 16px;
@@ -125,7 +124,6 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; box
 .msg { margin: var(--sp-3) 0 0; font-size: var(--fs-3); color: var(--muted); }
 .msg:empty { display: none; }
 .msg[data-kind="error"] { color: var(--bad); }
-.report-offer { color: var(--accent-ink); font-weight: 500; }
 .msg[data-kind="ok"] { color: var(--ok); }
 body[data-s="connecting"] .choices, body[data-s="done"] .choices { display: none; }
 /* A session is open and this is a tab: only "All sessions…" (the sessions page) stays. */

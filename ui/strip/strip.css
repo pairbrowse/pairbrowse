@@ -2,13 +2,11 @@
    native address bar, and the popovers alone for the shell's bubbles. Colors from tokens.css only;
    participant and agent colors arrive as inline backgrounds from strip.js. The light is static (the
    sheet's gradient, edge and glow tokens): never animated, never a backdrop-filter. */
-* { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; }
 [hidden] { display: none !important; }
 button { font: inherit; color: inherit; margin: 0; }
 svg { flex: none; }
-.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* ---- the tab row ---- */
 .row { position: relative; display: flex; align-items: stretch; gap: 8px; height: 53px; padding: 0 12px; -webkit-app-region: drag; } /* mockup */

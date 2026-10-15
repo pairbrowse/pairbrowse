@@ -155,7 +155,10 @@ for (const page of pages()) {
       const sheets = attrs(html, "link").filter((a) => /stylesheet/i.test(attr(a, "rel") || "")).map((a) => attr(a, "href"));
       if (!sheets.length) return;
       assert.equal(sheets[0], "../tokens.css", `${page}: tokens.css comes before the page's own sheet`);
-      for (const href of sheets.slice(1)) assert.equal(dirname(resolve(dir, href)), dir, `${page}: ${href} is not ui/${page}/*.css`);
+      // ui/base.css (the rules the pages share) only right after it.
+      const own = sheets[1] === "../base.css" ? sheets.slice(2) : sheets.slice(1);
+      assert.ok(!own.includes("../base.css"), `${page}: base.css comes right after tokens.css`);
+      for (const href of own) assert.equal(dirname(resolve(dir, href)), dir, `${page}: ${href} is not ui/${page}/*.css`);
       for (const f of cssFiles) {
         const css = noComments(read(f));
         for (const k of TOKEN_NAMES) assert.doesNotMatch(css, new RegExp(`--${k}\\s*:`), `${relative(root, f)} redefines --${k}`);

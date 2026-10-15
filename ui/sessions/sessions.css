@@ -1,7 +1,6 @@
 /* All sessions (pairbrowse://sessions): the picker's card and rows (DESIGN B9), wider, a list of every
    saved session with its actions at the row's end, then start fresh and join. Colors and type from
    tokens.css. */
-* { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body { display: grid; justify-items: center; align-content: start; min-height: 100vh; padding: 48px 16px 32px; background: var(--bg); color: var(--ink); font: var(--fs-3)/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
 main { width: min(640px, 100%); padding: var(--sp-6) var(--sp-6) var(--sp-4); border-radius: var(--r-3); background: var(--sidebar); border: 1px solid var(--edge); box-shadow: 0 24px 60px rgb(0 0 0 / 0.35); }
@@ -78,7 +77,6 @@ input:focus-visible { outline-offset: 1px; }
 .msg:empty { display: none; }
 .msg[data-kind="error"] { color: var(--bad); }
 .msg[data-kind="ok"] { color: var(--ok); }
-.report-offer { color: var(--accent-ink); font-weight: 500; }
 /* Busy: the 300 ms rule's bar along a control's foot (tokens.css [aria-busy]); the list dims while
    a pick is on its way. */
 body[data-s="picking"] .saved, body[data-s="picking"] .new { opacity: 0.55; pointer-events: none; }

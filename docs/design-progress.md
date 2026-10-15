@@ -101,56 +101,56 @@ constraints, the tests that pin them) is `docs/design-surfaces.md`, written by t
 
 | Mockup element | Surface | Classification |
 |---|---|---|
-| Deep navy frame, tab strip, toolbar colors | 1 chrome | REFINE: `THEME_COLOR` `browser.mjs:119`; next start; user theme wins `:140` |
-| Logo + "PairBrowse ⌄" switcher in the toolbar | 1 chrome | UNSUITABLE in chrome; function EXISTS as Switch session (`panel.html:25`) and picker (surface 5); logo unchanged |
+| Deep navy frame, tab strip, toolbar colors | 1 chrome | REFINE: `THEME_COLOR` `scripts/browser.mjs`; next start; user theme wins `profilePreferences()` |
+| Logo + "PairBrowse ⌄" switcher in the toolbar | 1 chrome | UNSUITABLE in chrome; function EXISTS as Switch session (`ui/right/index.html` `#switch-btn`) and picker (surface 5); logo unchanged |
 | Active/inactive tab surfaces | 1 chrome | EXISTS (Chromium's derivation); not per-element |
-| Orange owner dot on a tab | 3 hud | EXISTS: tab icon spark `hud.js:252-288`, `daemon/hud.mjs:77` |
-| "+", ×, back/forward/reload, address pill, lock | 1 chrome, 4 live view | EXISTS (Chromium; `liveview.html:13-25`) |
+| Orange owner dot on a tab | 3 hud | EXISTS: tab icon spark `scripts/hud/spark.js` `sparkIcon()`, `scripts/daemon/hud.mjs` `tabIcon()` |
+| "+", ×, back/forward/reload, address pill, lock | 1 chrome, 4 live view | EXISTS (Chromium; `scripts/liveview.html` `#tabs`, `#newtab`, `#state`, `#state-text` and more) |
 | Star, search, sparkle buttons | 1 chrome, 4 live view | UNSUITABLE (no toolbar slots; no state) |
-| "● Live session" pill | 2 panel, 3 hud, 4 live view | REFINE: `panel.js:82-86`, bar who line `hud.js:406-408`, `liveview.js:227-252`; fed by `collaborationNow` `liveview.mjs:144` |
-| Avatar stack (C, G, Y, +2) | 2 panel, 4 live view | REFINE: board people `panel.js:99-117`, guests `liveview.mjs:136-143`; colors `SPARK_COLORS` `daemon/hud.mjs:11` |
-| Share button | 2 panel, 4 live view | NEW: needs an owner-only route for invites (`sharing.mjs:290-299`, no event today); security table entry |
+| "● Live session" pill | 2 panel, 3 hud, 4 live view | REFINE: `ui/right/right.js` `collaboration` listener, bar who line `scripts/hud/bar.js` `drawBar()`, `scripts/liveview.js` `renderCollaboration()`; fed by `collaborationNow` `scripts/liveview.mjs` |
+| Avatar stack (C, G, Y, +2) | 2 panel, 4 live view | REFINE: board people `ui/right/right.js` `board` listener, guests `scripts/liveview.mjs` `startLiveView()`; colors `SPARK_COLORS` `ui/vocab.js` |
+| Share button | 2 panel, 4 live view | NEW: needs an owner-only route for invites (`scripts/daemon/sharing.mjs` `codeOf()`, no event today); security table entry |
 | "⋯" toolbar menu | 1 chrome | UNSUITABLE |
 | New tab page in navy | 1 chrome / 5 | REFINE: `newtab.css`; drop `ntp.png`; `addressToUrl` unchanged |
 | Left sidebar: Workspace header | 4 live view | NEW (Inspect layout), fed by `tabs`, `board`, `collaboration` |
-| Left sidebar: Browser (count) | 2 panel, 4 live view | NEW listener in `panel.js` / `liveview.js:200-205`; event already sent `liveview.mjs:639,813` |
-| Left sidebar: Sessions | 2 panel, 5 picker | EXISTS: Switch session, picker (`context.mjs:321-349`) |
+| Left sidebar: Browser (count) | 2 panel, 4 live view | NEW listener in `panel.js` / `scripts/liveview.js` `tabs` listener; event already sent `scripts/liveview/routes/viewer.mjs` `events()`, `scripts/liveview.mjs` `refreshTabs()` |
+| Left sidebar: Sessions | 2 panel, 5 picker | EXISTS: Switch session, picker (`scripts/daemon/sessions/picker.mjs` `showPicker()`, `reopenPicker()`) |
 | Left sidebar: History | any | UNSUITABLE (Chromium's own) |
-| Left sidebar: Activity | 2 panel, 4 live view | EXISTS: `panel.html:46-50`, `liveview.html:65-69` |
+| Left sidebar: Activity | 2 panel, 4 live view | EXISTS: `ui/right/index.html` `#collaboration`, `#activity`, `scripts/liveview.html` `#driver`, `#driver-who`, `#who-filter`, `#activity` |
 | Left sidebar: Tools | 2 panel, 4 live view | NEW static list, no state |
-| Left sidebar: Agents (Active · 2 tabs, Idle, Working) | 2 panel, 4 live view | REFINE: board entries `daemon.mjs:218-226`, `panel.js:99-117`; tab counts from `tabs` |
-| Left sidebar: Shared with (Team, Client) | 2 panel, 4 live view | REFINE: `collaboration.guests` `liveview.mjs:136-143`, approvals `open()` `join.mjs:227` |
+| Left sidebar: Agents (Active · 2 tabs, Idle, Working) | 2 panel, 4 live view | REFINE: board entries `scripts/daemon.mjs` `localEntries()`, `ui/right/right.js` `board` listener; tab counts from `tabs` |
+| Left sidebar: Shared with (Team, Client) | 2 panel, 4 live view | REFINE: `collaboration.guests` `scripts/liveview.mjs` `startLiveView()`, approvals `open()` `scripts/sharing/join.mjs` |
 | Left sidebar: storage meter | any | UNSUITABLE (no meaning) |
-| Agent cursor with label pill (Claude) | 3 hud | EXISTS `hud.js:559-631`; REFINE geometry, pill, no glow/trail |
-| Several agents' cursors at once (Codex, Gemini) | 3 hud | EXISTS for joiners' agents as peers `hud.js:633-737`; NEW per-agent cursor for this helper, fed by `cursor` calls' `who`/`color` `hud.js:758-769` |
-| Edited field outlined in the agent's color | 3 hud | NEW inside the cursor shadow root, fed by `targets` `hud.js:782-788`, `press` `:772-781`, `owned` `:168-173` |
-| Approval card: join request Allow/Deny | 3 hud, 2 panel, 4 live view | EXISTS `hud.js:452-557`, `common.js:56-98`; REFINE into a card inside `barHost`, gating kept (`:473-474, :485-495`; `common.js:84, :91`) |
-| Approval card: dev-server share question | 2 panel | EXISTS `common.js:148-155`; REFINE layout |
+| Agent cursor with label pill (Claude) | 3 hud | EXISTS `scripts/hud/cursor.js` `motion`, `CURSOR_MOTION`, `fittsA`, `fittsB` and more; REFINE geometry, pill, no glow/trail |
+| Several agents' cursors at once (Codex, Gemini) | 3 hud | EXISTS for joiners' agents as peers `scripts/hud/pointers.js` `peersHost`, `peersBox`, `peersFrame` and more; NEW per-agent cursor for this helper, fed by `cursor` calls' `who`/`color` `scripts/hud/status.js` `kind === "cursor"` |
+| Edited field outlined in the agent's color | 3 hud | NEW inside the cursor shadow root, fed by `targets` `scripts/hud/status.js` `kind === "targets"`, `press` `kind === "press"`, `owned` `scripts/hud/fields.js` `fields()` |
+| Approval card: join request Allow/Deny | 3 hud, 2 panel, 4 live view | EXISTS `scripts/hud/join.js` `JOIN_SHOWN_MS`, `JOIN_ARM_MS`, `JOIN_KEEP`, `joinSeen` and more, `ui/panels.js` `joinBanners()`; REFINE into a card inside `barHost`, gating kept (`ui/common.js`; `ui/panels.js` `joinBanners()`) |
+| Approval card: dev-server share question | 2 panel | EXISTS `ui/panels.js` `devPanel()`; REFINE layout |
 | Approval card: "Claude Code wants to click … Allow" | page | UNSUITABLE: confirmations stay in the coding app (guard hook) |
 | Approval card: "More actions ⌄" | 3 hud | UNSUITABLE |
-| Bottom bar "● Claude is driving" | 3 hud, 4 live view | EXISTS `hud.js:406-408`, `liveview.js:258-284` |
-| Bottom bar done chips | 3 hud, 4 live view | REFINE from bar `items` `daemon/hud.mjs:95-100` and `activity` |
-| Bottom bar current/pending chips | 3 hud, 4 live view, 6 state | NEW payload fields via `applyBar` `daemon/hud.mjs:95-99`, fed by the journal `journal.mjs:92-99`; payload shape kept (`native-check.mjs:64`; `hud.js:421-426`) |
-| Pause agents / Resume | 3 hud, 2 panel | EXISTS `hud.js:375,381-383`, `panel.js:41-43` |
+| Bottom bar "● Claude is driving" | 3 hud, 4 live view | EXISTS `scripts/hud/bar.js` `drawBar()`, `scripts/liveview.js` `allActivity`, `whoFilter`, `seenWho`, `filterEl` and more |
+| Bottom bar done chips | 3 hud, 4 live view | REFINE from bar `items` `scripts/daemon/hud.mjs` `applyBar()` and `activity` |
+| Bottom bar current/pending chips | 3 hud, 4 live view, 6 state | NEW payload fields via `applyBar` `scripts/daemon/hud.mjs`, fed by the journal `scripts/daemon/journal.mjs` `open()`; payload shape kept (`scripts/native/check.mjs` `checkBottomBar()`; `scripts/hud/bar.js` `setBar()`) |
+| Pause agents / Resume | 3 hud, 2 panel | EXISTS `scripts/hud/bar.js` `ensureBar()`, `scripts/hud/bar.js` `pz` `mousedown` and `click` listeners, `ui/right/right.js` `click` listener |
 | Right panel tabs Agent / Page / Tools | 2 panel | NEW section tabs in `panel.html`, no new state |
 | Right panel tab Screenshots | 2 panel | UNSUITABLE (pictures never kept) |
-| Active agent card (avatar, name, state, Pause, collapse) | 2 panel, 4 live view | REFINE: driver line `panel.js:51-60` + pause `:119-126` + first board entry `:99-117` |
-| "Current task" | 2 panel, 4 live view | EXISTS: board `task` (`daemon.mjs:218-226`; `session.mjs:71-75`) |
-| Checklist (done / current / pending) | 2 panel, 4 live view, 6 state | NEW: owner-only journal event/route (`journal.mjs:92-99`, file-only today `:210`) |
+| Active agent card (avatar, name, state, Pause, collapse) | 2 panel, 4 live view | REFINE: driver line `ui/right/right.js` `setDriver()` + pause `pause` listener + first board entry `board` listener |
+| "Current task" | 2 panel, 4 live view | EXISTS: board `task` (`scripts/daemon.mjs` `localEntries()`; `scripts/daemon/board.mjs` `setStatus()`) |
+| Checklist (done / current / pending) | 2 panel, 4 live view, 6 state | NEW: owner-only journal event/route (`scripts/daemon/journal.mjs` `open()`, file-only today `scripts/daemon/journal.mjs`) |
 | "Live reasoning" | 2 panel | UNSUITABLE as named; REFINE: `pairbrowse_status` text shown as the agent's status, named as such |
-| Other participants rows (Observing, Helping, Active) | 2 panel, 4 live view | REFINE: Session people list `panel.js:99-117`; "Helping · Suggesting inputs" has no state |
-| "Take control" | 2 panel | UNSUITABLE (`collaboration.mjs:128-142` are agents' tools; presence `presence.mjs:63-85`) |
-| Session card: name, where | 2 panel, 4 live view | EXISTS `panel.js:75-81`, `liveview.js:216-223` |
+| Other participants rows (Observing, Helping, Active) | 2 panel, 4 live view | REFINE: Session people list `ui/right/right.js` `board` listener; "Helping · Suggesting inputs" has no state |
+| "Take control" | 2 panel | UNSUITABLE (`scripts/tools/catalog.mjs` `COLLABORATION_TOOL` are agents' tools; presence `scripts/daemon/presence.mjs` `personIn()`, `actingIn()`, `actedIn()`, `filledIn()` and more) |
+| Session card: name, where | 2 panel, 4 live view | EXISTS `ui/right/right.js` `session` listener, `scripts/liveview.js` `session` listener |
 | Session card: "Saved 2 min ago" | 2 panel, 6 state | NEW from journal `updatedAt`, same transport as the checklist |
-| Session card: Save | 2 panel | EXISTS as Record (`panel.js:20-40`) for a recording; the run file saves itself (`journal.mjs:74-78`); a "Save" that copies the run is NEW via `runs.mjs` route, owner only |
+| Session card: Save | 2 panel | EXISTS as Record (`ui/right/right.js` `drawRecord()`, `click` listener) for a recording; the run file saves itself (`scripts/daemon/journal.mjs` `schedule()`); a "Save" that copies the run is NEW via `runs.mjs` route, owner only |
 | Session card: Share | 2 panel | NEW (see Share) |
 | Session card: End session | 2 panel | UNSUITABLE as one-click; Switch session / picker are the controls |
-| Hidden-by-default timeline | 4 live view, 6 state | NEW drawer like `#drawer` (`liveview.css:187-195`), loads on open, fed by the journal event/route |
-| Modes Focus / Collaborate / Inspect | 1, 2, 4 | EXISTS as which surface is open (side panel toggle `background.js:18-21`; live view page); NEW per-viewer persistence (`chrome.storage` / `localStorage`, like `pb-fit` `liveview.js:72,96`) |
-| Shared token sheet | 2, 4, 5 (`hud.js` inlined) | REFINE: `panel.css:2-11`, `liveview.css:4-18`, `picker.css:2-8`, `newtab.css`, `screen.css:1`, `record.js:70-99`; `hud.js` via inline values or a `__PB_` substitution in `browser.mjs:271-288` |
-| Joiner's picture page overlays | 5 screen | REFINE colors only; `#hold` rgba and texts pinned (`test/ui-screen.test.mjs:47-57`) |
+| Hidden-by-default timeline | 4 live view, 6 state | NEW drawer like `#drawer` (`scripts/liveview.css` `.drawer` rule, `.drawer[data-open="true"]` rule), loads on open, fed by the journal event/route |
+| Modes Focus / Collaborate / Inspect | 1, 2, 4 | EXISTS as which surface is open (side panel toggle `ui/background.js` `windowId`; live view page); NEW per-viewer persistence (`chrome.storage` / `localStorage`, like `pb-fit` `scripts/liveview.js`, `click` listener) |
+| Shared token sheet | 2, 4, 5 (`hud.js` inlined) | REFINE: `ui/tokens.css` `:root` rule, `ui/tokens.css` `:root` rule, `ui/tokens.css` `:root` rule, `newtab.css`, `ui/screen/screen.css` `:root` rule, `ui/capture/record.js` `strip()`; `hud.js` via inline values or a `__PB_` substitution in `scripts/browser.mjs` `hudScript()` |
+| Joiner's picture page overlays | 5 screen | REFINE colors only; `#hold` rgba and texts pinned (`test/ui-screen.test.mjs`) |
 | Agent cursors drawn over the live view stage | 4 live view | UNSUITABLE (already in the streamed frame; a per-frame overlay) |
-| Hold countdown "agents wait Ns" | 4 live view, 6 state | UNSUITABLE as drawn: `humanUntil` never produced (`collaboration.mjs:32-39`); per-tab `waiting`/`person` EXISTS (`liveview.mjs:131`) |
+| Hold countdown "agents wait Ns" | 4 live view, 6 state | UNSUITABLE as drawn: `humanUntil` never produced (`scripts/collaboration.mjs`); per-tab `waiting`/`person` EXISTS (`scripts/liveview.mjs` `tabsInfo()`) |
 Decisions taken from it: the color theme seed moves to navy (next start, a user's own theme
 still wins); the side panel is the agent panel and the live view page the expanded workspace;
 "Screenshots", "Live reasoning", "Take control", "End session", "More actions", History and the

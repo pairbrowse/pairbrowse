@@ -12,7 +12,7 @@
 // invites, input (replaying a viewer's input), joiner-server (the port the sharing tunnel
 // reaches: shared tabs for joiners, never frames) and tabs.
 import { ownTitle } from "./daemon/tablabels.mjs";
-import { resolve, sep, basename } from "node:path";
+import { resolve, sep } from "node:path";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { keepFocus } from "./focus.mjs";
@@ -26,12 +26,11 @@ import { createJoinerServer, recentlySeen, joinerKeyOf } from "./liveview/joiner
 import { createIcons, guestTabs, guestActivity, withoutIcons, hostOf } from "./liveview/tabs.mjs";
 import { layoutFrom } from "./liveview/layout.mjs";
 import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "../ui/urls.js";
-import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
 import { createToolsRoutes } from "./liveview/routes/tools.mjs";
 import { createTimelineRoutes } from "./liveview/routes/timeline.mjs";
 import { createSessionRoutes } from "./liveview/routes/sessions.mjs";
 import { createPagesRoutes } from "./liveview/routes/pages.mjs";
-import { scrub } from "./daemon/diagnostics.mjs";
+import { createOwnerRoutes, inviteItems } from "./liveview/routes/owner.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { createActivityLog } from "./daemon/activitylog.mjs";
 import { PAGE_KINDS as PAGE_KIND_LIST } from "../ui/vocab.js";
@@ -67,9 +66,6 @@ const PAGE_EVENT_KIND = new Map([["capture", "capture"]]);
 // name for counting them, nothing more; they get no frame stream.
 const PAGE_KINDS = new Set(PAGE_KIND_LIST);
 const SESSION_FIELDS = ["canRename", "canSave", "savedAt", "canRenameSaved"]; // the owner's streams only
-const INVITE_ID = /^[0-9a-f]{8}$/;
-// The invites as Settings lists them (GET invites.json, the invites event): never a key or a code.
-const inviteItems = (list) => list.map((i) => ({ id: i.id, role: i.role, label: i.label, share: i.share, expires: i.expiresAt }));
 
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
 // readForm(page): { url, fields } as they may cross, or null. applyForm(page, fields, who).
@@ -746,103 +742,13 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       const recent = activity.slice(-STATE_ACTIVITY);
       json(res, 200, { status, session: sessionInfo, collaboration: collaborationNow(), tabs: invite ? forGuest("tabs", tabs) : tabs, activity: invite ? forGuest("activity", recent) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
     } },
-    // People asking to join with a code, for the owner to let in or not.
-    { method: "GET", path: "joins.json", right: "approve", handler: ({ res }) => json(res, 200, approvals.pending()) },
-    // Named final clicks waiting for an answer (daemon/approvals.mjs), for the owner only: the
-    // browser's own pages list them and answer with POST approve { id, answer }.
-    { method: "GET", path: "approvals.json", right: "approve", needs: () => clickApprovals, handler: ({ res }) => json(res, 200, { pending: clickApprovals.pending() }) },
-    { method: "POST", path: "approve", right: "approve", handler: async ({ req, res }) => {
-      const given = await readJsonBody(req, res, BODY_MAX.approve);
-      if (given === undefined) return;
-      if (given && typeof given === "object" && typeof given.answer === "string") {
-        if (!(typeof given.id === "string" && APPROVAL_ID.test(given.id) && ANSWERS.has(given.answer))) return json(res, 400, { error: "An approval answer is { id, answer: allow, deny, terminal or site }." });
-        if (!clickApprovals) return plain(res, 404);
-        const ok = clickApprovals.answer(given.id, given.answer, "the live view");
-        return json(res, ok ? 200 : 404, { ok });
-      }
-      const op = given;
-      if (!op || typeof op !== "object" || Array.isArray(op)) return json(res, 400, { error: NOT_JSON });
-      if (op.remove === true) {
-        // Remove, after a yes: out at once (their channel, pictures and agent), and not back in.
-        const gone = approvals.remove(op.id);
-        if (!gone) return json(res, 404, { ok: false });
-        joiners.delete(gone.key);
-        push.end(gone.key);
-        // By key: their agent may still be at work here after their own entry went.
-        await stopJoinerKey(gone.key).catch(() => {});
-        collaborationChanged();
-        const { key: _k, ...request } = gone;
-        return json(res, 200, { ok: true, request });
-      }
-      const done = op.allow === true ? approvals.approve(op.id) : approvals.deny(op.id);
-      log(`join request ${String(op.id).slice(0, 12)}: ${op.allow === true ? "Allow" : "Deny"} from the side panel or a notification${done ? "" : ", but it wasn't waiting any more"}`);
-      json(res, done ? 200 : 404, { ok: !!done, request: done });
-    } },
-    // Dev servers (devshare.mjs), for the owner only: what's open on localhost and shared, an
-    // agent's question to share one; and the owner's answer, Share or Stop (a real click).
-    { method: "POST", path: "dev", right: "approve", needs: () => devPanel, handler: async ({ req, res }) => {
-      const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });
-      if (v === undefined) return;
-      const r = await devPanel.act(v);
-      json(res, r.error ? 409 : 200, r);
-    } },
-    // A join code whose address this person hasn't allowed (daemon/follow.mjs): their Allow once,
-    // Always allow or Cancel, and Remove for an allowed address. The owner only (the side panel,
-    // the session picker), with a real click; agents have no tool for it.
-    { method: "POST", path: "joinhost", right: "approve", needs: () => joinHost, handler: async ({ req, res }) => {
-      const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });
-      if (v === undefined) return;
-      const r = await joinHost.act(v);
-      json(res, r.error ? 409 : 200, r);
-    } },
-    // The Profile panel: remembered details in full, passwords by name and sites only.
-    { method: "GET", path: "profile.json", right: "profile", needs: () => profile, handler: ({ res }) => json(res, 200, profile.get()) },
-    { method: "POST", path: "profile", right: "profile", needs: () => profile, handler: changeProfile },
-    // The Timeline: the goal log's lines (journal.mjs read, masked again there), read when the
-    // owner opens it or presses Refresh; null while no run is open.
-    { method: "GET", path: "journal.json", right: "journal", needs: () => journal, handler: ({ res }) => json(res, 200, journal() ?? null) },
-    // The Share card (the side panel, the live view toolbar): the owner makes a join code or a
-    // watch link with a real click, through the helper's own invite code. The code or link is in
-    // this answer only: never broadcast, logged or kept in state.json.
-    // { op: "revoke", id } (Settings' Invites, Revoke): that invite stops at once, as with
-    // pairbrowse_invite revoke (anyone using it is out; a join code's tunnel goes with the last code).
-    { method: "POST", path: "invite", right: "invite", handler: async ({ req, res }) => {
-      const op = await readJsonBody(req, res, BODY_MAX.approve);
-      if (op === undefined) return;
-      if (op && typeof op === "object" && !Array.isArray(op) && op.op !== undefined) {
-        if (op.op !== "revoke" || Object.keys(op).some((k) => k !== "op" && k !== "id")) return json(res, 409, { error: 'An invite change is { op: "revoke", id }.' });
-        if (typeof op.id !== "string" || !INVITE_ID.test(op.id)) return json(res, 409, { error: "id is an invite's id, as invites.json lists it." });
-        if (!invites.revoke(op.id)) return json(res, 404, { error: "No such invite (it may have expired or been revoked already)." });
-        log(`invite ${op.id} revoked from PairBrowse's settings`);
-        return json(res, 200, { ok: true, id: op.id });
-      }
-      if (!makeInvite) return plain(res, 404);
-      if (!op || typeof op !== "object" || Array.isArray(op)) return json(res, 409, { error: "Choose a join code or a watch link." });
-      const { share, role, name, label, hours } = op;
-      const r = await makeInvite({ share, role, name, label, hours });
-      json(res, r?.error ? 409 : 200, r);
-      if (!r?.error) broadcast("invites", { items: inviteItems(invites.list()) });
-    } },
-    // The invites out now, for Settings (Sharing, Invites): id, role, label, link or code, when it
-    // ends (epoch ms). Never a key, a code or a link.
-    { method: "GET", path: "invites.json", right: "invite", handler: ({ res }) => json(res, 200, { items: inviteItems(invites.list()) }) },
+    ...createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState }),
     ...createSessionRoutes({ picker, sessionOps, broadcast, ownerSession, linkGuests, layouts, joinersNow, recordState, clickApprovals }),
     ...createPagesRoutes({ history, layoutNow, layouts, sessionName: () => sessionInfo.name, broadcast, settings, reporter, outlines, webPages, getContext, idOf, mask, watchPages, tabsStrip, agentTabs, tabOrder, capture, captureOk }),
     ...timelineRoutes.routes,
     ...toolRoutes.routes,
     { method: "POST", path: "input", right: "input", handler: human },
     { method: "POST", path: "tab", right: "tab", handler: human },
-    // Record (the side panel): the browser as a video, saved in Downloads. The owner only.
-    { method: "POST", path: "record", right: "record", handler: async ({ req, res }) => {
-      const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });
-      if (v === undefined) return;
-      const r = await onRecord(v.on === true);
-      // The file's name, never its folder or path (the Recordings list opens it by id).
-      const item = r?.path ? tools?.recordings?.itemFor?.(r.path) || null : null;
-      // The recorder's own sentence (no page text in it): masked, its folders hidden, its quotes kept.
-      const text = r?.error ? scrub(r?.text || "", { mask, quotes: false }) : r?.path ? `Saved the recording as "${basename(r.path)}" in your downloads folder.` : "Recording the browser.";
-      json(res, r?.error ? 409 : 200, { ...recordState(), text, ...(item ? { item } : {}) });
-    } },
     // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
     // who may drive. who: the guest's name (null: the owner). With `who` in the body: "Pause this
     // agent" / "Resume this agent" for the agent of that name, the owner's only.
@@ -930,19 +836,6 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     res.end(Buffer.from(data, "base64"));
   }
 
-  async function changeProfile({ req, res }) {
-    const op = await readJsonBody(req, res, BODY_MAX.profile, { object: true });
-    if (op === undefined) return;
-    let error = null;
-    if (op.op === "setDetail") error = profile.setDetail(op.label, op.value);
-    else if (op.op === "forgetDetail") profile.forgetDetail(String(op.label || ""));
-    else if (op.op === "setSecret") error = profile.setSecret({ name: op.name, value: op.value, domains: op.domains });
-    else if (op.op === "deleteSecret") profile.deleteSecret(String(op.name || ""));
-    else error = "Unknown change.";
-    const summary = profile.get();
-    if (!error) broadcast("profile", summary);
-    json(res, 200, { error, profile: summary });
-  }
 
 
   async function human({ req, res, route, role, invite }) {

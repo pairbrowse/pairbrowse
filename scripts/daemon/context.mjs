@@ -1,9 +1,7 @@
 // The browser itself: launching it (and the native PairBrowse build), the pages it opens, the
 // tabs it brings back, downloads, the tab cap, and switching between browser sessions.
-import { homedir } from "node:os";
-import { spawnSync } from "node:child_process";
-import { writeFileSync, mkdirSync, rmSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
-import { basename, join } from "node:path";
+import { writeFileSync, rmSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { paths } from "../paths.mjs";
 import { ensureBrowser, launchOptions, prepareProfile, panelExtensionId, resetPanelWorker, writeHelperKeyFile, dropHelperKeyFile, CAPTURE_KEY_PREFIX } from "../browser.mjs";
 import { chooseBrowser, engineConfig, shellOf, EXTENSION_SHELL } from "../browser/choice.mjs";
@@ -19,9 +17,10 @@ import { sleep, readJson, within } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
 import { MEASURING } from "../native-engine.mjs";
 import { isChromePage, CHROME_PICKER, extensionUrl } from "../../ui/urls.js";
-import { createPersonTabs, keepDownloadMark } from "./tools.mjs";
+import { createPersonTabs } from "./tools.mjs";
 import { OPEN_ACCEPT_MS } from "../opener.mjs";
 import { where } from "./where.mjs";
+import { createDownloads } from "./browser/downloads.mjs";
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
@@ -207,52 +206,8 @@ let switched = Promise.resolve();
     }
   }
 
-  // Files a site hands over (invoices, exported keys) go to the Downloads folder, as in any
-  // browser; Playwright would otherwise keep them under a random name and delete them on close.
-  function keepDownloads(page) {
-    page.on("download", async (download) => {
-      // A download started in the person's own tab is theirs: no note for the agents.
-      const personal = personTabs.has(page);
-      const dir = config.downloadsDir || join(homedir(), "Downloads");
-      // The site picks the name: keep it to a plain file name.
-      const name = basename(download.suggestedFilename() || "download").replace(/[\u0000-\u001f\u007f/\\:]/g, "_").replace(/^\.+/, "_").slice(0, 120) || "download";
-      const dot = name.lastIndexOf(".") > 0 ? name.lastIndexOf(".") : name.length;
-      let id = null;
-      try { id = onDownload({ op: "start", name, page }); } catch {}
-      try {
-        mkdirSync(dir, { recursive: true });
-        const from = await download.path(); // finished, in Playwright's temporary folder
-        let dest;
-        for (let i = 0; ; i++) {
-          dest = join(dir, i ? `${name.slice(0, dot)} (${i})${name.slice(dot)}` : name);
-          try { copyFileSync(from, dest, fsConstants.COPYFILE_EXCL); break; } // never over an existing file
-          catch (e) { if (e.code !== "EEXIST" || i > 500) throw e; }
-        }
-        await keepDownloadMark(from, dest); // Open and Office's Protected View read it
-        try { onDownload({ op: "done", id, path: dest }); } catch {}
-        if (!personal) hostNote(`Downloaded ${name} to ${dest}`);
-        log(`downloaded ${dest}`);
-      } catch (e) {
-        try { onDownload({ op: "failed", id }); } catch {}
-        const why = await download.failure().catch(() => null);
-        if (!personal) hostNote(`Download of ${name} failed: ${why || e?.message || e}`);
-        log(`download of ${name} failed: ${why || e?.message || e}`);
-      }
-    });
-  }
-
-  // Playwright saves downloads to a temporary folder it deletes when the browser closes. Chrome
-  // still lists them in its download history, and on the next launch the macOS PairBrowse browser
-  // (ungoogled-chromium) quits on the first new download. Forget those entries before launching.
-  function forgetTemporaryDownloads() {
-    const history = join(profile(), "Default", "History");
-    if (process.platform !== "darwin" || !existsSync(history)) return;
-    const temporary = "target_path LIKE '%/playwright-artifacts-%'";
-    const sql = `DELETE FROM downloads_url_chains WHERE id IN (SELECT id FROM downloads WHERE ${temporary}); ` +
-      `DELETE FROM downloads_slices WHERE download_id IN (SELECT id FROM downloads WHERE ${temporary}); DELETE FROM downloads WHERE ${temporary};`;
-    const r = spawnSync("/usr/bin/sqlite3", [history, sql], { timeout: 5000, encoding: "utf8" });
-    if (r.status !== 0) log(`couldn't clear temporary downloads: ${(r.stderr || r.error?.message || "").trim()}`);
-  }
+  // Downloads: kept in the Downloads folder, and Playwright's temporary ones forgotten (browser/downloads.mjs).
+  const { keepDownloads, forgetTemporaryDownloads } = createDownloads({ personTabs, config, hostNote, log, onDownload, profile: () => profile() });
 
   // The browser the person chose ("browser"): the native PairBrowse browser (the pinned build,
   // installed and checked when it's missing or a new version is pinned, scripts/native-install.mjs),

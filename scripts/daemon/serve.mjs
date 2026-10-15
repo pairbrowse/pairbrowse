@@ -133,7 +133,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const inUse = () => {
       const { owner, participants } = collaboration.state();
       const label = (id) => participants.find((p) => p.id === id)?.label || "an agent";
-      // Active: the owner, an agent that conn.acted lately, or one holding a tab now (its claim lasts
+      // Active: the owner, an agent that acted lately, or one holding a tab now (its claim lasts
       // across its quiet spells: switching would close the tab it holds).
       const holds = (id) => hud.sparkList().some((s) => s.id === id && s.page && !s.page.isClosed() && tabClaims.holder(s.page)?.id === id);
       return [...clients.keys()].filter((id) => id !== participant && (owner?.id === id || Date.now() - (lastCall.get(id) || 0) < ACTIVE_MS || holds(id))).map(label);
@@ -1122,7 +1122,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       transport.onmessage?.(msg);
     }
 
-    // The tab this participant acts in: its own (see conn.mine). Closed by someone else: the one it
+    // The tab this participant acts in: its own (see mine). Closed by someone else: the one it
     // used before or a free one. None yet: the tab its browser server starts on.
     async function myTab() {
       if (conn.mine && !conn.mine.isClosed() && !personTab(conn.mine)) return conn.mine;
@@ -1312,7 +1312,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         // Refs are good for this agent's own tab: what people or other agents do in that tab
         // makes them stale, work in other tabs never does.
         if (msg.method === "tools/call" && containsRef(msg.params?.arguments) && conn.observedRevision !== revision(ownTab())) {
-          return reply(msg.id, "This tab changed since your last snapshot (a person used it, or another agent conn.acted in it). Call browser_snapshot and use its fresh refs before retrying.", true);
+          return reply(msg.id, "This tab changed since your last snapshot (a person used it, or another agent acted in it). Call browser_snapshot and use its fresh refs before retrying.", true);
         }
         conn.snapshotReturned = false;
         const upToDate = conn.observedRevision === revision(ownTab());

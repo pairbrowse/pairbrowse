@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, nativeManifest, chromePages, macHostProfile, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
+import { launchNative, nativeManifest, chromePages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native-pack.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
@@ -66,6 +66,34 @@ test("the Mac host capture is cached privately and reused by new profiles", asyn
   assert.equal(chromium.captures, 2, "a new browser version captures again");
   await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p4-")), "150.0.7871.200", () => "Mac16,1|other GPU");
   assert.equal(chromium.captures, 3, "other hardware captures again");
+});
+
+// The capture takes up to a minute on a first launch: the helper is told when it starts (and only
+// then: a cached profile says nothing), and two launches at once share one capture.
+test("the Mac host capture says when it starts, once, and two launches share it", async () => {
+  rmSync(hostCachePath(), { force: true });
+  const chromium = fakeChromium({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" } });
+  const hardware = async () => "Mac15,7|AGXAcceleratorG15X";
+  let told = 0;
+  const ask = () => macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-m-")), "150.0.7871.114", hardware, () => told++);
+  const [a, b] = await Promise.all([ask(), ask()]);
+  assert.deepEqual(a, b);
+  assert.equal(chromium.captures, 1, "one capture for both");
+  assert.equal(told, 1);
+  await ask();
+  assert.equal(told, 1, "cached: nothing to say");
+  assert.match(MEASURING, /^launch: measuring this Mac once/);
+});
+
+// Every step of the capture is bounded: a collector that never answers fails the launch with its
+// reason (and the hidden browser is closed), it never holds the launch forever.
+test("a host capture that hangs fails in its time and closes its browser", async () => {
+  let closed = false;
+  const chromium = { launchPersistentContext: async () => ({ pages: () => [{ evaluate: () => new Promise(() => {}) }], close: async () => { closed = true; } }) };
+  const at = Date.now();
+  await assert.rejects(() => captureMacHost(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-hang-")), null, 150), /the collector took over 0\.15 s/);
+  assert.ok(Date.now() - at < 2000);
+  assert.equal(closed, true);
 });
 
 test("a software WebGL renderer is never kept as this Mac's profile", async () => {
@@ -385,13 +413,16 @@ macPackTest("macOS host capture keeps its seed across persisted restarts", async
   // Each launch step's time (plans/555 item 4): the capture inside the fingerprint step, then the launch.
   assert.match(lines.join("\n"), /^launch: fingerprint \d+ ms \(host capture \d+ ms\)$/m);
   assert.match(lines.join("\n"), /^launch: launchPersistentContext \d+ ms$/m);
+  assert.ok(lines.indexOf(MEASURING) >= 0 && lines.indexOf(MEASURING) < lines.findIndex((l) => l.startsWith("launch: fingerprint")), "the capture is told before it runs");
   assert.equal(readdirSync(directory).some(name => name.startsWith(".mac-host-capture-")), false);
   const saved = pack.Profile.load(join(directory, "pairbrowse-persona.json")).options;
   assert.equal(saved.fingerprint.length, 64);
   assert.deepEqual(saved.fingerprintProfile.webgl, { vendor: "Apple", renderer: "Apple M3 Pro" });
   const second = fakeChromium({});
+  const later = [];
   await launchNative(second, { pairbrowse: {} }, directory,
-    { executablePath: app.executablePath, headless: false }, pack);
+    { executablePath: app.executablePath, headless: false }, pack, (line) => later.push(line));
+  assert.equal(later.includes(MEASURING), false, "cached: no measuring");
   assert.ok(second.calls[0].options.args.includes(`--fingerprint=${saved.fingerprint}`));
 });
 

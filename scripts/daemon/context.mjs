@@ -16,7 +16,7 @@ import { renameRunsSession } from "../runs.mjs";
 import { keepFocus } from "../focus.mjs";
 import { sleep, readJson, within } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
-import { chromePages, capturePages, nativeManifest } from "../native-engine.mjs";
+import { chromePages, capturePages, nativeManifest, MEASURING } from "../native-engine.mjs";
 import { isChromePage } from "../policy.mjs";
 import { createPersonTabs, keepDownloadMark } from "./tools.mjs";
 import { OPEN_ACCEPT_MS } from "../opener.mjs";
@@ -46,6 +46,24 @@ const capturePagesIn = (config) => { try { return config.browserEngine === "pair
 // Started in an SSH session (say, the desktop app's SSH sessions) means the browser runs on that
 // machine, not the user's: its live view needs an SSH tunnel.
 export const where = () => (process.env.SSH_CONNECTION ? "Server" : "Local");
+
+// This Mac's one-time capture (native-engine.mjs MEASURING): the first launch of a browser version
+// waits up to a minute for it, and says so in the live view's status line and a notification (no
+// browser yet, so no side panel or strip to show it). The launch's log, passing every line on;
+// done(badge): the launch ended, the status line goes back to the badge.
+export const MEASURING_STATUS = "Measuring this Mac once (under a minute): the browser opens after that.";
+export function measuringLog({ log, status, notify }) {
+  let measuring = false;
+  const launchLog = (text, ...more) => {
+    log(text, ...more);
+    if (text !== MEASURING || measuring) return;
+    measuring = true;
+    status({ text: MEASURING_STATUS, kind: "claude" });
+    notify(MEASURING_STATUS);
+  };
+  launchLog.done = (badge) => { if (measuring) status(badge); measuring = false; };
+  return launchLog;
+}
 
 export function stopRequestMirroring(page) {
   setTimeout(() => {
@@ -337,6 +355,7 @@ let switched = Promise.resolve();
     // The PairBrowse browser (scripts/browser.mjs), or another Chromium browser from config.
     let keyFile = null;
     if (helper) try { keyFile = helperKeyPath = writeHelperKeyFile(helper.key); } catch (e) { log(`the browser's own pages have no helper address (key file: ${e?.code || "refused"})`); }
+    const launchLog = measuringLog({ log, status, notify });
     let ctx;
     try {
       ctx = await launchEngine(browserType(), config, profile(), {
@@ -353,8 +372,9 @@ let switched = Promise.resolve();
         // startup page (PairBrowse's new tab page), not the driver's about:blank (plans/555 D1.2).
         ignoreDefaultArgs: chrome ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"],
         args: launchArgs(config, { firstRun, chromePages: chrome, helper: helper && keyFile ? { origin: helper.origin, keyFile } : null }),
-      }, log);
+      }, launchLog);
     } catch (e) { dropHelperKey(keyFile); throw e; } // a failed launch leaves no key file
+    finally { launchLog.done(hud.badge()); }
     step("browser (fingerprint and launchPersistentContext inside)");
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
     await ctx.addInitScript({ content: hud.source });

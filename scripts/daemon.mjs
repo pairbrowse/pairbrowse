@@ -54,7 +54,7 @@ import { createPanel } from "./daemon/panel.mjs";
 import { CHROME_PAGE_ORIGINS } from "./policy.mjs";
 import { forgetPanelBuild, UNGOOGLED } from "./browser.mjs";
 import { createScreenShare } from "./daemon/screenshare.mjs";
-import { createRecorder } from "./daemon/recorder.mjs";
+import { createRecorder, pixelRatio } from "./daemon/recorder.mjs";
 import { createTabLabels } from "./daemon/tablabels.mjs";
 import { createRemoteAgents } from "./daemon/remote-agents.mjs";
 import { createSharing } from "./daemon/sharing.mjs";
@@ -423,7 +423,7 @@ const recorder = createRecorder({
   call: (fn, arg, ms) => panel.call(fn, arg, ms), log,
   owners: () => hud.sparkList().map((s) => ({ page: s.page, who: collaboration.participants.get(s.id)?.label || "Agent", color: s.color })),
   dir: () => config.downloadsDir || join(homedir(), "Downloads"),
-  scale: async () => (await Promise.resolve(context.openPages()))[0]?.evaluate(() => devicePixelRatio) ?? 1,
+  scale: async () => pixelRatio(await context.openPages()),
   changed: () => { const s = recorder.state(); liveView()?.setRecord(s); hud.setRecording(s.recording); },
   onSaved: (saved) => recordings.add(saved), // the Tools tab's Recordings (an owner-only index)
   onActivity: (fn) => hud.onActivity((text, who, page, from) => { if (who && page) fn(text, who, page, from); }),

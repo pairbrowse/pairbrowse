@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRecorder, recordingName } from "../scripts/daemon/recorder.mjs";
+import { createRecorder, recordingName, pixelRatio } from "../scripts/daemon/recorder.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -123,5 +123,33 @@ test("with the browser's own capture page, the file comes over in 1 MB pieces", 
     assert.deepEqual(readFileSync(saved.path), bytes);
     assert.deepEqual(calls.filter((c) => c.op === "chunk").map((c) => c.size), [1048576, 1048576, 1048576]);
     assert.equal(extension, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// After a renderer crash the first tab is an "Aw, Snap!" page: asking it fails, and the video
+// came out at 1x (1260x836 on a 2x screen). The ratio comes from a tab that answers, each asked
+// within its time; none answering keeps the last ratio told.
+test("the recording's pixel ratio: a crashed or stuck tab is skipped, never taken for 1x", async () => {
+  const crashed = { isClosed: () => false, evaluate: async () => { throw new Error("Target crashed"); } };
+  const stuck = { isClosed: () => false, evaluate: () => new Promise(() => {}) };
+  const closed = { isClosed: () => true, evaluate: async () => 3 };
+  const live = { isClosed: () => false, evaluate: async (fn) => { assert.equal(typeof fn, "function"); return 2; } };
+  const at = Date.now();
+  assert.equal(await pixelRatio([crashed, closed, stuck, live], 200), 2);
+  assert.ok(Date.now() - at < 1000, "each tab within its time");
+  assert.equal(await pixelRatio([crashed, stuck], 100), null);
+  assert.equal(await pixelRatio([], 100), null);
+
+  const dir = mkdtempSync(join(tmpdir(), "rec-"));
+  try {
+    const { call, calls } = fakeBrowser(Buffer.from("x"));
+    const told = [2, null, undefined, 0];
+    const rec = createRecorder({ call, dir: () => dir, scale: async () => { const v = told.shift(); if (v === undefined) throw new Error("no tab"); return v; } });
+    for (let i = 0; i < 4; i++) { await rec.start(); await rec.stop(); }
+    assert.deepEqual(calls.filter((c) => c.op === "start").map((c) => c.scale), [2, 2, 2, 2], "the last ratio told stands");
+    const fresh = createRecorder({ call, dir: () => dir, scale: async () => null });
+    await fresh.start();
+    assert.equal(calls.filter((c) => c.op === "start").at(-1).scale, 1, "nothing told yet: 1x");
+    await fresh.stop();
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

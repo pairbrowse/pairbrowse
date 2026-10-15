@@ -7,12 +7,25 @@ import { openSync, writeSync, closeSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { shortLabel } from "./tablabels.mjs";
 import { NO_CAPTURE_RECORD, RECORD_READY_MS } from "./capture.mjs";
+import { within } from "../util.mjs";
 
 const LABELS_EVERY_MS = 1500; // who works in which tab, while recording
 const DWELL_MS = 4000; // following agents: a tab stays in the video at least this long while they work there
 const CHUNK_BYTES = 4 * 1024 * 1024; // the file comes over in pieces this size (from the extension)
 const PAGE_CHUNK_BYTES = 1024 * 1024; // from the browser's own capture page (its reply route takes at most 2 MB)
 const EXT = { "video/mp4": "mp4", "video/webm": "webm" };
+
+// The screen's pixel ratio, asked of the open tabs in turn, each within ms: a tab whose renderer
+// crashed ("Aw, Snap!") answers with an error and one whose scripts never pause answers nothing;
+// both are skipped, never taken for 1x. null when no tab answered (the first PAGES_ASKED only).
+const PAGES_ASKED = 4;
+export async function pixelRatio(pages, ms = 1500) {
+  for (const page of (pages || []).filter((p) => p && !p.isClosed?.()).slice(0, PAGES_ASKED)) {
+    const v = await within(ms, page.evaluate(() => devicePixelRatio)).catch(() => null);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
+}
 
 // The file's name, from when the recording started: "PairBrowse recording 2026-10-07 23.41.05".
 export function recordingName(at, type, n = 0) {
@@ -28,7 +41,8 @@ const minutes = (ms) => {
 };
 
 // call(fn, arg, ms): runs fn(arg) in the extension's worker (daemon/panel.mjs). owners(): the agents
-// at work, [{ page, who, color }]. dir(): where recordings go. scale(): the screen's pixel ratio.
+// at work, [{ page, who, color }]. dir(): where recordings go. scale(): the screen's pixel ratio
+// (pixelRatio), null when no tab told it: the last one told stands.
 // changed(state): the side panels show it. onActivity(fn): fn(text, who, page) for each thing an
 // agent does (follow "agents"). onSaved({ path, at, ms, size }): a recording was saved (the Tools
 // tab's Recordings index, daemon/tools.mjs); a throw there never fails the save.
@@ -36,6 +50,7 @@ const minutes = (ms) => {
 // Nowhere to capture (a PairBrowse build without its capture page): recording is refused.
 export function createRecorder({ onSaved = () => {}, call, owners = () => [], dir, scale = async () => 1, log = () => {}, changed = () => {}, onActivity = () => () => {}, capture = null }) {
   let on = null; // { since, timer, follow, shown, shownAt, next }
+  let knownScale = null; // the last pixel ratio a tab told: kept for when none answers
   let saving = null;
   const tabIds = new WeakMap(); // page -> the browser's tab id
   const ext = (arg, ms = 15_000) => (capture?.kind() === "page" ? capture.record(arg, ms) : call((a) => { if (!globalThis.pbRecord) throw new Error("not ready"); return globalThis.pbRecord(a); }, arg, ms));
@@ -74,7 +89,9 @@ export function createRecorder({ onSaved = () => {}, call, owners = () => [], di
     if (capture && (typeof capture.waitReady === "function" ? await capture.waitReady(RECORD_READY_MS) : capture.kind()) === null) return { text: NO_CAPTURE_RECORD, error: true };
     if (on) return { text: `Already recording (${minutes(Date.now() - on.since)} so far). Stop it with pairbrowse_record action "stop".` };
     follow = follow === "agents" ? "agents" : "front";
-    const r = await ext({ op: "start", follow, labels: await labels().catch(() => ({})), scale: await scale().catch(() => 1) });
+    const asked = await scale().catch(() => null);
+    if (Number.isFinite(asked) && asked > 0) knownScale = asked;
+    const r = await ext({ op: "start", follow, labels: await labels().catch(() => ({})), scale: knownScale ?? 1 });
     if (!r || r.error) return { text: `Couldn't start recording: ${r?.error || "no answer from the browser"}.`, error: true };
     on = { since: Date.now(), follow, shown: null, shownAt: 0, next: null };
     on.timer = setInterval(tick, LABELS_EVERY_MS);

@@ -1491,7 +1491,7 @@ test("the panel script keeps its three timers, writes no markup and stores one k
   assert.doesNotMatch(js, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
   assert.doesNotMatch(js, /MutationObserver|IntersectionObserver|ResizeObserver|requestAnimationFrame/);
   assert.equal([...js.matchAll(/new EventSource\(/g)].length, 0, "no stream of its own: the shared one (stream.js)");
-  assert.equal([...js.matchAll(/\bhelperStream\(/g)].length, 1, "one event stream, the shared one");
+  assert.equal([...js.matchAll(/\bhelper(Stream|Connection)\(/g)].length, 1, "one event stream, the shared one");
   assert.equal(new Set([...js.matchAll(/"(pb-[a-z-]+)"/g)].map(([, k]) => k)).size, 1, "one storage key");
   assert.match(js, /"pb-panel"/);
   assert.doesNotMatch(js, /(^|[^.?])chrome\.storage/m, "every chrome.* access is guarded");
@@ -1500,7 +1500,7 @@ test("the panel script keeps its three timers, writes no markup and stores one k
   assert.equal([...toolsJs.matchAll(/\bset(Interval|Timeout)\(/g)].length, 0, "tools.js runs no timer");
   assert.doesNotMatch(toolsJs, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
   assert.doesNotMatch(toolsJs, /MutationObserver|IntersectionObserver|ResizeObserver|PerformanceObserver|requestAnimationFrame/);
-  assert.equal([...toolsJs.matchAll(/new EventSource\(|\bhelperStream\(/g)].length, 0, "no stream of its own");
+  assert.equal([...toolsJs.matchAll(/new EventSource\(|\bhelper(Stream|Connection)\(/g)].length, 0, "no stream of its own");
   assert.doesNotMatch(toolsJs, /chrome\.|localStorage|sessionStorage/, "stores nothing");
   assert.match(js, /import \{ toolsPanel \} from "\.\/tools\.js";/);
 });

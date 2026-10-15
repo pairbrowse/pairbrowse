@@ -10,7 +10,7 @@
 // browser's API the framed switcher. History and Activity open their pages in the contents
 // (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
-import { $, el, avatar, agentWords, ownAgentLine, isColor, splitLabel, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
+import { $, el, avatar, agentWords, ownAgentLine, isColor, splitLabel, pickerPopover, askDock, helperConnection, servedByBrowser, syncList, enter } from "../common.js";
 import { isOwnTabPage, isSettingsPage, ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
 import { followHelper } from "../helper.js";
@@ -34,7 +34,6 @@ let ownerLabel = "You"; // the collaboration's owner label: the one person row u
 let lastWebTab = -1; // the last active tab that is not History
 let myWindow = -1; // this dock's window (pb.windows.list), -1 until known
 let base = null;
-let stream = null; // the shared helper stream (common.js helperStream)
 let everLive = false;
 let driveTimer = 0;
 let focusAfter = ""; // "rail" or "open": the state whose button takes focus once the layout applies it
@@ -398,21 +397,19 @@ if (pb) {
 }
 
 // ---- the helper's stream ----
-function connect(url) {
-  if (!url || url === base) return;
+// panel=1 always (stream.js): today's helper never counts the dock as a viewer (no screencast for
+// it). One stream per address (helperConnection).
+const connect = helperConnection({
+  kind: "left",
+  onState: (s) => {
+    document.body.dataset.s = s;
+    $("conn").hidden = s === "live";
+    if (s === "live") everLive = true;
+    // Before the first open the line keeps saying it is connecting.
+    else if (s === "closed" || everLive) $("conn").textContent = s === "closed" ? "PairBrowse is closed" : "Reconnecting to PairBrowse…";
+  },
+}, (stream, url) => {
   base = url;
-  stream?.close();
-  // panel=1 always (common.js): today's helper never counts the dock as a viewer (no screencast for it).
-  stream = helperStream(base, {
-    kind: "left",
-    onState: (s) => {
-      document.body.dataset.s = s;
-      $("conn").hidden = s === "live";
-      if (s === "live") everLive = true;
-      // Before the first open the line keeps saying it is connecting.
-      else if (s === "closed" || everLive) $("conn").textContent = s === "closed" ? "PairBrowse is closed" : "Reconnecting to PairBrowse…";
-    },
-  });
   const on = stream.on;
   // The open session's name follows every switch and rename as the helper says it (no polling).
   on("session", (s) => { session = s && typeof s === "object" ? s : null; drawSession(); drawStorage(); });
@@ -445,7 +442,7 @@ function connect(url) {
       drawAgents();
     });
   }
-}
+});
 // No helper to ask (no browser API and no extension storage, or the browser has no helper
 // address): no connection line (the strip's pill says Local, the right dock says what to do);
 // the Agents section keeps only its label and its + button.

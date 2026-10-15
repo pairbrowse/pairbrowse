@@ -6,7 +6,7 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperStream, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
+import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperConnection, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
 import { AGENT_COLOR } from "../vocab.js";
 import { ownPage } from "../urls.js";
@@ -28,7 +28,6 @@ const ACTIVITY_SHOWN = 12;
 const PICTURE_ID = /^[0-9a-f]{12}$/;
 let base = null;
 let everLive = false; // the helper's stream has opened at least once (an address that never answers is no helper)
-let stream = null; // the shared helper stream (common.js helperStream)
 // When each agent of this browser acted last (who -> time; the newest 50): the card says its own
 // agent is working on that agent's actions only, never on a joiner's line, a note or another
 // browser's agent.
@@ -709,16 +708,15 @@ function forgetPictures() {
   $("pictures-empty").hidden = false;
 }
 
-function connect(url) {
-  if (!url || url === base) return;
-  if (base) { forgetPictures(); forgetSessionTools(); tools.forget(); }
+// One stream per address (stream.js helperConnection); another helper's pictures and session
+// tools are its own.
+const connect = helperConnection({
+  kind: pb ? "right" : "",
+  onState: (s) => { if (s === "live") everLive = true; document.body.dataset.s = s; setDriver(); drawSessionCard(); },
+  onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); showOutline(); tools.stale(); },
+}, (stream, url, was) => {
+  if (was) { forgetPictures(); forgetSessionTools(); tools.forget(); }
   base = url;
-  stream?.close();
-  stream = helperStream(base, {
-    kind: pb ? "right" : "",
-    onState: (s) => { if (s === "live") everLive = true; document.body.dataset.s = s; setDriver(); drawSessionCard(); },
-    onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); showOutline(); tools.stale(); },
-  });
   const on = stream.on;
   on("status", (s) => {
     document.body.dataset.turn = String(s.kind === "you" && !!s.text);
@@ -830,7 +828,7 @@ function connect(url) {
   on("join", drawJoins);
   on("dev", drawDev);
   on("joinhost", drawHosts);
-}
+});
 
 // The session card (name, Save, Share, End session) only for a session the helper named, and
 // not while there is no helper or its stream has closed: never controls for a session that is

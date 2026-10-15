@@ -40,7 +40,7 @@
 // IntersectionObserver v2 reports the card fully visible. The observer lives only while a card
 // shows and the page is visible. No timer: arming is a timestamp compared at click time. The
 // helper checks the answer again.
-import { $, el, avatar, splitLabel, helperStream } from "../common.js";
+import { $, el, avatar, splitLabel, helperConnection } from "../common.js";
 import { TOP_CHROME_HOST } from "../urls.js";
 import { followHelper, postJson, UNREACHABLE_RETRY } from "../helper.js";
 
@@ -76,13 +76,10 @@ if (BUBBLE) document.documentElement.dataset.mode = "bubble";
 let told = null; // the last [count, target id] told to the browser
 
 // ---- the helper's address and stream ----
-let stream = null; // the shared helper stream (common.js helperStream)
-function connect(url) {
-  if (!url || url === base) return;
-  stream?.close();
+// panel=1 always (stream.js): the bubble is never a viewer. approvals.json is the snapshot on each
+// open. One stream per address (helperConnection).
+const connect = helperConnection({ kind: "approve", shared: !BUBBLE, onState: (s) => { document.body.dataset.s = s; }, onOpen: () => load() }, (stream, url) => {
   base = url;
-  // panel=1 always (common.js): the bubble is never a viewer. approvals.json is the snapshot on each open.
-  stream = helperStream(base, { kind: "approve", shared: !BUBBLE, onState: (s) => { document.body.dataset.s = s; }, onOpen: () => load() });
   const on = stream.on;
   on("approval", (d) => {
     const id = d?.item?.id;
@@ -102,7 +99,7 @@ function connect(url) {
   });
   on("dev", (d) => replace("dev", d?.asks));
   on("joinhost", (d) => replace("host", d?.asks));
-}
+});
 
 // The pending clicks from approvals.json; a 404 or a failure leaves the list as the stream made it.
 async function load() {

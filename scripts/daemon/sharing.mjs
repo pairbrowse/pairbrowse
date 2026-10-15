@@ -201,7 +201,9 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     if (action === "revoke") {
       return invites.revoke(args.id) ? { text: `Revoked ${args.id}. Anyone using it lost the session at once.` } : fail(`No invite ${args.id}. Use list to see them.`);
     }
-    if (action === "revoke_all") { const n = invites.revokeAll(); tun.releaseTunnel(); devShare.stopAll(); return { text: `Revoked ${n} invite(s). No code works any more and no dev server is shared.` }; }
+    // Every invite ends, and so does the sharing tunnel, at once (not kept idle for a next code as
+    // when the last code ends by itself): nothing of this computer stays reachable from outside.
+    if (action === "revoke_all") { tun.stopTunnel(); const n = invites.revokeAll(); devShare.stopAll(); save(); return { text: `Revoked ${n} invite(s). No code works any more, the sharing connection is closed and no dev server is shared.` }; }
     if (action === "share_port") return sharePort(args, who);
     if (action === "unshare_port") {
       if (args.port === undefined) { const n = devShare.list().length; devShare.stopAll(); refreshDev().catch(() => {}); return { text: n ? `Stopped sharing ${n} dev server(s).` : "No dev server is shared." }; }

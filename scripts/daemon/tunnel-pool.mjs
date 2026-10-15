@@ -41,7 +41,8 @@ export function createTunnelPool({ config, log, hostNote, save }) {
   let idleTimer = null;
   function releaseTunnel() {
     tun.wanted = false;
-    clearTimeout(idleTimer);
+    clearTimeout(idleTimer); idleTimer = null;
+    if (!tun.pool.length && !tunnelStarting) return; // nothing up to keep (revoke_all closed it)
     idleTimer = setTimeout(() => { idleTimer = null; if (!tun.wanted) stopTunnel(); }, TUNNEL_IDLE_MS);
     idleTimer.unref?.();
     if (tun.pool.length) log(`sharing tunnel kept for ${TUNNEL_IDLE_MS / 60_000} min in case of a new code`);

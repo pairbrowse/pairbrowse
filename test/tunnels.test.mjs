@@ -243,19 +243,34 @@ test("sharing: a tunnel kept idle for a next code ends with the helper; one with
     assert.doesNotMatch(logs.join("\n"), /sharing tunnels stopped/);
   } finally { sharing.endAll(); }
   await until("ended", () => !alive(pidAt(0)));
-  // No code left (revoke_all): the running helper keeps the tunnel 15 min for a next code, but
-  // the helper going away takes it along, at once.
+  // The last code revoked by itself: the running helper keeps the tunnel 15 min for a next code,
+  // but the helper going away takes it along, at once.
   notes = []; logs = [];
   sharing = sharingWith(config, notes, logs);
   try {
-    assert.equal((await sharing.inviteCommand({ action: "create", role: "watch", share: "code", name: "Bob" }, { who: "Claude Code" })).error, undefined);
+    const made = await sharing.inviteCommand({ action: "create", role: "watch", share: "code", name: "Bob" }, { who: "Claude Code" });
+    assert.equal(made.error, undefined);
     await sleep(300);
-    await sharing.inviteCommand({ action: "revoke_all" }, { who: "Claude Code" });
+    const id = (await sharing.inviteCommand({ action: "list" })).text.match(/\b([0-9a-f]{8})\b/)?.[1];
+    assert.ok(id, "the invite's id");
+    await sharing.inviteCommand({ action: "revoke", id }, { who: "Claude Code" });
     assert.match(logs.join("\n"), /sharing tunnel kept for 15 min in case of a new code/);
     await sleep(300);
     assert.ok(alive(pidAt(1)), "kept while the helper runs");
     sharing.suspend();
     await until("stopped with the helper", () => !alive(pidAt(1)), 5000);
+    assert.match(logs.join("\n"), /sharing tunnels stopped/);
+  } finally { sharing.endAll(); }
+  // revoke_all: the tunnel closes at once, as its answer says.
+  notes = []; logs = [];
+  sharing = sharingWith(config, notes, logs);
+  try {
+    assert.equal((await sharing.inviteCommand({ action: "create", role: "watch", share: "code", name: "Bob" }, { who: "Claude Code" })).error, undefined);
+    await sleep(300);
+    const r = await sharing.inviteCommand({ action: "revoke_all" }, { who: "Claude Code" });
+    assert.match(r.text, /the sharing connection is closed/);
+    await until("closed by revoke_all", () => !alive(pidAt(2)), 5000);
+    assert.doesNotMatch(logs.join("\n"), /kept for 15 min/);
     assert.match(logs.join("\n"), /sharing tunnels stopped/);
   } finally { sharing.endAll(); }
 });

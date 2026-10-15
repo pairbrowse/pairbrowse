@@ -7,16 +7,10 @@
 const ICE = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const MOD = (e) => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
 const $ = (id) => document.getElementById(id);
-// The host this page runs in: the PairBrowse build (window.pairbrowse) or the extension. In the
-// build it asks once for the helper's address and key, and keeps them; every picture and word
-// still arrives through window.pbScreen, so it opens no stream and calls no route.
+// The host this page runs in: the PairBrowse build (window.pairbrowse) or the extension. Every
+// picture and word arrives through window.pbScreen, so it never asks for the helper's address or
+// key, opens no stream and calls no route.
 const native = !!window.pairbrowse;
-let helper = null;
-if (native) {
-  try {
-    Promise.resolve(window.pairbrowse.session?.helper?.()).then((r) => { helper = r && typeof r === "object" ? { origin: String(r.origin || ""), key: String(r.key || "") } : null; }).catch(() => {});
-  } catch {}
-}
 const video = $("v"), still = $("still"), statusBox = $("status"), statusText = $("status-text"), bar = $("top"), tagText = $("tag-text"), soundButton = $("sound");
 
 let pc = null, dc = null, peer = "", host = "", view = "video"; // view: "video" or "frames"
@@ -111,10 +105,12 @@ function shown() {
   const w = innerWidth, h = innerHeight, s = Math.min(w / fw, h / fh);
   return { el, x: (w - fw * s) / 2, y: (h - fh * s) / 2, w: fw * s, h: fh * s };
 }
-// The page's own controls (the file request, the sound button) take their clicks and keys.
+// The page's own controls (the file request, the sound button) take their clicks and keys. While
+// the file card is up nothing reaches the host's page: no click, wheel, key or paste.
 const ours = (e) => !!e.target?.closest?.("#pick, #sound");
+const carded = () => !$("pick").hidden;
 const norm = (e) => {
-  if (ours(e)) return null;
+  if (ours(e) || carded()) return null;
   const r = shown();
   if (!r) return null;
   const nx = (e.clientX - r.x) / r.w, ny = (e.clientY - r.y) / r.h;
@@ -164,7 +160,7 @@ const KEEP = new Set(["t", "w", "n", "l", "r", "q", "tab"]); // your own browser
 function key(e, a) {
   // While the file card is up no key reaches the host's page; Escape cancels it and Tab stays
   // inside it (between Choose files and Cancel).
-  if (!$("pick").hidden) {
+  if (carded()) {
     if (a === "down" && e.key === "Escape") { e.preventDefault(); $("pick-no").click(); }
     if (a === "down" && e.key === "Tab") { e.preventDefault(); (document.activeElement === $("pick-go") ? $("pick-no") : $("pick-go")).focus(); }
     return;
@@ -178,6 +174,7 @@ function key(e, a) {
 addEventListener("keydown", (e) => key(e, "down"));
 addEventListener("keyup", (e) => key(e, "up"));
 addEventListener("paste", (e) => {
+  if (carded()) return;
   const text = e.clipboardData?.getData("text/plain") || "";
   if (text) { e.preventDefault(); send({ t: "text", text: text.slice(0, 2000) }); }
 });
@@ -384,30 +381,56 @@ document.addEventListener("visibilitychange", () => {
 soundButton.addEventListener("click", () => { video.muted = false; video.play().catch(() => {}); soundButton.hidden = true; });
 
 // A file field you clicked in the host's tab: you pick the files on your own computer (the host's
-// file dialog never opens). Resolves to [{ name, b64 }] (empty: cancelled).
+// file dialog never opens). Resolves to [{ name, b64 }] (empty: cancelled). Everything picked goes
+// to the helper in one answer, so it is bounded: FILE_MAX a file, PICK_MAX in all, FILES_MAX files.
+// A pick past them is refused on the card, which stays up to choose again or cancel.
 const FILE_MAX = 50 * 1024 * 1024;
+const PICK_MAX = 50 * 1024 * 1024;
+const FILES_MAX = 20;
+const mb = (n) => `${Math.round(n / (1024 * 1024))} MB`;
+function tooMuch(list) {
+  const big = list.find((f) => f.size > FILE_MAX);
+  if (big) return `${big.name.slice(0, 80)} is over ${mb(FILE_MAX)}. Choose a smaller file.`;
+  if (list.length > FILES_MAX) return `That's ${list.length} files. Choose up to ${FILES_MAX} at a time.`;
+  const total = list.reduce((n, f) => n + f.size, 0);
+  if (total > PICK_MAX) return `These files come to ${mb(total)}, over ${mb(PICK_MAX)} in all. Choose fewer.`;
+  return "";
+}
+// A file as base64, read by the browser itself (no copy of it as a string of bytes first).
+const base64 = (f) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => { const s = String(r.result || ""); resolve(s.slice(s.indexOf(",") + 1)); };
+  r.onerror = () => reject(r.error);
+  r.readAsDataURL(f);
+});
 function pick({ multiple = false } = {}) {
-  const box = $("pick"), input = $("pick-input");
+  const box = $("pick"), input = $("pick-input"), msg = $("pick-msg");
   input.multiple = !!multiple;
   input.value = "";
+  msg.textContent = "";
+  msg.hidden = true;
   $("pick-text").textContent = `${host ? `${host}'s` : "The"} page asks for ${multiple ? "files" : "a file"}. They're sent from your computer.`;
   return new Promise((resolve) => {
     const finish = async (list) => {
+      const no = tooMuch(list);
+      if (no) { // refused where you chose: the card stays, saying why
+        msg.textContent = no;
+        msg.hidden = false;
+        input.value = "";
+        $("pick-go").focus();
+        return;
+      }
       box.hidden = true;
       if (!soundButton.hidden) soundButton.focus();
       else document.activeElement?.blur?.();
       const out = [];
-      for (const f of list.slice(0, 20)) {
-        if (f.size > FILE_MAX) continue;
-        const buf = new Uint8Array(await f.arrayBuffer());
-        let bin = "";
-        for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-        out.push({ name: f.name.slice(0, 120), b64: btoa(bin) });
+      for (const f of list) {
+        try { out.push({ name: f.name.slice(0, 120), b64: await base64(f) }); } catch {}
       }
       resolve(out);
     };
     input.onchange = () => finish([...input.files]);
-    input.oncancel = () => finish([]);
+    input.oncancel = () => { if (msg.hidden) finish([]); }; // after a refusal, a cancelled chooser leaves the card up
     $("pick-go").onclick = () => input.click();
     $("pick-no").onclick = () => finish([]);
     box.hidden = false;
@@ -450,7 +473,7 @@ window.pbScreen = {
   // The wait over a stilled picture, as the person sees it: { shown, text, dimmed }.
   hold: () => ({ shown: !$("hold").hidden, text: $("hold-text").textContent, dimmed: still.style.filter !== "" }),
   // What the helper needs to know each round, and the input waiting for it (no direct connection).
-  state: () => ({ visible: document.visibilityState === "visible", conn: state, peer, view, direct: !!(dc && dc.readyState === "open"), doc: DOC, offers, host: native ? "pairbrowse" : "extension", helper: !!helper }),
+  state: () => ({ visible: document.visibilityState === "visible", conn: state, peer, view, direct: !!(dc && dc.readyState === "open"), doc: DOC, offers, host: native ? "pairbrowse" : "extension" }),
   takeInput: () => outbox.splice(0, 200),
   // How the picture and sound arrive: frames a second, sound received, whether it plays, and the
   // route (direct between the two computers, or found through STUN).

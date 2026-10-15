@@ -4,7 +4,7 @@
 // switches with them. The helper takes the finished file over the browser's private pipe and
 // saves it; nothing here talks to a page or the network. Asked only by the helper, through a
 // transport (transport-extension.js or transport-native.js): record(m) takes today's rec* ops.
-import { captured, has, capture, stopTab, onTabStopped } from "./capture.js";
+import { captured, has, capturing, capture, stopTab, onTabStopped } from "./capture.js";
 
 const STRIP = 40; // the tab strip's height, in CSS pixels
 const RECORD_TYPES = ["video/mp4;codecs=avc1.640028", "video/mp4", "video/webm;codecs=vp9", "video/webm"];
@@ -16,7 +16,6 @@ const STOPPED_EARLY = "the recording was stopped before it began";
 let rec = null; // { canvas, ctx, w, h, scale, type, recorder, chunks, front, seq, tabs, labels, started, mine, ready, blob }
 const latest = new Map(); // tabId -> the newest picture of each captured tab (a VideoFrame)
 const readers = new Map(); // tabId -> { reader, track }
-const pending = new Map(); // tabId -> its capture being made (one per tab, however often asked)
 const waiting = new Set(); // { tabId, done } for a tab's first picture
 
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
@@ -75,7 +74,7 @@ function release(r) {
     if (!t.peers.size) stopTab(id);
   }
   r.mine.clear();
-  for (const track of r.recorder.stream.getTracks()) track.stop();
+  for (const track of r.recorder?.stream.getTracks() || []) track.stop();
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -166,16 +165,10 @@ async function recordStart(m) {
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d", { alpha: false });
-  // A new picture of the video each time the canvas changes (up to 60 a second): smooth while
-  // something moves, nothing while all is still.
-  const recorder = new MediaRecorder(canvas.captureStream(60), { mimeType: type, videoBitsPerSecond: RECORD_BITRATE });
   let began;
   const ready = new Promise((done) => { began = done; });
-  rec = { canvas, ctx, w, h, scale, type, recorder, chunks: [], front: null, seq: 0, tabs: Array.isArray(m.tabs) ? m.tabs : [], labels: m.labels || {}, started: Date.now(), mine: new Set(), ready, blob: null };
+  rec = { canvas, ctx, w, h, scale, type, recorder: null, chunks: [], front: null, seq: 0, tabs: Array.isArray(m.tabs) ? m.tabs : [], labels: m.labels || {}, started: Date.now(), mine: new Set(), ready, blob: null };
   const mine = rec;
-  recorder.ondataavailable = (e) => { if (e.data.size) mine.chunks.push(e.data); };
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, w, h);
   // The recorder starts once the tab in front is captured and its first picture came (capturing
   // takes a moment): started first, the video opened on seconds of black. A capture that fails
   // (the tab closed under it) ends the start, never a recording left running; so does a stop or
@@ -185,9 +178,17 @@ async function recordStart(m) {
     if (r?.error) return fail(rec !== mine ? STOPPED_EARLY : r.error);
     if (mine.front != null) await firstFrame(mine.front, FIRST_FRAME_MS);
     if (rec !== mine || mine.blob) return fail(STOPPED_EARLY);
+    draw(); // the first picture, even of a tab that doesn't change
+    // The canvas's stream is made only now, from a canvas that already holds the tab: a stream
+    // made earlier keeps the empty canvas as its last picture and hands it to the recorder as
+    // frame 0 (the black poster). Then a new picture each time the canvas changes (up to 60 a
+    // second): smooth while something moves, nothing while all is still.
+    const recorder = new MediaRecorder(canvas.captureStream(60), { mimeType: type, videoBitsPerSecond: RECORD_BITRATE });
+    mine.recorder = recorder;
+    recorder.ondataavailable = (e) => { if (e.data.size) mine.chunks.push(e.data); };
     mine.started = Date.now();
     recorder.start(1000);
-    draw(); // the first picture, even of a tab that doesn't change
+    draw(); // and once more for the running recorder, so its first picture is fresh
     return { type: type.split(";")[0], w, h };
   } catch (e) {
     return fail(String(e?.message || e));
@@ -209,12 +210,9 @@ async function recordFront({ tabId, streamId, frame, tabs: list }) {
   if (Array.isArray(list)) r.tabs = list;
   const n = ++r.seq;
   if (!has(tabId)) {
-    if (!pending.has(tabId)) {
-      if (!streamId) return { need: true };
-      const f = frame || { w: r.w / r.scale, h: r.h / r.scale - STRIP };
-      pending.set(tabId, capture(tabId, streamId, { w: even(f.w * r.scale), h: even(f.h * r.scale) }).finally(() => pending.delete(tabId)));
-    }
-    await pending.get(tabId);
+    if (!streamId && !capturing(tabId)) return { need: true };
+    const f = frame || { w: r.w / r.scale, h: r.h / r.scale - STRIP };
+    await capture(tabId, streamId, { w: even(f.w * r.scale), h: even(f.h * r.scale) }); // one per tab, however often asked
   }
   const t = captured(tabId);
   if (!t) return { error: "the tab's capture ended" };
@@ -234,7 +232,7 @@ async function recordStop() {
   if (!rec || rec.blob) return { error: "not recording" };
   const r = rec;
   await r.ready; // a stop while the start still waits for the tab: the start ends first
-  if (rec !== r || r.blob || r.recorder.state === "inactive") return { error: "not recording" };
+  if (rec !== r || r.blob || !r.recorder || r.recorder.state === "inactive") return { error: "not recording" };
   await new Promise((done) => { r.recorder.onstop = done; r.recorder.stop(); });
   r.blob = new Blob(r.chunks, { type: r.type.split(";")[0] });
   r.chunks = [];
@@ -264,7 +262,7 @@ export function record(m) {
   if (m.op === "recChunk") return recordChunk(m);
   if (m.op === "recClear") {
     // Cleared while recording (the helper restarted on it): nothing keeps running unseen.
-    if (rec && !rec.blob && rec.recorder.state !== "inactive") { rec.recorder.onstop = null; rec.recorder.stop(); release(rec); }
+    if (rec && !rec.blob && rec.recorder && rec.recorder.state !== "inactive") { rec.recorder.onstop = null; rec.recorder.stop(); release(rec); }
     rec = null;
     return true;
   }

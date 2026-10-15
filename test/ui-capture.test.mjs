@@ -117,6 +117,37 @@ test("an offer without a capture asks the browser for the tab once (with sound);
   assert.equal((await core.call({ n: 11, to: "share", op: "has", tabId: "TA" })).value, false);
 });
 
+// Offers that arrive together for one tab (two joiners, or a join and a recording) share one capture
+// being made: one stream, one AudioContext, so no orphaned stream and no doubled sound.
+test("asks that arrive together for one tab make one capture", async () => {
+  const { pb } = fakePb();
+  const core = createNativeCapture(pb);
+  const cap = await import("../ui/capture/capture.js");
+  const was = navigator.mediaDevices.getUserMedia, Was = globalThis.AudioContext;
+  let audios = 0;
+  globalThis.AudioContext = class extends Was { constructor() { super(); audios++; } };
+  navigator.mediaDevices.getUserMedia = async (c) => { await new Promise((r) => setTimeout(r, 30)); return was(c); };
+  gum.length = 0;
+  try {
+    const [a, b, rec] = await Promise.all([
+      core.call({ n: 1, to: "share", op: "offer", peer: "j1", tabId: "TJ", frame: { w: 640, h: 400 } }),
+      core.call({ n: 2, to: "share", op: "offer", peer: "j2", tabId: "TJ", frame: { w: 640, h: 400 } }),
+      cap.capture("TJ", undefined, { w: 640, h: 400 }), // a recording's ask, while the first is being made
+    ]);
+    assert.match(a.value.sdp, /^v=0/);
+    assert.match(b.value.sdp, /^v=0/);
+    assert.equal(gum.length, 1, "one stream for the tab");
+    assert.equal(audios, 1, "one sound");
+    assert.equal(rec, cap.captured("TJ"), "the recording got the same capture");
+    assert.deepEqual([...cap.captured("TJ").peers].sort(), ["j1", "j2"]);
+    assert.equal(cap.capturing("TJ"), false);
+  } finally {
+    navigator.mediaDevices.getUserMedia = was; globalThis.AudioContext = Was;
+    await core.call({ n: 3, to: "share", op: "stopTab", tabId: "TJ" });
+  }
+  assert.equal(cap.has("TJ"), false);
+});
+
 test("a tab the browser refuses (a chrome page, another profile's) is no capture, and nothing is asked of the page", async () => {
   const { pb, calls } = fakePb({ streamId: () => null });
   const core = createNativeCapture(pb);
@@ -391,6 +422,69 @@ describe("capture: a recording opens on the tab's picture, not on black", () => 
   const stop = await ask(helper, 2, { to: "record", op: "stop" }, 15_000);
   assert.ok(stop.value?.size > 0, JSON.stringify(stop));
   assert.ok(stop.value.ms < 3000, `${stop.value.ms} ms: counted from the recorder's start, not the ask`);
+}));
+
+// The encoded video itself: its frame 0 (the poster a player shows) is the tab's picture, not the
+// canvas as it was before the first draw. WebM here, so the test browser can decode what it made;
+// what's checked is the picture the recorder was handed first, the same for any codec.
+function keepRecordedWebm() {
+  const supported = MediaRecorder.isTypeSupported;
+  MediaRecorder.isTypeSupported = (t) => !/mp4/.test(t) && supported.call(MediaRecorder, t);
+  window.__chunks = [];
+  const start = MediaRecorder.prototype.start;
+  MediaRecorder.prototype.start = function (...a) {
+    this.addEventListener("dataavailable", (e) => { if (e.data.size) window.__chunks.push(e.data); });
+    return start.apply(this, a);
+  };
+  window.__frame0 = async () => {
+    const v = document.createElement("video");
+    v.muted = true;
+    v.src = URL.createObjectURL(new Blob(window.__chunks, { type: "video/webm" }));
+    await new Promise((ok, no) => { v.onloadeddata = ok; v.onerror = () => no(new Error("can't decode")); });
+    // Sought to 0 explicitly: the picture shown at loadeddata alone can be blank before decode.
+    v.currentTime = 0;
+    await new Promise((ok) => { v.onseeked = ok; });
+    const c = document.createElement("canvas");
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    const g = c.getContext("2d");
+    g.drawImage(v, 0, 0);
+    const d = g.getImageData(0, Math.round(c.height * 0.3), c.width, Math.round(c.height * 0.4)).data;
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+    return Math.round(sum / (d.length / 4) / 3); // the mean level of the tab's part, 0..255
+  };
+  return true;
+}
+
+describe("capture: the recording's frame 0 is the tab's picture", () => pageTest("capture", { timeout: 60_000 }, async ({ helper, inPage }) => {
+  await inPage(fakeTabCapture);
+  // A bright stand-in tab, so black and picture are far apart.
+  await inPage(() => {
+    const gum = navigator.mediaDevices.getUserMedia;
+    navigator.mediaDevices.getUserMedia = async (c) => {
+      const s = await gum(c);
+      const canvas = document.createElement("canvas");
+      canvas.width = c?.video?.mandatory?.maxWidth || 320; canvas.height = c?.video?.mandatory?.maxHeight || 200;
+      const g = canvas.getContext("2d");
+      const paint = () => { g.fillStyle = "#e8eef5"; g.fillRect(0, 0, canvas.width, canvas.height); };
+      paint();
+      const bright = canvas.captureStream(30);
+      const timer = setInterval(paint, 33);
+      bright.getVideoTracks()[0].addEventListener("ended", () => clearInterval(timer));
+      for (const t of s.getAudioTracks()) bright.addTrack(t);
+      for (const t of s.getVideoTracks()) t.stop();
+      return bright;
+    };
+  });
+  await inPage(slowCaptureAndWatchRecorder, 300);
+  await inPage(keepRecordedWebm);
+  const start = await ask(helper, 1, { to: "record", op: "start", follow: "front", labels: {}, scale: 1 });
+  assert.match(start.value?.type || "", /^video\/webm/, JSON.stringify(start));
+  await sleep(1500);
+  const stop = await ask(helper, 2, { to: "record", op: "stop" }, 15_000);
+  assert.ok(stop.value?.size > 0, JSON.stringify(stop));
+  const level = await inPage(() => window.__frame0());
+  assert.ok(level > 150, `frame 0's mean level is ${level}: black, not the tab`);
 }));
 
 describe("capture: a stop or a clear while the start waits for the tab leaves nothing running", () => pageTest("capture", { timeout: 60_000 }, async ({ helper, inPage }) => {

@@ -47,7 +47,9 @@ test("the logo is untouched: the same img line and the same file", () => {
 
 test("the picker script keeps its one timer and its words", () => {
   assert.equal(count(js, "setInterval("), 1, "one setInterval");
-  assert.equal(count(js, "setTimeout("), 0);
+  // One bounded wait, only while "All sessions…" asks a dock that may never answer; cleared on its answer.
+  assert.equal(count(js, "setTimeout("), 1);
+  assert.ok(js.includes("const late = setTimeout(() => { ch.close(); failed(); }, OPENER_MS);") && js.includes("clearTimeout(late);"), "the opener's wait, and only it");
   assert.equal(count(js, "requestAnimationFrame("), 0);
   assert.equal(count(js, "Observer"), 0);
   for (const text of ['"Allow once"', '"Always allow"', '"Cancel"', '"A join code starts with pb-join:"', "not a PairBrowse address. Join through it?",

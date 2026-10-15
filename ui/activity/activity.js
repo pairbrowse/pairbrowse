@@ -194,7 +194,7 @@ function noteText() {
 async function readHistory(before, limit) {
   const from = base;
   const q = `limit=${limit}${before ? `&before=${before}` : ""}`;
-  const r = await fetch(`${from}activity.json?${q}`).then(async (x) => ({ status: x.status, body: x.ok ? await x.json().catch(() => null) : null }), () => ({ status: 0, body: null }));
+  const r = await fetch(`${from}activity.json?${q}`, { signal: AbortSignal.timeout(8000) }).then(async (x) => ({ status: x.status, body: x.ok ? await x.json().catch(() => null) : null }), () => ({ status: 0, body: null }));
   if (from !== base) return false; // another helper meanwhile: its own lines
   const b = r.body;
   if (!b || !Array.isArray(b.items)) {

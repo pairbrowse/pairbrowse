@@ -93,6 +93,11 @@ scenario("sessions: delete asks in the row", { viewport: VIEW, fixtures: { sessi
   assert.equal(await inPage(() => document.activeElement.getAttribute("aria-label")), "Delete session travel");
   assert.deepEqual(posted(helper, "pick"), [], "Keep deletes nothing");
   await row(ctx, "travel").getByRole("button", { name: "Delete session travel" }).click();
+  await page.keyboard.press("Escape");
+  await until("Escape keeps it", () => !document.querySelector("#list .question"));
+  assert.equal(await inPage(() => document.activeElement.getAttribute("aria-label")), "Delete session travel");
+  assert.deepEqual(posted(helper, "pick"), [], "Escape deletes nothing");
+  await row(ctx, "travel").getByRole("button", { name: "Delete session travel" }).click();
   await row(ctx, "travel").getByRole("button", { name: "Yes, delete session travel" }).click();
   await until("the row gone", () => !document.querySelector('#list > li[data-name="travel"]'));
   assert.deepEqual(posted(helper, "pick"), [{ action: "delete", name: "travel" }]);

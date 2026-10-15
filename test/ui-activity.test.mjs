@@ -181,6 +181,27 @@ scenario("activity: the session's history, a page at a time, merged with the str
   await clean(ctx);
 });
 
+// A helper that takes the request and never answers: the read gives up (8 s) and says so, and
+// Show earlier works again; never a button busy for ever.
+scenario("activity: a history read that never answers gives up and says so", { viewport: VIEW, timeout: 60_000, fixtures: { history: LOG, activity: LOG.slice(-30) } }, async (ctx) => {
+  const { until, inPage, page } = ctx;
+  await until("the newest page", () => document.querySelectorAll("#log li").length === 100);
+  await inPage(() => {
+    const real = window.fetch;
+    window.__signals = [];
+    window.fetch = (u, init) => {
+      if (!String(u).includes("activity.json")) return real(u, init);
+      window.__signals.push(!!init?.signal);
+      return new Promise((_, no) => init?.signal?.addEventListener("abort", () => no(init.signal.reason)));
+    };
+  });
+  await page.getByRole("button", { name: "Show earlier" }).click();
+  await page.waitForFunction(() => document.getElementById("msg").textContent === "PairBrowse didn't send the earlier actions. Try again.", null, { timeout: 12_000 });
+  assert.deepEqual(await inPage(() => window.__signals), [true]);
+  assert.equal(await inPage(() => document.getElementById("earlier").getAttribute("aria-busy")), null, "not busy any more");
+  await clean(ctx);
+});
+
 scenario("activity: the stream back after a drop reads the newest page again", { viewport: VIEW, fixtures: { history: LOG, activity: LOG.slice(-30) } }, async (ctx) => {
   const { until, helper } = ctx;
   await until("the newest page", () => document.querySelectorAll("#log li").length === 100);

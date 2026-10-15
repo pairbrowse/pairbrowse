@@ -48,11 +48,11 @@
             <legend class="item-h">Browser PairBrowse opens</legend>
             <p class="help" id="browser-help">Used from the browser's next start, with the same session and logins.</p>
             <label class="choice" id="choice-pairbrowse"><input type="radio" name="browser" value="pairbrowse"><span><b>The PairBrowse browser</b><small id="pairbrowse-small">Docks, timeline and approvals in the window</small></span></label>
-            <label class="choice"><input type="radio" name="browser" value="chromium"><span><b>Chromium with the PairBrowse extension</b><small>The side panel instead of the docks</small></span></label>
-            <label class="choice"><input type="radio" name="browser" value="path"><span><b>Another Chromium on this computer</b><small>With the PairBrowse extension</small></span></label>
+            <label class="choice"><input type="radio" name="browser" value="chromium"><span><b>PairBrowse extension in a test browser</b><small>The side panel instead of the docks</small></span></label>
+            <label class="choice"><input type="radio" name="browser" value="path"><span><b>Another browser on this computer</b><small>With the PairBrowse extension</small></span></label>
             <form class="inline" id="path-form" hidden autocomplete="off">
               <label class="sr" for="path">Path to the browser</label>
-              <input class="field mono" id="path" name="path" placeholder="/Applications/Chromium.app/Contents/MacOS/Chromium" maxlength="1024" spellcheck="false">
+              <input class="field mono" id="path" name="path" placeholder="/Applications/YourBrowser.app" maxlength="1024" spellcheck="false">
               <button class="action" type="submit">Use this browser</button>
             </form>
           </fieldset>

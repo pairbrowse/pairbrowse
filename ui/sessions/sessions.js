@@ -124,6 +124,7 @@ function askDelete(li, acts, buttons, name) {
   const keep = el("button", { className: "secondary", type: "button", textContent: "Keep" });
   const back = () => { li.dataset.asking = "false"; acts.replaceChildren(...buttons); buttons.at(-1).focus(); };
   keep.addEventListener("click", back);
+  for (const b of [yes, keep]) b.addEventListener("keydown", (e) => { if (e.key === "Escape" && !keep.disabled) { e.preventDefault(); e.stopPropagation(); back(); } });
   yes.addEventListener("click", async (ev) => {
     if (!real(ev) || !base) return;
     yes.disabled = keep.disabled = true;

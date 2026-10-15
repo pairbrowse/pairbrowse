@@ -194,8 +194,11 @@ $("fresh").addEventListener("click", (ev) => { if (real(ev)) send({ action: "new
 // the browser's bubble (Session and Bubbles only: no tab of its own to open) it asks the dock whose
 // Sessions row opened it over the pairbrowse-sessions channel (this origin only); that dock holds the
 // pairbrowse-switcher-opener lock while its bubble shows, so with no lock held nobody would answer
-// and the item says so at once (no timer). The bubble closes once the dock says the page is open.
+// and the item says so at once. A dock that holds it but never answers (gone mid-ask) gets
+// OPENER_MS, then the item says so the same way and is clickable again. The bubble closes once the
+// dock says the page is open.
 const OPENER_LOCK = "pairbrowse-switcher-opener";
+const OPENER_MS = 3000;
 if (framed && !bubbled) { $("all").target = "_blank"; $("all").rel = "noopener"; }
 $("all").addEventListener("click", async (ev) => {
   if (!framed) return;
@@ -208,8 +211,10 @@ $("all").addEventListener("click", async (ev) => {
   let ch = null;
   try { ch = held ? new BroadcastChannel("pairbrowse-sessions") : null; } catch {}
   if (!ch) { failed(); return; }
+  const late = setTimeout(() => { ch.close(); failed(); }, OPENER_MS);
   ch.onmessage = (e) => {
     if (e.data?.opened !== "sessions") return;
+    clearTimeout(late);
     ch.close();
     $("all").removeAttribute("aria-busy");
     say("");

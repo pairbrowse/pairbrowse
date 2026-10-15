@@ -51,6 +51,8 @@ body { font: 500 var(--fs-3)/1.4 system-ui, -apple-system, "Segoe UI", sans-seri
 #sound { position: fixed; right: var(--sp-4); bottom: var(--sp-4); padding: var(--sp-2) var(--sp-4); border: 0; border-radius: 999px; background: var(--accent); color: var(--bg); font: var(--fw-name) var(--fs-3)/1 var(--sans); cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, .3); }
 #pick { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); padding: var(--sp-4) var(--sp-5); border-radius: var(--r-3); background: var(--pill); border: 1px solid var(--edge); box-shadow: inset 3px 0 0 var(--accent), 0 10px 40px rgba(0, 0, 0, .4); }
 #pick p { margin: 0 0 var(--sp-4); color: var(--ink); }
+#pick #pick-msg { margin-top: calc(-1 * var(--sp-2)); color: var(--bad-ink); font-size: var(--fs-2); }
+#pick #pick-msg[hidden] { display: none; }
 #pick .row { display: flex; gap: var(--sp-2); justify-content: flex-end; }
 #pick button { padding: var(--sp-2) var(--sp-4); border: 0; border-radius: 999px; background: var(--accent); color: var(--bg); font: var(--fw-name) var(--fs-3)/1 var(--sans); cursor: pointer; }
 #pick button.ghost { background: transparent; color: var(--muted); }

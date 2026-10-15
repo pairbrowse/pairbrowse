@@ -342,19 +342,26 @@ export function profilePanel(base) {
 
   async function change(op) {
     if (!base()) return "Not connected to PairBrowse yet.";
-    const r = await postJson(base() + "profile", op).then((x) => x.json()).catch(() => ({ error: "Couldn't reach PairBrowse." }));
-    if (r.profile) draw(r.profile);
-    return r.error || null;
+    const r = await postJson(base() + "profile", op).then(async (x) => {
+      const b = await x.json().catch(() => null);
+      return b && typeof b === "object" ? (x.ok || b.error ? b : { error: "That didn't save." }) : { error: x.ok ? null : "That didn't save." };
+    }, () => ({ error: "Couldn't reach PairBrowse." }));
+    if (r.profile && typeof r.profile === "object") draw(r.profile);
+    return r.error ? String(r.error) : null;
   }
-  function draw(p) {
-    $("details").replaceChildren(...(p.details.length ? p.details.map((d) => {
-      const input = el("input", { className: "field", value: d.value, ariaLabel: d.label });
+  // A reply of the wrong shape (an error, an older helper) draws empty lists, never throws.
+  function draw(raw) {
+    const p = raw && typeof raw === "object" ? raw : {};
+    const details = Array.isArray(p.details) ? p.details.filter((d) => d && typeof d.label === "string") : [];
+    const secrets = Array.isArray(p.secrets) ? p.secrets.filter((x) => x && typeof x.name === "string").map((x) => ({ ...x, domains: Array.isArray(x.domains) ? x.domains.map(String) : [] })) : [];
+    $("details").replaceChildren(...(details.length ? details.map((d) => {
+      const input = el("input", { className: "field", value: String(d.value ?? ""), ariaLabel: d.label });
       input.addEventListener("change", async () => { const e = await change({ op: "setDetail", label: d.label, value: input.value }); say(e || `Saved ${d.label}.`, e ? "error" : "ok"); });
       const del = el("button", { className: "mini", type: "button", textContent: "Remove", ariaLabel: `Remove ${d.label}` });
       del.addEventListener("click", async () => { const e = await change({ op: "forgetDetail", label: d.label }); say(e || `Removed ${d.label}.`, e ? "error" : "ok"); });
       return el("div", { className: "row" }, el("div", { className: "label", title: d.label }, d.label, el("small", { textContent: sourceLabel(d) })), input, del);
     }) : [el("p", { className: "empty-row", textContent: "Nothing yet. Add details below, or tell Claude." })]));
-    $("secrets").replaceChildren(...(p.secrets.length ? p.secrets.map((x) => {
+    $("secrets").replaceChildren(...(secrets.length ? secrets.map((x) => {
       const replace = el("button", { className: "mini", type: "button", textContent: "Replace", ariaLabel: `Replace ${x.name}` });
       replace.addEventListener("click", () => {
         const f = $("add-secret");
@@ -369,20 +376,24 @@ export function profilePanel(base) {
         const keep = el("button", { className: "mini", type: "button", textContent: "Keep" });
         const back = () => { acts.replaceChildren(replace, del); del.focus(); };
         keep.addEventListener("click", back);
-        yes.addEventListener("click", async () => { const e = await change({ op: "deleteSecret", name: x.name }); say(e || `Deleted ${x.name}.`, e ? "error" : "ok"); if (e) back(); });
+        for (const b of [yes, keep]) b.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !yes.disabled) { ev.preventDefault(); ev.stopPropagation(); back(); } });
+        yes.addEventListener("click", async () => { yes.disabled = true; const e = await change({ op: "deleteSecret", name: x.name }); say(e || `Deleted ${x.name}.`, e ? "error" : "ok"); if (e) back(); });
         acts.replaceChildren(el("small", { className: "ask", textContent: "Delete it?" }), yes, keep);
         keep.focus();
       });
       return el("div", { className: "row secret" }, el("div", { className: "label", title: x.name }, x.name), el("div", { className: "sites", title: x.domains.join(", "), textContent: x.domains.join(", ") }), acts);
     }) : [el("p", { className: "empty-row", textContent: "No passwords saved." })]));
-    if (p.problem) say(p.problem, "error");
+    if (p.problem) say(String(p.problem), "error");
   }
-  // Shows the current profile; false when it couldn't be loaded.
+  // Shows the current profile; false when it couldn't be loaded (an error reply says why).
   async function load() {
     if (!base()) return false;
-    const p = await fetch(base() + "profile.json").then((x) => x.json()).catch(() => null);
-    if (p) draw(p);
-    return !!p;
+    const r = await fetch(base() + "profile.json", { signal: AbortSignal.timeout(8000) })
+      .then(async (x) => ({ ok: x.ok, body: await x.json().catch(() => null) }), () => ({ ok: false, body: null }));
+    const p = r.body && typeof r.body === "object" ? r.body : null;
+    if (!r.ok || !p || p.error) { if (p?.error) say(String(p.error), "error"); return false; }
+    draw(p);
+    return true;
   }
 
   $("add-detail").addEventListener("submit", async (e) => {

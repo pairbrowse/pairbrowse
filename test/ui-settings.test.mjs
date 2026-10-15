@@ -123,6 +123,10 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
   await page.keyboard.press("Enter");
   assert.equal(await inPage(() => document.activeElement.getAttribute("aria-label")), "Delete SHOPIFY_PASSWORD", "Keep puts focus back");
   await page.click("button[aria-label='Delete SHOPIFY_PASSWORD']");
+  await page.keyboard.press("Escape");
+  assert.equal(await inPage(() => document.activeElement.getAttribute("aria-label")), "Delete SHOPIFY_PASSWORD", "Escape keeps it, focus back");
+  assert.equal(await inPage(() => !!document.querySelector("#secrets .ask")), false, "the question is gone");
+  await page.click("button[aria-label='Delete SHOPIFY_PASSWORD']");
   await page.click("button[aria-label='Yes, delete SHOPIFY_PASSWORD']");
   await posted(helper, page, "deleteSecret", "profile", { op: "deleteSecret", name: "SHOPIFY_PASSWORD" });
 
@@ -185,6 +189,10 @@ pageTest("settings", { fixtures: { ...fixtures, timeline: null, config: null }, 
   const cfg = await inPage(() => [...document.querySelectorAll(".cfg-item")].map((n) => n.hidden));
   assert.ok(cfg.length >= 9 && cfg.every(Boolean), JSON.stringify(cfg));
   assert.equal(await inPage(() => document.getElementById("report-open").hidden), true, "no report relay: no button");
+  await inPage(() => { location.hash = "#report"; });
+  await page.waitForTimeout(150);
+  assert.equal(await inPage(() => document.getElementById("report").open), false, "no report relay: #report opens nothing");
+  await inPage(() => { history.replaceState(null, "", location.pathname); });
   await page.hover("#manage-sessions");
   assert.deepEqual(await harness.animations(), []);
   const fires0 = await harness.hiddenFires();
@@ -239,6 +247,34 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
   await until("closed, focus back", () => !document.getElementById("report").open && document.activeElement.id === "report-open");
 });
 
+// 7b. The helper away: a #report link opens nothing (it couldn't be sent); back, it opens.
+pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPage, page }) => {
+  await until("the button", () => !document.getElementById("report-open").hidden && !document.getElementById("report-open").disabled);
+  helper.setDown(true);
+  await until("away", () => document.body.dataset.s !== "live");
+  await inPage(() => { location.hash = "#report"; });
+  await page.waitForTimeout(150);
+  assert.equal(await inPage(() => document.getElementById("report").open), false, "not connected: no report dialog");
+  await inPage(() => { history.replaceState(null, "", location.pathname); });
+  helper.setDown(false);
+  await until("live again", live);
+  await inPage(() => { location.hash = "#report"; });
+  await until("the dialog", () => document.getElementById("report").open);
+});
+
+// 7c. The profile's error replies: an unreadable profile.json and a refused save say why, and the
+// page never throws on a reply that isn't a profile.
+pageTest("settings", { fixtures: { ...fixtures, profile: { error: "The profile file can't be read." } }, replies: { profile: () => ({ status: 500, body: { error: "The disk is full." } }) }, viewport: VIEW }, async ({ page, until, inPage, errors }) => {
+  await until("the stream", live);
+  await until("the load error", () => document.getElementById("profile-msg").textContent === "The profile file can't be read.");
+  await page.fill("#add-detail [name=label]", "City");
+  await page.fill("#add-detail [name=value]", "Oslo");
+  await page.click("#add-detail button[type=submit]");
+  await until("the save error", () => document.getElementById("profile-msg").textContent === "The disk is full.");
+  assert.equal(await inPage(() => document.getElementById("profile-msg").dataset.kind), "error");
+  assert.deepEqual(errors, []);
+});
+
 // 8. A failed send says so and keeps the report to copy.
 pageTest("settings", { fixtures: { ...fixtures, sent: { status: 502, body: { error: "The report server didn't answer." } } }, viewport: VIEW }, async ({ page, until }) => {
   await until("the button", () => !document.getElementById("report-open").hidden && !document.getElementById("report-open").disabled);
@@ -255,7 +291,7 @@ pageTest("settings", { fixtures: { ...fixtures, sent: { status: 502, body: { err
 pageTest("settings", { fixtures, native: false, viewport: VIEW }, async ({ page, until, inPage, errors }) => {
   await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
   const s = await inPage(() => ({ host: document.body.dataset.host, docks: document.getElementById("docks").hidden, about: document.getElementById("about-host").textContent, invites: document.getElementById("invites-text").textContent }));
-  assert.deepEqual(s, { host: "chromium", docks: true, about: "Chromium with the PairBrowse extension", invites: "Make a join code or a watch link with Share in the PairBrowse side panel. Each one asks you before anyone gets in." });
+  assert.deepEqual(s, { host: "chromium", docks: true, about: "PairBrowse extension in a test browser", invites: "Make a join code or a watch link with Share in the PairBrowse side panel. Each one asks you before anyone gets in." });
   await page.click("#browser-settings");
   await until("the plain line", () => document.getElementById("diag-msg").textContent === "Type chrome://settings in the address bar to open the browser's settings.");
   await inPage(() => { window.__opened = []; window.chrome.tabs = { create: (o) => { window.__opened.push(o.url); } }; });
@@ -375,6 +411,11 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
   assert.equal(await inPage(() => document.getElementById("invites-empty").hidden), true);
   await page.click("button[aria-label='Revoke Bob']");
   assert.equal(await inPage(() => document.activeElement.textContent), "Keep");
+  await page.keyboard.press("Escape");
+  assert.equal(await inPage(() => document.activeElement.getAttribute("aria-label")), "Revoke Bob", "Escape keeps it, focus back");
+  assert.equal(await inPage(() => !!document.querySelector("#invite-list .ask")), false);
+  assert.equal(helper.posts.some((p) => p.route === "invite"), false, "Escape revokes nothing");
+  await page.click("button[aria-label='Revoke Bob']");
   await page.click("button[aria-label='Yes, revoke Bob']");
   await posted(helper, page, "revoke", "invite", { op: "revoke", id: "0a1b2c3d" });
   await until("Bob gone", () => document.querySelectorAll("#invite-list li").length === 1);

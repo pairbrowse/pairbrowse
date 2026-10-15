@@ -352,6 +352,25 @@ named("a gone request says so; a failed post re-enables", { replies: { approve: 
   assert.equal(await inPage(() => document.body.dataset.pending), "1");
 });
 
+// The same request updated (a join that asked to watch now asks to drive): the card says the new
+// words at once and is armed afresh, so an Allow meant for "Watch only" can't grant drive.
+named("an updated request redraws its card and arms it again", async (ctx) => {
+  const { page, helper } = ctx;
+  helper.push("join", [{ id: "j1", name: "Sam", role: "watch" }]);
+  await shown(ctx, "Watch only");
+  await sleep(SETTLE);
+  helper.push("join", [{ id: "j1", name: "Sam B", app: "Codex", role: "drive" }]);
+  await shown(ctx, "Shared browser, can drive");
+  assert.equal(await text(ctx, "who"), "Sam B (Codex)");
+  await realClick(page, "#allow");
+  await sleep(150);
+  assert.deepEqual(bodies(helper, "approve"), [], "not armed yet: the words just changed");
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await ctx.until("the join answer", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: "j1", allow: true }]);
+});
+
 named("join, dev-share and host asks render in the same card and post to their own routes", async (ctx) => {
   const { page, helper, inPage } = ctx;
   const border = () => inPage(() => getComputedStyle(document.getElementById("card")).borderTopColor);

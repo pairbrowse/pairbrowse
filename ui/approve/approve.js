@@ -59,6 +59,7 @@ let items = [];              // normalized requests, insertion order
 const ats = new Map();       // key -> first-seen ms
 const dismissed = new Set(); // keys hidden here; the request stays for the terminal and the dock
 let shownKey = "";
+let shownSig = ""; // the shown request's fields: a change to any of them draws the card again
 let seen = null;             // the IntersectionObserver, only while a card shows and the page is visible
 let visibleSince = 0;        // performance.now() when the card was last reported fully visible; 0: not
 let covered = false;         // the observer has reported the card not fully visible
@@ -200,16 +201,20 @@ function render(open) {
   const it = open[0];
   $("empty").hidden = !!it;
   card.hidden = !it;
-  if (!it) { shownKey = ""; busy = false; watch(false); return; }
+  if (!it) { shownKey = ""; shownSig = ""; busy = false; watch(false); return; }
   const n = open.length - 1, count = $("count");
   count.hidden = !n;
   count.textContent = n ? `${n} more` : "";
   if (n) count.setAttribute("aria-label", `${n} more waiting`); else count.removeAttribute("aria-label");
-  if (it.key === shownKey) return;
-
+  // The same request with the same words: nothing to draw. The same request updated (a join now
+  // asking to drive, not watch): drawn again and armed afresh, so what you answer is what it says.
+  const sig = JSON.stringify([it.kind, it.who, it.color, it.verb, it.target, it.host, it.reason, it.labels, it.menu]);
+  if (it.key === shownKey && sig === shownSig) return;
+  const same = it.key === shownKey;
   shownKey = it.key;
-  busy = false;
-  hint("");
+  shownSig = sig;
+  if (!same) busy = false;
+  hint(same && busy ? $("hint").textContent : "", same && busy ? $("hint").dataset.kind : "");
   card.dataset.kind = it.kind;
   const slot = $("avatar-slot");
   slot.hidden = it.kind === "host";
@@ -235,7 +240,7 @@ function render(open) {
     b.addEventListener("click", (ev) => answer(m.answer, ev));
     return b;
   }));
-  for (const b of buttons()) b.disabled = false;
+  for (const b of buttons()) b.disabled = busy; // an answer on its way keeps them off
   // What a click lands on changed: watched afresh, armed again only once seen whole.
   watch(false);
   watch(true);

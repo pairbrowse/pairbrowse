@@ -50,7 +50,7 @@ const bad = async (ctx) => (await ctx.harness.log()).filter((e) => ["csp", "page
 // A PNG for reviews, once the fades (--t) are done.
 const shot = async (ctx, name) => { if (!SHOTS) return; await ctx.page.waitForTimeout(300); await ctx.page.screenshot({ path: join(SHOTS, name) }).catch(() => {}); };
 
-screenTest("renders over the fake helper and asks the build for its helper once, calling no route", {}, async (ctx) => {
+screenTest("renders over the fake helper, never asking for the helper's key and calling no route", {}, async (ctx) => {
   await ctx.inPage(() => window.pbScreen.info({ title: "Shop", url: "https://shop.example/cart", who: "Bob" }));
   await sendFrame(ctx);
   await ctx.inPage(() => window.pbScreen.pointers([{ k: "sam", who: "Sam", color: "#2fb6d9", nx: 0.5, ny: 0.5 }]));
@@ -58,12 +58,12 @@ screenTest("renders over the fake helper and asks the build for its helper once,
   assert.deepEqual(ctx.errors, []);
   assert.deepEqual(await bad(ctx), []);
   const calls = (await ctx.shim.calls()).filter((c) => c.iface === "session" && c.method === "helper");
-  assert.equal(calls.length, 1, "session.helper() once");
+  assert.equal(calls.length, 0, "no session.helper(): the page keeps no owner key");
   assert.equal(ctx.helper.posts.length, 0, "no route called");
   assert.equal((await ctx.harness.live()).eventSources, 0, "no stream opened");
   const st = await ctx.inPage(() => window.pbScreen.state());
   assert.equal(st.host, "pairbrowse");
-  assert.equal(st.helper, true);
+  assert.equal("helper" in st, false);
   assert.equal(st.view, "frames");
 });
 
@@ -215,6 +215,50 @@ screenTest("the file card is a keyboard dialog, the sound button has the ring", 
   assert.deepEqual(await focused(), { id: "sound", ring: `solid 2px ${ring}` }, "the sound button, ringed");
   assert.equal(await ctx.page.evaluate(() => document.getElementById("sound").textContent.trim()), "Turn on sound");
   assert.deepEqual(await ctx.inPage(() => window.pbScreen.takeInput()), [], "no key reached the host");
+  assert.deepEqual(await bad(ctx), []);
+});
+
+// The file card: nothing reaches the host while it's up (clicks, wheel, keys, paste); a pick past
+// the limits (one file over 50 MB, over 50 MB in all, over 20 files) is refused on the card, which
+// stays up to choose again; a pick within them comes back as base64.
+screenTest("the file card blocks input to the host and refuses a pick past the limits", {}, async (ctx) => {
+  await ctx.inPage(() => window.pbScreen.info({ title: "Shop", url: "https://shop.example/cart", who: "Bob" }));
+  await sendFrame(ctx);
+  await ctx.inPage(() => window.pbScreen.takeInput());
+  await ctx.inPage(() => { document.getElementById("pick-input").click = () => {}; });
+  await ctx.inPage(() => { window.__picked = null; window.pbScreen.pick({ multiple: true }).then((v) => { window.__picked = v; }); });
+  // Input on the picture beside the card, and a paste: none of it goes to the host.
+  await ctx.page.mouse.click(60, 700);
+  await ctx.page.mouse.move(80, 650);
+  await ctx.page.mouse.wheel(0, 200);
+  await ctx.page.keyboard.press("a");
+  await ctx.page.evaluate(() => { const d = new DataTransfer(); d.setData("text/plain", "secret"); document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); });
+  await ctx.page.waitForTimeout(100);
+  assert.deepEqual(await ctx.inPage(() => window.pbScreen.takeInput()), [], "nothing reached the host while the card is up");
+
+  const choose = (sizes) => ctx.page.evaluate((list) => {
+    const d = new DataTransfer();
+    list.forEach((n, i) => d.items.add(new File([new Uint8Array(n).fill(65)], `f${i}.bin`)));
+    const input = document.getElementById("pick-input");
+    input.files = d.files;
+    input.dispatchEvent(new Event("change"));
+  }, sizes);
+  const card = () => ctx.page.evaluate(() => ({ up: !document.getElementById("pick").hidden, msg: document.getElementById("pick-msg").hidden ? "" : document.getElementById("pick-msg").textContent }));
+  const MB = 1024 * 1024;
+  await choose([51 * MB]);
+  assert.deepEqual(await card(), { up: true, msg: "f0.bin is over 50 MB. Choose a smaller file." });
+  await choose([20 * MB, 20 * MB, 20 * MB]);
+  assert.deepEqual(await card(), { up: true, msg: "These files come to 60 MB, over 50 MB in all. Choose fewer." });
+  await choose(Array(21).fill(1));
+  assert.deepEqual(await card(), { up: true, msg: "That's 21 files. Choose up to 20 at a time." });
+  assert.equal(await ctx.inPage(() => window.__picked), null, "still waiting for a pick");
+  await choose([3, 5]);
+  await ctx.until("the pick resolves", () => Array.isArray(window.__picked));
+  assert.deepEqual(await ctx.inPage(() => window.__picked), [{ name: "f0.bin", b64: "QUFB" }, { name: "f1.bin", b64: "QUFBQUE=" }]);
+  assert.equal((await card()).up, false);
+  // The card is down: input reaches the host again.
+  await ctx.page.mouse.click(600, 380);
+  assert.ok((await ctx.inPage(() => window.pbScreen.takeInput())).some((e) => e.a === "mousePressed"), "a click after the card goes to the host");
   assert.deepEqual(await bad(ctx), []);
 });
 

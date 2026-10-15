@@ -6,6 +6,7 @@
 // document asks through transport-extension.js (its worker, background.js), the PairBrowse
 // browser's own capture page through transport-native.js (the helper's channel); main.js picks.
 const tabs = new Map(); // tabId -> { stream, audio, frame: { w, h }, peers: Set, rec: recording uses it }
+const making = new Map(); // tabId -> its capture being made: offers and a recording that ask together share it
 const conns = new Map(); // peer -> { pc, tabId }
 const inbox = []; // { peer, ev } or { peer, state }, until the helper takes them
 const stopped = []; // fn(tabId) for each tab whose capture ends (record.js forgets its picture)
@@ -19,6 +20,7 @@ const tell = (item) => {
 // The captures, for record.js (it records the same tabs a share captures; one capture per tab).
 export const captured = (tabId) => tabs.get(tabId);
 export const has = (tabId) => tabs.has(tabId);
+export const capturing = (tabId) => making.has(tabId);
 export const peers = () => [...conns.keys()];
 export const onTabStopped = (fn) => { stopped.push(fn); };
 
@@ -31,8 +33,15 @@ const gathered = (pc, ms) => new Promise((resolve) => {
 
 // The tab's picture at frame.w x frame.h (the tab's own shape, so nothing is cropped or
 // letterboxed), and its sound, which tab capture takes away from the host's speakers: it's
-// played here again.
-export async function capture(tabId, streamId, frame) {
+// played here again. One capture per tab, however many ask at once (two joiners, a join and a
+// recording): an ask while one is being made waits for it, so no second stream or sound is left over.
+export function capture(tabId, streamId, frame) {
+  if (tabs.has(tabId)) return Promise.resolve(tabs.get(tabId));
+  if (!making.has(tabId)) making.set(tabId, make(tabId, streamId, frame).finally(() => making.delete(tabId)));
+  return making.get(tabId);
+}
+
+async function make(tabId, streamId, frame) {
   const size = { minWidth: frame.w, maxWidth: frame.w, minHeight: frame.h, maxHeight: frame.h };
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId, ...size, maxFrameRate: 30 } },
@@ -72,8 +81,9 @@ export async function offer({ peer, tabId, streamId, frame, ice }) {
   stopPeer(peer);
   let t = tabs.get(tabId);
   if (!t) {
-    if (!streamId) return { error: "no capture for that tab" };
+    if (!streamId && !making.has(tabId)) return { error: "no capture for that tab" };
     t = await capture(tabId, streamId, frame);
+    if (tabs.get(tabId) !== t) return { error: "the tab's capture ended" };
   }
   const pc = new RTCPeerConnection({ iceServers: Array.isArray(ice) ? ice : [] });
   conns.set(peer, { pc, tabId });

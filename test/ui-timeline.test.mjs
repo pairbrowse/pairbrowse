@@ -165,6 +165,11 @@ pageTest("timeline", opts(), async ({ until, inPage, helper, page }) => {
   assert.equal(helper.posts.length, 0);
   await page.click("#add-btn");
   await page.keyboard.type("Call the bank");
+  // Enter that ends an input method's composition picks the words: no note posts, the field stays.
+  await inPage(() => document.getElementById("note").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true, cancelable: true })));
+  await page.waitForTimeout(100);
+  assert.equal(helper.posts.length, 0, "an IME Enter posts nothing");
+  assert.equal(await inPage(() => !document.getElementById("note-form").hidden && document.getElementById("note").value), "Call the bank");
   await page.keyboard.press("Enter");
   const note = noteCard("Call the bank");
   await until("the note card", (s) => !!document.querySelector(s), card(note.id));

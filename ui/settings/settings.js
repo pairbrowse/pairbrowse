@@ -13,7 +13,7 @@
 import { $, el, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
 
 const NATIVE = !!window.pairbrowse;
-const HOST = NATIVE ? "The PairBrowse browser" : "Chromium with the PairBrowse extension";
+const HOST = NATIVE ? "The PairBrowse browser" : "PairBrowse extension in a test browser";
 document.body.dataset.host = NATIVE ? "pairbrowse" : "chromium";
 $("about-host").textContent = HOST;
 if (!NATIVE) {
@@ -135,7 +135,7 @@ for (const r of document.querySelectorAll("input[name=browser]")) {
     if (r.value === "path") {
       $("path-form").hidden = false;
       $("path").focus();
-      say($("browser-msg"), "Enter the path to a Chromium-based browser, then Use this browser.");
+      say($("browser-msg"), "Enter the path to the browser app, then Use this browser.");
       return;
     }
     $("path-form").hidden = true;
@@ -294,6 +294,7 @@ function inviteRow(i) {
     const keep = el("button", { className: "mini", type: "button", textContent: "Keep" });
     const back = () => { acts.replaceChildren(revoke); revoke.focus(); };
     keep.addEventListener("click", back);
+    for (const b of [yes, keep]) b.addEventListener("keydown", (e) => { if (e.key === "Escape" && !keep.disabled) { e.preventDefault(); e.stopPropagation(); back(); } });
     yes.addEventListener("click", async (e) => {
       if (!e.isTrusted) return;
       yes.disabled = keep.disabled = true;
@@ -334,7 +335,7 @@ function drawDiag(d) {
   diag = d && typeof d === "object" ? d : null;
   const h = diag?.helper || {}, b = diag?.browser || {}, c = diag?.connections || {};
   $("about-helper").textContent = h.version ? `${h.version}${h.node ? ` · Node ${h.node}` : ""}` : "Not reported";
-  $("about-browser").textContent = b.engine ? [b.engine === "pairbrowse" ? "PairBrowse" : b.engine === "chromium" ? "Chromium" : String(b.engine), b.version, b.build ? `build ${b.build}` : ""].filter(Boolean).join(" ") : "Not reported";
+  $("about-browser").textContent = b.engine ? [b.engine === "pairbrowse" ? "PairBrowse" : b.engine === "chromium" ? "Test browser" : String(b.engine), b.version, b.build ? `build ${b.build}` : ""].filter(Boolean).join(" ") : "Not reported";
   const n = (k, one, many) => { const v = Number(c[k]) || 0; return `${v} ${v === 1 ? one : many}`; };
   $("about-agents").textContent = diag ? [n("agents", "agent", "agents"), n("joiners", "person joined", "people joined"), n("viewers", "viewer", "viewers")].join(" · ") : "Not reported";
   const errors = Array.isArray(diag?.errors) ? diag.errors.slice(-5).reverse() : [];
@@ -393,7 +394,10 @@ function payload() {
   });
 }
 const preview = () => { $("report-preview").textContent = JSON.stringify(payload(), null, 2); };
+// Only while it can go out: the helper connected and relaying reports (#report from a link too).
+const canReport = () => conn === "live" && config?.report === true;
 async function openReport() {
+  if (!canReport()) return;
   say($("report-msg"), "");
   $("report-send").disabled = false;
   $("report-send").textContent = "Send";
@@ -533,7 +537,7 @@ function connect(url) {
     onOpen: async () => {
       await loadConfig();
       loadInvites(); profile.load(); loadTimelineCount(); loadDiag();
-      if (location.hash === "#report" && config?.report === true) openReport();
+      if (location.hash === "#report") openReport();
     },
   });
   const on = stream.on;

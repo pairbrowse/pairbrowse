@@ -621,7 +621,8 @@ addBtn.addEventListener("click", openNote);
 form.addEventListener("submit", (e) => e.preventDefault());
 note.addEventListener("keydown", async (e) => {
   if (e.key === "Escape") { e.preventDefault(); return closeNote(); }
-  if (e.key !== "Enter") return;
+  // Enter that ends an input method's composition (Japanese, Chinese...) picks the words; it posts nothing.
+  if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
   e.preventDefault();
   const text = note.value.trim();
   if (!text || !base) return closeNote();

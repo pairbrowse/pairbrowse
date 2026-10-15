@@ -385,6 +385,17 @@ pageTest("picker", { fixtures: { sessions: { ...STATE, picking: false } }, shim:
   assert.equal(await run(() => document.getElementById("msg").textContent), "Couldn't open the sessions list from here. Open pairbrowse://sessions in a tab.");
   assert.equal(await closes(), 0);
   assert.equal(await run(() => document.getElementById("all").hasAttribute("aria-busy")), false);
+  // A dock holds the lock but never answers (gone mid-ask): after a few seconds the item says so and
+  // is no longer busy, never stuck.
+  await run(() => { navigator.locks.request("pairbrowse-switcher-opener", () => new Promise((done) => { window.__unlock = done; })); });
+  await until("the lock held", async () => (await navigator.locks.query()).held.some((l) => l.name === "pairbrowse-switcher-opener"));
+  await run(() => { const m = document.getElementById("msg"); m.textContent = ""; m.dataset.kind = ""; });
+  await page.click("#all");
+  assert.equal(await run(() => document.getElementById("all").getAttribute("aria-busy")), "true");
+  await until("not busy for ever", () => !document.getElementById("all").hasAttribute("aria-busy") && document.getElementById("msg").dataset.kind === "error");
+  assert.equal(await closes(), 0);
+  await run(() => window.__unlock());
+  await until("the lock let go", async () => !(await navigator.locks.query()).held.some((l) => l.name === "pairbrowse-switcher-opener"));
   // The dock that opened the bubble answers: the bubble closes, nothing was picked.
   await run(() => { navigator.locks.request("pairbrowse-switcher-opener", () => new Promise(() => {})); const ch = new BroadcastChannel("pairbrowse-sessions"); window.__asked = []; ch.onmessage = (e) => { window.__asked.push(e.data); if (e.data?.open === "sessions") ch.postMessage({ opened: "sessions" }); }; window.__dock = ch; });
   await page.click("#all");

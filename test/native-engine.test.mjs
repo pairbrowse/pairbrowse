@@ -127,6 +127,10 @@ test("native app metadata requires a PairBrowse Chromium 150 bundle", () => {
   assert.throws(() => nativeManifest(bad.executablePath), /Chromium 150 PairBrowse/);
   const wrongVersion = appFixture({ product: "PairBrowse", version: "149.0.1.1" });
   assert.throws(() => nativeManifest(wrongVersion.executablePath), /Chromium 150 PairBrowse/);
+  // Malformed manifests refuse with the same sentence, never a TypeError (found by test/fuzz/native.test.js).
+  for (const m of [null, { product: "PairBrowse", version: [] }, { product: "PairBrowse", version: 150 }]) {
+    assert.throws(() => nativeManifest(appFixture(m).executablePath), /Chromium 150 PairBrowse/, JSON.stringify(m));
+  }
 });
 
 packTest("engine pack profile persistence round-trips through native launch", async () => {

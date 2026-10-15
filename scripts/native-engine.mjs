@@ -26,7 +26,8 @@ export function nativeManifest(executablePath) {
   const mac = /\.app$/.test(dirname(dirname(dirname(executablePath))));
   const contents = dirname(dirname(executablePath));
   const metadata = JSON.parse(readFileSync(mac ? join(contents, "Resources", "PairBrowse-build.json") : join(dirname(executablePath), "PairBrowse-build.json"), "utf8"));
-  if (metadata.product !== "PairBrowse" || metadata.version?.split(".")[0] !== CHROMIUM_MAJOR || !/^\d+\.\d+\.\d+\.\d+$/.test(metadata.version)) {
+  // Any JSON may be there (null, a number for the version): refused with this sentence, never a TypeError.
+  if (metadata?.product !== "PairBrowse" || typeof metadata.version !== "string" || metadata.version.split(".")[0] !== CHROMIUM_MAJOR || !/^\d+\.\d+\.\d+\.\d+$/.test(metadata.version)) {
     throw new Error(`PairBrowse native requires a Chromium ${CHROMIUM_MAJOR} PairBrowse build.`);
   }
   if (mac && !existsSync(join(contents, "Frameworks", "Chromium Framework.framework"))) {

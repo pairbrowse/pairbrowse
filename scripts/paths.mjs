@@ -1,21 +1,33 @@
-import { homedir, userInfo } from "node:os";
-import { join } from "node:path";
+import { userInfo } from "node:os";
+import { join, sep } from "node:path";
 import { mkdirSync, chmodSync } from "node:fs";
 import { writeJsonAtomic, sha256, readJson } from "./util.mjs";
+import { resolveHome } from "./home.mjs";
 
 // Everything PairBrowse writes is private to your user account.
 process.umask(0o077);
 
-export const HOME = process.env.PAIRBROWSE_HOME || join(homedir(), ".pairbrowse");
+// The home (home.mjs): PAIRBROWSE_HOME, else a named instance (PAIRBROWSE_INSTANCE, or the
+// project's .pairbrowse.json), else ~/.pairbrowse. SHARED holds the read-only installs every
+// instance uses (the default home; the home itself when PAIRBROWSE_HOME is set).
+export const SELECTED = resolveHome();
+export const HOME = SELECTED.home;
+export const SHARED = SELECTED.shared;
+export const INSTANCE = SELECTED.instance;
 // Under the test runner (node --test sets NODE_TEST_CONTEXT, which the processes a test starts
 // inherit) the person's own home is never used: a test without a home of its own stops here.
 // The account's own home (userInfo reads the system's record; a test may point $HOME elsewhere).
-if (process.env.NODE_TEST_CONTEXT && HOME === join(userInfo().homedir, ".pairbrowse")) {
+const REAL = join(userInfo().homedir, ".pairbrowse");
+if (process.env.NODE_TEST_CONTEXT && [HOME, SHARED].some((h) => h === REAL || h.startsWith(REAL + sep))) {
   throw new Error("A test reached the real ~/.pairbrowse: set PAIRBROWSE_HOME to a folder under the temp folder first (test/helpers/home.mjs).");
 }
 
 export const paths = {
   home: HOME,
+  // The read-only installs' home (runtime, browser apps, engine pack, tools, downloads), shared
+  // by instances, and the lock one install at a time takes there (install-lock.mjs).
+  shared: SHARED,
+  installLock: join(SHARED, "install.lock"),
   profile: join(HOME, "profile"),
   secrets: join(HOME, "secrets.env"),
   facts: join(HOME, "facts.md"),
@@ -23,7 +35,7 @@ export const paths = {
   runs: join(HOME, "runs"),
   reviews: join(HOME, "reviews"),
   log: join(HOME, "log"),
-  runtime: join(HOME, "runtime"),
+  runtime: join(SHARED, "runtime"),
   daemonLog: join(HOME, "daemon.log"),
   // Playwright may read files only inside this folder (and the project).
   files: join(HOME, "files"),
@@ -37,18 +49,18 @@ export const paths = {
   // A clean session's marker: the next start opens a clean session again.
   cleanSession: join(HOME, "run", "clean-session"),
   // Pinned downloads (browser builds, the engine pack) before they're installed.
-  downloads: join(HOME, "downloads"),
+  downloads: join(SHARED, "downloads"),
   // Installed browsers: the native build (PairBrowse.app on macOS), ungoogled-chromium.
-  browser: join(HOME, "browser"),
-  nativeApp: join(HOME, "browser", "PairBrowse.app"),
-  buildStamp: join(HOME, "browser", "build.sha256"),
+  browser: join(SHARED, "browser"),
+  nativeApp: join(SHARED, "browser", "PairBrowse.app"),
+  buildStamp: join(SHARED, "browser", "build.sha256"),
   // The engine pack, installed and checked.
-  engine: join(HOME, "engine"),
-  // Pinned tools (cloudflared) and the Quick Tunnels' logs.
-  tools: join(HOME, "tools"),
+  engine: join(SHARED, "engine"),
+  // Pinned tools (cloudflared, shared) and the Quick Tunnels' logs (this home's).
+  tools: join(SHARED, "tools"),
   tunnels: join(HOME, "tunnels"),
   // This Mac's captured host profile (native builds).
-  hostProfile: join(HOME, "mac-host-profile.json"),
+  hostProfile: join(SHARED, "mac-host-profile.json"),
   // Saved fast-mode playbooks; browser sessions (the default session's files sit in the home).
   playbooks: join(HOME, "playbooks"),
   sessions: join(HOME, "sessions"),

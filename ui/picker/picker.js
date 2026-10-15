@@ -16,7 +16,7 @@ import { followHelper, postJson, UNREACHABLE_RETRY, UNREACHABLE } from "../helpe
 const pb = window.pairbrowse || null;
 const bubbled = location.hash === "#bubble" && typeof pb?.bubbles?.close === "function";
 const framed = window.top !== window || bubbled;
-document.documentElement.dataset.host = framed ? "frame" : "page";
+document.documentElement.dataset.mount = framed ? "frame" : "page";
 if (bubbled) document.documentElement.dataset.bubble = "native";
 const SWITCHER = Number.isInteger(pb?.BubbleKind?.kSwitcher) ? pb.BubbleKind.kSwitcher : 0;
 const notify = (op) => {

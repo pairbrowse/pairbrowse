@@ -774,7 +774,7 @@ test("only same-origin pages frame the picker, and no other page can be framed",
     const probe = () => ctx.inPage(() => {
       const read = (id, fn) => { try { return fn(document.getElementById(id).contentDocument); } catch { return false; } };
       return {
-        picker: read("t-picker", (d) => d?.documentElement?.dataset.host === "frame"),
+        picker: read("t-picker", (d) => d?.documentElement?.dataset.mount === "frame"),
         right: read("t-right", (d) => !!d?.querySelector('script[src="right.js"]')),
       };
     });
@@ -787,7 +787,7 @@ test("only same-origin pages frame the picker, and no other page can be framed",
     await foreign.setContent(`<iframe src="${ctx.ui.url("picker")}"></iframe>`);
     await foreign.waitForTimeout(2000);
     const framed = [];
-    for (const f of foreign.frames()) framed.push(await f.evaluate(() => document.documentElement?.dataset.host === "frame").catch(() => false));
+    for (const f of foreign.frames()) framed.push(await f.evaluate(() => document.documentElement?.dataset.mount === "frame").catch(() => false));
     assert.deepEqual(framed.filter(Boolean), [], "a foreign origin never renders the picker");
   } finally {
     await foreign?.close();

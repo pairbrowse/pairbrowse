@@ -66,12 +66,12 @@ pageTest("picker", { fixtures: { sessions: STATE }, viewport: { width: 1200, hei
   const snap = await page.locator("#sessions > li:first-child button").ariaSnapshot();
   assert.match(snap, /Sam · Claude Code/, "the names stay in the row's accessible name");
   const layout = await run(() => ({
-    host: document.documentElement.dataset.host, main: document.querySelector("main").getBoundingClientRect().width,
+    mount: document.documentElement.dataset.mount, main: document.querySelector("main").getBoundingClientRect().width,
     logo: document.querySelector(".logo").getBoundingClientRect().width,
     h1: [getComputedStyle(document.querySelector("h1")).fontSize, getComputedStyle(document.querySelector("h1")).fontWeight],
     secondary: [document.getElementById("fresh"), document.getElementById("join")].map((e) => e.getBoundingClientRect().height),
   }));
-  assert.equal(layout.host, "page");
+  assert.equal(layout.mount, "page");
   assert.ok(layout.main <= 480, `the card is at most 480 px (${layout.main})`);
   assert.equal(layout.logo, 56);
   assert.deepEqual(layout.h1, ["20px", "600"]);
@@ -336,7 +336,7 @@ pageTest("picker", { fixtures: { sessions: STATE }, shim: { bubbles: true }, vie
   await page.goto("about:blank");
   await page.goto(url, { waitUntil: "load" });
   await until("the rows", ready);
-  assert.deepEqual(await run(() => [document.documentElement.dataset.host, document.documentElement.dataset.bubble]), ["frame", "native"]);
+  assert.deepEqual(await run(() => [document.documentElement.dataset.mount, document.documentElement.dataset.bubble]), ["frame", "native"]);
   // The browser sizes the bubble to the page (120 up to 560 px): the card is its contents' height,
   // never the viewport's, so three sessions leave no empty space under the card.
   const fit = await run(() => {

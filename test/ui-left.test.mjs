@@ -43,8 +43,8 @@ async function framedPicker(page, s = null) {
   for (let i = 0; i < 100; i++) {
     const frame = page.frames().find((f) => f.url().includes("/picker/index.html"));
     if (frame) {
-      const st = await inFrame(frame, () => ({ host: document.documentElement.dataset.host, s: document.body?.dataset.s })).catch(() => null);
-      if (st?.host === "frame" && (!s || st.s === s)) return frame;
+      const st = await inFrame(frame, () => ({ mount: document.documentElement.dataset.mount, s: document.body?.dataset.s })).catch(() => null);
+      if (st?.mount === "frame" && (!s || st.s === s)) return frame;
     }
     await page.waitForTimeout(50);
   }

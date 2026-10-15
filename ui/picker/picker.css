@@ -101,7 +101,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-1); font-weight: 650
 /* "All sessions…" (framed and in the bubble only): a link that reads as the rows above it. */
 #all { text-decoration: none; }
 #all[hidden] { display: none; }
-html[data-host="frame"] #all small { white-space: normal; overflow: visible; text-overflow: clip; }
+html[data-mount="frame"] #all small { white-space: normal; overflow: visible; text-overflow: clip; }
 details.choice { display: block; cursor: default; }
 summary { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 0 var(--sp-3); min-height: 36px; list-style: none; cursor: pointer; border-radius: var(--r-2); }
 summary::-webkit-details-marker { display: none; }
@@ -150,14 +150,14 @@ body[data-s="picking"] .choices { opacity: 0.55; pointer-events: none; }
 .host-ask button:disabled { opacity: 0.5; cursor: default; }
 
 /* Framed: the session switcher under the strip's own logo and wordmark. The card is the frame. */
-html[data-host="frame"] body { display: block; min-height: 0; padding: 0; background: var(--sidebar); }
-html[data-host="frame"] main { width: 100%; max-height: 100vh; padding: var(--sp-4) var(--sp-4) var(--sp-3); border: 0; border-radius: 0; box-shadow: none; }
-html[data-host="frame"] .logo, html[data-host="frame"] .brand { display: none; }
-html[data-host="frame"] header { margin-bottom: var(--sp-3); }
-html[data-host="frame"] h1 { font-size: var(--fs-5); }
+html[data-mount="frame"] body { display: block; min-height: 0; padding: 0; background: var(--sidebar); }
+html[data-mount="frame"] main { width: 100%; max-height: 100vh; padding: var(--sp-4) var(--sp-4) var(--sp-3); border: 0; border-radius: 0; box-shadow: none; }
+html[data-mount="frame"] .logo, html[data-mount="frame"] .brand { display: none; }
+html[data-mount="frame"] header { margin-bottom: var(--sp-3); }
+html[data-mount="frame"] h1 { font-size: var(--fs-5); }
 /* The 360 px popover is too narrow for the secondary rows' copy on one line (the fresh row's
    deletion warning among it): they wrap to two lines; the session rows keep their fixed 44 px. */
-html[data-host="frame"] #fresh small, html[data-host="frame"] details.choice > summary small { white-space: normal; overflow: visible; text-overflow: clip; }
+html[data-mount="frame"] #fresh small, html[data-mount="frame"] details.choice > summary small { white-space: normal; overflow: visible; text-overflow: clip; }
 /* Switching while agents are at work (the helper's 428): the same approval card, under the choices. */
 .switch-ask { margin: var(--sp-3) 0 0; }
 .switch-ask .agents { font-size: var(--fs-2); color: var(--ink-2); }

@@ -112,6 +112,7 @@ const ASSETS = new Map(Object.entries({
   "helper.js": ["../ui/helper.js", "text/javascript; charset=utf-8"],
   "dom.js": ["../ui/dom.js", "text/javascript; charset=utf-8"],
   "motion.js": ["../ui/motion.js", "text/javascript; charset=utf-8"],
+  "words.js": ["../ui/words.js", "text/javascript; charset=utf-8"],
 }).map(([name, [file, type]]) => [name, { file, body: readFileSync(new URL(file, scripts)), type }]));
 // Each served name and the file it is read from (relative to scripts/), for the test that every
 // module the page imports is served.

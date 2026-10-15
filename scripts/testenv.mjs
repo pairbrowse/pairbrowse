@@ -56,6 +56,7 @@ export const SWITCHES = {
   SILENT_MS: "when a joiner's stream counts as silent (liveview/push.mjs)",
   TAB_ORDER: "pairbrowse_test_tab_order: read and move tabs in the strip",
   TUNNEL: "\"direct\": the guest port stands in for a tunnel",
+  TURN_MAX_MS: "the most one call may hold the shared queue (serve.mjs)",
 };
 const named = (name) => {
   if (!Object.hasOwn(SWITCHES, name)) throw new Error(`unknown test switch ${name}`);

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { resolveHome, projectInstance, selectHome, INSTANCE_RE } from "../scripts/home.mjs";
+import { resolveHome, projectInstance, selectHome, INSTANCE_RE, gateProjectEnv, projectSetNames, PROJECT_GATED } from "../scripts/home.mjs";
 import { helperEnv } from "../scripts/launcher/daemon-connect.mjs";
 import { withInstallLock, withInstallLockSync } from "../scripts/install-lock.mjs";
 
@@ -135,4 +135,52 @@ test("open.mjs's home: the record's, else the one the environment names, else th
   assert.deepEqual(selectHome({ PAIRBROWSE_INSTANCE: "a" }, { PAIRBROWSE_HOME: "/h" }), { PAIRBROWSE_HOME: "/h" });
   assert.deepEqual(selectHome({ PAIRBROWSE_HOME: "/a" }, null), { PAIRBROWSE_HOME: "/a" });
   assert.deepEqual(selectHome({}, null), { PAIRBROWSE_INSTANCE: "default" });
+});
+
+// A project's own settings (Claude Code hands their "env" to the plugin) never pick the helper's
+// home nor the name it shows others; the same variables from your own shell still work.
+test("a home or participant name set by the project's settings is dropped; set elsewhere it stays", () => {
+  assert.deepEqual([...PROJECT_GATED].sort(), ["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"]);
+  const clean = project("gate-clean");
+  const env1 = { PAIRBROWSE_HOME: "/x/home", PAIRBROWSE_PARTICIPANT: "Me", CLAUDE_PROJECT_DIR: clean };
+  assert.deepEqual(gateProjectEnv(env1), []);
+  assert.equal(env1.PAIRBROWSE_HOME, "/x/home");
+  for (const [dir, file, text] of [
+    [".claude", "settings.json", JSON.stringify({ env: { PAIRBROWSE_HOME: "/evil", PAIRBROWSE_PARTICIPANT: "Alice (host)" } })],
+    [".claude", "settings.local.json", JSON.stringify({ env: { PAIRBROWSE_HOME: "/evil", PAIRBROWSE_PARTICIPANT: "x" } })],
+    [".codex", "config.toml", '[shell_environment_policy.set]\nPAIRBROWSE_HOME = "/evil"\nPAIRBROWSE_PARTICIPANT = "x"\n'],
+  ]) {
+    const proj = project(`gate-${file}`);
+    mkdirSync(join(proj, dir), { recursive: true });
+    writeFileSync(join(proj, dir, file), text);
+    assert.deepEqual(projectSetNames(proj).sort(), ["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"], file);
+    const env = { PAIRBROWSE_HOME: "/evil", PAIRBROWSE_PARTICIPANT: "Alice (host)", PAIRBROWSE_INSTANCE: "work", CLAUDE_PROJECT_DIR: proj };
+    assert.deepEqual(gateProjectEnv(env).sort(), ["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"], file);
+    assert.ok(!("PAIRBROWSE_HOME" in env) && !("PAIRBROWSE_PARTICIPANT" in env), file);
+    assert.equal(env.PAIRBROWSE_INSTANCE, "work", "an instance of your own stays choosable");
+    // The current folder when Claude Code names none.
+    const env2 = { PAIRBROWSE_HOME: "/evil" };
+    assert.deepEqual(gateProjectEnv(env2, { cwd: proj }), ["PAIRBROWSE_HOME"]);
+  }
+  // A settings path that can't be read (a folder in a file's place) counts as naming them all.
+  const odd = project("gate-odd");
+  mkdirSync(join(odd, ".claude", "settings.json"), { recursive: true });
+  assert.deepEqual(projectSetNames(odd).sort(), ["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"]);
+});
+
+test("a process in such a project resolves the default home and passes neither variable on", () => {
+  const proj = project("gate-run");
+  mkdirSync(join(proj, ".claude"), { recursive: true });
+  writeFileSync(join(proj, ".claude", "settings.json"), JSON.stringify({ env: { PAIRBROWSE_HOME: join(proj, "home"), PAIRBROWSE_PARTICIPANT: "Alice" } }));
+  const code = `const p = await import(${JSON.stringify(new URL("../scripts/paths.mjs", import.meta.url).href)});
+    const d = await import(${JSON.stringify(new URL("../scripts/launcher/daemon-connect.mjs", import.meta.url).href)});
+    const e = d.helperEnv();
+    console.log(JSON.stringify({ home: p.HOME, warning: p.SELECTED.warning, env: [e.PAIRBROWSE_HOME, e.PAIRBROWSE_PARTICIPANT, process.env.PAIRBROWSE_HOME] }));`;
+  const env = { PATH: process.env.PATH, HOME: account, PAIRBROWSE_HOME: join(proj, "home"), PAIRBROWSE_PARTICIPANT: "Alice", CLAUDE_PROJECT_DIR: proj };
+  const out = spawnSync(process.execPath, ["--input-type=module", "-e", code], { cwd: proj, env, encoding: "utf8" });
+  assert.equal(out.status, 0, out.stderr);
+  const r = JSON.parse(out.stdout.trim().split("\n").pop());
+  assert.equal(r.home, join(account, ".pairbrowse"));
+  assert.match(r.warning, /PAIRBROWSE_HOME and PAIRBROWSE_PARTICIPANT set by this project's settings/);
+  assert.deepEqual(r.env, [null, null, null], "neither reaches the helper (JSON writes a missing one as null)");
 });

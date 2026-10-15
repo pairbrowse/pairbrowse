@@ -1,4 +1,4 @@
-// One call can't hold the shared queue forever: past the cap (PAIRBROWSE_TURN_MAX_MS) the helper
+// One call can't hold the shared queue forever: past the cap (PAIRBROWSE_TEST_TURN_MAX_MS) the helper
 // answers it, resets the browser and lets the next agent go on. Live: a real helper and browser
 // (PAIRBROWSE_TEST_RUNTIME).
 import "../helpers/home.mjs";
@@ -20,7 +20,7 @@ test("a call that runs past the cap is answered, the browser resets, and the nex
   const h = mkdtempSync(join(base, "cap-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
-  const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TURN_MAX_MS: "20000" } });
+  const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TEST_TURN_MAX_MS: "20000" } });
   const a = [];
   try {
     const socketPath = join(h, "run", "browser.sock");

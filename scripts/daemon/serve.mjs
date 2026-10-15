@@ -37,7 +37,7 @@ const MCP_SETTLE_DEFAULT_MS = 200;
 const STALLED_MS = 30_000; // a disconnected participant's action may run this long
 // The most one call may hold the shared queue. Past it the browser is reset (as for a stalled
 // client that left), so one stuck call can't keep every other agent on this computer waiting.
-const TURN_MAX_MS = Number(process.env.PAIRBROWSE_TURN_MAX_MS) || 10 * 60_000;
+const TURN_MAX_MS = testMs("TURN_MAX_MS", 10 * 60_000);
 const TURN_MAX = TURN_MAX_MS >= 60_000 ? `${Math.round(TURN_MAX_MS / 60_000)} minutes` : `${Math.round(TURN_MAX_MS / 1000)} seconds`;
 
 // deps: the helper's parts (see daemon.mjs). Returns serve(sock, { remote }): runs one participant

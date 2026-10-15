@@ -11,7 +11,7 @@
 // "default" names the default home. An instance keeps its own profile, sessions, config, secrets,
 // facts, runs and logs; the read-only installs (runtime, browser apps, engine pack, cloudflared,
 // downloads, this Mac's measured profile) stay in the default home and are shared: `shared`.
-import { closeSync, fstatSync, openSync, readSync, constants as fsConstants } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync, readFileSync, constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
@@ -52,6 +52,48 @@ export function projectInstance(dir, { uid = process.getuid?.() } = {}) {
   } finally {
     closeSync(fd);
   }
+}
+
+// Variables a project's own settings may not set. Claude Code hands a project's
+// .claude/settings.json (and .claude/settings.local.json) "env" to the plugin it runs, and Codex
+// its .codex/config.toml: those name which folder is this helper's home (its profile, config,
+// secrets, the installs it runs) and the name it shows the people it shares with. Set there, they
+// are removed before anything reads them (paths.mjs), so a project never picks a home of its
+// choosing (it may still pick one of your own instances: PAIRBROWSE_INSTANCE, .pairbrowse.json)
+// nor speaks as someone else. Set in your own shell or user settings, they work as before.
+export const PROJECT_GATED = Object.freeze(["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"]);
+export const PROJECT_SETTINGS = Object.freeze([[".claude", "settings.json"], [".claude", "settings.local.json"], [".codex", "config.toml"]]);
+const SETTINGS_MAX_BYTES = 4 << 20;
+
+// The gated names the project folder's settings files mention (any mention counts: a file too big
+// or unreadable for a reason other than its absence counts as naming them all).
+export function projectSetNames(dir) {
+  if (typeof dir !== "string" || !isAbsolute(dir)) return [];
+  const named = new Set();
+  for (const parts of PROJECT_SETTINGS) {
+    let text;
+    try {
+      text = readFileSync(join(dir, ...parts));
+    } catch (e) {
+      if (e?.code === "ENOENT" || e?.code === "ENOTDIR") continue;
+      return [...PROJECT_GATED];
+    }
+    if (text.length > SETTINGS_MAX_BYTES) return [...PROJECT_GATED];
+    const t = text.toString("utf8");
+    for (const name of PROJECT_GATED) if (t.includes(name)) named.add(name);
+  }
+  return [...named];
+}
+
+// Removes from env each gated variable the project's settings name (CLAUDE_PROJECT_DIR, else
+// cwd); returns the names removed.
+export function gateProjectEnv(env = process.env, { cwd = process.cwd() } = {}) {
+  const present = PROJECT_GATED.filter((k) => env[k] !== undefined);
+  if (!present.length) return [];
+  const names = projectSetNames(env.CLAUDE_PROJECT_DIR || cwd);
+  const removed = present.filter((k) => names.includes(k));
+  for (const k of removed) delete env[k];
+  return removed;
 }
 
 // The home for an environment and a project folder:

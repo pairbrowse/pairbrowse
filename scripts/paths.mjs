@@ -2,7 +2,7 @@ import { userInfo } from "node:os";
 import { join, sep } from "node:path";
 import { mkdirSync, chmodSync } from "node:fs";
 import { writeJsonAtomic, sha256, readJson } from "./util.mjs";
-import { resolveHome } from "./home.mjs";
+import { resolveHome, gateProjectEnv } from "./home.mjs";
 
 // Everything PairBrowse writes is private to your user account.
 process.umask(0o077);
@@ -10,7 +10,11 @@ process.umask(0o077);
 // The home (home.mjs): PAIRBROWSE_HOME, else a named instance (PAIRBROWSE_INSTANCE, or the
 // project's .pairbrowse.json), else ~/.pairbrowse. SHARED holds the read-only installs every
 // instance uses (the default home; the home itself when PAIRBROWSE_HOME is set).
+// A home or name a project's own settings set is dropped first (home.mjs gateProjectEnv), so
+// neither this process nor the helper it starts uses it.
+const GATED = gateProjectEnv(process.env);
 export const SELECTED = resolveHome();
+if (GATED.length) SELECTED.warning = [SELECTED.warning, `${GATED.join(" and ")} set by this project's settings`].filter(Boolean).join("; ");
 export const HOME = SELECTED.home;
 export const SHARED = SELECTED.shared;
 export const INSTANCE = SELECTED.instance;

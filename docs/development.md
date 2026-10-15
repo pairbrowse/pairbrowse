@@ -130,10 +130,34 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `SILENT_MS` | knob | `failover`, `join` | When a joiner's stream counts as silent |
 | `TAB_ORDER` | knob | `integration/taborder` | Adds `pairbrowse_test_tab_order`: read and move tabs in the strip |
 | `TUNNEL` | knob | the sharing tests, `bench` | `direct`: the guest port stands in for a tunnel |
+| `TURN_MAX_MS` | knob | `integration/turn-cap` | The most one call may hold the shared queue (10 minutes otherwise) |
 
 Not switches: `PAIRBROWSE_FUZZ_RUNS` sets the runs per fuzz property (CI uses 20000), `PB_DEBUG`
 prints a helper's log in a few live tests, and `PB_MAIL`/`PB_RUNTIME` are how
 `optin/two-machines` hands its two sides their shared folder and runtime.
+
+### Every other variable
+
+The `PAIRBROWSE_*` variables the bridge, the hooks and the helper read besides the test switches,
+and whether a project may set them. Claude Code hands a project's `.claude/settings.json` and
+`.claude/settings.local.json` `env` to the plugin (Codex: `.codex/config.toml`); a variable that
+picks who the helper is or relaxes a check is removed when one of those files names it
+(`gateProjectEnv` in `scripts/home.mjs`, applied as `scripts/paths.mjs` loads) or is a test switch.
+
+| Variable | Read by | A project may set it | What it does |
+|----------|---------|----------------------|--------------|
+| `PAIRBROWSE_HOME` | every process (`home.mjs`) | no: removed | The home folder: profile, config, secrets, the installs the helper runs |
+| `PAIRBROWSE_PARTICIPANT` | bridge, helper | no: removed | The name joiners and other agents see for this connection or host |
+| `PAIRBROWSE_INSTANCE` | every process (`home.mjs`) | yes | One of your own instances, `~/.pairbrowse/instances/<name>`, as a project's `.pairbrowse.json` may choose |
+| `PAIRBROWSE_APPROVAL_WAIT_MS` | `guard.mjs` (hook) | yes | How long an ask waits in the browser (100 ms to 10 min) before the terminal's prompt is the only one; it never allows anything |
+| `PAIRBROWSE_TRACE` | helper | yes | `1`: each result's phases and their time in the helper's log (no page content) |
+| `PAIRBROWSE_LATENCY_LOG` | helper | yes | `1`: joiner stream timings in the log |
+| `PAIRBROWSE_TEST_*` | helper | no: removed | The test switches above; only a helper the test harness started keeps them |
+
+Not ours but read: `CLAUDE_PROJECT_DIR` (the project folder), `CLAUDE_CODE_REMOTE` and
+`CLAUDE_CODE_ENTRYPOINT` (which surface, for wording and the session picker), `SSH_CONNECTION`
+(the "Server" label). Playwright MCP's `PLAYWRIGHT_MCP_*` variables are not read: the helper builds
+its browser server with `createConnection`, which takes only the helper's own settings.
 
 ### The live tests
 

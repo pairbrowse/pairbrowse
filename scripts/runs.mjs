@@ -9,6 +9,7 @@ import { createInterface } from "node:readline";
 import { paths, ensureDirs } from "./paths.mjs";
 import { currentSession } from "./sessions.mjs";
 import { readJson, writeJsonAtomic } from "./util.mjs";
+import { RUNS_TOOLS as TOOLS } from "./tools/catalog.mjs";
 
 export const REVIEW_MAX_AGE_MIN = 30;
 // An auto run nothing touched for a day counts as stale; one older than a week is no longer offered at session start.
@@ -143,32 +144,6 @@ export function saveReview(a) {
 export function latestReview() {
   return readJson(join(paths.reviews, "latest.json"));
 }
-
-const str = { type: "string" };
-const strs = { type: "array", items: str };
-const TOOLS = [
-  {
-    name: "run_save",
-    description: "Save progress of a PairBrowse run so it can be resumed later. Call at the start of a job and after each page, passing the open tabs from browser_tabs. Lists replace the previous ones, except done and drafted, which accumulate. The log PairBrowse kept by itself for the current task goes in under this name.",
-    inputSchema: { type: "object", required: ["name"], properties: {
-      name: { ...str, description: "Short stable name, e.g. 'shopify-app-listing'" },
-      goal: str, done: strs, left: strs, yourTurn: { ...strs, description: "Things only the user can do" },
-      drafted: { ...strs, description: "Fields whose text Claude wrote and the user should check" },
-      notes: str, status: { type: "string", enum: ["open", "finished"] },
-      tabs: { type: "array", items: { type: "object", properties: { title: str, url: str } }, description: "Open tabs, from browser_tabs list" },
-    } },
-  },
-  { name: "run_list", description: "List saved runs, newest first, with what's done and left. Includes the runs PairBrowse kept by itself (stale after a day untouched).", inputSchema: { type: "object", properties: {} } },
-  { name: "run_get", description: "Get one saved run: its browser session (pairbrowse_session use <name>), the tabs that were open, and whether the browser restarted since.", inputSchema: { type: "object", required: ["name"], properties: { name: str } } },
-  {
-    name: "review_save",
-    description: "Record the pre-submit review: every rule from the platform's CURRENT official requirements checked against the filled-in listing. Required before any submit-for-review or publish click. A rule the user explicitly accepts failing can be marked waived.",
-    inputSchema: { type: "object", required: ["platform", "guidelinesUrl", "checks"], properties: {
-      run: str, platform: str, guidelinesUrl: { ...str, description: "Official requirements page you read for this review" },
-      checks: { type: "array", items: { type: "object", required: ["rule", "ok"], properties: { rule: str, ok: { type: "boolean" }, note: str, waived: { type: "boolean", description: "Only when the user said to submit anyway" } } } },
-    } },
-  },
-];
 
 async function callTool(name, a = {}) {
   switch (name) {

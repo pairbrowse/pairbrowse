@@ -23,6 +23,7 @@ import { randomBytes } from "node:crypto";
 import { AGENT_COLOR, isColor } from "../../ui/vocab.js";
 import { CHROME_SCREEN, extensionUrl, isShownScreenPage } from "../../ui/urls.js";
 import { PICK_FILE_MAX, PICK_FILES_MAX, JOINER_POINTER_EVERY_MS } from "../../ui/limits.js";
+import { toolsWith } from "../tools/catalog.mjs";
 
 // Runs tasks one at a time, in order; a failed task doesn't stop the next.
 function serially() {
@@ -67,7 +68,7 @@ export const isScreenPage = (url) => {
 };
 // The tools an agent here uses in the host's browser while in a shared browser session (the rest,
 // such as its status, remembered details and sessions, stay here).
-const FORWARDED = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_click_at"]);
+const FORWARDED = toolsWith("forwarded");
 const AGENT_CALL_MS = 15 * 60_000;
 const JOIN_ANSWER_MS = 5000; // join waits this long for the host's first answer (a code that doesn't work is an error at once)
 const RECONNECT_WAIT_MS = 60_000; // a call while the link to the host is down waits this long for it // a call there (a hand-off waits for a person) answers within this

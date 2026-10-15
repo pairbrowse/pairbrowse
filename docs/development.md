@@ -124,6 +124,8 @@ The plugin is small:
 | `.mcp.json` (Claude Code), `.codex-plugin/mcp.json` (Codex), `scripts/launch.mjs` | Bridge both apps run: installs the pinned runtime, starts or reconnects to the helper |
 | `scripts/daemon.mjs`, `scripts/daemon/` | The helper: owns Chrome over a pipe, serves shared clients over a private socket, enforces policy (tool calls, browser and sessions, people at the browser, the in-page badge and bar, screenshots, masking, side panel, sharing) |
 | `scripts/policy.mjs`, `scripts/secrets.mjs` | Rules the helper enforces: blocked tools, navigation, secret domains |
+| `scripts/tools/catalog.mjs` | Every tool's definition and rules, in one place (serve, guard, policy, launch, runs and the skill check read it) |
+| `ui/vocab.js`, `ui/urls.js`, `ui/limits.js` | What the helper and the pages share: words and colors, the browser's own addresses, limits both sides keep |
 | `runtime/` | Pinned Playwright MCP version and lockfile |
 | `scripts/runs.mjs` | `runs` MCP server: saved runs (resume) and pre-submit reviews |
 | `scripts/guard.mjs` | PreToolUse hook: auto-allows browser actions, enforces the review, asks before final ones (in Codex, which can't ask from a hook, it hands them to you; the helper applies the same rules for every app but Claude Code) |

@@ -92,21 +92,8 @@ function describeFacts(details) {
 
 // ---- the pairbrowse_facts tool and the Profile panel ---------------------------------------
 
-export const FACTS_TOOL = {
-  name: "pairbrowse_facts",
-  description:
-    'What PairBrowse remembers for filling forms. action "get": the remembered details (company, contact, addresses...) and the names of saved passwords with their sites. ' +
-    '"remember" with details {label: value}: save details the user told you (never passwords). "forget" with labels: remove details. Read this before asking the user for anything.',
-  inputSchema: {
-    type: "object",
-    required: ["action"],
-    properties: {
-      action: { type: "string", enum: ["get", "remember", "forget"] },
-      details: { type: "object", additionalProperties: { type: "string" } },
-      labels: { type: "array", items: { type: "string" } },
-    },
-  },
-};
+// The tool's definition lives in the catalog (tools/catalog.mjs).
+export { FACTS_TOOL } from "./tools/catalog.mjs";
 
 // secrets: the password store ({ get, save }, secretStore in secrets.mjs). onChange: after Claude
 // or a form changed the details (the Profile panel refreshes itself).

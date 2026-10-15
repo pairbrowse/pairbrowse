@@ -15,6 +15,7 @@ import { paths } from "./paths.mjs";
 import { navigationProblem, BLOCKED_TOOLS, BROWSER_PREFIX } from "./policy.mjs";
 import { latestReview, REVIEW_MAX_AGE_MIN } from "./runs.mjs";
 import { secretInside, MEDIA, realPath } from "./upload.mjs";
+import { toolsWith } from "./tools/catalog.mjs";
 
 // A click Claude knows commits something is named with its class first: "Pay: Submit order",
 // "Delete: OK", "Submit: Create account", "Send: Reply", "Publish: Submit for review". The helper
@@ -173,7 +174,7 @@ export function forMode(input, verdict) {
 // The class an element starts with, as clickClass reads it, with what follows it.
 export const CLICK_PREFIX = /^[\s"'“‘([]*[A-Za-z]+\s*:\s*/;
 // The tools whose named final action can be answered in the browser as well.
-export const APPROVAL_TOOLS = new Set(["browser_click", "browser_drag", "browser_drop", "pairbrowse_click_at", "browser_handle_dialog"]);
+export const APPROVAL_TOOLS = toolsWith("approval"); // the catalog's (tools/catalog.mjs)
 
 // What the browser's card says for this call ({ reason, target }), or null when it isn't a named
 // click or dialog OK the rules ask about. The reason is the rule's own (decide()), never the agent's.

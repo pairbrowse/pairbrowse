@@ -7,9 +7,8 @@ import { waitForLink, waitedLine } from "./linkwait.mjs";
 import { createInterface } from "node:readline";
 import { paths } from "../paths.mjs";
 import { hostAllowed } from "../secrets.mjs";
-import { BLOCKED_TOOLS, HIDDEN_TOOLS, STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, sensitiveLabel, isChromePage, CHROME_PAGE_RULE } from "../policy.mjs";
+import { BLOCKED_TOOLS, HIDDEN_TOOLS, secretNamesIn, navigationProblem, looksLikeSecretName, trimResult, isRef, sensitiveLabel, isChromePage, CHROME_PAGE_RULE } from "../policy.mjs";
 import { isUntouchedStart } from "../tabs.mjs";
-import { COLLABORATION_TOOL } from "../collaboration.mjs";
 import { appName, personLabel, computerName } from "../join.mjs";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -18,12 +17,9 @@ import { decide, clickClass, approvalAsk, APPROVAL_TOOLS } from "../guard.mjs";
 import { sameWhere, originOf } from "./approvals.mjs";
 import { clickRule, dialogRule, strongSignal } from "../clickrule.mjs";
 import { keepFocus } from "../focus.mjs";
-import { SESSION_TOOL } from "../sessions.mjs";
-import { UPLOAD_TOOL, uploadFiles } from "../upload.mjs";
-import { FACTS_TOOL } from "../facts.mjs";
-import { RUN_TOOL, SCROLL_TOOL, enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks, isoDate } from "../runner.mjs";
+import { uploadFiles } from "../upload.mjs";
+import { enterButtonLabel, riskAt, contextAt, riskReason, activatingKey, runSteps, preflight, outline, substitute, loadPlaybook, savePlaybook, listPlaybooks, isoDate } from "../runner.mjs";
 import { sleep, within, pageLoaded } from "../util.mjs";
-import { CLICK_AT_TOOL } from "./screenshot.mjs";
 import { buttonLabel, settle } from "./page.mjs";
 import { scanReveal, revealNote, foldedLine } from "./reveal.mjs";
 import { stopRequestMirroring } from "./context.mjs";
@@ -32,42 +28,42 @@ import { dragBetween, reason as dragReason } from "./drag.mjs";
 import { createRefNames, plainError, hideChromeTabs, hidePersonTabs, PERSON_TAB_RULE } from "./output.mjs";
 import { humanFill, humanType, fillSettings } from "../native-engine.mjs";
 import { STATUS_KINDS } from "../../ui/vocab.js";
+import { HELPER_TOOLS, toolsWith } from "../tools/catalog.mjs";
 
-const PAIRBROWSE_TOOLS = [STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, RUN_TOOL, SCROLL_TOOL, UPLOAD_TOOL, CLICK_AT_TOOL, SESSION_TOOL, FACTS_TOOL, COLLABORATION_TOOL];
+// The helper's own tools, listed after the browser's, and each tool's rules below: the catalog's.
+const PAIRBROWSE_TOOLS = HELPER_TOOLS;
 // A small picture of the page goes with each result that changes what's on screen, taken once
 // the page has loaded and settled for a second: the layout, overlays and images the text
 // snapshot can't show. config.screenshots = false turns it off.
-const SCREENSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_click", "browser_press_key", "browser_tabs", "browser_wait_for", "browser_snapshot", "browser_handle_dialog", "browser_drag", "browser_select_option", "pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload"]);
+const SCREENSHOT_TOOLS = toolsWith("screenshot");
 // Results after which the page may load new popups (checked again a few seconds later); after
 // Claude's clicks, overlays already on screen count as Claude's own and stay.
-const LOADING_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_tabs"]);
+const LOADING_TOOLS = toolsWith("loading");
 // Actions whose result links the page's snapshot in a file: the snapshot comes in the result
 // instead (output.inlineSnapshot), so the next action needs no browser_snapshot first. Typing and
 // hovering get theirs only when short (INLINE_SHORT_TOOLS).
-const INLINE_SNAPSHOT_TOOLS = new Set(["browser_navigate", "browser_navigate_back", "browser_click", "browser_select_option", "browser_press_key", "browser_tabs", "browser_hover", "browser_type"]);
-const INLINE_SHORT_TOOLS = new Set(["browser_type", "browser_hover"]);
-const CLICKING_TOOLS = new Set(["browser_click", "browser_press_key", "browser_handle_dialog", "browser_drag", "browser_drop", "browser_select_option", "browser_type", "browser_fill_form", "pairbrowse_run", "pairbrowse_upload"]);
+const INLINE_SNAPSHOT_TOOLS = toolsWith("inline");
+const INLINE_SHORT_TOOLS = toolsWith("inlineShort");
+const CLICKING_TOOLS = toolsWith("clicking");
 // Tools that act in the participant's tab: they take turns per tab (TabClaims) and wait for a
 // person using that tab.
-const TAB_TOOLS = new Set(["browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_hover",
-  "browser_navigate", "browser_navigate_back", "browser_drag", "browser_drop", "browser_file_upload", "browser_handle_dialog",
-  "pairbrowse_click_at", "pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload"]);
+const TAB_TOOLS = toolsWith("tab");
 // Tools that fill a field: a field a person is filling is left to them (daemon/fields.mjs).
-const FIELD_TOOLS = new Set(["browser_type", "browser_select_option", "browser_fill_form"]);
+const FIELD_TOOLS = toolsWith("field");
 // Tools that read the current tab without taking its turn (anyone may watch any tab).
-const PAGE_READ_TOOLS = new Set(["browser_snapshot", "browser_find", "browser_wait_for"]);
+const PAGE_READ_TOOLS = toolsWith("pageRead");
 // PairBrowse's own tools that answer before (or without) the browser being ready.
-const NO_WAIT = new Set(["pairbrowse_status", "pairbrowse_liveview", "pairbrowse_invite", "pairbrowse_session", "pairbrowse_facts"]);
+const NO_WAIT = toolsWith("noWait");
 // Tools that don't wait for the session picker: they choose a session themselves or only talk.
-const NO_PICK_WAIT = new Set([...NO_WAIT, "pairbrowse_join", "pairbrowse_collaboration", "pairbrowse_dock"]);
+const NO_PICK_WAIT = toolsWith("noPickWait");
 const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for the person to pick a session (its first tab asks: continue a saved session, start a fresh one, or join a shared one). " +
   "Ask them in chat which they want, then use pairbrowse_session (use, or new with clean: true) or pairbrowse_join; or retry once they've picked.";
 // Its own tools that act in a page: their results get the same notes and screenshot as the
 // browser tools'. browser_drag is the helper's own too (daemon/drag.mjs): a drag as a hand does
 // it, where Playwright's makes one move and most boards put the card back.
-const DECORATED = new Set(["pairbrowse_run", "pairbrowse_upload", "browser_drag", "browser_wait_for"]);
+const DECORATED = toolsWith("decorated");
 // Helper tools that act in the agent's tab, refused there when it is one of the browser's own pages.
-const CHROME_GUARDED = new Set(["pairbrowse_click_at", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_run"]);
+const CHROME_GUARDED = toolsWith("chromeGuarded");
 const WAIT_FOR_MS = 8000; // browser_wait_for: how long text gets to appear or go
 const RUN_MAX_MS = 120_000; // a fast-mode run stops between steps past this
 // Calls after which other participants' refs may be stale.
@@ -178,7 +174,7 @@ async function sensitiveTarget(page, target) {
 
 // Shared browser mode: what a joiner's agent (a remote participant, daemon/remote-agents.mjs) may
 // use here, and the paths that name files it sent over.
-const REMOTE_TOOLS = new Set(["pairbrowse_run", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_click_at", "pairbrowse_collaboration"]);
+const REMOTE_TOOLS = toolsWith("remote");
 // A result on its way to a joiner's agent: nothing of this computer's folders. Links to files
 // saved here (snapshots, downloads) keep their name only; this computer's home becomes "~".
 export function forJoiner(text, homes = [paths.home, homedir(), tmpdir()]) {

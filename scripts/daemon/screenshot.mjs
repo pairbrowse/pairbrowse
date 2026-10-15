@@ -29,15 +29,8 @@ const SHOT_MAX_AGE_MS = 120_000;
 // The scroll may differ this much (CSS px) from the picture's: sub-pixel and rounding.
 const SCROLL_SLACK_PX = 2;
 
-export const CLICK_AT_TOOL = {
-  name: "pairbrowse_click_at",
-  description: "Click a spot by its position in the latest screenshot (x, y in that image's pixels), for what the page structure doesn't name well: an icon-only close button, a map, a canvas. Prefer browser_click with a ref when there is one. Pay, publish, submit and delete buttons, and anything inside a frame, can't be clicked this way.",
-  inputSchema: {
-    type: "object",
-    required: ["x", "y", "element"],
-    properties: { x: { type: "number" }, y: { type: "number" }, element: { type: "string", description: "What you're clicking, as you see it" } },
-  },
-};
+// The tool's definition lives in the catalog (tools/catalog.mjs).
+export { CLICK_AT_TOOL } from "../tools/catalog.mjs";
 
 // The width of a JPEG, from its frame header.
 function jpegWidth(buf) {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,22 +52,16 @@ test("the core stays compact", () => {
   assert.ok(sessionStart("").length <= 6500, "core plus surface note stays small");
 });
 
-test("every tool the core names exists", () => {
-  const scripts = join(root, "scripts");
-  const sources = readdirSync(scripts, { recursive: true }).filter((f) => f.endsWith(".mjs")).map((f) => readFileSync(join(scripts, f), "utf8")).join("\n");
-  const policy = readFileSync(join(scripts, "policy.mjs"), "utf8");
-  const setOf = (name) => [...policy.match(new RegExp(`${name} = new Set\\(\\[([\\s\\S]*?)\\]\\)`))[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]);
-  const off = new Set([...setOf("BLOCKED_TOOLS"), ...setOf("HIDDEN_TOOLS")]);
-  // Passed through from the pinned @playwright/mcp (see the skills repo's validate.mjs).
-  const playwright = new Set(["browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_click", "browser_type",
-    "browser_fill_form", "browser_select_option", "browser_press_key", "browser_hover", "browser_drag", "browser_drop",
-    "browser_tabs", "browser_wait_for", "browser_find", "browser_handle_dialog", "browser_file_upload"]);
+test("every tool the core names exists", async () => {
+  // The tool catalog: what PairBrowse offers, hides and blocks.
+  const { CATALOG, OFFERED_PLAYWRIGHT, toolsWith } = await import("../scripts/tools/catalog.mjs");
+  const off = new Set([...toolsWith("blocked"), ...toolsWith("hidden")]);
   const names = [...new Set(core.match(/\b(?:browser|pairbrowse)_[a-z_]+\b|\b(?:run|review)_[a-z_]+\b/g))];
   assert.ok(names.length > 10);
   for (const t of names) {
     assert.ok(!off.has(t), `core.md names ${t}, which PairBrowse hides or blocks`);
-    if (t.startsWith("browser_")) assert.ok(playwright.has(t), `unknown browser tool ${t}`);
-    else assert.match(sources, new RegExp(`name: "${t}"`), `no tool named ${t} in scripts/`);
+    if (t.startsWith("browser_")) assert.ok(OFFERED_PLAYWRIGHT.has(t), `unknown browser tool ${t}`);
+    else assert.equal(CATALOG[t]?.def?.name, t, `no tool named ${t} in the catalog`);
   }
 });
 

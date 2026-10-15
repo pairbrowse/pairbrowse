@@ -7,11 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-export const DOCK_TOOL = {
-  name: "pairbrowse_dock",
-  description: 'Show the browser as a pane on the right side of the Claude desktop app window (macOS), so it looks like part of the app and follows the window. action "on" or "off".',
-  inputSchema: { type: "object", required: ["action"], properties: { action: { type: "string", enum: ["on", "off"] }, width: { type: "number", description: "Pane width in points (default: about half the window)" } } },
-};
+// The tool's definition lives in the catalog (tools/catalog.mjs).
+export { DOCK_TOOL } from "./tools/catalog.mjs";
 
 export const dockSupported = () => process.platform === "darwin";
 

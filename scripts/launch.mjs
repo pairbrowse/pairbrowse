@@ -5,8 +5,8 @@
 import { createInterface } from "node:readline";
 import { loadConfig } from "./paths.mjs";
 import { connectLocal as connectHelper } from "./daemon-connect.mjs";
-import { DOCK_TOOL, dockSupported, startPane } from "./dock.mjs";
-import { JOIN_TOOL } from "./policy.mjs";
+import { dockSupported, startPane } from "./dock.mjs";
+import { JOIN_TOOL, DOCK_TOOL } from "./tools/catalog.mjs";
 
 const err = (s) => process.stderr.write(`pairbrowse: ${s}\n`);
 

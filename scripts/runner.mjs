@@ -25,41 +25,8 @@ const strokeEnds = new WeakMap(); // page -> where its last stroke let go (moves
 // How long a handoff waits for the user (a sign-in, a CAPTCHA).
 const HANDOFF_MS = 10 * 60_000;
 
-export const RUN_TOOL = {
-  name: "pairbrowse_run",
-  description:
-    "Run several browser steps in one call, fast, on the current tab. Use it for each page (or a whole saved flow) instead of one tool call per field. " +
-    'Steps, one key each: {"go":url} {"fill":{"Label":"value",...}} {"check":"Label"} {"uncheck":"Label"} {"select":{"Label":"Option"}} ' +
-    '{"click":"Button or link text"} {"press":"Enter"} {"scroll":"down"|"up"|pixels} {"drag":[[x,y],...]} (press at the first point, move through the rest, let go: drawing on canvases; x, y are fractions 0-1 of the visible page) {"upload":{"Label":"/abs/path"}} {"waitFor":"text"} {"expect":"text"} ' +
-    '{"handoff":{"say":"what the user must do","until":"text that appears after"}} (or "untilGone"). ' +
-    "Labels match the field's label, placeholder or name. Values may use {{var}} from vars. Stops at the first problem and says why. " +
-    "Returns where it ended and an outline of the page (fields, buttons, errors). Save a working flow with saveAs, replay it with playbook + vars; list saved ones with list:true. " +
-    "Ordinary buttons and form submits run here. Payments, deletions (judged by what a click does) and a click step you name as a final action (\"Send: Reply\") stop the run: use browser_click so the user confirms.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      steps: { type: "array", items: { type: "object" } },
-      vars: { type: "object", additionalProperties: { type: "string" } },
-      playbook: { type: "string", description: "Run a saved playbook" },
-      saveAs: { type: "string", description: "Save these steps as a playbook if they all succeed" },
-      list: { type: "boolean", description: "List saved playbooks" },
-    },
-  },
-};
-
-// A single scroll that glides like a person's, with the agent's cursor on the page. Fast mode's
-// scroll step goes at once instead.
-export const SCROLL_TOOL = {
-  name: "pairbrowse_scroll",
-  description: 'Scroll the current tab the way a person does: the cursor moves onto the page and the wheel turns smoothly, so people watching see it. direction "down" or "up" (a screen), or pixels (negative: up). Use it instead of PageDown or End.',
-  inputSchema: {
-    type: "object",
-    properties: {
-      direction: { type: "string", enum: ["down", "up"] },
-      pixels: { type: "integer", minimum: -20000, maximum: 20000 },
-    },
-  },
-};
+// The tools' definitions live in the catalog (tools/catalog.mjs).
+export { RUN_TOOL, SCROLL_TOOL } from "./tools/catalog.mjs";
 
 const PLAYBOOKS = join(paths.home, "playbooks");
 const playbookFile = (name) => join(PLAYBOOKS, `${slug(name, "playbook")}.json`);

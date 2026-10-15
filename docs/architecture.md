@@ -43,8 +43,13 @@ what each boundary protects against, see [security.md](security.md) and the
   `outline` (the last whole-page snapshot an agent got per tab, in memory, dropped with the tab).
   With a native build that has its own pages, those `chrome://pairbrowse` pages are live view
   clients with a key of their own from an owner-only key file named in the launch switches; the picker's pick comes over `POST pick`.
-- **Policy and secrets** (`scripts/policy.mjs`, `scripts/secrets.mjs`): which tools exist, which
-  addresses open, which clicks need the user, where a password may be typed and how it is masked.
+- **Policy and secrets** (`scripts/policy.mjs`, `scripts/secrets.mjs`): which addresses open,
+  which clicks need the user, where a password may be typed and how it is masked. Which tools exist
+  and each tool's rules (blocked, hidden, approval, turn-taking, screenshots) are the tool catalog's
+  (`scripts/tools/catalog.mjs`), which the helper, the hooks and the skill check all read.
+- **Shared truths** (`ui/vocab.js`, `ui/urls.js`, `ui/limits.js`): the words and colors, the
+  browser's own addresses and the limits that the helper, the in-page script and the pages share,
+  as flat files at the `ui/` root (the live view serves them; the native build ships them).
 - **Hooks** (`scripts/guard.mjs`, `scripts/log.mjs`, `scripts/session-start.mjs`): the PreToolUse
   hook asks the user before final actions; the PostToolUse hook writes the run log; session start
   adds the PairBrowse core instructions. Apps that can't ask (Codex) get the same decisions applied

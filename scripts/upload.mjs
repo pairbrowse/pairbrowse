@@ -13,22 +13,8 @@ import { isRef } from "./policy.mjs";
 import { withHelpers, buttonLabel, clickRisk, clickContext } from "./daemon/page.mjs";
 import { bounded, within } from "./util.mjs";
 
-export const UPLOAD_TOOL = {
-  name: "pairbrowse_upload",
-  description:
-    "Upload files into the page in one call: an upload field (also hidden ones), an upload button, or a drag-and-drop zone. " +
-    "No file picker opens. files: absolute paths anywhere on this computer (a video or screenshot you just made is fine); images, video, PDF and office documents only. " +
-    "target: the element ref from the latest snapshot (the field, the button, or the drop zone), or its visible text or label. " +
-    "Without a target, the page's only file field is used. Returns what the page now holds.",
-  inputSchema: {
-    type: "object",
-    required: ["files"],
-    properties: {
-      files: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 20 },
-      target: { type: "string", description: "Element ref (e.g. e42), a CSS selector, or visible text/label of the field, button or drop zone" },
-    },
-  },
-};
+// The tool's definition lives in the catalog (tools/catalog.mjs).
+export { UPLOAD_TOOL } from "./tools/catalog.mjs";
 
 // Images, video and documents: what uploads here, and through browser_file_upload without asking
 // (uploadAllowed in guard.mjs).

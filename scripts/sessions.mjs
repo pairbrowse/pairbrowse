@@ -10,23 +10,8 @@ import { readJson, writeJsonAtomic } from "./util.mjs";
 const SESSIONS = join(paths.home, "sessions");
 const CURRENT = join(paths.home, "session");
 
-export const SESSION_TOOL = {
-  name: "pairbrowse_session",
-  description:
-    "Browser sessions are separate browsers, each with its own logins and tabs. " +
-    'action "list" shows them; "use" switches to one (name); "new" creates one: with clean:true and no name it is a ' +
-    'throwaway clean browser deleted when you switch away, with a name it is kept; "delete" removes one (the user confirms). ' +
-    "Switching closes the current browser window and opens the other session's tabs.",
-  inputSchema: {
-    type: "object",
-    required: ["action"],
-    properties: {
-      action: { type: "string", enum: ["list", "use", "new", "delete"] },
-      name: { type: "string", description: "Session name: letters, numbers, - and _" },
-      clean: { type: "boolean" },
-    },
-  },
-};
+// The tool's definition lives in the catalog (tools/catalog.mjs).
+export { SESSION_TOOL } from "./tools/catalog.mjs";
 
 export function validName(name) {
   return typeof name === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/.test(name);

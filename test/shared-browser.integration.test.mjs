@@ -88,6 +88,11 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
     stage = "listing tools";
     const tools = await alice.call("tools/list");
     assert.ok(tools.result.tools.some((tool) => tool.name === "pairbrowse_collaboration"));
+    // What the helper lists is the tool catalog's offer, no more and no less.
+    const { CATALOG, OFFERED_PLAYWRIGHT, HELPER_TOOLS } = await import("../scripts/tools/catalog.mjs");
+    const names = tools.result.tools.map((tool) => tool.name);
+    assert.deepEqual(names.filter((n) => !CATALOG[n] || CATALOG[n].rules.some((r) => r === "hidden" || r === "blocked")), [], "every listed tool is offered in the catalog");
+    assert.deepEqual([...OFFERED_PLAYWRIGHT, ...HELPER_TOOLS.map((t) => t.name)].filter((n) => !names.includes(n)), [], "every tool the catalog offers is listed");
     stage = "another app's local-network navigation handed to the user";
     const other = await connectClient(socketPath, "Other", "codex-mcp-client");
     const handed = await other.call("tools/call", { name: "browser_navigate", arguments: { url } });

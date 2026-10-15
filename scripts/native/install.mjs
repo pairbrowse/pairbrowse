@@ -13,7 +13,7 @@
 // (askBrowserChoice) and records the answer. An install writes nothing else into config.json.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, renameSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, renameSync, readdirSync, openSync, readSync, closeSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { paths, loadConfig, saveConfig } from "../paths.mjs";
 import { prepareProfile, browserChoice } from "../browser.mjs";
@@ -165,6 +165,47 @@ function sweepLeftovers(d) {
   for (const name of readdirSync(d.dir)) if (/^\.(install|selfcheck)-/.test(name) && name !== basename(d.pending)) rmSync(join(d.dir, name), { recursive: true, force: true });
 }
 
+// The chips a Mach-O program runs on ("arm64", "x86_64"; a universal one names each), or null
+// when the file isn't a Mach-O program.
+const CPU = { 0x0100000c: "arm64", 0x01000007: "x86_64" };
+export function machoArchs(file) {
+  let fd;
+  try {
+    fd = openSync(file, "r");
+    const b = Buffer.alloc(4096);
+    const n = readSync(fd, b, 0, b.length, 0);
+    if (n < 8) return null;
+    if (b.readUInt32LE(0) === 0xfeedfacf) return [CPU[b.readUInt32LE(4)] || "other"];
+    if (b.readUInt32BE(0) === 0xcafebabe || b.readUInt32BE(0) === 0xcafebabf) {
+      const count = b.readUInt32BE(4), size = b.readUInt32BE(0) === 0xcafebabf ? 32 : 20;
+      if (count < 1 || count > 16 || 8 + count * size > n) return null;
+      return Array.from({ length: count }, (_, i) => CPU[b.readUInt32BE(8 + i * size)] || "other");
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+// A build fits this computer only when its manifest names this platform and this chip (arch is
+// required: a manifest without one is refused). macOS builds' manifests name no platform: there it
+// may be absent or "macos", and the program itself must be a Mach-O program for this chip
+// (machO: machoArchs of the program). Throws a sentence otherwise.
+export function buildFits(manifest, layout, machO = null) {
+  const mac = layout.platform === "macos";
+  if (typeof manifest?.arch !== "string" || !manifest.arch) throw new Error(`the build's manifest names no arch; this computer is ${layout.arch}`);
+  if (manifest.arch !== layout.arch) throw new Error(`the build is for ${manifest.arch}, this computer is ${layout.arch}`);
+  if (mac) {
+    if (manifest.platform !== undefined && manifest.platform !== "macos") throw new Error(`the build is for ${manifest.platform}, not macos`);
+    if (!machO) throw new Error("the build's program isn't a macOS program");
+    if (!machO.includes(layout.arch)) throw new Error(`the build's program runs on ${machO.join(", ")}, this computer is ${layout.arch}`);
+  } else if (manifest.platform !== layout.platform) {
+    throw new Error(`the build is for ${manifest.platform}, not ${layout.platform}`);
+  }
+}
+
 // Unpacks an archive into staging and checks its manifest (and on macOS its signature, then
 // brands it). Returns the app folder and its manifest.
 async function unpackChecked(archive, staging, layout, log) {
@@ -177,8 +218,7 @@ async function unpackChecked(archive, staging, layout, log) {
   const exec = join(app, ...layout.exec);
   if (!existsSync(exec)) throw new Error(`the archive has no ${layout.folder}`);
   const manifest = nativeManifest(exec);
-  if (manifest.arch && manifest.arch !== layout.arch) throw new Error(`the build is for ${manifest.arch}, this computer is ${layout.arch}`);
-  if (!mac && manifest.platform !== layout.platform) throw new Error(`the build is for ${manifest.platform}, not ${layout.platform}`);
+  buildFits(manifest, layout, mac ? machoArchs(exec) : null);
   if (mac) {
     await verifySignature(app);
     await run("xattr", ["-cr", app]); // no quarantine on a build we checked ourselves

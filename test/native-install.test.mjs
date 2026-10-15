@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 
 const home = mkdtempSync(join(tmpdir(), "pb-install-"));
 process.env.PAIRBROWSE_HOME = home;
-const { installNative, expectedSha256, nativeDirs, ensureNative, nativeLayout, pinnedAsset } = await import("../scripts/native/install.mjs");
+const { installNative, expectedSha256, nativeDirs, ensureNative, nativeLayout, pinnedAsset, buildFits, machoArchs } = await import("../scripts/native/install.mjs");
 const { NATIVE } = await import("../scripts/native-pack.mjs");
 const { BRANDING, rebrandPak, attributionIds } = await import("../scripts/native/macos-app.mjs");
 const { nativeManifest } = await import("../scripts/native-engine.mjs");
@@ -269,6 +269,43 @@ test("a Linux/Windows build's manifest sits next to its program and names its pl
   assert.equal(nativeManifest(join(dir, "chrome")).platform, "linux");
   writeFileSync(join(dir, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "150.0.7871.114", arch: "x64" }));
   assert.throws(() => nativeManifest(join(dir, "chrome")), /names no platform/);
+});
+
+test("a build fits only this platform and chip: arch required, on macOS a Mach-O program for this chip", () => {
+  const mac = nativeLayout("darwin", "arm64"), intel = nativeLayout("darwin", "x64"), linux = nativeLayout("linux", "x64");
+  const base = { product: "PairBrowse", version: "150.0.7871.114" };
+  assert.doesNotThrow(() => buildFits({ ...base, arch: "arm64" }, mac, ["arm64"]));
+  assert.doesNotThrow(() => buildFits({ ...base, arch: "arm64", platform: "macos" }, mac, ["x86_64", "arm64"]));
+  assert.doesNotThrow(() => buildFits({ ...base, arch: "x64", platform: "linux" }, linux));
+  for (const [manifest, layout, machO, why] of [
+    [{ ...base }, mac, ["arm64"], /names no arch/],
+    [{ ...base, arch: "" }, linux, null, /names no arch/],
+    [{ ...base, platform: "linux" }, linux, null, /names no arch/],
+    [{ ...base, arch: "x86_64" }, mac, ["x86_64"], /for x86_64, this computer is arm64/],
+    [{ ...base, arch: "arm64" }, intel, ["arm64"], /for arm64, this computer is x86_64/],
+    [{ ...base, arch: "arm64", platform: "linux" }, mac, ["arm64"], /for linux, not macos/],
+    [{ ...base, arch: "arm64" }, mac, null, /isn't a macOS program/],
+    [{ ...base, arch: "arm64" }, mac, ["x86_64"], /runs on x86_64, this computer is arm64/],
+    [{ ...base, arch: "x64", platform: "windows" }, linux, null, /for windows, not linux/],
+    [{ ...base, arch: "arm64", platform: "linux" }, linux, null, /for arm64, this computer is x64/],
+  ]) assert.throws(() => buildFits(manifest, layout, machO), why, JSON.stringify(manifest));
+  assert.ok(machoArchs(process.execPath).length >= 1, "node itself is a Mach-O program here");
+  if (process.platform === "darwin") assert.equal(machoArchs("/etc/hosts"), null);
+});
+
+test("a Linux build whose manifest names no arch is refused before anything changes", async () => {
+  const layout = nativeLayout("linux", "x64");
+  const d = nativeDirs(layout);
+  const dir = temp("pb-noarch-");
+  const root = join(dir, "PairBrowse");
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, "chrome"), "#!/bin/sh\n");
+  writeFileSync(join(root, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "150.0.1.9", platform: "linux", binary: "chrome" }));
+  const archive = join(dir, "pairbrowse-150.0.1.9-linux-x64.tar.xz");
+  execFileSync("tar", ["-cJf", archive, "-C", dir, "PairBrowse"]);
+  writeFileSync(`${archive}.sha256`, `${createHash("sha256").update(readFileSync(archive)).digest("hex")}  pairbrowse-150.0.1.9-linux-x64.tar.xz\n`);
+  await assert.rejects(installNative(archive, { check: async () => ["fake check"], register: false, layout }), /names no arch/);
+  assert.ok(!existsSync(join(d.app, "chrome")), "nothing installed");
 });
 
 test("Linux layout: installs a tar.xz, keeps the previous build, rolls back, refuses another platform's build", async () => {

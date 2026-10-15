@@ -30,7 +30,6 @@ export const WEB_FILES = new Set(["html", "htm", "xhtml", "svg", "svgz", "shtml"
 // Programs and scripts: a download of one of these opens only after the person confirms.
 export const PROGRAMS = new Set(["app", "pkg", "mpkg", "dmg", "command", "sh", "bash", "zsh", "py", "rb", "pl", "js", "jar",
   "exe", "msi", "bat", "cmd", "ps1", "scpt", "workflow", "terminal", "tool", ...WEB_FILES]);
-export const isProgram = (path) => PROGRAMS.has(ext(path));
 
 // Downloads Chromium renders itself open in a new tab that belongs to the person (no agent reads
 // or acts in it). Not .csv (Chromium's MIME table maps it to text/csv, a type blink downloads

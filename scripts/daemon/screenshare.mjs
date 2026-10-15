@@ -117,7 +117,7 @@ export class NoDirect extends Error {
   constructor(message) { super(message); this.code = "NO_CAPTURE"; }
 }
 
-// call: the extension worker. getContext(): the browser. log.
+// call: the extension worker. log.
 // during(who): marks a joiner's input while it's replayed (presence.remoteStart; returns done()).
 // capture: where tabs are captured (daemon/capture.mjs); without it, the extension as before.
 export function createScreenShare({ call, log = () => {}, during = () => () => {}, capture = null }) {

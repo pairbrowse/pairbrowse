@@ -69,9 +69,9 @@ test("on the slower route the helper's word on the channel drives the wait, neve
     const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
     await page.route("http://pairbrowse.test/**", (route) => {
       const name = new URL(route.request().url()).pathname.slice(1);
-      route.fulfill({ contentType: TYPES[name.split(".").pop()], body: readFileSync(join(panel, name)) });
+      route.fulfill({ contentType: TYPES[name.split(".").pop()], body: readFileSync(join(ui, name)) });
     });
-    await page.goto("http://pairbrowse.test/screen.html");
+    await page.goto("http://pairbrowse.test/screen/index.html");
     const hold = () => inPage(page, () => window.pbScreen.hold());
     const holdUntil = async (ok) => { for (let i = 0; i < 80; i++) { const h = await hold(); if (ok(h)) return h; await page.waitForTimeout(50); } return hold(); };
     await inPage(page, () => { window.pbScreen.holdAfter(300, 1000); window.pbScreen.info({ title: "Shop", url: "https://shop.example", who: "Bob" }); });

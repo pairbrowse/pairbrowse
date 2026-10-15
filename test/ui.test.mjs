@@ -235,7 +235,12 @@ test("only ui/common.js opens an event stream to the helper", () => {
     // The code only: a comment may name the route the shared stream opens.
     const js = read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
     assert.ok(!/new EventSource\b/.test(js), `${relative(root, f)} opens no stream of its own`);
-    assert.ok(!/events\?/.test(js), `${relative(root, f)} names no stream route`);
+    // The one exception: the capture page's own keyed stream (page=capture with its launch capture
+    // key, which helperStream has no place for; transport-native.js keyedStream), and no other route.
+    const routes = js.match(/events\?[^`'"]*/g) || [];
+    if (relative(UI_ROOT, f) === join("capture", "transport-native.js")) {
+      assert.deepEqual(routes, ["events?panel=1&page=capture&ck=${encodeURIComponent(ck)}"], `${relative(root, f)} names only the capture page's keyed stream`);
+    } else assert.deepEqual(routes, [], `${relative(root, f)} names no stream route`);
   }
 });
 

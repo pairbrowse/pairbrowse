@@ -7,7 +7,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, ensureDirs, loadConfig } from "./paths.mjs";
 import { ensureRuntime } from "./runtime.mjs";
-import { withoutTestSwitches } from "./test-gate.mjs";
+import { withoutTestSwitches } from "./testenv.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 

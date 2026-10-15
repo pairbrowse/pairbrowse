@@ -9,10 +9,11 @@ import { createSession, isTemporary, listSessions, profileDir, readPeople, recor
 import { readSavedTabs } from "../../tabs.mjs";
 import { readJson, sleep, within } from "../../util.mjs";
 import { where } from "../where.mjs";
+import { testMs } from "../../testenv.mjs";
 
 // The session picker: agents' first browser action waits this long for the person's pick, then
 // says what it waits for, so the agent tells them in chat instead of hanging silently.
-const PICK_WAIT_MS = Number(process.env.PAIRBROWSE_TEST_PICK_WAIT_MS) || 15_000;
+const PICK_WAIT_MS = testMs("PICK_WAIT_MS", 15_000);
 
 export function createPicker(st, deps, api) {
   const { config, liveOthers, log } = deps;

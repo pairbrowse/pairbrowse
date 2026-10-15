@@ -134,7 +134,7 @@ test("a tab list comes once: the open-tabs section is dropped when browser_tabs 
 // environment a project hands down (a .claude/settings.json "env") can't turn on the test tool that
 // answers approval cards as a person.
 test("test switches: only a harness-started helper keeps them; the plugin's bridge drops them", async () => {
-  const { harnessStarted, withoutTestSwitches } = await import("../scripts/test-gate.mjs");
+  const { harnessStarted, withoutTestSwitches } = await import("../scripts/testenv.mjs");
   const { mkdtempSync, mkdirSync, symlinkSync, realpathSync: real } = await import("node:fs");
   const { tmpdir: temp, homedir } = await import("node:os");
   const { join: j } = await import("node:path");
@@ -155,4 +155,21 @@ test("test switches: only a harness-started helper keeps them; the plugin's brid
   const kept = execFileSync(process.execPath, ["--input-type=module", "-e", `process.env.PAIRBROWSE_TEST_APPROVAL = "1"; await import(${JSON.stringify(new URL("../scripts/test-gate.mjs", import.meta.url).href)}); console.log(process.env.PAIRBROWSE_TEST_APPROVAL ?? "gone");`],
     { env: { ...process.env, PAIRBROWSE_HOME: harness } }).toString().trim();
   assert.equal(kept, "1");
+});
+
+// Every test switch the helper reads is listed in testenv.mjs and read through it: production code
+// reads none of them on its own (scripts/dev/ tools start test helpers and are not the helper).
+test("test switches: read only through testenv.mjs, each one listed", async () => {
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { join: j } = await import("node:path");
+  const { SWITCHES, testOn, testMs } = await import("../scripts/testenv.mjs");
+  const dir = new URL("../scripts/", import.meta.url).pathname;
+  const files = readdirSync(dir, { recursive: true }).filter((f) => /\.(mjs|js)$/.test(f) && !f.startsWith("dev/") && f !== "testenv.mjs");
+  for (const f of files) assert.doesNotMatch(readFileSync(j(dir, f), "utf8"), /env\.PAIRBROWSE_TEST_|env\[["'`]PAIRBROWSE_TEST_/, `${f} reads a test switch itself`);
+  for (const f of files) {
+    for (const m of readFileSync(j(dir, f), "utf8").matchAll(/\btest(?:On|Ms|Value)\("([A-Z_]+)"/g)) assert.ok(Object.hasOwn(SWITCHES, m[1]), `${f}: ${m[1]} isn't listed`);
+  }
+  assert.throws(() => testOn("NOT_A_SWITCH", {}), /unknown test switch/);
+  assert.equal(testMs("GONE_MS", 5, { PAIRBROWSE_TEST_GONE_MS: "7" }), 7);
+  assert.equal(testMs("GONE_MS", 5, {}), 5);
 });

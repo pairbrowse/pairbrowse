@@ -87,6 +87,7 @@ import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mj
 import { engineDir } from "./native-pack.mjs";
 import { answerOpen, writeOpener } from "./opener.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
+import { testOn } from "./testenv.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
 
@@ -631,7 +632,7 @@ const serve = createServe({
   testTools: {
     // Tests only (PAIRBROWSE_TEST_MEMORY=1): how many listeners the browser has for its own end,
     // which grows with every session that came and went if their servers' listeners are kept.
-    ...(process.env.PAIRBROWSE_TEST_MEMORY === "1" ? { pairbrowse_test_memory: async (args = {}) => {
+    ...(testOn("MEMORY") ? { pairbrowse_test_memory: async (args = {}) => {
       const ctx = await context.current();
       globalThis.gc?.(); // with --expose-gc (the bench): what's reachable, not what's waiting to be collected
       // heap: a file path under the helper's home: a V8 heap snapshot is written there (leak hunts).
@@ -639,12 +640,12 @@ const serve = createServe({
       const m = process.memoryUsage();
       return { text: JSON.stringify({ close: ctx?.listenerCount("close") ?? -1, disconnected: ctx?.browser?.()?.listenerCount("disconnected") ?? -1, contexts: ctx ? contextCount(ctx) : -1, screenshots: screenshots.held().size, clients: clients.size, rss: m.rss, heapUsed: m.heapUsed, heapTotal: m.heapTotal, external: m.external, arrayBuffers: m.arrayBuffers }) };
     } } : {}),
-    ...(process.env.PAIRBROWSE_TEST_TAB_ORDER === "1" ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
+    ...(testOn("TAB_ORDER") ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
     // Tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): the join request in each tab's bottom bar, and
     // clicks on it as a person would (a trusted click), as an agent's or a joiner's input would,
     // or as a page script would (synthetic events); the browser's focus set (focus: true, false,
     // or "real"); the requests with a notification up (notes).
-    ...(process.env.PAIRBROWSE_TEST_JOIN_PROMPT === "1" ? { pairbrowse_test_join_prompt: async (args = {}) => {
+    ...(testOn("JOIN_PROMPT") ? { pairbrowse_test_join_prompt: async (args = {}) => {
       const pages = (await context.openPages()).filter((p) => !p.isClosed());
       if (args.focus !== undefined) { testFocus = typeof args.focus === "boolean" ? args.focus : null; joinPrompt.refresh(); return { text: `focus ${testFocus}` }; }
       if (args.notes) return { text: JSON.stringify(await panel.call(() => globalThis.pbJoinNotes?.() ?? null, null, 5000).catch(() => null)) };
@@ -668,7 +669,7 @@ const serve = createServe({
     // Tests only (PAIRBROWSE_TEST_APPROVAL=1): the approval card in each tab, clicks on it as a
     // person, an agent, a joiner, the live view or a page script would make them, the pointer moved
     // away, and the approvals waiting.
-    ...(process.env.PAIRBROWSE_TEST_APPROVAL === "1" ? { pairbrowse_test_approval: async (args = {}) => {
+    ...(testOn("APPROVAL") ? { pairbrowse_test_approval: async (args = {}) => {
       // Every await on a page is bounded (a page whose scripts never pause answers nothing): no
       // answer in time is said as such rather than holding the call.
       const silent = { text: "no answer from the page", error: true };
@@ -697,7 +698,7 @@ const serve = createServe({
       try { ok = await within(3000, page.mouse.click(x, y).then(() => true, () => true)); } finally { done(); }
       return ok === null ? silent : { text: "clicked" };
     } } : {}),
-    ...(process.env.PAIRBROWSE_TEST_SCREEN === "1" ? { pairbrowse_test_screen: async (args = {}) => { const { expr, type, choose } = args;
+    ...(testOn("SCREEN") ? { pairbrowse_test_screen: async (args = {}) => { const { expr, type, choose } = args;
       // at: a picture page by its place among the tabs (list gives them); else the first one.
       const all = (await context.getContext()).pages();
       const page = follow.pages().find((p) => !p.isClosed() && isScreenPage(p.url()) && (!Number.isInteger(args.at) || all.indexOf(p) === args.at));
@@ -718,7 +719,7 @@ const serve = createServe({
     // Tests only (PAIRBROWSE_TEST_PANEL=1): the side panel's worker state, the running worker made
     // to look like an earlier version's (stale: no build, no join notification buttons) and
     // checked again, and a join notification sent through it (notifyJoin: a request id).
-    ...(process.env.PAIRBROWSE_TEST_PANEL === "1" ? { pairbrowse_test_panel: async (args = {}) => {
+    ...(testOn("PANEL") ? { pairbrowse_test_panel: async (args = {}) => {
       if (args.stale) {
         await panel.call(() => { delete globalThis.pbBuild; delete globalThis.pbNotifyJoin; return true; }, null, 10_000);
         return { text: await panel.recheck() };

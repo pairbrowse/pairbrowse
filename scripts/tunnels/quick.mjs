@@ -12,6 +12,7 @@ import { randomBytes } from "node:crypto";
 import { join, dirname } from "node:path";
 import { paths } from "../paths.mjs";
 import { downloadPinned, isQuickTunnelHost } from "../util.mjs";
+import { testMs } from "../testenv.mjs";
 
 const run = promisify(execFile);
 
@@ -86,7 +87,7 @@ const resolvesHere = async (host) => { try { await lookup(host); return true; } 
 // helper has touched the heartbeat file (helperAlive) for KEEP_GRACE_MS. stop() ends it.
 const DNS_WAIT_MS = 15_000;
 const LOCAL_DNS_WAIT_MS = 10_000; // more, for the system resolver to see the name too
-export const KEEP_GRACE_MS = Number(process.env.PAIRBROWSE_TEST_KEEP_GRACE_MS) || 120_000;
+export const KEEP_GRACE_MS = testMs("KEEP_GRACE_MS", 120_000);
 // The keeper runs from its fixed path (scripts/tunnel-keeper.mjs): adoptTunnel knows keepers by it.
 const KEEPER = join(dirname(fileURLToPath(import.meta.url)), "..", "tunnel-keeper.mjs");
 export const heartbeatFile = () => join(paths.home, "run", "helper-alive");

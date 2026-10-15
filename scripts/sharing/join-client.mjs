@@ -8,12 +8,13 @@
 import { newJoinerId, computerName } from "./join.mjs";
 import { sleep, isQuickTunnelHost } from "../util.mjs";
 import { connect } from "../ws.mjs";
+import { testMs, testOn } from "../testenv.mjs";
 
 const OFFLINE_LONG_MS = 120_000; // offline this long: say so in more words
 const REACHING_MS = 45_000; // a fresh tunnel's name may take this long to reach the joiner's resolver: keep asking, quietly
 // In, and the connection dropped: the other addresses are tried for this long before anything
 // shows (phase stays "in"). A tunnel going down with a standby up is a non-event for the joiner.
-export const FAILOVER_MS = Number(process.env.PAIRBROWSE_TEST_FAILOVER_MS) || 20_000;
+export const FAILOVER_MS = testMs("FAILOVER_MS", 20_000);
 // connect: a fresh join through a tunnel whose name is still spreading. switch: the next address
 // after the channel dropped while in; a standby tunnel answers well within this, a stalled one
 // (open, nothing crossing) is given up on sooner so the addresses keep turning.
@@ -38,7 +39,7 @@ export function relayUrl(raw, codeUrl) {
   if (u.origin !== String(raw).replace(/\/$/, "") || u.username || u.password) return null;
   if (u.origin === new URL(codeUrl).origin) return u.origin;
   if (u.protocol === "https:" && isQuickTunnelHost(u.hostname)) return u.origin;
-  if (process.env.PAIRBROWSE_TEST_JOIN_LOCAL === "1" && u.protocol === "http:" && u.hostname === "127.0.0.1") return u.origin;
+  if (testOn("JOIN_LOCAL") && u.protocol === "http:" && u.hostname === "127.0.0.1") return u.origin;
   return null;
 }
 

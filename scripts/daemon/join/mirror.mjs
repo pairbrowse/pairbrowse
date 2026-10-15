@@ -12,6 +12,7 @@ import { AGENT_COLOR, isColor } from "../../../ui/vocab.js";
 import { JOINER_POINTER_EVERY_MS } from "../../../ui/limits.js";
 import { inScreen } from "./screens.mjs";
 import { OPEN_MS } from "./state.mjs";
+import { testOn } from "../../testenv.mjs";
 
 const ADOPT_MS = 10_000; // a tab opened from a shared one has this long to get a web address (in the shared window: no limit)
 const FIRST_ACTIVITY = 3; // on joining, the last few things that happened
@@ -236,7 +237,7 @@ export function createJoinMirror(live, { context, log, hud, presence, liveView, 
   // Quick Tunnel addresses only.
   async function allowDevServers(list, cur) {
     const entries = (Array.isArray(list) ? list : []).slice(0, DEV_PORTS_MAX)
-      .map((x) => readDevEntry(x, { allowLocal: process.env.PAIRBROWSE_TEST_JOIN_LOCAL === "1" })).filter(Boolean);
+      .map((x) => readDevEntry(x, { allowLocal: testOn("JOIN_LOCAL") })).filter(Boolean);
     const sig = JSON.stringify(entries);
     if (sig === cur.devSig) return;
     const ctx = await context.getContext();

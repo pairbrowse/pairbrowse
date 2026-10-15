@@ -23,6 +23,7 @@ import { createOwnTools } from "./serve/tools/index.mjs";
 import { createHandle } from "./serve/rewrite.mjs";
 import { createCollaborationTool } from "./serve/collaboration.mjs";
 import { createResult, TRACING, phaseTrace } from "./serve/result.mjs";
+import { testMs } from "../testenv.mjs";
 // The pure parts live in serve/; kept here for one release (tests and older imports name serve.mjs).
 export { wellFormed, forJoiner, pictureless, dropClosedAlerts } from "./serve/wire.mjs";
 export { arrivedAt } from "./serve/pageread.mjs";
@@ -61,7 +62,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
   // When each session last called a tool: only the ones in use hold up a session switch or closing
   // the browser. An open but idle session (a Claude Code window left for hours) doesn't.
   const lastCall = new Map();
-  const ACTIVE_MS = Number(process.env.PAIRBROWSE_TEST_ACTIVE_MS) || 10 * 60_000; // (tests: shorter)
+  const ACTIVE_MS = testMs("ACTIVE_MS", 10 * 60_000); // (tests: shorter)
 
   // Each session's browser server (Playwright MCP) listens for the browser closing (once "close"
   // on the context, once "disconnected" on its browser) and never stops listening, so every session that came and went would stay in

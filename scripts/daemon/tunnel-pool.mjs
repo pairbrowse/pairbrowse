@@ -4,6 +4,7 @@
 import { startQuickTunnel, watchTunnel, onTunnelExit, tunnelEnded } from "../tunnels/quick.mjs";
 import { tunnelConfig } from "../tunnels/config.mjs";
 import { startOwnTunnel } from "../tunnels/start.mjs";
+import { testMs, testValue } from "../testenv.mjs";
 
 export function createTunnelPool({ config, log, hostNote, save }) {
   // Quick Tunnels to the live view's guest port (which takes join code keys and nothing else),
@@ -11,7 +12,7 @@ export function createTunnelPool({ config, log, hostNote, save }) {
   // every address (sharing/join-client.mjs), so when one tunnel goes down their PairBrowse moves to the other
   // and nothing drops, and a replacement starts here. Stopped when the last code ends
   // (revoked, expired, revoke_all) or the helper shuts down.
-  const direct = process.env.PAIRBROWSE_TEST_TUNNEL === "direct"; // tests: the guest port stands in
+  const direct = testValue("TUNNEL") === "direct"; // tests: the guest port stands in
   // The user's own tunnel instead (config sharing.tunnel: tunnels/config.mjs): one connection on
   // an address of theirs, started again on that same address when it ends, so join codes keep
   // working; the pool of two and joiners' address rotation are for Quick Tunnels, whose address
@@ -89,7 +90,7 @@ export function createTunnelPool({ config, log, hostNote, save }) {
   }
   // Every tunnel gone and none coming back: tried again for EMPTY_NOTE_MS, then the host hears
   // it once, in plain words (nothing while at least one tunnel lives: codes keep working).
-  const EMPTY_NOTE_MS = 60_000, REFILL_MS = 15_000, RESTART_MS = Number(process.env.PAIRBROWSE_TEST_RESTART_MS) || 2000;
+  const EMPTY_NOTE_MS = 60_000, REFILL_MS = 15_000, RESTART_MS = testMs("RESTART_MS", 2000);
   let emptySince = 0, refillTimer = null;
   function refillSoon(port, ms) {
     clearTimeout(refillTimer);

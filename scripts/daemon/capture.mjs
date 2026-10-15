@@ -1,4 +1,5 @@
 import { within } from "../util.mjs";
+import { testOn } from "../testenv.mjs";
 
 // Where a tab's picture, sound and recordings are captured: the side panel extension (Chromium
 // and the PairBrowse build without its own pages, as before), the browser's own capture page (a
@@ -38,7 +39,7 @@ export async function targetIdOf(page, ms = 3000) {
 export function createCaptureBackend({ chromePages = () => false, capturePages = () => false, panelCall, channel = null, env = process.env }) {
   // "extension", "page", or null (nowhere).
   function kind() {
-    if (env.PAIRBROWSE_TEST_NO_CAPTURE === "1") return null;
+    if (testOn("NO_CAPTURE", env)) return null;
     if (!chromePages()) return "extension";
     return capturePages() && channel?.ready() ? "page" : null;
   }
@@ -61,7 +62,7 @@ export function createCaptureBackend({ chromePages = () => false, capturePages =
   }
   async function waitReady(ms = RECORD_READY_MS) {
     const now = kind();
-    if (now !== null || env.PAIRBROWSE_TEST_NO_CAPTURE === "1" || !chromePages() || !capturePages()) return now;
+    if (now !== null || testOn("NO_CAPTURE", env) || !chromePages() || !capturePages()) return now;
     if (typeof channel?.whenReady !== "function") return now;
     await within(Math.max(0, ms) + 100, channel.whenReady(ms)).catch(() => null);
     return kind();

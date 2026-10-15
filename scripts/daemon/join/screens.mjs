@@ -10,6 +10,7 @@ import { CHROME_SCREEN, extensionUrl, isShownScreenPage } from "../../../ui/urls
 import { PICK_FILES_MAX } from "../../../ui/limits.js";
 import { FILE_PART } from "./agents.mjs";
 import { OPEN_MS } from "./state.mjs";
+import { testOn } from "../../testenv.mjs";
 
 // The shared browser's picture page (screen/index.html, PairBrowse's own extension page) is called in its
 // own script world, where its script put window.pbScreen: Patchright's page.evaluate otherwise runs
@@ -22,7 +23,7 @@ const PICK_MS = 10 * 60_000; // a person choosing files for the host's file dial
 // Shared browser mode (codes with mode "shared"): each of the host's tabs is a page of the
 // extension here (screen.js) showing it live; the tab you look at is connected directly.
 const SCREEN_KEEP_MS = 60_000; // a tab out of sight stays connected this long (switching back is instant)
-const SCREEN_CONNECT_MS = process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" ? 3000 : 12_000; // no direct connection by then: try again, then the slower route
+const SCREEN_CONNECT_MS = testOn("NO_DIRECT") ? 3000 : 12_000; // no direct connection by then: try again, then the slower route
 const SCREEN_INPUT_MS = 30; // on the slower route, input goes to the host this often
 // The picture page: the extension's screen/index.html, or in a PairBrowse build with its own pages
 // its chrome://pairbrowse/screen/ tab (the same page, driven the same way through window.pbScreen).
@@ -157,7 +158,7 @@ export function createJoinScreens(live, { context, log }) {
             if (cur.screens.get(page) !== sc || page.isClosed() || sc.fallback) return stale();
             sc.peer = r.peer;
             // Tests only (PAIRBROWSE_TEST_NO_DIRECT=1): a network where no direct connection can be made.
-            const answer = await inScreen(page, (o) => window.pbScreen?.offer(o) ?? null, { sdp: r.sdp, peer: r.peer, doc: sc.doc, noDirect: process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" }, OFFER_MS);
+            const answer = await inScreen(page, (o) => window.pbScreen?.offer(o) ?? null, { sdp: r.sdp, peer: r.peer, doc: sc.doc, noDirect: testOn("NO_DIRECT") }, OFFER_MS);
             if (!answer) { if (sc.peer === r.peer) sc.peer = null; return stale(); }
             const a = await cur.join.screen({ op: "answer", peer: r.peer, sdp: answer });
             if (a?.error) log("shared browser", a.error);

@@ -16,6 +16,7 @@ import { createJoinAgents } from "./join/agents.mjs";
 import { createJoinScreens, isScreenPage } from "./join/screens.mjs";
 import { OPEN_MS } from "./join/state.mjs";
 import { createJoinMirror, hostPeople } from "./join/mirror.mjs";
+import { testOn } from "../testenv.mjs";
 
 export { isScreenPage, hostPeople };
 
@@ -95,7 +96,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     let parsed;
     let unlisted = null; // the code is fine but for its address: the person decides
     try {
-      parsed = parseJoinCode(code, { hosts: allowedHosts(), allowLocal: process.env.PAIRBROWSE_TEST_JOIN_LOCAL === "1" });
+      parsed = parseJoinCode(code, { hosts: allowedHosts(), allowLocal: testOn("JOIN_LOCAL") });
     } catch (e) {
       if (e.code !== "unlisted-host") return { text: `Not joining: ${e.message}`, error: true };
       unlisted = e.host;

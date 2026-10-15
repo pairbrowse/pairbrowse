@@ -9,6 +9,7 @@ import { AGENT_COLOR } from "../../ui/vocab.js";
 import { FRAME_SKIP_BYTES, STALLED_BYTES } from "../../ui/limits.js";
 import { stateAgo } from "../daemon/presence.mjs";
 import { createHmac, randomBytes } from "node:crypto";
+import { testMs } from "../testenv.mjs";
 
 // A pointer's key as one recipient sees it. A joiner's own key (invite id and joiner id) is what
 // their approval is bound to: it never leaves this helper. Each recipient (a joiner, the tabs
@@ -33,11 +34,11 @@ const AGENT_POINTER_MS = 12000; // an agent's stays as long as its cursor here d
 const HEARTBEAT_MS = 1000; // keeps the tunnel from closing an idle stream, and lets a joiner see a stalled one in seconds
 // A joiner that answered no ping (their side pongs each one) for this long is gone, even while
 // the tunnel keeps the socket open (their helper killed): a slow computer may miss a few.
-const SILENT_MS = Number(process.env.PAIRBROWSE_TEST_SILENT_MS) || 10_000;
+const SILENT_MS = testMs("SILENT_MS", 10_000);
 // A joiner whose channel closed and didn't come back within this is gone. A reconnect takes a
 // second or two; one through another tunnel address (sharing/join-client.mjs, when one went down) a few more,
 // so this leaves room for that: the joiner comes back on the same key and nothing is lost.
-export const GONE_MS = Number(process.env.PAIRBROWSE_TEST_GONE_MS) || 25_000;
+export const GONE_MS = testMs("GONE_MS", 25_000);
 const STREAMS_PER_JOINER = 2;
 // A joiner FRAME_SKIP_BYTES behind gets no new pictures until it catches up; STALLED_BYTES behind,
 // the stream is cut (the joiner reconnects). ui/limits.js.

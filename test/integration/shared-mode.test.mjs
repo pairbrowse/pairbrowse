@@ -259,13 +259,20 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     if (realTunnel) assert.ok(stats.route, "a route was found");
     if (excalidraw) {
       // Excalidraw in the host's tab: the joiner picks the rectangle tool with R and drags; a shape
-      // appears in the host's drawing (Excalidraw keeps it in the host's browser storage).
+      // appears in the host's drawing. The canvas has no snapshot of its own, so the host agent's
+      // snapshot (the helper has no page scripts) reads what Excalidraw shows around it: a new shape
+      // is selected (its actions, Delete among them) and Undo, disabled on a fresh page, is enabled.
       stage = "the joiner draws a rectangle in the host's Excalidraw";
       assert.ok(!(await tool(host.call, "browser_navigate", { url: "https://excalidraw.com/" })).result.isError);
       await sleep(5000);
       await tool(host.call, "pairbrowse_collaboration", { action: "release" });
-      const count = async () => Number(await evaluate(host.call, "() => { try { return JSON.parse(localStorage.getItem('excalidraw') || '[]').filter((e) => !e.isDeleted).length; } catch { return -1; } }"));
-      const before = await count();
+      const drawing = async () => {
+        const snap = text(await tool(host.call, "browser_snapshot"));
+        const undo = snap.match(/^\s*- button "Undo"([^\n]*)$/m)?.[1];
+        return { undo: undo === undefined ? "none" : /\[disabled\]/.test(undo) ? "disabled" : "enabled", selected: /^\s*- button "Delete" /m.test(snap) };
+      };
+      const before = await until("Excalidraw's canvas actions in the host's snapshot", async () => { const d = await drawing(); return d.undo !== "none" && d; }, 30_000);
+      assert.deepEqual(before, { undo: "disabled", selected: false }, "a fresh drawing: nothing to undo, nothing selected");
       await onScreen({ type: "r" });
       await sleep(500);
       const a = toJoiner(0.35, 0.4), b = toJoiner(0.6, 0.65);
@@ -274,10 +281,10 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
       await input([{ type: "mouse", action: "mouseMoved", ...a }, { type: "mouse", action: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 }]);
       for (const m of moves) { await input([m]); await sleep(30); }
       await input([{ type: "mouse", action: "mouseReleased", ...b, button: "left", buttons: 0, clickCount: 1 }]);
-      const after = await until("a shape in the host's drawing", async () => { const n = await count(); return n > before && n; }, 15_000).catch(() => count());
-      console.log(`excalidraw shapes: before ${before}, after ${after}`);
+      const after = await until("a shape in the host's drawing", async () => { const d = await drawing(); return d.undo === "enabled" && d.selected && d; }, 15_000).catch(() => drawing());
+      console.log(`excalidraw: before ${JSON.stringify(before)}, after ${JSON.stringify(after)}`);
       if (process.env.SHOT_JOINER) { await sleep(800); await onScreen({ shot: process.env.SHOT_JOINER }); }
-      assert.ok(after > before, `a rectangle was drawn (before ${before}, after ${after})`);
+      assert.deepEqual(after, { undo: "enabled", selected: true }, "a rectangle was drawn and is selected");
       return;
     }
     if (youtube) {

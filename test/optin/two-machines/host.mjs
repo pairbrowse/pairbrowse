@@ -24,8 +24,11 @@ say({ approve: text(await h.tool("pairbrowse_invite", { action: "approve", id })
 await h.tool("pairbrowse_collaboration", { action: "release" });
 let value = "";
 for (let i = 0; i < 120; i++) {
-  const r = text(await h.tool("browser_evaluate", { function: "() => (document.querySelector('textarea[name=q], input[name=q]') || {}).value || ''" }));
-  value = (r.match(/### Result\n"?([^"\n]*)/) || [])[1] || "";
+  // The search box as the host's agent reads it (the helper has no page scripts): Google's box is a
+  // combobox whose snapshot line ends with what it holds.
+  const r = text(await h.tool("browser_snapshot"));
+  const boxes = [...r.matchAll(/^\s*- (?:combobox|textbox|searchbox) [^\n]*?\[ref=[^\]]+\]: (.*)$/gm)].map((m) => m[1]);
+  value = boxes.find((v) => /hello from sven/.test(v)) || boxes[0] || "";
   if (/hello from sven/.test(value)) break;
   await sleep(1000);
 }

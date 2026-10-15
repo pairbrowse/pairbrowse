@@ -18,6 +18,7 @@ import { execFileSync } from "node:child_process";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
 import { rpc, sleep, text, until } from "../helpers/util.mjs";
 import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
+import { probeServer, PROBE_SCRIPT } from "../helpers/page-probe.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const real = process.env.PAIRBROWSE_TEST_REAL_TUNNEL === "1";
@@ -44,13 +45,17 @@ const kill9 = (pid) => { try { process.kill(pid, "SIGKILL"); return true; } catc
 test("sharing failover: the tunnel the joiner uses dies; they move to the standby with the same key and nothing shows", { skip: !runtime || !real, timeout: 300_000 }, async () => {
   const require = createRequire(join(runtime, "package.json"));
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("patchright").chromium.executablePath();
-  const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP); });
+  // Each side's browser gets the form from its own server; the host's lets the test read its page
+  // (page-probe.mjs), the helper having no page scripts.
+  const { server: fixture, probe } = probeServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP + PROBE_SCRIPT); });
+  const joinFixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
-  const port = fixture.address().port;
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
+  await new Promise((r) => joinFixture.listen(0, "127.0.0.1", r));
+  const sideArgs = (server) => ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${server.address().port}`];
+  const chromeArgs = [...sideArgs(fixture), "--disable-features=LocalNetworkAccessChecks"], joinChromeArgs = sideArgs(joinFixture);
   const hostHome = home("fh-"), joinHome = home("fj-");
   writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs: joinChromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1" });
   const daemons = [];
   const connect = async (h) => {
@@ -64,10 +69,11 @@ test("sharing failover: the tunnel the joiner uses dies; they move to the standb
   };
   const results = { host: [], joiner: [] }; // every result's text, by side
   const tool = async (side, name, args = {}) => { const r = await side.call("tools/call", { name, arguments: args }); results[side.who].push(text(r)); return r; };
+  // A read in the side's current tab, through the host's fixture server (the helper has no page
+  // scripts); asking for the tabs is the agent's call, as the script was.
   const evaluate = async (side, fn) => {
-    const r = text(await tool(side, "browser_evaluate", { function: fn }));
-    const m = r.match(/### Result\n([\s\S]*?)(\n###|$)/);
-    try { return JSON.parse(m ? m[1].trim() : r); } catch { return m ? m[1].trim() : r; }
+    const r = text(await tool(side, "browser_tabs", { action: "list" }));
+    return probe(fn, r.match(/^- \d+: \(current\) \[[^\n]*\]\(([^)\s]*)\)/m)?.[1]);
   };
   const fieldValue = async (host) => {
     // The host's snapshot (the value as the host's agent reads it), with the field itself as the check.
@@ -180,7 +186,8 @@ test("sharing failover: the tunnel the joiner uses dies; they move to the standb
   } finally {
     host?.sock.destroy();
     joiner?.sock.destroy();
-    fixture.close();
+    fixture.closeAllConnections(); fixture.close();
+    joinFixture.closeAllConnections(); joinFixture.close();
     await Promise.all(daemons.map(async (d) => { await stopDaemon(d); }));
     // The host's helper stops its tunnels on SIGTERM; make sure no keeper of these homes outlives the test.
     for (const t of [...keepers, ...(stateOf(hostHome)?.tunnels || [])]) { for (const c of children(t.pid)) kill9(c); kill9(t.pid); }

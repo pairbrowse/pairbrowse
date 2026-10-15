@@ -343,6 +343,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // The tab this participant works in, as a page: other agents' new and closed tabs shift the
     // numbers, and two tabs can show the same URL. Its browser server's current tab follows it.
     let mine = null;
+    // Its own tab while open; the tab its current call acts in, else that.
+    const openMine = () => (mine && !mine.isClosed() ? mine : null);
+    const ownTab = () => actingIn || openMine();
     let serverAt = null; // the page its browser server has current, when known
     let lostTab = false; // it closed its tab and every other tab was another agent's
     // Why it has no tab, for the answer it then gets.
@@ -441,7 +444,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
 
     // The agents this one shares its tab with (pairbrowse_collaboration share), for each result.
     function sharedNote() {
-      const page = actingIn || (mine && !mine.isClosed() ? mine : null);
+      const page = ownTab();
       const members = page ? tabClaims.members(page) : [];
       const others = members.some((m) => m.id === participant) ? members.filter((m) => m.id !== participant).map((m) => m.label) : [];
       return others.length ? `- ${others.join(", ")} also ${others.length > 1 ? "work" : "works"} in this tab: your calls take turns.` : "";
@@ -449,7 +452,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // Notes for this result: popups PairBrowse handled, downloads and join requests, and what a
     // person did in the tab meanwhile.
     function notes() {
-      const handled = popups.drain(actingIn || (mine && !mine.isClosed() ? mine : null));
+      const handled = popups.drain(ownTab());
       // Messages from other participants, and one line on what the other side's agents are
       // doing when it changed: coordination information only, marked as from someone else.
       const paused = pause.noteAfter(pauseSeen, participant);
@@ -594,7 +597,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       return `Typed into ${args?.element || args?.target} and pressed Enter.\n### Page\n- Page URL: ${page.url()}${title ? `\n- Page Title: ${title}` : ""}`;
     }
     async function pressEnterAfter(msg, args) {
-      const page = actingIn || (mine && !mine.isClosed() ? mine : null) || await context.pageAt(context.currentUrl());
+      const page = ownTab() || await context.pageAt(context.currentUrl());
       if (!page) return;
       msg.result.content = [{ type: "text", text: await enterAfterTyping(page, args) }];
     }
@@ -646,7 +649,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         // The bar said what was tried; a failure says so too, or it reads as done.
         if (tool && msg.result?.isError && describe(tool, args || {})) {
           const why = output.mask(String((msg.result.content || []).map((c) => c.text || "").join(" ").replace(/^### Error\s*/i, "").split("\n")[0]).slice(0, 100));
-          hud.addActivity(`That didn't work: ${why}`, myLabel(), mine && !mine.isClosed() ? mine : null);
+          hud.addActivity(`That didn't work: ${why}`, myLabel(), openMine());
         }
         await finishResult(msg, tool, null, tool === "browser_snapshot" && !args?.target, args);
       },
@@ -1123,7 +1126,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         // browser_click, where the user confirms it (and a publish needs its review).
         const cls = clickClass(args.element);
         if (cls) return { text: `Refused: "${String(args.element).slice(0, 60)}" names a final action (${cls}). Take a browser_snapshot and use browser_click with its ref, so the user confirms it.`, error: true };
-        const here = actingIn || (mine && !mine.isClosed() ? mine : null);
+        const here = ownTab();
         const r = await screenshots.clickAt(args, participant, { current: here, cursor: (x, y) => hud.cursorTo(here || hud.sparkPage(participant), { boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, "click", myLabel()) });
         if (r.error) return r;
         hud.addActivity(`Clicked ${String(args.element || "a spot").slice(0, 80)}`, myLabel(), r.page);
@@ -1179,14 +1182,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // browser_drag is the helper's own, after the checks every browser tool gets.
       // The page waits on its own confirm or prompt: nothing else works until it's answered.
       if (name.startsWith("browser_") && !["browser_handle_dialog", "browser_tabs", "browser_close", "browser_file_upload"].includes(name)) {
-        const here = actingIn || (mine && !mine.isClosed() ? mine : null);
+        const here = ownTab();
         const d = here && popups.waitingDialog(here);
         if (d) return reply(msg.id, `The page is waiting on its ${d.type} dialog ("${String(d.message).slice(0, 120)}"): answer it with browser_handle_dialog (accept, or dismiss) before anything else.`, true);
       }
       // The browser's own pages (chrome://pairbrowse...) and the person's own tabs are never a
       // tab an agent acts in, selects or closes (tabRefusal).
       {
-        const here = actingIn || (mine && !mine.isClosed() ? mine : null) || (serverAt && !serverAt.isClosed() ? serverAt : null);
+        const here = ownTab() || (serverAt && !serverAt.isClosed() ? serverAt : null);
         const byIndex = name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined;
         const tabNo = tabRefusal(name, args, { here, pages: byIndex ? await openTabs() : [], personTab });
         if (tabNo) return reply(msg.id, tabNo, true);
@@ -1194,7 +1197,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       // Another agent's tab is theirs to close.
       if (name === "browser_tabs" && args.action === "close") {
         const tabs = await openTabs();
-        const target = args.index === undefined ? (mine && !mine.isClosed() ? mine : null) : tabs[Number(args.index)] || null;
+        const target = args.index === undefined ? openMine() : tabs[Number(args.index)] || null;
         const owner = target && hud.sparkOwner(target);
         if (target && owner && owner.id !== participant && !tabClaims.members(target).some((m) => m.id === participant)) {
           return reply(msg.id, `Tab ${tabs.indexOf(target)} is ${collaboration.participants.get(owner.id)?.label || "another agent"}'s: their agent works there. Leave it, and close only your own tabs (browser_tabs close without index).`, true);
@@ -1311,9 +1314,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
         shown = { ...args, fields: await Promise.all(args.fields.map(async (f) => (await sensitiveTarget(page, f.target) ? { ...f, value: "••••" } : f))) };
       }
       hud.addActivity(describe(name, shown, { values: false }), myLabel(), actingIn);
-      await hud.showCursor(name, args, async () => actingIn || (mine && !mine.isClosed() ? mine : null) || context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
+      await hud.showCursor(name, args, async () => ownTab() || context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
       traces.get(msg.id)?.mark("cursor");
-      if (name === "browser_fill_form") await hud.markTargets(actingIn || (mine && !mine.isClosed() ? mine : null), args.fields.map((f) => f.target)).catch(() => {});
+      if (name === "browser_fill_form") await hud.markTargets(ownTab(), args.fields.map((f) => f.target)).catch(() => {});
       // A form in the native browser with human-like input on: PairBrowse fills it itself, field by
       // field as a person does (Tab to the next field, key by key at typingPace; native-engine.mjs
       // humanFill). The browser server's fill would reach for every field by mouse and type at the
@@ -1440,6 +1443,13 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
     }
 
+    // Shared browser mode, joined from here: the call goes to the host's browser over the join
+    // channel (follow.mjs), as this agent's, and its answer comes back as the host gave it.
+    async function forwardToHost(msg) {
+      const out = await follow.remoteCall(participant, msg, { app: clientName, label: myLabel() });
+      if (msg.id !== undefined) toClient({ jsonrpc: "2.0", ...out, id: msg.id });
+    }
+
     // Complete a queued turn only after the MCP result arrives, not when dispatch returns.
     const execute = async (msg) => {
       if (msg.method === "tools/call") lastCall.set(participant, Date.now());
@@ -1457,7 +1467,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           // The process that started its bridge (launch.mjs: the app's own): which agent a
           // PermissionRequest hook asks for (approvals.mjs whose).
           const parent = Number(msg.params?.clientInfo?.pairbrowseParent);
-          clickApprovals?.participant(participant, { client: clientName, remote: !!remote, parent: !remote && Number.isSafeInteger(parent) && parent > 1 ? parent : 0, tab: () => (mine && !mine.isClosed() ? mine : null) });
+          clickApprovals?.participant(participant, { client: clientName, remote: !!remote, parent: !remote && Number.isSafeInteger(parent) && parent > 1 ? parent : 0, tab: openMine });
         }
         // "<person> · Claude Code", "<person> · Codex".
         const label = msg.params?.clientInfo?.pairbrowseParticipant;
@@ -1485,9 +1495,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           // Shared browser mode, joined from here: the tab is in the host's browser, so the host
           // takes the turns (this agent is a participant there, like the host's own agents).
           if (!remote && follow.forwards?.("browser_tabs")) {
-            const out = await follow.remoteCall(participant, msg, { app: clientName, label: myLabel() });
-            if (msg.id !== undefined) toClient({ jsonrpc: "2.0", ...out, id: msg.id });
-            return;
+            return forwardToHost(msg);
           }
           const n = msg.params.arguments?.tab;
           const page = Number.isInteger(n) ? (await openTabs())[n] : null;
@@ -1514,24 +1522,19 @@ export function createServe({ config, log, host, createConnection, clients, coll
         } else if (action !== "status") throw new Error("Use status, identify, acquire, release, message, messages or share.");
         // Shared browser mode, joined from here: the session this agent works in is the host's.
         if (!remote && follow.forwards?.("browser_tabs")) {
-          const out = await follow.remoteCall(participant, msg, { app: clientName, label: myLabel() });
-          if (msg.id !== undefined) toClient({ jsonrpc: "2.0", ...out, id: msg.id });
-          return;
+          return forwardToHost(msg);
         }
         { const st = collaboration.state(); return reply(msg.id, JSON.stringify({ self: participant, ...st, participants: st.participants.map((p) => ({ ...p, color: hud.sparkColor(p.id) })) })); }
       }
       // Shared browser mode, joined from here: this agent works in the host's browser, as a
       // participant there (its calls go over the join channel; follow.mjs).
       if (!remote && msg.method === "tools/call" && follow.forwards?.(msg.params?.name)) {
-        const out = await follow.remoteCall(participant, msg, { app: clientName, label: myLabel() });
-        if (msg.id !== undefined) toClient({ jsonrpc: "2.0", ...out, id: msg.id });
-        return;
+        return forwardToHost(msg);
       }
       const tool = msg.params?.name;
       const dispatchNow = async () => {
         // Refs are good for this agent's own tab: what people or other agents do in that tab
         // makes them stale, work in other tabs never does.
-        const ownTab = () => actingIn || (mine && !mine.isClosed() ? mine : null);
         if (msg.method === "tools/call" && containsRef(msg.params?.arguments) && observedRevision !== revision(ownTab())) {
           return reply(msg.id, "This tab changed since your last snapshot (a person used it, or another agent acted in it). Call browser_snapshot and use its fresh refs before retrying.", true);
         }

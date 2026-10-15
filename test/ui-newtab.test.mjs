@@ -118,7 +118,7 @@ pageTest("newtab", { viewport: VIEW }, async ({ page, ui, shim }) => {
 pageTest("newtab", { viewport: VIEW, fixtures: { sessions: SESSIONS }, replies: { pick: { text: 'Opening session "Shop".' } } }, async ({ page, helper, until, inPage }) => {
   await until("the chips", () => !document.getElementById("sessions").hidden);
   assert.deepEqual(await chipTexts(inPage), CHIP_TEXTS);
-  assert.equal(await inPage(() => document.body.dataset.host), "build");
+  assert.equal(await inPage(() => document.body.dataset.host), "native");
   await page.click("#sessions .chip >> nth=0");
   await until("the switch", () => document.body.dataset.s === "done");
   assert.deepEqual(helper.posts.map((p) => p.route), ["pick"], "no picker step");

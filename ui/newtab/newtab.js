@@ -55,9 +55,9 @@ let askCancel = null; // the open switch question's Cancel path
 
 const say = (text, kind = "") => { $("msg").textContent = text; $("msg").dataset.kind = kind; };
 
-// The page's host, once: the browser build ("build") or the extension; neither, a plain file.
+// The page's host, once (ui/helper.js hostKind); neither, a plain file.
 const HOST = hostKind();
-if (HOST) document.body.dataset.host = HOST === "native" ? "build" : "extension";
+if (HOST) document.body.dataset.host = HOST; // "native" or "extension", as the docks say it
 
 const post = (base, route, body) => postJson(base + route, body)
   .then((x) => x.json(), () => NO_REACH)

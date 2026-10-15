@@ -1,7 +1,7 @@
 // Shared browser mode, on the host: one browser for everyone. A joiner sees the host's tabs live
 // and works in them (clicks, keys, wheel, pasted text), logged in as the host is, and nothing of
 // the session is copied to their computer but the picture. The picture and sound go peer to peer
-// (the extension's share.js, WebRTC); only the connection's setup goes over the join channel.
+// (the extension's ui/capture/capture.js, WebRTC); only the connection's setup goes over the join channel.
 // What a joiner does comes back on that connection; it's checked here and replayed in the tab
 // through CDP, like the live view's input (liveview/input.mjs).
 // call(fn, arg, ms): runs fn(arg) in the side panel extension's worker (panel.mjs).

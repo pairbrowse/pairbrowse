@@ -26,7 +26,7 @@ export const shouldNotify = ({ focused, shown }) => !(focused === true && shown 
 
 // approvals: createApprovals (join.mjs). front(): the tab in front in the host's browser (a
 // Playwright page), or null. focused(): whether the browser window has the system's focus (true,
-// false, or null when unknown; see pbFocused in browser/panel/background.js). show(page, value,
+// false, or null when unknown; see pbFocused in ui/background.js). show(page, value,
 // kind): one call into the page script (hud.call). byPerson(t): whether input at time t was a
 // person's own (presence.mjs). notify({ who, role, request }), clear(request): a join request's
 // notification, and taking it down (panel.mjs). log(text).

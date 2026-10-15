@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workspace</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="left.css">
+</head>
+<body data-dock="open" data-s="connecting">
+<svg hidden aria-hidden="true">
+  <symbol id="i-workspace" viewBox="0 0 20 20"><g stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.2V5.5A2.5 2.5 0 0 1 5.5 3h1.7M12.8 3h1.7A2.5 2.5 0 0 1 17 5.5v1.7M17 12.8v1.7a2.5 2.5 0 0 1-2.5 2.5h-1.7M7.2 17H5.5A2.5 2.5 0 0 1 3 14.5v-1.7"/><circle cx="10" cy="10" r="3.2"/></g><circle cx="10" cy="10" r="1.3" fill="currentColor"/></symbol>
+  <symbol id="i-browser" viewBox="0 0 18 18"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.8" width="14.4" height="12.4" rx="2"/><path d="M5.5 6.6h7M9 6.6v3.6M7.4 8.4h3.2"/></g></symbol>
+  <symbol id="i-history" viewBox="0 0 18 18"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="7"/><path d="M9 5v4.2l2.6 1.8"/></g></symbol>
+  <symbol id="i-activity" viewBox="0 0 18 18"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 2.6 16 7.4l-5.4 4.8V9.6c-3.4 0-5.6 1.4-7.4 4.6-.6.9-1.6.6-1.3-.4 1.1-4.4 4.2-7.2 8.7-7.6z"/></g></symbol>
+  <symbol id="i-people" viewBox="0 0 20 20"><g fill="currentColor"><circle cx="7.4" cy="6.6" r="3"/><path d="M1.6 15.6c.3-3.2 2.7-5 5.8-5s5.5 1.8 5.8 5c0 .4-.3.7-.7.7H2.3c-.4 0-.7-.3-.7-.7z"/><circle cx="14" cy="7.4" r="2.4"/><path d="M14.4 11.1c2.4.1 3.9 1.7 4.1 4.1 0 .4-.3.7-.7.7h-3.4c.1-1.9-.3-3.5-1.4-4.6.4-.1.9-.2 1.4-.2z"/></g></symbol>
+  <symbol id="i-gear" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14.48 6.74L14.48 9.26L12.69 9.43L12.33 10.3L13.47 11.69L11.69 13.47L10.3 12.33L9.43 12.69L9.26 14.48L6.74 14.48L6.57 12.69L5.7 12.33L4.31 13.47L2.53 11.69L3.67 10.3L3.31 9.43L1.52 9.26L1.52 6.74L3.31 6.57L3.67 5.7L2.53 4.31L4.31 2.53L5.7 3.67L6.57 3.31L6.74 1.52L9.26 1.52L9.43 3.31L10.3 3.67L11.69 2.53L13.47 4.31L12.33 5.7L12.69 6.57Z"/><circle cx="8" cy="8" r="2"/></g></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></g></symbol>
+  <symbol id="i-chevron" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6l4.5 4.5L12.5 6"/></g></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4L6 8l4 4"/></g></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></g></symbol>
+</svg>
+<!-- The session switcher served without the browser's API (a plain browser): the picker in a frame
+     under the Sessions row, the caret at its icon (DESIGN.md Part I). In the browser the row opens
+     the browser's own switcher bubble instead. -->
+<div id="switcher" class="switcher m-pop" role="dialog" aria-label="Switch session" tabindex="-1" hidden><iframe id="picker" title="Session picker"></iframe></div>
+<main class="body" id="main">
+  <nav aria-label="Workspace">
+    <ul class="nav" role="list">
+      <li><button class="row" id="nav-browser" type="button" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-browser"/></svg><span class="label">Browser</span><span class="badge" id="tab-count" aria-hidden="true"></span><span class="sr" id="tab-count-words"></span></button></li>
+      <!-- The one door to sessions (2026-10-14): the open session's name at the row's end (the
+           helper's session event), the switcher on a click; "All sessions…" in it lists them all. -->
+      <li><button class="row" id="nav-sessions" type="button" aria-expanded="false" aria-controls="switcher"><svg class="ic" aria-hidden="true"><use href="#i-workspace"/></svg><span class="label">Sessions</span><span class="current" id="session-name" aria-hidden="true"></span><span class="sr" id="session-words"></span></button></li>
+      <li><button class="row" id="nav-history" type="button"><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg><span class="label">History</span></button></li>
+      <!-- The session's activity, a page in the contents (pairbrowse://activity), like History. -->
+      <li><button class="row" id="nav-activity" type="button"><svg class="ic" aria-hidden="true"><use href="#i-activity"/></svg><span class="label">Activity</span></button></li>
+    </ul>
+  </nav>
+  <section class="sec" aria-labelledby="agents-h">
+    <div class="sec-head"><h2 id="agents-h">Agents</h2><button class="add" id="add-agent" type="button" aria-label="Add an agent" aria-expanded="false" aria-controls="hint"><svg aria-hidden="true"><use href="#i-plus"/></svg></button></div>
+    <div class="hint m-fold" id="hint" role="region" aria-label="How to add an agent" hidden>
+      <p>Any Claude Code or Codex session with the PairBrowse plugin shows up here once it acts in the browser.</p>
+      <p>Claude Code: <code>claude plugin marketplace add pairbrowse/pairbrowse</code> then <code>claude plugin install pairbrowse@pairbrowse</code>.</p>
+      <p>Codex: <code>codex plugin marketplace add pairbrowse/pairbrowse</code> then <code>codex plugin add pairbrowse@pairbrowse</code>.</p>
+    </div>
+    <p class="conn" id="conn" role="status" aria-live="polite">Connecting to PairBrowse…</p>
+    <ul class="people" id="agents" role="list"></ul>
+  </section>
+  <section class="sec" id="shared" aria-labelledby="shared-h">
+    <div class="sec-head"><h2 id="shared-h" tabindex="-1">Shared with</h2></div>
+    <!-- Share is the strip's (DESIGN.md Part G); its card opens under it, at the top of the agent
+         panel (Part I): nothing of it opens here. -->
+    <p class="empty-note" id="guests-empty">Not shared yet: use Share at the top</p>
+    <ul class="people" id="guests" role="list"></ul>
+  </section>
+</main>
+<footer class="foot">
+  <!-- Storage is PairBrowse Pro's cloud storage (api.pairbrowse.com): left.js adds the row before the gear only when the session event carries session.storage; until Pro the helper sends no figure and nothing shows here. -->
+  <div class="foot-row">
+    <button class="gear" id="settings" type="button" aria-label="Settings" title="Settings"><svg aria-hidden="true"><use href="#i-gear"/></svg></button>
+    <!-- The dock's own state (open, rail), set through the browser's layout: shown once it is known. -->
+    <button class="dock-btn" id="dock-collapse" type="button" aria-label="Collapse the workspace" title="Collapse the workspace" aria-expanded="true" hidden><svg aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
+    <button class="dock-btn" id="dock-expand" type="button" aria-label="Expand the workspace" title="Expand the workspace" aria-expanded="false" hidden><svg aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
+  </div>
+</footer>
+<script type="module" src="left.js"></script>
+</body>
+</html>

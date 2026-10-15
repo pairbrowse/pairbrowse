@@ -27,7 +27,7 @@ There's no headless mode.
 - **The PairBrowse side panel**: click the pinned PairBrowse button in the toolbar, or press
   **Cmd+Shift+Y** (Ctrl+Shift+Y on Windows and Linux). It shows what Claude is doing, "Your turn" when Claude
   needs you, the activity list, and the Profile (remembered details and passwords).
-- **New tabs** open the PairBrowse new tab page: the logo, a search field, the PairBrowse icon.
+- **New tabs** open the PairBrowse new tab page: the logo, a search field, and chips for your other recent sessions (one press switches, the same as the session picker's rows; none are shown when PairBrowse is not running).
 - **Claude's tab** carries the orange spark as its tab icon, and the spark moves with Claude.
 - **Claude's cursor**: a white pointer glides to where Claude clicks, types or chooses, with a
   ring on clicks. It never takes clicks and is hidden from Claude's view.
@@ -38,8 +38,8 @@ There's no headless mode.
   Signing into Google or any other site works as usual.
 - **The bottom bar** in each page shows who's driving and Claude's last actions. It never takes
   clicks, fades out when your pointer nears the bottom of the page, and is hidden from Claude's view.
-- It loads one extension of its own and no others: `scripts/browser/panel` (the side panel,
-  which talks only to the key-protected live view on 127.0.0.1). Its navy colors are Chromium's
+- It loads one extension of its own and no others: `ui/` (the side panel, new tab, picker, picture and capture pages,
+  which talk only to the key-protected live view on 127.0.0.1). Its navy colors are Chromium's
   built-in color theme, set in the profile (no theme extension, no "Installed theme" bar); pick
   another in Settings > Appearance and PairBrowse keeps it.
   With a native build that declares its own pages, no extension is loaded: the helper passes the

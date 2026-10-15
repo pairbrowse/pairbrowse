@@ -340,7 +340,9 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     const boxes = (await Promise.all((targets || []).filter((t) => typeof t === "string" && t).slice(0, 40).map((t) => within(400, page.locator(isRef(t) ? `aria-ref=${t}` : t).first().boundingBox().catch(() => null)).catch(() => null)))).filter(Boolean);
     if (boxes.length) await quietly(page, JSON.stringify(boxes.map((b) => ({ x: b.x, y: b.y, w: b.width, h: b.height }))), "targets");
   }
-  // Each page as it loads: the script, then the badge, spark and bar.
+  // Each page as it loads: the script, then the badge, spark and bar. Inside the PairBrowse
+  // browser's own window (docked()), the page first learns that the window's agent panel carries
+  // the bar and the agent's status (scripts/hud.js "docked"); elsewhere no call is made.
   async function onPageLoad(page) {
     await ensure(page);
     // Inside the PairBrowse browser's own window (docked()), the page first learns that the

@@ -43,8 +43,8 @@ const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n"
 // (no PB_BUILD, no join notification buttons).
 function earlierCopy(base) {
   const dir = join(base, "old");
-  for (const part of ["scripts", "package.json"]) cpSync(join(root, part), join(dir, part), { recursive: true });
-  const file = join(dir, "scripts", "browser", "panel", "background.js");
+  for (const part of ["scripts", "ui", "package.json"]) cpSync(join(root, part), join(dir, part), { recursive: true });
+  const file = join(dir, "ui", "background.js");
   const source = readFileSync(file, "utf8");
   const old = source.replace(/^const PB_BUILD = .*\n^globalThis\.pbBuild = PB_BUILD;\n/m, "").replace("globalThis.pbNotifyJoin = (", "globalThis.pbNotifyJoinNotYet = (");
   assert.notEqual(old, source);

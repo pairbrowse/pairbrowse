@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>PairBrowse window preview</title>
+<!-- A dev tool, not plugin code (scripts/dev/window-preview.mjs): the whole PairBrowse window as the
+     hybrid 500-shell lays it out, from the real ui/ pages in iframes. The traffic lights and the
+     address bar are stand-ins for what the native build draws. -->
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/preview/window-preview.css">
+</head>
+<body>
+<div class="window">
+  <iframe id="strip" title="Tab row" data-src="/strip/index.html"></iframe>
+  <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="nav">
+    <iframe id="nav-left" title="Navigation" data-src="/strip/index.html#nav-left"></iframe>
+    <div class="omni" role="presentation">
+      <svg class="lock" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" fill="currentColor"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      <span class="url"><span class="host">notion.so</span><span class="path">/new-workspace</span></span>
+    </div>
+    <iframe id="nav-right" title="Page tools" data-src="/strip/index.html#nav-right"></iframe>
+  </div>
+  <iframe id="left" title="Left dock" data-src="/left/index.html"></iframe>
+  <iframe id="right" title="Right dock" data-src="/right/index.html"></iframe>
+  <div class="column">
+    <div class="card">
+      <img id="contents" alt="" src="/preview/contents.png">
+      <div id="approval" hidden><iframe id="approve" title="Click approval" data-src="/approve/index.html"></iframe></div>
+    </div>
+    <iframe id="timeline" title="Timeline" data-src="/timeline/index.html"></iframe>
+  </div>
+</div>
+<script type="module" src="/preview/window-preview.js"></script>
+</body>
+</html>

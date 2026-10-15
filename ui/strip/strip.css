@@ -1,0 +1,184 @@
+/* The browser build's top strip (DESIGN.md B2): the 53 px tab row, the nav fragments beside the
+   native address bar, and the popovers alone for the shell's bubbles. Colors from tokens.css only;
+   participant and agent colors arrive as inline backgrounds from strip.js. The light is static (the
+   sheet's gradient, edge and glow tokens): never animated, never a backdrop-filter. */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; margin: 0; }
+svg { flex: none; }
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ---- the tab row ---- */
+.row { position: relative; display: flex; align-items: stretch; gap: 8px; height: 53px; padding: 0 12px; -webkit-app-region: drag; } /* mockup */
+body[data-platform="mac"] .row { padding-left: 92px; } /* the traffic lights end at 74: 18 px clear space */
+/* In the browser the row ends 8 px before Chromium's own ⋯ menu button, which the shell lays out at
+   the tab row's right end beside this page (525). */
+body[data-host="native"] .row { padding-right: 8px; }
+.row button, .row a, .row input, .row label, #tabs li, .pop, .nav, .nav button { -webkit-app-region: no-drag; }
+
+/* The brand mark: the logo and the wordmark, a static mark (no hover, press or focus; the sessions'
+   door is the left dock's Sessions row), part of the window's drag region. One centre line for the
+   whole row (the user, 2026-10-15: the tabs on the window buttons' line, a tab's contents centred
+   in the tab): 30 px from the top, where the shell centres the traffic lights and the "..."
+   (pairbrowse::kTabRowLine). The tabs, 47 px with a 1 px top edge, sit on the row's bottom edge, so
+   their contents' middle is 53 - 46 / 2 = 30; the logo, the wordmark, the + and the right end sit
+   on the same line through the same 46 px box. The logo and wordmark keep their places; with the
+   chevron gone (12 px and its 1 px margin) the 11 px gap before it stays as padding, so the tabs
+   move left by 13 px. */
+.brand { display: flex; align-items: center; gap: 11px; align-self: flex-end; margin-bottom: calc((46px - var(--ctl-strip)) / 2); height: var(--ctl-strip); padding: 0 calc(6px + 11px) 0 2px; flex: none; user-select: none; } /* mockup */
+.brand img { display: block; flex: none; }
+.brand .wordmark { font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.005em; color: var(--ink); white-space: nowrap; }
+
+/* The tabs sit on the row's bottom edge, 47 px tall from 6 px under the window's top (their outline
+   joins the nav row under them), their contents centred in them on the row's line; the padding
+   keeps the active tab's feet unclipped. */
+#tabs { display: flex; align-items: flex-end; flex: 0 1 auto; gap: 2px; min-width: 0; margin: 0 calc(-1 * var(--sp-3)); padding: 0 var(--sp-3); list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+/* Past the 160 px minimum the row scrolls (strip.js keeps the active tab in view): a 24 px fade at
+   each edge that has hidden tabs, set by two classes from the scroll handler. Static, never animated. */
+#tabs.fade-start, #tabs.fade-end { --fade-s: 0px; --fade-e: 0px; mask-image: linear-gradient(90deg, transparent, #000 var(--fade-s), #000 calc(100% - var(--fade-e)), transparent); }
+#tabs.fade-start { --fade-s: 24px; }
+#tabs.fade-end { --fade-e: 24px; }
+#tabs li { position: relative; display: flex; align-items: center; gap: var(--sp-2); flex: 0 1 235px; width: 235px; min-width: 160px; max-width: 240px; height: 47px; padding: 0 7px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup */
+#tabs li:not([aria-selected="true"]):hover { background-color: var(--elevated); }
+/* The active tab: lit at the top, fading into the centre column (--column: the nav row under it),
+   blue whoever drives it (the user, 2026-10-12; the owner shows by its dot): a blue edge, its top
+   lit in --tab-lit, a soft static blue halo above it (--halo), and two curved feet that carry the
+   edge into the row's bottom line: 9 px wide, so they cover the border column and end at the
+   neighbour's edge. Static: never animated, never blurred. */
+#tabs li { --halo: var(--glow-tab); }
+#tabs li[aria-selected="true"] { z-index: 1; background-color: var(--column); background-image: linear-gradient(180deg, var(--tab-top), var(--column)); color: var(--ink); border-color: var(--edge-tab); border-top-color: var(--tab-lit); box-shadow: inset 0 1px 0 var(--edge-light), var(--halo); }
+#tabs li[aria-selected="true"]::before, #tabs li[aria-selected="true"]::after { content: ""; position: absolute; bottom: 0; width: 9px; height: 9px; pointer-events: none; } /* mockup */
+#tabs li[aria-selected="true"]::before { left: -9px; background: radial-gradient(circle at 0 0, transparent 7.5px, var(--edge-tab) 8px, var(--column) 9px); } /* mockup */
+#tabs li[aria-selected="true"]::after { right: -9px; background: radial-gradient(circle at 100% 0, transparent 7.5px, var(--edge-tab) 8px, var(--column) 9px); } /* mockup */
+#tabs li.pinned { flex: 0 0 40px; min-width: 40px; max-width: 40px; padding: 0; justify-content: center; }
+/* The icon tile: a favicon on white (as the site drew it), the globe on --elevated, the ring bare. */
+#tabs .icon { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 6px; } /* mockup: B2's 22 px tile */
+#tabs .icon[data-key^="img:"] { background: #fff; }
+#tabs .icon[data-key="generic"] { background: var(--elevated); }
+#tabs .icon[data-key="ring"] { background: none; }
+#tabs .icon img { display: block; width: 16px; height: 16px; }
+#tabs .icon .generic { width: 16px; height: 16px; color: var(--ink-2); }
+#tabs .ring { display: block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; }
+#tabs .title { flex: 0 1 auto; min-width: 0; font-size: var(--fs-2); font-weight: 400; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#tabs li.pinned .title { display: none; }
+#tabs .shared-mark { flex: none; width: 12px; height: 12px; margin-left: 0; color: var(--accent); } /* the Shared mark (550): still, no timer or animation */
+#tabs li.pinned .shared-mark { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; margin: 0; }
+#tabs .agent { flex: none; width: 7px; height: 7px; margin-left: -2px; margin-right: 0; border-radius: 50%; } /* mockup: B2's 7 px dot; 8 px gap - 2 = 6 px after the title */
+/* The close shows on every tab but a pinned one; Tab reaches the active tab's alone. */
+#tabs .close { display: grid; place-items: center; flex: none; margin-left: auto; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup: the 18 px close */
+#tabs .close svg { width: 12px; height: 12px; }
+#tabs .close:hover { background: var(--hover); color: var(--ink); }
+#tabs li.pinned .close { display: none; }
+/* Drag to reorder: the siblings slide in 160 ms; the dragged tab follows the pointer. */
+body[data-dragging] #tabs li { transition: background-color var(--t-hover), color var(--t-hover), transform var(--t); }
+body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: none; }
+
+/* On the row's line, with the tabs' contents and the window buttons: (46 - 28) / 2 above the edge. */
+#new { display: grid; place-items: center; flex: none; align-self: flex-end; margin-bottom: 9px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); } /* native: the window buttons' line */
+#new svg { width: 16px; height: 16px; }
+#new:hover { background: var(--hover); color: var(--ink); }
+
+/* ---- the right end ---- */
+#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; align-self: flex-end; height: 46px; } /* native: on the row's line, as the tabs' contents */
+#pill { display: inline-flex; align-items: center; gap: 10px; height: var(--ctl-strip); padding: 0 14px; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; } /* mockup: the Live session pill */
+#pill .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); } /* mockup */
+#pill[data-state="reconnecting"] .dot { background: var(--warn); }
+#pill[data-state="live"] { background-color: var(--live-bg); border-color: var(--live-edge); color: var(--live-ink); }
+#pill[data-state="live"] .dot { background: var(--ok); box-shadow: var(--glow-ok); }
+#pill[data-state="live"] .live { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+#avatars { display: flex; margin: 0; padding: 0; list-style: none; }
+#avatars:empty { display: none; }
+#avatars li { display: flex; }
+#avatars li + li { margin-left: -2px; }
+.avatar { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--spark); color: var(--bg); font-size: var(--fs-2); font-weight: 700; line-height: 1; box-shadow: 0 0 0 1.5px var(--bg); } /* mockup: B2's 30 px avatars */
+.avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input), 0 0 0 1.5px var(--bg); }
+.avatar.more { background: var(--elevated); color: var(--ink); font-weight: 500; font-size: var(--fs-3); }
+
+#share-btn { display: inline-flex; align-items: center; gap: 9px; height: var(--ctl-strip); padding: 0 14px 0 13px; border: 1px solid var(--edge-btn); border-radius: var(--r-2); background: var(--btn); box-shadow: inset 0 1px 0 var(--edge-light); color: var(--ink); font-size: var(--fs-3); font-weight: 500; cursor: default; transition: background-color var(--t-hover); } /* mockup */
+#share-btn svg { width: 16px; height: 16px; }
+#share-btn:hover, #share-btn[aria-expanded="true"] { background: var(--hover); }
+#menu-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }
+#menu-btn svg { width: 18px; height: 18px; } /* mockup */
+#menu-btn:hover, #menu-btn[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+
+/* ---- popovers: under the row (a taller host), or alone in the browser's Share bubble (#share) ---- */
+/* They open and close with the sheet's motion (tokens.css .m-pop): down from the row, the right
+   end's from their top right corner. */
+.share-card, #menu { --origin: top right; }
+
+/* The Share card (DESIGN.md B8, the side panel's markup and styles). */
+.share-card { position: absolute; top: 53px; right: 12px; z-index: 3; width: 320px; display: grid; gap: var(--sp-3); padding: calc(var(--sp-3) - 1px); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); line-height: 1.45; } /* mockup: under the 53 px row */
+.share-card h2 { margin: 0; font-size: var(--fs-4); font-weight: var(--fw-name); }
+.share-choice { display: grid; gap: var(--sp-1); margin: 0; padding: 0; border: 0; min-width: 0; }
+.share-choice legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-1); font-weight: var(--fw-name); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.share-opt { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-2); align-items: start; padding: var(--sp-2); border-radius: var(--r-2); font-size: var(--fs-3); transition: background-color var(--t-hover); }
+.share-opt:hover { background: var(--hover); }
+.share-opt input { margin: 2px 0 0; accent-color: var(--accent); }
+.share-opt small { display: block; font-size: var(--fs-2); color: var(--ink-2); }
+.share-name { display: grid; gap: var(--sp-1); font-size: var(--fs-2); color: var(--ink-2); }
+.share-line { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-2); align-items: center; }
+.field { width: 100%; min-width: 0; height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
+.field:focus { border-color: var(--accent); }
+.share-card .share-code { font-family: var(--mono); }
+.primary { justify-self: start; height: var(--ctl); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font-weight: 650; cursor: default; box-shadow: var(--glow-accent); }
+.primary:hover { background: var(--accent-ink); }
+.primary:disabled { opacity: 0.6; }
+.mini { height: var(--ctl-sm); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); font-size: var(--fs-2); font-weight: var(--fw-name); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }
+.mini:hover { background: var(--hover); color: var(--ink); }
+.share-card .note { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
+#share-rights { font-size: var(--fs-2); color: var(--ink-2); }
+.msg { margin: 0; font-size: var(--fs-2); color: var(--muted); }
+.msg:empty { display: none; }
+.msg[data-kind="error"] { color: var(--bad); }
+.msg[data-kind="ok"] { color: var(--ok); }
+
+#menu { position: absolute; top: 53px; right: 12px; z-index: 3; min-width: 200px; display: grid; padding: var(--sp-1); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); } /* mockup: under the 53 px row */
+#menu .item { display: flex; align-items: center; gap: var(--sp-3); width: 100%; height: var(--ctl); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); font-size: var(--fs-3); text-align: left; cursor: default; transition: background-color var(--t-hover); }
+#menu .item:hover:not(:disabled), #menu .item:focus { background: var(--hover); }
+#menu .item:disabled { color: var(--muted); }
+
+/* ---- the nav fragments beside the native address bar ----
+   Each fills its slot (the shell's nav groups, 118 x 32 left and 76 x 32 right, centered in the
+   42 px nav row), its buttons at the mockup's places: back, forward and reload 41 px apart from 5 px
+   in; search 8 px after the address bar and the sparkle 40 px after it. The page paints the centre
+   column's own color (--column, the nav row's), so no other box sits beside the address bar. */
+body[data-mode="nav-left"], body[data-mode="nav-right"] { background: var(--column); }
+.nav { display: flex; align-items: center; justify-content: flex-start; gap: 13px; height: 100vh; padding: 0 0 0 5px; } /* mockup: B2's nav group, 41 px apart from 5 px in */
+body[data-mode="nav-right"] .nav { gap: 12px; padding-left: 8px; }
+.nav button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }
+.nav button svg { width: 18px; height: 18px; } /* mockup: B2's 18 px icons */
+.nav button:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.nav button:disabled { color: var(--muted); }
+#sparkle[aria-pressed="true"] { color: var(--ink); }
+
+/* ---- modes: the Share bubble shows its card alone ---- */
+body[data-mode="share"] .row { display: block; height: auto; padding: 0; -webkit-app-region: no-drag; }
+body[data-mode="share"] .row > :not(#right) { display: none; }
+body[data-mode="share"] #right > :not(#share-card) { display: none; }
+body[data-mode="share"] #right { display: block; }
+body[data-mode="share"] #share-card { position: static; width: 100%; }
+/* A host wider than the card never stretches it (B8: 320 px), left-aligned at the page edge. */
+body[data-mode="share"] #share-card { max-width: 320px; }
+/* In the browser's own bubble (530 E2: B2 under Share) the card is the bubble: it fills the page at
+   the bubble's width (320), the browser draws the corners, the shadow, the arrow and the motion, so
+   the page draws no shadow or entrance of its own. The x closes B2. */
+body[data-bubble="native"] { background: var(--elevated); }
+body[data-bubble="native"][data-mode="share"] #share-card { position: relative; top: auto; right: auto; max-width: none; padding-right: calc(var(--sp-3) + 24px); box-shadow: inset 0 1px 0 var(--edge-light); }
+body[data-bubble="native"] .m-pop { transition: none; }
+#share-close { position: absolute; top: calc(var(--sp-3) - 5px); right: calc(var(--sp-3) - 5px); display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }
+#share-close svg { width: 12px; height: 12px; }
+#share-close:hover { background: var(--hover); color: var(--ink); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+#tabs li:focus-visible, #menu .item:focus-visible { outline-offset: -2px; box-shadow: var(--glow-focus); }
+/* Focus keeps an element's own light first, then the halo. */
+#tabs li[aria-selected="true"]:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--halo), var(--glow-focus); }
+#share-btn:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-focus); }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+/* Said to a screen reader only: where Share opened its card (another part of the window). */
+.sr-note { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

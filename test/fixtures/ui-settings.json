@@ -1,0 +1,184 @@
+{
+  "helper": {
+    "session": {
+      "name": "default",
+      "where": "Local",
+      "temporary": false
+    },
+    "sessions": {
+      "picking": false,
+      "where": "Local",
+      "sessions": [
+        {
+          "name": "default",
+          "tabs": 3,
+          "sites": [
+            "shop.example",
+            "docs.example"
+          ],
+          "current": true,
+          "used": 1760000000000,
+          "people": [
+            {
+              "who": "Alice",
+              "app": "Claude Code",
+              "computer": "Mac",
+              "kind": "you"
+            }
+          ],
+          "live": []
+        },
+        {
+          "name": "checkout-test",
+          "tabs": 1,
+          "sites": [
+            "shop.example"
+          ],
+          "current": false,
+          "used": 0,
+          "people": [],
+          "live": [
+            {
+              "who": "Bob",
+              "computer": "Linux"
+            }
+          ]
+        }
+      ]
+    },
+    "profile": {
+      "details": [
+        {
+          "label": "VAT number",
+          "value": "DE123456789",
+          "source": "you"
+        },
+        {
+          "label": "Company",
+          "value": "Acme GmbH",
+          "source": "form",
+          "site": "shop.example"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "SHOPIFY_PASSWORD",
+          "domains": [
+            "accounts.shopify.com"
+          ]
+        }
+      ]
+    },
+    "dev": {
+      "asks": [],
+      "shared": [
+        {
+          "port": 3000
+        }
+      ],
+      "open": [
+        {
+          "port": 5173,
+          "title": "Vite"
+        }
+      ],
+      "joiners": 1
+    },
+    "joinhost": {
+      "asks": [],
+      "hosts": [
+        {
+          "host": "tunnel.example.com",
+          "always": true
+        }
+      ]
+    },
+    "timeline": {
+      "cards": [
+        {
+          "id": "0123456789ab",
+          "time": "2026-10-11T10:00:00Z",
+          "caption": "Checkout",
+          "step": 1
+        }
+      ]
+    },
+    "config": {
+      "browser": "pairbrowse",
+      "timeline": {
+        "on": true,
+        "cap": 200
+      },
+      "layout": {
+        "left": "open",
+        "right": "open",
+        "strip": 88
+      },
+      "name": "Alice",
+      "downloads": null,
+      "pictures": true,
+      "cookies": "accept",
+      "maxTabs": 20,
+      "askSession": true,
+      "native": true,
+      "chosen": true,
+      "report": true
+    },
+    "diagnostics": {
+      "helper": {
+        "version": "0.15.45",
+        "node": "22.11.0",
+        "uptime": 7500
+      },
+      "browser": {
+        "engine": "pairbrowse",
+        "version": "142.0.7444.59",
+        "build": "3"
+      },
+      "connections": {
+        "agents": 1,
+        "viewers": 0,
+        "joiners": 1,
+        "streams": 2
+      },
+      "joined": [],
+      "errors": [
+        {
+          "at": 1760000000000,
+          "where": "tunnel",
+          "text": "The Quick Tunnel didn't answer in 20 s; retried."
+        }
+      ]
+    },
+    "tabs": [
+      {
+        "id": "t1",
+        "i": 0,
+        "title": "Checkout",
+        "host": "shop.example",
+        "url": "https://shop.example/checkout?step=2",
+        "active": true
+      }
+    ],
+    "invites": {
+      "items": [
+        {
+          "id": "0a1b2c3d",
+          "role": "drive",
+          "label": "Bob",
+          "share": "code",
+          "expires": 4102444800000
+        },
+        {
+          "id": "4e5f6a7b",
+          "role": "watch",
+          "label": "Wendy",
+          "share": "link",
+          "expires": 4102444800000
+        }
+      ]
+    }
+  },
+  "shim": {},
+  "push": []
+}

@@ -16,7 +16,7 @@ if (!subset) throw new Error('args.subset is required (tokens | hud | panel | li
 
 const RULES = `Rules that override everything else:
 - Zero regression: nothing of the measured performance, security or behaviour in docs/engineering-progress.md may get worse. No new timer, observer, poll or animation loop that runs while a panel is hidden or nothing changes; no new screenshot capture or retention anywhere; no new process; no new runtime dependency (Node standard library only outside runtime/); no change to scripts/policy.mjs, scripts/secrets.mjs, scripts/guard.mjs, the screenshot module or the click rules.
-- The logo (scripts/browser/icon.svg, product-icon.svg, panel/logo.svg, icon PNGs, icns) is never redrawn or recolored.
+- The logo (scripts/browser/icon.svg, product-icon.svg, ui/logo.svg, icon PNGs, icns) is never redrawn or recolored.
 - Security is the product: keep docs/security.md true; the live view and side panel stay under their CSP and Trusted Types; nothing in a page can drive the in-page script without its per-start key.
 - No fabricated state in the UI: only what the helper really knows (statuses an agent set, the goal log's lines, participants, tabs, join requests). No "reasoning" text, no invented progress.
 - Motion: short transitions only, honoring prefers-reduced-motion; no backdrop blur, glow, pulsing or animated gradients.
@@ -54,7 +54,7 @@ const TEST_SCHEMA = {
 phase('Plan')
 const plan = await agent(
   `You are the principal designer-engineer (Fable) planning the "${subset}" subset of the PairBrowse design mission. Read docs/design-progress.md (the reference reading, the Surfaces map, the tokens, the subset list) and the code the subset touches. Brief for this subset: ${brief}\n${RULES}\n` +
-  `Produce a plan an engineer can execute without asking: exact files, ordered steps, acceptance checks, tests to run and add, what is out of scope. Prefer the smallest change that reaches the reference's quality; reuse scripts/browser/panel/common.js for shared code; one token sheet shared by the surfaces. Say which existing tests pin the behaviour you touch.`,
+  `Produce a plan an engineer can execute without asking: exact files, ordered steps, acceptance checks, tests to run and add, what is out of scope. Prefer the smallest change that reaches the reference's quality; reuse ui/common.js for shared code; one token sheet shared by the surfaces. Say which existing tests pin the behaviour you touch.`,
   { label: `plan:${subset}`, phase: 'Plan', schema: PLAN_SCHEMA, model: 'fable', effort: 'high' })
 log(`plan: ${plan?.summary || 'none'}`)
 if (!plan) throw new Error('no plan')

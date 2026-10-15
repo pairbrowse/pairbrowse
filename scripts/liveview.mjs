@@ -878,7 +878,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       json(res, r.confirm ? 428 : r.error ? 409 : 200, r);
       if (!r.error) { try { broadcast("sessions", picker.state()); } catch {} }
     } },
-    // "Switch session..." in the side panel: the picker again, in a new tab (the owner only).
+    // "End session" in the side panel (the right dock in the browser): the picker again, in a new tab (the owner only).
     { method: "POST", path: "picker", right: "session", handler: async ({ res }) => {
       if (!picker?.open) return plain(res, 404);
       json(res, 200, await picker.open());

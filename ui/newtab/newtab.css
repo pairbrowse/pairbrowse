@@ -1,0 +1,63 @@
+/* The PairBrowse new tab page: flat navy, the logo unchanged; colors and type from tokens.css. */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  display: grid; place-items: center;
+  background: var(--bg);
+  color: var(--ink); font: var(--fs-4)/1.4 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+/* Logo to wordmark 12 px, wordmark to pill 24 px (12 + the h1's 12), pill to chips 16 px. */
+main { display: grid; justify-items: center; gap: var(--sp-3); width: min(560px, 100% - 32px); margin-top: -8vh; }
+h1 { margin: 0 0 var(--sp-3); font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.02em; }
+form { width: 100%; }
+input {
+  width: 100%; height: 48px; padding: 0 var(--sp-6); border-radius: 999px;
+  border: 1px solid var(--edge-input);
+  background: var(--chrome); color: inherit; font: inherit;
+  box-shadow: none;
+  transition: border-color var(--t), background var(--t);
+}
+input::placeholder { color: var(--muted); opacity: 1; }
+input:focus { border-color: var(--accent); background: var(--elevated); }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+
+/* Your other recent sessions: one press switches (the picker's rows, shorter). */
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); width: 100%; margin-top: var(--sp-1); }
+.chips[hidden] { display: none; }
+.chip {
+  display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--ctl); padding: 0 var(--sp-4);
+  border-radius: 999px; border: 1px solid var(--edge);
+  background: var(--elevated); color: var(--ink);
+  font: 500 var(--fs-3)/1 var(--sans); cursor: pointer;
+  transition: background var(--t-hover), border-color var(--t-hover);
+}
+.chip:hover { background: var(--hover); }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+.chip .name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .meta { color: var(--ink-2); font-size: var(--fs-2); font-weight: 500; }
+
+/* What the helper answered, in words; color only repeats it. */
+.msg { margin: 0; font-size: var(--fs-3); color: var(--muted); }
+/* Empty, it stays in the accessibility tree (a live region announces changes, not births) but takes no
+   grid row: an absolute child adds no track and no gap (a negative margin would leave the gap). */
+.msg:empty { position: absolute; height: 0; overflow: hidden; }
+.msg[data-kind="error"] { color: var(--bad); }
+.msg[data-kind="ok"] { color: var(--ok); }
+
+body[data-s="picking"] .chips { opacity: 0.55; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Switching while agents are at work (the helper's 428): asked here, a warn edge as the picker's card. */
+.ask { display: grid; gap: var(--sp-3); width: 100%; padding: var(--sp-4); border-radius: 12px; border: 1px solid var(--edge); background: var(--elevated); box-shadow: inset 3px 0 0 var(--warn), 0 12px 32px rgb(0 0 0 / 0.4); text-align: left; }
+.ask[hidden] { display: none; }
+.ask strong { font-size: var(--fs-3); font-weight: 650; overflow-wrap: anywhere; }
+.ask .agents { font-size: var(--fs-2); color: var(--ink-2); }
+.ask .buttons { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.ask button { height: var(--ctl); padding: 0 var(--sp-4); border-radius: var(--r-2); font: 600 var(--fs-3) var(--sans); cursor: pointer; }
+.ask .primary { border: 0; background: var(--accent-fill); color: var(--ink); }
+.ask .primary:hover { background: var(--accent-fill-top); }
+.ask .secondary { border: 1px solid var(--edge); background: transparent; color: inherit; font-weight: 500; }
+.ask .secondary:hover { background: var(--hover); }
+.ask button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }

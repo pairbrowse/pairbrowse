@@ -24,3 +24,5 @@ coverage/
 
 # The test-gate live test's helper home outside the temp folder (removed after the test)
 /.gate/
+# Dev renders (scripts/dev/surface-refs.mjs)
+.cache/

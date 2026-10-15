@@ -138,7 +138,7 @@ test("a person from the other browser shows as a dot on the tab's icon, in the c
   const { createHud } = await import("../scripts/daemon/hud.mjs");
   const icons = [];
   const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => { if (args?.[3] === "spark") icons.push(args[2]); } };
-  const hud = createHud({ pages: async () => [page], participants: () => ["a"], waiting: () => null, liveView: () => null, notify: () => {} });
+  const hud = createHud({ pages: async () => [page], participants: () => ["a"], labelOf: (id) => ({ a: "Claude a" })[id] || "", waiting: () => null, liveView: () => null, notify: () => {} });
   hud.setPersonMark(page, "#38bdf8");
   assert.equal(hud.tabIcon(page), "o#38bdf8");
   assert.deepEqual(icons, ["o#38bdf8"]);
@@ -884,3 +884,132 @@ test("a tab with no title of its own shows the agent's name alone, never \"Name 
     await browser.close();
   }
 });
+
+test("peers' pointers: an agent's is the white agent cursor edged in its color, a person's keeps its colored fill", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    for (const reducedMotion of ["no-preference", "reduce"]) {
+      const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, reducedMotion });
+      await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<body style=\"margin:0;height:2000px\"></body>" }));
+      await page.goto("http://pairbrowse.test/");
+      await page.evaluate(openShadows);
+      await ensureHud(page, source, "__pbtest");
+      const list = [
+        { k: "host-agent:3", x: 200, y: 150, who: "Codex", color: "#7088f0" },
+        { k: "j1:a0", x: 400, y: 150, who: "Gemini", color: "#4fd1e8" },
+        { k: "sam", x: 300, y: 300, who: "Sam", color: "#4ade80" },
+        // As the helper keys a joiner's: `${invite}:${joiner}:me` and `${invite}:${joiner}:a<n>`.
+        { k: "inv7:j3:a1", x: 600, y: 150, who: "Claude", color: "#a78bfa" },
+        { k: "inv7:j3:me", x: 500, y: 300, who: "Pat", color: "#f472b6" },
+      ];
+      await page.evaluate((v) => window.__pbtest("tok", v, "cursors"), JSON.stringify(list));
+      await page.waitForTimeout(reducedMotion === "reduce" ? 50 : 500);
+      const peers = await page.evaluate((tag) => {
+        for (const el of document.querySelectorAll(tag)) {
+          const ps = el.shadowRoot?.querySelectorAll(".p");
+          if (!ps?.length) continue;
+          return [...ps].map((p) => {
+            const path = p.querySelector("path"), svg = p.querySelector("svg"), span = p.querySelector("span");
+            return { cls: p.className, fill: path.getAttribute("fill"), stroke: path.getAttribute("stroke"), sw: path.getAttribute("stroke-width"), w: svg.getBoundingClientRect().width, pill: getComputedStyle(span).backgroundColor, left: getComputedStyle(span).left, opacity: getComputedStyle(p).opacity, ph: span.getBoundingClientRect().height, fs: getComputedStyle(span).fontSize };
+          });
+        }
+        return null;
+      }, hud.tags.cursor);
+      assert.ok(peers && peers.length === 5, `five pointers: ${JSON.stringify(peers)}`);
+      const [codex, gemini, sam, claude, pat] = peers;
+      for (const [p, color, rgb] of [[codex, "#7088f0", "rgb(112, 136, 240)"], [gemini, "#4fd1e8", "rgb(79, 209, 232)"], [claude, "#a78bfa", "rgb(167, 139, 250)"]]) {
+        assert.equal(p.cls, "p a on", reducedMotion);
+        assert.deepEqual([p.fill, p.stroke, p.sw, p.w, p.pill, p.left], ["#fff", color, "1.4", 22, rgb, "16px"], `an agent's pointer, ${reducedMotion}`);
+        // The name pill: 24 px tall, 12 px text (DESIGN.md B5).
+        assert.deepEqual([p.ph, p.fs], [24, "12px"], `an agent's name pill, ${reducedMotion}`);
+      }
+      assert.deepEqual([sam.cls, sam.fill, sam.stroke, sam.w, sam.pill, sam.left], ["p on", "#4ade80", "#fff", 18, "rgb(74, 222, 128)", "14px"], `a person's pointer, ${reducedMotion}`);
+      assert.deepEqual([sam.ph, sam.fs], [24, "12px"], `a person's name pill, ${reducedMotion}`);
+      assert.deepEqual([pat.cls, pat.fill, pat.stroke, pat.w, pat.pill], ["p on", "#f472b6", "#fff", 18, "rgb(244, 114, 182)"], `a joiner's own pointer, ${reducedMotion}`);
+      if (reducedMotion === "reduce") assert.equal(codex.opacity, "1", "in place at once under reduced motion");
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+// The helper sends this page's pointers to the other browser of a shared tab: the person's (me)
+// is drawn there filled in their color, the agent's (agent) as its white cursor. An agent's own
+// mouse move onto its target is a trusted event too: it must never become the person's pointer.
+test("pointers sent across: an agent's own mouse move stays the agent's, a person's move is theirs", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, reducedMotion: "reduce" });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<body style=\"margin:0;height:2000px\"><button style=\"position:absolute;left:480px;top:290px;width:40px;height:20px\">Go</button></body>" }));
+    await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
+    const pointers = () => page.evaluate(() => window.__pbtest("tok", "", "pointer"));
+    await page.mouse.move(100, 100);
+    await page.mouse.move(120, 110);
+    let p = await pointers();
+    assert.deepEqual([p.me?.x, p.me?.y], [120, 110], "the person's move");
+    // The agent's turn: its cursor goes to the button, then its click moves the mouse there.
+    await page.evaluate(() => window.__pbtest("tok", JSON.stringify({ x: 500, y: 300, act: "click", who: "Claude", color: "#a78bfa", bw: 40, bh: 20 }), "cursor"));
+    await page.mouse.move(500, 300);
+    await page.mouse.move(502, 301);
+    p = await pointers();
+    assert.deepEqual([p.agent?.x, p.agent?.y], [500, 300], "the agent's pointer");
+    assert.deepEqual([p.me?.x, p.me?.y], [120, 110], `the agent's move isn't the person's: ${JSON.stringify(p.me)}`);
+    // The person moves well away from it meanwhile: theirs.
+    await page.mouse.move(150, 600);
+    await page.mouse.move(160, 610);
+    p = await pointers();
+    assert.deepEqual([p.me?.x, p.me?.y], [160, 610], "a person's move far from the agent's target, while it acts");
+  } finally {
+    await browser.close();
+  }
+});
+
+// A joiner's mouse replayed in a shared tab moves the page's mouse there; Chromium then sends moves
+// with no distance at that spot (a page loading, scrolling or changing under it). Taken as new
+// moves, the helper sent them as the host person's pointer, at the joiner's own place: the joiner
+// saw a pointer trailing their own mouse. They keep the time of the move that put the mouse there.
+test("a move with no distance is nobody's new move: the pointer keeps its time", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<body style=\"margin:0;height:3000px\">long</body>" }));
+    await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
+    const pointers = () => page.evaluate(() => window.__pbtest("tok", "", "pointer"));
+    const cdp = await page.context().newCDPSession(page);
+    const move = (x, y) => cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    const moves = () => page.evaluate(() => window.__moves, undefined, undefined, false);
+    await page.evaluate(() => { window.__moves = []; addEventListener("mousemove", (e) => window.__moves.push([e.movementX, e.movementY])); }, undefined, undefined, false);
+    // The first move in a page has no distance (nothing before it to measure from): no pointer yet.
+    await move(300, 200);
+    assert.deepEqual(await moves(), [[0, 0]]);
+    assert.equal((await pointers()).me, null, "a page's first move, with no distance");
+    await move(320, 210);
+    const p = (await pointers()).me;
+    assert.deepEqual([p?.x, p?.y], [320, 210], "a move that moves");
+    // The page scrolls under the resting mouse, and Chromium sends a move with no distance there.
+    await page.waitForTimeout(150);
+    await page.evaluate(() => scrollTo(0, 400), undefined, undefined, false);
+    await move(320, 210);
+    assert.deepEqual((await moves()).at(-1), [0, 0], "Chromium's move with no distance");
+    const q = (await pointers()).me;
+    assert.deepEqual([q?.x, q?.y, q?.t], [320, 610, p.t], `the same place on the screen, further down the page, at the time of the move that put it there: ${JSON.stringify(q)}`);
+    await move(340, 230);
+    const r = (await pointers()).me;
+    assert.ok(r.t > p.t && r.x === 340 && r.y === 630, `the next move that moves is new: ${JSON.stringify(r)}`);
+  } finally {
+    await browser.close();
+  }
+});
+

@@ -48,7 +48,7 @@ test("the side panel's id comes from its manifest key like Chromium does, wherev
   const id = [...hex].map((c) => "abcdefghijklmnop"[parseInt(c, 16)]).join("");
   assert.match(id, /^[a-p]{32}$/);
   assert.equal(panelExtensionId(), id);
-  const copy = join(mkdtempSync(join(tmpdir(), "pb-panel-")), "0.99.0", "scripts", "browser", "panel");
+  const copy = join(mkdtempSync(join(tmpdir(), "pb-panel-")), "0.99.0", "ui");
   cpSync(PANEL_DIR, copy, { recursive: true });
   assert.equal(panelExtensionId(copy), id, "another copy (a plugin update) keeps the id");
   assert.notEqual(panelExtensionId("/tmp/x"), panelExtensionId("/tmp/y"), "a folder without a key falls back to its path");
@@ -64,7 +64,7 @@ test("earlier copies' path-derived side panel records and buttons are removed", 
   const id = panelExtensionId();
   const old = "abcdabcdabcdabcdabcdabcdabcdabcd";
   const path = "/Users/x/.claude/plugins/cache/pairbrowse/pairbrowse/0.14.1/scripts/browser/panel";
-  writeFileSync(join(profile, "Default", "Secure Preferences"), JSON.stringify({ extensions: { settings: { [old]: { path, state: 0 }, [id]: { path: "/new/scripts/browser/panel", ack_ntp_bubble: true }, keep: { path: "/elsewhere" } } },
+  writeFileSync(join(profile, "Default", "Secure Preferences"), JSON.stringify({ extensions: { settings: { [old]: { path, state: 0 }, [id]: { path: "/new/ui", ack_ntp_bubble: true }, keep: { path: "/elsewhere" } } },
     protection: { macs: { extensions: { settings: { [old]: "M", [id]: "N", keep: "K" } } } } }));
   writeFileSync(join(profile, "Default", "Preferences"), JSON.stringify({ extensions: { pinned_extensions: [old, "keep"] } }));
   prepareProfile(profile);
@@ -73,6 +73,14 @@ test("earlier copies' path-derived side panel records and buttons are removed", 
   assert.deepEqual(Object.keys(secure.protection.macs.extensions.settings).sort(), [id, "keep"].sort());
   const prefs = JSON.parse(readFileSync(join(profile, "Default", "Preferences"), "utf8"));
   assert.deepEqual(prefs.extensions.pinned_extensions.sort(), [id, "keep"].sort());
+});
+
+test("this checkout's keyless panel id from before ui/ (scripts/browser/panel) counts as an earlier copy", async () => {
+  const { oldPanelIds } = await import("../scripts/browser.mjs");
+  // No manifest there any more, so the id is the one Chromium derived from the folder path.
+  const before = panelExtensionId(new URL("../scripts/browser/panel", import.meta.url).pathname);
+  const secure = { extensions: { settings: { [before]: { state: 0 }, [panelExtensionId()]: { path: "/new/ui" }, keep: { path: "/elsewhere" } } } };
+  assert.deepEqual(oldPanelIds(secure), [before]);
 });
 
 test("profiles get Chromium's own navy color theme instead of the old theme extension", async () => {
@@ -340,7 +348,7 @@ test("a new profile starts without a window on macOS, so the side panel opens th
   assert.ok(!launchArgs({}).includes("--no-startup-window"));
   assert.ok(!launchArgs({}, { firstRun: false }).includes("--no-startup-window"));
   // The window the panel opens instead, only when there is none.
-  const background = readFileSync(new URL("../scripts/browser/panel/background.js", import.meta.url), "utf8");
+  const background = readFileSync(new URL("../ui/background.js", import.meta.url), "utf8");
   assert.match(background, /windows\.getAll\(\)\)\.length\) await chrome\.windows\.create\(\{ url: "about:blank" \}\)/);
 });
 

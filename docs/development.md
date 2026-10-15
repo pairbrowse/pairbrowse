@@ -11,11 +11,11 @@ claude plugin validate .  # the Claude Code manifests
 
 ### The design tokens
 
-`scripts/browser/panel/tokens.css` is the one sheet (colors, type, radii; `--edge-input` is a text field's border at 3:1 or more) for the side
-panel, the session picker, the new tab page, a joiner's picture page and the live view (served
+`ui/tokens.css` is the one sheet (colors, type, radii; `--edge-input` is a text field's border at 3:1 or more) for the right
+dock (the side panel in plain Chromium), the session picker, the new tab page, a joiner's picture page and the live view (served
 from the same file through the live view's fixed asset list). The live view alone opts into the
 light scheme with `data-scheme="system"`; the extension pages stay dark. `scripts/hud.js` (closed
-shadow roots), `record.js` (a canvas) and the "Opening tabs" page in `scripts/tabs.mjs` carry the same hex values inline, and
+shadow roots), `ui/capture/record.js` (a canvas) and the "Opening tabs" page in `scripts/tabs.mjs` carry the same hex values inline, and
 `test/tokens.test.mjs` keeps every literal color in those files and the page sheets equal to a
 sheet value or a `SPARK_COLORS` entry and checks WCAG AA contrast in both schemes. Agent
 colors are `SPARK_COLORS` in `scripts/daemon/hud.mjs`, by app (Claude Code orange, Codex purple,
@@ -23,6 +23,58 @@ Gemini blue; a second agent of one app, or an app without a color, takes the fir
 `AGENT_FALLBACKS`, cyan first). People's colors are `PEOPLE_COLORS` in `scripts/tabsync.mjs`,
 never near an agent's (`test/colors.test.mjs` checks hue, distance and the tags' AA contrast). The window frame follows `THEME_COLOR` in
 `scripts/browser.mjs` (the sheet's chrome navy) unless the user picked a theme.
+
+### The pages' harness (ui/)
+
+`test/ui.test.mjs` runs over every `ui/*/index.html`. On every machine it checks each page's
+files: no inline script, handler or `style` attribute; `../tokens.css` linked before the page's
+own sheet and no token redefined; the logo taken from `ui/` (hash pinned) and never inlined; css
+colors that are sheet values; no markup sink (`innerHTML` and the like: Trusted Types); a
+reduced-motion block, no transition over 200 ms, no blur, no endless animation but the Live dot.
+With `PAIRBROWSE_TEST_RUNTIME` it renders each page and checks: no error, CSP or Trusted Types
+entry; an accessible name on every visible control; Tab reaches each one with the 2 px `--accent`
+ring; no timer, frame or observer while hidden; no running animation under reduced motion.
+
+Three fakes in `test/helpers/` stand in for the browser build: `pairbrowse-shim.mjs` is
+`window.pairbrowse` over the draft `native/mojom/pairbrowse.mojom` (its header is the page
+contract), `fake-helper.mjs` answers the live view's owner routes and event stream with the real
+key, Host and Origin checks, and `ui-server.mjs` serves `ui/` under the chrome pages' CSP
+(`script-src 'self'`, Trusted Types enforced), inserting the harness scripts as same-origin
+`<script src>` tags. Pages are served from another origin than the helper, as
+`chrome://pairbrowse` will be. Patchright has no console API and its init scripts are inline
+(refused by that CSP), so `ui-prelude.js` captures errors, timers and violations in the page.
+
+A page subset copies `test/ui-right.test.mjs` as `test/ui-<page>.test.mjs`: `pageTest(name,
+{ fixtures, shim, replies }, fn)` gives it the page, the helper (`push`, `set`, `posts`) and the
+shim's controls; the common checks stay in `ui.test.mjs`.
+
+The `DEBT` table at the top of `ui.test.mjs` lists today's known gaps by page and check. The suite
+asserts each entry is still true, so the subset that fixes the page removes its entry in the
+same change; new pages get none.
+
+For reviews, `node scripts/dev/ui-look.mjs <page> [--width 360 --height 900] [--hash name] [--fixtures f.json]`
+renders a page to a PNG and prints its harness log. Its fixtures (`{ helper, replies, shim, push }`)
+are `scripts/dev/look/<page>.json` by default, and `--fixtures` replaces them. `--hash nav-left`
+renders one of a page's hash modes (the strip's nav fragments and bubbles). `node scripts/dev/ui-look-all.mjs
+[--out dir] [--only a,b] [--reduced-motion]` renders every visible page (and the strip's hash modes
+and both docks' rails) at its Part B size into `<tmpdir>/pairbrowse-ui-look` by default, one line per
+shot with its count of error and CSP entries; it exits 1 when a shot logged one. The harness
+serves the picker frameable by same-origin pages only, as the native build will, so the strip's
+switcher and the left dock's popover show the real framed picker; every other page refuses any frame.
+
+`node scripts/dev/window-preview.mjs --out <dir> [--rail] [--reduced-motion] [--mockup <png>] [--one-host]`
+renders the whole window before the native build exists. The real pages sit in iframes at the
+hybrid 500-shell geometry (tab row 44, nav row 44 with the two nav fragments around a stand-in of
+the native address bar, docks 200 and 330 or 44 as rails, the contents card inset 8 with radius
+10, the timeline 130). The contents is the stand-in page in `scripts/dev/preview/` with
+`scripts/hud.js` added the way the helper adds it, rendered as its own top-level page as the
+build's contents is. The scene is `scripts/dev/preview/fixtures.json`. Outputs: `window.png` and
+`window@2x.png`, `side-by-side.png` against the mockup's window area, and `regions/*.png` crop
+pairs, plus `harness-log.json` and `frames.json`; it exits 1 on any error, CSP or page-error
+entry. For the composition only, a loopback proxy lifts `frame-ancestors` to `'self'` and splits
+the frames over `127.0.0.1` and `localhost`, because Chromium opens at most 6 connections per host
+and the window's pages open 7 event streams. `--one-host` shows what the build will do. The
+mockup is read in place and never committed.
 
 ### The live tests
 
@@ -79,12 +131,13 @@ The plugin is small:
 | `scripts/log.mjs` | PostToolUse hook: plain-English activity log per session in `~/.pairbrowse/log/` |
 | `scripts/hud.js` | In-page status badge, driven only with a per-start random key |
 | `scripts/liveview.mjs`, `scripts/liveview/` | Live view server for the Claude workspace (dock and Browser pane), the side panel's data: request checks, invites, input replay, shared tabs for joiners and their server |
-| `scripts/liveview.html`, `.css`, `.js`, `scripts/browser/panel/common.js`, `tokens.css` | The live view page, and the code and design tokens it shares with the side panel |
+| `scripts/liveview.html`, `.css`, `.js`, `ui/common.js`, `ui/tokens.css` | The live view page, and the code and design tokens it shares with the side panel |
 | `scripts/join.mjs`, `scripts/relay.mjs`, `scripts/tabsync.mjs`, `scripts/daemon/follow.mjs` | Join codes and host approvals; the joiner's connection to the host (one WebSocket both ways); which addresses, field values, pointers and tab orders cross and the loop-safe bookkeeping; the joiner's browser following the shared tabs |
 | `scripts/liveview/push.mjs`, `scripts/liveview/joiner-server.mjs`, `scripts/ws.mjs` | The host's push channel (one WebSocket per approved joiner: tabs, form values, pointers, session, messages), the guest port with its limits, and the small standard-library WebSocket both sides use |
 | `scripts/daemon/forms.mjs`, `scripts/daemon/cobrowse.mjs`, `scripts/daemon/taborder.mjs`, `scripts/daemon/session.mjs` | Reading and filling shared form fields; watching shared tabs for pointer moves and field changes; tab order through the side panel extension; who is doing what and messages between participants |
 | `scripts/tunnel.mjs` | The pinned Cloudflare Quick Tunnel |
-| `scripts/browser.mjs`, `scripts/browser/`, `scripts/macos-app.mjs` | The PairBrowse browser: pinned ungoogled-chromium on macOS, Playwright Chromium elsewhere; icon, color theme, side panel and new tab page; the PairBrowse name and icon in macOS apps |
+| `ui/` | The browser's own pages (side panel, new tab, session picker, picture page, capture, the approval card, the top strip, the left dock, settings), loaded as the side panel extension where the page has an extension host: manifest, worker, logo, icons, one directory per page; the browser build's own slots (`ui/strip`: the tab row and the nav fragments by hash; `ui/left`) are not loaded in the extension; `test/ui.test.mjs` checks every page |
+| `scripts/browser.mjs`, `scripts/browser/`, `scripts/macos-app.mjs` | The PairBrowse browser: pinned ungoogled-chromium on macOS, Playwright Chromium elsewhere; icon files, color theme (the extension's pages are in ui/); the PairBrowse name and icon in macOS apps |
 | `scripts/native-pack.mjs`, `scripts/native-install.mjs`, `scripts/native-check.mjs`, `scripts/native-engine.mjs`, `BINARY-LICENSE.md` | The native PairBrowse build: pinned downloads and the engine pack, install step with rollback, launch self-check, launch adapter, binary license (the build pipeline is in the private PairBrowse Pro repository) |
 | `scripts/util.mjs` | Small shared helpers: JSON files, SHA-256, pinned downloads, timeouts |
 | `skills/pairbrowse/SKILL.md` | How Claude runs a session: speed, accuracy, handoffs, updates |

@@ -1,0 +1,101 @@
+/* The approval card as a bubble (DESIGN.md B6). Only sheet tokens. Never opacity, filter or
+   transform on the card or inside it outside the open transition: IntersectionObserver v2 reports
+   a translucent or filtered card as not visible, and the click would then be refused. Hover and
+   disabled states change colors only. */
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: var(--fs-3)/1.4 var(--sans); }
+.empty { margin: 0; padding: var(--sp-4); color: var(--ink-2); }
+.card {
+  /* The mockup's card: the avatar in its own column at the left, everything else in one column. */
+  position: relative; box-sizing: border-box; width: 100%; max-width: 364px; padding: 10px 16px 24px 54px; /* mockup: B6's card, the avatar in its own column (measured on the 530 gate capture: column 55, right 17, Allow 24 above the bottom) */
+  display: grid; gap: 0;
+  background-color: var(--panel); border: 1px solid var(--edge-btn); border-radius: 12px;
+  box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised);
+  transition: opacity var(--t), translate var(--t);
+}
+.card:focus { outline: none; box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); } /* the card takes focus for readers: no ring, no halo */
+@starting-style { .card:not([hidden]) { opacity: 0; translate: 0 4px; } }
+.card[data-kind="join"] { border-color: var(--accent); }
+.card[data-kind="dev"], .card[data-kind="host"] { border-color: var(--warn); }
+
+.hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; height: 30px; } /* mockup: the 30 px header line */
+#avatar-slot { display: contents; }
+.avatar {
+  position: absolute; left: 12px; top: 12px; /* mockup: 13 px in from the card's outer edge on both sides */
+  flex: none; width: 28px; height: 28px; border-radius: 50%;
+  display: inline-grid; place-items: center;
+  font: 600 var(--fs-4)/1 var(--sans); color: var(--bg);
+}
+.avatar.plain { background: var(--hover); color: var(--ink); }
+.title {
+  margin: 0; flex: 1; min-width: 0;
+  font-size: var(--fs-3); font-weight: 400; color: var(--ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.title b { font-weight: var(--fw-name); color: var(--ink); }
+.count {
+  flex: none; height: 20px; padding: 0 var(--sp-2); border-radius: 10px;
+  background: var(--accent-soft); color: var(--accent-ink);
+  font: 600 var(--fs-1)/20px var(--sans);
+}
+
+button {
+  font: inherit; height: var(--ctl); padding: 0 var(--sp-4); border-radius: var(--r-2); cursor: pointer;
+  transition: background-color var(--t-hover), color var(--t-hover), border-color var(--t-hover);
+}
+.x {
+  flex: none; width: var(--ctl-xs); height: var(--ctl-xs); margin-right: -1px; padding: 0; border: 0; border-radius: var(--r-1);
+  background: transparent; color: var(--ink-soft); display: inline-grid; place-items: center;
+}
+.x svg { width: var(--icon); height: var(--icon); } /* mockup: a thin 9 px cross */
+.x:hover { background: var(--hover); color: var(--ink); }
+
+.target {
+  margin: 0; padding: calc(var(--sp-2) - 1px) calc(var(--sp-3) - 1px); border: 1px solid var(--panel-edge); border-radius: var(--r-2); background: var(--inset);
+  font-size: var(--fs-2); line-height: 17px; color: var(--ink); overflow-wrap: anywhere;
+}
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.reason { max-width: 250px; margin: var(--sp-2) 0 0; font-size: var(--fs-2); line-height: 16px; color: var(--ink-soft); }
+.hint { margin: 0; min-height: 16px; font-size: var(--fs-2); color: var(--ink-2); }
+/* An empty hint leaves the grid (no gap, no height) but stays a live region for what it says next. */
+.hint:empty { position: absolute; width: 1px; height: 1px; min-height: 0; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.hint[data-kind="error"] { color: var(--bad); }
+
+.act { display: flex; gap: var(--sp-3); align-items: center; margin-top: 16px; } /* mockup: 16 px from the reason */
+.act button { font-size: var(--fs-3); font-weight: 500; }
+.allow { width: 86px; background: var(--accent-fill); color: #fff; border: 0; box-shadow: var(--glow-accent); }
+.allow:hover { background: var(--accent-fill-top); }
+.deny { width: 88px; background: var(--panel); color: var(--ink); border: 1px solid var(--edge-btn); }
+.deny:hover { background: var(--hover); }
+.act .more { position: relative; margin-left: auto; padding: 0 2px 0 13px; background: transparent; border: 0; border-radius: 0 var(--r-2) var(--r-2) 0; color: var(--ink-soft); font-size: var(--fs-2); font-weight: 400; white-space: nowrap; } /* mockup: the More actions divider */
+.more .chevron { width: 12px; height: 12px; margin-left: 6px; vertical-align: -2px; } /* mockup: the strip's chevron, 6 px after the words */
+.more::before { content: ""; position: absolute; left: 0; top: 1px; bottom: 1px; width: 1px; background: var(--edge); }
+.more:hover { background: var(--hover); color: var(--ink); }
+
+.menu {
+  display: grid; gap: var(--sp-1); padding: var(--sp-1);
+  border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--chrome);
+  box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised);
+}
+.menu button { text-align: left; background: transparent; border: 0; color: var(--ink); }
+.menu button:hover { background: var(--hover); }
+
+button:disabled, button:disabled:hover { cursor: default; background: var(--hover); color: var(--muted); border-color: var(--edge); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+.allow:focus-visible { box-shadow: var(--glow-accent), var(--glow-focus); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+/* The rows after the buttons keep the card's rhythm (the card's own gap is 0 for the mockup's spacing). */
+.hint:not(:empty), .menu { margin-top: var(--sp-2); }
+
+/* The window's click-approval bubble (530, approve.js sets the mode on the top-chrome host): the
+   card is the whole document, 364 px wide (the mockup's), on the card's own fill so the native
+   frame's 12 px corners anti-alias against the same color. The native frame draws the shadow (a
+   page can't paint outside its WebContents), so the card keeps only its border and inset top line. */
+:root[data-mode="bubble"] { background: var(--panel); }
+:root[data-mode="bubble"] body { width: 364px; margin: 0; background: var(--panel); }
+:root[data-mode="bubble"] .empty { display: none; }
+:root[data-mode="bubble"] .card,
+:root[data-mode="bubble"] .card:focus { max-width: none; box-shadow: inset 0 1px 0 var(--edge-light); }

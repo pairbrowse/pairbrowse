@@ -1,0 +1,107 @@
+/* The session timeline (DESIGN.md B7): a 125 px strip of the pictures sent to the agent, the
+   current picture first, then the history oldest to newest, then the Add note card. Colors are the
+   sheet's tokens only; the light is static (gradient, edge, glow), never animated. */
+body { margin: 0; height: 125px; overflow: hidden; background: var(--bg); color: var(--ink); font: var(--fs-3)/1.3 var(--sans); } /* mockup: B7's 125 px */
+.strip { box-sizing: border-box; height: 125px; padding: 11px 17px 0; display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scroll-behavior: auto; } /* mockup: the cards from 17 px in, 10 px apart */
+.cards { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 0; list-style: none; } /* mockup: 10 px apart */
+.cards[hidden] { display: none; }
+
+/* A card is its picture, then the time and the caption under it (the mockup: no box around them). */
+.card { position: relative; flex: none; width: 104px; height: 100px; box-sizing: border-box; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--ink); cursor: pointer; transition: none; }
+.card:hover .thumb { box-shadow: 0 0 0 1px var(--edge-btn), 0 0 0 3px var(--hover); }
+/* The current picture: larger, the picture alone in a 2 px accent ring (its time and caption stay
+   in its name for readers); a soft accent glow while the agent drives. */
+.card:has(.face[aria-current="true"]) { width: 111px; height: 76px; border-radius: 7px; box-shadow: 0 0 0 2px var(--accent); }
+.card:has(.face[aria-current="true"]) .thumb { width: 111px; height: 76px; border-radius: 7px; box-shadow: none; }
+.card:has(.face[aria-current="true"]) .time, .card:has(.face[aria-current="true"]) .cap { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+body[data-driving="true"] .card:has(.face[aria-current="true"]) { box-shadow: 0 0 0 2px var(--accent), var(--glow-accent); }
+/* The card's face is the button that shows the picture; the More button sits beside it. */
+.face { display: block; box-sizing: border-box; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.thumb { display: block; box-sizing: border-box; width: 104px; height: 66px; margin: 0; border-radius: 5px; background: var(--elevated); object-fit: cover; object-position: left top; box-shadow: 0 0 0 1px var(--edge-light); } /* mockup: B7's 104 x 66 thumbnail */
+/* A transparent border, not padding, frames the text: overflow is clipped inside the border, so
+   exactly four 12 px lines show in the 60 px box. */
+.note-text { padding: 0; border: 6px solid transparent; overflow: hidden; font-size: var(--fs-1); line-height: 12px; color: var(--ink); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow-wrap: anywhere; } /* mockup: four 12 px lines in the 60 px box */
+.time { display: block; margin-top: var(--sp-2); font-size: var(--fs-0); line-height: 13px; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Time and caption at 10 px (--fs-0, the mockup's); a caption may run 6 px into the 10 px gap so
+   "Filled workspace name" fits without an ellipsis. */
+.cap { display: block; margin-top: 1px; margin-right: -6px; font-size: var(--fs-0); letter-spacing: -0.2px; font-weight: 400; line-height: 13px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* mockup: the caption runs 6 px into the gap */
+.pin-chip { position: absolute; top: var(--sp-2); right: 12px; height: 16px; box-sizing: border-box; padding: 0 var(--sp-1); border: 1px solid var(--edge); border-radius: 999px; background: var(--elevated); font-size: var(--fs-1); line-height: 14px; color: var(--ink-2); transition: right var(--t-hover); }
+.pin-chip[hidden] { display: none; }
+/* "● Live" at the thumbnail's top-left while the agent drives (red: a live picture). */
+.live-pill { position: absolute; top: 5px; left: 8px; right: auto; height: 20px; box-sizing: border-box; padding: 0 8px 0 7px; border: 0; border-radius: 10px; background-color: var(--btn); font-size: var(--fs-3); line-height: 20px; font-weight: 400; color: var(--ink); box-shadow: 0 1px 4px rgb(0 0 0 / 0.35); } /* mockup: the Live pill's place */
+.live-pill[hidden] { display: none; }
+.live { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; background: var(--bad); vertical-align: -1px; animation: pulse 2s ease-in-out infinite; } /* mockup: the 9 px live dot */
+@keyframes pulse { 50% { opacity: .35; } }
+.more { position: absolute; top: var(--sp-2); right: 8px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--r-1); background: var(--elevated); color: var(--ink); font: var(--fs-3)/20px var(--sans); cursor: pointer; opacity: 0; transition: opacity var(--t-hover); }
+.card:hover .more, .card:focus-within .more, .card:has(.more[aria-expanded="true"]) .more { opacity: 1; }
+/* While the More button shows, the Pinned chip steps left of it. */
+.card:hover .pin-chip, .card:focus-within .pin-chip, .card:has(.more[aria-expanded="true"]) .pin-chip { right: 32px; }
+
+.card.add[hidden] { display: none; }
+.card.add { display: flex; align-items: center; justify-content: center; width: 90px; height: 100px; margin-left: var(--sp-2); padding: 0; border: 1px dashed var(--edge-btn); border-radius: var(--r-1); background: none; box-shadow: none; cursor: default; }
+.card.add button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2); width: 100%; height: 100%; border: 0; border-radius: var(--r-2); background: none; color: var(--ink-2); font: 400 var(--fs-1)/1.2 var(--sans); cursor: pointer; }
+.card.add button:hover { color: var(--ink); }
+.card.add .plus { display: block; width: 18px; height: 18px; flex: none; color: currentColor; } /* mockup: the 18 px plus */
+.card.add button[hidden] { display: none; }
+/* The note field fades in and out like the menu (--t); while it fades out it lies over the card, so
+   the Add note button takes its place at once. */
+#note-form { opacity: 1; transition: opacity var(--t-open), display var(--t-open) allow-discrete; }
+#note-form[hidden] { position: absolute; inset: 0; opacity: 0; display: none; pointer-events: none; transition: opacity var(--t-close), display var(--t-close) allow-discrete; }
+@starting-style { #note-form:not([hidden]) { opacity: 0; } }
+.card.add form { box-sizing: border-box; width: 100%; padding: var(--sp-2); }
+.field { box-sizing: border-box; width: 100%; height: var(--ctl-sm); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
+.field::placeholder { color: var(--muted); opacity: 1; }
+.hint { display: block; margin-top: 4px; font-size: var(--fs-1); line-height: 13px; color: var(--ink-2); }
+
+.menu { position: absolute; z-index: 2; box-sizing: border-box; min-width: 140px; padding: 4px; border: 1px solid var(--edge); border-radius: var(--r-2); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); --origin: top right; } /* opens with the sheet's .m-pop from its More button */
+.menu[hidden] { display: none; }
+.menu button { display: block; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-1); background: none; color: var(--ink); font: var(--fs-3) var(--sans); text-align: left; cursor: pointer; }
+.menu button:hover { background: var(--hover); }
+.menu button.danger { color: var(--bad); }
+.menu .ask { margin: 4px 8px; font-size: var(--fs-2); color: var(--ink-2); }
+
+.line { flex: none; margin: 0; align-self: center; max-width: 520px; color: var(--ink-2); font-size: var(--fs-3); }
+.line[hidden] { display: none; }
+/* A route's error: out of the scrolling flow, in the strip's bottom padding under the cards, so it
+   shows wherever the strip is scrolled and moves no card. */
+.line.toast { position: absolute; left: 16px; top: 109px; z-index: 1; margin: 0; font-size: var(--fs-1); line-height: 16px; color: var(--bad); } /* mockup: in the strip's bottom padding, under the 104 px cards */
+/* The card last shown large in the agent panel: a ring on it and, under it, where it went (a
+   picture opens in another part of the window until 530's bubble; DESIGN.md Part I). */
+.card[data-shown="true"]:not(:has(.face[aria-current="true"])) .thumb { box-shadow: 0 0 0 1px var(--edge-btn), 0 0 0 2px var(--accent-ink); }
+.where { position: absolute; top: 109px; z-index: 1; margin: 0; font-size: var(--fs-1); line-height: 16px; color: var(--ink-2); white-space: nowrap; pointer-events: none; } /* mockup: in the strip's bottom padding, under the card */
+.where[hidden] { display: none; }
+.line small { display: block; margin-top: 2px; font-size: var(--fs-1); color: var(--muted); }
+.line small:empty { display: none; }
+.sr { position: absolute; top: 0; left: 0; margin: 0; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* The picture large in the browser's bubble above its card (530 E2 B3, #picture=<id>): the 820 px
+   picture scaled to 400 in a fixed 16:10 frame (the bubble keeps its size while the picture loads),
+   its time and caption, Pin and Delete, the x. 424 px wide (400 + 2 x 12); the browser draws the
+   corners, the shadow, the arrow and the motion, so the page draws none. */
+body[data-mode="picture"] { height: auto; background: var(--panel); }
+body[data-mode="picture"] .strip, body[data-mode="picture"] .menu, body[data-mode="picture"] .where { display: none; }
+.picture { position: relative; box-sizing: border-box; width: 424px; padding: 12px; border: 1px solid var(--panel-edge); border-radius: var(--r-3); box-shadow: inset 0 1px 0 var(--edge-light); }
+.picture[hidden] { display: none; }
+.pic-frame { width: 400px; aspect-ratio: 16 / 10; border-radius: var(--r-1); background: var(--inset); overflow: hidden; }
+.pic-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.pic-frame img:not([src]) { visibility: hidden; }
+.pic-title { margin: var(--sp-3) 32px 0 0; font-size: var(--fs-3); line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+#pic-time { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pic-actions, .pic-ask { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.pic-ask[hidden], .pic-actions[hidden] { display: none; }
+.pic-ask p { margin: 0 auto 0 0; font-size: var(--fs-2); color: var(--ink-2); }
+.pic-btn { height: var(--ctl-sm); padding: 0 var(--sp-3); border: 1px solid var(--edge-btn); border-radius: var(--r-1); background: var(--btn); color: var(--ink); font: var(--fs-2) var(--sans); cursor: default; transition: background-color var(--t-hover); }
+.pic-btn:hover { background: var(--hover); }
+.pic-btn.danger { color: var(--bad); }
+.pic-msg { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--bad); }
+.pic-msg:empty { display: none; }
+.pic-x { position: absolute; top: calc(var(--sp-3) + 400px * 10 / 16 + var(--sp-2)); right: 8px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }
+.pic-x svg { width: 12px; height: 12px; }
+.pic-x:hover { background: var(--hover); color: var(--ink); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+.card:has(.face:focus-visible) { box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
+}

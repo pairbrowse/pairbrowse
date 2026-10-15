@@ -98,7 +98,7 @@ const BAD = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' v
 export function loadingHtml(tabs) {
   const rows = tabs.map((t, i) => { const h = host(t.url); return `<li data-i="${i}" data-s="waiting"><span class="av" aria-hidden="true">${esc(initialOf(h))}</span><span class="t">${esc(t.title || h)}</span><span class="h">${esc(h)}</span><span class="m" aria-hidden="true"></span></li>`; }).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><title>Opening tabs</title><style>
-  :root{--bg:#0B1421;--sidebar:#111E2D;--elevated:#192A3D;--edge:#293B50;--ink:#F1F5FA;--ink-2:#A2B2C6;--muted:#8699B1;--accent:#3285F6;--ok:#20C997;--bad:#EF6468}
+  :root{--bg:#0B1421;--sidebar:#101B26;--elevated:#192A3D;--edge:#293B50;--ink:#F1F5FA;--ink-2:#A2B2C6;--muted:#8699B1;--accent:#3285F6;--ok:#20C997;--bad:#EF6468}
   *{box-sizing:border-box}html,body{margin:0;height:100%}
   body{display:grid;place-items:center;padding:24px;color:var(--ink);background:var(--bg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
   main{width:min(460px,100%);padding:28px 28px 18px;border-radius:10px;background:var(--sidebar);border:1px solid var(--edge)}

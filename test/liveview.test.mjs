@@ -490,7 +490,7 @@ test("the workspace column draws only what is seen; the Timeline reads the log o
 });
 
 test("ago: minutes while fresh, the date once older than an hour (a run saved yesterday never reads as today)", async () => {
-  const { ago } = await import("../scripts/browser/panel/common.js");
+  const { ago } = await import("../ui/common.js");
   const now = Date.parse("2026-10-11T12:00:00Z");
   assert.equal(ago(new Date(now - 10_000).toISOString(), now), "just now");
   assert.equal(ago(new Date(now - 5 * 60_000).toISOString(), now), "5 min ago");

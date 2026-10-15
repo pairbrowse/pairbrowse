@@ -32,6 +32,10 @@ desktop workspace with its left column and the Timeline (the goal log). Each is 
 open; switching restarts nothing, reloads nothing and takes no picture. The panel remembers
 which sections you folded, the live view which column state you chose.
 
+## The Tools tab
+
+The right dock's Tools tab starts with **Hand-offs** (the steps only you can do: sign-ins, two-step codes, CAPTCHAs, payments; Show brings up the tab), **Downloads** (the files agents downloaded in this session, with the page they came from, to open or show in Finder; Open in Word for Word-type documents; after Open the row says where it opened: a new tab, a read-only preview or its app) and **Recordings** (Record and Stop, and the videos you recorded, newest first, to open, show or delete after a confirm). **Diagnostics** shows the helper and browser versions, the live connections, who is joined and the last errors, read only when you open it or press Refresh; Prepare report shows the scrubbed text to copy or save. Nothing is sent from there: sending a report to PairBrowse comes in a later version, and only when you choose it.
+
 ## Sessions
 
 When the browser starts, its first tab is the session picker: your three most recently used
@@ -47,7 +51,7 @@ sessions. Set `"sessionPicker": false` to turn it off: Claude then asks you in t
 
 In a build with its own pages, renaming the session from the session card restarts the browser on the renamed session (its tabs reopen); **Save** keeps its tabs now.
 
-To switch later, click **Switch session…** in the side panel: the picker opens in a new tab.
+To switch later, click **End session** in the side panel and confirm: the picker opens in a new tab.
 Keeping the open session just closes it; another one switches the browser, whoever else is
 connected (agents' next actions wait for your pick, then carry on in the new session). Claude or
 Codex can switch too (`pairbrowse_session`), but not while another session is using the browser:
@@ -134,7 +138,7 @@ You and Claude can work in the same tab. When you click or type in the PairBrows
 next action in that tab waits (the bottom bar says "waiting… you're using the browser") and
 continues when you've stopped for two seconds; moving the mouse or scrolling holds nothing up. Fields you fill are yours for 5 seconds after your last keystroke (10 while you stay in them): Claude
 leaves them as you wrote them. Claude is then told what you did, which button or field, never what
-you typed. "Pause agents" in the bottom bar or side panel stops all agents until you press Resume. "Pause this agent" pauses one agent until a person resumes it or presses Resume. A visible CAPTCHA or bot check, or Claude handing over for a
+you typed. "Pause agents" in the bottom bar, or Pause on the side panel's agent card, stops all agents until you press Resume. "Pause this agent" pauses one agent until a person resumes it or presses Resume. A visible CAPTCHA or bot check, or Claude handing over for a
 sign-in, 2FA or approval, shows "Your turn" and sends you a PairBrowse notification.
 
 ## Uploads without a file picker

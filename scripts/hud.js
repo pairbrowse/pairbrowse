@@ -127,11 +127,21 @@
   addEventListener("scroll", () => { if (outline) placeOutline(); if (now() - personAt < 1500) looked(); }, opts);
   // Where the person's pointer is, in document coordinates (a shared tab shows it in the other
   // browser's copy at the same place in the page, whatever its window size). Never what's under it.
+  // An agent's own mouse moves (its click's move onto the target, a drag) are trusted events too:
+  // while it acts (PRESS_WINDOW_MS after its cursor or a press was sent), a move near what it acts
+  // on is the agent's, never the person's pointer. Taken as theirs, the other side drew a person's
+  // filled pointer, in their name and color, on top of the agent's white cursor.
   let ptr = null;
   addEventListener("mousemove", (e) => {
     if (!e.isTrusted) return;
     const n = now();
-    ptr = { x: Math.round(e.pageX), y: Math.round(e.pageY), t: n };
+    if (n - agentAt < PRESS_WINDOW_MS && !awayFromAgent(e)) return;
+    // A move with no distance (Chromium sends one under a resting mouse when a page loads, scrolls
+    // or changes under it) is nobody's new move: the pointer keeps the time of the move that put it
+    // there, and whose it is goes by that time (a joiner's move replayed here stays theirs, never
+    // the person's here: the helper tells them apart by it). None yet in this page: nothing to show.
+    if (e.movementX || e.movementY) ptr = { x: Math.round(e.pageX), y: Math.round(e.pageY), t: n };
+    else if (ptr) ptr = { x: Math.round(e.pageX), y: Math.round(e.pageY), t: ptr.t };
     // Only a move that moves: Chromium also sends one, with no distance, when a page loads or
     // scrolls under a resting pointer, and that isn't the person looking.
     if ((e.movementX || e.movementY) && (!view || n - view.t > 1000)) looked();
@@ -202,7 +212,8 @@
     host = document.createElement(TAG_HUD);
     const shadow = host.attachShadow({ mode: "closed" });
     // The elevated navy surface, the sheet's values (tokens.css), a 3 px left edge in the agent's
-    // color (accent for your turn, ok for done) and its spark.
+    // color (accent for your turn, ok for done) and its spark. Your turn calls three times (a ring
+    // and the spark), then stays lit: nothing endless but the Live dot (DESIGN.md B11, Part I).
     shadow.innerHTML = html(`<style>
       :host{all:initial !important;position:fixed !important;z-index:2147483647 !important;right:12px !important;bottom:12px !important}
       .b{display:flex;align-items:center;gap:9px;font:600 12px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;color:#F1F5FA;
@@ -211,8 +222,8 @@
          box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35)}
       .b span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       svg{flex:none;width:15px;height:15px;color:#e9763f}
-      .you{animation:g 1.8s ease-in-out infinite}
-      .you svg{animation:s 1.8s ease-in-out infinite}
+      .you{animation:g 1.8s ease-in-out 3}
+      .you svg{animation:s 1.8s ease-in-out 3}
       .x{flex:none;margin-left:2px;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer;padding:0 2px}
       .x:hover{color:#F1F5FA}
       @keyframes g{50%{box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35),0 0 0 4px rgba(50,133,246,.28)}}
@@ -350,7 +361,7 @@
         background:rgba(11,20,33,.96);
         border-top:1px solid #293B50;color:#A2B2C6;
         font:12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;
-        transition:opacity .18s ease,transform .18s ease}
+        transition:opacity .16s cubic-bezier(.22,1,.36,1),transform .16s cubic-bezier(.22,1,.36,1)}
       .bar.away{opacity:0;transform:translateY(8px)}
       .who{display:flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
       .who b{color:#F1F5FA;font-weight:600}
@@ -793,10 +804,10 @@
   // w: the target's smaller side (a small target takes a little longer to reach).
   // A name on a tag: at most 40 characters, cut between words.
   // The pointer's shape (its tip at 0,0 in a "1 1 22 22" view box: exactly at the point) and the
-  // name pill, shared by the agent's cursor and other people's pointers: dark ink on the
-  // participant's color (AA on all four), a 1 px darker outline, no glow.
+  // name pill (24 px tall, 12 px text: DESIGN.md B5), shared by the agent's cursor and other people's pointers: dark ink on the
+  // participant's color, AA on every palette color (test/tokens.test.mjs), a 1 px darker outline, no glow.
   const POINTER = "M1 1v16.6l4.3-3.8 2.7 6.1 2.8-1.3-2.7-6 5.6-.6z";
-  const PILL = "padding:2px 8px;border-radius:999px;font:600 11px/1.45 system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0B1421;white-space:nowrap;box-shadow:0 0 0 1px rgba(0,0,0,.28);-webkit-font-smoothing:antialiased";
+  const PILL = "padding:4px 10px;border-radius:999px;font:600 12px/16px system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0B1421;white-space:nowrap;box-shadow:0 0 0 1px rgba(0,0,0,.28);-webkit-font-smoothing:antialiased";
   const shortWho = (who) => { const t = String(who || "Claude"); return t.length > 40 ? `${t.slice(0, 40).replace(/\s+\S*$/, "")}…` : t; };
   function pointer(x, y, act, who = "Claude", color = "", w = 24) {
     if (!curHost || !curHost.isConnected) {
@@ -908,6 +919,7 @@
     if (moving) peersFrame = requestAnimationFrame(drawPeers);
   }
   const kickPeers = () => { if (!peersFrame) peersFrame = requestAnimationFrame(drawPeers); };
+  const agentKey = (k) => /^host-agent:|:a\d+$/.test(k);
   function setPeers(json) {
     let list;
     try { list = JSON.parse(json); } catch { return; }
@@ -921,9 +933,11 @@
         .p.on{opacity:1}
         svg{display:block;width:18px;height:18px;overflow:visible;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.35))}
         span{position:absolute;left:14px;top:16px;${PILL}}
+        .p.a svg{width:22px;height:22px}
+        .p.a span{left:16px;top:18px}
         .v{position:fixed;right:0;top:0;display:flex;align-items:flex-start;gap:4px;opacity:.8;pointer-events:none}
         .v i{display:block;width:4px;border-radius:2px 0 0 2px;box-shadow:0 0 0 1px rgba(255,255,255,.7)}
-        .v b{order:-1;${PILL};padding:1px 6px;font-size:10px;opacity:0;transition:opacity .35s ease}
+        .v b{order:-1;${PILL};padding:1px 6px;font-size:10px;line-height:1.45;opacity:0;transition:opacity .35s ease}
         .v.fresh b{opacity:1}
         @media (prefers-reduced-motion:reduce){.p,.v b{transition:none}}
       </style><div aria-hidden="true"></div>`);
@@ -959,15 +973,20 @@
       keep.add(c.k);
       const x = Number(c.x) || 0, y = Number(c.y) || 0;
       let p = peers.get(c.k);
+      // An agent's pointer (host-agent:<id>, <joiner>:a<n>) is drawn as the agent cursor: white,
+      // edged in its color, at its size; a person's is filled with their color, edged in white.
+      const agent = agentKey(c.k);
       if (!p) {
         const el = document.createElement("div");
-        el.className = "p";
-        el.innerHTML = html(`<svg viewBox="1 1 22 22"><path d="${POINTER}" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span>`);
+        el.className = agent ? "p a" : "p";
+        el.innerHTML = html(agent
+          ? `<svg viewBox="1 1 22 22"><path d="${POINTER}" fill="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span>`
+          : `<svg viewBox="1 1 22 22"><path d="${POINTER}" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span>`);
         peersBox.appendChild(el);
         p = { el, x, y, tx: x, ty: y, t: now(), on: false, color: "", who: null };
         peers.set(c.k, p);
       }
-      if (p.color !== color) { p.color = color; p.el.querySelector("path").setAttribute("fill", color); p.el.querySelector("span").style.background = color; }
+      if (p.color !== color) { p.color = color; p.el.querySelector("path").setAttribute(agent ? "stroke" : "fill", color); p.el.querySelector("span").style.background = color; }
       const who = c.who ? shortWho(c.who) : "";
       if (p.who !== who) { p.who = who; p.el.querySelector("span").textContent = who; }
       if (x !== p.tx || y !== p.ty) { p.tx = x; p.ty = y; p.t = now(); }

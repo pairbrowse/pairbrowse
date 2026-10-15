@@ -123,7 +123,7 @@ test("the picker shows when nobody chose, websites can't drive it, and the pick 
     assert.equal(byName.default.current, true);
     const tabs = await until("the picker tab", async () => {
       const t = (await (await fetch(`${live}state.json`)).json()).tabs;
-      return t.some((x) => x.url === `${EXTENSION}/picker.html` && x.title === "Choose a session") && t;
+      return t.some((x) => x.url === `${EXTENSION}/picker/index.html` && x.title === "Choose a session") && t;
     });
     assert.ok(!tabs.some((x) => /pbtest/.test(x.url)), "saved tabs wait until the person picks");
 
@@ -237,7 +237,7 @@ test("no picker when the agent chose first, when it's off, or on the very first 
     const listed = await agent.tool("browser_tabs", { action: "list" });
     assert.ok(!listed.result.isError, text(listed));
     assert.ok(Date.now() - t0 < 15_000);
-    assert.doesNotMatch(text(listed), /picker\.html/);
+    assert.doesNotMatch(text(listed), /picker\/index\.html/);
     assert.equal((await (await fetch(`${await agent.live()}sessions.json`)).json()).picking, false);
 
     for (const [i, what] of [[1, "picker off"], [2, "first start"]]) {
@@ -245,7 +245,7 @@ test("no picker when the agent chose first, when it's off, or on the very first 
       const a = await connect(homes[i]);
       const r = await a.tool("browser_tabs", { action: "list" });
       assert.ok(!r.result.isError, text(r));
-      assert.doesNotMatch(text(r), /picker\.html/);
+      assert.doesNotMatch(text(r), /picker\/index\.html/);
     }
   } catch (e) {
     throw new Error(`${stage}: ${e.message}\n${homes.map(logOf).join("\n---\n")}`);
@@ -335,7 +335,7 @@ test("an idle session doesn't block a switch, an active one does, and the person
     assert.ok(!(await bob2.tool("browser_tabs", { action: "list" })).result.isError);
     const refused = await alice.tool("pairbrowse_session", { action: "use", name: "work" });
     assert.ok(refused.result.isError, text(refused));
-    assert.match(text(refused), /Another session is using the browser .*Switch session/, text(refused));
+    assert.match(text(refused), /Another session is using the browser .*End session/, text(refused));
     void bob;
 
     stage = "the side panel reopens the picker";

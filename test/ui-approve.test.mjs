@@ -1,0 +1,650 @@
+// The approval card page (ui/approve/, DESIGN.md B6): what it shows from the helper's stream, and
+// that only a person's armed click answers. The data contract is approve.js's header; the two
+// click items come from test/fixtures/ui-approve.json (its review copy is scripts/dev/look/approve.json,
+// kept equal by test/ui.test.mjs). The common checks stay in test/ui.test.mjs.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { patchright } from "./live.mjs";
+import { openPage, runtime, hostProxy } from "./helpers/ui-page.mjs";
+import { startUiServer } from "./helpers/ui-server.mjs";
+import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";
+import { inPage as evalIn } from "./live.mjs";
+import { startFakeHelper } from "./helpers/fake-helper.mjs";
+
+const FIXTURE = JSON.parse(readFileSync(new URL("./fixtures/ui-approve.json", import.meta.url), "utf8"));
+const [OLDER, NEWER] = FIXTURE.push.map(([, d]) => d.item);
+const SETTLE = 1000; // the 160 ms open, the observer's 100 ms delay and the 600 ms arm
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const add = (helper, item) => helper.push("approval", { op: "add", item });
+const bodies = (helper, route) => helper.posts.filter((p) => p.route === route).map((p) => p.body);
+async function realClick(page, sel) {
+  const box = await page.locator(sel).boundingBox();
+  assert.ok(box, `${sel} is on screen`);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+async function press(page, sel, key) { await page.focus(sel); await page.keyboard.press(key); }
+const text = (ctx, id) => ctx.inPage((i) => document.getElementById(i).textContent, id);
+const shown = (ctx, target) => ctx.until(`the card showing ${target}`, (t) => !document.getElementById("card").hidden && document.getElementById("target").textContent === t, target);
+// A token's computed color, through a probe.
+const token = (ctx, name) => ctx.inPage((n) => {
+  const p = document.createElement("span");
+  p.style.color = `var(--${n})`;
+  document.body.append(p);
+  const c = getComputedStyle(p).color;
+  p.remove();
+  return c;
+}, name);
+
+// pageTest's harness (helpers/ui-page.mjs) under a title of the test's own: opts { replies,
+// reducedMotion }; fn gets openPage's context and the helper.
+function named(title, opts, fn) {
+  if (typeof opts === "function") { fn = opts; opts = {}; }
+  test(`approve page: ${title}`, { skip: !runtime, timeout: 60_000 }, async () => {
+    const browser = await patchright(runtime).chromium.launch();
+    let helper = null, ctx = null;
+    try {
+      helper = await startFakeHelper({ replies: opts.replies });
+      ctx = await openPage(browser, "approve", { helper, reducedMotion: opts.reducedMotion });
+      await fn({ ...ctx, helper });
+    } finally {
+      await ctx?.close();
+      await helper?.close();
+      await browser.close();
+    }
+  });
+}
+
+named("renders the oldest pending click and counts the rest", async (ctx) => {
+  const { helper, inPage } = ctx;
+  // The newer first: the order on screen is by `at`, not by arrival.
+  add(helper, NEWER);
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  await sleep(300);
+  assert.equal(await text(ctx, "who"), "Claude");
+  assert.equal(await text(ctx, "verb"), "wants to click");
+  assert.equal(await inPage(() => document.getElementById("where")), null, "no line of its own for the host");
+  assert.equal(await inPage(() => document.getElementById("target").title), "In the tab on shop.example", "the host is the target's title");
+  // And for everyone without hover: a visually hidden line the card's description names.
+  const host = await inPage(() => {
+    const h = document.getElementById("host"), r = h.getBoundingClientRect();
+    return { text: h.textContent, described: document.getElementById("card").getAttribute("aria-describedby").split(/\s+/), box: [r.width, r.height] };
+  });
+  assert.equal(host.text, "In the tab on shop.example");
+  assert.ok(host.described.includes("host"), "the card is described by the host line");
+  assert.deepEqual(host.box, [1, 1], "the host line is visually hidden");
+  assert.equal(await text(ctx, "reason"), "\"Place order\" pays: a final action (pay)");
+  assert.equal(await text(ctx, "count"), "1 more");
+  const m = await inPage(() => {
+    const cs = (q) => getComputedStyle(document.querySelector(q));
+    const av = document.querySelector("#avatar-slot .avatar");
+    return {
+      pending: document.body.dataset.pending, focus: document.activeElement.id,
+      countLabel: document.getElementById("count").getAttribute("aria-label"),
+      whoWeight: cs("#who").fontWeight, avRole: av.getAttribute("role"), avLabel: av.getAttribute("aria-label"), avBg: getComputedStyle(av).backgroundColor, avText: av.textContent,
+      width: cs("#card").width, padding: cs("#card").paddingTop, radius: cs("#card").borderTopLeftRadius, border: `${cs("#card").borderTopWidth} ${cs("#card").borderTopStyle} ${cs("#card").borderTopColor}`,
+      bg: cs("#card").backgroundColor, shadow: cs("#card").boxShadow,
+      target: `${cs("#target").borderTopWidth} ${cs("#target").borderTopColor}`, reason: cs("#reason").color,
+      allowShadow: cs("#allow").boxShadow,
+      raised: (() => { const p = document.createElement("i"); p.style.boxShadow = "inset 0 1px 0 var(--edge-light), var(--shadow-raised)"; document.body.append(p); const v = getComputedStyle(p).boxShadow; p.remove(); return v; })(),
+      allow: [cs("#allow").backgroundColor, cs("#allow").color], deny: [cs("#deny").backgroundColor, cs("#deny").borderTopWidth, cs("#deny").borderTopColor], more: cs("#more").color,
+    };
+  });
+  const [ink2, inkSoft, panel, panelEdge, edgeBtn, accentFill] = await Promise.all(["ink-2", "ink-soft", "panel", "panel-edge", "edge-btn", "accent-fill"].map((n) => token(ctx, n)));
+  assert.match(m.allowShadow, /rgba?\(50, 133, 246/, "Allow glows accent");
+  assert.ok(m.raised.length > 0);
+  m.shadow = m.shadow === m.raised ? "raised" : m.shadow;
+  delete m.allowShadow;
+  delete m.raised;
+  assert.deepEqual(m, {
+    pending: "2", focus: "card", countLabel: "1 more waiting",
+    // the mockup's card: the name at 500, a 57 px avatar column, the dark panel, white on the Allow fill
+    whoWeight: "600", avRole: "img", avLabel: "Claude", avBg: "rgb(233, 118, 63)", avText: "C",
+    width: "360px", padding: "10px", radius: "12px", border: `1px solid ${edgeBtn}`,
+    bg: panel, shadow: "raised", // the sheet's raised light: a 1 px top highlight and --shadow-raised
+    target: `1px ${panelEdge}`, reason: inkSoft,
+    allow: [accentFill, "rgb(255, 255, 255)"], deny: [panel, "1px", edgeBtn], more: inkSoft,
+  });
+  assert.deepEqual(helper.posts, []);
+  // The compact header: the name at 600, "wants to click" at 400 in --ink-2; an empty hint takes no
+  // space (the reason-to-actions gap is the grid's 10 px) but stays a live region; the card stays compact.
+  const hd = await inPage(() => {
+    const cs = (q) => getComputedStyle(document.querySelector(q));
+    const r = (q) => document.querySelector(q).getBoundingClientRect();
+    const hint = document.getElementById("hint");
+    return { who: cs("#who").fontWeight, verb: cs("#verb").fontWeight, verbColor: cs("#verb").color, hintBox: [r("#hint").width, r("#hint").height], hintLive: hint.getAttribute("aria-live"),
+      hintEmpty: hint.textContent === "", gap: Math.round(r(".act").top - r("#reason").bottom), height: r("#card").height };
+  });
+  assert.deepEqual([hd.who, hd.verb, hd.verbColor], ["600", "400", ink2]);
+  assert.deepEqual(hd.hintBox, [1, 1], "an empty hint is a 1 px box out of the grid");
+  assert.equal(hd.hintLive, "polite");
+  assert.equal(hd.hintEmpty, true);
+  assert.equal(hd.gap, 16, "the mockup's 16 px between the reason and the buttons (measured on the 530 gate capture)");
+  assert.ok(hd.height <= 205, `the card is compact: ${hd.height} px`);
+});
+
+named("the approval stream is the owner stream (panel=1), never a viewer", async (ctx) => {
+  const { helper } = ctx;
+  await ctx.until("live", () => document.body.dataset.s === "live");
+  assert.deepEqual([...helper.streams].map((s) => [s.kind, s.panel]), [["approve", true]]);
+});
+
+named("only a trusted pointer click answers, and only once armed", async (ctx) => {
+  const { page, helper, inPage } = ctx;
+  add(helper, OLDER);
+  add(helper, NEWER);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  await inPage(() => {
+    const allow = document.getElementById("allow");
+    allow.click();
+    allow.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+  });
+  await sleep(300);
+  assert.deepEqual(helper.posts, [], "a synthetic click posts nothing");
+  assert.equal(await text(ctx, "hint"), "", "and says nothing");
+
+  helper.posts.length = 0;
+  // A fresh card: dismiss and bring the next one, then click at once.
+  await realClick(page, "#dismiss");
+  await shown(ctx, "Publish");
+  await realClick(page, "#allow");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "a click before the card is armed posts nothing");
+  assert.equal(await text(ctx, "hint"), "Not yet: the card just appeared. Click again.");
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await ctx.until("the approve post", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: NEWER.id, answer: "allow" }]);
+});
+
+named("a covered card is not armed (IntersectionObserver v2)", async (ctx) => {
+  const { page, helper, inPage } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  // Something over the card that lets the click through: the browser no longer reports it fully visible.
+  await inPage(() => {
+    const veil = document.createElement("div");
+    veil.id = "veil";
+    Object.assign(veil.style, { position: "fixed", inset: "0", background: "rgb(0 0 0 / 0.01)", pointerEvents: "none" });
+    document.body.append(veil);
+  });
+  await sleep(400);
+  await realClick(page, "#allow");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "a click through a cover posts nothing");
+  assert.equal(await text(ctx, "hint"), "Something is over the card: answer in the terminal.");
+  await inPage(() => document.getElementById("veil").remove());
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await ctx.until("the post", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "allow" }]);
+});
+
+named("a real armed click answers and shows the next", async (ctx) => {
+  const { page, helper } = ctx;
+  add(helper, OLDER);
+  add(helper, NEWER);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await shown(ctx, "Publish");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "allow" }]);
+  assert.equal(await ctx.inPage(() => document.getElementById("count").hidden), true, "the chip goes");
+  assert.equal(await text(ctx, "who"), "Alice · Codex");
+});
+
+named("Deny by Enter, Allow never by key, Escape nothing", async (ctx) => {
+  const { page, helper } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  await press(page, "#allow", "Enter");
+  await press(page, "#allow", " ");
+  await sleep(200);
+  assert.deepEqual(helper.posts, []);
+  assert.equal(await text(ctx, "hint"), "Allow with a click: a key press can't allow.");
+  await ctx.inPage(() => document.getElementById("card").focus());
+  await page.keyboard.press("Escape");
+  await press(page, "#deny", "Escape");
+  await realClick(page, "#more");
+  await page.keyboard.press("Escape");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "Escape answers nothing");
+  assert.equal(await ctx.inPage(() => document.body.dataset.pending), "1", "and removes nothing");
+  await press(page, "#deny", "Enter");
+  await ctx.until("the deny post", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "deny" }]);
+});
+
+named("Tab order from the card", async (ctx) => {
+  const { page, helper } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  assert.equal(await ctx.inPage(() => document.activeElement.id), "card", "the card itself has focus first");
+  const ring = await token(ctx, "accent");
+  const order = [];
+  for (let i = 0; i < 4; i++) {
+    await page.keyboard.press("Tab");
+    order.push(await ctx.inPage(() => { const s = getComputedStyle(document.activeElement); return `${document.activeElement.id} ${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor}`; }));
+  }
+  assert.deepEqual(order, ["dismiss", "allow", "deny", "more"].map((id) => `${id} solid 2px ${ring}`));
+  assert.deepEqual(helper.posts, []);
+});
+
+named("More actions: site by a click, terminal by a key", async (ctx) => {
+  const { page, helper, inPage } = ctx;
+  add(helper, OLDER);
+  add(helper, NEWER);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  await realClick(page, "#more");
+  const opened = await inPage(() => ({
+    expanded: document.getElementById("more").getAttribute("aria-expanded"), hidden: document.getElementById("menu").hidden,
+    items: [...document.querySelectorAll("#menu button")].map((b) => [b.textContent, b.dataset.answer]), focus: document.activeElement.dataset.answer,
+  }));
+  // Part H: no "Allow for <site>": the helper keeps no per-site memory (it was a plain Allow).
+  assert.deepEqual(opened, { expanded: "true", hidden: false, items: [["Ask in the terminal only", "terminal"]], focus: "terminal" });
+  await realClick(page, '#menu [data-answer="terminal"]');
+  await shown(ctx, "Publish");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "terminal" }]);
+
+  await sleep(SETTLE);
+  await realClick(page, "#more");
+  await press(page, '#menu [data-answer="terminal"]', "Enter");
+  await ctx.until("the terminal post", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve").at(-1), { id: NEWER.id, answer: "terminal" });
+
+  add(helper, { ...OLDER, id: "ap-99999999" });
+  await shown(ctx, "Place order");
+  await realClick(page, "#more");
+  assert.equal(await inPage(() => document.getElementById("menu").hidden), false);
+  await page.keyboard.press("Shift+Tab"); // to More actions: still open
+  assert.equal(await inPage(() => document.getElementById("menu").hidden), false);
+  await page.keyboard.press("Shift+Tab"); // to Deny: focus left the menu
+  assert.deepEqual(await inPage(() => [document.getElementById("menu").hidden, document.getElementById("more").getAttribute("aria-expanded")]), [true, "false"]);
+});
+
+named("nothing counts while an agent is driving", async (ctx) => {
+  const { page, helper } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  const tops = () => ctx.inPage(() => ["allow", "deny", "more"].map((id) => document.getElementById(id).getBoundingClientRect().top));
+  const before = await tops();
+  helper.push("driving", { on: true });
+  await ctx.until("driving", () => document.body.dataset.driving === "true");
+  await realClick(page, "#allow");
+  await sleep(200);
+  assert.deepEqual(helper.posts, []);
+  assert.equal(await text(ctx, "hint"), "An agent is acting in the browser: wait, then click again.");
+  assert.deepEqual(await tops(), before, "a hint appearing never moves the buttons");
+  helper.push("driving", { on: false });
+  await ctx.until("not driving", () => document.body.dataset.driving === "false");
+  await realClick(page, "#allow");
+  await ctx.until("the post", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "allow" }]);
+});
+
+named("withdraw removes the card and × dismisses locally", async (ctx) => {
+  const { page, helper, harness, inPage } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  assert.equal((await harness.live()).observers, 1);
+  helper.push("approval", { op: "withdraw", item: { id: OLDER.id } });
+  await ctx.until("the empty state", () => document.getElementById("card").hidden);
+  assert.deepEqual(await inPage(() => [document.getElementById("empty").hidden, document.body.dataset.pending]), [false, "0"]);
+  assert.equal((await harness.live()).observers, 0);
+
+  add(helper, OLDER);
+  add(helper, NEWER);
+  await shown(ctx, "Place order");
+  await realClick(page, "#dismiss");
+  await shown(ctx, "Publish");
+  helper.push("join", []);
+  add(helper, NEWER);
+  await sleep(300);
+  assert.equal(await text(ctx, "target"), "Publish", "the dismissed item stays out");
+  assert.equal(await inPage(() => document.body.dataset.pending), "1");
+  assert.deepEqual(helper.posts, [], "× posts nothing");
+});
+
+named("the observer goes while hidden and re-arms when back", async (ctx) => {
+  const { page, helper, harness } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  await harness.setHidden(true);
+  assert.equal((await harness.live()).observers, 0);
+  const fires = await harness.hiddenFires();
+  await sleep(500);
+  assert.equal(await harness.hiddenFires(), fires);
+  await harness.setHidden(false);
+  assert.equal((await harness.live()).observers, 1);
+  await realClick(page, "#allow");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "re-armed: not at once");
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await ctx.until("the post", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "allow" }]);
+});
+
+named("a gone request says so; a failed post re-enables", { replies: { approve: () => ({ status: 404, body: { ok: false } }) } }, async (ctx) => {
+  const { page, helper, inPage } = ctx;
+  add(helper, OLDER);
+  add(helper, NEWER);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await ctx.until("the gone hint", () => document.getElementById("hint").textContent === "That request is gone (answered, or it timed out).");
+  assert.deepEqual(await inPage(() => ["allow", "deny", "more"].map((id) => document.getElementById(id).disabled)), [true, true, true]);
+  helper.replies.approve = () => ({ status: 500 });
+  await realClick(page, "#dismiss");
+  await shown(ctx, "Publish");
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await ctx.until("the failed hint", () => document.getElementById("hint").textContent === "Couldn't reach PairBrowse. Try again.");
+  assert.deepEqual(await inPage(() => ["allow", "deny", "more"].map((id) => document.getElementById(id).disabled)), [false, false, false]);
+  assert.equal(await inPage(() => document.body.dataset.pending), "1");
+});
+
+// The same request updated (a join that asked to watch now asks to drive): the card says the new
+// words at once and is armed afresh, so an Allow meant for "Watch only" can't grant drive.
+named("an updated request redraws its card and arms it again", async (ctx) => {
+  const { page, helper } = ctx;
+  helper.push("join", [{ id: "j1", name: "Sam", role: "watch" }]);
+  await shown(ctx, "Watch only");
+  await sleep(SETTLE);
+  helper.push("join", [{ id: "j1", name: "Sam B", app: "Codex", role: "drive" }]);
+  await shown(ctx, "Shared browser, can drive");
+  assert.equal(await text(ctx, "who"), "Sam B (Codex)");
+  await realClick(page, "#allow");
+  await sleep(150);
+  assert.deepEqual(bodies(helper, "approve"), [], "not armed yet: the words just changed");
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await ctx.until("the join answer", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: "j1", allow: true }]);
+});
+
+named("join, dev-share and host asks render in the same card and post to their own routes", async (ctx) => {
+  const { page, helper, inPage } = ctx;
+  const border = () => inPage(() => getComputedStyle(document.getElementById("card")).borderTopColor);
+  const [accent, warn] = await Promise.all([token(ctx, "accent"), token(ctx, "warn")]);
+
+  helper.push("join", [{ id: "j1", name: "Sam", app: "Claude Code", role: "drive" }, { id: "j0", name: "Old", state: "approved" }]);
+  await shown(ctx, "Shared browser, can drive");
+  assert.deepEqual([await text(ctx, "who"), await text(ctx, "verb")], ["Sam (Claude Code)", "wants to join"]);
+  assert.equal(await inPage(() => document.getElementById("dismiss").getAttribute("aria-label")), "Dismiss; it stays in the agent panel", "× says where a join request stays");
+  assert.equal(await border(), accent);
+  assert.equal(await inPage(() => document.getElementById("more").hidden), true);
+  assert.equal(await inPage(() => document.body.dataset.pending), "1", "a person already let in is no request");
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await ctx.until("the join answer", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: "j1", allow: true }]);
+
+  helper.push("dev", { asks: [{ id: "d1", who: "Claude", port: 3000 }] });
+  await shown(ctx, "localhost:3000");
+  assert.equal(await text(ctx, "verb"), "wants to share a dev server");
+  assert.equal(await border(), warn);
+  await sleep(SETTLE);
+  await realClick(page, "#deny");
+  await ctx.until("the dev answer", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "dev"), [{ op: "answer", id: "d1", allow: false }]);
+
+  helper.push("joinhost", { asks: [{ id: "h1", host: "relay.example", who: "Sam" }] });
+  await shown(ctx, "relay.example");
+  assert.equal(await border(), warn);
+  assert.equal(await text(ctx, "allow"), "Allow once");
+  assert.equal(await text(ctx, "deny"), "Cancel");
+  assert.equal(await text(ctx, "reason"), "This code leads to relay.example, not a PairBrowse address. The code came from Sam. Only you can allow an address.");
+  assert.equal(await inPage(() => document.getElementById("avatar-slot").hidden), true);
+  await sleep(SETTLE);
+  await realClick(page, "#more");
+  await page.keyboard.press("Enter");
+  await sleep(200);
+  assert.deepEqual(bodies(helper, "joinhost"), [], "Always allow takes a click");
+  await realClick(page, '#menu [data-answer="always"]');
+  await ctx.until("the host answer", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "joinhost"), [{ op: "allow", id: "h1", always: true }]);
+
+  helper.push("joinhost", { asks: [{ id: "h2", host: "relay.example" }] });
+  await shown(ctx, "relay.example");
+  await sleep(SETTLE);
+  await press(page, "#deny", "Enter");
+  await ctx.until("the cancel", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "joinhost").at(-1), { op: "cancel", id: "h2" });
+});
+
+named("reduced motion: the card appears without animation and still arms", { reducedMotion: "reduce" }, async (ctx) => {
+  const { page, helper, harness } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  await sleep(100);
+  assert.deepEqual(await harness.animations(), []);
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await ctx.until("the post", () => document.body.dataset.pending === "0");
+  assert.deepEqual(bodies(helper, "approve"), [{ id: OLDER.id, answer: "allow" }]);
+});
+
+test("approve page: the pending list loads from approvals.json on connect", { skip: !runtime, timeout: 60_000 }, async () => {
+  const helper = await startFakeHelper({ fixtures: { approvals: { pending: [OLDER] } } });
+  let browser = null, ctx = null;
+  try {
+    const r = await fetch(helper.base + "approvals.json");
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { pending: [OLDER] });
+    browser = await patchright(runtime).chromium.launch();
+    ctx = await openPage(browser, "approve", { helper });
+    await shown(ctx, "Place order");
+    assert.equal(await ctx.inPage(() => document.body.dataset.pending), "1");
+  } finally {
+    await ctx?.close();
+    await browser?.close();
+    await helper.close();
+  }
+});
+
+named("the tab page never tells the browser's bubble host", async (ctx) => {
+  const { helper, shim } = ctx;
+  add(helper, OLDER);
+  await shown(ctx, "Place order");
+  helper.push("approval", { op: "withdraw", item: { id: OLDER.id } });
+  await ctx.until("the empty state", () => document.getElementById("card").hidden);
+  assert.equal(await ctx.inPage(() => document.documentElement.dataset.mode), undefined, "no bubble mode off the top-chrome host");
+  assert.deepEqual((await shim.calls()).filter((c) => c.iface === "approval"), []);
+});
+
+// ---- the window's click-approval bubble (530): the same page on the top-chrome host ----
+const TOP = "pairbrowse.top-chrome";
+const T11 = { ...OLDER, tab: { ...OLDER.tab, target: "T11" } };
+const T12 = { ...NEWER, tab: { ...NEWER.tab, target: "T12" } };
+const told = async (ctx) => (await ctx.shim.calls()).filter((c) => c.iface === "approval").map((c) => [c.method, ...c.args]);
+// Waits until the last call told is want; returns every call so far.
+async function toldUntil(ctx, what, want) {
+  for (let i = 0; i < 100; i++) {
+    const got = await told(ctx);
+    if (JSON.stringify(got.at(-1)) === JSON.stringify(want)) return got;
+    await sleep(50);
+  }
+  assert.fail(`timed out waiting for ${what}: ${JSON.stringify(await told(ctx))}`);
+}
+
+function bubble(title, opts, fn) {
+  if (typeof opts === "function") { fn = opts; opts = {}; }
+  test(`approve bubble: ${title}`, { skip: !runtime, timeout: 60_000 }, async () => {
+    const proxy = await hostProxy(TOP);
+    const browser = await patchright(runtime).chromium.launch({ args: proxy.args });
+    let helper = null, ctx = null;
+    try {
+      helper = await startFakeHelper({ replies: opts.replies });
+      ctx = await openPage(browser, "approve", { helper, host: TOP, proxy, reducedMotion: opts.reducedMotion });
+      await fn({ ...ctx, helper });
+    } finally {
+      await ctx?.close();
+      await helper?.close();
+      await browser.close();
+      await proxy.close();
+    }
+  });
+}
+
+bubble("clicks only, and the browser hears the count and the tab on add, withdraw, answer and dismiss", async (ctx) => {
+  const { page, helper, inPage } = ctx;
+  await ctx.until("live", () => document.body.dataset.s === "live");
+  assert.equal(await inPage(() => [location.host, document.documentElement.dataset.mode].join(" ")), `${TOP} bubble`);
+  // The connect burst carried join, dev and host asks (the fake helper sends them): none is listed.
+  helper.push("join", [{ id: "j1", name: "Sam", role: "drive" }]);
+  helper.push("dev", { asks: [{ id: "d1", who: "Claude", port: 3000 }] });
+  helper.push("joinhost", { asks: [{ id: "h1", host: "relay.example" }] });
+  await sleep(300);
+  assert.equal(await inPage(() => document.body.dataset.pending), "0", "join, dev and host asks stay in the agent panel");
+  assert.deepEqual(await told(ctx), [["setPending", 0, ""]], "told once at start: nothing waits");
+
+  add(helper, T12);
+  await shown(ctx, "Publish");
+  await toldUntil(ctx, "one waiting", ["setPending", 1, "T12"]);
+  add(helper, T11); // older: shown first, so its tab is the one told
+  await shown(ctx, "Place order");
+  await toldUntil(ctx, "two waiting", ["setPending", 2, "T11"]);
+  helper.push("approval", { op: "withdraw", item: { id: T12.id } });
+  await toldUntil(ctx, "the withdraw", ["setPending", 1, "T11"]);
+  helper.push("join", [{ id: "j2", name: "Bo", role: "watch" }]);
+  await sleep(200);
+  assert.equal(await inPage(() => document.body.dataset.pending), "1", "a join request never joins the list");
+
+  await sleep(SETTLE);
+  await realClick(page, "#allow");
+  await toldUntil(ctx, "the answer", ["setPending", 0, ""]);
+  assert.deepEqual(bodies(helper, "approve"), [{ id: T11.id, answer: "allow" }]);
+
+  add(helper, T12);
+  await shown(ctx, "Publish");
+  await toldUntil(ctx, "the next ask", ["setPending", 1, "T12"]);
+  await realClick(page, "#dismiss");
+  const all = await toldUntil(ctx, "the dismiss", ["setPending", 0, ""]);
+  assert.deepEqual(all, [[0, ""], [1, "T12"], [2, "T11"], [1, "T11"], [0, ""], [1, "T12"], [0, ""]].map((a) => ["setPending", ...a]), "once per change");
+  assert.equal(bodies(helper, "approve").length, 1, "× posts nothing");
+  // An item without a target: "" for the browser (it picks the last active window).
+  add(helper, { ...OLDER, id: "ap-notarget" });
+  await toldUntil(ctx, "no target", ["setPending", 1, ""]);
+  assert.deepEqual(await ctx.harness.log(), [], "no error, rejection or CSP entry");
+});
+
+bubble("the bubble's look: the card is the document, 364 px, the native frame draws the shadow", async (ctx) => {
+  const { helper, inPage } = ctx;
+  await ctx.until("live", () => document.body.dataset.s === "live");
+  assert.equal(await inPage(() => getComputedStyle(document.getElementById("empty")).display), "none", "no empty line in a bubble");
+  add(helper, T11);
+  await shown(ctx, "Place order");
+  await ctx.settle();
+  const m = await inPage(() => {
+    const cs = (q) => getComputedStyle(document.querySelector(q));
+    const r = document.getElementById("card").getBoundingClientRect();
+    const p = document.createElement("i");
+    p.style.boxShadow = "inset 0 1px 0 var(--edge-light)";
+    document.body.append(p);
+    const inset = getComputedStyle(p).boxShadow;
+    p.remove();
+    return { body: [cs("body").width, cs("body").marginTop, cs("body").backgroundColor], root: cs("html").backgroundColor, card: [r.left, r.top, r.width], shadow: cs("#card").boxShadow === inset,
+      focused: document.activeElement.id, focusShadow: (document.getElementById("card").focus(), cs("#card").boxShadow === inset), border: `${cs("#card").borderTopWidth} ${cs("#card").borderTopColor}`, radius: cs("#card").borderTopLeftRadius };
+  });
+  const [panel, edgeBtn] = await Promise.all(["panel", "edge-btn"].map((n) => token(ctx, n)));
+  assert.deepEqual(m, { body: ["364px", "0px", panel], root: panel, card: [0, 0, 364], shadow: true, focused: "card", focusShadow: true, border: `1px ${edgeBtn}`, radius: "12px" });
+});
+
+bubble("Escape closes the menu, then dismisses; Deny by Enter; Allow never by key", async (ctx) => {
+  const { page, helper, inPage } = ctx;
+  add(helper, T11);
+  add(helper, T12);
+  await shown(ctx, "Place order");
+  await sleep(SETTLE);
+  await press(page, "#allow", "Enter");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "a key never allows");
+  assert.equal(await text(ctx, "hint"), "Allow with a click: a key press can't allow.");
+  await realClick(page, "#more");
+  assert.equal(await inPage(() => document.getElementById("menu").hidden), false);
+  await page.keyboard.press("Escape");
+  assert.deepEqual(await inPage(() => [document.getElementById("menu").hidden, document.activeElement.id, document.body.dataset.pending]), [true, "more", "2"], "the menu first, the focus back on More actions");
+  await page.keyboard.press("Escape");
+  await shown(ctx, "Publish");
+  await toldUntil(ctx, "the dismiss", ["setPending", 1, "T12"]);
+  assert.equal(await inPage(() => document.activeElement.id), "card", "the next card takes the focus itself");
+  // A synthetic Escape dismisses nothing.
+  await inPage(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await sleep(200);
+  assert.equal(await inPage(() => document.body.dataset.pending), "1");
+  assert.deepEqual(helper.posts, [], "Escape answers nothing");
+  await sleep(SETTLE);
+  await press(page, "#deny", "Enter");
+  await toldUntil(ctx, "the deny", ["setPending", 0, ""]);
+  assert.deepEqual(bodies(helper, "approve"), [{ id: T12.id, answer: "deny" }]);
+});
+
+bubble("an ask that arrives while the bubble is hidden arms only once it shows; nothing while driving", async (ctx) => {
+  const { page, helper, harness } = ctx;
+  await ctx.until("live", () => document.body.dataset.s === "live");
+  await harness.setHidden(true); // the browser keeps the page while the bubble is closed
+  add(helper, T11);
+  await toldUntil(ctx, "the ask", ["setPending", 1, "T11"]);
+  assert.equal((await harness.live()).observers, 0, "no observer while hidden");
+  const fires = await harness.hiddenFires();
+  await sleep(SETTLE);
+  assert.equal(await harness.hiddenFires(), fires, "nothing runs while hidden");
+  await harness.setHidden(false); // the bubble showed
+  assert.equal((await harness.live()).observers, 1);
+  await realClick(page, "#allow");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "not armed at once after showing");
+  await sleep(SETTLE);
+  helper.push("driving", { on: true });
+  await ctx.until("driving", () => document.body.dataset.driving === "true");
+  await realClick(page, "#allow");
+  await sleep(200);
+  assert.deepEqual(helper.posts, [], "nothing while an agent drives");
+  helper.push("driving", { on: false });
+  await ctx.until("not driving", () => document.body.dataset.driving === "false");
+  await realClick(page, "#allow");
+  await toldUntil(ctx, "the answer", ["setPending", 0, ""]);
+  assert.deepEqual(bodies(helper, "approve"), [{ id: T11.id, answer: "allow" }]);
+});
+
+test("approve bubble: its own stream (page=approve) beside the strip's shared one", { skip: !runtime, timeout: 60_000 }, async () => {
+  const proxy = await hostProxy(TOP);
+  // The full Chromium (new headless): the headless shell ignores the secure-origin switch, and
+  // without Web Locks every page would open its own stream anyway.
+  const browser = await patchright(runtime).chromium.launch({ channel: "chromium", args: proxy.args });
+  const helper = await startFakeHelper();
+  const ui = await startUiServer({ helper, fixture: defaultFixture() });
+  proxy.to(ui.origin);
+  helper.setPageOrigin(`http://${TOP}`);
+  try {
+    const context = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+    const strip = await context.newPage();
+    await strip.goto(`http://${TOP}/strip/index.html`, { waitUntil: "load" });
+    const approve = await context.newPage();
+    await approve.goto(`http://${TOP}/approve/index.html`, { waitUntil: "load" });
+    const until = async (what, fn) => { for (let i = 0; i < 120; i++) { if (await fn()) return; await sleep(50); } assert.fail(`timed out waiting for ${what}`); };
+    for (const p of [strip, approve]) await until("live", () => evalIn(p, () => document.body.dataset.s === "live"));
+    assert.equal(await evalIn(strip, () => typeof navigator.locks?.request === "function" && typeof BroadcastChannel === "function"), true, "the host can share a stream");
+    await until("two streams", () => helper.streams.size === 2);
+    assert.deepEqual([...helper.streams].map((s) => `${s.kind} ${s.panel}`).sort(), ["approve true", "strip true"], "the approve surface counts on its own");
+    assert.equal((await evalIn(approve, () => window.__harness.live())).eventSources, 1, "the bubble holds its own EventSource");
+    // A click ask reaches it on its own stream.
+    add(helper, T11);
+    await until("the bubble's card", () => evalIn(approve, () => document.body.dataset.pending === "1"));
+    await context.close();
+  } finally {
+    await browser.close();
+    await ui.close();
+    await helper.close();
+    await proxy.close();
+  }
+});

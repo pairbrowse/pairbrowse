@@ -50,7 +50,7 @@ test("an agent choosing the open session while the picker shows resolves the pic
   });
   await context.getContext();
   assert.equal(context.picking(), true, "the picker shows instead of the saved tabs");
-  assert.ok(await until(() => visited.some((u) => /picker\.html$/.test(u))), "the first tab shows the picker");
+  assert.ok(await until(() => visited.some((u) => /picker\/index\.html$/.test(u))), "the first tab shows the picker");
   const pick = context.waitForPick(); // an agent's first action waits for the pick
 
   const r = await context.sessionCommand({ action: "use", name: "default" });
@@ -59,7 +59,7 @@ test("an agent choosing the open session while the picker shows resolves the pic
   assert.match(await pick, /chosen by an agent/, "waiting agents hear the agent chose");
   assert.ok(await until(() => visited.includes("https://shop.example/orders")), "the saved tabs come back");
   assert.ok(await until(() => !context.isRestoring()), "the restore finishes");
-  assert.equal(visited.filter((u) => /picker\.html$/.test(u)).length, 1, "no second picker");
+  assert.equal(visited.filter((u) => /picker\/index\.html$/.test(u)).length, 1, "no second picker");
 });
 
 // A build with its own pages: the helper's address goes in its launch switch and the pages' key in

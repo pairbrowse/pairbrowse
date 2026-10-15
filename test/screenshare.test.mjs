@@ -118,12 +118,13 @@ test("with the browser's own capture page, share calls go to it with the tab's t
 
 test("the picture page's addresses: the extension's, the browser's own, and the name it shows", async () => {
   const { isScreenPage } = await import("../scripts/daemon/follow.mjs");
-  assert.equal(isScreenPage(`chrome-extension://${"a".repeat(32)}/screen.html#ab12`), true);
+  assert.equal(isScreenPage(`chrome-extension://${"a".repeat(32)}/screen/index.html#ab12`), true);
+  assert.equal(isScreenPage(`chrome-extension://${"a".repeat(32)}/screen.html#ab12`), false, "the extension's old address (before ui/) is gone");
   assert.equal(isScreenPage("chrome://pairbrowse/screen/#ab12"), true);
   assert.equal(isScreenPage("pairbrowse://screen/#ab12"), true);
   assert.equal(isScreenPage("chrome://pairbrowse/settings"), false);
   assert.equal(isScreenPage("https://evil.example/screen.html"), false);
-  assert.equal(isScreenPage("chrome-extension://xyz/screen.html"), false);
+  assert.equal(isScreenPage("chrome-extension://xyz/screen/index.html"), false);
 });
 
 // Leaving the browser's own error page: Playwright calls the new navigation interrupted by the old

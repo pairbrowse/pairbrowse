@@ -21,11 +21,11 @@ const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const shortBase = testBase();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-// The picture page's own address: the extension's screen.html on Playwright's Chromium; with
+// The picture page's own address: the extension's screen/index.html on Playwright's Chromium; with
 // another build on either side, the browser's own chrome://pairbrowse/screen/ page may be it.
 const otherBuild = !!(process.env.PAIRBROWSE_TEST_EXECUTABLE || process.env.PAIRBROWSE_TEST_JOINER_EXECUTABLE);
-const SCREEN_OWN = otherBuild ? /^(?:chrome-extension:\/\/[a-p]{32}\/screen\.html|chrome:\/\/pairbrowse\/screen\/)#[0-9a-f]{8}$/ : /^chrome-extension:\/\/[a-p]{32}\/screen\.html#[0-9a-f]{8}$/;
-const SCREEN_OWN_END = otherBuild ? /(?:\/screen\.html|\/screen\/)#[0-9a-f]{8}$/ : /\/screen\.html#[0-9a-f]{8}$/;
+const SCREEN_OWN = otherBuild ? /^(?:chrome-extension:\/\/[a-p]{32}\/screen\/index\.html|chrome:\/\/pairbrowse\/screen\/)#[0-9a-f]{8}$/ : /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html#[0-9a-f]{8}$/;
+const SCREEN_OWN_END = otherBuild ? /(?:\/screen\/index\.html|\/screen\/)#[0-9a-f]{8}$/ : /\/screen\/index\.html#[0-9a-f]{8}$/;
 // The sound probe, run in the joiner's picture page: the host tab's tone (the button's
 // oscillator, 440 Hz) heard in the picture's own stream through an AnalyserNode. Bounded in the
 // page (2 s at most) and closed after. tone and floor in dB: the loudest bin within 2 bins of 440

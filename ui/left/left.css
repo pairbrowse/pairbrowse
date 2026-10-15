@@ -1,0 +1,149 @@
+/* The PairBrowse left dock (DESIGN.md B3): colors and type from tokens.css. Three states,
+   reflected from the browser's layout: open (205 px), rail (44 px, icons only) and hidden.
+   Spacing (545): row highlights, cards and dividers stop --dock-gutter (8 px) from the dock's
+   edges and their content --dock-inset (12 px) further in, so every icon, avatar and heading
+   starts 20 px from the dock's outer edge. */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+/* The dock's inner side: 1 px --edge from the nav row to the bottom (DESIGN.md B3), open and rail;
+   none when hidden. */
+body { display: grid; grid-template-rows: minmax(0, 1fr) auto; height: 100vh; background: var(--sidebar); color: var(--ink); font: var(--fs-3)/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; box-shadow: inset -1px 0 0 var(--edge); }
+button { font: inherit; }
+/* The icon sheet: symbols only, never laid out (an <svg hidden> still takes a grid row). */
+body > svg[hidden] { display: none; }
+
+/* Collapse (open) and expand (rail), at the foot beside the gear: the dock's own state, set through
+   the browser's layout. */
+.dock-btn { display: grid; place-items: center; flex: none; width: var(--ctl-sm); height: var(--ctl-sm); padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink-2); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
+.dock-btn svg { width: var(--icon); height: var(--icon); }
+.dock-btn:hover { background: var(--hover); color: var(--ink); }
+.dock-btn[hidden] { display: none; }
+
+.body { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-3) var(--dock-gutter) var(--sp-2); scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+
+/* Nav rows: 36 px, 8 px radius, a 16 px icon and a 13 px label. */
+.nav { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.row { display: flex; align-items: center; gap: var(--sp-4); width: 100%; height: var(--row-nav); padding: 0 var(--dock-inset); border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-soft); font: 400 var(--fs-3) var(--sans); text-align: left; cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
+.row .ic { flex: none; width: var(--icon); height: var(--icon); color: var(--ink-soft); }
+.row:hover { background: var(--hover); color: var(--ink); }
+.row:disabled, .gear:disabled { color: var(--muted); cursor: default; }
+.row:disabled .ic { color: inherit; }
+.row:disabled:hover, .gear:disabled:hover { background: transparent; }
+.row[aria-current="page"] { background-color: var(--nav-active); color: var(--accent-ink); font-weight: 500; box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-soft); }
+.row[aria-current="page"] .ic { color: var(--accent-ink); }
+.row .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { display: inline-grid; place-items: center; flex: none; min-width: 24px; height: 24px; padding: 0 var(--sp-2); border-radius: 12px; background: var(--badge); color: var(--ink); font: 500 var(--fs-3)/1 var(--sans); }
+.badge:empty { display: none; }
+/* Sessions: the open session's name at the row's end, where Browser has its count (muted, cut
+   with an ellipsis; its whole name is in the row's words and, in the rail, its tooltip). */
+#nav-sessions .label { flex: none; }
+.row .current { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--muted); font-size: var(--fs-2); }
+.row .current:empty { display: none; }
+
+/* Sections: Agents (with the + hint) and Shared with; 16 px between groups, the divider from
+   gutter to gutter, the heading and its "+" on the shared edges. */
+.sec { margin-top: var(--sp-4); padding-top: var(--sp-2); border-top: 1px solid var(--edge); }
+.sec[hidden] { display: none; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; height: var(--ctl); margin-bottom: var(--sp-1); padding: 0 var(--dock-inset); }
+h2 { margin: 0; font: 500 var(--fs-3) var(--sans); color: var(--ink); }
+/* Shared with: always shown, a line while nobody has joined, and the Share card (opened by the
+   strip's Share) as a popover under its heading. */
+#shared { position: relative; }
+.empty-note { margin: 0 var(--dock-inset) var(--sp-2); font-size: var(--fs-2); color: var(--ink-2); }
+.empty-note[hidden] { display: none; }
+/* "No agent yet" and "Not shared yet" are the helper's word: not before its stream is live. */
+body:not([data-s="live"]) #agents li.empty, body:not([data-s="live"]) #guests-empty { display: none; }
+/* In the browser the right dock's empty state says it ("No agent in this session" and what to do):
+   the Agents section keeps only its label and its "+" (DESIGN.md Part G). */
+html[data-host="native"] #agents li.empty { display: none; }
+.add { display: grid; place-items: center; width: var(--ctl-xs); height: var(--ctl-xs); padding: 0; border: 0; border-radius: var(--r-1); background: var(--btn); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
+.add svg { width: var(--icon); height: var(--icon); }
+.add:hover, .add[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+.hint { margin: var(--sp-1) 0 var(--sp-2); padding: calc(var(--sp-3) - 1px); border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--elevated); font-size: var(--fs-2); color: var(--ink-2); }
+.hint[hidden] { display: none; }
+.hint p { margin: 0 0 var(--sp-2); }
+.hint p:last-child { margin: 0; }
+.hint code { display: inline-block; padding: 1px var(--sp-1); border-radius: var(--r-1); background: var(--bg); color: var(--ink); font: var(--fs-1)/1.4 var(--mono); overflow-wrap: anywhere; }
+.conn { margin: 0 var(--dock-inset) var(--sp-2); font-size: var(--fs-2); color: var(--muted); }
+.conn[hidden] { display: none; }
+/* In the browser the strip's pill says it once (Local, Live session, Reconnecting): no line here. */
+html[data-host="native"] .conn { display: none; }
+
+/* People rows: 44 px, a 36 px avatar with its state dot, the name and the state in words. */
+.people { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.people li { display: grid; grid-template-columns: var(--av-row) minmax(0, 1fr); gap: 0 var(--sp-3); align-items: center; align-content: center; height: var(--row-person); padding: 0 var(--dock-inset); border-radius: var(--r-2); }
+.people li.empty { display: block; height: auto; padding: var(--sp-1) var(--dock-inset); font-size: var(--fs-2); color: var(--muted); }
+.people .avatar { position: relative; grid-row: span 2; display: grid; place-items: center; width: var(--av-row); height: var(--av-row); border-radius: 50%; background: var(--spark); color: var(--bg); font: 600 var(--fs-5)/1 var(--sans); }
+.people .avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input); }
+.people .avatar svg { width: 20px; height: 20px; color: var(--ink); }
+.people .avatar.guest svg { color: var(--ink); } /* a filled icon on the group color: a graphic, 3:1 or more */
+.people .avatar.guest.plain { background: var(--btn); box-shadow: inset 0 0 0 1px var(--panel-edge); }
+/* The state dot repeats the words (B3): --ok working, active and online; --warn waiting for you;
+   --bad failed; --muted idle, done and paused. */
+.dot { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2.5px var(--sidebar); }
+li[data-state="working"] .dot, li[data-state="online"] .dot { background: var(--ok); }
+li[data-state="waiting"] .dot { background: var(--warn); }
+li[data-state="failed"] .dot { background: var(--bad); }
+li[data-state="idle"] .dot { background: var(--muted); }
+.people strong { align-self: end; min-width: 0; font: var(--fs-3)/18px var(--sans); font-weight: var(--fw-name); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people strong .app { font-weight: 400; color: var(--ink-2); }
+.people small { grid-column: 2; align-self: start; min-width: 0; font-size: var(--fs-2); line-height: 18px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Bottom: the settings gear at the left, the collapse chevron on the sections' right edge (the
+   "+"'s); Storage returns with PairBrowse Pro (see the markup). */
+.foot { display: flex; flex-direction: column; align-items: flex-start; gap: 0; min-width: 0; margin: 0 var(--dock-gutter); padding: 0 0 var(--sp-4); }
+/* Storage (PairBrowse Pro's cloud storage): only when the helper sends the figure; left.js builds it. */
+.storage { align-self: stretch; padding: var(--sp-3) var(--dock-inset) 0; border-top: 1px solid var(--edge); }
+.storage .line { display: flex; justify-content: space-between; font-size: var(--fs-2); line-height: 16px; color: var(--ink-soft); }
+.storage .bar { height: 4px; margin-top: var(--sp-2); border-radius: 2px; background: var(--meter-track); overflow: hidden; }
+.storage .bar i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--meter-from), var(--meter-to)); }
+.foot-row { align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1); margin-top: var(--sp-8); padding: 0 var(--dock-inset); }
+.foot:not(:has(.storage)) { padding-top: var(--sp-2); border-top: 1px solid var(--edge); }
+.foot:not(:has(.storage)) .foot-row { margin-top: 0; }
+.gear { display: grid; place-items: center; width: var(--ctl-sm); height: var(--ctl-sm); padding: 0; border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); cursor: pointer; transition: background var(--t-hover), color var(--t-hover); }
+.gear svg { width: 20px; height: 20px; }
+.gear:hover { background: var(--hover); color: var(--ink); }
+
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
+.add:focus-visible { box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--glow-focus); }
+/* Focus keeps the active row's own edge and light first, then the halo. */
+.row[aria-current="page"]:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-lit), inset 0 1px 0 var(--edge-light), var(--glow-soft), var(--glow-focus); }
+
+/* Rail: 44 px, icons, avatars with their dots and the gear; every word moves to a tooltip. */
+body[data-dock="rail"] .row .label, body[data-dock="rail"] .row .current, body[data-dock="rail"] .badge, body[data-dock="rail"] #tab-count-words,
+body[data-dock="rail"] .sec-head h2, body[data-dock="rail"] .add,
+body[data-dock="rail"] .hint, body[data-dock="rail"] .conn,
+body[data-dock="rail"] .people li.empty,
+body[data-dock="rail"] #shared h2, body[data-dock="rail"] .empty-note { display: none; }
+/* The agents' names and states leave the eye but stay in the accessibility tree (the .sr recipe). */
+body[data-dock="rail"] .people strong, body[data-dock="rail"] .people small { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+body[data-dock="rail"] .body { padding: var(--sp-3) var(--sp-1) var(--sp-2); }
+body[data-dock="rail"] .row { justify-content: center; width: 36px; padding: 0; margin: 0 auto; }
+body[data-dock="rail"] .sec { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--edge); }
+body[data-dock="rail"] .sec-head { display: none; }
+body[data-dock="rail"] .people li { grid-template-columns: 28px; justify-content: center; height: 40px; padding: 0; }
+body[data-dock="rail"] .people .avatar { width: 28px; height: 28px; font-size: var(--fs-2); }
+body[data-dock="rail"] .foot { grid-template-columns: auto; justify-content: center; padding: var(--sp-2) var(--sp-1); }
+body[data-dock="rail"] .gear { grid-column: 1; margin: 0; }
+body[data-dock="rail"] .foot { align-items: center; margin: 0; padding: var(--sp-2) var(--sp-1); border-top: 1px solid var(--edge); }
+body[data-dock="rail"] .storage { display: none; }
+/* The rail's foot: the gear, then the expand chevron under it, both centred in the 44 px band. */
+body[data-dock="rail"] .foot-row { flex-direction: column; margin: 0; padding: 0; }
+
+/* The session switcher served without the browser's API: the picker in a same-origin frame under the
+   Sessions row (--pop-top; 360 by 560 at most, narrowed to the dock's width with the gutter on both
+   sides), its caret at the row's icon (--caret-x, from left.js; DESIGN.md Part I). It opens with the
+   sheet's motion (.m-pop) from the caret. */
+.switcher { position: fixed; top: var(--pop-top, var(--sp-2)); left: var(--dock-gutter); z-index: 3; width: min(360px, calc(100vw - 2 * var(--dock-gutter))); height: min(560px, calc(100vh - var(--pop-top, var(--sp-2)) - var(--sp-2))); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--shadow-raised); --origin: var(--caret-x, 50%) top; }
+.switcher::before { content: ""; position: absolute; top: -5px; left: calc(var(--caret-x, 50%) - 5px); width: 10px; height: 10px; rotate: 45deg; background: var(--elevated); box-shadow: -1px -1px 0 var(--edge); pointer-events: none; } /* mockup: the caret under the logo */
+.switcher iframe { display: block; width: 100%; height: 100%; border: 0; border-radius: inherit; background: var(--bg); }
+
+/* A change of the dock's state (open, rail) brings its content in with the sheet's motion: left.js
+   runs it (common.js enter's timing); the slot's own width is the browser's. */
+
+/* Hidden: nothing shows and nothing takes focus (left.js makes it inert too). */
+body[data-dock="hidden"] > * { visibility: hidden; }
+body[data-dock="hidden"] { box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

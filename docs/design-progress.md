@@ -511,6 +511,18 @@ directory here into the native build, talking to the browser over `pairbrowse.mo
 the helper over the live view's channel. The exact plan for both repos, patch by patch, page by
 page, with phases and exit criteria, is `../pairbrowse-native/DESIGN.md` (private).
 
+### Lane U: the pages (2026-10-11, branch `browser/ui`)
+
+The extension's pages moved to `ui/` (one source for two hosts: the native build's slots over
+`window.pairbrowse`, the side panel extension on plain Chromium), a harness renders every page
+headless under the chrome pages' CSP over a mojom shim and a fake helper (`test/ui.test.mjs`,
+`test/helpers/`, `scripts/dev/ui-look.mjs`), and the nine pages of Part B are built and merged
+after their own review: the top strip (`ui/strip`), the left dock (`ui/left`), the right dock
+(`ui/right`: the side panel on plain Chromium), the new tab page, the picker, the joiner's
+picture page, the approval card, settings and the timeline strip. Nothing a user sees on plain
+Chromium changed: the extension loads from `ui/` and its live suites stay green at every gate.
+Follow-ups landed: frame-src/frame-ancestors for the picker and the switcher popover in the strip and the left dock, approvals in the fake helper, and `scripts/dev/ui-look-all.mjs` with per-page review fixtures (`scripts/dev/look/`).
+
 ## Next
 
 1. Nothing open. The window frame's tint is verified from Chromium's own computed theme sheet

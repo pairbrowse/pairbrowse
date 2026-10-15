@@ -74,7 +74,7 @@ test("run_save takes the auto log over; status finished closes it and the next a
   await j.flushNow();
   assert.equal(liveAutoRun(t).name, "partners.shopify.com 2026-10-10 15:05");
   // The agent saves under its own name: the helper's line goes in under it, and its file says so.
-  const saved = saveRun({ name: "shopify-app-listing", goal: "List the app", left: ["Pricing"] });
+  const saved = saveRun({ name: "shopify-app-listing", goal: "List the app", left: ["Pricing"] }, t);
   assert.equal(saved.done[0], "New app <https://partners.shopify.com/apps/new>: Filled **App name** = `Forest`");
   assert.deepEqual(saved.left, ["Pricing"]);
   assert.equal(saved.tabs[0].url, "https://partners.shopify.com/apps/new");
@@ -92,14 +92,14 @@ test("run_save takes the auto log over; status finished closes it and the next a
   assert.match(taken.done[0], /Filled \*\*App name\*\* = `Forest`; Clicked \*\*Save\*\*$/);
   assert.equal(taken.source, undefined, "the agent's run stays the agent's");
   // Finished: the log closes; the next action starts a new auto run.
-  saveRun({ name: "shopify-app-listing", status: "finished" });
+  saveRun({ name: "shopify-app-listing", status: "finished" }, t);
   t += 120_000;
   j.activity("Opened https://example.org/next", "Claude", page);
   await j.flushNow();
   assert.equal(j.file(), join(runs, "example-org-2026-10-10-15-07.json"));
   assert.equal(read("shopify-app-listing.json").done.length, 1, "nothing more goes into the finished run");
   // A run_save that names the auto run itself just saves into it.
-  const own = saveRun({ name: "example.org 2026-10-10 15:07", status: "finished" });
+  const own = saveRun({ name: "example.org 2026-10-10 15:07", status: "finished" }, t);
   assert.equal(own.source, "auto");
   assert.equal(own.status, "finished");
 });

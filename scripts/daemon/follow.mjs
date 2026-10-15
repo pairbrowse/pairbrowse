@@ -27,7 +27,7 @@ function serially() {
   return (task) => { const run = last.then(task); last = run.catch(() => {}); return run; };
 }
 
-// The shared browser's picture page (screen.html, PairBrowse's own extension page) is called in its
+// The shared browser's picture page (screen/index.html, PairBrowse's own extension page) is called in its
 // own script world, where its script put window.pbScreen: Patchright's page.evaluate otherwise runs
 // in a hidden world of its own (the extra arguments are Patchright's; Playwright ignores them).
 // Bounded (a page whose scripts never pause answers nothing): null when the time is up.
@@ -53,15 +53,15 @@ const FORM_COALESCE_MS = 30; // keystrokes that come together go as one
 const SCREEN_KEEP_MS = 60_000; // a tab out of sight stays connected this long (switching back is instant)
 const SCREEN_CONNECT_MS = process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" ? 3000 : 12_000; // no direct connection by then: try again, then the slower route
 const SCREEN_INPUT_MS = 30; // on the slower route, input goes to the host this often
-// The picture page: the extension's screen.html, or in a PairBrowse build with its own pages its
-// chrome://pairbrowse/screen/ tab (the same page, driven the same way through window.pbScreen).
+// The picture page: the extension's screen/index.html, or in a PairBrowse build with its own pages
+// its chrome://pairbrowse/screen/ tab (the same page, driven the same way through window.pbScreen).
 const CHROME_SCREEN = "chrome://pairbrowse/screen/";
-const screenBaseFor = (chrome) => (chrome ? CHROME_SCREEN : `chrome-extension://${panelExtensionId()}/screen.html`);
+const screenBaseFor = (chrome) => (chrome ? CHROME_SCREEN : `chrome-extension://${panelExtensionId()}/screen/index.html`);
 // Any of the picture page's addresses (the extension's, the browser's own, and the name the
 // browser shows for it).
 export const isScreenPage = (url) => {
   const u = String(url || "");
-  return /^chrome-extension:\/\/[a-p]{32}\/screen\.html(?:[#?]|$)/.test(u) || u.startsWith(CHROME_SCREEN) || /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(u);
+  return /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html(?:[#?]|$)/.test(u) || u.startsWith(CHROME_SCREEN) || /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(u);
 };
 // The tools an agent here uses in the host's browser while in a shared browser session (the rest,
 // such as its status, remembered details and sessions, stay here).
@@ -98,7 +98,7 @@ export function hostPeople(presence, page, t, did, host, heardAt = Date.now()) {
 // side panel, hostState()). configFile: where "Always allow" is written (paths.config).
 export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {}, onHostChange = () => {}, configFile = paths.config }) {
   const screenBase = () => screenBaseFor(!!context.chromePages?.());
-  // The tab id after # keeps the address short (screen.html#a1b2c3d4); the page itself shows the
+  // The tab id after # keeps the address short (screen/index.html#a1b2c3d4); the page itself shows the
   // host tab's real address and title (screen.js).
   const screenUrl = (id) => `${screenBase()}#${encodeURIComponent(id)}`;
   // The browser's own picture tab may show under its pairbrowse:// name too.

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Activity</title>
+<link rel="icon" href="../logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="activity.css">
+</head>
+<body data-s="connecting">
+  <main>
+    <header>
+      <img class="logo" src="../logo.svg" alt="" width="40" height="40">
+      <div>
+        <p class="brand">PairBrowse</p>
+        <h1>Activity</h1>
+        <p class="sub" id="sub">What agents and people did in this session, newest first.</p>
+      </div>
+    </header>
+
+    <!-- Who to show: All, each agent with a line here, People (activity.js); only once there are lines. -->
+    <div class="filter" id="filter" role="group" aria-label="Show activity from" hidden></div>
+
+    <!-- The session's activity lines (the helper's log, GET activity.json, and its activity event), grouped by day, newest first. -->
+    <div class="log" id="log"></div>
+    <!-- The next older page of the helper's log (activity.js showEarlier); only while it has more. -->
+    <button type="button" class="earlier" id="earlier" hidden>Show earlier</button>
+    <p class="empty" id="empty">Nothing yet</p>
+    <!-- What the helper keeps (activity.json's kept), set by activity.js. -->
+    <p class="note" id="note" hidden></p>
+    <p class="msg" id="msg" role="status" aria-live="polite"></p>
+  </main>
+  <script type="module" src="activity.js"></script>
+</body>
+</html>

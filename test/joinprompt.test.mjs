@@ -171,7 +171,7 @@ test("its time in the bar ran out while the browser wasn't focused: it asks agai
   assert.deepEqual(prompt.unseen(), []);
 });
 
-// The side panel extension's worker (browser/panel/background.js), with a stand-in for chrome.
+// The side panel extension's worker (ui/background.js), with a stand-in for chrome.
 async function worker({ view = "http://127.0.0.1:9/k3y/", focused = true, state = "normal" } = {}) {
   const { readFileSync } = await import("node:fs");
   const on = {}, made = [], cleared = [], posts = [], updates = [];
@@ -187,7 +187,7 @@ async function worker({ view = "http://127.0.0.1:9/k3y/", focused = true, state 
   };
   const fetch = async (url, o) => { posts.push({ url, body: JSON.parse(o.body) }); return { ok: true }; };
   const g = {};
-  new Function("globalThis", "chrome", "setInterval", "fetch", "console", readFileSync(new URL("../scripts/browser/panel/background.js", import.meta.url), "utf8"))(g, chrome, () => 0, fetch, { log() {}, warn() {} });
+  new Function("globalThis", "chrome", "setInterval", "fetch", "console", readFileSync(new URL("../ui/background.js", import.meta.url), "utf8"))(g, chrome, () => 0, fetch, { log() {}, warn() {} });
   return { g, on, made, cleared, posts, updates };
 }
 

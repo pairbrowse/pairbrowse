@@ -2,7 +2,7 @@
 // debugging port). On macOS it's a pinned ungoogled-chromium build, which has a switch to hide the
 // profile button, copied once into ~/.pairbrowse/browser under the name
 // PairBrowse with the PairBrowse icon. Elsewhere it's Playwright's own Chromium. It loads one
-// extension of its own and no others: scripts/browser/panel (the PairBrowse side panel, which
+// extension of its own and no others: ui/ (the PairBrowse side panel and pages, which
 // talks only to the key-protected live view on 127.0.0.1). Its colors come from Chromium's own
 // color theme, set in the profile (profilePreferences), so there's no "Installed theme" bar.
 // A native build that declares its own pages (chrome://pairbrowse, its manifest's `chrome` field)
@@ -31,7 +31,7 @@ const nativeTarget = join(paths.home, "browser", "PairBrowse.app");
 const OLD_THEME_DIR = join(here, "browser", "theme");
 // (Chromium records the theme's folder, or its compiled pack file inside it.)
 const isOldThemePath = (p) => typeof p === "string" && /[/\\]scripts[/\\]browser[/\\]theme([/\\](Cached Theme\.pak)?)?$/.test(p);
-export const PANEL_DIR = join(here, "browser", "panel");
+export const PANEL_DIR = join(here, "..", "ui");
 
 // The origin a page of the extension sends (URL.origin is "null" for chrome-extension: URLs).
 export const extensionOrigin = (url) => `chrome-extension://${new URL(url).host}`;
@@ -89,8 +89,9 @@ export function resetPanelWorker(profile, build = panelBuild()) {
 // The running worker turned out old (daemon/panel.mjs): the next launch drops it.
 export const forgetPanelBuild = (profile) => rmSync(join(profile, PANEL_BUILD_FILE), { force: true });
 
-// Earlier versions' side panel had no key, so its ID came from its folder path.
-const pathPanelId = (dir = PANEL_DIR) => idFrom(dir);
+// Earlier versions' side panel had no key, so its ID came from its folder path: the folder
+// earlier versions loaded the keyless panel from (a checkout updated in place keeps that path).
+const pathPanelId = (dir = join(here, "browser", "panel")) => idFrom(dir);
 // (Any copy of PairBrowse: Chromium records an unpacked extension's folder as its path.)
 const isPanelPath = (p) => typeof p === "string" && /[/\\]scripts[/\\]browser[/\\]panel[/\\]?$/.test(p);
 // The IDs of earlier side panel copies recorded in a profile's Secure Preferences (parsed).
@@ -155,7 +156,7 @@ export const browserArgs = ({ firstRun = false, chromePages = false } = {}) => (
   ]);
 
 // The PairBrowse colors: Chromium's built-in color theme (Settings > Appearance), the sheet's
-// chrome navy (scripts/browser/panel/tokens.css --chrome), dark, tonal: Chromium's tonal palette
+// chrome navy (ui/tokens.css --chrome), dark, tonal: Chromium's tonal palette
 // takes the hue. Keys from Chromium 150 chrome/common/pref_names.h; the color is an SkColor (ARGB)
 // stored as a signed 32-bit integer.
 export const THEME_COLOR = 0xff101d2d | 0;

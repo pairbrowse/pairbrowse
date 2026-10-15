@@ -78,11 +78,13 @@ function railTitles() {
 // fresh one (the helper's temporary, deleted when the person switches away) marked as such; null
 // before the helper said.
 function sessionShown() {
-  if (session?.temporary === true) return { short: "Fresh", long: "Fresh session (temporary)" };
   const name = typeof session?.name === "string" ? session.name.trim() : "";
-  if (!name) return null;
-  const shown = name === "default" ? "Default" : name;
-  return { short: shown, long: shown };
+  const fresh = session?.temporary === true;
+  if (!fresh && !name) return null;
+  const open = fresh ? { short: "Fresh", long: "Fresh session (temporary)" } : { short: name === "default" ? "Default" : name, long: name === "default" ? "Default" : name };
+  // A named instance (several PairBrowse helpers on one computer) leads, so two windows differ.
+  const instance = typeof session?.instance === "string" ? session.instance.trim().slice(0, 32) : "";
+  return instance ? { short: `${instance} · ${open.short}`, long: `${open.long}, instance ${instance}` } : open;
 }
 function drawSession() {
   const open = sessionShown();

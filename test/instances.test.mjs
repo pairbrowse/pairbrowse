@@ -121,3 +121,11 @@ test("install lock: one at a time, re-entrant, a dead holder's lock taken over",
   rmSync(file, { force: true }); // the child leaves its file (it never took the lock through the module)
   assert.equal(await withInstallLock(async () => 2, { file, waitMs: 1000 }), 2);
 });
+
+test("pairbrowse_status names the instance and its home, and a project file it couldn't use", async () => {
+  const { statusLine } = await import("../scripts/daemon/serve/tools/status.mjs");
+  assert.equal(statusLine({ instance: null, source: "default", home: "/h/.pairbrowse" }), "ok");
+  assert.equal(statusLine({ instance: "work", source: "project", home: "/h/.pairbrowse/instances/work" }), 'ok; PairBrowse instance "work" (/h/.pairbrowse/instances/work)');
+  assert.equal(statusLine({ instance: null, source: "PAIRBROWSE_HOME", home: "/x" }), "ok; PairBrowse home /x");
+  assert.match(statusLine({ instance: null, source: "default", home: "/h", warning: "/p/.pairbrowse.json is not JSON" }), /^ok; ignored: .*not JSON/);
+});

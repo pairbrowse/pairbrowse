@@ -2,7 +2,7 @@
 // renaming, saving the open session's tabs, pairbrowse_session, and the clean session's marker.
 // st: the browser's state (browser/state.mjs); api: the other parts' functions, read when called.
 import { writeFileSync, rmSync, existsSync } from "node:fs";
-import { paths } from "../../paths.mjs";
+import { paths, INSTANCE } from "../../paths.mjs";
 import { validName, isTemporary, rememberSession, listSessions, createSession, deleteSession, renameSession, sessionFilesExist, profileInUse, sweepTemporary } from "../../sessions.mjs";
 import { renameRunsSession } from "../../runs.mjs";
 import { within } from "../../util.mjs";
@@ -16,7 +16,9 @@ export function createSwitch(st, deps, api) {
   const { beforeRename, hostNote, log, notify, onRenamed } = deps;
   // ---- browser sessions ----------------------------------------------------------------
 
-  const sessionInfo = () => ({ name: isTemporary(st.session) ? "Clean session" : st.session, where: where(), temporary: isTemporary(st.session) });
+  // instance: this helper's named instance (home.mjs), so the browser's pages can tell two
+  // PairBrowse windows apart; absent for the default home.
+  const sessionInfo = () => ({ name: isTemporary(st.session) ? "Clean session" : st.session, where: where(), temporary: isTemporary(st.session), ...(INSTANCE ? { instance: INSTANCE } : {}) });
 
   // renameFrom: a person's rename of the open session (renameCurrent): the browser closes, the
   // session's files move to the new name, and the same session reopens with its tabs.

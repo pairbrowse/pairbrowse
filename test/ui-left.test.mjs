@@ -804,6 +804,10 @@ scenario("left: the Sessions row shows the open session", { viewport: OPEN, fixt
   assert.equal(await inPage(() => document.querySelector("#nav-sessions .current").checkVisibility()), false, "the rail shows the icon only");
   helper.push("session", { name: "work", where: "Local" });
   await until("the rail's tooltip follows", () => document.getElementById("nav-sessions").title === "Sessions · work");
+  // A named instance (several PairBrowse helpers on one computer) leads the name.
+  helper.push("session", { name: "default", where: "Local", instance: "client-a" });
+  await until("the instance", () => document.getElementById("nav-sessions").title === "Sessions · Default, instance client-a");
+  assert.equal(await inPage(() => document.querySelector("#nav-sessions .current").textContent), "client-a · Default");
   const live = await ctx.harness.live();
   assert.equal(live.intervals, 0, "no polling");
   await clean(ctx);

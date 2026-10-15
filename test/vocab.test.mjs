@@ -32,7 +32,7 @@ test("Claude's orange is written once: the page script and the sheets take it fr
   const { source } = hudScript();
   assert.ok(source.includes(vocab.AGENT_COLOR) && !source.includes("__PB_AGENT_COLOR__"));
   assert.match(read("ui/tokens.css"), new RegExp(`--spark: ${vocab.AGENT_COLOR};`));
-  const files = ["scripts/hud/", "scripts/liveview.js", "scripts/tabsync.mjs", "scripts/daemon.mjs", "scripts/daemon/follow.mjs", "scripts/daemon/approvals.mjs",
+  const files = ["scripts/hud/", "scripts/liveview.js", "scripts/sharing/tabsync.mjs", "scripts/daemon.mjs", "scripts/daemon/follow.mjs", "scripts/daemon/approvals.mjs",
     "scripts/liveview/push.mjs", "ui/right/right.js", "ui/screen/screen.js", "ui/capture/record.js"];
   for (const f of files) assert.ok(!read(f).toLowerCase().includes(vocab.AGENT_COLOR), `${f} names the color itself`);
 });
@@ -59,7 +59,7 @@ test("the browser's own addresses have one set of rules, for the helper and the 
   assert.ok(urls.isShownScreenPage("pairbrowse://screen/#t1") && !urls.isShownScreenPage("chrome://pairbrowse/screen/"));
   assert.equal(urls.extensionUrl("abc", "picker/index.html"), "chrome-extension://abc/picker/index.html");
   // No page or helper module spells the browser's own hosts itself.
-  for (const f of ["ui/pairbrowse-adapter.js", "ui/common.js", "ui/approve/approve.js", "scripts/policy.mjs", "scripts/daemon/context.mjs", "scripts/daemon/browser/launch.mjs", "scripts/daemon/browser/tabs.mjs", "scripts/daemon/sessions/picker.mjs", "scripts/daemon/follow.mjs", "scripts/daemon/join/screens.mjs"]) {
+  for (const f of ["ui/pairbrowse-adapter.js", "ui/common.js", "ui/approve/approve.js", "scripts/rules/policy.mjs", "scripts/daemon/context.mjs", "scripts/daemon/browser/launch.mjs", "scripts/daemon/browser/tabs.mjs", "scripts/daemon/sessions/picker.mjs", "scripts/daemon/follow.mjs", "scripts/daemon/join/screens.mjs"]) {
     // Comments, and the sentence that tells an agent so (CHROME_PAGE_RULE), name them in words.
     const code = read(f).replace(/^\s*\/\/.*$/gm, "").replace(/^export const CHROME_PAGE_RULE = .*$/m, "");
     const spelled = code.match(/chrome:\/\/pairbrowse|"pairbrowse\.top-chrome"|(HOST|host) = "pairbrowse"|pairbrowse:\\\/\\\/screen/);

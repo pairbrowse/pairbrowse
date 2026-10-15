@@ -224,7 +224,7 @@ test("only strong signals stop a click; ordinary submits and script buttons go",
 
 test("nothing about a click leaves the computer: no model, API key or network in the judging", () => {
   const root = new URL("..", import.meta.url).pathname;
-  for (const f of ["scripts/clickrule.mjs", "scripts/guard.mjs", "scripts/daemon/serve.mjs", "scripts/daemon/page.mjs", "scripts/runner.mjs", "scripts/paths.mjs"]) {
+  for (const f of ["scripts/rules/clicks.mjs", "scripts/guard.mjs", "scripts/daemon/serve.mjs", "scripts/daemon/page.mjs", "scripts/runner.mjs", "scripts/paths.mjs"]) {
     const code = readFileSync(join(root, f), "utf8");
     assert.doesNotMatch(code, /from "node:(https?|net|tls|http2|dgram)"|\bfetch\(|api\.anthropic|clickjudge|clickJudge|API_KEY/, f);
   }

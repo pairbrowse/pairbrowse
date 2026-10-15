@@ -2,7 +2,6 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createBoard, redact, readEntries, readMessage } from "../scripts/daemon/board.mjs";
-import * as oldPath from "../scripts/daemon/session.mjs";
 
 const labels = { a: "Alice · Claude Code", b: "Bob · Codex" };
 const make = (extra = {}) => createBoard({ labelOf: (p) => labels[p] || "Agent", locals: () => Object.values(labels).map((who) => ({ who, kind: "agent" })), secrets: () => ({ SHOP_PASSWORD: "hunter2hunter2" }), ...extra });
@@ -88,15 +87,4 @@ test("what crosses is redacted by the one redaction: the longest password first,
   assert.equal(redact("pw abcd1234xyz and abcd1234", { SHORT: "abcd1234", LONG: "abcd1234xyz" }), "pw [LONG] and [SHORT]", "a password holding a shorter one never leaves a piece");
   assert.equal(redact("abcd1234xyz", { SHORT: "abcd1234", LONG: "abcd1234xyz" }), "[LONG]");
   for (const t of ["card 4242 4242 4242 4242 ok", "4242-4242-4242-4242", "x 5555555555554444 y", "call 555-123-4567"]) assert.equal(redact(t), maskCards(t), t);
-});
-
-test("the old path daemon/session.mjs still re-exports the board (one release)", () => {
-  assert.equal(oldPath.createSession, createBoard);
-  assert.equal(oldPath.redact, redact);
-});
-
-test("the old paths daemon/tools.mjs and daemon/contexts.mjs still re-export theirs (one release)", async () => {
-  const [tools, toolstab, contexts, execContexts] = await Promise.all(["tools", "toolstab", "contexts", "exec-contexts"].map((n) => import(`../scripts/daemon/${n}.mjs`)));
-  assert.equal(tools.createPersonTabs, toolstab.createPersonTabs);
-  assert.equal(contexts.pruneStaleContexts, execContexts.pruneStaleContexts);
 });

@@ -8,7 +8,9 @@ import fc from "fast-check";
 import { readInput } from "../../scripts/daemon/screenshare.mjs";
 
 const RUNS = Number(process.env.PAIRBROWSE_FUZZ_RUNS) || 5000;
-const check = (property) => fc.assert(property, { numRuns: RUNS });
+// A fixed seed: every run tries the same cases, so a failure repeats (set PAIRBROWSE_FUZZ_SEED to explore).
+const SEED = Number(process.env.PAIRBROWSE_FUZZ_SEED) || 20261015;
+const check = (property) => fc.assert(property, { numRuns: RUNS, seed: SEED });
 const view = { w: 1000, h: 800 };
 
 const key = fc.oneof(
@@ -57,6 +59,14 @@ test("the known ways around a key-only check are refused", () => {
   no({ key: "Paste", code: "Paste", m: 0 }, "the Paste key");
   no({ key: "q", code: "Copy", m: 0 }, "the Copy key by code");
   no({ key: "Cut", code: "", m: 0 }, "the Cut key by name");
+  // A key code worked out from the character: "-" is 45 (Insert), "." 46 (Delete). Found by fuzzing.
+  assert.equal(readInput({ t: "key", a: "down", key: "-", code: "KeyC", kc: -1, m: 8 }, view).keyCode, 189, "Shift + '-' is never sent as Shift+Insert (45)");
+  no({ key: "-", code: "KeyC", kc: -1, m: 4 }, "Cmd + physical C");
+  no({ key: "-", code: "KeyC", kc: -1, m: 2 }, "Ctrl + physical C");
+  assert.equal(readInput({ t: "key", a: "down", key: "-", code: "Minus", kc: 0, m: 8 }, view).keyCode, 189, "Shift + '-' is the minus key");
+  assert.equal(readInput({ t: "key", a: "down", key: ".", code: "Period", kc: 0, m: 8 }, view).keyCode, 190, "Shift + '.' is the period key, not Delete");
+  assert.equal(readInput({ t: "key", a: "down", key: "toString", code: "", kc: 0, m: 2 }, view).keyCode, 0, "names off the prototype are no key codes");
+  assert.equal(readInput({ t: "key", a: "down", key: "constructor", code: "", kc: 0, m: 0 }, view).keyCode, 0);
   // What keeps working: plain typing, shortcuts that aren't the clipboard's, Delete and Insert alone.
   assert.equal(readInput({ t: "key", a: "down", key: "v", code: "KeyV", kc: 86, m: 0 }, view).text, "v");
   assert.equal(readInput({ t: "key", a: "down", key: "z", code: "KeyW", kc: 90, m: 2 }, view).keyCode, 90, "Ctrl+Z on AZERTY is still undo");

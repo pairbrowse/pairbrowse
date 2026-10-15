@@ -48,7 +48,20 @@ export function usesClipboard(key, code, kc, m) {
 // Digit1: 49); 0 when none. Never C, V or X: those were refused above by all three names.
 function shortcutCode(key, code) {
   if (/^[a-z0-9]$/i.test(key)) return key.toUpperCase().charCodeAt(0);
-  if (CODES[key]) return CODES[key];
+  if (Object.hasOwn(CODES, key)) return CODES[key];
+  const l = letterOfCode(code);
+  return l ? l.charCodeAt(0) : 0;
+}
+
+// The key code a plain key (no Ctrl/Cmd) is dispatched with when none came: a letter's or digit's
+// own (its upper case), punctuation's OEM code, else where it is (KeyL: 76), else 0. Never a
+// character's code point: "-" is 45 (Insert) and "." 46 (Delete), so Shift + either would paste or cut.
+const PUNCT_CODES = { ";": 186, ":": 186, "=": 187, "+": 187, ",": 188, "<": 188, "-": 189, "_": 189, ".": 190, ">": 190,
+  "/": 191, "?": 191, "`": 192, "~": 192, "[": 219, "{": 219, "\\": 220, "|": 220, "]": 221, "}": 221, "'": 222, '"': 222 };
+function plainCode(key, code) {
+  if (/^[a-z0-9]$/i.test(key)) return key.toUpperCase().charCodeAt(0);
+  if (Object.hasOwn(CODES, key)) return CODES[key];
+  if (Object.hasOwn(PUNCT_CODES, key)) return PUNCT_CODES[key];
   const l = letterOfCode(code);
   return l ? l.charCodeAt(0) : 0;
 }
@@ -86,7 +99,9 @@ export function readInput(ev, view) {
     const text = ev.a === "down" && KEY_TEXT.test(ev.key) && !(m & 6) ? ev.key : ev.key === "Enter" && ev.a === "down" ? "\r" : "";
     // With Ctrl or Cmd held the key code is worked out here from the key's place (code) or name,
     // never taken as sent: one picture of the key, the one checked above.
-    const keyCode = m & 6 ? shortcutCode(ev.key, code) : kc || CODES[ev.key] || (text ? text.toUpperCase().charCodeAt(0) : 0);
+    const keyCode = m & 6 ? shortcutCode(ev.key, code) : kc || plainCode(ev.key, code);
+    // The key as it would be dispatched is checked again: a key code worked out here is a name too.
+    if (usesClipboard(ev.key, code, keyCode, m)) return null;
     return { type: "rawkey", action: ev.a, key: ev.key, code, keyCode, text, location: [0, 1, 2, 3].includes(ev.loc) ? ev.loc : 0, repeat: !!ev.rep, modifiers: m };
   }
   return null;

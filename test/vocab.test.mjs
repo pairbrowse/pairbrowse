@@ -57,7 +57,7 @@ test("the browser's own addresses have one set of rules, for the helper and the 
   assert.ok(urls.isShownScreenPage("pairbrowse://screen/#t1") && !urls.isShownScreenPage("chrome://pairbrowse/screen/"));
   assert.equal(urls.extensionUrl("abc", "picker/index.html"), "chrome-extension://abc/picker/index.html");
   // No page or helper module spells the browser's own hosts itself.
-  for (const f of ["ui/pairbrowse-adapter.js", "ui/common.js", "ui/approve/approve.js", "scripts/policy.mjs", "scripts/daemon/context.mjs", "scripts/daemon/browser/launch.mjs", "scripts/daemon/browser/tabs.mjs", "scripts/daemon/sessions/picker.mjs", "scripts/daemon/follow.mjs"]) {
+  for (const f of ["ui/pairbrowse-adapter.js", "ui/common.js", "ui/approve/approve.js", "scripts/policy.mjs", "scripts/daemon/context.mjs", "scripts/daemon/browser/launch.mjs", "scripts/daemon/browser/tabs.mjs", "scripts/daemon/sessions/picker.mjs", "scripts/daemon/follow.mjs", "scripts/daemon/join/screens.mjs"]) {
     // Comments, and the sentence that tells an agent so (CHROME_PAGE_RULE), name them in words.
     const code = read(f).replace(/^\s*\/\/.*$/gm, "").replace(/^export const CHROME_PAGE_RULE = .*$/m, "");
     const spelled = code.match(/chrome:\/\/pairbrowse|"pairbrowse\.top-chrome"|(HOST|host) = "pairbrowse"|pairbrowse:\\\/\\\/screen/);

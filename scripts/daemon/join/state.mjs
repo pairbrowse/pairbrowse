@@ -3,6 +3,9 @@
 import { newJoinerId } from "../../join.mjs";
 import { createMirror, createFormSync, createOrderSync } from "../../tabsync.mjs";
 
+// A tab opened or sent somewhere here: its first answer within this.
+export const OPEN_MS = 15_000;
+
 // What follow.mjs and its parts share: the session joined now (cur, or null) and how the last one
 // ended without a leave (ended: { text }, denied or revoked, for status).
 export const newFollowState = () => ({ cur: null, ended: null });

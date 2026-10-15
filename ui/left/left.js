@@ -13,6 +13,7 @@
 import { $, el, agentWords, ownAgentLine, isColor, inkOn, splitLabel, initialOf, pickerPopover, askDock, helperStream, servedByBrowser, syncList, enter } from "../common.js";
 import { isOwnTabPage, ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
+import { followHelper } from "../helper.js";
 
 const pb = window.pairbrowse ?? null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -458,15 +459,9 @@ function noHelper() {
   document.body.dataset.s = "closed";
   $("conn").hidden = true;
 }
-if (pb) pb.session.helper().then(({ origin, key }) => { if (origin && key) connect(`${origin}/${key}/`); else noHelper(); }).catch(noHelper);
-else {
-  // The extension's storage (the bridge period); null on a page opened without it.
-  let area = null;
-  try { area = globalThis.chrome?.storage?.session || null; } catch {}
-  if (!area) noHelper();
-  else area.get("view").then(({ view }) => (view ? connect(view) : null)).catch(() => {});
-  try { globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-}
+// The helper's address (ui/helper.js), and each new one the extension's worker stores; the
+// extension's storage without one yet waits for it.
+followHelper({ connect, none: noHelper, wait: true });
 
 // ---- wiring ----
 $("nav-browser").addEventListener("click", openBrowser);

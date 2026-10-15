@@ -3,10 +3,11 @@
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync, rmSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 import { paths } from "../paths.mjs";
-import { ensureBrowser, launchArgs, prepareProfile, panelExtensionId, resetPanelWorker, browserChoice, writeHelperKeyFile, dropHelperKeyFile, CAPTURE_KEY_PREFIX } from "../browser.mjs";
-import { engineProfile, launchEngine, validateEngine } from "../engine.mjs";
+import { ensureBrowser, launchOptions, prepareProfile, panelExtensionId, resetPanelWorker, writeHelperKeyFile, dropHelperKeyFile, CAPTURE_KEY_PREFIX } from "../browser.mjs";
+import { chooseBrowser, engineConfig, shellOf, EXTENSION_SHELL } from "../browser/choice.mjs";
+import { engineProfile, nativeProfile, launchEngine, validateEngine } from "../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../native-install.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "../display.mjs";
 import { readSavedTabs, trackTabs, restoreTabs } from "../tabs.mjs";
@@ -16,7 +17,7 @@ import { renameRunsSession } from "../runs.mjs";
 import { keepFocus } from "../focus.mjs";
 import { sleep, readJson, within } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
-import { chromePages, capturePages, captureKeyed, nativeManifest, MEASURING } from "../native-engine.mjs";
+import { MEASURING } from "../native-engine.mjs";
 import { isChromePage, CHROME_PICKER, extensionUrl } from "../../ui/urls.js";
 import { createPersonTabs, keepDownloadMark } from "./tools.mjs";
 import { OPEN_ACCEPT_MS } from "../opener.mjs";
@@ -36,13 +37,12 @@ const NETWORK_EVENTS = ["request", "response", "requestfailed", "requestfinished
 const PICK_WAIT_MS = Number(process.env.PAIRBROWSE_TEST_PICK_WAIT_MS) || 15_000;
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
 // A build with its own pages shows its own picker instead (CHROME_PICKER, ui/urls.js).
-// Whether the browser config launches is a native build that declares its own pages (its
-// manifest's `chrome` field).
-const chromePagesIn = (config) => { try { return config.browserEngine === "pairbrowse" && chromePages(nativeManifest(config.executablePath)); } catch { return false; } };
-// Whether that build also declares its capture page (native-engine capturePages).
-const capturePagesIn = (config) => { try { return config.browserEngine === "pairbrowse" && capturePages(nativeManifest(config.executablePath)); } catch { return false; } };
-// Whether its capture page reads a key of its own (native-engine captureKeyed).
-const captureKeyedIn = (config) => { try { return config.browserEngine === "pairbrowse" && captureKeyed(nativeManifest(config.executablePath)); } catch { return false; } };
+// The shell of the browser an engine config launches (browser/choice.mjs shellOf): whether it is a
+// native build that declares its own pages (its manifest's `chrome` field), whether that build also
+// declares its capture page, and whether that page reads a key of its own. Tests pass their own.
+const chromePagesIn = (engine) => shellOf(engine).ownPages;
+const capturePagesIn = (engine) => shellOf(engine).capturePage;
+const captureKeyedIn = (engine) => shellOf(engine).captureKeyed;
 
 // Started in an SSH session (say, the desktop app's SSH sessions) means the browser runs on that
 // machine, not the user's: its live view needs an SSH tunnel.
@@ -91,8 +91,10 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null }) {
   let contextPromise = null;
   let chrome = false; // the browser in use has its own pages (no side panel extension)
-  let chosen = false; // chrome and capture are this launch's (set once its build was chosen)
+  let chosen = false; // shell, chrome and capture are this launch's (set once its build was chosen)
   let capture = false; // ...and its own capture page
+  let shell = EXTENSION_SHELL; // this launch's shell (browser/choice.mjs): chrome and capture are its
+  let engine = null; // the launch layer's config of the last launch (engineConfig), null before one
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
   const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
   let helperKeyPath = null; // the key file of the browser launched last, until used or closed
@@ -115,12 +117,17 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   // come to the front, so nothing puts the app they were in back in front of it (keepFocus).
   let byHand = false;
   const focusing = (own, change) => (own ? change() : keepFocus(change));
-  // Which browser runs ("browser" in config.json, browserChoice in browser.mjs). The launch sets
-  // config.browserEngine and config.executablePath from it (in memory only), so the older names a
-  // person wrote are kept aside here: every launch reads the choice anew (a change in Settings
-  // takes effect at the next start).
-  const legacy = { browserEngine: config.browserEngine, executablePath: config.executablePath };
-  const choiceConfig = () => ({ ...config, ...legacy });
+  // Which browser runs ("browser" in config.json, chooseBrowser in browser/choice.mjs). Every launch
+  // reads the choice anew (a change in Settings takes effect at the next start) and keeps it here
+  // (engine, shell): config itself is never written, so the older names a person wrote stay as
+  // they wrote them.
+  const choiceConfig = () => config;
+  // The shell of the browser an engine config launches, read once per choice.
+  const shellFor = (e) => {
+    const ownPages = !!chromePagesOf(e);
+    const capturePage = ownPages && !!capturePagesOf(e);
+    return { kind: ownPages ? "pages" : "extension", ownPages, capturePage, captureKeyed: capturePage && !!captureKeyedOf(e) };
+  };
   let inUse = null; // the browser the last launch chose
   const said = new Set(); // lines about the choice, logged once per helper run
   const once = (line) => { if (!said.has(line)) { said.add(line); log(line); } };
@@ -140,13 +147,14 @@ let switched = Promise.resolve();
   // person which session to use, unless an agent chose first. Never on the very first start
   // (nothing to go back to) or in a cloud container (nobody sees the window).
   // pick.state: "off", "pending" (shown at the next launch), "showing", "done".
-  // Something to go back to: a browser that ran before (Chrome's "Default" folder), saved tabs or
-  // another kept session.
-  const hasHistory = () => existsSync(join(profileDir(session), "Default")) || listSessions().some((s) => !s.temporary && (s.name !== "default" || s.tabs > 0));
+  // Something to go back to: a browser that ran before (Chrome's "Default" folder, in the Chromium
+  // profile or the native build's own: engine.mjs engineProfile), saved tabs or another kept session.
+  const ranBefore = (dir) => existsSync(join(dir, "Default")) || existsSync(join(nativeProfile(dir), "Default"));
+  const hasHistory = () => ranBefore(profileDir(session)) || listSessions().some((s) => !s.temporary && (s.name !== "default" || s.tabs > 0));
   const pick = { state: config.sessionPicker !== false && process.env.CLAUDE_CODE_REMOTE !== "true" && hasHistory() ? "pending" : "off", page: null, text: "" };
   pick.done = new Promise((r) => { pick.resolve = r; });
 
-  const profile = () => engineProfile(config, profileDir(session));
+  const profile = () => engineProfile(engine || config, profileDir(session));
   const findPage = (ctx, url) => ctx.pages().find((p) => p.url() === url);
   // The open tabs, without starting the browser.
   const openPages = async () => (contextPromise ? (await contextPromise.catch(() => null))?.pages() || [] : []);
@@ -253,15 +261,12 @@ let switched = Promise.resolve();
   // quiet switch from the native build to Chromium: only "browser": "chromium" picks that.
   async function chooseEngine() {
     const asset = pinnedAsset();
-    const choice = browserChoice(choiceConfig(), { native: !!asset });
-    if (choice.problem) once(choice.problem);
-    if (!choice.set) once(`browser: no choice recorded yet; using ${choice.browser} (Settings, or "browser" in ~/.pairbrowse/config.json)`);
-    inUse = choice.browser;
-    if (choice.browser === "pairbrowse" && choice.executablePath && resolve(choice.executablePath) !== nativeDirs().exec) {
-      // (The older names: a native build of your own, used as it is.)
-      config.browserEngine = "pairbrowse";
-      config.executablePath = choice.executablePath;
-    } else if (choice.browser === "pairbrowse") {
+    const spec = chooseBrowser(config, { native: !!asset, pinnedExec: () => nativeDirs().exec });
+    if (spec.problem) once(spec.problem);
+    if (!spec.set) once(`browser: no choice recorded yet; using ${spec.browser} (Settings, or "browser" in ~/.pairbrowse/config.json)`);
+    inUse = spec.browser;
+    let executablePath = spec.executablePath; // a native build of your own (the older names), a path of your own, or null
+    if (spec.install) {
       const optOut = 'To use Chromium instead, set "browser": "chromium" in ~/.pairbrowse/config.json.';
       const installLog = (m) => {
         log(m);
@@ -272,7 +277,7 @@ let switched = Promise.resolve();
       };
       let native = null;
       try {
-        native = nativeLayout() ? await ensureNative(installLog, { asset, config: choiceConfig() }) : null;
+        native = nativeLayout() ? await ensureNative(installLog, { asset, config }) : null;
       } catch (e) {
         if (installing) notify("The PairBrowse browser couldn't be installed. Ask Claude what happened.");
         throw new Error(`The PairBrowse browser couldn't be installed: ${e.message} ${optOut}`);
@@ -281,16 +286,17 @@ let switched = Promise.resolve();
         installing = false;
       }
       if (!native) throw new Error(`There's no PairBrowse browser build for ${process.platform} ${process.arch} yet. ${optOut}`);
-      config.browserEngine = "pairbrowse";
-      config.executablePath = native;
-    } else {
+      executablePath = native;
+    } else if (spec.binary !== "native") {
       // A recorded chromium or path of your own: the log says why nothing is installed, once.
-      const why = choice.set && !choice.problem ? notChosen(choiceConfig(), !!asset) : null;
+      const why = spec.set && !spec.problem ? notChosen(config, !!asset) : null;
       if (why) once(why);
-      config.browserEngine = "chromium";
-      config.executablePath = choice.executablePath; // null: the PairBrowse Chromium (ensureBrowser)
     }
-    validateEngine(config);
+    // null for chromium: the PairBrowse Chromium (ensureBrowser at launch).
+    const next = engineConfig(config, { binary: spec.binary, executablePath });
+    validateEngine(next);
+    engine = next;
+    return next;
   }
 
   // Everything that watches a page, for the tabs there at launch and each new one.
@@ -358,10 +364,11 @@ let switched = Promise.resolve();
     // Each launch step's time (plans/555 item 4), logged as "launch: <step> <ms> ms".
     let stepAt = Date.now();
     const step = (name) => { const now = Date.now(); log(`launch: ${name} ${now - stepAt} ms`); stepAt = now; };
-    await chooseEngine();
+    const next = await chooseEngine();
     step("engine");
-    chrome = !!chromePagesOf(config);
-    capture = chrome && !!capturePagesOf(config);
+    shell = shellFor(next);
+    chrome = shell.ownPages;
+    capture = shell.capturePage;
     chosen = true;
     // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
     // colors; see prepareProfile in browser.mjs), written before each launch.
@@ -383,25 +390,24 @@ let switched = Promise.resolve();
     if (helper) try { keyFile = helperKeyPath = writeHelperKeyFile(helper.key); } catch (e) { log(`the browser's own pages have no helper address (key file: ${e?.code || "refused"})`); }
     // A capture page that reads its own key gets a new one now (and the helper requires it); a
     // file that can't be written leaves the capture page without one (it is refused: fail closed).
-    const ck = helper?.newCaptureKey?.(!!(keyFile && capture && captureKeyedOf(config))) || null;
+    const ck = helper?.newCaptureKey?.(!!(keyFile && capture && shell.captureKeyed)) || null;
     if (ck) try { captureKeyFile = captureKeyPath = writeHelperKeyFile(ck, undefined, CAPTURE_KEY_PREFIX); } catch (e) { log(`the capture page has no key (key file: ${e?.code || "refused"})`); }
     const launchLog = measuringLog({ log, status, notify });
     let ctx;
     try {
-      ctx = await launchEngine(browserType(), config, profile(), {
-        headless: false,
+      ctx = await launchEngine(browserType(), next, profile(), {
         // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
         // Playwright's signal handlers would start a close of their own on the same SIGTERM, and
         // then treat the helper's close as a second one: a SIGKILL of Chromium inside 50 ms, before
         // it wrote its cookies (it writes them every ~30 s and on a clean exit): logins lost.
         handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
-        env: { ...process.env, ...(screen?.env || {}) },
-        executablePath: config.executablePath || await ensureBrowser(browserType(), log),
-        viewport: null,
-        // Its own side panel is the only extension it loads. A build with its own pages opens its
-        // startup page (PairBrowse's new tab page), not the driver's about:blank (plans/555 D1.2).
-        ignoreDefaultArgs: chrome ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"],
-        args: launchArgs(config, { firstRun, chromePages: chrome, helper: helper && keyFile ? { origin: helper.origin, keyFile, ...(captureKeyFile ? { captureKeyFile } : {}) } : null }),
+        // The launch itself, as the install self-check makes it too (browser.mjs launchOptions).
+        ...launchOptions(config, {
+          shell, firstRun,
+          env: { ...process.env, ...(screen?.env || {}) },
+          executablePath: next.executablePath || await ensureBrowser(browserType(), log),
+          helper: helper && keyFile ? { origin: helper.origin, keyFile, ...(captureKeyFile ? { captureKeyFile } : {}) } : null,
+        }),
       }, launchLog);
     } catch (e) { dropHelperKey(keyFile, captureKeyFile); throw e; } // a failed launch leaves no key file
     finally { launchLog.done(hud.badge()); }
@@ -816,7 +822,7 @@ let switched = Promise.resolve();
   // plain window, as before), while the helper stops, or when the launch failed at once.
   async function openByHand({ acceptMs = OPEN_ACCEPT_MS } = {}) {
     if (shuttingDown()) return { ok: false, why: "PairBrowse is restarting" };
-    const pages = contextPromise && chosen ? chrome : predict().pages;
+    const pages = nextShell().ownPages;
     if (!pages) return { ok: false, why: "the browser in use here isn't the PairBrowse browser (\"browser\" in ~/.pairbrowse/config.json)" };
     if (!contextPromise) byHand = true; // this start is the person's: it may come to the front
     const up = getContext().then(async (ctx) => {
@@ -856,32 +862,33 @@ let switched = Promise.resolve();
     screen?.stop();
   }
 
-  // Before the browser runs: the config the next launch would use (the build chooseEngine would
+  // Before the browser runs: the shell the next launch would have (the build chooseEngine would
   // pick, without installing anything). Read from disk once per choice.
   let predicted = null;
   function predict() {
-    let next = config;
-    if (!(config.browserEngine === "pairbrowse" && config.executablePath)) {
-      try {
-        const choice = browserChoice(choiceConfig(), { native: !!pinnedAsset() });
-        if (choice.browser === "pairbrowse") next = { ...config, browserEngine: "pairbrowse", executablePath: choice.executablePath || nativeDirs().exec };
-      } catch {}
-    }
+    let next = engine || config;
+    try {
+      const spec = chooseBrowser(config, { native: !!pinnedAsset(), pinnedExec: () => nativeDirs().exec });
+      next = engineConfig(config, { binary: spec.binary, executablePath: spec.install ? nativeDirs().exec : spec.executablePath });
+    } catch {}
     const sig = `${next.browserEngine}\u0001${next.executablePath}`;
-    if (predicted?.sig !== sig) {
-      const pages = !!chromePagesOf(next);
-      predicted = { sig, pages, capture: pages && !!capturePagesOf(next) };
-    }
-    return predicted;
+    if (predicted?.sig !== sig) predicted = { sig, shell: shellFor(next) };
+    return predicted.shell;
   }
+  // This launch's shell, or the next one's while no browser runs (what it will be once it runs).
+  const nextShell = () => (contextPromise && chosen ? shell : predict());
 
   return {
+    // The shell of the browser in use (browser/choice.mjs: "extension" or "pages", with its
+    // capture page or not), and its parts as they were read before (aliases).
+    shell: () => shell,
     chromePages: () => chrome,
     capturePages: () => capture,
     // The same, before the browser has started too (what it will be once it runs): an invite made
     // first says what the share will really carry.
-    willHaveChromePages: () => (contextPromise && chosen ? chrome : predict().pages),
-    willHaveCapturePages: () => (contextPromise && chosen ? capture : predict().capture),
+    nextShell,
+    willHaveChromePages: () => nextShell().ownPages,
+    willHaveCapturePages: () => nextShell().capturePage,
     openForPerson, isPersonTab: (p) => personTabs.has(p), openByHand,
     // The browser of the window open now ("pairbrowse", "chromium" or a path), null when none is.
     browserInUse: () => (contextPromise ? inUse : null),

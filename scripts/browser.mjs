@@ -1,7 +1,8 @@
 // The PairBrowse browser: a normal headed Chromium the daemon drives over a private pipe (no
 // debugging port). On macOS it's a pinned ungoogled-chromium build, which has a switch to hide the
 // profile button, copied once into ~/.pairbrowse/browser under the name
-// PairBrowse with the PairBrowse icon. Elsewhere it's Playwright's own Chromium. It loads one
+// PairBrowse with the PairBrowse icon. Elsewhere it's Playwright's own Chromium; where a native
+// PairBrowse build is pinned (macOS, Linux), that build is the default (browser/choice.mjs). It loads one
 // extension of its own and no others: ui/ (the PairBrowse side panel and pages, which
 // talks only to the key-protected live view on 127.0.0.1). Its colors come from Chromium's own
 // color theme, set in the profile (profilePreferences), so there's no "Installed theme" bar.
@@ -12,8 +13,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash, randomBytes, randomInt } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, readdirSync, chmodSync, copyFileSync, statSync, accessSync, constants as fsConstants } from "node:fs";
-import { dirname, join, isAbsolute } from "node:path";
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, readdirSync, chmodSync, copyFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
 import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
@@ -99,38 +100,9 @@ const isPanelPath = (p) => typeof p === "string" && /[/\\]scripts[/\\]browser[/\
 export const oldPanelIds = (secure, panelId = panelExtensionId()) => Object.entries(secure?.extensions?.settings || {})
   .filter(([id, entry]) => id !== panelId && (id === pathPanelId() || isPanelPath(entry?.path))).map(([id]) => id);
 
-// Which browser PairBrowse runs (config "browser"): "pairbrowse" (the native build), "chromium"
-// (ensureBrowser below: ungoogled-chromium on macOS, Playwright's Chromium elsewhere, with the
-// side panel), or an absolute path to a Chromium-based browser of your own (launched like
-// "chromium", with the side panel). A path that isn't an executable file, or any other value, is
-// "chromium" with a problem line for the helper's log. Unset: the older names (browserEngine,
-// executablePath), read as before and not checked; else "pairbrowse" where a build is pinned for
-// this computer (native), "chromium" otherwise, with set false (nobody chose yet).
-// Returns { browser, set, executablePath (the program to launch, null: the one PairBrowse
-// provides), problem }. exists / executable: file checks (tests pass stand-ins).
-const isFile = (p) => { try { return statSync(p).isFile(); } catch { return false; } };
-const isExecutable = (p) => { try { accessSync(p, fsConstants.X_OK); return true; } catch { return false; } };
-export function browserChoice(config = {}, { native = false, exists = isFile, executable = isExecutable } = {}) {
-  const given = config?.browser;
-  const chromium = (problem) => ({ browser: "chromium", set: true, executablePath: null, problem });
-  if (typeof given === "string") {
-    if (given === "pairbrowse") return { browser: "pairbrowse", set: true, executablePath: null, problem: null };
-    if (given === "chromium") return chromium(null);
-    if (isAbsolute(given)) {
-      let ok = false;
-      try { ok = !!exists(given) && !!executable(given); } catch {}
-      return ok ? { browser: given, set: true, executablePath: given, problem: null } : chromium(`browser: ${given} isn't an executable file; using Chromium instead`);
-    }
-    return chromium('browser must be "pairbrowse", "chromium" or an absolute path; using Chromium');
-  }
-  // The older names, as they were read before "browser" existed.
-  const path = typeof config?.executablePath === "string" && config.executablePath ? config.executablePath : null;
-  // (pairbrowse with a path: a native build of your own, used as it is.)
-  if (config?.browserEngine === "pairbrowse") return { browser: "pairbrowse", set: true, executablePath: path, problem: null };
-  if (path && (config?.browserEngine === "chromium" || config?.browserEngine === "auto" || config?.browserEngine == null)) return { browser: path, set: true, executablePath: path, problem: null };
-  if (config?.browserEngine === "chromium") return chromium(null);
-  return { browser: native ? "pairbrowse" : "chromium", set: false, executablePath: null, problem: null };
-}
+// Which browser PairBrowse runs (config "browser") and its older names: browser/choice.mjs, the one
+// place they are read.
+export { browserChoice } from "./browser/choice.mjs";
 
 // The ungoogled-chromium build PairBrowse uses on macOS. Pinned: a new version is a deliberate
 // change here, with the SHA-256 from its GitHub release. Builds are notarized by the project.
@@ -361,6 +333,26 @@ export function launchArgs(config = {}, { firstRun = false, chromePages = false,
     ...(extra.some((a) => a.startsWith("--headless")) ? ["--disable-notifications"] : []),
     ...extra.filter((a) => !a.startsWith(ENABLE)),
   ];
+}
+
+// The launch options every launch of the PairBrowse browser shares, built once here: the helper's
+// (daemon/context.mjs, which adds its own signal handling) and the install self-check's
+// (native-check.mjs). shell: the browser's (browser/choice.mjs). Its own side panel is the only
+// extension a browser loads; a build with its own pages loads none and opens its startup page
+// (PairBrowse's new tab page), not the driver's about:blank (plans/555 D1.2), unless blankStart
+// (the self-check, which drives its first tab to a page of its own). firstRun: a new profile
+// (prepareProfile). helper: { origin, keyFile, captureKeyFile? } for the browser's own pages, or
+// null (the self-check has no live view). env, executablePath: as Playwright takes them.
+export function launchOptions(config = {}, { shell, firstRun = false, helper = null, env, executablePath, blankStart = false } = {}) {
+  const ownPages = !!shell?.ownPages;
+  return {
+    headless: false,
+    env,
+    executablePath,
+    viewport: null,
+    ignoreDefaultArgs: ownPages && !blankStart ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"],
+    args: launchArgs(config, { firstRun, chromePages: ownPages, helper }),
+  };
 }
 
 // The page script (scripts/hud.js: bottom bar, badge, cursor, tab spark, your-activity recorder)

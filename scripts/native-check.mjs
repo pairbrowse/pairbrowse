@@ -6,9 +6,10 @@ import { createRequire } from "node:module";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { paths, loadConfig } from "./paths.mjs";
-import { launchArgs, prepareProfile, panelExtensionId, THEME_COLOR, hudScript } from "./browser.mjs";
+import { launchOptions, prepareProfile, panelExtensionId, THEME_COLOR, hudScript } from "./browser.mjs";
+import { engineConfig, shellOf } from "./browser/choice.mjs";
 import { launchEngine } from "./engine.mjs";
-import { nativeManifest, chromePages } from "./native-engine.mjs";
+import { nativeManifest } from "./native-engine.mjs";
 import { ensureRuntime } from "./runtime.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "./display.mjs";
 import { loadBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
@@ -94,8 +95,9 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
   mkdirSync(browserDir, { recursive: true });
   const scratch = mkdtempSync(join(browserDir, ".selfcheck-"));
   const profile = join(scratch, "profile");
-  let chrome = false; // a manifest that doesn't read fails the version check below
-  try { chrome = chromePages(nativeManifest(exec)); } catch {}
+  const engine = engineConfig(config, { binary: "native", executablePath: exec });
+  const shell = shellOf(engine); // a manifest that doesn't read: the extension's (the version check below fails it)
+  const chrome = shell.ownPages;
   prepareProfile(profile, undefined, { chromePages: chrome, layout: config.layout });
   const site = await checkServer();
   const passed = [];
@@ -103,8 +105,11 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
   let ctx = null;
   const work = (async () => {
     if (needsVirtualDisplay(config, env)) screen = await startVirtualDisplay(log, { name: "Xauthority-check" });
-    ctx = await launchEngine(chromium, { ...config, browserEngine: "pairbrowse", executablePath: exec }, profile,
-      { headless: false, env: { ...env, ...(screen?.env || {}) }, executablePath: exec, viewport: null, ignoreDefaultArgs: ["--disable-extensions"], args: launchArgs(config, { chromePages: chrome }) }, log);
+    // Launched as the helper launches it (browser.mjs launchOptions), on purpose without three
+    // things: no live view (no helper switches), a plain about:blank first tab whatever the
+    // build's start page (blankStart: the check drives that tab), and never firstRun (on macOS
+    // --no-startup-window would leave no first tab to drive).
+    ctx = await launchEngine(chromium, engine, profile, launchOptions(config, { shell, env: { ...env, ...(screen?.env || {}) }, executablePath: exec, blankStart: true }), log);
     const version = ctx.browser()?.version() || "";
     if (!version.includes(nativeManifest(exec).version)) throw new Error(`the browser reports version ${version || "(none)"}`);
     passed.push(`launches (${version})`);

@@ -15,8 +15,9 @@ export function validateEngine(config, nodeVersion = process.versions.node) {
 }
 
 // The native browser keeps its own profile: never open the Chromium one with it.
+export const nativeProfile = (profile) => join(profile, "pairbrowse-native");
 export function engineProfile(config, profile) {
-  return config.browserEngine === "pairbrowse" ? join(profile, "pairbrowse-native") : profile;
+  return config.browserEngine === "pairbrowse" ? nativeProfile(profile) : profile;
 }
 
 // Chromium's own sandbox (renderer and GPU processes walled off from the computer) is on unless

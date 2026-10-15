@@ -20,6 +20,7 @@ import { paths, loadConfig, saveConfig } from "./paths.mjs";
 import { prepareProfile, browserChoice } from "./browser.mjs";
 import { engineProfile } from "./engine.mjs";
 import { nativeManifest, chromePages } from "./native-engine.mjs";
+import { engineConfig, shellFrom } from "./browser/choice.mjs";
 import { selfCheck } from "./native-check.mjs";
 import { NATIVE, installHint, pinnedArchive, ensureEngine, installEngine } from "./native-pack.mjs";
 import { BRANDING, brandNativeApp, registerApp, verifySignature } from "./macos-app.mjs";
@@ -214,8 +215,8 @@ export async function installNative(archive, { sha256, log = () => {}, check = s
       if (register && layout.platform === "macos") await registerApp(d.app);
 
       // The profile, set up for it (config.json isn't written: "browser" picks the browser).
-      const using = { ...config, browserEngine: "pairbrowse", executablePath: d.exec };
-      try { prepareProfile(engineProfile(using, profileDir(currentSession())), undefined, { chromePages: chromePages(manifest), layout: using.layout }); } catch {}
+      const using = engineConfig(config, { binary: "native", executablePath: d.exec });
+      try { prepareProfile(engineProfile(using, profileDir(currentSession())), undefined, { chromePages: shellFrom(manifest).ownPages, layout: using.layout }); } catch {}
 
       log("checking the new browser");
       const passed = await check(d.exec, { config: using, log });

@@ -8,6 +8,7 @@
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
 import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperConnection, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
+import { createPictures } from "./pictures.js";
 import { AGENT_COLOR } from "../vocab.js";
 import { ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
@@ -25,8 +26,9 @@ const native = () => document.documentElement.dataset.host === "native";
 
 // DRIVING_MS (ui/limits.js): "Working…" for this long after the agent's last action.
 const ACTIVITY_SHOWN = 12;
-const PICTURE_ID = /^[0-9a-f]{12}$/;
 let base = null;
+// The Pictures tab (pictures.js).
+const pictures = createPictures({ base: () => base });
 let everLive = false; // the helper's stream has opened at least once (an address that never answers is no helper)
 // When each agent of this browser acted last (who -> time; the newest 50): the card says its own
 // agent is working on that agent's actions only, never on a joiner's line, a note or another
@@ -78,7 +80,7 @@ function selectTab(name) {
   // The goal log is read only while the Agent tab is in front: another tab drops its pending read.
   if (name === "agent") { if (checklistStale) scheduleChecklist(); }
   else { clearTimeout(checklistTimer); checklistTimer = 0; checklistPending = false; }
-  if (name === "pictures") showPictures();
+  if (name === "pictures") pictures.show();
   if (name === "page") showOutline();
   if (name === "tools") tools.show();
   revealed($(`pane-${name}`)); // what it holds is drawn as it was (open sections open), only the pane moves
@@ -175,7 +177,7 @@ function applyDock(s) {
   if (name !== "open") share.close(false);
   if (name === "hidden" || name === "rail") sleepTimers();
   else if (was === "hidden" || was === "rail") wakeTimers();
-  else if (name === "open" && document.body.dataset.tab === "pictures") showPictures();
+  else if (name === "open" && document.body.dataset.tab === "pictures") pictures.show();
 }
 if (pb) {
   pb.layout.get().then(({ state }) => { lastLayout = state; applyDock(state); }).catch(() => {});
@@ -640,82 +642,14 @@ function drawPeople() {
   syncList($("people"), [...rows, ...(idle ? [quietLine] : [])]);
 }
 
-// ---- Pictures: the picture last sent to the agent, fetched only while the tab is in front and
-// the page is visible, held as a blob: URL until the next replaces it. ----
-const known = new Map(); // id -> card, from timeline.json and the timeline events (newest 50)
-let newest = null, shownId = null, pictureUrl = null, timelineKnown = false, timelineBusy = false, pictureSeq = 0;
-const picturesShown = () => !document.hidden && document.body.dataset.tab === "pictures" && !["rail", "hidden"].includes(document.documentElement.dataset.dock);
-const remember = (card) => {
-  if (!card || !PICTURE_ID.test(card.id || "")) return;
-  known.delete(card.id);
-  known.set(card.id, card);
-  if (known.size > 50) known.delete(known.keys().next().value);
-};
-async function showPictures() {
-  if (!base || !picturesShown()) return;
-  if (!timelineKnown) {
-    if (timelineBusy) return;
-    timelineBusy = true;
-    const from = base;
-    // null: no timeline (404, timeline off); undefined: not reached, asked again next time.
-    const r = await fetch(base + "timeline.json", { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.json() : x.status === 404 ? null : undefined)).catch(() => undefined);
-    timelineBusy = false;
-    if (from !== base || r === undefined) return;
-    timelineKnown = true;
-    const cards = Array.isArray(r?.cards) ? r.cards.filter((c) => c && c.note !== true && PICTURE_ID.test(c.id || "")) : [];
-    for (const c of cards) remember(c);
-    if (!newest && cards.length) newest = cards.reduce((a, b) => ((Number(b.t) || 0) >= (Number(a.t) || 0) ? b : a));
-  }
-  if (newest && newest.id !== shownId) drawPicture(newest);
-}
-function showCard(card) {
-  if (!card || !PICTURE_ID.test(card.id || "")) return;
-  newest = card;
-  if (base && picturesShown()) drawPicture(card);
-}
-async function drawPicture(card) {
-  if (!picturesShown()) return;
-  const seq = ++pictureSeq;
-  const blob = await fetch(`${base}timeline/${card.id}.jpg`, { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.blob() : null)).catch(() => null);
-  if (seq !== pictureSeq || !blob) return;
-  const url = URL.createObjectURL(blob);
-  const img = $("picture-img");
-  img.src = url;
-  img.alt = card.caption || "Picture sent to the agent";
-  const t = Number(card.t);
-  const time = $("picture-time");
-  time.textContent = Number.isFinite(t) && t > 0 ? clock(t) : "";
-  if (Number.isFinite(t) && t > 0) time.dateTime = new Date(t).toISOString(); else time.removeAttribute("datetime");
-  $("picture-caption").textContent = card.caption || "";
-  if (pictureUrl) URL.revokeObjectURL(pictureUrl);
-  pictureUrl = url;
-  shownId = card.id;
-  $("picture").hidden = false;
-  $("pictures-empty").hidden = true;
-}
-
-// Another helper: nothing of the last one's pictures stays on screen as if current.
-function forgetPictures() {
-  known.clear();
-  newest = null;
-  shownId = null;
-  timelineKnown = false;
-  pictureSeq++;
-  if (pictureUrl) URL.revokeObjectURL(pictureUrl);
-  pictureUrl = null;
-  $("picture-img").removeAttribute("src");
-  $("picture").hidden = true;
-  $("pictures-empty").hidden = false;
-}
-
 // One stream per address (stream.js helperConnection); another helper's pictures and session
 // tools are its own.
 const connect = helperConnection({
   kind: pb ? "right" : "",
   onState: (s) => { if (s === "live") everLive = true; document.body.dataset.s = s; setDriver(); drawSessionCard(); },
-  onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") showPictures(); showOutline(); tools.stale(); },
+  onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") pictures.show(); showOutline(); tools.stale(); },
 }, (stream, url, was) => {
-  if (was) { forgetPictures(); forgetSessionTools(); tools.forget(); }
+  if (was) { pictures.forget(); forgetSessionTools(); tools.forget(); }
   base = url;
   const on = stream.on;
   on("status", (s) => {
@@ -806,19 +740,8 @@ const connect = helperConnection({
     recording = r?.recording ? { since: r.since || Date.now() } : null;
     if (was !== !!recording || recording) drawRecord();
   });
-  // The timeline (pictures sent to the agent): a new card replaces the one shown; "show" brings
-  // one to the front. Notes carry no picture.
-  on("timeline", (e) => {
-    if (e?.op === "add" && e.card && e.card.note !== true) { remember(e.card); showCard(e.card); }
-    else if (e?.op === "show" && PICTURE_ID.test(e.id || "")) {
-      const card = e.card || known.get(e.id) || { id: e.id, caption: "" };
-      newest = card;
-      // selectTab draws `newest` itself; fetch once, and not again for the card on screen.
-      if (document.body.dataset.tab !== "pictures") selectTab("pictures");
-      else if (shownId !== card.id) showCard(card);
-    }
-    // "remove": the picture shown stays until the next replaces it.
-  });
+  // The timeline (pictures sent to the agent): pictures.js.
+  on("timeline", (e) => pictures.timeline(e, () => selectTab("pictures")));
   on("downloads", tools.downloads);
   on("handoffs", tools.handoffs);
   // The tab the left dock's Tools row asked for (POST layout's tab, relayed, never kept). The
@@ -867,7 +790,7 @@ function wakeTimers() {
   if (Date.now() - cardActedAt() < DRIVING_MS) armDrive();
   if (checklistStale) scheduleChecklist();
   if (recording) drawRecord();
-  if (document.body.dataset.tab === "pictures") showPictures();
+  if (document.body.dataset.tab === "pictures") pictures.show();
   if (document.body.dataset.tab === "tools") tools.show();
 }
 document.addEventListener("visibilitychange", () => (document.hidden ? sleepTimers() : wakeTimers()));

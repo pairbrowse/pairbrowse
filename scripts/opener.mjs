@@ -68,7 +68,7 @@ export function writeOpener({ node = process.execPath, script, home = paths.home
   return file;
 }
 
-// The socket line scripts/open.mjs sends (mark: guard.mjs HOOK_MARK, the private socket's
+// The socket line scripts/open.mjs sends (mark: hookline.mjs HOOK_MARK, the private socket's
 // one-line requests).
 export const openLine = (mark) => `${mark},${JSON.stringify({ op: OPEN_OP, v: 1 }).slice(1)}\n`;
 

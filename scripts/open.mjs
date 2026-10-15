@@ -5,7 +5,7 @@
 // it: the bare browser that ran this then ends without a window. Any other exit (no answer in
 // time, the helper declined, no helper could start) and the browser opens as a plain window, as
 // before. Prints nothing secret; the reason for a no goes to stderr.
-import { HOOK_MARK } from "./guard.mjs";
+import { HOOK_MARK, requestLine } from "./hookline.mjs";
 import { connectOnce, connectLocal } from "./launcher/daemon-connect.mjs";
 import { openLine, OPEN_ANSWER_MS } from "./opener.mjs";
 import { within } from "./util.mjs";
@@ -13,20 +13,9 @@ import { within } from "./util.mjs";
 const say = (s) => process.stderr.write(`pairbrowse open: ${s}\n`);
 
 // The answer line ({ ok, why? }) to one open request on a connected socket, or null.
-export function askOpen(sock, waitMs = OPEN_ANSWER_MS) {
-  return within(waitMs, new Promise((resolve) => {
-    let buf = "";
-    sock.setEncoding("utf8");
-    sock.on("data", (d) => {
-      buf += d;
-      const i = buf.indexOf("\n");
-      if (i < 0) { if (buf.length > 4096) resolve(null); return; }
-      try { resolve(JSON.parse(buf.slice(0, i))); } catch { resolve(null); }
-    });
-    sock.on("error", () => resolve(null));
-    sock.on("close", () => resolve(null));
-    sock.write(openLine(HOOK_MARK));
-  })).finally(() => sock.destroy());
+export async function askOpen(sock, waitMs = OPEN_ANSWER_MS) {
+  const line = await requestLine(sock, openLine(HOOK_MARK), waitMs);
+  try { return line === null ? null : JSON.parse(line); } catch { return null; }
 }
 
 async function main() {

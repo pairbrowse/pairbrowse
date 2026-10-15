@@ -13,6 +13,7 @@
 import { paths } from "./paths.mjs";
 import { isCodexTool, approvalAsk, decide, forHost, forMode, ask } from "./rules/decide.mjs";
 import { BROWSER_PREFIX } from "./rules/policy.mjs";
+import { HOOK_MARK, requestLine } from "./hookline.mjs";
 
 // The rules live in rules/ (decide.mjs, clicks.mjs, upload.mjs, network.mjs); re-exported here for
 // the hook's older importers.
@@ -31,8 +32,8 @@ export { isCodexTool, decide, forHost, forMode, APPROVAL_TOOLS, approvalAsk, app
 // closes. Nothing here ever allows by mistake: any error, timeout or other answer prints nothing, and
 // the terminal's prompt stays as the only one.
 
-// The first bytes of a hook's line on the private socket (an MCP client's never start so).
-export const HOOK_MARK = '{"pairbrowse":"hook"';
+// The first bytes of a hook's line on the private socket, and the one-line request (hookline.mjs).
+export { HOOK_MARK } from "./hookline.mjs";
 // How long an ask waits in the browser before the terminal is the only place left.
 const waitEnv = Number(process.env.PAIRBROWSE_APPROVAL_WAIT_MS);
 export const APPROVAL_WAIT_MS = Number.isFinite(waitEnv) && process.env.PAIRBROWSE_APPROVAL_WAIT_MS !== "" ? Math.min(600_000, Math.max(100, waitEnv)) : 120_000;
@@ -65,23 +66,9 @@ export async function permissionRequest(input, { socketPath = paths.socket, wait
     const name = tool.replace(BROWSER_PREFIX, "");
     if (!approvalAsk(name, ti)) return "";
     const net = await import("node:net");
-    const { within } = await import("./util.mjs");
     const chain = await ancestors();
     sock = net.connect(socketPath);
-    const s = sock;
-    const line = await within(waitMs + 5000, new Promise((resolve) => {
-      let buf = "";
-      s.setEncoding("utf8");
-      s.on("connect", () => s.write(`${HOOK_MARK},${JSON.stringify({ op: "approval", v: 1, tool: name, input: ti, ancestors: chain }).slice(1)}\n`));
-      s.on("data", (d) => {
-        buf += d;
-        const i = buf.indexOf("\n");
-        if (i >= 0) resolve(buf.slice(0, i));
-        else if (buf.length > 4096) resolve("");
-      });
-      s.on("error", () => resolve(""));
-      s.on("close", () => resolve(buf));
-    }));
+    const line = await requestLine(sock, `${HOOK_MARK},${JSON.stringify({ op: "approval", v: 1, tool: name, input: ti, ancestors: chain }).slice(1)}`, waitMs + 5000, { partialOnClose: true });
     let answer = "";
     try { answer = JSON.parse(line || "null")?.answer; } catch {}
     if (answer === "allow" || answer === "site") return JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } });

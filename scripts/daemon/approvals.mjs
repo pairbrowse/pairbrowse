@@ -23,7 +23,8 @@
 // page script checks the same first (scripts/hud.js).
 import { randomBytes } from "node:crypto";
 import { approvalAsk, approvalKey, APPROVAL_TOOLS } from "../rules/decide.mjs";
-import { APPROVAL_WAIT_MS, HOOK_MARK } from "../guard.mjs";
+import { APPROVAL_WAIT_MS } from "../guard.mjs";
+import { HOOK_MARK } from "../hookline.mjs";
 import { within } from "../util.mjs";
 import { AGENT_COLOR } from "../../ui/vocab.js";
 

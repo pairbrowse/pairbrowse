@@ -11,8 +11,9 @@
 // config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
 import { $, el, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
+import { hostKind, followHelper } from "../helper.js";
 
-const NATIVE = !!window.pairbrowse;
+const NATIVE = hostKind() === "native";
 const HOST = NATIVE ? "The PairBrowse browser" : "PairBrowse extension in a test browser";
 document.body.dataset.host = NATIVE ? "pairbrowse" : "chromium";
 $("about-host").textContent = HOST;
@@ -51,19 +52,6 @@ function setConn(state, text) {
   for (const b of document.querySelectorAll("#tl-on, #ask-on, #pics-on, #dl-reset, #diag-copy, #report-open, .needs-live")) b.disabled = state !== "live";
 }
 
-// The live view's address with the owner's key: from the browser, or from the extension's session
-// storage (in memory, never on disk), as the side panel gets it.
-function helperBase() {
-  if (NATIVE) {
-    return Promise.resolve().then(() => window.pairbrowse.session.helper())
-      .then((h) => (h && h.origin && h.key ? `${h.origin}/${h.key}/` : null)).catch(() => null);
-  }
-  try {
-    const store = globalThis.chrome?.storage?.session;
-    if (!store) return Promise.resolve(null);
-    return store.get("view").then((r) => r?.view || null).catch(() => null);
-  } catch { return Promise.resolve(null); }
-}
 
 // ---- General: the browser, the docks (config.json / config) ----------------------------------
 function drawConfig(c) {
@@ -551,7 +539,6 @@ function connect(url) {
 setConn("connecting", "Connecting to PairBrowse…");
 drawDiag(null);
 $("errors-empty").textContent = "Checking…";
-if (!NATIVE) {
-  try { globalThis.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-}
-helperBase().then((b) => (b ? connect(b) : setConn("closed", NO_HELPER)));
+// The live view's address with the owner's key (ui/helper.js), and each new one the extension's
+// worker stores.
+followHelper({ connect, none: () => setConn("closed", NO_HELPER) });

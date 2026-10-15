@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { patchright } from "./live.mjs";
-import { pages, openPage, runtime } from "./helpers/ui-page.mjs";
+import { pages, openPage, runtime, sleep } from "./helpers/ui-page.mjs";
 import { startFakeHelper, merge } from "./helpers/fake-helper.mjs";
 import { UI_ROOT } from "./helpers/ui-server.mjs";
 import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";
@@ -188,7 +188,6 @@ async function revealAll(page) {
   await page.waitForTimeout(150);
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test("every page's accessibility tree has names only where Chromium allows them", { skip: !runtime, timeout: 300_000 }, async (t) => {
   const browser = await patchright(runtime).chromium.launch();

@@ -9,7 +9,7 @@ import "./helpers/home.mjs";
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { pageTest } from "./helpers/ui-page.mjs";
+import { pageTest, sleep } from "./helpers/ui-page.mjs";
 
 // ---- Part 1: Node, with stand-ins ----
 
@@ -344,7 +344,6 @@ test("take: at most 200 items, within the helper's reply limit, the rest kept in
 
 // ---- Part 2: the page in a browser ----
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // In the page: tab capture stood in by a moving canvas (picture) and an oscillator (sound).
 function fakeTabCapture() {
   window.__gum = [];

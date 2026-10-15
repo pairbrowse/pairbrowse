@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { patchright } from "./live.mjs";
-import { openPage, runtime, hostProxy } from "./helpers/ui-page.mjs";
+import { openPage, runtime, hostProxy, sleep } from "./helpers/ui-page.mjs";
 import { startUiServer } from "./helpers/ui-server.mjs";
 import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";
 import { inPage as evalIn } from "./live.mjs";
@@ -16,7 +16,6 @@ import { startFakeHelper } from "./helpers/fake-helper.mjs";
 const FIXTURE = JSON.parse(readFileSync(new URL("./fixtures/ui-approve.json", import.meta.url), "utf8"));
 const [OLDER, NEWER] = FIXTURE.push.map(([, d]) => d.item);
 const SETTLE = 1000; // the 160 ms open, the observer's 100 ms delay and the 600 ms arm
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const add = (helper, item) => helper.push("approval", { op: "add", item });
 const bodies = (helper, route) => helper.posts.filter((p) => p.route === route).map((p) => p.body);

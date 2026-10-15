@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pageTest } from "./helpers/ui-page.mjs";
+import { pageTest, sleep } from "./helpers/ui-page.mjs";
 
 // The helper's picker data: five sessions, most recently used first.
 const STATE = {
@@ -36,7 +36,6 @@ const TIGHT = { picking: false, sessions: [
     live: [{ who: "Sam", app: "Claude Code", kind: "guest" }],
     people: [{ who: "You", kind: "you", computer: "Mac" }, { who: "Alice", computer: "Linux", kind: "guest" }, { who: "Bo", computer: "Mac", kind: "guest" }] },
 ] };
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const posted = (helper, route) => helper.posts.filter((p) => p.route === route).map((p) => p.body);
 const bad = (log) => log.filter((e) => ["error", "pageerror", "rejection", "csp"].includes(e.kind));
 const msg = () => ({ text: document.getElementById("msg").textContent, kind: document.getElementById("msg").dataset.kind });

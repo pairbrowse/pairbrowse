@@ -6,11 +6,10 @@ import "./helpers/home.mjs";
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { pageTest } from "./helpers/ui-page.mjs";
+import { pageTest, sleep } from "./helpers/ui-page.mjs";
 
 const TOKENS = readFileSync(new URL("../ui/tokens.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 const root = Object.fromEntries([...TOKENS.match(/^:root\s*\{([^}]*)\}/m)[1].matchAll(/--([\w-]+)\s*:\s*([^;]+);/g)].map(([, k, v]) => [k, v.trim()]));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test("one motion language: the sheet's tokens", () => {
   assert.equal(root["dur-open"], "160ms");

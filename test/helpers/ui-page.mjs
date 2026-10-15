@@ -18,7 +18,8 @@ export const pages = () => readdirSync(UI_ROOT, { withFileTypes: true })
   .filter((d) => d.isDirectory() && existsSync(join(UI_ROOT, d.name, "index.html")))
   .map((d) => d.name).sort();
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// A wait of ms, for the tests that need one.
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // host: serve the page as http://<host>/ instead of the ui server's own origin, for a page whose
 // mode follows location.host (the approve page's bubble on pairbrowse.top-chrome). The browser

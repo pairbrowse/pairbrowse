@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pageTest, runtime } from "./helpers/ui-page.mjs";
+import { pageTest, runtime, sleep } from "./helpers/ui-page.mjs";
 import { patchright } from "./live.mjs";
 import { startFakeHelper, UNMARKED, CONFIRM_PROGRAM, CONFIRM_WEB, FILE_CHANGED, NO_APP } from "./helpers/fake-helper.mjs";
 import { startUiServer } from "./helpers/ui-server.mjs";
@@ -36,7 +36,6 @@ const CARD = { id: "0123456789ab", t: 1760169600000, caption: "Checkout page", s
 const opts = (fixtures = {}, more = {}) => ({ viewport: VIEWPORT, fixtures, ...more });
 const visible = (sel) => { const e = document.querySelector(sel); return !!e && e.checkVisibility(); };
 const text = (id) => document.getElementById(id).textContent;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const journalReads = (helper) => helper.gets.filter((r) => r === "journal.json").length;
 const posted = async (helper, route, n = 1) => { for (let i = 0; i < 40 && helper.posts.filter((p) => p.route === route).length < n; i++) await sleep(50); return helper.posts.filter((p) => p.route === route); };
 // WCAG contrast of an element's text on its composited background (its own and its ancestors'

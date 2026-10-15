@@ -5,13 +5,12 @@ import { join } from "node:path";
 import { paths } from "../paths.mjs";
 import { ensureBrowser, launchOptions, prepareProfile, panelExtensionId, resetPanelWorker, writeHelperKeyFile, dropHelperKeyFile, CAPTURE_KEY_PREFIX } from "../browser.mjs";
 import { chooseBrowser, engineConfig, shellOf } from "../browser/choice.mjs";
-import { engineProfile, nativeProfile, launchEngine, validateEngine } from "../engine.mjs";
+import { engineProfile, launchEngine, validateEngine } from "../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../native-install.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "../display.mjs";
-import { readSavedTabs } from "../tabs.mjs";
-import { validName, isTemporary, profileDir, tabsFile, currentSession, rememberSession, listSessions, createSession, deleteSession, renameSession, sessionFilesExist, profileInUse, sweepTemporary, readPeople, recordPerson } from "../sessions.mjs";
+import { validName, isTemporary, profileDir, currentSession, rememberSession, listSessions, createSession, deleteSession, renameSession, sessionFilesExist, profileInUse, sweepTemporary } from "../sessions.mjs";
 import { renameRunsSession } from "../runs.mjs";
-import { sleep, readJson, within } from "../util.mjs";
+import { within } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
 import { MEASURING } from "../native-engine.mjs";
 import { isChromePage, CHROME_PICKER, extensionUrl } from "../../ui/urls.js";
@@ -21,15 +20,13 @@ import { where } from "./where.mjs";
 import { createDownloads } from "./browser/downloads.mjs";
 import { createBrowserState } from "./browser/state.mjs";
 import { createTabs, stopRequestMirroring } from "./browser/tabs.mjs";
+import { createPicker } from "./sessions/picker.mjs";
 
 export { stopRequestMirroring };
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
 const CLEAN_MARKER = join(paths.home, "run", "clean-session");
-// The session picker: agents' first browser action waits this long for the person's pick, then
-// says what it waits for, so the agent tells them in chat instead of hanging silently.
-const PICK_WAIT_MS = Number(process.env.PAIRBROWSE_TEST_PICK_WAIT_MS) || 15_000;
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
 // A build with its own pages shows its own picker instead (CHROME_PICKER, ui/urls.js).
 // The shell of the browser an engine config launches (browser/choice.mjs shellOf): whether it is a
@@ -81,8 +78,8 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   const st = createBrowserState({ session: currentSession(), pick: null }); // browser/state.mjs
   // What the browser's parts (browser/*.mjs, sessions/*.mjs) are given, and the functions they
   // read from each other when called (api).
-  const deps = { personTabs, config, log, hud, presence, popups, hostNote, onTabClosed, status, notify };
-  const api = { getContext };
+  const deps = { personTabs, config, log, hud, presence, popups, hostNote, onTabClosed, status, notify, liveOthers };
+  const api = { getContext, switchTo, pickerUrl: () => pickerUrl() };
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
   const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
 
@@ -109,17 +106,6 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   const said = new Set(); // lines about the choice, logged once per helper run
   const once = (line) => { if (!said.has(line)) { said.add(line); log(line); } };
   const installWaiters = new Set();
-  // The session picker (config sessionPicker, on by default): the browser's first tab asks the
-  // person which session to use, unless an agent chose first. Never on the very first start
-  // (nothing to go back to) or in a cloud container (nobody sees the window).
-  // pick.state: "off", "pending" (shown at the next launch), "showing", "done".
-  // Something to go back to: a browser that ran before (Chrome's "Default" folder, in the Chromium
-  // profile or the native build's own: engine.mjs engineProfile), saved tabs or another kept session.
-  const ranBefore = (dir) => existsSync(join(dir, "Default")) || existsSync(join(nativeProfile(dir), "Default"));
-  const hasHistory = () => ranBefore(profileDir(st.session)) || listSessions().some((s) => !s.temporary && (s.name !== "default" || s.tabs > 0));
-  const pick = { state: config.sessionPicker !== false && process.env.CLAUDE_CODE_REMOTE !== "true" && hasHistory() ? "pending" : "off", page: null, text: "" };
-  pick.done = new Promise((r) => { pick.resolve = r; });
-  st.pick = pick;
 
   const profile = () => engineProfile(st.engine || config, profileDir(st.session));
 
@@ -128,7 +114,9 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   // Downloads: kept in the Downloads folder, and Playwright's temporary ones forgotten (browser/downloads.mjs).
   const { forgetTemporaryDownloads } = Object.assign(api, createDownloads({ personTabs, config, hostNote, log, onDownload, profile: () => profile() }));
   // The tabs: finding them, the cap, what watches each page, saved tabs coming back (browser/tabs.mjs).
-  const { focusing, findPage, openPages, pageAt, touch, capTabs, adopt, notePlaces, successorOf, restore, takeRestoredActive, openForPerson } = Object.assign(api, createTabs(st, deps, api));
+  const { findPage, openPages, pageAt, touch, capTabs, adopt, notePlaces, successorOf, restore, takeRestoredActive, openForPerson } = Object.assign(api, createTabs(st, deps, api));
+  // The session picker (sessions/picker.mjs): sets st.pick.
+  const { showPicker, reopenPicker, picked, waitForPick, pickerState, pickSession, pickedJoin, switchForPerson, agentChose, recordPersonHere } = Object.assign(api, createPicker(st, deps, api));
 
   // The browser the person chose ("browser"): the native PairBrowse browser (the pinned build,
   // installed and checked when it's missing or a new version is pinned, scripts/native-install.mjs),
@@ -241,7 +229,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     // script comes now, since under Patchright it isn't there until ensure adds it.
     ctx.on("page", (p) => { adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => { if (!isChromePage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => capTabs(ctx, p).catch(() => {}), 300); });
     step(`first page (${ctx.pages().length} open)`);
-    if (pick.state === "pending") showPicker(ctx, { own });
+    if (st.pick.state === "pending") showPicker(ctx, { own });
     else restore(ctx, null, { own });
     const mine = st.contextPromise;
     ctx.on("close", () => {
@@ -251,7 +239,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
       // calls in flight hear of it.
       if (!st.switching) for (const fn of closeWatchers) try { fn(); } catch {}
       // Closed while asking: the next browser asks again.
-      if (pick.state === "showing") { pick.state = "pending"; pick.page = null; }
+      if (st.pick.state === "showing") { st.pick.state = "pending"; st.pick.page = null; }
       // Only the browser in use: an older one closing late never drops the next one.
       if (st.contextPromise === mine) st.contextPromise = null;
       hud.clearSparks();
@@ -289,161 +277,14 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     return ctx;
   }
 
-  // ---- the session picker ----------------------------------------------------------------
 
-  // Its tab, instead of the saved tabs (they come back once the person chose this session).
-  // reopened: asked for again from the side panel, in a tab of its own; the open tabs stay.
-  function showPicker(ctx, { reopened = false, own = false } = {}) {
-    pick.state = "showing";
-    if (!reopened) st.tabTracker = null; // the saved tabs stay as they were until the person chose
-    (async () => {
-      // The browser may start without a window and open its first one a moment later: use that.
-      for (let i = 0; !reopened && i < 20 && !ctx.pages().length; i++) await sleep(150);
-      const page = reopened ? await ctx.newPage() : ctx.pages()[0] || (await ctx.newPage());
-      pick.page = page;
-      // The extension may still be loading right after launch: try a few times.
-      for (let i = 0; i < 20 && pick.state === "showing" && !page.isClosed(); i++) {
-        const at = Date.now();
-        const went = await page.goto(pickerUrl(), { waitUntil: "domcontentloaded", timeout: 5000 }).then(() => "ok", (e) => String(e?.message || e).split("\n")[0].slice(0, 80));
-        log(`launch: picker goto try ${i + 1} ${Date.now() - at} ms: ${went}`);
-        if (went === "ok") break;
-        await sleep(250);
-      }
-      await focusing(own, () => page.bringToFront().catch(() => {}));
-      log("session picker shown");
-    })().catch((e) => log("session picker", e?.message || e));
-  }
 
-  // The person asked to switch (the side panel's "End session", the right dock in the browser): the picker opens again in a
-  // new tab, and agents' next actions wait for the pick as at the start. Agents can't ask for it.
-  async function reopenPicker() {
-    if (pick.state === "showing") { await within(3000, Promise.resolve(pick.page?.bringToFront()).catch(() => {})); return { text: "The session picker is open." }; }
-    const ctx = await getContext();
-    pick.reopened = true;
-    pick.text = "";
-    pick.done = new Promise((r) => { pick.resolve = r; });
-    showPicker(ctx, { reopened: true });
-    return { text: "Pick a session in the new tab." };
-  }
 
-  // A choice was made (by the person in the picker, or by an agent): waiting agents go on.
-  function picked(text) {
-    if (pick.state === "done" || pick.state === "off") { pick.state = "done"; return; }
-    pick.state = "done";
-    pick.text = text;
-    pick.resolve(text);
-    log(`session picked: ${text}`);
-  }
 
-  // Before an agent's first browser action: starts the browser (which shows the picker) and waits
-  // for the person's pick, at most PICK_WAIT_MS. Returns the pick's text, "" when there was no
-  // picker, or { waiting } when it timed out.
-  async function waitForPick(signal) {
-    if (pick.state === "off" || pick.state === "done") return "";
-    await getContext();
-    if (pick.state !== "showing") return pick.state === "done" ? pick.text : "";
-    let timer;
-    let onAbort;
-    const aborted = new Promise((r) => { onAbort = () => r(null); signal?.addEventListener("abort", onAbort, { once: true }); });
-    const r = await Promise.race([pick.done, new Promise((ok) => { timer = setTimeout(() => ok(null), PICK_WAIT_MS); }), aborted]);
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", onAbort);
-    return r === null ? { waiting: true } : r;
-  }
 
-  // What the picker shows: the kept sessions, most recently used first, with their saved tabs'
-  // sites, who used them (people and agents, their app and kind of computer) and, for the open
-  // one, who is in it right now.
-  function pickerState() {
-    const sessions = listSessions().filter((s) => !s.temporary).map((s) => {
-      const { tabs } = readSavedTabs(tabsFile(s.name));
-      const sites = [...new Set(tabs.map((t) => { try { return new URL(t.url).hostname.replace(/^www\./, ""); } catch { return ""; } }).filter(Boolean))];
-      const people = readPeople(s.name);
-      const used = Math.max(Date.parse(readJson(tabsFile(s.name))?.savedAt || "") || 0, people[0]?.at || 0);
-      return { name: s.name, tabs: tabs.length, sites: sites.slice(0, 4), current: s.name === st.session, used,
-        people: people.map(({ who, app, computer, kind }) => ({ who, app, computer, kind })),
-        live: s.name === st.session ? liveOthers().slice(0, 8) : [] };
-    });
-    // The open one (the last used) first, then by when they were used.
-    sessions.sort((a, b) => Number(b.current) - Number(a.current) || b.used - a.used || a.name.localeCompare(b.name));
-    return { picking: pick.state === "showing", where: where(), sessions };
-  }
 
-  function switchFromPicker(name) {
-    st.pickSwitch = switchTo(name).catch((e) => log("pick", e?.message || e)).finally(() => { st.pickSwitch = null; });
-  }
 
-  // The person's pick: { action: "use", name } (a saved session) or { action: "new" } (fresh and
-  // clean). Joining is wired in daemon.mjs (it needs the join code checks). Returns { text, error }.
-  async function pickSession({ action, name } = {}) {
-    if (pick.state !== "showing") return { text: "A session is already chosen.", error: true };
-    if (action === "use") {
-      if (!validName(name) || isTemporary(name) || !listSessions().some((s) => s.name === name)) return { text: `No session "${name}".`, error: true };
-      if (name === st.session && pick.reopened) {
-        // Asked for again, and the person kept the open session: the picker just closes.
-        pick.reopened = false;
-        picked(`The person kept session "${name}" in the browser's session picker.`);
-        await pick.page?.close().catch(() => {});
-        return { text: `Staying in session "${name}".` };
-      }
-      pick.reopened = false;
-      if (name === st.session) {
-        // Back to the session that's open: the picker's tab shows its tabs coming back.
-        const ctx = await getContext();
-        picked(`The person picked session "${name}" in the browser. Its tabs are reopening.`);
-        await pick.page?.goto("about:blank").catch(() => {});
-        restore(ctx);
-        return { text: `Opening session "${name}".` };
-      }
-      // Waiting agents go on at once; their next action waits for the new browser (ready()).
-      switchFromPicker(name);
-      picked(`The person picked session "${name}" in the browser. Its tabs are reopening.`);
-      return { text: `Opening session "${name}".` };
-    }
-    if (action === "new") {
-      pick.reopened = false;
-      const target = `clean-${Date.now()}`;
-      createSession(target);
-      switchFromPicker(target);
-      picked("The person started a fresh session in the browser: a clean, throwaway browser with no logins, deleted when you switch away.");
-      return { text: "Starting a fresh session." };
-    }
-    return { text: 'Use action "use" or "new".', error: true };
-  }
 
-  // The person joined a shared session from the picker: this session stays, without its saved
-  // tabs (the shared ones open in a window of their own).
-  // The picker's tab stays, saying what happens next; the saved tabs open after it.
-  function pickedJoin(text) {
-    if (pick.state !== "showing") return;
-    picked(text);
-    if (pick.reopened) { pick.reopened = false; return; } // the open tabs are still there
-    st.contextPromise?.then(async (ctx) => restore(ctx, await ctx.newPage())).catch((e) => log("restore", e?.message || e));
-  }
-
-  // The person switches away from the session that's open (POST pick while no picker shows: the
-  // session switcher, the new tab page's chips; daemon/pick.mjs checks who else is at work first):
-  // { action: "use", name } or { action: "new" }. Checked here at once, then the browser restarts
-  // on the other session after the answer went out (the page that asked closes with the window).
-  // Returns { text } or { text, error: true }.
-  async function switchForPerson({ action, name } = {}) {
-    if (pick.state === "showing") return pickSession({ action, name });
-    if (st.switching) return { text: "The browser is switching sessions; try again in a moment.", error: true };
-    if (st.restoring) return { text: "Tabs are still reopening; switch once they're back.", error: true };
-    if (action === "use") {
-      if (!validName(name) || isTemporary(name) || !listSessions().some((s) => s.name === name)) return { text: `No session "${name}".`, error: true };
-      if (name === st.session) return { text: `You're in session "${name}" already.` };
-      setImmediate(() => switchTo(name).catch((e) => log("switch", e?.message || e)));
-      return { text: `Opening session "${name}".` };
-    }
-    if (action === "new") {
-      const target = `clean-${Date.now()}`;
-      createSession(target);
-      setImmediate(() => switchTo(target).catch((e) => log("switch", e?.message || e)));
-      return { text: "Starting a fresh session." };
-    }
-    return { text: 'Use action "use" or "new".', error: true };
-  }
 
   // ---- browser sessions ----------------------------------------------------------------
 
@@ -454,10 +295,10 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   async function switchTo(name, { renameFrom = null } = {}) {
     if (!renameFrom && name === st.session && st.contextPromise) {
       // The open session, chosen by an agent while the picker is up: the picker goes, its tabs come back.
-      if (pick.state === "showing") {
+      if (st.pick.state === "showing") {
         const ctx = await st.contextPromise;
         picked(`Session "${name}" was chosen by an agent. Its tabs are reopening.`);
-        await pick.page?.goto("about:blank").catch(() => {});
+        await st.pick.page?.goto("about:blank").catch(() => {});
         restore(ctx);
       }
       return;
@@ -519,7 +360,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     if (!st.contextPromise) return { error: "The browser isn't open; open it first, then rename its session." };
     if (st.switching) return { error: "The browser is switching sessions; try again in a moment." };
     if (st.restoring) return { error: "Tabs are still reopening; rename the session once they're back." };
-    if (pick.state === "showing") return { error: "The session picker is open; pick a session first." };
+    if (st.pick.state === "showing") return { error: "The session picker is open; pick a session first." };
     if (from === "default") return { error: "The default session keeps its name; start a named session to name it." };
     if (isTemporary(from)) return { error: "A clean session can't be renamed: it is deleted when you switch away." };
     if (to === from) return { ok: true, name: from, from, restarting: false };
@@ -618,7 +459,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     if (!pages) return { ok: false, why: "the browser in use here isn't the PairBrowse browser (\"browser\" in ~/.pairbrowse/config.json)" };
     if (!st.contextPromise) st.byHand = true; // this start is the person's: it may come to the front
     const up = getContext().then(async (ctx) => {
-      const page = pick.state === "showing" && pick.page && !pick.page.isClosed() ? pick.page : ctx.pages().findLast((p) => !p.isClosed()) || null;
+      const page = st.pick.state === "showing" && st.pick.page && !st.pick.page.isClosed() ? st.pick.page : ctx.pages().findLast((p) => !p.isClosed()) || null;
       if (page) await within(3000, page.bringToFront().catch(() => {}));
       return { ok: true };
     }, (e) => ({ ok: false, why: e?.message || String(e) }));
@@ -695,13 +536,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     // back), or null.
     successorOf,
     waitForPick, pickerState, pickSession, pickedJoin, switchForPerson, // In the session being opened, when the person just picked another.
-    recordPerson: async (person) => { while (st.pickSwitch) await st.pickSwitch; recordPerson(st.session, person); }, picking: () => pick.state === "showing", reopenPicker,
-    // An agent chose (pairbrowse_join): the picker goes, the saved tabs come back.
-    agentChose(text) {
-      if (pick.state !== "showing") { if (pick.state === "pending") pick.state = "done"; return; }
-      picked(text);
-      const page = pick.page;
-      st.contextPromise?.then(async (ctx) => { await page?.goto("about:blank").catch(() => {}); restore(ctx); }).catch(() => {});
-    },
+    recordPerson: recordPersonHere, picking: () => st.pick.state === "showing", reopenPicker,
+    agentChose,
   };
 }

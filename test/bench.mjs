@@ -6,6 +6,9 @@
 //   ... --soak N [--viewers V]   N rounds on one helper, memory over time, V live-view viewers
 //   ... --agents N [--rounds R]  N agents at once in their own tabs
 //   ... --joiner R               a shared-browser joiner (two helpers) over R rounds
+//   ... --check test/bench-budgets.json   compares the screenshots-on run to the budgets in that
+//                                file, prints each with pass/fail and exits 1 on any miss
+//                                (npm run bench:check: a local gate on this Mac, not CI)
 //
 // It starts its own helper on a temporary home with a headless browser, so a running PairBrowse
 // is untouched. Numbers are wall-clock on this machine: compare runs on the same machine only.
@@ -19,6 +22,7 @@ import { createServer } from "node:http";
 import { session } from "./helpers/live.mjs";
 import { sleep, text } from "./helpers/util.mjs";
 import { stopDaemon } from "./helpers/daemon.mjs";
+import { checkBudgets, formatCheck } from "./bench-check.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 if (!runtime) { console.error("PAIRBROWSE_TEST_RUNTIME is required"); process.exit(2); }
@@ -27,6 +31,9 @@ const args = process.argv.slice(2);
 const opt = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
 const OPS = Number(opt("--ops", 60));
 const JSON_OUT = opt("--json", "");
+const CHECK = opt("--check", "");
+// Read the budgets before the run, so a bad path fails at once rather than after a minute of bench.
+const budgets = CHECK ? JSON.parse(readFileSync(CHECK, "utf8")) : null;
 const hasImage = (r) => (r.result?.content || []).some((c) => c.type === "image");
 
 // The process tree under pid: rss (KB) and cumulative CPU seconds, from ps.
@@ -394,3 +401,8 @@ for (const screenshots of [true, false]) {
   console.log(JSON.stringify(r, null, 1));
 }
 if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify({ at: new Date().toISOString(), node: process.version, results }, null, 1));
+if (budgets) {
+  const verdict = checkBudgets(results, budgets);
+  console.log(formatCheck(verdict));
+  process.exit(verdict.pass ? 0 : 1);
+}

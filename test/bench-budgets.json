@@ -1,0 +1,10 @@
+{
+  "about": "Local gate for this Mac (npm run bench:check), not CI. Each key is a path into the bench's screenshots-on result (node test/bench.mjs --json). value / scale must be <= max.",
+  "screenshots": true,
+  "budgets": {
+    "click.p50": { "max": 600, "unit": "ms" },
+    "startup.totalMs": { "max": 1500, "unit": "ms" },
+    "helperMemEnd.rss": { "max": 260, "unit": "MB", "scale": 1048576 },
+    "idleAfterWork.perKind.helper": { "max": 1, "unit": "%" }
+  }
+}

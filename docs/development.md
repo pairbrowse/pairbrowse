@@ -100,6 +100,15 @@ statements 84.82%, functions 86.65%, branches 84.36%. Raise the floor as coverag
 `test/bench.mjs` is not a test: it times the helper's tool calls on a real browser
 (`node test/bench.mjs`, `PAIRBROWSE_TEST_RUNTIME` set) and prints the numbers.
 
+`npm run bench:check` runs it with `--check test/bench-budgets.json`: the screenshots-on run is
+compared to the budgets in that file (click p50, cold start to the first tool answer, the helper's
+RSS at the end, the helper's idle CPU after work), each printed with its budget and pass or fail,
+and the command exits 1 on any miss. Each budget is keyed by its path in the bench's own JSON
+(`click.p50`, `startup.totalMs`, `helperMemEnd.rss`, `idleAfterWork.perKind.helper`). It is a local
+gate on this Mac, not CI: the numbers are wall clock on one machine, so run it on the machine the
+budgets were set on, with no other test browser running, before a change that could slow the
+helper lands. `test/bench-check.test.mjs` covers the comparison without a browser.
+
 ### The test switches
 
 Every `PAIRBROWSE_TEST_*` variable. A gate is read by the test files only: you set it when you run

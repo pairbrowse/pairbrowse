@@ -186,7 +186,7 @@ test("no word lists: the click guard's code holds no wording to match in any lan
   // Structure decides (fields, roles, styles, markup); a list of button or dialog words, in any
   // language, must not come back. Class names ("pay", "delete", "submit", "publish") and HTTP
   // methods are PairBrowse's own protocol, not page wording.
-  const files = ["scripts/guard.mjs", "scripts/rules/policy.mjs", "scripts/rules/decide.mjs", "scripts/rules/clicks.mjs", "scripts/rules/upload.mjs", "scripts/daemon/serve.mjs", "scripts/runner.mjs", ...["risk", "locate", "choices", "dates", "verify", "steps"].map((m) => `scripts/runner/${m}.mjs`), "scripts/daemon/page.mjs", "scripts/daemon/screenshot.mjs", "scripts/upload.mjs"];
+  const files = ["scripts/guard.mjs", "scripts/rules/policy.mjs", "scripts/rules/decide.mjs", "scripts/rules/clicks.mjs", "scripts/rules/upload.mjs", "scripts/daemon/serve.mjs", "scripts/runner.mjs", ...["risk", "locate", "choices", "dates", "verify", "steps"].map((m) => `scripts/runner/${m}.mjs`), ...["common", "go", "fill", "check", "select", "click", "press", "drag", "scroll", "upload", "wait", "handoff"].map((m) => `scripts/runner/steps/${m}.mjs`), "scripts/daemon/page.mjs", "scripts/daemon/screenshot.mjs", "scripts/upload.mjs"];
   const words = ["checkout", "purchase", "kaufen", "bestellen", "löschen", "supprimer", "eliminar", "verwijderen", "削除", "删除", "提交", "确认", "weiter", "suivant", "siguiente", "次へ", "are you sure", "can't be undone", "cancel subscription", "place order", "send message", "submit for review", "go live", "veröffentlichen", "close account", "confirm payment"];
   const root = new URL("..", import.meta.url).pathname;
   for (const f of files) {

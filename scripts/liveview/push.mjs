@@ -6,6 +6,19 @@
 import { shareableUrl, onSecretDomain, readPointers, personColor, formForJoiner, VIEW_FRESH_MS, TABS_MAX } from "../tabsync.mjs";
 import { cleanName } from "../join.mjs";
 import { stateAgo } from "../daemon/presence.mjs";
+import { createHmac, randomBytes } from "node:crypto";
+
+// A pointer's key as one recipient sees it. A joiner's own key (invite id and joiner id) is what
+// their approval is bound to: it never leaves this helper. Each recipient (a joiner, the tabs
+// here, the browser's overlay) gets an opaque name for it instead, the same for the same pointer
+// (so their page follows it as it moves), different for every recipient (so two can't match theirs).
+// The host's own pointers (host, host-view, host-agent:<tab>) carry no joiner key and stay as they are.
+const HOST_KEY = /^host(-view|-agent:[\w-]{1,40})?$/;
+export function opaquePointerKey(secret, recipient, k) {
+  const s = String(k ?? "");
+  if (HOST_KEY.test(s)) return s;
+  return `p${createHmac("sha256", secret).update(`${recipient}\0${s}`).digest("base64url").slice(0, 22)}`;
+}
 
 const STATE_DEBOUNCE_MS = 20; // changes that come together go as one
 const STATE_AGAIN_MS = 1000; // titles and the like, which no event announces
@@ -50,6 +63,8 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
   const seesPicture = (key) => pictureJoiners.has(key);
   let stateTimer = null, pointerTimer = null, lastPointers = 0, overlaySig = "[]";
   let hostView = null; // { page, t }: the tab the host scrolled in last
+  const pointerSecret = randomBytes(32); // opaquePointerKey's, for as long as this helper runs
+  const opaque = (recipient, k) => opaquePointerKey(pointerSecret, recipient, k);
 
   const send = (st, event, data) => {
     // A joiner that stopped reading would otherwise collect every picture here in memory.
@@ -152,7 +167,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
       // their picture of it).
       for (const p of out) { if (p.v) continue; const at = typeof p.vx === "number" ? { nx: p.vx, ny: p.vy } : shared.toView(pages.get(p.id), p.x, p.y); if (at) Object.assign(p, at); }
     }
-    for (const p of out) { delete p.vx; delete p.vy; }
+    for (const p of out) { delete p.vx; delete p.vy; p.k = opaque(st.key, p.k); }
     return out;
   }
   async function pushPointers() {
@@ -182,7 +197,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
     }
     for (const page of drawn) if (!byPage.has(page) && !page.isClosed()) shared.showPointers(page, []);
     drawn.clear();
-    for (const [page, list] of byPage) { drawn.add(page); shared.showPointers(page, list.map(({ k, who, color, x, y, v, h }) => ({ k, who, color, x, y, ...(v ? { v: 1, h } : {}) }))); }
+    for (const [page, list] of byPage) { drawn.add(page); shared.showPointers(page, list.map(({ k, who, color, x, y, v, h }) => ({ k: opaque("tab", k), who, color, x, y, ...(v ? { v: 1, h } : {}) }))); }
     pushOverlay(pages);
   }
   // Shared browser joiners' pointers, which nothing draws in the tab: for the browser's own overlay
@@ -199,7 +214,7 @@ export function createPush({ getContext, idOf, tabsFor, joinerKey, secretDomains
         const page = pages.get(p.id);
         if (!page || typeof p.vx !== "number" || typeof p.vy !== "number") continue;
         const fresh = Math.round(POINTER_FRESH_MS - Math.max(0, now - Number(p.t || e.t)));
-        if (fresh >= 1) over.set(page, [...(over.get(page) || []), { k: p.k, who: p.who, color: p.color, x: p.vx, y: p.vy, fresh }]);
+        if (fresh >= 1) over.set(page, [...(over.get(page) || []), { k: opaque("overlay", p.k), who: p.who, color: p.color, x: p.vx, y: p.vy, fresh }]);
       }
     }
     // Only a change goes (a pointer that stays fades there by itself).

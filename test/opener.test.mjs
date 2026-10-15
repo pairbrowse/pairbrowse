@@ -200,4 +200,21 @@ test("context.openByHand: only a build with its own pages; opens the browser, th
   for (let i = 0; i < 100 && !release; i++) await new Promise((r) => setTimeout(r, 10));
   release();
   await slow.getContext();
+
+  // A start that fails inside the wait: no (the opener's browser opens a window of its own). One
+  // that fails after it was taken: said to the person (a notification), never silently.
+  const told = [];
+  const failing = (ms) => createContext({
+    config: { browserEngine: "chromium", executablePath: "/fake/chrome", display: "none", sessionPicker: false }, log: quiet, notify: (t) => told.push(t),
+    chromium: { launchPersistentContext: () => new Promise((_, no) => setTimeout(() => no(new Error("the profile is locked")), ms)) },
+    hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
+    presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
+    shuttingDown: () => false, onStarted: quiet, onClosed: quiet, chromePagesOf: () => true,
+  });
+  const quick = await failing(20).openByHand({ acceptMs: 2000 });
+  assert.equal(quick.ok, false);
+  assert.match(quick.why, /profile is locked/);
+  assert.deepEqual(await failing(200).openByHand({ acceptMs: 50 }), { ok: true });
+  for (let i = 0; i < 100 && !told.length; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.match(told.at(-1) || "", /The PairBrowse browser didn't start: .*profile is locked/);
 });

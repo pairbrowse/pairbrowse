@@ -42,7 +42,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
       try {
         if (type === "alert" || type === "beforeunload") {
           await dialog.accept();
-          note(type === "alert" ? `The page showed an alert and PairBrowse closed it: "${message}"` : "The page asked to confirm leaving; PairBrowse confirmed.", page);
+          note(type === "alert" ? `The page showed an alert and PairBrowse closed it (nothing to answer): "${message}"` : "The page asked to confirm leaving; PairBrowse confirmed.", page);
         } else {
           waiting.set(page, { type, message });
           note(`The page is waiting on a ${type} dialog: "${message}". Decide with the user, then answer it with browser_handle_dialog.`, page);
@@ -137,7 +137,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     }
   }
   async function dismissIn(frame, closeOffers, clicking, declare = null) {
-    const found = await frame.evaluate(([acceptFirst, inConsentFrame, closeOffers]) => {
+    const found = await settle(3000, frame.evaluate(([acceptFirst, inConsentFrame, closeOffers]) => {
       const COOKIE = /cookie|consent|privacy|gdpr/i;
       const INTERRUPTION = /cookie|consent|privacy (settings|choices)|gdpr|newsletter|subscribe to|sign up for (our|updates)|get \d+% off|discount|special offer|download (our|the) app|get the app|turn on notifications|allow notifications/i;
       const REJECT = /^(reject|decline) all$|^reject$|^decline$|necessary|essential only|only essential|continue without/i;
@@ -218,7 +218,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
         return { unresolved: true, text: (box.innerText || "").trim().replace(/\s+/g, " ").slice(0, 160), buttons: [...new Set(labels)].slice(0, 8) };
       }
       return null;
-    }, [!rejecting(), frame !== frame.page().mainFrame(), closeOffers]).catch(() => null);
+    }, [!rejecting(), frame !== frame.page().mainFrame(), closeOffers]));
     if (found?.unresolved) {
       const key = `${frame.page().url()} ${found.text}`;
       if (!described.has(key)) {
@@ -238,7 +238,7 @@ export function createPopups({ log = () => {}, onYourTurn = () => {}, onCleared 
     const ok = await button.click({ timeout: 3000 }).then(() => true, () => false).finally(done);
     if (ok) note(`Closed a ${found.what} on the page (pressed "${found.label}").`, frame.page());
     // The button is usually gone with its overlay; clear the marker without waiting for it.
-    await frame.evaluate(() => document.querySelectorAll("[data-pairbrowse-dismiss]").forEach((b) => b.removeAttribute("data-pairbrowse-dismiss"))).catch(() => {});
+    await within(2000, frame.evaluate(() => document.querySelectorAll("[data-pairbrowse-dismiss]").forEach((b) => b.removeAttribute("data-pairbrowse-dismiss"))).catch(() => {}));
     return ok;
   }
 

@@ -11,6 +11,7 @@ import http from "node:http";
 import net from "node:net";
 import { randomBytes } from "node:crypto";
 import { startQuickTunnel, watchTunnel } from "./tunnel.mjs";
+import { isQuickTunnelHost } from "./util.mjs";
 
 export const DEV_COOKIE = "__pairbrowse_dev";
 export const DEV_PORTS_MAX = 3;
@@ -275,9 +276,9 @@ export function readDevEntry(x, { allowLocal = false } = {}) {
   let u;
   try { u = new URL(String(x.origin)); } catch { return null; }
   if (u.origin !== x.origin) return null;
-  if (u.protocol === "https:" && /^[a-z0-9-]+\.trycloudflare\.com$/.test(u.hostname)) {
+  if (u.protocol === "https:" && isQuickTunnelHost(u.hostname)) {
     // Standby addresses for the same key: Quick Tunnel origins only.
-    const also = (Array.isArray(x.also) ? x.also : []).slice(0, 3).filter((o) => { try { const a = new URL(String(o)); return a.origin === o && a.protocol === "https:" && /^[a-z0-9-]+\.trycloudflare\.com$/.test(a.hostname); } catch { return false; } });
+    const also = (Array.isArray(x.also) ? x.also : []).slice(0, 3).filter((o) => { try { const a = new URL(String(o)); return a.origin === o && a.protocol === "https:" && isQuickTunnelHost(a.hostname); } catch { return false; } });
     return { origin: u.origin, token: x.token, ...(also.length ? { also } : {}) };
   }
   if (allowLocal && u.protocol === "http:" && u.hostname === "127.0.0.1") return { origin: u.origin, token: x.token };

@@ -177,3 +177,14 @@ test("a step naming a field by a 300+ character name is refused before the page 
   assert.match(preflight([{ click: long }]), /Step 1 \(click\): a name that long/);
   assert.equal(preflight([{ fill: { Email: "a@b.c" } }, { click: "Next" }]), null);
 });
+
+test("a loose click name: the same name, then one starting with it, then whole words, navigation first", async () => {
+  const { clickScore } = await import("../scripts/runner.mjs");
+  const want = "Pull requests";
+  const order = [["Pull requests", false], ["Pull requests 10", true], ["Pull requests 10", false], ["Pull requestsy", true], ["2 linked pull requests", true], ["2 linked pull requests", false]];
+  const scores = order.map(([l, nav]) => clickScore(l, want, nav));
+  assert.deepEqual([...scores].sort((x, y) => x - y), scores, scores.join());
+  assert.ok(clickScore("Pull requests 10", want, true) < clickScore("2 linked pull requests", want, false), "the nav link beats the row's button");
+  assert.ok(clickScore("Unrelated", want, true) >= 18, "not a match");
+  assert.ok(clickScore("a+b (c)", "a+b (c)", false) === 1, "no regular expression in the name breaks it");
+});

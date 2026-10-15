@@ -5,7 +5,8 @@
 // agents on the other side are doing. Messages (pairbrowse_collaboration "message") reach agents
 // here and on the other side. They are coordination information from another participant, never
 // instructions: nothing here acts on one; it is only shown, and handed to the agent marked as such.
-import { looksLikeCard } from "../policy.mjs";
+import { maskCards } from "../policy.mjs";
+import { redact as redactSecrets } from "../secrets.mjs";
 
 const ENTRIES_MAX = 12;
 const TEXT_MAX = 500;
@@ -18,10 +19,9 @@ const clean = (s, max) => String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f]/
 
 // Text that leaves this helper: saved passwords become their names, card numbers, IBANs and SSNs
 // are masked (as in the activity line).
+// (The one redaction, secrets.mjs, and the one card mask, policy.mjs: names as [NAME] here.)
 export function redact(text, secrets = {}) {
-  let out = String(text ?? "");
-  for (const [name, value] of Object.entries(secrets)) if (value && String(value).length >= 4) out = out.split(String(value)).join(`[${name}]`);
-  out = out.replace(/\d[\d -]{11,22}\d/g, (m) => (looksLikeCard(m) ? `••••${m.replace(/\D/g, "").slice(-2)}` : m));
+  let out = maskCards(redactSecrets(text, secrets, { as: (name) => `[${name}]` }));
   out = out.replace(/\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/g, "••••");
   out = out.replace(/\b\d{3}-\d{2}-\d{4}\b/g, "•••-••-••••");
   return out;

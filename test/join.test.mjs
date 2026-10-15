@@ -556,3 +556,23 @@ test("pairbrowse_join with an unlisted address: refused for agents, a question f
     assert.deepEqual(notes, [], "agents hear nothing until the person says yes");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("a drive joiner's activity lines: named as the host knows them, never as they say; paced", async () => {
+  const lines = [];
+  const s = await setup({ onJoinerActivity: (page, text, name) => lines.push({ text, name }) });
+  try {
+    const d = s.invites.create({ role: "drive", label: "Dee", share: "code" });
+    const dee = newJoinerId();
+    await request(s.gport, "GET", `/${d.key}/tabs`, { headers: who(dee, "Dee") });
+    s.view.approvals.approve(s.requests.at(-1).id);
+    const id0 = (await request(s.gport, "GET", `/${d.key}/tabs`, { headers: who(dee, "Dee") })).json.tabs[0].id;
+    const ops = (n, name) => Array.from({ length: n }, (_, i) => ({ op: "activity", id: id0, text: `Clicked ${i}`, who: name }));
+    assert.equal((await request(s.gport, "POST", `/${d.key}/tabs`, { headers: who(dee, "Dee"), body: { ops: ops(2, "Claude") } })).status, 200);
+    assert.deepEqual(lines.map((l) => l.name), ["Dee's agent", "Dee's agent"], "never \"Claude\"");
+    assert.equal((await request(s.gport, "POST", `/${d.key}/tabs`, { headers: who(dee, "Dee"), body: { ops: [{ op: "activity", id: id0, text: "Typed" }] } })).status, 200);
+    assert.match(lines.at(-1).name, /^Dee\b/);
+    // A burst: twenty a request, request after request; only a few get through.
+    for (let i = 0; i < 5; i++) await request(s.gport, "POST", `/${d.key}/tabs`, { headers: who(dee, "Dee"), body: { ops: ops(20, "Host") } });
+    assert.ok(lines.length <= 12, `${lines.length} lines kept from a burst of 103`);
+  } finally { s.view.close(); }
+});

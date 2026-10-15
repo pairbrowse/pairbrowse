@@ -42,6 +42,13 @@ const PAGES = {
   "/sub": `<!doctype html><title>News</title><style>.wide{display:inline} ${NARROW}{.wide{display:none}}</style>
 <div><div style="display:none"><input aria-label="Newsletter email"></div><button onclick="window.sent = 1; document.title = 'Subscribed'">Newsletter signup</button></div>
 <nav><a class=wide href="/pricing">Plans</a></nav><main><a href="/archive">Plans archive</a></main>`,
+  // A form's own submit button that says it controls the hidden part (a GET form: the click checks
+  // call its submit safe): never clicked to unfold it.
+  "/coupon": `<!doctype html><title>Cart</title><form action="/results" method=get><input name=q aria-label="Item"><button aria-controls=more>Coupon</button><div id=more hidden><input aria-label="Coupon"></div></form>`,
+  // A toggle that is a link to another site: never followed. One that only says "#" but whose
+  // script leaves for another site: the run stops there and the tab comes back.
+  "/away": `<!doctype html><title>Away</title><a href="http://localhost:PORT/pricing" aria-controls=p1 aria-expanded=false>Promo</a><div id=p1 hidden><input aria-label="Promo code"></div>`,
+  "/jump": `<!doctype html><title>Jump</title><a href="#" aria-controls=p2 aria-expanded=false onclick="location.href='http://localhost:PORT/pricing'; return false">Gift</a><div id=p2 hidden><input aria-label="Gift code"></div>`,
   "/pricing": `<!doctype html><title>Pricing</title><h1>Pricing</h1>`,
   "/archive": `<!doctype html><title>Archive</title><h1>Archive</h1>`,
   "/results": `<!doctype html><title>Results</title><h1>Results</h1>`,
@@ -69,7 +76,7 @@ async function helper(width) {
 }
 
 test("compact layouts: fast mode unfolds a folded search box and menus; find and snapshots name the folded controls", { skip: !runtime, timeout: 240_000 }, async () => {
-  const site = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(PAGES[new URL(req.url, "http://x").pathname] || ""); });
+  const site = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end((PAGES[new URL(req.url, "http://x").pathname] || "").replaceAll("PORT", String(site.address().port))); });
   await new Promise((r) => site.listen(0, "127.0.0.1", r));
   const url = (p) => `http://127.0.0.1:${site.address().port}${p}`;
   try { for (const width of [760, 1280]) {
@@ -104,6 +111,19 @@ test("compact layouts: fast mode unfolds a folded search box and menus; find and
       const plans = text(await a.tool("pairbrowse_run", { steps: [{ click: "Plans" }] }));
       if (narrow) assert.match(plans, /"Plans" doesn't show[^\n]*Its link goes to http:\/\/127\.0\.0\.1:\d+\/pricing: open that with browser_navigate/, plans);
       else assert.match(plans, /^Done: 1 steps[^\n]*\nPage: Pricing/, plans);
+      // A form's submit button is never pressed to unfold a field, even in a form the checks call safe.
+      await a.tool("browser_navigate", { url: url("/coupon") });
+      const cp = text(await a.tool("pairbrowse_run", { steps: [{ fill: { Coupon: "SAVE10" } }] }));
+      assert.match(cp, /^Stopped at step 1 of 1: "Coupon"/, cp);
+      assert.match(cp, /Page: Cart /, `never submitted: ${cp}`);
+      // A toggle that links to another site is never followed; one whose script leaves is undone.
+      await a.tool("browser_navigate", { url: url("/away") });
+      const aw = text(await a.tool("pairbrowse_run", { steps: [{ fill: { "Promo code": "X1" } }] }));
+      assert.match(aw, /Page: Away /, `never followed: ${aw}`);
+      await a.tool("browser_navigate", { url: url("/jump") });
+      const jp = text(await a.tool("pairbrowse_run", { steps: [{ fill: { "Gift code": "X2" } }] }));
+      assert.match(jp, /went to another site \(http:\/\/localhost:\d+\), so the run stopped and went back/, jp);
+      assert.match(text(await a.tool("browser_snapshot")), /Page Title: Jump|Jump/);
       // A form's checkbox is an answer: never ticked to unfold "State".
       await a.tool("browser_navigate", { url: url("/form") });
       const st = text(await a.tool("pairbrowse_run", { steps: [{ fill: { State: "Ohio" } }] }));

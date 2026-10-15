@@ -20,7 +20,8 @@ export function readJson(file, fallback = null) {
 // makes gets 0o700 then too.
 export function writeJsonAtomic(file, value, { mode } = {}) {
   mkdirSync(dirname(file), { recursive: true, ...(mode !== undefined ? { mode: 0o700 } : {}) });
-  const tmp = `${file}.tmp`;
+  // Per process: two processes writing the same file (the runs server of two agents) never share one.
+  const tmp = `${file}.${process.pid}.tmp`;
   if (mode !== undefined) rmSync(tmp, { force: true }); // a leftover .tmp keeps its own mode otherwise
   writeFileSync(tmp, JSON.stringify(value, null, 2), mode !== undefined ? { mode } : undefined);
   if (mode !== undefined) chmodSync(tmp, mode); // the umask can't widen or narrow it
@@ -54,7 +55,23 @@ export async function downloadPinned(url, dest, sha256Hex, { timeoutMs = 30 * 60
 }
 
 // `promise`'s value, or null once `ms` have passed (for checks that give up quietly).
-export const within = (ms, promise) => Promise.race([promise, sleep(ms).then(() => null)]);
+// The timer goes as soon as the promise settles: no timer outlives the wait (thousands of bounded
+// awaits would otherwise keep theirs running, and a process waiting to exit on them).
+export function within(ms, promise) {
+  let timer;
+  const up = new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+  return Promise.race([promise, up]).finally(() => clearTimeout(timer));
+}
+
+// A Cloudflare Quick Tunnel's host name, the one check every part uses (join codes, relays, shared
+// dev servers, the tunnel's own address): words of lower-case letters and digits joined by single
+// hyphens (none at either end, none doubled), then .trycloudflare.com, nothing else.
+const QUICK_TUNNEL_HOST = /^[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com$/;
+export const isQuickTunnelHost = (host) => typeof host === "string" && host.length <= 253 && QUICK_TUNNEL_HOST.test(host);
+
+// A page read that gives up quietly: its value, or `fallback` when it failed or didn't answer
+// within ms (a page whose scripts never pause answers nothing).
+export const bounded = (p, fallback, ms = 2500) => within(ms, Promise.resolve(p).catch(() => fallback)).then((v) => v ?? fallback);
 
 // Until a page has loaded, at most maxMs, by asking it first: a page restored by Back (the
 // browser's cache) fires no load event again, and Playwright's waitForLoadState("load") then

@@ -290,3 +290,74 @@ test("the key file goes with its browser, never with the next one", { timeout: 3
 
 // The helper's timers (tab memory, picker) keep running: the run ends here.
 after(() => setImmediate(() => process.exit(process.exitCode || 0)));
+
+// A build whose capture page reads its own key: a new one each launch, in an owner-only file of
+// its own named by --pairbrowse-capture-key-file; the key never on the command line, and both
+// files go once the browser's pages used their key. A build whose capture page reads none gets none.
+test("the capture page's own key: its own file and switch, new at each launch, only for a build that reads it", { timeout: 30_000 }, async () => {
+  const home = process.env.PAIRBROWSE_HOME;
+  const { createContext } = await import("../scripts/daemon/context.mjs");
+  const { randomBytes } = await import("node:crypto");
+  const fakePage = (ctx) => { const page = { on() {}, once() {}, listeners: () => [], isClosed: () => false, context: () => ctx, url: () => page.at, goto: async (u) => { page.at = u; }, close: async () => {}, bringToFront: async () => {}, setContent: async () => {}, evaluate: async () => {}, at: "about:blank" }; return page; };
+  const fakeContext = () => { const ctx = new EventEmitter(); const pages = [fakePage(ctx)]; Object.assign(ctx, { pages: () => pages, addInitScript: async () => {}, newPage: async () => { const p = fakePage(ctx); pages.push(p); return p; }, browser: () => null, close: async () => { ctx.emit("close"); } }); return ctx; };
+  const quiet = () => {};
+  const run = async (keyed) => {
+    const launches = [], keys = [];
+    const context = createContext({
+      config: { browserEngine: "chromium", executablePath: "/fake/chrome", display: "none" }, log: quiet,
+      chromium: { launchPersistentContext: async (dir, opts) => { launches.push(opts); return fakeContext(); } },
+      hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
+      presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
+      shuttingDown: () => false, onStarted: quiet, onClosed: quiet,
+      chromePagesOf: () => true, capturePagesOf: () => true, captureKeyedOf: () => keyed,
+      helperFor: async () => ({ origin: "http://127.0.0.1:4321", key: randomBytes(32).toString("base64url"), newCaptureKey: (on) => { const k = on ? randomBytes(32).toString("base64url") : null; keys.push(k); return k; } }),
+    });
+    await context.getContext();
+    return { args: launches[0].args, keys, context };
+  };
+  const plain = await run(false);
+  assert.ok(!plain.args.some((a) => a.startsWith("--pairbrowse-capture-key-file=")), "a build that reads none gets none");
+  assert.deepEqual(plain.keys, [null]);
+  await plain.context.close?.();
+  const keyed = await run(true);
+  const file = keyed.args.find((a) => a.startsWith("--pairbrowse-capture-key-file="))?.slice("--pairbrowse-capture-key-file=".length);
+  assert.ok(file, "the switch");
+  const pagesFile = keyed.args.find((a) => a.startsWith("--pairbrowse-helper-key-file="))?.slice("--pairbrowse-helper-key-file=".length);
+  assert.notEqual(file, pagesFile, "a file of its own");
+  assert.equal(dirname(file), join(home, "run"));
+  assert.equal(readFileSync(file, "utf8"), keyed.keys[0], "the key alone");
+  if (process.platform !== "win32") assert.equal(statSync(file).mode & 0o777, 0o600);
+  assert.ok(existsSync(pagesFile), "writing one never removes the other");
+  assert.ok(!keyed.args.some((a) => a.includes(keyed.keys[0])), "never a launch argument");
+  keyed.context.dropHelperKey();
+  assert.equal(existsSync(file), false, "gone with the pages' key file");
+  assert.equal(existsSync(pagesFile), false);
+  await keyed.context.close?.();
+});
+
+// pairbrowse_session delete: never a session a browser has open (its profile's lock), nor while
+// the browser switches; otherwise its files go.
+test("a session open in another browser isn't deleted", { timeout: 30_000 }, async () => {
+  const { createContext } = await import("../scripts/daemon/context.mjs");
+  const s = await import("../scripts/sessions.mjs");
+  const { symlinkSync, rmSync: rm } = await import("node:fs");
+  const { hostname } = await import("node:os");
+  const quiet = () => {};
+  const context = createContext({
+    config: { browserEngine: "chromium", executablePath: "/fake/chrome", display: "none" }, log: quiet, chromium: { launchPersistentContext: async () => { throw new Error("no browser here"); } },
+    hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
+    presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
+    shuttingDown: () => false, onStarted: quiet, onClosed: quiet,
+  });
+  s.createSession("old-one");
+  const lock = join(s.profileDir("old-one"), "SingletonLock");
+  symlinkSync(`${hostname()}-${process.pid}`, lock); // this very process: alive
+  const r = await context.sessionCommand({ action: "delete", name: "old-one" });
+  assert.equal(r.error, true);
+  assert.match(r.text, /open in another browser/);
+  assert.ok(existsSync(s.profileDir("old-one")), "kept");
+  rm(lock);
+  const ok = await context.sessionCommand({ action: "delete", name: "old-one" });
+  assert.ok(!ok.error, ok.text);
+  assert.equal(existsSync(s.profileDir("old-one")), false);
+});

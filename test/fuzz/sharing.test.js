@@ -317,3 +317,24 @@ test("a joiner's agent's results name no folder on the host's computer, and web 
     if (!u.includes(who)) assert.doesNotMatch(out, new RegExp(`(?<![\\w-])${who}(?![\\w-])`));
   }));
 });
+
+// One Quick Tunnel host check for every part (join codes, relays, shared dev servers, the tunnel's
+// own address): words joined by single hyphens, then .trycloudflare.com, nothing else.
+test("Quick Tunnel host names: one strict rule everywhere", async () => {
+  const { isQuickTunnelHost } = await import("../../scripts/util.mjs");
+  const { tunnelUrl } = await import("../../scripts/tunnel.mjs");
+  const word = fc.stringMatching(/^[a-z0-9]{1,10}$/);
+  fc.assert(fc.property(fc.array(word, { minLength: 1, maxLength: 5 }), (words) => {
+    const h = `${words.join("-")}.trycloudflare.com`;
+    assert.equal(isQuickTunnelHost(h), true, h);
+    assert.equal(tunnelUrl(`| https://${h} |`), `https://${h}`);
+  }), { numRuns: 2000 });
+  fc.assert(fc.property(fc.string({ maxLength: 40 }), (s) => {
+    const h = `${s}.trycloudflare.com`;
+    if (isQuickTunnelHost(h)) assert.match(s, /^[a-z0-9]+(-[a-z0-9]+)*$/, s);
+  }), { numRuns: 5000 });
+  for (const bad of ["-a.trycloudflare.com", "a-.trycloudflare.com", "a--b.trycloudflare.com", "A.trycloudflare.com", "a.b.trycloudflare.com", "trycloudflare.com", "a.trycloudflare.com.evil.example", ".trycloudflare.com"]) {
+    assert.equal(isQuickTunnelHost(bad), false, bad);
+    assert.equal(tunnelUrl(`https://${bad}`), null, bad);
+  }
+});

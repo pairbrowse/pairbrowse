@@ -140,6 +140,40 @@ on("frame", (f) => {
   if (!gotFrame) { gotFrame = true; img.hidden = false; $("skeleton").remove(); img.alt = "Live page"; }
 });
 
+// Joiners' pointers in the shown tab (shared browser mode; the owner's stream only): drawn over the
+// picture where each points, by their opaque key; each fades after its time without a move.
+const pointerEls = new Map(); // k -> { node, timer }
+const NS = "http://www.w3.org/2000/svg";
+on("joiner-pointers", (list) => {
+  const box = $("frame");
+  const seen = new Set();
+  for (const p of Array.isArray(list) ? list.slice(0, 12) : []) {
+    const k = String(p?.k || ""), x = Number(p?.x), y = Number(p?.y);
+    if (!k || !(x >= 0 && x <= 1 && y >= 0 && y <= 1)) continue;
+    seen.add(k);
+    let e = pointerEls.get(k);
+    if (!e) {
+      const svg = document.createElementNS(NS, "svg");
+      svg.setAttribute("viewBox", "0 0 16 18");
+      const path = document.createElementNS(NS, "path");
+      path.setAttribute("d", "M1 1 L1 15 L5 11 L8 17 L10.5 16 L7.5 10 L13 10 Z");
+      svg.append(path);
+      const node = el("div", { className: "joiner-pointer" }, svg, el("span", { textContent: String(p.who || "").slice(0, 40) }));
+      box.append(node);
+      e = { node, timer: null };
+      pointerEls.set(k, e);
+    }
+    const color = agentColor(p.color);
+    if (color) e.node.style.setProperty("--who", color);
+    e.node.style.left = `${(x * 100).toFixed(2)}%`;
+    e.node.style.top = `${(y * 100).toFixed(2)}%`;
+    delete e.node.dataset.fading;
+    clearTimeout(e.timer);
+    e.timer = setTimeout(() => { e.node.dataset.fading = ""; }, Math.max(300, Math.min(3000, Number(p.fresh) || 3000)));
+  }
+  for (const [k, e] of pointerEls) if (!seen.has(k)) { clearTimeout(e.timer); e.node.remove(); pointerEls.delete(k); }
+});
+
 // An agent's spark color, only if it is a plain color value.
 const agentColor = (c) => /^#[0-9a-f]{3,8}$|^(rgb|hsl|oklch)a?\([\d.,%\s/]+\)$/i.test(String(c || "")) ? c : "";
 // Claude's own orange (SPARK_COLORS[0]) is the sheet's --spark, which darkens in the light scheme:

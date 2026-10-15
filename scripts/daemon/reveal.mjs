@@ -15,9 +15,10 @@ export const REVEAL_MAX = 5;
 
 // Runs in the page (with isVisible and buttonLabel). want: the name or text asked for ("" for none:
 // only the page's folded controls). opts.target: the element the agent tried (a ref that couldn't
-// be clicked), else looked for by want. opts.mark: set as data-pb-reveal on the one control fast
-// mode may open. Returns { hidden, list: [{ role, name, ref, why, tier, auto }], auto }: auto is
-// the index in list of that control, or -1.
+// be clicked), else looked for by want. opts.pick: the result is { scan, el } with el the one
+// control fast mode may open (the element itself, so the page can't move a mark to another).
+// Returns { hidden, list: [{ role, name, ref, why, tier, auto }], auto }: auto is the index in list
+// of that control, or -1.
 export function revealScan(want, opts = {}) {
   const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
   const low = (t) => norm(t).toLowerCase();
@@ -77,7 +78,9 @@ export function revealScan(want, opts = {}) {
     (cb.getAttribute("role") === "button" || cb.hasAttribute("aria-controls") || cb.hasAttribute("aria-expanded") || cb.hasAttribute("aria-haspopup") || !isVisible(cb));
   const CTRL = "button, a[href], summary, label[for], [role=button], [role=link], [role=menuitem], [aria-expanded], [aria-haspopup], [aria-controls], input[type=checkbox]";
   const NOT = "input:not([type=checkbox]), select, textarea, [role=combobox], [role=tab], [role=option], [role=listbox], [role=menuitemcheckbox], [role=menuitemradio]";
-  const ctrls = all(CTRL).filter((c) => shown(c) && !c.matches(NOT) && !closest(c, "[role=tablist]"));
+  // A form's submit button sends the form: never one that unfolds something.
+  const submits = (c) => c.matches("button") && (c.getAttribute("type") || "submit").toLowerCase() === "submit" && !!c.form;
+  const ctrls = all(CTRL).filter((c) => shown(c) && !c.matches(NOT) && !submits(c) && !closest(c, "[role=tablist]"));
   // How many controls a box holds (a label counts with its field once): up to 5.
   const counted = new Map();
   const controlCount = (box) => {
@@ -109,6 +112,8 @@ export function revealScan(want, opts = {}) {
     const href = c.matches("a[href]") ? c.getAttribute("href") || "" : "";
     const navigates = !!href && !/^\s*(#|javascript:)/i.test(href) && !c.hasAttribute("aria-controls") && !c.hasAttribute("aria-expanded") && c.getAttribute("role") !== "button";
     const anchor = !!href && /^\s*#/.test(href) && !c.hasAttribute("aria-controls") && !c.hasAttribute("aria-expanded");
+    // A link to another site (whatever its ARIA says): never opened for the agent.
+    const offsite = !!href && !/^\s*(#|javascript:)/i.test(href) && (() => { try { return new URL(c.href).origin !== location.origin; } catch { return true; } })();
     const shares = wantWords.some((x) => words.some((y) => y === x || (x.length >= 4 && y.length >= 4 && (y.startsWith(x) || x.startsWith(y)))));
     const where = { main: !!closest(c, "main, [role=main]"), foot: !!closest(c, "footer, [role=contentinfo]"), top: c.getBoundingClientRect().top + scrollY };
     let tier = 9, depth = 99, why = "";
@@ -139,7 +144,7 @@ export function revealScan(want, opts = {}) {
     if (tier > 5 && c.matches("button, [role=button]") && !where.main && !where.foot && !closest(c, "form") && where.top < 150 && (text ? text.split(" ").length <= 3 : !!c.querySelector("svg, img, i, span"))) { tier = 6; why = "a button in the page's header"; }
     if (tier > 6) continue;
     // Within a tier: what unfolds things in place first, a link to a spot on the page or elsewhere last.
-    found.push({ el: c, box, controlled, role, ref: c._ariaRef?.ref || box?._ariaRef?.ref || "", why, tier, depth, top: where.top, navigates, toggle, shares, rank: toggle ? 0 : anchor || navigates ? 2 : 1 });
+    found.push({ el: c, box, controlled, role, ref: c._ariaRef?.ref || box?._ariaRef?.ref || "", why, tier, depth, top: where.top, navigates, offsite, toggle, shares, rank: toggle ? 0 : anchor || navigates ? 2 : 1 });
   }
   // Tier 3 counts only for the page's one collapsed menu; two menus are a choice for the agent.
   const menus = found.filter((f) => f.tier === 3);
@@ -155,15 +160,17 @@ export function revealScan(want, opts = {}) {
     // Never a button that only runs the page's scripts ("Subscribe to newsletter" beside a hidden
     // "Newsletter email"): a disclosure by its markup, or a link named like what was asked for.
     const ok = best.tier === 1 || best.toggle || (best.shares && best.role === "link" && !!best.el.getAttribute("href"));
-    if (ok && (!best.navigates || best.shares)) auto = 0;
+    if (ok && !best.offsite && (!best.navigates || best.shares)) auto = 0;
   }
-  if (auto === 0 && opts.mark) best.el.setAttribute("data-pb-reveal", opts.mark);
   // Its accessible name first (what the snapshot calls it), else its label as the page shows it.
   const labelOf = (f) => norm(f.el.getAttribute("aria-label") || f.el.innerText || buttonLabel(f.el) || f.box?.getAttribute("aria-label") || f.controlled[0]?.getAttribute("aria-label") || "").slice(0, 60);
   const list = found.slice(0, opts.max || 5).map((f, i) => ({ role: f.role, name: labelOf(f), ref: f.ref, why: f.why, tier: f.tier, auto: i === auto }));
-  // Where a hidden link goes: the agent can open that address when nothing unfolds it.
+  // Where a hidden link goes: the agent can open that address when nothing unfolds it. Its origin
+  // and path only: a page's query string or fragment can carry anything (a token, an instruction).
   const link = targets.find((t) => t.matches("a[href]") && /^https?:/i.test(t.href));
-  return { hidden: targets.length > 0, list, auto, href: link ? link.href.slice(0, 300) : "" };
+  const href = link ? (() => { const u = new URL(link.href); return (u.origin + u.pathname).slice(0, 300); })() : "";
+  const out = { hidden: targets.length > 0, list, auto, href };
+  return opts.pick ? { scan: out, el: auto === 0 ? best.el : null } : out;
 }
 
 const scanIn = withHelpers(([want, opts]) => revealScan(want, opts), revealScan, isVisible, buttonLabel);
@@ -171,12 +178,33 @@ const scanAt = withHelpers((el, [want, opts]) => revealScan(want, { ...opts, tar
 
 // The scan on a page (its main frame) or for an element (a locator or handle): bounded, null when
 // the page didn't answer in time.
-export async function scanReveal(page, want, { target = null, mark = "", max = REVEAL_MAX, ms = 2500, exact = false } = {}) {
+export async function scanReveal(page, want, { target = null, max = REVEAL_MAX, ms = 2500, exact = false } = {}) {
   try {
-    const run = target ? target.evaluate(scanAt, [String(want || ""), { mark, max }], { timeout: ms }) : page.evaluate(scanIn, [String(want || ""), { mark, max, exact }]);
+    const run = target ? target.evaluate(scanAt, [String(want || ""), { max }], { timeout: ms }) : page.evaluate(scanIn, [String(want || ""), { max, exact }]);
     return (await within(ms, run.catch(() => null))) ?? null;
   } catch {
     return null;
+  }
+}
+
+// The scan, with the one control fast mode may open as an element handle (the very element the
+// scan chose): { scan, el }, el null when there is none; null when the page didn't answer.
+export async function pickReveal(page, want, { max = REVEAL_MAX, ms = 2500, exact = false } = {}) {
+  let h = null;
+  try {
+    const run = page.evaluateHandle(scanIn, [String(want || ""), { max, exact, pick: true }]);
+    h = await within(ms, run.catch(() => null));
+    if (!h) { run.then((x) => x?.dispose(), () => {}); return null; }
+    const scan = await within(1000, h.getProperty("scan").then((p) => p.jsonValue()).catch(() => null));
+    if (!scan) return null;
+    const prop = await within(1000, h.getProperty("el").catch(() => null));
+    const el = prop?.asElement?.() || null;
+    if (!el) prop?.dispose().catch(() => {});
+    return { scan, el };
+  } catch {
+    return null;
+  } finally {
+    h?.dispose().catch(() => {});
   }
 }
 

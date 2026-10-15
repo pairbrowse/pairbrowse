@@ -111,12 +111,16 @@ export function looksLikeSecretName(tool, args) {
 // The PairBrowse browser's own pages (a native build's tab strip, docks, session picker, new tab
 // and settings): never an agent's to open, read or act in.
 export const CHROME_PAGE_ORIGINS = ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"];
-export const isChromePage = (url) => /^chrome:\/\/pairbrowse(\.top-chrome)?([/?#]|$)/i.test(String(url ?? "").trim());
+// A native build shows its own pages and Chromium's as pairbrowse://<name> (patch 570: a display
+// rewrite; the committed address stays chrome://, which is what a tab reports), and opens the
+// browser's pages when one is typed so: every pairbrowse: address is the browser's own, whichever
+// spelling a tab or a call carries.
+export const isChromePage = (url) => /^(chrome:\/\/pairbrowse(\.top-chrome)?([/?#]|$)|pairbrowse:)/i.test(String(url ?? "").trim());
 // A joiner's picture page in a build with its own pages (chrome://pairbrowse/screen/): the
 // browser's own page that shows a host's tab, as the extension's screen.html does elsewhere. The
 // live view lists, shows and replays a person's input into it like that page; the browser's other
 // pages stay out of the live view.
-export const isChromeScreenPage = (url) => /^chrome:\/\/pairbrowse\/screen\/(?:[?#]|$)/i.test(String(url ?? "").trim());
+export const isChromeScreenPage = (url) => /^(chrome:\/\/pairbrowse\/screen|pairbrowse:\/\/screen)\/(?:[?#]|$)/i.test(String(url ?? "").trim());
 export const hiddenFromLiveView = (url) => isChromePage(url) && !isChromeScreenPage(url);
 export const CHROME_PAGE_RULE = "chrome://pairbrowse pages are the PairBrowse browser's own (its tab strip, docks, session picker, new tab and settings): no agent opens, reads or acts in them.";
 

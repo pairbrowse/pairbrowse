@@ -14,7 +14,8 @@ import { appName, personLabel, computerName } from "../join.mjs";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { describe } from "../log.mjs";
-import { decide, clickClass, approvalAsk } from "../guard.mjs";
+import { decide, clickClass, approvalAsk, APPROVAL_TOOLS } from "../guard.mjs";
+import { sameWhere, originOf } from "./approvals.mjs";
 import { clickRule, dialogRule, strongSignal } from "../clickrule.mjs";
 import { keepFocus } from "../focus.mjs";
 import { SESSION_TOOL } from "../sessions.mjs";
@@ -86,6 +87,7 @@ const SAME_PICTURE = "\n### PairBrowse\n- The page looks exactly as in your last
 const MCP_SETTLE_DEFAULT_MS = 200;
 const LOAD_WAIT_MS = 4000; // for the page to load before the screenshot
 const SETTLE_MS = 1000; // after it loaded
+const BADGE_MS = 4000; // pairbrowse_status waits this long at most for the badge in every tab
 const CLICK_SETTLE_MS = 500; // at least, after a click: in-page changes (menus, single-page apps) don't load a page
 const TIDY_MAX_MS = 8000; // the most a result waits for the page to settle
 const LATE_POPUP_CHECKS_MS = [3000, 8000]; // an offer that shows up a few seconds later
@@ -203,6 +205,39 @@ export function withPaths(name, args = {}, map) {
   return args;
 }
 // The file paths a call names (uploads, drops, fast mode's upload steps).
+// A result's words for an agent that gets no pictures: "the screenshot" becomes a snapshot.
+export function pictureless(text) {
+  return String(text ?? "")
+    .replace(/\b([Ll])ook at the screenshot\b/g, (_, l) => `${l === "L" ? "T" : "t"}ake a browser_snapshot`)
+    .replace(/\b([Cc])heck the screenshot\b/g, (_, c) => `${c === "C" ? "T" : "t"}ake a browser_snapshot`)
+    .replace(/\bthe screenshot\b/g, "a browser_snapshot");
+}
+
+// An alert (or a leave-page question) PairBrowse closes at once (popups.mjs): the browser server's
+// "Modal state" still lists it as waiting for browser_handle_dialog. Only the true statement stays
+// (PairBrowse's note that it closed it); a confirm or prompt the page waits on stays listed.
+export function dropClosedAlerts(text) {
+  const t = String(text ?? "");
+  if (!/### Modal state/.test(t)) return t;
+  const out = t.replace(/^- \["(alert|beforeunload)" dialog with message [^\n]*\]: can be handled by browser_handle_dialog\n?/gm, "");
+  return out.replace(/### Modal state\n(?=###|\s*$)/g, "");
+}
+
+// The tab came to the address asked for (its committed URL: the same document, whatever the
+// fragment), within ms: the page, or null. A navigation the browser "interrupted" with its own
+// error page may still get there (serve.mjs, browser_navigate).
+export async function arrivedAt(page, wanted, ms = 5000) {
+  if (!page || typeof wanted !== "string") return null;
+  const key = (u) => { try { const x = new URL(u); x.hash = ""; return x.href; } catch { return null; } };
+  const want = key(wanted);
+  if (!want) return null;
+  for (const end = Date.now() + ms; ; await new Promise((r) => setTimeout(r, 100))) {
+    if (page.isClosed?.()) return null;
+    if (key(page.url()) === want) return page;
+    if (Date.now() >= end) return null;
+  }
+}
+
 export function pathsIn(name, args = {}) {
   if (name === "pairbrowse_upload") return Array.isArray(args.files) ? args.files.map(String) : [];
   if (name === "browser_file_upload" || name === "browser_drop") return Array.isArray(args.paths) ? args.paths.map(String) : [];
@@ -257,7 +292,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
   // When each session last called a tool: only the ones in use hold up a session switch or closing
   // the browser. An open but idle session (a Claude Code window left for hours) doesn't.
   const lastCall = new Map();
-  const ACTIVE_MS = 10 * 60_000;
+  const ACTIVE_MS = Number(process.env.PAIRBROWSE_TEST_ACTIVE_MS) || 10 * 60_000; // (tests: shorter)
 
   // Each session's browser server (Playwright MCP) listens for the browser closing (once "close"
   // on the context, once "disconnected" on its browser) and never stops listening, so every session that came and went would stay in
@@ -294,7 +329,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const inUse = () => {
       const { owner, participants } = collaboration.state();
       const label = (id) => participants.find((p) => p.id === id)?.label || "an agent";
-      return [...clients.keys()].filter((id) => id !== participant && (owner?.id === id || Date.now() - (lastCall.get(id) || 0) < ACTIVE_MS)).map(label);
+      // Active: the owner, an agent that acted lately, or one holding a tab now (its claim lasts
+      // across its quiet spells: switching would close the tab it holds).
+      const holds = (id) => hud.sparkList().some((s) => s.id === id && s.page && !s.page.isClosed() && tabClaims.holder(s.page)?.id === id);
+      return [...clients.keys()].filter((id) => id !== participant && (owner?.id === id || Date.now() - (lastCall.get(id) || 0) < ACTIVE_MS || holds(id))).map(label);
     };
     session.join(participant);
     sock.once("close", () => {
@@ -326,7 +364,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
     let lostTab = false; // it closed its tab and every other tab was another agent's
     // Why it has no tab, for the answer it then gets.
     let closedByMe = false; // it closed its own tab itself (else a person or the page did)
-    const lostWhy = () => (closedByMe ? "you closed yours and the others are in use by other agents" : "your tab was closed (by a person, the page or the browser) and the others are in use by other agents");
+    let othersOpen = 0; // the web tabs open besides this agent's, as freeTab last counted them
+    const lostWhy = () => `${closedByMe ? "you closed yours" : "your tab was closed (by a person, the page or the browser)"} and ${othersOpen ? "the others are in use by other agents" : "no other tab is open"}`;
     let noTabWhy = lostWhy();
     const noTab = () => `You have no tab of your own: ${noTabWhy}. Open one with browser_tabs new.`;
     const used = []; // tabs it worked in before, latest last: where it goes back to
@@ -334,6 +373,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // Calls whose named final action the user allowed in the browser (Codex and other apps: the
     // approval card, daemon/approvals.mjs): the hand-off below doesn't apply to them.
     const approvedArgs = new WeakSet();
+    const approvedWhere = new WeakMap(); // args -> the tab and origin that Allow was for (approvals.mjs sameWhere)
     // What needs the user's OK in an app that can't ask for it: handed to the user. denied: the
     // user said Deny in the browser.
     const handOff = (reason, denied = false) => `${denied ? "Denied in the PairBrowse browser. " : ""}${reason} This needs the user's OK, which this app can't ask for. ` +
@@ -362,7 +402,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
       timeouts: { settle: Math.max(0, Math.min(5000, Number(config.settleMs ?? MCP_SETTLE_DEFAULT_MS) || 0)) },
     }, contextFor(serverListeners));
 
-    const toClient = (msg) => !sock.destroyed && sock.write(JSON.stringify(msg) + "\n");
+    // With pictures off (config screenshots: false) no result carries one: a message pointing at
+    // "the screenshot" points at a snapshot instead.
+    const toClient = (msg) => {
+      if (config.screenshots === false && Array.isArray(msg?.result?.content)) for (const c of msg.result.content) if (c?.type === "text" && typeof c.text === "string") c.text = pictureless(c.text);
+      return !sock.destroyed && sock.write(JSON.stringify(msg) + "\n");
+    };
     const pending = new Map(); // the helper's own calls to the server, by id
     const completed = new Map(); // calls in flight: resolved once their result went out
     const calls = new Map(); // request id -> tool name, for the result
@@ -461,9 +506,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
           const owner = ownPage && hud.sparkOwner(ownPage);
           if (!(read && (!ownPage || (owner && owner.id !== participant)))) hud.moveSpark(participant, ownPage || (lostTab || (remote && !mine) ? null : seenUrl)).catch(() => {});
         }
-        for (const part of content()) if (part.type === "text") part.text = trimResult(tool, part.text);
+        for (const part of content()) if (part.type === "text") part.text = dropClosedAlerts(trimResult(tool, part.text));
         if (tool === "browser_handle_dialog" && msg.result && !msg.result.isError && !content().some((c) => /### Result|Accepted|Dismissed/.test(c.text || ""))) {
-          const a = callArgs.get(msg.id) ?? msg.params?.arguments;
+          // The call's own arguments (callArgs is emptied before this runs): a dismiss says so.
+          const a = args ?? callArgs.get(msg.id) ?? msg.params?.arguments;
           content().unshift({ type: "text", text: `${a?.accept === false ? "Dismissed" : "Accepted"} the page's dialog.` });
         }
         if (tool === "browser_snapshot" && msg.result && !msg.result.isError && content().some((c) => /```yaml\s*```/.test(c.text || ""))) {
@@ -593,8 +639,17 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (submitAfter.delete(msg.id) && msg.result && !msg.result.isError) await pressEnterAfter(msg, args).catch((e) => log("enter after typing", e?.message || e));
         if (tool?.startsWith("browser_") && msg.result?.isError) {
           const raw = (msg.result.content || []).map((c) => c.text || "").join("\n");
+          // Leaving the browser's own error page (a 404 with no body, a failed load): its late
+          // commit "interrupts" the new navigation in Playwright's eyes, though the tab gets
+          // there. Where the tab really is decides: the address asked for is a success.
+          const landed = tool === "browser_navigate" && /interrupted by another navigation/i.test(raw) ? await within(7000, arrivedAt(await within(2000, serverPage().catch(() => null)), args?.url)) : null;
+          if (landed) {
+            const snap = await within(10_000, internal("browser_snapshot", {})).catch(() => null);
+            const title = await within(1000, landed.title()).catch(() => "");
+            msg.result = { content: [{ type: "text", text: `### Page\n- Page URL: ${landed.url()}${title ? `\n- Page Title: ${title}` : ""}` }, ...(snap?.result && !snap.result.isError ? (snap.result.content || []).filter((c) => c.type === "text") : [])] };
+          }
           // No dialog to answer: said plainly (the server's "modal state" wording is for developers).
-          if (tool === "browser_handle_dialog" && /modal state/.test(raw)) msg.result.content = [{ type: "text", text: "No dialog is open right now (no alert, confirm or prompt from the page). Take a browser_snapshot and go on." }];
+          else if (tool === "browser_handle_dialog" && /modal state/.test(raw)) msg.result.content = [{ type: "text", text: "No dialog is open right now (no alert, confirm or prompt from the page). Take a browser_snapshot and go on." }];
           // A file from outside the folders the browser reads: refused, and the chooser it left
           // open is closed again (nothing else works in the tab while it's open).
           else if (tool === "browser_file_upload" && /outside allowed roots|File access denied/i.test(raw)) {
@@ -638,7 +693,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }
       mine = page;
       lostTab = false;
+      try { homes.set(context.sessionName(), page); } catch {}
     }
+    const homes = new Map(); // browser session -> this agent's tab there last (successorOf finds it again)
     // A tab no other agent is working in (its spark or turn), for when this one's tab closed.
     const othersTab = (page) => {
       const held = tabClaims.holder(page);
@@ -650,12 +707,16 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const takenByOther = (page) => othersTab(page) || !!remoteHolder(page);
     async function freeTab() {
       for (const page of [...used].reverse()) if (!page.isClosed() && !othersTab(page) && !isChromePage(page.url()) && !personTab(page)) return page;
-      return (await openTabs()).find((page) => !page.isClosed() && !othersTab(page) && !isChromePage(page.url()) && !personTab(page)) || null;
+      const open = (await openTabs()).filter((page) => !page.isClosed() && !isChromePage(page.url()));
+      othersOpen = open.length;
+      return open.find((page) => !othersTab(page) && !personTab(page)) || null;
     }
     // Moves this participant's browser server to its own tab, by that tab's number right now.
     async function syncServer() {
       if (!mine || mine.isClosed() || serverAt === mine) return;
-      if (!serverAt) {
+      // Unknown, or a tab of a browser that has since closed (a session switch): the server lists
+      // the tabs anew first (a select by number before that finds no such tab).
+      if (!serverAt || serverAt.isClosed?.()) {
         serverAt = await currentIn(await tabList());
         tabsListed = true;
         if (serverAt === mine) return;
@@ -739,13 +800,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         log(`handed to the user (${clientName || "unknown app"}): ${name}`);
         return handOff(reason);
       }
-      // Claude Code: the same ask was answered Deny in the browser (its hook passed that on, so this
-      // call came some other way): refused. A call that arrives while the browser still asks is the
-      // terminal's yes, and takes the card down there.
-      if (verdict.permissionDecision === "ask" && clientName === "claude-code" && clickApprovals) {
-        const ask = approvalAsk(name, args);
-        if (ask && clickApprovals.arrived(name, args) === "denied") return `Denied in the PairBrowse browser: ${ask.reason.replace(/\.$/, "")}. Nothing was done; ask the user what to do.`;
-      }
+      // (Claude Code's answer from the browser is checked once the call's tab is known: approvalProblem.)
       // While the session picker is up nobody has tabs to lose: an agent may choose for everyone.
       if ((name === "browser_close" || (name === "pairbrowse_session" && args.action !== "list")) && !context.picking() && inUse().length) {
         const who = inUse();
@@ -754,6 +809,36 @@ export function createServe({ config, log, host, createConnection, clients, coll
           "or ask the person to switch with \"Switch session\" in the PairBrowse side panel.";
       }
       return null;
+    }
+
+    // A named final action allowed in the browser holds only in the tab it was asked in, still on
+    // the same origin (approvals.mjs sameWhere): a navigation or another tab in between (another
+    // agent, a joiner, the page itself) makes it another click, asked again; the element's own
+    // risk is judged again as it is clicked (browserToolProblem). Claude Code: the same ask
+    // answered Deny in the browser (its hook passed that on, so this call came some other way) is
+    // refused; a call that arrives while the browser still asks is the terminal's yes, and takes
+    // the card down there.
+    async function approvalProblem(name, args) {
+      if (!clickApprovals || !APPROVAL_TOOLS.has(name)) return null;
+      const ask = approvalAsk(name, args);
+      if (!ask) return null;
+      if (clientName !== "claude-code" && !approvedWhere.has(args)) return null;
+      const page = await within(3000, serverPage().catch(() => null));
+      const here = { page, url: page && !page.isClosed() ? page.url() : "" };
+      const moved = (where) => `Not done: the user allowed this in the PairBrowse browser for ${where?.origin || "another page"}, but the tab has changed since (it is now on ${originOf(here.url) || "another page"}). ` +
+        "Take a browser_snapshot, check this is still the right step, and call again: the user is asked again.";
+      if (clientName === "claude-code") {
+        const r = clickApprovals.arrived(name, args, here);
+        if (r === "denied") return `Denied in the PairBrowse browser: ${ask.reason.replace(/\.$/, "")}. Nothing was done; ask the user what to do.`;
+        if (r === "moved") { log(`approval: refused ${name}: the tab changed after the browser's Allow`); return moved(clickApprovals.lastWhere?.()); }
+        return null;
+      }
+      const where = approvedWhere.get(args);
+      approvedWhere.delete(args);
+      if (sameWhere(where, here)) return null;
+      approvedArgs.delete(args);
+      log(`approval: refused ${name}: the tab changed after the browser's Allow`);
+      return moved(where);
     }
 
     // The button Enter or Space would press (activatingKey), in the tab Claude worked in last.
@@ -954,9 +1039,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
       pairbrowse_run: runCommand,
       async pairbrowse_status(args) {
         await context.getContext();
-        await hud.setBadgeFor(participant, args.text, args.kind, myLabel());
-        if (args.kind === "done" || args.kind === "clear") await hud.hideCursor(hud.sparkPage(participant));
+        // The side panels and docks (session) and the badge in the tabs (hud) say the same. The
+        // badge goes to every tab: bounded, so one frozen tab never holds this agent (nor the
+        // others behind the shared queue).
         session.setStatus(participant, args.text, args.kind); // the side panels in a shared session show it
+        await within(BADGE_MS, hud.setBadgeFor(participant, args.text, args.kind, myLabel()).catch(() => {}));
+        if (args.kind === "done" || args.kind === "clear") await within(BADGE_MS, Promise.resolve(hud.hideCursor(hud.sparkPage(participant))).catch(() => {}));
         journal.status(args.kind, args.text); // a hand-off goes to the goal log's yourTurn
         return { text: "ok" };
       },
@@ -974,7 +1062,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         if (!page) return { text: "No page open to scroll.", error: true };
         const r = await runSteps(page, [step], { smooth: true, signal: disconnected.signal,
           cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()), activity: (text) => hud.addActivity(text, myLabel(), page) });
-        return r.ok === false ? { text: r.why, error: true } : { text: `Scrolled. ${await page.evaluate(() => `Now ${Math.min(Math.round(scrollY), Math.max(0, Math.round(document.documentElement.scrollHeight - innerHeight)))} of ${Math.max(0, Math.round(document.documentElement.scrollHeight - innerHeight))} px down.`).catch(() => "")}`, url: page.url() };
+        return r.ok === false ? { text: r.why, error: true } : { text: `Scrolled. ${(await within(2000, page.evaluate(() => `Now ${Math.min(Math.round(scrollY), Math.max(0, Math.round(document.documentElement.scrollHeight - innerHeight)))} of ${Math.max(0, Math.round(document.documentElement.scrollHeight - innerHeight))} px down.`).catch(() => ""))) ?? ""}`, url: page.url() };
       },
       // browser_drag: press on the first element, a short move that starts the drag, steps across
       // to the second, let go (daemon/drag.mjs). The guard's rules ran first (refusal): a drag
@@ -1087,12 +1175,17 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (denied) { traces.delete(msg.id); return reply(msg.id, denied, true); }
       if (!NO_WAIT.has(name)) await whenReady();
       // "Your turn" is done once Claude acts again: take the badge down.
-      if (hud.statusOf(participant)?.kind === "you" && (CLICKING_TOOLS.has(name) || name === "browser_navigate" || name === "pairbrowse_click_at")) {
+      // The bar and the docks (session status) together: one cleared alone left the dock saying
+      // "your turn" after the bar had cleared.
+      if ((hud.statusOf(participant)?.kind === "you" || session.statusOf(participant)?.kind === "you") && (CLICKING_TOOLS.has(name) || name === "browser_navigate" || name === "pairbrowse_click_at")) {
         hud.setBadgeFor(participant, "", "clear").catch(() => {});
+        session.setStatus(participant, "", "clear");
       }
       // Act in this participant's own tab (browser_tabs new and select pick a new one).
       const picksTab = name === "browser_tabs" && ["new", "select"].includes(args.action);
       if ((name.startsWith("browser_") && !picksTab) || DECORATED.has(name)) { await myTab(); await syncServer(); }
+      const unapproved = await approvalProblem(name, args);
+      if (unapproved) { traces.delete(msg.id); return reply(msg.id, unapproved, true); }
       // The main frame's refs Claude got plain get Playwright's frame number back (refNames).
       const framed = refNames.toFrame(args);
       if (framed !== args) {
@@ -1175,7 +1268,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const dated = items.filter((_, i) => /^(date|time|month|week|datetime-local)$/.test(kinds[i] || ""));
         if (dated.length && !secretNamesIn(name, args, secretNames()).length) {
           const shape = { date: "YYYY-MM-DD", "datetime-local": "YYYY-MM-DDThh:mm", month: "YYYY-MM", week: "YYYY-Www", time: "hh:mm" };
-          const lines = [];
+          const lines = [], said = []; // said: the activity line's, names only
           for (const f of dated) {
             const kind = kinds[items.indexOf(f)];
             const value = kind === "date" ? isoDate(String(f.value ?? "")) || String(f.value ?? "") : String(f.value ?? "");
@@ -1187,13 +1280,15 @@ export function createServe({ config, log, host, createConnection, clients, coll
               await loc.fill(value, { timeout: 5000 });
               const now = await loc.inputValue({ timeout: 1000 }).catch(() => null);
               lines.push(now === value ? `Filled ${f.name || f.target} with ${value}.` : `${f.name || f.target} didn't take "${String(f.value).slice(0, 40)}": a ${kind} field takes ${shape[kind]}.`);
+              said.push(now === value ? `Filled ${f.name || f.target}.` : `${f.name || f.target} didn't take the value: a ${kind} field takes ${shape[kind]}.`);
             } catch (e) {
               lines.push(`${f.name || f.target} didn't take "${String(f.value).slice(0, 40)}": a ${kind} field takes ${shape[kind]} (${dragReason(e)}).`);
+              said.push(`${f.name || f.target} didn't take the value: a ${kind} field takes ${shape[kind]}.`);
             } finally {
               if (human) page._pairbrowseHumanized = true;
             }
           }
-          hud.addActivity(lines.join(" "), myLabel(), page);
+          hud.addActivity(said.join(" "), myLabel(), page);
           if (name === "browser_type" || dated.length === items.length) return reply(msg.id, lines.join("\n"), lines.some((l) => /didn't take/.test(l)));
           fieldNotes.push(...lines);
           msg = structuredClone(msg);
@@ -1232,7 +1327,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const page = actingIn || await context.pageAt(context.currentUrl());
         shown = { ...args, fields: await Promise.all(args.fields.map(async (f) => (await sensitiveTarget(page, f.target) ? { ...f, value: "••••" } : f))) };
       }
-      hud.addActivity(describe(name, shown), myLabel(), actingIn);
+      hud.addActivity(describe(name, shown, { values: false }), myLabel(), actingIn);
       await hud.showCursor(name, args, async () => actingIn || (mine && !mine.isClosed() ? mine : null) || context.pageAt(context.currentUrl()), myLabel()).catch(() => {});
       traces.get(msg.id)?.mark("cursor");
       if (name === "browser_fill_form") await hud.markTargets(actingIn || (mine && !mine.isClosed() ? mine : null), args.fields.map((f) => f.target)).catch(() => {});
@@ -1271,6 +1366,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (mine && !mine.isClosed() && !personTab(mine)) return mine;
       if (lostTab) return null;
       if (mine) {
+        // Its own tab came back as a new page (its session's browser restarted: a switch and
+        // back): that one, the same tab, never another agent's on the same address.
+        let session = "";
+        try { session = context.sessionName(); } catch {}
+        const back = [homes.get(session), mine].map((p) => (p && !p.isClosed() ? p : context.successorOf?.(p))).find(Boolean);
+        if (back && !takenByOther(back) && !personTab(back)) { setMine(back); return mine; }
         const next = await freeTab();
         if (next) setMine(next);
         else { mine = null; lostTab = true; noTabWhy = lostWhy(); }
@@ -1370,7 +1471,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
           // A joiner's agent: its app's OK (its own user's) never counts as the host's.
           if (remote) { collaboration.register(participant, personLabel(remote.name, appName(clientName))); clientName = `remote:${clientName}`; }
           log(`participant ${participant} is ${clientName || "an unnamed app"}`);
-          clickApprovals?.participant(participant, { client: clientName, remote: !!remote, tab: () => (mine && !mine.isClosed() ? mine : null) });
+          // The process that started its bridge (launch.mjs: the app's own): which agent a
+          // PermissionRequest hook asks for (approvals.mjs whose).
+          const parent = Number(msg.params?.clientInfo?.pairbrowseParent);
+          clickApprovals?.participant(participant, { client: clientName, remote: !!remote, parent: !remote && Number.isSafeInteger(parent) && parent > 1 ? parent : 0, tab: () => (mine && !mine.isClosed() ? mine : null) });
         }
         // "<person> · Claude Code", "<person> · Codex".
         const label = msg.params?.clientInfo?.pairbrowseParticipant;
@@ -1540,7 +1644,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           });
           const a = await Promise.race([r.answer, left]);
           disconnected.signal.removeEventListener("abort", onAbort);
-          if (a === "allow" || a === "site") approvedArgs.add(args);
+          if (a === "allow" || a === "site") { approvedArgs.add(args); approvedWhere.set(args, r.where || null); }
           else {
             log(`handed to the user (${clientName || "unknown app"}): ${tool}, after the browser's ${a}`);
             const reason = String(decide({ tool_name: `mcp__plugin_pairbrowse_browser__${tool}`, tool_input: args }).hookSpecificOutput.permissionDecisionReason || "").replace(/\.?$/, ".");

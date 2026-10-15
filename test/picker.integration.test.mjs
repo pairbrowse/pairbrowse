@@ -150,7 +150,14 @@ test("the picker shows when nobody chose, websites can't drive it, and the pick 
     await until("work's tabs", async () => /work\.pbtest\.example\/b/.test(text(await agent.tool("browser_tabs", { action: "list" }))));
     const after = await agent.live();
     assert.equal((await (await fetch(`${after}sessions.json`)).json()).picking, false);
-    assert.equal((await post(`${after}pick`, { action: "new" }, EXTENSION)).status, 409, "no second pick");
+    // Picked: another pick is a switch now, and with an agent at work it asks first (428, the
+    // question and who is at work: daemon/pick.mjs) and switches nothing until confirmed.
+    const again = await post(`${after}pick`, { action: "new" }, EXTENSION);
+    assert.equal(again.status, 428, "an agent at work: asked first, never switched at once");
+    const asked = again.json;
+    assert.equal(typeof asked.confirm, "string");
+    assert.ok(Array.isArray(asked.agents) && asked.agents.length, JSON.stringify(asked));
+    assert.equal((await (await fetch(`${after}sessions.json`)).json()).picking, false, "nothing switched");
 
     stage = "who used it is remembered for the picker, most recently used first";
     const later = await (await fetch(`${after}sessions.json`)).json();

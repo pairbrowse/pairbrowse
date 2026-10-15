@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync, rmSync, existsSync, copyFileSync, constants as fsConstants } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { paths } from "../paths.mjs";
-import { ensureBrowser, launchArgs, prepareProfile, panelExtensionId, resetPanelWorker, browserChoice, writeHelperKeyFile, dropHelperKeyFile } from "../browser.mjs";
+import { ensureBrowser, launchArgs, prepareProfile, panelExtensionId, resetPanelWorker, browserChoice, writeHelperKeyFile, dropHelperKeyFile, CAPTURE_KEY_PREFIX } from "../browser.mjs";
 import { engineProfile, launchEngine, validateEngine } from "../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../native-install.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "../display.mjs";
@@ -16,7 +16,7 @@ import { renameRunsSession } from "../runs.mjs";
 import { keepFocus } from "../focus.mjs";
 import { sleep, readJson, within } from "../util.mjs";
 import { pruneStaleContexts } from "./contexts.mjs";
-import { chromePages, capturePages, nativeManifest, MEASURING } from "../native-engine.mjs";
+import { chromePages, capturePages, captureKeyed, nativeManifest, MEASURING } from "../native-engine.mjs";
 import { isChromePage } from "../policy.mjs";
 import { createPersonTabs, keepDownloadMark } from "./tools.mjs";
 import { OPEN_ACCEPT_MS } from "../opener.mjs";
@@ -42,6 +42,8 @@ const CHROME_PICKER = "chrome://pairbrowse/picker";
 const chromePagesIn = (config) => { try { return config.browserEngine === "pairbrowse" && chromePages(nativeManifest(config.executablePath)); } catch { return false; } };
 // Whether that build also declares its capture page (native-engine capturePages).
 const capturePagesIn = (config) => { try { return config.browserEngine === "pairbrowse" && capturePages(nativeManifest(config.executablePath)); } catch { return false; } };
+// Whether its capture page reads a key of its own (native-engine captureKeyed).
+const captureKeyedIn = (config) => { try { return config.browserEngine === "pairbrowse" && captureKeyed(nativeManifest(config.executablePath)); } catch { return false; } };
 
 // Started in an SSH session (say, the desktop app's SSH sessions) means the browser runs on that
 // machine, not the user's: its live view needs an SSH tunnel.
@@ -51,7 +53,8 @@ export const where = () => (process.env.SSH_CONNECTION ? "Server" : "Local");
 // waits up to a minute for it, and says so in the live view's status line and a notification (no
 // browser yet, so no side panel or strip to show it). The launch's log, passing every line on;
 // done(badge): the launch ended, the status line goes back to the badge.
-export const MEASURING_STATUS = "Measuring this Mac once (under a minute): the browser opens after that.";
+// Each of its steps is bounded at 90 s (native-engine CAPTURE_STEP_MS); together they usually take under a minute.
+export const MEASURING_STATUS = "Measuring this Mac once (usually under a minute, sometimes a few): the browser opens after that.";
 export function measuringLog({ log, status, notify }) {
   let measuring = false;
   const launchLog = (text, ...more) => {
@@ -85,7 +88,7 @@ export function stopRequestMirroring(page) {
 // the Tools tab's Downloads (daemon/tools.mjs), in memory only.
 // personTabs: the person's own tabs (daemon/tools.mjs createPersonTabs), shared with serve.mjs:
 // openForPerson opens one, and no agent's fallback tab is ever one.
-export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, capturePagesOf = capturePagesIn, helperFor = async () => null,
+export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, helperFor = async () => null,
   beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null }) {
   let contextPromise = null;
   let chrome = false; // the browser in use has its own pages (no side panel extension)
@@ -94,9 +97,12 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
   const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
   let helperKeyPath = null; // the key file of the browser launched last, until used or closed
+  let captureKeyPath = null; // ...and its capture page's
 
   // Sync and idempotent: a path given is one launch's own file (its close drops only that one).
-  function dropHelperKey(path = helperKeyPath) {
+  // The capture page's file goes with the pages' (the browser reads both as it starts).
+  function dropHelperKey(path = helperKeyPath, capturePath = path === helperKeyPath ? captureKeyPath : null) {
+    if (capturePath) { dropHelperKeyFile(capturePath); if (capturePath === captureKeyPath) captureKeyPath = null; }
     if (!path) return;
     dropHelperKeyFile(path);
     if (path === helperKeyPath) helperKeyPath = null;
@@ -301,9 +307,29 @@ let switched = Promise.resolve();
   }
 
   // screen: the tab that shows "Opening tabs" (default: the first one).
+  // A tab's identity across a browser restart (a session switch, a rename): its place in its
+  // session's last save. Before the browser closes, each saved page is noted with that place
+  // (placeOf); as the session's tabs come back, each new page takes the place's (successors), so an
+  // agent's tab is the same tab when its session comes back, never another one on the same address.
+  const successors = new WeakMap(); // old page -> the page that tab came back as
+  const comingBack = new Map(); // `${session}|${i}` -> [old pages]
+  function notePlaces() {
+    if (!tabTracker?.indexOf || !contextPromise) return;
+    return contextPromise.then((ctx) => {
+      for (const p of ctx.pages()) {
+        const i = tabTracker.indexOf(p);
+        if (i < 0) continue;
+        const k = `${session}|${i}`;
+        comingBack.set(k, [...(comingBack.get(k) || []).filter((x) => x !== p), p].slice(-8));
+      }
+    }).catch(() => {});
+  }
+  const successorOf = (page) => { let p = page; for (let n = 0; p && n < 8 && successors.has(p); n++) p = successors.get(p); return p && p !== page && !p.isClosed() ? p : null; };
+
   function restore(ctx, screen = null, { own = false } = {}) {
     recordPerson(session, { who: "You", computer: computerName(), kind: "you" }); // the session is in use now
     const saved = readSavedTabs(tabsFile(session));
+    const restoredSession = session;
     tabTracker = trackTabs(ctx, { file: tabsFile(session), activePage: () => findPage(ctx, lastCurrentUrl), log });
     if (!saved.tabs.length) { screen?.close().catch(() => {}); return; }
     restoredActiveUrl = saved.tabs[saved.active]?.url || null;
@@ -316,6 +342,7 @@ let switched = Promise.resolve();
       // Progress shows in the live view and side panel only (never as a badge in the pages),
       // and only when there's more than one tab to bring back.
       onProgress: (n, total) => { if (total > 1) status({ text: `Opening tabs ${n} of ${total}`, kind: "claude" }); },
+      onPage: (i, page) => { for (const old of comingBack.get(`${restoredSession}|${i}`) || []) successors.set(old, page); comingBack.delete(`${restoredSession}|${i}`); },
     }).catch((e) => log("restore failed", e?.message || e)).finally(() => {
       status(hud.badge());
       restoring = null;
@@ -353,8 +380,12 @@ let switched = Promise.resolve();
     if (!screen && needsVirtualDisplay(config)) screen = await startVirtualDisplay(log);
     createSession(session);
     // The PairBrowse browser (scripts/browser.mjs), or another Chromium browser from config.
-    let keyFile = null;
+    let keyFile = null, captureKeyFile = null;
     if (helper) try { keyFile = helperKeyPath = writeHelperKeyFile(helper.key); } catch (e) { log(`the browser's own pages have no helper address (key file: ${e?.code || "refused"})`); }
+    // A capture page that reads its own key gets a new one now (and the helper requires it); a
+    // file that can't be written leaves the capture page without one (it is refused: fail closed).
+    const ck = helper?.newCaptureKey?.(!!(keyFile && capture && captureKeyedOf(config))) || null;
+    if (ck) try { captureKeyFile = captureKeyPath = writeHelperKeyFile(ck, undefined, CAPTURE_KEY_PREFIX); } catch (e) { log(`the capture page has no key (key file: ${e?.code || "refused"})`); }
     const launchLog = measuringLog({ log, status, notify });
     let ctx;
     try {
@@ -371,9 +402,9 @@ let switched = Promise.resolve();
         // Its own side panel is the only extension it loads. A build with its own pages opens its
         // startup page (PairBrowse's new tab page), not the driver's about:blank (plans/555 D1.2).
         ignoreDefaultArgs: chrome ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"],
-        args: launchArgs(config, { firstRun, chromePages: chrome, helper: helper && keyFile ? { origin: helper.origin, keyFile } : null }),
+        args: launchArgs(config, { firstRun, chromePages: chrome, helper: helper && keyFile ? { origin: helper.origin, keyFile, ...(captureKeyFile ? { captureKeyFile } : {}) } : null }),
       }, launchLog);
-    } catch (e) { dropHelperKey(keyFile); throw e; } // a failed launch leaves no key file
+    } catch (e) { dropHelperKey(keyFile, captureKeyFile); throw e; } // a failed launch leaves no key file
     finally { launchLog.done(hud.badge()); }
     step("browser (fingerprint and launchPersistentContext inside)");
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
@@ -388,7 +419,7 @@ let switched = Promise.resolve();
     else restore(ctx, null, { own });
     const mine = contextPromise;
     ctx.on("close", () => {
-      dropHelperKey(keyFile); // this launch's own file: an older browser closing late keeps the next one's
+      dropHelperKey(keyFile, captureKeyFile); // this launch's own file: an older browser closing late keeps the next one's
       log("browser closed");
       // Closed for good (by hand, a crash, the turn cap), not on the way to another session: the
       // calls in flight hear of it.
@@ -623,6 +654,7 @@ let switched = Promise.resolve();
       const ctx = contextPromise && (await contextPromise);
       if (ctx) {
         await tabTracker?.saveNow();
+        await notePlaces();
         tabTracker?.stop();
         await ctx.close().catch(() => {});
       }
@@ -718,7 +750,9 @@ let switched = Promise.resolve();
   async function sessionCommand({ action, name } = {}) {
     const fail = (text) => ({ text, error: true });
     const exists = () => validName(name) && listSessions().some((s) => s.name === name);
-    const list = () => listSessions().map((s) => `${s.name === session ? "* " : "  "}${s.temporary ? "clean (throwaway)" : s.name}${s.tabs ? `, ${s.tabs} saved tabs` : ""}`).join("\n");
+    const list = () => listSessions().map((s) => `${s.name === session ? "* " : "  "}${s.temporary ? "clean (throwaway)" : s.name}${s.tabs ? `, ${s.tabs} saved tab${s.tabs === 1 ? "" : "s"}` : ""}`).join("\n");
+    // The open session's count is its tabs now (its file may be up to a save behind).
+    if (action === "list" && tabTracker && !switching) await within(3000, tabTracker.saveNow()).catch(() => {});
     if (action === "list") return { text: `Browser sessions (* = in use, ${where().toLowerCase()} browser):\n${list()}` };
     if (action === "use") {
       if (!exists()) return fail(`No session "${name}".\n${list()}`);
@@ -741,6 +775,10 @@ let switched = Promise.resolve();
       if (!exists()) return fail(`No session "${name}".`);
       if (name === session) return fail("That session is in use. Switch to another one first.");
       if (name === "default") return fail("The default session can't be deleted.");
+      // Not while the browser switches (it may be opening that one), nor while a browser has its
+      // profile open (another PairBrowse, a browser started by hand on it).
+      if (switching) return fail("The browser is switching sessions; try again in a moment.");
+      if (profileInUse(name)) return fail(`Session "${name}" is open in another browser; close it there, then delete it.`);
       deleteSession(name);
       return { text: `Deleted session "${name}" and its logins.` };
     }
@@ -789,7 +827,13 @@ let switched = Promise.resolve();
     }, (e) => ({ ok: false, why: e?.message || String(e) }));
     const answer = await within(acceptMs, up);
     if (answer) return answer;
-    up.then((a) => { if (!a.ok) log(`the browser opened by hand didn't start: ${a.why}`); });
+    // Still starting: taken (the opener's browser won't open a window of its own). A start that
+    // fails from here on is said where the person looks, since nothing else would show it.
+    up.then((a) => {
+      if (a.ok) return;
+      log(`the browser opened by hand didn't start: ${a.why}`);
+      try { notify(`The PairBrowse browser didn't start: ${String(a.why).slice(0, 200)}. Open it again.`); } catch {}
+    });
     return { ok: true };
   }
 
@@ -850,6 +894,9 @@ let switched = Promise.resolve();
     sessionInfo, sessionCommand, startUp, close, sessionName: () => session, renameSaved, renameCurrent, saveTabs,
     // The browser's pages used their key (or the helper stops): its file has done its job.
     dropHelperKey: () => dropHelperKey(),
+    // The tab a page came back as after its session's browser restarted (a session switch and
+    // back), or null.
+    successorOf,
     waitForPick, pickerState, pickSession, pickedJoin, switchForPerson, // In the session being opened, when the person just picked another.
     recordPerson: async (person) => { while (pickSwitch) await pickSwitch; recordPerson(session, person); }, picking: () => pick.state === "showing", reopenPicker,
     // An agent chose (pairbrowse_join): the picker goes, the saved tabs come back.

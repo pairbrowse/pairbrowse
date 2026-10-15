@@ -30,7 +30,11 @@ function serially() {
 // The shared browser's picture page (screen.html, PairBrowse's own extension page) is called in its
 // own script world, where its script put window.pbScreen: Patchright's page.evaluate otherwise runs
 // in a hidden world of its own (the extra arguments are Patchright's; Playwright ignores them).
-const inScreen = (page, fn, arg) => page.evaluate(fn, arg, undefined, false);
+// Bounded (a page whose scripts never pause answers nothing): null when the time is up.
+const SCREEN_CALL_MS = 5000;
+const inScreen = (page, fn, arg, ms = SCREEN_CALL_MS) => within(ms, Promise.resolve().then(() => page.evaluate(fn, arg, undefined, false)));
+const OFFER_MS = 20_000; // the picture page's answer to an offer (gathering its connection's routes)
+const PICK_MS = 10 * 60_000; // a person choosing files for the host's file dialog
 const OPEN_MS = 15_000;
 const ADOPT_MS = 10_000; // a tab opened from a shared one has this long to get a web address (in the shared window: no limit)
 const FIRST_ACTIVITY = 3; // on joining, the last few things that happened
@@ -532,7 +536,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
             if (cur.screens.get(page) !== sc || page.isClosed() || sc.fallback) return stale();
             sc.peer = r.peer;
             // Tests only (PAIRBROWSE_TEST_NO_DIRECT=1): a network where no direct connection can be made.
-            const answer = await inScreen(page, (o) => window.pbScreen?.offer(o) ?? null, { sdp: r.sdp, peer: r.peer, doc: sc.doc, noDirect: process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" });
+            const answer = await inScreen(page, (o) => window.pbScreen?.offer(o) ?? null, { sdp: r.sdp, peer: r.peer, doc: sc.doc, noDirect: process.env.PAIRBROWSE_TEST_NO_DIRECT === "1" }, OFFER_MS);
             if (!answer) { if (sc.peer === r.peer) sc.peer = null; return stale(); }
             const a = await cur.join.screen({ op: "answer", peer: r.peer, sdp: answer });
             if (a?.error) log("shared browser", a.error);
@@ -586,7 +590,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
       const page = cur.pages.get(data.id);
       if (!page || page.isClosed() || cur.join.role !== "drive") return;
       (async () => {
-        const picked = await inScreen(page, (o) => window.pbScreen?.pick(o), { multiple: !!data.multiple }).catch(() => null);
+        const picked = await inScreen(page, (o) => window.pbScreen?.pick(o), { multiple: !!data.multiple }, PICK_MS).catch(() => null);
         log(`shared browser: ${Array.isArray(picked) ? picked.length : 0} file(s) picked for the host's page`);
         if (!Array.isArray(picked) || !picked.length) return;
         const files = [];

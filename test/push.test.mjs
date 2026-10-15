@@ -206,7 +206,8 @@ test("overlay: shared browser joiners' pointers, as places in the tab's view, on
     const last = overlays.at(-1);
     assert.equal(last.length, 1);
     assert.ok(last[0].same);
-    assert.deepEqual(last[0].pointers.map(({ fresh, ...p }) => p), [{ k: "i1:a:me", who: "Alice", color: last[0].pointers[0].color, x: 0.25, y: 0.5 }]);
+    assert.deepEqual(last[0].pointers.map(({ fresh, k, ...p }) => p), [{ who: "Alice", color: last[0].pointers[0].color, x: 0.25, y: 0.5 }]);
+    assert.match(last[0].pointers[0].k, /^p[\w-]{22}$/, "an opaque key, never the joiner's own");
     assert.ok(last[0].pointers[0].fresh > 2500 && last[0].pointers[0].fresh <= 3000, "how long it stays without a move");
     const before = overlays.length;
     await push.fromJoiner({ me: { id: "t1", x: 300, y: 410 } }, dan); // only Dan moved
@@ -224,6 +225,37 @@ test("overlay: shared browser joiners' pointers, as places in the tab's view, on
     await push.fromJoiner({ me: { id: "t1", x: 100, y: 200 } }, alice, { x: 2, y: 0.5 });
     await sleep(80);
     assert.deepEqual(overlays.at(-1), [], "a place outside the view is dropped");
+  } finally {
+    push.close();
+  }
+});
+
+// A joiner's key (invite id and joiner id: what their approval is bound to) never reaches another
+// joiner or a page: each recipient gets its own opaque name for each pointer, stable as it moves.
+test("pointers: other joiners get opaque keys, each their own, never a joiner's id", async () => {
+  const page = { isClosed: () => false, url: () => "https://example.com/" };
+  const got = new Map(), drawnKeys = [];
+  const connFor = (key) => { let closed = () => {}; return { send: (raw) => { const m = JSON.parse(raw); if (m.event === "pointers") got.set(key, [...(got.get(key) || []), m.data]); }, onClose(cb) { closed = cb; }, close() { closed(); } }; };
+  const push = createPush({
+    getContext: async () => ({ pages: () => [page] }), idOf: () => "t1", joinerKey: (j) => j.key, secretDomains: () => [], tabMeta: () => ({}),
+    shared: { host: "Bob", showPointers: (p, list) => drawnKeys.push(...list.map((x) => x.k)), readForm: async () => null, toView: () => null },
+    tabsFor: async () => ({ tabs: [] }),
+  });
+  const SECRET_A = "inv1:" + "a".repeat(32), SECRET_B = "inv1:" + "b".repeat(32), SECRET_C = "inv2:" + "c".repeat(32);
+  const a = { name: "Alice", key: SECRET_A, invite: { mode: "follow" } }, b = { name: "Bea", key: SECRET_B, invite: { mode: "follow" } }, c = { name: "Cy", key: SECRET_C, invite: { mode: "follow" } };
+  try {
+    for (const j of [a, b, c]) await push.open(j, connFor(j.key));
+    await push.fromJoiner({ me: { id: "t1", x: 10, y: 20 }, agents: [{ id: "t1", x: 5, y: 5, who: "Claude" }] }, a);
+    await sleep(80);
+    await push.fromJoiner({ me: { id: "t1", x: 11, y: 21 } }, a);
+    await sleep(80);
+    const all = JSON.stringify([...got.values()]) + JSON.stringify(drawnKeys);
+    for (const secret of ["a".repeat(32), "inv1:"]) assert.ok(!all.includes(secret), `${secret} leaked`);
+    const keysOf = (key) => got.get(key).map((list) => list.filter((p) => p.who === "Alice").map((p) => p.k));
+    const [b1, b2] = keysOf(SECRET_B), [c1] = keysOf(SECRET_C);
+    assert.deepEqual(b1, b2, "the same pointer keeps its name for one recipient");
+    assert.notDeepEqual(b1, c1, "another recipient names it differently");
+    assert.ok(drawnKeys.length && drawnKeys.every((k) => /^p[\w-]{22}$/.test(k)), "drawn in the tab by opaque keys too");
   } finally {
     push.close();
   }

@@ -13,6 +13,7 @@ const FRAME_MAX = 1920; // the picture's longer side, in pixels
 const FRAME_EVERY_MS = 33; // the slower route's pictures: at most this many a second
 const VIEW_EVERY_MS = 250; // the tab's size and scroll are read again this often (pointers follow scrolling)
 const TAKE_MS = 1000;
+const REPLAY_MS = 5000; // one input event replayed in the tab, at most (a navigation waits its own bound inside)
 const KEY_TEXT = /^.$/u;
 const CODES = { Backspace: 8, Tab: 9, Enter: 13, Shift: 16, Control: 17, Alt: 18, Escape: 27, " ": 32, PageUp: 33, PageDown: 34, End: 35, Home: 36,
   ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Delete: 46, Meta: 91 };
@@ -23,6 +24,33 @@ export function frameFor(w, h, dpr = 1) {
   const s = Math.min(1, FRAME_MAX / Math.max(pw, ph));
   const even = (n) => Math.max(2, Math.round(n * s / 2) * 2);
   return { w: even(pw), h: even(ph) };
+}
+
+// Modifiers (CDP): Alt 1, Ctrl 2, Meta (Cmd) 4, Shift 8.
+const CLIP_LETTER = /^[cxv]$/i;
+const CLIP_LETTER_CODES = new Set(["KeyC", "KeyX", "KeyV"]);
+const CLIP_KEYS = new Set(["Copy", "Cut", "Paste"]); // keyboards' own keys, by name and by code
+const CLIP_KEY_CODES = new Set([67, 86, 88]); // C, V, X
+const letterOfCode = (code) => (/^Key[A-Z]$/.test(code) ? code[3] : /^Digit[0-9]$/.test(code) ? code[5] : "");
+
+// Whether a key would read or write the host's clipboard: Ctrl/Cmd + C, X or V by any of the
+// key's three names (key, code, key code: a page and Chromium's editing each read a different one),
+// Shift+Insert, Ctrl/Cmd+Insert, Shift+Delete, and the keyboards' own Copy, Cut and Paste keys.
+export function usesClipboard(key, code, kc, m) {
+  if (CLIP_KEYS.has(key) || CLIP_KEYS.has(code)) return true;
+  if (m & 6 && (CLIP_LETTER.test(key) || CLIP_LETTER_CODES.has(code) || CLIP_KEY_CODES.has(kc))) return true;
+  const insert = key === "Insert" || code === "Insert" || kc === 45;
+  const del = key === "Delete" || code === "Delete" || kc === 46;
+  return (insert && m & 14) || (del && m & 8) ? true : false;
+}
+// The key code a shortcut is dispatched with: from the key's letter or digit (the layout's, so
+// Ctrl+Z on AZERTY stays undo), else its name (Enter, Tab, ...), else where it is (KeyL: 76,
+// Digit1: 49); 0 when none. Never C, V or X: those were refused above by all three names.
+function shortcutCode(key, code) {
+  if (/^[a-z0-9]$/i.test(key)) return key.toUpperCase().charCodeAt(0);
+  if (CODES[key]) return CODES[key];
+  const l = letterOfCode(code);
+  return l ? l.charCodeAt(0) : 0;
 }
 
 // One event from a joiner's page (screen.js), checked, as CSS pixels in a view of w x h; null when
@@ -51,11 +79,15 @@ export function readInput(ev, view) {
   }
   if (ev.t === "text" && typeof ev.text === "string" && ev.text) return { type: "text", text: ev.text.slice(0, 2000) };
   if (ev.t === "key" && (ev.a === "down" || ev.a === "up") && typeof ev.key === "string" && ev.key.length <= 32) {
-    // Shortcuts that would use the host's clipboard (copy, cut, paste) never reach the page.
-    if (m & 6 && /^[cxv]$/i.test(ev.key)) return null;
     const code = typeof ev.code === "string" ? ev.code.slice(0, 32) : "";
+    const kc = Number.isInteger(ev.kc) && ev.kc > 0 && ev.kc < 256 ? ev.kc : 0;
+    // Shortcuts that would use the host's clipboard (copy, cut, paste) never reach the page.
+    if (usesClipboard(ev.key, code, kc, m)) return null;
     const text = ev.a === "down" && KEY_TEXT.test(ev.key) && !(m & 6) ? ev.key : ev.key === "Enter" && ev.a === "down" ? "\r" : "";
-    return { type: "rawkey", action: ev.a, key: ev.key, code, keyCode: Number(ev.kc) > 0 && Number(ev.kc) < 256 ? Number(ev.kc) : CODES[ev.key] || (text ? text.toUpperCase().charCodeAt(0) : 0), text, location: [0, 1, 2, 3].includes(ev.loc) ? ev.loc : 0, repeat: !!ev.rep, modifiers: m };
+    // With Ctrl or Cmd held the key code is worked out here from the key's place (code) or name,
+    // never taken as sent: one picture of the key, the one checked above.
+    const keyCode = m & 6 ? shortcutCode(ev.key, code) : kc || CODES[ev.key] || (text ? text.toUpperCase().charCodeAt(0) : 0);
+    return { type: "rawkey", action: ev.a, key: ev.key, code, keyCode, text, location: [0, 1, 2, 3].includes(ev.loc) ? ev.loc : 0, repeat: !!ev.rep, modifiers: m };
   }
   return null;
 }
@@ -182,8 +214,9 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     if (onPick && ((ev.type === "mouse" && ev.action !== "mouseMoved") || (ev.type === "rawkey" && ev.action === "down" && (ev.key === "Enter" || ev.key === " ")))) catchPicker(page, s, onPick);
     const done = during(who);
     try {
-      if (ev.type === "rawkey") await rawKey(s.cdp, ev);
-      else await s.replayer.replay({ page, cdp: s.cdp }, ev, "drive");
+      // Bounded: a tab that stopped answering (a page whose scripts never pause) holds up no one's input.
+      if (ev.type === "rawkey") await within(REPLAY_MS, rawKey(s.cdp, ev));
+      else await within(REPLAY_MS, s.replayer.replay({ page, cdp: s.cdp }, ev, "drive"));
     } finally {
       done();
     }

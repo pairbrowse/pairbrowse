@@ -52,3 +52,17 @@ test("agents never open file: addresses, a downloaded file's included", () => {
     assert.match(problem, /only opens web pages/, url);
   }
 });
+
+test("pairbrowse:// addresses are the browser's own, as chrome://pairbrowse ones: refused, hidden, never an agent's", async () => {
+  const { isChromePage, isChromeScreenPage, hiddenFromLiveView, navigationProblem, CHROME_PAGE_RULE } = await import("../scripts/policy.mjs");
+  const { hideChromeTabs } = await import("../scripts/daemon/output.mjs");
+  for (const u of ["pairbrowse://settings", "pairbrowse://browser-settings", "PAIRBROWSE://about", " pairbrowse://newtab/", "pairbrowse:sessions"]) {
+    assert.equal(isChromePage(u), true, u);
+    assert.equal(hiddenFromLiveView(u), true, u);
+    assert.equal(navigationProblem(u.trim()), CHROME_PAGE_RULE, u);
+  }
+  assert.equal(isChromeScreenPage("pairbrowse://screen/"), true);
+  assert.equal(hiddenFromLiveView("pairbrowse://screen/"), false, "a joiner's picture page shows, as chrome://pairbrowse/screen/ does");
+  assert.equal(hideChromeTabs("- 0: [Settings](pairbrowse://settings)\n- 1: [Shop](https://shop.example/)"), "- 1: [Shop](https://shop.example/)");
+  assert.equal(isChromePage("https://pairbrowse.com/"), false);
+});

@@ -25,9 +25,11 @@ export const OPEN_OP = "open";
 // How long the opener waits for the helper's answer; the browser waits a little longer for the
 // opener (the native side's own bound), then opens as a plain window.
 export const OPEN_ANSWER_MS = 12_000;
-// The helper's answer comes once the browser is up, or after this long while it is still starting
-// (a first start that measures this computer can take a while; the launch goes on either way).
-export const OPEN_ACCEPT_MS = 3_000;
+// The helper's answer comes once the browser is up (or its start failed: no), or after this long
+// while it is still starting (a first start that measures this computer can take a while; the
+// launch goes on, and a start that fails after that is told to the person in the browser's place:
+// a notification). Inside the opener's own wait (OPEN_ANSWER_MS), so a no still reaches it.
+export const OPEN_ACCEPT_MS = 10_000;
 
 export const openerPath = (home = paths.home) => join(home, "run", OPENER_FILE);
 

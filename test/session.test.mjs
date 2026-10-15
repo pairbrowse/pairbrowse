@@ -80,3 +80,10 @@ test("each message, sent or received, goes to the activity log once; the panel's
   assert.equal(t.recent().length, 1);
   assert.equal(t.drain("b").length, 1);
 });
+
+test("what crosses is redacted by the one redaction: the longest password first, cards as the activity line masks them", async () => {
+  const { maskCards } = await import("../scripts/policy.mjs");
+  assert.equal(redact("pw abcd1234xyz and abcd1234", { SHORT: "abcd1234", LONG: "abcd1234xyz" }), "pw [LONG] and [SHORT]", "a password holding a shorter one never leaves a piece");
+  assert.equal(redact("abcd1234xyz", { SHORT: "abcd1234", LONG: "abcd1234xyz" }), "[LONG]");
+  for (const t of ["card 4242 4242 4242 4242 ok", "4242-4242-4242-4242", "x 5555555555554444 y", "call 555-123-4567"]) assert.equal(redact(t), maskCards(t), t);
+});

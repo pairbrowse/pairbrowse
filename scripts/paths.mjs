@@ -43,8 +43,6 @@ export const DEFAULT_CONFIG = {
   browserDriver: "patchright",
   // Label this Claude connection in a shared browser (or set PAIRBROWSE_PARTICIPANT).
   participantName: null,
-  // Origins ("https://intranet.example.com") where a plain form submit goes without asking (your
-  // call, your browser). Payments, deletions and publishing still ask there.
   // Most tabs open at once; the one used longest ago closes when another opens.
   maxTabs: 20,
   // A small screenshot of the page with each result that changes it (false: text only).
@@ -90,6 +88,22 @@ export const DEFAULT_CONFIG = {
   // a Jira bug. null: no report is ever sent, and Settings doesn't offer it. Nothing goes there but
   // what you saw and sent, and only when you press Send.
   reportUrl: "https://pairbrowse.com/api/report",
+  // What agents press on a site's cookie banner: "accept" or "reject" (Settings).
+  cookieChoice: "accept",
+  // Ask which browser session to open when the browser starts (Settings); false opens the last one.
+  sessionPicker: true,
+  // The browser server's pause after each action, in ms (0 to 5000; null: 200).
+  settleMs: null,
+  // The live view docked beside Claude (scripts/launch.mjs, the desktop pane): its width in pixels
+  // (null: the pane's own), the app it docks to, its distance from the screen's top, and whether
+  // that app's window makes room for it.
+  dockWidth: null,
+  dockHost: "Claude",
+  dockTop: 52,
+  dockMakeRoom: false,
+  // The native PairBrowse build's own settings (scripts/native-engine.mjs: fingerprint, humanize,
+  // typingPace, motion, geoip, profile, ...). {}: its defaults.
+  pairbrowse: {},
 };
 
 export function loadConfig() {

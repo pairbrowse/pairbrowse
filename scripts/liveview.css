@@ -410,3 +410,11 @@ body:not([data-role="owner"]) #fit { display: none; }
 .share-card .note { margin: 6px 0 0; font-size: var(--fs-2); color: var(--ink-2); }
 .share-card .msg { margin: 0; }
 .share-card .msg:empty { display: none; }
+
+/* Joiners' pointers over the picture (shared browser mode): where each points in the shown tab,
+   never the viewer's own. A white pointer with the person's color on its edge and name pill. */
+.frame .joiner-pointer { position: absolute; z-index: 2; pointer-events: none; line-height: 1; transform: translate(-2px, -2px); transition: left 60ms linear, top 60ms linear, opacity 300ms; }
+.frame .joiner-pointer svg { width: 16px; height: 18px; }
+.frame .joiner-pointer path { fill: #fff; stroke: var(--who, var(--ink-2)); stroke-width: 1.6; stroke-linejoin: round; }
+.frame .joiner-pointer span { display: inline-block; margin: 2px 0 0 10px; padding: 2px 6px; border-radius: 999px; font: 600 var(--fs-1)/1.3 var(--sans); color: #fff; background: var(--who, var(--ink-2)); white-space: nowrap; }
+.frame .joiner-pointer[data-fading] { opacity: 0; }

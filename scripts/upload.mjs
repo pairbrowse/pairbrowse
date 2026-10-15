@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import { isRef } from "./policy.mjs";
 import { withHelpers, buttonLabel, clickRisk, clickContext } from "./daemon/page.mjs";
+import { bounded, within } from "./util.mjs";
 
 export const UPLOAD_TOOL = {
   name: "pairbrowse_upload",
@@ -109,19 +110,19 @@ async function locate(page, target) {
     // A CSS selector, like the other browser tools take ("#drop-zone", ".upload input").
     if (/^[#.[]|^[a-z]+[#.[:]/i.test(target)) {
       const l = page.locator(target);
-      if (await l.count().catch(() => 0)) return l.first();
+      if (await bounded(l.count(), 0)) return l.first();
     }
     for (const l of [page.getByLabel(target, { exact: false }), page.getByRole("button", { name: target }), page.getByText(target, { exact: false })]) {
-      if (await l.count().catch(() => 0)) return l.first();
+      if (await bounded(l.count(), 0)) return l.first();
     }
     throw new Error(`nothing on the page called "${target}"`);
   }
   const inputs = page.locator('input[type="file"]');
-  const n = await inputs.count();
+  const n = await bounded(inputs.count(), 0);
   if (n === 1) return inputs.first();
   // Drop-zone libraries add hidden fields of their own: the one field you can see is the one.
   const shown = [];
-  for (let i = 0; i < Math.min(n, 20); i++) if (await inputs.nth(i).isVisible().catch(() => false)) shown.push(inputs.nth(i));
+  for (let i = 0; i < Math.min(n, 20); i++) if (await bounded(inputs.nth(i).isVisible(), false)) shown.push(inputs.nth(i));
   if (shown.length === 1) return shown[0];
   throw new Error(n ? `the page has ${n} file fields; name the one you mean as target` : "the page has no file field; give the upload button or drop zone as target");
 }
@@ -129,42 +130,42 @@ async function locate(page, target) {
 // Puts staged files into the element: a file field directly; a field inside it (drop zones often
 // hide one); a button through its file chooser; otherwise a synthetic drop of real File objects.
 async function deliver(page, el, files) {
-  const isInput = await el.evaluate((n) => n instanceof HTMLInputElement && n.type === "file").catch(() => false);
+  const isInput = await bounded(el.evaluate((n) => n instanceof HTMLInputElement && n.type === "file"), false);
   if (isInput) {
     await el.setInputFiles(files, { timeout: 10000 });
     return "file field";
   }
   const inner = el.locator('input[type="file"]');
-  if (await inner.count().catch(() => 0)) {
+  if (await bounded(inner.count(), 0)) {
     await inner.first().setInputFiles(files, { timeout: 10000 });
     return "file field inside it";
   }
   // A label for a (hidden) file field.
-  const forId = await el.evaluate((n) => (n.closest("label") || n).getAttribute("for")).catch(() => null);
+  const forId = await bounded(el.evaluate((n) => (n.closest("label") || n).getAttribute("for")), null);
   if (forId) {
     const labelled = el.page().locator(`input[type="file"][id="${forId.replace(/"/g, "")}"]`);
-    if (await labelled.count().catch(() => 0)) {
+    if (await bounded(labelled.count(), 0)) {
       await labelled.first().setInputFiles(files, { timeout: 10000 });
       return "file field of its label";
     }
   }
   // A drop zone: drop the files on it rather than opening its file chooser (which would leave
   // the browser tools waiting on a chooser that's already been answered).
-  const dropLike = await el.evaluate((n) => /drop|drag/i.test(`${n.className} ${n.id} ${n.textContent}`.slice(0, 500))).catch(() => false);
+  const dropLike = await bounded(el.evaluate((n) => /drop|drag/i.test(`${n.className} ${n.id} ${n.textContent}`.slice(0, 500))), false);
   if (dropLike) {
     await dropOn(page, el, files);
     return "drop zone";
   }
   // A caption next to its field ("Picture" beside "Choose File"): the one file field in the same
   // row, a few levels up.
-  const near = await el.evaluateHandle((n) => {
+  const near = await bounded(el.evaluateHandle((n) => {
     for (let up = n.parentElement, i = 0; up && i < 3; up = up.parentElement, i++) {
       const fields = up.querySelectorAll('input[type="file"]');
       if (fields.length === 1) return fields[0];
       if (fields.length > 1) return null;
     }
     return null;
-  }).catch(() => null);
+  }), null);
   const nearField = near?.asElement();
   if (nearField) {
     await nearField.setInputFiles(files, { timeout: 10000 });
@@ -172,7 +173,7 @@ async function deliver(page, el, files) {
   }
   // Never click a submit, pay or delete button just to look for a file chooser (judged by what it
   // does, as for browser_click; unreadable counts as one).
-  const risk = (await el.evaluate(withHelpers((e) => clickContext(e, "click"), clickContext, clickRisk, buttonLabel)).catch(() => null))?.risk;
+  const risk = (await bounded(el.evaluate(withHelpers((e) => clickContext(e, "click"), clickContext, clickRisk, buttonLabel)), null))?.risk;
   if (!risk || risk.level !== "safe") throw new Error(`the target looks like a final action (${risk?.word || "unreadable"}); give the upload field or drop zone instead`);
   const chooser = page.waitForEvent("filechooser", { timeout: 2500 }).catch(() => null);
   await el.click({ timeout: 5000 }).catch(() => {});
@@ -188,7 +189,7 @@ async function deliver(page, el, files) {
 // Drops real File objects on an element: the files go into a temporary hidden field first (the
 // browser reads them from disk, nothing is copied through the page), then onto the zone.
 async function dropOn(page, el, files) {
-  const tmp = await page.evaluateHandle(() => {
+  const tmp = await within(5000, page.evaluateHandle(() => {
     const i = document.createElement("input");
     i.type = "file";
     i.multiple = true;
@@ -196,16 +197,18 @@ async function dropOn(page, el, files) {
     i.setAttribute("data-pairbrowse-upload", "");
     document.body.appendChild(i);
     return i;
-  });
+  }));
+  if (!tmp) throw new Error("the page didn't answer (it's busy or stuck)");
   try {
     await tmp.asElement().setInputFiles(files, { timeout: 10000 });
-    await el.evaluate((zone, input) => {
+    const dropped = await within(10_000, el.evaluate((zone, input) => {
       const dt = new DataTransfer();
       for (const f of input.files) dt.items.add(f);
       for (const type of ["dragenter", "dragover", "drop"]) zone.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
-    }, tmp);
+    }, tmp).then(() => true));
+    if (!dropped) throw new Error("the page didn't answer the drop (it's busy or stuck)");
   } finally {
-    await tmp.evaluate((i) => i.remove()).catch(() => {});
+    await within(2000, tmp.evaluate((i) => i.remove()).catch(() => {}));
   }
 }
 

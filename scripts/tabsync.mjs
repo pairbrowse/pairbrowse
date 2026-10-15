@@ -16,6 +16,21 @@ import { redact } from "./daemon/session.mjs";
 export const TABS_MAX = 40; // tabs that cross, in order
 export const URL_MAX = 2048;
 export const OPS_MAX = 20; // changes in one request from a drive joiner
+// A joiner's activity lines (their agent's actions, shown in the bar and kept in the host's
+// activity log): at most ACTIVITY_BURST at once, then one every ACTIVITY_EVERY_MS; more are dropped.
+export const ACTIVITY_BURST = 10;
+export const ACTIVITY_EVERY_MS = 1000;
+export function activityBudget({ burst = ACTIVITY_BURST, everyMs = ACTIVITY_EVERY_MS, now = Date.now } = {}) {
+  let tokens = burst, at = now();
+  return () => {
+    const t = now();
+    tokens = Math.min(burst, tokens + (t - at) / everyMs);
+    at = t;
+    if (tokens < 1) return false;
+    tokens -= 1;
+    return true;
+  };
+}
 export const ACTIVITY_MAX = 12; // activity lines that cross
 const TEXT_MAX = 200;
 const ID = /^[0-9a-f]{8}$/;
@@ -414,9 +429,10 @@ export function readView(p, ids) {
   if (!p || !ids.has(p.id) || !Number.isFinite(numOf(p.y)) || !Number.isFinite(numOf(p.h))) return null;
   return { id: p.id, x: 0, y: coord(p.y), h: coord(p.h), v: 1, ...(p.who ? { who: clean(p.who, 60) } : {}), ...(COLOR.test(textOf(p.color)) ? { color: p.color } : {}) };
 }
-// Whether a pointer the host sent (its key k: "<invite>:<joiner id>:me", ":a<n>", ":view") is
-// this joiner's own, or their agents': never drawn here, whatever the host sends. Theirs is the
-// mouse they hold; a drawn copy of it would trail it.
+// Whether a pointer the host sent is this joiner's own, or their agents': never drawn here,
+// whatever the host sends. Theirs is the mouse they hold; a drawn copy of it would trail it. A host
+// of this version never sends a joiner their own and names every joiner's pointer by an opaque key
+// (push.mjs opaquePointerKey); an older host's keys held "<invite>:<joiner id>:me" (":a<n>", ":view").
 export const ownPointer = (k, joinerId) => !!joinerId && typeof k === "string" && k.split(":").includes(joinerId);
 // A joiner's pointers: theirs (me), their agents' (agents) and where they read (view), checked.
 export function readPointers(body, ids) {

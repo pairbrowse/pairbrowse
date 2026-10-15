@@ -27,6 +27,8 @@
 //   tools.mjs     the Tools tab: downloads, recordings, hand-offs, the OS opener (files by id), the person's own tabs
 //   preview.mjs   read-only previews of downloads (text; Word-type documents on macOS) for the person's tab
 //   diagnostics.mjs  the Tools tab's diagnostics and its scrubbed report (nothing is sent)
+// First: the test switches go unless the test harness started this helper (test-gate.mjs).
+import "./test-gate.mjs";
 import net from "node:net";
 import { createRequire } from "node:module";
 import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
@@ -262,7 +264,7 @@ const context = createContext({
   personTabs,
   config, log, chromium: () => runtime().chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   // A person renamed the session: the timeline's last writes land first, then the goal log follows.
-  beforeRename: () => timeline.settled(), onRenamed: (from, to) => journal.renamed(from, to),
+  beforeRename: () => { activityLog.flush(); return timeline.settled(); }, onRenamed: (from, to) => journal.renamed(from, to),
   liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
   onTabClosed: (page) => { tabClaims.drop(page); screenshots.forgetPage(page); hud.forgetPage(page); handoffs.forgetPage(page); }, // a closed tab's turn ends with it, with the maps onto its pictures and the sparks on it
   status: (badge) => liveView()?.setStatus(badge),
@@ -275,7 +277,7 @@ const context = createContext({
     for (const o of CHROME_PAGE_ORIGINS) if (!panel.origins.includes(o)) panel.origins.push(o);
     try {
       const v = await sharing.ensureLiveView();
-      return { origin: new URL(v.url).origin, key: v.pagesKey };
+      return { origin: new URL(v.url).origin, key: v.pagesKey, newCaptureKey: (on) => v.newCaptureKey?.(on) ?? null };
     } catch (e) { log("live view", e?.message || e); return null; }
   },
   onStarted: () => {
@@ -751,6 +753,7 @@ async function shutdown(code) {
   shuttingDown = true;
   socketServer?.close();
   journal.flushNow().catch(() => {}); // the goal log's last lines
+  activityLog.flush(); // the activity log's last lines
   // Join codes outlive a restart: their tunnels keep running for the next run (sharing.mjs); a
   // tunnel kept idle for a next code ends with the helper.
   sharing.suspend();

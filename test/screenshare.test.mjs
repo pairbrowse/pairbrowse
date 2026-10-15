@@ -125,3 +125,34 @@ test("the picture page's addresses: the extension's, the browser's own, and the 
   assert.equal(isScreenPage("https://evil.example/screen.html"), false);
   assert.equal(isScreenPage("chrome-extension://xyz/screen.html"), false);
 });
+
+// Leaving the browser's own error page: Playwright calls the new navigation interrupted by the old
+// error page's commit, though the tab gets there. Where it lands decides (serve.mjs).
+test("a navigation 'interrupted' by an error page counts when the tab reaches the address asked for", async () => {
+  const { arrivedAt } = await import("../scripts/daemon/serve.mjs");
+  let at = "chrome-error://chromewebdata/";
+  const page = { url: () => at, isClosed: () => false };
+  setTimeout(() => { at = "https://example.com/#top"; }, 150);
+  assert.equal(await arrivedAt(page, "https://example.com", 2000), page, "the same document, whatever the fragment");
+  at = "chrome-error://chromewebdata/";
+  assert.equal(await arrivedAt(page, "https://example.com/", 300), null, "still on the error page: a failure as before");
+  at = "https://example.com/other";
+  assert.equal(await arrivedAt(page, "https://example.com/", 200), null);
+  assert.equal(await arrivedAt(null, "https://example.com/"), null);
+});
+
+test("an alert PairBrowse closed is never also listed as waiting for browser_handle_dialog; a confirm still is", async () => {
+  const { dropClosedAlerts } = await import("../scripts/daemon/serve.mjs");
+  const alert = '### Page\n- Page URL: http://x/\n### Modal state\n- ["alert" dialog with message "Hello"]: can be handled by browser_handle_dialog\n### Snapshot\n```yaml\n```';
+  assert.equal(dropClosedAlerts(alert), "### Page\n- Page URL: http://x/\n### Snapshot\n```yaml\n```");
+  const confirm = '### Modal state\n- ["confirm" dialog with message "Delete?"]: can be handled by browser_handle_dialog\n';
+  assert.equal(dropClosedAlerts(confirm), confirm);
+});
+
+test("with pictures off, no message points at a screenshot", async () => {
+  const { pictureless } = await import("../scripts/daemon/serve.mjs");
+  assert.equal(pictureless("Look at the screenshot, close what covers it."), "Take a browser_snapshot, close what covers it.");
+  assert.equal(pictureless("Fix these (look at the screenshot), then continue."), "Fix these (take a browser_snapshot), then continue.");
+  assert.equal(pictureless("check the screenshot, then fill it"), "take a browser_snapshot, then fill it");
+  assert.doesNotMatch(pictureless("x: look at the screenshot; then the screenshot again"), /screenshot\b/);
+});

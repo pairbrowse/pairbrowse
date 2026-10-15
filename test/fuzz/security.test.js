@@ -115,3 +115,28 @@ test("the live view answers only on this computer, to its own pages, with the ri
     assert.equal(keyOk(key, key), true);
   }));
 });
+
+// What an agent's MCP connection sends goes on to the browser server only as a well-formed
+// JSON-RPC 2.0 message with the fields it knows; anything else is refused here (null), so a
+// message the server would leave unanswered never holds the shared queue.
+test("wellFormed: only well-formed JSON-RPC 2.0 messages, only known fields", async () => {
+  const { wellFormed } = await import("../../scripts/daemon/serve.mjs");
+  check(fc.property(fc.anything(), (msg) => {
+    const out = wellFormed(msg);
+    if (out === null) return;
+    assert.equal(out.jsonrpc, "2.0");
+    for (const k of Object.keys(out)) assert.ok(["jsonrpc", "id", "method", "params", "result", "error"].includes(k), k);
+    if ("id" in out) assert.ok(typeof out.id === "string" || typeof out.id === "number");
+    if ("method" in out) assert.equal(typeof out.method, "string");
+    if ("params" in out) assert.ok(out.params && typeof out.params === "object" && !Array.isArray(out.params));
+    if (out.params?._meta?.progressToken !== undefined) assert.ok(["string", "number"].includes(typeof out.params._meta.progressToken));
+    if ("error" in out) assert.ok(Number.isInteger(out.error.code) && typeof out.error.message === "string");
+  }));
+  assert.equal(wellFormed({ jsonrpc: "1.0", id: 1, method: "x" }), null);
+  assert.equal(wellFormed({ jsonrpc: "2.0", id: { a: 1 }, method: "x" }), null, "an object id");
+  assert.equal(wellFormed({ jsonrpc: "2.0", id: 1, method: "tools/call", params: [] }), null, "params not an object");
+  assert.deepEqual(wellFormed({ jsonrpc: "2.0", id: 1, method: "m", extra: 1 }), { jsonrpc: "2.0", id: 1, method: "m" }, "an unknown field dropped");
+  assert.deepEqual(wellFormed({ jsonrpc: "2.0", id: 2, method: "m", params: { _meta: { progressToken: {} } } }), { jsonrpc: "2.0", id: 2, method: "m", params: { _meta: {} } });
+  assert.deepEqual(wellFormed({ jsonrpc: "2.0", id: 3, error: "boom" }), { jsonrpc: "2.0", id: 3, error: { code: -32603, message: "Malformed error" } });
+  assert.equal(wellFormed(null), null);
+});

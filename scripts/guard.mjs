@@ -203,6 +203,22 @@ export const HOOK_MARK = '{"pairbrowse":"hook"';
 const waitEnv = Number(process.env.PAIRBROWSE_APPROVAL_WAIT_MS);
 export const APPROVAL_WAIT_MS = Number.isFinite(waitEnv) && process.env.PAIRBROWSE_APPROVAL_WAIT_MS !== "" ? Math.min(600_000, Math.max(100, waitEnv)) : 120_000;
 
+// This hook's ancestors (process ids, its parent first, up to 6): the app that runs it is among
+// them, and the helper matches it to the agent whose bridge that app started (approvals.mjs
+// whose). Read with one bounded ps; [parent] alone when that fails.
+export async function ancestors() {
+  const chain = [process.ppid];
+  if (process.platform === "win32") return chain;
+  try {
+    const { execFile } = await import("node:child_process");
+    const out = await new Promise((done) => execFile("ps", ["-A", "-o", "pid=,ppid="], { timeout: 1500, maxBuffer: 4 << 20 }, (e, o) => done(e ? "" : String(o))));
+    const parent = new Map();
+    for (const l of out.split("\n")) { const [a, b] = l.trim().split(/\s+/).map(Number); if (a > 0) parent.set(a, b); }
+    for (let p = parent.get(process.ppid); chain.length < 6 && p > 1 && !chain.includes(p); p = parent.get(p)) chain.push(p);
+  } catch {}
+  return chain;
+}
+
 // The PermissionRequest hook: what it prints ("" leaves the terminal's prompt to answer).
 export async function permissionRequest(input, { socketPath = paths.socket, waitMs = APPROVAL_WAIT_MS } = {}) {
   let sock = null;
@@ -216,12 +232,13 @@ export async function permissionRequest(input, { socketPath = paths.socket, wait
     if (!approvalAsk(name, ti)) return "";
     const net = await import("node:net");
     const { within } = await import("./util.mjs");
+    const chain = await ancestors();
     sock = net.connect(socketPath);
     const s = sock;
     const line = await within(waitMs + 5000, new Promise((resolve) => {
       let buf = "";
       s.setEncoding("utf8");
-      s.on("connect", () => s.write(`${HOOK_MARK},${JSON.stringify({ op: "approval", v: 1, tool: name, input: ti }).slice(1)}\n`));
+      s.on("connect", () => s.write(`${HOOK_MARK},${JSON.stringify({ op: "approval", v: 1, tool: name, input: ti, ancestors: chain }).slice(1)}\n`));
       s.on("data", (d) => {
         buf += d;
         const i = buf.indexOf("\n");

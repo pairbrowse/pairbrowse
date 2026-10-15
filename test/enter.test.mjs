@@ -145,3 +145,40 @@ test("waitFor also finds a field by its placeholder", { skip: !runtime, timeout:
     assert.equal((await runSteps(page, [{ waitFor: "Enter your email address…" }], hooksFor())).ok, true);
   });
 });
+
+// Enter in a field inside a frame (a payment form in another site's iframe): judged in that frame.
+// Read from the page around it, the focused element is only the <iframe>, which presses nothing.
+test("Enter in a payment field inside a cross-site frame is judged in the frame and refused", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { createServer } = await import("node:http");
+  const { riskAt, focusedFrame } = await import("../scripts/runner.mjs");
+  const { strongSignal } = await import("../scripts/clickrule.mjs");
+  const site = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "text/html" });
+    res.end(req.url.startsWith("/frame") ? `<form onsubmit="parent.postMessage('sent','*');return false"><label>Card number <input id="cc" autocomplete="cc-number"></label><button>Pay $49</button></form>`
+      : `<p>Checkout</p><iframe src="http://localhost:${site.address().port}/frame"></iframe>`);
+  });
+  await new Promise((r) => site.listen(0, "127.0.0.1", r));
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${site.address().port}/`);
+    const frame = page.frames().find((f) => f.url().includes("/frame")) || (await page.waitForEvent("frameattached").then(() => page.frames()[1]));
+    await frame.waitForSelector("#cc");
+    await frame.focus("#cc");
+    assert.equal(await inPage(page, () => document.activeElement.tagName), "IFRAME", "the page around it sees only the frame");
+    assert.equal((await focusedFrame(page)).url(), frame.url());
+    const risk = await riskAt(page, null, "enter");
+    assert.ok(strongSignal(risk), JSON.stringify(risk));
+    assert.equal(risk.word, "pay");
+    // The same field, filled by a run then Enter: refused before the key goes.
+    const hooks = { activity: () => {}, status: () => {}, cursor: () => {}, remember: () => {}, secrets: { values: {}, domains: {} } };
+    await frame.fill("#cc", "4242424242424242");
+    await frame.focus("#cc");
+    const r = await runSteps(page, [{ press: "Enter" }], hooks);
+    assert.equal(r.ok, false, JSON.stringify(r));
+  } finally {
+    await browser.close();
+    site.close();
+  }
+});

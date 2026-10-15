@@ -6,6 +6,8 @@ import { isRef } from "../policy.mjs";
 import { within } from "../util.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 
+const CALL_MS = 3000; // one call into a page script, at most
+
 // Each connected agent's tab carries the spark on its icon, in that agent's color; it moves when
 // that agent works in another tab. The color is its app's: Claude Code orange, Codex purple,
 // Gemini blue. An agent whose app has none, or whose app's color another agent here already has
@@ -70,7 +72,10 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
   const listeners = new Set(); // onActivity: a joined session's shared tabs send theirs on
 
   // One call into the page script (in a page or a frame). Rejects when the page doesn't answer.
-  const call = (target, value, kind) => target.evaluate(([n, t, v, k]) => window[n]?.(t, v, k), [HUD_NAME, HUD_TOKEN, value, kind]);
+  // Bounded (a page whose scripts never pause answers nothing): null when the time is up. A
+  // "user-wait" call waits in the page for as long as it says, and a little more here.
+  const call = (target, value, kind) => within(kind === "user-wait" ? (Number(value) || 0) + CALL_MS : CALL_MS,
+    (() => { try { return Promise.resolve(target.evaluate(([n, t, v, k]) => window[n]?.(t, v, k), [HUD_NAME, HUD_TOKEN, value, kind])); } catch (e) { return Promise.reject(e); } })());
   const quietly = (target, value, kind) => call(target, value, kind).catch(() => {});
 
   // The page script normally comes in as an init script. Some engines don't run those (patchright

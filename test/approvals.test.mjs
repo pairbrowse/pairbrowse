@@ -495,3 +495,82 @@ test("the tab's target: a failed, odd or hung lookup is empty, and the ask isn't
   assert.equal(l.item.tab.target, "");
   assert.equal(looked, 0);
 });
+
+// An Allow is for the click in the tab it was asked in, on the origin that tab had then. A
+// navigation (or another tab) between the ask and the click makes it a different click: refused,
+// to be asked again. Claude Code's Allow comes back as the call itself (arrived); Codex's is
+// checked by serve.mjs with the same sameWhere.
+test("an Allow holds only in the same tab on the same origin", async () => {
+  const { sameWhere, originOf } = await import("../scripts/daemon/approvals.mjs");
+  const { ca } = setup({ surfaces: { approve: 1 } });
+  let url = "https://shop.example/checkout";
+  const page = fakePage();
+  page.url = () => url;
+  const other = fakePage("https://shop.example/checkout");
+  ca.participant("p1", { client: "claude-code", tab: () => page });
+  const ask = async () => { const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "r", target: "t" }, participant: "p1", client: "claude-code" }); ca.answer(r.item.id, "allow", "the page"); await r.answer; return r; };
+  const r = await ask();
+  assert.deepEqual(r.where, { page, origin: "https://shop.example" });
+  url = "https://shop.example/checkout?step=2"; // same origin: still that click
+  assert.equal(ca.arrived("browser_click", PAY, { page, url }), null);
+  await ask();
+  url = "https://evil.example/pay"; // the tab went to another site after Allow
+  assert.equal(ca.arrived("browser_click", PAY, { page, url }), "moved");
+  assert.deepEqual(ca.lastWhere(), { origin: "https://shop.example" });
+  assert.equal(ca.arrived("browser_click", PAY, { page, url }), null, "used up: the next one asks again (the hook)");
+  url = "https://shop.example/checkout";
+  await ask();
+  assert.equal(ca.arrived("browser_click", PAY, { page: other, url }), "moved", "another tab on the same address");
+  await ask();
+  page.closed = true;
+  assert.equal(ca.arrived("browser_click", PAY, { page, url }), "moved", "the tab closed");
+  assert.equal(ca.arrived("browser_click", PAY, null), null, "nothing remembered after a refusal");
+  // The pure check, as serve.mjs uses it for Codex's Allow.
+  page.closed = false;
+  assert.equal(sameWhere({ page, origin: "https://shop.example" }, { page, url: "https://shop.example/x" }), true);
+  assert.equal(sameWhere({ page, origin: "https://shop.example" }, { page, url: "https://shop.example.evil.example/" }), false);
+  assert.equal(sameWhere({ page, origin: "https://shop.example" }, { page: null, url: "https://shop.example/" }), false);
+  assert.equal(sameWhere(null, { page: null }), true, "asked with no tab known: nothing to hold it to");
+  assert.equal(originOf("not a url"), "");
+});
+
+test("several Claude Code agents: an ask the hook can't tie to one is named as one of them, in no agent's color", async () => {
+  const { ca } = setup({ surfaces: { approve: 1 } });
+  ca.participant("p1", { client: "claude-code" });
+  ca.participant("p2", { client: "claude-code" });
+  assert.equal(ca.only("claude-code"), null);
+  const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "r", target: "t" }, participant: null, client: "claude-code" });
+  assert.equal(r.item.agent.label, "One of the Claude Code agents");
+  assert.equal(r.item.agent.color, "#8699b1");
+  ca.withdraw(r.item.id, "test");
+  ca.gone("p2");
+  const one = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "r", target: "t" }, participant: ca.only("claude-code"), client: "claude-code" });
+  assert.equal(one.item.agent.label, "Alice · Codex", "one agent: its own name (the test's label for p1)");
+});
+
+// With several Claude Code agents here, the hook's ask is tied to the one whose bridge the same
+// Claude Code process started (its parent among the hook's ancestors, nearest first): named and
+// colored as that agent, shown on its tab.
+test("several Claude Code agents: the hook's ancestors name the agent that asks", async () => {
+  const { ca } = setup({ surfaces: { approve: 1 } });
+  ca.participant("p1", { client: "claude-code", parent: 4001 });
+  ca.participant("p2", { client: "claude-code", parent: 4002 });
+  ca.participant("p3", { client: "codex", parent: 4003 });
+  assert.equal(ca.whose("claude-code", [9001, 4002, 1]), "p2", "the hook's shell, then its Claude Code");
+  assert.equal(ca.whose("claude-code", [9001, 4001, 4002]), "p1", "a Claude Code inside another's terminal: the inner one");
+  assert.equal(ca.whose("claude-code", [9001, 4003]), null, "another app's process: no Claude Code agent of its own, and two here");
+  assert.equal(ca.whose("claude-code", ["4001", -1, null]), null, "only process ids count");
+  assert.equal(ca.whose("claude-code", undefined), null);
+  ca.gone("p2");
+  assert.equal(ca.whose("claude-code", []), "p1", "one agent: that one, as before");
+  ca.participant("p4", { client: "claude-code", parent: 4001 });
+  assert.equal(ca.whose("claude-code", [4001]), null, "two bridges of one process: no guess");
+});
+
+test("ancestors: the hook's parent first, then its parent's, as ps lists them", async () => {
+  const { ancestors } = await import("../scripts/guard.mjs");
+  const chain = await ancestors();
+  assert.equal(chain[0], process.ppid);
+  if (process.platform !== "win32") assert.ok(chain.length >= 2, chain.join(","));
+  assert.equal(new Set(chain).size, chain.length);
+});

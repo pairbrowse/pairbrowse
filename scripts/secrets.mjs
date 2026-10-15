@@ -65,10 +65,12 @@ export function secretStore(file, log = () => {}) {
 
 // text with every saved password (4+ characters) replaced by its name, for whatever Claude reads.
 // Longest first: a password that holds a shorter one goes whole, not with its other characters left.
-export function redact(text, values) {
-  let out = String(text);
-  const longestFirst = Object.entries(values).sort(([, a], [, b]) => String(b ?? "").length - String(a ?? "").length);
-  for (const [name, value] of longestFirst) if (value && value.length >= 4) out = out.split(value).join(`<secret>${name}</secret>`);
+// as(name): what a password becomes (by default <secret>NAME</secret>). Longest first, so a saved
+// password that holds a shorter one never leaves a piece of itself behind.
+export function redact(text, values = {}, { as = (name) => `<secret>${name}</secret>` } = {}) {
+  let out = String(text ?? "");
+  const longestFirst = Object.entries(values || {}).sort(([, a], [, b]) => String(b ?? "").length - String(a ?? "").length);
+  for (const [name, value] of longestFirst) if (value && String(value).length >= 4) out = out.split(String(value)).join(as(name));
   return out;
 }
 

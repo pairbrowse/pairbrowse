@@ -314,13 +314,16 @@ const helperGiven = (h) => !!h && typeof h === "object" && typeof h.origin === "
 // The browser (patch 510's ParseHelperKey) takes only 1-256 characters of [A-Za-z0-9_-] and refuses
 // a file group or others could read. The daemon deletes it once used, and with its browser.
 export const HELPER_KEY_PREFIX = "helper-key-";
-export function writeHelperKeyFile(key, dir = join(paths.home, "run")) {
+// The capture page's own key (a build whose capture page reads one) goes the same way, in a file
+// of its own (CAPTURE_KEY_PREFIX) that --pairbrowse-capture-key-file names.
+export const CAPTURE_KEY_PREFIX = "capture-key-";
+export function writeHelperKeyFile(key, dir = join(paths.home, "run"), prefix = HELPER_KEY_PREFIX) {
   if (typeof key !== "string" || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw new Error("the helper key has a form the browser refuses");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   // One helper per home, and the previous browser is closed when a launch starts: anything left
   // is from a helper that was killed.
-  for (const f of readdirSync(dir)) if (f.startsWith(HELPER_KEY_PREFIX)) rmSync(join(dir, f), { force: true });
-  const path = join(dir, HELPER_KEY_PREFIX + randomBytes(16).toString("hex"));
+  for (const f of readdirSync(dir)) if (f.startsWith(prefix)) rmSync(join(dir, f), { force: true });
+  const path = join(dir, prefix + randomBytes(16).toString("hex"));
   writeFileSync(path, key, { mode: 0o600, flag: "wx" });
   if (process.platform !== "win32") chmodSync(path, 0o600); // a umask can strip owner bits
   return path;
@@ -350,6 +353,7 @@ export function launchArgs(config = {}, { firstRun = false, chromePages = false,
     ENABLE + [...new Set(features.filter(Boolean))].join(","),
     ...browserArgs({ firstRun, chromePages }),
     ...(chromePages && helperGiven(helper) ? [`--pairbrowse-helper=${helper.origin}`, `--pairbrowse-helper-key-file=${helper.keyFile}`] : []),
+    ...(chromePages && helperGiven(helper) && typeof helper.captureKeyFile === "string" && helper.captureKeyFile ? [`--pairbrowse-capture-key-file=${helper.captureKeyFile}`] : []),
     // Only test runs are headless, and nobody is there to see a notification: without this the
     // first one starts the test browser's notification helper and macOS asks to allow it.
     ...(extra.some((a) => a.startsWith("--headless")) ? ["--disable-notifications"] : []),

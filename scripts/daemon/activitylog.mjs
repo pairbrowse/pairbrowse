@@ -4,8 +4,9 @@
 // Each line is the one the stream sends ({ t, text, who, tab, tabId?, from? }: names and plain
 // sentences, never a value typed or a secret), its text and tab passed through mask() (saved
 // passwords) as well before they are kept. A kept session's log is an owner-only file in its
-// folder (sessions.mjs activityFile, written whole through util.mjs writeJsonAtomic at each line:
-// no timer), moved by a rename and removed with the session; a clean session's stays in memory.
+// folder (sessions.mjs activityFile, written whole through util.mjs writeJsonAtomic at most once a
+// second, SAVE_MS, and at once before the session's files move or the helper stops), moved by a
+// rename and removed with the session; a clean session's stays in memory.
 // Times are unique and rising within a log (a line in the same millisecond as the last gets the
 // next one), so `before` pages without losing a line on a boundary.
 // A message between participants (pairbrowse_collaboration message, daemon/session.mjs) is a
@@ -20,6 +21,10 @@ export const PAGE_DEFAULT = 50;
 const FILE_VERSION = 1;
 const TAB_ID = /^[0-9a-f]{8}$/;
 
+// Addresses in a line keep their origin and path only: a query or fragment carries search terms,
+// codes and tokens, whoever wrote the line (an agent here, a joiner, a session joined).
+const URL_REST = /\b((?:https?|wss?|ftp):\/\/[^\s?#<>"'`]+)[?#][^\s<>"'`)]*/gi;
+export const cutAddresses = (t) => String(t).replace(URL_REST, "$1");
 const MESSAGE_MAX = 500; // a message's text (session.mjs TEXT_MAX); other lines keep 200
 const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : "");
 // A line as it may be kept (from the stream's entry or the file), or null.
@@ -50,10 +55,15 @@ export function readPageQuery(params) {
 // where(): { name, file }: the open session's name and its log file (null: memory only, a clean
 // session). Read at each call, so a session switch or rename reaches the right log: another
 // name loads that session's file. mask(text): as results are masked. now(): the clock (tests).
-export function createActivityLog({ where = () => ({ name: "", file: null }), mask = (t) => t, now = Date.now, max = LOG_MAX, maxAgeMs = LOG_AGE_MS, log = () => {} } = {}) {
+// saveMs: a kept session's file is written at most this often (the lines of a busy moment, a
+// joiner's burst, one write); 0 writes at each line. flush() writes what's waiting now (before a
+// session's files move, at shutdown).
+export const SAVE_MS = 1000;
+export function createActivityLog({ where = () => ({ name: "", file: null }), mask = (t) => t, now = Date.now, max = LOG_MAX, maxAgeMs = LOG_AGE_MS, log = () => {}, saveMs = SAVE_MS } = {}) {
   let name; // the session the lines below are for
   let file = null;
   let lines = []; // oldest first
+  let dirty = false, timer = null;
 
   const trim = () => {
     const from = now() - maxAgeMs;
@@ -78,15 +88,30 @@ export function createActivityLog({ where = () => ({ name: "", file: null }), ma
     const n = String(w.name ?? "");
     const f = typeof w.file === "string" && w.file ? w.file : null;
     if (n !== name || f !== file) {
+      flush(); // the last session's lines, to its own file (when it is still where it was)
       name = n;
       file = f;
       lines = f ? load(f) : [];
       trim();
     }
   }
+  // Written only while the session still has this file: a session renamed or deleted meanwhile
+  // never gets a stray file under its old name.
+  function flush() {
+    clearTimeout(timer);
+    timer = null;
+    if (!dirty || !file) { dirty = false; return; }
+    dirty = false;
+    let w = {};
+    try { w = where() || {}; } catch {}
+    if (String(w.name ?? "") !== name || w.file !== file) return;
+    try { writeJsonAtomic(file, { v: FILE_VERSION, lines }, { mode: 0o600 }); } catch (e) { log(`activity log: ${e?.message || e}`); }
+  }
   function save() {
     if (!file) return;
-    try { writeJsonAtomic(file, { v: FILE_VERSION, lines }, { mode: 0o600 }); } catch (e) { log(`activity log: ${e?.message || e}`); }
+    dirty = true;
+    if (!saveMs) return flush();
+    if (!timer) { timer = setTimeout(flush, saveMs); timer.unref?.(); }
   }
 
   return {
@@ -97,7 +122,7 @@ export function createActivityLog({ where = () => ({ name: "", file: null }), ma
       const t0 = Number.isSafeInteger(entry?.t) ? entry.t : Math.trunc(now());
       const t = Math.max(t0, (lines.at(-1)?.t ?? 0) + 1);
       let text = entry?.text, tab = entry?.tab;
-      try { text = mask(String(text ?? "")); tab = mask(String(tab ?? "")); } catch { return null; }
+      try { text = cutAddresses(mask(String(text ?? ""))); tab = cutAddresses(mask(String(tab ?? ""))); } catch { return null; }
       const line = cleanLine({ ...entry, t, text, tab });
       if (!line) return null;
       lines.push(line);
@@ -116,5 +141,6 @@ export function createActivityLog({ where = () => ({ name: "", file: null }), ma
       return { items: lines.slice(start, end).reverse(), more: start > 0, kept: { lines: max, days: Math.round(maxAgeMs / 86_400_000), saved: !!file } };
     },
     size: () => { current(); return lines.length; },
+    flush,
   };
 }

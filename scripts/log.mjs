@@ -7,20 +7,31 @@ import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { shownValue, BROWSER_PREFIX } from "./policy.mjs";
 
-export function describe(tool, ti = {}) {
+// values: false (the activity line, kept in the session's activity log): field names without what
+// was typed or chosen, and addresses as origin and path only (no query or fragment, which carry
+// search terms, codes and tokens).
+export function describe(tool, ti = {}, { values = true } = {}) {
+  const url = (u) => (values ? u : addressOnly(u));
   switch (tool) {
-    case "browser_navigate": return `Opened ${ti.url}`;
-    case "browser_fill_form": return "Filled " + (ti.fields || []).map((f) => `**${f.name}** = ${short(shownValue(f.name, f.value))}`).join(", ");
-    case "browser_type": return `Typed ${short(shownValue(ti.element || ti.target, ti.text))} into **${ti.element || ti.target}**${ti.submit ? " and pressed Enter" : ""}`;
-    case "browser_select_option": return `Chose ${[].concat(ti.values ?? []).map(String).join(", ")} in **${ti.element || ti.target}**`;
+    case "browser_navigate": return `Opened ${url(ti.url)}`;
+    case "browser_fill_form": return "Filled " + (ti.fields || []).map((f) => (values ? `**${f.name}** = ${short(shownValue(f.name, f.value))}` : `**${f.name}**`)).join(", ");
+    case "browser_type": return `Typed ${values ? `${short(shownValue(ti.element || ti.target, ti.text))} ` : ""}into **${ti.element || ti.target}**${ti.submit ? " and pressed Enter" : ""}`;
+    case "browser_select_option": return values ? `Chose ${[].concat(ti.values ?? []).map(String).join(", ")} in **${ti.element || ti.target}**` : `Chose in **${ti.element || ti.target}**`;
     case "browser_click": return `Clicked **${ti.element || ti.target}**`;
     case "browser_drag": return `Dragged **${ti.startElement || ti.startTarget}** to **${ti.endElement || ti.endTarget}**`;
     case "browser_file_upload": return `Uploaded ${(ti.paths || []).map((p) => p.split(/[\\/]/).pop()).join(", ") || "nothing (cancelled)"}`;
-    case "browser_tabs": return ti.action === "list" ? null : `Tab ${ti.action}${ti.url ? ` ${ti.url}` : ""}${ti.index !== undefined ? ` #${ti.index}` : ""}`;
+    case "browser_tabs": return ti.action === "list" ? null : `Tab ${ti.action}${ti.url ? ` ${url(ti.url)}` : ""}${ti.index !== undefined ? ` #${ti.index}` : ""}`;
     case "browser_handle_dialog": return `${ti.accept ? "Accepted" : "Dismissed"} a browser dialog`;
     case "browser_press_key": return `Pressed ${ti.key}`;
     default: return null; // read-only tools (snapshot, find, wait) are not logged
   }
+}
+
+// An address as its origin and path ("https://shop.example/cart"); "" for none, "an address" for
+// one that doesn't parse (it may hold anything).
+export function addressOnly(u) {
+  if (u === undefined || u === null || u === "") return "";
+  try { const x = new URL(String(u)); return /^(https?|file):$/.test(x.protocol) ? `${x.origin}${x.pathname}` : x.protocol === "about:" ? `about:${x.pathname}` : `a ${x.protocol.replace(/:$/, "")} address`; } catch { return "an address"; }
 }
 
 function short(v) {

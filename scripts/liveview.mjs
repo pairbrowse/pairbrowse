@@ -18,11 +18,11 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { keepFocus } from "./focus.mjs";
 import { createApprovals, personLabel, cleanName } from "./join.mjs";
-import { stateForJoiner, readOps, shareableUrl, onSecretDomain } from "./tabsync.mjs";
+import { stateForJoiner, readOps, shareableUrl, onSecretDomain, activityBudget } from "./tabsync.mjs";
 import { createPush } from "./liveview/push.mjs";
 import { hostOk, originOk, keyOk, readBody, BODY_MAX, SECURITY_HEADERS, serveViewer, serveAsset, plain, pathParts, listen } from "./liveview/http.mjs";
 import { createInvites, roleMay } from "./liveview/invites.mjs";
-import { createInputReplayer } from "./liveview/input.mjs";
+import { createInputReplayer, readViewerInput, inputBudget } from "./liveview/input.mjs";
 import { createJoinerServer, recentlySeen } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/tabs.mjs";
 import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
@@ -53,7 +53,7 @@ const STATE_ACTIVITY = 4; // activity lines in state.json
 const INPUT_BATCH_MAX = 500;
 const FRAME_SKIP_BYTES = 1 << 20; // a reader this far behind gets no new frames until it catches up
 const STALLED_BYTES = 16 << 20; // this far behind: the connection is cut (the page reconnects)
-const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites", "overlay-pointers"]); // events only the owner's streams get
+const OWNER_ONLY = new Set(["profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites", "overlay-pointers", "joiner-pointers"]); // events only the owner's streams get
 // Events for the browser's own pages alone (streams opened with ?page=): the capture page's calls
 // (liveview/capture.mjs), the tab strip's order requests and the pointers its browser draws over
 // the page card (overlay-pointers). Never the live view page, a viewer
@@ -172,6 +172,17 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   // handed to them in an owner-only key file, never the command line): never in the owner's link,
   // the log or any event.
   const pagesKey = randomBytes(32).toString("base64url");
+  // The capture page's own key (a build whose capture page reads one: native-engine
+  // captureKeyed), new at each launch and handed only to that page in its own owner-only file:
+  // the capture stream (?page=capture) and capture/reply take it besides the pages' key, so no
+  // other page of the browser's (nor the owner's live view key) gets SDPs or answers for it.
+  // null: the build takes none; the pages' key alone (never the owner's) still is required.
+  let captureKey = null;
+  const captureOk = (req, byPages) => {
+    if (!byPages) return false;
+    if (captureKey === null) return true;
+    return keyOk(new URL(req.url, "http://x").searchParams.get("ck") || "", captureKey);
+  };
   const clients = new Set(); // every open event stream
   const linkGuests = new Map(); // event stream -> the invite link it was opened with
   const owners = new Set(); // event streams opened with the owner's key (the Profile panel's updates go only there)
@@ -350,9 +361,11 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   devShare?.members((key) => joiners.has(key));
   // Shared browser joiners' pointers for the PairBrowse browser's overlay over the page card
   // (push.mjs pushOverlay): to the browser's own pages only (its strip passes them on to the
-  // browser), each tab by its CDP target id. A browser without pages of its own (plain Chromium)
-  // gets nothing: there they are not drawn (never in the tab). One at a time, the latest wins.
-  let overlayNext = null, overlayBusy = false;
+  // browser), each tab by its CDP target id. One at a time, the latest wins. The owner's live view
+  // gets the shown tab's (joiner-pointers) and draws them over its picture: in plain Chromium,
+  // which has no overlay of its own, that is where the host sees them (never drawn in the tab,
+  // whose picture goes back to the joiners: nobody sees their own pointer trail their mouse).
+  let overlayNext = null, overlayBusy = false, viewerPointersSig = "[]";
   async function overlayPointers(entries) {
     overlayNext = entries;
     if (overlayBusy) return;
@@ -361,6 +374,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       while (overlayNext) {
         const list = overlayNext;
         overlayNext = null;
+        const here = (list.find((x) => x.page === shown?.page)?.pointers || []).slice(0, 12);
+        const sig = JSON.stringify(here.map(({ fresh, ...p }) => p));
+        if (sig !== viewerPointersSig) { viewerPointersSig = sig; broadcast("joiner-pointers", here); }
         if (!kinds.size) continue;
         const tabs = [];
         for (const { page, pointers } of list.slice(0, 16)) {
@@ -525,7 +541,13 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
         const page = o.op === "open" ? await keepFocus(() => ctx.newPage()) : known.get(o.id);
         if (!page || page.isClosed()) continue;
         if (o.op === "person") { onJoinerPerson(page, j.name, o.did, o.acting, false, o.ago, heardAt); continue; }
-        if (o.op === "activity") { onJoinerActivity(page, o.text, o.who || who, joinerKey(j)); continue; }
+        // Named by who the host knows them as (their join's name), never by what they send: a
+        // joiner can't write lines as "Claude" or as someone else. Paced per joiner.
+        if (o.op === "activity") {
+          j.activityOk ??= activityBudget();
+          if (j.activityOk()) onJoinerActivity(page, o.text, o.who ? `${cleanName(j.name)}'s agent` : who, joinerKey(j));
+          continue;
+        }
         if (o.op === "agent") { shared.onJoinerAgent(page, o.who, o.color, o.left, joinerKey(j), cleanName(j.name)); continue; }
         if (o.op === "form") {
           // Only on the same page; the host's own form reading then carries it to other joiners.
@@ -682,9 +704,18 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
 
   // A person's clicks, typing and tab changes, from a viewer. who: their name for the others
   // (null: the owner). Only the owner may resize the shared page ("Fit to pane").
-  async function humanPost(route, ev, role, who) {
+  const guestBudgets = new Map(); // invite id -> its input budget (inputBudget)
+  async function humanPost(route, ev, role, who, inviteKey = null) {
     if (route === "input") {
-      const batch = (Array.isArray(ev) ? ev : [ev]).slice(0, INPUT_BATCH_MAX).filter((one) => role === "owner" || one?.type !== "viewport");
+      // Each event checked (kinds, places inside the picture, modifiers, no clipboard for an invited
+      // viewer); an invited viewer's input paced per invite.
+      const frame = lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null;
+      let batch = (Array.isArray(ev) ? ev : [ev]).slice(0, INPUT_BATCH_MAX).map((one) => readViewerInput(one, { frame, role })).filter(Boolean);
+      if (role !== "owner" && inviteKey) {
+        if (!guestBudgets.has(inviteKey)) guestBudgets.set(inviteKey, inputBudget());
+        if (!guestBudgets.get(inviteKey)(batch.length)) batch = [];
+      }
+      if (!batch.length) return;
       return humanQueue(async () => {
         if (role !== "owner" && personTab(shown?.page)) return; // a person's own tab: never a guest's input
         // Only moving the pointer (or the wheel) changes nothing an agent's refs point at.
@@ -754,7 +785,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
         const ok = clickApprovals.answer(given.id, given.answer, "the live view");
         return json(res, ok ? 200 : 404, { ok });
       }
-      const op = JSON.parse(body);
+      const op = given;
+      if (!op || typeof op !== "object" || Array.isArray(op)) return json(res, 400, { error: NOT_JSON });
       if (op.remove === true) {
         // Remove, after a yes: out at once (their channel, pictures and agent), and not back in.
         const gone = approvals.remove(op.id);
@@ -777,7 +809,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       if (!devPanel) return plain(res, 404);
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
-      const r = await devPanel.act(JSON.parse(body) || {});
+      const v = objectBody(body);
+      if (!v) return json(res, 400, { error: NOT_JSON });
+      const r = await devPanel.act(v);
       json(res, r.error ? 409 : 200, r);
     } },
     // A join code whose address this person hasn't allowed (daemon/follow.mjs): their Allow once,
@@ -787,7 +821,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       if (!joinHost) return plain(res, 404);
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
-      const r = await joinHost.act(JSON.parse(body) || {});
+      const v = objectBody(body);
+      if (!v) return json(res, 400, { error: NOT_JSON });
+      const r = await joinHost.act(v);
       json(res, r.error ? 409 : 200, r);
     } },
     // The Profile panel: remembered details in full, passwords by name and sites only.
@@ -1047,8 +1083,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     } },
     // The browser's own capture page answering the helper (liveview/capture.mjs): an offer, an
     // answer, a recording's piece, or its hello.
-    { method: "POST", path: "capture", right: "capture", handler: async ({ req, res, rest }) => {
+    { method: "POST", path: "capture", right: "capture", handler: async ({ req, res, rest, byPages }) => {
       if (!capture || rest.length !== 1 || rest[0] !== "reply") return plain(res, 404);
+      if (!captureOk(req, byPages)) return plain(res, 403);
       const body = await readBody(req, BODY_MAX.capture);
       if (body === null) return plain(res, 413);
       if (!capture.reply(parsed(body))) return json(res, 400, { error: "Not a capture reply." });
@@ -1058,7 +1095,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     { method: "POST", path: "record", right: "record", handler: async ({ req, res }) => {
       const body = await readBody(req, BODY_MAX.approve);
       if (body === null) return plain(res, 413);
-      const r = await onRecord(JSON.parse(body)?.on === true);
+      const v = objectBody(body);
+      if (!v) return json(res, 400, { error: NOT_JSON });
+      const r = await onRecord(v.on === true);
       // The file's name, never its folder or path (the Recordings list opens it by id).
       const item = r?.path ? tools?.recordings?.itemFor?.(r.path) || null : null;
       // The recorder's own sentence (no page text in it): masked, its folders hidden, its quotes kept.
@@ -1081,13 +1120,14 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     } },
   ];
 
-  async function events({ req, res, invite }) {
-    res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/event-stream", connection: "keep-alive" });
+  async function events({ req, res, invite, byPages }) {
     // ?panel: status, activity and profile only (the PairBrowse side panel): no page stream.
     // ?page=<kind>: one of the browser's own pages, with the owner's key (a guest's is ignored):
-    // no page stream either.
+    // no page stream either. The capture page's stream: the pages' key and its own (captureOk).
     const q = new URL(req.url, "http://x").searchParams;
     const kind = !invite && PAGE_KINDS.has(q.get("page")) ? q.get("page") : null;
+    if (kind === "capture" && !captureOk(req, byPages)) return plain(res, 403);
+    res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/event-stream", connection: "keep-alive" });
     const viewer = !q.has("panel") && !kind;
     clients.add(res);
     if (viewer) viewers.add(res);
@@ -1154,7 +1194,8 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     if (!profile) return plain(res, 404);
     const body = await readBody(req, BODY_MAX.profile);
     if (body === null) return plain(res, 413);
-    const op = JSON.parse(body);
+    const op = objectBody(body);
+    if (!op) return json(res, 400, { error: NOT_JSON });
     let error = null;
     if (op.op === "setDetail") error = profile.setDetail(op.label, op.value);
     else if (op.op === "forgetDetail") profile.forgetDetail(String(op.label || ""));
@@ -1237,15 +1278,18 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
 
   // A body that isn't JSON: undefined, so the chrome pages' routes answer 400 without logging it.
   const parsed = (body) => { try { return JSON.parse(body); } catch { return undefined; } };
+  // A body that must be a JSON object: it, or null (the route answers 400).
+  const objectBody = (body) => { const v = parsed(body); return v && typeof v === "object" && !Array.isArray(v) ? v : null; };
   const NOT_JSON = "The body is not JSON.";
 
   async function human({ req, res, route, role, invite }) {
     const body = await readBody(req, BODY_MAX.input);
     if (body === null) return plain(res, 413);
-    const ev = JSON.parse(body);
+    const ev = parsed(body);
+    if (ev === undefined || ev === null || typeof ev !== "object") return json(res, 400, { error: NOT_JSON });
     // Moving tabs around the strip is the owner's (a drive guest switches, opens and closes them).
     if (route === "tab" && ev?.order !== undefined && role !== "owner") return plain(res, 403);
-    await humanPost(route, ev, role, invite ? `${invite.label} (by hand)` : null);
+    await humanPost(route, ev, role, invite ? `${invite.label} (by hand)` : null, invite?.id || null);
     res.writeHead(204, SECURITY_HEADERS);
     res.end();
   }
@@ -1280,7 +1324,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     if (!r) return plain(res, 404);
     if (!roleMay(role, r.right)) return plain(res, 403);
     try {
-      await r.handler({ req, res, route, rest, role, invite });
+      await r.handler({ req, res, route, rest, role, invite, byPages });
     } catch (e) {
       log("liveview", e?.message || e);
       if (!res.headersSent) plain(res, 500);
@@ -1357,6 +1401,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // The browser's own pages' key (written to an owner-only key file, never the command line):
     // never printed, logged or sent in an event.
     pagesKey,
+    // A new key for the capture page of the browser launching now (its file: context.mjs), or
+    // null for a build whose capture page reads none. Returns the key.
+    newCaptureKey(on = true) { captureKey = on ? randomBytes(32).toString("base64url") : null; return captureKey; },
     follow,
     reconnecting: (except) => push.reconnecting(except),
     // The badge state, mirrored in the viewer's own chrome (pages can't fake it there).

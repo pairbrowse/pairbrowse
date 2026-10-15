@@ -128,3 +128,30 @@ test("a tab list comes once: the open-tabs section is dropped when browser_tabs 
   assert.match(trimResult("browser_tabs", "### Result\nClosed tab 1\n### Open tabs\n- 0: [A](http://a/)\n"), /### Open tabs/);
   assert.doesNotMatch(trimResult("browser_click", "### Result\nok\n### Open tabs\n- 0: [A](http://a/)\n"), /Open tabs/);
 });
+
+// Test switches (PAIRBROWSE_TEST_*) never reach a helper the test harness didn't start: an
+// environment a project hands down (a .claude/settings.json "env") can't turn on the test tool that
+// answers approval cards as a person.
+test("test switches: only a harness-started helper keeps them; the plugin's bridge drops them", async () => {
+  const { harnessStarted, withoutTestSwitches } = await import("../scripts/test-gate.mjs");
+  const { mkdtempSync, mkdirSync, symlinkSync, realpathSync: real } = await import("node:fs");
+  const { tmpdir: temp, homedir } = await import("node:os");
+  const { join: j } = await import("node:path");
+  const base = real(mkdtempSync(j(temp(), "pb-gate-")));
+  const harness = j(base, "h"), plain = j(base, "p");
+  mkdirSync(harness); mkdirSync(plain); mkdirSync(j(plain, "runtime"));
+  symlinkSync(plain, j(harness, "runtime"), "dir");
+  assert.equal(harnessStarted({ PAIRBROWSE_HOME: harness }), true);
+  assert.equal(harnessStarted({ PAIRBROWSE_HOME: plain }), false, "an installed runtime is a folder");
+  assert.equal(harnessStarted({ PAIRBROWSE_HOME: j(homedir(), ".pairbrowse") }), false, "a home outside the temp folder");
+  assert.equal(harnessStarted({}), false);
+  assert.deepEqual(withoutTestSwitches({ PATH: "/bin", PAIRBROWSE_TEST_APPROVAL: "1", PAIRBROWSE_HOME: "/x" }), { PATH: "/bin", PAIRBROWSE_HOME: "/x" });
+  // A helper started as the plugin starts it, with the approval switch in its environment: no test tool.
+  const { execFileSync } = await import("node:child_process");
+  const out = execFileSync(process.execPath, ["--input-type=module", "-e", `process.env.PAIRBROWSE_TEST_APPROVAL = "1"; await import(${JSON.stringify(new URL("../scripts/test-gate.mjs", import.meta.url).href)}); console.log(process.env.PAIRBROWSE_TEST_APPROVAL ?? "gone");`],
+    { env: { ...process.env, PAIRBROWSE_HOME: plain } }).toString().trim();
+  assert.equal(out, "gone");
+  const kept = execFileSync(process.execPath, ["--input-type=module", "-e", `process.env.PAIRBROWSE_TEST_APPROVAL = "1"; await import(${JSON.stringify(new URL("../scripts/test-gate.mjs", import.meta.url).href)}); console.log(process.env.PAIRBROWSE_TEST_APPROVAL ?? "gone");`],
+    { env: { ...process.env, PAIRBROWSE_HOME: harness } }).toString().trim();
+  assert.equal(kept, "1");
+});

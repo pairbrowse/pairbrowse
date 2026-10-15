@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
-import { readJson } from "./util.mjs";
+import { readJson, writeJsonAtomic } from "./util.mjs";
 
 const SESSIONS = join(paths.home, "sessions");
 const CURRENT = join(paths.home, "session");
@@ -144,7 +144,7 @@ export function recordPerson(name, person, now = Date.now()) {
   if (!p.who) return;
   const same = (x) => x.who === p.who && x.app === p.app && x.computer === p.computer && x.kind === p.kind;
   const people = [p, ...readPeople(name).filter((x) => !same(x))].slice(0, PEOPLE_MAX);
-  try { writeFileSync(peopleFile(name), JSON.stringify({ people }, null, 2)); } catch {}
+  try { writeJsonAtomic(peopleFile(name), { people }); } catch {}
 }
 
 // Throwaway sessions left behind (by a crash, or at shutdown).

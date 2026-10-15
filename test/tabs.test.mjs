@@ -110,7 +110,10 @@ test("the browser dying before a pending save ran still records the tabs as last
 test("a tabs file that can't be written is logged, not thrown", async () => {
   const logs = [];
   const ctx = fakeContext([fakePage("https://a.test/")]);
-  const tracker = trackTabs(ctx, { file: join(tmpdir(), "pb-no-such-dir", String(Date.now()), "tabs.json"), log: (...a) => logs.push(a.join(" ")) });
+  // Its folder is a file: nothing can be written there.
+  const blocker = join(tmpdir(), `pb-tabs-blocker-${process.pid}-${Date.now()}`);
+  (await import("node:fs")).writeFileSync(blocker, "");
+  const tracker = trackTabs(ctx, { file: join(blocker, "tabs.json"), log: (...a) => logs.push(a.join(" ")) });
   await tracker.saveNow();
   assert.match(logs[0], /^saving tabs failed /);
   tracker.stop();
@@ -179,4 +182,22 @@ test("a build with its own pages restores quietly and closes an untouched start 
 test("the untouched start tab is the new tab page by either address", () => {
   for (const url of ["chrome://newtab/", "chrome://newtab", "chrome://pairbrowse/newtab/", "chrome://pairbrowse/newtab/?x#y"]) assert.equal(isUntouchedStart(url), true, url);
   for (const url of ["about:blank", "chrome://pairbrowse/picker/", "https://newtab/", "chrome://pairbrowse/newtab/more", ""]) assert.equal(isUntouchedStart(url), false, url);
+});
+
+test("one tab that never answers doesn't hold up saving the others", { timeout: 15_000 }, async () => {
+  const { trackTabs } = await import("../scripts/tabs.mjs");
+  const { mkdtempSync, readFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { EventEmitter } = await import("node:events");
+  const file = join(mkdtempSync(join(tmpdir(), "pb-tabs-stuck-")), "tabs.json");
+  const page = (url, title) => Object.assign(new EventEmitter(), { url: () => url, title, mainFrame: () => null });
+  const pages = [page("https://a.example/", async () => "A"), page("https://stuck.example/", () => new Promise(() => {})), page("https://b.example/", async () => "B")];
+  const ctx = Object.assign(new EventEmitter(), { pages: () => pages });
+  const t = trackTabs(ctx, { file });
+  const started = Date.now();
+  await t.saveNow();
+  assert.ok(Date.now() - started < 5000, "bounded");
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).tabs.map((x) => x.url), ["https://a.example/", "https://stuck.example/", "https://b.example/"]);
+  t.stop();
 });

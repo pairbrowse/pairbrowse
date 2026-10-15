@@ -85,6 +85,9 @@ function send(msg) {
   if (msg.method === "initialize") {
     const label = config.participantName || process.env.PAIRBROWSE_PARTICIPANT;
     if (label) msg = { ...msg, params: { ...msg.params, clientInfo: { ...msg.params?.clientInfo, pairbrowseParticipant: String(label).replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, 60) } } };
+    // The app that started this bridge (Claude Code's own process): its PermissionRequest hook
+    // runs under the same process, so the helper can tell which of several agents asks (approvals.mjs).
+    msg = { ...msg, params: { ...msg.params, clientInfo: { ...msg.params?.clientInfo, pairbrowseParent: process.ppid } } };
   }
   if (msg.method === "initialize") initMsg = msg;
   if (up) up.write(JSON.stringify(msg) + "\n");

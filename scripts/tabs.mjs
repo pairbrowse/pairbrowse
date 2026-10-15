@@ -2,8 +2,7 @@
 // starts, behind an "Opening tabs" screen. Chrome's own restore reloads every tab at once
 // during startup, which made the first action wait many seconds.
 import { ownTitle } from "./daemon/tablabels.mjs";
-import { writeFileSync } from "node:fs";
-import { readJson, sleep } from "./util.mjs";
+import { readJson, sleep, writeJsonAtomic } from "./util.mjs";
 
 const restorable = (url) => /^https?:\/\//i.test(url);
 
@@ -24,16 +23,20 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
   // half after a navigation would otherwise lose that tab).
   const known = new Map(); // page -> { url, title }
   const titles = new Map(); // url -> title, from the last save
+  let order = []; // the pages of the last save, in its order: a tab's place there is its identity (indexOf)
   const snapshot = async () => {
     const pages = ctx.pages();
     const tabs = [];
+    const saved = [];
     for (const p of pages) {
       const url = p.url();
       if (!restorable(url)) continue;
       const title = (await ownTitle(p)).slice(0, 120);
       tabs.push({ url, title });
+      saved.push(p);
       titles.set(url, title);
     }
+    order = saved;
     const active = Math.max(0, tabs.findIndex((t) => t.url === activePage()?.url()));
     return { tabs, active, savedAt: new Date().toISOString() };
   };
@@ -43,7 +46,7 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
     if (stopped) return;
     for (const [page, k] of known) if (k.closedAt !== undefined) known.delete(page); // closed by a person, saved as such now
     try {
-      writeFileSync(file, JSON.stringify(await snapshot(), null, 2));
+      writeJsonAtomic(file, await snapshot());
     } catch (e) {
       log("saving tabs failed", e?.message || e);
     }
@@ -56,7 +59,7 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
     const tabs = [...known.values()].filter((t) => restorable(t.url) && (t.closedAt === undefined || now - t.closedAt < 1000)).map((t) => ({ url: t.url, title: t.title || titles.get(t.url) || "" }));
     if (!tabs.length) return;
     const active = Math.max(0, tabs.findIndex((t) => t.url === activePage()?.url()));
-    try { writeFileSync(file, JSON.stringify({ tabs, active, savedAt: new Date().toISOString() }, null, 2)); } catch (e) { log("saving tabs failed", e?.message || e); }
+    try { writeJsonAtomic(file, { tabs, active, savedAt: new Date().toISOString() }); } catch (e) { log("saving tabs failed", e?.message || e); }
   };
   const soon = () => {
     if (stopped) return;
@@ -77,7 +80,9 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
     stopped = true;
     clearTimeout(timer);
   });
-  return { saveNow, stop: () => { stopped = true; clearTimeout(timer); } };
+  // indexOf(page): where the page stands in the last save (-1: not in it). Restored tabs come back in
+  // that order (restoreTabs onPage), so it names the same tab after a browser restart.
+  return { saveNow, stop: () => { stopped = true; clearTimeout(timer); }, indexOf: (page) => order.indexOf(page) };
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -126,10 +131,11 @@ export function loadingHtml(tabs) {
 // screen: the tab to show the progress in (default: the first one); it closes at the end.
 // list false (a build with its own pages): no progress page; the start tab closes at the end only
 // while it is still the untouched new tab page.
-export async function restoreTabs(ctx, saved, { onProgress = () => {}, log = () => {}, screen: given = null, list = true } = {}) {
+// onPage(i, page): saved tab i opened as page.
+export async function restoreTabs(ctx, saved, { onProgress = () => {}, log = () => {}, screen: given = null, list = true, onPage = () => {} } = {}) {
   const { tabs, active } = saved;
   if (!tabs.length) { if (given) await given.close().catch(() => {}); return; }
-  if (!list) return restoreQuietly(ctx, saved, { onProgress, log, start: given || ctx.pages()[0] || null });
+  if (!list) return restoreQuietly(ctx, saved, { onProgress, log, start: given || ctx.pages()[0] || null, onPage });
   const screen = given || ctx.pages()[0] || (await ctx.newPage());
   await screen.setContent(loadingHtml(tabs)).catch(() => {});
   await screen.bringToFront().catch(() => {});
@@ -145,6 +151,7 @@ export async function restoreTabs(ctx, saved, { onProgress = () => {}, log = () 
     onProgress(i + 1, tabs.length, t);
     await mark(i, "opening", i);
     const page = await ctx.newPage();
+    try { onPage(i, page); } catch {}
     await screen.bringToFront().catch(() => {}); // keep the loading screen in view
     const ok = await page.goto(t.url, { waitUntil: "commit", timeout: 5000 }).then(() => true, (e) => { log(`restore ${t.url}: ${e.message.split("\n")[0]}`); return false; });
     pages.push(page);
@@ -160,11 +167,12 @@ export const isUntouchedStart = (url) => /^chrome:\/\/(newtab|pairbrowse\/newtab
 
 // restoreTabs without the progress page: the saved tabs open in order, the one that was active
 // comes forward, and the start tab closes if nobody used it (still the new tab page).
-async function restoreQuietly(ctx, { tabs, active }, { onProgress, log, start }) {
+async function restoreQuietly(ctx, { tabs, active }, { onProgress, log, start, onPage = () => {} }) {
   const pages = [];
   for (const [i, t] of tabs.entries()) {
     onProgress(i + 1, tabs.length, t);
     const page = await ctx.newPage();
+    try { onPage(i, page); } catch {}
     await page.goto(t.url, { waitUntil: "commit", timeout: 5000 }).catch((e) => log(`restore ${t.url}: ${e.message.split("\n")[0]}`));
     pages.push(page);
   }

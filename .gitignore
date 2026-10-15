@@ -21,3 +21,6 @@ docs/media/*
 !docs/media/pairbrowse-demo.gif
 
 coverage/
+
+# The test-gate live test's helper home outside the temp folder (removed after the test)
+/.gate/

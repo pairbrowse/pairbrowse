@@ -75,7 +75,7 @@ test("a message between participants: a line of its own kind, by time with the o
   const now = clock();
   const dir = mkdtempSync(join(tmpdir(), "pb-activity-msg-"));
   const file = join(dir, "a.activity.json");
-  const log = createActivityLog({ now, where: () => ({ name: "m", file }), mask: (t) => t.replaceAll("hunter2", "••••") });
+  const log = createActivityLog({ now, saveMs: 0, where: () => ({ name: "m", file }), mask: (t) => t.replaceAll("hunter2", "••••") });
   log.add(line(1));
   now.add(5);
   const long = `I'll take the checkout tab, hunter2 ${"x".repeat(600)}`;
@@ -94,7 +94,7 @@ test("a message between participants: a line of its own kind, by time with the o
   assert.deepEqual(items.map((a) => a.kind || "action"), ["action", "message", "message", "action"], "interleaved by time");
   assert.equal(items[1].to, "all", "no recipient: everyone");
   // Read back from the owner-only file the same.
-  const again = createActivityLog({ now, where: () => ({ name: "m", file }) });
+  const again = createActivityLog({ now, saveMs: 0, where: () => ({ name: "m", file }) });
   assert.deepEqual(again.page().items, items);
   if (owner) assert.equal(statSync(file).mode & 0o777, owner);
   // A message line needs a sender; an ordinary line never gets kind or to.
@@ -115,15 +115,15 @@ test("a kept session: an owner-only file that survives a restart, follows a rena
   s.createSession("work");
   const where = () => ({ name, file: s.isTemporary(name) ? null : s.activityFile(name) });
   const now = clock();
-  const log = createActivityLog({ where, now });
+  const log = createActivityLog({ where, now, saveMs: 0 });
   for (let i = 0; i < 3; i++) { log.add(line(i)); now.add(5); }
   const file = s.activityFile("work");
   assert.ok(existsSync(file));
   if (owner !== null) assert.equal(statSync(file).mode & 0o777, owner, "owner-only");
-  assert.equal(existsSync(`${file}.tmp`), false);
+  assert.equal(existsSync(`${file}.${process.pid}.tmp`), false);
   assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).lines.map((a) => a.text), ["Clicked **Button 0**", "Clicked **Button 1**", "Clicked **Button 2**"]);
   // A helper restart: a new log reads the file.
-  const again = createActivityLog({ where, now });
+  const again = createActivityLog({ where, now, saveMs: 0 });
   assert.equal(again.page().items.length, 3);
   // A clean session: in memory only, nothing written; back on "work" its lines are there.
   name = "clean-42";
@@ -234,4 +234,43 @@ test("GET activity.json uses the helper's log when given one", async () => {
   } finally {
     view.close();
   }
+});
+
+test("written at most once a second, flushed on demand, never to a session's old name", async () => {
+  let name = "busy";
+  s.createSession("busy");
+  const where = () => ({ name, file: s.activityFile(name) });
+  const now = clock();
+  const log = createActivityLog({ where, now, saveMs: 60_000 });
+  for (let i = 0; i < 100; i++) log.add(line(i)); // a burst: nothing written yet
+  assert.equal(existsSync(s.activityFile("busy")), false);
+  log.flush();
+  assert.equal(JSON.parse(readFileSync(s.activityFile("busy"), "utf8")).lines.length, 100);
+  // A line waiting when the session is renamed: the rename flushes first (beforeRename); a write
+  // that comes after never makes a file under the old name.
+  log.add(line("late"));
+  s.renameSession("busy", "calm");
+  name = "calm";
+  log.flush();
+  assert.equal(existsSync(s.activityFile("busy")), false, "no stray file");
+  assert.equal(existsSync(`${s.activityFile("busy")}.${process.pid}.tmp`), false);
+  const quick = createActivityLog({ where, now, saveMs: 20 });
+  quick.add(line("soon"));
+  await new Promise((r) => setTimeout(r, 80));
+  assert.ok(JSON.parse(readFileSync(s.activityFile("calm"), "utf8")).lines.some((a) => /soon/.test(a.text)), "written by the timer");
+  s.deleteSession("calm");
+});
+
+test("addresses in kept lines lose their query and fragment, whoever wrote the line", async () => {
+  const { describe } = await import("../scripts/log.mjs");
+  const log = createActivityLog({ now: clock() });
+  log.add({ text: describe("browser_navigate", { url: "https://shop.example/cart?code=QX55#t=9" }, { values: false }), who: "Claude" });
+  log.add({ text: "Joined https://a.example/x?token=abc and wss://b.example/y#k", who: "Dee" });
+  log.add({ text: describe("browser_type", { element: "Email", text: "ada@example.com" }, { values: false }), who: "Claude" });
+  log.add({ text: describe("browser_fill_form", { fields: [{ name: "Promo", value: "SAVE-7" }] }, { values: false }), who: "Claude" });
+  log.add({ text: describe("browser_select_option", { element: "Plan", values: ["Gold-1"] }, { values: false }), who: "Claude" });
+  const all = log.page().items.map((a) => a.text).reverse();
+  assert.deepEqual(all, ["Opened https://shop.example/cart", "Joined https://a.example/x and wss://b.example/y", "Typed into **Email**", "Filled **Promo**", "Chose in **Plan**"]);
+  // The run log (the hook's file) keeps what was typed, as before.
+  assert.match(describe("browser_type", { element: "Email", text: "ada@example.com" }), /ada@example\.com/);
 });

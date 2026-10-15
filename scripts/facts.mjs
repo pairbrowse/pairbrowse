@@ -2,7 +2,8 @@
 // entered in the Profile panel, details Claude was told, and values seen in forms (never
 // passwords). Stored in ~/.pairbrowse/facts.json, private to the user. Also the pairbrowse_facts
 // tool and the live view's Profile panel on top of them (createFacts).
-import { readFileSync, writeFileSync, existsSync, renameSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
+import { writeJsonAtomic } from "./util.mjs";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { setSecret, deleteSecret } from "./secrets.mjs";
@@ -61,9 +62,7 @@ export function loadFacts(file = FACTS_FILE, log = () => {}) {
 // Never over a file that's there but unreadable: it may hold details worth fixing by hand.
 export function saveFacts(details, file = FACTS_FILE) {
   if (readDetails(file) === null) throw new Error(`${file} can't be read, so it isn't overwritten. Fix or remove it, then try again.`);
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify({ details: details.slice(-MAX) }, null, 2));
-  renameSync(tmp, file);
+  writeJsonAtomic(file, { details: details.slice(-MAX) });
 }
 
 // source: "you" (the Profile panel), "claude" (told in conversation), "form" (seen in a form).

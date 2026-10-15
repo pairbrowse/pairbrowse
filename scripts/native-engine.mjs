@@ -1,13 +1,13 @@
 // Launches the native PairBrowse browser with the engine pack (native-pack.mjs): its fingerprint,
 // persona and launch switches, and humanized input. Settings come from "pairbrowse" in config.json.
-import { existsSync, readFileSync, writeFileSync, renameSync, chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { NATIVE } from "./native-pack.mjs";
-import { within } from "./util.mjs";
+import { within, writeJsonAtomic } from "./util.mjs";
 
 const CHROMIUM_MAJOR = NATIVE.version.split(".")[0];
 // Options this engine can't honour: refused, never silently ignored.
@@ -40,6 +40,9 @@ export const chromePages = (manifest) => Number.isInteger(manifest?.chrome) && m
 // for joiners, recordings; liveview/capture.mjs) is there. Absent: a shared browser sends pictures
 // through the join channel and recording is refused (daemon/capture.mjs).
 export const capturePages = (manifest) => Number.isInteger(manifest?.capture) && manifest.capture >= 1;
+// `capture` 2 and up: the capture page reads its own key from the file --pairbrowse-capture-key-file
+// names and sends it (ck) on its stream and its replies; the helper then requires it.
+export const captureKeyed = (manifest) => Number.isInteger(manifest?.capture) && manifest.capture >= 2;
 
 // A command's output, trimmed, or "" when it fails or takes over 10 s. Never execFileSync here:
 // the helper serves its live view and every other caller while these run.
@@ -172,10 +175,7 @@ async function captureAndKeep(chromium, executablePath, pack, directory, file, k
   if (!profile) return null;
   try {
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-    const temporary = `${file}.${process.pid}.tmp`;
-    writeFileSync(temporary, JSON.stringify({ key, version, profile }), { mode: 0o600 });
-    chmodSync(temporary, 0o600);
-    renameSync(temporary, file);
+    writeJsonAtomic(file, { key, version, profile }, { mode: 0o600 });
   } catch {}
   return profile;
 }
@@ -410,11 +410,11 @@ export async function humanFill(page, items, settings, { rng = Math.random, wait
           for (let presses = 0; presses < 4 && !focused; presses++) {
             await keys.press("Tab");
             await wait(between(50, 120));
-            const at = await loc.evaluate((el) => {
+            const at = (await within(2500, loc.evaluate((el) => {
               const active = document.activeElement;
               if (el === active || el.contains(active)) return "here";
               return active?.tagName === "INPUT" && /^(date|time|month|week|datetime-local)$/.test(active.type) ? "parts" : "elsewhere";
-            }, undefined, { timeout: 1500 }).catch(() => "elsewhere");
+            }, undefined, { timeout: 1500 }).catch(() => "elsewhere"))) ?? "elsewhere";
             if (at === "here") focused = true;
             else if (at !== "parts") break;
           }
@@ -562,7 +562,14 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const { portableProfile, encryptionKey, extensions, disablePrivacySandbox = true, ...personaRest } = rest;
   const { agent, rest: launchOptions } = pack.splitAgentOptions(personaRest);
   const merged = { ...launchOptions, ...options };
-  const givenArgs = merged.args ?? [];
+  // The browser's WebRTC IP handling is PairBrowse's: web pages never get this computer's local
+  // or public addresses outside a proxy (the engine's default deny below). A policy in the
+  // config's chromeArgs that would loosen it is dropped here, whatever it says; the browser's own
+  // capture page keeps its direct connections through the build's own exemption, not a switch.
+  const WEBRTC_POLICY = /^--(?:force-)?webrtc-ip-handling-policy(?:=|$)/;
+  const dropped = (merged.args ?? []).filter((a) => WEBRTC_POLICY.test(String(a)));
+  if (dropped.length) log("launch: a WebRTC IP handling switch in chromeArgs was dropped: PairBrowse keeps WebRTC from showing this computer's addresses");
+  const givenArgs = (merged.args ?? []).filter((a) => !WEBRTC_POLICY.test(String(a)));
   pack.emitCoherenceWarnings?.({ ...fingerprint, proxy: merged.proxy, geoip: settings.geoip, headless: merged.headless, userAgent: merged.userAgent, _userArgs: givenArgs.filter((a) => !/^--pairbrowse-helper(-key-file)?=/.test(String(a))) },
     false, process.platform, CHROMIUM_MAJOR);
   const { args: proxyArgs, proxy } = pack.resolveProxy(merged.proxy, pack.engineSupportsSwitch(options.executablePath, "proxy-auth"));

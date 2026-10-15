@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,7 +52,9 @@ async function setup({ file = ON_DISK, native = true, inUse = "pairbrowse", time
   writeFileSync(paths.config, JSON.stringify(file, null, 2));
   const config = { ...DEFAULT_CONFIG, ...file };
   const state = { inUse };
-  const settings = createSettings({ config, native, browserInUse: () => state.inUse, exists, executable });
+  // user: the test's home folder stand-in (downloads go inside it); vouch: BRAVE is an app this
+  // computer vouches for (browserProblem's own checks: their test below).
+  const settings = createSettings({ config, native, browserInUse: () => state.inUse, exists, executable, user: tmpdir(), vouch: async (p) => (p === BRAVE ? "" : "not vouched for") });
   const invites = createInvites();
   const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites, settings, timeline, layoutDefaults: () => config.layout });
   view.setSession({ name: "default", where: "Local" });
@@ -182,7 +184,7 @@ test("every invalid body is refused with 409 and writes nothing; a body that isn
 test("a config.json that can't be written: an error, nothing applied", async () => {
   const config = { ...DEFAULT_CONFIG };
   const settings = createSettings({ config, native: true, save: () => { throw new Error("disk full"); } });
-  const r = settings.write({ browser: "chromium" });
+  const r = await settings.write({ browser: "chromium" });
   assert.match(r.error, /Couldn't write config\.json: disk full/);
   assert.equal(config.browser, null);
 });
@@ -291,3 +293,29 @@ test("report: true only for a valid https reportUrl; the address is never in an 
 });
 
 test.after(() => rmSync(home, { recursive: true, force: true }));
+
+test("downloads go only to an ordinary folder inside your home folder", async () => {
+  const { downloadsProblem } = await import("../scripts/liveview/settings.mjs");
+  const user = realpathSync(mkdtempSync(join(tmpdir(), "pb-user-")));
+  const at = (...p) => join(user, ...p);
+  assert.equal(downloadsProblem(at("Downloads"), user), "");
+  assert.equal(downloadsProblem(at("Work", "Reports"), user), "");
+  for (const [p, why] of [[user, /home folder itself|straight into your home/], [at("Library", "LaunchAgents"), /Library/], [at("library", "x"), /library/i], [at("AppData", "Roaming"), /AppData/],
+    [at(".ssh"), /hidden/], [at("Work", ".git", "hooks"), /hidden/], [at(".config", "autostart"), /hidden/], ["/etc", /inside your home/], [join(user, "..", "other"), /inside your home/]]) {
+    assert.match(downloadsProblem(p, user), why, p);
+  }
+});
+
+test("a browser of your own: an app macOS vouches for; elsewhere a file only you or root can change", async () => {
+  const { browserProblem } = await import("../scripts/liveview/settings.mjs");
+  const ok = async () => true, no = async () => false;
+  assert.equal(await browserProblem("/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", { platform: "darwin", verify: ok }), "");
+  assert.match(await browserProblem("/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", { platform: "darwin", verify: no }), /signature doesn't verify/);
+  assert.match(await browserProblem("/Users/me/Downloads/chrome", { platform: "darwin", verify: ok }), /isn't an app's program/);
+  assert.match(await browserProblem("/x.app/Contents/Resources/run", { platform: "darwin", verify: ok }), /isn't an app's program/);
+  const stat = (modes) => (p) => ({ mode: modes[p] ?? 0o755, uid: 0 });
+  assert.equal(await browserProblem("/opt/brave/brave", { platform: "linux", stat: stat({}), uid: 1000 }), "");
+  assert.match(await browserProblem("/tmp/x/brave", { platform: "linux", stat: stat({ "/tmp/x": 0o777 }), uid: 1000 }), /other accounts/);
+  assert.match(await browserProblem("/opt/brave/brave", { platform: "linux", stat: stat({ "/opt/brave/brave": 0o757 }), uid: 1000 }), /other accounts/);
+  assert.match(await browserProblem("/home/eve/brave", { platform: "linux", stat: () => ({ mode: 0o755, uid: 1001 }), uid: 1000 }), /another account/);
+});

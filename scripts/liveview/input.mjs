@@ -26,6 +26,60 @@ const CAST_MAX_SIDE = 1920;
 const CAST_DEFAULT_SIDE = 1600;
 const CAST_QUALITY = 60;
 
+// One event from a viewer of the live view (liveview.js), checked before it is replayed: known
+// kinds and actions, places inside the picture (frame: its { w, h }, CSS pixels; unknown: a wide
+// bound), modifiers as CDP takes them (Alt 1, Ctrl 2, Meta 4, Shift 8), text and wheel bounded.
+// Nothing an invited viewer sends uses the host's clipboard: no cut command, no Shift+Delete (the
+// keys are the named ones in KEYS only, never letters or Insert). The owner's own cut stays.
+// Returns the event to replay, or null.
+const MOUSE = new Set(["mousePressed", "mouseReleased", "mouseMoved"]);
+const TOUCH = new Set(["touchStart", "touchMove", "touchEnd", "touchCancel"]);
+const NAV = new Set(["back", "forward", "reload", "go"]);
+export function readViewerInput(ev, { frame = null, role = "owner" } = {}) {
+  if (!ev || typeof ev !== "object" || Array.isArray(ev)) return null;
+  const m = Number.isInteger(ev.modifiers) ? ev.modifiers & 15 : 0;
+  const w = frame?.w > 0 ? frame.w : 10_000, h = frame?.h > 0 ? frame.h : 10_000;
+  const at = () => {
+    const x = Number(ev.x), y = Number(ev.y);
+    return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= w && y <= h ? { x, y } : null;
+  };
+  if (ev.type === "mouse" && MOUSE.has(ev.action)) {
+    const p = at();
+    if (!p) return null;
+    return { type: "mouse", action: ev.action, ...p, button: ["left", "middle", "right", "none"].includes(ev.button) ? ev.button : "none", buttons: Number.isInteger(ev.buttons) ? ev.buttons & 7 : 0, clickCount: Math.min(3, Math.max(0, Math.trunc(Number(ev.clickCount) || 0))), modifiers: m };
+  }
+  if (ev.type === "touch" && TOUCH.has(ev.action)) {
+    // An ending touch carries no place (the replayer lifts every point).
+    if (ev.action === "touchEnd" || ev.action === "touchCancel") return { type: "touch", action: ev.action, modifiers: m };
+    const p = at();
+    return p ? { type: "touch", action: ev.action, ...p, modifiers: m } : null;
+  }
+  if (ev.type === "wheel") {
+    const p = at();
+    const d = (n) => Math.max(-5000, Math.min(5000, Math.round(Number(n) || 0)));
+    return p ? { type: "wheel", ...p, dx: d(ev.dx), dy: d(ev.dy) } : null;
+  }
+  if (ev.type === "text") return typeof ev.text === "string" && ev.text ? { type: "text", text: ev.text.slice(0, TEXT_MAX) } : null;
+  if (ev.type === "nav" && NAV.has(ev.action)) return ev.action === "go" ? (typeof ev.url === "string" && ev.url.length <= 2048 ? { type: "nav", action: "go", url: ev.url } : null) : { type: "nav", action: ev.action };
+  if (ev.type === "viewport") return role === "owner" ? { type: "viewport", on: ev.on === true, w: Number(ev.w) || 0, h: Number(ev.h) || 0, dpr: Number(ev.dpr) || 1 } : null;
+  if (ev.type === "command" && Object.hasOwn(COMMANDS, ev.command)) return ev.command === "cut" && role !== "owner" ? null : { type: "command", command: ev.command, modifiers: m };
+  if (ev.type === "key" && Object.hasOwn(KEYS, ev.key)) return ev.key === "Delete" && m & 8 && role !== "owner" ? null : { type: "key", key: ev.key, modifiers: m };
+  return null;
+}
+
+// Invited viewers' input, paced per invite: at most `burst` events at once, then `perSecond`.
+export function inputBudget({ burst = 600, perSecond = 200, now = Date.now } = {}) {
+  let tokens = burst, t = now();
+  return (n = 1) => {
+    const at = now();
+    tokens = Math.min(burst, tokens + ((at - t) / 1000) * perSecond);
+    t = at;
+    if (tokens < n) return false;
+    tokens -= n;
+    return true;
+  };
+}
+
 export const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, Math.round(Number(n) || lo)));
 
 export function createInputReplayer() {

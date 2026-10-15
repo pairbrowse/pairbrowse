@@ -21,6 +21,9 @@ test("measuring this Mac shows in the status line and a notification, once, unti
   assert.deepEqual(statuses, [{ text: MEASURING_STATUS, kind: "claude" }]);
   assert.deepEqual(notes, [MEASURING_STATUS]);
   assert.ok(MEASURING_STATUS.length <= 140, "fits the live view's status line");
+  // Each measuring step may take 90 s (native-engine CAPTURE_STEP_MS): the line promises no hard
+  // bound under that, only what is usual.
+  assert.match(MEASURING_STATUS, /usually under a minute, sometimes a few/);
   launchLog.done({ text: "", kind: "clear" });
   assert.deepEqual(statuses.at(-1), { text: "", kind: "clear" });
   launchLog.done({ text: "x", kind: "clear" });

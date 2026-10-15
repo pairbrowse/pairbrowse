@@ -130,7 +130,7 @@ the real machine and is saved per profile (the capture runs once per Mac in a hi
 the real GPU, and is kept in a private `~/.pairbrowse/mac-host-profile.json` until the browser
 version or hardware changes; that first launch takes up to a minute longer, and the live view's
 status line and a notification say "Measuring this Mac once" while it runs); time zone and language follow your system; and WebRTC
-doesn't reveal your local addresses by default. The goal is that sites see a normal browser, not
+doesn't reveal your local addresses (a WebRTC IP policy in `chromeArgs` can't loosen that: it is dropped). The goal is that sites see a normal browser, not
 to get around a site's security (see [Intended use](../README.md#intended-use)).
 
 **Human-like input (native browser).** On by default: an agent's single clicks, drags and typing

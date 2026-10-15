@@ -1160,7 +1160,7 @@ test("a person's tab never crosses to joiners, even at a web address; screen req
   } finally { view.close(); }
 });
 
-test("POST tab-order and POST capture/reply: the owner's and the pages' key only, checked, never on the join-code port", async () => {
+test("POST tab-order: the owner's and the pages' key; POST capture/reply: the pages' key (and the capture page's own); checked, never on the join-code port", async () => {
   const invites = createInvites();
   const { ctx } = fakeTabs(1);
   const replies = [];
@@ -1172,16 +1172,25 @@ test("POST tab-order and POST capture/reply: the owner's and the pages' key only
   const order = { tabs: [{ target: T, window: 1, index: 0, active: true }], focused: 1, last: 1 };
   try {
     assert.equal(view.stripTabs(), null, "nothing reported yet");
-    for (const k of [key, view.pagesKey]) {
-      assert.equal((await request(view.port, "POST", `/${k}/tab-order`, { body: order })).status, 204);
-      assert.equal((await request(view.port, "POST", `/${k}/capture/reply`, { body: { n: 1, value: true } })).status, 204);
-    }
+    for (const k of [key, view.pagesKey]) assert.equal((await request(view.port, "POST", `/${k}/tab-order`, { body: order })).status, 204);
+    // The capture page's answers: the pages' key, never the owner's (a live view link).
+    assert.equal((await request(view.port, "POST", `/${key}/capture/reply`, { body: { n: 1, value: true } })).status, 403);
+    assert.equal((await request(view.port, "POST", `/${view.pagesKey}/capture/reply`, { body: { n: 1, value: true } })).status, 204);
+    // A build whose capture page has its own key: the pages' key alone isn't enough any more.
+    const ck = view.newCaptureKey(true);
+    assert.equal((await request(view.port, "POST", `/${view.pagesKey}/capture/reply`, { body: { n: 1, value: true } })).status, 403);
+    assert.equal((await request(view.port, "POST", `/${view.pagesKey}/capture/reply?ck=${"A".repeat(43)}`, { body: { n: 1, value: true } })).status, 403);
+    assert.equal((await request(view.port, "POST", `/${key}/capture/reply?ck=${ck}`, { body: { n: 1, value: true } })).status, 403, "its key with the owner's: no");
+    assert.equal((await request(view.port, "POST", `/${view.pagesKey}/capture/reply?ck=${ck}`, { body: { n: 1, value: true } })).status, 204);
+    assert.notEqual(view.newCaptureKey(true), ck, "new at each launch");
+    assert.equal((await request(view.port, "POST", `/${view.pagesKey}/capture/reply?ck=${ck}`, { body: { n: 1, value: true } })).status, 403, "the last launch's key is gone");
+    assert.equal(view.newCaptureKey(false), null);
     assert.deepEqual(view.stripTabs(), { tabs: [{ target: T.toUpperCase(), window: 1, index: 0, active: true }], focused: 1, last: 1 });
     assert.equal(replies.length, 2);
     assert.equal((await request(view.port, "POST", `/${key}/tab-order`, { body: { tabs: [{ target: "nope", window: 1, index: 0, active: true }], focused: 1, last: 1 } })).status, 400);
     assert.equal((await request(view.port, "POST", `/${key}/tab-order`, { raw: "{" })).status, 400);
     assert.equal((await request(view.port, "POST", `/${key}/tab-order`, { raw: JSON.stringify({ tabs: [], focused: 1, last: 1, pad: "x".repeat(70_000) }) })).status, 413, "at most 64 KB");
-    assert.equal((await request(view.port, "POST", `/${key}/capture/reply`, { body: { n: "x" } })).status, 400);
+    assert.equal((await request(view.port, "POST", `/${view.pagesKey}/capture/reply`, { body: { n: "x" } })).status, 400);
     assert.equal((await request(view.port, "POST", `/${key}/capture/other`, { body: { n: 1 } })).status, 404);
     for (const role of ["drive", "watch"]) {
       const i = invites.create({ role, label: role });
@@ -1204,7 +1213,8 @@ test("the capture and tab-order events reach the browser's own pages only, never
   const key = view.url.split("/").at(-2);
   const streams = [];
   try {
-    const page = await readStream(view.port, `/${key}/events?panel=1&page=capture`); streams.push(page);
+    const page = await readStream(view.port, `/${view.pagesKey}/events?panel=1&page=capture`); streams.push(page);
+    const owner = await readStream(view.port, `/${key}/events?page=capture`); streams.push(owner);
     const strip = await readStream(view.port, `/${key}/events?page=strip`); streams.push(strip);
     const panel = await readStream(view.port, `/${key}/events?panel=1`); streams.push(panel);
     const viewer = await readStream(view.port, `/${key}/events`); streams.push(viewer);
@@ -1218,7 +1228,7 @@ test("the capture and tab-order events reach the browser's own pages only, never
     for (const s of [page, strip]) assert.equal(eventsIn(s.text(), "tab-order").length, 1, "tab-order: every page stream");
     assert.equal(eventsIn(page.text(), "capture").length, 1, "capture: the capture page's stream");
     assert.equal(eventsIn(strip.text(), "capture").length, 0, "capture: never another page's stream");
-    for (const s of [panel, viewer, guest]) {
+    for (const s of [panel, viewer, guest, owner]) {
       assert.equal(eventsIn(s.text(), "capture").length, 0);
       assert.equal(eventsIn(s.text(), "tab-order").length, 0);
     }
@@ -1248,5 +1258,65 @@ test("a screen want while nothing here captures a tab: the slower route at once,
     assert.match(body.error, /join channel/);
     assert.equal(offered, 0);
     assert.ok(!logs.some((l) => /liveview guest|shared screen/.test(l)), logs.join("\n"));
+  } finally { view.close(); }
+});
+
+// Pointer rule (plain Chromium, no overlay of its own): a shared browser joiner's pointer is never
+// drawn in the host's tab (its picture goes back to them), so the host sees it in the live view,
+// over the shown tab's picture; only the owner's streams get it, by an opaque key (never the
+// joiner's id, which their approval is bound to).
+test("a shared browser joiner's pointer reaches the owner's live view, never a guest, by an opaque key", async () => {
+  const { ctx, pages } = fakeTabs(1);
+  pages[0].url = () => "https://shop.example/";
+  pages.forEach((p) => { p.isClosed = () => false; });
+  const invites = createInvites();
+  const requests = [];
+  const screens = { available: () => true, offer: async () => ({ sdp: "x" }), frames: async () => {}, stop: async () => {}, answer: async () => true, stopAll: async () => {}, viewCached: () => null,
+    input: async (page, events, onInput) => { for (const ev of events) onInput({ type: "mouse", action: "mouseMoved", x: ev.x, y: ev.y }, null, { w: 1000, h: 500, sx: 0, sy: 0 }); } };
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => pages[0].url(), invites, screens, onJoinRequest: (e) => requests.push(e) });
+  const key = view.url.split("/").at(-2);
+  const code = invites.create({ role: "drive", label: "D", share: "code", mode: "shared" });
+  const joinerId = "c".repeat(32);
+  const headers = { "x-pairbrowse-joiner": joinerId, "x-pairbrowse-name": "Dee", "x-pairbrowse-app": "Claude Code" };
+  const streams = [];
+  try {
+    const owner = await readStream(view.port, `/${key}/events`); streams.push(owner);
+    const w = invites.create({ role: "watch", label: "W" });
+    const guest = await readStream(view.port, `/${w.key}/events`); streams.push(guest);
+    await wait(150); // the owner's viewer shows the tab
+    await request(view.guestPort, "GET", `/${code.key}/tabs`, { headers });
+    view.approvals.approve(requests[0].id);
+    const tabs = JSON.parse((await request(view.guestPort, "GET", `/${code.key}/tabs`, { headers })).text).tabs;
+    const r = await request(view.guestPort, "POST", `/${code.key}/screen`, { headers, body: { op: "input", id: tabs[0].id, events: [{ x: 250, y: 100 }] } });
+    assert.equal(r.status, 200, r.text);
+    let got = [];
+    for (let i = 0; i < 40 && !got.length; i++) { await wait(50); got = eventsIn(owner.text(), "joiner-pointers").filter((l) => l.length); }
+    assert.equal(got.length >= 1, true, owner.text().slice(-500));
+    const [p] = got.at(-1);
+    assert.equal(p.who, "Dee");
+    assert.equal(p.x, 0.25);
+    assert.equal(p.y, 0.2);
+    assert.match(p.k, /^p[\w-]{22}$/);
+    assert.ok(!owner.text().includes(joinerId), "the joiner's id never leaves");
+    assert.equal(eventsIn(guest.text(), "joiner-pointers").length, 0, "never to a guest");
+  } finally { for (const s of streams) s.close(); view.close(); }
+});
+
+// A body that isn't JSON (or isn't an object) is a 400 on every owner route that reads one, never
+// a crash in the handler and a 500.
+test("routes that read a JSON body answer 400 to one that isn't, never 500", async () => {
+  const { ctx } = fakeTabs(1);
+  const logs = [];
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", invites: createInvites(), log: (...a) => logs.push(a.join(" ")),
+    profile: { get: () => ({ details: [], secrets: [] }) }, devPanel: { act: async () => ({}) }, joinHost: { act: async () => ({}) }, onRecord: async () => ({}) });
+  const key = view.url.split("/").at(-2);
+  try {
+    for (const route of ["approve", "dev", "joinhost", "record", "profile", "input", "tab"]) {
+      for (const raw of ["{", "null", "7", "\"x\""]) {
+        const r = await request(view.port, "POST", `/${key}/${route}`, { raw });
+        assert.ok(r.status === 400, `${route} ${raw}: ${r.status}`);
+      }
+    }
+    assert.ok(!logs.some((l) => /SyntaxError|Cannot read/.test(l)), logs.join("\n"));
   } finally { view.close(); }
 });

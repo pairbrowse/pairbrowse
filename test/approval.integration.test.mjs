@@ -306,6 +306,21 @@ test("a named click asked in the browser and the terminal at once: the first ans
     assert.ok(!clicked.result.isError, text(clicked));
     assert.match(text(await t("browser_snapshot")), /Ordered/);
 
+    stage = "(a2) allowed in the browser, then the tab went to another site: the click is refused, to be asked again";
+    ref = await fresh();
+    h = runHook(ref);
+    await asked(h);
+    await sleep(1500);
+    assert.equal(await press("allow"), "clicked");
+    await h.done;
+    assert.equal(JSON.parse(h.out).hookSpecificOutput.decision.behavior, "allow");
+    assert.ok(!(await t("browser_navigate", { url: "http://other.pbtest.example/" })).result.isError);
+    await t("browser_snapshot");
+    const moved = await t("browser_click", { target: ref, element: "Pay: Place order" });
+    assert.ok(moved.result.isError, text(moved));
+    assert.match(text(moved), /^Not done: the user allowed this in the PairBrowse browser for http:\/\/shop\.pbtest\.example, but the tab has changed since \(it is now on http:\/\/other\.pbtest\.example\)/);
+    assert.doesNotMatch(text(await t("browser_snapshot")), /Ordered/, "nothing clicked");
+
     stage = "(b) answered in the terminal: the call arrives, the card goes, the hook says nothing";
     ref = await fresh();
     h = runHook(ref);

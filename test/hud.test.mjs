@@ -793,6 +793,10 @@ test("docked: no bottom bar, the join card still asks, the badge only for your t
     assert.equal(v.badge, "Your turn: Solve the CAPTCHA");
     const lift = await page.evaluate((tags) => { const b = document.querySelector(tags.hud).getBoundingClientRect(), j = document.querySelector(tags.bar).shadowRoot.querySelector(".jq").getBoundingClientRect(); return b.bottom <= j.top; }, hud.tags);
     assert.equal(lift, true, "the badge sits above the join card");
+    // The browser's own approval card covers the page card's bottom right (a window of its own):
+    // docked, "your turn" sits in the bottom's middle, clear of it.
+    const mid = await page.evaluate((tags) => { const b = document.querySelector(tags.hud).getBoundingClientRect(); return Math.abs((b.left + b.right) / 2 - innerWidth / 2) <= 2 && b.right < innerWidth - 120; }, hud.tags);
+    assert.equal(mid, true, "docked: the badge in the bottom's middle, away from the right corner");
     // A new bar while docked: still no strip (drawBar returns before it draws or arms its re-check).
     await send({ items: [{ t: Date.now(), text: "Clicked Next", who: "Claude" }], canPause: true }, "bar");
     assert.equal((await look()).barH, 0);
@@ -849,4 +853,34 @@ test("docked: the helper tells a page it is docked before its badge, only in a b
   const plain = await run({});
   assert.equal(plain.includes("docked"), false, "plain Chromium: no extra call");
   assert.ok(plain.includes("bar"));
+});
+
+test("a tab with no title of its own shows the agent's name alone, never \"Name ·\"", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const { ownTitle } = await import("../scripts/daemon/tablabels.mjs");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.addInitScript({ content: source });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<p>untitled</p>" }));
+    await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
+    await page.evaluate(() => window.__pbtest("tok", "Claude 5490", "tab-name"));
+    assert.equal(await page.title(), "Claude 5490");
+    await page.evaluate(() => { document.title = "Inbox"; });
+    await page.waitForTimeout(50);
+    assert.equal(await page.title(), "Claude 5490 · Inbox", "a title of its own comes after the name");
+    await page.evaluate(() => window.__pbtest("tok", "", "tab-name"));
+    assert.equal(await page.title(), "Inbox", "the name gone, the title back");
+    await page.evaluate(() => { document.title = ""; });
+    await page.evaluate(() => window.__pbtest("tok", "Claude 5490", "tab-name"));
+    assert.equal(await page.title(), "Claude 5490");
+    await page.evaluate(() => window.__pbtest("tok", "", "tab-name"));
+    assert.equal(await page.title(), "", "an empty title stays empty");
+    assert.equal(await ownTitle(page), "");
+  } finally {
+    await browser.close();
+  }
 });

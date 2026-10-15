@@ -34,10 +34,22 @@ const PAGE_KINDS = { "approval-allow": "allow", "approval-deny": "deny", "approv
 const SURFACES = ["approve"];
 const EARLY_MS = 10_000; // a call that arrived before its hook's line: that ask is no longer real
 const DEFAULT_COLOR = "#e9763f";
+const UNKNOWN_COLOR = "#8699b1"; // no agent's spark color (the muted ink)
 
 // The private socket carries two kinds of connection: an MCP client's (an agent) and a hook's
 // single line (HOOK_MARK first). Reads until it can tell, then hands the socket on with what it read
 // put back. A connection that never sends anything calls neither.
+// Where an ask was made: its tab and that tab's origin then. An Allow holds only for the same tab
+// still on the same origin: a navigation or another tab between the ask and the click (another
+// agent, a joiner, the page itself) makes it a different click, asked again. here: { page, url }
+// where the click would land now. Pure.
+export const originOf = (url) => { try { const u = new URL(String(url)); return u.origin === "null" ? `${u.protocol}${u.pathname}` : u.origin; } catch { return ""; } };
+export function sameWhere(where, here) {
+  if (!where) return true; // asked with no tab of its own known: nothing to hold it to
+  if (!here?.page || here.page !== where.page || here.page.isClosed?.()) return false;
+  return !!where.origin && originOf(here.url ?? here.page.url?.()) === where.origin;
+}
+
 export function routeConnection(sock, { onHook, onOther }) {
   const mark = Buffer.from(HOOK_MARK);
   let buf = Buffer.alloc(0);
@@ -84,18 +96,19 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   const listeners = new Set();
   let poll = null;
   let reading = false;
+  let movedFrom = null; // the last Allow refused as "moved": where it was asked (lastWhere)
 
   const emit = (change) => { for (const fn of listeners) { try { fn(change); } catch {} } };
   const publicItem = (it) => ({ id: it.id, agent: { label: it.agent.label, color: it.agent.color }, kind: it.kind, target: it.target, reason: it.reason, tab: { id: it.tab.id, host: it.tab.host, target: it.tab.target }, at: it.at });
   const short = (id) => String(id).slice(0, 11);
-  const remember = (key, answer) => {
+  const remember = (key, answer, where = null) => {
     const t = now();
     for (const [k, r] of answered) if (t - r.at >= waitMs) answered.delete(k);
-    answered.set(key, { answer, at: t });
+    answered.set(key, { answer, at: t, where });
   };
 
   function participant(id, info = {}) {
-    participants.set(id, { client: String(info.client || ""), remote: !!info.remote, tab: typeof info.tab === "function" ? info.tab : () => null });
+    participants.set(id, { client: String(info.client || ""), remote: !!info.remote, parent: Number.isSafeInteger(info.parent) ? info.parent : 0, tab: typeof info.tab === "function" ? info.tab : () => null });
   }
   function gone(id) {
     participants.delete(id);
@@ -105,6 +118,18 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   function only(client) {
     const found = [...participants.entries()].filter(([, p]) => !p.remote && p.client === client);
     return found.length === 1 ? found[0][0] : null;
+  }
+  // The agent a hook asks for: the one whose bridge the same app process started (its parent is
+  // among the hook's ancestors, nearest first: an app run inside another's terminal is the inner
+  // one), else the one agent of that app, else null. ancestors: process ids, the hook's parent first.
+  function whose(client, ancestors) {
+    const chain = Array.isArray(ancestors) ? ancestors.filter((n) => Number.isSafeInteger(n) && n > 1).slice(0, 8) : [];
+    for (const pid of chain) {
+      const found = [...participants.entries()].filter(([, p]) => !p.remote && p.client === client && p.parent === pid);
+      if (found.length === 1) return found[0][0];
+      if (found.length > 1) break;
+    }
+    return only(client);
   }
 
   // Ends an item: resolves its answer, takes the card down, tells the streams.
@@ -125,9 +150,12 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     const key = approvalKey(tool, input);
     answered.delete(key); // a new ask for the same call: an earlier answer no longer holds
     const info = p ? participants.get(p) : null;
+    // Asked by an agent it can't tell (several Claude Code agents here: the hook names none): said
+    // so, in no agent's color, never as if it were one of them.
+    const several = !info && client === "claude-code" && [...participants.values()].filter((x) => !x.remote && x.client === "claude-code").length > 1;
     const agent = info
       ? { label: String(collaboration?.participants?.get?.(p)?.label || "Agent"), color: hud.sparkColor?.(p) || DEFAULT_COLOR }
-      : { label: "Claude Code", color: DEFAULT_COLOR };
+      : several ? { label: "One of the Claude Code agents", color: UNKNOWN_COLOR } : { label: "Claude Code", color: DEFAULT_COLOR };
     // The agent's own tab only: never a guess at another agent's.
     let page = info ? (info.tab() || hud.sparkPage?.(p) || null) : null;
     if (page?.isClosed?.()) page = null;
@@ -163,20 +191,24 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     if (!shownIn && !surface()) return { shown: false };
     let resolve;
     const answer = new Promise((r) => { resolve = r; });
-    const it = { id, key, client, participant: p, agent, kind: "click", target, reason, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0 };
+    // The tab and its origin as asked: an Allow holds only there (sameWhere).
+    let origin = "";
+    try { origin = page ? originOf(page.url()) : ""; } catch {}
+    const where = page ? { page, origin } : null;
+    const it = { id, key, client, participant: p, agent, kind: "click", target, reason, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0, where };
     items.set(id, it);
     it.timer = setTimeout(() => { if (end(it, "expired")) log(`approval ${short(id)}: no answer in ${Math.round(waitMs / 1000)} s`); }, waitMs);
     it.timer.unref?.();
     emit({ op: "add", item: publicItem(it) });
     log(`approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : bubble ? "in the browser's approval card" : "in the browser's pages"})`);
     watch();
-    return { item: publicItem(it), shown: true, answer };
+    return { item: publicItem(it), shown: true, answer, where };
   }
 
   function answer(id, a, from) {
     const it = items.get(String(id));
     if (!it || !ANSWERS.has(a)) return false;
-    remember(it.key, a === "site" ? "allow" : a);
+    remember(it.key, a === "site" ? "allow" : a, it.where);
     end(it, a);
     log(`approval ${short(id)}: ${a} from ${from}${a === "site" ? " (no per-site memory exists: treated as Allow)" : ""}`);
     return true;
@@ -197,7 +229,9 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   }
 
   // The call itself arrived (Claude Code: the terminal's yes, or the browser's Allow passed on).
-  function arrived(tool, input) {
+  // here: where the click would land now ({ page, url }). "moved": the browser's Allow was for
+  // this call in another tab or on another origin: refused, to be asked again.
+  function arrived(tool, input, here = null) {
     const key = approvalKey(tool, input);
     for (const it of items.values()) if (it.key === key) { withdraw(it.id, "answered in the terminal"); return "withdrawn"; }
     const r = answered.get(key);
@@ -210,6 +244,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
       return null;
     }
     answered.delete(key);
+    if (r.answer === "allow" && !sameWhere(r.where, here)) { movedFrom = r.where; return "moved"; }
     // A browser Deny refuses the same call only within the race window (the call beat the hook's
     // answer); later, the terminal's own answer stands.
     return r.answer === "deny" && now() - r.at < EARLY_MS ? "denied" : null;
@@ -299,7 +334,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     const ran = early.get(key);
     early.delete(key);
     if (ran !== undefined && now() - ran < EARLY_MS) return say("none"); // answered in the terminal already
-    const r = await open({ tool, input, ask, participant: only("claude-code"), client: "claude-code" });
+    const r = await open({ tool, input, ask, participant: whose("claude-code", msg.ancestors), client: "claude-code" });
     if (!r.shown) return say("none");
     const id = r.item.id;
     const stopped = () => withdraw(id, "the hook stopped: the terminal answered, or Claude Code stopped waiting");
@@ -310,7 +345,8 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   }
 
   return {
-    participant, gone, only, open, answer, withdraw, arrived, hook, cover,
+    participant, gone, only, whose, open, answer, withdraw, arrived, hook, cover,
+    lastWhere: () => (movedFrom ? { origin: movedFrom.origin } : null),
     pending: () => [...items.values()].map(publicItem),
     onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
   };

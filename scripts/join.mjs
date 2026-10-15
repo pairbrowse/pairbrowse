@@ -13,12 +13,11 @@
 // config.json through saveConfig, on the person's "Always allow" or "Remove").
 import { randomBytes } from "node:crypto";
 import { saveConfig } from "./paths.mjs";
+import { isQuickTunnelHost } from "./util.mjs";
 
 const JOIN_PREFIX = "pb-join:";
 const KEY = /^[0-9a-f]{64}$/;
 export const JOINER_ID = /^[0-9a-f]{32}$/;
-// Quick Tunnel addresses: https://<words>.trycloudflare.com, nothing else.
-const QUICK_TUNNEL_HOST = /^[a-z0-9]+(-[a-z0-9]+)*\.trycloudflare\.com$/;
 // A host name as joinHosts holds it: lower-case labels with dots between, no port, path or
 // wildcard. Anything else is "" (never written, never matched).
 const HOST_NAME = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)+$/;
@@ -27,7 +26,7 @@ export const cleanHost = (h) => { const host = textOf(h).trim().toLowerCase(); r
 export const joinHostsOf = (config) => [...new Set((Array.isArray(config?.joinHosts) ? config.joinHosts : []).map(cleanHost).filter(Boolean))];
 // Whether a join code's address is taken: a Quick Tunnel, or exactly one of the hosts the person
 // allowed (no suffix or wildcard match: share.example.com allows nothing else).
-export const hostAllowed = (host, hosts = []) => QUICK_TUNNEL_HOST.test(host) || hosts.includes(host);
+export const hostAllowed = (host, hosts = []) => isQuickTunnelHost(host) || hosts.includes(host);
 
 // Any value as text, never a throw: a request body can hold { "toString": "" }, which String() can't convert.
 export const textOf = (v) => { try { return String(v ?? ""); } catch { return ""; } };

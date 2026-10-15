@@ -1,6 +1,7 @@
 // Who works in which tab, on the browser's own tab strip: the agent's name goes in front of the
 // title of each tab it works in ("Claude (Mac) · Inbox", the page script: hud.js tab-name), next
 // to its spark on the tab's icon. A tab the agent leaves gets its own title back.
+import { within } from "../util.mjs";
 
 const SETTLE_MS = 150;
 const shownOn = new WeakMap(); // page -> the name in front of its title now
@@ -8,9 +9,11 @@ const shownOn = new WeakMap(); // page -> the name in front of its title now
 // A tab's own title, without the agent's name in front: what the session saves, the live view and
 // joiners show (they name the agent themselves).
 export async function ownTitle(page) {
-  const title = await page.title().catch(() => "");
+  const title = (await within(2000, page.title().catch(() => ""))) ?? "";
   const n = shownOn.get(page);
-  return n && title.startsWith(`${n} · `) ? title.slice(n.length + 3) : title;
+  if (!n) return title;
+  if (title === n || title === `${n} ·`) return ""; // a tab with no title of its own shows the name alone
+  return title.startsWith(`${n} · `) ? title.slice(n.length + 3) : title;
 } // spark moves and actions in a burst become one update
 
 // The name on the tab, short: an agent's own name ("Claude (Mac) · Claude Code" -> "Claude (Mac)"),

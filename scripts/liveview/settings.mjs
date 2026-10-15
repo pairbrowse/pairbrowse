@@ -22,8 +22,11 @@
 // the helper's next start; askSession from the next start. Anything else in the body, or an
 // invalid value, is refused (409, { error }) and nothing is written. Tunnel tokens, join
 // addresses, the report address and every other setting are never in an answer.
-import { isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, resolve, sep, dirname, basename, relative } from "node:path";
 import { statSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { execFile } from "node:child_process";
+import { within } from "../util.mjs";
 import { browserChoice } from "../browser.mjs";
 import { saveConfig, paths } from "../paths.mjs";
 import { cleanName } from "../join.mjs";
@@ -49,6 +52,43 @@ const folderOf = (p) => { try { return statSync(p).isDirectory() ? realpathSync(
 // so a site's file can't land beside them.
 const inHelperHome = (real, home) => { const h = folderOf(home) || resolve(home); return real === h || real.startsWith(h + sep); };
 
+// Where downloads may go: an ordinary folder inside your home folder, never the home folder itself
+// (where a file named like a shell's startup file would be read), never inside a hidden folder (.ssh,
+// .config, ...: settings and keys) or the folders apps and the system read from (macOS ~/Library:
+// LaunchAgents among them; Windows AppData). user: your home folder. A reason, or "" when it may.
+const SYSTEM_DIRS = ["Library", "AppData", "Applications"];
+export function downloadsProblem(real, user = homedir()) {
+  const h = folderOf(user) || resolve(user);
+  if (real === h) return "Downloads can't go straight into your home folder: choose a folder in it.";
+  const rel = relative(h, real);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return "Downloads go to a folder inside your home folder.";
+  const parts = rel.split(sep);
+  if (parts.some((p) => p.startsWith("."))) return "Downloads can't go into a hidden folder (its name starts with a dot).";
+  if (SYSTEM_DIRS.some((d) => parts[0].toLowerCase() === d.toLowerCase())) return `Downloads can't go into ~${sep}${parts[0]} (apps and the system read from it).`;
+  return "";
+}
+
+// A browser of your own chosen in Settings: one this computer vouches for. On macOS an app (the
+// path inside a .app bundle's Contents/MacOS) whose code signature verifies; elsewhere a file only
+// its owner (you or root) can change, in a folder only they can change. A reason, or "".
+const run = (file, args, ms) => new Promise((done) => execFile(file, args, { timeout: ms }, (error) => done(!error)));
+export async function browserProblem(path, { platform = process.platform, verify = (app) => run("codesign", ["--verify", "--strict", app], 20_000), stat = statSync, uid = process.getuid?.() } = {}) {
+  if (platform === "darwin") {
+    const m = /^(.*\.app)\/Contents\/MacOS\/[^/]+$/.exec(path);
+    if (!m) return `${path} isn't an app's program (choose the app: …/Name.app/Contents/MacOS/Name).`;
+    return (await within(25_000, Promise.resolve().then(() => verify(m[1])).catch(() => false))) === true ? "" : `${basename(m[1])}'s code signature doesn't verify: PairBrowse only starts a browser app macOS can vouch for.`;
+  }
+  if (platform === "win32") return "";
+  try {
+    for (const p of [path, dirname(path)]) {
+      const s = stat(p);
+      if (s.mode & 0o022) return `${p} can be changed by other accounts: PairBrowse doesn't start a browser from there.`;
+      if (uid !== undefined && s.uid !== 0 && s.uid !== uid) return `${p} belongs to another account.`;
+    }
+  } catch { return `${path} can't be read.`; }
+  return "";
+}
+
 // config: the settings with the older names as the person wrote them (context.choiceConfig()).
 // exists / executable: as applySettings.
 export function readSettings(config, { native = false, exists, executable } = {}) {
@@ -71,7 +111,7 @@ export function readSettings(config, { native = false, exists, executable } = {}
 // maxTabs, sessionPicker) or { error }. exists / executable: file checks for a path (tests pass
 // stand-ins; browserChoice's own by default). folder(path): the real folder at path, or null
 // (statSync's by default). home: the helper's home, which no downloads folder may be in.
-export function applySettings(given, config, { native = false, exists, executable, folder = folderOf, home = paths.home } = {}) {
+export function applySettings(given, config, { native = false, exists, executable, folder = folderOf, home = paths.home, user = homedir() } = {}) {
   if (!plainObject(given)) return { error: `Settings are { ${SETTINGS_KEYS.join(", ")} }.` };
   for (const k of Object.keys(given)) if (!SETTINGS_KEYS.includes(k)) return { error: `Unknown setting "${k}"` };
   const fields = {};
@@ -115,6 +155,8 @@ export function applySettings(given, config, { native = false, exists, executabl
       const real = folder(d);
       if (!real) return { error: `${d} isn't a folder` };
       if (inHelperHome(real, home)) return { error: "Downloads can't go inside PairBrowse's own folder (~/.pairbrowse)." };
+      const why = downloadsProblem(real, user);
+      if (why) return { error: why };
       fields.downloadsDir = d;
     }
   }
@@ -142,13 +184,20 @@ export function applySettings(given, config, { native = false, exists, executabl
 // browser choice is read from; browserInUse(): the browser of the window open now, or null.
 // save(fields): writes config.json (saveConfig: a temp file and a rename).
 // folder / home: as applySettings. onChange(fields): after a write (the helper passes it on).
-export function createSettings({ config, choiceConfig = () => config, native = false, browserInUse = () => null, save = (fields) => saveConfig(fields), exists, executable, folder, home, onChange = () => {} }) {
+// vouch(path): browserProblem's check for a browser path of your own (tests pass a stand-in).
+export function createSettings({ config, choiceConfig = () => config, native = false, browserInUse = () => null, save = (fields) => saveConfig(fields), exists, executable, folder, home, user, vouch = (p) => browserProblem(p), onChange = () => {} }) {
   const read = () => readSettings(choiceConfig(), { native, exists, executable });
   return {
     read,
-    write(given) {
-      const r = applySettings(given, choiceConfig(), { native, exists, executable, ...(folder ? { folder } : {}), ...(home ? { home } : {}) });
+    async write(given) {
+      const r = applySettings(given, choiceConfig(), { native, exists, executable, ...(folder ? { folder } : {}), ...(home ? { home } : {}), ...(user ? { user } : {}) });
       if (r.error) return r;
+      // A path of your own: checked before anything is written (defense in depth: the route is the
+      // owner's alone already).
+      if (typeof r.fields.browser === "string" && isAbsolute(r.fields.browser)) {
+        const why = await vouch(r.fields.browser);
+        if (why) return { error: why };
+      }
       try { save(r.fields); } catch (e) { return { error: `Couldn't write config.json: ${e?.message || e}` }; }
       Object.assign(config, r.fields);
       try { onChange(r.fields); } catch {}

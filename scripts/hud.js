@@ -297,18 +297,19 @@
   // changes it, the name goes back in front; when the agent leaves, the title is the page's again.
   let tabName = "", titleWatch = null;
   const namePrefix = (n) => `${n} · `;
-  // The browser trims the title: with no title of its own, the tab reads "Name ·" (no space).
-  const titleNamed = () => !!tabName && (document.title.startsWith(namePrefix(tabName)) || document.title === `${tabName} ·`);
-  const titleOnly = () => (titleNamed() ? document.title.slice(`${tabName} ·`.length).replace(/^ /, "") : document.title);
+  // With no title of its own, the tab reads the name alone (never "Name ·").
+  const withName = (n, own) => (own ? namePrefix(n) + own : n);
+  const titleNamed = () => !!tabName && (document.title.startsWith(namePrefix(tabName)) || document.title === tabName || document.title === `${tabName} ·`);
+  const titleOnly = () => (!titleNamed() ? document.title : document.title === tabName ? "" : document.title.slice(`${tabName} ·`.length).replace(/^ /, ""));
   function keepName() {
-    if (tabName && !titleNamed()) document.title = namePrefix(tabName) + document.title;
+    if (tabName && !titleNamed()) document.title = withName(tabName, document.title);
   }
   function setTabName(name) {
     name = String(name || "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 32);
     if (name === tabName) return keepName();
     const own = titleOnly();
     tabName = name;
-    document.title = name ? namePrefix(name) + own : own;
+    document.title = name ? withName(name, own) : own;
     if (name && !titleWatch) {
       titleWatch = new MutationObserver(keepName);
       titleWatch.observe(document.head || document.documentElement, { subtree: true, childList: true, characterData: true });
@@ -534,7 +535,11 @@
     // Above the 30 px bar (12 px clear), or, docked, at the page's corner where the bar's card sits
     // (above the docked note while one shows).
     const note = docked && !!bar?.classList.contains("note");
-    hostPlace.textContent = barHost?.isConnected ? `:host{bottom:${(docked && !note ? 12 : 42) + lift}px !important}${lift ? ".b{box-shadow:0 0 0 1px #293B50 !important}" : ""}` : "";
+    // Docked, the browser's own approval card sits over the page card's bottom right corner (its
+    // own window, which this page can't see): "your turn" goes to the bottom's middle, so the two
+    // never cover each other.
+    const middle = docked ? "left:50% !important;right:auto !important;transform:translateX(-50%) !important;" : "";
+    hostPlace.textContent = barHost?.isConnected ? `:host{bottom:${(docked && !note ? 12 : 42) + lift}px !important;${middle}}${lift ? ".b{box-shadow:0 0 0 1px #293B50 !important}" : ""}` : "";
   }
 
   // Someone asks to join the session (shown on the host's tab in front only, when the browser has

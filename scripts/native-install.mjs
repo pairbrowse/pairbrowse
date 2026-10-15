@@ -24,7 +24,7 @@ import { selfCheck } from "./native-check.mjs";
 import { NATIVE, installHint, pinnedArchive, ensureEngine, installEngine } from "./native-pack.mjs";
 import { BRANDING, brandNativeApp, registerApp, verifySignature } from "./macos-app.mjs";
 import { currentSession, profileDir } from "./sessions.mjs";
-import { readJson, sha256File, within } from "./util.mjs";
+import { readJson, sha256File, within, writeJsonAtomic } from "./util.mjs";
 
 const run = promisify(execFile);
 const UNPACK_TIMEOUT_MS = 600_000;
@@ -150,13 +150,13 @@ function recoverInterrupted(log, d = nativeDirs()) {
 // written first, so a swap cut short anywhere from here is undone by the next install or start.
 async function swapIn(d, app, configBefore) {
   if (await runningFrom(d.app)) throw new Error("the PairBrowse browser is open: quit it (or stop the PairBrowse helper) and try again");
-  writeFileSync(d.pending, JSON.stringify({ hadOld: existsSync(d.app), config: configBefore, startedAt: new Date().toISOString() }));
+  writeJsonAtomic(d.pending, { hadOld: existsSync(d.app), config: configBefore, startedAt: new Date().toISOString() });
   rmSync(d.rollback, { recursive: true, force: true });
   if (existsSync(d.app)) renameSync(d.app, d.rollback);
   renameSync(app, d.app);
 }
 
-const writeRecord = (d, record) => writeFileSync(d.record, JSON.stringify(record, null, 2) + "\n");
+const writeRecord = (d, record) => writeJsonAtomic(d.record, record);
 const readConfigText = () => (existsSync(paths.config) ? readFileSync(paths.config, "utf8") : null);
 // Leftovers of an install or check that was killed half-way (call with the lock held).
 function sweepLeftovers(d) {

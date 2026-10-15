@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, ensureDirs } from "./paths.mjs";
 import { ensureRuntime } from "./runtime.mjs";
+import { withoutTestSwitches } from "./test-gate.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -26,7 +27,7 @@ export function prepareLocal(say = () => {}) {
 
 export function startDaemon() {
   const out = openSync(paths.daemonLog, "a");
-  spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { detached: true, stdio: ["ignore", out, out], env: process.env }).unref();
+  spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { detached: true, stdio: ["ignore", out, out], env: withoutTestSwitches(process.env) }).unref();
 }
 
 export function connectOnce(socketPath = paths.socket) {

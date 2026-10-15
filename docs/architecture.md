@@ -71,7 +71,7 @@ Everything lives in `~/.pairbrowse`, created private to the user: the browser pr
 details (facts), passwords (a separate file, readable only by the user), runs, logs, downloads,
 and each session's timeline folder (`timeline/`, or `sessions/<name>.timeline/`: the pictures
 already sent to agents, deleted with the session).
-Nothing is sent to a PairBrowse server; there is none. Network traffic is the user's own browsing,
+Nothing is sent to a PairBrowse server except a problem report you send yourself (Report a problem: what you saw and wrote, scrubbed, to `reportUrl`, by default `https://pairbrowse.com/api/report`; `null` turns it off; see docs/security.md). Network traffic is the user's own browsing,
 the pinned downloads (GitHub, npm) and, while sharing, the tunnel.
 
 ## Trust boundaries

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { join, dirname } from "node:path";
 import { paths } from "./paths.mjs";
-import { downloadPinned } from "./util.mjs";
+import { downloadPinned, isQuickTunnelHost } from "./util.mjs";
 
 const run = promisify(execFile);
 
@@ -55,7 +55,7 @@ export async function ensureCloudflared(log = () => {}, platform = process.platf
 }
 
 // The public address cloudflared prints once the Quick Tunnel is up.
-export const tunnelUrl = (text) => String(text).match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com\b/)?.[0] || null;
+export const tunnelUrl = (text) => { const m = String(text).match(/https:\/\/([a-z0-9-]+\.trycloudflare\.com)(?![a-z0-9-]|\.[a-z0-9])/); return m && isQuickTunnelHost(m[1]) ? m[0] : null; };
 
 // Whether a new tunnel's name resolves yet, asked of Cloudflare's own resolver (the joiner's
 // resolver must never ask too early: trycloudflare.com's "no such name" is cached for a minute).

@@ -3,7 +3,7 @@
 // and records the pre-submit review the guard requires. No dependencies.
 // The helper keeps a run of its own for every task (daemon/journal.mjs, source "auto"), in the
 // same files, so a task survives a context reset even when the agent never called run_save.
-import { writeFileSync, readdirSync, readFileSync, mkdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { paths, ensureDirs } from "./paths.mjs";
@@ -135,7 +135,7 @@ export function saveReview(a) {
   const checks = a.checks || [];
   const failing = checks.filter((c) => !c.ok && !c.waived);
   const review = { run: a.run || null, platform: a.platform, guidelinesUrl: a.guidelinesUrl, checks, passed: checks.length > 0 && failing.length === 0, at: new Date().toISOString() };
-  writeFileSync(join(paths.reviews, "latest.json"), JSON.stringify(review, null, 2));
+  writeJsonAtomic(join(paths.reviews, "latest.json"), review); // the guard reads it at every call: never half written
   return review;
 }
 

@@ -5,7 +5,7 @@
 // The same safety rules apply as for single actions: web pages only, passwords only on their
 // domains, uploads only of checked media and documents, final actions (pay, publish, submit for
 // review, delete, message people) are left for browser_click so the user confirms them.
-import { mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { navigationProblem, isRef, SENSITIVE } from "./policy.mjs";
@@ -14,9 +14,10 @@ import { isLocalNetwork, clickClass } from "./guard.mjs";
 import { strongSignal } from "./clickrule.mjs";
 import { uploadProblem, uploadFiles } from "./upload.mjs";
 import { slug } from "./runs.mjs";
-import { readJson, sleep, within } from "./util.mjs";
+import { addressOnly } from "./log.mjs";
+import { readJson, sleep, within, bounded, writeJsonAtomic } from "./util.mjs";
 import { withHelpers, buttonLabel, isVisible, nearbyText, clickRisk, clickContext, settle } from "./daemon/page.mjs";
-import { scanReveal, revealNote } from "./daemon/reveal.mjs";
+import { scanReveal, pickReveal, revealNote } from "./daemon/reveal.mjs";
 
 // A stroke's pace: one small move this often (a steady hand drawing).
 const STROKE_STEP_MS = 8;
@@ -79,7 +80,7 @@ export function loadPlaybook(name) {
 
 export function savePlaybook(name, steps) {
   mkdirSync(PLAYBOOKS, { recursive: true, mode: 0o700 });
-  writeFileSync(playbookFile(name), JSON.stringify({ name, steps, savedAt: new Date().toISOString() }, null, 2));
+  writeJsonAtomic(playbookFile(name), { name, steps, savedAt: new Date().toISOString() });
 }
 
 export function substitute(value, vars = {}) {
@@ -142,10 +143,14 @@ export async function contextAt(page, target, kind = "click", prev = "") {
   try {
     const args = [kind, prev, { payFrame: await cardFrame(page) }];
     const el = !target ? null : typeof target === "string" ? page.locator(isRef(target) ? `aria-ref=${target}` : target).first() : target;
+    // The focused element may be in a frame (a payment form in an iframe): read it there. A
+    // frame that can't be followed reads as unreadable (the user confirms).
+    const where = el ? null : await focusedFrame(page);
+    if (!el && !where) return { risk: UNREADABLE };
     // A busy computer or a page still loading can miss the first second; a second, longer try
     // keeps that from reading as unreadable (which asks the user).
     for (const ms of [1000, 4000]) {
-      const run = el ? el.evaluate(inPage, args, { timeout: ms }) : page.evaluate(focused, args);
+      const run = el ? el.evaluate(inPage, args, { timeout: ms }) : where.evaluate(focused, args);
       const ctx = await within(ms + 500, run.catch(() => null));
       if (ctx?.risk) return ctx;
     }
@@ -153,6 +158,26 @@ export async function contextAt(page, target, kind = "click", prev = "") {
   } catch {
     return { risk: UNREADABLE };
   }
+}
+// The frame holding the focused element: the page's own, or the frame a focused <iframe> leads
+// into (as deep as frames go, up to 6); null when a focused frame can't be followed.
+const FOCUSED_FRAME = () => { let e = document.activeElement; while (e?.shadowRoot?.activeElement) e = e.shadowRoot.activeElement; return /^(IFRAME|FRAME)$/.test(e?.tagName || "") ? e : null; };
+export async function focusedFrame(page) {
+  const main = typeof page.mainFrame === "function" ? page.mainFrame() : page;
+  let frame = main;
+  for (let depth = 0; depth < 6; depth++) {
+    if (typeof frame.evaluateHandle !== "function") return frame;
+    const h = await within(1500, Promise.resolve().then(() => frame.evaluateHandle(FOCUSED_FRAME)).catch(() => null));
+    // The page's own document didn't answer: read as before (the checks' own tries decide).
+    if (!h) return depth ? null : main;
+    const box = h.asElement?.() || null;
+    if (!box) { h.dispose?.().catch(() => {}); return frame; }
+    const child = await within(1500, box.contentFrame().catch(() => null));
+    box.dispose().catch(() => {});
+    if (!child) return null;
+    frame = child;
+  }
+  return null;
 }
 export const riskAt = async (page, target, kind = "click", prev = "") => (await contextAt(page, target, kind, prev)).risk;
 
@@ -227,6 +252,15 @@ async function formRoots(page) {
   return roots;
 }
 
+// A page read that gives up quietly: its value, or `fallback` when it failed or didn't answer
+// within ms (a page whose scripts never pause answers nothing).
+// The page's inner size; a page that doesn't answer is taken as 1280 x 800 (the step then says so
+// by doing little harm: a scroll or a stroke in the middle of a usual window).
+async function viewSize(page) {
+  const v = await bounded(page.evaluate(() => [innerWidth, innerHeight]), null);
+  return Array.isArray(v) && v.every((n) => Number.isFinite(n) && n > 0) ? v : [1280, 800];
+}
+
 // First visible match among candidate locators, each made for a root (the page or a frame).
 // frames: false for clicks (their safety checks read the page itself).
 async function find(page, candidates, { frames = true } = {}) {
@@ -258,7 +292,7 @@ async function findIn(root, candidates) {
 async function visibleSoon(loc, timeout) {
   const until = Date.now() + timeout;
   do {
-    for (let i = 0, n = Math.min(await loc.count().catch(() => 0), 50); i < n; i++) if (await loc.nth(i).isVisible().catch(() => false)) return true;
+    for (let i = 0, n = Math.min(await bounded(loc.count(), 0), 50); i < n; i++) if (await bounded(loc.nth(i).isVisible(), false)) return true;
     await sleep(200);
   } while (Date.now() < until);
   return false;
@@ -276,18 +310,18 @@ const nearbyMatch = withHelpers((els, want) => {
 // A <select> whose first choice is its name (a placeholder: "Organization Type*"), the one such.
 async function byFirstOption(root, label) {
   const all = root.locator("select");
-  const index = await all.evaluateAll((els, want) => {
+  const index = await bounded(all.evaluateAll((els, want) => {
     const norm = (t) => String(t || "").replace(/[\s*:]+/g, " ").trim().toLowerCase();
     const hits = els.map((el, i) => { const o = el.options[0]; const r = el.getBoundingClientRect(); return o && (o.disabled || o.value === "") && norm(o.text) === norm(want) && r.width > 0 ? i : -1; }).filter((i) => i >= 0);
     return hits.length === 1 ? hits[0] : -1;
-  }, label).catch(() => -1);
+  }, label), -1);
   return index >= 0 ? all.nth(index) : null;
 }
 async function byNearbyText(page, label) {
   const all = page.locator("input, textarea, select");
-  const index = await all.evaluateAll(nearbyMatch, label).catch(() => -1);
+  const index = await bounded(all.evaluateAll(nearbyMatch, label), -1);
   if (index >= 0) return all.nth(index);
-  const own = await all.evaluateAll(ownBoxMatch, label).catch(() => -1);
+  const own = await bounded(all.evaluateAll(ownBoxMatch, label), -1);
   return own >= 0 ? all.nth(own) : null;
 }
 // A field named by text inside the small box that holds only it (a floating label drawn over the
@@ -437,14 +471,14 @@ async function pickFromOpened(page, opener, option, label, hooks) {
     await hooks.cursor?.(opener, "click");
     // Covered by a menu still open from before: close it as a person would (Escape), then again.
     const opened = await opener.click({ timeout: 2500 }).then(() => true, async () => {
-      await page.keyboard.press("Escape").catch(() => {});
+      await within(3000, page.keyboard.press("Escape").catch(() => {}));
       await opener.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(() => {});
       await hooks.cursor?.(opener, "click"); // it moved: the press is declared where it is now
       return opener.click({ timeout: 3000 }).then(() => true, () => false);
     });
     if (!opened) return `"${label}" couldn't be opened: something covers it (a banner, a chat box, another open list) or it's disabled. Look at the screenshot, close what covers it, then try again.`;
     let choices = [];
-    const near = await opener.evaluate(rectOf, null, { timeout: 1000 }).catch(() => null); // in its own frame
+    const near = await bounded(opener.evaluate(rectOf, null, { timeout: 1000 }), null); // in its own frame
     for (const until = Date.now() + SUGGEST_MS; Date.now() < until;) {
       choices = await choicesAfter(page, mark, near);
       if (bestChoice(choices, option) || (choices.length && Date.now() > until - SUGGEST_MS + 400)) break;
@@ -456,16 +490,16 @@ async function pickFromOpened(page, opener, option, label, hooks) {
       // Focused in the page or in the frame the list lives in.
       let typed = false;
       for (const root of await formRoots(page)) if (await within(1000, root.evaluate(() => { const f = document.activeElement; return !!f && f.matches("input:not([type=hidden]):not([type=checkbox]):not([type=radio])") && !f.readOnly && !f.hasAttribute("data-pb-dropdown"); }).catch(() => false))) { typed = true; break; }
-      const same = typed && await opener.evaluate((n) => n === document.activeElement || n.contains(document.activeElement)).catch(() => true);
+      const same = typed && await bounded(opener.evaluate((n) => n === document.activeElement || n.contains(document.activeElement)), true);
       if (typed && !same) {
-        await page.keyboard.type(String(option), { delay: 10 }).catch(() => {});
+        await within(8000, page.keyboard.type(String(option), { delay: 10 }).catch(() => {}));
         for (const until = Date.now() + SUGGEST_MS; Date.now() < until && !best; await new Promise((r) => setTimeout(r, 80))) best = bestChoice(await choicesAfter(page, mark, near), option);
       }
     }
     // A list that filled in late or redrew while it was read (a form in a frame from another site):
     // closed and opened once more, then given longer.
     if (!best) {
-      await page.keyboard.press("Escape").catch(() => {});
+      await within(3000, page.keyboard.press("Escape").catch(() => {}));
       await clearChoices(page, mark);
       const again = await choicesBefore(page);
       await hooks.cursor?.(opener, "click"); // declared once more: the first declaration may have run out
@@ -478,7 +512,7 @@ async function pickFromOpened(page, opener, option, label, hooks) {
       }
     }
     if (!best) {
-      await page.keyboard.press("Escape").catch(() => {});
+      await within(3000, page.keyboard.press("Escape").catch(() => {}));
       // No choice could be read at all (pictures with no name, a list drawn on a canvas): the
       // agent looks for itself instead of trying other spellings.
       return `Opened "${label}" but found no option "${option}".${choices.length ? ` Its options: ${choices.map((c) => c.text).slice(0, 25).join(", ")}.` : " Its list shows nothing readable (pictures or icons without names): look at the screenshot, take a browser_snapshot, and click the choice by its ref with browser_click."}`;
@@ -507,7 +541,7 @@ const SUGGEST_MS = 1200;
 async function pickSuggestion(page, el, value, mark, typed = "", hooks = {}) {
   if (!String(value).trim()) return { picked: "", seen: [] };
   let choices = [];
-  const near = await el.evaluate(rectOf, null, { timeout: 1000 }).catch(() => null); // in its own frame
+  const near = await bounded(el.evaluate(rectOf, null, { timeout: 1000 }), null); // in its own frame
   for (const until = Date.now() + SUGGEST_MS; Date.now() < until;) {
     choices = await choicesAfter(page, mark, near);
     // The value itself, else (after typing a shorter part) the one suggestion starting with that part.
@@ -552,8 +586,8 @@ export function isoDate(v) {
 async function openSectionOf(page, label) {
   for (const root of await formRoots(page)) {
     const loc = root.getByLabel(label, { exact: true }).first();
-    if (!(await loc.count().catch(() => 0))) continue;
-    const opened = await loc.evaluate((n) => { const d = n.closest("details:not([open])"); if (!d) return false; d.open = true; return true; }).catch(() => false);
+    if (!(await bounded(loc.count(), 0))) continue;
+    const opened = await bounded(loc.evaluate((n) => { const d = n.closest("details:not([open])"); if (!d) return false; d.open = true; return true; }), false);
     if (opened) return loc;
   }
   return null;
@@ -566,24 +600,27 @@ async function openSectionOf(page, label) {
 // was found then, else { note }: the controls that may unfold it, for the failure's message. A
 // control opened for nothing is folded back.
 async function unfold(page, want, look, hooks, { exact = false } = {}) {
-  const mark = `r${Math.random().toString(36).slice(2, 10)}`;
-  const scan = await scanReveal(page, want, { mark, exact });
+  const found = await pickReveal(page, want, { exact });
+  const scan = found?.scan || null;
   const note = revealNote(scan);
-  if (!scan || scan.auto < 0) return { note, scan };
+  const handle = found?.el || null;
+  if (!scan || scan.auto < 0 || !handle) { handle?.dispose().catch(() => {}); return { note, scan }; }
   const pick = scan.list[scan.auto];
-  const loc = page.locator(`[data-pb-reveal="${mark}"]`).first();
-  const handle = await within(1500, loc.elementHandle({ timeout: 1000 }).catch(() => null));
-  await within(1000, loc.evaluate((n) => n.removeAttribute("data-pb-reveal"), null, { timeout: 800 }).catch(() => {}));
-  if (!handle) return { note, scan };
+  const origin = originOf(page.url());
   try {
-    const { risk } = await contextAt(page, handle, "click");
-    // Only a click the checks call safe and whose effect the markup says (a disclosure, a link):
-    // never one that submits, commits, or only runs the page's scripts.
-    if (risk?.level !== "safe" || risk.unclear || strongSignal(risk)) return { note, scan };
+    if (!(await revealable(page, handle))) return { note, scan };
     await hooks.beforeStep?.("click", handle);
     await hooks.cursor?.(handle, "click");
     if (!(await within(6000, handle.click({ timeout: 5000 }).then(() => true, () => false)))) return { note, scan };
     await within(5000, page.waitForLoadState("domcontentloaded", { timeout: 4500 }).catch(() => {}));
+    // It took the tab to another site: nothing more is done there (no field filled, nothing
+    // remembered for that site); the tab goes back to where the run was.
+    const now = originOf(page.url());
+    if (now !== origin) {
+      hooks.left = true;
+      await within(6000, page.goBack({ timeout: 5000 }).catch(() => {}));
+      return { note: ` Opening ${pick.name ? `"${pick.name}"` : "the page's menu"} went to another site (${now || "an unknown address"}), so the run stopped and went back.`, scan, left: true };
+    }
     await settle(page, 1500);
     const el = await look();
     if (el) {
@@ -594,7 +631,8 @@ async function unfold(page, want, look, hooks, { exact = false } = {}) {
       const b = n.matches("label[for]") ? n.control : n;
       return b?.getAttribute("aria-expanded") === "true" || (b?.type === "checkbox" && b.checked) || !!n.closest("details[open]");
     }).catch(() => false));
-    if (open) await within(4000, handle.click({ timeout: 3000 }).catch(() => {}));
+    // Folded back with the same checks as the click that opened it (the page may have changed it).
+    if (open && originOf(page.url()) === origin && (await revealable(page, handle))) await within(4000, handle.click({ timeout: 3000 }).catch(() => {}));
     // The control just tried isn't offered again.
     const after = (await scanReveal(page, want, { exact })) || scan;
     const rest = { ...after, list: after.list.filter((c) => !(c.name === pick.name && c.ref === pick.ref)) };
@@ -603,12 +641,29 @@ async function unfold(page, want, look, hooks, { exact = false } = {}) {
     handle.dispose().catch(() => {});
   }
 }
+const originOf = (url) => { try { return new URL(url).origin; } catch { return ""; } };
+
+// Whether fast mode may click a control to unfold something: only a click the checks call safe
+// and whose effect the markup says (a disclosure, a link on this site): never one that submits a
+// form (even one the checks let through, a search or a sign-in), sends a request, commits, only
+// runs the page's scripts, or goes to another site.
+export async function revealable(page, handle) {
+  const { risk } = await contextAt(page, handle, "click");
+  if (risk?.level !== "safe" || risk.unclear || strongSignal(risk)) return false;
+  if (risk.does === "submits a form" || /^sends /.test(risk.does || "")) return false;
+  const away = await within(1000, handle.evaluate((n) => {
+    const a = n.closest("a[href]");
+    if (!a || /^\s*(#|javascript:)/i.test(a.getAttribute("href") || "")) return false;
+    try { return new URL(a.href).origin !== location.origin; } catch { return true; }
+  }).catch(() => true));
+  return away === false;
+}
 
 // Whether the form has a field by that name that it hides at the moment.
 async function hiddenNow(page, label) {
   for (const root of await formRoots(page)) {
     for (const loc of [root.getByLabel(label, { exact: true }), root.getByRole("combobox", { name: label, exact: true })]) {
-      if ((await loc.count().catch(() => 0)) && !(await loc.first().isVisible().catch(() => true))) return true;
+      if ((await bounded(loc.count(), 0)) && !(await bounded(loc.first().isVisible(), true))) return true;
     }
   }
   return false;
@@ -618,7 +673,7 @@ async function hiddenNow(page, label) {
 // a styled box), with the events a person's choice fires. The option by its text or value, else the
 // one option holding that text ("United States" for "US - United States").
 async function chooseNative(sel, option) {
-  return sel.evaluate((n, want) => {
+  return within(5000, sel.evaluate((n, want) => {
     const w = want.trim().toLowerCase();
     const opts = [...n.options].filter((x) => !x.disabled);
     const words = (t) => new RegExp(`(^|[^\\p{L}\\p{N}])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "u").test(t.trim().toLowerCase());
@@ -630,18 +685,18 @@ async function chooseNative(sel, option) {
     n.focus(); n.value = o.value;
     n.dispatchEvent(new Event("input", { bubbles: true })); n.dispatchEvent(new Event("change", { bubbles: true }));
     return { picked: o.text.trim() };
-  }, String(option)).catch(() => ({ options: [] }));
+  }, String(option)).then((r) => r, () => ({ options: [] }))).then((r) => r ?? { options: [] });
 }
 // A native <select> named exactly that (its label, aria-label, name or id), shown or drawn invisible.
 async function nativeNamed(page, label) {
   for (const root of await formRoots(page)) {
     const all = root.locator("select");
-    const i = await all.evaluateAll((els, want) => {
+    const i = await bounded(all.evaluateAll((els, want) => {
       const norm = (t) => String(t || "").replace(/[\s*:]+/g, " ").trim().toLowerCase();
       const w = norm(want);
       const hits = els.map((n, i) => ([...(n.labels || [])].some((l) => norm(l.innerText) === w) || norm(n.getAttribute("aria-label")) === w || n.name === want || n.id === want) && !n.disabled && n.closest("body") && getComputedStyle(n).display !== "none" && n.parentElement?.getBoundingClientRect().width > 0 ? i : -1).filter((i) => i >= 0);
       return hits.length === 1 ? hits[0] : -1;
-    }, label).catch(() => -1);
+    }, label), -1);
     if (i >= 0) return all.nth(i);
   }
   return null;
@@ -675,10 +730,10 @@ async function hiddenDropdown(page, label) {
   for (const root of await formRoots(page)) {
     for (const loc of [root.getByRole("combobox", { name: label, exact: true }), root.getByRole("textbox", { name: label, exact: true }), root.getByLabel(label, { exact: true }), root.getByLabel(label)]) {
       const el = loc.first();
-      if (!(await el.count().catch(() => 0)) || (await el.isVisible().catch(() => false))) continue;
+      if (!(await bounded(el.count(), 0)) || (await bounded(el.isVisible(), false))) continue;
       // The box is marked for the one click that opens it, then unmarked (select, below).
       const mark = `d${Math.random().toString(36).slice(2, 10)}`;
-      const marked = await el.evaluate((n, mark) => {
+      const marked = await bounded(el.evaluate((n, mark) => {
         // The box a person clicks: shown, dropdown-sized, and holding no other field. A form that
         // hid the field itself (it applies to other answers) has no such box.
         for (let a = n.parentElement, i = 0; a && i < 6; a = a.parentElement, i++) {
@@ -698,7 +753,7 @@ async function hiddenDropdown(page, label) {
           }
         }
         return false;
-      }, mark).catch(() => false);
+      }, mark), false);
       if (marked) return Object.assign(root.locator(`[data-pb-dropdown="${mark}"]`), { field: el });
     }
   }
@@ -711,10 +766,10 @@ async function hiddenDropdown(page, label) {
 async function onlyOne(page, selector, label = "") {
   const all = page.locator(selector);
   const shown = [];
-  for (let i = 0, n = Math.min(await all.count().catch(() => 0), 20); i < n; i++) if (await all.nth(i).isVisible().catch(() => false)) shown.push(all.nth(i));
+  for (let i = 0, n = Math.min(await bounded(all.count(), 0), 20); i < n; i++) if (await bounded(all.nth(i).isVisible(), false)) shown.push(all.nth(i));
   if (shown.length !== 1) return null;
   // Nor when the name asked for shows on the page away from it: that is another control's name.
-  const named = await shown[0].evaluate((n, want) => {
+  const named = await bounded(shown[0].evaluate((n, want) => {
     if (n.labels?.length || n.getAttribute("aria-label") || n.getAttribute("aria-labelledby") || n.title) return true;
     const norm = (t) => String(t || "").replace(/[\s*:]+/g, " ").trim().toLowerCase();
     const w = norm(want);
@@ -722,7 +777,7 @@ async function onlyOne(page, selector, label = "") {
     let box = n.parentElement;
     for (let k = 0; box && k < 3 && box.parentElement && box.parentElement.querySelectorAll("input:not([type=hidden]), select, textarea").length <= 1; k++) box = box.parentElement;
     return [...document.querySelectorAll("body *")].some((e) => !e.children.length && norm(e.textContent) === w && !box?.contains(e));
-  }, label).catch(() => true);
+  }, label), true); // a page that doesn't answer: as if named elsewhere, so nothing is guessed
   return named ? null : shown[0];
 }
 
@@ -732,15 +787,40 @@ const exactlyClickable = (page, name) => find(page, [
   (root) => root.getByRole("tab", { name, exact: true }),
   (root) => root.getByRole("menuitem", { name, exact: true }),
 ], { frames: false });
-const clickable = (page, name) => find(page, [
-  (root) => root.getByRole("button", { name, exact: true }),
-  (root) => root.getByRole("link", { name, exact: true }),
-  (root) => root.getByRole("button", { name }),
-  (root) => root.getByRole("link", { name }),
-  (root) => root.getByRole("tab", { name }),
-  (root) => root.getByRole("menuitem", { name }),
-  (root) => root.getByText(name, { exact: true }),
-], { frames: false });
+// Named loosely: of every visible button, link, tab and menu item whose name holds the words, the
+// one named most like them: the same name first, then one that starts with it ("Pull requests 10"
+// for "Pull requests"), then one with it as whole words, then any; within each, one in the page's
+// navigation (nav, header, a tab list) before one in its content (an issue row's "2 linked pull
+// requests"), then page order. Text named exactly is the last resort.
+export function clickScore(label, want, inNav) {
+  const norm = (t) => String(t || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const l = norm(label), w = norm(want);
+  if (!w) return 9;
+  const esc = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tier = l === w ? 0 : l.startsWith(w) && !/[\p{L}\p{N}]/u.test(l[w.length] || " ") ? 1 : l.startsWith(w) ? 2 : new RegExp(`(^|[^\\p{L}\\p{N}])${esc}($|[^\\p{L}\\p{N}])`, "u").test(l) ? 3 : l.includes(w) ? 4 : 9;
+  return tier * 2 + (inNav ? 0 : 1);
+}
+const CLICK_ROLES = ["button", "link", "tab", "menuitem"];
+async function clickable(page, name) {
+  const exact = await find(page, [(root) => root.getByRole("button", { name, exact: true }), (root) => root.getByRole("link", { name, exact: true })], { frames: false });
+  if (exact) return exact;
+  let best = null;
+  for (const role of CLICK_ROLES) {
+    const loc = page.getByRole(role, { name });
+    const n = Math.min((await within(LOOK_MS, loc.count().catch(() => 0))) ?? 0, 25);
+    for (let i = 0; i < n; i++) {
+      const one = loc.nth(i);
+      if (!(await within(LOOK_MS, one.isVisible().catch(() => false)))) continue;
+      const seen = await within(LOOK_MS, one.evaluate((el) => [el.getAttribute("aria-label") || el.innerText || el.textContent || "", !!el.closest("nav, header, [role=navigation], [role=banner], [role=tablist], [role=menubar]")]).catch(() => null));
+      if (!seen) continue;
+      const score = clickScore(seen[0], name, seen[1]);
+      if (score < 18 && (!best || score < best.score)) best = { el: one, score };
+      if (score === 0) return one;
+    }
+  }
+  if (best) return best.el;
+  return find(page, [(root) => root.getByText(name, { exact: true })], { frames: false });
+}
 
 // Compact description of what's on the page now: enough to plan the next steps.
 const describePage = withHelpers(() => {
@@ -864,7 +944,7 @@ async function nodeOf(t) {
   const h = await t.handle;
   if (h && (await within(500, h.evaluate((n) => n.isConnected)).catch(() => false))) return h;
   // One match only: with two fields of that name, reading the other one would blame the wrong field.
-  if (typeof t.el?.count === "function" && (await t.el.count().catch(() => 0)) !== 1) return null;
+  if (typeof t.el?.count === "function" && (await bounded(t.el.count(), 0)) !== 1) return null;
   return t.el;
 }
 // What a field shows a person: a dropdown's chosen text, a box ticked or not, a field's value, or
@@ -1093,7 +1173,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
         await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
         // Sites built in JavaScript draw their forms a moment after the page arrives.
         await page.locator("input:not([type=hidden]), textarea, select").first().waitFor({ state: "visible", timeout: 2500 }).catch(() => {});
-        hooks.activity(`Opened ${arg}`);
+        hooks.activity(`Opened ${addressOnly(arg)}`);
       } else if (kind === "fill") {
         const filled = [];
         const suggestionsSeen = new Map(); // label -> what a suggesting field offered
@@ -1120,8 +1200,8 @@ async function stepsIn(page, steps, hooks, touched = []) {
           let value = String(raw);
           const isSecret = Object.hasOwn(hooks.secrets.values, value);
           // Remember what was filled for next time; never passwords or one-time codes.
-          if (!isSecret && value && !SENSITIVE.test(label)) {
-            const type = await el.getAttribute("type").catch(() => null);
+          if (!isSecret && value && !SENSITIVE.test(label) && !hooks.left) {
+            const type = await bounded(el.getAttribute("type"), null);
             if (type !== "password") hooks.remember?.(label, value, (() => { try { return new URL(page.url()).hostname; } catch { return ""; } })());
           }
           if (isSecret) {
@@ -1173,7 +1253,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
               await el.fill(shorter, { timeout: 5000 }).catch(() => {});
               s2 = await pickSuggestion(page, el, value, m2, shorter, hooks).finally(() => clearChoices(page, m2));
             }
-            if (s2.picked) { hooks.activity(`Picked **${s2.picked}** for **${label}**`); touched.push({ el, label }); continue; }
+            if (s2.picked) { hooks.activity(`Picked a suggestion for **${label}**`); touched.push({ el, label }); continue; }
             suggestionsSeen.set(label, s2.seen.map((c) => c.text));
             await el.fill(value, { timeout: 5000 }).catch(() => {});
           }
@@ -1245,7 +1325,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
           let hidden = null;
           for (const root of await formRoots(page)) {
             const box = root.getByRole("checkbox", { name: String(arg), exact: true }).first();
-            if (await box.count().catch(() => 0)) { hidden = box; break; }
+            if (await bounded(box.count(), 0)) { hidden = box; break; }
           }
           const want = kind === "check";
           const was = hidden ? await hidden.isChecked({ timeout: 1500 }).catch(() => null) : null;
@@ -1253,6 +1333,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
           if (!text) {
             const u = await unfold(page, String(arg), () => find(page, [(root) => root.getByLabel(arg, { exact: true }), (root) => root.getByRole("checkbox", { name: arg }), (root) => root.getByRole("radio", { name: arg }), (root) => root.getByLabel(arg)]), hooks);
             if (!u.el) return fail(`No checkbox "${arg}"${u.note ? " shows." : "."}${u.note}${gone()}`);
+            if (await theirs(u.el, String(arg))) { done.push(kind); continue; }
             await hooks.cursor?.(u.el, "click");
             await (kind === "check" ? u.el.check({ timeout: 3000 }) : u.el.uncheck({ timeout: 3000 }));
             touched.push({ el: u.el, label: String(arg) });
@@ -1290,7 +1371,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
             (root) => root.getByRole("button", { name: label, exact: true }),
             (root) => root.locator(`select[name="${cssString(label)}"], select[id="${cssString(label)}"]`)]);
           // A native <select> by that exact name that's drawn invisible (a styled box shows instead).
-          if (!el || !(await el.evaluate((n) => n.tagName === "SELECT").catch(() => false))) {
+          if (!el || !(await bounded(el.evaluate((n) => n.tagName === "SELECT"), false))) {
             const native = await nativeNamed(page, label);
             if (native) {
               if (await theirs(native, label)) continue;
@@ -1304,7 +1385,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
           if (!el) el = await labelOpener(page, label);
           // A <select> named only by the text before or beside it (no label), or by its own first
           // choice ("Organization Type*", a placeholder the form shows in the box).
-          if (!el) for (const root of await formRoots(page)) { const hit = await byNearbyText(root, label) || await byFirstOption(root, label); if (hit && (await hit.evaluate((n) => n.tagName === "SELECT").catch(() => false))) { el = hit; break; } }
+          if (!el) for (const root of await formRoots(page)) { const hit = await byNearbyText(root, label) || await byFirstOption(root, label); if (hit && (await bounded(hit.evaluate((n) => n.tagName === "SELECT"), false))) { el = hit; break; } }
           // Then a name that holds the words ("Country*", "Select your country"); last, the page's one
           // unnamed dropdown, when nothing else on the page carries the name.
           if (!el) el = await find(page, [(root) => root.getByRole("combobox", { name: label }), (root) => root.getByLabel(label), (root) => root.getByRole("button", { name: label })]) || await onlyOne(page, "select", label);
@@ -1313,7 +1394,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
           const control = el ? null : await hiddenDropdown(page, label);
           // A native <select> drawn invisible over (or under) its styled box: chosen as its own list
           // would, with the events a person's choice fires.
-          if (control && (await control.field.evaluate((n) => n.tagName === "SELECT").catch(() => false))) {
+          if (control && (await bounded(control.field.evaluate((n) => n.tagName === "SELECT"), false))) {
             await control.evaluate((n) => n.removeAttribute("data-pb-dropdown"), null, { timeout: 1000 }).catch(() => {});
             const picked = await chooseNative(control.field, option);
             if (!picked.picked) return fail(`"${label}" has no option "${option}". Its options: ${picked.options.join(", ")}.`);
@@ -1333,10 +1414,10 @@ async function stepsIn(page, steps, hooks, touched = []) {
           }
           if (await theirs(el, label)) continue;
           await hooks.cursor?.(el, "click");
-          const isSelect = await el.evaluate((n) => n.tagName === "SELECT").catch(() => false);
+          const isSelect = await bounded(el.evaluate((n) => n.tagName === "SELECT"), false);
           if (isSelect) {
             // An option it doesn't have: say which ones it has rather than wait for it.
-            const options = await el.evaluate((n) => [...n.options].map((o) => [o.label || o.text, o.value])).catch(() => []);
+            const options = await bounded(el.evaluate((n) => [...n.options].map((o) => [o.label || o.text, o.value])), []);
             const want = String(option);
             if (options.length && !options.some(([l, v]) => l.trim() === want || v === want)) {
               // The one option holding that text ("US - United States" for "United States").
@@ -1346,7 +1427,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
             }
             const chosen = await el.selectOption({ label: want }, { timeout: 3000 }).then(() => true, () => el.selectOption(want, { timeout: 3000 }).then(() => true, () => false));
             if (!chosen) {
-              const off = await el.evaluate((n) => n.disabled || !!n.closest("fieldset[disabled]")).catch(() => false);
+              const off = await bounded(el.evaluate((n) => n.disabled || !!n.closest("fieldset[disabled]")), false);
               return fail(`"${label}" didn't take "${want}": ${off ? "it's disabled until another answer is given (often the field before it)" : "something covers it or it's waiting for another answer"}. Fill the fields above it first, then choose again.`);
             }
           }
@@ -1361,7 +1442,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
           }
           touched.push({ el, label, want: isSelect ? String(option) : "" });
         }
-        hooks.activity(`Chose ${Object.entries(arg).map(([k, v]) => `**${k}** = \`${v}\``).join(", ")}`);
+        hooks.activity(`Chose in ${Object.keys(arg).map((k) => `**${k}**`).join(", ")}`);
       } else if (kind === "click") {
         // A step the agent named as a final action ("Send: Reply") goes through browser_click, which asks the user.
         if (clickClass(arg)) return fail(`"${arg}" is named as a final action. Run the steps before it, then use browser_click on it so the user confirms.`);
@@ -1387,6 +1468,13 @@ async function stepsIn(page, steps, hooks, touched = []) {
         const real = String(await el.evaluate(buttonLabel, undefined, { timeout: 2000 }).catch(() => ""));
         const { risk } = await contextAt(page, el, "click");
         if (strongSignal(risk)) return fail(`"${arg}" is the "${real.slice(0, 60)}" button: ${riskReason(risk)}. Run the steps before it, then use browser_click on it so the user confirms.`);
+        // Whether the click should take the page elsewhere: a link (same tab) to another document.
+        const urlBefore = page.url();
+        const goes = await within(1500, el.evaluate((n) => {
+          const a = n.closest("a[href]");
+          if (!a || (a.target && a.target !== "_self") || /^\s*(#|javascript:)/i.test(a.getAttribute("href") || "") || a.hasAttribute("download")) return null;
+          try { const u = new URL(a.href), l = new URL(location.href); u.hash = ""; l.hash = ""; return u.href === l.href ? null : { role: "link", to: u.origin + u.pathname }; } catch { return null; }
+        }).catch(() => null));
         await hooks.cursor?.(el, "click"); // sent before the press, which puts it on the click
         try {
           // A click that opens the page's own confirm or prompt never returns while the page
@@ -1402,6 +1490,12 @@ async function stepsIn(page, steps, hooks, touched = []) {
           return fail(`"${arg}" is on the page but couldn't be clicked (hidden, covered or not ready): look at the screenshot, close what covers it or wait, then try again.`);
         }
         await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
+        // A link to another page that left the page where it was: no "Done" for it. Said with what
+        // was clicked, so the agent sees what happened and corrects it.
+        if (goes) {
+          for (let t = 0; t < 15 && page.url() === urlBefore; t++) await sleep(200);
+          if (page.url() === urlBefore) return fail(`Clicked ${goes.role} "${real.replace(/\s+/g, " ").trim().slice(0, 80)}" for "${arg}", which links to ${goes.to}, but the page stayed on ${addressOnly(urlBefore)}. Look at the screenshot: if that wasn't the control you meant, click it by its ref with browser_click.`);
+        }
         hooks.activity(`Clicked **${arg}**`);
       } else if (kind === "press") {
         const key = activatingKey(arg);
@@ -1415,11 +1509,12 @@ async function stepsIn(page, steps, hooks, touched = []) {
             return fail(`${String(arg)} here would ${label ? `press "${label.slice(0, 60)}" and ` : ""}commit something (${riskReason(risk)}). Use browser_click on its button so the user confirms.`);
           }
         }
-        await page.keyboard.press(String(arg));
+        // Bounded: a page that stops answering ends the step with a word, not the run with a hang.
+        if ((await within(10_000, page.keyboard.press(String(arg)).then(() => true))) === null) return fail(`Pressing ${String(arg)} got no answer from the page (it's busy or stuck). Take a browser_snapshot and try again.`);
       } else if (kind === "drag") {
         // Drawing, as a person does: the mouse goes down at the first point and follows the rest
         // (in the PairBrowse browser its moves take human paths and timing), then lets go.
-        const [w, h] = await page.evaluate(() => [innerWidth, innerHeight]);
+        const [w, h] = await viewSize(page);
         const pts = arg.map(([x, y]) => ({ x: Math.round(x * w), y: Math.round(y * h) }));
         const mark = (p) => hooks.cursor?.({ boundingBox: async () => ({ x: p.x, y: p.y, width: 0, height: 0 }) }, "");
         const glide = Math.min(600, Number(await mark(pts[0])) || 0); // how long the cursor takes to get there
@@ -1471,7 +1566,7 @@ async function stepsIn(page, steps, hooks, touched = []) {
       } else if (kind === "scroll") {
         // The cursor onto the page, then the wheel: in small eased steps that glide like a person
         // (pairbrowse_scroll), or in two quick ones (fast mode). A screen for "down" / "up".
-        const [w, h] = await page.evaluate(() => [innerWidth, innerHeight]);
+        const [w, h] = await viewSize(page);
         const total = arg === "down" ? Math.round(h * 0.8) : arg === "up" ? -Math.round(h * 0.8) : Math.round(Number(arg));
         const x = Math.round(w / 2), y = Math.round(h / 2);
         await hooks.cursor?.({ boundingBox: async () => ({ x, y, width: 0, height: 0 }) }, "");

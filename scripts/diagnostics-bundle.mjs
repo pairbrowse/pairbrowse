@@ -14,7 +14,7 @@ import { homedir, platform, arch, release } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths } from "./paths.mjs";
-import { readJson } from "./util.mjs";
+import { readJson, writeJsonAtomic } from "./util.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";
 import { loadSecrets, redact } from "./rules/secrets.mjs";
 
@@ -98,7 +98,7 @@ export function writeBundle({ out = paths.diagnostics, home = homedir(), now = n
   const dir = join(resolve(out), `pairbrowse-diagnostics-${stamp}`);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const files = [join(dir, "summary.json"), join(dir, "daemon-log.txt")];
-  writeFileSync(files[0], `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
+  writeJsonAtomic(files[0], summary, { mode: 0o600 });
   writeFileSync(files[1], `${logLines.filter((l) => l.trim()).slice(-LOG_LINES).map(clean).join("\n")}\n`, { mode: 0o600 });
   return { dir, files };
 }

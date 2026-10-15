@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { patchright } from "./live.mjs";
+import { patchright } from "./helpers/live.mjs";
 import { openPage, runtime } from "./helpers/ui-page.mjs";
 import { startFakeHelper, merge } from "./helpers/fake-helper.mjs";
 import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";

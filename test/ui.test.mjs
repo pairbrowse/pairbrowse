@@ -17,7 +17,7 @@ import http from "node:http";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative, dirname } from "node:path";
-import { patchright, inPage } from "./live.mjs";
+import { patchright, inPage } from "./helpers/live.mjs";
 import { pages, openPage, runtime } from "./helpers/ui-page.mjs";
 import { startFakeHelper } from "./helpers/fake-helper.mjs";
 import { startUiServer, UI_ROOT, PAGE_CSP, FRAMEABLE } from "./helpers/ui-server.mjs";

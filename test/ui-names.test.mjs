@@ -16,7 +16,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
-import { patchright } from "./live.mjs";
+import { patchright } from "./helpers/live.mjs";
 import { pages, openPage, runtime, sleep } from "./helpers/ui-page.mjs";
 import { startFakeHelper, merge } from "./helpers/fake-helper.mjs";
 import { UI_ROOT } from "./helpers/ui-server.mjs";

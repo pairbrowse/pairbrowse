@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pageTest, runtime, sleep } from "./helpers/ui-page.mjs";
-import { patchright } from "./live.mjs";
+import { patchright } from "./helpers/live.mjs";
 import { startFakeHelper, UNMARKED, CONFIRM_PROGRAM, CONFIRM_WEB, FILE_CHANGED, NO_APP } from "./helpers/fake-helper.mjs";
 import { startUiServer } from "./helpers/ui-server.mjs";
 import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";

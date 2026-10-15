@@ -52,7 +52,7 @@ jobs:
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q xvfb
           node runtime/node_modules/patchright/cli.js install --with-deps chromium
-          # Only for the test of the "playwright" opt-in (test/driver-optin.integration.test.mjs).
+          # Only for the test of the "playwright" opt-in (test/integration/driver-optin.test.mjs).
           node runtime/node_modules/playwright/cli.js install chromium
       - name: Unit and live tests, with coverage
         run: xvfb-run -a --server-args="-screen 0 1920x1200x24" npm run coverage

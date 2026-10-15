@@ -9,10 +9,13 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test test/*.test.mjs test/integration/*.test.mjs",
+    "test:unit": "node --test test/*.test.mjs",
+    "test:live": "node --test test/integration/*.test.mjs",
+    "test:optin": "node --test test/optin/*.test.mjs",
     "test:fuzz": "node --test test/fuzz/*.test.js",
     "lint": "eslint --max-warnings 0 .",
-    "coverage": "c8 node --test test/*.test.mjs"
+    "coverage": "c8 node --test test/*.test.mjs test/integration/*.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

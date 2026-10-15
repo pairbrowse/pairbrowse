@@ -8,7 +8,7 @@ import "./helpers/home.mjs";
 import { describe } from "node:test";
 import assert from "node:assert/strict";
 import { pageTest } from "./helpers/ui-page.mjs";
-import { inPage as inFrame } from "./live.mjs";
+import { inPage as inFrame } from "./helpers/live.mjs";
 
 // Each case its own pageTest under a suite that names it, so a failure says which.
 const scenario = (title, opts, fn) => describe(title, () => pageTest("left", opts, fn));

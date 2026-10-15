@@ -153,7 +153,7 @@ newest-frame wait.
     debounce). Fixed (`scripts/tabs.mjs`): when the browser dies with a save pending, the tabs as
     last known are written at once; tabs closed in the last second count as taken down with the
     browser, not by a person. Covered by a unit test and the live test below.
-18. **No test killed the browser under a session.** Added `test/interruption.integration.test.mjs`:
+18. **No test killed the browser under a session.** Added `test/integration/interruption.test.mjs`:
     SIGKILL on the browser while a wait is in flight; the call is answered, the helper lives on,
     the session's picture maps are gone (`pairbrowse_test_memory` now reports `screenshots` and
     `clients`), the next session reopens the browser with both tabs back and works.

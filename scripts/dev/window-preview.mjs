@@ -29,7 +29,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname, posix } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { patchright, inPage, ensureHud } from "../../test/live.mjs";
+import { patchright, inPage, ensureHud } from "../../test/helpers/live.mjs";
 import { startFakeHelper, merge } from "../../test/helpers/fake-helper.mjs";
 import { startUiServer, insertTags } from "../../test/helpers/ui-server.mjs";
 import { defaultFixture, shimScript, bridgeChromeScript } from "../../test/helpers/pairbrowse-shim.mjs";

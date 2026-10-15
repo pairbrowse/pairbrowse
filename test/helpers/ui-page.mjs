@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
-import { patchright, inPage } from "../live.mjs";
+import { patchright, inPage } from "./live.mjs";
 import { startFakeHelper, merge } from "./fake-helper.mjs";
 import { startUiServer, UI_ROOT } from "./ui-server.mjs";
 import { defaultFixture } from "./pairbrowse-shim.mjs";

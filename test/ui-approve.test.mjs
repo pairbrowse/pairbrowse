@@ -6,11 +6,11 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { patchright } from "./live.mjs";
+import { patchright } from "./helpers/live.mjs";
 import { openPage, runtime, hostProxy, sleep } from "./helpers/ui-page.mjs";
 import { startUiServer } from "./helpers/ui-server.mjs";
 import { defaultFixture } from "./helpers/pairbrowse-shim.mjs";
-import { inPage as evalIn } from "./live.mjs";
+import { inPage as evalIn } from "./helpers/live.mjs";
 import { startFakeHelper } from "./helpers/fake-helper.mjs";
 
 const FIXTURE = JSON.parse(readFileSync(new URL("./fixtures/ui-approve.json", import.meta.url), "utf8"));

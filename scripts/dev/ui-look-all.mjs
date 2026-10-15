@@ -17,7 +17,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { patchright } from "../../test/live.mjs";
+import { patchright } from "../../test/helpers/live.mjs";
 import { merge } from "../../test/helpers/fake-helper.mjs";
 import { renderPage, lookFixtures } from "./ui-look.mjs";
 

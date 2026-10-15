@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { runSteps, enterButtonLabel } from "../scripts/runner.mjs";
-import { inPage } from "./live.mjs";
+import { inPage } from "./helpers/live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 

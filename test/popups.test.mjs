@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { createPopups } from "../scripts/popups.mjs";
-import { inPage } from "./live.mjs";
+import { inPage } from "./helpers/live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));

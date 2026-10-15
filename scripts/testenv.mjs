@@ -5,7 +5,7 @@
 // would, a local "tunnel", no capture): unless the test harness started this helper, the gate
 // (applyTestGate, run by test-gate.mjs, which daemon.mjs imports first) removes every one from its
 // environment. The harness's helper is one whose home (PAIRBROWSE_HOME) is inside the system's
-// temp folder and whose runtime there is a link the harness made (test/live.mjs and the live tests
+// temp folder and whose runtime there is a link the harness made (test/helpers/live.mjs and the live tests
 // link the pinned runtime; an installed helper's is a folder npm filled). An environment a project
 // or app hands down (a .claude/settings.json "env") can name variables, never make that link. The
 // plugin's bridge drops them too (launcher/daemon-connect.mjs).

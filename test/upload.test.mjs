@@ -6,7 +6,7 @@ import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { uploadProblem, uploadFiles } from "../scripts/upload.mjs";
-import { inPage } from "./live.mjs";
+import { inPage } from "./helpers/live.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "pb-upload-"));
 const uploads = join(dir, "uploads");

@@ -360,7 +360,7 @@ test("the live view adds no timer, observer or poll; storage keys and the journa
 });
 
 // ---- the workspace column and the Timeline, rendered (headless Patchright, the real server) ----
-import { patchright } from "./live.mjs";
+import { patchright } from "./helpers/live.mjs";
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME?.replace(/^~/, process.env.HOME);
 
 test("the workspace column draws only what is seen; the Timeline reads the log on open and Refresh", { skip: !runtime }, async () => {

@@ -16,7 +16,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { session } from "./live.mjs";
+import { session } from "./helpers/live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 if (!runtime) { console.error("PAIRBROWSE_TEST_RUNTIME is required"); process.exit(2); }

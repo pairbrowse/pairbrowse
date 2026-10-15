@@ -158,7 +158,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const text = (r) => (r.result?.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("\n") || r.error?.message || "";
 
 test("live: the outline is the yaml the agent got, read without touching the page, gone with the tab", { skip: !runtime, timeout: 240_000 }, async () => {
-  const { session } = await import("./live.mjs");
+  const { session } = await import("./helpers/live.mjs");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const h = mkdtempSync(join(tmpdir(), "pb-outline-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");

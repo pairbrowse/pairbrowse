@@ -7,7 +7,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { ensureHud } from "./live.mjs";
+import { ensureHud } from "./helpers/live.mjs";
 import { readOps, stateForJoiner, readPointers, readView, turnLeft, TURN_MAX_MS, createFormSync } from "../scripts/sharing/tabsync.mjs";
 import { createPresence } from "../scripts/daemon/presence.mjs";
 import { clickRisk, clickContext, buttonLabel } from "../scripts/daemon/page.mjs";

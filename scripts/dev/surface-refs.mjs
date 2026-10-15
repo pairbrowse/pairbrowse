@@ -30,7 +30,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { patchright, inPage } from "../../test/live.mjs";
+import { patchright, inPage } from "../../test/helpers/live.mjs";
 import { startFakeHelper, merge } from "../../test/helpers/fake-helper.mjs";
 import { startUiServer } from "../../test/helpers/ui-server.mjs";
 import { defaultFixture } from "../../test/helpers/pairbrowse-shim.mjs";

@@ -32,10 +32,11 @@ through the live view, docked or in the Browser pane).
 ## Checks
 
 ```bash
-npm test                      # live tests: PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime
-                              # native launch tests: PAIRBROWSE_TEST_ENGINE=~/.pairbrowse/engine
-                              # shared browser mode, opt-in: PAIRBROWSE_TEST_REAL_TUNNEL=1, PAIRBROWSE_TEST_YOUTUBE=1, PAIRBROWSE_TEST_EXCALIDRAW=1,
-                              # PAIRBROWSE_TEST_EXECUTABLE=<PairBrowse browser>, PAIRBROWSE_TEST_DOCKER=1 (two machines)
+npm test                      # unit (test/*.test.mjs) + integration (test/integration/); integration skips without
+                              # PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime; native launch tests: PAIRBROWSE_TEST_ENGINE=~/.pairbrowse/engine
+npm run test:unit             # unit only; npm run test:live: integration only (helper and browser per file)
+npm run test:optin            # test/optin/: each skips without its own switch (PAIRBROWSE_TEST_REAL_TUNNEL=1, PAIRBROWSE_TEST_DOCKER=1,
+                              # a native build in PAIRBROWSE_TEST_EXECUTABLE); every PAIRBROWSE_TEST_* is in docs/development.md
 npm ci && npm run lint        # ESLint (eslint.config.js), no warnings; CI runs it
 npm run test:fuzz             # fast-check fuzzing of the security checks (test/fuzz/*.test.js: .js so Scorecard sees it)
 claude plugin validate .

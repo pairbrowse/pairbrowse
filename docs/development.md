@@ -1,8 +1,11 @@
 # Development
 
 ```
-npm test                  # unit tests; live ones need PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime,
+npm test                  # unit and integration tests; integration ones need PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime,
                           # the native launch ones PAIRBROWSE_TEST_ENGINE=~/.pairbrowse/engine
+npm run test:unit         # unit tests only (test/*.test.mjs)
+npm run test:live         # integration tests only (test/integration/)
+npm run test:optin        # opt-in tests (test/optin/), each behind a switch of its own
 npm ci && npm run lint       # ESLint, no warnings allowed (CI runs it); .claude/ is skipped: its worktrees
                              # are copies of the repo and its workflow scripts are local, not shipped
 npm run test:fuzz  # property-based fuzzing of the security checks (test/fuzz, fast-check)
@@ -76,23 +79,36 @@ the frames over `127.0.0.1` and `localhost`, because Chromium opens at most 6 co
 and the window's pages open 7 event streams. `--one-host` shows what the build will do. The
 mockup is read in place and never committed.
 
+### The test groups
+
+| Folder | What runs | Script |
+|--------|-----------|--------|
+| `test/*.test.mjs` | Unit tests. Some still start a browser for a few cases, gated by `PAIRBROWSE_TEST_RUNTIME` (`hud`, `enter`, `ui-*` and others) | `npm run test:unit` |
+| `test/integration/` | A real helper (`scripts/daemon.mjs`) and browser per file, two or three for joining; every test skips without `PAIRBROWSE_TEST_RUNTIME` | `npm run test:live` |
+| `test/optin/` | Tests behind a switch of their own, never run by `npm test`: `failover` (`PAIRBROWSE_TEST_REAL_TUNNEL=1`), `native-join` (a native build), `two-machines` (`PAIRBROWSE_TEST_DOCKER=1`; its two sides in `test/optin/two-machines/`) | `npm run test:optin` |
+| `test/fuzz/*.test.js` | Property-based fuzzing of the security checks | `npm run test:fuzz` |
+| `test/helpers/` | Not tests: `home.mjs` (every test file imports it first: a home of its own under the temp folder), `util.mjs` (`sleep`, `until`, `text`, `rpc`), `daemon.mjs` (`helperHome`, `spawnDaemon`, `startHelper`, `stopDaemon`), `live.mjs` (`testBase`, `attachDaemon`, `session`, `patchright`), `live-helper.mjs`, and the pages' harness | |
+
+`test/bench.mjs` is not a test: it times the helper's tool calls on a real browser
+(`node test/bench.mjs`, `PAIRBROWSE_TEST_RUNTIME` set) and prints the numbers.
+
 ### The live tests
 
-Each live test file starts its own helper and browser (two or three for joining), and
+Each integration file starts its own helper and browser (two or three for joining), and
 `node --test` runs files in parallel, one short of the CPU count: a full live run is ten or
 more browsers at once for about three minutes on a 12-core machine. Knobs:
 
-- `node --test --test-reporter=spec test/*.test.mjs` prints each test's duration; the suite's
+- `node --test --test-reporter=spec test/integration/*.test.mjs` prints each test's duration; the suite's
   length is set by its longest files (`form-patterns`, `join`, `shared-browser`,
   `shared-mode`), not by their number.
-- `node --test --test-concurrency=4 test/*.test.mjs` runs fewer browsers at once. The option
+- `node --test --test-concurrency=4 test/integration/*.test.mjs` runs fewer browsers at once. The option
   goes before the files (after them node takes it for a file pattern), and `NODE_OPTIONS`
   refuses it. On an idle 12-core machine this is slower (measured: 4 files at once 5 min 9 s, 8 files
   4 min 26 s, the default 11 files 3 min 10 s), since the long files then start late; on a machine busy with other work it keeps each test
   near its solo pace.
-- `node --test test/scroll.integration.test.mjs` runs one file; the live ones skip without
+- `node --test test/integration/scroll.test.mjs` runs one file; it skips without
   `PAIRBROWSE_TEST_RUNTIME`.
-- Helper homes come from `testBase()` in `test/live.mjs`: the system's temporary folder (on the
+- Helper homes come from `testBase()` in `test/helpers/live.mjs`: the system's temporary folder (on the
   machine's own disk; an external disk a build saturates holds every helper's start up), or `/tmp`
   when a socket path there would pass the Unix limit. `attachDaemon()` waits for a helper to
   listen and fails at once, with the ends of its `daemon.stderr.log` and `daemon.log`, when it
@@ -100,15 +116,15 @@ more browsers at once for about three minutes on a 12-core machine. Knobs:
   `startup: socket after N ms, runtime after M ms`).
 - `PAIRBROWSE_TEST_NO_CAPTURE=1` (tests only) makes the helper act as a PairBrowse build without a
   capture page: no direct connection is offered to joiners (pictures through the join channel)
-  and recording is refused (`shared-mode.integration` sets it on the host only).
-- `test/native-join.integration.test.mjs` joins with a PairBrowse build that has its own pages:
+  and recording is refused (`integration/shared-mode` sets it on the host only).
+- `test/optin/native-join.test.mjs` joins with a PairBrowse build that has its own pages:
   set `PAIRBROWSE_TEST_RUNTIME`, `PAIRBROWSE_TEST_ENGINE` and `PAIRBROWSE_TEST_EXECUTABLE` (that
   build's `Contents/MacOS/pairbrowse`); it skips unless the build's manifest declares its own
-  pages. It opens real windows. The macOS download-mark test in `tools.integration` opens one
+  pages. It opens real windows. The macOS download-mark test in `integration/tools` opens one
   window too: headless Chromium writes no mark.
 
-Speed checks (the smooth scroll in `scroll.integration`, the styled pick on a big page and the
-fields whose names go away in `form-patterns.integration`) are relative: each test first times
+Speed checks (the smooth scroll in `integration/scroll`, the styled pick on a big page and the
+fields whose names go away in `integration/form-patterns`) are relative: each test first times
 a plain action of the same kind on the same page, allows the step under test a multiple of
 that (with a floor at the quiet-machine limit and an absolute ceiling), and prints both as a
 diagnostic (`ℹ` lines with the spec reporter). A regression that waits on a stale name or a

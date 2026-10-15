@@ -111,7 +111,7 @@ describe("agent states in words", () => pageTest("right", opts(), async ({ page,
   await until("working", () => document.getElementById("driver-text").textContent === "Working…");
   assert.equal(await inPage(() => document.getElementById("driver").dataset.state), "working");
   // One home for Live (DESIGN.md Part G): in the browser the strip's pill says the session is live
-  // and this line says "Working…"; the Status box's Live pill is the side panel's (test/right.test.mjs).
+  // and this line says "Working…"; the Status box's Live pill is the side panel's (the side panel scenarios below).
   assert.equal(await inPage(visible, "#status-live"), false, "no Live pill in the browser, even while driving");
   assert.equal(await inPage(() => document.getElementById("status-live").hidden), false, "its state is kept (the side panel shows it)");
   assert.equal(await inPage(() => getComputedStyle(document.querySelector("#driver .dot")).backgroundColor), await inPage(token, "ok"));
@@ -273,7 +273,7 @@ describe("status box", () => pageTest("right", opts({ board: { people: [PEOPLE[0
 
 describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE, messages: [] }, activity: [{ t: Date.now(), text: "Typed into **Email**", who: "Claude", tab: "Checkout" }] }), async ({ page, helper, inPage, until, errors }) => {
   // In the browser the people (you, guests) are the left dock's: here the agents only (DESIGN.md
-  // Part G); the side panel keeps everyone (test/right.test.mjs).
+  // Part G); the side panel keeps everyone (the side panel scenarios below).
   await until("the rows", () => document.querySelectorAll("#people li").length === 4);
   assert.equal(await inPage(() => [...document.querySelectorAll("#people li")].some((li) => li.textContent.includes("Sam (by hand)"))), false, "no person row");
   const rows = await inPage(() => [...document.querySelectorAll("#people li")].map((li) => {
@@ -597,7 +597,7 @@ describe("tools order and reads", () => pageTest("right", opts(), async ({ page,
   }));
   // In the browser (DESIGN.md Part G) Join addresses, Remembered details and Passwords are the
   // Settings page's, with one row here that opens it; the side panel keeps all of them
-  // (test/right.test.mjs).
+  // (the side panel scenarios below).
   assert.deepEqual(secs.map((x) => x.id), ["sec-handoffs", "sec-downloads", "sec-recordings", "dev", "hosts", "sec-details", "sec-secrets", "sec-settings-link", "sec-diag"]);
   assert.deepEqual(secs.map((x) => x.head), ["Hand-offs", "Downloads", "Recordings", "Dev servers", "Join addresses", "Remembered details", "Passwords", "", "Diagnostics"]);
   assert.deepEqual(secs.map((x) => x.expanded), ["true", "true", "true", "false", "false", "false", "false", null, "false"]);

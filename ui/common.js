@@ -6,6 +6,7 @@
 // and colors the helper shares with the pages are in vocab.js, the browser's own addresses in
 // urls.js (addressToUrl, servedByBrowser), re-exported here.
 import { STATE_WORDS, PAGE_KINDS, isColor } from "./vocab.js";
+import { SHARED_STREAM_EVENTS, DELTA_EVENTS, OWN_EVENTS } from "./events.js";
 import { addressToUrl, servedByBrowser, REPORT_URL, TOP_CHROME_HOST, ownPage } from "./urls.js";
 export { STATE_WORDS, isColor, addressToUrl, servedByBrowser, REPORT_URL };
 
@@ -742,8 +743,9 @@ export function askDock({ pb, layout, base, side, state, onFail }) {
 // event's `tab` (the right dock opening on a tab) and a record event's `op` ("saved", with its
 // item), so a late page neither jumps to a tab nor adds a recording from an old event. Without Web Locks or BroadcastChannel (or when the lock is refused) a page
 // opens its own stream as before. No timer, frame or observer anywhere here.
-export const STREAM_EVENTS = ["activity", "agent-tabs", "board", "collaboration", "config", "dev", "join", "joinhost", "layout", "pause", "profile", "record", "session", "sessions", "invites", "status", "tabs", "timeline", "approval", "driving", "downloads", "handoffs", "tab-order", "overlay-pointers"];
-const STREAM_DELTAS = new Set(["approval", "timeline", "downloads", "handoffs", "tab-order", "overlay-pointers"]);
+// The names come from events.js, the one list of the helper's events (pages: "shared", delta).
+export const STREAM_EVENTS = SHARED_STREAM_EVENTS;
+const STREAM_DELTAS = new Set(DELTA_EVENTS);
 // What the holder keeps of a state event for a late page: no delta, and no one-shot field.
 function replayable(name, v) {
   if (STREAM_DELTAS.has(name)) return undefined;
@@ -761,7 +763,7 @@ function replayable(name, v) {
 // never relayed or replayed. The capture page's calls from the helper (`capture`, plans/550 D4:
 // SDPs and recordings for the capture page alone). A page of such a kind always gets a stream of
 // its own (helperStream below), whatever it asks.
-export const OWN_STREAM_EVENTS = Object.freeze({ capture: Object.freeze(["capture"]) });
+export const OWN_STREAM_EVENTS = OWN_EVENTS;
 
 // The helper's page kinds: one of them on the stream gets the browser pages' initial burst
 // (agent-tabs); the helper sends the same burst to every kind, so one kind stands for all.

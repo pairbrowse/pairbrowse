@@ -26,6 +26,7 @@ import { createJoinerServer, recentlySeen, joinerKeyOf } from "./liveview/joiner
 import { createIcons, guestTabs, guestActivity, hostOf } from "./liveview/tabs.mjs";
 import { layoutFrom } from "./liveview/layout.mjs";
 import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "../ui/urls.js";
+import { OWNER_EVENTS, PAGES_EVENTS, EVENT_KIND } from "../ui/events.js";
 import { createToolsRoutes } from "./liveview/routes/tools.mjs";
 import { createTimelineRoutes } from "./liveview/routes/timeline.mjs";
 import { createSessionRoutes } from "./liveview/routes/sessions.mjs";
@@ -51,15 +52,14 @@ const ACTIVITY_MAX = 30; // the activity event's lines; the session's log (activ
 const INPUT_BATCH_MAX = 500;
 // A reader FRAME_SKIP_BYTES behind gets no new frames until it catches up; STALLED_BYTES behind,
 // the connection is cut (the page reconnects). ui/limits.js.
-const OWNER_ONLY = new Set(["record", "profile", "join", "board", "dev", "joinhost", "layout", "agent-tabs", "timeline", "config", "approval", "driving", "outline", "downloads", "handoffs", "capture", "tab-order", "sessions", "invites", "overlay-pointers", "joiner-pointers"]); // events only the owner's streams get
-// Events for the browser's own pages alone (streams opened with ?page=): the capture page's calls
-// (liveview/capture.mjs), the tab strip's order requests and the pointers its browser draws over
-// the page card (overlay-pointers). Never the live view page, a viewer
-// or a guest. An event named here goes only to the page streams of that one kind (least
-// privilege: the SDPs and recording calls reach the capture page alone); the others go to every
-// page stream.
-const PAGES_ONLY = new Set(["capture", "tab-order", "overlay-pointers"]);
-const PAGE_EVENT_KIND = new Map([["capture", "capture"]]);
+
+// Who gets which event: ui/events.js, the one list the pages read too. OWNER_ONLY: only the
+// owner's streams. PAGES_ONLY: only the browser's own pages' streams (?page=), never the live view
+// page, a viewer or a guest. PAGE_EVENT_KIND: an event that goes only to the page streams of that
+// one kind (least privilege: the SDPs and recording calls reach the capture page alone).
+const OWNER_ONLY = new Set(OWNER_EVENTS);
+const PAGES_ONLY = new Set(PAGES_EVENTS);
+const PAGE_EVENT_KIND = new Map(Object.entries(EVENT_KIND));
 const SESSION_FIELDS = ["canRename", "canSave", "savedAt", "canRenameSaved"]; // the owner's streams only
 
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).

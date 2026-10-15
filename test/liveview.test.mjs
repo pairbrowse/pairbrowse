@@ -237,7 +237,7 @@ test("the viewer runs only its own files, served from a fixed list behind the ke
     assert.match(csp, /style-src 'self'/);
     assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
     assert.doesNotMatch(page.text, /<script>|<script(?![^>]*\bsrc=)[^>]*>|<style|\sstyle=|\son[a-z]+=/i, "no inline code or styles");
-    for (const name of ["liveview.js", "liveview.css", "tokens.css", "common.js", "vocab.js", "urls.js", "limits.js"]) {
+    for (const name of ["liveview.js", "liveview.css", "tokens.css", "common.js", "vocab.js", "urls.js", "limits.js", "events.js"]) {
       const r = await request(view.port, "GET", `/${key}/assets/${name}`);
       assert.equal(r.status, 200, name);
       assert.match(r.headers["content-type"], name.endsWith(".css") ? /^text\/css/ : /^text\/javascript/);

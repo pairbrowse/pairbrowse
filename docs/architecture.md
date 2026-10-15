@@ -36,7 +36,8 @@ what each boundary protects against, see [security.md](security.md) and the
   helper, starting it if needed.
 - **Helper** (`scripts/daemon.mjs` and `scripts/daemon/`): one long-running process per user. It
   owns the browser and serves every tool call. Each part is a `createX(deps)` factory:
-  `serve` (refusal checks, then a handler table), `context` (browser, sessions, downloads, tabs),
+  `serve` (one connection per agent: its state, its tab and turns, refusal checks, its own tools by
+  family, then each result; parts in `daemon/serve/`), `context` (browser, sessions, downloads, tabs),
   `presence` (people using the browser), `hud` (badge, bar, cursor), `screenshot`, `output`
   (masking what the agent reads), `panel` (side panel), `sharing` (invites, join codes, tunnel),
   `timeline` (the session's pictures already sent to agents: local, capped, off by config),

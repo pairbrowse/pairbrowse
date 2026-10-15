@@ -19,27 +19,28 @@ import { keepFocus } from "./focus.mjs";
 import { createApprovals, personLabel, cleanName } from "./join.mjs";
 import { stateForJoiner, readOps, shareableUrl, onSecretDomain, activityBudget } from "./tabsync.mjs";
 import { createPush } from "./liveview/push.mjs";
-import { hostOk, originOk, keyOk, readCapped, readJsonBody, parseJson, json, NOT_JSON, BODY_MAX, SECURITY_HEADERS, serveViewer, serveAsset, plain, pathParts, listen } from "./liveview/http.mjs";
+import { hostOk, originOk, keyOk, readJsonBody, json, NOT_JSON, BODY_MAX, SECURITY_HEADERS, serveViewer, serveAsset, plain, pathParts, listen } from "./liveview/http.mjs";
 import { createInvites, roleMay } from "./liveview/invites.mjs";
 import { createInputReplayer, readViewerInput, inputBudget } from "./liveview/input.mjs";
 import { createJoinerServer, recentlySeen, joinerKeyOf } from "./liveview/joiner-server.mjs";
-import { createIcons, guestTabs, guestActivity, withoutIcons } from "./liveview/tabs.mjs";
-import { readLayout, layoutFrom, readDockTab } from "./liveview/layout.mjs";
+import { createIcons, guestTabs, guestActivity, withoutIcons, hostOf } from "./liveview/tabs.mjs";
+import { layoutFrom } from "./liveview/layout.mjs";
 import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "../ui/urls.js";
 import { APPROVAL_ID, ANSWERS } from "./daemon/approvals.mjs";
 import { createToolsRoutes } from "./liveview/routes/tools.mjs";
 import { createTimelineRoutes } from "./liveview/routes/timeline.mjs";
 import { createSessionRoutes } from "./liveview/routes/sessions.mjs";
+import { createPagesRoutes } from "./liveview/routes/pages.mjs";
 import { scrub } from "./daemon/diagnostics.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
-import { REPORT_BODY_MAX } from "./liveview/report.mjs";
-import { createActivityLog, readPageQuery } from "./daemon/activitylog.mjs";
+import { createActivityLog } from "./daemon/activitylog.mjs";
 import { PAGE_KINDS as PAGE_KIND_LIST } from "../ui/vocab.js";
 import { FRAME_EVERY_MS, FRAME_SKIP_BYTES, STALLED_BYTES } from "../ui/limits.js";
 
 export { hostOk, originOk, keyOk } from "./liveview/http.mjs";
 export { liveViewHostsFrom, inviteBaseFrom, inviteLabel, createInvites, roleMay } from "./liveview/invites.mjs";
 export { addressToUrl } from "./liveview/input.mjs";
+export { readTabOrder } from "./liveview/routes/pages.mjs";
 
 const TICK_MS = 1500; // following Claude's tab, and the tab strip
 const SETTLE_MS = 180; // the page is still this long: send one sharp frame
@@ -62,20 +63,6 @@ const OWNER_ONLY = new Set(["record", "profile", "join", "board", "dev", "joinho
 // page stream.
 const PAGES_ONLY = new Set(["capture", "tab-order", "overlay-pointers"]);
 const PAGE_EVENT_KIND = new Map([["capture", "capture"]]);
-// The tab strip's report of every window's tabs (POST tab-order), checked.
-const TAB_ORDER_MAX = 500;
-const TARGET_ID = /^[A-F0-9]{32}$/i;
-export function readTabOrder(body) {
-  if (!body || typeof body !== "object" || Array.isArray(body) || !Array.isArray(body.tabs) || body.tabs.length > TAB_ORDER_MAX) return null;
-  if (!Number.isInteger(body.focused) || !Number.isInteger(body.last)) return null;
-  const tabs = [];
-  for (const t of body.tabs) {
-    if (!t || typeof t !== "object" || typeof t.target !== "string" || !TARGET_ID.test(t.target)) return null;
-    if (!Number.isInteger(t.window) || !Number.isInteger(t.index) || t.index < 0 || typeof t.active !== "boolean") return null;
-    tabs.push({ target: t.target.toUpperCase(), window: t.window, index: t.index, active: t.active });
-  }
-  return { tabs, focused: body.focused, last: body.last };
-}
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
 const PAGE_KINDS = new Set(PAGE_KIND_LIST);
@@ -84,7 +71,6 @@ const INVITE_ID = /^[0-9a-f]{8}$/;
 // The invites as Settings lists them (GET invites.json, the invites event): never a key or a code.
 const inviteItems = (list) => list.map((i) => ({ id: i.id, role: i.role, label: i.label, share: i.share, expires: i.expiresAt }));
 
-const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
 // What the helper does for shared tabs beyond addresses (each a no-op until it's given).
 // readForm(page): { url, fields } as they may cross, or null. applyForm(page, fields, who).
 // onJoinerAgent(page, who, color, left, from, where): a drive joiner's agent works in their copy
@@ -201,7 +187,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   const replayer = createInputReplayer();
   const iconFor = createIcons();
   const kinds = new Map(); // event stream -> the browser page's kind (?page=), owner streams only
-  let stripOrder = { sig: "", order: null }; // the tab strip's last report (POST tab-order); gone with this live view
+  const tabOrder = { sig: "", order: null }; // the tab strip's last report (POST tab-order); gone with this live view
   const loading = new WeakSet(); // tabs whose main frame is loading (watched from watchPages on)
   // The docks' layout, per browser session, in memory (the browser keeps its own in its profile).
   const layoutStart = () => layoutFrom(typeof layoutDefaults === "function" ? layoutDefaults() : layoutDefaults);
@@ -760,15 +746,6 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       const recent = activity.slice(-STATE_ACTIVITY);
       json(res, 200, { status, session: sessionInfo, collaboration: collaborationNow(), tabs: invite ? forGuest("tabs", tabs) : tabs, activity: invite ? forGuest("activity", recent) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
     } },
-    // The session's activity log, newest first, a page at a time (the Activity page's history; the
-    // activity event has the latest 30): ?before=<epoch ms> (lines strictly older) &limit=<1..200>
-    // -> { items, more, kept: { lines, days, saved } }. The owner's alone (either owner key).
-    { method: "GET", path: "activity.json", right: "activity", handler: ({ req, res, rest }) => {
-      if (rest.length) return plain(res, 404);
-      const q = readPageQuery(new URL(req.url, "http://x").searchParams);
-      if (q.error) return json(res, 400, { error: q.error });
-      json(res, 200, history.page(q));
-    } },
     // People asking to join with a code, for the owner to let in or not.
     { method: "GET", path: "joins.json", right: "approve", handler: ({ res }) => json(res, 200, approvals.pending()) },
     // Named final clicks waiting for an answer (daemon/approvals.mjs), for the owner only: the
@@ -850,90 +827,12 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     // ends (epoch ms). Never a key, a code or a link.
     { method: "GET", path: "invites.json", right: "invite", handler: ({ res }) => json(res, 200, { items: inviteItems(invites.list()) }) },
     ...createSessionRoutes({ picker, sessionOps, broadcast, ownerSession, linkGuests, layouts, joinersNow, recordState, clickApprovals }),
-    // The browser's own pages (the owner only): the docks' layout, the tab strip's list, and the
-    // session's timeline of pictures already sent to agents (daemon/timeline.mjs).
-    { method: "GET", path: "layout.json", right: "layout", handler: ({ res }) => json(res, 200, layoutNow()) },
-    { method: "POST", path: "layout", right: "layout", handler: async ({ req, res }) => {
-      const given = await readJsonBody(req, res, BODY_MAX.approve);
-      if (given === undefined) return;
-      // tab: the right dock's tab to open on, relayed in this answer and its event only (never kept).
-      const t = readDockTab(given);
-      if (t.error) return json(res, 409, { error: t.error });
-      const plainObject = given && typeof given === "object" && !Array.isArray(given);
-      const next = readLayout(plainObject ? Object.fromEntries(Object.entries(given).filter(([k]) => k !== "tab")) : given, layoutNow());
-      if (next.error) return json(res, 409, { error: next.error });
-      layouts.set(sessionInfo.name, next);
-      const out = t.tab ? { ...next, tab: t.tab } : next;
-      broadcast("layout", out);
-      json(res, 200, out);
-    } },
-    // The browser's Settings page (the owner only): which browser runs, the timeline on/off and
-    // cap, the docks' default layout, and nothing else (liveview/settings.mjs has the body shape).
-    // GET: { browser: "pairbrowse" | "chromium" | "<absolute path>", timeline: { on, cap },
-    // layout: { left, right, strip }, native: boolean (a build is pinned for this computer),
-    // chosen: boolean (a person recorded the choice) }. POST: any subset of browser / timeline /
-    // layout; answers the GET body plus restart: true while "browser" differs from the browser in
-    // use (it takes effect at the next start); written into config.json, broadcast as "config".
-    { method: "GET", path: "config.json", right: "config", needs: () => settings, handler: ({ res }) => json(res, 200, settings.read()) },
-    { method: "POST", path: "config", right: "config", needs: () => settings, handler: async ({ req, res }) => {
-      const given = await readJsonBody(req, res, BODY_MAX.approve);
-      if (given === undefined) return;
-      const r = await settings.write(given);
-      if (!r || r.error) return json(res, 409, { error: r?.error || "That didn't work." });
-      broadcast("config", r);
-      json(res, 200, r);
-    } },
-    // Report a problem (Settings, on the person's click after they saw the JSON): relayed over
-    // HTTPS to config.json's reportUrl (liveview/report.mjs: checked, scrubbed again, 5 an hour).
-    // 404 without a report address; the address itself is never in an answer.
-    { method: "POST", path: "report", right: "config", needs: () => reporter?.enabled(), handler: async ({ req, res }) => {
-      const given = await readJsonBody(req, res, REPORT_BODY_MAX);
-      if (given === undefined) return;
-      const r = await reporter.relay(given);
-      if (r.status === 404) return plain(res, 404);
-      json(res, r.status, r.body);
-    } },
-    // The Page tab: the whole-page snapshot an agent last got for a tab (?tab=<id>, else the
-    // latest), its text masked again here; { outline: null } when there is none.
-    { method: "GET", path: "outline.json", right: "outline", needs: () => outlines, handler: async ({ req, res }) => {
-      const want = new URL(req.url, "http://x").searchParams.get("tab");
-      const page = want ? webPages((await getContext()).pages()).map(([p]) => p).find((p) => !p.isClosed() && idOf(p) === want) || null : outlines.latest();
-      const o = page ? outlines.get(page) : null;
-      json(res, 200, { outline: o ? { tab: idOf(page), host: hostOf(page.url()), who: o.who, at: o.at, cut: o.cut, text: mask(o.text) } : null });
-    } },
-    { method: "GET", path: "tabs.json", right: "strip", handler: async ({ res }) => { watchPages(); json(res, 200, await tabsStrip()); } },
-    { method: "GET", path: "agent-tabs.json", right: "strip", handler: async ({ res }) => json(res, 200, await agentTabs()) },
+    ...createPagesRoutes({ history, layoutNow, layouts, sessionName: () => sessionInfo.name, broadcast, settings, reporter, outlines, webPages, getContext, idOf, mask, watchPages, tabsStrip, agentTabs, tabOrder, capture, captureOk }),
     ...timelineRoutes.routes,
     ...toolRoutes.routes,
     { method: "POST", path: "input", right: "input", handler: human },
     { method: "POST", path: "tab", right: "tab", handler: human },
-    // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
-    // who may drive. who: the guest's name (null: the owner). With `who` in the body: "Pause this
-    // agent" / "Resume this agent" for the agent of that name, the owner's only.
     // Record (the side panel): the browser as a video, saved in Downloads. The owner only.
-    // The tab strip's report of every window's tabs by CDP target (the browser's own pages): kept
-    // for the helper's tab order (daemon/taborder.mjs), the last one only.
-    { method: "POST", path: "tab-order", right: "strip", handler: async ({ req, res }) => {
-      const body = await readCapped(req, res, BODY_MAX.tabOrder);
-      if (body === null) return;
-      const order = readTabOrder(parseJson(body));
-      if (!order) return json(res, 400, { error: "Not a tab order." });
-      const sig = JSON.stringify(order);
-      if (sig !== stripOrder.sig) stripOrder = { sig, order };
-      res.writeHead(204, SECURITY_HEADERS);
-      res.end();
-    } },
-    // The browser's own capture page answering the helper (liveview/capture.mjs): an offer, an
-    // answer, a recording's piece, or its hello.
-    { method: "POST", path: "capture", right: "capture", needs: () => capture, handler: async ({ req, res, rest, byPages }) => {
-      if (rest.length !== 1 || rest[0] !== "reply") return plain(res, 404);
-      if (!captureOk(req, byPages)) return plain(res, 403);
-      const body = await readCapped(req, res, BODY_MAX.capture);
-      if (body === null) return;
-      if (!capture.reply(parseJson(body))) return json(res, 400, { error: "Not a capture reply." });
-      res.writeHead(204, SECURITY_HEADERS);
-      res.end();
-    } },
     { method: "POST", path: "record", right: "record", handler: async ({ req, res }) => {
       const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });
       if (v === undefined) return;
@@ -944,6 +843,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       const text = r?.error ? scrub(r?.text || "", { mask, quotes: false }) : r?.path ? `Saved the recording as "${basename(r.path)}" in your downloads folder.` : "Recording the browser.";
       json(res, r?.error ? 409 : 200, { ...recordState(), text, ...(item ? { item } : {}) });
     } },
+    // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
+    // who may drive. who: the guest's name (null: the owner). With `who` in the body: "Pause this
+    // agent" / "Resume this agent" for the agent of that name, the owner's only.
     { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite, role }) => {
       const op = await readJsonBody(req, res, BODY_MAX.approve);
       if (op === undefined) return;
@@ -1157,7 +1059,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   return {
     url: `http://127.0.0.1:${server.address().port}/${key}/`,
     // The tab strip's last report of every window's tabs ({ tabs, focused, last }), or null.
-    stripTabs: () => stripOrder.order,
+    stripTabs: () => tabOrder.order,
     // An event for the browser's own pages alone: capture (the capture page's streams only),
     // tab-order (every page stream).
     sendToPages: (name, data) => { if (PAGES_ONLY.has(name)) broadcast(name, data); },

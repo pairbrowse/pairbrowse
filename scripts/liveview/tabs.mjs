@@ -2,6 +2,9 @@
 // activity (addresses without query strings or fragments).
 import { stripUrl, stripText } from "../join.mjs";
 
+// A web address's host (with its port), or "" for anything else.
+export const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
+
 const ICON_TIMEOUT_MS = 3000;
 const ICON_MAX_BYTES = 64_000;
 const ICONS_MAX = 200; // sites kept

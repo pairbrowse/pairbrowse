@@ -6,9 +6,9 @@ import { ownTitle } from "../../daemon/tablabels.mjs";
 import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } from "../../daemon/toolstab.mjs";
 import { within } from "../../util.mjs";
 import { readCapped, parseJson, json, plain, BODY_MAX } from "../http.mjs";
+import { hostOf } from "../tabs.mjs";
 
 const TOOL_ID = /^[0-9a-f]{12}$/; // a download, recording or hand-off (daemon/toolstab.mjs): never a path
-const hostOf = (url) => { try { return new URL(url).host; } catch { return ""; } };
 
 // tools: the helper's Tools tab (startLiveView's tools), or null. mask(text): as results are
 // masked. recordState(): the recorder's state. idOf(page): a tab's id. bringTabForward(page).

@@ -11,7 +11,7 @@
 // config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
 import { $, el, initialOf, hostPanel, profilePanel, helperStream, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
-import { hostKind, followHelper } from "../helper.js";
+import { hostKind, followHelper, postReply } from "../helper.js";
 
 const NATIVE = hostKind() === "native";
 const HOST = NATIVE ? "The PairBrowse browser" : "PairBrowse extension in a test browser";
@@ -33,8 +33,7 @@ let diag = null; // GET diagnostics.json
 
 const say = (node, text, kind = "") => { node.textContent = text; node.dataset.kind = kind; };
 const getJson = (path) => fetch(base + path).then(async (r) => ({ status: r.status, body: r.ok ? await r.json().catch(() => null) : await r.text().catch(() => "") })).catch(() => ({ status: 0, body: null }));
-const postJson = (path, body) => fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  .then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) })).catch(() => ({ status: 0, body: null }));
+const postJson = (path, body) => postReply(base + path, body);
 
 // ---- connection ------------------------------------------------------------------------------
 const CONN_TEXT = { live: "Connected", connecting: "Connecting…", closed: NO_AGENT };

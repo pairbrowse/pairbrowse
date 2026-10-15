@@ -7,7 +7,7 @@
 // the page is first visible; while hidden it fetches nothing and holds no picture.
 import { $, el, shortClock, helperStream, enter, leave, busy } from "../common.js";
 import { DRIVING_MS } from "../limits.js";
-import { followHelper, helperAddress } from "../helper.js";
+import { followHelper, helperAddress, postJson } from "../helper.js";
 
 const PITCH = 114; // a card (104 px) and its gap (10 px)
 const PAD = 15; // the strip's left padding
@@ -39,7 +39,6 @@ if (PICTURE) { document.body.dataset.mode = "picture"; $("picture").hidden = fal
 
 const strip = $("strip"), list = $("cards"), addLi = $("add"), addBtn = $("add-btn"), form = $("note-form"), note = $("note"), menu = $("menu");
 const visible = () => document.visibilityState === "visible";
-const post = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 const say = (text) => { $("said").textContent = text; };
 
 // ---- what the helper says ----
@@ -392,7 +391,7 @@ function show(id) {
       if (state && state.right !== pb.DockState.kOpen) return pb.layout.set({ ...state, right: pb.DockState.kOpen });
     }).catch(() => {});
   }
-  if (base) post(base + `timeline/${id}/show`, {}).then((r) => { if (r.ok) setShown(id); else if (r.status !== 404) problem("Couldn't show it in the agent panel."); }).catch(() => problem("Couldn't reach PairBrowse."));
+  if (base) postJson(base + `timeline/${id}/show`, {}).then((r) => { if (r.ok) setShown(id); else if (r.status !== 404) problem("Couldn't show it in the agent panel."); }).catch(() => problem("Couldn't reach PairBrowse."));
 }
 // The picture shows large in another part of the window (the agent panel) until 530's bubble can
 // show it here: the card says so where it was clicked, a ring on it and a line under it, until
@@ -574,7 +573,7 @@ menu.addEventListener("keydown", (e) => {
 // The menu item pressed says busy while its request is out (tokens.css draws the bar after 300 ms).
 const pressed = () => (menu.contains(document.activeElement) ? document.activeElement : null);
 async function pin(card) {
-  const r = await busy(pressed(), () => post(base + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
+  const r = await busy(pressed(), () => postJson(base + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
   const body = await r?.json().catch(() => null);
   const next = r?.ok ? valid(body) : null;
   closeMenu(true);
@@ -629,7 +628,7 @@ note.addEventListener("keydown", async (e) => {
   const text = note.value.trim();
   if (!text || !base) return closeNote();
   note.disabled = true;
-  const r = await post(base + "timeline/note", { text }).catch(() => null);
+  const r = await postJson(base + "timeline/note", { text }).catch(() => null);
   const body = await r?.json().catch(() => null);
   note.disabled = false;
   const card = r?.ok ? valid(body) : null;
@@ -682,7 +681,7 @@ async function pictureMode() {
   };
   $("pic-pin").addEventListener("click", async () => {
     if (!card || !pbase) return;
-    const r = await busy($("pic-pin"), () => post(pbase + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
+    const r = await busy($("pic-pin"), () => postJson(pbase + `timeline/${card.id}/pin`, { on: !card.pinned }).catch(() => null));
     const body = await r?.json().catch(() => null);
     const next = r?.ok ? valid(body) : null;
     if (!next) return msg(body?.error || "Couldn't reach PairBrowse.");

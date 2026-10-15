@@ -6,7 +6,7 @@
 // The live view takes these requests only from the page's own origin.
 import { $, el, avatar, initialOf, reportOffer, askSwitch, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
-import { followHelper } from "../helper.js";
+import { followHelper, postJson } from "../helper.js";
 
 // Framed: the switcher popover. No page chrome of its own, the list even when a session is open,
 // and the parent told (same origin only) when to close; the pick itself goes only to the helper.
@@ -60,7 +60,7 @@ async function send(op, label) {
   busy = true;
   document.body.dataset.s = "picking";
   say(label);
-  const r = await fetch(base + "pick", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(op) })
+  const r = await postJson(base + "pick", op)
     .then((x) => x.json(), () => ({ text: "Couldn't reach PairBrowse. Try again.", error: true }))
     .catch(() => ({ text: "Couldn't reach PairBrowse. Try again.", error: true }));
   busy = false;
@@ -247,7 +247,7 @@ function showHostAsk({ id, host }) {
     for (const b of buttons) b.disabled = true;
     document.body.dataset.s = "picking";
     say(label);
-    const r = await fetch(base + "joinhost", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(op) })
+    const r = await postJson(base + "joinhost", op)
       .then((x) => x.json(), () => ({ error: "Couldn't reach PairBrowse. Try again." }))
       .catch(() => ({ error: "Couldn't reach PairBrowse. Try again." }));
     busy = false;

@@ -11,7 +11,7 @@
 // (common.js helperStream) only. The nav fragments read no stream at all.
 import { $, el, avatar, shareCard, isColor, helperStream, servedByBrowser, enter, leave, calm } from "../common.js";
 import { isOwnTabPage, ownPage } from "../urls.js";
-import { helperAddress, onHelperAddress } from "../helper.js";
+import { helperAddress, onHelperAddress, postJson } from "../helper.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
@@ -31,7 +31,6 @@ const KEYS = mac
   : { back: "Back (Alt+Left)", forward: "Forward (Alt+Right)", reload: "Reload (Ctrl+R)", find: "Find in page (Ctrl+F)" };
 for (const id of ["back", "forward", "reload", "find"]) { $(id).setAttribute("aria-label", KEYS[id]); $(id).title = KEYS[id]; }
 
-const postJson = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 const tabsEl = $("tabs");
 let base = null; // the helper's address, `${origin}/${key}/`; null: not connected
 let myWindow = -1;

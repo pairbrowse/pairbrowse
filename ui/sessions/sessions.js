@@ -16,7 +16,7 @@
 // no timer, no poll, no observer.
 import { $, el, ago, initialOf, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
-import { followHelper } from "../helper.js";
+import { followHelper, postReply } from "../helper.js";
 
 const FILTER_FROM = 6; // the search shows from this many saved sessions
 const NAME = /^[A-Za-z0-9_-]{1,40}$/; // the helper's session names (scripts/sessions.mjs validName)
@@ -33,8 +33,7 @@ let askCancel = null; // the open address question's Cancel path (Escape)
 const say = (text, kind = "") => { $("msg").textContent = text; $("msg").dataset.kind = kind; };
 const real = (ev) => ev.isTrusted;
 const shownName = (name) => (name === "default" ? "Default" : String(name));
-const postJson = (path, body) => fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  .then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }), () => ({ status: 0, body: null }));
+const postJson = (path, body) => postReply(base + path, body);
 
 // ---- the line under the title: the open session, as the helper says it ----
 function drawSub() {

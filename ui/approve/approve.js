@@ -42,7 +42,7 @@
 // helper checks the answer again.
 import { $, el, avatar, splitLabel, helperStream } from "../common.js";
 import { TOP_CHROME_HOST } from "../urls.js";
-import { followHelper } from "../helper.js";
+import { followHelper, postJson } from "../helper.js";
 
 const ARM_MS = 600;
 const POINTER = new Set(["allow", "site", "always"]);
@@ -278,7 +278,7 @@ async function post(it, name) {
         : ["joinhost", name === "deny" ? { op: "cancel", id: it.id } : { op: "allow", id: it.id, always: name === "always" }];
   let status = 0;
   try {
-    const r = await fetch(base + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await postJson(base + route, body);
     status = r.ok ? 200 : r.status;
   } catch {}
   if (shownKey !== it.key) return; // withdrawn or dismissed meanwhile

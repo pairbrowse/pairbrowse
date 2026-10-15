@@ -11,7 +11,7 @@ import { toolsPanel } from "./tools.js";
 import { AGENT_COLOR } from "../vocab.js";
 import { ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
-import { followHelper } from "../helper.js";
+import { followHelper, postJson } from "../helper.js";
 
 const pb = globalThis.pairbrowse || null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -54,7 +54,7 @@ const asleep = () => document.hidden || document.documentElement.dataset.dock ==
 const unseen = () => asleep() || document.documentElement.dataset.dock === "rail";
 // The agent card is on screen: the page and the dock shown, open (not a rail), on the Agent tab.
 const agentShown = () => !unseen() && document.body.dataset.tab === "agent";
-const post = (route, body) => fetch(base + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const post = (route, body) => postJson(base + route, body);
 
 // ---- tabs: Agent, Page, Pictures, Tools (roving tabindex; arrows, Home and End move it) ----
 const TABS = ["agent", "page", "pictures", "tools"];

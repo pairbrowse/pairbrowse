@@ -7,7 +7,7 @@
 // address (session.helper()); as the extension page it is chrome.storage.session "view", as in the
 // session picker. One fetch at load; no timer, observer or poll.
 import { $, el, addressToUrl, askSwitch } from "../common.js";
-import { hostKind, helperAddress, onHelperAddress } from "../helper.js";
+import { hostKind, helperAddress, onHelperAddress, postJson } from "../helper.js";
 
 // Where words go: the default engine's address with "{searchTerms}" (http or https only), or "" when
 // it searches nothing. Google until the browser answers, and in the extension.
@@ -59,7 +59,7 @@ const say = (text, kind = "") => { $("msg").textContent = text; $("msg").dataset
 const HOST = hostKind();
 if (HOST) document.body.dataset.host = HOST === "native" ? "build" : "extension";
 
-const post = (base, route, body) => fetch(base + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+const post = (base, route, body) => postJson(base + route, body)
   .then((x) => x.json(), () => UNREACHABLE)
   .catch(() => UNREACHABLE);
 

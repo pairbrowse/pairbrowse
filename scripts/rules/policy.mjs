@@ -1,6 +1,6 @@
 // Rules the daemon enforces on every tool call, whatever the hooks or permission mode say.
 import { isChromePage } from "../../ui/urls.js";
-import { toolsWith } from "../tools/catalog.mjs";
+import { toolsWith, CATALOG } from "../tools/catalog.mjs";
 
 // run_code_unsafe runs arbitrary code in the helper. The webmcp tools let web pages register
 // their own tools for Claude to call, which hands a hostile page a direct line to Claude. The
@@ -10,6 +10,21 @@ export const BLOCKED_TOOLS = toolsWith("blocked");
 // Not offered to Claude, to keep every request small: debugging and layout tools that form work
 // doesn't need. Screenshots too: Claude reads the page structure, and you watch the live view.
 export const HIDDEN_TOOLS = toolsWith("hidden");
+
+// Whether the browser server refuses a tool outright, whatever the hooks or permission mode say
+// (bypass included): a reason, or "". Blocked tools, hidden ones (not offered, so never Claude's to
+// call: browser_evaluate runs a script in the page, which can read what was typed, passwords
+// included; browser_take_screenshot would skip the password check on pictures), and any browser_
+// tool the catalog doesn't know (a newer runtime's, never reviewed).
+const KNOWN_TOOLS = new Set(Object.keys(CATALOG));
+export function toolRefused(name) {
+  const n = String(name ?? "");
+  if (BLOCKED_TOOLS.has(n)) return `${n} is disabled by PairBrowse.`;
+  if (n === "browser_evaluate") return "browser_evaluate isn't available in PairBrowse: page scripts can read what was typed, passwords included. Read the page with browser_snapshot or browser_find instead.";
+  if (HIDDEN_TOOLS.has(n)) return `${n} isn't available in PairBrowse. Use the tools it offers (browser_snapshot reads the page).`;
+  if (n.startsWith("browser_") && !KNOWN_TOOLS.has(n)) return `${n} isn't available in PairBrowse.`;
+  return "";
+}
 
 // PairBrowse's own tools: their definitions live in the catalog.
 export { STATUS_TOOL, LIVEVIEW_TOOL, RECORD_TOOL, INVITE_TOOL, JOIN_TOOL } from "../tools/catalog.mjs";

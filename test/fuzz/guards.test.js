@@ -329,7 +329,7 @@ test("a click, drag or drop named with a class never goes without the user", () 
 test("refused and asked-for tools stay so through either app's name, with any arguments", () => {
   check(fc.property(fc.constantFrom(...PREFIXES), anyInput, (prefix, input) => {
     for (const tool of ["browser_run_code_unsafe", "browser_webmcp_list", "browser_webmcp_call"]) assert.equal(verdict(`${prefix}${tool}`, input), "deny");
-    assert.equal(verdict(`${prefix}browser_evaluate`, input), "ask");
+    for (const tool of ["browser_evaluate", "browser_take_screenshot", "browser_network_request", "browser_cookie_get"]) assert.equal(verdict(`${prefix}${tool}`, input), "deny");
   }));
   // The same verdict through Claude Code's and Codex's names; never an allow where the other refuses.
   check(fc.property(fc.constantFrom("browser_click", "browser_drag", "browser_drop", "browser_handle_dialog", "browser_navigate", "browser_tabs", "browser_file_upload", "pairbrowse_invite", "pairbrowse_session", "browser_type"), anyInput, (tool, input) => {

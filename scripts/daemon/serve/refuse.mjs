@@ -2,7 +2,7 @@
 // never a person's own tab), its arguments, the PairBrowse safety rules (guard.mjs), approvals
 // given in the browser, and the browser tools' own checks (web pages only, passwords only on their
 // sites, no final action pressed under a milder name). Each returns a refusal's text, or null.
-import { isChromePage, CHROME_PAGE_RULE, BLOCKED_TOOLS, isRef, looksLikeSecretName, navigationProblem, secretNamesIn } from "../../rules/policy.mjs";
+import { isChromePage, CHROME_PAGE_RULE, toolRefused, isRef, looksLikeSecretName, navigationProblem, secretNamesIn } from "../../rules/policy.mjs";
 import { isUntouchedStart } from "../../tabs.mjs";
 import { PERSON_TAB_RULE } from "../output.mjs";
 import { CHROME_GUARDED, REMOTE_TOOLS } from "./wire.mjs";
@@ -76,7 +76,10 @@ export function createRefusals(conn, api) {
   }
 
   function refusal(name, args) {
-    if (BLOCKED_TOOLS.has(name)) return `${name} is disabled by PairBrowse.`;
+    // Blocked, hidden or unknown browser tools: refused here, not only by the hook, so no
+    // permission mode (bypass included) and no app without hooks reaches them.
+    const off = toolRefused(name);
+    if (off) return off;
     if (remote) {
       if (!name.startsWith("browser_") && !REMOTE_TOOLS.has(name)) return `${name} isn't available to a joiner's agent: it works in the host's tabs only.`;
       if (secretNamesIn(name, args, secretNames()).length) return "The host's saved passwords stay with the host. Ask the host to sign in, or use your own details.";

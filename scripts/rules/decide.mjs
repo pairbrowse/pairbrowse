@@ -2,7 +2,7 @@
 // you and what is refused, for every PairBrowse tool call. Pure apart from reading the latest
 // pre-submit review, so the daemon applies the same rules for clients whose hooks can't ask (Codex).
 import { paths } from "../paths.mjs";
-import { navigationProblem, BLOCKED_TOOLS, BROWSER_PREFIX } from "./policy.mjs";
+import { navigationProblem, toolRefused, BROWSER_PREFIX } from "./policy.mjs";
 import { latestReview, REVIEW_MAX_AGE_MIN } from "../runs.mjs";
 import { toolsWith } from "../tools/catalog.mjs";
 import { clickClass, CLASS_TEXT, CLICK_PREFIX } from "./clicks.mjs";
@@ -26,7 +26,10 @@ export function decide(input, _config, review = latestReview(), now = Date.now()
   const tool = name.replace(BROWSER_PREFIX, "");
   const ti = input.tool_input || {};
 
-  if (BLOCKED_TOOLS.has(tool)) return deny(`${tool} is disabled by PairBrowse.`);
+  // Blocked, hidden (browser_evaluate among them) or unknown browser tools: refused (the browser
+  // server refuses them itself too, whatever this hook says).
+  const refused = toolRefused(tool);
+  if (refused) return deny(refused);
 
   if (tool === "pairbrowse_session" && ti.action === "delete") return ask(`Deletes the browser session "${ti.name}" and its logins.`);
 
@@ -50,10 +53,6 @@ export function decide(input, _config, review = latestReview(), now = Date.now()
   if (tool === "pairbrowse_invite" && ti.action === "approve") {
     return ask(`Lets the person behind join request ${String(ti.id || "").replace(/[^\w-]/g, "").slice(0, 20)} into your PairBrowse session. Allow only if you are expecting them: the name on the request is in the PairBrowse side panel, where you can also click Allow yourself.`);
   }
-
-  // Page scripts can read what was typed (including passwords) and send it anywhere, so they
-  // always need your OK. Claude doesn't need them for filling forms.
-  if (tool === "browser_evaluate") return ask("Runs a script inside the page. Check what it does before allowing it.");
 
   if (tool === "browser_file_upload" || (tool === "browser_drop" && ti.paths)) {
     const files = ti.paths || [];

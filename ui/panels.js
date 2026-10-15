@@ -63,22 +63,27 @@ export function joinBanners(container, base) {
   };
 }
 
+// A press on one of a row's buttons, posted to route: the buttons wait meanwhile (the pressed one
+// busy), and a failure is said in the row (rowSay), cleared by the next answer.
+const sender = (base, route) => (body, buttons) => {
+  if (!base()) return;
+  for (const b of buttons) b.disabled = true;
+  const pressed = buttons.find((b) => b === document.activeElement) || buttons[0];
+  pressed?.setAttribute("aria-busy", "true");
+  const row = pressed?.closest(".join, li");
+  postJson(base() + route, body).then((r) => { if (!r.ok) throw r; if (row) rowSay(row, ""); })
+    .catch((r) => { if (row) rowSay(row, r?.status ? "That didn't go through. Try again." : UNREACHABLE_RETRY); })
+    .finally(() => { pressed?.removeAttribute("aria-busy"); for (const b of buttons) b.disabled = false; });
+};
+// A person's own pointer click only: no synthetic event, no keyboard default.
+const real = (fn) => (ev) => { if (ev.isTrusted && ev.detail > 0) fn(); };
+
 // A join code whose address isn't a PairBrowse one (*.trycloudflare.com) or one this person
 // allowed: the question in asks, with the address plainly and Allow once / Always allow / Cancel,
 // and in list the addresses allowed (Remove). The person decides here, never an agent or a page:
 // real clicks only, posted to the live view with the owner's key. Returns draw({ asks, hosts }).
 export function hostPanel(asks, list, section, base) {
-  const send = (body, buttons) => {
-    if (!base()) return;
-    for (const b of buttons) b.disabled = true;
-    const pressed = buttons.find((b) => b === document.activeElement) || buttons[0];
-    pressed?.setAttribute("aria-busy", "true");
-    const row = pressed?.closest(".join, li");
-    postJson(base() + "joinhost", body).then((r) => { if (!r.ok) throw r; if (row) rowSay(row, ""); })
-      .catch((r) => { if (row) rowSay(row, r?.status ? "That didn't go through. Try again." : UNREACHABLE_RETRY); })
-      .finally(() => { pressed?.removeAttribute("aria-busy"); for (const b of buttons) b.disabled = false; });
-  };
-  const real = (fn) => (ev) => { if (ev.isTrusted && ev.detail > 0) fn(); };
+  const send = sender(base, "joinhost");
   return function draw(state) {
     const s = state && typeof state === "object" ? state : {};
     asks.replaceChildren(...(Array.isArray(s.asks) ? s.asks : []).map((a) => {
@@ -139,17 +144,7 @@ export function joinHostAsk(box, { id, host }, { canSend, send, done }) {
 // in list the localhost dev servers open in tabs (Share) and those shared (Stop), for the people
 // in the session. Only real clicks answer. section: shown when there is something to show.
 export function devPanel(asks, list, section, base) {
-  const send = (body, buttons) => {
-    if (!base()) return;
-    for (const b of buttons) b.disabled = true;
-    const pressed = buttons.find((b) => b === document.activeElement) || buttons[0];
-    pressed?.setAttribute("aria-busy", "true");
-    const row = pressed?.closest(".join, li");
-    postJson(base() + "dev", body).then((r) => { if (!r.ok) throw r; if (row) rowSay(row, ""); })
-      .catch((r) => { if (row) rowSay(row, r?.status ? "That didn't go through. Try again." : UNREACHABLE_RETRY); })
-      .finally(() => { pressed?.removeAttribute("aria-busy"); for (const b of buttons) b.disabled = false; });
-  };
-  const real = (fn) => (ev) => { if (ev.isTrusted && ev.detail > 0) fn(); };
+  const send = sender(base, "dev");
   return function draw(state) {
     const s = state && typeof state === "object" ? state : {};
     asks.replaceChildren(...(Array.isArray(s.asks) ? s.asks : []).map((a) => {

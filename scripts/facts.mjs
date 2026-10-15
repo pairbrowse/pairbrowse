@@ -4,11 +4,10 @@
 // tool and the live view's Profile panel on top of them (createFacts).
 import { readFileSync, existsSync } from "node:fs";
 import { writeJsonAtomic } from "./util.mjs";
-import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { setSecret, deleteSecret } from "./rules/secrets.mjs";
 
-export const FACTS_FILE = join(paths.home, "facts.json");
+export const FACTS_FILE = paths.factsJson;
 const MAX = 400;
 
 const norm = (label) => String(label).trim().replace(/\s+/g, " ").toLowerCase();

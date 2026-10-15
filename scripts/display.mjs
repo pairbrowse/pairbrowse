@@ -22,8 +22,8 @@ export async function startVirtualDisplay(log = () => {}, { name = "Xauthority" 
   if (!hasCommand("Xvfb") || !hasCommand("xauth")) {
     throw new Error("pairbrowse needs Xvfb and xauth for a virtual screen. Install them (Debian/Ubuntu: sudo apt-get install -y xvfb xauth).");
   }
-  const auth = join(paths.home, "run", name);
-  mkdirSync(join(paths.home, "run"), { recursive: true, mode: 0o700 });
+  const auth = join(paths.run, name);
+  mkdirSync(paths.run, { recursive: true, mode: 0o700 });
   for (let n = 99; n < 140; n++) {
     if (existsSync(`/tmp/.X11-unix/X${n}`) || existsSync(`/tmp/.X${n}-lock`)) continue;
     rmSync(auth, { force: true });

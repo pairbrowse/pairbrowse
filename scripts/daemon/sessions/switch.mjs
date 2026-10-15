@@ -2,7 +2,6 @@
 // renaming, saving the open session's tabs, pairbrowse_session, and the clean session's marker.
 // st: the browser's state (browser/state.mjs); api: the other parts' functions, read when called.
 import { writeFileSync, rmSync, existsSync } from "node:fs";
-import { join } from "node:path";
 import { paths } from "../../paths.mjs";
 import { validName, isTemporary, rememberSession, listSessions, createSession, deleteSession, renameSession, sessionFilesExist, profileInUse, sweepTemporary } from "../../sessions.mjs";
 import { renameRunsSession } from "../../runs.mjs";
@@ -11,7 +10,7 @@ import { where } from "../where.mjs";
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
-const CLEAN_MARKER = join(paths.home, "run", "clean-session");
+const CLEAN_MARKER = paths.cleanSession;
 
 export function createSwitch(st, deps, api) {
   const { beforeRename, hostNote, log, notify, onRenamed } = deps;

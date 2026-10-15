@@ -91,7 +91,7 @@ function checkProfile(profile, { chrome = false } = {}) {
 export async function selfCheck(exec, { config = loadConfig(), log = () => {}, timeoutMs = CHECK_TIMEOUT_MS, env = process.env } = {}) {
   ensureRuntime(log);
   const { chromium } = loadBrowserDriver(createRequire(join(paths.runtime, "package.json")), config, process.versions.node, patchrightNodeMinimum(paths.runtime));
-  const browserDir = join(paths.home, "browser");
+  const browserDir = paths.browser;
   mkdirSync(browserDir, { recursive: true });
   const scratch = mkdtempSync(join(browserDir, ".selfcheck-"));
   const profile = join(scratch, "profile");

@@ -7,7 +7,6 @@ import { createApprovals, encodeJoinCode, cleanName } from "../sharing/join.mjs"
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
 import { readJson } from "../util.mjs";
 import { writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { adoptTunnel, helperAlive } from "../tunnels/quick.mjs";
 import { randomBytes } from "node:crypto";
 import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../sharing/devshare.mjs";
@@ -68,7 +67,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // and the tunnels are kept in a private file, and the next run takes them over, so joiners just
   // reconnect to the same address, already let in. Closing the browser window, revoking and
   // expiry end them (endAll). Invite links are never kept.
-  const stateFile = join(paths.home, "sharing.json");
+  const stateFile = paths.sharing;
   // The tunnels' keepers stop them when this stops beating for a while (tunnel-keeper.mjs).
   helperAlive();
   setInterval(helperAlive, 15_000).unref();

@@ -3,11 +3,11 @@
 // in config.json. Its path is fixed: the Pro repo's engine test reads the pack calls made here.
 import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { NATIVE } from "./native-pack.mjs";
+import { paths } from "./paths.mjs";
 import { within, writeJsonAtomic } from "./util.mjs";
 import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
 
@@ -153,7 +153,7 @@ export function macHardware() {
 export const MEASURING = "launch: measuring this Mac once (the first start of this browser version)";
 
 export function hostCachePath() {
-  return join(process.env.PAIRBROWSE_HOME || join(homedir(), ".pairbrowse"), "mac-host-profile.json");
+  return paths.hostProfile;
 }
 
 // The capture runs once per Mac: every new profile (sessions, clean sessions, tests) reuses it.

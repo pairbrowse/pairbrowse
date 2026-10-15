@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { paths, ensureDirs } from "./paths.mjs";
 import { currentSession } from "./sessions.mjs";
-import { readJson, writeJsonAtomic } from "./util.mjs";
+import { readJson, writeJsonAtomic, pidAlive } from "./util.mjs";
 import { RUNS_TOOLS as TOOLS } from "./tools/catalog.mjs";
 
 export const REVIEW_MAX_AGE_MIN = 30;
@@ -49,10 +49,10 @@ export function unfinishedNote(runs) {
 
 // When the helper now running started (its lock file's time), or null when none is running.
 export function daemonStartedAt() {
-  const lock = join(paths.home, "daemon.lock");
+  const lock = paths.daemonLock;
   try {
     const pid = Number(readFileSync(lock, "utf8"));
-    try { process.kill(pid, 0); } catch (e) { if (e.code !== "EPERM") return null; }
+    if (!pidAlive(pid)) return null;
     return statSync(lock).mtimeMs;
   } catch { return null; }
 }

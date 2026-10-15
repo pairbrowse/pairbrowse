@@ -29,11 +29,47 @@ export const paths = {
   // Playwright may read files only inside this folder (and the project).
   files: join(HOME, "files"),
   uploads: join(HOME, "files", "uploads"),
+  // Private runtime files: the socket, the helper key file, the heartbeat, the opener record.
+  run: join(HOME, "run"),
+  // The one helper's lock (its pid; its time is when the helper started).
+  daemonLock: join(HOME, "daemon.lock"),
+  // The helper's heartbeat (touched every few seconds): tunnel keepers stop without it.
+  helperAlive: join(HOME, "run", "helper-alive"),
+  // A clean session's marker: the next start opens a clean session again.
+  cleanSession: join(HOME, "run", "clean-session"),
+  // Pinned downloads (browser builds, the engine pack) before they're installed.
+  downloads: join(HOME, "downloads"),
+  // Installed browsers: the native build (PairBrowse.app on macOS), ungoogled-chromium.
+  browser: join(HOME, "browser"),
+  nativeApp: join(HOME, "browser", "PairBrowse.app"),
+  buildStamp: join(HOME, "browser", "build.sha256"),
+  // The engine pack, installed and checked.
+  engine: join(HOME, "engine"),
+  // Pinned tools (cloudflared) and the Quick Tunnels' logs.
+  tools: join(HOME, "tools"),
+  tunnels: join(HOME, "tunnels"),
+  // This Mac's captured host profile (native builds).
+  hostProfile: join(HOME, "mac-host-profile.json"),
+  // Saved fast-mode playbooks; browser sessions (the default session's files sit in the home).
+  playbooks: join(HOME, "playbooks"),
+  sessions: join(HOME, "sessions"),
+  currentSession: join(HOME, "session"),
+  // Facts Claude may fill in (facts.md above is the older format, imported once).
+  factsJson: join(HOME, "facts.json"),
+  // Sharing's saved state (tunnels, invites), previews of downloaded files, recordings.
+  sharing: join(HOME, "sharing.json"),
+  previews: join(HOME, "previews"),
+  recordings: join(HOME, "recordings.json"),
   // The only way into the browser: a socket file only you can open (a named pipe on Windows).
   socket: process.platform === "win32"
     ? `\\\\.\\pipe\\pairbrowse-${createHash("sha256").update(`${userInfo().username}:${HOME}`).digest("hex").slice(0, 16)}`
     : join(HOME, "run", "browser.sock"),
 };
+
+// A browser session's profile and its own files: the default session's are the originals in the
+// home; a named one's sit in sessions/ (file: "people.json", "tabs.json", "timeline", "activity.json").
+export const sessionProfile = (name) => (name === "default" ? paths.profile : join(paths.sessions, name));
+export const sessionFile = (name, file) => (name === "default" ? join(HOME, file) : join(paths.sessions, `${name}.${file}`));
 
 export const DEFAULT_CONFIG = {
   // Which browser PairBrowse runs: "pairbrowse" (the native PairBrowse build), "chromium"
@@ -140,9 +176,9 @@ export function saveConfig(fields, file = paths.config) {
 }
 
 export function ensureDirs() {
-  for (const dir of [paths.home, paths.profile, paths.runs, paths.reviews, paths.log, paths.files, paths.uploads, join(HOME, "run")]) {
+  for (const dir of [paths.home, paths.profile, paths.runs, paths.reviews, paths.log, paths.files, paths.uploads, paths.run]) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
   // Tighten folders created by older versions or another umask.
-  if (process.platform !== "win32") for (const dir of [paths.home, paths.profile, join(HOME, "run")]) chmodSync(dir, 0o700);
+  if (process.platform !== "win32") for (const dir of [paths.home, paths.profile, paths.run]) chmodSync(dir, 0o700);
 }

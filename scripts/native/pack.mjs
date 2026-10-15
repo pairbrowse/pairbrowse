@@ -23,12 +23,12 @@ export const installHint = (asset) => `node ${INSTALLER} <${asset.file}>`;
 
 // A pinned file in ~/.pairbrowse/downloads, fetched from the release when it isn't there yet.
 export function pinnedArchive(asset, log, what = `PairBrowse ${NATIVE.version} (about 150-250 MB, once)`) {
-  const archive = join(paths.home, "downloads", asset.file);
+  const archive = join(paths.downloads, asset.file);
   if (!existsSync(archive)) log(`downloading ${what}`);
   return downloadPinned(`${NATIVE.baseUrl}/${asset.file}`, archive, asset.sha256);
 }
 
-export const engineDir = () => join(paths.home, "engine");
+export const engineDir = () => paths.engine;
 
 // Each pinned file of an unpacked engine pack, checked against its SHA-256 (throws on the first
 // that doesn't match). Returns their contents.

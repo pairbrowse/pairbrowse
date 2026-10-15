@@ -4,11 +4,11 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, renameSync, readlinkSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { paths } from "./paths.mjs";
-import { readJson, writeJsonAtomic } from "./util.mjs";
+import { paths, sessionProfile, sessionFile } from "./paths.mjs";
+import { readJson, writeJsonAtomic, pidAlive } from "./util.mjs";
 
-const SESSIONS = join(paths.home, "sessions");
-const CURRENT = join(paths.home, "session");
+const SESSIONS = paths.sessions;
+const CURRENT = paths.currentSession;
 
 // The tool's definition lives in the catalog (tools/catalog.mjs).
 export { SESSION_TOOL } from "./tools/catalog.mjs";
@@ -18,15 +18,15 @@ export function validName(name) {
 }
 
 export const isTemporary = (name) => /^clean-\d+$/.test(name);
-export const profileDir = (name) => (name === "default" ? paths.profile : join(SESSIONS, name));
+export const profileDir = sessionProfile;
 // Who used a session: people and agents, with their app and kind of computer (sessions picker).
-export const peopleFile = (name) => (name === "default" ? join(paths.home, "people.json") : join(SESSIONS, `${name}.people.json`));
-export const tabsFile = (name) => (name === "default" ? join(paths.home, "tabs.json") : join(SESSIONS, `${name}.tabs.json`));
+export const peopleFile = (name) => sessionFile(name, "people.json");
+export const tabsFile = (name) => sessionFile(name, "tabs.json");
 // The session's timeline (daemon/timeline.mjs): pictures already sent to agents, and their index.
-export const timelineDir = (name) => (name === "default" ? join(paths.home, "timeline") : join(SESSIONS, `${name}.timeline`));
+export const timelineDir = (name) => sessionFile(name, "timeline");
 // The session's activity log (daemon/activitylog.mjs): the bar's lines, owner-only. A clean
 // session's stays in memory.
-export const activityFile = (name) => (name === "default" ? join(paths.home, "activity.json") : join(SESSIONS, `${name}.activity.json`));
+export const activityFile = (name) => sessionFile(name, "activity.json");
 
 export function currentSession() {
   try {
@@ -109,10 +109,6 @@ export function profileInUse(name, { host = hostname(), alive = pidAlive } = {})
     if (alive(Number(m[2]))) return true;
   }
   return false;
-}
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return e?.code === "EPERM"; }
 }
 
 const PEOPLE_MAX = 12;

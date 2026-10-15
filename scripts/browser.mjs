@@ -26,7 +26,7 @@ import { AGENT_COLOR } from "../ui/vocab.js";
 
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
-const nativeTarget = join(paths.home, "browser", "PairBrowse.app");
+const nativeTarget = paths.nativeApp;
 // Earlier versions colored the window with a theme extension in scripts/browser/theme. Profiles
 // that used it get the color theme instead, wherever that copy of PairBrowse was (plugin installs
 // live in versioned folders, so the path, and the extension id derived from it, change).
@@ -291,7 +291,7 @@ export const HELPER_KEY_PREFIX = "helper-key-";
 // The capture page's own key (a build whose capture page reads one) goes the same way, in a file
 // of its own (CAPTURE_KEY_PREFIX) that --pairbrowse-capture-key-file names.
 export const CAPTURE_KEY_PREFIX = "capture-key-";
-export function writeHelperKeyFile(key, dir = join(paths.home, "run"), prefix = HELPER_KEY_PREFIX) {
+export function writeHelperKeyFile(key, dir = paths.run, prefix = HELPER_KEY_PREFIX) {
   if (typeof key !== "string" || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw new Error("the helper key has a form the browser refuses");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   // One helper per home, and the previous browser is closed when a launch starts: anything left
@@ -384,11 +384,11 @@ export function hudScript() {
 // The pinned ungoogled-chromium app: downloaded once, checked against its SHA-256 and its
 // notarization, then copied out of the disk image.
 async function ungoogledApp(log) {
-  const dir = join(paths.home, "browser", `ungoogled-${UNGOOGLED.version}`);
+  const dir = join(paths.browser, `ungoogled-${UNGOOGLED.version}`);
   const app = join(dir, "Chromium.app");
   if (existsSync(join(app, "Contents", "Info.plist"))) return app;
   const asset = UNGOOGLED[process.arch === "arm64" ? "arm64" : "x64"];
-  const dmg = join(paths.home, "downloads", asset.file);
+  const dmg = join(paths.downloads, asset.file);
   if (!existsSync(dmg)) log(`downloading ungoogled-chromium ${UNGOOGLED.version} (about 150 MB, once)`);
   await downloadPinned(`https://github.com/ungoogled-software/ungoogled-chromium-macos/releases/download/${UNGOOGLED.version}/${asset.file}`, dmg, asset.sha256);
   const { stdout } = await run("hdiutil", ["attach", "-nobrowse", "-readonly", "-noautoopen", dmg]);
@@ -427,7 +427,7 @@ export async function ensureBrowser(chromium, log = () => {}) {
   const target = existsSync(join(nativeTarget, "Contents", "Resources", "PairBrowse-build.json")) ? join(dirname(nativeTarget), "PairBrowse Chromium.app") : nativeTarget;
   const exec = join(target, "Contents", "MacOS", "pairbrowse");
   const stamp = createHash("sha256").update(`branding v6 ${sourceApp} ${target}` + readFileSync(ICON).toString("base64")).digest("hex");
-  const stampFile = join(paths.home, "browser", "build.sha256");
+  const stampFile = paths.buildStamp;
   if (existsSync(exec) && existsSync(stampFile) && readFileSync(stampFile, "utf8") === stamp) return exec;
 
   log("building the PairBrowse browser");

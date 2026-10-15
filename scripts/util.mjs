@@ -9,6 +9,12 @@ import { pipeline } from "node:stream/promises";
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Whether a process with this id runs (one of another user's counts: EPERM).
+export function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e?.code === "EPERM"; }
+}
+
 // A sliding-window rate limit kept on an object (a joiner, say): true when n more fit among the
 // last windowMs' (and counts them, at t), false when they don't (nothing counted).
 export function spend(holder, field, max, { t = Date.now(), n = 1, windowMs = 1000 } = {}) {

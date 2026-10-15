@@ -25,7 +25,7 @@ import { NATIVE } from "../native-pack.mjs";
 import { installHint, pinnedArchive, ensureEngine, installEngine } from "./pack.mjs";
 import { BRANDING, brandNativeApp, registerApp, verifySignature } from "./macos-app.mjs";
 import { currentSession, profileDir } from "../sessions.mjs";
-import { readJson, sha256File, within, writeJsonAtomic } from "../util.mjs";
+import { readJson, sha256File, within, writeJsonAtomic, pidAlive } from "../util.mjs";
 
 const run = promisify(execFile);
 const UNPACK_TIMEOUT_MS = 600_000;
@@ -56,7 +56,7 @@ export function notChosen(config, native) {
 }
 
 export const nativeDirs = (layout = nativeLayout() || nativeLayout("darwin")) => {
-  const dir = join(paths.home, "browser");
+  const dir = paths.browser;
   return {
     dir,
     app: join(dir, layout.folder),
@@ -110,9 +110,7 @@ function takeLock(dir) {
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
       const pid = Number(readFileSync(file, "utf8")) || 0;
-      let alive;
-      try { process.kill(pid, 0); alive = pid > 0; } catch (err) { alive = err.code === "EPERM"; }
-      if (alive) throw new Error(`another PairBrowse install is running (process ${pid})`);
+      if (pidAlive(pid)) throw new Error(`another PairBrowse install is running (process ${pid})`);
       // Take the dead lock over atomically: only one process can move it aside, and only if it's
       // still the dead one (not a fresh lock another process just took).
       const aside = `${file}.${process.pid}`;

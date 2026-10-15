@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { join, dirname } from "node:path";
 import { paths } from "../paths.mjs";
-import { downloadPinned, isQuickTunnelHost } from "../util.mjs";
+import { downloadPinned, isQuickTunnelHost, pidAlive } from "../util.mjs";
 import { testMs } from "../testenv.mjs";
 
 const run = promisify(execFile);
@@ -32,7 +32,7 @@ export const CLOUDFLARED = {
 export async function ensureCloudflared(log = () => {}, platform = process.platform, arch = process.arch) {
   const asset = CLOUDFLARED.assets[`${platform}-${arch}`];
   if (!asset) throw new Error(`sharing needs cloudflared, which has no build for ${platform}-${arch}`);
-  const dir = join(paths.home, "tools", `cloudflared-${CLOUDFLARED.version}`);
+  const dir = join(paths.tools, `cloudflared-${CLOUDFLARED.version}`);
   const exe = join(dir, platform === "win32" ? "cloudflared.exe" : "cloudflared");
   if (existsSync(exe)) return exe;
   const download = join(dir, asset.file);
@@ -90,12 +90,12 @@ const LOCAL_DNS_WAIT_MS = 10_000; // more, for the system resolver to see the na
 export const KEEP_GRACE_MS = testMs("KEEP_GRACE_MS", 120_000);
 // The keeper runs from its fixed path (scripts/tunnel-keeper.mjs): adoptTunnel knows keepers by it.
 const KEEPER = join(dirname(fileURLToPath(import.meta.url)), "..", "tunnel-keeper.mjs");
-export const heartbeatFile = () => join(paths.home, "run", "helper-alive");
+export const heartbeatFile = () => paths.helperAlive;
 // The helper is here (sharing.mjs touches it every few seconds).
 export function helperAlive() {
-  try { mkdirSync(join(paths.home, "run"), { recursive: true, mode: 0o700 }); writeFileSync(heartbeatFile(), String(Date.now()), { mode: 0o600 }); } catch {}
+  try { mkdirSync(paths.run, { recursive: true, mode: 0o700 }); writeFileSync(heartbeatFile(), String(Date.now()), { mode: 0o600 }); } catch {}
 }
-export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe, resolves = resolvesAtCloudflare, resolvesLocally = resolvesHere, logDir = join(paths.home, "tunnels") } = {}) {
+export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe, resolves = resolvesAtCloudflare, resolvesLocally = resolvesHere, logDir = paths.tunnels } = {}) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("bad live view port");
   const program = exe || await ensureCloudflared(log);
   mkdirSync(logDir, { recursive: true, mode: 0o700 });
@@ -143,7 +143,6 @@ export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_00
   }
 }
 
-const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
 const defaultPs = async (pid) => (await run("ps", ["-p", String(pid), "-o", "command="])).stdout;
 // Whether pid is still a tunnel keeper of ours for this port (a pid can be reused by anything).
 async function isKeeper(pid, port, psCommand = defaultPs) {
@@ -162,7 +161,7 @@ export async function adoptTunnel(saved, { psCommand = defaultPs } = {}) {
   const { url, pid, port } = saved;
   if (tunnelUrl(url) !== url || !Number.isInteger(pid) || pid < 2 || !Number.isInteger(port)) return null;
   if (!(await isKeeper(pid, port, psCommand))) return null;
-  const file = typeof saved.log === "string" && saved.log.startsWith(join(paths.home, "tunnels")) ? saved.log : null;
+  const file = typeof saved.log === "string" && saved.log.startsWith(paths.tunnels) ? saved.log : null;
   const t = { url, host: new URL(url).host, pid, port, log: file, child: null, adopted: true, gone: false };
   t.check = () => isKeeper(pid, port, psCommand);
   t.stop = () => {

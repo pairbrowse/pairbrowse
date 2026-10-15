@@ -45,7 +45,7 @@ import { createCaptureChannel } from "./liveview/capture.mjs";
 import { createFacts } from "./facts.mjs";
 import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
 import { cleanName, displayName } from "./sharing/join.mjs";
-import { currentAccount, within, readJson, spend } from "./util.mjs";
+import { currentAccount, within, readJson, spend, pidAlive } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
@@ -115,16 +115,15 @@ ensureDirs();
 // One helper at a time, settled before anything else starts: each Claude Code and Codex window
 // starts one when there's none (after an update, a crash), often several at once, and a second
 // one must never touch the browser, the sharing tunnel or its saved state before it finds out.
-const lockFile = join(dirname(paths.daemonLog), "daemon.lock");
+const lockFile = paths.daemonLock;
 function claimHelper() {
-  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
   for (let i = 0; i < 3; i++) {
     try { writeFileSync(lockFile, String(process.pid), { flag: "wx", mode: 0o600 }); break; } catch (e) {
       if (e.code !== "EEXIST") return true; // no lock possible here: as before (the socket decides)
       let pid = 0, age = Infinity;
       try { pid = Number(readFileSync(lockFile, "utf8")); age = Date.now() - statSync(lockFile).mtimeMs; } catch {}
       // A live helper holds it (still starting, or with its socket up); otherwise it's left over.
-      if (pid && pid !== process.pid && alive(pid) && (age < 30_000 || existsSync(paths.socket))) return false;
+      if (pid && pid !== process.pid && pidAlive(pid) && (age < 30_000 || existsSync(paths.socket))) return false;
       rmSync(lockFile, { force: true });
     }
   }

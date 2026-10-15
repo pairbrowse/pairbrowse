@@ -7,7 +7,7 @@
 import { randomBytes } from "node:crypto";
 import { spawn as nodeSpawn, execFile as nodeExecFile } from "node:child_process";
 import { lstatSync, unlinkSync, chmodSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname } from "node:path";
 import { paths } from "../paths.mjs";
 import { readJson, writeJsonAtomic, within } from "../util.mjs";
 
@@ -163,7 +163,7 @@ export function createDownloads({ session = () => "" } = {}) {
 
 // The recordings this helper saved, indexed in an owner-only file so only they can be deleted,
 // across restarts. Each entry carries the file's inode and size, checked before any action.
-export function createRecordings({ file = join(paths.home, "recordings.json") } = {}) {
+export function createRecordings({ file = paths.recordings } = {}) {
   let index = null; // newest first: { id, path, at, ms, size, ino }
   const changes = listeners();
   const load = () => {

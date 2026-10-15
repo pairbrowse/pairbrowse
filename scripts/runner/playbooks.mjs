@@ -5,7 +5,7 @@ import { paths } from "../paths.mjs";
 import { slug } from "../runs.mjs";
 import { readJson, writeJsonAtomic } from "../util.mjs";
 
-const PLAYBOOKS = join(paths.home, "playbooks");
+const PLAYBOOKS = paths.playbooks;
 const playbookFile = (name) => join(PLAYBOOKS, `${slug(name, "playbook")}.json`);
 
 export function listPlaybooks() {

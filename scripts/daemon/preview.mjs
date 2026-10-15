@@ -188,7 +188,7 @@ export function textPreviewPage(text, name) {
 
 // make(entry, kind): kind "text" or "document"; resolves { path, drop } or { error }. Never throws.
 // clear(): empties the folder (sync); a symlink in its place is never followed.
-export function createPreviews({ dir = join(paths.home, "previews"), execFile = nodeExecFile, textutilMs = 20_000 } = {}) {
+export function createPreviews({ dir = paths.previews, execFile = nodeExecFile, textutilMs = 20_000 } = {}) {
   function ensureDir() {
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 });

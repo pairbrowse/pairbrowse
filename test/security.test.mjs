@@ -173,3 +173,17 @@ test("test switches: read only through testenv.mjs, each one listed", async () =
   assert.equal(testMs("GONE_MS", 5, { PAIRBROWSE_TEST_GONE_MS: "7" }), 7);
   assert.equal(testMs("GONE_MS", 5, {}), 5);
 });
+
+// Every path under ~/.pairbrowse is built in paths.mjs (one place to see what the helper keeps):
+// no other module joins onto the home or reads PAIRBROWSE_HOME itself.
+test("paths under the home come from paths.mjs", async () => {
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { join: j } = await import("node:path");
+  const dir = new URL("../scripts/", import.meta.url).pathname;
+  const files = readdirSync(dir, { recursive: true }).filter((f) => /\.(mjs|js)$/.test(f) && !f.startsWith("dev/") && !["paths.mjs", "testenv.mjs"].includes(f));
+  for (const f of files) {
+    const src = readFileSync(j(dir, f), "utf8");
+    assert.doesNotMatch(src, /join\(paths\.home\b|join\(dirname\(paths\.[a-zA-Z]+\)/, `${f} builds a home path itself`);
+    assert.doesNotMatch(src, /env\.PAIRBROWSE_HOME\b/, `${f} reads PAIRBROWSE_HOME itself`);
+  }
+});

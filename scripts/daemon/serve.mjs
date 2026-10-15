@@ -12,7 +12,7 @@ import { keepFocus } from "../focus.mjs";
 // pathsIn and withPaths live in upload.mjs now; kept here for one release.
 export { pathsIn, withPaths } from "../upload.mjs";
 import { within } from "../util.mjs";
-import { stopRequestMirroring } from "./context.mjs";
+import { stopRequestMirroring } from "./browser/tabs.mjs";
 import { plainError } from "./output.mjs";
 import { PAIRBROWSE_TOOLS, TAB_TOOLS, PAGE_READ_TOOLS, NO_PICK_WAIT, changesPage, wellFormed, withDialogLabel, containsRef, pictureless } from "./serve/wire.mjs";
 import { arrivedAt } from "./serve/pageread.mjs";

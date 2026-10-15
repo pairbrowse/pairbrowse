@@ -3,5 +3,10 @@
   "include": ["scripts/**/*.mjs", "scripts/**/*.js"],
   "exclude": ["scripts/dock/**", "scripts/dev/**", "ui/**", "scripts/hud/*.js"],
   "reporter": ["text-summary", "json-summary"],
-  "report-dir": "coverage"
+  "report-dir": "coverage",
+  "check-coverage": true,
+  "lines": 71,
+  "statements": 71,
+  "functions": 77,
+  "branches": 83
 }

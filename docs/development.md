@@ -9,6 +9,7 @@ npm run test:optin        # opt-in tests (test/optin/), each behind a switch of 
 npm ci && npm run lint       # ESLint, no warnings allowed (CI runs it); .claude/ is skipped: its worktrees
                              # are copies of the repo and its workflow scripts are local, not shipped
 npm run test:fuzz  # property-based fuzzing of the security checks (test/fuzz, fast-check)
+npm run coverage          # unit and integration tests under c8, failing below .c8rc.json's floor
 claude plugin validate .  # the Claude Code manifests
 ```
 
@@ -88,6 +89,13 @@ mockup is read in place and never committed.
 | `test/optin/` | Tests behind a switch of their own, never run by `npm test`: `failover` (`PAIRBROWSE_TEST_REAL_TUNNEL=1`), `native-join` (a native build), `two-machines` (`PAIRBROWSE_TEST_DOCKER=1`; its two sides in `test/optin/two-machines/`) | `npm run test:optin` |
 | `test/fuzz/*.test.js` | Property-based fuzzing of the security checks | `npm run test:fuzz` |
 | `test/helpers/` | Not tests: `home.mjs` (every test file imports it first: a home of its own under the temp folder), `util.mjs` (`sleep`, `until`, `text`, `rpc`), `daemon.mjs` (`helperHome`, `spawnDaemon`, `startHelper`, `stopDaemon`), `live.mjs` (`testBase`, `attachDaemon`, `session`, `patchright`), `live-helper.mjs`, and the pages' harness | |
+
+Coverage (`npm run coverage`, c8 over `scripts/`, the helper's child processes included) fails
+below the floor in `.c8rc.json`: lines and statements 71%, functions 77%, branches 83%. That is
+about a point under the unit tests alone (`npx c8 node --test --test-concurrency=2 test/*.test.mjs`
+on macOS, measured: lines and statements 71.93%, functions 77.88%, branches 84.3%), so the floor
+holds without a browser too; CI's live job, unit and integration tests on Linux, measured lines and
+statements 84.82%, functions 86.65%, branches 84.36%. Raise the floor as coverage grows.
 
 `test/bench.mjs` is not a test: it times the helper's tool calls on a real browser
 (`node test/bench.mjs`, `PAIRBROWSE_TEST_RUNTIME` set) and prints the numbers.

@@ -5,10 +5,12 @@ import { basename } from "node:path";
 import { APPROVAL_ID, ANSWERS } from "../../daemon/approvals.mjs";
 import { scrub } from "../../daemon/diagnostics.mjs";
 import { json, plain, readJsonBody, NOT_JSON, BODY_MAX } from "../http.mjs";
+import { roleOf } from "../invites.mjs";
 
 const INVITE_ID = /^[0-9a-f]{8}$/;
 // The invites as Settings lists them (GET invites.json, the invites event): never a key or a code.
-export const inviteItems = (list) => list.map((i) => ({ id: i.id, role: i.role, label: i.label, share: i.share, expires: i.expiresAt }));
+// role: "watch", "drive" or "approve" (roleOf); mode: a join code's ("shared" or "follow"), else "".
+export const inviteItems = (list) => list.map((i) => ({ id: i.id, role: roleOf(i), label: i.label, share: i.share, mode: i.share === "code" ? i.mode : "", expires: i.expiresAt }));
 
 // approvals: who asked to join (createApprovals). clickApprovals: named final clicks, or null.
 // joiners, push, stopJoinerKey(key), collaborationChanged(): the live view's joiners. devPanel,
@@ -90,11 +92,26 @@ export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, st
     // this answer only: never broadcast, logged or kept in state.json.
     // { op: "revoke", id } (Settings' Invites, Revoke): that invite stops at once, as with
     // pairbrowse_invite revoke (anyone using it is out; a join code's tunnel goes with the last code).
+    // { op: "role", id, role: "drive" | "approve" } (Settings' Invites): a shared browser code
+    // switched between drive and approve, as with pairbrowse_invite set_role; the owner's click
+    // is the OK approve needs. A joiner losing approve loses their cards at once (the role is
+    // read again at every answer).
     { method: "POST", path: "invite", right: "invite", handler: async ({ req, res }) => {
       const op = await readJsonBody(req, res, BODY_MAX.approve);
       if (op === undefined) return;
       if (op && typeof op === "object" && !Array.isArray(op) && op.op !== undefined) {
-        if (op.op !== "revoke" || Object.keys(op).some((k) => k !== "op" && k !== "id")) return json(res, 409, { error: 'An invite change is { op: "revoke", id }.' });
+        if (op.op === "role") {
+          if (Object.keys(op).some((k) => k !== "op" && k !== "id" && k !== "role") || (op.role !== "drive" && op.role !== "approve")) return json(res, 409, { error: 'A role change is { op: "role", id, role: "drive" | "approve" }.' });
+          if (typeof op.id !== "string" || !INVITE_ID.test(op.id)) return json(res, 409, { error: "id is an invite's id, as invites.json lists it." });
+          if (!invites.get(op.id)) return json(res, 404, { error: "No such invite (it may have expired or been revoked already)." });
+          let i;
+          try { i = invites.setRole(op.id, op.role); } catch (e) { return json(res, 409, { error: e.message }); }
+          log(`invite ${op.id} set to ${roleOf(i)} from PairBrowse's settings`);
+          json(res, 200, { ok: true, id: i.id, role: roleOf(i) });
+          broadcast("invites", { items: inviteItems(invites.list()) });
+          return;
+        }
+        if (op.op !== "revoke" || Object.keys(op).some((k) => k !== "op" && k !== "id")) return json(res, 409, { error: 'An invite change is { op: "revoke", id } or { op: "role", id, role }.' });
         if (typeof op.id !== "string" || !INVITE_ID.test(op.id)) return json(res, 409, { error: "id is an invite's id, as invites.json lists it." });
         if (!invites.revoke(op.id)) return json(res, 404, { error: "No such invite (it may have expired or been revoked already)." });
         log(`invite ${op.id} revoked from PairBrowse's settings`);
@@ -102,7 +119,7 @@ export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, st
       }
       if (!makeInvite) return plain(res, 404);
       if (!op || typeof op !== "object" || Array.isArray(op)) return json(res, 409, { error: "Choose a join code or a watch link." });
-      const { share, role, name, label, hours } = op;
+      const { share, role, name, label, hours } = op; // role: "approve" makes an approve code (the Share card's third choice)
       const r = await makeInvite({ share, role, name, label, hours });
       json(res, r?.error ? 409 : 200, r);
       if (!r?.error) broadcast("invites", { items: inviteItems(invites.list()) });

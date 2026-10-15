@@ -77,9 +77,14 @@ export function decide(input, _config, review = latestReview(), now = Date.now()
 
   // A drive link lets another person click and type in your logged-in browser. Anything but a
   // plain watch link asks.
+  // The approve role (made, or given to an invite later) also answers your approval cards.
+  const approves = ti.role === "approve" ? " and answer your approval cards (pay, delete, send, submit, publish) in their own browser" : "";
   if (tool === "pairbrowse_invite" && ti.action === "create" && ti.role !== "watch") {
     const who = String(ti.label || "someone").replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, 40);
-    return ask(`Creates an invite (a link or join code) that lets ${who} click and type in your logged-in PairBrowse browser (not your saved details or passwords) for ${Number(ti.hours) > 0 ? Math.min(Number(ti.hours), 168) : 24} hours. Share it only with someone you trust.`);
+    return ask(`Creates an invite (a link or join code) that lets ${who} click and type in your logged-in PairBrowse browser${approves} (not your saved details or passwords) for ${Number(ti.hours) > 0 ? Math.min(Number(ti.hours), 168) : 24} hours. Share it only with someone you trust.`);
+  }
+  if (tool === "pairbrowse_invite" && ti.action === "set_role" && ti.role !== "drive") {
+    return ask(`Lets the people who joined with invite ${String(ti.id || "").replace(/[^\w-]/g, "").slice(0, 20)} answer your approval cards (pay, delete, send, submit, publish) in their own browser. Allow only if you trust them with those steps.`);
   }
 
   // share_port needs no prompt here: it only asks the user, Yes or No in the side panel (a real

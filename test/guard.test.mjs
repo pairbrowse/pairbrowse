@@ -132,6 +132,20 @@ test("drive invite links ask; watch links, list and revoke don't", () => {
   assert.equal(decide({ tool_name: "mcp__pairbrowse_browser__pairbrowse_invite", tool_input: { action: "create", role: "drive" } }, cfg, null, NOW).hookSpecificOutput.permissionDecision, "ask");
 });
 
+test("the approve role asks, made or given later; back to drive doesn't", () => {
+  const why = (ti) => decide({ tool_name: "mcp__plugin_pairbrowse_browser__pairbrowse_invite", tool_input: ti }, cfg, null, NOW).hookSpecificOutput;
+  const made = why({ action: "create", role: "approve", label: "Alex" });
+  assert.equal(made.permissionDecision, "ask");
+  assert.match(made.permissionDecisionReason, /Alex click and type .* and answer your approval cards \(pay, delete, send, submit, publish\) in their own browser/);
+  const given = why({ action: "set_role", id: "abcd1234", role: "approve" });
+  assert.equal(given.permissionDecision, "ask");
+  assert.match(given.permissionDecisionReason, /invite abcd1234 answer your approval cards/);
+  assert.equal(why({ action: "set_role", id: "abcd1234", role: "x" }).permissionDecision, "ask", "anything but drive asks");
+  assert.equal(run("pairbrowse_invite", { action: "set_role", id: "abcd1234", role: "drive" }), "allow");
+  // Codex: the same ask, handed to the user (the helper applies decide itself).
+  assert.equal(decide({ tool_name: "mcp__pairbrowse_browser__pairbrowse_invite", tool_input: { action: "set_role", id: "abcd1234", role: "approve" } }, cfg, null, NOW).hookSpecificOutput.permissionDecision, "ask");
+});
+
 test("Codex tool names get the same decisions", () => {
   const codex = (tool, tool_input) => decide({ tool_name: `mcp__pairbrowse_browser__${tool}`, tool_input }, cfg, null, NOW).hookSpecificOutput.permissionDecision;
   assert.equal(codex("browser_click", { element: "Next", target: "e1" }), "allow");

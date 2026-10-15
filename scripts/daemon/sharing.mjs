@@ -3,6 +3,7 @@
 import { RECORD_READY_MS } from "./capture.mjs";
 import { ownTitle } from "./tablabels.mjs";
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
+import { roleOf } from "../liveview/invites.mjs";
 import { createApprovals, encodeJoinCode, cleanName } from "../join.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
 import { readJson } from "../util.mjs";
@@ -43,6 +44,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
 
   invites.onEnd(() => { if (!invites.list().some((i) => i.share === "code")) { tun.releaseTunnel(); devShare.stopAll(); } save(); });
   approvals.onChange(() => save());
+  invites.onRole(() => save());
   // The user's answers in the side panel, the live view or the page's prompt: the host's agent
   // hears them in its next result (its own approve and deny already say so).
   const states = new Map(); // request id -> state last seen
@@ -162,6 +164,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // The host's name as join codes carry it (raw: the fallback too, for create's own check).
   const codeLabel = (raw = false) => { const n = savedName(config) || host; return raw ? n : n === "The host" ? "" : n; };
 
+  const ROLE_WORDS = { watch: "watch only", drive: "can drive", approve: "can drive and approve" };
   // pairbrowse_invite: links or join codes for someone else to watch or co-drive (the guard asks
   // before a drive invite and before letting a joiner in). Returns { text, error }.
   async function inviteCommand(args, { who } = {}) {
@@ -173,7 +176,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       const live = tun.pool.find((t) => tun.alive(t, tun.guestPortWanted || t.port));
       const keys = new Map(invites.savedCodes().map((i) => [i.id, i.key])); // list() leaves keys out
       const codeOf = (i) => (i.share === "code" && live && keys.has(i.id) ? `\n  code: ${encodeJoinCode({ url: live.url, key: keys.get(i.id), role: i.role, mode: i.mode, label: codeLabel() })}` : "");
-      const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${i.role === "drive" ? "can drive" : "watch only"}, ${i.share === "code" ? (i.mode === "shared" ? "join code (shared browser)" : "join code (follow)") : "link"}, until ${formatTime(i.expiresAt)}` + codeOf(i) +
+      const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${ROLE_WORDS[roleOf(i)]}, ${i.share === "code" ? (i.mode === "shared" ? "join code (shared browser)" : "join code (follow)") : "link"}, until ${formatTime(i.expiresAt)}` + codeOf(i) +
         asking.filter((r) => r.inviteId === i.id).map((r) => `\n  - request ${r.id}: ${r.name}${r.app ? ` (${r.app})` : ""}, ${r.state === "pending" ? "waiting for the user's OK" : r.state === "approved" ? "let in" : r.state === "removed" ? "removed" : "turned away"}`).join(""));
       const dev = devShare.list().map((d) => `- dev server localhost:${d.port}, shared with joiners at ${d.url}`);
       // The user's own tunnel: said once, in plain words (the default relay needs no mention).
@@ -191,6 +194,11 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
         : `Their own PairBrowse browser opens your tabs now${done.role === "drive" ? " (and their changes in them come back here)" : ""}`;
       return { text: action === "approve" ? `Let ${done.name} in (${done.role}${shared ? ", shared browser" : ""}). ${opens}; revoke the invite to end it.` : `Turned ${done.name} away. If they try that code again, the user is asked again; revoke the invite to stop it working.` };
     }
+    if (action === "set_role") {
+      let i;
+      try { i = invites.setRole(args.id, args.role); } catch (e) { return fail(`${e.message} Use list to see the invites.`); }
+      return { text: `${i.label} (invite ${i.id}) ${roleOf(i) === "approve" ? "can now also answer your approval cards (pay, delete, send, submit, publish) in their own PairBrowse, by their own click there; the first answer wins, theirs or yours" : "can drive but no longer answer your approval cards"}.` };
+    }
     if (action === "revoke") {
       return invites.revoke(args.id) ? { text: `Revoked ${args.id}. Anyone using it lost the session at once.` } : fail(`No invite ${args.id}. Use list to see them.`);
     }
@@ -202,7 +210,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       refreshDev().catch(() => {});
       return stopped ? { text: `Stopped sharing localhost:${args.port}. Joiners' tabs on it stop loading.` } : fail(`localhost:${args.port} isn't shared. Use list to see what is.`);
     }
-    if (action !== "create") return fail("Use create, list, approve, deny, revoke, revoke_all, share_port or unshare_port.");
+    if (action !== "create") return fail("Use create, list, approve, deny, set_role, revoke, revoke_all, share_port or unshare_port.");
     const r = await createInvite(args, who);
     return r.error ? fail(r.text) : { text: r.text };
   }
@@ -240,7 +248,8 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
         ? "They can watch, click, type and switch tabs in the browser, but not see remembered details or passwords."
         : "They can watch the page, tabs and activity, but not click, type or see remembered details or passwords.";
     let code = "", link = "";
-    const lines = [`Invite ${invite.id} for ${invite.label} (${invite.role}), until ${formatTime(invite.expiresAt)}. ${rights}`];
+    const approves = invite.approve ? " They can also answer your approval cards (pay, delete, send, submit, publish) in their own PairBrowse, by their own click there; the first answer wins, theirs or yours." : "";
+    const lines = [`Invite ${invite.id} for ${invite.label} (${roleOf(invite)}), until ${formatTime(invite.expiresAt)}. ${rights}${approves}`];
     if (share === "code") {
       // A pinned guest port taken by another program: the user's tunnel would reach the wrong
       // thing (nothing of ours), so nothing is shared.
@@ -274,14 +283,15 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     if (inviteProblems.length) lines.push(`Config problems: ${inviteProblems.join(" ")}`);
     lines.push(`Give the ${share === "code" ? "code" : "link"} to the user to send; don't paste it into any web page. Revoke it with pairbrowse_invite revoke when they're done.`);
     const text = lines.join("\n");
-    const { id, label, role, mode, expiresAt } = invite;
-    return { text, invite: { id, label, role, share, mode, expiresAt }, ...(code ? { code } : { link }), rights, hint: lines[2] || "" };
+    const { id, label, mode, expiresAt } = invite;
+    return { text, invite: { id, label, role: roleOf(invite), share, mode, expiresAt }, ...(code ? { code } : { link }), rights: rights + approves, hint: lines[2] || "" };
   }
 
-  // The Share card's two choices: a join code (shared browser, can drive) or a watch link. The
-  // click in the owner's own panel is the OK a drive invite needs. Nothing of the answer is logged.
+  // The Share card's choices: a join code (shared browser, can drive; with role "approve", can
+  // also answer approval cards) or a watch link. The click in the owner's own panel is the OK a
+  // drive or approve invite needs. Nothing of the answer is logged.
   async function inviteFromPanel(body = {}) {
-    const choice = body.share === "link" ? { share: "link", role: "watch" } : body.share === "code" ? { share: "code", role: "drive", mode: "shared" } : null;
+    const choice = body.share === "link" ? { share: "link", role: "watch" } : body.share === "code" ? { share: "code", role: body.role === "approve" ? "approve" : "drive", mode: "shared" } : null;
     if (!choice) return { error: "Choose a join code or a watch link." };
     const r = await createInvite({ action: "create", ...choice, ...(typeof body.name === "string" && body.name ? { name: body.name } : {}) }, "the side panel");
     if (r.error) return { error: r.text, ...(r.needName ? { needName: true } : {}) };

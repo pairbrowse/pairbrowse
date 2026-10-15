@@ -262,10 +262,23 @@ async function revokeInvite(id, shown) {
   say($("invites-msg"), r.body?.error || (r.status === 0 ? UNREACHABLE : "That didn't work."), "error");
   return false;
 }
+// A shared browser code switched between drive and approve (the joiner may also answer the
+// approval cards in their own browser): { op: "role" }, on a person's click only.
+async function setInviteRole(id, role, shown) {
+  if (!base || conn !== "live") return say($("invites-msg"), "Not connected to PairBrowse.", "error");
+  const r = await postJson("invite", { op: "role", id, role });
+  if (r.status === 200 && r.body?.ok) {
+    say($("invites-msg"), role === "approve" ? `${shown} can now also answer your approval cards.` : `${shown} can drive but no longer answer your approval cards.`, "ok");
+    loadInvites();
+    return;
+  }
+  say($("invites-msg"), r.body?.error || (r.status === 0 ? UNREACHABLE : "That didn't work."), "error");
+  if (r.status === 404) loadInvites();
+}
 function inviteRow(i) {
   const shown = i.label ? String(i.label) : i.role === "watch" ? "a watch invite" : "a drive invite";
   const kind = i.share === "code" ? "Join code" : "Link";
-  const rights = i.role === "watch" ? "can watch" : "can drive";
+  const rights = i.role === "watch" ? "can watch" : i.role === "approve" ? "can drive and approve" : "can drive";
   const face = avatar(i.label || kind, null, { decorative: true });
   const head = el("strong", {}, el("span", { className: "name", textContent: i.label ? String(i.label) : kind, title: i.label ? String(i.label) : kind }));
   const meta = [kind, rights, endsIn(i.expires)].filter(Boolean).join(" · ");
@@ -273,6 +286,14 @@ function inviteRow(i) {
   li.dataset.id = i.id;
   const revoke = el("button", { className: "mini needs-live", type: "button", textContent: "Revoke", ariaLabel: `Revoke ${shown}`, disabled: conn !== "live" });
   const acts = el("span", { className: "acts-row" }, revoke);
+  // Shared browser codes that drive: whether the joiner may also answer approval cards.
+  if (i.share === "code" && i.mode === "shared" && (i.role === "drive" || i.role === "approve")) {
+    const on = i.role === "approve";
+    const approve = el("button", { className: "mini needs-live", type: "button", textContent: "Can approve", title: on ? "They can answer your approval cards (pay, send, submit…) in their own browser. Click to stop." : "Let them answer your approval cards (pay, send, submit…) in their own browser too.", disabled: conn !== "live" });
+    approve.setAttribute("aria-pressed", String(on));
+    approve.addEventListener("click", (ev) => { if (ev.isTrusted) setInviteRole(i.id, on ? "drive" : "approve", shown); });
+    acts.prepend(approve);
+  }
   revoke.addEventListener("click", (ev) => {
     if (!ev.isTrusted) return;
     const yes = el("button", { className: "mini bad needs-live", type: "button", textContent: "Revoke", ariaLabel: `Yes, revoke ${shown}` });

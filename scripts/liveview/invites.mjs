@@ -1,6 +1,10 @@
 // Invite links: a link for someone else. "drive" (the default) sees the page, tabs and activity
 // and can click, type and switch tabs; "watch" (view-only, when asked for) only looks. Neither ever reaches the Profile panel (remembered details,
 // password names). Each has its own key, expires, and can be revoked; links live in memory only.
+// "approve" (shared browser join codes only) is drive plus answering the host's approval cards in
+// the joiner's own browser: kept as role "drive" with approve: true, so every right a drive invite
+// has (and every check for one) stays as it is; roleOf names it. The host may switch a code
+// between drive and approve while it runs (setRole); never to or from watch.
 import { randomBytes } from "node:crypto";
 import { cleanName } from "../join.mjs";
 import { keyOk } from "./http.mjs";
@@ -39,6 +43,14 @@ export function inviteBaseFrom(value, hosts = []) {
 // A name to show, not markup: the same rule as joiners' names.
 export const inviteLabel = (label) => cleanName(label);
 
+// An invite's role as people and agents read it: "watch", "drive" or "approve".
+export const roleOf = (i) => (i?.approve === true && i.role === "drive" ? "approve" : i?.role === "drive" ? "drive" : "watch");
+const ACCESS = ["watch", "drive"];
+// Whether an invite may hold the approve role: a join code that shares this browser itself (a
+// follow code's joiner never sees the page the click is on; a link has no browser of its own).
+const mayApprove = (share, mode) => share === "code" && mode === "shared";
+const APPROVE_ONLY = 'role "approve" is for shared browser join codes only (share "code", mode "shared").';
+
 // The invites, for as long as the helper runs (the live view may restart with the browser). Join
 // codes are also saved (sharing.mjs) so they outlive a restart of the helper; links never are.
 export function createInvites({ now = () => Date.now() } = {}) {
@@ -50,14 +62,15 @@ export function createInvites({ now = () => Date.now() } = {}) {
     for (const id of gone) all.delete(id);
     ended(gone);
   };
-  const publicView = ({ id, role, label, share, mode, createdAt, expiresAt }) => ({ id, role, label, share, mode, createdAt, expiresAt });
+  const roleListeners = new Set(); // called with an invite's id when its role changed
+  const publicView = ({ id, role, approve, label, share, mode, createdAt, expiresAt }) => ({ id, role, approve: approve === true, label, share, mode, createdAt, expiresAt });
   return {
     // share: "link" (a live view link, reached through an SSH tunnel or liveViewHosts) or "code"
     // (a join code: reached only through the sharing tunnel, and only after the host approves).
     // mode (join codes): "shared" (the default: they work in this browser, seeing it live) or
     // "follow" (their own browser opens these tabs and follows them).
     create({ role = "drive", label, hours, share = "link", mode = "shared" } = {}) {
-      if (role !== "watch" && role !== "drive") throw new Error('role must be "watch" or "drive".');
+      if (!ROLES.includes(role)) throw new Error('role must be "watch", "drive" or "approve".');
       const h = hours === undefined || hours === null || hours === "" ? DEFAULT_HOURS : Number(hours);
       if (!Number.isFinite(h) || h <= 0) throw new Error("hours must be a number above 0.");
       const createdAt = now();
@@ -65,11 +78,31 @@ export function createInvites({ now = () => Date.now() } = {}) {
       do id = randomBytes(4).toString("hex"); while (all.has(id));
       if (share !== "link" && share !== "code") throw new Error('share must be "link" or "code".');
       if (mode !== "shared" && mode !== "follow") throw new Error('mode must be "shared" or "follow".');
-      const invite = { id, role, share, mode, label: inviteLabel(label), key: randomBytes(32).toString("hex"), createdAt, expiresAt: createdAt + Math.min(h, INVITE_MAX_HOURS) * HOUR_MS };
+      if (role === "approve" && !mayApprove(share, mode)) throw new Error(APPROVE_ONLY);
+      const invite = { id, role: role === "approve" ? "drive" : role, approve: role === "approve", share, mode, label: inviteLabel(label), key: randomBytes(32).toString("hex"), createdAt, expiresAt: createdAt + Math.min(h, INVITE_MAX_HOURS) * HOUR_MS };
       all.set(id, invite);
       return { ...invite };
     },
     list() { sweep(); return [...all.values()].map(publicView); },
+    // One invite by id, as it stands now (its role read fresh), or null.
+    get(id) { sweep(); const i = all.get(String(id ?? "")); return i ? publicView(i) : null; },
+    // The host switches a code between drive and approve. Returns the invite as it stands now;
+    // throws with a sentence when that change isn't possible.
+    setRole(id, role) {
+      sweep();
+      const i = all.get(String(id ?? ""));
+      if (!i) throw new Error("No such invite (it may have expired or been revoked already).");
+      if (role !== "drive" && role !== "approve") throw new Error('role must be "drive" or "approve" (watch and drive are fixed when the invite is made: make a new one).');
+      if (i.role !== "drive") throw new Error("This invite is watch only: make a new one to let them drive or approve.");
+      if (role === "approve" && !mayApprove(i.share, i.mode)) throw new Error(APPROVE_ONLY);
+      const approve = role === "approve";
+      if (i.approve !== approve) {
+        i.approve = approve;
+        for (const fn of roleListeners) try { fn(i.id); } catch {}
+      }
+      return publicView(i);
+    },
+    onRole(fn) { roleListeners.add(fn); return () => roleListeners.delete(fn); },
     revoke(id) {
       const had = all.delete(String(id ?? ""));
       if (had) ended([String(id)]);
@@ -93,10 +126,10 @@ export function createInvites({ now = () => Date.now() } = {}) {
       let n = 0;
       for (const i of Array.isArray(list) ? list : []) {
         if (!i || !/^[0-9a-f]{8}$/.test(i.id) || !/^[0-9a-f]{64}$/.test(i.key) || i.share !== "code" || all.has(i.id)) continue;
-        if (!ROLES.includes(i.role) || !SHARE_MODES.includes(i.mode)) continue;
+        if (!ACCESS.includes(i.role) || !SHARE_MODES.includes(i.mode)) continue;
         const createdAt = Number(i.createdAt), expiresAt = Number(i.expiresAt);
         if (!Number.isFinite(createdAt) || !Number.isFinite(expiresAt) || expiresAt <= now() || expiresAt - createdAt > INVITE_MAX_HOURS * HOUR_MS) continue;
-        all.set(i.id, { id: i.id, role: i.role, share: "code", mode: i.mode, label: inviteLabel(i.label), key: i.key, createdAt, expiresAt });
+        all.set(i.id, { id: i.id, role: i.role, approve: i.approve === true && i.role === "drive" && mayApprove("code", i.mode), share: "code", mode: i.mode, label: inviteLabel(i.label), key: i.key, createdAt, expiresAt });
         n++;
       }
       return n;

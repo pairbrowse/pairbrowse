@@ -1469,7 +1469,7 @@ test("the panel's markup keeps every id once, and each section folds with a name
   }
   // It rises from the session card's Share with the sheet's motion (m-pop m-up, DESIGN.md Part I).
   assert.match(html, /<div class="share-card m-pop m-up" id="share-card" role="dialog" aria-labelledby="share-title" hidden>/);
-  assert.deepEqual([...html.matchAll(/<input type="radio" name="share" value="(\w+)"/g)].map(([, v]) => v), ["code", "link"]);
+  assert.deepEqual([...html.matchAll(/<input type="radio" name="share" value="(\w+)"/g)].map(([, v]) => v), ["code", "approve", "link"]);
   assert.match(html, /id="share-code" readonly aria-label="[^"]+"/);
   assert.match(html, /id="share-msg" role="status" aria-live="polite"/);
   assert.match(html, /<p class="sr" id="checklist-said" role="status" aria-live="polite"><\/p><ol id="checklist-items" aria-label="[^"]+">/);

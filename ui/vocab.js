@@ -34,8 +34,11 @@ export const BOARD_STATES = Object.freeze(["working", "you", "done", "idle"]);
 export const STATE_WORDS = Object.freeze({ working: "working", you: "waiting for their person", done: "done", idle: "idle" });
 
 // ---- people who joined ----
-// An invite's role: watch (only looks) or drive (clicks, types, and their agent acts here).
-export const ROLES = Object.freeze(["watch", "drive"]);
+// An invite's role: watch (only looks), drive (clicks, types, and their agent acts here) or
+// approve (drive, and may also answer the host's approval cards in their own browser: shared
+// browser join codes only). An invite keeps role "watch" or "drive" and approve: true for the
+// last (liveview/invites.mjs roleOf), so every drive check holds for it as it is.
+export const ROLES = Object.freeze(["watch", "drive", "approve"]);
 // How a join code shares: the host's own browser (shared) or a copy that follows it (follow).
 export const SHARE_MODES = Object.freeze(["shared", "follow"]);
 

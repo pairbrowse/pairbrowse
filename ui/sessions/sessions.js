@@ -16,8 +16,8 @@
 // no timer, no poll, no observer.
 import { $, el, ago, initialOf, helperStream, askSwitch, reportOffer, NO_AGENT, noAgentLine } from "../common.js";
 import { JOIN_NAME_MAX } from "../limits.js";
+import { followHelper } from "../helper.js";
 
-const NATIVE = !!window.pairbrowse;
 const FILTER_FROM = 6; // the search shows from this many saved sessions
 const NAME = /^[A-Za-z0-9_-]{1,40}$/; // the helper's session names (scripts/sessions.mjs validName)
 const NO_REACH = "Couldn't reach PairBrowse. Try again.";
@@ -281,16 +281,5 @@ function connect(url) {
     if (state) draw(state); // Rename follows canRename and the open session
   });
 }
-function helperBase() {
-  if (NATIVE) {
-    return Promise.resolve().then(() => window.pairbrowse.session.helper())
-      .then((h) => (h && h.origin && h.key ? `${h.origin}/${h.key}/` : null)).catch(() => null);
-  }
-  try {
-    const store = globalThis.chrome?.storage?.session;
-    if (!store) return Promise.resolve(null);
-    try { globalThis.chrome.storage.onChanged.addListener((changes, area) => { if (area === "session" && changes.view) connect(changes.view.newValue); }); } catch {}
-    return store.get("view").then((r) => r?.view || null).catch(() => null);
-  } catch { return Promise.resolve(null); }
-}
-helperBase().then((b) => (b ? connect(b) : none()));
+// The helper's address (ui/helper.js), and each new one the extension's worker stores.
+followHelper({ connect, none });

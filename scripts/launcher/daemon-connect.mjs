@@ -2,13 +2,14 @@
 // running: the bridge (scripts/launch.mjs) and the opener (scripts/open.mjs) share this.
 import net from "node:net";
 import { spawn } from "node:child_process";
-import { existsSync, copyFileSync, chmodSync, openSync, statSync, accessSync, constants as fsConstants } from "node:fs";
+import { existsSync, copyFileSync, chmodSync, openSync, readFileSync, statSync, accessSync, constants as fsConstants } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, ensureDirs, loadConfig, SELECTED } from "../paths.mjs";
 import { ensureRuntime } from "../runtime.mjs";
 import { withoutTestSwitches } from "../testenv.mjs";
-import { sleep } from "../util.mjs";
+import { sleep, pidAlive } from "../util.mjs";
+import { askVersion, waitGone, HANDOFF_WAIT_MS } from "../handoff.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -78,14 +79,39 @@ export function connectOnce(socketPath = paths.socket) {
   });
 }
 
-// The helper's socket: the running helper's, else a new helper's (up to 15 s for it to listen).
-export async function connectLocal(say = () => {}) {
+// This copy's own version (its package.json): what the bridge says to the running helper.
+export const BRIDGE_VERSION = (() => { try { return String(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version || ""); } catch { return ""; } })();
+
+// The pid in the helper's lock file, 0 for none.
+const lockHolder = () => { try { return Number(readFileSync(paths.daemonLock, "utf8")) || 0; } catch { return 0; } };
+const answers = () => connectOnce().then((s) => { s.destroy(); return true; }, () => false);
+
+// A running helper older than this copy, with nobody using it, stops for it (handoff.mjs): the
+// bridge says its version first (bounded, HELLO_MS). Any answer but a yes (an older helper's,
+// none, a helper in use): nothing more. A yes: up to HANDOFF_WAIT_MS for the old helper to be gone
+// (socket and lock), then true: start this copy's. version is this copy's (tests give another).
+async function handOver(say, version) {
+  let sock;
+  try { sock = await connectOnce(); } catch { return false; }
+  const a = await askVersion(sock, version).catch(() => ({ restart: false }));
+  if (!a.restart) return false;
+  say(`PairBrowse ${version} is installed; the helper restarts on it`);
+  if (!(await waitGone({ reachable: answers, holder: lockHolder }))) say(`the old helper is still stopping after ${HANDOFF_WAIT_MS / 1000} s; starting this one anyway`);
+  return true;
+}
+
+// The helper's socket: the running helper's (after the version hello), else a new helper's (up to
+// 15 s for it to listen). agent: the PairBrowse Agent to start it on (agentProgram).
+export async function connectLocal(say = () => {}, { version = BRIDGE_VERSION, agent: given, start = startDaemon } = {}) {
   prepareLocal(say);
-  try {
-    return await connectOnce();
-  } catch {}
-  let agent = agentProgram();
-  let child = startDaemon({ agent });
+  if (!(await handOver(say, version))) {
+    try {
+      return await connectOnce();
+    } catch {}
+  }
+  let agent = given === undefined ? agentProgram() : given;
+  let child = start({ agent });
+  let starts = 1;
   for (let i = 0; i < 100; i++) {
     await sleep(150);
     try {
@@ -96,7 +122,13 @@ export async function connectLocal(say = () => {}) {
     if (agent && child.exitCode !== null) {
       say(`PairBrowse Agent ended (${child.exitCode}); starting the helper on Node`);
       agent = null;
-      child = startDaemon({ agent: null });
+      child = start({ agent: null });
+      starts++;
+    } else if (typeof child.exitCode === "number" && starts < 3 && !pidAlive(lockHolder())) {
+      // The one started left (an old helper still held the lock as it stopped), and nobody holds
+      // it now: once more.
+      child = start({ agent: null });
+      starts++;
     }
   }
   throw new Error(`couldn't reach the PairBrowse daemon; see ${paths.daemonLog}`);

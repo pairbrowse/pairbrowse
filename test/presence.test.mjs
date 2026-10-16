@@ -5,6 +5,30 @@ import { createPresence, sentAgo, stateAgo } from "../scripts/daemon/presence.mj
 import { stateForJoiner } from "../scripts/sharing/tabsync.mjs";
 import { hostPeople } from "../scripts/daemon/follow.mjs";
 
+test("lastPersonAt: when a person last used any tab; an agent's own input doesn't count", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 3_000_000 });
+  try {
+    const presence = createPresence({ host: "You", readEvents: async () => [], pages: () => [], paused: () => true,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    const a = {}, b = {};
+    assert.equal(presence.lastPersonAt(), 0, "never");
+    const done = presence.busyStart();
+    presence.userDid([{ kind: "key", t: Date.now(), what: "Tab" }], a);
+    done();
+    assert.equal(presence.lastPersonAt(), 0, "the agent's key press");
+    mock.timers.tick(2000);
+    presence.userDid([{ kind: "click", t: Date.now() - 100, what: "Continue" }], a);
+    assert.equal(presence.lastPersonAt(), 3_001_900);
+    mock.timers.tick(1000);
+    presence.userDid([{ kind: "wheel", t: Date.now() }], b);
+    assert.equal(presence.lastPersonAt(), 3_003_000, "any tab, any input (reading along too)");
+    presence.userDid([{ kind: "click", t: Date.now() + 60_000 }], b);
+    assert.equal(presence.lastPersonAt(), 3_003_000, "never a time in the future");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test("an agent's own input read late is still the agent's, a person's is a person's", () => {
   mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 1_000_000 });
   try {

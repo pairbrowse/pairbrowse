@@ -28,22 +28,31 @@ function newHome() {
   return home;
 }
 
-// A fake helper: each connection's messages, answered by answer(msg, conn) (null: no answer).
+// A fake helper: each agent connection's messages, answered by answer(msg, conn) (null: no
+// answer). The bridge's version hello (handoff.mjs) is answered as a helper of the same version
+// does, on its own connection, which isn't counted among them (hellos): a connection counts at
+// its first other line, or once 100 ms passed without a hello (an agent's that sends nothing yet).
 async function fakeHelper(home, answer) {
   const conns = [];
+  const hellos = [];
   const server = net.createServer((sock) => {
     const conn = { sock, got: [] };
-    conns.push(conn);
     sock.on("error", () => {});
+    let counted = false;
+    const count = () => { if (!counted) { counted = true; conns.push(conn); } };
+    const timer = setTimeout(count, 100);
     createInterface({ input: sock }).on("line", (line) => {
       const msg = JSON.parse(line);
+      if (!counted && msg?.pairbrowse === "hook" && msg.op === "version") { clearTimeout(timer); counted = true; hellos.push(msg); sock.end('{"restart":false,"why":"same version"}\n'); return; }
+      clearTimeout(timer);
+      count();
       conn.got.push(msg);
       const reply = answer(msg, conn);
       if (reply) sock.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, ...reply }) + "\n");
     });
   });
   await new Promise((r) => server.listen(join(home, "run", "browser.sock"), r));
-  return { conns, close: () => { for (const c of conns) c.sock.destroy(); server.close(); } };
+  return { conns, hellos, close: () => { for (const c of conns) c.sock.destroy(); server.close(); } };
 }
 
 // The bridge as its own process: send(msg or raw line), the messages it writes, its stderr and exit.
@@ -94,6 +103,7 @@ test("both ways, line by line: junk ignored, initialize names the parent and the
     assert.equal(sent.params.clientInfo.pairbrowseParticipant, `Annie ${"x".repeat(54)}`, "control characters out, 60 at most");
     assert.equal(sent.params.clientInfo.name, "codex");
     assert.equal(helper.conns[0].got.length, 1, "junk lines never reach the helper");
+    assert.deepEqual(helper.hellos.map((h) => h.version), [JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version], "it said its own version first, on a connection of its own");
     b.send({ jsonrpc: "2.0", method: "notifications/initialized" });
     b.send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     const list = await until("tools/list", () => b.out.find((m) => m.id === 2));

@@ -158,8 +158,12 @@ export function createDownloads({ session = () => "" } = {}) {
     entry: (id) => { const e = all.get(id); return e && e.session === session() ? e : null; },
     onChange: (fn) => changes.on(fn),
     listeners: () => changes.size,
+    // Downloads still running, in any session (handoff.mjs: the helper isn't idle). One started
+    // over DOWNLOAD_STALE_MS ago counts no more (a browser that died under it never says it ended).
+    inProgress: (now = Date.now()) => [...all.values()].filter((e) => e.state === "in-progress" && now - e.at < DOWNLOAD_STALE_MS).length,
   };
 }
+const DOWNLOAD_STALE_MS = 60 * 60_000;
 
 // The recordings this helper saved, indexed in an owner-only file so only they can be deleted,
 // across restarts. Each entry carries the file's inode and size, checked before any action.

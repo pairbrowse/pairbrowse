@@ -112,8 +112,10 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     if (m.size > 12) m.delete(m.keys().next().value);
   }
   const recentPerson = (page) => { const h = humanAt.get(page); return h && Date.now() - h.t < PERSON_SHOWN_MS ? h.who : null; };
+  let lastPersonAt = 0; // the last time a person used any tab (handoff.mjs: the helper is idle without)
   function humanIn(page, who = host, t = Date.now()) {
     if (!page) return;
+    if (Number.isFinite(t)) lastPersonAt = Math.max(lastPersonAt, Math.min(t, Date.now()));
     const prev = humanAt.get(page);
     const newer = t >= (prev?.t || 0);
     humanAt.set(page, { t: Math.max(t, prev?.t || 0), who: newer ? who : prev.who, ...(!newer && prev.remote ? { remote: true } : {}) });
@@ -362,5 +364,8 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     byPerson: (t) => !byAgent(t, 300) && !byReplay(t),
     personIn, actingIn, recentPerson, humanIn, agentPointed, personWithin, elsewhere, sharedPerson, feedAfter, busyStart, agentActing, userDid, watchUser, waitForUser, userNote, didIn,
     waiting: (page) => waitingIn.get(page), loadedAt: (page) => loadedAt.get(page) || 0,
+    // When a person last used the browser by hand, in any tab (any input: clicks, keys, the
+    // pointer, scrolling; here or, in a joined session, in the other browser), 0 for never.
+    lastPersonAt: () => lastPersonAt,
   };
 }

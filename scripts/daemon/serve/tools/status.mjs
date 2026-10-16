@@ -10,8 +10,9 @@ const BADGE_MS = 4000; // pairbrowse_status waits this long at most for the badg
 // "ok", naming this helper's instance and home when it isn't the default one (several PairBrowse
 // helpers on one computer: home.mjs), a project file that couldn't be used, and config.json's
 // unknown keys and refused values (paths.mjs loadConfig), and the browser's sandbox: off (Linux
-// only) or a request to turn it off refused (engine.mjs SANDBOX).
-export function statusLine(selected = SELECTED, configWarnings = CONFIG_WARNINGS, sandbox = SANDBOX) {
+// only) or a request to turn it off refused (engine.mjs SANDBOX). update: a newer PairBrowse
+// installed that this helper waits to move to (handoff.mjs pendingLine), said last.
+export function statusLine(selected = SELECTED, configWarnings = CONFIG_WARNINGS, sandbox = SANDBOX, update = "") {
   const parts = ["ok"];
   if (selected.instance) parts.push(`PairBrowse instance "${selected.instance}" (${selected.home})`);
   else if (selected.source === "PAIRBROWSE_HOME") parts.push(`PairBrowse home ${selected.home}`);
@@ -19,11 +20,12 @@ export function statusLine(selected = SELECTED, configWarnings = CONFIG_WARNINGS
   for (const w of configWarnings) parts.push(`warning: ${w}`);
   if (sandbox?.on === false) parts.push(`warning: ${SANDBOX_OFF_WARNING} (${sandbox.reason})`);
   if (sandbox?.refused && !configWarnings.some((w) => w.includes(sandbox.refused))) parts.push(`warning: ${sandbox.refused}`);
-  return parts.join("; ");
+  const line = parts.join("; ");
+  return update ? `${line}\n${update}` : line;
 }
 
 export function createStatusTool(conn, api) {
-  const { context, hud, journal, myLabel, session } = api;
+  const { context, hud, journal, myLabel, session, updateNote = () => "" } = api;
   const { participant } = conn;
   return {
     async pairbrowse_status(args) {
@@ -35,7 +37,7 @@ export function createStatusTool(conn, api) {
       await within(BADGE_MS, hud.setBadgeFor(participant, args.text, args.kind, myLabel()).catch(() => {}));
       if (args.kind === "done" || args.kind === "clear") await within(BADGE_MS, Promise.resolve(hud.hideCursor(hud.sparkPage(participant))).catch(() => {}));
       journal.status(args.kind, args.text); // a hand-off goes to the goal log's yourTurn
-      return { text: statusLine() };
+      return { text: statusLine(SELECTED, CONFIG_WARNINGS, SANDBOX, updateNote()) };
     },
   };
 }

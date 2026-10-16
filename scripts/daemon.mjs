@@ -87,6 +87,7 @@ import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mj
 import { engineDir } from "./native/pack.mjs";
 import { answerOpen, writeOpener, claimOpener, releaseOpener, registryDir } from "./opener.mjs";
 import { bundleIdOfApp } from "./openers.mjs";
+import { createVersionHandoff } from "./handoff.mjs";
 import { chooseBrowser, isOpenBrowser } from "./browser/choice.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
 import { testOn, harnessStarted } from "./testenv.mjs";
@@ -632,7 +633,7 @@ const serve = createServe({
   // A fast-mode run's hand-off step (runner "handoff"): a hand-off for that tab until the step ends.
   onRunStatus: (p, text, kind, page, label) => { if (kind === "you") handoffs.set(`run:${p}`, { text, page: page || null, by: { label: label || "Agent", color: hud.sparkColor(p) } }); else handoffs.clear(`run:${p}`); },
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
-  secrets, facts, sharing, follow, pause, remoteHolder, personTabs, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals, outlines,
+  secrets, facts, sharing, follow, pause, remoteHolder, personTabs, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals, outlines, updateNote: () => handoff.note(),
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
   // by dragging them; no app gets this tool otherwise.
   testTools: {
@@ -743,14 +744,12 @@ const serve = createServe({
 const picks = createPick({
   context, follow, log, hostNote,
   activeAgents: () => serve.activeAgents(),
-  busy: () => {
-    const lv = liveView();
-    if ((lv?.guestViewers?.() || 0) > 0 || (lv?.joinersNow?.().length || 0) > 0) return "People are in this session; switch once they have left.";
-    if (recorder.state()?.recording) return "Stop the recording first.";
-    if (clickApprovals.pending().length) return "An approval is waiting; answer it first.";
-    return null;
-  },
+  busy: () => { const s = inUse(); return s.people ? "People are in this session; switch once they have left." : s.recording ? "Stop the recording first." : s.approvals ? "An approval is waiting; answer it first." : null; },
 });
+// What uses the helper now (handoff.mjs busyReason): a newer bridge's hello restarts it only without any.
+const inUse = (lv = liveView()) => ({ agents: clients.size, people: (lv?.guestViewers?.() || 0) + (lv?.joinersNow?.().length || 0), shared: (lv?.sharedJoiners?.() || 0) + (lv?.sharing?.() ? 1 : 0),
+  joined: follow.joined(), recording: !!recorder.state()?.recording, approvals: clickApprovals.pending().length, downloads: downloads.inProgress(), personAt: presence.lastPersonAt() });
+const handoff = createVersionHandoff({ own: HELPER_VERSION, state: inUse, stop: () => shutdown(0), lock: lockFile, log });
 output.start();
 
 // The opener registry (plans/555 D6.2a, opener.mjs claimOpener): this helper's record for the
@@ -819,9 +818,9 @@ async function main() {
   }
   context.startUp();
   // An agent's connection, or a single line: a PairBrowse hook's (an approval asked in the browser)
-  // or the opener's (the browser opened by hand, scripts/open.mjs).
+  // the opener's (the browser opened by hand, scripts/open.mjs) or a bridge's version (handoff.mjs).
   socketServer = net.createServer((sock) => shuttingDown ? sock.destroy() : routeConnection(sock, {
-    onHook: (s, line) => answerOpen(s, line, () => context.openByHand(), log)
+    onHook: (s, line) => answerOpen(s, line, () => context.openByHand(), log) || handoff.answer(s, line)
       || clickApprovals.hook(s, line).catch((e) => { log("approval hook", e?.message || e); s.destroy(); }),
     onOther: (s) => serve(s).catch((e) => { log("session error", e?.stack || e); s.destroy(); }),
   }));

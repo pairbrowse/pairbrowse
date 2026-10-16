@@ -6,7 +6,7 @@
 //   PAIRBROWSE_INSTANCE=<name>       ~/.pairbrowse/instances/<name>
 //   .pairbrowse.json {"instance"}    the same, from the project folder Claude Code (or the Claude
 //                                    desktop app) runs in: CLAUDE_PROJECT_DIR, else the current
-//                                    folder; only that one file, never a parent folder
+//                                    folder (projectDir); only that one file, never a parent folder
 //   none of these                    ~/.pairbrowse (the default home, as before)
 // "default" names the default home. An instance keeps its own profile, sessions, config, secrets,
 // facts, runs and logs; the read-only installs (runtime, browser apps, engine pack, cloudflared,
@@ -117,12 +117,23 @@ export function projectSetNames(dir) {
   return [...named];
 }
 
-// Removes from env each gated variable the project's settings name (CLAUDE_PROJECT_DIR, else
-// cwd); returns the names removed.
+// The project folder every PairBrowse process reads (.pairbrowse.json, the project settings): Claude
+// Code's CLAUDE_PROJECT_DIR when it is an absolute path, else the current folder. Hooks get
+// CLAUDE_PROJECT_DIR from Claude Code; the bridge gets it too (Claude Code sets it for MCP servers,
+// and .mcp.json passes it in "env" as well). A value that isn't an absolute path (such as the
+// unexpanded "${CLAUDE_PROJECT_DIR}" an older client may leave, or the "." default .mcp.json
+// gives where nothing sets it) counts as unset.
+export function projectDir(env = process.env, cwd = process.cwd()) {
+  const dir = env.CLAUDE_PROJECT_DIR;
+  return typeof dir === "string" && isAbsolute(dir) ? dir : cwd;
+}
+
+// Removes from env each gated variable the project's settings name (projectDir); returns the
+// names removed.
 export function gateProjectEnv(env = process.env, { cwd = process.cwd() } = {}) {
   const present = PROJECT_GATED.filter((k) => env[k] !== undefined);
   if (!present.length) return [];
-  const names = projectSetNames(env.CLAUDE_PROJECT_DIR || cwd);
+  const names = projectSetNames(projectDir(env, cwd));
   const removed = present.filter((k) => names.includes(k));
   for (const k of removed) delete env[k];
   return removed;
@@ -146,8 +157,7 @@ export function resolveHome({ env = process.env, cwd = process.cwd(), account = 
     if (!validInstance(named)) throw Object.assign(new Error(`PAIRBROWSE_INSTANCE must be 1 to 32 of a-z, 0-9 and - (got ${JSON.stringify(String(named).slice(0, 40))})`), { code: BAD_INSTANCE });
     return { home: instanceHome(named, account), instance: named, shared: base, source: "PAIRBROWSE_INSTANCE" };
   }
-  const dir = env.CLAUDE_PROJECT_DIR || cwd;
-  const found = projectInstance(dir, uid === undefined ? {} : { uid });
+  const found = projectInstance(projectDir(env, cwd), uid === undefined ? {} : { uid });
   if (found?.name) return { home: instanceHome(found.name, account), instance: found.name, shared: base, source: "project" };
   return { home: base, instance: null, shared: base, source: found?.name === null ? "project" : "default", ...(found?.warning ? { warning: found.warning } : {}) };
 }

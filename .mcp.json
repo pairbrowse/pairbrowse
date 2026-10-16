@@ -2,11 +2,13 @@
   "mcpServers": {
     "browser": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/launch.mjs"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/launch.mjs"],
+      "env": { "CLAUDE_PROJECT_DIR": "${CLAUDE_PROJECT_DIR:-.}" }
     },
     "runs": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/runs.mjs"],
+      "env": { "CLAUDE_PROJECT_DIR": "${CLAUDE_PROJECT_DIR:-.}" }
     }
   }
 }

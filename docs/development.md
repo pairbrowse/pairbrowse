@@ -171,7 +171,7 @@ picks who the helper is or relaxes a check is removed when one of those files na
 | `PAIRBROWSE_LATENCY_LOG` | helper | yes | `1`: joiner stream timings in the log |
 | `PAIRBROWSE_TEST_*` | helper | no: removed | The test switches above; only a helper the test harness started keeps them |
 
-Not ours but read: `CLAUDE_PROJECT_DIR` (the project folder), `CLAUDE_CODE_REMOTE` and
+Not ours but read: `CLAUDE_PROJECT_DIR` (the project folder, for the hooks and the bridge alike: `projectDir` in `scripts/home.mjs`; `.mcp.json` passes it to the MCP servers), `CLAUDE_CODE_REMOTE` and
 `CLAUDE_CODE_ENTRYPOINT` (which surface, for wording and the session picker), `SSH_CONNECTION`
 (the "Server" label). Playwright MCP's `PLAYWRIGHT_MCP_*` variables are not read: the helper builds
 its browser server with `createConnection`, which takes only the helper's own settings.

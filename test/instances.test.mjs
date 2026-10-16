@@ -4,12 +4,12 @@
 import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, existsSync, chmodSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { resolveHome, projectInstance, selectHome, INSTANCE_RE, gateProjectEnv, projectSetNames, settingsNames, PROJECT_GATED } from "../scripts/home.mjs";
+import { resolveHome, projectInstance, selectHome, INSTANCE_RE, gateProjectEnv, projectSetNames, settingsNames, projectDir, PROJECT_GATED } from "../scripts/home.mjs";
 import { helperEnv } from "../scripts/launcher/daemon-connect.mjs";
 import { withInstallLock, withInstallLockSync } from "../scripts/install-lock.mjs";
 
@@ -242,4 +242,41 @@ test("a process in such a project resolves the default home and passes neither v
   assert.equal(r.home, join(account, ".pairbrowse"));
   assert.match(r.warning, /PAIRBROWSE_HOME and PAIRBROWSE_PARTICIPANT set by this project's settings/);
   assert.deepEqual(r.env, [null, null, null], "neither reaches the helper (JSON writes a missing one as null)");
+});
+
+// The hooks and the bridge read the same project folder: Claude Code's CLAUDE_PROJECT_DIR (which it
+// sets for hooks and MCP servers; .mcp.json passes it too), else the current folder.
+test("the hooks and the bridge resolve the same home for the same inputs", () => {
+  assert.equal(projectDir({ CLAUDE_PROJECT_DIR: "/p" }, "/c"), "/p");
+  for (const odd of [undefined, "", ".", "${CLAUDE_PROJECT_DIR}", "rel/dir"]) assert.equal(projectDir({ CLAUDE_PROJECT_DIR: odd }, "/c"), "/c", String(odd));
+  const mcp = JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8")).mcpServers;
+  for (const name of ["browser", "runs"]) assert.equal(mcp[name].env?.CLAUDE_PROJECT_DIR, "${CLAUDE_PROJECT_DIR:-.}", name);
+
+  const proj = project("same-home", '{"instance":"work"}');
+  const sub = join(proj, "sub");
+  mkdirSync(join(proj, ".claude"), { recursive: true });
+  mkdirSync(sub, { recursive: true });
+  writeFileSync(join(proj, ".claude", "settings.json"), JSON.stringify({ env: { PAIRBROWSE_HOME: join(proj, "home") } }));
+  const hookCode = `const p = await import(${JSON.stringify(new URL("../scripts/paths.mjs", import.meta.url).href)});
+    await import(${JSON.stringify(new URL("../scripts/guard.mjs", import.meta.url).href)});
+    console.log(JSON.stringify({ home: p.HOME, set: process.env.PAIRBROWSE_HOME ?? null }));`;
+  const bridgeCode = `const p = await import(${JSON.stringify(new URL("../scripts/paths.mjs", import.meta.url).href)});
+    const d = await import(${JSON.stringify(new URL("../scripts/launcher/daemon-connect.mjs", import.meta.url).href)});
+    console.log(JSON.stringify({ home: p.HOME, set: d.helperEnv().PAIRBROWSE_HOME ?? null, instance: d.helperEnv().PAIRBROWSE_INSTANCE }));`;
+  const run = (code, cwd, extra) => {
+    const env = { PATH: process.env.PATH, HOME: account, PAIRBROWSE_HOME: join(proj, "home"), ...extra };
+    const out = spawnSync(process.execPath, ["--input-type=module", "-e", code], { cwd, env, encoding: "utf8" });
+    assert.equal(out.status, 0, out.stderr);
+    return JSON.parse(out.stdout.trim().split("\n").pop());
+  };
+  const want = join(account, ".pairbrowse", "instances", "work");
+  // Claude Code started in a subfolder: the hook runs there, the bridge in the plugin's folder;
+  // both have CLAUDE_PROJECT_DIR. And a bridge whose client left it unexpanded or defaulted, in the
+  // project folder.
+  for (const [code, cwd, dir] of [[hookCode, sub, proj], [bridgeCode, root, proj], [bridgeCode, proj, "${CLAUDE_PROJECT_DIR}"], [bridgeCode, proj, "."], [hookCode, proj, undefined]]) {
+    const r = run(code, cwd, dir === undefined ? {} : { CLAUDE_PROJECT_DIR: dir });
+    assert.equal(r.home, want, `${cwd} ${dir}`);
+    assert.equal(r.set, null, "the project's PAIRBROWSE_HOME is removed on both sides");
+    if ("instance" in r) assert.equal(r.instance, "work", "the helper the bridge starts gets the instance");
+  }
 });

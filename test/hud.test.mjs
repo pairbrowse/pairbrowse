@@ -1046,10 +1046,12 @@ test("a move with no distance is nobody's new move: the pointer keeps its time",
     const move = (x, y) => cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
     const moves = () => page.evaluate(() => window.__moves, undefined, undefined, false);
     await page.evaluate(() => { window.__moves = []; addEventListener("mousemove", (e) => window.__moves.push([e.movementX, e.movementY])); }, undefined, undefined, false);
-    // The first move in a page has no distance (nothing before it to measure from): no pointer yet.
+    // The first move in a page: on macOS it has no distance (nothing before it to measure from), so
+    // no pointer yet; Chromium on Linux measures it from the corner, a move like any other.
     await move(300, 200);
-    assert.deepEqual(await moves(), [[0, 0]]);
-    assert.equal((await pointers()).me, null, "a page's first move, with no distance");
+    const first = (await moves())[0];
+    if (first[0] === 0 && first[1] === 0) assert.equal((await pointers()).me, null, "a page's first move, with no distance");
+    else assert.deepEqual([(await pointers()).me?.x, (await pointers()).me?.y], [300, 200], "a first move with a distance is a move");
     await move(320, 210);
     const p = (await pointers()).me;
     assert.deepEqual([p?.x, p?.y], [320, 210], "a move that moves");

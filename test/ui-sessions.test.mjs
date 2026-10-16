@@ -102,6 +102,8 @@ scenario("sessions: delete asks in the row", { viewport: VIEW, fixtures: { sessi
   await row(ctx, "travel").getByRole("button", { name: "Yes, delete session travel" }).click();
   await until("the row gone", () => !document.querySelector('#list > li[data-name="travel"]'));
   assert.deepEqual(posted(helper, "pick"), [{ action: "delete", name: "travel" }]);
+  // The row goes first; the line says so once the helper's answer is in.
+  await until("the line says it's deleted", () => document.getElementById("msg").dataset.kind === "ok");
   assert.deepEqual(await inPage(msg), { text: 'Deleted session "travel" and its logins.', kind: "ok" });
   await clean(ctx);
 });

@@ -289,8 +289,10 @@ test("a build fits only this platform and chip: arch required, on macOS a Mach-O
     [{ ...base, arch: "x64", platform: "windows" }, linux, null, /for windows, not linux/],
     [{ ...base, arch: "arm64", platform: "linux" }, linux, null, /for arm64, this computer is x64/],
   ]) assert.throws(() => buildFits(manifest, layout, machO), why, JSON.stringify(manifest));
-  assert.ok(machoArchs(process.execPath).length >= 1, "node itself is a Mach-O program here");
-  if (process.platform === "darwin") assert.equal(machoArchs("/etc/hosts"), null);
+  if (process.platform === "darwin") {
+    assert.ok(machoArchs(process.execPath).length >= 1, "node itself is a Mach-O program here");
+    assert.equal(machoArchs("/etc/hosts"), null);
+  } else assert.equal(machoArchs(process.execPath), null, "an ELF program is no Mach-O one");
 });
 
 test("a Linux build whose manifest names no arch is refused before anything changes", async () => {

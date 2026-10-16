@@ -27,12 +27,40 @@
   (optional opt-in: plain Playwright, easier for sites to detect). On a Node.js too old for
   Patchright, PairBrowse uses Playwright by itself and says so once (see [Install](install.md)); the
   pinned Playwright also requires Node.js 20+, so Node.js 20 or newer is effectively required either way.
-- `chromeArgs`: extra Chromium flags. Switches that would open a debugging surface or weaken the
-  browser are dropped, named once in the helper log and as a warning in `pairbrowse_status`:
-  `--remote-debugging-*` (port, address, pipe), `--remote-allow-origins`, `--disable-web-security`,
-  `--disable-site-isolation-trials`, `--user-data-dir`, `--load-extension`,
-  `--disable-extensions-except` and `--allowlisted-extension-id`. `--no-sandbox` here works as
-  `"chromeSandbox": false`.
+- `chromeArgs`: extra Chromium flags, from a fixed list; anything else is dropped before launch and
+  named once in the helper log and as a warning in `pairbrowse_status`. The list, each with the
+  value it takes after `=` (Chromium never reads a switch's value from the next item, so write
+  `"--lang=de"`, not `"--lang", "de"`):
+  - language and window: `--lang=<language tag>`, `--window-size=<w>,<h>`,
+    `--window-position=<x>,<y>`, `--start-maximized`, `--force-device-scale-factor=<number>`;
+  - colors, fonts and motion: `--force-dark-mode`, `--force-prefers-reduced-motion`,
+    `--force-color-profile=<name>`, `--font-render-hinting=none|slight|medium|full`,
+    `--disable-font-subpixel-positioning`, `--disable-lcd-text`, `--hide-scrollbars`,
+    `--disable-smooth-scrolling`, `--force-renderer-accessibility`;
+  - GPU and display: `--disable-gpu`, `--disable-gpu-compositing`, `--use-gl=<name>`,
+    `--use-angle=<name>`, `--ozone-platform=wayland|x11`, `--ozone-platform-hint=auto|wayland|x11`,
+    `--disable-dev-shm-usage`;
+  - sound and notifications: `--mute-audio`,
+    `--autoplay-policy=no-user-gesture-required|user-gesture-required|document-user-activation-required`,
+    `--disable-notifications`;
+  - quieter starts and backgrounding: `--no-first-run`, `--no-default-browser-check`,
+    `--hide-crash-restore-bubble`, `--test-type`, `--disable-renderer-backgrounding`,
+    `--disable-background-timer-throttling`, `--disable-backgrounding-occluded-windows`;
+  - `--enable-features=<Name>,<Name>` (feature names only; merged into the helper's own);
+  - `--host-resolver-rules=` with rules that keep a name on this computer only:
+    `MAP <name> 127.0.0.1[:port]` (or `localhost`, `[::1]`), `MAP <name> ~NOTFOUND`, `EXCLUDE <name>`;
+  - `--headless` (`=new` or `=old`), for test runs ([ADR 0009](adr/0009-always-headed.md));
+  - `--no-sandbox`, which works as `"chromeSandbox": false` in any spelling.
+
+  Everything else is dropped: a debugging port, address or pipe, `--remote-allow-origins`,
+  switches that run another program in place of a browser process (`--renderer-cmd-prefix`,
+  `--gpu-launcher`, `--browser-subprocess-path`), certificate or web security checks off, a proxy,
+  `--disable-features` (it is how site isolation is turned off), another profile or extension, and
+  any switch not listed above. So is every item that isn't a switch (Chromium would open it as a
+  page or file), and everything after a bare `--`. A switch written `-x`, or `/x` on Windows, is
+  read like `--x`. A browser the test suite starts also takes `--use-mock-keychain`,
+  `--password-store=basic` and `--disable-features=LocalNetworkAccessChecks`; an installed helper
+  never does.
 - `chromeSandbox`: `false` turns off Chromium's own sandbox (default `true`). PairBrowse turns it off
   by itself only where it can't run: as root on Linux, and where the system has no user namespaces
   (Docker's default seccomp profile or Ubuntu's AppArmor rule blocks them); the helper log says so once. In a container, run

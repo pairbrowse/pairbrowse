@@ -17,7 +17,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, readdirSync
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
-import { launchableChromeArgs } from "./chrome-args.mjs";
+import { launchableChromeArgs, switchName } from "./chrome-args.mjs";
 import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createMotion } from "./motion.mjs";
 import { hudSource } from "./hud/assemble.mjs";
@@ -318,7 +318,9 @@ export function launchArgs(config = {}, { firstRun = false, chromePages = false,
   // The user's chromeArgs, screened (chrome-args.mjs): no debugging surface, no other profile or
   // extension, no web security off; --no-sandbox goes through sandboxDecision instead.
   const extra = launchableChromeArgs(config.chromeArgs || []);
-  const features = [...FEATURES, ...extra.filter((a) => a.startsWith(ENABLE)).flatMap((a) => a.slice(ENABLE.length).split(","))];
+  // Any spelling of --enable-features ("-enable-features=..." too) joins the one merged switch.
+  const isEnable = (a) => switchName(a) === "enable-features";
+  const features = [...FEATURES, ...extra.filter(isEnable).flatMap((a) => a.slice(a.indexOf("=") + 1).split(","))];
   return [
     "--window-size=1366,900", "--hide-crash-restore-bubble",
     // Hides Chrome's "unsupported command-line flag" bar (about --no-sandbox where the sandbox is
@@ -335,8 +337,8 @@ export function launchArgs(config = {}, { firstRun = false, chromePages = false,
     ...(chromePages && helperGiven(helper) && typeof helper.captureKeyFile === "string" && helper.captureKeyFile ? [`--pairbrowse-capture-key-file=${helper.captureKeyFile}`] : []),
     // Only test runs are headless, and nobody is there to see a notification: without this the
     // first one starts the test browser's notification helper and macOS asks to allow it.
-    ...(extra.some((a) => a.startsWith("--headless")) ? ["--disable-notifications"] : []),
-    ...extra.filter((a) => !a.startsWith(ENABLE)),
+    ...(extra.some((a) => switchName(a) === "headless") ? ["--disable-notifications"] : []),
+    ...extra.filter((a) => !isEnable(a)),
   ];
 }
 

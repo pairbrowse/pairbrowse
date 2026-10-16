@@ -3,6 +3,7 @@ import { join, isAbsolute } from "node:path";
 import { launchNative, nativeManifest } from "./native-engine.mjs";
 import { ensureEngine, loadEngine } from "./native/pack.mjs";
 import { PATCHRIGHT_NODE_MINIMUM } from "./driver.mjs";
+import { switchName } from "./chrome-args.mjs";
 
 export function validateEngine(config, nodeVersion = process.versions.node) {
   const engine = config.browserEngine ?? "chromium";
@@ -27,7 +28,9 @@ export function engineProfile(config, profile) {
 // without it, on Linux only (launchEngine). Either way the log says so once.
 export function sandboxDecision(config = {}, { platform = process.platform, uid = process.getuid?.() } = {}) {
   if (config.chromeSandbox === false) return { on: false, reason: "chromeSandbox is false in config.json" };
-  if ((config.chromeArgs || []).includes("--no-sandbox")) return { on: false, reason: "chromeArgs has --no-sandbox" };
+  // Any spelling Chromium reads ("-no-sandbox", "/no-sandbox" on Windows): launchableChromeArgs
+  // drops every one of them, so each one must turn the sandbox off here, never be dropped quietly.
+  if ((Array.isArray(config.chromeArgs) ? config.chromeArgs : []).some((a) => switchName(a, platform) === "no-sandbox")) return { on: false, reason: "chromeArgs has --no-sandbox" };
   if (platform === "linux" && uid === 0) return { on: false, reason: "running as root, where Chromium refuses its sandbox" };
   return { on: true, reason: null };
 }

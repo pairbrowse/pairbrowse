@@ -82,6 +82,7 @@ export function createJoinMirror(live, { context, log, hud, presence, liveView, 
     const any = ctx.pages().find((p) => !p.isClosed());
     try {
       if (!any) throw new Error("no tab to ask from");
+      presence.helperGoes?.(null, url); // a tab the helper opens: nobody's use (presence.mjs)
       const cdp = await ctx.newCDPSession(any);
       let targetId;
       try { ({ targetId } = await cdp.send("Target.createTarget", { url, newWindow: !live.cur.window, background: !!live.cur.window })); } finally { cdp.detach().catch(() => {}); }
@@ -102,6 +103,7 @@ export function createJoinMirror(live, { context, log, hud, presence, liveView, 
     } catch (e) {
       log("shared tab", e?.message || e);
       const page = await keepFocus(() => ctx.newPage());
+      presence.helperGoes?.(page, url);
       await page.goto(url, { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {});
       return page;
     }
@@ -214,7 +216,7 @@ export function createJoinMirror(live, { context, log, hud, presence, liveView, 
         if (!id || !cur.mirror.opened(id, op.url)) continue;
         cur.pages.set(id, page);
         // Shared browser: the tab opened there; here it becomes its picture.
-        if (cur.shared) await page.goto(api.screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {});
+        if (cur.shared) { presence.helperGoes?.(page, api.screenUrl(id)); await page.goto(api.screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {}); }
       }
     }
   }

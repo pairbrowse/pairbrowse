@@ -44,7 +44,7 @@ export function screenCard(page, arg, kind) {
   return Promise.resolve(null);
 }
 
-export function createJoinScreens(live, { context, log }) {
+export function createJoinScreens(live, { context, log, presence = null }) {
   const screenBase = () => screenBaseFor(!!context.browserPages?.());
 
   // The tab id after # keeps the address short (screen/index.html#a1b2c3d4); the page itself shows the
@@ -110,7 +110,7 @@ export function createJoinScreens(live, { context, log }) {
     for (const [id, page] of cur.pages) {
       if (page.isClosed()) continue;
       if (!isScreen(page)) {
-        if (/^https?:/.test(page.url())) { tell(id, page); cur.screens.delete(page); cur.titles.delete(id); if (cur.who.has(id)) cur.who.get(id).sig = ""; await page.goto(screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {}); }
+        if (/^https?:/.test(page.url())) { tell(id, page); cur.screens.delete(page); cur.titles.delete(id); if (cur.who.has(id)) cur.who.get(id).sig = ""; presence?.helperGoes?.(page, screenUrl(id)); await page.goto(screenUrl(id), { waitUntil: "commit", timeout: OPEN_MS }).catch(() => {}); }
         continue;
       }
       const st = await within(800, inScreen(page, () => window.pbScreen?.state() || null).catch(() => null));

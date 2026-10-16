@@ -262,6 +262,32 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   // news for agents. Not the start tab's new tab page (it opens with the browser), not while an
   // agent acts (or just did) nor while saved tabs come back.
   const browserPageByPerson = (url) => /^(chrome|pairbrowse):/i.test(url) && !isUntouchedStart(url) && !byAgent(Date.now(), 5000) && !restoring();
+  // A browser page the helper itself sends a tab to (the session picker, a shared tab's screen):
+  // helperGoes(page, url) just before its goto, or helperGoes(null, url) before it opens a new tab
+  // at that address (no page yet), so that tab's opening or load is nobody's use. One mark per
+  // navigation, used up by the first tab there at that address (a trailing slash aside), gone
+  // after HELPER_GO_MS.
+  const HELPER_GO_MS = 30_000;
+  const helperGoing = new WeakMap(); // page -> { url, at }
+  const opening = []; // { url, at }: new tabs the helper is opening
+  const sameAddress = (a, b) => String(a).replace(/\/+(?=$|[?#])/, "").toLowerCase() === String(b).replace(/\/+(?=$|[?#])/, "").toLowerCase();
+  function helperGoes(page, url) {
+    const m = { url: String(url), at: Date.now() };
+    if (page) helperGoing.set(page, m);
+    else { opening.push(m); if (opening.length > 16) opening.shift(); }
+  }
+  function wentByHelper(page, url) {
+    const now = Date.now();
+    while (opening.length && now - opening[0].at > HELPER_GO_MS) opening.shift();
+    const i = opening.findIndex((m) => sameAddress(m.url, url));
+    if (i >= 0) { opening.splice(i, 1); return true; }
+    const m = helperGoing.get(page);
+    if (!m) return false;
+    if (now - m.at > HELPER_GO_MS) { helperGoing.delete(page); return false; }
+    if (!sameAddress(m.url, url)) return false;
+    helperGoing.delete(page);
+    return true;
+  }
 
   // A page you opened yourself (address bar, a link): a new document loading while no agent was
   // acting, or for a while after (a click's page can finish loading late). opened: a tab that
@@ -271,7 +297,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
   function watchUser(page, { opened = false } = {}) {
     const first = page.url();
     lastUrls.set(page, first);
-    if (opened && browserPageByPerson(first)) lastPersonAt = Math.max(lastPersonAt, Date.now());
+    if (opened && browserPageByPerson(first) && !wentByHelper(page, first)) lastPersonAt = Math.max(lastPersonAt, Date.now());
     page.on("load", () => {
       loadedAt.set(page, Date.now());
       const url = page.url();
@@ -281,7 +307,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       // Never a saved tab coming back after a start or a session switch: nobody went there.
       if (url === before || byAgent(Date.now(), 5000) || restoring()) return;
       if (/^https?:/.test(url)) userDid([{ t: Date.now(), kind: "went", what: url.split(/[?#]/)[0].slice(0, 120) }], page);
-      else if (browserPageByPerson(url)) lastPersonAt = Math.max(lastPersonAt, Date.now());
+      else if (!wentByHelper(page, url) && browserPageByPerson(url)) lastPersonAt = Math.max(lastPersonAt, Date.now());
     });
   }
 
@@ -376,7 +402,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     // A person's own input at time t: no agent acting then (or just before), nothing replayed
     // (a joiner's, the live view's). The join prompt's answers must be.
     byPerson: (t) => !byAgent(t, 300) && !byReplay(t),
-    personIn, actingIn, recentPerson, humanIn, agentPointed, personWithin, elsewhere, sharedPerson, feedAfter, busyStart, agentActing, userDid, watchUser, waitForUser, userNote, didIn,
+    personIn, actingIn, recentPerson, humanIn, agentPointed, personWithin, elsewhere, sharedPerson, feedAfter, busyStart, agentActing, userDid, watchUser, helperGoes, waitForUser, userNote, didIn,
     waiting: (page) => waitingIn.get(page), loadedAt: (page) => loadedAt.get(page) || 0,
     // When a person last used the browser by hand, in any tab (any input: clicks, keys, the
     // pointer, scrolling; here or, in a joined session, in the other browser), 0 for never.

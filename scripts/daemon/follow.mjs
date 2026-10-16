@@ -67,7 +67,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   // An agent here working in the host's browser (shared browser mode: join/agents.mjs).
   const { onAgent, tabInSight, remoteCall, agentGone, forgetAgents } = createJoinAgents(live, { log });
   // Shared browser mode's picture pages (join/screens.mjs).
-  const { screenUrl, isScreen, showInfo, showWho, screensRound, sayLink, onScreen, setNotice } = createJoinScreens(live, { context, log });
+  const { screenUrl, isScreen, showInfo, showWho, screensRound, sayLink, onScreen, setNotice } = createJoinScreens(live, { context, log, presence });
   // Follow mode's mirror: the host's tabs here and this side's changes there, forms, order, pointers
   // (join/mirror.mjs). Picture pages stand in for the tabs in shared browser mode.
   const { outbound, applyHost, onForm, sendPointers, drawPointers } = createJoinMirror(live, { context, log, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent },

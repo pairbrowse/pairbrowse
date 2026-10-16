@@ -53,10 +53,11 @@ test("an agent's choice while a reopened picker shows closes it; the open tabs a
   writeFileSync(tabsFile("default"), JSON.stringify({ tabs: [{ url: SAVED, title: "Orders" }], active: 0 }));
   const b = fakeBrowser();
   const quiet = () => {};
+  const marks = []; // the browser pages the helper said it sends a tab to (presence.helperGoes)
   const context = createContext({
     config: { browserEngine: "chromium", executablePath: "/fake/chrome", display: "none" }, log: quiet, chromium: b.chromium,
     hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
-    presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
+    presence: { watchUser: quiet, helperGoes: (page, url) => marks.push([page, url, b.visited.length]) }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
     shuttingDown: () => false, onStarted: quiet, onClosed: quiet,
   });
   await context.getContext();
@@ -71,6 +72,13 @@ test("an agent's choice while a reopened picker shows closes it; the open tabs a
   assert.equal(context.picking(), true);
   assert.ok(await until(() => b.ctx.pages().length === open + 1), "the picker's own tab");
   const pickerTab = b.ctx.pages().at(-1);
+  // Both pickers were the helper's own doing, said before each went: no person's use (presence.mjs).
+  const isPicker = (u) => /picker\/index\.html$/.test(u);
+  assert.ok(await until(() => b.visited.filter(isPicker).length === 2), "two pickers shown");
+  const at = b.visited.map((u, i) => (isPicker(u) ? i : -1)).filter((i) => i >= 0);
+  assert.deepEqual(marks.map((m) => m[1]), at.map((i) => b.visited[i]), "each picker address marked");
+  assert.ok(marks.every(([, , n], k) => n <= at[k]), "each marked before its tab went");
+  assert.equal(marks.at(-1)[0], pickerTab);
 
   context.agentChose("An agent joined a shared session (pairbrowse_join).");
   assert.equal(context.picking(), false, "answered");

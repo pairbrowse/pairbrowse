@@ -16,7 +16,7 @@ import { testMs } from "../../testenv.mjs";
 const PICK_WAIT_MS = testMs("PICK_WAIT_MS", 15_000);
 
 export function createPicker(st, deps, api) {
-  const { config, liveOthers, log } = deps;
+  const { config, liveOthers, log, presence } = deps;
   // The session picker (config sessionPicker, on by default): the browser's first tab asks the
   // person which session to use, unless an agent chose first. Never on the very first start
   // (nothing to go back to) or in a cloud container (nobody sees the window).
@@ -48,6 +48,7 @@ export function createPicker(st, deps, api) {
       // The extension may still be loading right after launch: try a few times.
       for (let i = 0; i < 20 && pick.state === "showing" && !page.isClosed(); i++) {
         const at = Date.now();
+        presence?.helperGoes?.(page, api.pickerUrl()); // the helper's own navigation: nobody's use (presence.mjs)
         const went = await page.goto(api.pickerUrl(), { waitUntil: "domcontentloaded", timeout: 5000 }).then(() => "ok", (e) => String(e?.message || e).split("\n")[0].slice(0, 80));
         log(`launch: picker goto try ${i + 1} ${Date.now() - at} ms: ${went}`);
         if (went === "ok") break;

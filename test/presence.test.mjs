@@ -102,6 +102,61 @@ test("lastPersonAt: a browser page handed over already at its address (Settings 
   }
 });
 
+test("lastPersonAt: a browser page the helper itself sends a tab to (the session picker, a shared tab's screen) is no person's use", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 7_000_000 });
+  try {
+    const presence = createPresence({ host: "You", readEvents: async () => [], pages: () => [], paused: () => true, restoring: () => false,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    const page = new EventEmitter();
+    page.at = "about:blank";
+    page.url = () => page.at;
+    presence.watchUser(page, { opened: true });
+    const load = (url) => { page.at = url; page.emit("load"); };
+    mock.timers.tick(10_000);
+    presence.helperGoes(page, "chrome://pairbrowse/picker");
+    load("chrome://pairbrowse/picker/"); // the browser may add the slash
+    assert.equal(presence.lastPersonAt(), 0, "the helper's picker");
+    presence.helperGoes(page, "chrome://pairbrowse/screen/#t%201");
+    load("chrome://pairbrowse/screen/#t%201");
+    assert.equal(presence.lastPersonAt(), 0, "the helper's screen for a shared tab");
+    // The mark is used up: the person's own Settings afterwards counts, and so does the picker
+    // address reached by hand later.
+    mock.timers.tick(1000);
+    load("chrome://settings/");
+    assert.equal(presence.lastPersonAt(), 7_011_000);
+    mock.timers.tick(1000);
+    load("chrome://pairbrowse/picker");
+    assert.equal(presence.lastPersonAt(), 7_012_000, "the same address by hand, unmarked");
+    // A mark for another address doesn't hide where the person went instead.
+    mock.timers.tick(1000);
+    presence.helperGoes(page, "chrome://pairbrowse/picker");
+    load("chrome://history/");
+    assert.equal(presence.lastPersonAt(), 7_013_000);
+    // An old mark (its navigation never arrived) expires.
+    mock.timers.tick(60_000);
+    load("chrome://pairbrowse/picker");
+    assert.equal(presence.lastPersonAt(), 7_073_000, "a mark a minute old no longer hides it");
+    // A new tab the helper opens at a screen's address (no page yet to mark): handed over there,
+    // or loading there after starting blank, it is nobody's use; once only.
+    mock.timers.tick(1000);
+    const at = (url) => { const p = new EventEmitter(); p.url = () => url; return p; };
+    presence.helperGoes(null, "chrome://pairbrowse/screen/#a");
+    presence.watchUser(at("chrome://pairbrowse/screen/#a"), { opened: true });
+    presence.helperGoes(null, "chrome://pairbrowse/screen/#b");
+    const blank = new EventEmitter();
+    blank.at = "about:blank";
+    blank.url = () => blank.at;
+    presence.watchUser(blank, { opened: true });
+    blank.at = "chrome://pairbrowse/screen/#b";
+    blank.emit("load");
+    assert.equal(presence.lastPersonAt(), 7_073_000, "the helper's own new tabs");
+    presence.watchUser(at("chrome://pairbrowse/screen/#a"), { opened: true });
+    assert.equal(presence.lastPersonAt(), 7_074_000, "the mark was used up by the first tab");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test("an agent's own input read late is still the agent's, a person's is a person's", () => {
   mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 1_000_000 });
   try {

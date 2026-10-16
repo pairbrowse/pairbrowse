@@ -11,13 +11,13 @@
 // Re-entrant only along one call chain: an install that runs another (the native browser's engine
 // pack) never waits on itself (AsyncLocalStorage for the async form, the running synchronous fn for
 // the sync one), while two unrelated installs in one process take turns like two processes do.
-import { readFileSync, renameSync, rmSync, statSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
+import { readFileSync, renameSync, rmSync, statSync, mkdirSync, utimesSync, linkSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { paths } from "./paths.mjs";
-import { pidAlive, sleep } from "./util.mjs";
+import { pidAlive, sleep, writeJsonAtomic } from "./util.mjs";
 
 const POLL_MS = 250;
 const WAIT_MS = 15 * 60_000; // the slowest install (the browser on a slow line) finishes in this
@@ -68,11 +68,17 @@ export function holderAlive(h, { alive = pidAlive, started = startOf } = {}) {
 function tryTake(file, staleMs) {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const token = randomBytes(16).toString("hex");
+  // The whole holder is written to a file of this hold's own, then linked into place: the link
+  // fails when a lock is there, and a waiter never reads a half-written one.
+  const mine = `${file}.${process.pid}.${token}.new`;
   try {
-    writeFileSync(file, JSON.stringify({ pid: process.pid, start: ownStart, token }), { flag: "wx", mode: 0o600 });
+    writeJsonAtomic(mine, { pid: process.pid, start: ownStart, token }, { mode: 0o600, indent: 0 });
+    linkSync(mine, file);
     return token;
   } catch (e) {
     if (e.code !== "EEXIST") throw e;
+  } finally {
+    rmSync(mine, { force: true });
   }
   let holder, age;
   try { holder = readHolder(file); age = Date.now() - statSync(file).mtimeMs; } catch { return null; }

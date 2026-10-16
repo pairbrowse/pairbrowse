@@ -2,6 +2,7 @@
 // the tab it acts in, approvals), its own tools answered here, and the call's arguments rewritten
 // where PairBrowse does the work itself (fields a person fills, date fields, Enter after typing,
 // saved passwords swapped in, a form filled by hand in the native browser).
+import { keepFocus } from "../../focus.mjs";
 import { describe } from "../../log.mjs";
 import { fillSettings, humanFill, humanType } from "../../native/humanize.mjs";
 import { isRef, navigationProblem, secretNamesIn } from "../../rules/policy.mjs";
@@ -59,7 +60,7 @@ export function createHandle(conn, api) {
       // tab there, as browser_tabs new would, and runs in it (the browser's page stays as it was).
       const opens = runOpensTab(name, args, here);
       if (opens && !navigationProblem(opens)) {
-        const opened = await internal("browser_tabs", { action: "new", url: opens });
+        const opened = await keepFocus(() => internal("browser_tabs", { action: "new", url: opens })); // never over the app you are in
         if (opened.result && !opened.result.isError) {
           await followTabs(opened, "new");
           here = conn.mine;

@@ -74,6 +74,12 @@
           <p class="msg" id="docks-msg" role="status" aria-live="polite"></p>
         </div>
 
+        <!-- The extension's options page (plain Chromium): no docks there; settings.js shows this note instead. -->
+        <div class="item ext-only" id="docks-ext" data-k="docks dock layout left right sidebar side panel" hidden>
+          <h3 class="item-h">Docks</h3>
+          <p class="help">The docks are the PairBrowse browser's window. In this browser PairBrowse is the side panel: open it with the toolbar button or Ctrl+Shift+Y (Cmd+Shift+Y on a Mac).</p>
+        </div>
+
         <div class="item cfg-item" id="session-start" data-field="askSession" data-k="session picker ask start startup which session choose">
           <h3 class="item-h">Session at start</h3>
           <div class="sw-row">
@@ -94,6 +100,14 @@
           </form>
           <div class="acts" id="dl-acts" hidden><button class="action" id="dl-reset" type="button">Use my Downloads folder</button></div>
           <p class="msg" id="dl-msg" role="status" aria-live="polite"></p>
+        </div>
+
+        <!-- The extension's options page: the Tools tab's lists live in the side panel; one button opens it there. -->
+        <div class="item ext-only" id="tool-lists" data-k="downloads recordings recording video hand-offs handoffs steps waiting tools side panel" hidden>
+          <h3 class="item-h">Downloads, recordings and hand-offs</h3>
+          <p class="help">This session's downloads, your saved recordings and the steps waiting for you are in the side panel's Tools tab.</p>
+          <div class="acts"><button class="action" id="tools-open" type="button">Show in the side panel</button></div>
+          <p class="msg" id="tools-msg" role="status" aria-live="polite"></p>
         </div>
 
         <p class="note cfg-missing" hidden>This PairBrowse helper can't change its settings from here yet. Update PairBrowse to choose the browser and the docks here.</p>

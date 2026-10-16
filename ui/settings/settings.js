@@ -23,6 +23,8 @@ if (!NATIVE) {
   $("dev-note").textContent = "Share a dev server from the side panel's Tools while people are in your session.";
   $("agents-who-text").textContent = "Pause stops every agent at once; Take control stops one. Both are in the PairBrowse side panel.";
   $("asks-where").textContent = "You answer in the agent's app. The first answer counts.";
+  // What has no place here gets a short note; the Tools tab's lists open in the side panel.
+  for (const n of document.querySelectorAll(".ext-only")) n.hidden = false;
 }
 
 let base = null;
@@ -461,6 +463,25 @@ for (const a of document.querySelectorAll("#browser-settings, [data-browser-sett
     } catch {
       say($("diag-msg"), "Type chrome://settings in the address bar to open the browser's settings.", "error");
       $("about").scrollIntoView();
+    }
+  });
+}
+
+// ---- The extension: the Tools tab's lists, in the side panel --------------------------------------
+// The window is read now, so the click opens the panel at once (sidePanel.open needs the click's
+// gesture); the panel reads "panelTab" from the extension's session storage and shows Tools.
+if (!NATIVE) {
+  let windowId;
+  try { chrome.windows?.getCurrent?.().then((w) => { windowId = w?.id; }, () => {}); } catch {}
+  $("tools-open").addEventListener("click", (ev) => {
+    if (!ev.isTrusted) return;
+    try {
+      if (windowId === undefined || typeof chrome.sidePanel?.open !== "function") throw new Error("no side panel");
+      chrome.sidePanel.open({ windowId }).catch(() => {});
+      chrome.storage.session.set({ panelTab: "tools" }).catch(() => {});
+      say($("tools-msg"), "");
+    } catch {
+      say($("tools-msg"), "Open the PairBrowse side panel with its toolbar button, then its Tools tab.", "error");
     }
   });
 }

@@ -200,6 +200,16 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     return color;
   }
   const forgetParticipant = (participant) => { agentColors.delete(participant); };
+  // The same app session back on a new connection (serve/departures.mjs): it keeps its color and
+  // its tab's spark.
+  function adoptParticipant(from, to) {
+    if (agentColors.has(from)) agentColors.set(to, agentColors.get(from));
+    const s = sparks.get(from);
+    if (!s) return;
+    sparks.delete(from);
+    sparks.set(to, { page: s.page, color: sparkColor(to) });
+    sparksChanged();
+  }
   const sparkColor = (participant) => agentColors.get(participant) || APP_COLORS.claude;
   // Moves a participant's spark to a tab: the page itself, else the tab showing url (none: takes
   // it away). A page is exact; two tabs can show the same URL.
@@ -367,7 +377,7 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
     source, call, ensure, onPageLoad, applyBar, setReconnecting, setRecording, setSandboxOff, setBadge, setBadgeFor, statusOf, badge: () => badge,
-    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, forgetPage, sparkColor, setApp, forgetParticipant, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
+    moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, forgetPage, sparkColor, setApp, forgetParticipant, adoptParticipant, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor, markTargets,
     pressOn, declarePress, onPress: (fn) => { pressListeners.add(fn); return () => pressListeners.delete(fn); },
   };

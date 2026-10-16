@@ -21,6 +21,7 @@ import { createOwnTools } from "./serve/tools/index.mjs";
 import { createHandle } from "./serve/rewrite.mjs";
 import { createCollaborationTool } from "./serve/collaboration.mjs";
 import { createResult, TRACING, phaseTrace } from "./serve/result.mjs";
+import { createDepartures, resumeKey } from "./serve/departures.mjs";
 import { testMs } from "../testenv.mjs";
 
 const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for the person to pick a session (its first tab asks: continue a saved session, start a fresh one, or join a shared one). " +
@@ -56,6 +57,12 @@ export function createServe({ config, log, host, createConnection, clients, coll
   // When each session last called a tool: only the ones in use hold up a session switch or closing
   // the browser. An open but idle session (a Claude Code window left for hours) doesn't.
   const lastCall = new Map();
+  // Connections that closed, held a moment for the same app session (serve/departures.mjs).
+  const departures = createDepartures({ log });
+  // Agents quiet too long stop showing (collaboration.mjs untilSeen): their tab's spark goes too.
+  setInterval(() => {
+    for (const id of collaboration.sweep()) { hud.moveSpark(id, null).catch(() => {}); hud.setBadgeFor(id, "", "clear").catch(() => {}); }
+  }, 60_000).unref();
   const ACTIVE_MS = testMs("ACTIVE_MS", 10 * 60_000); // (tests: shorter)
 
   // Each session's browser server (Playwright MCP) listens for the browser closing (once "close"
@@ -106,9 +113,19 @@ export function createServe({ config, log, host, createConnection, clients, coll
       disconnected.abort();
       clients.delete(participant);
       lastCall.delete(participant);
-      collaboration.unregister(participant);
-      hud.forgetParticipant?.(participant);
       tabClaims.release(participant);
+      // Off the board and docks at once; its label, color and tab wait a moment for the same app
+      // session (a restarted bridge), then go: the tab stays open, nobody's.
+      const was = collaboration.participants.get(participant);
+      const shown = !!was?.seen;
+      collaboration.hide(participant);
+      const gone = () => {
+        collaboration.unregister(participant);
+        hud.moveSpark(participant, null).catch(() => {});
+        hud.forgetParticipant?.(participant);
+      };
+      if (shown && conn.resumeKey) departures.hold(conn.resumeKey, { id: participant, label: was.label, page: hud.sparkPage(participant) || null }, gone);
+      else gone();
       screenshots.forget(participant);
       follow.ownerGone(participant);
       follow.agentGone?.(participant);
@@ -242,6 +259,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
     // Complete a queued turn only after the MCP result arrives, not when dispatch returns.
     const execute = async (msg) => {
       if (msg.method === "tools/call") lastCall.set(participant, Date.now());
+      // At work here (the bridge's own calls aren't): it shows on the board and docks.
+      if (msg.method === "tools/call" && !String(msg.id).startsWith("pb-int-")) { session.join(participant); collaboration.seen(participant); }
       if (TRACING && msg.method === "tools/call" && msg.id !== undefined) traces.set(msg.id, phaseTrace(log));
       if (sock.destroyed) return;
       if (msg.method === "initialize") {
@@ -256,12 +275,25 @@ export function createServe({ config, log, host, createConnection, clients, coll
           // The process that started its bridge (launch.mjs: the app's own): which agent a
           // PermissionRequest hook asks for (approvals.mjs whose).
           const parent = Number(msg.params?.clientInfo?.pairbrowseParent);
+          conn.resumeKey = resumeKey(conn.clientName, parent, !!remote);
           clickApprovals?.participant(participant, { client: conn.clientName, remote: !!remote, parent: !remote && Number.isSafeInteger(parent) && parent > 1 ? parent : 0, tab: openMine });
         }
         // "<person> · Claude Code", "<person> · Codex".
         const label = msg.params?.clientInfo?.pairbrowseParticipant;
         if (remote) { /* named by the host's side, above */ } else if (label) collaboration.register(participant, personLabel(label, appName(conn.clientName)));
         else if (conn.clientName !== "claude-code") collaboration.register(participant, `${conn.clientName === "codex-mcp-client" ? "Codex" : "Agent"} ${participant.slice(0, 4)}`);
+        // The same app session back within the grace (its bridge restarted, the socket dropped):
+        // the same label, color and tab, and it shows again at once.
+        const back = !conn.resumed && conn.resumeKey ? departures.take(conn.resumeKey) : null;
+        if (back) {
+          conn.resumed = true;
+          collaboration.register(participant, back.label);
+          hud.adoptParticipant?.(back.id, participant);
+          if (back.page && !back.page.isClosed()) conn.mine = back.page;
+          back.finish();
+          collaboration.seen(participant);
+          log(`participant ${participant} resumes ${back.id}`);
+        }
       }
       if (msg.method === "tools/call" && msg.params?.name === "pairbrowse_collaboration") return collaborationCall(msg);
       // Shared browser mode, joined from here: this agent works in the host's browser, as a
@@ -422,7 +454,6 @@ export function createServe({ config, log, host, createConnection, clients, coll
       }).catch((e) => log("participant cleanup", e?.message || e)).finally(() => {
         for (const { emitter, event, fn } of serverListeners.splice(0)) emitter.removeListener(event, fn);
       });
-      hud.moveSpark(participant, null).catch(() => {});
       log(`participant disconnected ${participant}`);
     });
 

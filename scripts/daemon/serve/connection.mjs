@@ -10,6 +10,8 @@ export function createConnectionState(participant, { remote = null, pauseSeen = 
     remote,
     initialized: false, // its MCP initialize came (the first one names the app for good)
     clientName: "", // the app on this connection, from its MCP initialize ("claude-code", "codex-mcp-client", ...)
+    resumeKey: "", // the app session it belongs to (serve/departures.mjs): a later connection of it takes its place
+    resumed: false, // it took a closed connection's label, color and tab
     disconnected: new AbortController(),
     actingIn: null, // the tab this participant's current call acts in
     // The tab this participant works in, as a page: other agents' new and closed tabs shift the

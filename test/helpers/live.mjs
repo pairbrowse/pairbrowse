@@ -47,7 +47,8 @@ export const inPage = (target, fn, arg) => target.evaluate(fn, arg, undefined, f
 
 
 // A session on the helper's socket, as Claude Code would open one.
-export async function session(socketPath, name) {
+// clientInfo: more of the MCP initialize's clientInfo (pairbrowseParent: the bridge's parent process).
+export async function session(socketPath, name, clientInfo = {}) {
   let sock;
   for (let i = 0; ; i++) {
     sock = net.createConnection(socketPath);
@@ -70,7 +71,7 @@ export async function session(socketPath, name) {
     waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
     sock.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
   });
-  await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
+  await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1", ...clientInfo } });
   sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
   return { sock, answers, tool: (tool, args = {}, ms) => call("tools/call", { name: tool, arguments: args }, ms) };
 }

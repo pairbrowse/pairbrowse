@@ -1,12 +1,21 @@
 // Coordination for several PairBrowse clients sharing one browser.
+import { testMs } from "./testenv.mjs";
+
+// untilSeen: a participant shows (state().participants, shown()) only once it called a tool
+// (seen) and until unseenMs after its last call: every Claude Code or Codex window connects at
+// its start and stays connected while open, at work here or not.
+const UNSEEN_MS = testMs("UNSEEN_MS", 30 * 60_000);
 
 const cleanLabel = (label) => String(label ?? "participant")
   .replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
   .slice(0, 60);
 
 export class BrowserCoordinator {
-  constructor({ leaseMs = 120_000, onChange = () => {}, now = () => Date.now() } = {}) {
+  constructor({ leaseMs = 120_000, onChange = () => {}, now = () => Date.now(), untilSeen = false, unseenMs = UNSEEN_MS } = {}) {
     this.leaseMs = leaseMs;
+    this.untilSeen = untilSeen;
+    this.unseenMs = unseenMs;
+    this.shownIds = new Set(); // who showed at the last sweep (a change is news)
     this.onChange = onChange;
     this.now = now;
     this.participants = new Map();
@@ -29,10 +38,42 @@ export class BrowserCoordinator {
     try { this.onChange(this.state()); } catch {}
   }
 
+  _shows(p) { return !this.untilSeen || (p.seen > 0 && this.now() - p.seen < this.unseenMs); }
+  // The participants that show, as [id, participant] (the Map's own entries).
+  shown() { return [...this.participants].filter(([, p]) => this._shows(p)); }
+  // A tool call from this participant: it shows (again) from now.
+  seen(id) {
+    const p = this.participants.get(String(id));
+    if (!p) return;
+    const was = this._shows(p);
+    p.seen = this.now();
+    if (!was) { this.shownIds.add(p.id); this._changed(); }
+  }
+  // Quiet too long: stops showing. Returns the ids that stopped (each told once).
+  sweep() {
+    const gone = [];
+    for (const id of [...this.shownIds]) {
+      const p = this.participants.get(id);
+      if (p && this._shows(p)) continue;
+      this.shownIds.delete(id);
+      if (p) gone.push(id);
+    }
+    if (gone.length) this._changed();
+    return gone;
+  }
+  // Stops showing at once (its connection closed), but stays registered (a resume can take it).
+  hide(id) {
+    const p = this.participants.get(String(id));
+    if (!p || !p.seen) return;
+    p.seen = 0;
+    this.shownIds.delete(p.id);
+    this._changed();
+  }
+
   state() {
     this._expire();
     return {
-      participants: [...this.participants.values()].map(({ id, label }) => ({ id, label })),
+      participants: this.shown().map(([, { id, label }]) => ({ id, label })),
       owner: this.owner && { id: this.owner.id, label: this.owner.label, expiresAt: this.owner.expiresAt },
       active: this.active && { id: this.active.id, label: this.active.label },
     };
@@ -40,7 +81,7 @@ export class BrowserCoordinator {
 
   register(id, label) {
     const key = String(id);
-    const participant = { id: key, label: cleanLabel(label) };
+    const participant = { id: key, label: cleanLabel(label), seen: this.participants.get(key)?.seen || 0 };
     this.participants.set(key, participant);
     if (this.owner?.id === key) this.owner.label = participant.label;
     if (this.active?.id === key) this.active.label = participant.label;

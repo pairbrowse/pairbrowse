@@ -59,3 +59,31 @@ test("tasks in different tabs run at the same time; one tab takes turns; a brows
   assert.deepEqual(log, ["t1+", "t1-", "all+", "all-", "t2+", "t2-"], "the browser-wide task waits for the tab before it, and the tab after waits for it");
   assert.equal(c.isActing("a"), false);
 });
+
+test("untilSeen: an agent shows once it called a tool, stops showing when quiet too long or hidden, and comes back when it calls again", () => {
+  let now = 1000;
+  const changes = [];
+  const c = new BrowserCoordinator({ now: () => now, untilSeen: true, unseenMs: 30 * 60_000, onChange: (s) => changes.push(s.participants.map((p) => p.id).join(",")) });
+  c.register("a", "Claude a"); c.register("b", "Codex b");
+  assert.deepEqual(c.state().participants, [], "connected only (a window left open): nobody shows");
+  c.seen("a");
+  assert.deepEqual(c.state().participants.map((p) => p.id), ["a"]);
+  assert.equal(changes.at(-1), "a", "showing is news");
+  c.register("a", "Alice · Claude Code");
+  assert.deepEqual(c.state().participants, [{ id: "a", label: "Alice · Claude Code" }], "a relabel keeps it shown");
+  now += 29 * 60_000;
+  assert.deepEqual(c.sweep(), [], "quiet, not yet long");
+  now += 2 * 60_000;
+  assert.deepEqual(c.sweep(), ["a"], "quiet 31 minutes: it stops showing, told once");
+  assert.deepEqual(c.sweep(), []);
+  assert.deepEqual(c.state().participants, []);
+  c.seen("a");
+  assert.deepEqual(c.state().participants.map((p) => p.id), ["a"], "a call brings it back");
+  c.hide("a");
+  assert.deepEqual(c.state().participants, [], "its connection closed: gone at once");
+  assert.ok(c.participants.has("a"), "still registered for a resume");
+  assert.deepEqual(c.shown(), []);
+  const plain = new BrowserCoordinator();
+  plain.register("x", "X");
+  assert.deepEqual(plain.state().participants.map((p) => p.id), ["x"], "without untilSeen every registered participant shows");
+});

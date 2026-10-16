@@ -208,7 +208,7 @@ const refreshTabs = () => liveView()?.refreshTabs().catch(() => {});
 // Passwords are read live, so one added in the Profile panel works at once. PairBrowse swaps
 // them in itself and masks them in everything Claude reads back.
 const secrets = secretStore(paths.secrets, log);
-const collaboration = new BrowserCoordinator({ onChange: (state) => { liveView()?.setCollaboration(state); labelsChanged(); } });
+const collaboration = new BrowserCoordinator({ untilSeen: true, onChange: (state) => { liveView()?.setCollaboration(state); labelsChanged(); } });
 // An agent's name changed (identify): its tab's label follows (tabLabels, below).
 function labelsChanged() { try { tabLabels.changed(); } catch {} }
 // Per-tab turns (the default); the whole-browser lease above stays for pairbrowse_collaboration.
@@ -356,7 +356,7 @@ const STATUS_OF = { you: "you", done: "done", clear: "idle" };
 const crossingEntries = (list) => readEntries(list).map((e) => ({ ...e, task: crossingText(e.task), last: crossingText(e.last) }));
 function localEntries() {
   const out = [];
-  for (const [id, p] of collaboration.participants) {
+  for (const [id, p] of collaboration.shown()) {
     const page = hud.sparkPage(id);
     const st = session.statusOf(id);
     out.push({ who: p.label, kind: "agent", color: hud.sparkColor(id), tab: page && !page.isClosed() ? (shareableUrl(page.url()) || "").replace(/^https?:\/\//, "") : "",

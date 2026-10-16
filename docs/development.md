@@ -143,11 +143,13 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `PANEL` | knob | `integration/panel-reload` | Adds `pairbrowse_test_panel`: the side panel's worker |
 | `PICK_WAIT_MS` | knob | `integration/picker` | How long the session picker waits |
 | `RESTART_MS` | knob | `tunnels` | The tunnel pool's restart pause |
+| `RESUME_GRACE_MS` | knob | `integration/departures` | How long a closed agent connection's label, color and tab wait for the same app session (10 seconds otherwise) |
 | `SCREEN` | knob | the sharing tests, `bench` | Adds `pairbrowse_test_screen`: the shared browser picture page |
 | `SILENT_MS` | knob | `failover`, `join` | When a joiner's stream counts as silent |
 | `TAB_ORDER` | knob | `integration/taborder` | Adds `pairbrowse_test_tab_order`: read and move tabs in the strip |
 | `TUNNEL` | knob | the sharing tests, `bench` | `direct`: the guest port stands in for a tunnel |
 | `TURN_MAX_MS` | knob | `integration/turn-cap` | The most one call may hold the shared queue (10 minutes otherwise) |
+| `UNSEEN_MS` | knob | `integration/departures` | How long after its last call an agent stops showing (30 minutes otherwise) |
 
 Not switches: `PAIRBROWSE_FUZZ_RUNS` sets the runs per fuzz property (CI uses 20000), `PB_DEBUG`
 prints a helper's log in a few live tests, and `PB_MAIL`/`PB_RUNTIME` are how

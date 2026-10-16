@@ -54,7 +54,7 @@ const ALLOWED = new Set([
   "recorder -> tablabels", "recorder -> capture", "reveal -> page", "screenshot -> page",
   "serve -> browser/tabs", "serve -> output", "serve -> serve/wire", "serve -> serve/pageread", "serve -> serve/refuse",
   "serve -> serve/connection", "serve -> serve/turns", "serve -> serve/tools/index", "serve -> serve/rewrite",
-  "serve -> serve/collaboration", "serve -> serve/result",
+  "serve -> serve/collaboration", "serve -> serve/result", "serve -> serve/departures",
   "sharing -> capture", "sharing -> tablabels", "sharing -> where", "sharing -> tunnel-pool",
   // A part's own folder reaching back to a shared piece.
   "browser/downloads -> toolstab", "browser/launch -> exec-contexts",

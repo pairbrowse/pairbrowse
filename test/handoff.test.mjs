@@ -294,7 +294,7 @@ test("connectLocal: a yes waits for the old helper to go, then starts this copy'
   try {
     assert.ok(oldGoneAt > 0 && startedAt >= oldGoneAt, "started only after the old helper was gone");
     assert.ok(said.some((m) => /99\.0\.0 is installed; the helper restarts on it/.test(m)), said.join(" | "));
-    assert.equal(next.seen.length, 0, "the new helper it started got the connection, not another hello");
+    assert.equal(next.seen.length, 1, "the new helper it started hears the version once (same version), then gets the connection");
   } finally { s.destroy(); await next?.close(); rmSync(paths.daemonLock, { force: true }); }
 });
 
@@ -355,6 +355,58 @@ test("connectLocal: the second hello's yes starts this copy's helper again, and 
   } finally { s.destroy(); await last?.close(); rmSync(paths.daemonLock, { force: true }); }
 });
 
+// The started process still runs (an agent alive, or the lock naming the child), yet the helper that
+// answers is another bridge's older one: it must hear the version, whatever the start looked like.
+for (const [path, agent] of [["PairBrowse Agent", "/Applications/PairBrowse.app/Contents/Helpers/PairBrowse Agent.app/Contents/MacOS/PairBrowse Agent"], ["Node", null]]) {
+  test(`connectLocal (${path}): after any start the helper reached hears the version once more, and a yes starts this copy's again`, async () => {
+    fakeRuntime();
+    rmSync(paths.socket, { force: true });
+    const starts = [];
+    let older = null;
+    let mine = null;
+    const start = ({ agent: a }) => {
+      starts.push(a);
+      writeFileSync(paths.daemonLock, String(process.pid)); // the child's pid, alive
+      if (starts.length === 1) {
+        // An older idle helper another bridge started in the same second answers instead.
+        fakeHelper(() => {
+          setTimeout(async () => { await older.close(); setTimeout(() => rmSync(paths.daemonLock, { force: true }), 100); }, 100);
+          return '{"restart":true}';
+        }).then((h) => { older = h; });
+      } else {
+        fakeHelper(() => '{"restart":false,"why":"same version"}').then((h) => { mine = h; });
+      }
+      return { exitCode: null, pid: process.pid };
+    };
+    const s = await connectLocal(() => {}, { version: "99.0.0", agent, start, handoff: true });
+    try {
+      assert.equal(older.seen.length, 1, "the helper reached after the start heard the version");
+      assert.equal(starts.length, 2, "its yes started this copy's helper");
+      assert.equal(mine.seen.length, 0, "two rounds at most: no third hello");
+    } finally { s.destroy(); await older?.close(); await mine?.close(); rmSync(paths.daemonLock, { force: true }); }
+  });
+}
+
+test("connectLocal: its own helper, started with nothing running, answers the second hello with same version and is connected to", async () => {
+  fakeRuntime();
+  rmSync(paths.socket, { force: true });
+  const starts = [];
+  let mine = null;
+  const start = () => {
+    starts.push(1);
+    writeFileSync(paths.daemonLock, String(process.pid));
+    fakeHelper(() => '{"restart":false,"why":"same version"}').then((h) => { mine = h; });
+    return { exitCode: null, pid: process.pid };
+  };
+  const t = Date.now();
+  const s = await connectLocal(() => {}, { version: "99.0.0", agent: null, start, handoff: true });
+  try {
+    assert.equal(starts.length, 1);
+    assert.equal(mine.seen.length, 1, "one hello after the start");
+    assert.ok(Date.now() - t < 1500, `no hello timeout waited (${Date.now() - t} ms)`);
+  } finally { s.destroy(); await mine?.close(); rmSync(paths.daemonLock, { force: true }); }
+});
+
 test("connectLocal (macOS): PairBrowse Agent ending because another live helper holds the lock is no refusal: no helper on Node", async () => {
   fakeRuntime();
   rmSync(paths.socket, { force: true });
@@ -403,5 +455,27 @@ test("installedCopy: only a copy under Claude Code's or Codex's plugin cache", (
     assert.equal(installedCopy(moved, { env: { CLAUDE_CONFIG_DIR: join(base, "cfg") }, home: user }), true, "CLAUDE_CONFIG_DIR");
     assert.equal(installedCopy(moved, { env: { CODEX_HOME: join(base, "cfg") }, home: user }), true, "CODEX_HOME");
     assert.equal(installedCopy(moved, { env: { CODEX_HOME: "relative/cfg" }, home: user }), false, "only an absolute home");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("installedCopy: a home spelled in another case (or with other separators on Windows) is the same folder where the disk ignores case", () => {
+  const copy = "/Users/Artifex/.claude/plugins/cache/pairbrowse/pairbrowse/0.16.2";
+  const realpath = (p) => p; // what a resolver that keeps the spelling given returns
+  const opts = (platform, env = {}, home = "/users/artifex") => ({ env, home, platform, realpath });
+  assert.equal(installedCopy(copy, opts("darwin")), true, "macOS: ~ spelled lower case");
+  assert.equal(installedCopy(copy, opts("darwin", { CLAUDE_CONFIG_DIR: "/USERS/ARTIFEX/.CLAUDE" }, "/nowhere")), true, "macOS: CLAUDE_CONFIG_DIR");
+  assert.equal(installedCopy(copy, opts("linux")), false, "Linux: case is part of the name");
+  assert.equal(installedCopy("C:\\Users\\Me\\.codex\\plugins\\cache\\pairbrowse\\pairbrowse\\0.16.2", opts("win32", { CODEX_HOME: "c:/users/me/.codex" }, "C:\\nowhere")), true, "Windows: case and separators");
+  assert.equal(installedCopy("C:\\Users\\Me\\.codex\\plugins\\cachex\\pairbrowse", opts("win32", { CODEX_HOME: "c:/users/me/.codex" }, "C:\\nowhere")), false, "Windows: a folder merely starting so");
+});
+
+test("installedCopy (macOS, real disk): the home spelled in upper case still finds the copy", { skip: process.platform !== "darwin" }, () => {
+  const base = mkdtempSync(join(tmpdir(), "pb-ic-"));
+  try {
+    const user = join(base, "me");
+    const copy = join(user, ".claude", "plugins", "cache", "pairbrowse", "pairbrowse", "0.16.2");
+    mkdirSync(copy, { recursive: true });
+    assert.equal(installedCopy(copy, { env: {}, home: user.toUpperCase() }), true);
+    assert.equal(installedCopy(copy.toUpperCase(), { env: {}, home: user }), true, "and the copy's own path in another case");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

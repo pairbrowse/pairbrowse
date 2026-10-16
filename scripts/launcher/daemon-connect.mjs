@@ -4,7 +4,7 @@ import net from "node:net";
 import { spawn } from "node:child_process";
 import { existsSync, copyFileSync, chmodSync, openSync, readFileSync, realpathSync, statSync, accessSync, constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, ensureDirs, loadConfig, SELECTED } from "../paths.mjs";
 import { ensureRuntime } from "../runtime.mjs";
@@ -87,12 +87,18 @@ export const BRIDGE_VERSION = (() => { try { return String(JSON.parse(readFileSy
 // cache (<its home>/plugins/cache: CLAUDE_CONFIG_DIR, else ~/.claude) or Codex's (CODEX_HOME, else
 // ~/.codex), real paths compared. A checkout (this repository's own .mcp.json starts a bridge from
 // it, and so does a plugin loaded from a folder) is not: its version in package.json may run ahead
-// of the person's install, and its daemon.mjs must never take over their helper.
-export function installedCopy(dir = root, { env = process.env, home = homedir() } = {}) {
-  const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
-  const at = real(dir);
-  const homes = [env.CLAUDE_CONFIG_DIR, join(home, ".claude"), env.CODEX_HOME, join(home, ".codex")].filter((p) => typeof p === "string" && isAbsolute(p));
-  return homes.some((h) => at.startsWith(join(real(h), "plugins", "cache") + sep));
+// of the person's install, and its daemon.mjs must never take over their helper. The real paths
+// are the native resolver's (the disk's own spelling); on macOS and Windows, whose disks ignore
+// case, they compare case-insensitively (Windows: either separator), so a home spelled in another
+// case is still the same folder.
+export function installedCopy(dir = root, { env = process.env, home = homedir(), platform = process.platform, realpath = realpathSync.native } = {}) {
+  const real = (p) => { try { return realpath(p); } catch { return resolve(p); } };
+  const win = platform === "win32";
+  const fold = (p) => { const s = win ? String(p).replace(/\\/g, "/") : String(p); return win || platform === "darwin" ? s.toLowerCase() : s; };
+  const absolute = (p) => isAbsolute(p) || (win && /^[A-Za-z]:[\\/]/.test(p));
+  const at = fold(real(dir));
+  const homes = [env.CLAUDE_CONFIG_DIR, join(home, ".claude"), env.CODEX_HOME, join(home, ".codex")].filter((p) => typeof p === "string" && absolute(p));
+  return homes.some((h) => { const cache = fold(join(real(h), "plugins", "cache")); return at.startsWith(cache.endsWith("/") ? cache : `${cache}/`); });
 }
 // Whether this copy asks a running helper to hand over to it (handoff.mjs): the installed plugin only.
 const HANDOFF_HERE = installedCopy();
@@ -120,10 +126,11 @@ async function handOver(say, version) {
 // The helper's socket: the running helper's (after the version hello), else a new helper's (up to
 // 15 s for it to listen). agent: the PairBrowse Agent to start it on (agentProgram). handoff:
 // whether to say this copy's version first (the installed plugin only: installedCopy; tests pass
-// true). A helper reached after starting one that this bridge didn't start (another bridge's,
-// which may be older: it won the lock, or it started in the old helper's last moments), or reached
-// only after starting more than once, hears the version once more: then every bridge ends on the
-// newest copy, or on a helper that is in use and says a newer one waits. At most twice.
+// true). After any start the helper reached hears the version once more: it may not be the one this
+// bridge started (another bridge's, maybe older, won the lock, or started in the old helper's last
+// moments), and nothing seen from here tells them apart; its own helper answers "same version" at
+// once. Then every bridge ends on the newest copy, or on a helper that is in use and says a newer
+// one waits. At most two rounds.
 export async function connectLocal(say = () => {}, { version = BRIDGE_VERSION, agent: given, start = startDaemon, handoff = HANDOFF_HERE } = {}) {
   prepareLocal(say);
   for (let round = 0; ; round++) {
@@ -132,25 +139,21 @@ export async function connectLocal(say = () => {}, { version = BRIDGE_VERSION, a
         return await connectOnce();
       } catch {}
     }
-    const { sock, ours } = await startAndReach(say, given, start);
-    if (!handoff || ours || round > 0) return sock;
+    const sock = await startAndReach(say, given, start);
+    if (!handoff || round > 0) return sock;
     sock.destroy();
   }
 }
 
-// Starts the helper and connects to it: { sock, ours } (ours: the helper reached is the one this
-// started, the only start: on Node, the lock's holder is its process; on PairBrowse Agent, the
-// agent still runs).
+// Starts the helper and connects to it.
 async function startAndReach(say, given, start) {
   let agent = given === undefined ? agentProgram() : given;
   let child = start({ agent });
   let starts = 1;
-  const ours = () => starts === 1 && child.exitCode === null && (agent ? true : lockHolder() === child.pid);
   for (let i = 0; i < 100; i++) {
     await sleep(150);
     try {
-      const sock = await connectOnce();
-      return { sock, ours: ours() };
+      return await connectOnce();
     } catch {}
     // The one started left because another live helper holds the lock (it won the contest, or
     // is still starting): that one listens soon; nothing more to start.

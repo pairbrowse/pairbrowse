@@ -1,4 +1,4 @@
-// Browser sessions: separate Chrome profiles, each with its own logins, cookies and tabs.
+// Browser sessions: separate browser profiles, each with its own logins, cookies and tabs.
 // "default" is the original ~/.pairbrowse/profile. Clean sessions start empty and, unless
 // they're given a name to keep, are deleted when you switch away or the browser shuts down.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, renameSync, readlinkSync } from "node:fs";
@@ -92,7 +92,7 @@ export function renameSession(from, to) {
   try { if (readFileSync(CURRENT, "utf8").trim() === from) rememberSession(to); } catch {}
 }
 
-// Whether a browser has a session's profile open now: Chromium's SingletonLock in the profile (or
+// Whether a browser has a session's profile open now: the engine's SingletonLock in the profile (or
 // the native browser's own profile inside it), a link to "<host>-<pid>". A lock this computer left
 // behind (its process gone, a crash) doesn't count; one from another host or an unreadable one
 // does. A saved session is renamed only while nothing has it open (context.mjs renameSaved).

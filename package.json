@@ -3,7 +3,7 @@
   "version": "0.16.0",
   "private": true,
   "type": "module",
-  "description": "Pair-browse with Claude Code in a visible Chrome window.",
+  "description": "Pair-browse with Claude Code in a visible PairBrowse browser window.",
   "license": "MIT",
   "engines": {
     "node": ">=18"

@@ -11,7 +11,7 @@
 // top-level page (as the build's contents is a WebContents of its own) and shown as an image.
 // The scene's page is docked (hud.docked: the helper tells pages inside the PairBrowse browser's
 // window that its docks carry the bottom bar, DESIGN.md Part G) before the bar it sends every page;
-// --plain also writes contents-plain.png, the same page as plain Chromium shows it (not docked:
+// --plain also writes contents-plain.png, the same page as the open build shows it (not docked:
 // the 30 px bottom bar with who drives, the steps and Pause agents).
 // Writes window.png, window@2x.png, contents.png, contents@2x.png, pictures/<card>.jpg (the
 // timeline's pictures: real renders of the sample page at each step), side-by-side.png and
@@ -32,7 +32,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { patchright, inPage, ensureHud } from "../../test/helpers/live.mjs";
 import { startFakeHelper, merge } from "../../test/helpers/fake-helper.mjs";
 import { startUiServer, insertTags } from "../../test/helpers/ui-server.mjs";
-import { defaultFixture, shimScript, bridgeChromeScript } from "../../test/helpers/pairbrowse-shim.mjs";
+import { defaultFixture, shimScript, bridgeExtensionScript } from "../../test/helpers/pairbrowse-shim.mjs";
 import { SECURITY_HEADERS, listen, plain } from "../liveview/http.mjs";
 import { hudScript } from "../browser.mjs";
 
@@ -150,7 +150,7 @@ export async function startPreviewServer({ ui, helper, shim, mockupPath, out }) 
     }
     if (via && path === "/__harness/chrome.js") {
       res.writeHead(200, { ...SECURITY_HEADERS, "content-type": TYPES.js });
-      return res.end(bridgeChromeScript(`${localOrigin}/${helper.key}/`));
+      return res.end(bridgeExtensionScript(`${localOrigin}/${helper.key}/`));
     }
     const upstream = http.get(ui.origin + url.pathname + url.search, (up) => {
       const headers = { ...up.headers };
@@ -397,7 +397,7 @@ export async function main(args) {
       writeFileSync(file, contents[scale]);
       written.push(file);
     }
-    // Plain Chromium (no docks): the same page, not docked.
+    // The open build (no docks): the same page, not docked.
     if (flag("--plain")) {
       const file = join(out, "contents-plain.png");
       writeFileSync(file, await renderContents(browser, { proxy, geo, raw, scale: 1, reducedMotion, log, plain: true }));

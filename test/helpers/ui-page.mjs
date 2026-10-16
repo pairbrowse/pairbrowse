@@ -95,7 +95,7 @@ export async function openPage(browser, name, { helper, fixture = defaultFixture
 // The ui server under another host name: a forward proxy on loopback that hands every request to
 // the ui server set by to(origin). args: the browser's launch switches (loopback stays direct, so
 // the helper is reached as usual; the host counts as a secure context, as chrome:// pages do, so
-// Web Locks exist there: in the full Chromium, launch({ channel: "chromium" }); the headless
+// Web Locks exist there: in the full engine, launch({ channel: "chromium" }); the headless
 // shell ignores that switch).
 export async function hostProxy(host) {
   let target = null;

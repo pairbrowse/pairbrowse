@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A dev tool, not plugin code: the page references for Chromium's own surfaces (the native shell's
+// A dev tool, not plugin code: the page references for the engine's own surfaces (the native shell's
 // plan 560, D5). Each is a 1x render of a shipped ui/ page, over the pages' harness (the fake
 // helper and the ui server from test/helpers) with the window preview's scene
 // (scripts/dev/preview/fixtures.json), so a reference can't drift from the page it stands for:
@@ -42,7 +42,7 @@ const REPO = join(here, "..", "..");
 export const DEFAULT_OUT = join(REPO, ".cache", "surface-refs");
 export const PAD = 8; // px of the page around a part (menu, field, buttons): its edge and corners show
 export const TOLERANCE = 3; // per channel, as 560 D5's numbers
-const TOP_CHROME = "pairbrowse.top-chrome";
+const TOP_SHELL = "pairbrowse.top-chrome";
 const BAD_KINDS = new Set(["error", "pageerror", "rejection", "csp"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -214,7 +214,7 @@ async function renderField(browser, { ui, log }) {
     const shot = (name, state, border) => reference(browser, page, name, {
       clip: padded(f), box: f, radius, page: "ui/strip#share: the share card's name field (.field)", state,
       colors: {
-        fill: { token: "--chrome", at: [f.x + 4, f.y + f.h / 2] },
+        fill: { token: "--frame", at: [f.x + 4, f.y + f.h / 2] },
         text: { token: "--ink", at: null },
         border: { token: border, at: [f.x, f.y + f.h / 2] },
       },
@@ -234,7 +234,7 @@ async function renderField(browser, { ui, log }) {
 async function renderBubble(browser, { log }) {
   const page = await newPage(browser, { width: 364, height: 600 }, "approve (bubble)", log);
   try {
-    await page.goto(`http://${TOP_CHROME}/approve/index.html`, { waitUntil: "load" });
+    await page.goto(`http://${TOP_SHELL}/approve/index.html`, { waitUntil: "load" });
     if (!await until(page, () => document.documentElement.dataset.mode === "bubble" && Number(document.body.dataset.pending) >= 1 && !document.getElementById("card").hidden, 5000)) throw new Error("the approval card did not show");
     await sleep(1000); // the open and the arm (approve.js ARM_MS)
     const card = await rectIn(page, "#card");
@@ -286,7 +286,7 @@ export async function main(args) {
     ui = await startUiServer({ helper, fixture: { ...merge(defaultFixture(), fx.shim), owners: fx.shim.owners } });
     // The pages without window.pairbrowse (a plain browser): the left dock's framed switcher.
     plain = await startUiServer({ helper, native: false });
-    proxy = await hostProxy(TOP_CHROME);
+    proxy = await hostProxy(TOP_SHELL);
     proxy.to(ui.origin);
     browser = await patchright(runtime).chromium.launch({ args: proxy.args });
 
@@ -295,7 +295,7 @@ export async function main(args) {
     results.push(...await renderMenu(browser, { ui: plain, log }));
     helper.setPageOrigin(ui.origin);
     results.push(...await renderField(browser, { ui, log }));
-    helper.setPageOrigin(`http://${TOP_CHROME}`);
+    helper.setPageOrigin(`http://${TOP_SHELL}`);
     results.push(...await renderBubble(browser, { log }));
 
     const references = {};

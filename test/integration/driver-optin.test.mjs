@@ -16,7 +16,7 @@ import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 
 test("the Playwright opt-in still launches the browser and works", { skip: !runtime, timeout: 120_000 }, async () => {
-  // Its own Chromium build, as a user who opts in would have it installed.
+  // Its own build of the engine, as a user who opts in would have it installed.
   const executablePath = createRequire(join(runtime, "package.json"))("playwright").chromium.executablePath();
   const server = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>Opt-in</title><button onclick="document.title='clicked'">Go</button>`); });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -24,7 +24,7 @@ test("the Playwright opt-in still launches the browser and works", { skip: !runt
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "pw-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, browserDriver: "playwright" }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false, browserDriver: "playwright" }));
   const daemon = spawnDaemon(h);
   let s;
   try {

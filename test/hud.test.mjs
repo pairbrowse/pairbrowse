@@ -803,7 +803,7 @@ test("the bar's chips end in an ellipsis when long, the newest never shrinks, an
 // ---- docked (545, DESIGN.md Part G): inside the PairBrowse browser's own window ----
 // The window's agent panel carries the bottom bar's duties (who drives, the steps, Pause) and the
 // agent's status, so a docked page draws only a join request's card and only the "your turn" badge.
-// Plain Chromium never hears "docked": nothing changes there (the tests above).
+// The open build never hears "docked": nothing changes there (the tests above).
 test("docked: no bottom bar, the join card still asks, the badge only for your turn; undocked again, all back", { skip: !runtime, timeout: 60_000 }, async () => {
   const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const hud = (await import("../scripts/browser.mjs")).hudScript();
@@ -876,7 +876,7 @@ test("docked: no bottom bar, the join card still asks, the badge only for your t
     v = await look();
     assert.deepEqual([v.barH, v.who], [0, false], "nothing to note: no strip again");
     assert.equal(v.joinBottom, 12);
-    // Undocked again (the same tab in plain Chromium): the whole bar and the agent's badge are back.
+    // Undocked again (the same tab in the open build): the whole bar and the agent's badge are back.
     await send({ on: false }, "docked");
     await send("Filling the shipping form", "claude");
     v = await look();
@@ -1027,7 +1027,7 @@ test("pointers sent across: an agent's own mouse move stays the agent's, a perso
   }
 });
 
-// A joiner's mouse replayed in a shared tab moves the page's mouse there; Chromium then sends moves
+// A joiner's mouse replayed in a shared tab moves the page's mouse there; the engine then sends moves
 // with no distance at that spot (a page loading, scrolling or changing under it). Taken as new
 // moves, the helper sent them as the host person's pointer, at the joiner's own place: the joiner
 // saw a pointer trailing their own mouse. They keep the time of the move that put the mouse there.
@@ -1047,7 +1047,7 @@ test("a move with no distance is nobody's new move: the pointer keeps its time",
     const moves = () => page.evaluate(() => window.__moves, undefined, undefined, false);
     await page.evaluate(() => { window.__moves = []; addEventListener("mousemove", (e) => window.__moves.push([e.movementX, e.movementY])); }, undefined, undefined, false);
     // The first move in a page: on macOS it has no distance (nothing before it to measure from), so
-    // no pointer yet; Chromium on Linux measures it from the corner, a move like any other.
+    // no pointer yet; the engine on Linux measures it from the corner, a move like any other.
     await move(300, 200);
     const first = (await moves())[0];
     if (first[0] === 0 && first[1] === 0) assert.equal((await pointers()).me, null, "a page's first move, with no distance");
@@ -1055,7 +1055,7 @@ test("a move with no distance is nobody's new move: the pointer keeps its time",
     await move(320, 210);
     const p = (await pointers()).me;
     assert.deepEqual([p?.x, p?.y], [320, 210], "a move that moves");
-    // The page scrolls under the resting mouse, and Chromium sends a move with no distance there.
+    // The page scrolls under the resting mouse, and the engine sends a move with no distance there.
     await page.waitForTimeout(150);
     await page.evaluate(() => scrollTo(0, 400), undefined, undefined, false);
     await move(320, 210);

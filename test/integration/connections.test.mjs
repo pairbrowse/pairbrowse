@@ -61,7 +61,7 @@ function setup() {
     const h = mkdtempSync(join(shortBase, prefix));
     homes.push(h);
     symlinkSync(runtime, join(h, "runtime"), "dir");
-    writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false, ...config }));
+    writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false, ...config }));
     return h;
   };
   const socketOf = (h) => join(h, "run", "browser.sock");
@@ -293,9 +293,9 @@ test("a joiner's link to the host drops, stalls or the host's helper crashes: ba
     res.end(`<title>Page ${name}</title><button>Tap ${name}</button>`);
   });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
-  const hostHome = t.home("ch-", { chromeArgs, participantName: "Bob" });
-  const joinHome = t.home("cj-", { chromeArgs, participantName: "Alice" });
+  const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
+  const hostHome = t.home("ch-", { browserArgs, participantName: "Bob" });
+  const joinHome = t.home("cj-", { browserArgs, participantName: "Alice" });
   const env = { PAIRBROWSE_TEST_SCREEN: "1", PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" };
   const tool = (s, name, args = {}, ms) => s.tool(name, args, ms);
   const status = async (j) => text(await tool(j, "pairbrowse_join", { action: "status" }));

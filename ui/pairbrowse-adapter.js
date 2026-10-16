@@ -16,7 +16,7 @@
 //   rethrown into the bindings.
 // Nothing here starts a timer, a poll or a DOM observer.
 
-import { TOP_CHROME_HOST, TAB_HOST } from "./urls.js";
+import { TOP_SHELL_HOST, TAB_HOST } from "./urls.js";
 
 // The interfaces: the page's name, the mojom interface, its observer interface and the observer's
 // methods (lowerCamel, in mojom order).
@@ -131,9 +131,9 @@ function makeInterface(bindings, scope, [name, mojom, observer, observerMethods]
 // or a page the browser gave no bindings (no Mojo).
 export function adapt(bindings, scope) {
   const host = scope?.location?.protocol === "chrome:" ? scope.location.host : "";
-  if (host !== TOP_CHROME_HOST && host !== TAB_HOST) return null;
+  if (host !== TOP_SHELL_HOST && host !== TAB_HOST) return null;
   if (typeof scope.Mojo === "undefined" || !bindings) return null;
-  const allowed = (name) => host === TOP_CHROME_HOST || TAB_PAGE_INTERFACES.has(name);
+  const allowed = (name) => host === TOP_SHELL_HOST || TAB_PAGE_INTERFACES.has(name);
   const api = {};
   for (const spec of INTERFACES) api[spec[0]] = makeInterface(bindings, scope, spec, allowed(spec[0]));
   for (const name of ENUMS) api[name] = enumObject(bindings[name]);

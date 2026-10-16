@@ -16,7 +16,7 @@ function setup(snapshot) {
   const order = createTabOrder({
     call: async () => { workerCalls++; throw new Error("no worker here"); },
     getContext: async () => ({ pages: () => [a, b, c] }),
-    strip: { chrome: () => true, snapshot: () => snapshot, arrange: (targets) => arranged.push(targets) },
+    strip: { ownPages: () => true, snapshot: () => snapshot, arrange: (targets) => arranged.push(targets) },
   });
   return { order, a, b, c, arranged, worker: () => workerCalls };
 }

@@ -18,7 +18,7 @@ body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1.45 var(--sa
 .search input:focus + kbd, .search input:not(:placeholder-shown) + kbd { display: none; }
 
 /* The connection: one line under the header while not live. */
-.banner { margin: 0; padding: var(--sp-2) var(--sp-6); font-size: var(--fs-2); color: var(--ink-2); background: var(--chrome); border-bottom: 1px solid var(--edge); }
+.banner { margin: 0; padding: var(--sp-2) var(--sp-6); font-size: var(--fs-2); color: var(--ink-2); background: var(--frame); border-bottom: 1px solid var(--edge); }
 body[data-s="live"] .banner { display: none; }
 
 .layout { display: grid; grid-template-columns: 216px minmax(0, 680px); gap: var(--sp-8); max-width: 960px; margin: 0 auto; padding: var(--sp-6) var(--sp-6) 48px; }
@@ -42,7 +42,7 @@ body[data-s="live"] .banner { display: none; }
 .sec { margin-bottom: var(--sp-8); }
 .sec.miss { display: none; }
 .sec-h { margin: 0 0 var(--sp-3); font-size: var(--fs-4); font-weight: 600; color: var(--ink); }
-.item { margin-bottom: var(--sp-3); padding: calc(var(--sp-4) - 1px); background: var(--chrome); border: 1px solid var(--edge); border-radius: var(--r-3); }
+.item { margin-bottom: var(--sp-3); padding: calc(var(--sp-4) - 1px); background: var(--frame); border: 1px solid var(--edge); border-radius: var(--r-3); }
 .item.miss { display: none; }
 .item-h { margin: 0; padding: 0; font-size: var(--fs-3); font-weight: 600; color: var(--ink); }
 .help { margin: var(--sp-1) 0 var(--sp-3); font-size: var(--fs-2); color: var(--ink-2); }
@@ -110,7 +110,7 @@ fieldset[disabled] .seg label, fieldset[disabled] .choice, form[disabled] { opac
 
 /* About: facts, errors. */
 .facts { display: grid; grid-template-columns: 160px minmax(0, 1fr); margin: 0; }
-.facts .fact { display: contents; } /* rows of spans, not dt/dd: Chromium refuses a name on a term in its own pages */
+.facts .fact { display: contents; } /* rows of spans, not dt/dd: the engine refuses a name on a term in its own pages */
 .facts .fact > span { margin: 0; padding: var(--sp-2) 0; border-top: 1px solid var(--edge); }
 .facts .fact:first-child > span { border-top: 0; }
 .facts .fact-k { color: var(--ink-2); }

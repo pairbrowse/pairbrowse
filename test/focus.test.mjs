@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isBrowser, isOwnBrowser, childPids } from "../scripts/focus.mjs";
 
-test("isBrowser: the Chromium-based and the native PairBrowse browser (release and dev), nothing else", () => {
+test("isBrowser: the open build's and the native PairBrowse browser (release and dev), nothing else", () => {
   assert.equal(isBrowser("123 dev.pairbrowse.browser"), true);
   assert.equal(isBrowser("123 app.pairbrowse.browser"), true);
   assert.equal(isBrowser("123 app.pairbrowse.browser.dev"), true);

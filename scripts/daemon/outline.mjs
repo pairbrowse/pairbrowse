@@ -4,7 +4,7 @@
 // for it and no page is asked anything (only url() and isClosed() are read). Read by the owner's
 // live view routes (GET outline.json, masked again there) and their `outline` event (metadata
 // only, never the text).
-import { isChromePage } from "../../ui/urls.js";
+import { isBrowserPage } from "../../ui/urls.js";
 
 export const OUTLINE_MAX = 32_000;
 const CUT_NOTE = "This page's snapshot is long"; // output.mjs capSnapshot's note
@@ -32,7 +32,7 @@ export function createOutlines({ mask = (t) => t, now = Date.now } = {}) {
     // A result's text for this page (its yaml block, if any): kept, replacing the one before.
     // True when an outline was kept.
     record(page, { text, who = "" } = {}) {
-      if (!page || !open(page) || isChromePage(urlOf(page))) return false;
+      if (!page || !open(page) || isBrowserPage(urlOf(page))) return false;
       const y = yamlOf(text);
       if (!y) return false;
       let body = y.text, cut = y.cut;

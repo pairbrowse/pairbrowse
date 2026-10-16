@@ -1,4 +1,4 @@
-/* The PairBrowse right dock (the side panel in plain Chromium): colors and type from tokens.css.
+/* The PairBrowse right dock (the side panel in the open build): colors and type from tokens.css.
    Raised cards carry the sheet's static light (gradient, edge, shadow): never animated, no blur.
    Spacing (545): cards, row highlights and dividers stop --dock-gutter (8 px) from the dock's edges
    and their content --dock-inset (12 px) further in, so every icon, avatar and heading starts 20 px
@@ -260,7 +260,7 @@ h2 { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-2); }
 .row.secret { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; }
 .row .sites { font-size: var(--fs-2); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty-row { font-size: var(--fs-2); color: var(--muted); margin: var(--sp-1) 0; }
-.field { width: 100%; min-width: 0; height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); transition: border-color var(--t); }
+.field { width: 100%; min-width: 0; height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--frame); color: var(--ink); font: var(--fs-2) var(--sans); transition: border-color var(--t); }
 .field:focus { border-color: var(--accent); }
 .field::placeholder { color: var(--muted); opacity: 1; }
 .add { display: grid; gap: var(--sp-2); margin-top: var(--sp-3); }
@@ -343,14 +343,14 @@ body[data-recording="true"] #record-btn::before { border-radius: 2px; background
 .act.go:focus-visible { box-shadow: var(--glow-focus); }
 .act.bad:focus-visible { box-shadow: var(--glow-focus); }
 /* Delete asks in the row (a dock slot has no JavaScript dialogs). */
-.confirm { grid-column: 1 / -1; margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--chrome); font-size: var(--fs-2); color: var(--ink); }
+.confirm { grid-column: 1 / -1; margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--frame); font-size: var(--fs-2); color: var(--ink); }
 .confirm[hidden] { display: none; }
 .confirm p { margin: 0; overflow-wrap: anywhere; }
 .confirm-row { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
 
 /* Diagnostics: what the helper reports, then a report to copy or save (nothing is sent). */
 .diag { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); margin: 0 0 var(--sp-3); font-size: var(--fs-2); }
-.diag .fact { display: contents; } /* rows of spans, not dt/dd: Chromium refuses a name on a term in its own pages */
+.diag .fact { display: contents; } /* rows of spans, not dt/dd: the engine refuses a name on a term in its own pages */
 .diag .fact-k { color: var(--ink-2); }
 .diag .fact-v { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 #sec-diag h3.k { margin: var(--sp-3) 0 var(--sp-1); }
@@ -359,7 +359,7 @@ body[data-recording="true"] #record-btn::before { border-radius: 2px; background
 .diag-errors strong { color: var(--ink); font-weight: var(--fw-name); }
 .diag-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0 0; }
 .diag-report { margin-top: var(--sp-3); }
-.field.report { display: block; height: auto; min-height: 160px; padding: var(--sp-2); font: var(--fs-1)/1.45 var(--mono); resize: vertical; background: var(--chrome); }
+.field.report { display: block; height: auto; min-height: 160px; padding: var(--sp-2); font: var(--fs-1)/1.45 var(--mono); resize: vertical; background: var(--frame); }
 #diag-send-note { margin: var(--sp-3) 0 0; }
 
 /* The session card, a raised card at the bottom of the Agent tab, at the gutter on every side:

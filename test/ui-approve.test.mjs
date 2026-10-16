@@ -618,7 +618,7 @@ bubble("an ask that arrives while the bubble is hidden arms only once it shows; 
 
 test("approve bubble: its own stream (page=approve) beside the strip's shared one", { skip: !runtime, timeout: 60_000 }, async () => {
   const proxy = await hostProxy(TOP);
-  // The full Chromium (new headless): the headless shell ignores the secure-origin switch, and
+  // The full the engine (new headless): the headless shell ignores the secure-origin switch, and
   // without Web Locks every page would open its own stream anyway.
   const browser = await patchright(runtime).chromium.launch({ channel: "chromium", args: proxy.args });
   const helper = await startFakeHelper();

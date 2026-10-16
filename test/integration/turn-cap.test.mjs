@@ -19,7 +19,7 @@ test("a call that runs past the cap is answered, the browser resets, and the nex
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "cap-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false }));
   const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TEST_TURN_MAX_MS: "20000" } });
   const a = [];
   try {

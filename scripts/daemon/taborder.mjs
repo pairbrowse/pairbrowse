@@ -10,12 +10,12 @@ const ASK_MS = 3000;
 
 // call(fn, arg, timeoutMs): runs fn(arg) in the side panel's worker (panel.mjs).
 // strip: in a PairBrowse build with its own pages (no side panel), the tab strip's own report
-// instead: { chrome(): whether this browser has them, snapshot(): the strip's last report
+// instead: { ownPages(): whether this browser has them, snapshot(): the strip's last report
 // ({ tabs: [{ target, window, index, active }], focused, last }) or null, arrange(targets): asks
 // the strip for that order }. There the worker is never asked, and without a report every answer
 // is "unknown", quietly.
 export function createTabOrder({ call, getContext, log = () => {}, strip = null }) {
-  const ownPages = () => !!strip?.chrome?.();
+  const ownPages = () => !!strip?.ownPages?.();
   const targets = new WeakMap(); // page -> its CDP target id (a tab keeps it for its life)
   async function targetOf(page) {
     if (targets.has(page)) return targets.get(page);

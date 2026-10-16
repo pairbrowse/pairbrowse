@@ -208,7 +208,7 @@ test("a named click asked in the browser and the terminal at once: the first ans
   mkdirSync(shortBase, { recursive: true });
   const home = mkdtempSync(join(shortBase, "pa-"));
   symlinkSync(runtime, join(home, "runtime"), "dir");
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`], display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`], display: "none", screenshots: false, participantName: "Bob" }));
   const env = { ...process.env, PAIRBROWSE_HOME: home, PAIRBROWSE_APPROVAL_WAIT_MS: "4000" };
   const out = openSync(join(home, "daemon.stderr.log"), "a");
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...env, PAIRBROWSE_TEST_APPROVAL: "1" }, stdio: ["ignore", out, out] });

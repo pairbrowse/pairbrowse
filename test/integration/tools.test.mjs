@@ -21,8 +21,8 @@ const PAGE = `<!doctype html><title>Tools page</title><body>
 <a id=f href="/file" download>Get the file</a> <p id=w></p>
 <script>setInterval(async () => { try { if ((await (await fetch("/state")).text()) === "done") w.textContent = "Welcome back"; } catch {} }, 300);</script>`;
 
-// A helper of its own (a fresh home, Playwright's Chromium, headless), with its site.
-// headed: a visible window (closed at the end), for what headless Chromium leaves out.
+// A helper of its own (a fresh home, Playwright's build, headless), with its site.
+// headed: a visible window (closed at the end), for what the headless engine leaves out.
 async function startHelper(handler, prefix, { headed = false } = {}) {
   const site = createServer(handler);
   await new Promise((r) => site.listen(0, "127.0.0.1", r));
@@ -35,7 +35,7 @@ async function startHelper(handler, prefix, { headed = false } = {}) {
   // home folder of its own, never the account's.
   const user = mkdtempSync(join(base, "user-"));
   mkdirSync(join(user, "downloads"));
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: headed ? [] : ["--headless=new"], display: "none", screenshots: false, downloadsDir: join(user, "downloads") }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: headed ? [] : ["--headless=new"], display: "none", screenshots: false, downloadsDir: join(user, "downloads") }));
   const daemon = spawnDaemon(h, { env: { HOME: user } });
   const socketPath = join(h, "run", "browser.sock");
   const ready = async () => { (await attachDaemon({ socketPath, daemon, home: h })).destroy(); };
@@ -205,7 +205,7 @@ test("a downloaded PDF and .txt open in the person's tab; agents can't reach it"
 
 // macOS's download mark, as the browser itself writes it: a real download saved by the helper
 // keeps it with no help from the test, and the Tools tab opens it (no 409 for a file without one).
-// Headed on purpose: Chromium under --headless=new writes no mark at all (checked with a probe
+// Headed on purpose: the engine under --headless=new writes no mark at all (checked with a probe
 // before writing this test), so this one test opens a window, and closes it at the end.
 test("a real download keeps the browser's own download mark, and opens", { skip: !runtime || process.platform !== "darwin", timeout: 180_000 }, async () => {
   const { site, user, socketPath, ready, log, stop } = await startHelper((req, res) => {

@@ -70,7 +70,7 @@ export function createViewerRoutes(lv) {
   async function thumb({ req, res, invite }) {
     const q = Number(new URL(req.url, "http://x").searchParams.get("q")) || THUMB_QUALITY.default;
     const quality = Math.min(THUMB_QUALITY.max, Math.max(THUMB_QUALITY.min, q));
-    // What's on screen, unscaled: a clip or scale makes Chromium re-lay out the page (it flickers).
+    // What's on screen, unscaled: a clip or scale makes the engine re-lay out the page (it flickers).
     const still = (cdp) => cdp.send("Page.captureScreenshot", { format: "jpeg", quality, optimizeForSpeed: true, captureBeyondViewport: false });
     let data;
     const shown = lv.shown;

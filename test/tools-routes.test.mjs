@@ -520,7 +520,7 @@ test("open: office formats open with their default app; recordings keep their li
     const rid = t.recordings.add({ path: t.file("notes.docx", "doc"), at: 1, ms: 2, size: 3 }).id;
     assert.equal((await request(t.view.port, "POST", `/${t.key}/recordings/${rid}/open`, { body: { confirm: true } })).status, 409, "a recording's id keeps its list");
     assert.equal(t.spawned.length, before);
-    // Each opens: in the person's tab, as a preview there, or with its app (Playwright's Chromium
+    // Each opens: in the person's tab, as a preview there, or with its app (Playwright's build
     // here: the codec types go to their app).
     const way = { "a.pdf": "tab", "a.png": "tab", "a.jpg": "tab", "a.jpeg": "tab", "a.gif": "tab", "a.webp": "tab", "a.heic": "app", "a.txt": "tab", "a.csv": "preview", "a.json": "tab", "a.md": "tab",
       "a.mp4": "app", "a.mov": "app", "a.webm": "tab", "a.m4v": "app", "a.mp3": "tab", "a.wav": "tab", "a.m4a": "app" };

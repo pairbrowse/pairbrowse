@@ -1,4 +1,4 @@
-// Accessible names only where Chromium allows one. The browser's debug build checks every page on
+// Accessible names only where the engine allows one. The browser's debug build checks every page on
 // chrome:// (blink AXObject::SimplifyName): a name on a role that ARIA says cannot be named aborts
 // the renderer, and the page crashes as soon as the accessibility tree is read. The prohibited
 // roles are blink's RoleIsNameProhibited (ax_utilities_generated_naming.cc): caption, code,
@@ -10,7 +10,7 @@
 // is not a name there (blink makes it the description), and a focusable element is exempt.
 // Part 1, static (every machine): every ui/<page>/index.html and the names its scripts set.
 // Part 2, rendered (PAIRBROWSE_TEST_RUNTIME): every review shot and every page over the default
-// fixtures, with every hidden element shown, read through the accessibility tree Chromium builds.
+// fixtures, with every hidden element shown, read through the accessibility tree the engine builds.
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -141,7 +141,7 @@ for (const page of pages()) {
   });
 }
 
-test("the shared scripts set names only where Chromium allows them (static)", () => {
+test("the shared scripts set names only where the engine allows them (static)", () => {
   const problems = readdirSync(UI_ROOT).filter((f) => f.endsWith(".js")).flatMap((f) => jsProblems(join(UI_ROOT, f), read(join(UI_ROOT, f)), new Map()));
   assert.deepEqual(problems, [], problems.join("\n"));
 });
@@ -189,7 +189,7 @@ async function revealAll(page) {
 }
 
 
-test("every page's accessibility tree has names only where Chromium allows them", { skip: !runtime, timeout: 300_000 }, async (t) => {
+test("every page's accessibility tree has names only where the engine allows them", { skip: !runtime, timeout: 300_000 }, async (t) => {
   const browser = await patchright(runtime).chromium.launch();
   // The review shots (their fixtures, hash modes and the extension host), then every page over
   // the default fixtures.

@@ -56,7 +56,7 @@ export default [
     },
   },
   { files: ["scripts/hud/*.js"], processor: hudParts },
-  // The extension's pages (ui/) use Chrome's extension API.
+  // The extension's pages (ui/) use the browser's extension API (chrome.*).
   { files: ["ui/**"], languageOptions: { globals: { chrome: "readonly" } } },
   // macOS JavaScript for Automation (osascript -l JavaScript).
   // osascript calls its top-level run(); helpers live beside it.

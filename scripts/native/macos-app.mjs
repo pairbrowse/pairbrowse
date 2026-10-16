@@ -1,6 +1,6 @@
-// The PairBrowse look of a macOS browser app: its name in Chromium's interface text, its icon and
+// The PairBrowse look of a macOS browser app: its name in the engine's interface text, its icon and
 // logo, and the ad-hoc signatures and Launch Services registration that go with changing them. Used
-// for both macOS builds: the branded ungoogled-chromium copy (browser.mjs) and the native build
+// for both macOS builds: the branded open build copy (browser.mjs) and the native build
 // (native-install.mjs).
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -39,8 +39,8 @@ const setString = (file, key, value) => run("plutil", ["-replace", key, "-string
 
 // The name macOS shows in the notification permission prompt and in Notifications settings comes
 // from the notification helper, and from its localized InfoPlist.strings before its Info.plist:
-// Chromium ships base.lproj with "Chromium", and with no English one macOS falls back to it. So
-// both, in every language folder, say PairBrowse, and Chromium's lookup ID (the app's ID plus
+// The engine ships base.lproj with its own name, and with no English one macOS falls back to it.
+// So both, in every language folder, say PairBrowse, and the engine's lookup ID (the app's ID plus
 // ".framework.AlertNotificationService") stays matched. Returns the new bundle ID when it changed,
 // true for other changes, false when the helper was already branded.
 async function brandNotificationHelper(helper, appId) {
@@ -71,7 +71,7 @@ async function brandNotificationHelper(helper, appId) {
   return idChanged ? id : changed;
 }
 
-// Chromium's resource packs (.pak, format version 5): a header, a table of resource ids and
+// The engine's resource packs (.pak, format version 5): a header, a table of resource ids and
 // offsets, aliases, then the resources. Writes the pack again with each resource that
 // `change(resource, id)` returns a Buffer for replaced; the rest are copied byte for byte. null for
 // another format.
@@ -99,9 +99,9 @@ function rewritePak(buf, change) {
   return out;
 }
 
-// Chromium's interface text ("About Chromium", "Customize Chromium", settings pages) lives in UTF-8
-// locale.pak files. The product is PairBrowse; Chromium keeps its credit: its copyright strings
-// (`attribution`, resource ids found in the English pack) and the link to the Chromium project.
+// The engine's interface text (its About and Customize entries, settings pages) lives in UTF-8
+// locale.pak files. The product is PairBrowse; the engine's project keeps its credit (BSD): its copyright strings
+// (`attribution`, resource ids found in the English pack) and the link to its open source project.
 // A pack branded before that rule is put right again.
 const PROJECT_LINK = />(?:Chromium|PairBrowse)<\/a>/;
 function brandText(text, attribution) {
@@ -109,7 +109,7 @@ function brandText(text, attribution) {
   return text.split(new RegExp(`(${PROJECT_LINK.source})`)).map((part, i) => (i % 2 ? ">Chromium</a>" : part.replaceAll("Chromium", "PairBrowse"))).join("");
 }
 
-// The ids of the copyright strings, from the English pack ("Copyright ... The Chromium Authors").
+// The ids of the copyright strings, from the English pack ("Copyright ... Authors", the engine project's).
 export function attributionIds(englishPak) {
   const ids = new Set();
   rewritePak(englishPak, (text, id) => { if (/\b(Chromium|PairBrowse) Authors\b/.test(text.toString("utf8"))) ids.add(id); return null; });
@@ -127,7 +127,7 @@ export function rebrandPak(buf, attribution = new Set()) {
   });
 }
 
-// Rebrands every locale.pak inside an app's Chromium framework. Returns whether any changed.
+// Rebrands every locale.pak inside an app's engine framework. Returns whether any changed.
 export async function rebrandInterfaceText(app) {
   const { stdout } = await run("find", [frameworkOf(app), "-name", "locale.pak"], { maxBuffer: 4 << 20 }).catch(() => ({ stdout: "" }));
   const files = stdout.trim().split("\n").filter(Boolean);
@@ -142,8 +142,8 @@ export async function rebrandInterfaceText(app) {
   return changed;
 }
 
-// Chromium's product logo images in this Chromium version (16 to 256 px, both scales), by SHA-256.
-const CHROMIUM_LOGOS = new Set([
+// The engine's product logo images in this engine version (16 to 256 px, both scales), by SHA-256.
+const ENGINE_LOGOS = new Set([
   "32ea0cf8a4f67b8fde3225391201f72bb4ef117295b104961c68d0502a7142d8", "a393eac540413ebbc51ba033b96d6f87918d1039f1ec16cd8c0e6a57818f2ea1",
   "7a431699c78af352352932f6dd4e04848b57990c0a5675a66695e1dd454cb592", "9fef85f58e6e4a2cdcbe8b0d3d8fe833547362ab1501ab700d745876fd830f4e",
   "c29f2c754d619246062db49e4ba1c3b8e96fcce18ec4524f5ef371172af385ad", "926700351f770f2ae5d1298c75aa269da1416d1511e90a1eed07a5ac5e27e85e",
@@ -151,11 +151,11 @@ const CHROMIUM_LOGOS = new Set([
   "e14120fdefb8eb455f44eac572f34bda75c32c9404e5c3745d44793dae217331",
 ]);
 // The web UI's product icon (Settings' "About" entry), in the gzipped web UI files.
-const CHROMIUM_ICON_START = '<g id="chrome-product" viewBox="0 -960 960 960">';
-const CHROMIUM_ICON = /<g id="chrome-product" viewBox="0 -960 960 960">[\s\S]*?<\/g>/g;
+const ENGINE_ICON_START = '<g id="chrome-product" viewBox="0 -960 960 960">';
+const ENGINE_ICON = /<g id="chrome-product" viewBox="0 -960 960 960">[\s\S]*?<\/g>/g;
 const isPng = (buf) => buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47;
 const isGzip = (buf) => buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b;
-const isChromiumLogo = (buf) => isPng(buf) && CHROMIUM_LOGOS.has(sha256(buf));
+const isEngineLogo = (buf) => isPng(buf) && ENGINE_LOGOS.has(sha256(buf));
 
 // PairBrowse's icon as PNGs, rendered from the .icns at each size asked for.
 async function iconRenderer() {
@@ -184,7 +184,7 @@ function productIconGroup() {
   return `<g id="chrome-product" viewBox="100 100 824 824">${shapes.replace(/\s*\n\s*/g, "")}</g>`;
 }
 
-// Swaps Chromium's logo for PairBrowse's in the framework's resources: the logo images (in the
+// Swaps the engine's logo for PairBrowse's in the framework's resources: the logo images (in the
 // resource packs and as loose files, each at its own pixel size) and the web UI's product icon.
 // Returns whether anything changed.
 export async function rebrandLogos(app) {
@@ -198,20 +198,20 @@ export async function rebrandLogos(app) {
       const file = join(resources, name);
       if (/^product_logo_\d+\.png$/.test(name)) {
         const data = readFileSync(file);
-        if (isChromiumLogo(data)) { writeFileSync(file, await icon.png(data.readUInt32BE(16))); changed = true; }
+        if (isEngineLogo(data)) { writeFileSync(file, await icon.png(data.readUInt32BE(16))); changed = true; }
         continue;
       }
       if (!name.endsWith(".pak")) continue;
       const before = readFileSync(file);
       // Render the sizes this pack needs first: the rewrite itself runs synchronously.
       const logos = new Map();
-      rewritePak(before, (resource) => { if (isChromiumLogo(resource)) logos.set(sha256(resource), resource.readUInt32BE(16)); return null; });
+      rewritePak(before, (resource) => { if (isEngineLogo(resource)) logos.set(sha256(resource), resource.readUInt32BE(16)); return null; });
       for (const [hash, width] of logos) logos.set(hash, await icon.png(width));
       const after = rewritePak(before, (resource) => {
         if (isPng(resource)) return logos.get(sha256(resource)) || null;
         if (!isGzip(resource)) return null;
         const text = gunzipSync(resource).toString("utf8");
-        return text.includes(CHROMIUM_ICON_START) ? gzipSync(text.replace(CHROMIUM_ICON, productIcon), { level: 9 }) : null;
+        return text.includes(ENGINE_ICON_START) ? gzipSync(text.replace(ENGINE_ICON, productIcon), { level: 9 }) : null;
       });
       if (after && !after.equals(before)) { writeFileSync(file, after); changed = true; }
     }
@@ -227,8 +227,8 @@ export const BRANDING = 5;
 
 // The PairBrowse name and icon in a native build (package.py sets its bundle names already): the
 // icon in the app and its notification helpers, the helpers' names (the notification prompt
-// shows them), PairBrowse instead of Chromium in the interface
-// text, in every language, and PairBrowse's logo instead of Chromium's in the browser's own pages.
+// shows them), PairBrowse instead of the engine's name in the interface
+// text, in every language, and PairBrowse's logo instead of the engine's in the browser's own pages.
 // What changed gets fresh signatures, inside out. Returns whether anything changed.
 export async function brandNativeApp(app, log = () => {}) {
   const plist = join(app, "Contents", "Info.plist");

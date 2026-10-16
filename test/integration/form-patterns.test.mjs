@@ -117,7 +117,7 @@ test("fast mode fills common form patterns and the page holds every value", { sk
   const h = mkdtempSync(join(base, "patterns-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false }));
   const daemon = spawnDaemon(h);
   let a;
   try {

@@ -1,4 +1,4 @@
-// Launching the browser: which one (the native PairBrowse build, installed when needed, Chromium or
+// Launching the browser: which one (the native PairBrowse build, installed when needed, the open build or
 // one of your own: browser/choice.mjs), its profile and key files, the launch itself, getContext()
 // for everyone who needs the browser, its close, and what the next launch would be.
 // st: the browser's state (browser/state.mjs); api: the other parts' functions, read when called.
@@ -11,15 +11,15 @@ import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
 import { within } from "../../util.mjs";
 import { MEASURING } from "../../native-engine.mjs";
 import { OPEN_ACCEPT_MS } from "../../opener.mjs";
-import { isChromePage, CHROME_PICKER, extensionUrl } from "../../../ui/urls.js";
+import { isBrowserPage, BROWSER_PICKER, extensionUrl } from "../../../ui/urls.js";
 import { pruneStaleContexts } from "../exec-contexts.mjs";
 
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
-// A build with its own pages shows its own picker instead (CHROME_PICKER, ui/urls.js).
+// A build with its own pages shows its own picker instead (BROWSER_PICKER, ui/urls.js).
 // The shell of the browser an engine config launches (browser/choice.mjs shellOf): whether it is a
-// native build that declares its own pages (its manifest's `chrome` field), whether that build also
+// native build that declares its own pages (its build manifest's `chrome` field), whether that build also
 // declares its capture page, and whether that page reads a key of its own. Tests pass their own.
-export const chromePagesIn = (engine) => shellOf(engine).ownPages;
+export const browserPagesIn = (engine) => shellOf(engine).ownPages;
 export const capturePagesIn = (engine) => shellOf(engine).capturePage;
 export const captureKeyedIn = (engine) => shellOf(engine).captureKeyed;
 
@@ -43,7 +43,7 @@ export function measuringLog({ log, status, notify }) {
 }
 
 export function createLaunch(st, deps, api) {
-  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, chromePagesOf, capturePagesOf, captureKeyedOf, helperFor } = deps;
+  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, helperFor } = deps;
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
   const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
 
@@ -55,7 +55,7 @@ export function createLaunch(st, deps, api) {
     dropHelperKeyFile(path);
     if (path === st.helperKeyPath) st.helperKeyPath = null;
   }
-  const pickerUrl = () => (st.chrome ? CHROME_PICKER : extensionUrl(panelExtensionId(), "picker/index.html"));
+  const pickerUrl = () => (st.ownPages ? BROWSER_PICKER : extensionUrl(panelExtensionId(), "picker/index.html"));
   // Which browser runs ("browser" in config.json, chooseBrowser in browser/choice.mjs). Every launch
   // reads the choice anew (a change in Settings takes effect at the next start) and keeps it here
   // (engine, shell): config itself is never written, so the older names a person wrote stay as
@@ -63,7 +63,7 @@ export function createLaunch(st, deps, api) {
   const choiceConfig = () => config;
   // The shell of the browser an engine config launches, read once per choice.
   const shellFor = (e) => {
-    const ownPages = !!chromePagesOf(e);
+    const ownPages = !!browserPagesOf(e);
     const capturePage = ownPages && !!capturePagesOf(e);
     return { kind: ownPages ? "pages" : "extension", ownPages, capturePage, captureKeyed: capturePage && !!captureKeyedOf(e) };
   };
@@ -75,9 +75,10 @@ export function createLaunch(st, deps, api) {
 
   // The browser the person chose ("browser"): the native PairBrowse browser (the pinned build,
   // installed and checked when it's missing or a new version is pinned, scripts/native-install.mjs),
-  // "chromium" (ensureBrowser at launch) or a browser of their own. Unset: the native build where
-  // one is pinned for this computer, else chromium; the helper never records that default. Never a
-  // quiet switch from the native build to Chromium: only "browser": "chromium" picks that.
+  // "pairbrowse-open" (ensureBrowser at launch) or a browser of their own. Unset: the native build
+  // where one is pinned for this computer, else the open build; the helper never records that
+  // default. Never a quiet switch from the native build to the open build: only "browser":
+  // "pairbrowse-open" (or its older name "chromium") picks that.
   async function chooseEngine() {
     const asset = pinnedAsset();
     const spec = chooseBrowser(config, { native: !!asset, pinnedExec: () => nativeDirs().exec });
@@ -86,7 +87,7 @@ export function createLaunch(st, deps, api) {
     st.inUse = spec.browser;
     let executablePath = spec.executablePath; // a native build of your own (the older names), a path of your own, or null
     if (spec.install) {
-      const optOut = 'To use Chromium instead, set "browser": "chromium" in ~/.pairbrowse/config.json.';
+      const optOut = 'To use the open build instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.';
       const installLog = (m) => {
         log(m);
         if (st.installing || !/^(downloading|unpacking)/.test(m)) return;
@@ -107,11 +108,11 @@ export function createLaunch(st, deps, api) {
       if (!native) throw new Error(`There's no PairBrowse browser build for ${process.platform} ${process.arch} yet. ${optOut}`);
       executablePath = native;
     } else if (spec.binary !== "native") {
-      // A recorded chromium or path of your own: the log says why nothing is installed, once.
+      // A recorded open build or path of your own: the log says why nothing is installed, once.
       const why = spec.set && !spec.problem ? notChosen(config, !!asset) : null;
       if (why) once(why);
     }
-    // null for chromium: the PairBrowse Chromium (ensureBrowser at launch).
+    // null for the open build: PairBrowse's own (ensureBrowser at launch).
     const next = engineConfig(config, { binary: spec.binary, executablePath });
     validateEngine(next);
     st.engine = next;
@@ -131,25 +132,25 @@ export function createLaunch(st, deps, api) {
     const next = await chooseEngine();
     step("engine");
     st.shell = shellFor(next);
-    st.chrome = st.shell.ownPages;
+    st.ownPages = st.shell.ownPages;
     st.capture = st.shell.capturePage;
     st.chosen = true;
     // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
     // colors; see prepareProfile in browser.mjs), written before each launch.
-    const firstRun = prepareProfile(profile(), undefined, { chromePages: st.chrome, layout: config.layout });
+    const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout });
     step("prepare");
     // A side panel worker from another build (an update): the browser would keep running its
     // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
-    if (!st.chrome) try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
+    if (!st.ownPages) try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
     // The browser's own pages reach the live view with the address in their launch switch and the
     // key in an owner-only file the other switch names (neither the key nor the path is logged).
-    const helper = st.chrome ? await helperFor().catch((e) => { log("live view", e?.message || e); return null; }) : null;
-    if (st.chrome && !helper) log("the browser's own pages have no helper address");
+    const helper = st.ownPages ? await helperFor().catch((e) => { log("live view", e?.message || e); return null; }) : null;
+    if (st.ownPages && !helper) log("the browser's own pages have no helper address");
     step("live view");
     api.forgetTemporaryDownloads();
     if (!st.screen && needsVirtualDisplay(config)) st.screen = await startVirtualDisplay(log);
     createSession(st.session);
-    // The PairBrowse browser (scripts/browser.mjs), or another Chromium browser from config.
+    // The PairBrowse browser (scripts/browser.mjs), or another browser on the same engine from config.
     let keyFile = null, captureKeyFile = null;
     if (helper) try { keyFile = st.helperKeyPath = writeHelperKeyFile(helper.key); } catch (e) { log(`the browser's own pages have no helper address (key file: ${e?.code || "refused"})`); }
     // A capture page that reads its own key gets a new one now (and the helper requires it); a
@@ -162,7 +163,7 @@ export function createLaunch(st, deps, api) {
       ctx = await launchEngine(browserType(), next, profile(), {
         // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
         // Playwright's signal handlers would start a close of their own on the same SIGTERM, and
-        // then treat the helper's close as a second one: a SIGKILL of Chromium inside 50 ms, before
+        // then treat the helper's close as a second one: a SIGKILL of the browser inside 50 ms, before
         // it wrote its cookies (it writes them every ~30 s and on a clean exit): logins lost.
         handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
         // The launch itself, as the install self-check makes it too (browser.mjs launchOptions).
@@ -180,10 +181,10 @@ export function createLaunch(st, deps, api) {
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
     await ctx.addInitScript({ content: hud.source });
     // Never into the browser's own pages (its new tab page among them: plans/555 D1.3).
-    for (const p of ctx.pages()) { api.adopt(p, ctx); if (!isChromePage(p.url())) hud.ensure(p); }
+    for (const p of ctx.pages()) { api.adopt(p, ctx); if (!isBrowserPage(p.url())) hud.ensure(p); }
     // A tab can arrive already loaded (one the side panel opened at its address): its page
     // script comes now, since under Patchright it isn't there until ensure adds it.
-    ctx.on("page", (p) => { api.adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => { if (!isChromePage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => api.capTabs(ctx, p).catch(() => {}), 300); });
+    ctx.on("page", (p) => { api.adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => { if (!isBrowserPage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => api.capTabs(ctx, p).catch(() => {}), 300); });
     step(`first page (${ctx.pages().length} open)`);
     if (st.pick.state === "pending") api.showPicker(ctx, { own });
     else api.restore(ctx, null, { own });

@@ -248,7 +248,7 @@ test("pointers: a known tab, a clamped position, a name and a color; nothing els
 
 test("the side panel extension arranges tabs into the places they hold, per window", async () => {
   const { readFileSync } = await import("node:fs");
-  // A stand-in for chrome.tabs: tabs in windows, moved the way Chrome moves them.
+  // A stand-in for chrome.tabs: tabs in windows, moved the way the browser moves them.
   const tabs = [{ id: 1, windowId: 9, index: 0 }, { id: 2, windowId: 9, index: 1 }, { id: 3, windowId: 9, index: 2 }, { id: 4, windowId: 9, index: 3 }];
   const reindex = () => tabs.sort((a, b) => a.index - b.index).forEach((t, i) => { t.index = i; });
   const chrome = {

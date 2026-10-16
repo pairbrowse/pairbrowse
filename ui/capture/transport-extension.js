@@ -1,4 +1,4 @@
-// The capture page as the extension's offscreen document (plain Chromium, and a PairBrowse build
+// The capture page as the extension's offscreen document (the open build, and a PairBrowse build
 // without its own pages): the worker (background.js pbShare, pbRecord) mints the tab's stream id
 // and asks here with chrome.runtime messages addressed { to: "share", op }. The ops and answers
 // are the ones the offscreen document has always had: has, offer, answer, stop, stopTab, resize,

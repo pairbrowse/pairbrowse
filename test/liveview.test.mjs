@@ -1262,7 +1262,7 @@ test("a screen want while nothing here captures a tab: the slower route at once,
   } finally { view.close(); }
 });
 
-// Pointer rule (plain Chromium, no overlay of its own): a shared browser joiner's pointer is never
+// Pointer rule (the open build, no overlay of its own): a shared browser joiner's pointer is never
 // drawn in the host's tab (its picture goes back to them), so the host sees it in the live view,
 // over the shown tab's picture; only the owner's streams get it, by an opaque key (never the
 // joiner's id, which their approval is bound to).

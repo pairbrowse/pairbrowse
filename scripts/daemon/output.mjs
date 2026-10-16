@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, rmSync, existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { redact } from "../rules/secrets.mjs";
-import { isChromePage } from "../../ui/urls.js";
+import { isBrowserPage } from "../../ui/urls.js";
 
 // Playwright's own snapshot and console files in the files folder; never your own files there.
 const PLAYWRIGHT_OUTPUT = /^(page|console|network)-[\dT:.Z-]+\.(ya?ml|log|md|txt)$/;
@@ -118,10 +118,10 @@ export function createOutput({ dir, secretValues }) {
 // kinds (it then goes as it is, without escape codes).
 // A browser_tabs result without the browser's own pages (chrome://pairbrowse...): their lines go,
 // every other line keeps its number and its "(current)" mark.
-export function hideChromeTabs(text) {
+export function hideBrowserTabs(text) {
   return String(text).split("\n").filter((line) => {
     const m = /^- \d+: .*\]\(([^)\s]+)\)\s*$/.exec(line);
-    return !(m && isChromePage(m[1]));
+    return !(m && isBrowserPage(m[1]));
   }).join("\n");
 }
 

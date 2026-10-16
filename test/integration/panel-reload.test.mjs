@@ -1,5 +1,5 @@
 // After an update, the browser must run the side panel worker on disk, not the copy it cached
-// (Chromium keeps an extension's worker script in the profile and goes on running it): a helper
+// (the engine keeps an extension's worker script in the profile and goes on running it): a helper
 // from an earlier PairBrowse (its worker without a build and without the join notification's
 // Allow and Deny) starts the browser in a profile, then the current helper starts it in the same
 // profile, and the worker is the current one, with the live view handed over and join
@@ -46,7 +46,7 @@ test("after an update the browser runs the side panel's current worker, not its 
   const home = join(base, "home");
   mkdirSync(home);
   symlinkSync(runtime, join(home, "runtime"), "dir");
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, participantName: "Bob", sessionPicker: false }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false, participantName: "Bob", sessionPicker: false }));
   const logText = () => (existsSync(join(home, "daemon.log")) ? readFileSync(join(home, "daemon.log"), "utf8") : "");
   const fail = (what) => new Error(`timed out: ${what}\n${logText().split("\n").slice(-30).join("\n")}`);
   let helper = null;

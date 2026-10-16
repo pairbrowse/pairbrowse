@@ -1,5 +1,5 @@
 // The PairBrowse right dock: one page for two hosts. In the browser build (window.pairbrowse) it
-// takes the helper's address and the dock state from the browser; as plain Chromium's side panel
+// takes the helper's address and the dock state from the browser; as the open build's side panel
 // it reads the address the daemon handed to background.js. Either way it reads the live view
 // server's owner stream (status, activity, profile) through the one shared stream per origin
 // (common.js helperStream) and never asks for the page stream itself. The Tools tab's Hand-offs,
@@ -128,7 +128,7 @@ function countRequests() {
   const n = open("joins") + open("dev-asks") + open("host-asks");
   const words = `${n} request${n === 1 ? "" : "s"}`;
   // The count is a figure for the eye (aria-hidden); its words name the tab, as on the rail: a name
-  // on the span itself is a name on a generic, which Chromium refuses in its own pages.
+  // on the span itself is a name on a generic, which the engine refuses in its own pages.
   const c = $("agent-count");
   c.hidden = !n || document.body.dataset.tab === "agent";
   c.textContent = n ? String(n) : "";

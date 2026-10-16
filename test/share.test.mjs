@@ -79,12 +79,12 @@ test("an invite made before a native browser starts says the pictures go through
     config: { browserEngine: "pairbrowse", executablePath: "/fake/PairBrowse", sessionPicker: false, display: "none" }, log: quiet, chromium: {},
     hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
     presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
-    shuttingDown: () => false, onStarted: quiet, onClosed: quiet, chromePagesOf: () => pages, capturePagesOf: () => capture,
+    shuttingDown: () => false, onStarted: quiet, onClosed: quiet, browserPagesOf: () => pages, capturePagesOf: () => capture,
   });
   const native = contextFor(true, false);
-  assert.equal(native.chromePages(), false, "nothing launched: the launched value isn't known yet");
-  assert.deepEqual([native.willHaveChromePages(), native.willHaveCapturePages()], [true, false], "what the next launch will be");
-  const backend = (context) => createCaptureBackend({ chromePages: () => context.willHaveChromePages(), capturePages: () => context.willHaveCapturePages(), panelCall: async () => null, channel: { ready: () => false }, env: {} });
+  assert.equal(native.browserPages(), false, "nothing launched: the launched value isn't known yet");
+  assert.deepEqual([native.willHaveBrowserPages(), native.willHaveCapturePages()], [true, false], "what the next launch will be");
+  const backend = (context) => createCaptureBackend({ browserPages: () => context.willHaveBrowserPages(), capturePages: () => context.willHaveCapturePages(), panelCall: async () => null, channel: { ready: () => false }, env: {} });
   assert.equal(backend(native).kind(), null, "a native build without its capture page: nowhere, before launch too");
   const screens = createScreenShare({ call: async () => null, capture: backend(native) });
   const { sharing } = sharingWith({}, { screens });
@@ -112,7 +112,7 @@ test("an invite made before the capture page's hello waits for it", async () => 
         setTimeout(() => { hello = true; resolve(); }, helloAfter);
       }),
     };
-    const capture = createCaptureBackend({ chromePages: () => true, capturePages: () => true, panelCall: async () => null, channel, env: {} });
+    const capture = createCaptureBackend({ browserPages: () => true, capturePages: () => true, panelCall: async () => null, channel, env: {} });
     assert.equal(capture.kind(), null, "no hello yet");
     const screens = createScreenShare({ call: async () => null, capture });
     const { sharing } = sharingWith({}, { screens });

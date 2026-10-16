@@ -1,14 +1,14 @@
 import { within } from "../util.mjs";
 import { testOn } from "../testenv.mjs";
 
-// Where a tab's picture, sound and recordings are captured: the side panel extension (Chromium
+// Where a tab's picture, sound and recordings are captured: the side panel extension (the open build
 // and the PairBrowse build without its own pages, as before), the browser's own capture page (a
 // build with its own pages that declares one, once that page said hello; liveview/capture.mjs),
 // or nowhere (a build with its own pages and no capture page yet). Nowhere means: a shared
 // browser sends pictures through the join channel (the slower route, no sound) and recording is
 // refused; nothing new is captured in its place.
 //
-// chromePages(): the browser has its own pages. capturePages(): its build declares a capture page.
+// browserPages(): the browser has its own pages. capturePages(): its build declares a capture page.
 // panelCall(fn, arg, ms): runs fn(arg) in the extension's worker (daemon/panel.mjs). channel: the
 // capture page's channel. env: PAIRBROWSE_TEST_NO_CAPTURE=1 (tests only) makes it nowhere.
 //
@@ -36,11 +36,11 @@ export async function targetIdOf(page, ms = 3000) {
   return targetId;
 }
 
-export function createCaptureBackend({ chromePages = () => false, capturePages = () => false, panelCall, channel = null, env = process.env }) {
+export function createCaptureBackend({ browserPages = () => false, capturePages = () => false, panelCall, channel = null, env = process.env }) {
   // "extension", "page", or null (nowhere).
   function kind() {
     if (testOn("NO_CAPTURE", env)) return null;
-    if (!chromePages()) return "extension";
+    if (!browserPages()) return "extension";
     return capturePages() && channel?.ready() ? "page" : null;
   }
   // The tab as the capturer knows it: the extension's tab id (its worker maps the CDP target), or
@@ -62,7 +62,7 @@ export function createCaptureBackend({ chromePages = () => false, capturePages =
   }
   async function waitReady(ms = RECORD_READY_MS) {
     const now = kind();
-    if (now !== null || testOn("NO_CAPTURE", env) || !chromePages() || !capturePages()) return now;
+    if (now !== null || testOn("NO_CAPTURE", env) || !browserPages() || !capturePages()) return now;
     if (typeof channel?.whenReady !== "function") return now;
     await within(Math.max(0, ms) + 100, channel.whenReady(ms)).catch(() => null);
     return kind();

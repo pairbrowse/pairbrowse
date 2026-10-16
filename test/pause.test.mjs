@@ -252,7 +252,7 @@ test("pause this agent through the live view: only that agent's next acting call
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const home = mkdtempSync(join(tmpdir(), "pb-pa-"));
   symlinkSync(runtime, join(home, "runtime"), "dir");
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
   const daemon = spawnDaemon(home);
   const agents = [];
   try {

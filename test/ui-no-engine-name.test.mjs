@@ -1,7 +1,7 @@
 // No browser engine's product name anywhere a person reads in ui/**: page text, the attributes that
 // show or are spoken (placeholder, title, aria-*, alt, value, label), CSS content and the strings in
 // the scripts that reach the page. chrome:// addresses and code identifiers (chrome.storage,
-// chromeMediaSource, the "chromium" engine value, the top-chrome host) are not text and pass.
+// chromeMediaSource, the older "chromium" value, the top-chrome host) are not text and pass.
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -83,6 +83,33 @@ test("the scanner finds the name in text and passes addresses and identifiers", 
   assert.deepEqual(scan("a.html", '<a href="chrome://settings">Browser settings</a><div data-k="chromium">ok</div><input type="radio" value="chromium">'), []);
   assert.deepEqual(scan("a.js", 'const a = { chromium: "Chromium" }; // Chromium here\nx.textContent = `Open ${"chrome://history"}`;\nconst r = /^chrome:\\/\\/x"/; const k = "chromium"; chrome.storage; const h = "pairbrowse.top-chrome";'), ["Chromium"]);
   assert.deepEqual(scan("a.js", 'say("Enter a Chromium-based browser")'), ["Enter a Chromium-based browser"]);
+});
+
+// The helper's own text (log lines, errors, refusals, tool results) in scripts/** and hooks/**: the
+// same scan, and only these literals may name the engine. Each must match something outside this
+// repo: the older config keys still read, the report service's wire value, the open build's
+// download, app, framework and helper file names, the engine's own interface strings that the
+// rebranding finds and its credit keeps, the driver's install command, a dev tool's host name.
+const KEPT = new Set([
+  "chromeArgs", "chromeSandbox",
+  'app.host is "pairbrowse" or "chromium".',
+  "https://github.com/ungoogled-software/ungoogled-chromium-macos/releases/download/${UNGOOGLED.version}/${asset.file}",
+  "Chromium.app", "PairBrowse Chromium.app", "Chromium", "Chromium Framework.framework", "Chromium Helper (Alerts).app", "Chromium Helper (Aperitif Alerts).app",
+  ">Chromium</a>", '<g id="chrome-product" viewBox="0 -960 960 960">', '<g id="chrome-product" viewBox="100 100 824 824">${shapes.replace(/\\s*\\n\\s*/g, "")}</g>',
+  "The browser didn't install at ${chromium.executablePath()}. Run: node ${driverCli()} install --with-deps chromium",
+  "chrome-extension://${panelExtensionId()}/",
+  "ui/approve in bubble mode (pairbrowse.top-chrome): the approval card",
+]);
+test("the helper's own text in scripts/** and hooks/** names no engine but what must match outside", () => {
+  const found = [];
+  for (const dir of ["scripts", "hooks"]) {
+    const base = fileURLToPath(new URL(`../${dir}`, import.meta.url));
+    for (const f of files(base)) {
+      if (!/\.(html|svg|js|mjs|css|json)$/.test(f)) continue;
+      for (const h of scan(f, readFileSync(f, "utf8"))) if (!KEPT.has(h)) found.push(`${dir}/${relative(base, f)}: ${h}`);
+    }
+  }
+  assert.deepEqual(found, []);
 });
 
 test("no engine product name a person can read in ui/**", () => {

@@ -3,7 +3,7 @@
    record.js carry the same values inline (closed shadow roots and a canvas take no variables);
    test/tokens.test.mjs keeps them equal and checks the contrast. Navy surfaces with a static light (no motion, no blur); color is for state. */
 :root {
-  --bg: #0B1421; --chrome: #101D2D; --sidebar: #101B26; --elevated: #192A3D; --hover: #243750;
+  --bg: #0B1421; --frame: #101D2D; --sidebar: #101B26; --elevated: #192A3D; --hover: #243750;
   --ink: #F1F5FA; --ink-2: #A2B2C6; --muted: #8699B1; --edge: #293B50;
   --edge-input: #647891; /* a text field's border: 3:1 on every surface (WCAG 1.4.11) */
   --accent: #3285F6; --accent-ink: #6AA6F9; --accent-soft: rgb(50 133 246 / 0.18);
@@ -111,7 +111,7 @@
    extension pages stay dark. */
 @media (prefers-color-scheme: light) {
   :root[data-scheme="system"] {
-    --bg: #F4F7FB; --chrome: #FFFFFF; --sidebar: #FFFFFF; --elevated: #E8EEF5; --hover: #DCE5EF;
+    --bg: #F4F7FB; --frame: #FFFFFF; --sidebar: #FFFFFF; --elevated: #E8EEF5; --hover: #DCE5EF;
     --ink: #0F1B2A; --ink-2: #3A4B60; --muted: #53667D; --edge: #CBD6E2; --edge-input: #76879C;
     --accent: #2468D0; --accent-ink: #1E61C4; /* 4.5:1 on --hover (an open side button) */ --accent-soft: rgb(36 104 208 / 0.14);
     --spark: #C4521B; /* the spark at 3:1 or more on a light tab strip (WCAG 1.4.11) */

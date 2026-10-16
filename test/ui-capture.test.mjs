@@ -479,7 +479,7 @@ describe("capture: a recording opens on the tab's picture, not on black", () => 
   // The stand-in tab paints #123 (17, 34, 51); the empty canvas is black.
   assert.ok(seen.px[2] > 30, `first picture ${seen.px}: black`);
   // A few pictures in before the stop: an MP4 recorder stopped some 20 ms after its start may hand
-  // over no data at all (Playwright's Chromium does), which says nothing about the first picture.
+  // over no data at all (Playwright's build does), which says nothing about the first picture.
   await sleep(500);
   const stop = await ask(helper, 2, { to: "record", op: "stop" }, 15_000);
   assert.ok(stop.value?.size > 0, JSON.stringify(stop));

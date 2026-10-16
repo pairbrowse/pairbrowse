@@ -69,7 +69,7 @@ test("two clients share one browser and survive peer disconnect", { skip: !runti
   const home = mkdtempSync(join(tmpdir(), "pairbrowse-shared-"));
   const linkedRuntime = join(home, "runtime");
   symlinkSync(runtime, linkedRuntime, "dir");
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", liveViewPort: 0 }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", liveViewPort: 0 }));
   const socketPath = join(home, "run", "browser.sock");
   const daemonOutput = openSync(join(home, "daemon.stderr.log"), "a");
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], {
@@ -220,7 +220,7 @@ test("a client that answers roots/list mid-call isn't deadlocked", { skip: !runt
   const home = mkdtempSync(join(tmpdir(), "pairbrowse-roots-"));
   const linkedRuntime = join(home, "runtime");
   symlinkSync(runtime, linkedRuntime, "dir");
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", liveViewPort: 0 }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", liveViewPort: 0 }));
   const socketPath = join(home, "run", "browser.sock");
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...process.env, PAIRBROWSE_HOME: home }, stdio: "ignore" });
   let socket;
@@ -273,7 +273,7 @@ test("two agents' tabs stay their own through new, navigate and close", { skip: 
   const home = mkdtempSync(join(tmpdir(), "pairbrowse-tabs-"));
   const linkedRuntime = join(home, "runtime");
   symlinkSync(runtime, linkedRuntime, "dir");
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", liveViewPort: 0, screenshots: false }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", liveViewPort: 0, screenshots: false }));
   const socketPath = join(home, "run", "browser.sock");
   const daemonOutput = openSync(join(home, "daemon.stderr.log"), "a");
   const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], {

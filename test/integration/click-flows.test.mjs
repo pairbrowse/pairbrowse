@@ -89,8 +89,8 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
   mkdirSync(base, { recursive: true });
   const home = mkdtempSync(join(base, "cf-"));
   symlinkSync(runtime, join(home, "runtime"), "dir");
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false }));
+  const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false }));
   const daemon = spawnDaemon(home, { env: { PAIRBROWSE_APPROVAL_WAIT_MS: "1500" } });
   const socketPath = join(home, "run", "browser.sock");
   const site = "http://shop.pbtest.example";

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { hidePersonTabs, PERSON_TAB_RULE, PERSON_TAB_LINE } from "../scripts/daemon/output.mjs";
 import { tabRefusal } from "../scripts/daemon/serve/refuse.mjs";
 import { createPersonTabs } from "../scripts/daemon/toolstab.mjs";
-import { CHROME_PAGE_RULE } from "../scripts/rules/policy.mjs";
+import { BROWSER_PAGE_RULE } from "../scripts/rules/policy.mjs";
 
 const page = (url) => ({ url: () => url });
 
@@ -46,8 +46,8 @@ test("tabRefusal: chrome pages keep today's sentences; person tabs are refused f
   set.add(mine);
   const personTab = (p) => set.has(p);
   // The browser's own pages: byte-identical to the sentences before.
-  assert.equal(tabRefusal("browser_click", { target: "e1" }, { here: chrome, personTab }), `${CHROME_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`);
-  assert.equal(tabRefusal("browser_tabs", { action: "select", index: 0 }, { pages: [chrome], personTab }), `Tab 0 is the browser's own page. ${CHROME_PAGE_RULE} Use browser_tabs list.`);
+  assert.equal(tabRefusal("browser_click", { target: "e1" }, { here: chrome, personTab }), `${BROWSER_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`);
+  assert.equal(tabRefusal("browser_tabs", { action: "select", index: 0 }, { pages: [chrome], personTab }), `Tab 0 is the browser's own page. ${BROWSER_PAGE_RULE} Use browser_tabs list.`);
   const tools = ["browser_click", "browser_type", "browser_snapshot", "browser_find", "browser_navigate", "browser_navigate_back", "browser_press_key", "browser_wait_for", "browser_hover", "browser_fill_form",
     "browser_select_option", "browser_drag", "browser_drop", "browser_file_upload", "browser_handle_dialog", "pairbrowse_click_at", "pairbrowse_scroll", "pairbrowse_upload", "pairbrowse_run"];
   const fileTab = page("file:///Users/x/Downloads/a.pdf"); // not in the set: its address says so

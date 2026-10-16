@@ -20,7 +20,7 @@ import { probeServer, PROBE_SCRIPT } from "../helpers/page-probe.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const shortBase = testBase();
-// The picture page's own address: the extension's screen/index.html on Playwright's Chromium; with
+// The picture page's own address: the extension's screen/index.html on Playwright's build; with
 // another build on either side, the browser's own chrome://pairbrowse/screen/ page may be it.
 const otherBuild = !!(process.env.PAIRBROWSE_TEST_EXECUTABLE || process.env.PAIRBROWSE_TEST_JOINER_EXECUTABLE);
 const SCREEN_OWN = otherBuild ? /^(?:chrome-extension:\/\/[a-p]{32}\/screen\/index\.html|chrome:\/\/pairbrowse\/screen\/)#[0-9a-f]{8}$/ : /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html#[0-9a-f]{8}$/;
@@ -71,8 +71,8 @@ const tool = (call, name, args = {}) => call("tools/call", { name, arguments: ar
 // of it; any other program runs as a browser of your own, with the side panel.
 const isPairBrowseBuild = (exe) => existsSync(join(dirname(exe), "..", "Resources", "PairBrowse-build.json"));
 const sideConfig = (exe, args) => (isPairBrowseBuild(exe)
-  ? { browserEngine: "pairbrowse", executablePath: exe, chromeArgs: [...args, "--use-mock-keychain", "--password-store=basic"] }
-  : { executablePath: exe, chromeArgs: args });
+  ? { browserEngine: "pairbrowse", executablePath: exe, browserArgs: [...args, "--use-mock-keychain", "--password-store=basic"] }
+  : { executablePath: exe, browserArgs: args });
 
 function home(prefix) {
   mkdirSync(shortBase, { recursive: true });
@@ -85,7 +85,7 @@ function home(prefix) {
 // only, as a PairBrowse build without its capture page): pictures go through the join channel.
 async function run({ noDirect = false, noCapture = false, realTunnel = false, youtube = false, excalidraw = false, joinerApp = "claude-code" } = {}) {
   const require = createRequire(join(runtime, "package.json"));
-  // PAIRBROWSE_TEST_EXECUTABLE: another Chromium build to run both sides on (the PairBrowse browser, say).
+  // PAIRBROWSE_TEST_EXECUTABLE: another build on the same engine to run both sides on (the PairBrowse browser, say).
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("patchright").chromium.executablePath();
   // PAIRBROWSE_TEST_JOINER_EXECUTABLE: the joiner on a build of its own (the acceptance matrix:
   // native host with extension joiner, extension host with native joiner).
@@ -97,10 +97,10 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   await new Promise((r) => joinFixture.listen(0, "127.0.0.1", r));
   const sideArgs = (server) => ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${server.address().port}`];
-  const chromeArgs = [...sideArgs(fixture), "--disable-features=LocalNetworkAccessChecks"], joinChromeArgs = sideArgs(joinFixture);
+  const browserArgs = [...sideArgs(fixture), "--disable-features=LocalNetworkAccessChecks"], joinBrowserArgs = sideArgs(joinFixture);
   const hostHome = home("sh-"), joinHome = home("sj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ ...sideConfig(executablePath, chromeArgs), display: "none", screenshots: false, participantName: "Bob" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ ...sideConfig(joinerExecutablePath, joinChromeArgs), display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ ...sideConfig(executablePath, browserArgs), display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ ...sideConfig(joinerExecutablePath, joinBrowserArgs), display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", ...(realTunnel ? {} : { PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" }), ...(noDirect ? { PAIRBROWSE_TEST_NO_DIRECT: "1" } : {}), ...(noCapture && h === hostHome ? { PAIRBROWSE_TEST_NO_CAPTURE: "1" } : {}) });
   const daemons = [];
   const daemonOf = new Map(); // home -> its helper

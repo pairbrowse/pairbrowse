@@ -81,7 +81,7 @@ test("fast mode fills a form inside a frame, opens a styled dropdown, ticks a st
   const h = mkdtempSync(join(base, "forms-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false }));
   const daemon = spawnDaemon(h);
   let a;
   try {

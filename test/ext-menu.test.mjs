@@ -1,4 +1,4 @@
-// The side panel extension in plain Chromium reaches the same Settings page and Tools lists as the
+// The side panel extension in the open build reaches the same Settings page and Tools lists as the
 // native build: the toolbar button's menu (ui/background.js), and the extension's pages only
 // (the owner's key in the extension's session storage never reaches a web page).
 import "./helpers/home.mjs";

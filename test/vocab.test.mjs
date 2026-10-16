@@ -48,10 +48,10 @@ test("the browser's own addresses have one set of rules, for the helper and the 
   const urls = await import("../ui/urls.js");
   const policy = await import("../scripts/rules/policy.mjs");
   const common = await import("../ui/common.js");
-  for (const name of ["isChromePage", "isChromeScreenPage", "hiddenFromLiveView", "CHROME_PAGE_ORIGINS"]) assert.equal(policy[name], urls[name], name);
+  for (const name of ["isBrowserPage", "isBrowserScreenPage", "hiddenFromLiveView", "BROWSER_PAGE_ORIGINS"]) assert.equal(policy[name], urls[name], name);
   for (const name of ["addressToUrl", "servedByBrowser", "REPORT_URL"]) assert.equal(common[name], urls[name], name);
   assert.equal((await import("../scripts/browser.mjs")).extensionOrigin, urls.extensionOrigin);
-  assert.deepEqual([...urls.CHROME_PAGE_ORIGINS], ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"]);
+  assert.deepEqual([...urls.BROWSER_PAGE_ORIGINS], ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"]);
   assert.equal(urls.ownPage("settings#passwords"), "pairbrowse://settings#passwords");
   for (const u of ["pairbrowse://activity", "pairbrowse://activity#x", "chrome://pairbrowse/activity/", "chrome://pairbrowse/activity?y"]) assert.ok(urls.isOwnTabPage("activity", u), u);
   for (const u of ["pairbrowse://activityx", "https://pairbrowse/activity", "", undefined]) assert.ok(!urls.isOwnTabPage("activity", u), String(u));
@@ -60,8 +60,8 @@ test("the browser's own addresses have one set of rules, for the helper and the 
   assert.equal(urls.extensionUrl("abc", "picker/index.html"), "chrome-extension://abc/picker/index.html");
   // No page or helper module spells the browser's own hosts itself.
   for (const f of ["ui/pairbrowse-adapter.js", "ui/common.js", "ui/approve/approve.js", "scripts/rules/policy.mjs", "scripts/daemon/context.mjs", "scripts/daemon/browser/launch.mjs", "scripts/daemon/browser/tabs.mjs", "scripts/daemon/sessions/picker.mjs", "scripts/daemon/follow.mjs", "scripts/daemon/join/screens.mjs"]) {
-    // Comments, and the sentence that tells an agent so (CHROME_PAGE_RULE), name them in words.
-    const code = read(f).replace(/^\s*\/\/.*$/gm, "").replace(/^export const CHROME_PAGE_RULE = .*$/m, "");
+    // Comments, and the sentence that tells an agent so (BROWSER_PAGE_RULE), name them in words.
+    const code = read(f).replace(/^\s*\/\/.*$/gm, "").replace(/^export const BROWSER_PAGE_RULE = .*$/m, "");
     const spelled = code.match(/chrome:\/\/pairbrowse|"pairbrowse\.top-chrome"|(HOST|host) = "pairbrowse"|pairbrowse:\\\/\\\/screen/);
     assert.equal(spelled?.[0], undefined, f);
   }

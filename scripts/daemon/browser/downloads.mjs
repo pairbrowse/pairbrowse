@@ -55,9 +55,9 @@ export function createDownloads({ personTabs, config, hostNote, log, onDownload,
     });
   }
 
-  // Playwright saves downloads to a temporary folder it deletes when the browser closes. Chrome
+  // Playwright saves downloads to a temporary folder it deletes when the browser closes. The engine
   // still lists them in its download history, and on the next launch the macOS PairBrowse browser
-  // (ungoogled-chromium) quits on the first new download. Forget those entries before launching.
+  // (the open build on macOS) quits on the first new download. Forget those entries before launching.
   function forgetTemporaryDownloads() {
     const history = join(profile(), "Default", "History");
     if (process.platform !== "darwin" || !existsSync(history)) return;

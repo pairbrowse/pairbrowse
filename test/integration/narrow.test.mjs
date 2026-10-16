@@ -58,7 +58,7 @@ async function helper(width) {
   const h = mkdtempSync(join(base, "narrow-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new", `--window-size=${width},900`], display: "none", screenshots: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new", `--window-size=${width},900`], display: "none", screenshots: false }));
   const daemon = spawnDaemon(h);
   const socketPath = join(h, "run", "browser.sock");
   for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);

@@ -21,12 +21,12 @@ document.body.dataset.platform = mac ? "mac" : "other";
 document.body.dataset.native = String(!!pb);
 // Served by the browser itself (chrome://pairbrowse.top-chrome), with or without the API.
 const nativeHost = servedByBrowser();
-// The browser's own host: its API, or served by it (strip.css lets the row end before Chromium's ⋯).
+// The browser's own host: its API, or served by it (strip.css lets the row end before the engine's ⋯).
 document.body.dataset.host = pb || nativeHost ? "native" : "page";
 
 // Back, forward and find come from the browser API when it has them (the active tab's history,
 // the window's find bar); without it they show disabled, their shortcut in the name, never a
-// state they don't have. The star is Chromium's own in the address bar beside the nav-right
+// state they don't have. The star is the engine's own in the address bar beside the nav-right
 // fragment, so the fragment draws none in the browser.
 const KEYS = mac
   ? { back: "Back (⌘[)", forward: "Forward (⌘])", reload: "Reload (⌘R)", find: "Find in page (⌘F)" }
@@ -135,7 +135,7 @@ const ROW_ONLY = 60; // px: taller than the 53 px row, shorter than any popover
 const inSlot = () => !!pb && !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
 const SHARE_CHANNEL = "pairbrowse-share";
 const SHARE_SLOT_LABEL = "Share this session (opens under Share, in the agent panel)";
-// Chromium's own ⋯ (32 px, 16 px from the window's edge) sits after this page in the browser: the
+// The engine's own ⋯ (32 px, 16 px from the window's edge) sits after this page in the browser: the
 // docks measure from the window's edge (native: B2).
 const APP_MENU = nativeHost ? 48 : 0;
 // What the dock or the browser's bubble said it shows for this window: Share's card, the app menu.

@@ -56,6 +56,7 @@ export function readReport(body) {
   if (typeof body.what !== "string" || !body.what.trim() || body.what.length > REPORT_WHAT_MAX) return { error: `what is what happened, 1 to ${REPORT_WHAT_MAX} characters.` };
   const { app, platform, helperState: st, tab } = body;
   if (!plainObject(app) || only(app, ["host", "page", "helper", "browser"]) !== undefined) return { error: "app is { host, page, helper, browser }." };
+  // "chromium": the report service's wire value for the open build (pairbrowse.com/api/report checks it).
   if (app.host !== "pairbrowse" && app.host !== "chromium") return { error: 'app.host is "pairbrowse" or "chromium".' };
   if (typeof app.page !== "string" || !/^[a-z0-9-]{0,40}$/.test(app.page)) return { error: "app.page is a page's name." };
   if (!shortText(app.helper, 40)) return { error: "app.helper is a version or null." };

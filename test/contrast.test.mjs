@@ -109,12 +109,12 @@ function contrast(t, fg, bg, base = "bg") {
 // light variants check the live view's sheet and the surfaces the light block sets.
 const DARK_ONLY = new Set(["dark", "dark, more contrast"]);
 // Opaque surfaces text sits on, and the text colors.
-const SURFACES = ["bg", "chrome", "sidebar", "elevated", "panel", "inset", "column", "btn"];
-const LIGHT_SURFACES = ["bg", "chrome", "sidebar", "elevated"];
+const SURFACES = ["bg", "frame", "sidebar", "elevated", "panel", "inset", "column", "btn"];
+const LIGHT_SURFACES = ["bg", "frame", "sidebar", "elevated"];
 const TEXT = ["ink", "ink-2", "muted", "accent-ink"];
 // State colors are text too (an error line, a warning, "connected"), on the page surfaces.
 const STATE = ["ok", "warn", "bad"];
-const PAGE = ["bg", "chrome", "sidebar", "elevated"];
+const PAGE = ["bg", "frame", "sidebar", "elevated"];
 // Declared pairs for a variant: [kind, fg, bg]. Text is 4.5:1, ui 3:1.
 const declared = (variant) => {
   const surfaces = DARK_ONLY.has(variant) ? SURFACES : LIGHT_SURFACES;
@@ -125,8 +125,8 @@ const declared = (variant) => {
     // A text field's border and the focus ring (2 px of --accent) on every surface; a plain
     // button's ring on the surfaces buttons sit on (its label names it, the ring only frames it).
     ...surfaces.flatMap((bg) => [["ui", "edge-input", bg], ["ui", "accent", bg]]),
-    ...["bg", "chrome", "sidebar", "panel"].map((bg) => ["ui", "edge-btn", bg]),
-    ["ui", "spark", "bg"], ["ui", "spark", "chrome"], ["ui", "spark", "sidebar"],
+    ...["bg", "frame", "sidebar", "panel"].map((bg) => ["ui", "edge-btn", bg]),
+    ["ui", "spark", "bg"], ["ui", "spark", "frame"], ["ui", "spark", "sidebar"],
     // Primary buttons: white on the accent fill (Allow, Save, the new tab's Ask), at rest and hovered.
     ["text", "#ffffff", "accent-fill"], ["text", "#ffffff", "accent-fill-hover"],
     ["text", "bg", "accent"],

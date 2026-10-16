@@ -51,13 +51,13 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>${req.headers.host}${req.url}</title><main>shared fixture</main><input aria-label='Name'>`); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   const port = fixture.address().port;
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
+  const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("jh-");
   const joinHome = home("jj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Bob" }));
   writeFileSync(join(hostHome, "secrets.env"), "SHOP_PASSWORD=hunter2hunter2\nSHOP_PASSWORD_DOMAINS=shop.pbtest.example\n");
   chmodSync(join(hostHome, "secrets.env"), 0o600);
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
   const daemons = [];
   const connect = async (h) => {
@@ -205,14 +205,14 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
   });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   const port = fixture.address().port;
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
+  const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("fh-");
   const joinHome = home("fj-");
   // No participantName on the host: its name comes from PAIRBROWSE_PARTICIPANT (env below).
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false }));
   writeFileSync(join(hostHome, "secrets.env"), "SHOP_PASSWORD=hunter2hunter2\nSHOP_PASSWORD_DOMAINS=shop.pbtest.example\n");
   chmodSync(join(hostHome, "secrets.env"), 0o600);
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_PARTICIPANT: h === hostHome ? "Bob" : "" });
   const daemons = [];
   const connect = async (h) => {

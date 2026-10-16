@@ -21,7 +21,7 @@ export function createPicker(st, deps, api) {
   // person which session to use, unless an agent chose first. Never on the very first start
   // (nothing to go back to) or in a cloud container (nobody sees the window).
   // pick.state: "off", "pending" (shown at the next launch), "showing", "done".
-  // Something to go back to: a browser that ran before (Chrome's "Default" folder, in the Chromium
+  // Something to go back to: a browser that ran before (the engine's "Default" folder, in the open build's
   // profile or the native build's own: engine.mjs engineProfile), saved tabs or another kept session.
   const ranBefore = (dir) => existsSync(join(dir, "Default")) || existsSync(join(nativeProfile(dir), "Default"));
 

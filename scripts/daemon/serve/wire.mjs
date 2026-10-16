@@ -37,7 +37,7 @@ export const NO_PICK_WAIT = toolsWith("noPickWait");
 // it, where Playwright's makes one move and most boards put the card back.
 export const DECORATED = toolsWith("decorated");
 // Helper tools that act in the agent's tab, refused there when it is one of the browser's own pages.
-export const CHROME_GUARDED = toolsWith("chromeGuarded");
+export const BROWSER_GUARDED = toolsWith("browserGuarded");
 // Calls after which other participants' refs may be stale.
 export const changesPage = (tool) => tool?.startsWith("browser_") || tool?.startsWith("pairbrowse_click") || ["pairbrowse_run", "pairbrowse_upload", "pairbrowse_session"].includes(tool);
 

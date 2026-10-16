@@ -440,7 +440,7 @@ test("docked with the approval card there: no in-page card, the item names the t
   assert.equal(await r.answer, "allow");
 });
 
-test("docked, the approval card not there: the in-page card as before; plain Chromium unchanged", async () => {
+test("docked, the approval card not there: the in-page card as before; the open build unchanged", async () => {
   for (const docked of [() => true, () => false]) {
     const page = fakePage();
     const { ca } = setup({ front: page, docked, targetOf: async () => T1 });
@@ -448,10 +448,10 @@ test("docked, the approval card not there: the in-page card as before; plain Chr
     const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "pays", target: "Place order" }, participant: "p1", client: "codex-mcp-client" });
     assert.equal(r.shown, true);
     assert.equal(page.calls.filter(([k]) => k === "approval").length, 1, "the in-page card");
-    // The lookup only in the native build: plain Chromium never waits on it.
+    // The lookup only in the native build: the open build never waits on it.
     assert.equal(r.item.tab.target, docked() ? T1 : "");
   }
-  // Plain Chromium with its approval page open (the extension era's tab): the in-page card still shows.
+  // The open build with its approval page open (the extension era's tab): the in-page card still shows.
   const page = fakePage();
   const { ca } = setup({ front: page, surfaces: { approve: 1 }, docked: () => false });
   ca.participant("p1", { client: "codex-mcp-client", remote: false, tab: () => page });

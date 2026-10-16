@@ -49,7 +49,7 @@ body[data-driving="true"] .card:has(.face[aria-current="true"]) { box-shadow: 0 
 #note-form[hidden] { position: absolute; inset: 0; opacity: 0; display: none; pointer-events: none; transition: opacity var(--t-close), display var(--t-close) allow-discrete; }
 @starting-style { #note-form:not([hidden]) { opacity: 0; } }
 .card.add form { box-sizing: border-box; width: 100%; padding: var(--sp-2); }
-.field { box-sizing: border-box; width: 100%; height: var(--ctl-sm); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
+.field { box-sizing: border-box; width: 100%; height: var(--ctl-sm); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--frame); color: var(--ink); font: var(--fs-2) var(--sans); }
 .field::placeholder { color: var(--muted); opacity: 1; }
 .hint { display: block; margin-top: 4px; font-size: var(--fs-1); line-height: 13px; color: var(--ink-2); }
 

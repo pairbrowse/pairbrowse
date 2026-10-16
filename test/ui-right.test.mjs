@@ -1585,7 +1585,7 @@ describe("side panel: header, agent card, people, pause, requests and folding", 
   assert.ok(v.people.some((p) => p.startsWith("Alice · Codex") && p.includes("Waiting for you")), "name, app, state in words");
   assert.ok(await page.evaluate(() => [...document.querySelectorAll("#people .st")].some((s) => s.title.includes("shop.example/cart"))), "the tab in the line's title");
   assert.ok(v.people.some((p) => p.startsWith("Sam · Claude Code") && p.includes("Done") && p.includes("Sam's browser")), "where");
-  // The side panel has no left dock or strip: it keeps the people's rows (the plain-Chromium
+  // The side panel has no left dock or strip: it keeps the people's rows (the open-build
   // guard of DESIGN.md Part G), the Live pill while the agent drives and Share in the session card.
   assert.ok(v.people.some((p) => p.startsWith("Sam (by hand)") && p.includes("Online")), "a person's row, Online");
   assert.equal(await page.evaluate(() => document.getElementById("status-live").checkVisibility()), true, "the Live pill while driving");

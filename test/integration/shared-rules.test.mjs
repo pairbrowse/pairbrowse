@@ -51,11 +51,11 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
   });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   const port = fixture.address().port;
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
+  const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("sh-");
   const joinHome = home("sj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
   const daemons = [];
   const connect = async (h) => {

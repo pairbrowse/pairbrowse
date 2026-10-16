@@ -47,7 +47,7 @@ test("the page's own errors come back with the run, and a recording is saved as 
   // A PairBrowse build (its PairBrowse-build.json beside the program) runs as the PairBrowse
   // browser, its capture page recording, on the mock keychain as every test launch of it.
   const native = existsSync(join(dirname(executablePath), "..", "Resources", "PairBrowse-build.json"));
-  const engine = native ? { browserEngine: "pairbrowse", chromeArgs: ["--headless=new", "--use-mock-keychain", "--password-store=basic"] } : { chromeArgs: ["--headless=new"] };
+  const engine = native ? { browserEngine: "pairbrowse", browserArgs: ["--headless=new", "--use-mock-keychain", "--password-store=basic"] } : { browserArgs: ["--headless=new"] };
   writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, ...engine, display: "none", screenshots: false, downloadsDir: downloads }));
   const daemon = spawnDaemon(h, { env: { HOME: user } });
   let a;

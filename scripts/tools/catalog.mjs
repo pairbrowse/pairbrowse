@@ -231,7 +231,7 @@ export const RUNS_TOOLS = [
 //   noWait       answers before (or without) the browser being ready
 //   noPickWait   doesn't wait for the session picker
 //   decorated    the helper's own, acting in a page: its result gets the browser tools' notes
-//   chromeGuarded refused in the agent's tab when that is one of the browser's own pages
+//   browserGuarded refused in the agent's tab when that is one of the browser's own pages
 //   approval     its named final action can be answered in the browser as well (guard.mjs)
 //   forwarded    a joiner's agent's call goes to the host's helper (daemon/follow.mjs)
 //   remote       ... and the host's helper takes it from a joiner's agent (the browser tools too)
@@ -275,10 +275,10 @@ export const CATALOG = Object.freeze({
   pairbrowse_liveview: OWN(LIVEVIEW_TOOL, ["noWait", "noPickWait"]),
   pairbrowse_record: OWN(RECORD_TOOL),
   pairbrowse_invite: OWN(INVITE_TOOL, ["noWait", "noPickWait"]),
-  pairbrowse_run: OWN(RUN_TOOL, ["screenshot", "clicking", "tab", "decorated", "chromeGuarded", "forwarded", "remote"]),
-  pairbrowse_scroll: OWN(SCROLL_TOOL, ["screenshot", "tab", "chromeGuarded", "forwarded", "remote"]),
-  pairbrowse_upload: OWN(UPLOAD_TOOL, ["screenshot", "clicking", "tab", "decorated", "chromeGuarded", "forwarded", "remote"]),
-  pairbrowse_click_at: OWN(CLICK_AT_TOOL, ["tab", "chromeGuarded", "approval", "forwarded", "remote"]),
+  pairbrowse_run: OWN(RUN_TOOL, ["screenshot", "clicking", "tab", "decorated", "browserGuarded", "forwarded", "remote"]),
+  pairbrowse_scroll: OWN(SCROLL_TOOL, ["screenshot", "tab", "browserGuarded", "forwarded", "remote"]),
+  pairbrowse_upload: OWN(UPLOAD_TOOL, ["screenshot", "clicking", "tab", "decorated", "browserGuarded", "forwarded", "remote"]),
+  pairbrowse_click_at: OWN(CLICK_AT_TOOL, ["tab", "browserGuarded", "approval", "forwarded", "remote"]),
   pairbrowse_session: OWN(SESSION_TOOL, ["noWait", "noPickWait"]),
   pairbrowse_facts: OWN(FACTS_TOOL, ["noWait", "noPickWait"]),
   pairbrowse_collaboration: OWN(COLLABORATION_TOOL, ["noPickWait", "remote"]),

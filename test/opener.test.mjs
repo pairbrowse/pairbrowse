@@ -167,7 +167,7 @@ test("context.openByHand: only a build with its own pages; opens the browser, th
     config: { browserEngine: "chromium", executablePath: "/fake/chrome", display: "none", sessionPicker: false }, log: quiet, chromium,
     hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
     presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
-    shuttingDown: () => stopping, onStarted: quiet, onClosed: quiet, chromePagesOf: () => pages,
+    shuttingDown: () => stopping, onStarted: quiet, onClosed: quiet, browserPagesOf: () => pages,
   });
 
   const plain = make(false);
@@ -195,7 +195,7 @@ test("context.openByHand: only a build with its own pages; opens the browser, th
     chromium: { launchPersistentContext: () => new Promise((r) => { release = () => r(fakeContext()); }) },
     hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
     presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
-    shuttingDown: () => false, onStarted: quiet, onClosed: quiet, chromePagesOf: () => true,
+    shuttingDown: () => false, onStarted: quiet, onClosed: quiet, browserPagesOf: () => true,
   });
   assert.deepEqual(await slow.openByHand({ acceptMs: 50 }), { ok: true });
   for (let i = 0; i < 100 && !release; i++) await new Promise((r) => setTimeout(r, 10));
@@ -210,7 +210,7 @@ test("context.openByHand: only a build with its own pages; opens the browser, th
     chromium: { launchPersistentContext: () => new Promise((_, no) => setTimeout(() => no(new Error("the profile is locked")), ms)) },
     hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
     presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
-    shuttingDown: () => false, onStarted: quiet, onClosed: quiet, chromePagesOf: () => true,
+    shuttingDown: () => false, onStarted: quiet, onClosed: quiet, browserPagesOf: () => true,
   });
   const quick = await failing(20).openByHand({ acceptMs: 2000 });
   assert.equal(quick.ok, false);

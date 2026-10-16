@@ -12,7 +12,7 @@ const AXE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.mi
 
 // Known violations, each with its reason: "page: rule" -> why.
 const EXCEPTIONS = new Map([
-  // Chromium's own tab pattern: each tab (role tab) carries its close button, so a tab holds a
+  // The engine's own tab pattern: each tab (role tab) carries its close button, so a tab holds a
   // focusable descendant. Tab reaches only the active tab's close (roving tabindex), Delete closes
   // the focused tab, and the close is named "Close <title>". Moving role="tab" onto an inner
   // element would clear it; it touches every tab selector in strip.js and its tests.

@@ -1,5 +1,5 @@
 // A login (a persistent cookie) made just before the helper stops, or just before a session
-// switch, is there in the next browser. Chromium writes its cookies every ~30 s and on a clean
+// switch, is there in the next browser. The engine writes its cookies every ~30 s and on a clean
 // exit: the helper closes the browser cleanly on SIGTERM, SIGINT and a session switch, and only
 // then exits (daemon.mjs shutdown, context.mjs close and switchTo). Live: a real helper and
 // browser (PAIRBROWSE_TEST_RUNTIME).
@@ -31,7 +31,7 @@ function makeHome() {
   const home = mkdtempSync(join(tmpdir(), "pb-cookies-"));
   symlinkSync(runtime, join(home, "runtime"), "dir");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
   return home;
 }
 

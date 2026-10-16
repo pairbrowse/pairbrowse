@@ -86,7 +86,7 @@ export function writeBundle({ out = paths.diagnostics, home = homedir(), now = n
       os: `${platform()} ${arch()} ${release()}`,
     },
     native: {
-      build: pick(readJson(join(paths.browser, "native.json")), ["version", "sha256", "installedAt", "branding", "chrome"]),
+      build: pick(readJson(join(paths.browser, "native.json")), ["version", "sha256", "installedAt", "branding", "ownPages", "chrome"]),
       engine: pick(readJson(join(paths.engine, "installed.json")), ["version", "sha256", "installedAt"]),
       ungoogledStamp: existsSync(paths.buildStamp) ? clean(readFileSync(paths.buildStamp, "utf8").trim()) : null,
     },

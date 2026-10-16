@@ -45,7 +45,7 @@
 // shows and the page is visible. No timer: arming is a timestamp compared at click time. The
 // helper checks the answer again.
 import { $, el, avatar, splitLabel, helperConnection } from "../common.js";
-import { TOP_CHROME_HOST } from "../urls.js";
+import { TOP_SHELL_HOST } from "../urls.js";
 import { followHelper, postJson, UNREACHABLE_RETRY } from "../helper.js";
 
 const ARM_MS = 600;
@@ -77,7 +77,7 @@ const said = new Map(); // key -> "Allowed by Alex": answered elsewhere, shown b
 const card = $("card"), menu = $("menu"), more = $("more");
 
 // The window's approval bubble (530), not the tab page: set before the first paint.
-const BUBBLE = location.host === TOP_CHROME_HOST;
+const BUBBLE = location.host === TOP_SHELL_HOST;
 if (BUBBLE) document.documentElement.dataset.mode = "bubble";
 let told = null; // the last [count, target id] told to the browser
 

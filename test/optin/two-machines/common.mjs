@@ -10,7 +10,7 @@ export { sleep, text } from "../../helpers/util.mjs";
 const mail = process.env.PB_MAIL || "/tmp/pbmail";
 export const post = (name, value = "") => writeFileSync(join(mail, name), String(value));
 export async function wait(name, ms = 600_000) { const f = join(mail, name); for (let t = 0; t < ms && !existsSync(f); t += 300) await sleep(300); return readFileSync(f, "utf8"); }
-// This machine's browser: the PairBrowse browser on macOS, Patchright's Chromium on Linux.
+// This machine's browser: the PairBrowse browser on macOS, Patchright's build on Linux.
 export function browserPath() {
   if (process.platform === "darwin") return process.env.HOME + "/.pairbrowse/browser/PairBrowse.app/Contents/MacOS/pairbrowse";
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright";
@@ -18,7 +18,7 @@ export function browserPath() {
   const sub = readdirSync(join(root, dir)).find((d) => /^chrome-linux/.test(d));
   return join(root, dir, sub, "chrome");
 }
-export const chromeArgs = process.platform === "linux" ? ["--headless=new", "--no-sandbox"] : ["--headless=new"];
+export const browserArgs = process.platform === "linux" ? ["--headless=new", "--no-sandbox"] : ["--headless=new"];
 export async function attach(home, app = "claude-code") {
   const sp = join(home, "run", "browser.sock");
   let sock;

@@ -10,7 +10,7 @@ const run = promisify(execFile);
 const FRONT = 'ObjC.import("Cocoa"); const f = $.NSWorkspace.sharedWorkspace.frontmostApplication; f.processIdentifier + " " + ObjC.unwrap(f.bundleIdentifier)';
 const ACTIVATE = (pid) => `ObjC.import("Cocoa"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${Number(pid)}).activateWithOptions(0)`;
 const jxa = (code) => run("osascript", ["-l", "JavaScript", "-e", code], { timeout: 3000 }).then((r) => r.stdout.trim());
-// The PairBrowse browser's bundle ids: the Chromium build scripts/browser.mjs brands, and the
+// The PairBrowse browser's bundle ids: the open build scripts/browser.mjs brands, and the
 // native build (release app.pairbrowse.browser, dev builds app.pairbrowse.browser.dev). Only the
 // fallback: focus follows this helper's own browser by its process (below), so another helper's
 // PairBrowse window (a named instance, a dev build) counts as any other app.

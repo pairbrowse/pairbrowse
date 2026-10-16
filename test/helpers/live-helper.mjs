@@ -9,7 +9,7 @@ import { sleep } from "./util.mjs";
 export { text } from "./util.mjs";
 
 export async function liveHelper(runtime, { prefix = "lh-", config = {}, args = [], name = "w", env = {} } = {}) {
-  const h = helperHome(runtime, { prefix, config: { ...config, chromeArgs: args } });
+  const h = helperHome(runtime, { prefix, config: { ...config, browserArgs: args } });
   const daemon = spawnDaemon(h, { env });
   const socketPath = join(h, "run", "browser.sock");
   for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);

@@ -193,7 +193,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
       try { host = new URL(page.url()).host; } catch {}
       const index = lv?.tabIndex ? await within(2000, Promise.resolve(lv.tabIndex(page)).catch(() => -1)) : -1;
       // The tab's CDP target id: which window shows the browser's approval card.
-      // Only the native build's card uses it: plain Chromium never waits on the lookup.
+      // Only the native build's card uses it: the open build never waits on the lookup.
       const found = docked() ? await within(2000, Promise.resolve().then(() => targetOf(page, 2000)).catch(() => null)) : null;
       const target = typeof found === "string" && /^[0-9A-Za-z]{1,64}$/.test(found) ? found : "";
       tab = { id: Number.isInteger(index) ? index : -1, host, target };

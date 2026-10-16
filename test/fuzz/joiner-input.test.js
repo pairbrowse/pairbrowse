@@ -25,7 +25,7 @@ const code = fc.oneof(
 const kc = fc.oneof(fc.constantFrom(67, 86, 88, 45, 46, 81, 65, 0, -1, 300, "86", 86.5), fc.integer({ min: -5, max: 300 }));
 const mods = fc.oneof(fc.integer({ min: 0, max: 15 }), fc.constantFrom(-1, 16, 2 ** 31, "2", null, 6.5));
 
-// What the page and Chromium's editing could read as copy, cut or paste.
+// What the page and the engine's editing could read as copy, cut or paste.
 function clipboard(ev) {
   const m = ev.modifiers;
   const names = [ev.key, ev.code];

@@ -12,7 +12,7 @@ import { hudScript } from "../scripts/browser.mjs";
 
 // SHA-256 of scripts/hud.js before the split (commit 9c462de): the parts change nothing. A
 // deliberate change to the page script updates this value with it.
-const PRE_SPLIT_SHA256 = "18576bb941edbefdd004aef1994c6a58c9ec1057ec983d9abb5a03f2ba1f7c41";
+const PRE_SPLIT_SHA256 = "2f2a26ea9f499a17c90aaedea3d8364b278cc68a6fa0f5ded5b9c881653998c8";
 const PLACEHOLDERS = ["__PB_NAME__", "__PB_TOKEN__", "__PB_TAG_HUD__", "__PB_TAG_BAR__", "__PB_TAG_CURSOR__", "__PB_AGENT_COLOR__", '"__PB_MOTION__"'];
 
 test("the parts joined are the page script as it was in one file", () => {

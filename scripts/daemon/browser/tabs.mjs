@@ -6,7 +6,7 @@ import { keepFocus } from "../../focus.mjs";
 import { readSavedTabs, trackTabs, restoreTabs } from "../../tabs.mjs";
 import { recordPerson, tabsFile } from "../../sessions.mjs";
 import { within } from "../../util.mjs";
-import { isChromePage } from "../../../ui/urls.js";
+import { isBrowserPage } from "../../../ui/urls.js";
 
 const TRIM_EVERY_MS = 60_000;
 const KEEP_ENTRIES = 200;
@@ -35,7 +35,7 @@ export function createTabs(st, deps, api) {
   async function pageAt(url) {
     if (!st.contextPromise) return null;
     const ctx = await api.getContext();
-    return findPage(ctx, url) || ctx.pages().findLast((p) => !isChromePage(p.url()) && !personTabs.has(p)) || null;
+    return findPage(ctx, url) || ctx.pages().findLast((p) => !isBrowserPage(p.url()) && !personTabs.has(p)) || null;
   }
 
   // Playwright MCP keeps every network request and page event of each tab until it navigates or
@@ -84,7 +84,7 @@ export function createTabs(st, deps, api) {
   // Everything that watches a page, for the tabs there at launch and each new one.
   function adopt(page, ctx) {
     // No badge or bar is drawn into the browser's own pages.
-    page.on("domcontentloaded", () => { if (!isChromePage(page.url())) hud.onPageLoad(page); });
+    page.on("domcontentloaded", () => { if (!isBrowserPage(page.url())) hud.onPageLoad(page); });
     popups.watchPage(page, ctx);
     api.keepDownloads(page);
     presence.watchUser(page);
@@ -127,7 +127,7 @@ export function createTabs(st, deps, api) {
       log, screen,
       // A build with its own pages: no "Opening tabs" list (setContent fails on its new tab page,
       // and the strip shows the progress); its untouched start tab closes after (plans/555 D1.4).
-      list: !st.chrome,
+      list: !st.ownPages,
       // Progress shows in the live view and side panel only (never as a badge in the pages),
       // and only when there's more than one tab to bring back.
       onProgress: (n, total) => { if (total > 1) status({ text: `Opening tabs ${n} of ${total}`, kind: "claude" }); },

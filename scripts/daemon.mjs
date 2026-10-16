@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// The PairBrowse daemon. It owns the Chrome window and outlives Claude Code sessions, so tabs and
+// The PairBrowse daemon. It owns the browser window and outlives Claude Code sessions, so tabs and
 // logins stay put between sessions.
 //
 // Security model:
-// - Chrome is driven over a private pipe (Playwright's default). There's no remote-debugging port.
+// - The browser is driven over a private pipe (Playwright's default). There's no remote-debugging port.
 // - The only way in is a socket file in ~/.pairbrowse/run (mode 0700), so only your user account
 //   can connect. Shared clients coordinate through a daemon-wide queue and control leases.
 // - Secrets are typed only on the HTTPS domains listed for them in secrets.env.
@@ -54,7 +54,7 @@ import { createPresence } from "./daemon/presence.mjs";
 import { createPause, pressPause as pressPauseIn } from "./daemon/pause.mjs";
 import { fieldOwner } from "./daemon/fields.mjs";
 import { createPanel } from "./daemon/panel.mjs";
-import { CHROME_PAGE_ORIGINS } from "../ui/urls.js";
+import { BROWSER_PAGE_ORIGINS } from "../ui/urls.js";
 import { forgetPanelBuild, UNGOOGLED } from "./browser.mjs";
 import { createScreenShare } from "./daemon/screenshare.mjs";
 import { createRecorder, pixelRatio } from "./daemon/recorder.mjs";
@@ -87,7 +87,7 @@ import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mj
 import { engineDir } from "./native/pack.mjs";
 import { answerOpen, writeOpener, claimOpener, releaseOpener, registryDir } from "./opener.mjs";
 import { bundleIdOfApp } from "./openers.mjs";
-import { chooseBrowser } from "./browser/choice.mjs";
+import { chooseBrowser, isOpenBrowser } from "./browser/choice.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
 import { testOn, harnessStarted } from "./testenv.mjs";
 
@@ -174,12 +174,12 @@ const diagnostics = createDiagnostics({
   // Never a path, and never a launch for it: the browser open now, if any.
   browser: async () => {
     const inUse = context.browserInUse();
-    const engine = inUse === "pairbrowse" || inUse === "chromium" ? inUse : inUse ? "path" : null;
+    const engine = inUse === "pairbrowse" ? inUse : isOpenBrowser(inUse) ? "open" : inUse ? "path" : null;
     const version = pinnedBrowserVersion({
       engine,
       nativeRecord: engine === "pairbrowse" ? readJson(nativeDirs().record) : null,
       ungoogled: process.platform === "darwin" ? UNGOOGLED.version : null,
-      browsersJson: engine === "chromium" ? readJson(join(paths.runtime, "node_modules", driverChoice.driver === "playwright" ? "playwright-core" : "patchright-core", "browsers.json")) : null,
+      browsersJson: engine === "open" ? readJson(join(paths.runtime, "node_modules", driverChoice.driver === "playwright" ? "playwright-core" : "patchright-core", "browsers.json")) : null,
     });
     const build = inUse === "pairbrowse" ? readJson(join(engineDir(), "installed.json"))?.version ?? null : null;
     return { engine, version, build };
@@ -214,7 +214,7 @@ function labelsChanged() { try { tabLabels.changed(); } catch {} }
 // Per-tab turns (the default); the whole-browser lease above stays for pairbrowse_collaboration.
 const tabClaims = new TabClaims({ onChange: refreshTabs });
 
-const panel = createPanel({ context: () => context.current(), liveViewUrl: async () => (await sharing.ensureLiveView()).url, log, onStale: () => forgetPanelBuild(context.profile()), available: () => !context.willHaveChromePages() });
+const panel = createPanel({ context: () => context.current(), liveViewUrl: async () => (await sharing.ensureLiveView()).url, log, onStale: () => forgetPanelBuild(context.profile()), available: () => !context.willHaveBrowserPages() });
 // "Pause agents", session-wide: held here, or mirrored from the host of a session joined from
 // here (only a drive participant may press it there; a watcher sees it but can't).
 const canPause = () => !follow.joined() || follow.role() === "drive";
@@ -246,9 +246,9 @@ const hud = createHud({
   pause: () => ({ by: pause.view().by, can: canPause() }),
   // An agent handed a step to the person (pairbrowse_status "you"): a hand-off until it moves on.
   onStatus: (p, st) => { if (st?.kind === "you") handoffs.set(`status:${p}`, { text: st.text, page: hud.sparkPage(p) || null, by: agentBy(p, st.color) }); else handoffs.clear(`status:${p}`); },
-  // A build with its own pages (the context's chromePages): its docks carry the bottom bar's
-  // duties, so pages are told they are docked (DESIGN.md Part G3). Plain Chromium: false, no call.
-  docked: () => { try { return !!context.chromePages?.(); } catch { return false; } },
+  // A build with its own pages (the context's browserPages): its docks carry the bottom bar's
+  // duties, so pages are told they are docked (DESIGN.md Part G3). The open build: false, no call.
+  docked: () => { try { return !!context.browserPages?.(); } catch { return false; } },
 });
 const presence = createPresence({
   host: HOST, readEvents: (frame, waitMs) => hud.call(frame, String(waitMs), "user-wait"), pages: () => context.openPages(), paused: () => context.isSwitching(),
@@ -279,7 +279,7 @@ const context = createContext({
   // requests pass), and they get the live view's address in its switch and their own key in an
   // owner-only file (context.mjs writes it and deletes it once used).
   helperFor: async () => {
-    for (const o of CHROME_PAGE_ORIGINS) if (!panel.origins.includes(o)) panel.origins.push(o);
+    for (const o of BROWSER_PAGE_ORIGINS) if (!panel.origins.includes(o)) panel.origins.push(o);
     try {
       const v = await sharing.ensureLiveView();
       return { origin: new URL(v.url).origin, key: v.pagesKey, newCaptureKey: (on) => v.newCaptureKey?.(on) ?? null };
@@ -290,9 +290,9 @@ const context = createContext({
     liveView()?.setSession(context.sessionInfo());
     // The side panel extension gets the live view's address through its worker; the browser's own
     // pages already have the address in its switch and their own key in an owner-only file.
-    if (!context.chromePages()) setTimeout(() => panel.connect().catch((e) => log("side panel", e?.message || e)), 0);
+    if (!context.browserPages()) setTimeout(() => panel.connect().catch((e) => log("side panel", e?.message || e)), 0);
   },
-  // The window is gone: end the sessions (the bridge reconnects and reopens Chrome on the next
+  // The window is gone: end the sessions (the bridge reconnects and reopens the browser on the next
   // action), or shut down if nobody is connected.
   onClosed: () => {
     // The host closed the window: sharing ends with it (codes, yeses, tunnels). A restart of the
@@ -416,13 +416,13 @@ const forms = {
 // tab-order, the tab-order event): the side panel's worker isn't asked there.
 const tabOrder = createTabOrder({
   call: (fn, arg, ms) => panel.call(fn, arg, ms), getContext: () => context.getContext(), log,
-  strip: { chrome: () => context.chromePages(), snapshot: () => liveView()?.stripTabs?.() ?? null, arrange: (targets) => liveView()?.sendToPages?.("tab-order", { op: "arrange", targets }) },
+  strip: { ownPages: () => context.browserPages(), snapshot: () => liveView()?.stripTabs?.() ?? null, arrange: (targets) => liveView()?.sendToPages?.("tab-order", { op: "arrange", targets }) },
 });
 
 // Where tabs are captured for joiners and recordings (daemon/capture.mjs): the side panel
 // extension, the browser's own capture page (its channel: liveview/capture.mjs), or nowhere.
 const captureChannel = createCaptureChannel({ send: (data) => liveView()?.sendToPages?.("capture", data), log });
-const capture = createCaptureBackend({ chromePages: () => context.willHaveChromePages(), capturePages: () => context.willHaveCapturePages(), panelCall: (fn, arg, ms) => panel.call(fn, arg, ms), channel: captureChannel });
+const capture = createCaptureBackend({ browserPages: () => context.willHaveBrowserPages(), capturePages: () => context.willHaveCapturePages(), panelCall: (fn, arg, ms) => panel.call(fn, arg, ms), channel: captureChannel });
 // Shared browser mode: joiners see this browser's tabs live and work in them (daemon/screenshare.mjs).
 const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), log, during: (who) => presence.remoteStart(who), capture });
 // Recording the browser to a video (pairbrowse_record, the side panel's Record button).
@@ -575,7 +575,7 @@ const joinPrompt = createJoinPrompt({
 // A named final click asked in the browser as well as in the agent's app (daemon/approvals.mjs).
 // Docked (the browser's own pages), its approve page is the window's approval card; the tab's
 // target id says which window.
-const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, docked: () => !!context.chromePages?.(), targetOf: targetIdOf, mask: output.mask, log, hostName: () => HOST,
+const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, docked: () => !!context.browserPages?.(), targetOf: targetIdOf, mask: output.mask, log, hostName: () => HOST,
   // A session joined from here with the approve role: the host's asks on its picture pages, answers sent back on the channel.
   screen: { pages: () => follow.screenPages(), call: screenCard }, sendAnswer: (id, answer) => follow.answerApproval(id, answer) });
 // Who used each session, for the session picker: joiners the host let in. A joiner let in also
@@ -797,7 +797,7 @@ async function shutdown(code) {
   follow.stop().catch(() => {});
   cobrowse.stop();
   screens.close().catch(() => {}); // joiners' direct connections and the tabs' debugger sessions
-  // The browser gets a clean close (Chromium writes its cookies and logins on the way out; it
+  // The browser gets a clean close (the engine writes its cookies and logins on the way out; it
   // writes them only every ~30 s otherwise), at most SHUTDOWN_GRACE_MS: then the helper exits
   // and Playwright's exit handler kills what's left of it.
   const started = Date.now();

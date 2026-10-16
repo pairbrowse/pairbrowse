@@ -3,7 +3,7 @@
 // tabs hidden, and a small picture of the page.
 import { isRef, trimResult } from "../../rules/policy.mjs";
 import { pageLoaded, within } from "../../util.mjs";
-import { hideChromeTabs, hidePersonTabs } from "../output.mjs";
+import { hideBrowserTabs, hidePersonTabs } from "../output.mjs";
 import { settle } from "../page.mjs";
 import { foldedLine, revealNote, scanReveal } from "../reveal.mjs";
 import { CLICKING_TOOLS, DECORATED, FIELD_TOOLS, INLINE_SHORT_TOOLS, INLINE_SNAPSHOT_TOOLS, LOADING_TOOLS, PAGE_READ_TOOLS, SCREENSHOT_TOOLS, dropClosedAlerts, forJoiner, urlIn } from "./wire.mjs";
@@ -147,7 +147,7 @@ export function createResult(conn, api) {
     let personIdx = null;
     for (const part of content()) if (part.type === "text") {
       output.maskLinkedFiles(part.text); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text)));
-      if (tool === "browser_tabs") part.text = hideChromeTabs(part.text);
+      if (tool === "browser_tabs") part.text = hideBrowserTabs(part.text);
       if (/^- \d+: |file:/m.test(part.text)) {
         personIdx ??= await context.openPages().then((pages) => pages.flatMap((p, i) => (personTab(p) ? [i] : []))).catch(() => []);
         part.text = hidePersonTabs(part.text, personIdx);

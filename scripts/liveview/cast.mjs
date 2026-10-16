@@ -125,7 +125,7 @@ export function createCast({ getContext, currentUrl, personTab, replayer, broadc
       const url = await currentUrl();
       if ((state.shown || state.switching) && url === state.followed) return;
       state.followed = url;
-      // The browser's own pages are never shown; followedPage stays the agents' page (a chrome
+      // The browser's own pages are never shown; followedPage stays the agents' page (a browser
       // page is never listed, so no tab is marked as Claude's).
       const at = ctx.pages().find((p) => p.url() === url);
       const page = (at && !hiddenFromLiveView(at.url()) ? at : null) || state.shown?.page || ctx.pages().filter((p) => !hiddenFromLiveView(p.url()) && !personTab(p)).at(-1);

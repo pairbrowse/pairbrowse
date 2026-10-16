@@ -1,5 +1,5 @@
 // Rules the daemon enforces on every tool call, whatever the hooks or permission mode say.
-import { isChromePage } from "../../ui/urls.js";
+import { isBrowserPage } from "../../ui/urls.js";
 import { toolsWith, CATALOG } from "../tools/catalog.mjs";
 
 // run_code_unsafe runs arbitrary code in the helper. The webmcp tools let web pages register
@@ -73,8 +73,8 @@ export function looksLikeSecretName(tool, args) {
 // The PairBrowse browser's own pages (a native build's tab strip, docks, session picker, new tab
 // and settings): never an agent's to open, read or act in. Their addresses and the rules about
 // them live in ui/urls.js (one copy for the helper and the pages).
-export { CHROME_PAGE_ORIGINS, isChromePage, isChromeScreenPage, hiddenFromLiveView } from "../../ui/urls.js";
-export const CHROME_PAGE_RULE = "chrome://pairbrowse pages are the PairBrowse browser's own (its tab strip, docks, session picker, new tab and settings): no agent opens, reads or acts in them.";
+export { BROWSER_PAGE_ORIGINS, isBrowserPage, isBrowserScreenPage, hiddenFromLiveView } from "../../ui/urls.js";
+export const BROWSER_PAGE_RULE = "chrome://pairbrowse pages are the PairBrowse browser's own (its tab strip, docks, session picker, new tab and settings): no agent opens, reads or acts in them.";
 
 export function navigationProblem(url) {
   let u;
@@ -83,7 +83,7 @@ export function navigationProblem(url) {
   } catch {
     return `Not a valid URL: ${url}. Pass a full address, like https://example.com/.`;
   }
-  if (isChromePage(u.href)) return `${CHROME_PAGE_RULE} Open a web page (http or https) instead.`;
+  if (isBrowserPage(u.href)) return `${BROWSER_PAGE_RULE} Open a web page (http or https) instead.`;
   if (u.protocol === "http:" || u.protocol === "https:" || u.href === "about:blank") return null;
   return `pairbrowse only opens web pages (http/https), not ${u.protocol} URLs. Open an http or https address instead.`;
 }

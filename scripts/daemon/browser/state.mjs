@@ -5,10 +5,10 @@ import { EXTENSION_SHELL } from "../../browser/choice.mjs";
 export function createBrowserState({ session, pick }) {
   return {
     contextPromise: null, // the browser's context while it runs or starts, else null
-    chrome: false, // the browser in use has its own pages (no side panel extension)
-    chosen: false, // shell, chrome and capture are this launch's (set once its build was chosen)
+    ownPages: false, // the browser in use has its own pages (no side panel extension)
+    chosen: false, // shell, ownPages and capture are this launch's (set once its build was chosen)
     capture: false, // ...and its own capture page
-    shell: EXTENSION_SHELL, // this launch's shell (browser/choice.mjs): chrome and capture are its
+    shell: EXTENSION_SHELL, // this launch's shell (browser/choice.mjs): ownPages and capture are its
     engine: null, // the launch layer's config of the last launch (engineConfig), null before one
     helperKeyPath: null, // the key file of the browser launched last, until used or closed
     captureKeyPath: null, // ...and its capture page's
@@ -20,7 +20,7 @@ export function createBrowserState({ session, pick }) {
     // come to the front, so nothing puts the app they were in back in front of it (keepFocus).
     byHand: false,
     inUse: null, // the browser the last launch chose
-    session, // which browser session (Chrome profile) is in use
+    session, // which browser session (browser profile) is in use
     switching: false,
     // While a session switch closes one browser and opens the next, anyone else asking for the
     // browser waits for it: a browser started in between would be left running, unknown to the

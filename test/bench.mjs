@@ -78,7 +78,7 @@ async function startHelper({ screenshots }) {
   }
   writeFileSync(join(h, "config.json"), JSON.stringify(NATIVE
     ? { browserEngine: "pairbrowse", executablePath: nativeExe, sessionPicker: false, ...(screenshots ? {} : { screenshots: false }) }
-    : { executablePath, chromeArgs: ["--headless=new"], display: "none", ...(screenshots ? {} : { screenshots: false }) }));
+    : { executablePath, browserArgs: ["--headless=new"], display: "none", ...(screenshots ? {} : { screenshots: false }) }));
   const out = openSync(join(h, "daemon.stderr.log"), "a");
   const t0 = Date.now();
   // --expose-gc: the memory probe collects garbage first, so heap figures are what's reachable.
@@ -303,8 +303,8 @@ async function joinerSoak(rounds) {
   const APP = `<title>App</title><body style="margin:0"><h1>App</h1><button id="b" style="display:block;width:100vw;height:30vh" onclick="document.getElementById('n').textContent=(+document.getElementById('n').textContent||0)+1">Tap</button><span id="n">0</span><input id="i" aria-label="Note" style="display:block;width:100vw;height:20vh;font-size:30px"><div style="height:150vh">more below</div>`;
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
-  const home = (prefix, name) => { const dir = mkdtempSync(join(tmpdir(), prefix)); symlinkSync(runtime, join(dir, "runtime"), "dir"); writeFileSync(join(dir, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", participantName: name })); return dir; };
+  const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
+  const home = (prefix, name) => { const dir = mkdtempSync(join(tmpdir(), prefix)); symlinkSync(runtime, join(dir, "runtime"), "dir"); writeFileSync(join(dir, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", participantName: name })); return dir; };
   const hostHome = home("pbj-h-", "Bob"), joinHome = home("pbj-j-", "Alice");
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", PAIRBROWSE_TEST_MEMORY: "1", PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
   const rpc = (write, input) => {

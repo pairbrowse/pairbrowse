@@ -20,7 +20,7 @@ export function detectHost(input = {}) {
 // One or two lines for the agent at session start: how the user sees the browser here.
 export function surfaceGuidance(surface, host = "claude") {
   const who = host === "codex" ? "Codex" : "Claude";
-  const own = `The browser is the PairBrowse browser: a Chromium window of its own (named PairBrowse on macOS) where the user watches, clicks and types directly. The PairBrowse side panel (pinned toolbar button, or Cmd+Shift+Y) and the bar at the bottom of each page show what ${who} is doing; ${who}'s tab carries an orange spark. No live view is needed.`;
+  const own = `The browser is the PairBrowse browser: a browser window of its own (named PairBrowse on macOS) where the user watches, clicks and types directly. The PairBrowse side panel (pinned toolbar button, or Cmd+Shift+Y) and the bar at the bottom of each page show what ${who} is doing; ${who}'s tab carries an orange spark. No live view is needed.`;
   if (host === "codex") return `pairbrowse: Codex. ${own} Pay, publish, delete, send and submit-for-review steps are the user's: PairBrowse refuses them here, so set pairbrowse_status to "you" and ask the user to click those themselves.`;
   switch (surface) {
     case "desktop":

@@ -41,7 +41,7 @@ const lum = (hex) => {
 };
 const contrast = (a, b) => { const [x, y] = [lum(norm(a)), lum(norm(b))].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
 
-const REQUIRED = ["bg", "chrome", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "accent", "accent-ink", "accent-soft",
+const REQUIRED = ["bg", "frame", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "accent", "accent-ink", "accent-soft",
   "edge-input", "ok", "warn", "bad", "spark", "sans", "mono", "fs-0", "fs-1", "fs-2", "fs-3", "fw-name", "r-1", "r-2", "r-3", "t",
   "tab-idle", "tab-top", "edge-tab", "tab-lit", "glow-tab", "edge-light", "edge-lit", "surface-grad", "shadow-raised", "glow-soft", "glow-accent",
   "glow-ok", "glow-focus", "live-bg", "live-edge", "live-ink", "btn", "edge-btn", "accent-fill", "panel", "panel-edge", "inset", "column"];
@@ -53,7 +53,7 @@ const ALL_CSS = readdirSync(root + UI, { withFileTypes: true }).filter((d) => d.
 test("the sheet has every token, dark by default and light only for the live view", () => {
   for (const k of REQUIRED) assert.ok(dark[k], `--${k}`);
   assert.ok(lightBlock, "a light block under :root[data-scheme=\"system\"]");
-  for (const k of ["bg", "chrome", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "edge-input", "accent-ink", "ok", "warn", "bad"]) {
+  for (const k of ["bg", "frame", "sidebar", "elevated", "hover", "ink", "ink-2", "muted", "edge", "edge-input", "accent-ink", "ok", "warn", "bad"]) {
     assert.notEqual(light[k], dark[k], `light --${k}`);
   }
 });
@@ -61,7 +61,7 @@ test("the sheet has every token, dark by default and light only for the live vie
 test("text colors meet WCAG AA on every surface, in both schemes", () => {
   for (const [scheme, t] of [["dark", dark], ["light", light]]) {
     for (const fg of ["ink", "ink-2", "muted", "accent-ink", "ok", "warn", "bad"]) {
-      for (const bg of ["bg", "chrome", "sidebar", "elevated"]) {
+      for (const bg of ["bg", "frame", "sidebar", "elevated"]) {
         const r = contrast(t[fg], t[bg]);
         assert.ok(r >= 4.5, `${scheme}: --${fg} on --${bg} is ${r.toFixed(2)}:1`);
       }
@@ -70,17 +70,17 @@ test("text colors meet WCAG AA on every surface, in both schemes", () => {
       const r = contrast(t[fg], t.hover);
       assert.ok(r >= 3, `${scheme}: --${fg} on --hover is ${r.toFixed(2)}:1`);
     }
-    for (const bg of ["bg", "chrome", "sidebar", "elevated"]) {
+    for (const bg of ["bg", "frame", "sidebar", "elevated"]) {
       const r = contrast(t["edge-input"], t[bg]);
       assert.ok(r >= 3, `${scheme}: a text field's border (--edge-input) on --${bg} is ${r.toFixed(2)}:1`);
     }
-    for (const bg of ["bg", "chrome", "sidebar", "panel"]) {
+    for (const bg of ["bg", "frame", "sidebar", "panel"]) {
       const r = contrast(t["edge-btn"], t[bg]);
       assert.ok(r >= 3, `${scheme}: a plain button's ring (--edge-btn) on --${bg} is ${r.toFixed(2)}:1`);
     }
     const r = contrast(t.bg, t.accent);
     assert.ok(r >= 4.5, `${scheme}: primary button text (--bg on --accent) is ${r.toFixed(2)}:1`);
-    for (const bg of ["bg", "chrome", "sidebar"]) {
+    for (const bg of ["bg", "frame", "sidebar"]) {
       const r = contrast(t.spark, t[bg]);
       assert.ok(r >= 3, `${scheme}: the spark on the tab Claude works in (--spark on --${bg}) is ${r.toFixed(2)}:1`);
     }
@@ -162,7 +162,7 @@ test("every placeholder is a sheet text color at full opacity", () => {
       assert.ok(["ink", "ink-2", "muted"].includes(color), `${f}: ${sel.trim()} takes --ink, --ink-2 or --muted (${color})`);
       const opacity = body.match(/(?:^|;)\s*opacity\s*:\s*([\d.]+)/)?.[1];
       assert.equal(opacity, "1", `${f}: ${sel.trim()} sets opacity: 1`);
-      for (const [scheme, t] of [["dark", dark], ["light", light]]) for (const bg of ["bg", "chrome", "elevated"]) {
+      for (const [scheme, t] of [["dark", dark], ["light", light]]) for (const bg of ["bg", "frame", "elevated"]) {
         const r = contrast(t[color], t[bg]);
         assert.ok(r >= 4.5, `${scheme}: ${f} placeholder (--${color}) on --${bg} is ${r.toFixed(2)}:1`);
       }
@@ -181,7 +181,7 @@ test("the static light keeps text at AA", () => {
   }
   // The mockup's opaque fills under text: the Live session pill, Allow (white), the docks' panels; a
   // destructive confirm's red on the raised surface.
-  for (const [fg, bg] of [["bad-ink", "elevated"], ["bad-ink", "chrome"], ["live-ink", "live-bg"], ["ink", "btn"], ["ink-2", "panel"], ["ink-2", "inset"], ["ink-soft", "sidebar"], ["accent-ink", "nav-active"], ["ink", "badge"]]) {
+  for (const [fg, bg] of [["bad-ink", "elevated"], ["bad-ink", "frame"], ["live-ink", "live-bg"], ["ink", "btn"], ["ink-2", "panel"], ["ink-2", "inset"], ["ink-soft", "sidebar"], ["accent-ink", "nav-active"], ["ink", "badge"]]) {
     const r = contrast(t[fg], t[bg]);
     assert.ok(r >= 4.5, `--${fg} on --${bg} is ${r.toFixed(2)}:1`);
   }
@@ -241,9 +241,9 @@ test("every page links the sheet before its own", () => {
   assert.match(lv, /<html[^>]*\sdata-scheme="system"/);
 });
 
-test("the window frame's seed is the sheet's chrome navy", async () => {
+test("the window frame's seed is the sheet's frame navy", async () => {
   const { THEME_COLOR } = await import("../scripts/browser.mjs");
-  assert.equal("#" + (THEME_COLOR >>> 0).toString(16).slice(2), norm(dark.chrome));
+  assert.equal("#" + (THEME_COLOR >>> 0).toString(16).slice(2), norm(dark.frame));
 });
 
 test("text that sits on --hover takes --ink-2, which keeps AA there (muted does not)", () => {

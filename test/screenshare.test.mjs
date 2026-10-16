@@ -67,7 +67,7 @@ test("the slower route lets go of a tab that closed: nothing reopens on it, noth
   await share.close();
 });
 
-// A joiner's keys are for the host's page only. With a native key code, Chromium makes a real OS
+// A joiner's keys are for the host's page only. With a native key code, the engine makes a real OS
 // key event of them, and one the page leaves alone goes on to the host's browser itself (its
 // shortcuts; on macOS through the window's key handling, which a native build's Dev checks stop
 // at). Without one, a key the page doesn't take ends there.

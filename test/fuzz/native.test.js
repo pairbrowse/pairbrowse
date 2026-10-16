@@ -27,7 +27,7 @@ const version = fc.oneof(fc.tuple(fc.constantFrom(MAJOR, "1", "999"), fc.nat(), 
 const manifest = fc.oneof(fc.anything(), fc.record({ product: fc.constantFrom("PairBrowse", "pairbrowse", "", 1), version, platform: fc.oneof(fc.constantFrom("linux", "windows", "macos", "__proto__"), fc.anything()), arch: fc.oneof(fc.constantFrom("x64", "arm64", "x86_64", ""), fc.anything()) }, { requiredKeys: [] }));
 
 // Property: a Linux or Windows build's manifest comes back only as a PairBrowse build of the
-// pinned Chromium major with a four-part version and a known platform; anything else refuses.
+// pinned engine major with a four-part version and a known platform; anything else refuses.
 test("a build manifest: checked, or refused with a sentence", () => {
   const exec = join(dir, "chrome");
   check(fc.property(fc.oneof(manifest.map((m) => JSON.stringify(m) ?? ""), fc.string({ maxLength: 40 })), (text) => {

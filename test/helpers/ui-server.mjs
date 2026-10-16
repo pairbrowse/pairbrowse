@@ -10,14 +10,14 @@ import { readFileSync, statSync } from "node:fs";
 import { join, posix, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SECURITY_HEADERS, listen, plain } from "../../scripts/liveview/http.mjs";
-import { defaultFixture, shimScript, bridgeChromeScript } from "./pairbrowse-shim.mjs";
+import { defaultFixture, shimScript, bridgeExtensionScript } from "./pairbrowse-shim.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const UI_ROOT = join(here, "..", "..", "ui");
 const PRELUDE = readFileSync(join(here, "ui-prelude.js"), "utf8");
 
-// The live view's VIEWER_CSP (scripts/liveview/http.mjs) widened to a chrome page's own images,
-// media and its helper, plus Chromium WebUI's Trusted Types enforcement (ui/webui/webui_util.cc
+// The live view's VIEWER_CSP (scripts/liveview/http.mjs) widened to a browser page's own images,
+// media and its helper, plus the engine WebUI's Trusted Types enforcement (ui/webui/webui_util.cc
 // EnableTrustedTypesCSP); `static-types` is one of its default policy names, the only one a
 // PairBrowse page may use. Framing mirrors what the native 520 patch sets: frame-src 'self' on
 // every chrome page; frame-ancestors 'self', with X-Frame-Options lifted to SAMEORIGIN, on /picker
@@ -51,7 +51,7 @@ export async function startUiServer({ helper, fixture = defaultFixture(), bridge
     // A fixture with helper: null is a browser started without a helper: session.helper() answers
     // with no address.
     if (path === "/__harness/pairbrowse-api.js") return js(res, shimScript({ ...current, helper: current.helper === null ? { origin: "", key: "" } : { origin: helper.origin, key: helper.key } }));
-    if (path === "/__harness/chrome.js") return js(res, bridgeChromeScript(helper.base));
+    if (path === "/__harness/chrome.js") return js(res, bridgeExtensionScript(helper.base));
     const clean = posix.normalize(path);
     const parts = clean.split("/").filter(Boolean);
     if (clean.includes("..") || clean.includes("\0") || !parts.length || parts.some((p) => p.startsWith(".")) || parts[0] === "__harness") return plain(res, 404);

@@ -28,7 +28,7 @@ test("the agent is the one inside the PairBrowse app the browser config names, e
   assert.equal(agentProgram({ browser: "/A/PairBrowse.app/Contents/MacOS/pairbrowse" }, mac), `/A/PairBrowse.app/${AGENT_TAIL}`);
   // The older names, as browser.mjs reads them.
   assert.equal(agentProgram({ browserEngine: "pairbrowse", executablePath: "/B/My Build.app/Contents/MacOS/PairBrowse" }, mac), `/B/My Build.app/${AGENT_TAIL}`);
-  // Not a program inside an app (Chromium's own name, a bare binary): the installed build's.
+  // Not a program inside an app (the engine's own name, a bare binary): the installed build's.
   for (const config of [{ browser: "chromium" }, { browser: "pairbrowse" }, { browser: "/usr/bin/chromium" }, {}, null]) {
     assert.equal(agentProgram(config, mac), `/h/.pairbrowse/browser/PairBrowse.app/${AGENT_TAIL}`, JSON.stringify(config));
   }

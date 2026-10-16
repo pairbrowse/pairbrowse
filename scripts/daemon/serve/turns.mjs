@@ -3,7 +3,7 @@
 // another agent holding it is waited for briefly, else the call is refused).
 import { keepFocus } from "../../focus.mjs";
 import { GONE_MS } from "../../liveview/push.mjs";
-import { isChromePage } from "../../rules/policy.mjs";
+import { isBrowserPage } from "../../rules/policy.mjs";
 import { sleep, within } from "../../util.mjs";
 import { waitForLink, waitedLine } from "../linkwait.mjs";
 
@@ -54,8 +54,8 @@ export function createTurns(conn, api) {
   const takenByOther = (page) => othersTab(page) || !!remoteHolder(page);
 
   async function freeTab() {
-    for (const page of [...used].reverse()) if (!page.isClosed() && !othersTab(page) && !isChromePage(page.url()) && !personTab(page)) return page;
-    const open = (await openTabs()).filter((page) => !page.isClosed() && !isChromePage(page.url()));
+    for (const page of [...used].reverse()) if (!page.isClosed() && !othersTab(page) && !isBrowserPage(page.url()) && !personTab(page)) return page;
+    const open = (await openTabs()).filter((page) => !page.isClosed() && !isBrowserPage(page.url()));
     conn.othersOpen = open.length;
     return open.find((page) => !othersTab(page) && !personTab(page)) || null;
   }
@@ -139,7 +139,7 @@ export function createTurns(conn, api) {
     // tab by chance. None: it asks again on its next call.
     if (remote) {
       const start = remote.startPage && !remote.startPage.isClosed() && !personTab(remote.startPage) ? remote.startPage : null;
-      const unheld = (page) => !page.isClosed() && !isChromePage(page.url()) && !personTab(page) && !(tabClaims.holder(page) && tabClaims.holder(page).id !== participant);
+      const unheld = (page) => !page.isClosed() && !isBrowserPage(page.url()) && !personTab(page) && !(tabClaims.holder(page) && tabClaims.holder(page).id !== participant);
       const page = start || await freeTab() || (await openTabs()).findLast(unheld);
       if (page) { remote.startPage = null; remote.started = true; setMine(page); }
       else conn.noTabWhy = "every tab here is in use by another agent";
@@ -149,8 +149,8 @@ export function createTurns(conn, api) {
     // in it; else its browser server's tab when free, else any free tab. Every tab taken: its
     // browser server's, where it hears "in use".
     const looked = await within(FRONT_WAIT_MS, front().catch(() => null));
-    const start = [looked, conn.serverAt].find((p) => p && !p.isClosed() && !takenByOther(p) && !isChromePage(p.url()) && !personTab(p))
-      || (await openTabs()).find((p) => !p.isClosed() && !takenByOther(p) && !isChromePage(p.url()) && !personTab(p)) || (conn.serverAt && !personTab(conn.serverAt) ? conn.serverAt : null);
+    const start = [looked, conn.serverAt].find((p) => p && !p.isClosed() && !takenByOther(p) && !isBrowserPage(p.url()) && !personTab(p))
+      || (await openTabs()).find((p) => !p.isClosed() && !takenByOther(p) && !isBrowserPage(p.url()) && !personTab(p)) || (conn.serverAt && !personTab(conn.serverAt) ? conn.serverAt : null);
     if (start) setMine(start);
     return conn.mine;
   }

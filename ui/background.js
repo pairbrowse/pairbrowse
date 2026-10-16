@@ -5,10 +5,10 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 // file after an update; the helper compares this with the file on disk and reloads the extension
 // when they differ (daemon/panel.mjs). A hash of this file with the value blanked (browser.mjs
 // panelBuildOf).
-const PB_BUILD = "565ea7550b65a19d";
+const PB_BUILD = "4e701c42a9cb28da";
 globalThis.pbBuild = PB_BUILD;
 // In a new profile on macOS the browser starts without a window (--no-startup-window, see
-// browserArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
+// shellArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
 // the user closed every window brings none back.
 (async () => {
   if ((await chrome.storage.session.get("started")).started) return;
@@ -38,7 +38,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 // The daemon hands over the live view address at launch; it's kept in session storage (memory
 // only, never on disk).
 globalThis.pbSetView = (url) => chrome.storage.session.set({ view: url });
-// Chrome stops an idle extension worker after 30 seconds; PairBrowse talks to it any time (the
+// The engine stops an idle extension worker after 30 seconds; PairBrowse talks to it any time (the
 // live view address, notifications), so keep it awake: any extension call resets that timer.
 setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20_000);
 // "Your turn" notifications (sign-in, 2FA, CAPTCHA, an approval), shown as PairBrowse.

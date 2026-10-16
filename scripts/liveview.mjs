@@ -28,7 +28,7 @@ import { createInputReplayer, readViewerInput, inputBudget } from "./liveview/in
 import { createJoinerServer, recentlySeen, joinerKeyOf } from "./liveview/joiner-server.mjs";
 import { createIcons, guestTabs, guestActivity, hostOf } from "./liveview/tabs.mjs";
 import { layoutFrom } from "./liveview/layout.mjs";
-import { hiddenFromLiveView, CHROME_PAGE_ORIGINS } from "../ui/urls.js";
+import { hiddenFromLiveView, BROWSER_PAGE_ORIGINS } from "../ui/urls.js";
 import { OWNER_EVENTS, PAGES_EVENTS, EVENT_KIND } from "../ui/events.js";
 import { createToolsRoutes } from "./liveview/routes/tools.mjs";
 import { createTimelineRoutes } from "./liveview/routes/timeline.mjs";
@@ -311,7 +311,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
   // Shared browser joiners' pointers for the PairBrowse browser's overlay over the page card
   // (push.mjs pushOverlay): to the browser's own pages only (its strip passes them on to the
   // browser), each tab by its CDP target id. One at a time, the latest wins. The owner's live view
-  // gets the shown tab's (joiner-pointers) and draws them over its picture: in plain Chromium,
+  // gets the shown tab's (joiner-pointers) and draws them over its picture: in the open build,
   // which has no overlay of its own, that is where the host sees them (never drawn in the tab,
   // whose picture goes back to the joiners: nobody sees their own pointer trail their mouse).
   let overlayNext = null, overlayBusy = false, viewerPointersSig = "[]";
@@ -548,7 +548,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
 
 
 
-  const chromeOrigin = (o) => !!o && CHROME_PAGE_ORIGINS.includes(o) && extraOrigins.includes(o);
+  const browserPageOrigin = (o) => !!o && BROWSER_PAGE_ORIGINS.includes(o) && extraOrigins.includes(o);
   const server = http.createServer(async (req, res) => {
     if (!hostOk(req.headers.host, hosts)) return plain(res, 403); // blocks DNS-rebinding
     const { key: given, route, rest } = pathParts(req);
@@ -567,9 +567,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     const origin = req.headers.origin;
     // CORS for the browser's own pages alone (chrome://pairbrowse, allowed only when the daemon
     // runs a build that has them): never "*", never a web or extension origin.
-    if (role === "owner" && chromeOrigin(origin)) { res.setHeader("access-control-allow-origin", origin); res.setHeader("vary", "origin"); }
+    if (role === "owner" && browserPageOrigin(origin)) { res.setHeader("access-control-allow-origin", origin); res.setHeader("vary", "origin"); }
     if (req.method === "OPTIONS") {
-      if (role !== "owner" || !chromeOrigin(origin)) return plain(res, 404);
+      if (role !== "owner" || !browserPageOrigin(origin)) return plain(res, 404);
       res.writeHead(204, { ...SECURITY_HEADERS, "access-control-allow-methods": "GET, POST, DELETE", "access-control-allow-headers": "content-type", "access-control-max-age": "600" });
       return res.end();
     }
@@ -665,7 +665,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     newCaptureKey(on = true) { captureKey = on ? randomBytes(32).toString("base64url") : null; return captureKey; },
     follow,
     reconnecting: (except) => push.reconnecting(except),
-    // The badge state, mirrored in the viewer's own chrome (pages can't fake it there).
+    // The badge state, mirrored in the viewer's own frame (pages can't fake it there).
     setStatus(next) {
       status = { text: String(next.text || "").slice(0, 140), kind: next.kind || "clear" };
       broadcast("status", status);

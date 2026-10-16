@@ -60,7 +60,7 @@ test("bad replies are refused: n, error and sizes", async () => {
 
 test("where tabs are captured: extension without own pages, the page once it said hello and the build declares it, else nowhere", () => {
   const ch = createCaptureChannel({ send: () => {} });
-  const of = (chromePages, capturePages, env = {}) => createCaptureBackend({ chromePages: () => chromePages, capturePages: () => capturePages, panelCall: async () => null, channel: ch, env }).kind();
+  const of = (browserPages, capturePages, env = {}) => createCaptureBackend({ browserPages: () => browserPages, capturePages: () => capturePages, panelCall: async () => null, channel: ch, env }).kind();
   assert.equal(of(false, false), "extension");
   assert.equal(of(false, true), "extension");
   assert.equal(of(true, false), null, "own pages, no capture page");
@@ -77,8 +77,8 @@ test("in page mode share and record go to the channel with the tab's target id; 
   const sent = [];
   const ch = createCaptureChannel({ send: (d) => sent.push(d) });
   const ext = [];
-  let chrome = true;
-  const backend = createCaptureBackend({ chromePages: () => chrome, capturePages: () => true, channel: ch, env: {}, panelCall: async (fn, arg) => { ext.push(arg); return 7; } });
+  let ownPages = true;
+  const backend = createCaptureBackend({ browserPages: () => ownPages, capturePages: () => true, channel: ch, env: {}, panelCall: async (fn, arg) => { ext.push(arg); return 7; } });
   ch.reply({ hello: true, caps: { share: true, record: true } });
   const cdp = { send: async () => ({ targetInfo: { targetId: "ABCDEF" } }), detach: async () => {} };
   const page = { context: () => ({ newCDPSession: async () => cdp }) };
@@ -92,13 +92,13 @@ test("in page mode share and record go to the channel with the tab's target id; 
   ch.reply({ n: 2, value: { type: "video/webm" } });
   await r;
   assert.deepEqual(ext, [], "the extension isn't asked");
-  chrome = false;
+  ownPages = false;
   assert.equal(await backend.tabRef(page), 7, "the extension's tab id");
   assert.deepEqual(ext, ["ABCDEF"]);
 });
 
 test("a tab that never answers: tabRef gives up within its bound; a tab's target is asked once", async () => {
-  const backend = createCaptureBackend({ chromePages: () => true, capturePages: () => true, channel: { ready: () => true }, env: {}, panelCall: async () => 7 });
+  const backend = createCaptureBackend({ browserPages: () => true, capturePages: () => true, channel: { ready: () => true }, env: {}, panelCall: async () => 7 });
   const hung = { context: () => ({ newCDPSession: async () => ({ send: () => new Promise(() => {}), detach: async () => {} }) }) };
   const t0 = Date.now();
   await assert.rejects(backend.tabRef(hung, 300), /the tab didn't answer/);
@@ -114,7 +114,7 @@ test("targetIdOf: one cached lookup for every caller; null when the tab fails or
   let asked = 0;
   const page = { context: () => ({ newCDPSession: async () => ({ send: async () => { asked++; return { targetInfo: { targetId: "T2" } }; }, detach: async () => {} }) }) };
   assert.equal(await targetIdOf(page, 2000), "T2");
-  const backend = createCaptureBackend({ chromePages: () => true, capturePages: () => true, channel: { ready: () => true }, env: {}, panelCall: async () => 7 });
+  const backend = createCaptureBackend({ browserPages: () => true, capturePages: () => true, channel: { ready: () => true }, env: {}, panelCall: async () => 7 });
   assert.equal(await backend.tabRef(page), "T2", "tabRef reuses the approvals' lookup");
   assert.equal(await targetIdOf(page), "T2");
   assert.equal(asked, 1, "asked once for every caller");
@@ -153,7 +153,7 @@ test("whenReady: true at a late hello, at once after it, false after its time or
 
 test("waitReady: the capture page's late hello is waited for; nothing is waited for where no capture page is declared", async () => {
   const ch = createCaptureChannel({ send: () => {} });
-  const backend = (chromePages, capturePages, env = {}) => createCaptureBackend({ chromePages: () => chromePages, capturePages: () => capturePages, panelCall: async () => null, channel: ch, env });
+  const backend = (browserPages, capturePages, env = {}) => createCaptureBackend({ browserPages: () => browserPages, capturePages: () => capturePages, panelCall: async () => null, channel: ch, env });
   assert.equal(RECORD_READY_MS, 3000);
   assert.equal(await backend(false, false).waitReady(5000), "extension", "the extension: at once");
   let t0 = Date.now();
@@ -173,7 +173,7 @@ test("waitReady: the capture page's late hello is waited for; nothing is waited 
 test("record waits for the capture page's late hello, then records through it", async () => {
   const sent = [];
   const ch = createCaptureChannel({ send: (d) => { sent.push(d); if (d.op === "start") setImmediate(() => ch.reply({ n: d.n, value: { type: "video/webm", w: 1280, h: 840 } })); } });
-  const capture = createCaptureBackend({ chromePages: () => true, capturePages: () => true, panelCall: async () => { throw new Error("the extension isn't there"); }, channel: ch, env: {} });
+  const capture = createCaptureBackend({ browserPages: () => true, capturePages: () => true, panelCall: async () => { throw new Error("the extension isn't there"); }, channel: ch, env: {} });
   const rec = createRecorder({ call: async () => { throw new Error("the extension isn't there"); }, dir: () => tmpdir(), capture });
   setTimeout(() => ch.reply({ hello: true, caps: { share: true, record: true } }), 300);
   const t0 = Date.now();
@@ -190,7 +190,7 @@ test("record still refuses after 3 s with no capture page, and asks nothing", as
   const sent = [];
   const ch = createCaptureChannel({ send: (d) => sent.push(d) });
   let extension = 0;
-  const capture = createCaptureBackend({ chromePages: () => true, capturePages: () => true, panelCall: async () => { extension++; }, channel: ch, env: {} });
+  const capture = createCaptureBackend({ browserPages: () => true, capturePages: () => true, panelCall: async () => { extension++; }, channel: ch, env: {} });
   const rec = createRecorder({ call: async () => { extension++; }, dir: () => tmpdir(), capture });
   const t0 = Date.now();
   const r = await rec.start();

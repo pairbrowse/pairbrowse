@@ -18,7 +18,7 @@ async function toolsOf(home) {
   symlinkSync(runtime, join(home, "runtime"), "dir");
   const { createRequire } = await import("node:module");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false }));
   const daemon = spawnDaemon(home, { env: { PAIRBROWSE_TEST_APPROVAL: "1" } });
   const socketPath = join(home, "run", "browser.sock");
   try {

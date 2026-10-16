@@ -11,7 +11,7 @@ svg { flex: none; }
 /* ---- the tab row ---- */
 .row { position: relative; display: flex; align-items: stretch; gap: 8px; height: 53px; padding: 0 12px; -webkit-app-region: drag; } /* mockup */
 body[data-platform="mac"] .row { padding-left: 92px; } /* the traffic lights end at 74: 18 px clear space */
-/* In the browser the row ends 8 px before Chromium's own ⋯ menu button, which the shell lays out at
+/* In the browser the row ends 8 px before the engine's own ⋯ menu button, which the shell lays out at
    the tab row's right end beside this page (525). */
 body[data-host="native"] .row { padding-right: 8px; }
 .row button, .row a, .row input, .row label, #tabs li, .pop, .nav, .nav button { -webkit-app-region: no-drag; }
@@ -119,7 +119,7 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 .share-opt small { display: block; font-size: var(--fs-2); color: var(--ink-2); }
 .share-name { display: grid; gap: var(--sp-1); font-size: var(--fs-2); color: var(--ink-2); }
 .share-line { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-2); align-items: center; }
-.field { width: 100%; min-width: 0; height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--chrome); color: var(--ink); font: var(--fs-2) var(--sans); }
+.field { width: 100%; min-width: 0; height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-input); border-radius: var(--r-1); background: var(--frame); color: var(--ink); font: var(--fs-2) var(--sans); }
 .field:focus { border-color: var(--accent); }
 .share-card .share-code { font-family: var(--mono); }
 .primary { justify-self: start; height: var(--ctl); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-2); background: var(--accent); color: var(--bg); font-weight: 650; cursor: default; box-shadow: var(--glow-accent); }

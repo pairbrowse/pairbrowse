@@ -371,7 +371,7 @@ export function shimScript(fixture = defaultFixture()) {
 // Bridge period only (deleted with the extension): the chrome.storage and chrome.runtime the
 // panel, picker and capture pages still read. session.get("view") is the helper's address; local
 // is kept in the page's localStorage so it survives a reload.
-export function bridgeChromeScript(base) {
+export function bridgeExtensionScript(base) {
   return `// chrome.* for the bridge period (test/helpers/pairbrowse-shim.mjs)
 (() => {
   const load = () => { try { return JSON.parse(localStorage.getItem("__store") || "{}"); } catch { return {}; } };

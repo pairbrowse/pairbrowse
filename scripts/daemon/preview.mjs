@@ -159,7 +159,7 @@ export function sanitizeDocumentHtml(html) {
   return { css, body };
 }
 
-// The fixed header and page colors (the tokens' chrome, ink, ink-2 and edge).
+// The fixed header and page colors (the tokens' frame, ink, ink-2 and edge).
 // It comes after the document's own CSS and wins: the document's CSS only styles its own textutil
 // classes (keptCss), no kept style positions a box with a z-index, and the header's rules are
 // !important, so a document can't hide, rewrite or cover the header.

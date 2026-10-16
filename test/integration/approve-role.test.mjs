@@ -41,10 +41,10 @@ test("approve role: a joiner allows the host's agent's Pay click by their own cl
   const executablePath = require("patchright").chromium.executablePath();
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(SHOP); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
+  const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
   const hostHome = home("ah-"), joinHome = home("aj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
   const daemons = new Map();
   const attach = async (h, app = "claude-code") => {

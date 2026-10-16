@@ -7,7 +7,7 @@ import { where } from "./where.mjs";
 import { createDownloads } from "./browser/downloads.mjs";
 import { createBrowserState } from "./browser/state.mjs";
 import { createTabs, stopRequestMirroring } from "./browser/tabs.mjs";
-import { createLaunch, chromePagesIn, capturePagesIn, captureKeyedIn, measuringLog, MEASURING_STATUS } from "./browser/launch.mjs";
+import { createLaunch, browserPagesIn, capturePagesIn, captureKeyedIn, measuringLog, MEASURING_STATUS } from "./browser/launch.mjs";
 import { createPicker } from "./sessions/picker.mjs";
 import { createSwitch } from "./sessions/switch.mjs";
 
@@ -20,7 +20,7 @@ export { where };
 // shuttingDown(): no new browser then. onStarted(ctx) / onClosed(): the browser came up / went
 // away by itself (not for a session switch).
 // liveOthers(): who else is in this browser's session right now ({ who, app, computer }).
-// chromePagesOf(config): whether the browser it launches has its own pages. helperFor(): the live view's
+// browserPagesOf(config): whether the browser it launches has its own pages. helperFor(): the live view's
 // { origin, key } for those pages (started then), or null: the address goes in its launch switch,
 // the key in an owner-only file named by the other switch, deleted on first use (dropHelperKey).
 // beforeRename(): awaited before a rename moves the session's files (the timeline's last writes).
@@ -29,13 +29,13 @@ export { where };
 // the Tools tab's Downloads (daemon/toolstab.mjs), in memory only.
 // personTabs: the person's own tabs (daemon/toolstab.mjs createPersonTabs), shared with serve.mjs:
 // openForPerson opens one, and no agent's fallback tab is ever one.
-export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, chromePagesOf = chromePagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, helperFor = async () => null,
+export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, browserPagesOf = browserPagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, helperFor = async () => null,
   beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null }) {
   const st = createBrowserState({ session: currentSession(), pick: null }); // browser/state.mjs
   // What the browser's parts (browser/*.mjs, sessions/*.mjs) are given, and the functions they
   // read from each other when called (api).
   const deps = { personTabs, config, log, chromium, driver, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers, notify,
-    chromePagesOf, capturePagesOf, captureKeyedOf, helperFor, beforeRename, onRenamed };
+    browserPagesOf, capturePagesOf, captureKeyedOf, helperFor, beforeRename, onRenamed };
   const api = {};
   // Launching the browser and getContext() (browser/launch.mjs).
   const { dropHelperKey, choiceConfig, profile, getContext, watchClose, ready, openByHand, close, nextShell } = Object.assign(api, createLaunch(st, deps, api));
@@ -52,15 +52,15 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     // The shell of the browser in use (browser/choice.mjs: "extension" or "pages", with its
     // capture page or not), and its parts as they were read before (aliases).
     shell: () => st.shell,
-    chromePages: () => st.chrome,
+    browserPages: () => st.ownPages,
     capturePages: () => st.capture,
     // The same, before the browser has started too (what it will be once it runs): an invite made
     // first says what the share will really carry.
     nextShell,
-    willHaveChromePages: () => nextShell().ownPages,
+    willHaveBrowserPages: () => nextShell().ownPages,
     willHaveCapturePages: () => nextShell().capturePage,
     openForPerson, isPersonTab: (p) => personTabs.has(p), openByHand,
-    // The browser of the window open now ("pairbrowse", "chromium" or a path), null when none is.
+    // The browser of the window open now ("pairbrowse", "pairbrowse-open" or a path), null when none is.
     browserInUse: () => (st.contextPromise ? st.inUse : null),
     // The settings the choice is read from (config with the older names as the person wrote them).
     choiceConfig,

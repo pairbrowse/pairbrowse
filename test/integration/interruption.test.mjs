@@ -27,7 +27,7 @@ test("the browser killed under a session: the call is answered, pictures are for
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const h = mkdtempSync(join(tmpdir(), "pb-crash-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", sessionPicker: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", sessionPicker: false }));
   const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TEST_MEMORY: "1" } });
   const server = createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end(`<!doctype html><title>Page ${req.url}</title><h1>${req.url}</h1><button id="b">Go</button>`); });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));

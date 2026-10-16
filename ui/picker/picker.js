@@ -8,7 +8,7 @@ import { $, el, joinHostAsk, avatar, initialOf, reportOffer, askSwitch, NO_AGENT
 import { JOIN_NAME_MAX } from "../limits.js";
 import { followHelper, postJson, UNREACHABLE_RETRY, UNREACHABLE } from "../helper.js";
 
-// Framed: the switcher popover. No page chrome of its own, the list even when a session is open,
+// Framed: the switcher popover. No page frame of its own, the list even when a session is open,
 // and the parent told (same origin only) when to close; the pick itself goes only to the helper.
 // In the browser's own switcher bubble (530 E2 B1, #bubble): the same popover, but a page of its
 // own (a frame gets no bindings, so only a page reaches the helper), and the bubble is closed through

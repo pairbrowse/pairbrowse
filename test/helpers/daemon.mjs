@@ -12,12 +12,12 @@ import { sleep } from "./util.mjs";
 // The repository's root.
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// Patchright's Chromium from the pinned runtime: the browser the live tests drive.
-export const chromiumPath = (runtime) => createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
+// Patchright's build from the pinned runtime: the browser the live tests drive.
+export const driverBrowserPath = (runtime) => createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
 
 // A new helper home under testBase() with the runtime linked in (the link is what lets the helper
 // read its PAIRBROWSE_TEST_* switches, scripts/testenv.mjs). With config, writes config.json:
-// headless, no screen, no screenshots, then config's own keys; config.chromeArgs are added after
+// headless, no screen, no screenshots, then config's own keys; config.browserArgs are added after
 // --headless=new.
 export function helperHome(runtime, { prefix = "pbh-", config } = {}) {
   const base = testBase();
@@ -25,8 +25,8 @@ export function helperHome(runtime, { prefix = "pbh-", config } = {}) {
   const home = mkdtempSync(join(base, prefix));
   if (runtime) symlinkSync(runtime, join(home, "runtime"), "dir");
   if (config) {
-    const { chromeArgs = [], ...rest } = config;
-    writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath: chromiumPath(runtime), chromeArgs: ["--headless=new", ...chromeArgs], display: "none", screenshots: false, ...rest }));
+    const { browserArgs = [], ...rest } = config;
+    writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath: driverBrowserPath(runtime), browserArgs: ["--headless=new", ...browserArgs], display: "none", screenshots: false, ...rest }));
   }
   return home;
 }

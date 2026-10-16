@@ -6,7 +6,7 @@
 import { randomBytes } from "node:crypto";
 import { within } from "../../util.mjs";
 import { panelExtensionId } from "../../browser.mjs";
-import { CHROME_SCREEN, extensionUrl, isShownScreenPage } from "../../../ui/urls.js";
+import { BROWSER_SCREEN, extensionUrl, isShownScreenPage } from "../../../ui/urls.js";
 import { PICK_FILES_MAX } from "../../../ui/limits.js";
 import { FILE_PART } from "./agents.mjs";
 import { OPEN_MS } from "./state.mjs";
@@ -27,12 +27,12 @@ const SCREEN_CONNECT_MS = testOn("NO_DIRECT") ? 3000 : 12_000; // no direct conn
 const SCREEN_INPUT_MS = 30; // on the slower route, input goes to the host this often
 // The picture page: the extension's screen/index.html, or in a PairBrowse build with its own pages
 // its chrome://pairbrowse/screen/ tab (the same page, driven the same way through window.pbScreen).
-const screenBaseFor = (chrome) => (chrome ? CHROME_SCREEN : extensionUrl(panelExtensionId(), "screen/index.html"));
+const screenBaseFor = (ownPages) => (ownPages ? BROWSER_SCREEN : extensionUrl(panelExtensionId(), "screen/index.html"));
 // Any of the picture page's addresses (the extension's, the browser's own, and the name the
 // browser shows for it).
 export const isScreenPage = (url) => {
   const u = String(url || "");
-  return /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html(?:[#?]|$)/.test(u) || u.startsWith(CHROME_SCREEN) || isShownScreenPage(u);
+  return /^chrome-extension:\/\/[a-p]{32}\/screen\/index\.html(?:[#?]|$)/.test(u) || u.startsWith(BROWSER_SCREEN) || isShownScreenPage(u);
 };
 
 // The approve role: the host's approval card on a picture page (screen.js approval, approvalOff,
@@ -45,14 +45,14 @@ export function screenCard(page, arg, kind) {
 }
 
 export function createJoinScreens(live, { context, log }) {
-  const screenBase = () => screenBaseFor(!!context.chromePages?.());
+  const screenBase = () => screenBaseFor(!!context.browserPages?.());
 
   // The tab id after # keeps the address short (screen/index.html#a1b2c3d4); the page itself shows the
   // host tab's real address and title (screen.js).
   const screenUrl = (id) => `${screenBase()}#${encodeURIComponent(id)}`;
 
   // The browser's own picture tab may show under its pairbrowse:// name too.
-  const isScreen = (page) => page.url().startsWith(screenBase()) || (!!context.chromePages?.() && isShownScreenPage(page.url()));
+  const isScreen = (page) => page.url().startsWith(screenBase()) || (!!context.browserPages?.() && isShownScreenPage(page.url()));
 
   // Shared browser mode: a picture page's title and address (the host tab's), said again only
   // when they changed. Not taken yet (the page still loading, say after a typed address took it
@@ -132,7 +132,7 @@ export function createJoinScreens(live, { context, log }) {
       // for it, or it runs as the extension's page would): the slower route at once, without
       // two tries of SCREEN_CONNECT_MS first. Asked from its second round (the word comes async);
       // an offer asked for meanwhile is let go.
-      const ownPage = !!context.chromePages?.();
+      const ownPage = !!context.browserPages?.();
       if (!sc.fallback && ownPage && sc.rounds >= 2 && st.conn !== "connected" && (st.host === "extension" || st.helper === false)) {
         sc.fallback = true;
         if (sc.peer) { cur.join.screen({ op: "stop", peer: sc.peer }).catch(() => {}); sc.peer = null; await inScreen(page, () => window.pbScreen?.close()).catch(() => {}); }

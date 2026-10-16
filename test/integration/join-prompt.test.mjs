@@ -180,13 +180,13 @@ test("a join request: the bar in the host's tab in front when the browser has th
   const executablePath = require("patchright").chromium.executablePath();
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>${req.headers.host}</title><main>fixture</main>`); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
+  const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
   const homes = [];
   const home = (prefix, name) => {
     mkdirSync(shortBase, { recursive: true });
     const dir = mkdtempSync(join(shortBase, prefix));
     symlinkSync(runtime, join(dir, "runtime"), "dir");
-    writeFileSync(join(dir, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: name }));
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: name }));
     homes.push(dir);
     return dir;
   };

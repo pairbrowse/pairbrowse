@@ -1,5 +1,5 @@
-// PairBrowse remembers the open tabs itself and brings them back one by one after Chrome
-// starts, behind an "Opening tabs" screen. Chrome's own restore reloads every tab at once
+// PairBrowse remembers the open tabs itself and brings them back one by one after the browser
+// starts, behind an "Opening tabs" screen. The engine's own restore reloads every tab at once
 // during startup, which made the first action wait many seconds.
 import { ownTitle } from "./daemon/tablabels.mjs";
 import { readJson, sleep, writeJsonAtomic, urlHost } from "./util.mjs";
@@ -14,7 +14,7 @@ export function readSavedTabs(file) {
 }
 
 // Keeps tabs.json in step with the browser. Writes are debounced, and a pending write is dropped
-// when the whole browser closes, so quitting Chrome doesn't record an empty set of tabs.
+// when the whole browser closes, so quitting the browser doesn't record an empty set of tabs.
 export function trackTabs(ctx, { file, activePage = () => null, log = () => {} } = {}) {
   let timer = null;
   let stopped = false;

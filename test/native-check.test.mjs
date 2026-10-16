@@ -60,13 +60,13 @@ test("no driver in the runtime: refused before anything is made", async () => {
 const manifest = (m) => writeFileSync(join(dirname(exec), "PairBrowse-build.json"), JSON.stringify(m));
 const MAJOR = NATIVE.version.split(".")[0];
 
-test("a build without its manifest, or one for another product or Chromium: refused before any launch", async () => {
+test("a build without its manifest, or one for another product or engine version: refused before any launch", async () => {
   stubDriver();
   enginePack({});
   await assert.rejects(selfCheck(exec, { config: {}, timeoutMs: 20_000 }), /PairBrowse-build\.json/);
   for (const bad of [{ product: "Chromium", version: `${MAJOR}.0.0.1`, platform: "linux" }, { product: "PairBrowse", version: "1.0.0.1", platform: "linux" }, { product: "PairBrowse", version: `${MAJOR}.0`, platform: "linux" }]) {
     manifest(bad);
-    await assert.rejects(selfCheck(exec, { config: {}, timeoutMs: 20_000 }), new RegExp(`requires a Chromium ${MAJOR} PairBrowse build`), JSON.stringify(bad));
+    await assert.rejects(selfCheck(exec, { config: {}, timeoutMs: 20_000 }), new RegExp(`requires a PairBrowse build of engine version ${MAJOR}`), JSON.stringify(bad));
   }
   manifest({ product: "PairBrowse", version: `${MAJOR}.0.0.1` });
   await assert.rejects(selfCheck(exec, { config: {}, timeoutMs: 20_000 }), /names no platform/);

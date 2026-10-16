@@ -28,7 +28,7 @@ test("browser_evaluate, the other hidden tools and unknown browser tools are ref
   const h = mkdtempSync(join(base, "hid-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
   const daemon = spawnDaemon(h);
   let a;
   try {

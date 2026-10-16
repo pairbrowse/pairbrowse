@@ -160,7 +160,7 @@ test("live: the outline is the yaml the agent got, read without touching the pag
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const h = mkdtempSync(join(tmpdir(), "pb-outline-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
   const daemon = spawnDaemon(h);
   const server = http.createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end("<!doctype html><title>Outline</title><h1>Sign up</h1><label>Email <input name=email></label><button>Continue</button>"); });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));

@@ -7,8 +7,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
 import { hostAllowed, redact } from "../../scripts/rules/secrets.mjs";
-import { navigationProblem, isChromePage } from "../../scripts/rules/policy.mjs";
-import { hideChromeTabs } from "../../scripts/daemon/output.mjs";
+import { navigationProblem, isBrowserPage } from "../../scripts/rules/policy.mjs";
+import { hideBrowserTabs } from "../../scripts/daemon/output.mjs";
 import { hostOk, originOk, keyOk } from "../../scripts/liveview/http.mjs";
 import { addressToUrl } from "../../ui/urls.js";
 
@@ -64,10 +64,10 @@ test("the browser opens only web pages", () => {
   const own = fc.constantFrom("pairbrowse", "PairBrowse", "pairbrowse.top-chrome", "PAIRBROWSE.TOP-CHROME");
   check(fc.property(fc.constantFrom("", " ", "\t"), own, fc.constantFrom("", "/", "/picker", "/strip?x=1", "#frag"), junk, (lead, host, sep, rest) => {
     const url = `${lead}chrome://${host}${sep}${sep ? rest : ""}`;
-    if (isChromePage(url)) assert.match(navigationProblem(url), /browser's own/, url);
+    if (isBrowserPage(url)) assert.match(navigationProblem(url), /browser's own/, url);
   }));
   check(fc.property(fc.oneof(junk, fc.tuple(own, junk).map(([h, r]) => `chrome://${h}${r}`)), (url) => {
-    if (isChromePage(url)) assert.match(navigationProblem(url), /browser's own/, url);
+    if (isBrowserPage(url)) assert.match(navigationProblem(url), /browser's own/, url);
   }));
 });
 
@@ -80,8 +80,8 @@ test("browser_tabs never lists the browser's own pages and keeps every other tab
   );
   check(fc.property(fc.array(fc.tuple(url, fc.stringMatching(/^[A-Za-z ]{0,12}$/)), { maxLength: 8 }), (tabs) => {
     const lines = tabs.map(([u, t], i) => `- ${i}: [${t}](${u})`);
-    const out = hideChromeTabs(`### Result\n${lines.map((l) => `${l}\n`).join("")}`);
-    const kept = lines.filter((_, i) => !isChromePage(tabs[i][0]));
+    const out = hideBrowserTabs(`### Result\n${lines.map((l) => `${l}\n`).join("")}`);
+    const kept = lines.filter((_, i) => !isBrowserPage(tabs[i][0]));
     assert.equal(out, `### Result\n${kept.map((l) => `${l}\n`).join("")}`);
   }));
 });

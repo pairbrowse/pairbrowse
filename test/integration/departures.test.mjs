@@ -20,7 +20,7 @@ test("idle connections stay off the board; a closed one leaves at once; a resume
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "dep-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false }));
   const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TEST_UNSEEN_MS: "6000", PAIRBROWSE_TEST_RESUME_GRACE_MS: "3000" } });
   const open = [];
   const connect = async (name, parent) => { const s = await session(join(h, "run", "browser.sock"), name, parent ? { pairbrowseParent: parent } : {}); open.push(s); return s; };

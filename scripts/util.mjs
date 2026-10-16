@@ -63,7 +63,7 @@ export function keepCorrupt(file, text) {
 // Writes `value` as JSON through a .tmp file and a rename, so another process reading the file
 // (the helper and the runs server share the run files) never sees half of it. mode: the file's
 // permissions (0o600: owner-only), set on the .tmp file before it takes the name; the folder it
-// makes gets 0o700 then too. indent: JSON.stringify's (0: on one line, as Chromium writes its own
+// makes gets 0o700 then too. indent: JSON.stringify's (0: on one line, as the engine writes its own
 // profile files).
 export function writeJsonAtomic(file, value, { mode, indent = 2 } = {}) {
   mkdirSync(dirname(file), { recursive: true, ...(mode !== undefined ? { mode: 0o700 } : {}) });

@@ -34,7 +34,7 @@ const CLIP_KEY_CODES = new Set([67, 86, 88]); // C, V, X
 const letterOfCode = (code) => (/^Key[A-Z]$/.test(code) ? code[3] : /^Digit[0-9]$/.test(code) ? code[5] : "");
 
 // Whether a key would read or write the host's clipboard: Ctrl/Cmd + C, X or V by any of the
-// key's three names (key, code, key code: a page and Chromium's editing each read a different one),
+// key's three names (key, code, key code: a page and the engine's editing each read a different one),
 // Shift+Insert, Ctrl/Cmd+Insert, Shift+Delete, and the keyboards' own Copy, Cut and Paste keys.
 export function usesClipboard(key, code, kc, m) {
   if (CLIP_KEYS.has(key) || CLIP_KEYS.has(code)) return true;
@@ -278,7 +278,7 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     keepViews();
   }
   // One key as a person presses it: down (with its text) and up, so pages that listen for keys
-  // (games, typing tests, editors, shortcuts) get them. No native key code: with one Chromium
+  // (games, typing tests, editors, shortcuts) get them. No native key code: with one, the engine
   // makes an OS key event of it, and a key the page leaves alone goes on to the host's browser
   // itself (its shortcuts; on macOS a redispatch a native build stops at). Keys are the page's only.
   async function rawKey(cdp, ev) {

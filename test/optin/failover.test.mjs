@@ -52,10 +52,10 @@ test("sharing failover: the tunnel the joiner uses dies; they move to the standb
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
   await new Promise((r) => joinFixture.listen(0, "127.0.0.1", r));
   const sideArgs = (server) => ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${server.address().port}`];
-  const chromeArgs = [...sideArgs(fixture), "--disable-features=LocalNetworkAccessChecks"], joinChromeArgs = sideArgs(joinFixture);
+  const browserArgs = [...sideArgs(fixture), "--disable-features=LocalNetworkAccessChecks"], joinBrowserArgs = sideArgs(joinFixture);
   const hostHome = home("fh-"), joinHome = home("fj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: "Bob" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, chromeArgs: joinChromeArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs: joinBrowserArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1" });
   const daemons = [];
   const connect = async (h) => {

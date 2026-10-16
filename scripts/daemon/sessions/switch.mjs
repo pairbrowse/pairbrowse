@@ -49,7 +49,7 @@ export function createSwitch(st, deps, api) {
         await ctx.close().catch(() => {});
       }
       if (renameFrom) {
-        // Only once the browser is closed: a running Chromium keeps writing into its profile folder.
+        // Only once the browser is closed: a running browser keeps writing into its profile folder.
         await beforeRename().catch(() => {});
         try {
           renameSession(renameFrom, name);

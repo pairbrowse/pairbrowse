@@ -2,7 +2,7 @@
 // Google through a real Quick Tunnel with a joiner on another (behind its own NAT, joiner.mjs).
 // Either side can be this Mac or a Linux container; they meet in a shared folder (PB_MAIL).
 // Prints what happened, one JSON line per step.
-import { helper, sleep, text, post, wait, browserPath, chromeArgs } from "./common.mjs";
+import { helper, sleep, text, post, wait, browserPath, browserArgs } from "./common.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,7 +11,7 @@ const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const say = (o) => console.log(JSON.stringify({ host: process.platform, ...o }));
 const home = mkdtempSync(join(tmpdir(), "pbh-"));
 const h = await helper({ home, repo, runtime: process.env.PB_RUNTIME || process.env.HOME + "/.pairbrowse/runtime",
-  config: { executablePath: browserPath(), chromeArgs, display: "none", screenshots: false, participantName: "Kees" } });
+  config: { executablePath: browserPath(), browserArgs, display: "none", screenshots: false, participantName: "Kees" } });
 const tabs = async () => [...text(await h.tool("browser_tabs", { action: "list" })).matchAll(/^- (\d+):( \(current\))? \[[^\n]*\]\(([^)\s]*)\)/gm)].map((m) => ({ index: Number(m[1]), url: m[3] }));
 say({ nav: !(await h.tool("browser_navigate", { url: "https://www.google.com/?hl=en" })).result?.isError });
 const made = text(await h.tool("pairbrowse_invite", { action: "create", role: "drive", label: "Sven", share: "code", name: "Kees" }));

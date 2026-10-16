@@ -124,13 +124,13 @@
     if (!e.isTrusted) return;
     const n = now();
     if (n - agentAt < PRESS_WINDOW_MS && !awayFromAgent(e)) return;
-    // A move with no distance (Chromium sends one under a resting mouse when a page loads, scrolls
+    // A move with no distance (the engine sends one under a resting mouse when a page loads, scrolls
     // or changes under it) is nobody's new move: the pointer keeps the time of the move that put it
     // there, and whose it is goes by that time (a joiner's move replayed here stays theirs, never
     // the person's here: the helper tells them apart by it). None yet in this page: nothing to show.
     if (e.movementX || e.movementY) ptr = { x: Math.round(e.pageX), y: Math.round(e.pageY), t: n };
     else if (ptr) ptr = { x: Math.round(e.pageX), y: Math.round(e.pageY), t: ptr.t };
-    // Only a move that moves: Chromium also sends one, with no distance, when a page loads or
+    // Only a move that moves: the engine also sends one, with no distance, when a page loads or
     // scrolls under a resting pointer, and that isn't the person looking.
     if ((e.movementX || e.movementY) && (!view || n - view.t > 1000)) looked();
     if (n - lastMove > 500) { lastMove = n; record("move", ""); }

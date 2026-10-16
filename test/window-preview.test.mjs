@@ -117,8 +117,8 @@ function run(extra, geo, more = () => {}) {
 test("window preview: the default run", { skip: !runtime, timeout: 240_000 }, () => run([], geometry()));
 test("window preview: rails and reduced motion", { skip: !runtime, timeout: 240_000 }, () => run(["--rail", "--reduced-motion"], geometry({ rail: true })));
 test("window preview: one helper host, one event stream", { skip: !runtime, timeout: 240_000 }, () => run(["--one-host"], geometry()));
-// --plain: the same page as plain Chromium shows it (not docked), with the 30 px bottom bar.
-test("window preview: --plain writes the plain-Chromium contents", { skip: !runtime, timeout: 240_000 }, () => run(["--one-host", "--plain"], geometry(), (dir) => {
+// --plain: the same page as the open build shows it (not docked), with the 30 px bottom bar.
+test("window preview: --plain writes the open-build contents", { skip: !runtime, timeout: 240_000 }, () => run(["--one-host", "--plain"], geometry(), (dir) => {
   const plain = png(join(dir, "contents-plain.png")), docked = png(join(dir, "contents.png"));
   assert.deepEqual(plain, docked, "the contents card's size");
   // Docked, the page's bottom rows are the sample page; plain, the bar's navy (#0B1421 at 96%).

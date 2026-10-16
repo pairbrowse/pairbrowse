@@ -9,7 +9,7 @@
 // row 1536 x 53; the docks 205 and 346 wide by 971 (1024 - 53), both rails 44 by 971; the contents
 // card 969 x 796; the timeline 985 x 125; the approve card 360; the nav fragments 3 x 28 + 2 x 4 +
 // 16 = 108; Share its B width. right-extension is the right dock as
-// plain Chromium's side panel shows it (no window.pairbrowse: the header, Share in the session
+// the open build's side panel shows it (no window.pairbrowse: the header, Share in the session
 // card, the Live pill, the You row, the profile sections in Tools); the *-empty shots have a
 // helper connected and nothing in the scene (no people, steps, cards or approvals; one new tab).
 // capture is left out: a hidden page with no UI.

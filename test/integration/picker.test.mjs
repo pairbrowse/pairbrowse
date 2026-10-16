@@ -32,7 +32,7 @@ function home(prefix, { saved = true } = {}) {
 }
 
 function config(executablePath, port, extra = {}) {
-  return JSON.stringify({ executablePath, chromeArgs: ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`], display: "none", screenshots: false, ...extra });
+  return JSON.stringify({ executablePath, browserArgs: ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`], display: "none", screenshots: false, ...extra });
 }
 
 // POST to the live view as a page at origin would (null: no Origin header).

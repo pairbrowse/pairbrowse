@@ -29,11 +29,11 @@ test("shared browser: the joiner stays in through a restart of the host's helper
   const executablePath = process.env.PAIRBROWSE_TEST_EXECUTABLE || require("patchright").chromium.executablePath();
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(APP); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
-  const chromeArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
+  const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
   mkdirSync(shortBase, { recursive: true });
   const home = (prefix) => { const dir = mkdtempSync(join(shortBase, prefix)); symlinkSync(runtime, join(dir, "runtime"), "dir"); return dir; };
   const hostHome = home("rh-"), joinHome = home("rj-");
-  const config = (name) => JSON.stringify({ executablePath, chromeArgs, display: "none", screenshots: false, participantName: name, sessionPicker: false });
+  const config = (name) => JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: name, sessionPicker: false });
   writeFileSync(join(hostHome, "config.json"), config("Bob"));
   writeFileSync(join(joinHome, "config.json"), config("Alice"));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_SCREEN: "1", PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });

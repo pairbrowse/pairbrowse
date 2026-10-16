@@ -15,7 +15,7 @@ const DOWNLOADS_KEPT = 100;
 const RECORDINGS_KEPT = 500;
 const newId = () => randomBytes(6).toString("hex");
 
-// Downloads open like a browser's: in a person's tab where Chromium renders them, else with the
+// Downloads open like a browser's: in a person's tab where the engine renders them, else with the
 // system's default app (see openWay, downloadMarked and PROGRAMS below). Recordings, files the
 // helper made itself, open with the OS opener and only as these types.
 // (Not .svg: its usual opener is a web browser, where an SVG runs script under file://.)
@@ -31,10 +31,10 @@ export const WEB_FILES = new Set(["html", "htm", "xhtml", "svg", "svgz", "shtml"
 export const PROGRAMS = new Set(["app", "pkg", "mpkg", "dmg", "command", "sh", "bash", "zsh", "py", "rb", "pl", "js", "jar",
   "exe", "msi", "bat", "cmd", "ps1", "scpt", "workflow", "terminal", "tool", ...WEB_FILES]);
 
-// Downloads Chromium renders itself open in a new tab that belongs to the person (no agent reads
-// or acts in it). Not .csv (Chromium's MIME table maps it to text/csv, a type blink downloads
+// Downloads the engine renders itself open in a new tab that belongs to the person (no agent reads
+// or acts in it). Not .csv (the engine's MIME table maps it to text/csv, a type blink downloads
 // rather than shows) or .log (no MIME entry): those come as an escaped text preview. Not .mov
-// (video/quicktime, which Chromium doesn't play) or .aac (no entry in Chromium's own table): those
+// (video/quicktime, which the engine doesn't play) or .aac (no entry in the engine's own table): those
 // open with their app.
 export const TAB_TYPES = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "webm", "ogv", "mp3", "wav", "ogg", "oga", "opus", "flac", "txt", "md", "json"]);
 // Proprietary codecs: only the macOS PairBrowse build plays them (proprietary_codecs in its build).

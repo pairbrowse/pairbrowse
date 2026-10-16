@@ -19,7 +19,7 @@ test("sessions that came and went leave no listeners on the browser", { skip: !r
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "mem-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false }));
   const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TEST_MEMORY: "1" } });
   const open = [];
   try {
@@ -57,7 +57,7 @@ test("sessions that took pictures and left leave no screenshot maps behind", { s
   const base = testBase();
   const h = mkdtempSync(join(base, "shot-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none" }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none" }));
   const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TEST_MEMORY: "1" } });
   const { createServer } = await import("node:http");
   const server = createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end(`<!doctype html><title>Pictures</title><h1>${req.url}</h1><button>Go</button>`); });
@@ -115,7 +115,7 @@ test("a tab's navigations leave no execution contexts behind in the driver", { s
   const base = testBase();
   const h = mkdtempSync(join(base, "ctx-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", screenshots: false }));
+  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false }));
   const daemon = spawnDaemon(h, { env: { PAIRBROWSE_TEST_MEMORY: "1" } });
   const { createServer } = await import("node:http");
   const server = createServer((req, res) => { res.setHeader("content-type", "text/html"); res.end(`<!doctype html><title>Page ${req.url}</title><h1>${req.url}</h1><input name="q">`); });

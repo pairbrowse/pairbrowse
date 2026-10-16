@@ -12,8 +12,8 @@
 // name appended). A platform whose sha256 is null has no build yet.
 export const NATIVE = {
   version: "150.0.7871.114",
-  arm64: { file: "pairbrowse-150.0.7871.114-macos-arm64.zip", sha256: "9b874b9cc28e50822df9e34a799e81401344814616d62f3d827184c691368eec" },
-  x64: { file: "pairbrowse-150.0.7871.114-macos-x86_64.zip", sha256: "4084043a79d283cb7e06d3c53d42cdd4dcf1ba9ebf0fd13b362d20b1a618566c" },
+  arm64: { file: "pairbrowse-150.0.7871.114-2-macos-arm64.zip", sha256: "6403a2a7e1afa6b60049e7c726058a8aa5f461a3a8b4e44a70ea727e5e87011f" },
+  x64: { file: "pairbrowse-150.0.7871.114-2-macos-x86_64.zip", sha256: "04697adff7144bef7d9374e25c2e1905e381d80ea99dd95a52ee58636c5400b1" },
   linux: { file: "pairbrowse-150.0.7871.114-linux-x64.tar.xz", sha256: "5398af78e2a8163a8f08bb1620ae822d774ff821c695f78c73e1d447c534adac" },
   windows: { file: "pairbrowse-150.0.7871.114-windows-x64.zip", sha256: null },
   engine: {

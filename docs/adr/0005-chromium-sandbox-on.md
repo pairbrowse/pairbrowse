@@ -1,7 +1,7 @@
 # 5. Chromium's sandbox is on, off only on Linux, and never dropped quietly
 
 - Status: Accepted
-- Date: v0.15.20 (2026-10-07), on by default; v0.15.46 (2026-10-14), no quiet fallback on macOS and Windows; Unreleased, no opt-out on macOS and Windows ([CHANGELOG](../../CHANGELOG.md) 0.15.20, 0.15.22, 0.15.46, Unreleased)
+- Date: v0.15.20 (2026-10-07), on by default; v0.15.46 (2026-10-14), no quiet fallback on macOS and Windows; v0.16.0 (2026-10-16), no opt-out on macOS and Windows ([CHANGELOG](../../CHANGELOG.md) 0.15.20, 0.15.22, 0.15.46, 0.16.0)
 
 ## Context
 

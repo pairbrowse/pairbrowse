@@ -1,7 +1,7 @@
 # 6. Test switches work only in a helper the test harness started
 
 - Status: Accepted
-- Date: 2026-10-15 (commit a25f313, "Helper review fixes: joiner input, test gates, ..."); "Test switches only in the test harness" in the Unreleased notes of [CHANGELOG](../../CHANGELOG.md)
+- Date: 2026-10-15 (commit a25f313, "Helper review fixes: joiner input, test gates, ..."); "Test switches only in the test harness" in the 0.16.0 notes of [CHANGELOG](../../CHANGELOG.md)
 
 ## Context
 

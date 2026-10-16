@@ -5,7 +5,7 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
-## Unreleased
+## 0.16.0 (2026-10-16)
 
 The native browser track merged into the plugin: the PairBrowse browser's own pages and shell, an approve role for joiners, named instances that coexist on one computer, and the helper and pages restructured into folders. `docs/security.md` has a row for each new behaviour.
 
@@ -61,6 +61,7 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 - Sessions can be renamed (also a saved one that isn't open) and saved from the session card; one agent can be paused on its own; the Activity page keeps the session's log, agent messages included.
 - Shared joiners' pointers are drawn by the browser over the page card, never inside your tab, and your own pointer never comes back to you.
 - **Faster clicks in the native browser.** The new default `motion`, `"fast"` (engine pack 150.0.7871.114-3), reaches at a quick hand's pace with a short press: a click on the next field about 0.25 s instead of 0.4, one across the page 0.65 s instead of 1.1 (bench p50, element click 619 to 494 ms with the screenshot). `"quick"` stays for a slower, more careful hand. Clearing a field before typing is quicker too, and typing into a field that never took the focus is reported as failed instead of done.
+- **New native browser builds for macOS** (`150.0.7871.114-2`, Apple Silicon and Intel): a joiner's pointer label has no border, primary buttons darken on hover. Linux keeps its build.
 - No "unsupported command-line flag" bar above the page: the native browser launches without the driver's `--disable-blink-features=AutomationControlled` (the build keeps `navigator.webdriver` false itself).
 - Fast mode opens what a narrow layout folded (a search box behind a link, a menu behind a toggle) when the page's markup ties it to the step.
 

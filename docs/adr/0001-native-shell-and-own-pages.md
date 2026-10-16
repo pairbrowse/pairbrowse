@@ -1,7 +1,7 @@
 # 1. The native build draws PairBrowse's own UI from ui/
 
 - Status: Accepted
-- Date: 2026-10-11 (commit 7c3dcb6, "the launch switch for a build with its own pages"); in the Unreleased notes of [CHANGELOG](../../CHANGELOG.md)
+- Date: 2026-10-11 (commit 7c3dcb6, "the launch switch for a build with its own pages"); in the 0.16.0 notes of [CHANGELOG](../../CHANGELOG.md)
 
 ## Context
 

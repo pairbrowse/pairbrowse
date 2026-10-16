@@ -33,7 +33,7 @@ window forward.
 - A dev build and the release coexist with separate helpers (usually separate instances, ADR 3)
   ([security.md](../security.md), "With several PairBrowse helpers on one computer ...").
 - The helper itself runs as PairBrowse Agent (`app.pairbrowse.agent`) when the build carries it,
-  a further identity of its own for privacy prompts (CHANGELOG Unreleased, "Prompts name
+  a further identity of its own for privacy prompts (CHANGELOG 0.16.0, "Prompts name
   PairBrowse, never Node").
 
 ## In code

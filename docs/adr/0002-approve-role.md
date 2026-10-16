@@ -1,7 +1,7 @@
 # 2. Joiners can hold an approve role
 
 - Status: Accepted
-- Date: 2026-10-16 (commits 3f8c3e1, bf32ea5, 8bddd53); "Approve role for joiners" in the Unreleased notes of [CHANGELOG](../../CHANGELOG.md)
+- Date: 2026-10-16 (commits 3f8c3e1, bf32ea5, 8bddd53); "Approve role for joiners" in the 0.16.0 notes of [CHANGELOG](../../CHANGELOG.md)
 
 ## Context
 

@@ -1,7 +1,7 @@
 # 3. Named instances: one home per helper
 
 - Status: Accepted
-- Date: 2026-10-16 (commit e9954f9, "Named instances: PAIRBROWSE_INSTANCE or a project's .pairbrowse.json"); "Named instances and coexistence" in the Unreleased notes of [CHANGELOG](../../CHANGELOG.md)
+- Date: 2026-10-16 (commit e9954f9, "Named instances: PAIRBROWSE_INSTANCE or a project's .pairbrowse.json"); "Named instances and coexistence" in the 0.16.0 notes of [CHANGELOG](../../CHANGELOG.md)
 
 ## Context
 

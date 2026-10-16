@@ -7,7 +7,7 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
-import { screenChromeArgs, switchName, allowedChromeArg, ALLOWED } from "../../scripts/chrome-args.mjs";
+import { screenChromeArgs, switchName, allowedChromeArg, ALLOWED, withoutNoSandbox } from "../../scripts/chrome-args.mjs";
 import { sandboxDecision } from "../../scripts/engine.mjs";
 
 const RUNS = Number(process.env.PAIRBROWSE_FUZZ_RUNS) || 5000;
@@ -78,10 +78,28 @@ test("allowlisted switches pass in any spelling", () => {
   }), { numRuns: 5 })), { numRuns: Math.max(1, Math.floor(RUNS / 5)) });
 });
 
-// Property: any spelling of --no-sandbox Chromium reads turns the sandbox off (never dropped quietly).
-test("every spelling of --no-sandbox reaches sandboxDecision", () => {
+// Property: any spelling of --no-sandbox Chromium reads (prefix, case, any value) turns the sandbox
+// off on Linux, and is refused on macOS and Windows: the sandbox stays on, the refusal says why, and
+// the switch is never kept nor dropped quietly.
+test("every spelling of --no-sandbox: off on Linux, refused on macOS and Windows", () => {
   check(fc.property(platform, (p) => fc.assert(fc.property(prefix(p), recase("no-sandbox"), fc.option(anyText, { nil: undefined }), (pre, name, value) => {
     const arg = pre + name + (value === undefined ? "" : `=${value}`);
-    assert.equal(sandboxDecision({ chromeArgs: [arg] }, { platform: p, uid: 501 }).on, false, arg);
+    const d = sandboxDecision({ chromeArgs: [arg] }, { platform: p, uid: 501 });
+    assert.ok(!withoutNoSandbox([arg], p).length, arg);
+    if (p === "linux") { assert.equal(d.on, false, arg); return; }
+    assert.equal(d.on, true, arg);
+    assert.match(d.refused, /refused/, arg);
+    const s = screenChromeArgs([arg], p, { harness: true });
+    assert.deepEqual(s.kept, [], arg);
+    assert.deepEqual(s.refused, [arg.split("=")[0]], arg);
   }), { numRuns: 10 })), { numRuns: Math.max(1, Math.floor(RUNS / 10)) });
+});
+
+// Property: other sandbox-weakening switches are never kept, in any spelling, on any platform.
+test("no other sandbox switch passes", () => {
+  const names = fc.constantFrom("disable-setuid-sandbox", "disable-gpu-sandbox", "no-zygote-sandbox", "disable-seccomp-filter-sandbox", "disable-namespace-sandbox", "no-zygote", "single-process", "in-process-gpu");
+  check(fc.property(platform, names, (p, n) => fc.assert(fc.property(prefix(p), recase(n), fc.option(anyText, { nil: undefined }), (pre, name, value) => {
+    const arg = pre + name + (value === undefined ? "" : `=${value}`);
+    assert.deepEqual(screenChromeArgs([arg], p, { harness: true }).kept, [], arg);
+  }), { numRuns: 5 })), { numRuns: Math.max(1, Math.floor(RUNS / 5)) });
 });

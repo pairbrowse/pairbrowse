@@ -2,18 +2,23 @@
 // in every tab (bounded per tab), and the goal log.
 import { within } from "../../../util.mjs";
 import { SELECTED, CONFIG_WARNINGS } from "../../../paths.mjs";
+import { SANDBOX } from "../../../engine.mjs";
+import { SANDBOX_OFF_WARNING } from "../../../chrome-args.mjs";
 
 const BADGE_MS = 4000; // pairbrowse_status waits this long at most for the badge in every tab
 
 // "ok", naming this helper's instance and home when it isn't the default one (several PairBrowse
 // helpers on one computer: home.mjs), a project file that couldn't be used, and config.json's
-// unknown keys and refused values (paths.mjs loadConfig).
-export function statusLine(selected = SELECTED, configWarnings = CONFIG_WARNINGS) {
+// unknown keys and refused values (paths.mjs loadConfig), and the browser's sandbox: off (Linux
+// only) or a request to turn it off refused (engine.mjs SANDBOX).
+export function statusLine(selected = SELECTED, configWarnings = CONFIG_WARNINGS, sandbox = SANDBOX) {
   const parts = ["ok"];
   if (selected.instance) parts.push(`PairBrowse instance "${selected.instance}" (${selected.home})`);
   else if (selected.source === "PAIRBROWSE_HOME") parts.push(`PairBrowse home ${selected.home}`);
   if (selected.warning) parts.push(`ignored: ${selected.warning}`);
   for (const w of configWarnings) parts.push(`warning: ${w}`);
+  if (sandbox?.on === false) parts.push(`warning: ${SANDBOX_OFF_WARNING} (${sandbox.reason})`);
+  if (sandbox?.refused && !configWarnings.some((w) => w.includes(sandbox.refused))) parts.push(`warning: ${sandbox.refused}`);
   return parts.join("; ");
 }
 

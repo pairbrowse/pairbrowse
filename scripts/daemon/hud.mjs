@@ -134,7 +134,16 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     const person = waiting(page);
     const p = pause();
     const re = reconnecting.to && reconnecting.pages.has(page) ? reconnecting.to : "";
-    return quietly(page, JSON.stringify({ items: recentFor(page), waiting: !!person, person: person || "", pause: p.by ? { by: p.by } : null, canPause: !!p.can, ...(re ? { reconnecting: re } : {}), ...(recording ? { recording: true } : {}) }), "bar");
+    return quietly(page, JSON.stringify({ items: recentFor(page), waiting: !!person, person: person || "", pause: p.by ? { by: p.by } : null, canPause: !!p.can, ...(re ? { reconnecting: re } : {}), ...(recording ? { recording: true } : {}), ...(sandboxOff ? { sandboxOff: true } : {}) }), "bar");
+  }
+  // Whether this browser runs without its sandbox (Linux only, engine.mjs SANDBOX): the bars of its
+  // own pages say so the whole time. Never crossed to joiners (it is about this computer).
+  let sandboxOff = false;
+  function setSandboxOff(off) {
+    off = !!off;
+    if (off === sandboxOff) return;
+    sandboxOff = off;
+    return pages().then((all) => all.forEach(applyBar)).catch(() => {});
   }
   function setRecording(on) {
     on = !!on;
@@ -357,7 +366,7 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     // The page script's name and key: forms.mjs reads and claims fields through it.
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
-    source, call, ensure, onPageLoad, applyBar, setReconnecting, setRecording, setBadge, setBadgeFor, statusOf, badge: () => badge,
+    source, call, ensure, onPageLoad, applyBar, setReconnecting, setRecording, setSandboxOff, setBadge, setBadgeFor, statusOf, badge: () => badge,
     moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, forgetPage, sparkColor, setApp, forgetParticipant, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor, markTargets,
     pressOn, declarePress, onPress: (fn) => { pressListeners.add(fn); return () => pressListeners.delete(fn); },

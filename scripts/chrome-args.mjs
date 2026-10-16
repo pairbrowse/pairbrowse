@@ -14,9 +14,11 @@
 // finds the name the same way; a name is compared lowercased on every platform (on macOS and Linux
 // a differently cased switch is one Chromium doesn't know and ignores).
 //
-// --no-sandbox is not dropped as a choice: it is the user's documented way to turn the sandbox off
-// (engine.mjs sandboxDecision, ADR 0005), which reaches the driver as chromiumSandbox: false, and
-// the driver then adds --no-sandbox itself. The raw switch is left out of the launch args.
+// --no-sandbox (any spelling, with or without a value) is the sandbox choice, never a raw switch.
+// On Linux it is the user's documented way to turn the sandbox off (engine.mjs sandboxDecision, ADR
+// 0005): it reaches the driver as chromiumSandbox: false, and the driver adds --no-sandbox itself.
+// On macOS and Windows the sandbox always works and always stays on: the switch is refused (named
+// in the log and in pairbrowse_status, never dropped quietly), and so is "chromeSandbox": false.
 import { harnessStarted } from "./testenv.mjs";
 
 const NONE = (v) => v === null; // a switch that takes no value
@@ -82,8 +84,9 @@ export const ALLOWED = {
   "enable-features": (v) => featureList(v, () => true),
   "disable-features": (v, { harness }) => featureList(v, (f) => harness && HARNESS_DISABLED_FEATURES.includes(f)),
   "host-resolver-rules": localRules,
-  // The sandbox: the user's own choice, read by sandboxDecision and never passed as a raw switch.
-  "no-sandbox": NONE,
+  // The sandbox: the user's own choice on Linux only, read by sandboxDecision and never passed as
+  // a raw switch. Elsewhere it is refused (screenChromeArgs "refused").
+  "no-sandbox": (v, { platform }) => sandboxOffAllowed(platform),
   // A browser the test harness started (testenv.mjs harnessStarted) keeps its test profile's
   // passwords out of the computer's keychain; an installed helper never does.
   "use-mock-keychain": (v, { harness }) => harness && v === null,
@@ -110,23 +113,26 @@ export function allowedChromeArg(arg, platform = process.platform, { harness = f
   if (typeof arg !== "string") return false;
   const name = switchName(arg, platform);
   if (name === null || !Object.hasOwn(ALLOWED, name)) return false;
-  return ALLOWED[name](valueOf(arg), { harness }) === true;
+  return ALLOWED[name](valueOf(arg), { harness, platform }) === true;
 }
 
-// { kept, dropped }: dropped names each switch removed, as the user wrote it (value cut off), and
-// counts the arguments that aren't switches (never shown: one could be a page's address).
+// { kept, dropped, refused }: dropped names each switch removed, as the user wrote it (value cut
+// off), and counts the arguments that aren't switches (never shown: one could be a page's address);
+// refused names each --no-sandbox spelling removed where the sandbox can't be turned off
+// (sandboxRefusal says why).
 // harness: whether the test harness started this helper (the test-only switches above).
 export function screenChromeArgs(args, platform = process.platform, { harness = harnessStarted() } = {}) {
-  const kept = [], dropped = [];
+  const kept = [], dropped = [], refused = [];
   let positional = 0, ended = false;
   for (const a of Array.isArray(args) ? args : []) {
     if (a === "--") ended = true; // what follows is never a switch
     if (!ended && allowedChromeArg(a, platform, { harness })) { kept.push(a); continue; }
-    if (!ended && typeof a === "string" && switchName(a, platform) !== null) dropped.push(a.split("=")[0]);
+    if (!ended && typeof a === "string" && switchName(a, platform) === "no-sandbox") refused.push(a.split("=")[0]);
+    else if (!ended && typeof a === "string" && switchName(a, platform) !== null) dropped.push(a.split("=")[0]);
     else positional++;
   }
   if (positional) dropped.push(`${positional} argument${positional > 1 ? "s" : ""} that ${positional > 1 ? "aren't switches" : "isn't a switch"}`);
-  return { kept, dropped };
+  return { kept, dropped, refused };
 }
 
 // The config warning (and helper log line) for dropped switches, or null.
@@ -135,8 +141,29 @@ export function droppedWarning(dropped) {
   return `config.json: chromeArgs ${dropped.join(", ")} dropped (PairBrowse passes only the switches on its list, each with a value of the shape it takes; see docs/configuration.md)`;
 }
 
+// The sandbox. Only Linux may turn it off: its kernel or container can take away what the sandbox
+// needs. On macOS and Windows it always works, so nothing in config turns it off there.
+export const SANDBOX_OFF_WARNING = "The browser's sandbox is off: websites are less isolated from this computer";
+export const sandboxOffAllowed = (platform) => platform === "linux";
+const isNoSandbox = (a, platform) => typeof a === "string" && switchName(a, platform) === "no-sandbox";
+// What in config asks for the sandbox off, or null.
+export function sandboxOffAsked(config = {}, platform = process.platform) {
+  if (config.chromeSandbox === false) return "chromeSandbox is false in config.json";
+  const args = Array.isArray(config.chromeArgs) ? config.chromeArgs : [];
+  const end = args.indexOf("--"); // what follows a bare "--" is never a switch
+  if ((end < 0 ? args : args.slice(0, end)).some((a) => isNoSandbox(a, platform))) return "chromeArgs has --no-sandbox";
+  return null;
+}
+const OS_NAMES = { darwin: "macOS", win32: "Windows" };
+// Why a request for the sandbox off is refused on this platform.
+export function sandboxRefusal(asked, platform = process.platform) {
+  return `${asked}: refused, the browser's sandbox always stays on on ${OS_NAMES[platform] || platform} (only Linux may turn it off)`;
+}
+// args without any --no-sandbox spelling (the driver alone adds it, and only when the sandbox is off).
+export const withoutNoSandbox = (args, platform = process.platform) => (Array.isArray(args) ? args : []).filter((a) => !isNoSandbox(a, platform));
+
 // The args launchArgs passes on: the screened ones, without --no-sandbox (the driver adds that
 // itself when the sandbox is off).
 export function launchableChromeArgs(args, platform = process.platform, options) {
-  return screenChromeArgs(args, platform, options).kept.filter((a) => switchName(a, platform) !== "no-sandbox");
+  return withoutNoSandbox(screenChromeArgs(args, platform, options).kept, platform);
 }

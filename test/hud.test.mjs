@@ -474,6 +474,60 @@ test("the bar shows a REC pill while recording and takes it down after", { skip:
   }
 });
 
+test("the helper puts the sandbox warning on every page's bar only while the sandbox is off", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const bars = new Map();
+  let sent = 0;
+  const fake = (name) => ({ name, isClosed: () => false, url: () => `https://example.com/${name}`, evaluate: async (fn, args) => { if (args?.[3] === "bar") { sent++; bars.set(name, JSON.parse(args[2])); } } });
+  const a = fake("a"), b = fake("b");
+  const hud = createHud({ pages: async () => [a, b], participants: () => [], waiting: () => null, liveView: () => null, notify: () => {} });
+  await hud.setSandboxOff(true);
+  assert.equal(bars.get("a").sandboxOff, true);
+  assert.equal(bars.get("b").sandboxOff, true);
+  await hud.setSandboxOff(true);
+  assert.equal(sent, 2, "unchanged: nothing sent");
+  await hud.setSandboxOff(false);
+  assert.equal("sandboxOff" in bars.get("a"), false, "on: the key is gone");
+  assert.equal(sent, 4);
+});
+
+test("the bar warns that the sandbox is off, in full, beside the who line", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Shop</h1>" }));
+    await page.goto("http://pairbrowse.test/");
+    await page.evaluate(() => { const a = Element.prototype.attachShadow; Element.prototype.attachShadow = function (i) { return a.call(this, { ...i, mode: "open" }); }; });
+    await ensureHud(page, source, "__pbtest");
+    const read = () => page.evaluate((tag) => {
+      const root = document.querySelector(tag).shadowRoot, s = root.querySelector(".who .sbx");
+      return { who: root.querySelector(".who span").textContent, hidden: s.hidden, text: s.textContent, display: getComputedStyle(s).display };
+    }, hud.tags.bar);
+    const send = (v, kind = "bar") => page.evaluate(([v, k]) => window.__pbtest("tok", JSON.stringify(v), k), [v, kind]);
+    const items = [{ t: Date.now(), text: "Clicked Next", who: "Bob" }];
+    await send({ items, sandboxOff: true });
+    let r = await read();
+    assert.equal(r.who, "Bob's Claude is driving", "the who-line is unchanged");
+    assert.equal(r.hidden, false);
+    assert.equal(r.text, "The browser's sandbox is off: websites are less isolated from this computer");
+    assert.notEqual(r.display, "none");
+    await send({ items });
+    r = await read();
+    assert.equal(r.hidden, true, "sandbox on: no warning");
+    assert.equal(r.display, "none");
+    // Docked: the warning stays as the bar's note (no dock carries it).
+    await send({ on: true }, "docked");
+    await send({ items, sandboxOff: true });
+    const docked = await page.evaluate((tag) => { const root = document.querySelector(tag).shadowRoot; const bar = root.querySelector(".bar"); return { note: bar.classList.contains("note"), shown: getComputedStyle(root.querySelector(".sbx")).display !== "none" && getComputedStyle(bar).display !== "none" }; }, hud.tags.bar);
+    assert.deepEqual(docked, { note: true, shown: true });
+  } finally {
+    await browser.close();
+  }
+});
+
 // The helper waits on the page for input ("user-wait") instead of asking twice a second: the wait
 // answers the moment a person does something, empty after its time, and never two at once.
 test("the page answers a wait for input at once when something happens, empty after its time", { skip: !runtime, timeout: 60_000 }, async () => {

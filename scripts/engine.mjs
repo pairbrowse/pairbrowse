@@ -3,7 +3,7 @@ import { join, isAbsolute } from "node:path";
 import { launchNative, nativeManifest } from "./native-engine.mjs";
 import { ensureEngine, loadEngine } from "./native/pack.mjs";
 import { PATCHRIGHT_NODE_MINIMUM } from "./driver.mjs";
-import { switchName } from "./chrome-args.mjs";
+import { sandboxOffAllowed, sandboxOffAsked, sandboxRefusal, withoutNoSandbox } from "./chrome-args.mjs";
 
 export function validateEngine(config, nodeVersion = process.versions.node) {
   const engine = config.browserEngine ?? "chromium";
@@ -21,19 +21,24 @@ export function engineProfile(config, profile) {
   return config.browserEngine === "pairbrowse" ? nativeProfile(profile) : profile;
 }
 
-// Chromium's own sandbox (renderer and GPU processes walled off from the computer) is on unless
-// "chromeSandbox": false or a --no-sandbox in chromeArgs turns it off. On Linux, Chromium refuses
-// it as root, so it's off there; and where the kernel or container gives it nothing to work with
-// (no user namespaces, Docker's default seccomp profile), the launch fails and runs again
-// without it, on Linux only (launchEngine). Either way the log says so once.
+// Chromium's own sandbox (renderer and GPU processes walled off from the computer). On macOS and
+// Windows it is always on: "chromeSandbox": false or a --no-sandbox in chromeArgs (any spelling) is
+// refused, and the refusal is logged and named in pairbrowse_status. On Linux it is on unless one of
+// those turns it off; Chromium refuses it as root, so it's off there; and where the kernel or
+// container gives it nothing to work with (no user namespaces, Docker's default seccomp profile),
+// the launch fails and runs again without it (launchEngine). Off, the log, pairbrowse_status and
+// the browser's bar say so (SANDBOX_OFF_WARNING).
+// { on, reason: why it's off, refused: why a request to turn it off was refused }
 export function sandboxDecision(config = {}, { platform = process.platform, uid = process.getuid?.() } = {}) {
-  if (config.chromeSandbox === false) return { on: false, reason: "chromeSandbox is false in config.json" };
-  // Any spelling Chromium reads ("-no-sandbox", "/no-sandbox" on Windows): launchableChromeArgs
-  // drops every one of them, so each one must turn the sandbox off here, never be dropped quietly.
-  if ((Array.isArray(config.chromeArgs) ? config.chromeArgs : []).some((a) => switchName(a, platform) === "no-sandbox")) return { on: false, reason: "chromeArgs has --no-sandbox" };
-  if (platform === "linux" && uid === 0) return { on: false, reason: "running as root, where Chromium refuses its sandbox" };
-  return { on: true, reason: null };
+  const asked = sandboxOffAsked(config, platform);
+  if (!sandboxOffAllowed(platform)) return { on: true, reason: null, refused: asked ? sandboxRefusal(asked, platform) : null };
+  if (asked) return { on: false, reason: asked, refused: null };
+  if (uid === 0) return { on: false, reason: "running as root, where Chromium refuses its sandbox", refused: null };
+  return { on: true, reason: null, refused: null };
 }
+
+// This helper's browser's sandbox as last launched (pairbrowse_status and the bar read it).
+export const SANDBOX = { on: true, reason: null, refused: null };
 
 // The messages Chromium (and Playwright's rewrite of them) gives when it can't start its sandbox.
 // Without user namespaces (a container, or Ubuntu's AppArmor rule against them) Chromium turns to
@@ -52,27 +57,33 @@ function noteOnce(log, text) {
 // installed first when it isn't yet (scripts/native-pack.mjs).
 export async function launchEngine(chromium, config, profile, options, log = () => {}, loadPack, { platform = process.platform } = {}) {
   const engine = validateEngine(config);
-  const sandbox = sandboxDecision(config);
+  const sandbox = sandboxDecision(config, { platform });
+  Object.assign(SANDBOX, sandbox);
+  if (sandbox.refused) noteOnce(log, `Chromium sandbox stays on: ${sandbox.refused}`);
   if (!sandbox.on) noteOnce(log, `Chromium sandbox off: ${sandbox.reason}`);
   const pack = engine === "chromium" ? null : loadPack ? await loadPack() : await loadEngine(await ensureEngine(log));
-  const start = (chromiumSandbox) => {
-    const opts = { ...options, chromiumSandbox };
+  const start = (off) => {
+    // Never off outside Linux, whatever asked; and a sandbox that's on gets no --no-sandbox from
+    // any launch option (the driver alone adds it, and only when off).
+    const chromiumSandbox = !(off && sandboxOffAllowed(platform));
+    const opts = { ...options, chromiumSandbox, ...(chromiumSandbox ? { args: withoutNoSandbox(options.args, platform) } : {}) };
     if (engine !== "chromium") return launchNative(chromium, config, profile, opts, pack, log);
     return chromium.launchPersistentContext(profile, {
       ...opts,
       ignoreDefaultArgs: [...new Set([...(options.ignoreDefaultArgs || []), "--enable-automation"])],
-      args: [...(options.args || []), "--disable-blink-features=AutomationControlled"],
+      args: [...(opts.args || []), "--disable-blink-features=AutomationControlled"],
     });
   };
-  if (!sandbox.on) return start(false);
+  if (!sandbox.on) return start(true);
   try {
-    return await start(true);
+    return await start(false);
   } catch (e) {
     // Only Linux falls back (containers and AppArmor take away what its sandbox needs). On macOS
     // and Windows the sandbox always works: a failure there is an error to show, never a quiet
     // launch without it.
-    if (platform !== "linux" || !SANDBOX_FAILED.test(String(e?.message || e))) throw e;
+    if (!sandboxOffAllowed(platform) || !SANDBOX_FAILED.test(String(e?.message || e))) throw e;
     noteOnce(log, "Chromium sandbox off: this system can't run it (no user namespaces: a container or an AppArmor rule blocks them); set \"chromeSandbox\": false in config.json to skip the first try");
-    return start(false);
+    Object.assign(SANDBOX, { on: false, reason: "this system can't run it (no user namespaces)", refused: null });
+    return start(true);
   }
 }

@@ -9,7 +9,7 @@ import { NATIVE } from "./native-pack.mjs";
 import { paths } from "./paths.mjs";
 import { within, writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
-import { switchName } from "./chrome-args.mjs";
+import { switchName, withoutNoSandbox } from "./chrome-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
@@ -222,7 +222,7 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   const steps = [];
   if (picksPersona) {
     const measureAt = Date.now();
-    const host = await pack.measureHost((probe) => chromium.launch({ ...probe, executablePath: options.executablePath, chromiumSandbox: options.chromiumSandbox, ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS }),
+    const host = await pack.measureHost((probe) => chromium.launch({ ...probe, ...(options.chromiumSandbox === false ? {} : { args: withoutNoSandbox(probe?.args) }), executablePath: options.executablePath, chromiumSandbox: options.chromiumSandbox !== false, ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS }),
       options.executablePath, Number(CHROMIUM_MAJOR));
     const resolved = selection === "local" ? pack.resolveLocal(host, profileSelect) : await pack.resolveAuto(host, profileSelect);
     fingerprint.fingerprintProfile = resolved.profile;
@@ -328,7 +328,10 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const context = await chromium.launchPersistentContext(directory, {
     ...merged, proxy, ...(env ? { env } : {}),
     viewport: merged.viewport ?? null,
-    args: gated.args,
+    // The sandbox is the helper's choice alone (engine.mjs launchEngine): never off from a saved
+    // persona's options or a switch from the pack while it's on.
+    chromiumSandbox: options.chromiumSandbox !== false,
+    args: options.chromiumSandbox === false ? gated.args : withoutNoSandbox(gated.args),
     ignoreDefaultArgs: [...new Set([...pack.DEFAULT_IGNORED_ARGS, ...(merged.ignoreDefaultArgs ?? []), "--enable-automation"])],
   });
   log(`launch: launchPersistentContext ${Date.now() - contextAt} ms`);

@@ -5,7 +5,7 @@ import { writeJsonAtomic, sha256, readJson, onCorruptJson, corruptLine } from ".
 import { resolveHome, gateProjectEnv, BAD_INSTANCE } from "./home.mjs";
 import { checkDownloads } from "./rules/downloads.mjs";
 import { checkConfig, configProblem, configWarnings } from "./config-schema.mjs";
-import { screenChromeArgs, droppedWarning } from "./chrome-args.mjs";
+import { screenChromeArgs, droppedWarning, sandboxOffAllowed, sandboxOffAsked, sandboxRefusal } from "./chrome-args.mjs";
 
 // Everything PairBrowse writes is private to your user account.
 process.umask(0o077);
@@ -199,8 +199,13 @@ export function loadConfig(file = paths.config, log = () => {}) {
   const config = { ...DEFAULT_CONFIG, ...checked.config };
   // A chromeArgs switch that would open a debugging surface or weaken security is dropped here
   // (chrome-args.mjs), named once in the log and in pairbrowse_status; launchArgs screens again.
-  const { kept, dropped } = screenChromeArgs(config.chromeArgs);
-  if (dropped.length) { config.chromeArgs = kept; CONFIG_WARNINGS.push(droppedWarning(dropped)); }
+  // The sandbox stays on outside Linux: chromeSandbox false or a --no-sandbox is refused, and said.
+  const asked = sandboxOffAllowed(process.platform) ? null : sandboxOffAsked(config, process.platform);
+  if (asked) CONFIG_WARNINGS.push(`config.json: ${sandboxRefusal(asked, process.platform)}`);
+  const { kept, dropped, refused } = screenChromeArgs(config.chromeArgs);
+  if (dropped.length || refused.length) config.chromeArgs = kept;
+  if (dropped.length) CONFIG_WARNINGS.push(droppedWarning(dropped));
+  if (refused.length && asked !== "chromeArgs has --no-sandbox") CONFIG_WARNINGS.push(`config.json: ${sandboxRefusal("chromeArgs has --no-sandbox", process.platform)}`);
   for (const w of CONFIG_WARNINGS) try { log(w); } catch {}
   if (config.downloadsDir != null && (typeof config.downloadsDir !== "string" || (config.downloadsDir && checkDownloads(config.downloadsDir, { home: paths.home }).problem))) config.downloadsDir = null;
   return config;

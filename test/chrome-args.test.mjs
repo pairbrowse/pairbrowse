@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { screenChromeArgs, switchName, launchableChromeArgs, allowedChromeArg } from "../scripts/chrome-args.mjs";
+import { screenChromeArgs, switchName, launchableChromeArgs, allowedChromeArg, sandboxRefusal } from "../scripts/chrome-args.mjs";
 import { loadConfig, CONFIG_WARNINGS } from "../scripts/paths.mjs";
 import { launchArgs, launchOptions } from "../scripts/browser.mjs";
 import { statusLine } from "../scripts/daemon/serve/tools/status.mjs";
@@ -85,12 +85,41 @@ test("Windows reads /switch and any case; elsewhere a /path is not a switch", ()
   assert.deepEqual(screenChromeArgs(["/lang=de"], "linux", { harness: false }).kept, []);
 });
 
-test("--no-sandbox in any spelling turns the sandbox off, never dropped quietly", () => {
-  for (const [a, platform] of [["--no-sandbox", "linux"], ["-no-sandbox", "linux"], ["--No-Sandbox", "linux"], ["/no-sandbox", "win32"], ["--no-sandbox=1", "darwin"]]) {
-    assert.equal(sandboxDecision({ chromeArgs: [a] }, { platform, uid: 501 }).on, false, a);
-    assert.deepEqual(launchableChromeArgs([a, "--lang=en"], platform, { harness: false }), ["--lang=en"], a);
+test("--no-sandbox in any spelling turns the sandbox off on Linux only, never dropped quietly", () => {
+  for (const a of ["--no-sandbox", "-no-sandbox", "--No-Sandbox", "--no-sandbox=1", "--no-sandbox="]) {
+    assert.equal(sandboxDecision({ chromeArgs: [a] }, { platform: "linux", uid: 501 }).on, false, a);
+    assert.deepEqual(launchableChromeArgs([a, "--lang=en"], "linux", { harness: false }), ["--lang=en"], a);
+    assert.deepEqual(screenChromeArgs([a], "linux", { harness: false }), { kept: [a], dropped: [], refused: [] }, a);
   }
   assert.equal(sandboxDecision({ chromeArgs: ["/no-sandbox"] }, { platform: "linux", uid: 501 }).on, true, "a path off Windows");
+  assert.equal(sandboxDecision({ chromeArgs: ["--", "--no-sandbox"] }, { platform: "linux", uid: 501 }).on, true, "after a bare --, never a switch");
+});
+
+test("--no-sandbox in any spelling is refused on macOS and Windows: the sandbox stays on and says why", () => {
+  for (const [a, platform] of [["--no-sandbox", "darwin"], ["-no-sandbox", "darwin"], ["--NO-SANDBOX", "darwin"], ["--no-sandbox=1", "darwin"],
+    ["--no-sandbox", "win32"], ["/no-sandbox", "win32"], ["/No-Sandbox=true", "win32"], ["-No-sandbox", "win32"]]) {
+    const d = sandboxDecision({ chromeArgs: [a] }, { platform, uid: 501 });
+    assert.equal(d.on, true, a);
+    assert.match(d.refused, /chromeArgs has --no-sandbox: refused, the browser's sandbox always stays on on (macOS|Windows)/, a);
+    const screened = screenChromeArgs([a, "--lang=en"], platform, { harness: false });
+    assert.deepEqual(screened.kept, ["--lang=en"], a);
+    assert.deepEqual(screened.dropped, [], a);
+    assert.deepEqual(screened.refused, [a.split("=")[0]], a);
+    assert.equal(allowedChromeArg(a, platform, { harness: true }), false, a);
+  }
+  const d = sandboxDecision({ chromeSandbox: false }, { platform: "darwin", uid: 0 });
+  assert.equal(d.on, true);
+  assert.match(d.refused, /chromeSandbox is false in config\.json: refused.*macOS/);
+});
+
+test("pairbrowse_status warns while the sandbox is off and names a refusal once", () => {
+  const sel = { instance: null, source: "default", home: "/h" };
+  assert.equal(statusLine(sel, [], { on: true, reason: null, refused: null }), "ok");
+  assert.match(statusLine(sel, [], { on: false, reason: "running as root", refused: null }),
+    /warning: The browser's sandbox is off: websites are less isolated from this computer \(running as root\)/);
+  const refused = sandboxRefusal("chromeSandbox is false in config.json", "darwin");
+  assert.equal(statusLine(sel, [], { on: true, reason: null, refused }), `ok; warning: ${refused}`);
+  assert.equal(statusLine(sel, [`config.json: ${refused}`], { on: true, reason: null, refused }), `ok; warning: config.json: ${refused}`, "once");
 });
 
 test("launchArgs: the user's unsafe switches never reach the browser; the panel's own extension switches do", () => {
@@ -102,11 +131,33 @@ test("launchArgs: the user's unsafe switches never reach the browser; the panel'
   assert.ok(!args.some((a) => /^--?remote-debugging-/.test(a)), "PairBrowse adds no debugging switch; the driver adds its own pipe");
 });
 
-test("--no-sandbox stays the user's sandbox choice (sandboxDecision) and is not passed raw", () => {
+test("--no-sandbox stays the user's sandbox choice on Linux (sandboxDecision) and is never passed raw", () => {
   const config = { chromeArgs: ["--no-sandbox", "--lang=en"] };
-  assert.equal(sandboxDecision(config, { platform: "darwin", uid: 501 }).on, false);
+  assert.equal(sandboxDecision(config, { platform: "linux", uid: 501 }).on, false);
+  assert.equal(sandboxDecision(config, { platform: "darwin", uid: 501 }).on, true);
   assert.deepEqual(launchableChromeArgs(config.chromeArgs), ["--lang=en"]);
   assert.ok(!launchOptions(config).args.includes("--no-sandbox"), "the driver adds it from chromiumSandbox: false");
+});
+
+test("loadConfig refuses the sandbox off outside Linux and names it in pairbrowse_status", { skip: process.platform === "linux" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "pb-sandbox-"));
+  try {
+    const file = join(dir, "config.json");
+    writeFileSync(file, JSON.stringify({ chromeArgs: ["--No-Sandbox", "--lang=en"] }));
+    const logs = [];
+    const config = loadConfig(file, (l) => logs.push(l));
+    assert.deepEqual(config.chromeArgs, ["--lang=en"]);
+    assert.equal(logs.length, 1);
+    assert.match(logs[0], /chromeArgs has --no-sandbox: refused, the browser's sandbox always stays on/);
+    assert.ok(!/dropped/.test(logs[0]), "named as refused, not among the dropped");
+    assert.match(statusLine(undefined, undefined, { on: true, reason: null, refused: null }), /warning: config\.json: chromeArgs has --no-sandbox: refused/);
+    writeFileSync(file, JSON.stringify({ chromeSandbox: false, chromeArgs: ["--no-sandbox"] }));
+    const both = [];
+    loadConfig(file, (l) => both.push(l));
+    assert.equal(both.length, 2, "each refusal named");
+    assert.match(both[0], /chromeSandbox is false in config\.json: refused/);
+    assert.match(both[1], /chromeArgs has --no-sandbox: refused/);
+  } finally { rmSync(dir, { recursive: true, force: true }); loadConfig(join(tmpdir(), "pb-none", "config.json")); }
 });
 
 test("loadConfig drops them, logs one line and pairbrowse_status names the switches", () => {

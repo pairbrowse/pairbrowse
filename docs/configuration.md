@@ -50,7 +50,8 @@
   - `--host-resolver-rules=` with rules that keep a name on this computer only:
     `MAP <name> 127.0.0.1[:port]` (or `localhost`, `[::1]`), `MAP <name> ~NOTFOUND`, `EXCLUDE <name>`;
   - `--headless` (`=new` or `=old`), for test runs ([ADR 0009](adr/0009-always-headed.md));
-  - `--no-sandbox`, which works as `"chromeSandbox": false` in any spelling.
+  - `--no-sandbox`, on Linux only, which works as `"chromeSandbox": false` in any spelling (refused on
+    macOS and Windows, where the sandbox always stays on).
 
   Everything else is dropped: a debugging port, address or pipe, `--remote-allow-origins`,
   switches that run another program in place of a browser process (`--renderer-cmd-prefix`,
@@ -61,10 +62,13 @@
   read like `--x`. A browser the test suite starts also takes `--use-mock-keychain`,
   `--password-store=basic` and `--disable-features=LocalNetworkAccessChecks`; an installed helper
   never does.
-- `chromeSandbox`: `false` turns off Chromium's own sandbox (default `true`). PairBrowse turns it off
-  by itself only where it can't run: as root on Linux, and where the system has no user namespaces
-  (Docker's default seccomp profile or Ubuntu's AppArmor rule blocks them); the helper log says so once. In a container, run
-  as a regular user to keep it.
+- `chromeSandbox`: on Linux, `false` turns off Chromium's own sandbox (default `true`); on macOS and
+  Windows it always stays on and `false` is refused (a warning in `pairbrowse_status`). PairBrowse
+  turns it off by itself only on Linux, where it can't run: as root, and where the system has no
+  user namespaces (Docker's default seccomp profile or Ubuntu's AppArmor rule blocks them). While
+  it's off, the helper log, `pairbrowse_status` and the bar at the bottom of the browser's pages say
+  "The browser's sandbox is off: websites are less isolated from this computer". In a container,
+  run as a regular user to keep it.
 - `maxTabs`: most tabs open at once (default 20). When another opens, the tab used longest ago
   closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more
   stay open), and Claude is told.

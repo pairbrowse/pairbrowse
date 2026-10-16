@@ -8,6 +8,7 @@
   let barPerson = ""; // who is using this tab (empty: you)
   let barReconnecting = ""; // the host this shared tab is being reconnected to (empty: the channel is up)
   let barRecording = false; // this browser's recorder runs (the helper sends it to its own pages only)
+  let barSandboxOff = false; // this browser runs without its sandbox (Linux only; its own pages only)
   // Docked (the helper says so, kind "docked", only in the PairBrowse browser with its own pages):
   // the window's agent panel carries the bar's duties (who drives, the steps, Pause) and the
   // agent's status, so the bar draws only a join request's or an approval's card and the badge
@@ -39,6 +40,8 @@
       .dot{flex:none;width:8px;height:8px;border-radius:50%;background:__PB_AGENT_COLOR__}
       .rec{display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 7px;border-radius:6px;background:#192A3D;color:#F1F5FA;font:600 11px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.06em}
       .rec[hidden]{display:none}
+      .sbx{display:inline-block;height:18px;padding:0 7px;border-radius:6px;background:#192A3D;color:#F4B45D;font:600 11px/18px system-ui,-apple-system,"Segoe UI",sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+      .sbx[hidden]{display:none}
       .rec i{width:7px;height:7px;border-radius:50%;background:#EF6468}
       ol{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:0;padding:0;list-style:none;min-width:0;flex:1;overflow:hidden}
       li{display:flex;gap:6px;align-items:center;white-space:nowrap;flex:none}
@@ -69,7 +72,7 @@
       .bar.docked.note{height:30px;padding:0 14px;width:max-content;max-width:100%;border-top:1px solid #293B50;border-right:1px solid #293B50;border-radius:0 8px 0 0;background:rgba(11,20,33,.96)}
       .bar.docked.note>.who{display:flex}
       .bar.docked.note .jq{bottom:40px}
-      .bar.reconly .who>.dot,.bar.reconly .who>span:not(.rec){display:none}
+      .bar.reconly .who>.dot,.bar.reconly .who>span:not(.rec):not(.sbx){display:none}
       .jq{position:absolute;right:12px;bottom:40px;display:flex;flex-direction:column;gap:9px;box-sizing:border-box;max-width:min(420px,70vw);
         padding:12px 34px 12px 14px;border-radius:10px;background:rgba(25,42,61,.97);box-shadow:0 0 0 1px #293B50,0 8px 24px rgba(0,0,0,.35);
         pointer-events:auto;cursor:default;font:600 12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#F1F5FA}
@@ -118,7 +121,7 @@
       .ab .ax{position:absolute;right:8px;top:18px;box-sizing:border-box;width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer}
       .ab .ax:hover{color:#F1F5FA}
       @media (prefers-reduced-motion:reduce){.bar,.bar *{animation:none!important;transition:none!important}}
-    </style><div class="bar" aria-hidden="true"><span class="who"><i class="dot"></i><span></span><span class="rec" hidden><i></i>REC</span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><div class="jq" hidden><div class="jb"><div class="hd"><i class="av"></i><span class="t"><b></b> wants to join · <span class="r"></span><span class="h"></span></span></div><span class="m" hidden></span><div class="act"><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button></div><b class="x" title="Dismiss (it stays in the side panel)">×</b></div><div class="ab" hidden><div class="ah"><i class="ai"></i><span class="aw"><b></b> wants to click</span></div><span class="ac">Described by the agent as</span><div class="ag"></div><div class="ar"></div><div class="aact"><button class="aok" tabindex="-1">Allow</button><button class="ano" tabindex="-1">Deny</button><button class="atm" tabindex="-1">Ask in the terminal</button></div><span class="am" hidden></span><span class="an" hidden></span><b class="ax" title="Hide here (the terminal still asks)">×</b></div></div></div>`);
+    </style><div class="bar" aria-hidden="true"><span class="who"><i class="dot"></i><span></span><span class="rec" hidden><i></i>REC</span><span class="sbx" hidden>The browser's sandbox is off: websites are less isolated from this computer</span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><div class="jq" hidden><div class="jb"><div class="hd"><i class="av"></i><span class="t"><b></b> wants to join · <span class="r"></span><span class="h"></span></span></div><span class="m" hidden></span><div class="act"><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button></div><b class="x" title="Dismiss (it stays in the side panel)">×</b></div><div class="ab" hidden><div class="ah"><i class="ai"></i><span class="aw"><b></b> wants to click</span></div><span class="ac">Described by the agent as</span><div class="ag"></div><div class="ar"></div><div class="aact"><button class="aok" tabindex="-1">Allow</button><button class="ano" tabindex="-1">Deny</button><button class="atm" tabindex="-1">Ask in the terminal</button></div><span class="am" hidden></span><span class="an" hidden></span><b class="ax" title="Hide here (the terminal still asks)">×</b></div></div></div>`);
     bar = shadow.querySelector(".bar");
     joinWire(shadow); // a new bar: a join request it shows is drawn anew
     apWire(shadow); // and an approval
@@ -163,9 +166,11 @@
     bar.classList.toggle("paused", !!barPause);
     paintDot();
     bar.querySelector(".rec").hidden = !barRecording;
-    // Docked: the who line only for what no dock shows (a wait, a reconnect, a pause, REC; REC
-    // alone shows only its chip, never a driving line that would go stale without the re-check).
-    const note = docked && !!(barWaiting || barReconnecting || barRecording || barPause);
+    bar.querySelector(".sbx").hidden = !barSandboxOff;
+    // Docked: the who line only for what no dock shows (a wait, a reconnect, a pause, REC, the
+    // sandbox off; REC and the sandbox alone show only their chips, never a driving line that
+    // would go stale without the re-check).
+    const note = docked && !!(barWaiting || barReconnecting || barRecording || barSandboxOff || barPause);
     bar.classList.toggle("note", note);
     bar.classList.toggle("reconly", note && !barWaiting && !barReconnecting && !barPause);
     if (barPause) bar.querySelector(".who span").innerHTML = html(`Paused by <b>${esc(barPause.by)}</b>${barCanPause && !docked ? " \u00b7" : ""}`);
@@ -201,6 +206,7 @@
       barCanPause = !Array.isArray(v) && !!v.canPause;
       barReconnecting = !Array.isArray(v) && typeof v.reconnecting === "string" ? v.reconnecting.slice(0, 60) : "";
       barRecording = !Array.isArray(v) && v.recording === true;
+      barSandboxOff = !Array.isArray(v) && v.sandboxOff === true;
     } catch { return; }
     ensureBar(); // always there, "idle" until the first action
     drawBar();

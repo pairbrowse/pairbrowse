@@ -4,7 +4,7 @@
 // st: the browser's state (browser/state.mjs); api: the other parts' functions, read when called.
 import { ensureBrowser, launchOptions, prepareProfile, panelExtensionId, resetPanelWorker, writeHelperKeyFile, dropHelperKeyFile, CAPTURE_KEY_PREFIX } from "../../browser.mjs";
 import { chooseBrowser, engineConfig, shellOf } from "../../browser/choice.mjs";
-import { engineProfile, launchEngine, validateEngine } from "../../engine.mjs";
+import { engineProfile, launchEngine, validateEngine, SANDBOX } from "../../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../../native/install.mjs";
 import { needsVirtualDisplay, startVirtualDisplay } from "../../display.mjs";
 import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
@@ -175,6 +175,7 @@ export function createLaunch(st, deps, api) {
       }, launchLog);
     } catch (e) { dropHelperKey(keyFile, captureKeyFile); throw e; } // a failed launch leaves no key file
     finally { launchLog.done(hud.badge()); }
+    hud.setSandboxOff?.(SANDBOX.on === false); // the bar warns while the sandbox is off
     step("browser (fingerprint and launchPersistentContext inside)");
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
     await ctx.addInitScript({ content: hud.source });

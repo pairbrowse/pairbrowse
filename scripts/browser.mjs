@@ -1,10 +1,10 @@
-// The PairBrowse browser: a normal headed Chromium the daemon drives over a private pipe (no
-// debugging port). On macOS it's a pinned ungoogled-chromium build, which has a switch to hide the
+// The PairBrowse browser: a normal headed browser the daemon drives over a private pipe (no
+// debugging port). On macOS it's a pinned open-source build (the UNGOOGLED pin below), which has a switch to hide the
 // profile button, copied once into ~/.pairbrowse/browser under the name
-// PairBrowse with the PairBrowse icon. Elsewhere it's Playwright's own Chromium; where a native
+// PairBrowse with the PairBrowse icon. Elsewhere it's Playwright's own build of the engine; where a native
 // PairBrowse build is pinned (macOS, Linux), that build is the default (browser/choice.mjs). It loads one
 // extension of its own and no others: ui/ (the PairBrowse side panel and pages, which
-// talks only to the key-protected live view on 127.0.0.1). Its colors come from Chromium's own
+// talks only to the key-protected live view on 127.0.0.1). Its colors come from the engine's own
 // color theme, set in the profile (profilePreferences), so there's no "Installed theme" bar.
 // A native build that declares its own pages (chrome://pairbrowse, its manifest's `chrome` field)
 // loads no extension: those pages take the side panel's place, with the live view's address in
@@ -17,7 +17,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, readdirSync
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, loadConfig } from "./paths.mjs";
-import { launchableChromeArgs, switchName } from "./chrome-args.mjs";
+import { launchableBrowserArgs, browserArgsOf, switchName } from "./browser-args.mjs";
 import { validateBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
 import { createMotion } from "./motion.mjs";
 import { hudSource } from "./hud/assemble.mjs";
@@ -34,17 +34,17 @@ const nativeTarget = paths.nativeApp;
 // that used it get the color theme instead, wherever that copy of PairBrowse was (plugin installs
 // live in versioned folders, so the path, and the extension id derived from it, change).
 const OLD_THEME_DIR = join(here, "browser", "theme");
-// (Chromium records the theme's folder, or its compiled pack file inside it.)
+// (The engine records the theme's folder, or its compiled pack file inside it.)
 const isOldThemePath = (p) => typeof p === "string" && /[/\\]scripts[/\\]browser[/\\]theme([/\\](Cached Theme\.pak)?)?$/.test(p);
 export const PANEL_DIR = join(here, "..", "ui");
 
 // The origin a page of the extension sends (URL.origin is "null" for chrome-extension: URLs): ui/urls.js.
 export { extensionOrigin } from "../ui/urls.js";
 
-// Chromium's extension ID scheme: SHA-256 of the input, first 32 hex digits written as a-p.
+// The engine's extension ID scheme: SHA-256 of the input, first 32 hex digits written as a-p.
 const idFrom = (data) => [...sha256(data).slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
 
-// The side panel's extension ID. Its manifest carries a public "key", so Chromium derives the ID
+// The side panel's extension ID. Its manifest carries a public "key", so the engine derives the ID
 // from that key (SHA-256 of the DER public key) rather than from the folder path. Plugin installs
 // live in versioned folders, and a path-derived ID changed with every update, which brought back
 // the "Did you mean to change this page?" dialog (its acknowledgement is per ID).
@@ -57,7 +57,7 @@ export function panelExtensionId(dir = PANEL_DIR) {
   return panelIds.get(dir);
 }
 
-// The side panel worker's build. Chromium keeps an extension's service worker script in the
+// The side panel worker's build. The engine keeps an extension's service worker script in the
 // profile (its "Service Worker" folder) and goes on running that copy after the file on disk
 // changed (an update), whatever the manifest's version or path; neither chrome.runtime.reload
 // (it leaves a command-line extension disabled) nor the browser's own update calls replace it.
@@ -97,7 +97,7 @@ export const forgetPanelBuild = (profile) => rmSync(join(profile, PANEL_BUILD_FI
 // Earlier versions' side panel had no key, so its ID came from its folder path: the folder
 // earlier versions loaded the keyless panel from (a checkout updated in place keeps that path).
 const pathPanelId = (dir = join(here, "browser", "panel")) => idFrom(dir);
-// (Any copy of PairBrowse: Chromium records an unpacked extension's folder as its path.)
+// (Any copy of PairBrowse: the engine records an unpacked extension's folder as its path.)
 const isPanelPath = (p) => typeof p === "string" && /[/\\]scripts[/\\]browser[/\\]panel[/\\]?$/.test(p);
 // The IDs of earlier side panel copies recorded in a profile's Secure Preferences (parsed).
 export const oldPanelIds = (secure, panelId = panelExtensionId()) => Object.entries(secure?.extensions?.settings || {})
@@ -107,7 +107,7 @@ export const oldPanelIds = (secure, panelId = panelExtensionId()) => Object.entr
 // place they are read.
 export { browserChoice } from "./browser/choice.mjs";
 
-// The ungoogled-chromium build PairBrowse uses on macOS. Pinned: a new version is a deliberate
+// The open-source build PairBrowse uses on macOS (its project's release, named as published). Pinned: a new version is a deliberate
 // change here, with the SHA-256 from its GitHub release. Builds are notarized by the project.
 export const UNGOOGLED = {
   version: "154.0.8037.57-1.1",
@@ -115,25 +115,25 @@ export const UNGOOGLED = {
   x64: { file: "ungoogled-chromium_154.0.8037.57-1.1_x86_64-macos.dmg", sha256: "58ee9436dcbc457fe6634bbc247ad03e0d1609ed5ce9954106ddce89944eb2ff" },
 };
 
-// Chromium flags for the PairBrowse browser: load its side panel, and nothing else. On
-// macOS (ungoogled-chromium) also hide the profile button. The side panel opens from its pinned
+// Switches for the PairBrowse browser: load its side panel, and nothing else. On
+// macOS (the pinned open build) also hide the profile button. The side panel opens from its pinned
 // toolbar button or with Cmd+Shift+Y.
 // firstRun (a new profile, on macOS): the browser starts with no window and the side panel opens
-// the first one (background.js). Chromium acknowledges new tab page extensions at the first tab
+// the first one (background.js). The engine acknowledges new tab page extensions at the first tab
 // shown in a profile, and a startup tab comes before the panel is loaded, so new users would get
 // "Did you mean to change this page?". Only for new profiles: there the panel's worker always
 // starts (its install); in an existing one it may not, and the launch would wait for a window.
-// chromePages (a build with its own pages): no extension, and the browser opens its own window.
-export const browserArgs = ({ firstRun = false, chromePages = false } = {}) => (chromePages
+// browserPages (a build with its own pages): no extension, and the browser opens its own window.
+export const shellArgs = ({ firstRun = false, browserPages = false } = {}) => (browserPages
   ? (process.platform === "darwin" ? ["--show-avatar-button=never"] : [])
   : [
     `--disable-extensions-except=${PANEL_DIR}`, `--load-extension=${PANEL_DIR}`,
     ...(process.platform === "darwin" ? ["--show-avatar-button=never", ...(firstRun ? ["--no-startup-window"] : [])] : []),
   ]);
 
-// The PairBrowse colors: Chromium's built-in color theme (Settings > Appearance), the sheet's
-// chrome navy (ui/tokens.css --chrome), dark, tonal: Chromium's tonal palette
-// takes the hue. Keys from Chromium 150 chrome/common/pref_names.h; the color is an SkColor (ARGB)
+// The PairBrowse colors: the engine's built-in color theme (Settings > Appearance), the sheet's
+// frame navy (ui/tokens.css --frame), dark, tonal: the engine's tonal palette
+// takes the hue. Keys from engine version 150 chrome/common/pref_names.h; the color is an SkColor (ARGB)
 // stored as a signed 32-bit integer.
 export const THEME_COLOR = 0xff101d2d | 0;
 // The seed PairBrowse set before 0.15.43: a profile still on it (never a color the user picked)
@@ -154,7 +154,7 @@ function extensionPreferences(prefs, panelId, oldPanels) {
   const commands = Object.fromEntries(Object.entries(prefs.extensions?.commands || {}).filter(([, c]) => !(c.extension === panelId && c.command_name === "_execute_action")));
   prefs.extensions = { ...(prefs.extensions || {}), pinned_extensions: [...pinned].filter((id) => id !== panelExtensionId(OLD_THEME_DIR)), commands };
   // The color theme, unless the user picked another one (a theme, or Default: id ""). The old
-  // theme extension's entry goes: Chromium would keep drawing its saved theme pack.
+  // theme extension's entry goes: the engine would keep drawing its saved theme pack.
   const theme = prefs.extensions.theme;
   const ownOldSeed = theme?.id === USER_COLOR_THEME_ID && prefs.browser?.theme?.user_color2 === OLD_THEME_COLOR;
   if (ownOldSeed) {
@@ -170,30 +170,30 @@ function extensionPreferences(prefs, panelId, oldPanels) {
 
 // The profile settings PairBrowse needs, applied to a profile's Default/Preferences (parsed).
 // Run before every launch and by the install step; keeps everything else the user set.
-// chromePages (a build with its own pages): no extension or theme settings; the docks' layout
+// browserPages (a build with its own pages): no extension or theme settings; the docks' layout
 // starts from config.layout (layout) the first time, and the browser keeps its own after that.
-export function profilePreferences(prefs = {}, panelId = panelExtensionId(), oldPanels = [], { chromePages = false, layout = null } = {}) {
-  // Chrome starts on a blank tab (its own restore would reload every tab during startup);
+export function profilePreferences(prefs = {}, panelId = panelExtensionId(), oldPanels = [], { browserPages = false, layout = null } = {}) {
+  // The browser starts on a blank tab (its own restore would reload every tab during startup);
   // PairBrowse then brings the tabs back itself, one by one (see tabs.mjs).
   prefs.session = { ...(prefs.session || {}), restore_on_startup: 5 };
-  if (chromePages) prefs.pairbrowse = { ...(prefs.pairbrowse || {}), layout: prefs.pairbrowse?.layout ?? layoutFrom(layout) };
+  if (browserPages) prefs.pairbrowse = { ...(prefs.pairbrowse || {}), layout: prefs.pairbrowse?.layout ?? layoutFrom(layout) };
   else extensionPreferences(prefs, panelId, oldPanels);
-  // Notification and location requests never pop up: Chromium's quiet prompts show them only as
-  // an icon in the address bar. Sites see the normal "ask" state, as in an everyday Chrome
+  // Notification and location requests never pop up: the engine's quiet prompts show them only as
+  // an icon in the address bar. Sites see the normal "ask" state, as in your everyday browser
   // (a flat "denied" is a known automation tell); earlier versions blocked both outright.
   const defaults = { ...(prefs.profile?.default_content_setting_values || {}) };
   for (const k of ["notifications", "geolocation"]) if (defaults[k] === 2) delete defaults[k];
   const contentSettings = prefs.profile?.content_settings || {};
   prefs.profile = { ...(prefs.profile || {}), default_content_setting_values: defaults,
     content_settings: { ...contentSettings, enable_quiet_permission_ui: { ...(contentSettings.enable_quiet_permission_ui || {}), notifications: true, geolocation: true },
-      // Quiet prompts and Chrome's predicted prompts (CPSS, on by default) are one choice: both on
-      // at once is a state Chromium's own settings page refuses (it crashed opening Settings).
+      // Quiet prompts and the engine's predicted prompts (CPSS, on by default) are one choice: both on
+      // at once is a state the engine's own settings page refuses (it crashed opening Settings).
       enable_cpss: { ...(contentSettings.enable_cpss || {}), notifications: false, geolocation: false } } };
   // No Energy Saver (its popup and leaf icon); PairBrowse needs full rendering for the live view.
   prefs.performance_tuning = { ...(prefs.performance_tuning || {}), battery_saver_mode: { ...(prefs.performance_tuning?.battery_saver_mode || {}), state: 0 } };
   // No footer under the PairBrowse new tab page (the extension link and "Customize" button).
-  if (!chromePages) prefs.ntp_footer = { ...(prefs.ntp_footer || {}), settings: { ...(prefs.ntp_footer?.settings || {}), extension_attribution: false, management_notice: false } };
-  // PairBrowse, not Chrome: no Chrome sign-in or sync (signing into Google on websites works as on
+  if (!browserPages) prefs.ntp_footer = { ...(prefs.ntp_footer || {}), settings: { ...(prefs.ntp_footer?.settings || {}), extension_attribution: false, management_notice: false } };
+  // PairBrowse, not a Google browser: no browser sign-in or sync (signing into Google on websites works as on
   // any site), no default-browser check, no translate bubble, and no password or autofill popups
   // over forms (PairBrowse fills forms itself and keeps passwords in its own secrets file).
   prefs.signin = { ...(prefs.signin || {}), allowed: false };
@@ -206,11 +206,11 @@ export function profilePreferences(prefs = {}, panelId = panelExtensionId(), old
 }
 
 // The extension records PairBrowse needs fixed in a profile's Default/Secure Preferences (parsed).
-// Chromium keeps a command-line extension's disabled state across launches, and a disabled side
+// The engine keeps a command-line extension's disabled state across launches, and a disabled side
 // panel has no worker (no live view address, no notifications) and no toolbar button. Its record,
-// and the old theme extension's, are removed with their MACs: Chromium then loads the side panel
+// and the old theme extension's, are removed with their MACs: the engine then loads the side panel
 // as a fresh install, enabled. Returns true when something changed (only then is the file written,
-// since Chromium re-signs the file afterwards).
+// since the engine re-signs the file afterwards).
 export function profileSecurePreferences(secure, panelId = panelExtensionId()) {
   const settings = secure?.extensions?.settings;
   if (!settings) return false;
@@ -229,18 +229,18 @@ export function profileSecurePreferences(secure, panelId = panelExtensionId()) {
   return changed;
 }
 
-// The side panel provides the new tab page, so Chromium (on macOS) would ask "Did you mean to change
+// The side panel provides the new tab page, so the engine (on macOS) would ask "Did you mean to change
 // this page?" until the panel is acknowledged. The acknowledgement sits in the sealed Secure
-// Preferences, which only Chromium may write; but once per profile Chromium acknowledges every
+// Preferences, which only the engine may write; but once per profile the engine acknowledges every
 // extension already providing the new tab page, tracked by this plain preference. Clearing it
-// while the panel isn't acknowledged has Chromium do that before it would show the dialog.
+// while the panel isn't acknowledged has the engine do that before it would show the dialog.
 function acknowledgeNewTabPage(prefs, secure, panelId) {
   if (secure?.extensions?.settings?.[panelId]?.ack_ntp_bubble === true) return prefs;
   return { ...prefs, ack_existing_ntp_extensions: false };
 }
 
-// Browser-wide settings in Local State. PairBrowse has its own sessions, so no guest or added Chrome
-// profiles. And Chromium stores a profile's default name ("Your Chromium") when it creates the
+// Browser-wide settings in Local State. PairBrowse has its own sessions, so no guest or added browser
+// profiles. And the engine stores a profile's default name ("Your" and its own name) when it creates the
 // profile and never updates it: a default name becomes "Your PairBrowse"; a name the user chose stays.
 export function localStatePreferences(state) {
   let changed = false;
@@ -253,10 +253,10 @@ export function localStatePreferences(state) {
 }
 
 // Writes the settings above into a profile folder (before a launch, and when installing).
-// Returns true for a new profile (Chromium hasn't run in it yet): launchArgs' firstRun.
-// chromePages, layout: as profilePreferences (no extension records then: Secure Preferences and the
+// Returns true for a new profile (the browser hasn't run in it yet): launchArgs' firstRun.
+// browserPages, layout: as profilePreferences (no extension records then: Secure Preferences and the
 // new tab acknowledgement are left alone).
-export function prepareProfile(profile, panelId = panelExtensionId(), { chromePages = false, layout = null } = {}) {
+export function prepareProfile(profile, panelId = panelExtensionId(), { browserPages = false, layout = null } = {}) {
   const dir = join(profile, "Default");
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "Preferences");
@@ -265,7 +265,7 @@ export function prepareProfile(profile, panelId = panelExtensionId(), { chromePa
   const prefs = readJson(file, {});
   const secure = readJson(secureFile, null);
   const oldPanels = oldPanelIds(secure, panelId);
-  if (chromePages) writeJsonAtomic(file, profilePreferences(prefs, panelId, oldPanels, { chromePages, layout }), { indent: 0 });
+  if (browserPages) writeJsonAtomic(file, profilePreferences(prefs, panelId, oldPanels, { browserPages, layout }), { indent: 0 });
   else {
     if (secure && profileSecurePreferences(secure, panelId)) writeJsonAtomic(secureFile, secure, { indent: 0 });
     writeJsonAtomic(file, acknowledgeNewTabPage(profilePreferences(prefs, panelId, oldPanels), secure, panelId), { indent: 0 });
@@ -279,7 +279,7 @@ export function prepareProfile(profile, panelId = panelExtensionId(), { chromePa
 // Agents work in tabs nobody is looking at. macOS still runs a hidden tab's renderer (and the
 // side panel's worker) at background priority despite --disable-renderer-backgrounding, and on a
 // busy computer it then answers nothing for a minute or more: every tool call that reads that
-// tab hangs. Chrome reads only one --enable-features, so Playwright's own goes in it too.
+// tab hangs. The engine reads only one --enable-features, so Playwright's own goes in it too.
 const FEATURES = ["ForceForegroundPriorityForAllTabs", ...(process.env.PLAYWRIGHT_LEGACY_SCREENSHOT ? [] : ["CDPScreenshotNewSurface"])];
 const ENABLE = "--enable-features=";
 
@@ -311,30 +311,30 @@ export function dropHelperKeyFile(path) {
 }
 
 // Every flag the daemon launches the PairBrowse browser with (the install self-check uses the same).
-// chromePages (a build with its own pages): no extension switches; helper ({ origin, keyFile }):
+// browserPages (a build with its own pages): no extension switches; helper ({ origin, keyFile }):
 // the live view's address goes in --pairbrowse-helper and the path of the owner-only file holding
 // the pages' key in --pairbrowse-helper-key-file. The key itself is never on the command line.
-export function launchArgs(config = {}, { firstRun = false, chromePages = false, helper = null } = {}) {
-  // The user's chromeArgs, screened (chrome-args.mjs): no debugging surface, no other profile or
+export function launchArgs(config = {}, { firstRun = false, browserPages = false, helper = null } = {}) {
+  // The user's browserArgs (or older chromeArgs), screened (browser-args.mjs): no debugging surface, no other profile or
   // extension, no web security off; --no-sandbox goes through sandboxDecision instead.
-  const extra = launchableChromeArgs(config.chromeArgs || []);
+  const extra = launchableBrowserArgs(browserArgsOf(config));
   // Any spelling of --enable-features ("-enable-features=..." too) joins the one merged switch.
   const isEnable = (a) => switchName(a) === "enable-features";
   const features = [...FEATURES, ...extra.filter(isEnable).flatMap((a) => a.slice(a.indexOf("=") + 1).split(","))];
   return [
     "--window-size=1366,900", "--hide-crash-restore-bubble",
-    // Hides Chrome's "unsupported command-line flag" bar (about --no-sandbox where the sandbox is
+    // Hides the engine's "unsupported command-line flag" bar (about --no-sandbox where the sandbox is
     // off, see sandboxDecision in engine.mjs, and the other launch flags).
     "--test-type",
     // Keep rendering when the window is behind other windows, so the live view stays live.
     "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling",
     // Shared browser mode: PairBrowse's own extension (and no other, nor any page) may capture a
     // tab for the people the user let in, without the user clicking the extension first.
-    ...(chromePages ? [] : [`--allowlisted-extension-id=${panelExtensionId()}`]),
+    ...(browserPages ? [] : [`--allowlisted-extension-id=${panelExtensionId()}`]),
     ENABLE + [...new Set(features.filter(Boolean))].join(","),
-    ...browserArgs({ firstRun, chromePages }),
-    ...(chromePages && helperGiven(helper) ? [`--pairbrowse-helper=${helper.origin}`, `--pairbrowse-helper-key-file=${helper.keyFile}`] : []),
-    ...(chromePages && helperGiven(helper) && typeof helper.captureKeyFile === "string" && helper.captureKeyFile ? [`--pairbrowse-capture-key-file=${helper.captureKeyFile}`] : []),
+    ...shellArgs({ firstRun, browserPages }),
+    ...(browserPages && helperGiven(helper) ? [`--pairbrowse-helper=${helper.origin}`, `--pairbrowse-helper-key-file=${helper.keyFile}`] : []),
+    ...(browserPages && helperGiven(helper) && typeof helper.captureKeyFile === "string" && helper.captureKeyFile ? [`--pairbrowse-capture-key-file=${helper.captureKeyFile}`] : []),
     // Only test runs are headless, and nobody is there to see a notification: without this the
     // first one starts the test browser's notification helper and macOS asks to allow it.
     ...(extra.some((a) => switchName(a) === "headless") ? ["--disable-notifications"] : []),
@@ -358,7 +358,7 @@ export function launchOptions(config = {}, { shell, firstRun = false, helper = n
     executablePath,
     viewport: null,
     ignoreDefaultArgs: ownPages && !blankStart ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"],
-    args: launchArgs(config, { firstRun, chromePages: ownPages, helper }),
+    args: launchArgs(config, { firstRun, browserPages: ownPages, helper }),
   };
 }
 
@@ -388,7 +388,7 @@ export function hudScript() {
   return { source, name, token, tags };
 }
 
-// The pinned ungoogled-chromium app: downloaded once, checked against its SHA-256 and its
+// The pinned open build's macOS app: downloaded once, checked against its SHA-256 and its
 // notarization, then copied out of the disk image.
 async function ungoogledApp(log) {
   const dir = join(paths.browser, `ungoogled-${UNGOOGLED.version}`);
@@ -396,7 +396,7 @@ async function ungoogledApp(log) {
   if (existsSync(join(app, "Contents", "Info.plist"))) return app;
   const asset = UNGOOGLED[process.arch === "arm64" ? "arm64" : "x64"];
   const dmg = join(paths.downloads, asset.file);
-  if (!existsSync(dmg)) log(`downloading ungoogled-chromium ${UNGOOGLED.version} (about 150 MB, once)`);
+  if (!existsSync(dmg)) log(`downloading the PairBrowse open build ${UNGOOGLED.version} (about 150 MB, once)`);
   await downloadPinned(`https://github.com/ungoogled-software/ungoogled-chromium-macos/releases/download/${UNGOOGLED.version}/${asset.file}`, dmg, asset.sha256);
   const { stdout } = await run("hdiutil", ["attach", "-nobrowse", "-readonly", "-noautoopen", dmg]);
   const mount = stdout.trim().split("\n").at(-1).split("\t").at(-1).trim();
@@ -415,16 +415,16 @@ async function ungoogledApp(log) {
 // The installer of the browser driver PairBrowse runs with (config browserDriver).
 export const driverCli = () => join(paths.runtime, "node_modules", validateBrowserDriver(loadConfig(), process.versions.node, patchrightNodeMinimum(paths.runtime)), "cli.js");
 
-// Path of the browser to launch: on macOS the branded copy of ungoogled-chromium (built first when
-// it's missing or out of date), elsewhere Playwright's Chromium (downloaded once if missing).
+// Path of the browser to launch: on macOS the branded copy of the pinned open build (built first when
+// it's missing or out of date), elsewhere Playwright's build (downloaded once if missing).
 // chromium: Playwright's chromium launcher (from the pinned runtime). log: progress messages.
 export async function ensureBrowser(chromium, log = () => {}) {
   if (process.platform !== "darwin") {
     if (!existsSync(chromium.executablePath())) {
-      log("downloading Chromium for the PairBrowse browser (about 100 MB, once)");
+      log("downloading the PairBrowse browser (about 100 MB, once)");
       // The driver in use installs its own build: patchright and Playwright pin different ones.
       await run(process.execPath, [driverCli(), "install", "chromium"], { timeout: 600_000 });
-      if (!existsSync(chromium.executablePath())) throw new Error(`Chromium didn't install at ${chromium.executablePath()}. Run: node ${driverCli()} install --with-deps chromium`);
+      if (!existsSync(chromium.executablePath())) throw new Error(`The browser didn't install at ${chromium.executablePath()}. Run: node ${driverCli()} install --with-deps chromium`);
     }
     return chromium.executablePath();
   }
@@ -435,7 +435,7 @@ export async function ensureBrowser(chromium, log = () => {}) {
 async function brandedApp(log) {
   const sourceApp = await ungoogledApp(log);
   // The native PairBrowse build (scripts/native-install.mjs) lives at the usual place; this one
-  // then goes next to it, so switching "browser" to chromium never overwrites the native app.
+  // then goes next to it, so switching "browser" to pairbrowse-open never overwrites the native app.
   const target = existsSync(join(nativeTarget, "Contents", "Resources", "PairBrowse-build.json")) ? join(dirname(nativeTarget), "PairBrowse Chromium.app") : nativeTarget;
   const exec = join(target, "Contents", "MacOS", "pairbrowse");
   const stamp = sha256(`branding v6 ${sourceApp} ${target}` + readFileSync(ICON).toString("base64"));
@@ -451,11 +451,11 @@ async function brandedApp(log) {
     await run("plutil", ["-replace", k, "-string", v, plist]);
   }
   // The program itself is named PairBrowse too (Activity Monitor, some macOS prompts). The
-  // framework and helper file names stay: Chromium has those paths built in.
+  // framework and helper file names stay: the engine has those paths built in.
   await run("mv", [join(target, "Contents", "MacOS", "Chromium"), exec]);
   await run("/usr/libexec/PlistBuddy", ["-c", "Delete :CFBundleIconName", plist]).catch(() => {}); // use the .icns, not the asset catalog
   copyFileSync(ICON, join(target, "Contents", "Resources", "app.icns"));
-  // The notification helpers: macOS shows their name and icon for notifications. Chromium finds
+  // The notification helpers: macOS shows their name and icon for notifications. The engine finds
   // them by the main app's bundle ID plus ".framework.AlertNotificationService".
   const helpers = join(target, "Contents", "Frameworks", "Chromium Framework.framework", "Versions", "Current", "Helpers");
   for (const helper of ["Chromium Helper (Alerts).app", "Chromium Helper (Aperitif Alerts).app"]) {
@@ -466,12 +466,12 @@ async function brandedApp(log) {
     }
     await run("plutil", ["-remove", "CFBundleIconName", hp]).catch(() => {});
     copyFileSync(ICON, join(helpers, helper, "Contents", "Resources", "app.icns"));
-    // An English name as well: with only "base", macOS falls back to "Chromium" in its prompts.
+    // An English name as well: with only "base", macOS falls back to the engine's own name in its prompts.
     const en = join(helpers, helper, "Contents", "Resources", "en.lproj");
     mkdirSync(en, { recursive: true });
     writeFileSync(join(en, "InfoPlist.strings"), '"CFBundleDisplayName" = "PairBrowse";\n"CFBundleName" = "PairBrowse";\n');
   }
-  // Localized names ("Chromium" in every language folder).
+  // Localized names (the engine's own name in every language folder).
   const { stdout: strings } = await run("find", [target, "-name", "InfoPlist.strings"], { maxBuffer: 4 << 20 });
   for (const f of strings.trim().split("\n").filter(Boolean)) {
     for (const k of ["CFBundleDisplayName", "CFBundleName"]) await run("plutil", ["-replace", k, "-string", "PairBrowse", f]).catch(() => {});

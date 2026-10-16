@@ -1,5 +1,5 @@
-// Property-based fuzzing of the chromeArgs allowlist (scripts/chrome-args.mjs): every spelling
-// Chromium reads of a switch the list doesn't hold ("--x", "-x", "/x" on Windows, any case, with
+// Property-based fuzzing of the browserArgs allowlist (scripts/browser-args.mjs): every spelling
+// the engine reads of a switch the list doesn't hold ("--x", "-x", "/x" on Windows, any case, with
 // or without "=value", its value as the next element) is dropped; an allowlisted switch with a
 // value of its shape passes in any spelling; nothing that isn't a switch ever passes; and what
 // passes is always a switch on the list. Run with: npm ci && npm run test:fuzz
@@ -7,7 +7,7 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
-import { screenChromeArgs, switchName, allowedChromeArg, ALLOWED, withoutNoSandbox } from "../../scripts/chrome-args.mjs";
+import { screenBrowserArgs, switchName, allowedBrowserArg, ALLOWED, withoutNoSandbox } from "../../scripts/browser-args.mjs";
 import { sandboxDecision } from "../../scripts/engine.mjs";
 
 const RUNS = Number(process.env.PAIRBROWSE_FUZZ_RUNS) || 5000;
@@ -37,7 +37,7 @@ test("no spelling of an unlisted switch survives", () => {
       ([pre, name], value, next) => {
         const arg = pre + name + (value === undefined ? "" : `=${value}`);
         const args = [...around, arg, ...(next === undefined ? [] : [next])];
-        const { kept } = screenChromeArgs(args, p, { harness });
+        const { kept } = screenBrowserArgs(args, p, { harness });
         assert.ok(!kept.includes(arg), `${p}: ${arg}`);
         if (next !== undefined && switchName(next, p) === null) assert.ok(!kept.includes(next), `${p}: ${next}`);
       }), { numRuns: 20 });
@@ -48,7 +48,7 @@ test("no spelling of an unlisted switch survives", () => {
 test("nothing that isn't a switch passes", () => {
   check(fc.property(platform, fc.boolean(), fc.oneof(anyText, fc.webUrl(), fc.constantFrom("--", "-", "/", "", "=x", "--=x")), (p, harness, arg) => {
     if (switchName(arg, p) !== null && arg !== "--") return;
-    assert.deepEqual(screenChromeArgs([arg], p, { harness }).kept, []);
+    assert.deepEqual(screenBrowserArgs([arg], p, { harness }).kept, []);
   }));
 });
 
@@ -58,38 +58,42 @@ test("what passes is always a listed switch with a value of its shape", () => {
   const arg = fc.tuple(fc.constantFrom("--", "-", "/"), listed, fc.option(fc.oneof(anyText, fc.constantFrom("new", "en-US", "1280,800", "1.5", "Foo,Bar", "basic", "MAP * 127.0.0.1", "MAP * 10.0.0.1", "SitePerProcess", "LocalNetworkAccessChecks")), { nil: undefined }))
     .map(([pre, n, v]) => pre + n + (v === undefined ? "" : `=${v}`));
   check(fc.property(platform, fc.boolean(), fc.array(fc.oneof(arg, anyText), { maxLength: 6 }), (p, harness, args) => {
-    for (const a of screenChromeArgs(args, p, { harness }).kept) {
+    for (const a of screenBrowserArgs(args, p, { harness }).kept) {
       const name = switchName(a, p);
       assert.ok(name !== null && Object.hasOwn(ALLOWED, name), a);
-      assert.ok(allowedChromeArg(a, p, { harness }), a);
+      assert.ok(allowedBrowserArg(a, p, { harness }), a);
       if (name === "disable-features") assert.ok(harness && a.endsWith("=LocalNetworkAccessChecks"), a);
       if (name === "host-resolver-rules") assert.ok(!/\b10\.0\.0\.1\b/.test(a), a);
     }
   }));
 });
 
-// Property: allowlisted switches with a good value pass in every spelling Chromium reads.
+// Property: allowlisted switches with a good value pass in every spelling the engine reads.
 test("allowlisted switches pass in any spelling", () => {
   const good = fc.constantFrom(["lang", "en-US"], ["window-size", "1280,800"], ["mute-audio", null], ["headless", "new"], ["enable-features", "Foo,Bar"],
     ["host-resolver-rules", "MAP *.pbtest.example 127.0.0.1:4100"], ["force-device-scale-factor", "2"], ["disable-notifications", null]);
   check(fc.property(platform, good, (p, [n, v]) => fc.assert(fc.property(prefix(p), p === "win32" ? recase(n) : fc.constant(n), (pre, name) => {
     const arg = pre + name + (v === null ? "" : `=${v}`);
-    assert.deepEqual(screenChromeArgs([arg], p, { harness: false }).kept, [arg]);
+    assert.deepEqual(screenBrowserArgs([arg], p, { harness: false }).kept, [arg]);
   }), { numRuns: 5 })), { numRuns: Math.max(1, Math.floor(RUNS / 5)) });
 });
 
-// Property: any spelling of --no-sandbox Chromium reads (prefix, case, any value) turns the sandbox
+// Property: any spelling of --no-sandbox the engine reads (prefix, case, any value) turns the sandbox
 // off on Linux, and is refused on macOS and Windows: the sandbox stays on, the refusal says why, and
 // the switch is never kept nor dropped quietly.
 test("every spelling of --no-sandbox: off on Linux, refused on macOS and Windows", () => {
   check(fc.property(platform, (p) => fc.assert(fc.property(prefix(p), recase("no-sandbox"), fc.option(anyText, { nil: undefined }), (pre, name, value) => {
     const arg = pre + name + (value === undefined ? "" : `=${value}`);
-    const d = sandboxDecision({ chromeArgs: [arg] }, { platform: p, uid: 501 });
+    const d = sandboxDecision({ browserArgs: [arg] }, { platform: p, uid: 501 });
+    // The older name chromeArgs gets the same decision (only the key named in the refusal differs).
+    const older = sandboxDecision({ chromeArgs: [arg] }, { platform: p, uid: 501 });
+    assert.equal(older.on, d.on, arg);
+    assert.equal(older.refused?.replace(/^chromeArgs/, "browserArgs") ?? null, d.refused, arg);
     assert.ok(!withoutNoSandbox([arg], p).length, arg);
     if (p === "linux") { assert.equal(d.on, false, arg); return; }
     assert.equal(d.on, true, arg);
     assert.match(d.refused, /refused/, arg);
-    const s = screenChromeArgs([arg], p, { harness: true });
+    const s = screenBrowserArgs([arg], p, { harness: true });
     assert.deepEqual(s.kept, [], arg);
     assert.deepEqual(s.refused, [arg.split("=")[0]], arg);
   }), { numRuns: 10 })), { numRuns: Math.max(1, Math.floor(RUNS / 10)) });
@@ -100,6 +104,6 @@ test("no other sandbox switch passes", () => {
   const names = fc.constantFrom("disable-setuid-sandbox", "disable-gpu-sandbox", "no-zygote-sandbox", "disable-seccomp-filter-sandbox", "disable-namespace-sandbox", "no-zygote", "single-process", "in-process-gpu");
   check(fc.property(platform, names, (p, n) => fc.assert(fc.property(prefix(p), recase(n), fc.option(anyText, { nil: undefined }), (pre, name, value) => {
     const arg = pre + name + (value === undefined ? "" : `=${value}`);
-    assert.deepEqual(screenChromeArgs([arg], p, { harness: true }).kept, [], arg);
+    assert.deepEqual(screenBrowserArgs([arg], p, { harness: true }).kept, [], arg);
   }), { numRuns: 5 })), { numRuns: Math.max(1, Math.floor(RUNS / 5)) });
 });

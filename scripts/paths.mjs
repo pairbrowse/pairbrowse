@@ -5,7 +5,7 @@ import { writeJsonAtomic, sha256, readJson, onCorruptJson, corruptLine } from ".
 import { resolveHome, gateProjectEnv, BAD_INSTANCE } from "./home.mjs";
 import { checkDownloads } from "./rules/downloads.mjs";
 import { checkConfig, configProblem, configWarnings } from "./config-schema.mjs";
-import { screenChromeArgs, droppedWarning, sandboxOffAllowed, sandboxOffAsked, sandboxRefusal } from "./chrome-args.mjs";
+import { screenBrowserArgs, droppedWarning, sandboxOffAllowed, sandboxOffAsked, sandboxRefusal, argsKey, browserArgsOf, browserSandboxOf } from "./browser-args.mjs";
 
 // Everything PairBrowse writes is private to your user account.
 process.umask(0o077);
@@ -70,7 +70,7 @@ export const paths = {
   cleanSession: join(HOME, "run", "clean-session"),
   // Pinned downloads (browser builds, the engine pack) before they're installed.
   downloads: join(SHARED, "downloads"),
-  // Installed browsers: the native build (PairBrowse.app on macOS), ungoogled-chromium.
+  // Installed browsers: the native build (PairBrowse.app on macOS), the open build's macOS app.
   browser: join(SHARED, "browser"),
   nativeApp: join(SHARED, "browser", "PairBrowse.app"),
   buildStamp: join(SHARED, "browser", "build.sha256"),
@@ -107,10 +107,10 @@ export const sessionProfile = (name) => (name === "default" ? paths.profile : jo
 export const sessionFile = (name, file) => (name === "default" ? join(HOME, file) : join(paths.sessions, `${name}.${file}`));
 
 export const DEFAULT_CONFIG = {
-  // Which browser PairBrowse runs: "pairbrowse" (the native PairBrowse build), "chromium"
-  // (ungoogled-chromium on macOS, Playwright's Chromium elsewhere, with the PairBrowse side panel),
-  // or an absolute path to your own Chromium-based browser (Brave, Arc, Vivaldi). Unset:
-  // "pairbrowse" where a build is pinned for this computer, else "chromium" (browserChoice in
+  // Which browser PairBrowse runs: "pairbrowse" (the native PairBrowse build), "pairbrowse-open"
+  // (the open build with the PairBrowse side panel; older name "chromium"), or an absolute path to
+  // a browser of your own on the same engine (Brave, Arc, Vivaldi). Unset:
+  // "pairbrowse" where a build is pinned for this computer, else "pairbrowse-open" (browserChoice in
   // browser.mjs). The older names browserEngine and executablePath are still read while this is
   // unset, and never written.
   browser: null,
@@ -126,11 +126,11 @@ export const DEFAULT_CONFIG = {
   screenshots: true,
   // Where files a site hands over are saved (default: your Downloads folder).
   downloadsDir: null,
-  // Extra Chrome flags, e.g. ["--lang=en-US"].
-  chromeArgs: [],
-  // Chromium's own sandbox. On by default; false turns it off (off by itself as root on Linux,
-  // and where the system can't run it).
-  chromeSandbox: true,
+  // Extra browser switches, e.g. ["--lang=en-US"] (older name: chromeArgs, read while this is unset).
+  browserArgs: [],
+  // The browser's own sandbox. On by default; false turns it off on Linux only (off by itself as
+  // root there, and where the system can't run it). Older name: chromeSandbox.
+  browserSandbox: true,
   // On a Linux machine without a screen, PairBrowse runs the browser headed on a private virtual
   // screen (Xvfb) and you watch through the live view. "auto": use one when there's no screen;
   // "xvfb": always; "none": never.
@@ -197,15 +197,22 @@ export function loadConfig(file = paths.config, log = () => {}) {
   CONFIG_WARNINGS.length = 0;
   CONFIG_WARNINGS.push(...configWarnings(checked, file));
   const config = { ...DEFAULT_CONFIG, ...checked.config };
-  // A chromeArgs switch that would open a debugging surface or weaken security is dropped here
-  // (chrome-args.mjs), named once in the log and in pairbrowse_status; launchArgs screens again.
-  // The sandbox stays on outside Linux: chromeSandbox false or a --no-sandbox is refused, and said.
-  const asked = sandboxOffAllowed(process.platform) ? null : sandboxOffAsked(config, process.platform);
+  // The switches and the sandbox under their new names only, from either name in the file
+  // (browser-args.mjs browserArgsOf, browserSandboxOf): everything after this reads one name.
+  const key = argsKey(checked.config);
+  delete config.chromeArgs;
+  delete config.chromeSandbox;
+  config.browserArgs = browserArgsOf(checked.config);
+  config.browserSandbox = browserSandboxOf(checked.config);
+  // A browserArgs switch that would open a debugging surface or weaken security is dropped here
+  // (browser-args.mjs), named once in the log and in pairbrowse_status; launchArgs screens again.
+  // The sandbox stays on outside Linux: browserSandbox false or a --no-sandbox is refused, and said.
+  const asked = sandboxOffAllowed(process.platform) ? null : sandboxOffAsked(checked.config, process.platform);
   if (asked) CONFIG_WARNINGS.push(`config.json: ${sandboxRefusal(asked, process.platform)}`);
-  const { kept, dropped, refused } = screenChromeArgs(config.chromeArgs);
-  if (dropped.length || refused.length) config.chromeArgs = kept;
-  if (dropped.length) CONFIG_WARNINGS.push(droppedWarning(dropped));
-  if (refused.length && asked !== "chromeArgs has --no-sandbox") CONFIG_WARNINGS.push(`config.json: ${sandboxRefusal("chromeArgs has --no-sandbox", process.platform)}`);
+  const { kept, dropped, refused } = screenBrowserArgs(config.browserArgs);
+  if (dropped.length || refused.length) config.browserArgs = kept;
+  if (dropped.length) CONFIG_WARNINGS.push(droppedWarning(dropped, key));
+  if (refused.length && asked !== `${key} has --no-sandbox`) CONFIG_WARNINGS.push(`config.json: ${sandboxRefusal(`${key} has --no-sandbox`, process.platform)}`);
   for (const w of CONFIG_WARNINGS) try { log(w); } catch {}
   if (config.downloadsDir != null && (typeof config.downloadsDir !== "string" || (config.downloadsDir && checkDownloads(config.downloadsDir, { home: paths.home }).problem))) config.downloadsDir = null;
   return config;

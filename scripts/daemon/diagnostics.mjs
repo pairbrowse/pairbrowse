@@ -80,12 +80,12 @@ export async function lastErrors({ file = paths.daemonLog, home = homedir(), mas
 
 // The browser's version from what the helper already pins, never from the running browser (a
 // persistent context has no Browser to ask): the installed native build's record, else the pinned
-// ungoogled-chromium on macOS; for Chromium the driver's browsers.json. No launch, no read of the page.
+// the open build's pinned version on macOS; for the open build elsewhere the driver's browsers.json. No launch, no read of the page.
 // nativeRecord / browsersJson: the parsed files (or null); null when nothing is known.
 export function pinnedBrowserVersion({ engine, nativeRecord = null, ungoogled = null, browsersJson = null } = {}) {
   const str = (v) => (typeof v === "string" && v ? v : null);
   if (engine === "pairbrowse") return str(nativeRecord?.version) ?? str(ungoogled);
-  if (engine === "chromium") {
+  if (engine === "open") {
     const c = Array.isArray(browsersJson?.browsers) ? browsersJson.browsers.find((b) => b?.name === "chromium") : null;
     return str(c?.browserVersion) ?? (c?.revision != null ? `r${c.revision}` : null);
   }

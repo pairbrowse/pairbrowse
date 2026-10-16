@@ -189,8 +189,8 @@ function applyConfig(given, config) {
   if (given.browser !== undefined) {
     const b = given.browser;
     if (b === "pairbrowse") { if (!config.native) return { error: "There's no PairBrowse browser build for this computer yet" }; }
-    else if (b !== "chromium") {
-      if (typeof b !== "string" || !b.startsWith("/") || b.length > 1024) return { error: 'browser is "pairbrowse", "chromium" or an absolute path.' };
+    else if (b !== "pairbrowse-open") {
+      if (typeof b !== "string" || !b.startsWith("/") || b.length > 1024) return { error: 'browser is "pairbrowse", "pairbrowse-open" or an absolute path.' };
       if (b.includes("missing")) return { error: `${b} isn't an executable file` };
     }
     next.browser = b;

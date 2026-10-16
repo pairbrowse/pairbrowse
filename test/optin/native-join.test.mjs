@@ -1,7 +1,7 @@
 // Joining with the PairBrowse build that has its own pages (no side panel extension; its own
 // capture page, 550): a native host shares the tab live from its capture page (picture and sound,
 // straight to the joiner), a native joiner shows it in its chrome://pairbrowse/screen/ tab, and
-// recording on the native side records and saves a file. Three cases: native host with a Chromium
+// recording on the native side records and saves a file. Three cases: native host with a the engine
 // (extension) joiner, the other way round, and native on both sides.
 // Needs PAIRBROWSE_TEST_RUNTIME, PAIRBROWSE_TEST_ENGINE and PAIRBROWSE_TEST_EXECUTABLE naming a
 // build whose manifest declares its own pages; skipped otherwise. Headed: real windows open and
@@ -16,13 +16,13 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
-import { chromePages, nativeManifest } from "../../scripts/native-engine.mjs";
+import { declaresOwnPages, nativeManifest } from "../../scripts/native-engine.mjs";
 import { sleep, text } from "../helpers/util.mjs";
 import { spawnDaemon } from "../helpers/daemon.mjs";
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const engine = process.env.PAIRBROWSE_TEST_ENGINE;
 const nativeExe = process.env.PAIRBROWSE_TEST_EXECUTABLE;
-const native = (() => { try { return !!(runtime && engine && nativeExe && chromePages(nativeManifest(nativeExe))); } catch { return false; } })();
+const native = (() => { try { return !!(runtime && engine && nativeExe && declaresOwnPages(nativeManifest(nativeExe))); } catch { return false; } })();
 const NO_RECORD = /Recording isn't available in this PairBrowse browser yet/;
 const APP = "<!doctype html><title>app</title><button id=tap style='position:fixed;left:0;top:0;width:100vw;height:40vh;font-size:40px' onclick=\"document.title='clicked'\">Tap</button>";
 
@@ -67,7 +67,7 @@ async function run({ nativeHost, nativeJoiner }) {
     homes.push(user);
     users.set(h, user);
     mkdirSync(join(user, "Downloads"));
-    writeFileSync(join(h, "config.json"), JSON.stringify({ browserEngine: isNative ? "pairbrowse" : "chromium", executablePath: isNative ? nativeExe : cft, participantName: who, downloadsDir: join(user, "Downloads"), sessionPicker: false, screenshots: false, chromeArgs: [rules] }));
+    writeFileSync(join(h, "config.json"), JSON.stringify({ browserEngine: isNative ? "pairbrowse" : "chromium", executablePath: isNative ? nativeExe : cft, participantName: who, downloadsDir: join(user, "Downloads"), sessionPicker: false, screenshots: false, browserArgs: [rules] }));
     return h;
   };
   const users = new Map();
@@ -171,6 +171,6 @@ async function run({ nativeHost, nativeJoiner }) {
   }
 }
 
-test("native host, Chromium (extension) joiner: the tab live from the capture page, a click goes through", { skip: !native, timeout: 600_000 }, () => run({ nativeHost: true, nativeJoiner: false }));
-test("Chromium (extension) host, native joiner: the picture in chrome://pairbrowse/screen/, a click goes through", { skip: !native, timeout: 600_000 }, () => run({ nativeHost: false, nativeJoiner: true }));
+test("native host, open build (extension) joiner: the tab live from the capture page, a click goes through", { skip: !native, timeout: 600_000 }, () => run({ nativeHost: true, nativeJoiner: false }));
+test("open build (extension) host, native joiner: the picture in chrome://pairbrowse/screen/, a click goes through", { skip: !native, timeout: 600_000 }, () => run({ nativeHost: false, nativeJoiner: true }));
 test("native host, native joiner", { skip: !native, timeout: 600_000 }, () => run({ nativeHost: true, nativeJoiner: true }));

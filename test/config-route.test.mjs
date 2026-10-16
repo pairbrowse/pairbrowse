@@ -78,10 +78,10 @@ test("GET config.json: exactly its twelve keys, the choice as browserChoice read
     assert.ok(!r.text.includes(TOKEN) && !r.text.includes("share.example.org"), "no other setting in the answer");
   } finally { view.close(); }
   // The same reading, without the server.
-  assert.deepEqual(readSettings({}, { native: false }), { browser: "chromium", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, report: false, native: false, chosen: false }); // a raw config with no reportUrl: no report
+  assert.deepEqual(readSettings({}, { native: false }), { browser: "pairbrowse-open", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, report: false, native: false, chosen: false }); // a raw config with no reportUrl: no report
   assert.deepEqual(readSettings({ browserEngine: "pairbrowse", executablePath: "/x/PairBrowse.app/Contents/MacOS/pairbrowse" }, { native: true }).chosen, true, "the older names count as chosen");
   assert.equal(readSettings({ browserEngine: "chromium", executablePath: "/fake/chrome" }, { native: true }).browser, "/fake/chrome");
-  assert.equal(readSettings({ browserEngine: "chromium" }, { native: true }).browser, "chromium");
+  assert.equal(readSettings({ browserEngine: "chromium" }, { native: true }).browser, "pairbrowse-open");
   assert.deepEqual(readSettings({ timeline: false, timelineCap: 12, layout: { left: "rail", strip: 1000 } }).timeline, { on: false, cap: 12 });
   assert.deepEqual(readSettings({ layout: { left: "rail", strip: 1000 } }).layout, { left: "open", right: "open", strip: 88 }, "an invalid layout reads as the fallback");
   assert.equal(readSettings({ timelineCap: 500 }).timeline.cap, 200);
@@ -94,12 +94,12 @@ test("watch and drive links get 403; the join-code port never serves the setting
     for (const role of ["watch", "drive"]) {
       const k = invites.create({ role, label: role }).key;
       assert.equal((await request(view.port, "GET", `/${k}/config.json`)).status, 403, `${role}: GET`);
-      assert.equal((await request(view.port, "POST", `/${k}/config`, { body: { browser: "chromium" } })).status, 403, `${role}: POST`);
+      assert.equal((await request(view.port, "POST", `/${k}/config`, { body: { browser: "pairbrowse-open" } })).status, 403, `${role}: POST`);
     }
     const c = invites.create({ role: "drive", label: "C", share: "code" });
     for (const k of [c.key, key]) {
       assert.notEqual((await request(view.guestPort, "GET", `/${k}/config.json`)).status, 200);
-      assert.notEqual((await request(view.guestPort, "POST", `/${k}/config`, { body: { browser: "chromium" } })).status, 200);
+      assert.notEqual((await request(view.guestPort, "POST", `/${k}/config`, { body: { browser: "pairbrowse-open" } })).status, 200);
     }
     assert.equal(onDisk(), before, "nothing written");
   } finally { view.close(); }
@@ -109,16 +109,16 @@ test("POST config merges what's given into config.json alone; the tunnel token a
   const { view, key, config, state, onDisk } = await setup();
   const owner = await readStream(view.port, `/${key}/events?panel=1`);
   try {
-    let r = await request(view.port, "POST", `/${key}/config`, { body: { browser: "chromium" } });
+    let r = await request(view.port, "POST", `/${key}/config`, { body: { browser: "pairbrowse-open" } });
     assert.equal(r.status, 200);
     const body = JSON.parse(r.text);
-    assert.deepEqual(body, { browser: "chromium", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, name: "Ann", native: true, chosen: true, restart: true });
-    assert.equal(onDisk(), JSON.stringify({ ...ON_DISK, browser: "chromium" }, null, 2), "only that key changed");
+    assert.deepEqual(body, { browser: "pairbrowse-open", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, name: "Ann", native: true, chosen: true, restart: true });
+    assert.equal(onDisk(), JSON.stringify({ ...ON_DISK, browser: "pairbrowse-open" }, null, 2), "only that key changed");
     assert.ok(onDisk().includes(TOKEN));
     assert.ok(!r.text.includes(TOKEN));
-    assert.equal(config.browser, "chromium", "the running config too");
+    assert.equal(config.browser, "pairbrowse-open", "the running config too");
     // No restart while the chosen browser is the one running, or with no window open.
-    state.inUse = "chromium";
+    state.inUse = "pairbrowse-open";
     r = await request(view.port, "POST", `/${key}/config`, { body: { timeline: { cap: 50 } } });
     assert.equal(JSON.parse(r.text).restart, false);
     state.inUse = null;
@@ -126,7 +126,7 @@ test("POST config merges what's given into config.json alone; the tunnel token a
     assert.equal(r.status, 200, "an executable path of your own");
     assert.equal(JSON.parse(r.text).browser, BRAVE);
     assert.equal(JSON.parse(r.text).restart, false, "no window open: nothing to restart");
-    state.inUse = "chromium";
+    state.inUse = "pairbrowse-open";
     assert.equal(JSON.parse((await request(view.port, "GET", `/${key}/config.json`)).text).browser, BRAVE);
     r = await request(view.port, "POST", `/${key}/config`, { body: { layout: { left: "rail" }, timeline: { on: false } } });
     assert.equal(JSON.parse(r.text).restart, true, "still another browser than the one running");
@@ -145,7 +145,7 @@ test("a guest's stream never gets the config event", async () => {
   const guest = await readStream(view.port, `/${invites.create({ role: "drive", label: "D" }).key}/events?panel=1`);
   const owner = await readStream(view.port, `/${key}/events?panel=1`);
   try {
-    assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { browser: "chromium" } })).status, 200);
+    assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { browser: "pairbrowse-open" } })).status, 200);
     await wait(50);
     assert.equal(eventsIn(owner.text(), "config").length, 1);
     assert.equal(eventsIn(guest.text(), "config").length, 0);
@@ -154,14 +154,14 @@ test("a guest's stream never gets the config event", async () => {
 });
 
 test("every invalid body is refused with 409 and writes nothing; a body that isn't JSON is 400", async () => {
-  const { view, key, config, onDisk } = await setup({ native: false, file: { ...ON_DISK, browser: "chromium" } });
+  const { view, key, config, onDisk } = await setup({ native: false, file: { ...ON_DISK, browser: "pairbrowse-open" } });
   const before = onDisk();
   const running = JSON.stringify(config);
   try {
     for (const bad of [{ foo: 1 }, { chosen: true }, { native: true }, { browser: "../x" }, { browser: "chromium-ish" }, { browser: "/nowhere/chromium" }, { browser: "/opt/notes.txt" },
       { browser: "pairbrowse" }, { browser: 7 }, { browser: `/a/${"x".repeat(1100)}` }, { browser: "/a/b\nc" }, { timeline: { cap: 0 } }, { timeline: { cap: 201 } }, { timeline: { cap: 88.5 } },
-      { timeline: { on: "yes" } }, { timeline: true }, { timeline: { on: true, extra: 1 } }, { layout: { strip: 20 } }, { layout: { left: "big" } }, { layout: { foo: 1 } }, { layout: [] }, [], [{ browser: "chromium" }], null, "chromium",
-      { browser: "chromium", foo: 1 }, { timeline: { on: false }, layout: { strip: 20 } }]) {
+      { timeline: { on: "yes" } }, { timeline: true }, { timeline: { on: true, extra: 1 } }, { layout: { strip: 20 } }, { layout: { left: "big" } }, { layout: { foo: 1 } }, { layout: [] }, [], [{ browser: "pairbrowse-open" }], null, "chromium",
+      { browser: "pairbrowse-open", foo: 1 }, { timeline: { on: false }, layout: { strip: 20 } }]) {
       const r = await request(view.port, "POST", `/${key}/config`, { body: bad });
       assert.equal(r.status, 409, JSON.stringify(bad).slice(0, 80));
       assert.ok(JSON.parse(r.text).error, JSON.stringify(bad).slice(0, 80));
@@ -185,7 +185,7 @@ test("every invalid body is refused with 409 and writes nothing; a body that isn
 test("a config.json that can't be written: an error, nothing applied", async () => {
   const config = { ...DEFAULT_CONFIG };
   const settings = createSettings({ config, native: true, save: () => { throw new Error("disk full"); } });
-  const r = await settings.write({ browser: "chromium" });
+  const r = await settings.write({ browser: "pairbrowse-open" });
   assert.match(r.error, /Couldn't write config\.json: disk full/);
   assert.equal(config.browser, null);
 });
@@ -219,7 +219,7 @@ test("no settings dep: both routes answer 404", async () => {
   const key = view.url.split("/").at(-2);
   try {
     assert.equal((await request(view.port, "GET", `/${key}/config.json`)).status, 404);
-    assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { browser: "chromium" } })).status, 404);
+    assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { browser: "pairbrowse-open" } })).status, 404);
   } finally { view.close(); }
 });
 

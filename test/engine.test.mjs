@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { validateEngine, engineProfile, launchEngine, sandboxDecision, SANDBOX } from "../scripts/engine.mjs";
 
 test("only the standard and native engines exist", () => {
-  assert.equal(validateEngine({}), "chromium");
-  assert.equal(validateEngine({ browserEngine: "chromium" }), "chromium");
+  assert.equal(validateEngine({}), "open");
+  assert.equal(validateEngine({ browserEngine: "open" }), "open");
+  assert.equal(validateEngine({ browserEngine: "chromium" }), "open", "the older name");
   assert.throws(() => validateEngine({ browserEngine: "typo" }), /Unknown/);
   assert.throws(() => validateEngine({ browserEngine: "pairbrowse" }, "18.0.0"), /Node.js 20/);
   assert.throws(() => validateEngine({ browserEngine: "pairbrowse" }, "22.0.0"), /executablePath/);
@@ -25,17 +26,26 @@ test("standard engine removes automation signals without loading the engine pack
   assert.deepEqual(result.opts.args, ["--disable-blink-features=AutomationControlled"]);
 });
 
-test("Chromium's sandbox is on unless config, root on Linux, or the system turns it off", async () => {
+test("the browser's sandbox is on unless config, root on Linux, or the system turns it off", async () => {
   assert.equal(sandboxDecision({}, { platform: "darwin", uid: 501 }).on, true);
   assert.equal(sandboxDecision({}, { platform: "linux", uid: 1000 }).on, true);
   assert.equal(sandboxDecision({}, { platform: "darwin", uid: 0 }).on, true);
   assert.match(sandboxDecision({}, { platform: "linux", uid: 0 }).reason, /root/);
-  assert.equal(sandboxDecision({ chromeSandbox: false }, { platform: "linux", uid: 501 }).on, false);
-  assert.equal(sandboxDecision({ chromeArgs: ["--no-sandbox"] }, { platform: "linux", uid: 501 }).on, false);
+  assert.equal(sandboxDecision({ browserSandbox: false }, { platform: "linux", uid: 501 }).on, false);
+  assert.equal(sandboxDecision({ browserArgs: ["--no-sandbox"] }, { platform: "linux", uid: 501 }).on, false);
+  assert.equal(sandboxDecision({ chromeSandbox: false }, { platform: "linux", uid: 501 }).on, false, "the older name");
+  assert.equal(sandboxDecision({ chromeArgs: ["--no-sandbox"] }, { platform: "linux", uid: 501 }).on, false, "the older name");
+  // The new name wins over the older one when both are set.
+  assert.equal(sandboxDecision({ browserSandbox: true, chromeSandbox: false }, { platform: "linux", uid: 501 }).on, true);
+  assert.equal(sandboxDecision({ browserArgs: ["--lang=en"], chromeArgs: ["--no-sandbox"] }, { platform: "linux", uid: 501 }).on, true);
   // Never off on macOS or Windows, whatever config says: refused, with the reason.
   for (const platform of ["darwin", "win32"]) {
+    assert.equal(sandboxDecision({ browserSandbox: false }, { platform, uid: 501 }).on, true, platform);
+    assert.equal(sandboxDecision({ browserArgs: ["--no-sandbox"] }, { platform, uid: 501 }).on, true, platform);
+    // The older names are held to the same rule.
     assert.equal(sandboxDecision({ chromeSandbox: false }, { platform, uid: 501 }).on, true, platform);
     assert.equal(sandboxDecision({ chromeArgs: ["--no-sandbox"] }, { platform, uid: 501 }).on, true, platform);
+    assert.match(sandboxDecision({ chromeArgs: ["--no-sandbox"] }, { platform, uid: 501 }).refused, /^chromeArgs has --no-sandbox: refused/, platform);
     assert.equal(sandboxDecision({}, { platform, uid: 501 }).refused, null, platform);
   }
   const tries = [];
@@ -49,8 +59,8 @@ test("Chromium's sandbox is on unless config, root on Linux, or the system turns
   const expected = process.platform === "linux" && process.getuid?.() === 0 ? [false] : [true, false];
   assert.deepEqual(tries, expected);
   assert.equal(result.opts.chromiumSandbox, false);
-  assert.equal(logs.filter((m) => /sandbox off/.test(m)).length, 1);
-  // No user namespaces, so Chromium tried its setuid helper, which an unpacked browser can't have.
+  assert.equal(logs.filter((m) => /sandbox is off/.test(m)).length, 1);
+  // No user namespaces, so the engine tried its setuid helper, which an unpacked browser can't have.
   const suid = [];
   await launchEngine({ launchPersistentContext: async (profile, opts) => {
     suid.push(opts.chromiumSandbox);
@@ -75,22 +85,22 @@ test("macOS and Windows launch with the sandbox on whatever config asks, strip e
   for (const platform of ["darwin", "win32"]) {
     const logs = [];
     const result = await launchEngine({ launchPersistentContext: async (profile, opts) => ({ opts }) },
-      { chromeSandbox: false, chromeArgs: ["--no-sandbox"] }, "/a", { args: ["--no-sandbox", "-No-Sandbox=1", "--lang=en", ...(platform === "win32" ? ["/NO-SANDBOX"] : [])] }, (m) => logs.push(m), undefined, { platform });
+      { browserSandbox: false, browserArgs: ["--no-sandbox"] }, "/a", { args: ["--no-sandbox", "-No-Sandbox=1", "--lang=en", ...(platform === "win32" ? ["/NO-SANDBOX"] : [])] }, (m) => logs.push(m), undefined, { platform });
     assert.equal(result.opts.chromiumSandbox, true, platform);
     assert.deepEqual(result.opts.args, ["--lang=en", "--disable-blink-features=AutomationControlled"], platform);
     assert.equal(SANDBOX.on, true);
     assert.match(SANDBOX.refused, /refused/);
-    assert.ok(logs.some((m) => /Chromium sandbox stays on: chromeSandbox is false in config\.json: refused/.test(m)), platform);
-    assert.ok(!logs.some((m) => /sandbox off/.test(m)), platform);
+    assert.ok(logs.some((m) => /The browser's sandbox stays on: browserSandbox is false in config\.json: refused/.test(m)), platform);
+    assert.ok(!logs.some((m) => /sandbox is off/.test(m)), platform);
   }
 });
 
 test("Linux: the sandbox off only when asked, and SANDBOX says so for the status and the bar", async () => {
   const result = await launchEngine({ launchPersistentContext: async (profile, opts) => ({ opts }) },
-    { chromeSandbox: false }, "/a", { args: ["--lang=en"] }, () => {}, undefined, { platform: "linux" });
+    { browserSandbox: false }, "/a", { args: ["--lang=en"] }, () => {}, undefined, { platform: "linux" });
   assert.equal(result.opts.chromiumSandbox, false);
   assert.equal(SANDBOX.on, false);
-  assert.match(SANDBOX.reason, /chromeSandbox is false/);
+  assert.match(SANDBOX.reason, /browserSandbox is false/);
   if (process.getuid?.() !== 0) {
     const on = await launchEngine({ launchPersistentContext: async (profile, opts) => ({ opts }) }, {}, "/a", { args: ["--no-sandbox"] }, () => {}, undefined, { platform: "linux" });
     assert.equal(on.opts.chromiumSandbox, true);

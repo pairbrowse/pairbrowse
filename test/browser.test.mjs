@@ -26,7 +26,7 @@ const read = (buf) => {
   return Array.from({ length: count }, (_, i) => buf.subarray(buf.readUInt32LE(start + i * 6 + 2), buf.readUInt32LE(start + (i + 1) * 6 + 2)).toString("utf8"));
 };
 
-test("Chromium's interface text is renamed to PairBrowse, web addresses stay", () => {
+test("the engine's interface text is renamed to PairBrowse, web addresses stay", () => {
   const out = rebrandPak(pak(["Quit Chromium", "See chromium.org — Chromium ❤"]));
   assert.deepEqual(read(out), ["Quit PairBrowse", "See chromium.org — PairBrowse ❤"]);
   assert.equal(out.readUInt16LE(12 + 3 * 6), 900, "aliases kept");
@@ -38,7 +38,7 @@ test("other pak formats are left alone", () => {
   assert.equal(rebrandPak(b), null);
 });
 
-test("the side panel's id comes from its manifest key like Chromium does, wherever the folder is", async () => {
+test("the side panel's id comes from its manifest key like the engine does, wherever the folder is", async () => {
   const { readFileSync, mkdtempSync, cpSync } = await import("node:fs");
   const { createHash } = await import("node:crypto");
   const { tmpdir } = await import("node:os");
@@ -78,13 +78,13 @@ test("earlier copies' path-derived side panel records and buttons are removed", 
 
 test("this checkout's keyless panel id from before ui/ (scripts/browser/panel) counts as an earlier copy", async () => {
   const { oldPanelIds } = await import("../scripts/browser.mjs");
-  // No manifest there any more, so the id is the one Chromium derived from the folder path.
+  // No manifest there any more, so the id is the one the engine derived from the folder path.
   const before = panelExtensionId(new URL("../scripts/browser/panel", import.meta.url).pathname);
   const secure = { extensions: { settings: { [before]: { state: 0 }, [panelExtensionId()]: { path: "/new/ui" }, keep: { path: "/elsewhere" } } } };
   assert.deepEqual(oldPanelIds(secure), [before]);
 });
 
-test("profiles get Chromium's own navy color theme instead of the old theme extension", async () => {
+test("profiles get the engine's own navy color theme instead of the old theme extension", async () => {
   const { profilePreferences, THEME_COLOR } = await import("../scripts/browser.mjs");
   const old = { extensions: { theme: { id: panelExtensionId(new URL("../scripts/browser/theme", import.meta.url).pathname), pack: "x" }, pinned_extensions: [] } };
   for (const prefs of [{}, old]) {
@@ -99,7 +99,7 @@ test("profiles get Chromium's own navy color theme instead of the old theme exte
   const own = profilePreferences({ extensions: { theme: { id: "" } }, browser: { theme: { user_color2: 5 } } });
   assert.deepEqual(own.extensions.theme, { id: "" });
   assert.equal(own.browser.theme.user_color2, 5);
-  // A color the user picked in Chromium's own color theme stays; PairBrowse's old seed moves on.
+  // A color the user picked in the engine's own color theme stays; PairBrowse's old seed moves on.
   const picked = profilePreferences({ extensions: { theme: { id: "user_color_theme_id" } }, browser: { theme: { user_color2: 0xff00aa00 | 0 } } });
   assert.equal(picked.browser.theme.user_color2, 0xff00aa00 | 0);
   const stale = profilePreferences({ extensions: { theme: { id: "user_color_theme_id" } }, browser: { theme: { user_color2: 0xff4e6498 | 0, color_scheme2: 2 } } });
@@ -114,38 +114,38 @@ test("profiles get Chromium's own navy color theme instead of the old theme exte
 });
 
 test("the browser loads only the side panel extension", async () => {
-  const { browserArgs, PANEL_DIR } = await import("../scripts/browser.mjs");
-  const args = browserArgs();
+  const { shellArgs, PANEL_DIR } = await import("../scripts/browser.mjs");
+  const args = shellArgs();
   assert.ok(args.includes(`--load-extension=${PANEL_DIR}`));
   assert.ok(args.includes(`--disable-extensions-except=${PANEL_DIR}`));
 });
 
 test("a build with its own pages: no extension, no theme seed, two helper switches, never the key", async () => {
-  const { launchArgs, browserArgs } = await import("../scripts/browser.mjs");
+  const { launchArgs, shellArgs } = await import("../scripts/browser.mjs");
   const noExtension = (args) => !args.some((a) => /^--(load-extension|disable-extensions-except|allowlisted-extension-id)=/.test(a));
   const helperSwitches = (args) => args.filter((a) => /^--pairbrowse-helper/.test(a));
-  const chrome = launchArgs({}, { chromePages: true, helper: { origin: "http://127.0.0.1:4321", keyFile: "/k/helper-key-ab" } });
-  assert.deepEqual(helperSwitches(chrome), ["--pairbrowse-helper=http://127.0.0.1:4321", "--pairbrowse-helper-key-file=/k/helper-key-ab"]);
-  assert.ok(noExtension(chrome));
+  const pages = launchArgs({}, { browserPages: true, helper: { origin: "http://127.0.0.1:4321", keyFile: "/k/helper-key-ab" } });
+  assert.deepEqual(helperSwitches(pages), ["--pairbrowse-helper=http://127.0.0.1:4321", "--pairbrowse-helper-key-file=/k/helper-key-ab"]);
+  assert.ok(noExtension(pages));
   // The old "<origin>#<key>" string form is never passed through: the key never rides the command line.
-  assert.deepEqual(helperSwitches(launchArgs({}, { chromePages: true, helper: "http://127.0.0.1:4321#k" })), [], "a string helper: no switch");
-  assert.deepEqual(helperSwitches(launchArgs({}, { chromePages: true, helper: { origin: "http://127.0.0.1:4321" } })), [], "no key file: no switch");
-  const first = launchArgs({}, { chromePages: true, firstRun: true });
+  assert.deepEqual(helperSwitches(launchArgs({}, { browserPages: true, helper: "http://127.0.0.1:4321#k" })), [], "a string helper: no switch");
+  assert.deepEqual(helperSwitches(launchArgs({}, { browserPages: true, helper: { origin: "http://127.0.0.1:4321" } })), [], "no key file: no switch");
+  const first = launchArgs({}, { browserPages: true, firstRun: true });
   assert.ok(!first.includes("--no-startup-window"), "the browser opens its own window");
   assert.deepEqual(helperSwitches(first), [], "no helper given: no switch");
-  assert.deepEqual(browserArgs({ chromePages: true, firstRun: true }), process.platform === "darwin" ? ["--show-avatar-button=never"] : []);
+  assert.deepEqual(shellArgs({ browserPages: true, firstRun: true }), process.platform === "darwin" ? ["--show-avatar-button=never"] : []);
   // Today's builds: the extension as before, never the switch.
   for (const args of [launchArgs({}), launchArgs({}, { firstRun: true }), launchArgs({}, { helper: { origin: "http://127.0.0.1:1", keyFile: "/k/f" } }), launchArgs({}, { helper: "http://127.0.0.1:1#k" })]) {
     assert.deepEqual(helperSwitches(args), []);
     assert.ok(!noExtension(args));
   }
   // The --enable-features merge and the headless notifications rule hold in this mode too.
-  const merged = launchArgs({ chromeArgs: ["--headless=new", "--enable-features=Foo"] }, { chromePages: true, helper: { origin: "h", keyFile: "f" } });
+  const merged = launchArgs({ browserArgs: ["--headless=new", "--enable-features=Foo"] }, { browserPages: true, helper: { origin: "h", keyFile: "f" } });
   const enable = merged.filter((a) => a.startsWith("--enable-features="));
   assert.equal(enable.length, 1);
   assert.ok(enable[0].includes("ForceForegroundPriorityForAllTabs") && enable[0].includes("Foo"));
   assert.ok(merged.includes("--disable-notifications"));
-  assert.ok(!launchArgs({}, { chromePages: true }).includes("--disable-notifications"));
+  assert.ok(!launchArgs({}, { browserPages: true }).includes("--disable-notifications"));
 });
 
 test("the helper key file: 0600, the key alone, a fresh name per start, swept and dropped", async () => {
@@ -177,7 +177,7 @@ test("the helper key file: 0600, the key alone, a fresh name per start, swept an
     assert.ok(!existsSync(p2));
     assert.doesNotThrow(() => dropHelperKeyFile(p2));
     assert.doesNotThrow(() => dropHelperKeyFile(null));
-    const args = launchArgs({}, { chromePages: true, helper: { origin: "http://127.0.0.1:4321", keyFile: p1 } });
+    const args = launchArgs({}, { browserPages: true, helper: { origin: "http://127.0.0.1:4321", keyFile: p1 } });
     assert.ok(!args.some((a) => a.includes(key)), "the key is never a launch argument");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -188,7 +188,7 @@ test("a build with its own pages: the profile gets the docks' layout, no extensi
   const { join } = await import("node:path");
   const { tmpdir } = await import("node:os");
   const given = { left: "rail", right: "open", strip: 100 };
-  const out = profilePreferences({ autofill: { last_version_deduped: 1 } }, undefined, [], { chromePages: true, layout: given });
+  const out = profilePreferences({ autofill: { last_version_deduped: 1 } }, undefined, [], { browserPages: true, layout: given });
   assert.deepEqual(out.pairbrowse.layout, given);
   assert.equal(out.extensions, undefined, "no pinned button, no theme");
   assert.equal(out.browser.theme, undefined);
@@ -198,22 +198,22 @@ test("a build with its own pages: the profile gets the docks' layout, no extensi
   assert.equal(out.session.restore_on_startup, 5);
   assert.equal(out.autofill.last_version_deduped, 1);
   const kept = { left: "hidden", right: "rail", strip: 44 };
-  assert.deepEqual(profilePreferences({ pairbrowse: { layout: kept } }, undefined, [], { chromePages: true, layout: given }).pairbrowse.layout, kept, "the browser's own layout stays");
-  assert.deepEqual(profilePreferences({}, undefined, [], { chromePages: true, layout: { left: "wide" } }).pairbrowse.layout, { left: "open", right: "open", strip: 88 });
+  assert.deepEqual(profilePreferences({ pairbrowse: { layout: kept } }, undefined, [], { browserPages: true, layout: given }).pairbrowse.layout, kept, "the browser's own layout stays");
+  assert.deepEqual(profilePreferences({}, undefined, [], { browserPages: true, layout: { left: "wide" } }).pairbrowse.layout, { left: "open", right: "open", strip: 88 });
   assert.equal(profilePreferences({}).pairbrowse, undefined, "with the extension: no layout pref");
   const dir = mkdtempSync(join(tmpdir(), "pb-chrome-prof-"));
-  assert.equal(prepareProfile(dir, undefined, { chromePages: true, layout: null }), true, "a new profile");
+  assert.equal(prepareProfile(dir, undefined, { browserPages: true, layout: null }), true, "a new profile");
   const prefs = JSON.parse(readFileSync(join(dir, "Default", "Preferences"), "utf8"));
   assert.deepEqual(prefs.pairbrowse.layout, { left: "open", right: "open", strip: 88 });
   assert.equal("ack_existing_ntp_extensions" in prefs, false);
   const secureFile = join(dir, "Default", "Secure Preferences");
   const secure = JSON.stringify({ extensions: { settings: { [panelExtensionId()]: { disable_reasons: [1] } } } });
   writeFileSync(secureFile, secure);
-  assert.equal(prepareProfile(dir, undefined, { chromePages: true }), false);
+  assert.equal(prepareProfile(dir, undefined, { browserPages: true }), false);
   assert.equal(readFileSync(secureFile, "utf8"), secure, "Secure Preferences untouched");
 });
 
-test("a disabled side panel record is dropped so Chromium loads it enabled again", async () => {
+test("a disabled side panel record is dropped so the engine loads it enabled again", async () => {
   const { profileSecurePreferences } = await import("../scripts/browser.mjs");
   const id = panelExtensionId();
   const secure = { extensions: { settings: { [id]: { disable_reasons: [1] }, other: { disable_reasons: [1] } } }, protection: { macs: { extensions: { settings: { [id]: "A", other: "B" } } } } };
@@ -260,7 +260,7 @@ test("site notification and location requests are quiet, not denied", async () =
   const out = profilePreferences({ profile: { default_content_setting_values: { notifications: 2, geolocation: 2, cookies: 1 } } });
   assert.deepEqual(out.profile.default_content_setting_values, { cookies: 1 }, "the old block is removed, other settings stay");
   assert.deepEqual(out.profile.content_settings.enable_quiet_permission_ui, { notifications: true, geolocation: true });
-  // Never quiet and predicted prompts at once (Chromium's Settings page crashes on it).
+  // Never quiet and predicted prompts at once (the engine's Settings page crashes on it).
   assert.deepEqual(out.profile.content_settings.enable_cpss, { notifications: false, geolocation: false });
 });
 
@@ -280,7 +280,7 @@ test("a profile's default name says PairBrowse; a chosen name stays", async () =
   assert.equal(localStatePreferences(state), false, "nothing left to change");
 });
 
-test("Chromium acknowledges the side panel's fixed-id new tab page itself until it has", async () => {
+test("the engine acknowledges the side panel's fixed-id new tab page itself until it has", async () => {
   const { prepareProfile, panelExtensionId, PANEL_DIR } = await import("../scripts/browser.mjs");
   const { mkdtempSync, readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -299,7 +299,7 @@ test("Chromium acknowledges the side panel's fixed-id new tab page itself until 
   assert.equal(JSON.parse(readFileSync(join(profile, "Default", "Preferences"), "utf8")).ack_existing_ntp_extensions, true, "acknowledged: left alone");
 });
 
-test("PairBrowse, not Chrome: no Chrome sign-in, default-browser check, translate, password or autofill popups", async () => {
+test("PairBrowse, not a Google browser: no browser sign-in, default-browser check, translate, password or autofill popups", async () => {
   const { profilePreferences } = await import("../scripts/browser.mjs");
   const prefs = profilePreferences({ autofill: { last_version_deduped: 1 } });
   assert.equal(prefs.signin.allowed, false);
@@ -313,13 +313,13 @@ test("PairBrowse, not Chrome: no Chrome sign-in, default-browser check, translat
 test("headless test browsers send no notifications; the visible browser keeps them", async () => {
   const { launchArgs } = await import("../scripts/browser.mjs");
   // Otherwise each test run's browser starts its notification helper and macOS asks to allow it.
-  assert.ok(launchArgs({ chromeArgs: ["--headless=new"] }).includes("--disable-notifications"));
+  assert.ok(launchArgs({ browserArgs: ["--headless=new"] }).includes("--disable-notifications"));
   assert.equal(launchArgs({}).includes("--disable-notifications"), false);
 });
 
 test("hidden tabs keep foreground priority, in one --enable-features that keeps the driver's", async () => {
   const { launchArgs } = await import("../scripts/browser.mjs");
-  const args = launchArgs({ chromeArgs: ["--headless=new", "--enable-features=Foo,Bar"] });
+  const args = launchArgs({ browserArgs: ["--headless=new", "--enable-features=Foo,Bar"] });
   const enable = args.filter((a) => a.startsWith("--enable-features="));
   assert.equal(enable.length, 1, "Chrome reads only one --enable-features");
   const features = enable[0].slice("--enable-features=".length).split(",");
@@ -409,7 +409,7 @@ test("before a launch, a profile's stored workers go when the side panel's build
   } finally { rmSync(profile, { recursive: true, force: true }); }
 });
 
-test("the browser setting: pairbrowse, chromium, a path of your own, and the fallback", () => {
+test("the browser setting: pairbrowse, pairbrowse-open (or chromium), a path of your own, and the fallback", () => {
   const calls = { exists: 0, executable: 0 };
   const files = new Map([["/opt/brave/brave", true], ["/opt/notes.txt", false]]); // path -> executable
   const deps = (native = true) => ({
@@ -419,29 +419,30 @@ test("the browser setting: pairbrowse, chromium, a path of your own, and the fal
   });
   const pick = (config, native) => browserChoice(config, deps(native));
   assert.deepEqual(pick({ browser: "pairbrowse" }), { browser: "pairbrowse", set: true, executablePath: null, problem: null });
-  assert.deepEqual(pick({ browser: "chromium" }), { browser: "chromium", set: true, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browser: "pairbrowse-open" }), { browser: "pairbrowse-open", set: true, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browser: "chromium" }), { browser: "pairbrowse-open", set: true, executablePath: null, problem: null }, "the older name");
   assert.deepEqual(pick({ browser: "/opt/brave/brave" }), { browser: "/opt/brave/brave", set: true, executablePath: "/opt/brave/brave", problem: null });
-  // A missing or non-executable path, a relative path or another word: Chromium, with a line for the log.
-  for (const [given, line] of [["/nowhere/chromium", "browser: /nowhere/chromium isn't an executable file; using Chromium instead"],
-    ["/opt/notes.txt", "browser: /opt/notes.txt isn't an executable file; using Chromium instead"],
-    ["brave", 'browser must be "pairbrowse", "chromium" or an absolute path; using Chromium'],
-    ["../x", 'browser must be "pairbrowse", "chromium" or an absolute path; using Chromium'],
-    ["Chromium", 'browser must be "pairbrowse", "chromium" or an absolute path; using Chromium']]) {
-    assert.deepEqual(pick({ browser: given }), { browser: "chromium", set: true, executablePath: null, problem: line }, given);
+  // A missing or non-executable path, a relative path or another word: the open build, with a line for the log.
+  for (const [given, line] of [["/nowhere/chromium", "browser: /nowhere/chromium isn't an executable file; using PairBrowse (open build) instead"],
+    ["/opt/notes.txt", "browser: /opt/notes.txt isn't an executable file; using PairBrowse (open build) instead"],
+    ["brave", 'browser must be "pairbrowse", "pairbrowse-open" or an absolute path; using PairBrowse (open build)'],
+    ["../x", 'browser must be "pairbrowse", "pairbrowse-open" or an absolute path; using PairBrowse (open build)'],
+    ["Chromium", 'browser must be "pairbrowse", "pairbrowse-open" or an absolute path; using PairBrowse (open build)']]) {
+    assert.deepEqual(pick({ browser: given }), { browser: "pairbrowse-open", set: true, executablePath: null, problem: line }, given);
   }
-  // Unset: PairBrowse where a build is pinned, Chromium elsewhere; nobody chose.
+  // Unset: PairBrowse where a build is pinned, the open build elsewhere; nobody chose.
   assert.deepEqual(pick({}, true), { browser: "pairbrowse", set: false, executablePath: null, problem: null });
-  assert.deepEqual(pick({ browser: null }, false), { browser: "chromium", set: false, executablePath: null, problem: null });
-  assert.deepEqual(pick({ browserEngine: "auto" }, false), { browser: "chromium", set: false, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browser: null }, false), { browser: "pairbrowse-open", set: false, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browserEngine: "auto" }, false), { browser: "pairbrowse-open", set: false, executablePath: null, problem: null });
   // The older names map as before, and their paths aren't checked (the stubs aren't called).
   const before = { ...calls };
   assert.deepEqual(pick({ browserEngine: "pairbrowse" }, false), { browser: "pairbrowse", set: true, executablePath: null, problem: null });
   assert.deepEqual(pick({ browserEngine: "pairbrowse", executablePath: "/my/native/pairbrowse" }), { browser: "pairbrowse", set: true, executablePath: "/my/native/pairbrowse", problem: null });
-  assert.deepEqual(pick({ browserEngine: "chromium" }), { browser: "chromium", set: true, executablePath: null, problem: null });
+  assert.deepEqual(pick({ browserEngine: "chromium" }), { browser: "pairbrowse-open", set: true, executablePath: null, problem: null });
   assert.deepEqual(pick({ browserEngine: "chromium", executablePath: "/fake/chrome" }), { browser: "/fake/chrome", set: true, executablePath: "/fake/chrome", problem: null });
   assert.deepEqual(pick({ browserEngine: "auto", executablePath: "/fake/chrome" }), { browser: "/fake/chrome", set: true, executablePath: "/fake/chrome", problem: null });
   assert.deepEqual(pick({ executablePath: "/fake/chrome" }), { browser: "/fake/chrome", set: true, executablePath: "/fake/chrome", problem: null });
   assert.deepEqual(calls, before, "legacy paths are never checked on disk");
   // "browser" wins over the older names.
-  assert.equal(pick({ browser: "chromium", browserEngine: "pairbrowse", executablePath: "/fake/chrome" }).browser, "chromium");
+  assert.equal(pick({ browser: "chromium", browserEngine: "pairbrowse", executablePath: "/fake/chrome" }).browser, "pairbrowse-open");
 });

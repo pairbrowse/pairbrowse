@@ -23,7 +23,7 @@ function file(content) {
 
 test("the schema has exactly DEFAULT_CONFIG's keys and the older names, and every default fits it", () => {
   const older = Object.keys(CONFIG_SCHEMA).filter((k) => CONFIG_SCHEMA[k].older);
-  assert.deepEqual(older.sort(), ["browserEngine", "executablePath"]);
+  assert.deepEqual(older.sort(), ["browserEngine", "chromeArgs", "chromeSandbox", "executablePath"]);
   assert.deepEqual(Object.keys(CONFIG_SCHEMA).filter((k) => !CONFIG_SCHEMA[k].older).sort(), Object.keys(DEFAULT_CONFIG).sort());
   const r = checkConfig(DEFAULT_CONFIG);
   assert.deepEqual(r.wrong, []);
@@ -32,7 +32,7 @@ test("the schema has exactly DEFAULT_CONFIG's keys and the older names, and ever
 });
 
 test("a good config.json loads as written, with no warnings", () => {
-  const given = { browser: "chromium", maxTabs: 30, chromeArgs: ["--lang=en-US"], layout: { left: "rail", right: "open", strip: 100 },
+  const given = { browser: "pairbrowse-open", maxTabs: 30, browserArgs: ["--lang=en-US"], layout: { left: "rail", right: "open", strip: 100 },
     sharing: { tunnel: { kind: "ngrok", authtoken: "t" }, guestPort: 8443 }, settleMs: null, dockWidth: 420.5,
     pairbrowse: { humanize: false, typingPace: 0.35, motion: "quick", formMove: "mouse", fingerprintProfile: "x", timezone: "Europe/Berlin" } };
   const config = loadConfig(file(given));
@@ -53,13 +53,13 @@ test("unknown keys: kept, named in one warning with the file; the native block i
 });
 
 test("a wrong-typed value is refused: the default for that key, a warning naming the key, what it takes and the file", () => {
-  const f = file({ maxTabs: "20", screenshots: "no", display: "always", timelineCap: 500, chromeArgs: "--lang=en", liveViewPort: -1,
+  const f = file({ maxTabs: "20", screenshots: "no", display: "always", timelineCap: 500, browserArgs: "--lang=en", liveViewPort: -1,
     cookieChoice: true, browser: 7, layout: { left: "big", strip: 100 }, sharing: { tunnel: "quick", guestPort: 70000 },
     pairbrowse: { humanize: "off", typingPace: 3, motion: "fastest", geoip: true }, joinHosts: ["a.example", 5], timeline: false });
   let config;
   assert.doesNotThrow(() => { config = loadConfig(f); });
   const w = CONFIG_WARNINGS.join("\n");
-  for (const k of ["maxTabs", "screenshots", "display", "timelineCap", "chromeArgs", "liveViewPort", "cookieChoice", "browser", "layout.left", "sharing.tunnel", "sharing.guestPort", "pairbrowse.humanize", "pairbrowse.typingPace", "pairbrowse.motion", "joinHosts"]) {
+  for (const k of ["maxTabs", "screenshots", "display", "timelineCap", "browserArgs", "liveViewPort", "cookieChoice", "browser", "layout.left", "sharing.tunnel", "sharing.guestPort", "pairbrowse.humanize", "pairbrowse.typingPace", "pairbrowse.motion", "joinHosts"]) {
     assert.match(w, new RegExp(`^config\\.json: ${k.replace(".", "\\.")} is `, "m"), k);
   }
   assert.equal(CONFIG_WARNINGS.length, 15, "one line each");
@@ -67,13 +67,13 @@ test("a wrong-typed value is refused: the default for that key, a warning naming
   assert.ok(CONFIG_WARNINGS.includes(`config.json: maxTabs is a whole number of 1 or more, not "20" (a string); using the default for it until it is fixed in ${f}`));
   assert.match(w, /display is "auto", "xvfb" or "none", not "always" \(a string\)/);
   assert.match(w, /timelineCap is a whole number from 1 to 200, not 500 \(a whole number\)/);
-  assert.match(w, /browser is "pairbrowse", "chromium" or an absolute path to a browser, or null, not 7/);
+  assert.match(w, /browser is "pairbrowse", "pairbrowse-open" or an absolute path to a browser, or null, not 7/);
   // The defaults for the refused ones; the good ones beside them kept.
   assert.equal(config.maxTabs, 20);
   assert.equal(config.screenshots, true);
   assert.equal(config.display, "auto");
   assert.equal(config.timelineCap, 200);
-  assert.deepEqual(config.chromeArgs, []);
+  assert.deepEqual(config.browserArgs, []);
   assert.equal(config.liveViewPort, 0);
   assert.equal(config.cookieChoice, "accept");
   assert.equal(config.browser, null);

@@ -19,7 +19,7 @@ export const PAIRBROWSE_ENGINE_KEYS = ["fingerprint", "fingerprintVoices", "fing
   "location", "timezone", "acceptLanguage", "webrtcIp", "webrtcMdns", "canvasNoise", "storageQuota", "tlsProfile"];
 const NAMES = { type: "array", items: "string" };
 export const CONFIG_SCHEMA = {
-  browser: { type: "string", nullable: true, hint: '"pairbrowse", "chromium" or an absolute path to a browser' },
+  browser: { type: "string", nullable: true, hint: '"pairbrowse", "pairbrowse-open" or an absolute path to a browser' },
   // Older names, still read while "browser" is unset (browser/choice.mjs), never written.
   browserEngine: { type: "string", nullable: true, older: true },
   executablePath: { type: "string", nullable: true, older: true },
@@ -28,8 +28,11 @@ export const CONFIG_SCHEMA = {
   maxTabs: { type: "integer", min: 1 },
   screenshots: { type: "boolean" },
   downloadsDir: { type: "string", nullable: true },
-  chromeArgs: NAMES,
-  chromeSandbox: { type: "boolean" },
+  browserArgs: NAMES,
+  browserSandbox: { type: "boolean" },
+  // Their older names, still read while the new one is unset (browser-args.mjs), never written.
+  chromeArgs: { ...NAMES, older: true },
+  chromeSandbox: { type: "boolean", older: true },
   display: { values: ["auto", "xvfb", "none"] },
   liveViewPort: PORT,
   liveViewHosts: NAMES,

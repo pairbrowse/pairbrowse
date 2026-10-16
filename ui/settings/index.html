@@ -44,12 +44,12 @@
       <section class="sec" id="general" aria-labelledby="general-h">
         <h2 class="sec-h" id="general-h">General</h2>
 
-        <div class="item cfg-item" id="browser" data-k="browser chromium executable path engine build restart which browser opens">
+        <div class="item cfg-item" id="browser" data-k="browser open build executable path engine build restart which browser opens">
           <fieldset class="group" id="browser-group" aria-describedby="browser-help">
             <legend class="item-h">Browser PairBrowse opens</legend>
             <p class="help" id="browser-help">Used from the browser's next start, with the same session and logins.</p>
             <label class="choice" id="choice-pairbrowse"><input type="radio" name="browser" value="pairbrowse"><span><b>The PairBrowse browser</b><small id="pairbrowse-small">Docks, timeline and approvals in the window</small></span></label>
-            <label class="choice"><input type="radio" name="browser" value="chromium"><span><b>PairBrowse extension in a test browser</b><small>The side panel instead of the docks</small></span></label>
+            <label class="choice"><input type="radio" name="browser" value="pairbrowse-open"><span><b>PairBrowse (open build)</b><small>The side panel instead of the docks</small></span></label>
             <label class="choice"><input type="radio" name="browser" value="path"><span><b>Another browser on this computer</b><small>With the PairBrowse extension</small></span></label>
             <form class="inline" id="path-form" hidden autocomplete="off">
               <label class="sr" for="path">Path to the browser</label>
@@ -74,7 +74,7 @@
           <p class="msg" id="docks-msg" role="status" aria-live="polite"></p>
         </div>
 
-        <!-- The extension's options page (plain Chromium): no docks there; settings.js shows this note instead. -->
+        <!-- The extension's options page (the open build): no docks there; settings.js shows this note instead. -->
         <div class="item ext-only" id="docks-ext" data-k="docks dock layout left right sidebar side panel" hidden>
           <h3 class="item-h">Docks</h3>
           <p class="help">The docks are the PairBrowse browser's window. In this browser PairBrowse is the side panel: open it with the toolbar button or Ctrl+Shift+Y (Cmd+Shift+Y on a Mac).</p>

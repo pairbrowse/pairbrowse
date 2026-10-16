@@ -112,9 +112,9 @@ test("pinnedBrowserVersion: the version the helper pins, never a guess", () => {
   assert.equal(pinnedBrowserVersion({ engine: "pairbrowse", nativeRecord: null, ungoogled: "154.0-1" }), "154.0-1");
   assert.equal(pinnedBrowserVersion({ engine: "pairbrowse" }), null);
   const browsersJson = { browsers: [{ name: "firefox", browserVersion: "1" }, { name: "chromium", revision: "1247", browserVersion: "155.0.8059.12" }] };
-  assert.equal(pinnedBrowserVersion({ engine: "chromium", browsersJson }), "155.0.8059.12");
-  assert.equal(pinnedBrowserVersion({ engine: "chromium", browsersJson: { browsers: [{ name: "chromium", revision: "1247" }] } }), "r1247");
-  assert.equal(pinnedBrowserVersion({ engine: "chromium", browsersJson: null }), null);
+  assert.equal(pinnedBrowserVersion({ engine: "open", browsersJson }), "155.0.8059.12");
+  assert.equal(pinnedBrowserVersion({ engine: "open", browsersJson: { browsers: [{ name: "chromium", revision: "1247" }] } }), "r1247");
+  assert.equal(pinnedBrowserVersion({ engine: "open", browsersJson: null }), null);
   assert.equal(pinnedBrowserVersion({ engine: "path", browsersJson }), null);
 });
 
@@ -123,10 +123,10 @@ test("a known browser version reaches diagnostics.json and the report", async ()
   try {
     const browsersJson = { browsers: [{ name: "chromium", revision: "1247", browserVersion: "155.0.8059.12" }] };
     const d = createDiagnostics({ version: "1.2.3", logFile: join(dir, "none.log"), home: dir,
-      browser: async () => ({ engine: "chromium", version: pinnedBrowserVersion({ engine: "chromium", browsersJson }), build: null }) });
+      browser: async () => ({ engine: "open", version: pinnedBrowserVersion({ engine: "open", browsersJson }), build: null }) });
     const got = await d.read();
     assert.equal(got.browser.version, "155.0.8059.12");
     assert.equal(JSON.parse(JSON.stringify(got)).browser.version, "155.0.8059.12");
-    assert.match(d.reportText(got), /Browser: chromium 155\.0\.8059\.12/);
+    assert.match(d.reportText(got), /Browser: open 155\.0\.8059\.12/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

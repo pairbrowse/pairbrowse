@@ -105,10 +105,10 @@ test("a build with its own pages launches with the helper switches and shows its
     hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
     presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
     shuttingDown: () => false, onStarted: quiet, onClosed: quiet,
-    chromePagesOf: () => true, helperFor: async () => ({ origin: "http://127.0.0.1:4321", key: KEY }),
+    browserPagesOf: () => true, helperFor: async () => ({ origin: "http://127.0.0.1:4321", key: KEY }),
   });
   await context.getContext();
-  assert.equal(context.chromePages(), true);
+  assert.equal(context.browserPages(), true);
   const args = launches[0].opts.args;
   assert.ok(args.includes("--pairbrowse-helper=http://127.0.0.1:4321"));
   const keyFile = args.find((a) => a.startsWith("--pairbrowse-helper-key-file="))?.slice("--pairbrowse-helper-key-file=".length);
@@ -169,7 +169,7 @@ test("a build with its own pages still opens when the live view cannot start", {
     hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
     presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
     shuttingDown: () => false, onStarted: quiet, onClosed: quiet,
-    chromePagesOf: () => true,
+    browserPagesOf: () => true,
     helperFor: async () => { throw new Error("port taken"); },
   });
   await context.getContext();
@@ -181,12 +181,13 @@ test("a build with its own pages still opens when the live view cannot start", {
 });
 
 // A recorded browser other than the PairBrowse browser: the helper's log says once per run that
-// nothing is downloaded or installed (the wording is native-install.mjs notChosen's, whose chromium
+// nothing is downloaded or installed (the wording is native-install.mjs notChosen's, whose open build
 // form test/native-install.test.mjs checks), and a second launch doesn't repeat it.
 test("a recorded browser of your own logs once that nothing is downloaded or installed", { timeout: 30_000 }, async () => {
   const { createContext } = await import("../scripts/daemon/context.mjs");
   const { notChosen } = await import("../scripts/native/install.mjs");
-  assert.equal(notChosen({ browser: "chromium" }, true), "browser is chromium in ~/.pairbrowse/config.json: nothing to download or install");
+  assert.equal(notChosen({ browser: "pairbrowse-open" }, true), "browser is pairbrowse-open in ~/.pairbrowse/config.json: nothing to download or install");
+  assert.equal(notChosen({ browser: "chromium" }, true), "browser is pairbrowse-open in ~/.pairbrowse/config.json: nothing to download or install", "the older name");
   assert.equal(notChosen({ browser: "pairbrowse" }, true), null);
   assert.equal(notChosen({}, true), null);
   let launched = 0;
@@ -260,7 +261,7 @@ test("the key file goes with its browser, never with the next one", { timeout: 3
     hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
     presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
     shuttingDown: () => false, onStarted: quiet, onClosed: quiet,
-    chromePagesOf: () => true, helperFor: async () => ({ origin: "http://127.0.0.1:4321", key: KEY }),
+    browserPagesOf: () => true, helperFor: async () => ({ origin: "http://127.0.0.1:4321", key: KEY }),
   });
   const fileOf = (args) => args.find((a) => a.startsWith("--pairbrowse-helper-key-file="))?.slice("--pairbrowse-helper-key-file=".length);
   const keyFiles = () => readdirSync(join(home, "run")).filter((f) => f.startsWith("helper-key-"));
@@ -310,7 +311,7 @@ test("the capture page's own key: its own file and switch, new at each launch, o
       hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
       presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
       shuttingDown: () => false, onStarted: quiet, onClosed: quiet,
-      chromePagesOf: () => true, capturePagesOf: () => true, captureKeyedOf: () => keyed,
+      browserPagesOf: () => true, capturePagesOf: () => true, captureKeyedOf: () => keyed,
       helperFor: async () => ({ origin: "http://127.0.0.1:4321", key: randomBytes(32).toString("base64url"), newCaptureKey: (on) => { const k = on ? randomBytes(32).toString("base64url") : null; keys.push(k); return k; } }),
     });
     await context.getContext();

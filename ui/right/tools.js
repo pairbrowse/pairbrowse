@@ -67,7 +67,7 @@ function uptimeWords(s) {
 }
 const KIND = { login: "Sign in", "2fa": "Two-step code", captcha: "CAPTCHA", payment: "Payment", other: "Your turn" };
 const STATE = { done: "Done", failed: "Failed", "in-progress": "Downloading" };
-const ENGINE = { pairbrowse: "PairBrowse browser", chromium: "Test browser", path: "Your own browser" };
+const ENGINE = { pairbrowse: "PairBrowse browser", open: "PairBrowse (open build)", path: "Your own browser" };
 const has = (o, k) => !!o && typeof o === "object" && Object.hasOwn(o, k);
 
 // base(): the helper's `${origin}/${key}/` or null. shown(): the Tools tab is visible in the open

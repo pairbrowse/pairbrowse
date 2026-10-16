@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, DRIVER_BLINK_SWITCH, nativeManifest, chromePages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
+import { launchNative, DRIVER_BLINK_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
@@ -22,7 +22,7 @@ function appFixture(metadata = { product: "PairBrowse", version: "150.0.7871.114
   return { root, executablePath };
 }
 
-function fakeChromium(captured = { webgl: { vendor: "Apple", renderer: "Apple test GPU" }, speech: [], media_devices: [] }) {
+function fakeBrowserType(captured = { webgl: { vendor: "Apple", renderer: "Apple test GPU" }, speech: [], media_devices: [] }) {
   const calls = [];
   const chromium = {
     calls,
@@ -55,7 +55,7 @@ const loadPack = () => loadEngine(engineDir);
 const fakePack = { collector: "", DEFAULT_IGNORED_ARGS: [] };
 test("the Mac host capture is cached privately and reused by new profiles", async () => {
   rmSync(hostCachePath(), { force: true });
-  const chromium = fakeChromium({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" } });
+  const chromium = fakeBrowserType({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" } });
   const hardware = () => "Mac15,7|AGXAcceleratorG15X";
   const first = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p1-")), "150.0.7871.114", hardware);
   assert.equal(chromium.captures, 1);
@@ -73,7 +73,7 @@ test("the Mac host capture is cached privately and reused by new profiles", asyn
 // then: a cached profile says nothing), and two launches at once share one capture.
 test("the Mac host capture says when it starts, once, and two launches share it", async () => {
   rmSync(hostCachePath(), { force: true });
-  const chromium = fakeChromium({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" } });
+  const chromium = fakeBrowserType({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" } });
   const hardware = async () => "Mac15,7|AGXAcceleratorG15X";
   let told = 0;
   const ask = () => macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-m-")), "150.0.7871.114", hardware, () => told++);
@@ -99,7 +99,7 @@ test("a host capture that hangs fails in its time and closes its browser", async
 
 test("a software WebGL renderer is never kept as this Mac's profile", async () => {
   rmSync(hostCachePath(), { force: true });
-  const chromium = fakeChromium({ webgl: { webgl1: { UNMASKED_RENDERER_WEBGL: "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)" } } });
+  const chromium = fakeBrowserType({ webgl: { webgl1: { UNMASKED_RENDERER_WEBGL: "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)" } } });
   await assert.rejects(() => macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-sw-")), "150.0.7871.114", () => "x"), /software WebGL renderer/);
   assert.equal(existsSync(hostCachePath()), false);
 });
@@ -112,24 +112,24 @@ test("the hidden capture is told the real screen in physical pixels", () => {
 
 test("a build's own pages are read from its manifest's chrome field", () => {
   const base = { product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" };
-  assert.equal(chromePages(nativeManifest(appFixture({ ...base, chrome: 1 }).executablePath)), true);
-  assert.equal(chromePages(nativeManifest(appFixture({ ...base, chrome: 2 }).executablePath)), true);
+  assert.equal(declaresOwnPages(nativeManifest(appFixture({ ...base, chrome: 1 }).executablePath)), true);
+  assert.equal(declaresOwnPages(nativeManifest(appFixture({ ...base, chrome: 2 }).executablePath)), true);
   for (const chrome of [undefined, 0, "1", true, 1.5, -1, null]) {
-    assert.equal(chromePages(nativeManifest(appFixture(chrome === undefined ? base : { ...base, chrome }).executablePath)), false, String(chrome));
+    assert.equal(declaresOwnPages(nativeManifest(appFixture(chrome === undefined ? base : { ...base, chrome }).executablePath)), false, String(chrome));
   }
-  assert.equal(chromePages(null), false);
+  assert.equal(declaresOwnPages(null), false);
 });
 
-test("native app metadata requires a PairBrowse Chromium 150 bundle", () => {
+test("native app metadata requires a PairBrowse build of engine version 150", () => {
   const good = appFixture();
   assert.equal(nativeManifest(good.executablePath).version, "150.0.7871.114");
   const bad = appFixture({ product: "Other", version: "150.0.7871.114" });
-  assert.throws(() => nativeManifest(bad.executablePath), /Chromium 150 PairBrowse/);
+  assert.throws(() => nativeManifest(bad.executablePath), /PairBrowse build of engine version 150/);
   const wrongVersion = appFixture({ product: "PairBrowse", version: "149.0.1.1" });
-  assert.throws(() => nativeManifest(wrongVersion.executablePath), /Chromium 150 PairBrowse/);
+  assert.throws(() => nativeManifest(wrongVersion.executablePath), /PairBrowse build of engine version 150/);
   // Malformed manifests refuse with the same sentence, never a TypeError (found by test/fuzz/native.test.js).
   for (const m of [null, { product: "PairBrowse", version: [] }, { product: "PairBrowse", version: 150 }]) {
-    assert.throws(() => nativeManifest(appFixture(m).executablePath), /Chromium 150 PairBrowse/, JSON.stringify(m));
+    assert.throws(() => nativeManifest(appFixture(m).executablePath), /PairBrowse build of engine version 150/, JSON.stringify(m));
   }
 });
 
@@ -137,7 +137,7 @@ packTest("engine pack profile persistence round-trips through native launch", as
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-profile-"));
-  const chromium = fakeChromium();
+  const chromium = fakeBrowserType();
   await launchNative(chromium, { pairbrowse: { fingerprint: "stable-seed", humanize: false } }, directory,
     { executablePath: app.executablePath, headless: false }, pack);
   const persona = join(directory, "pairbrowse-persona.json");
@@ -152,7 +152,7 @@ packTest("browser options are read from the pairbrowse key", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-profile-"));
-  const chromium = fakeChromium();
+  const chromium = fakeBrowserType();
   await launchNative(chromium, { pairbrowse: { fingerprint: "named-seed" } }, directory,
     { executablePath: app.executablePath, headless: false }, pack);
   assert.equal(chromium.calls[0].options.args.find(a => a.startsWith("--fingerprint=")), "--fingerprint=named-seed");
@@ -161,7 +161,7 @@ packTest("browser options are read from the pairbrowse key", async () => {
 packTest("a native launch leaves out the driver's switches: no automation flag, no warning bar for AutomationControlled", async () => {
   const pack = await loadPack();
   const app = appFixture();
-  const chromium = fakeChromium();
+  const chromium = fakeBrowserType();
   await launchNative(chromium, { pairbrowse: { fingerprint: "bar-seed" } }, mkdtempSync(join(tmpdir(), "pairbrowse-bar-")),
     { executablePath: app.executablePath, headless: false }, pack);
   const { ignoreDefaultArgs, args } = chromium.calls[0].options;
@@ -177,7 +177,7 @@ packTest("humanized mouse moves take the fast shape unless config asks for the q
   const spy = { ...pack, installHumanizeOnContext: (context, opts) => seen.push(opts) };
   const app = appFixture();
   for (const pairbrowse of [{}, { motion: "classic" }, { motion: "combined" }, { motion: "quick" }, { motion: "anything else" }]) {
-    await launchNative(fakeChromium(), { pairbrowse: { fingerprint: "motion-seed", ...pairbrowse } }, mkdtempSync(join(tmpdir(), "pairbrowse-motion-")),
+    await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "motion-seed", ...pairbrowse } }, mkdtempSync(join(tmpdir(), "pairbrowse-motion-")),
       { executablePath: app.executablePath, headless: false }, spy);
   }
   assert.deepEqual(seen.map((o) => o.motion), ["fast", "classic", "combined", "quick", "fast"]);
@@ -253,7 +253,7 @@ function fakeForm(fields) {
       },
       down: async (key) => {
         const f = byRef.get(focus);
-        // A closed select picks the first option starting with what is typed, as Chrome does.
+        // A closed select picks the first option starting with what is typed, as the browser does.
         if (f?.type === "combobox" && key.length === 1) { f.prefix = (f.prefix || "") + key; f.index = f.options.findIndex((o) => o.toLowerCase().startsWith(f.prefix.toLowerCase())); }
         else if (key.length === 1 || key === "Enter") { held += key === "Enter" ? "\n" : key; typed(); }
         log.push(`down ${key}`);
@@ -413,7 +413,7 @@ packTest("engine pack emits this platform's fingerprint, proxy, locale, and stab
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-flags-"));
-  const chromium = fakeChromium();
+  const chromium = fakeBrowserType();
   await launchNative(chromium, { pairbrowse: { fingerprint: "mac-seed", timezone: "Europe/Berlin", acceptLanguage: "de-DE,de" } }, directory,
     { executablePath: app.executablePath, headless: false, proxy: { server: "http://proxy.test:8080" } }, pack);
   const { options } = chromium.calls[0];
@@ -429,7 +429,7 @@ macPackTest("macOS host capture keeps its seed across persisted restarts", async
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-host-capture-"));
-  const chromium = fakeChromium({
+  const chromium = fakeBrowserType({
     webgl: { vendor: "Apple", renderer: "Apple M3 Pro" },
     webgpu: { vendor: "Apple", architecture: "Apple GPU" },
     media_devices: [], speech: [],
@@ -445,7 +445,7 @@ macPackTest("macOS host capture keeps its seed across persisted restarts", async
   const saved = pack.Profile.load(join(directory, "pairbrowse-persona.json")).options;
   assert.equal(saved.fingerprint.length, 64);
   assert.deepEqual(saved.fingerprintProfile.webgl, { vendor: "Apple", renderer: "Apple M3 Pro" });
-  const second = fakeChromium({});
+  const second = fakeBrowserType({});
   const later = [];
   await launchNative(second, { pairbrowse: {} }, directory,
     { executablePath: app.executablePath, headless: false }, pack, (line) => later.push(line));
@@ -457,13 +457,13 @@ offMacPackTest("off macOS there's no host capture: the browser runs seeded, and 
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-seeded-"));
-  const chromium = fakeChromium({});
+  const chromium = fakeBrowserType({});
   await launchNative(chromium, { pairbrowse: {} }, directory, { executablePath: app.executablePath, headless: false }, pack);
   assert.equal(chromium.calls.length, 1, "only the browser itself is launched");
   const saved = pack.Profile.load(join(directory, "pairbrowse-persona.json")).options;
   assert.equal(saved.fingerprint.length, 64);
   assert.equal(saved.fingerprintProfile, undefined);
-  const second = fakeChromium({});
+  const second = fakeBrowserType({});
   await launchNative(second, { pairbrowse: {} }, directory, { executablePath: app.executablePath, headless: false }, pack);
   assert.ok(second.calls[0].options.args.includes(`--fingerprint=${saved.fingerprint}`));
 });
@@ -473,7 +473,7 @@ macPackTest("nested collector WebGPU info is flattened for native profile import
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-webgpu-normalize-"));
-  const chromium = fakeChromium({
+  const chromium = fakeBrowserType({
     webgl: { webgl1: { parameters: {} }, webgl2: null },
     webgpu: { info: { vendor: "apple", architecture: "apple-gpu", device: "", description: "" }, limits: {} },
     speech: [], media_devices: [],
@@ -488,7 +488,7 @@ packTest("captured profile objects persist without an accidental seed", async ()
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-captured-"));
-  const chromium = fakeChromium();
+  const chromium = fakeBrowserType();
   const profile = new pack.Profile("captured", {
     fingerprintProfile: { navigator: { languages: ["en-US"] } },
     canvasBridge: { url: "ws://127.0.0.1:9099", auth: "secret" },
@@ -514,7 +514,7 @@ packTest("saved profile launch controls survive the native adapter merge; its ex
     extensions: ["/tmp/saved-extension"],
     disablePrivacySandbox: false,
   });
-  const chromium = fakeChromium();
+  const chromium = fakeBrowserType();
   const lines = [];
   await launchNative(chromium, { pairbrowse: { profile } }, directory,
     { executablePath: app.executablePath, headless: false }, pack, (l) => lines.push(l));
@@ -529,7 +529,7 @@ packTest("unsupported options in saved profiles are rejected before launch", asy
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-saved-reject-"));
   const profile = new pack.Profile("saved-reject", { personaSchema: 2 });
-  await assert.rejects(() => launchNative(fakeChromium(), { pairbrowse: { profile } }, directory,
+  await assert.rejects(() => launchNative(fakeBrowserType(), { pairbrowse: { profile } }, directory,
     { executablePath: app.executablePath }, pack), /does not support pairbrowse\.personaSchema/);
 });
 
@@ -538,7 +538,7 @@ packTest("fingerprint passthrough is rejected when loaded from a saved profile",
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-saved-off-"));
   const profile = new pack.Profile("saved-off", { fingerprint: "off" });
-  await assert.rejects(() => launchNative(fakeChromium(), { pairbrowse: { profile } }, directory,
+  await assert.rejects(() => launchNative(fakeBrowserType(), { pairbrowse: { profile } }, directory,
     { executablePath: app.executablePath }, pack), /passthrough needs a newer/);
 });
 
@@ -554,7 +554,7 @@ packTest("GeoIP refreshes persisted implicit locale after proxy changes", async 
     fingerprint.timezone = 'Europe/Berlin';
     fingerprint.acceptLanguage = 'de-DE';
   };
-  const chromium = fakeChromium();
+  const chromium = fakeBrowserType();
   await launchNative(chromium, { pairbrowse: { geoip: true } }, directory,
     { executablePath: app.executablePath, headless: false }, pack);
   assert.ok(chromium.calls[0].options.args.includes('--timezone=Europe/Berlin'));
@@ -564,15 +564,15 @@ packTest("native launch refuses options this engine can't honour", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-reject-"));
-  await assert.rejects(() => launchNative(fakeChromium(), { pairbrowse: { socks5Udp: true } }, directory,
+  await assert.rejects(() => launchNative(fakeBrowserType(), { pairbrowse: { socks5Udp: true } }, directory,
     { executablePath: app.executablePath }, pack), /does not support pairbrowse\.socks5Udp/);
 });
 
-packTest("a WebRTC IP policy in chromeArgs never loosens the default deny, in any spelling", async () => {
+packTest("a WebRTC IP policy in browserArgs never loosens the default deny, in any spelling", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-profile-"));
-  const chromium = fakeChromium();
+  const chromium = fakeBrowserType();
   const lines = [];
   await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, directory,
     { executablePath: app.executablePath, headless: false, args: ["--webrtc-ip-handling-policy=default", "--force-webrtc-ip-handling-policy", "-webrtc-ip-handling-policy=default", "--WebRTC-IP-Handling-Policy=default", ...(process.platform === "win32" ? ["/webrtc-ip-handling-policy=default"] : []), "--lang=en"] }, pack, (l) => lines.push(l));
@@ -580,14 +580,14 @@ packTest("a WebRTC IP policy in chromeArgs never loosens the default deny, in an
   const rtc = args.filter((a) => /webrtc-ip-handling-policy/i.test(a));
   assert.deepEqual(rtc, ["--webrtc-ip-handling-policy=disable_non_proxied_udp"], rtc.join(" "));
   assert.ok(args.includes("--lang=en"), "other switches pass");
-  assert.ok(lines.some((l) => /WebRTC IP handling switch in chromeArgs was dropped/.test(l)));
+  assert.ok(lines.some((l) => /WebRTC IP handling switch in browserArgs was dropped/.test(l)));
 });
 
 packTest("config.pairbrowse passes only PairBrowse's settings and the engine's fingerprint options to a launch", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-closed-"));
-  const chromium = fakeChromium();
+  const chromium = fakeBrowserType();
   const lines = [];
   const own = "/opt/pairbrowse/ui";
   await launchNative(chromium, { pairbrowse: { fingerprint: "closed-seed", humanize: false, extensions: ["/tmp/evil-ext"], proxy: { server: "http://evil.example:8080" },

@@ -2,7 +2,7 @@
 // GET config.json and POST config, liveview.mjs): the fields of config.json below and nothing else.
 //
 // GET config.json answers exactly:
-//   { browser: "pairbrowse" | "chromium" | "<absolute path>",  which browser runs (browserChoice)
+//   { browser: "pairbrowse" | "pairbrowse-open" | "<absolute path>",  which browser runs (browserChoice)
 //     timeline: { on: boolean, cap: 1..200 },                   the session's pictures kept
 //     layout: { left, right, strip },                           where the docks start
 //     name: string,                                             participantName: your name in shared sessions ("" unset)
@@ -29,6 +29,7 @@ import { execFile } from "node:child_process";
 import { within } from "../util.mjs";
 import { folderOf, checkDownloads, downloadsProblem } from "../rules/downloads.mjs";
 import { browserChoice } from "../browser.mjs";
+import { isOpenBrowser, OPEN_BROWSER } from "../browser/choice.mjs";
 import { saveConfig, paths } from "../paths.mjs";
 import { configProblem, wrongValue } from "../config-schema.mjs";
 import { cleanName } from "../sharing/join.mjs";
@@ -103,14 +104,14 @@ export function applySettings(given, config, { native = false, exists, executabl
   const fields = {};
   if (given.browser !== undefined) {
     const b = given.browser;
-    if (typeof b !== "string") return { error: 'browser is "pairbrowse", "chromium" or an absolute path.' };
+    if (typeof b !== "string") return { error: 'browser is "pairbrowse", "pairbrowse-open" or an absolute path.' };
     if (b === "pairbrowse") {
-      if (!native) return { error: "There's no PairBrowse browser build for this computer yet. Choose Chromium for now." };
-    } else if (b !== "chromium") {
-      if (!isAbsolute(b) || b.length > PATH_MAX || CONTROL.test(b)) return { error: 'browser is "pairbrowse", "chromium" or an absolute path.' };
+      if (!native) return { error: "There's no PairBrowse browser build for this computer yet. Choose the open build for now." };
+    } else if (!isOpenBrowser(b)) {
+      if (!isAbsolute(b) || b.length > PATH_MAX || CONTROL.test(b)) return { error: 'browser is "pairbrowse", "pairbrowse-open" or an absolute path.' };
       if (browserChoice({ browser: b }, checksOf(exists, executable)).browser !== b) return { error: `${b} isn't an executable file. Choose the browser app itself.` };
     }
-    fields.browser = b;
+    fields.browser = isOpenBrowser(b) ? OPEN_BROWSER : b;
   }
   if (given.timeline !== undefined) {
     const t = given.timeline;

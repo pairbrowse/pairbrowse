@@ -3,7 +3,7 @@
 import { within } from "../../../util.mjs";
 import { SELECTED, CONFIG_WARNINGS } from "../../../paths.mjs";
 import { SANDBOX } from "../../../engine.mjs";
-import { SANDBOX_OFF_WARNING } from "../../../chrome-args.mjs";
+import { SANDBOX_OFF_WARNING } from "../../../browser-args.mjs";
 
 const BADGE_MS = 4000; // pairbrowse_status waits this long at most for the badge in every tab
 

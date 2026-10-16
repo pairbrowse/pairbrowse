@@ -9,13 +9,13 @@ import { NATIVE } from "./native-pack.mjs";
 import { paths } from "./paths.mjs";
 import { within, writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
-import { switchName, withoutNoSandbox } from "./chrome-args.mjs";
+import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
 export * from "./native/humanize.mjs";
 
-const CHROMIUM_MAJOR = NATIVE.version.split(".")[0];
+const ENGINE_MAJOR = NATIVE.version.split(".")[0];
 // Options this engine can't honour: refused, never silently ignored.
 const UNSUPPORTED = ["version", "autoUpdate", "pro", "licenseThroughProxy", "shaderDialect", "widevine", "socks5Udp", "transparentProxy",
   "allowThirdPartyCookies", "fingerprintSchema", "personaSchema", "realGpuHost"];
@@ -29,11 +29,11 @@ export function nativeManifest(executablePath) {
   const contents = dirname(dirname(executablePath));
   const metadata = JSON.parse(readFileSync(mac ? join(contents, "Resources", "PairBrowse-build.json") : join(dirname(executablePath), "PairBrowse-build.json"), "utf8"));
   // Any JSON may be there (null, a number for the version): refused with this sentence, never a TypeError.
-  if (metadata?.product !== "PairBrowse" || typeof metadata.version !== "string" || metadata.version.split(".")[0] !== CHROMIUM_MAJOR || !/^\d+\.\d+\.\d+\.\d+$/.test(metadata.version)) {
-    throw new Error(`PairBrowse native requires a Chromium ${CHROMIUM_MAJOR} PairBrowse build.`);
+  if (metadata?.product !== "PairBrowse" || typeof metadata.version !== "string" || metadata.version.split(".")[0] !== ENGINE_MAJOR || !/^\d+\.\d+\.\d+\.\d+$/.test(metadata.version)) {
+    throw new Error(`PairBrowse native requires a PairBrowse build of engine version ${ENGINE_MAJOR}.`);
   }
   if (mac && !existsSync(join(contents, "Frameworks", "Chromium Framework.framework"))) {
-    throw new Error("PairBrowse app is incomplete: Chromium Framework is missing.");
+    throw new Error("PairBrowse app is incomplete: its engine framework is missing.");
   }
   if (!mac && !["linux", "windows"].includes(metadata.platform)) throw new Error("PairBrowse build manifest names no platform.");
   return metadata;
@@ -42,7 +42,7 @@ export function nativeManifest(executablePath) {
 // The build manifest's `chrome` field: the protocol level of the browser's own pages (1 =
 // chrome://pairbrowse and chrome://pairbrowse.top-chrome pages reading --pairbrowse-helper).
 // Absent in today's builds: then the side panel extension takes their place.
-export const chromePages = (manifest) => Number.isInteger(manifest?.chrome) && manifest.chrome >= 1;
+export const declaresOwnPages = (manifest) => Number.isInteger(manifest?.chrome) && manifest.chrome >= 1;
 // The build manifest's `capture` field: the browser's own capture page (a tab's picture and sound
 // for joiners, recordings; liveview/capture.mjs) is there. Absent: a shared browser sends pictures
 // through the join channel and recording is refused (daemon/capture.mjs).
@@ -57,8 +57,8 @@ const output = (file, args) => new Promise((resolve) => {
   execFile(file, args, { encoding: "utf8", timeout: 10_000 }, (error, stdout) => resolve(error ? "" : String(stdout).trim()));
 });
 
-// The primary display as Chromium reports it, so the hidden capture sees the real screen, not
-// headless's 800x600. Chromium on macOS reports 30-bit color on EDR (XDR) displays.
+// The primary display as the engine reports it, so the hidden capture sees the real screen, not
+// headless's 800x600. The engine on macOS reports 30-bit color on EDR (XDR) displays.
 async function macScreen() {
   const script = 'ObjC.import("AppKit"); const s = $.NSScreen.screens.objectAtIndex(0); const f = s.frame, v = s.visibleFrame;'
     + ' JSON.stringify({ width: f.size.width, height: f.size.height, top: f.size.height - v.origin.y - v.size.height, bottom: v.origin.y,'
@@ -199,7 +199,7 @@ function readSettings(config, pack, personaPath) {
   void formMove;
   // Only the engine's fingerprint options pass (config-schema.mjs PAIRBROWSE_ENGINE_KEYS): never an
   // unpacked extension, a proxy, launch options or switches from config.json, which would go
-  // around the chromeArgs screen. An option this engine can't honour still stops the launch below.
+  // around the browserArgs screen. An option this engine can't honour still stops the launch below.
   const overrides = Object.fromEntries(Object.entries(given).filter(([k]) => PAIRBROWSE_ENGINE_KEYS.includes(k)));
   const ignored = Object.keys(given).filter((k) => !PAIRBROWSE_ENGINE_KEYS.includes(k) && !UNSUPPORTED.includes(k));
   const motion = ["classic", "combined", "quick"].includes(motionSetting) ? motionSetting : "fast";
@@ -216,7 +216,7 @@ function readSettings(config, pack, personaPath) {
 async function resolveFingerprint(chromium, options, pack, directory, settings, version, log = () => {}) {
   const { selection, profileSelect, geoip, overrides, saved, persisted } = settings;
   const { fingerprint, rest } = pack.splitFingerprintOptions({ ...persisted, ...saved, ...overrides });
-  if (fingerprint.fingerprint === "off") throw new Error(`Fingerprint passthrough needs a newer PairBrowse engine; Chromium ${CHROMIUM_MAJOR} treats off as a seed.`);
+  if (fingerprint.fingerprint === "off") throw new Error(`Fingerprint passthrough needs a newer PairBrowse engine; engine version ${ENGINE_MAJOR} treats off as a seed.`);
   fingerprint.platform ??= PLATFORM;
   fingerprint.brandVersion ??= version;
   const picksPersona = selection === "auto" || selection === "local";
@@ -225,7 +225,7 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   if (picksPersona) {
     const measureAt = Date.now();
     const host = await pack.measureHost((probe) => chromium.launch({ ...probe, ...(options.chromiumSandbox === false ? {} : { args: withoutNoSandbox(probe?.args) }), executablePath: options.executablePath, chromiumSandbox: options.chromiumSandbox !== false, ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS }),
-      options.executablePath, Number(CHROMIUM_MAJOR));
+      options.executablePath, Number(ENGINE_MAJOR));
     const resolved = selection === "local" ? pack.resolveLocal(host, profileSelect) : await pack.resolveAuto(host, profileSelect);
     fingerprint.fingerprintProfile = resolved.profile;
     source = resolved.source;
@@ -299,19 +299,19 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const merged = { ...launchOptions, ...options };
   // The browser's WebRTC IP handling is PairBrowse's: web pages never get this computer's local
   // or public addresses outside a proxy (the engine's default deny below). A policy in the
-  // config's chromeArgs that would loosen it is dropped here, whatever it says; the browser's own
+  // config's browserArgs that would loosen it is dropped here, whatever it says; the browser's own
   // capture page keeps its direct connections through the build's own exemption, not a switch.
-  // Every spelling Chromium reads ("-webrtc-ip-handling-policy=...", "/..." on Windows) counts.
+  // Every spelling the engine reads ("-webrtc-ip-handling-policy=...", "/..." on Windows) counts.
   const webrtcPolicy = (a) => ["webrtc-ip-handling-policy", "force-webrtc-ip-handling-policy"].includes(switchName(a));
   const dropped = (merged.args ?? []).filter(webrtcPolicy);
-  if (dropped.length) log("launch: a WebRTC IP handling switch in chromeArgs was dropped: PairBrowse keeps WebRTC from showing this computer's addresses");
+  if (dropped.length) log("launch: a WebRTC IP handling switch in browserArgs was dropped: PairBrowse keeps WebRTC from showing this computer's addresses");
   const givenArgs = (merged.args ?? []).filter((a) => !webrtcPolicy(a));
   pack.emitCoherenceWarnings?.({ ...fingerprint, proxy: merged.proxy, geoip: settings.geoip, headless: merged.headless, userAgent: merged.userAgent, _userArgs: givenArgs.filter((a) => !/^--pairbrowse-helper(-key-file)?=/.test(String(a))) },
-    false, process.platform, CHROMIUM_MAJOR);
+    false, process.platform, ENGINE_MAJOR);
   const { args: proxyArgs, proxy } = pack.resolveProxy(merged.proxy, pack.engineSupportsSwitch(options.executablePath, "proxy-auth"));
   // The only extension a launch loads is PairBrowse's own, which the helper adds in its own
-  // --load-extension switch (browser.mjs browserArgs); one named anywhere else (a saved profile's
-  // "extensions") is left out and logged, as chromeArgs' --load-extension is.
+  // --load-extension switch (browser.mjs shellArgs); one named anywhere else (a saved profile's
+  // "extensions") is left out and logged, as browserArgs' --load-extension is.
   const own = splitExtensionArgs(givenArgs, []).extensionPaths;
   const strayExtensions = (Array.isArray(extensions) ? extensions : extensions ? [extensions] : []).filter((p) => !own.includes(p));
   if (strayExtensions.length) log(`launch: ${strayExtensions.length} extension${strayExtensions.length > 1 ? "s" : ""} besides PairBrowse's own dropped: the browser loads only its side panel`);
@@ -337,7 +337,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
     chromiumSandbox: options.chromiumSandbox !== false,
     args: options.chromiumSandbox === false ? gated.args : withoutNoSandbox(gated.args),
     // The driver's --disable-blink-features=AutomationControlled is left out too: the build keeps
-    // navigator.webdriver false on its own, and Chromium shows that switch in a warning bar above
+    // navigator.webdriver false on its own, and the engine shows that switch in a warning bar above
     // every page ("unsupported command-line flag").
     ignoreDefaultArgs: [...new Set([...pack.DEFAULT_IGNORED_ARGS, ...(merged.ignoreDefaultArgs ?? []), "--enable-automation", DRIVER_BLINK_SWITCH])],
   });

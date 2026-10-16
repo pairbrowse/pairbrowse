@@ -46,7 +46,7 @@ function assertKept(found, version, { written = false } = {}) {
   assert.equal(found.config.participantName, "Ann Example");
   assert.equal(found.config.maxTabs, written ? 14 : 12);
   assert.equal(found.config.screenshots, false);
-  assert.deepEqual(found.config.chromeArgs, ["--lang=en-US"]);
+  assert.deepEqual(found.config.browserArgs, ["--lang=en-US"]);
   assert.equal(found.config.liveViewPort, 4321);
   assert.deepEqual(found.config.joinHosts, ["share.example.org"]);
   assert.equal(found.config.browserEngine, "auto", "the older name is still there to read");

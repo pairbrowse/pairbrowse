@@ -58,7 +58,7 @@ export function createPagesRoutes({ history, layoutNow, layouts, sessionName, br
     } },
     // The browser's Settings page (the owner only): which browser runs, the timeline on/off and
     // cap, the docks' default layout, and nothing else (liveview/settings.mjs has the body shape).
-    // GET: { browser: "pairbrowse" | "chromium" | "<absolute path>", timeline: { on, cap },
+    // GET: { browser: "pairbrowse" | "pairbrowse-open" | "<absolute path>", timeline: { on, cap },
     // layout: { left, right, strip }, native: boolean (a build is pinned for this computer),
     // chosen: boolean (a person recorded the choice) }. POST: any subset of browser / timeline /
     // layout; answers the GET body plus restart: true while "browser" differs from the browser in

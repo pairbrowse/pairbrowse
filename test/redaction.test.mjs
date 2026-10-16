@@ -131,7 +131,7 @@ test("the diagnostics bundle: versions, build, settings and the last crash, with
     dirtyLog(m);
     writeFileSync(paths.config, JSON.stringify({
       browser: "chromium", screenshots: true, proxy: { server: "http://proxy.example:8080", username: "u", password: m.secret },
-      reportUrl: `https://r.example/api?k=${m.query}`, joinHosts: ["h.example"], chromeArgs: [`--x=${m.key}`, `--y="${m.typed}"`],
+      reportUrl: `https://r.example/api?k=${m.query}`, joinHosts: ["h.example"], browserArgs: [`--x=${m.key}`, `--y="${m.typed}"`],
       helperKey: m.key, nested: { cookie: m.cookie, note: `mail ${m.email}`, deeper: { a: { b: { c: m.typed } } } },
     }));
     const out = mkdtempSync(join(tmpdir(), "pb-bundle-"));

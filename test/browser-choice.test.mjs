@@ -26,30 +26,31 @@ const choose = (config, native = true) => {
 
 test("the choice: binary and where it runs from, for the setting, its older names and a pinned build", () => {
   const c = (browser, binary, executablePath, install, set = true) => ({ browser, binary, executablePath, install, set, problem: null });
-  // Unset: the pinned native build where there is one (installed first), else Chromium; nobody chose.
+  // Unset: the pinned native build where there is one (installed first), else the open build; nobody chose.
   assert.deepEqual(choose({}, true), c("pairbrowse", "native", null, true, false));
-  assert.deepEqual(choose({}, false), c("chromium", "chromium", null, false, false));
+  assert.deepEqual(choose({}, false), c("pairbrowse-open", "open", null, false, false));
   // "browser" itself.
   assert.deepEqual(choose({ browser: "pairbrowse" }), c("pairbrowse", "native", null, true));
-  assert.deepEqual(choose({ browser: "chromium" }), c("chromium", "chromium", null, false));
+  assert.deepEqual(choose({ browser: "pairbrowse-open" }), c("pairbrowse-open", "open", null, false));
+  assert.deepEqual(choose({ browser: "chromium" }), c("pairbrowse-open", "open", null, false), "the older name");
   assert.deepEqual(choose({ browser: "/opt/brave" }), c("/opt/brave", "custom", "/opt/brave", false));
   // The older names: a native build of your own runs as it is; the pinned one's own path is the pinned build.
   assert.deepEqual(choose({ browserEngine: "pairbrowse", executablePath: "/my/native/pairbrowse" }), c("pairbrowse", "native", "/my/native/pairbrowse", false));
   assert.deepEqual(choose({ browserEngine: "pairbrowse", executablePath: PINNED }), c("pairbrowse", "native", null, true));
   assert.deepEqual(choose({ browserEngine: "pairbrowse" }), c("pairbrowse", "native", null, true));
   assert.deepEqual(choose({ browserEngine: "chromium", executablePath: "/fake/chrome" }), c("/fake/chrome", "custom", "/fake/chrome", false));
-  assert.deepEqual(choose({ browserEngine: "chromium" }, true), c("chromium", "chromium", null, false));
-  // "browser" wins over the older names; a bad value is Chromium, with the line for the log.
-  assert.equal(choose({ browser: "chromium", browserEngine: "pairbrowse", executablePath: "/x" }).binary, "chromium");
-  assert.match(choose({ browser: "brave" }).problem, /must be "pairbrowse", "chromium" or an absolute path/);
+  assert.deepEqual(choose({ browserEngine: "chromium" }, true), c("pairbrowse-open", "open", null, false));
+  // "browser" wins over the older names; a bad value is the open build, with the line for the log.
+  assert.equal(choose({ browser: "chromium", browserEngine: "pairbrowse", executablePath: "/x" }).binary, "open");
+  assert.match(choose({ browser: "brave" }).problem, /must be "pairbrowse", "pairbrowse-open" or an absolute path/);
 });
 
 test("the launch layer gets a copy with the older names; config stays as written", () => {
-  const config = Object.freeze({ browser: "pairbrowse", chromeArgs: ["--x"], pairbrowse: { persona: 1 } });
+  const config = Object.freeze({ browser: "pairbrowse", browserArgs: ["--x"], pairbrowse: { persona: 1 } });
   const engine = engineConfig(config, { binary: "native", executablePath: PINNED });
   assert.deepEqual(engine, { ...config, browserEngine: "pairbrowse", executablePath: PINNED });
-  assert.deepEqual(engineConfig(config, { binary: "custom", executablePath: "/opt/brave" }).browserEngine, "chromium");
-  assert.equal(engineConfig(config, { binary: "chromium" }).executablePath, null);
+  assert.deepEqual(engineConfig(config, { binary: "custom", executablePath: "/opt/brave" }).browserEngine, "open");
+  assert.equal(engineConfig(config, { binary: "open" }).executablePath, null);
 });
 
 test("the shell: the side panel extension unless the build declares its own pages", () => {
@@ -60,8 +61,8 @@ test("the shell: the side panel extension unless the build declares its own page
   assert.deepEqual(shellFrom({ chrome: 1, capture: 2 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true });
   let reads = 0;
   const read = (p) => { reads++; if (p === "/bad") throw new Error("no manifest"); return { chrome: 1 }; };
-  assert.equal(shellOf({ browserEngine: "chromium", executablePath: "/x" }, read), EXTENSION_SHELL);
-  assert.equal(reads, 0, "a Chromium binary's manifest is never read");
+  assert.equal(shellOf({ browserEngine: "open", executablePath: "/x" }, read), EXTENSION_SHELL);
+  assert.equal(reads, 0, "an open build's manifest is never read");
   assert.equal(shellOf({ browserEngine: "pairbrowse", executablePath: "/bad" }, read), EXTENSION_SHELL, "a manifest that doesn't read: the extension");
   assert.equal(shellOf({ browserEngine: "pairbrowse", executablePath: "/ok" }, read).kind, "pages");
 });
@@ -110,7 +111,7 @@ async function fakeContext(config) {
 test("a launch keeps its choice to itself, and a native profile alone is something to go back to", { timeout: 30_000 }, async () => {
   writeFileSync(join(home, "config.json"), "{}");
   mkdirSync(join(home, "run"), { recursive: true });
-  // Only the native build ran here before: its profile folder, nothing in the Chromium one.
+  // Only the native build ran here before: its profile folder, nothing in the open build's one.
   mkdirSync(join(home, "profile", "pairbrowse-native", "Default"), { recursive: true });
   const config = { browserEngine: "auto", executablePath: "/fake/chrome", display: "none" };
   const written = JSON.stringify(config);
@@ -121,7 +122,7 @@ test("a launch keeps its choice to itself, and a native profile alone is somethi
   assert.equal(context.browserInUse(), "/fake/chrome");
   assert.deepEqual(context.shell(), EXTENSION_SHELL);
   assert.equal(launched.length, 1);
-  assert.equal(launched[0].profile, join(home, "profile"), "a Chromium binary runs in the Chromium profile");
+  assert.equal(launched[0].profile, join(home, "profile"), "a browser of your own runs in the open build's profile");
   assert.equal(launched[0].options.executablePath, "/fake/chrome");
   assert.equal(context.choiceConfig(), config);
   await context.close();

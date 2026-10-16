@@ -16,7 +16,7 @@ async function posted(helper, page, what, route, body) {
   assert.fail(`no post for ${what}: ${JSON.stringify(helper.posts)}`);
 }
 // A test that runs as the browser's own page and again as the extension's options page (plain
-// Chromium: no window.pairbrowse, the extension's storage holds the helper's address): every
+// The engine: no window.pairbrowse, the extension's storage holds the helper's address): every
 // section works the same in both.
 const both = (opts, fn) => { pageTest("settings", opts, fn); pageTest("settings", { ...opts, native: false }, fn); };
 const live = () => document.body.dataset.s === "live";
@@ -40,8 +40,8 @@ both({ fixtures, viewport: VIEW }, async ({ helper, until, inPage, errors }) => 
   }));
   assert.deepEqual(top.ids, ["general", "agents", "sharing", "data", "about"]);
   assert.deepEqual(top.nav, [["General", "#general"], ["Agents and approvals", "#agents"], ["Sharing", "#sharing"], ["Your data", "#data"], ["About and diagnostics", "#about"], ["Browser settings", "chrome://settings"]]);
-  const ext = top.host === "chromium";
-  assert.equal(top.host, ext ? "chromium" : "pairbrowse");
+  const ext = top.host === "open";
+  assert.equal(top.host, ext ? "open" : "pairbrowse");
   assert.deepEqual(top.docks, ["open", "open"]);
   // The extension has no docks: a short note says where PairBrowse is instead, and the Tools
   // tab's lists get a button that opens them in the side panel.
@@ -76,8 +76,8 @@ both({ fixtures, viewport: VIEW }, async ({ helper, until, inPage, errors }) => 
 // 2. General and the pictures write through POST config; a refusal says why and keeps the helper's value.
 both({ fixtures, viewport: VIEW }, async ({ page, helper, until, inPage }) => {
   await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
-  await page.click("input[name=browser][value=chromium]");
-  await posted(helper, page, "the browser", "config", { browser: "chromium" });
+  await page.click("input[name=browser][value=pairbrowse-open]");
+  await posted(helper, page, "the browser", "config", { browser: "pairbrowse-open" });
   await until("restart note", () => document.getElementById("browser-msg").textContent === "Saved. PairBrowse uses it from the browser's next start.");
 
   await page.click("input[name=browser][value=path]");
@@ -240,7 +240,8 @@ both({ fixtures, viewport: VIEW }, async ({ page, helper, until, inPage }) => {
   assert.equal(before.what, "The switcher said a session is already chosen.");
   assert.equal(before.tab, null);
   assert.equal(before.schema, "pairbrowse-report/1");
-  assert.deepEqual(before.app, { host: await inPage(() => document.body.dataset.host), page: "settings", helper: "0.15.45", browser: { engine: "pairbrowse", version: "142.0.7444.59", build: "3" } });
+  // The report service's wire value for the open build is "chromium" (ui/report.js).
+  assert.deepEqual(before.app, { host: (await inPage(() => document.body.dataset.host)) === "pairbrowse" ? "pairbrowse" : "chromium", page: "settings", helper: "0.15.45", browser: { engine: "pairbrowse", version: "142.0.7444.59", build: "3" } });
   assert.equal(before.diagnostics, "PairBrowse diagnostics\nhelper 0.15.45\n");
   assert.equal(before.helperState.connection, "live");
   for (const k of ["profile", "secrets", "details", "cookies", "tabs"]) assert.ok(!(k in before), k);
@@ -298,12 +299,12 @@ pageTest("settings", { fixtures: { ...fixtures, sent: { status: 502, body: { err
   await until("retry", () => document.getElementById("report-send").textContent === "Try again" && !document.getElementById("report-send").disabled);
 });
 
-// 9. The extension's options page in plain Chromium (no window.pairbrowse): no docks, the side
+// 9. The extension's options page in the open build (no window.pairbrowse): no docks, the side
 // panel named instead of the window, and Browser settings through chrome.tabs or a plain line.
 pageTest("settings", { fixtures, native: false, viewport: VIEW }, async ({ page, until, inPage, errors }) => {
   await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
   const s = await inPage(() => ({ host: document.body.dataset.host, docks: document.getElementById("docks").hidden, about: document.getElementById("about-host").textContent, invites: document.getElementById("invites-text").textContent }));
-  assert.deepEqual(s, { host: "chromium", docks: true, about: "PairBrowse extension in a test browser", invites: "Make a join code or a watch link with Share in the PairBrowse side panel. Each one asks you before anyone gets in." });
+  assert.deepEqual(s, { host: "open", docks: true, about: "The PairBrowse extension", invites: "Make a join code or a watch link with Share in the PairBrowse side panel. Each one asks you before anyone gets in." });
   await page.click("#browser-settings");
   await until("the plain line", () => document.getElementById("diag-msg").textContent === "Type chrome://settings in the address bar to open the browser's settings.");
   await inPage(() => { window.__opened = []; window.chrome.tabs = { create: (o) => { window.__opened.push(o.url); } }; });

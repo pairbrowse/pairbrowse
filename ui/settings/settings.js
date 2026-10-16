@@ -1,5 +1,5 @@
 // PairBrowse Settings (pairbrowse://settings in the PairBrowse browser; settings/index.html, the
-// extension's options page, in Chromium). Organized by what people come for (DESIGN.md Part H):
+// extension's options page, in the open build). Organized by what people come for (DESIGN.md Part H):
 // General, Agents and approvals, Sharing, Your data, About and diagnostics, and one link to the
 // browser's own settings. Every control reads the helper's current value and writes through a real
 // owner route with the owner's key: config.json / config (the browser, the docks at a session's
@@ -14,8 +14,8 @@ import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload
 import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
 
 const NATIVE = hostKind() === "native";
-const HOST = NATIVE ? "The PairBrowse browser" : "PairBrowse extension in a test browser";
-document.body.dataset.host = NATIVE ? "pairbrowse" : "chromium";
+const HOST = NATIVE ? "The PairBrowse browser" : "The PairBrowse extension";
+document.body.dataset.host = NATIVE ? "pairbrowse" : "open";
 $("about-host").textContent = HOST;
 if (!NATIVE) {
   // The extension's side panel holds Tools and Share; the window's docks are not there.
@@ -57,14 +57,14 @@ function setConn(state, text) {
 function drawConfig(c) {
   config = c && typeof c === "object" ? c : null;
   const have = !!config;
-  // The docks are the PairBrowse browser's window; the extension's Chromium has none.
+  // The docks are the PairBrowse browser's window; the open build has none.
   // An item for a field this helper doesn't answer with (an older helper) stays off the page.
   for (const n of document.querySelectorAll(".cfg-item")) n.hidden = !have || (!NATIVE && n.classList.contains("native-only")) || (!!n.dataset.field && !(n.dataset.field in config));
   for (const n of document.querySelectorAll(".cfg-missing")) n.hidden = have;
   if (!have) { applySearch(); return; }
   // The browser.
   const b = String(config.browser || "");
-  const which = b === "pairbrowse" || b === "chromium" ? b : b ? "path" : "";
+  const which = b === "pairbrowse" ? b : b === "pairbrowse-open" || b === "chromium" ? "pairbrowse-open" : b ? "path" : "";
   for (const r of document.querySelectorAll("input[name=browser]")) r.checked = r.value === which;
   const pbRadio = document.querySelector("input[name=browser][value=pairbrowse]");
   pbRadio.disabled = !config.native && b !== "pairbrowse";
@@ -343,7 +343,7 @@ function drawDiag(d) {
   diag = d && typeof d === "object" ? d : null;
   const h = diag?.helper || {}, b = diag?.browser || {}, c = diag?.connections || {};
   $("about-helper").textContent = h.version ? `${h.version}${h.node ? ` · Node ${h.node}` : ""}` : "Not reported";
-  $("about-browser").textContent = b.engine ? [b.engine === "pairbrowse" ? "PairBrowse" : b.engine === "chromium" ? "Test browser" : String(b.engine), b.version, b.build ? `build ${b.build}` : ""].filter(Boolean).join(" ") : "Not reported";
+  $("about-browser").textContent = b.engine ? [b.engine === "pairbrowse" ? "PairBrowse" : b.engine === "open" || b.engine === "chromium" ? "PairBrowse (open build)" : String(b.engine), b.version, b.build ? `build ${b.build}` : ""].filter(Boolean).join(" ") : "Not reported";
   const n = (k, one, many) => { const v = Number(c[k]) || 0; return `${v} ${v === 1 ? one : many}`; };
   $("about-agents").textContent = diag ? [n("agents", "agent", "agents"), n("joiners", "person joined", "people joined"), n("viewers", "viewer", "viewers")].join(" · ") : "Not reported";
   const errors = Array.isArray(diag?.errors) ? diag.errors.slice(-5).reverse() : [];

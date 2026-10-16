@@ -65,15 +65,15 @@ async function setup({ file = ON_DISK, native = true, inUse = "pairbrowse", time
 
 // The fields every answer carries besides browser, timeline, layout, native and chosen, as a
 // config with none of them set reads.
-const MORE = { name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, report: true }; // report: on by default (PairBrowse's own address, paths.mjs)
+const MORE = { name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, report: true, settingsSection: false }; // report: on by default (PairBrowse's own address, paths.mjs)
 
-test("GET config.json: exactly its twelve keys, the choice as browserChoice reads it", async () => {
+test("GET config.json: exactly its thirteen keys, the choice as browserChoice reads it", async () => {
   const { view, key } = await setup();
   try {
     const r = await request(view.port, "GET", `/${key}/config.json`);
     assert.equal(r.status, 200);
     const body = JSON.parse(r.text);
-    assert.deepEqual(Object.keys(body).sort(), ["askSession", "browser", "chosen", "cookies", "downloads", "layout", "maxTabs", "name", "native", "pictures", "report", "timeline"]);
+    assert.deepEqual(Object.keys(body).sort(), ["askSession", "browser", "chosen", "cookies", "downloads", "layout", "maxTabs", "name", "native", "pictures", "report", "settingsSection", "timeline"]);
     assert.deepEqual(body, { browser: "pairbrowse", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, name: "Ann", native: true, chosen: false });
     assert.ok(!r.text.includes(TOKEN) && !r.text.includes("share.example.org"), "no other setting in the answer");
   } finally { view.close(); }
@@ -85,6 +85,11 @@ test("GET config.json: exactly its twelve keys, the choice as browserChoice read
   assert.deepEqual(readSettings({ timeline: false, timelineCap: 12, layout: { left: "rail", strip: 1000 } }).timeline, { on: false, cap: 12 });
   assert.deepEqual(readSettings({ layout: { left: "rail", strip: 1000 } }).layout, { left: "open", right: "open", strip: 88 }, "an invalid layout reads as the fallback");
   assert.equal(readSettings({ timelineCap: 500 }).timeline.cap, 200);
+  // settingsSection: the browser's build has its settings as the engine settings' PairBrowse
+  // section (its manifest's settingsSection, 580), a boolean and nothing more.
+  assert.equal(readSettings({}, { settingsSection: true }).settingsSection, true);
+  assert.equal(readSettings({}, { settingsSection: "yes" }).settingsSection, true);
+  assert.equal(readSettings({}).settingsSection, false);
 });
 
 test("watch and drive links get 403; the join-code port never serves the settings", async () => {

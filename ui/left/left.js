@@ -13,7 +13,7 @@
 import { $, el, avatar, agentWords, ownAgentLine, isColor, splitLabel, pickerPopover, askDock, helperConnection, servedByBrowser, syncList, enter } from "../common.js";
 import { isOwnTabPage, isSettingsPage, ownPage, settingsPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
-import { followHelper } from "../helper.js";
+import { followHelper, settingsSectionAt } from "../helper.js";
 
 const pb = window.pairbrowse ?? null;
 // The browser build serves the dock itself (chrome://pairbrowse.top-chrome), with or without the
@@ -302,7 +302,8 @@ function findOrOpen(match, url) {
   pb.tabs.create(url, true, w).catch(() => {});
 }
 const openHistory = () => findOrOpen(isHistory, "chrome://history");
-const openSettings = () => findOrOpen(isSettingsPage, settingsPage());
+// Settings: the engine settings' PairBrowse section in a build with it (580), else its tab page.
+const openSettings = async () => { if (pb) findOrOpen(isSettingsPage, settingsPage("", await settingsSectionAt(base))); };
 function openBrowser() {
   if (pb && lastWebTab >= 0 && tabs.has(lastWebTab) && !tabs.get(lastWebTab).active) pb.tabs.activate(lastWebTab).catch(() => {});
 }

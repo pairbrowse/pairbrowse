@@ -110,7 +110,7 @@ export const defaultFixtures = () => ({
   // plus `report`: true when the helper relays problem reports (the follow-up route POST report;
   // not in liveview.mjs yet). running: the browser of the window open now (restart in the answer).
   config: { browser: "pairbrowse", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 },
-    name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, native: true, chosen: true, report: false },
+    name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, native: true, chosen: true, report: false, settingsSection: false },
   // The agents at work in the browser now (their names): a switch asks first (428) while any are.
   agents: [],
   // GET invites.json: the invites out now, never a key, code or link (null: 404).

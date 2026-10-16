@@ -50,6 +50,11 @@ export const capturePages = (manifest) => Number.isInteger(manifest?.capture) &&
 // `capture` 2 and up: the capture page reads its own key from the file --pairbrowse-capture-key-file
 // names and sends it (ck) on its stream and its replies; the helper then requires it.
 export const captureKeyed = (manifest) => Number.isInteger(manifest?.capture) && manifest.capture >= 2;
+// The build manifest's `settingsSection` field (1 and up, 580): PairBrowse's settings are the
+// engine settings' PairBrowse section (chrome://settings/pairbrowse, which frames
+// chrome://pairbrowse/settings/). Absent (older builds): the settings page is the tab page
+// chrome://pairbrowse/settings itself.
+export const settingsSection = (manifest) => Number.isInteger(manifest?.settingsSection) && manifest.settingsSection >= 1;
 
 // A command's output, trimmed, or "" when it fails or takes over 10 s. Never execFileSync here:
 // the helper serves its live view and every other caller while these run.

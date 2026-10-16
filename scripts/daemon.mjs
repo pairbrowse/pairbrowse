@@ -479,7 +479,7 @@ const sharing = createSharing({
     activityLog,
     // The browser's Settings page: which browser runs, the timeline, the docks' default layout
     // (liveview/settings.mjs; written into config.json and the running config).
-    settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), browserInUse: () => context.browserInUse() }),
+    settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), settingsSection: () => !!context.nextShell().settingsSection, browserInUse: () => context.browserInUse() }),
     // Report a problem: relayed to config.json's reportUrl on the person's click (liveview/report.mjs).
     reporter: createReporter({ url: () => config.reportUrl, mask: output.mask, log }),
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;

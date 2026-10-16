@@ -18,10 +18,12 @@ import { pruneStaleContexts } from "../exec-contexts.mjs";
 // A build with its own pages shows its own picker instead (BROWSER_PICKER, ui/urls.js).
 // The shell of the browser an engine config launches (browser/choice.mjs shellOf): whether it is a
 // native build that declares its own pages (its build manifest's `chrome` field), whether that build also
-// declares its capture page, and whether that page reads a key of its own. Tests pass their own.
+// declares its capture page, whether that page reads a key of its own, and whether its settings are
+// the engine settings' PairBrowse section (580). Tests pass their own.
 export const browserPagesIn = (engine) => shellOf(engine).ownPages;
 export const capturePagesIn = (engine) => shellOf(engine).capturePage;
 export const captureKeyedIn = (engine) => shellOf(engine).captureKeyed;
+export const settingsSectionIn = (engine) => shellOf(engine).settingsSection;
 
 // This Mac's one-time capture (native-engine.mjs MEASURING): the first launch of a browser version
 // waits up to a minute for it, and says so in the live view's status line and a notification (no
@@ -46,7 +48,7 @@ export function measuringLog({ log, status, notify }) {
 const RESTORE_WAIT_MS = 3000;
 
 export function createLaunch(st, deps, api) {
-  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, helperFor } = deps;
+  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, helperFor } = deps;
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
   const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
 
@@ -68,7 +70,7 @@ export function createLaunch(st, deps, api) {
   const shellFor = (e) => {
     const ownPages = !!browserPagesOf(e);
     const capturePage = ownPages && !!capturePagesOf(e);
-    return { kind: ownPages ? "pages" : "extension", ownPages, capturePage, captureKeyed: capturePage && !!captureKeyedOf(e) };
+    return { kind: ownPages ? "pages" : "extension", ownPages, capturePage, captureKeyed: capturePage && !!captureKeyedOf(e), settingsSection: ownPages && !!settingsSectionOf(e) };
   };
   const said = new Set(); // lines about the choice, logged once per helper run
   const once = (line) => { if (!said.has(line)) { said.add(line); log(line); } };

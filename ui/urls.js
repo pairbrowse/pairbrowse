@@ -12,9 +12,11 @@
 // what a tab reports): every host keeps its own name (pairbrowse://settings is the engine's
 // settings, pairbrowse://chrome-urls its list of pages), and the older renamed hosts
 // (browser-settings, browser-newtab, browser-signin) only forward to theirs. PairBrowse's own
-// settings are a "PairBrowse" section of the engine's settings (patch 580):
+// settings are, in a build that declares it (its manifest's settingsSection, 580; the helper's
+// config.json says so to the pages), a "PairBrowse" section of the engine's settings:
 // chrome://settings/pairbrowse[#section], shown as pairbrowse://settings/pairbrowse, which frames
-// chrome://pairbrowse/settings/; that old address opened as a tab goes there.
+// chrome://pairbrowse/settings/; that old address opened as a tab goes there. In an older build
+// (no settingsSection) the settings page is that tab page itself, opened as pairbrowse://settings.
 
 export const TOP_SHELL_HOST = "pairbrowse.top-chrome";
 export const TAB_HOST = "pairbrowse";
@@ -25,14 +27,17 @@ export const ownPage = (name) => `pairbrowse://${name}`;
 // The session picker and the joiner's picture page, in a build with its own pages.
 export const BROWSER_PICKER = `chrome://${TAB_HOST}/picker`;
 export const BROWSER_SCREEN = `chrome://${TAB_HOST}/screen/`;
-// PairBrowse's own settings, at one of its sections ("passwords"), by the name the browser shows:
-// the engine settings' PairBrowse section (580), which frames the page.
-export const settingsPage = (section = "") => ownPage(`settings/pairbrowse${section ? `#${section}` : ""}`);
+// PairBrowse's own settings, at one of its sections ("passwords"), by the name the browser shows.
+// section: the build has the engine settings' PairBrowse section (580), which frames the page
+// (pairbrowse://settings/pairbrowse#passwords); else the tab page itself (pairbrowse://settings#passwords).
+export const settingsPage = (at = "", section = false) => ownPage(`settings${section ? "/pairbrowse" : ""}${at ? `#${at}` : ""}`);
 // The engine's settings page around it (chrome://settings), where its frame posts its height.
 export const ENGINE_SETTINGS_ORIGIN = "chrome://settings";
-// Settings' report section, as a link a plain browser shows (the older own address,
-// chrome://pairbrowse/settings#report, still goes there).
-export const REPORT_URL = `${ENGINE_SETTINGS_ORIGIN}/pairbrowse#report`;
+// Settings' report section, as a link a plain browser shows: the tab page's (an older build), and
+// the engine settings' section's (a build with it; the older address still goes there).
+export const REPORT_URL = `chrome://${TAB_HOST}/settings#report`;
+export const REPORT_SECTION_URL = `${ENGINE_SETTINGS_ORIGIN}/pairbrowse#report`;
+export const reportUrl = (section = false) => (section ? REPORT_SECTION_URL : REPORT_URL);
 
 // Every pairbrowse: address is the browser's own, whichever spelling a tab or a call carries:
 // never an agent's to open, read or act in. So is the engine's settings page (chrome://settings
@@ -58,10 +63,11 @@ export const isShownScreenPage = (url) => /^pairbrowse:\/\/screen(?:[/#?]|$)/.te
 // window.pairbrowse; anything else is a page in a plain browser (the extension, the harness).
 export const servedByBrowser = (loc = globalThis.location) => loc?.protocol === "chrome:" && (loc.host === TOP_SHELL_HOST || loc.host === TAB_HOST);
 // Where PairBrowse's settings page goes when the browser opened it as a whole tab of its own
-// (framed: false): its home, the engine settings' PairBrowse section at the same section
-// (chrome://settings/pairbrowse#report). null where it stays: framed there, or not the browser's
+// (framed: false) in a build with the settings section (section: true): its home, the engine
+// settings' PairBrowse section at the same section (chrome://settings/pairbrowse#report). null
+// where it stays: framed there, an older build (the tab page is its home), or not the browser's
 // own page (the extension's options page, the harness).
-export const settingsHomeFor = (loc = globalThis.location, framed = true) => (!framed && servedByBrowser(loc) && loc.host === TAB_HOST ? `${ENGINE_SETTINGS_ORIGIN}/pairbrowse${loc.hash || ""}` : null);
+export const settingsHomeFor = (loc = globalThis.location, framed = true, section = false) => (section && !framed && servedByBrowser(loc) && loc.host === TAB_HOST ? `${ENGINE_SETTINGS_ORIGIN}/pairbrowse${loc.hash || ""}` : null);
 
 // The side panel extension's pages: chrome-extension://<id>/<path>, and the origin such a page
 // sends (URL.origin is "null" for chrome-extension: URLs).

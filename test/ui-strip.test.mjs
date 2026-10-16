@@ -445,6 +445,32 @@ describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, sh
   assert.notEqual(await inPage(() => document.activeElement?.closest?.("#brand") ? "brand" : "elsewhere"), "brand");
 }));
 
+// One page for both builds: the shell sizes the strip page to its tab row (53 px before 580, 47
+// since), and every place on the row follows from that height. The tabs run from 6 px under the
+// top to the row's bottom edge; the logo, the wordmark, a tab's icon, title and close, the + and
+// the right end's controls share the shell's line (kTabRowLine: 30, then 27), within 0.5 px.
+for (const [row, line] of [[53, 30], [47, 27]]) {
+  describe(`one line through a ${row} px row, at ${line} px`, () => pageTest("strip", { viewport: { width: 1200, height: row } }, async ({ inPage }) => {
+    const at = await inPage(() => {
+      const mid = (r) => r.top + r.height / 2;
+      const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+      const text = (sel) => { const r = document.createRange(); r.selectNodeContents(document.querySelector(sel)); return r.getBoundingClientRect(); };
+      const tab = box("#tabs li");
+      return {
+        row: box("#row").height, tab: [tab.top, tab.bottom],
+        mids: { logo: mid(box("#brand img")), word: mid(text("#brand .wordmark")), icon: mid(box("#tabs li .icon")), title: mid(box("#tabs li .title")), titleText: mid(text("#tabs li .title")), close: mid(box("#tabs li .close")), new: mid(box("#new")),
+          ...Object.fromEntries([...document.querySelectorAll("#right > :not([hidden])")].filter((e) => e.getBoundingClientRect().height > 0).map((e) => [e.id, mid(e.getBoundingClientRect())])) },
+      };
+    });
+    assert.equal(at.row, row, "the row is the slot's height");
+    assert.deepEqual(at.tab, [6, row], `the tabs ${row - 6} px from 6 px down to the row's bottom edge`);
+    assert.ok(Object.keys(at.mids).length >= 8, JSON.stringify(at.mids));
+    // Every box within 0.5 px; the title text's own box (the font's ascent and descent) within
+    // 0.75, as in the brand test.
+    for (const [what, y] of Object.entries(at.mids)) assert.ok(Math.abs(y - line) <= (what === "titleText" ? 0.75 : 0.5), `${what}'s centre ${y} on the ${line} px line`);
+  }));
+}
+
 // Thirty tabs in the mockup's 1494 px window: the tabs keep B2's 160 px minimum and the row
 // scrolls; the active tab is always fully in view (24 px clear of either edge, the fade's width),
 // the vertical wheel scrolls the row, and an edge with hidden tabs fades (plans/555 item 3).
@@ -620,7 +646,7 @@ describe("share card opens and posts an invite", () => pageTest("strip", { viewp
     const r = c.getBoundingClientRect();
     return { hidden: c.hidden, role: c.getAttribute("role"), expanded: document.getElementById("share-btn").getAttribute("aria-expanded"), w: r.width, top: r.top, right: innerWidth - r.right, focus: document.activeElement.value };
   });
-  assert.deepEqual(card, { hidden: false, role: "dialog", expanded: "true", w: 320, top: 47, right: 12, focus: "code" });
+  assert.deepEqual(card, { hidden: false, role: "dialog", expanded: "true", w: 320, top: 53, right: 12, focus: "code" });
   await page.click("#share-make");
   await until("the code", () => document.getElementById("share-code").value === "pb-join:FAKE");
   assert.deepEqual(helper.posts.filter((p) => p.route === "invite").map((p) => p.body), [{ share: "code" }]);
@@ -634,7 +660,9 @@ describe("share card opens and posts an invite", () => pageTest("strip", { viewp
   assert.equal(await inPage(() => document.getElementById("share-card").hidden), true);
 }));
 
-describe("menu: PairBrowse settings, found or opened", () => pageTest("strip", { viewport: TALL }, async ({ page, shim, inPage }) => {
+// Settings: the engine settings' PairBrowse section in a build that has it (the helper's
+// config.json settingsSection, 580), else the tab page of an older build.
+for (const [section, settingsUrl] of [[false, "pairbrowse://settings"], [true, "pairbrowse://settings/pairbrowse"]]) describe(`menu: PairBrowse settings, found or opened (${section ? "the settings section" : "an older build"})`, () => pageTest("strip", { viewport: TALL, fixtures: { config: { settingsSection: section } } }, async ({ page, shim, inPage }) => {
   // Part H: the menu holds only PairBrowse settings; New window, Zoom and Record are gone.
   assert.equal(await inPage(() => document.getElementById("menu-btn").getAttribute("aria-haspopup")), "menu");
   await page.click("#menu-btn");
@@ -653,15 +681,15 @@ describe("menu: PairBrowse settings, found or opened", () => pageTest("strip", {
   await page.click("#menu-btn");
   await page.click("#settings");
   await page.waitForTimeout(100);
-  assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://settings/pairbrowse", true, 1]]);
+  assert.deepEqual(await callsOf(shim, "tabs", "create"), [[settingsUrl, true, 1]]);
   assert.equal(await inPage(() => document.getElementById("menu").hidden), true);
   // An open settings tab in this window is brought forward, not opened twice.
-  const id = await inPage(async () => (await window.pairbrowse.tabs.list()).tabs.find((t) => t.url === "pairbrowse://settings/pairbrowse")?.id);
+  const id = await inPage(async (u) => (await window.pairbrowse.tabs.list()).tabs.find((t) => t.url === u)?.id, settingsUrl);
   if (id !== undefined) {
     await page.click("#menu-btn");
     await page.click("#settings");
     await page.waitForTimeout(100);
-    assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://settings/pairbrowse", true, 1]]);
+    assert.deepEqual(await callsOf(shim, "tabs", "create"), [[settingsUrl, true, 1]]);
     assert.ok((await callsOf(shim, "tabs", "activate")).some((c) => c[0] === id));
   }
 }));

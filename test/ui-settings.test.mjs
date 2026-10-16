@@ -610,6 +610,17 @@ pageTest("settings", { fixtures, viewport: VIEW, frame: "report" }, async ({ unt
   assert.deepEqual(errors, []);
 });
 
+// A build with the settings section (config.json settingsSection): framed there, the page stays
+// (only a whole tab of its own goes to the section) and is embedded as in any build.
+pageTest("settings", { fixtures: { ...fixtures, config: { ...fixtures.config, settingsSection: true } }, viewport: VIEW, frame: true }, async ({ until, inPage, top, errors }) => {
+  await until("the stream", live);
+  await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
+  assert.equal((await inPage(chromeOf)).embedded, true);
+  assert.match(await top(() => document.getElementById("framed").contentWindow.location.pathname), /\/settings\/index\.html$/, "not sent anywhere");
+  assert.ok((await top(heights)).length > 0);
+  assert.deepEqual(errors, []);
+});
+
 // The extension's options page is never embedded, even in a frame (the open build is unchanged).
 pageTest("settings", { fixtures, viewport: VIEW, frame: true, native: false }, async ({ until, inPage, top, errors }) => {
   await until("the stream", live);

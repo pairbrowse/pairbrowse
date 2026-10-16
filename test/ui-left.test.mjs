@@ -146,16 +146,26 @@ scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }
 });
 
 // Settings is found by its address under either spelling, with or without a section after "#"
-// (chrome://settings/pairbrowse#report, the report offer's link, as its tab reports it): the tab
-// comes forward, none is opened.
-scenario("left: Settings finds a Settings tab open at a section", { viewport: OPEN }, async (ctx) => {
+// (the report offer's link, as its tab reports it: the tab page's in an older build, the engine
+// settings' PairBrowse section's in one with it): the tab comes forward, none is opened.
+for (const url of ["chrome://pairbrowse/settings#report", "chrome://settings/pairbrowse#report"]) scenario(`left: Settings finds a Settings tab open at a section (${url})`, { viewport: OPEN }, async (ctx) => {
   const { until } = ctx;
-  const id = await ctx.shim.createTab({ url: "chrome://settings/pairbrowse#report", title: "Settings", active: false });
-  await until("the tab", (u) => window.__pairbrowse.fixture.tabs.some((t) => t.url === u), "chrome://settings/pairbrowse#report");
+  const id = await ctx.shim.createTab({ url, title: "Settings", active: false });
+  await until("the tab", (u) => window.__pairbrowse.fixture.tabs.some((t) => t.url === u), url);
   await ctx.page.click("#settings");
   await until("Settings forward", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "activate"));
   assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [id]);
   assert.equal((await calls(ctx, "tabs", "create")).length, 0, "no second Settings tab");
+  await clean(ctx);
+});
+
+// No Settings tab: one opens, at the tab page in an older build, at the engine settings' PairBrowse
+// section in a build with it (the helper's config.json settingsSection, 580).
+for (const [section, url] of [[false, "pairbrowse://settings"], [true, "pairbrowse://settings/pairbrowse"]]) scenario(`left: Settings opens ${url}`, { viewport: OPEN, fixtures: { config: { settingsSection: section } } }, async (ctx) => {
+  await ctx.until("the stream", () => document.body.dataset.s === "live" || !!window.__pairbrowse);
+  await ctx.page.click("#settings");
+  await ctx.until("a Settings tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args[0]), [url]);
   await clean(ctx);
 });
 

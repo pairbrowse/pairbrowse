@@ -303,7 +303,7 @@ test("the capture page's own key: its own file and switch, new at each launch, o
   const fakePage = (ctx) => { const page = { on() {}, once() {}, listeners: () => [], isClosed: () => false, context: () => ctx, url: () => page.at, goto: async (u) => { page.at = u; }, close: async () => {}, bringToFront: async () => {}, setContent: async () => {}, evaluate: async () => {}, at: "about:blank" }; return page; };
   const fakeContext = () => { const ctx = new EventEmitter(); const pages = [fakePage(ctx)]; Object.assign(ctx, { pages: () => pages, addInitScript: async () => {}, newPage: async () => { const p = fakePage(ctx); pages.push(p); return p; }, browser: () => null, close: async () => { ctx.emit("close"); } }); return ctx; };
   const quiet = () => {};
-  const run = async (keyed) => {
+  const run = async (keyed, section = false) => {
     const launches = [], keys = [];
     const context = createContext({
       config: { browserEngine: "chromium", executablePath: "/fake/chrome", display: "none" }, log: quiet,
@@ -311,17 +311,21 @@ test("the capture page's own key: its own file and switch, new at each launch, o
       hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
       presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
       shuttingDown: () => false, onStarted: quiet, onClosed: quiet,
-      browserPagesOf: () => true, capturePagesOf: () => true, captureKeyedOf: () => keyed,
+      browserPagesOf: () => true, capturePagesOf: () => true, captureKeyedOf: () => keyed, settingsSectionOf: () => section,
       helperFor: async () => ({ origin: "http://127.0.0.1:4321", key: randomBytes(32).toString("base64url"), newCaptureKey: (on) => { const k = on ? randomBytes(32).toString("base64url") : null; keys.push(k); return k; } }),
     });
     await context.getContext();
     return { args: launches[0].args, keys, context };
   };
   const plain = await run(false);
+  // The build's settings section (580) is part of its shell, read with it.
+  assert.equal(plain.context.shell().settingsSection, false);
   assert.ok(!plain.args.some((a) => a.startsWith("--pairbrowse-capture-key-file=")), "a build that reads none gets none");
   assert.deepEqual(plain.keys, [null]);
   await plain.context.close?.();
-  const keyed = await run(true);
+  const keyed = await run(true, true);
+  assert.equal(keyed.context.shell().settingsSection, true, "a build that declares its settings section");
+  assert.equal(keyed.context.nextShell().settingsSection, true);
   const file = keyed.args.find((a) => a.startsWith("--pairbrowse-capture-key-file="))?.slice("--pairbrowse-capture-key-file=".length);
   assert.ok(file, "the switch");
   const pagesFile = keyed.args.find((a) => a.startsWith("--pairbrowse-helper-key-file="))?.slice("--pairbrowse-helper-key-file=".length);

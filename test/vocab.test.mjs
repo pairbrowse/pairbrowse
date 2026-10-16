@@ -54,18 +54,26 @@ test("the browser's own addresses have one set of rules, for the helper and the 
   assert.deepEqual([...urls.BROWSER_PAGE_ORIGINS], ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"]);
   assert.equal(urls.ownPage("settings#passwords"), "pairbrowse://settings#passwords");
   // PairBrowse's own settings: the engine settings' PairBrowse section (580), any of its spellings.
-  assert.equal(urls.settingsPage(), "pairbrowse://settings/pairbrowse");
-  assert.equal(urls.settingsPage("passwords"), "pairbrowse://settings/pairbrowse#passwords");
-  assert.equal(urls.REPORT_URL, "chrome://settings/pairbrowse#report");
+  // With the settings section (a build that declares it), and without (an older build: the tab page).
+  assert.equal(urls.settingsPage("", true), "pairbrowse://settings/pairbrowse");
+  assert.equal(urls.settingsPage("passwords", true), "pairbrowse://settings/pairbrowse#passwords");
+  assert.equal(urls.settingsPage(), "pairbrowse://settings");
+  assert.equal(urls.settingsPage("passwords"), "pairbrowse://settings#passwords");
+  assert.equal(urls.REPORT_URL, "chrome://pairbrowse/settings#report");
+  assert.equal(urls.reportUrl(false), "chrome://pairbrowse/settings#report");
+  assert.equal(urls.reportUrl(true), "chrome://settings/pairbrowse#report");
   for (const u of ["chrome://settings/pairbrowse", "chrome://settings/pairbrowse#report", "pairbrowse://settings/pairbrowse", "pairbrowse://settings/pairbrowse?x",
     "chrome://settings/pairbrowse/", "chrome://pairbrowse/settings/", "chrome://pairbrowse/settings#report", "pairbrowse://settings#report"]) assert.ok(urls.isSettingsPage(u), u);
   // Opened as a whole tab of its own, the browser's settings page goes to its section; framed, or
   // anywhere but the browser's tab host, it stays.
   const at = (href) => { const u = new URL(href); return { protocol: u.protocol, host: u.host, hash: u.hash }; };
-  assert.equal(urls.settingsHomeFor(at("chrome://pairbrowse/settings/#report"), false), "chrome://settings/pairbrowse#report");
-  assert.equal(urls.settingsHomeFor(at("chrome://pairbrowse/settings/"), false), "chrome://settings/pairbrowse");
-  assert.equal(urls.settingsHomeFor(at("chrome://pairbrowse/settings/#report"), true), null);
-  for (const href of ["chrome-extension://abc/settings/index.html#report", "http://127.0.0.1:9/settings/index.html", "chrome://pairbrowse.top-chrome/settings/"]) assert.equal(urls.settingsHomeFor(at(href), false), null, href);
+  assert.equal(urls.settingsHomeFor(at("chrome://pairbrowse/settings/#report"), false, true), "chrome://settings/pairbrowse#report");
+  assert.equal(urls.settingsHomeFor(at("chrome://pairbrowse/settings/"), false, true), "chrome://settings/pairbrowse");
+  assert.equal(urls.settingsHomeFor(at("chrome://pairbrowse/settings/#report"), true, true), null);
+  // An older build (no settings section): the tab page is its home, never redirected.
+  assert.equal(urls.settingsHomeFor(at("chrome://pairbrowse/settings/#report"), false, false), null);
+  assert.equal(urls.settingsHomeFor(at("chrome://pairbrowse/settings/#report"), false), null);
+  for (const href of ["chrome-extension://abc/settings/index.html#report", "http://127.0.0.1:9/settings/index.html", "chrome://pairbrowse.top-chrome/settings/"]) assert.equal(urls.settingsHomeFor(at(href), false, true), null, href);
   for (const u of ["chrome://settings/pairbrowsex","chrome://settings/appearance", "chrome://settings/", "https://settings/pairbrowse", "chrome://settings/x/pairbrowse", "", undefined]) assert.ok(!urls.isSettingsPage(u), String(u));
   for (const u of ["pairbrowse://activity", "pairbrowse://activity#x", "chrome://pairbrowse/activity/", "chrome://pairbrowse/activity?y"]) assert.ok(urls.isOwnTabPage("activity", u), u);
   for (const u of ["pairbrowse://activityx", "https://pairbrowse/activity", "", undefined]) assert.ok(!urls.isOwnTabPage("activity", u), String(u));

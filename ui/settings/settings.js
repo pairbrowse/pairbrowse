@@ -18,15 +18,14 @@ import { servedByBrowser, settingsHomeFor, ENGINE_SETTINGS_ORIGIN } from "../url
 
 const NATIVE = hostKind() === "native";
 // ---- at home in the engine's settings (580) -----------------------------------------------------
-// In a build with its own pages this page lives in the engine settings' PairBrowse section
-// (chrome://settings/pairbrowse, which frames it); opened as a whole tab of its own it goes there,
-// at the same section. Framed there (embedded), the page around it has the title, the search and
+// In a build with the engine settings' PairBrowse section (its manifest's settingsSection, which
+// the helper's config.json passes on) this page lives there (chrome://settings/pairbrowse, which
+// frames it); opened as a whole tab of its own it goes there, at the same section, once the
+// helper says so (drawConfig). An older build has no section: the tab page stays. Framed (embedded), the page around it has the title, the search and
 // the menu, and is the browser's settings: this page shows none of its own, follows the system's
 // light or dark scheme as that page does, and posts its height to it (the only message it sends,
 // to that origin only) so the frame grows with it. The extension's options page never is either.
 const FRAMED = window.top !== window;
-const HOME = settingsHomeFor(location, FRAMED);
-if (HOME) location.replace(HOME);
 const EMBEDDED = FRAMED && (NATIVE || servedByBrowser());
 if (EMBEDDED) {
   document.documentElement.dataset.embedded = "";
@@ -90,6 +89,9 @@ function setConn(state, text) {
 function drawConfig(c) {
   config = c && typeof c === "object" ? c : null;
   const have = !!config;
+  // A whole tab of its own in a build with the settings section: off to its home there.
+  const home = settingsHomeFor(location, FRAMED, config?.settingsSection === true);
+  if (home) { location.replace(home); return; }
   // The docks are the PairBrowse browser's window; the open build has none.
   // An item for a field this helper doesn't answer with (an older helper) stays off the page.
   for (const n of document.querySelectorAll(".cfg-item")) n.hidden = !have || (!NATIVE && n.classList.contains("native-only")) || (!!n.dataset.field && !(n.dataset.field in config));

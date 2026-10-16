@@ -158,13 +158,15 @@ pageTest("picker", { fixtures: { sessions: STATE }, replies: { pick: AT_WORK } }
   assert.deepEqual(errors, []);
 });
 
-// Part H: a refused pick offers Report a problem while the helper relays reports.
-pageTest("picker", { fixtures: { sessions: STATE, config: { report: true } }, replies: { pick: { error: true, text: "A session is already chosen." } } }, async ({ page, until, inPage: run }) => {
+// Part H: a refused pick offers Report a problem while the helper relays reports: Settings' report
+// section, the tab page's in an older build, the engine settings' PairBrowse section's in one with
+// it (config.json settingsSection, 580).
+for (const [section, href] of [[false, "chrome://pairbrowse/settings#report"], [true, "chrome://settings/pairbrowse#report"]]) pageTest("picker", { fixtures: { sessions: STATE, config: { report: true, settingsSection: section } }, replies: { pick: { error: true, text: "A session is already chosen." } } }, async ({ page, until, inPage: run }) => {
   await until("the rows", ready);
   await page.click("#fresh");
   await until("the offer", () => !!document.querySelector("#msg a.report-offer"));
   assert.deepEqual(await run(() => { const a = document.querySelector("#msg a"); return [document.getElementById("msg").textContent, a.getAttribute("href"), a.target]; }),
-    ["A session is already chosen. Report a problem", "chrome://settings/pairbrowse#report", "_blank"]);
+    ["A session is already chosen. Report a problem", href, "_blank"]);
 });
 pageTest("picker", { fixtures: { sessions: STATE }, replies: { pick: { error: true, text: "A session is already chosen." } } }, async ({ page, until, inPage: run }) => {
   await until("the rows", ready);

@@ -14,7 +14,7 @@
 // a copy that does.
 import { accessSync, statSync, constants as fsConstants } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { nativeManifest, declaresOwnPages, capturePages, captureKeyed } from "../native-engine.mjs";
+import { nativeManifest, declaresOwnPages, capturePages, captureKeyed, settingsSection } from "../native-engine.mjs";
 
 // The config value for the open build, and its older name (still read, never written).
 export const OPEN_BROWSER = "pairbrowse-open";
@@ -81,11 +81,12 @@ export const engineConfig = (config, { binary, executablePath = null }) =>
 
 // The shell a browser has, from its build manifest (null: not a native build, or one whose
 // manifest doesn't read): the side panel extension unless the build declares its own pages.
-export const EXTENSION_SHELL = Object.freeze({ kind: "extension", ownPages: false, capturePage: false, captureKeyed: false });
+// settingsSection: its settings are the engine settings' PairBrowse section (580).
+export const EXTENSION_SHELL = Object.freeze({ kind: "extension", ownPages: false, capturePage: false, captureKeyed: false, settingsSection: false });
 export function shellFrom(manifest) {
   if (!declaresOwnPages(manifest)) return EXTENSION_SHELL;
   const capturePage = capturePages(manifest);
-  return Object.freeze({ kind: "pages", ownPages: true, capturePage, captureKeyed: capturePage && captureKeyed(manifest) });
+  return Object.freeze({ kind: "pages", ownPages: true, capturePage, captureKeyed: capturePage && captureKeyed(manifest), settingsSection: settingsSection(manifest) });
 }
 // The shell of the browser an engine config launches, its manifest read once. read: tests pass their own.
 export function shellOf(engine, read = nativeManifest) {

@@ -610,7 +610,7 @@ describe("tools order and reads", () => pageTest("right", opts(), async ({ page,
   // Open settings: the Settings page on its Passwords section, in a new tab of this window.
   await page.click("#open-settings");
   await until("a settings tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
-  assert.deepEqual(await inPage(() => window.__pairbrowse.calls.filter((c) => c.iface === "tabs" && c.method === "create").map((c) => c.args)), [["pairbrowse://settings/pairbrowse#passwords", true, -1]]);
+  assert.deepEqual(await inPage(() => window.__pairbrowse.calls.filter((c) => c.iface === "tabs" && c.method === "create").map((c) => c.args)), [["pairbrowse://settings#passwords", true, -1]]);
   assert.equal(await inPage(text, "handoffs-empty"), "Nothing waiting for you.");
   assert.equal(await inPage(text, "downloads-empty"), "Nothing downloaded in this session.");
   await until("No recordings yet", () => document.getElementById("recordings-empty").checkVisibility());
@@ -1883,3 +1883,13 @@ describe("side panel: the card works on its own agent's actions only", () => pag
   await until("working", () => document.getElementById("driver-text").textContent === "Working…");
   assert.deepEqual(errors, []);
 }));
+
+// A build with the engine settings' PairBrowse section (the helper's config.json
+// settingsSection, 580): the Tools row opens Settings there, on its Passwords section.
+pageTest("right", { fixtures: { config: { settingsSection: true } } }, async ({ until, inPage, errors }) => {
+  await until("the settings row", () => !document.getElementById("sec-settings-link").hidden);
+  await inPage(() => document.getElementById("open-settings").click());
+  await until("a settings tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual(await inPage(() => window.__pairbrowse.calls.filter((c) => c.iface === "tabs" && c.method === "create").map((c) => c.args)), [["pairbrowse://settings/pairbrowse#passwords", true, -1]]);
+  assert.deepEqual(errors, []);
+});

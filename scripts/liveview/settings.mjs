@@ -78,7 +78,7 @@ export async function browserProblem(path, { platform = process.platform, verify
 
 // config: the settings with the older names as the person wrote them (context.choiceConfig()).
 // exists / executable: as applySettings.
-export function readSettings(config, { native = false, exists, executable } = {}) {
+export function readSettings(config, { native = false, exists, executable, settingsSection = false } = {}) {
   const choice = browserChoice(config, { native, ...checksOf(exists, executable) });
   return {
     browser: choice.browser, timeline: { on: config.timeline !== false, cap: capOf(config.timelineCap) }, layout: layoutFrom(config.layout),
@@ -90,6 +90,9 @@ export function readSettings(config, { native = false, exists, executable } = {}
     askSession: config.sessionPicker !== false,
     native: !!native, chosen: choice.set,
     report: reportUrlFrom(config.reportUrl) !== null,
+    // The browser's settings are the engine settings' PairBrowse section (a build that declares
+    // it, 580): where the pages open Settings. Never a path or address.
+    settingsSection: !!settingsSection,
   };
 }
 
@@ -165,12 +168,13 @@ export function applySettings(given, config, { native = false, exists, executabl
 
 // The live view's settings dep ({ read(), write(given) }). config: the running config (changed in
 // place, so the timeline and the docks' default follow at once); choiceConfig(): the settings the
-// browser choice is read from; browserInUse(): the browser of the window open now, or null.
+// browser choice is read from; browserInUse(): the browser of the window open now, or null;
+// settingsSection(): the browser's build has its settings as the engine settings' section.
 // save(fields): writes config.json (saveConfig: a temp file and a rename).
 // folder / home: as applySettings. onChange(fields): after a write (the helper passes it on).
 // vouch(path): browserProblem's check for a browser path of your own (tests pass a stand-in).
-export function createSettings({ config, choiceConfig = () => config, native = false, browserInUse = () => null, save = (fields) => saveConfig(fields), exists, executable, folder, home, user, vouch = (p) => browserProblem(p), onChange = () => {} }) {
-  const read = () => readSettings(choiceConfig(), { native, exists, executable });
+export function createSettings({ config, choiceConfig = () => config, native = false, settingsSection = () => false, browserInUse = () => null, save = (fields) => saveConfig(fields), exists, executable, folder, home, user, vouch = (p) => browserProblem(p), onChange = () => {} }) {
+  const read = () => readSettings(choiceConfig(), { native, exists, executable, settingsSection: settingsSection() });
   return {
     read,
     async write(given) {

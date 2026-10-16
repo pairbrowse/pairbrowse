@@ -7,7 +7,7 @@ import { where } from "./where.mjs";
 import { createDownloads } from "./browser/downloads.mjs";
 import { createBrowserState } from "./browser/state.mjs";
 import { createTabs, stopRequestMirroring } from "./browser/tabs.mjs";
-import { createLaunch, browserPagesIn, capturePagesIn, captureKeyedIn, measuringLog, MEASURING_STATUS } from "./browser/launch.mjs";
+import { createLaunch, browserPagesIn, capturePagesIn, captureKeyedIn, settingsSectionIn, measuringLog, MEASURING_STATUS } from "./browser/launch.mjs";
 import { createPicker } from "./sessions/picker.mjs";
 import { createSwitch } from "./sessions/switch.mjs";
 
@@ -29,13 +29,13 @@ export { where };
 // the Tools tab's Downloads (daemon/toolstab.mjs), in memory only.
 // personTabs: the person's own tabs (daemon/toolstab.mjs createPersonTabs), shared with serve.mjs:
 // openForPerson opens one, and no agent's fallback tab is ever one.
-export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, browserPagesOf = browserPagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, helperFor = async () => null,
+export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, browserPagesOf = browserPagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, settingsSectionOf = settingsSectionIn, helperFor = async () => null,
   beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null }) {
   const st = createBrowserState({ session: currentSession(), pick: null }); // browser/state.mjs
   // What the browser's parts (browser/*.mjs, sessions/*.mjs) are given, and the functions they
   // read from each other when called (api).
   const deps = { personTabs, config, log, chromium, driver, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers, notify,
-    browserPagesOf, capturePagesOf, captureKeyedOf, helperFor, beforeRename, onRenamed };
+    browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, helperFor, beforeRename, onRenamed };
   const api = {};
   // Launching the browser and getContext() (browser/launch.mjs).
   const { dropHelperKey, choiceConfig, profile, getContext, watchClose, ready, openByHand, close, nextShell } = Object.assign(api, createLaunch(st, deps, api));

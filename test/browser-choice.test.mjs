@@ -56,9 +56,14 @@ test("the launch layer gets a copy with the older names; config stays as written
 test("the shell: the side panel extension unless the build declares its own pages", () => {
   assert.equal(shellFrom(null), EXTENSION_SHELL);
   assert.equal(shellFrom({ capture: 2 }), EXTENSION_SHELL, "a capture page needs the build's own pages");
-  assert.deepEqual(shellFrom({ chrome: 1 }), { kind: "pages", ownPages: true, capturePage: false, captureKeyed: false });
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: false });
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 2 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true });
+  assert.equal(shellFrom({ settingsSection: 1 }), EXTENSION_SHELL, "a settings section needs the build's own pages");
+  assert.equal(EXTENSION_SHELL.settingsSection, false);
+  assert.deepEqual(shellFrom({ chrome: 1 }), { kind: "pages", ownPages: true, capturePage: false, captureKeyed: false, settingsSection: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: false, settingsSection: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 2 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: false });
+  // 580: the build's settings are the engine settings' PairBrowse section.
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 2, settingsSection: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: true });
+  for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, settingsSection: v }).settingsSection, false, String(v));
   let reads = 0;
   const read = (p) => { reads++; if (p === "/bad") throw new Error("no manifest"); return { chrome: 1 }; };
   assert.equal(shellOf({ browserEngine: "open", executablePath: "/x" }, read), EXTENSION_SHELL);

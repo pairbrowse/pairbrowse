@@ -43,6 +43,22 @@ Restart Claude Code. Needs Node.js 20+ and Claude Code running on your computer 
 session). Codex: see [docs/codex.md](docs/codex.md). Update, uninstall and a local checkout:
 [docs/install.md](docs/install.md).
 
+## Two ways to run it: the native browser or the extension
+
+- **The native PairBrowse browser** (the default on a Mac, Apple Silicon or Intel, and on Linux
+  x64). A hardened Chromium build made for PairBrowse, with its own tab strip, docks, new tab page
+  and Settings built in, and pointers of the people who joined drawn by the browser itself. It
+  looks like an everyday browser to sites, so you see fewer CAPTCHAs.
+- **The PairBrowse extension in Chromium**, for people who'd rather have the Chrome they know:
+  open-source Chromium (the browser Chrome is built on: Chrome's menus, settings and toolbar) with
+  PairBrowse as an extension in it: the side panel (Cmd+Shift+Y, Ctrl+Shift+Y off a Mac), its
+  toolbar menu, Settings, and the downloads, recordings and hand-offs lists. Fully open source, so it's also the choice for
+  commercial use without a Pro license. Windows uses this until the native build arrives.
+
+Pick one with `"browser"` in `~/.pairbrowse/config.json`: `"pairbrowse"` (native) or `"chromium"`
+(extension); PairBrowse asks once, and Settings can switch it. Everything else (agents, sharing,
+sessions, safety) works the same in both. Details: [The browser](docs/browser.md).
+
 ## Try it
 
 > Register a Shopify Partner account for our company and start an app listing for our app.

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { resolveHome, projectInstance, selectHome, INSTANCE_RE, gateProjectEnv, projectSetNames, PROJECT_GATED } from "../scripts/home.mjs";
+import { resolveHome, projectInstance, selectHome, INSTANCE_RE, gateProjectEnv, projectSetNames, settingsNames, PROJECT_GATED } from "../scripts/home.mjs";
 import { helperEnv } from "../scripts/launcher/daemon-connect.mjs";
 import { withInstallLock, withInstallLockSync } from "../scripts/install-lock.mjs";
 
@@ -166,6 +166,35 @@ test("a home or participant name set by the project's settings is dropped; set e
   const odd = project("gate-odd");
   mkdirSync(join(odd, ".claude", "settings.json"), { recursive: true });
   assert.deepEqual(projectSetNames(odd).sort(), ["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"]);
+});
+
+// The settings are read as Claude Code and Codex read them: a key spelled with escapes is the same key.
+test("a gated name spelled with JSON or TOML escapes is still caught; a file not naming one removes nothing", () => {
+  const esc = (s) => [...s].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join("");
+  const proj = project("gate-escaped");
+  mkdirSync(join(proj, ".claude"), { recursive: true });
+  writeFileSync(join(proj, ".claude", "settings.json"), `{"env":{"${esc("PAIRBROWSE_HOME")}":"/evil"}}`);
+  assert.deepEqual(projectSetNames(proj), ["PAIRBROWSE_HOME"]);
+  const env = { PAIRBROWSE_HOME: "/evil", CLAUDE_PROJECT_DIR: proj };
+  assert.deepEqual(gateProjectEnv(env), ["PAIRBROWSE_HOME"]);
+  assert.ok(!("PAIRBROWSE_HOME" in env));
+  // Half escaped, lower-case hex, any letter case, nested elsewhere in the file: all caught.
+  assert.deepEqual(settingsNames("json", '{"env":{"PAIRBROWSE_\\u0068ome":"x"}}'), ["PAIRBROWSE_HOME"]);
+  assert.deepEqual(settingsNames("json", '\uFEFF{"a":[{"b":{"PAIRBROWSE_PARTICIPANT":1}}]}'), ["PAIRBROWSE_PARTICIPANT"]);
+  // Unparsable JSON names them all; a value that merely mentions one names nothing.
+  assert.deepEqual(settingsNames("json", '{"env":{"PAIRBROWSE_HOME":').sort(), [...PROJECT_GATED].sort());
+  assert.deepEqual(settingsNames("json", '{"env":{"OTHER":"PAIRBROWSE_HOME"},"note":"PAIRBROWSE_PARTICIPANT"}'), []);
+  assert.deepEqual(settingsNames("json", "{}"), []);
+  // TOML: \uXXXX and \UXXXXXXXX in a quoted key.
+  assert.deepEqual(settingsNames("toml", `[shell_environment_policy.set]\n"${esc("PAIRBROWSE_HOME")}" = "/evil"\n`), ["PAIRBROWSE_HOME"]);
+  assert.deepEqual(settingsNames("toml", '[x]\n"PAIRBROWSE_\\U00000050ARTICIPANT" = "y"\n'), ["PAIRBROWSE_PARTICIPANT"]);
+  assert.deepEqual(settingsNames("toml", '[x]\nOTHER = "1"\n'), []);
+  const codex = project("gate-escaped-toml");
+  mkdirSync(join(codex, ".codex"), { recursive: true });
+  writeFileSync(join(codex, ".codex", "config.toml"), `[shell_environment_policy.set]\n"PAIRBROWSE_${esc("HOME")}" = "/evil"\n`);
+  const env2 = { PAIRBROWSE_HOME: "/evil", PAIRBROWSE_INSTANCE: "work" };
+  assert.deepEqual(gateProjectEnv(env2, { cwd: codex }), ["PAIRBROWSE_HOME"]);
+  assert.equal(env2.PAIRBROWSE_INSTANCE, "work");
 });
 
 test("a process in such a project resolves the default home and passes neither variable on", () => {

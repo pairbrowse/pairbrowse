@@ -67,8 +67,38 @@ export const PROJECT_GATED = Object.freeze(["PAIRBROWSE_HOME", "PAIRBROWSE_PARTI
 export const PROJECT_SETTINGS = Object.freeze([[".claude", "settings.json"], [".claude", "settings.local.json"], [".codex", ["config", "toml"].join(".")]]);
 const SETTINGS_MAX_BYTES = 4 << 20;
 
-// The gated names the project folder's settings files mention (any mention counts: a file too big
-// or unreadable for a reason other than its absence counts as naming them all).
+// The gated names one settings file names. Claude Code's .claude files are JSON: a key anywhere in
+// the parsed file (its "env" above all) that is a gated name, in any letter case, counts, so a key
+// spelled with \u escapes is caught as JSON.parse reads it; a file that doesn't parse names them
+// all. The Codex file is TOML: any mention counts, in its text as written or with its \uXXXX and
+// \UXXXXXXXX escapes decoded (a quoted key may spell a name that way).
+export function settingsNames(kind, text) {
+  const t = String(text);
+  if (kind === "json") {
+    let v;
+    try { v = JSON.parse(t.replace(/^\uFEFF/, "")); } catch { return [...PROJECT_GATED]; }
+    const named = new Set();
+    const stack = [v];
+    while (stack.length) {
+      const o = stack.pop();
+      if (!o || typeof o !== "object") continue;
+      for (const k of Object.keys(o)) {
+        const up = k.toUpperCase();
+        for (const name of PROJECT_GATED) if (up === name) named.add(name);
+        stack.push(o[k]);
+      }
+    }
+    return [...named];
+  }
+  const decoded = t.replace(/\\(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8}))/g, (m, a, b) => {
+    const cp = parseInt(a || b, 16);
+    return cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+  });
+  return PROJECT_GATED.filter((name) => t.includes(name) || decoded.includes(name));
+}
+
+// The gated names the project folder's settings files name (settingsNames; a file too big or
+// unreadable for a reason other than its absence counts as naming them all).
 export function projectSetNames(dir) {
   if (typeof dir !== "string" || !isAbsolute(dir)) return [];
   const named = new Set();
@@ -81,8 +111,7 @@ export function projectSetNames(dir) {
       return [...PROJECT_GATED];
     }
     if (text.length > SETTINGS_MAX_BYTES) return [...PROJECT_GATED];
-    const t = text.toString("utf8");
-    for (const name of PROJECT_GATED) if (t.includes(name)) named.add(name);
+    for (const name of settingsNames(parts[1].endsWith(".json") ? "json" : "toml", text.toString("utf8"))) named.add(name);
   }
   return [...named];
 }

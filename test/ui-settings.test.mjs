@@ -15,11 +15,15 @@ async function posted(helper, page, what, route, body) {
   for (let i = 0; i < 100; i++) { if (has(helper.posts, route, body)) return; await page.waitForTimeout(50); }
   assert.fail(`no post for ${what}: ${JSON.stringify(helper.posts)}`);
 }
+// A test that runs as the browser's own page and again as the extension's options page (plain
+// Chromium: no window.pairbrowse, the extension's storage holds the helper's address): every
+// section works the same in both.
+const both = (opts, fn) => { pageTest("settings", opts, fn); pageTest("settings", { ...opts, native: false }, fn); };
 const live = () => document.body.dataset.s === "live";
 const text = (id) => document.getElementById(id).textContent;
 
 // 1. The sections, organized by what people come for, read their real values.
-pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPage, errors }) => {
+both({ fixtures, viewport: VIEW }, async ({ helper, until, inPage, errors }) => {
   await until("the stream", live);
   await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
   const top = await inPage(() => ({
@@ -28,6 +32,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPag
     host: document.body.dataset.host,
     docks: ["left", "right"].map((s) => document.querySelector(`input[name=dock-${s}]:checked`)?.value),
     docksShown: !document.getElementById("docks").hidden,
+    extShown: ["docks-ext", "tool-lists"].map((id) => !document.getElementById(id).hidden),
     tl: [document.getElementById("tl-on").getAttribute("aria-checked"), document.getElementById("tl-cap").value, document.getElementById("cap-form").hidden],
     asks: !!document.getElementById("host-asks"),
     appearance: !!document.getElementById("appearance"),
@@ -35,9 +40,13 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPag
   }));
   assert.deepEqual(top.ids, ["general", "agents", "sharing", "data", "about"]);
   assert.deepEqual(top.nav, [["General", "#general"], ["Agents and approvals", "#agents"], ["Sharing", "#sharing"], ["Your data", "#data"], ["About and diagnostics", "#about"], ["Browser settings", "chrome://settings"]]);
-  assert.equal(top.host, "pairbrowse");
+  const ext = top.host === "chromium";
+  assert.equal(top.host, ext ? "chromium" : "pairbrowse");
   assert.deepEqual(top.docks, ["open", "open"]);
-  assert.equal(top.docksShown, true);
+  // The extension has no docks: a short note says where PairBrowse is instead, and the Tools
+  // tab's lists get a button that opens them in the side panel.
+  assert.equal(top.docksShown, !ext);
+  assert.deepEqual(top.extShown, [ext, ext]);
   assert.deepEqual(top.tl, ["true", "200", false]);
   assert.equal(top.asks, false, "join asks have one home, the agent panel");
   assert.equal(top.appearance, false, "no placeholder section");
@@ -65,7 +74,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPag
 });
 
 // 2. General and the pictures write through POST config; a refusal says why and keeps the helper's value.
-pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage }) => {
+both({ fixtures, viewport: VIEW }, async ({ page, helper, until, inPage }) => {
   await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
   await page.click("input[name=browser][value=chromium]");
   await posted(helper, page, "the browser", "config", { browser: "chromium" });
@@ -84,9 +93,11 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
   await until("saved", () => /^Saved/.test(document.getElementById("browser-msg").textContent));
   assert.equal(helper.fixtures.config.browser, "/opt/chromium/chrome");
 
-  await page.click("#docks .seg[data-side=left] label:nth-child(2)");
-  await posted(helper, page, "the left dock", "config", { layout: { left: "rail" } });
-  await until("docks saved", () => document.getElementById("docks-msg").textContent === "Saved. New sessions start this way.");
+  if (await inPage(() => document.body.dataset.host === "pairbrowse")) {
+    await page.click("#docks .seg[data-side=left] label:nth-child(2)");
+    await posted(helper, page, "the left dock", "config", { layout: { left: "rail" } });
+    await until("docks saved", () => document.getElementById("docks-msg").textContent === "Saved. New sessions start this way.");
+  }
 
   await page.click("#tl-on");
   await posted(helper, page, "pictures off", "config", { timeline: { on: false } });
@@ -104,7 +115,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
 });
 
 // 3. Your data: the profile forms, an in-row delete question, and Remove for a join address.
-pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, harness, errors }) => {
+both({ fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, harness, errors }) => {
   await until("the profile", () => document.querySelectorAll("#details .row").length === 2);
   await page.fill("#add-detail [name=label]", "Phone");
   await page.fill("#add-detail [name=value]", "+49 30 1");
@@ -216,7 +227,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ until, inPage }) => 
 
 // 7. Report a problem: the review screen shows exactly what is sent, the tab only when ticked
 // (without its query), Send posts it to the helper's report route; Copy instead is the fallback.
-pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage }) => {
+both({ fixtures, viewport: VIEW }, async ({ page, helper, until, inPage }) => {
   await until("the button", () => !document.getElementById("report-open").hidden && !document.getElementById("report-open").disabled);
   await until("the versions", () => document.getElementById("about-helper").textContent !== "Not reported");
   await page.click("#report-open");
@@ -229,7 +240,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
   assert.equal(before.what, "The switcher said a session is already chosen.");
   assert.equal(before.tab, null);
   assert.equal(before.schema, "pairbrowse-report/1");
-  assert.deepEqual(before.app, { host: "pairbrowse", page: "settings", helper: "0.15.45", browser: { engine: "pairbrowse", version: "142.0.7444.59", build: "3" } });
+  assert.deepEqual(before.app, { host: await inPage(() => document.body.dataset.host), page: "settings", helper: "0.15.45", browser: { engine: "pairbrowse", version: "142.0.7444.59", build: "3" } });
   assert.equal(before.diagnostics, "PairBrowse diagnostics\nhelper 0.15.45\n");
   assert.equal(before.helperState.connection, "live");
   for (const k of ["profile", "secrets", "details", "cookies", "tabs"]) assert.ok(!(k in before), k);
@@ -298,12 +309,22 @@ pageTest("settings", { fixtures, native: false, viewport: VIEW }, async ({ page,
   await inPage(() => { window.__opened = []; window.chrome.tabs = { create: (o) => { window.__opened.push(o.url); } }; });
   await page.click("#browser-settings");
   assert.deepEqual(await inPage(() => window.__opened), ["chrome://settings"]);
+  // Downloads, recordings and hand-offs: a person's click opens the side panel at its Tools tab
+  // (the window read at load, so the click keeps its gesture); a script's click does nothing.
+  await inPage(() => { window.__chromeCalls.length = 0; document.getElementById("tools-open").click(); });
+  assert.deepEqual(await inPage(() => window.__chromeCalls), []);
+  await page.click("#tools-open");
+  assert.deepEqual(await inPage(() => window.__chromeCalls), [["sidePanel.open", { windowId: 7 }], ["storage.session.set", { panelTab: "tools" }]]);
+  // Without the side panel's API: a plain line says where they are.
+  await inPage(() => { delete window.chrome.sidePanel; });
+  await page.click("#tools-open");
+  await until("the plain line", () => document.getElementById("tools-msg").textContent === "Open the PairBrowse side panel with its toolbar button, then its Tools tab.");
   assert.deepEqual(errors, []);
 });
 
 // 10. The six config fields: read from config.json, written through POST config one at a time,
 // a refusal in the item's own line, the notes on what waits for the next start, the config event.
-pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+both({ fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
   await until("the config", () => document.getElementById("your-name-field").value === "Alice");
   const read = () => inPage(() => ({
     ask: document.getElementById("ask-on").getAttribute("aria-checked"),
@@ -373,7 +394,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
 });
 
 // 11. An older helper's config.json without the new fields: those items stay off the page.
-pageTest("settings", { fixtures, viewport: VIEW, replies: {} }, async ({ helper, until, inPage }) => {
+both({ fixtures, viewport: VIEW, replies: {} }, async ({ helper, until, inPage }) => {
   await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
   const { name, downloads, pictures, cookies, maxTabs, askSession, ...old } = helper.fixtures.config;
   assert.ok(name !== undefined && downloads !== undefined && pictures !== undefined && cookies !== undefined && maxTabs !== undefined && askSession !== undefined);
@@ -385,7 +406,7 @@ pageTest("settings", { fixtures, viewport: VIEW, replies: {} }, async ({ helper,
 
 // 12. Saved sessions: one home, the sessions page (DESIGN.md Part G). Settings links to it in this
 // tab; it asks the helper nothing about sessions (no sessions.json, no pick).
-pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+both({ fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
   await until("the stream", live);
   assert.equal(await inPage(() => document.getElementById("sessions").querySelector(".help").textContent),
     "Each session is a browser of its own, with its own logins and tabs. Switch, rename or delete them on the sessions page.");
@@ -405,7 +426,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
 // 13. Invites out now: listed from invites.json (no key, code or link), Revoke after a question
 // in the row posts invite { op: "revoke", id }; the invites event adds and drops rows; one already
 // gone (404) says so and reloads the list.
-pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+both({ fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
   await until("two invites", () => document.querySelectorAll("#invite-list li").length === 2);
   const rows = await inPage(() => [...document.querySelectorAll("#invite-list li")].map((li) => [li.querySelector(".name").textContent, li.querySelector("small").textContent]));
   assert.deepEqual(rows, [["Bob", "Join code · can drive"], ["Wendy", "Link · can watch"]]);
@@ -442,7 +463,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until,
 // 14. The approve role: a shared browser code's row has "Can approve" (a toggle, pressed when the
 // joiner may answer approval cards); a person's click posts invite { op: "role" }; a script's
 // click posts nothing; links and follow codes have no such button.
-pageTest("settings", { fixtures: { ...fixtures, invites: { items: [
+both({ fixtures: { ...fixtures, invites: { items: [
   { id: "0a1b2c3d", role: "drive", label: "Bob", share: "code", mode: "shared", expires: Date.now() + 3600_000 },
   { id: "1a1b2c3d", role: "approve", label: "Alex", share: "code", mode: "shared", expires: Date.now() + 3600_000 },
   { id: "2a1b2c3d", role: "drive", label: "Fay", share: "code", mode: "follow", expires: Date.now() + 3600_000 },

@@ -5,7 +5,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 // file after an update; the helper compares this with the file on disk and reloads the extension
 // when they differ (daemon/panel.mjs). A hash of this file with the value blanked (browser.mjs
 // panelBuildOf).
-const PB_BUILD = "c88f7833e0acce25";
+const PB_BUILD = "565ea7550b65a19d";
 globalThis.pbBuild = PB_BUILD;
 // In a new profile on macOS the browser starts without a window (--no-startup-window, see
 // browserArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
@@ -15,6 +15,22 @@ globalThis.pbBuild = PB_BUILD;
   await chrome.storage.session.set({ started: true });
   if (!(await chrome.windows.getAll()).length) await chrome.windows.create({ url: "about:blank" });
 })().catch(() => {});
+// The toolbar button's menu (a right-click on it): Settings (the options page, settings/index.html,
+// an extension page) and the Tools tab's lists in the side panel. Only a person can open this menu.
+const MENU = [["pb-settings", "Settings"], ["pb-tools", "Downloads, recordings and hand-offs"]];
+chrome.runtime.onInstalled?.addListener(() => {
+  chrome.contextMenus?.removeAll(() => {
+    for (const [id, title] of MENU) chrome.contextMenus.create({ id, title, contexts: ["action"] }, () => void chrome.runtime.lastError);
+  });
+});
+chrome.contextMenus?.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "pb-settings") chrome.runtime.openOptionsPage().catch(() => {});
+  else if (info.menuItemId === "pb-tools") {
+    // sidePanel.open first, straight from the click (it needs the gesture); the panel reads panelTab.
+    if (tab?.windowId !== undefined) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+    chrome.storage.session.set({ panelTab: "tools" }).catch(() => {});
+  }
+});
 chrome.commands.onCommand.addListener((command, tab) => {
   // Called straight from the key press: sidePanel.open needs that user gesture.
   if (command === "open-panel" && tab?.windowId !== undefined) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});

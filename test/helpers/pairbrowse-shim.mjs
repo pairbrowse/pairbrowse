@@ -375,15 +375,32 @@ export function bridgeChromeScript(base) {
   return `// chrome.* for the bridge period (test/helpers/pairbrowse-shim.mjs)
 (() => {
   const load = () => { try { return JSON.parse(localStorage.getItem("__store") || "{}"); } catch { return {}; } };
+  // What a page asked of the extension's own API (opening Settings or the side panel, the panel's
+  // tab), in order: window.__chromeCalls.
+  const calls = window.__chromeCalls = [];
+  const note = (name) => async (...args) => { calls.push([name, ...args]); };
+  const session = {};
+  const changed = [];
   window.chrome = {
-    runtime: { onMessage: { addListener() {} }, sendMessage: async () => undefined },
+    runtime: { onMessage: { addListener() {} }, sendMessage: async () => undefined, openOptionsPage: note("runtime.openOptionsPage") },
+    windows: { getCurrent: async () => ({ id: 7 }) },
+    sidePanel: { open: note("sidePanel.open") },
     storage: {
-      session: { get: async (k) => (k === "view" || k === undefined ? { view: ${JSON.stringify(base)} } : {}) },
+      session: {
+        get: async (k) => (k === "view" || k === undefined ? { view: ${JSON.stringify(base)} } : k in session ? { [k]: session[k] } : {}),
+        set: async (o) => {
+          calls.push(["storage.session.set", o]);
+          Object.assign(session, o);
+          const changes = Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { newValue: v }]));
+          for (const fn of changed) fn(changes, "session");
+        },
+        remove: async (k) => { calls.push(["storage.session.remove", k]); delete session[k]; },
+      },
       local: {
         get: async (k) => { const s = load(); return k in s ? { [k]: s[k] } : {}; },
         set: async (o) => { try { localStorage.setItem("__store", JSON.stringify({ ...load(), ...o })); } catch {} },
       },
-      onChanged: { addListener() {} },
+      onChanged: { addListener: (fn) => { changed.push(fn); }, removeListener: (fn) => { const i = changed.indexOf(fn); if (i >= 0) changed.splice(i, 1); } },
     },
   };
   window.__copied = null;

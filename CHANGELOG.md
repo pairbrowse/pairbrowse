@@ -36,6 +36,10 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 - **Approvals with joiners.** A joiner can answer only an ask tied to a tab and site; an ask without one reaches joiners as waiting only. Claude Code's notice-only ask can never be answered by a joiner. A Codex ask kept for an approve joiner goes to you at once when no joiner can answer it any more. The "Waiting for" notice a joiner sees is masked with their own secrets.
 - **Install lock.** The lock that keeps installs one at a time names its holder by process and start time, so a lock left by a crash is taken over even when its process number has been reused; a helper removes only its own lock, and two installs in one helper take turns.
 
+**Settings in the side panel extension**
+
+- With the extension (Chromium, or a browser of your own), Settings opens as the extension's options page from a gear in the side panel's header, **Open settings** in its Tools tab, and **Settings** in the toolbar button's menu. Every section works there, Can approve and Revoke on invites included; a short note stands in for the docks. **Downloads, recordings and hand-offs** in the toolbar button's menu (or Settings) opens the side panel at its Tools tab. The owner's key stays in the extension's own pages: nothing is served to or readable by a web page.
+
 **Approve role for joiners**
 
 - A shared browser join code can carry the approve role: drive, plus answering your agents' named final clicks (pay, delete, publish, send, submit) from the joiner's own browser. Making one or switching an invite to it (`pairbrowse_invite` role "approve", `set_role`, the Share card's third choice, Settings' "Can approve") asks you first.

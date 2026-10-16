@@ -9,8 +9,8 @@
 import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperConnection, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
 import { createPictures } from "./pictures.js";
+import { settingsLink } from "./settings-link.js";
 import { AGENT_COLOR } from "../vocab.js";
-import { ownPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
 import { followHelper, postJson, UNREACHABLE } from "../helper.js";
 
@@ -256,12 +256,8 @@ $("pause-btn").addEventListener("click", (ev) => {
   if (ev.isTrusted && base) pauseAsk($("pause-btn"), { paused: !paused }, paused ? "Couldn't resume" : "Couldn't pause");
 });
 
-// Tools in the browser: one row for what lives in Settings (Passwords first; the page's #passwords
-// anchor). Without the browser's API there is nothing to open it with, so the row stays hidden.
-if (pb) {
-  $("sec-settings-link").hidden = false;
-  $("open-settings").addEventListener("click", () => { pb.tabs.create(ownPage("settings#passwords"), true, -1).catch(() => {}); });
-}
+// The Settings row and gear, and the Tools tab asked for from outside (settings-link.js).
+settingsLink({ pb, native: native(), selectTab });
 
 // The requests, then the count on the Agent tab.
 const joins = joinBanners($("joins"), () => base);

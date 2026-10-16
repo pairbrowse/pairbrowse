@@ -11,7 +11,10 @@
 // and it names an ask by the id this joiner was given for it. Each joiner gets its own id for each
 // ask, an HMAC of their key, the ask's id and its call under a key that never leaves this helper,
 // so an id seen by one joiner (or any other ask's) answers nothing for another, and nothing but
-// that very call. Their own agent's asks are never here (approvals.mjs shareable).
+// that very call. Their own agent's asks are never here (approvals.mjs shareable). An ask no
+// joiner may answer (no known tab and origin to hold an Allow to, or Claude Code's notice-only ask
+// that its terminal answers: approvals.mjs joinerCan) is shown to approve joiners too as waiting,
+// with no id to answer it by.
 import { createHmac, randomBytes } from "node:crypto";
 import { joinerKeyOf, recentlySeen } from "./joiner-server.mjs";
 import { roleOf } from "./invites.mjs";
@@ -38,7 +41,10 @@ export function createApprovalShare({ clickApprovals, invites, joinRequests, joi
     return roleOf(inv);
   }
 
-  // What joiner j sees: approve: the asks to answer; drive or watch: what waits, to read only.
+  const answerable = () => (clickApprovals?.shareable?.() || []).filter((it) => it.answerable === true);
+  const waitingOf = (asks) => asks.map((it) => ({ agent: it.agent.label, what: it.what || it.target, site: it.tab.host }));
+  // What joiner j sees: approve: the asks to answer (and the others as waiting); drive or watch:
+  // what waits, to read only.
   function viewFor(j) {
     const role = standing(j);
     if (!role) return null;
@@ -46,9 +52,11 @@ export function createApprovalShare({ clickApprovals, invites, joinRequests, joi
     const asks = clickApprovals?.shareable?.() || [];
     const name = String(host() || "The host").slice(0, 40);
     if (role === "approve") {
-      return { role, host: name, items: asks.map((it) => ({ id: aliasFor(key, it), agent: { label: it.agent.label, color: it.agent.color }, target: it.target, reason: it.reason, site: it.tab.host, at: it.at })) };
+      const items = asks.filter((it) => it.answerable === true).map((it) => ({ id: aliasFor(key, it), agent: { label: it.agent.label, color: it.agent.color }, target: it.target, reason: it.reason, site: it.tab.host, at: it.at }));
+      const waiting = waitingOf(asks.filter((it) => it.answerable !== true));
+      return { role, host: name, items, ...(waiting.length ? { waiting } : {}) };
     }
-    return { role, host: name, waiting: asks.map((it) => ({ agent: it.agent.label, what: it.what || it.target, site: it.tab.host })) };
+    return { role, host: name, waiting: waitingOf(asks) };
   }
 
   function sendTo(j, force = false) {
@@ -88,7 +96,7 @@ export function createApprovalShare({ clickApprovals, invites, joinRequests, joi
       if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => k !== "id" && k !== "answer")) return { code: 400, body: { error: "An answer is { id, answer }." } };
       if (typeof body.id !== "string" || !ALIAS.test(body.id) || !ANSWERS.has(body.answer)) return { code: 400, body: { error: "An answer is { id, answer: \"allow\" | \"deny\" }." } };
       const key = keyOf(j);
-      const it = (clickApprovals?.shareable?.() || []).find((x) => aliasFor(key, x) === body.id);
+      const it = answerable().find((x) => aliasFor(key, x) === body.id);
       if (!it) return { code: 404, body: { gone: true, error: "That request is gone (answered, or it timed out). Wait for the host's next one." } };
       const by = cleanName(j.name);
       if (!clickApprovals.answerShared(it.id, body.answer, { by })) return { code: 404, body: { gone: true, error: "That request is gone (answered, or it timed out). Wait for the host's next one." } };

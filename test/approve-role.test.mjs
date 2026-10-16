@@ -6,6 +6,7 @@ import "./helpers/home.mjs";
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { EventEmitter } from "node:events";
 import { createClickApprovals } from "../scripts/daemon/approvals.mjs";
 import { createApprovalShare } from "../scripts/liveview/approval-share.mjs";
 import { joinerKeyOf } from "../scripts/liveview/joiner-server.mjs";
@@ -32,6 +33,9 @@ function setup() {
   made.push(ca);
   share = createApprovalShare({ clickApprovals: ca, invites, joinRequests: requests, joiners, push, host: () => "Bob" });
   ca.onChange(() => share.changed()); // as the live view wires it
+  // The host's agent and its tab: an ask a joiner may answer is held to a known tab and origin.
+  const tab = { url: () => "https://shop.example/checkout", isClosed: () => false };
+  ca.participant("p1", { client: "codex", tab: () => tab });
   // Someone let in with this invite, as the joiner port keeps them.
   const join = (inv, name) => {
     const joinerId = newJoinerId();
@@ -43,7 +47,7 @@ function setup() {
     return j;
   };
   const last = (j) => pushed.filter((p) => p.to === joinerKeyOf(j.invite.id, j.joinerId) && p.event === "approvals").at(-1)?.data;
-  const ask = (input = PAY, extra = {}) => ca.open({ tool: "browser_click", input, ask: approvalAsk("browser_click", input), client: "codex", ...extra });
+  const ask = (input = PAY, extra = {}) => ca.open({ tool: "browser_click", input, ask: approvalAsk("browser_click", input), client: "codex", participant: "p1", ...extra });
   return { invites, requests, joiners, pushed, activity, ca, share, join, last, ask };
 }
 
@@ -68,7 +72,7 @@ test("approve joiners get the host's asks to answer; drive and watch joiners a n
   for (const j of [dee, wes]) {
     const v = s.last(j);
     assert.equal(v.role, j === dee ? "drive" : "watch");
-    assert.deepEqual(v.waiting, [{ agent: r.item.agent.label, what: "Pay: Place order", site: "" }], "a notice, no id to answer with");
+    assert.deepEqual(v.waiting, [{ agent: r.item.agent.label, what: "Pay: Place order", site: "shop.example" }], "a notice, no id to answer with");
     assert.equal(v.items, undefined);
   }
   assert.deepEqual(s.last(fay), { role: null, host: "Bob", items: [] }, "a follow code's joiner gets nothing");
@@ -99,7 +103,7 @@ test("first answer wins: a joiner's Allow ends the ask, names them, and the card
   assert.deepEqual(s.share.answer({ id, answer: "allow" }, alex), { code: 200, body: { ok: true } });
   assert.equal(await r.answer, "allow");
   assert.deepEqual(withdrawn, [{ id: r.item.id, answer: "allow", by: "Alex" }], "the host's card hears who");
-  assert.deepEqual(s.activity.at(-1), { text: "Allowed by Alex: Place order", who: "Alex", from: "approval" });
+  assert.deepEqual(s.activity.at(-1), { text: "Allowed by Alex: Place order on shop.example", who: "Alex", from: "approval" });
   assert.deepEqual(s.last(alex).items, []);
   assert.deepEqual(s.last(cat).items, [], "gone for the other approver too");
   // Cat's own id for it, a moment late: gone.
@@ -172,11 +176,65 @@ test("a joiner's own agent's asks never reach the approvers, and answerShared re
   const s = setup();
   const alex = s.join(s.invites.create({ role: "approve", label: "Alex", share: "code" }), "Alex");
   s.ca.participant("p-remote", { client: "claude-code", remote: true });
-  const r = await s.ask(PAY, { participant: "p-remote" });
-  assert.equal(r.shown, true);
+  assert.equal((await s.ask(PAY, { participant: "p-remote" })).shown, false, "not kept for joiners: none may answer it");
+  const r = await s.ask(PAY, { participant: "p-remote", client: "claude-code" });
+  assert.equal(r.shown, true, "Claude Code's: a notice while the terminal asks");
   assert.deepEqual(s.last(alex).items, [], "not shared");
   assert.equal(s.ca.answerShared(r.item.id, "allow", { by: "Alex" }), false);
   assert.equal(s.ca.pending().length, 1);
+});
+
+// An Allow from a joiner is held to the tab and origin the ask was made in: an ask with no tab of
+// its own known (several Claude Code agents the hook can't tell apart, an agent with no tab) has
+// nothing to hold it to, so no joiner answers it; the host still does.
+test("an ask with no known tab is never a joiner's to answer: Codex's isn't kept for them, Claude Code's is a notice", async () => {
+  const s = setup();
+  const alex = s.join(s.invites.create({ role: "approve", label: "Alex", share: "code" }), "Alex");
+  assert.equal(s.share.approvers(), 1);
+  const codex = await s.ask(PAY, { participant: null });
+  assert.equal(codex.shown, false, "only a joiner could answer it, and no joiner may: handed to the user at once");
+  const claude = await s.ask(PAY, { participant: null, client: "claude-code" });
+  assert.equal(claude.shown, true, "the terminal answers; the session sees it waits");
+  assert.equal(claude.where, null);
+  assert.deepEqual(s.last(alex).items, [], "no id to answer it by");
+  assert.deepEqual(s.last(alex).waiting.map((w) => w.what), ["Pay: Place order"], "shown as waiting");
+  assert.equal(s.ca.shareable()[0].answerable, false);
+  assert.equal(s.ca.answerShared(claude.item.id, "allow", { by: "Alex" }), false);
+  // The host still answers it.
+  assert.equal(s.ca.answer(claude.item.id, "allow", "the browser's approve page"), true);
+  assert.equal(await claude.answer, "allow");
+});
+
+// Claude Code's ask while people are in the session and nobody could answer it in a browser: a
+// notice for everyone, marked so when it starts: an approve joiner arriving (or a code switched to
+// approve) while it waits never gets it to answer. The hook stopping withdraws it.
+test("Claude Code's notice-only ask: drive joiners see it wait, an approve joiner arriving can't answer it, the hook's close withdraws it", async () => {
+  const s = setup();
+  const dee = s.join(s.invites.create({ role: "drive", label: "Dee", share: "code" }), "Dee");
+  const sock = Object.assign(new EventEmitter(), { destroyed: false, said: [], resume() {}, end(t) { this.said.push(t); } });
+  const line = JSON.stringify({ op: "approval", v: 1, tool: "browser_click", input: PAY, ancestors: [] });
+  s.ca.participant("p2", { client: "claude-code", tab: () => ({ url: () => "https://shop.example/checkout", isClosed: () => false }) });
+  const hooked = s.ca.hook(sock, line);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(s.ca.pending().length, 1, "kept while people are in the session");
+  assert.deepEqual(s.last(dee).waiting.map((w) => w.what), ["Pay: Place order"]);
+  assert.equal(s.ca.shareable()[0].answerable, false, "notice only, although held to a tab");
+  // An approve joiner comes, and Dee's code is switched to approve: nothing to answer for either.
+  const alex = s.join(s.invites.create({ role: "approve", label: "Alex", share: "code" }), "Alex");
+  s.invites.setRole(dee.invite.id, "approve");
+  s.share.changed();
+  for (const j of [alex, dee]) {
+    assert.deepEqual(s.last(j).items, [], "no id to answer it by");
+    assert.equal(s.last(j).waiting.length, 1, "still shown as waiting");
+  }
+  assert.equal(s.ca.answerShared(s.ca.pending()[0].id, "allow", { by: "Alex" }), false);
+  assert.equal(s.share.answer({ id: `ap-${"0".repeat(32)}`, answer: "allow" }, alex).code, 404);
+  // The terminal answered (the hook stopped): withdrawn, the notice goes.
+  sock.emit("close");
+  await hooked;
+  assert.deepEqual(s.ca.pending(), []);
+  assert.equal(s.last(dee).waiting, undefined);
+  assert.deepEqual(sock.said.map((t) => JSON.parse(t).answer), ["withdrawn"]);
 });
 
 // ---- through the joiner port ----

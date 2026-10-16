@@ -69,7 +69,8 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     if (live.cur !== cur || !cur.shared) return;
     const Host = cur.join.host.charAt(0).toUpperCase() + cur.join.host.slice(1);
     const approve = data?.role === "approve";
-    const waiting = !approve && Array.isArray(data?.waiting) ? data.waiting : [];
+    // Everyone's notice: drive and watch joiners every ask; an approve joiner, the asks it may not answer.
+    const waiting = Array.isArray(data?.waiting) ? data.waiting : [];
     const first = waiting[0];
     setNotice(cur, first ? `Waiting for ${Host} to approve: ${String(first.what || "a final step").slice(0, 120)}${waiting.length > 1 ? ` (+${waiting.length - 1} more)` : ""}` : "");
     // (fromHost takes the first few only.)

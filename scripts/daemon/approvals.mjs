@@ -207,6 +207,14 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     // browser has no approval card of its own (docked with its approve page there: that is the home).
     let shownIn = null;
     const bubble = !!docked() && surface();
+    // The tab and its origin as asked: an Allow holds only there (sameWhere). An ask with no tab
+    // of its own known (several Claude Code agents the hook can't tell apart, an agent with no tab)
+    // is never answered by a joiner: nothing would hold their Allow to a tab and origin; the host
+    // answers it (terminal, card, approve page).
+    let origin = "";
+    try { origin = page ? originOf(page.url()) : ""; } catch {}
+    const where = page ? { page, origin } : null;
+    const joinable = !!where && !info?.remote;
     if (page && !bubble && !lv?.sharing?.() && !lv?.guestViewers?.()) {
       const front = await within(3000, Promise.resolve(frontPage()).catch(() => null));
       if (front === page) {
@@ -218,21 +226,19 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     }
     // Nowhere to answer in a browser: nothing kept, nothing waits; except Claude Code's ask while
     // people are in a shared browser session here: the terminal answers it, and they see that the
-    // host is deciding meanwhile (approval-share.mjs: a notice, never a way to answer).
-    const noticeOnly = !shownIn && !surface() && client === "claude-code" && Number(lv?.sharedJoiners?.()) > 0;
-    if (!shownIn && !surface() && !noticeOnly) return { shown: false };
+    // host is deciding meanwhile (approval-share.mjs: a notice, never a way to answer). Marked so
+    // at its start: an approve joiner who comes (or a code switched to approve) while it waits
+    // never gets it to answer.
+    const noticeOnly = !shownIn && !surface(joinable) && client === "claude-code" && Number(lv?.sharedJoiners?.()) > 0;
+    if (!shownIn && !surface(joinable) && !noticeOnly) return { shown: false };
     let resolve;
     const answer = new Promise((r) => { resolve = r; });
-    // The tab and its origin as asked: an Allow holds only there (sameWhere).
-    let origin = "";
-    try { origin = page ? originOf(page.url()) : ""; } catch {}
-    const where = page ? { page, origin } : null;
-    const it = { id, key, client, participant: p, agent, kind: "click", target, reason, what, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0, where };
+    const it = { id, key, client, participant: p, agent, kind: "click", target, reason, what, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0, where, noticeOnly };
     items.set(id, it);
     it.timer = setTimeout(() => { if (end(it, "expired")) log(`approval ${short(id)}: no answer in ${Math.round(waitMs / 1000)} s`); }, waitMs);
     it.timer.unref?.();
     emit({ op: "add", item: publicItem(it) });
-    const joinersToo = Number(lv?.approveJoiners?.()) > 0 ? " and by the joiners who can approve" : "";
+    const joinersToo = joinerCan(it) && Number(lv?.approveJoiners?.()) > 0 ? " and by the joiners who can approve" : "";
     log(noticeOnly ? `approval ${short(id)}: asked in the terminal; the people in the session see that it waits` : `approval ${short(id)}: asked in the browser for ${client || "an app"} (${shownIn ? "in the page" : bubble ? "in the browser's approval card" : "in the browser's pages"}${joinersToo})`);
     watch();
     return { item: publicItem(it), shown: true, answer, where };
@@ -317,17 +323,22 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     return true;
   }
 
-  // The asks a joiner with the approve role may see and answer: this helper's own agents' only
-  // (never a joiner's agent's: those are never asked here). bind: the call's own key, hashed (an
-  // answer is bound to the ask's id and its call, approval-share.mjs).
+  // Whether a joiner with the approve role may answer this ask: one of this helper's own agents'
+  // (never a joiner's agent's), held to a known tab and origin, and not a notice-only ask (the
+  // terminal answers those).
+  const joinerCan = (it) => !!it && !it.remote && !it.noticeOnly && !!it.where && !participants.get(it.participant)?.remote;
+  // The asks joiners in a shared browser session may see: this helper's own agents' only (never a
+  // joiner's agent's: those are never asked here). answerable: whether an approve joiner may answer
+  // it (joinerCan); the others are shown to everyone as waiting. bind: the call's own key, hashed
+  // (an answer is bound to the ask's id and its call, approval-share.mjs).
   function shareable() {
     return [...items.values()].filter((it) => !it.remote && !participants.get(it.participant)?.remote)
-      .map((it) => ({ ...publicItem(it), what: it.what, bind: sha256(it.key).slice(0, 32) }));
+      .map((it) => ({ ...publicItem(it), what: it.what, bind: sha256(it.key).slice(0, 32), answerable: joinerCan(it) }));
   }
   // A joiner's answer (approval-share.mjs checked who and the role): allow or deny only.
   function answerShared(id, a, { by = "" } = {}) {
     const it = items.get(String(id));
-    if (!it || it.remote || participants.get(it.participant)?.remote || (a !== "allow" && a !== "deny")) return false;
+    if (!joinerCan(it) || (a !== "allow" && a !== "deny")) return false;
     return answer(it.id, a, `${by || "a joiner"} (joined, can approve)`, by);
   }
 
@@ -339,11 +350,12 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     return true;
   }
 
-  // A browser page that lists approvals is open, or a joiner who can approve is in.
-  function surface() {
+  // A browser page that lists approvals is open, or (joiners: whether joiners may answer the ask
+  // in question) a joiner who can approve is in.
+  function surface(joiners = true) {
     const lv = liveView();
     const counts = lv?.pageClients?.() || {};
-    return SURFACES.some((k) => Number(counts[k]) > 0) || Number(lv?.approveJoiners?.()) > 0;
+    return SURFACES.some((k) => Number(counts[k]) > 0) || (joiners && Number(lv?.approveJoiners?.()) > 0);
   }
 
   // The call itself arrived (Claude Code: the terminal's yes, or the browser's Allow passed on).
@@ -379,7 +391,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   // handed to the user now rather than at the expiry.
   function lost(it) {
     it.page = null;
-    if (it.client === "claude-code" || surface()) return;
+    if (it.client === "claude-code" || surface(joinerCan(it))) return;
     if (end(it, "terminal")) log(`approval ${short(it.id)}: no place left to ask: handed to the user`);
   }
   // Someone else came to look (a joiner let in, an invite link opened) while a card is shown:

@@ -36,7 +36,12 @@ export const isOwnBrowser = (front, own) => (own?.size ? own.has(Number(String(f
 // activates the PairBrowse browser, sometimes a second or two later, so for a short while focus
 // goes back to the app you were in (the Claude workspace with its pane, another PairBrowse
 // window, for example) whenever this helper's browser jumps in front.
+// A build whose automation tab changes never activate it (its manifest's quietTabs, 585) needs none
+// of this: the change runs alone. Set at each launch from the browser's shell (daemon/browser/launch.mjs).
+let quiet = false;
+export const setQuietTabs = (on) => { quiet = !!on; };
 export async function keepFocus(change, { children = ownPids } = {}) {
+  if (quiet) return change();
   const before = process.platform === "darwin" ? await jxa(FRONT).catch(() => "") : "";
   const [pid] = before.split(" ");
   const result = await change();

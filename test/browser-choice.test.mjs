@@ -58,12 +58,17 @@ test("the shell: the side panel extension unless the build declares its own page
   assert.equal(shellFrom({ capture: 2 }), EXTENSION_SHELL, "a capture page needs the build's own pages");
   assert.equal(shellFrom({ settingsSection: 1 }), EXTENSION_SHELL, "a settings section needs the build's own pages");
   assert.equal(EXTENSION_SHELL.settingsSection, false);
-  assert.deepEqual(shellFrom({ chrome: 1 }), { kind: "pages", ownPages: true, capturePage: false, captureKeyed: false, settingsSection: false });
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: false, settingsSection: false });
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 2 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: false });
+  assert.deepEqual(shellFrom({ chrome: 1 }), { kind: "pages", ownPages: true, capturePage: false, captureKeyed: false, settingsSection: false, quietTabs: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: false, settingsSection: false, quietTabs: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 2 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: false, quietTabs: false });
   // 580: the build's settings are the engine settings' PairBrowse section.
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 2, settingsSection: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: true });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 2, settingsSection: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: true, quietTabs: false });
   for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, settingsSection: v }).settingsSection, false, String(v));
+  // 585: automation's tab changes never bring the build in front of the app you're in.
+  assert.equal(shellFrom({ chrome: 1, quietTabs: 1 }).quietTabs, true);
+  assert.equal(shellFrom({ quietTabs: 1 }), EXTENSION_SHELL, "quiet tabs come with the build's own pages");
+  assert.equal(EXTENSION_SHELL.quietTabs, false);
+  for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, quietTabs: v }).quietTabs, false, String(v));
   let reads = 0;
   const read = (p) => { reads++; if (p === "/bad") throw new Error("no manifest"); return { chrome: 1 }; };
   assert.equal(shellOf({ browserEngine: "open", executablePath: "/x" }, read), EXTENSION_SHELL);

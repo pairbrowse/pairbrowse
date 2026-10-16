@@ -9,6 +9,7 @@ import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "
 import { needsVirtualDisplay, startVirtualDisplay } from "../../display.mjs";
 import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
 import { within } from "../../util.mjs";
+import { setQuietTabs } from "../../focus.mjs";
 import { MEASURING } from "../../native-engine.mjs";
 import { OPEN_ACCEPT_MS } from "../../opener.mjs";
 import { isBrowserPage, BROWSER_PICKER, extensionUrl } from "../../../ui/urls.js";
@@ -24,6 +25,7 @@ export const browserPagesIn = (engine) => shellOf(engine).ownPages;
 export const capturePagesIn = (engine) => shellOf(engine).capturePage;
 export const captureKeyedIn = (engine) => shellOf(engine).captureKeyed;
 export const settingsSectionIn = (engine) => shellOf(engine).settingsSection;
+export const quietTabsIn = (engine) => shellOf(engine).quietTabs;
 
 // This Mac's one-time capture (native-engine.mjs MEASURING): the first launch of a browser version
 // waits up to a minute for it, and says so in the live view's status line and a notification (no
@@ -50,7 +52,7 @@ const RESTORE_WAIT_MS = 3000;
 export const CLOSE_RESERVE_MS = 1500;
 
 export function createLaunch(st, deps, api) {
-  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, helperFor } = deps;
+  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf = quietTabsIn, helperFor } = deps;
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
   const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
 
@@ -72,7 +74,7 @@ export function createLaunch(st, deps, api) {
   const shellFor = (e) => {
     const ownPages = !!browserPagesOf(e);
     const capturePage = ownPages && !!capturePagesOf(e);
-    return { kind: ownPages ? "pages" : "extension", ownPages, capturePage, captureKeyed: capturePage && !!captureKeyedOf(e), settingsSection: ownPages && !!settingsSectionOf(e) };
+    return { kind: ownPages ? "pages" : "extension", ownPages, capturePage, captureKeyed: capturePage && !!captureKeyedOf(e), settingsSection: ownPages && !!settingsSectionOf(e), quietTabs: ownPages && !!quietTabsOf(e) };
   };
   const said = new Set(); // lines about the choice, logged once per helper run
   const once = (line) => { if (!said.has(line)) { said.add(line); log(line); } };
@@ -139,6 +141,7 @@ export function createLaunch(st, deps, api) {
     const next = await chooseEngine();
     step("engine");
     st.shell = shellFor(next);
+    setQuietTabs(st.shell.quietTabs); // its tab changes never come in front: keepFocus has nothing to do
     st.ownPages = st.shell.ownPages;
     st.capture = st.shell.capturePage;
     st.chosen = true;

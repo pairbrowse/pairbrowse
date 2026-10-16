@@ -495,7 +495,9 @@ dlg.addEventListener("close", () => { if (location.hash === "#report") history.r
 
 // ---- Browser settings: one link to the browser's own (chrome://settings) ----------------------
 // In the browser this tab page follows the link itself; the extension opens it with chrome.tabs.
+// The page's HTML names no address outside itself (the build's page checks): the link gets it here.
 for (const a of document.querySelectorAll("#browser-settings, [data-browser-settings]")) {
+  a.href = ENGINE_SETTINGS_ORIGIN;
   a.addEventListener("click", (ev) => {
     if (NATIVE) return; // the link itself
     ev.preventDefault();

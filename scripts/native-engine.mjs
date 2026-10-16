@@ -55,6 +55,9 @@ export const captureKeyed = (manifest) => Number.isInteger(manifest?.capture) &&
 // chrome://pairbrowse/settings/). Absent (older builds): the settings page is the tab page
 // chrome://pairbrowse/settings itself.
 export const settingsSection = (manifest) => Number.isInteger(manifest?.settingsSection) && manifest.settingsSection >= 1;
+// The build manifest's `quietTabs` field (1 and up, 585): a tab automation opens or brings forward
+// is selected in its window without bringing the browser in front of the app you're in.
+export const quietTabs = (manifest) => Number.isInteger(manifest?.quietTabs) && manifest.quietTabs >= 1;
 
 // A command's output, trimmed, or "" when it fails or takes over 10 s. Never execFileSync here:
 // the helper serves its live view and every other caller while these run.

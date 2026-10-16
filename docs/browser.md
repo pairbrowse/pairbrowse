@@ -144,8 +144,9 @@ actions, for testing):
 ```
 
 Typing speed: `typingPace` from 0.2 (fastest) to 1 (slowest, about 60 words a minute). The
-default, 0.3, types a single `browser_type` at about 105 words a minute: the gaps between keys and
-the short pauses scale with it; how long each key is held doesn't. A `browser_type` goes the way a
+default, 0.2 (0.3 in earlier versions), types with a fast typist's rollover: the gaps between keys
+and the short pauses scale with it; how long each key is held doesn't. A slower pace (0.3 to 0.5) is
+the setting for a more careful, slower hand. A `browser_type` goes the way a
 form field does (below): the field focused by the engine's own reach and click (none when it has the
 focus already), what it held cleared, the text key by key with a quick typist's rhythm, read back; 41
 characters take about 3.5 s (6 s before 0.15.39), 200 characters into a textarea about 10 s (24 s).
@@ -163,7 +164,7 @@ typed key by key at `typingPace` with a quick typist's rhythm (the next key ofte
 last is up, a beat after each word), a closed select picked by typing its option's first letters, a
 box ticked with Space, a date or time field set at once in its turn (its exact shape, YYYY-MM-DD).
 Every field is read back, and a value that didn't stay is said so in the result. A form never types
-quicker than about 40 ms a key on average (`typingPace` below 0.25 counts as 0.25 there). An
+quicker than `typingPace` 0.2 allows (lower counts as 0.2 there). An
 11-field form takes about 9 s this way (the first fill after the browser starts a little longer),
 against 25 s with a mouse reach and a full key hold for every field. `formMove` picks how
 PairBrowse goes from field to field:
@@ -175,8 +176,8 @@ PairBrowse goes from field to field:
 `"tab"` (the default) is described above; `"mouse"` reaches for every field with the mouse, as
 single actions do. Fast mode (`pairbrowse_run`) is unchanged: it skips the human-like input altogether.
 
-Mouse movement: `motion` is `"combined"` by default. The profile keeps its own speed, tremor and
-habits, and each move is shaped like a hand's: one quick reach that lands close (now and then a few
+Mouse movement: `motion` is `"quick"` by default (`"combined"` in earlier versions). With
+`"combined"` the profile keeps its own speed, tremor and habits, and each move is shaped like a hand's: one quick reach that lands close (now and then a few
 pixels past), then homes in without stopping. Every click still lands exactly on its point.
 `"quick"` is the same shape with a short hop (under about 200 px, one field to the next) in about
 half the time, a long reach as before, and a shorter pause before the press: a click on the next

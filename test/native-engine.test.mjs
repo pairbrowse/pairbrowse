@@ -158,16 +158,16 @@ packTest("browser options are read from the pairbrowse key", async () => {
   assert.equal(chromium.calls[0].options.args.find(a => a.startsWith("--fingerprint=")), "--fingerprint=named-seed");
 });
 
-packTest("humanized mouse moves take the combined shape unless config asks for the quick or the classic one", async () => {
+packTest("humanized mouse moves take the quick shape unless config asks for the combined or the classic one", async () => {
   const pack = await loadPack();
   const seen = [];
   const spy = { ...pack, installHumanizeOnContext: (context, opts) => seen.push(opts) };
   const app = appFixture();
-  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "quick" }, { motion: "anything else" }]) {
+  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "combined" }, { motion: "anything else" }]) {
     await launchNative(fakeChromium(), { pairbrowse: { fingerprint: "motion-seed", ...pairbrowse } }, mkdtempSync(join(tmpdir(), "pairbrowse-motion-")),
       { executablePath: app.executablePath, headless: false }, spy);
   }
-  assert.deepEqual(seen.map((o) => o.motion), ["combined", "classic", "quick", "combined"]);
+  assert.deepEqual(seen.map((o) => o.motion), ["quick", "classic", "combined", "quick"]);
   assert.ok(seen.every((o) => o.humanize === true && o.seed));
   assert.ok(seen.every((o) => o.typingPace === TYPING_PACE), "single actions type at the default pace");
 });
@@ -178,15 +178,15 @@ function seeded(seed = 7) {
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
 }
 
-test("form fill settings: typingPace 0.3 and Tab between fields by default, floored and parsed", () => {
-  assert.equal(TYPING_PACE, 0.3);
-  assert.deepEqual(fillSettings({}), { typingPace: 0.3, formMove: "tab" });
-  assert.deepEqual(fillSettings(undefined), { typingPace: 0.3, formMove: "tab" });
+test("form fill settings: typingPace 0.2 and Tab between fields by default, floored and parsed", () => {
+  assert.equal(TYPING_PACE, 0.2);
+  assert.deepEqual(fillSettings({}), { typingPace: 0.2, formMove: "tab" });
+  assert.deepEqual(fillSettings(undefined), { typingPace: 0.2, formMove: "tab" });
   assert.deepEqual(fillSettings({ pairbrowse: { typingPace: 0.5, formMove: "mouse" } }), { typingPace: 0.5, formMove: "mouse" });
   assert.equal(fillSettings({ pairbrowse: { formMove: "anything else" } }).formMove, "tab");
-  assert.equal(fillSettings({ pairbrowse: { typingPace: 0.2 } }).typingPace, FILL_PACE_FLOOR, "a form never types quicker than the floor");
+  assert.equal(fillSettings({ pairbrowse: { typingPace: 0.1 } }).typingPace, FILL_PACE_FLOOR, "a form never types quicker than the floor");
   assert.equal(fillSettings({ pairbrowse: { typingPace: 3 } }).typingPace, 1);
-  assert.equal(fillSettings({ pairbrowse: { typingPace: "fast" } }).typingPace, 0.3);
+  assert.equal(fillSettings({ pairbrowse: { typingPace: "fast" } }).typingPace, 0.2);
 });
 
 test("a keystroke schedule types every key with a person's rhythm: rollover, Shift held, no faster than 40 ms a key", () => {
@@ -341,7 +341,7 @@ test("a single browser_type clicks the field once, clears it, types key by key a
   assert.deepEqual(moves, ["click e1", "press ControlOrMeta+a", "press Backspace"], "the engine's own click, then a hand's clear; never an instant fill");
   assert.deepEqual(form.log.filter((l) => l.startsWith("down ") && l !== "down Shift").map((l) => l.slice(5)), Array.from(T41), "every character key by key");
   const quick = perKey(TYPING_PACE);
-  assert.ok(quick >= 40 && quick < 65, `about 105 words a minute at the default pace: ${quick.toFixed(1)} ms a key`);
+  assert.ok(quick >= 22 && quick < 40, `a fast typist's rollover at the default pace: ${quick.toFixed(1)} ms a key`);
   assert.match(traced[0], /^browser_type, 41 characters: Notes by click: check \d+, click \d+, read \d+, clear \d+, type \d+, read \d+ ms$/);
   // The field has the focus now: no second click.
   const again = await humanType(form.page, { target: "e1", name: "Notes", value: "Hi" }, fillSettings({}), { rng: seeded(), wait, trace: (l) => traced.push(l) });

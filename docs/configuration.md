@@ -84,7 +84,8 @@
   to 176). Changes made in the browser last for the session while the helper runs. Written into the
   profile as `pairbrowse.layout` the first time a browser with its own pages starts; the browser
   keeps it after.
-- `settleMs`: the browser server's fixed pause after each action before it answers (default 200;
+- `settleMs`: the browser server's fixed pause after each action before it answers (default 60; 200 in earlier
+  versions;
   Playwright MCP's own default is 500, and twice that when the action made requests). PairBrowse
   waits for the page itself after that (until its document is quiet, popups closed) before the
   picture, so a longer pause only slows things down; raise it for a page whose scripts react late

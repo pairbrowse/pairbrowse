@@ -64,6 +64,16 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 - **Corrupt state files are kept aside.** A state file that doesn't read is copied aside before it starts afresh, the helper starts and names it in `pairbrowse_status`, and a failed write leaves no temporary file behind.
 - **A clock set back** no longer holds rate limits, stretches invites or ends a live tunnel.
 - Every refusal says what to do next.
+- **Only agents at work show.** An open Claude Code or Codex window that never called a tool is no longer listed as an idle agent in the board, docks and tab strip; an agent shows from its first call until 30 minutes after its last, and leaves at once when its connection closes. The same app session back within 10 s (a restarted bridge) keeps its name, color and tab; after that its tab is released, still open.
+- A joiner's approval answer with an id that isn't a string answers nothing (it could throw).
+
+**Faster**
+
+- On the native browser (bench, this Mac): click 1067 to 613 ms, navigate 337 to 180 ms, type 650 to 495 ms, click at a point 683 to 459 ms, fast-mode form 276 to 243 ms (p50, screenshots on). The browser server's pause after each action is 60 ms (`settleMs`, was 200); a page counts as quiet after 80 ms without changes (was 120); the agent's cursor glides in at most 200 ms and, with humanized input on, alongside the engine's own reach instead of before it; humanized mouse moves default to `"quick"` (`motion: "combined"` for the slower hand); `typingPace` defaults to 0.2 (was 0.3; raise it for a slower hand) and clearing a field holds each key as briefly as typing does.
+
+**Look**
+
+- Pointer name labels are clean filled pills: no ring around the agent cursor's pill or a joiner's on the picture page.
 
 **Restructure**
 

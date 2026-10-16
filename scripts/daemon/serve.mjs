@@ -28,7 +28,7 @@ const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for th
   "Ask them in chat which they want, then use pairbrowse_session (use, or new with clean: true) or pairbrowse_join; or retry once they've picked.";
 
 // Playwright MCP's own pause after each action (see createConnection): config.settleMs overrides.
-const MCP_SETTLE_DEFAULT_MS = 200;
+const MCP_SETTLE_DEFAULT_MS = 60;
 const STALLED_MS = 30_000; // a disconnected participant's action may run this long
 // The most one call may hold the shared queue. Past it the browser is reset (as for a stalled
 // client that left), so one stuck call can't keep every other agent on this computer waiting.

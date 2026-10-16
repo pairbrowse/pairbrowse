@@ -236,7 +236,7 @@ export function clickContext(n, kind = "click", prev = "", hints = {}) {
 // to its document (no nodes, attributes or text changing), at most maxMs. A page that is already
 // still answers in about a tenth of a second; one still loading or animating a menu gets up to
 // maxMs, as the fixed wait it replaces did. Resolves to how long it waited (ms).
-export const QUIET_MS = 120;
+export const QUIET_MS = 80;
 export async function settle(page, maxMs) {
   if (!page || page.isClosed() || maxMs <= 0) return 0;
   const started = Date.now();

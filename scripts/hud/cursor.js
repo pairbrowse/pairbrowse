@@ -5,7 +5,7 @@
   // press itself puts it exactly where the press was (the real point, which a humanized click
   // picks itself), so it never points beside the click or still at the previous target.
   const motion = "__PB_MOTION__";
-  const CURSOR_MOTION = { fittsA: 50, fittsB: 60, minMs: 120, maxMs: 350 }; // quicker than a hand
+  const CURSOR_MOTION = { fittsA: 30, fittsB: 35, minMs: 60, maxMs: 200 }; // much quicker than a hand: it shows where, it never holds the action up long
   const CURSOR_HOLD_MS = 12000;
   const PRESS_WINDOW_MS = 4000; // the first press this soon after the cursor was sent is the agent's
   let curHost, cur, curTimer, curAt = null, curFrame = 0, pressBy = 0, pressAct = "";

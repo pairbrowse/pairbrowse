@@ -4,17 +4,17 @@
 import { within, sleep } from "../util.mjs";
 
 // typingPace: how fast humanized typing goes, 0.2 (fastest) to 1 (the engine's own, about 60 words a
-// minute); the gaps between keys scale, how long each key is held doesn't. For a single browser_type
-// 0.3 is about 104 words a minute (measured: 0.5 is 80, 0.35 is 95); a form fill (humanFill) has its
-// own rhythm at the same pace.
-export const TYPING_PACE = 0.3;
+// minute); the gaps between keys scale, how long each key is held doesn't. The default, 0.2, is a
+// fast typist's rollover (measured: 0.3 is about 104 words a minute, 0.5 is 80); a slower pace is
+// the config's for a more careful hand. A form fill (humanFill) has its own rhythm at the same pace.
+export const TYPING_PACE = 0.2;
 export const clampPace = (pace, floor = 0.2) => Math.min(1, Math.max(floor, Number(pace) || TYPING_PACE));
 
 // What a form fill (browser_fill_form) in the native browser follows. typingPace as above, floored at
-// 0.25 here: quicker would be under 40 ms a key on average, which no hand does. formMove: "tab" (the
+// 0.2 here, as single actions are. formMove: "tab" (the
 // default) goes on to the next field with the Tab key when it is next in the page's own order, by
 // mouse otherwise; "mouse" reaches for every field, as single actions do.
-export const FILL_PACE_FLOOR = 0.25;
+export const FILL_PACE_FLOOR = 0.2;
 export function fillSettings(config) {
   const { typingPace = TYPING_PACE, formMove = "tab" } = config?.pairbrowse ?? {};
   return { typingPace: clampPace(typingPace, FILL_PACE_FLOOR), formMove: formMove === "mouse" ? "mouse" : "tab" };
@@ -79,12 +79,13 @@ const readBack = (loc) => loc.inputValue({ timeout: 1500 }).catch(() => loc.eval
 // What the field with the focus holds (where the keys went, also when the page swapped the element
 // for another as it was typed in, as a search box with suggestions does): as readBack, else null.
 const readFocused = (page) => within(1500, page.evaluate(() => { const a = document.activeElement; return a && typeof a.value === "string" ? a.value : a?.isContentEditable ? a.textContent : null; })).catch(() => null);
-// Clears what a focused field holds, as a hand does: select all, Backspace.
+// Clears what a focused field holds, as a quick hand does: select all, Backspace, each key held
+// as briefly as a fast typist's (the engine's own hold for a lone press is twice that).
 async function clearField(keys, between, wait) {
-  await keys.press("ControlOrMeta+a");
-  await wait(between(30, 90));
-  await keys.press("Backspace");
-  await wait(between(40, 120));
+  await keys.press("ControlOrMeta+a", { delay: between(30, 60) });
+  await wait(between(15, 45));
+  await keys.press("Backspace", { delay: between(30, 60) });
+  await wait(between(20, 50));
 }
 // How a typed value stayed, read back: { line, failed }. done: the line when it did; said: how the
 // line starts when the page kept something else ("Filled Name", "Typed into Name"); plain: the value

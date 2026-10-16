@@ -6,6 +6,8 @@
 //   ... --soak N [--viewers V]   N rounds on one helper, memory over time, V live-view viewers
 //   ... --agents N [--rounds R]  N agents at once in their own tabs
 //   ... --joiner R               a shared-browser joiner (two helpers) over R rounds
+//   ... --native                 the PairBrowse browser with its engine pack (humanized input),
+//                                headed: PAIRBROWSE_TEST_ENGINE and PAIRBROWSE_TEST_EXECUTABLE
 //   ... --check test/bench-budgets.json   compares the screenshots-on run to the budgets in that
 //                                file, prints each with pass/fail and exits 1 on any miss
 //                                (npm run bench:check: a local gate on this Mac, not CI)
@@ -13,8 +15,8 @@
 // It starts its own helper on a temporary home with a headless browser, so a running PairBrowse
 // is untouched. Numbers are wall-clock on this machine: compare runs on the same machine only.
 import { createRequire } from "node:module";
-import { mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, symlinkSync, writeFileSync, rmSync, existsSync, openSync, readFileSync, cpSync } from "node:fs";
+import { tmpdir, homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
@@ -34,6 +36,9 @@ const JSON_OUT = opt("--json", "");
 const CHECK = opt("--check", "");
 // Read the budgets before the run, so a bad path fails at once rather than after a minute of bench.
 const budgets = CHECK ? JSON.parse(readFileSync(CHECK, "utf8")) : null;
+const NATIVE = args.includes("--native");
+const nativeExe = process.env.PAIRBROWSE_TEST_EXECUTABLE, nativeEngine = process.env.PAIRBROWSE_TEST_ENGINE;
+if (NATIVE && !(nativeExe && nativeEngine)) { console.error("--native needs PAIRBROWSE_TEST_ENGINE and PAIRBROWSE_TEST_EXECUTABLE"); process.exit(2); }
 const hasImage = (r) => (r.result?.content || []).some((c) => c.type === "image");
 
 // The process tree under pid: rss (KB) and cumulative CPU seconds, from ps.
@@ -65,7 +70,15 @@ async function startHelper({ screenshots }) {
   const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
   const h = mkdtempSync(join(tmpdir(), "pb-bench-"));
   symlinkSync(runtime, join(h, "runtime"), "dir");
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, chromeArgs: ["--headless=new"], display: "none", ...(screenshots ? {} : { screenshots: false }) }));
+  if (NATIVE) {
+    // The engine pack and this Mac's captured host profile, as an installed helper has them.
+    cpSync(nativeEngine, join(h, "engine"), { recursive: true });
+    const profile = join(homedir(), ".pairbrowse", "mac-host-profile.json");
+    if (existsSync(profile)) cpSync(profile, join(h, "mac-host-profile.json"));
+  }
+  writeFileSync(join(h, "config.json"), JSON.stringify(NATIVE
+    ? { browserEngine: "pairbrowse", executablePath: nativeExe, sessionPicker: false, ...(screenshots ? {} : { screenshots: false }) }
+    : { executablePath, chromeArgs: ["--headless=new"], display: "none", ...(screenshots ? {} : { screenshots: false }) }));
   const out = openSync(join(h, "daemon.stderr.log"), "a");
   const t0 = Date.now();
   // --expose-gc: the memory probe collects garbage first, so heap figures are what's reachable.
@@ -168,6 +181,8 @@ async function run({ screenshots }) {
     const byTool = new Map();
     for (const l of helper.log().split("\n")) { const m = l.match(/trace (\S+) (.*)$/); if (m) byTool.set(m[1], m[2]); }
     result.trace = [...byTool].map(([t, v]) => `${t} ${v}`);
+    // How the last humanized typing went, step by step (native/humanize.mjs trace).
+    result.typeSteps = helper.log().split("\n").filter((l) => /browser_type, \d+ characters/.test(l)).slice(-3).map((l) => l.replace(/^\S+ /, ""));
   } catch (e) {
     result.error = `${e.message}\n${helper.log().slice(-1500)}`;
   } finally {

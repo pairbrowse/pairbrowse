@@ -40,7 +40,7 @@ export function pickAgentColor(app, taken = []) {
 // Claude's cursor: before a click, typing or a choice, show where in the page it happens.
 const CURSOR_TOOLS = { browser_click: "click", browser_type: "type", browser_hover: "hover", browser_select_option: "click", browser_fill_form: "type", pairbrowse_upload: "click" };
 const CURSOR_WAIT_MS = 300; // never holds an action up for longer finding its element
-const CURSOR_ARRIVE_MS = 350; // nor for longer while the cursor gets there (the page script's limit)
+const CURSOR_ARRIVE_MS = 200; // nor for longer while the cursor gets there (the page script's limit)
 // Declaring what is about to be pressed is what tells the agent's own press from a person's, so
 // it waits longer than the cursor (a busy computer) for the box and for the page to take it; a
 // press itself is never held up past these.
@@ -347,8 +347,10 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     const ms = await pointAt(page, box, act, who);
     // The press that follows is the agent's: declared before the action goes on.
     await declarePress(page, [box || await pressBox(el, asked, since)]);
-    // The action waits for the cursor to arrive, so it is there when the click happens.
-    if (ms) await sleep(ms);
+    // The action waits for the cursor to arrive, so it is there when the click happens. With the
+    // engine's humanized input on (it marks such a page with its persona) the real pointer's own
+    // reach takes longer than this glide, so the two go together instead of one after the other.
+    if (ms && !page._pairbrowsePersona) await sleep(ms);
   }
 
   // What a form fill will act on, all of it (document pixels), so the page script knows the

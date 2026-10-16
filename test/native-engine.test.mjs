@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, nativeManifest, chromePages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
+import { launchNative, DRIVER_BLINK_SWITCH, nativeManifest, chromePages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
@@ -156,6 +156,19 @@ packTest("browser options are read from the pairbrowse key", async () => {
   await launchNative(chromium, { pairbrowse: { fingerprint: "named-seed" } }, directory,
     { executablePath: app.executablePath, headless: false }, pack);
   assert.equal(chromium.calls[0].options.args.find(a => a.startsWith("--fingerprint=")), "--fingerprint=named-seed");
+});
+
+packTest("a native launch leaves out the driver's switches: no automation flag, no warning bar for AutomationControlled", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const chromium = fakeChromium();
+  await launchNative(chromium, { pairbrowse: { fingerprint: "bar-seed" } }, mkdtempSync(join(tmpdir(), "pairbrowse-bar-")),
+    { executablePath: app.executablePath, headless: false }, pack);
+  const { ignoreDefaultArgs, args } = chromium.calls[0].options;
+  assert.ok(ignoreDefaultArgs.includes("--enable-automation"));
+  assert.ok(ignoreDefaultArgs.includes(DRIVER_BLINK_SWITCH));
+  assert.equal(DRIVER_BLINK_SWITCH, "--disable-blink-features=AutomationControlled");
+  assert.ok(!args.some((a) => a.startsWith("--disable-blink-features")), "no Blink feature switch of PairBrowse's own");
 });
 
 packTest("humanized mouse moves take the quick shape unless config asks for the combined or the classic one", async () => {

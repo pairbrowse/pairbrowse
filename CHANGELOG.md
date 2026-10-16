@@ -60,6 +60,7 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 - The right dock's Tools tab: hand-offs, downloads, recordings and diagnostics. Report a problem goes to PairBrowse's own address by default, after you review the exact report.
 - Sessions can be renamed (also a saved one that isn't open) and saved from the session card; one agent can be paused on its own; the Activity page keeps the session's log, agent messages included.
 - Shared joiners' pointers are drawn by the browser over the page card, never inside your tab, and your own pointer never comes back to you.
+- No "unsupported command-line flag" bar above the page: the native browser launches without the driver's `--disable-blink-features=AutomationControlled` (the build keeps `navigator.webdriver` false itself).
 - Fast mode opens what a narrow layout folded (a search box behind a link, a menu behind a toggle) when the page's markup ties it to the step.
 
 **Reliability**

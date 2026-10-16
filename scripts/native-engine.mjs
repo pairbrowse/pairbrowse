@@ -277,6 +277,8 @@ function splitExtensionArgs(args, extensions) {
   return { extensionPaths: [...paths], userArgs: rest };
 }
 
+export const DRIVER_BLINK_SWITCH = "--disable-blink-features=AutomationControlled";
+
 export async function launchNative(chromium, config, directory, options, pack, log = () => {}) {
   const metadata = nativeManifest(options.executablePath);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -332,7 +334,10 @@ export async function launchNative(chromium, config, directory, options, pack, l
     // persona's options or a switch from the pack while it's on.
     chromiumSandbox: options.chromiumSandbox !== false,
     args: options.chromiumSandbox === false ? gated.args : withoutNoSandbox(gated.args),
-    ignoreDefaultArgs: [...new Set([...pack.DEFAULT_IGNORED_ARGS, ...(merged.ignoreDefaultArgs ?? []), "--enable-automation"])],
+    // The driver's --disable-blink-features=AutomationControlled is left out too: the build keeps
+    // navigator.webdriver false on its own, and Chromium shows that switch in a warning bar above
+    // every page ("unsupported command-line flag").
+    ignoreDefaultArgs: [...new Set([...pack.DEFAULT_IGNORED_ARGS, ...(merged.ignoreDefaultArgs ?? []), "--enable-automation", DRIVER_BLINK_SWITCH])],
   });
   log(`launch: launchPersistentContext ${Date.now() - contextAt} ms`);
   try {

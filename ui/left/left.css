@@ -18,7 +18,9 @@ body > svg[hidden] { display: none; }
 .dock-btn:hover { background: var(--hover); color: var(--ink); }
 .dock-btn[hidden] { display: none; }
 
-.body { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-3) var(--dock-gutter) var(--sp-2); scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+/* The first nav row on the back button's line: centred in the 42 px nav row beside the dock
+   (strip.css, the shell's nav groups), so (42 - 36) / 2 = 3 px above it (the user, 2026-10-17). */
+.body { --first-row: calc((42px - var(--row-nav)) / 2); min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--first-row) var(--dock-gutter) var(--sp-2); scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
 
 /* Nav rows: 36 px, 8 px radius, a 16 px icon and a 13 px label. */
 .nav { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
@@ -116,7 +118,7 @@ body[data-dock="rail"] .people li.empty,
 body[data-dock="rail"] #shared h2, body[data-dock="rail"] .empty-note { display: none; }
 /* The agents' names and states leave the eye but stay in the accessibility tree (the .sr recipe). */
 body[data-dock="rail"] .people strong, body[data-dock="rail"] .people small { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-body[data-dock="rail"] .body { padding: var(--sp-3) var(--sp-1) var(--sp-2); }
+body[data-dock="rail"] .body { padding: var(--first-row) var(--sp-1) var(--sp-2); }
 body[data-dock="rail"] .row { justify-content: center; width: 36px; padding: 0; margin: 0 auto; }
 body[data-dock="rail"] .sec { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--edge); }
 body[data-dock="rail"] .sec-head { display: none; }

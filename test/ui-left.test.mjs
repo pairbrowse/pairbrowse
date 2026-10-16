@@ -125,10 +125,10 @@ scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }
   // The active row, as the mockup draws it: the --nav-active fill, no gradient, the soft blue glow.
   const look = await inPage(() => { const p = document.createElement("i"); p.style.backgroundColor = "var(--nav-active)"; document.body.append(p); const want = getComputedStyle(p).backgroundColor; p.remove(); const s = getComputedStyle(document.getElementById("nav-browser")); return { bg: s.backgroundColor === want, image: s.backgroundImage, shadow: s.boxShadow }; });
   assert.deepEqual({ ...look, shadow: look.shadow !== "none" }, { bg: true, image: "none", shadow: true });
-  // No Workspace header (2026-10-14): the nav starts 12 px under the dock's top, and the Sessions row
-  // carries the workspace icon.
+  // No Workspace header (2026-10-14): the Sessions row carries the workspace icon. The first row is
+  // on the back button's line (2026-10-17): centred in the 42 px nav row, 3 px under the dock's top.
   assert.deepEqual(await inPage(() => [document.getElementById("workspace"), document.querySelector(".head")]), [null, null]);
-  assert.equal(await inPage(() => document.getElementById("nav-browser").getBoundingClientRect().top), 12);
+  assert.equal(await inPage(() => { const r = document.getElementById("nav-browser").getBoundingClientRect(); return r.top + r.height / 2; }), 21);
   assert.equal(await inPage(() => document.querySelector("#nav-sessions .ic use").getAttribute("href")), "#i-workspace");
   await ctx.page.click("#nav-history");
   await until("a history tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));

@@ -555,6 +555,7 @@ const follow = createFollow({
   onHostChange: (state) => liveView()?.setJoinHost(state),
   // The approve role: the host's approval cards this side may answer (declared below; called later).
   onApprovals: (data) => clickApprovals.fromHost(data),
+  mask: output.mask,
 });
 // A join request: the bottom bar in the host's tab in front asks (Allow / Deny) while the browser
 // has the focus, else a notification with Allow / Deny (daemon/joinprompt.mjs).

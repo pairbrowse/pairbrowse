@@ -31,6 +31,16 @@ const FORM_COALESCE_MS = 30; // keystrokes that come together go as one
 // The tools an agent here uses in the host's browser while in a shared browser session (the rest,
 // such as its status, remembered details and sessions, stay here).
 const FORWARDED = toolsWith("forwarded");
+// The notice on the picture pages while the host decides ("Waiting for <Host> to approve: <what>"):
+// the host's own list of what waits (data.waiting: everything for drive and watch joiners; for an
+// approve joiner, the asks it may not answer), each "what" masked here with this side's own
+// secrets as the cards' text is (approvals.mjs fromHost), then cut. "" when nothing waits. Pure.
+export function approvalNotice(data, Host, mask = (t) => t) {
+  const waiting = Array.isArray(data?.waiting) ? data.waiting : [];
+  const first = waiting[0];
+  if (!first) return "";
+  return `Waiting for ${Host} to approve: ${String(mask(String(first.what || "a final step"))).slice(0, 120)}${waiting.length > 1 ? ` (+${waiting.length - 1} more)` : ""}`;
+}
 const JOIN_ANSWER_MS = 5000; // join waits this long for the host's first answer (a code that doesn't work is an error at once)
 
 // context: the helper's browser ({ getContext }). hud: addActivity, onActivity. presence: people
@@ -46,7 +56,8 @@ const JOIN_ANSWER_MS = 5000; // join waits this long for the host's first answer
 // side panel, hostState()). configFile: where "Always allow" is written (paths.config).
 // onApprovals({ host, items } | null): the host's approval cards this side may answer (the approve
 // role, shared browser codes; daemon/approvals.mjs fromHost), or null when out of the session.
-export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {}, onHostChange = () => {}, onApprovals = null, configFile = paths.config }) {
+// mask(text): this side's own masking (output.mask), for the host's text shown here.
+export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {}, onHostChange = () => {}, onApprovals = null, mask = (t) => t, configFile = paths.config }) {
   // The session joined now (live.cur: join/state.mjs newJoinState) and how the last one ended (live.ended).
   const live = newFollowState();
 
@@ -70,9 +81,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
     const Host = cur.join.host.charAt(0).toUpperCase() + cur.join.host.slice(1);
     const approve = data?.role === "approve";
     // Everyone's notice: drive and watch joiners every ask; an approve joiner, the asks it may not answer.
-    const waiting = Array.isArray(data?.waiting) ? data.waiting : [];
-    const first = waiting[0];
-    setNotice(cur, first ? `Waiting for ${Host} to approve: ${String(first.what || "a final step").slice(0, 120)}${waiting.length > 1 ? ` (+${waiting.length - 1} more)` : ""}` : "");
+    setNotice(cur, approvalNotice(data, Host, mask));
     // (fromHost takes the first few only.)
     try { onApprovals?.({ host: Host, items: approve && Array.isArray(data?.items) ? data.items : [] }); } catch (e) { log("approvals", e?.message || e); }
   }

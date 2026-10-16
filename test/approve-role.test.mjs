@@ -13,6 +13,7 @@ import { joinerKeyOf } from "../scripts/liveview/joiner-server.mjs";
 import { createInvites, startLiveView } from "../scripts/liveview.mjs";
 import { createApprovals, newJoinerId } from "../scripts/sharing/join.mjs";
 import { approvalAsk } from "../scripts/rules/decide.mjs";
+import { approvalNotice } from "../scripts/daemon/follow.mjs";
 
 const PAY = { element: "Pay: Place order", target: "e5" };
 const SEND = { element: "Send: Send message", target: "e9" };
@@ -412,6 +413,18 @@ test("a joiner's side: no card on the picture pages while someone else looks at 
   assert.equal(p.calls.filter(([k]) => k === "approval").length, 0);
   assert.equal(s.ca.pending().length, 1, "still listed for this browser's own approve page");
   s.ca.fromHost(null);
+});
+
+// The "Waiting for <host> to approve" notice shows the host's text through this side's own masking,
+// as the cards' text is (fromHost), whatever the role.
+test("a joiner's side: the waiting notice is masked with this side's own secrets", () => {
+  const mask = (t) => t.replace(/hunter2/g, "••••");
+  const data = { role: "drive", waiting: [{ agent: "Claude Code", what: "Send: password hunter2", site: "shop.example" }, { agent: "Codex", what: "Pay", site: "" }] };
+  assert.equal(approvalNotice(data, "Bob", mask), "Waiting for Bob to approve: Send: password •••• (+1 more)");
+  assert.equal(approvalNotice({ role: "approve", items: [], waiting: [{ what: "hunter2".repeat(40) }] }, "Bob", mask).length, "Waiting for Bob to approve: ".length + 120, "masked, then cut");
+  assert.ok(!approvalNotice({ role: "approve", waiting: [{ what: "x hunter2" }] }, "Bob", mask).includes("hunter2"), "an approve joiner's notice too");
+  assert.equal(approvalNotice({ role: "watch", waiting: [{}] }, "Bob", mask), "Waiting for Bob to approve: a final step");
+  for (const bad of [null, {}, { waiting: "x" }, { waiting: [] }]) assert.equal(approvalNotice(bad, "Bob", mask), "");
 });
 
 test("a join request says approve when the code can approve: the host knows what they let in", () => {

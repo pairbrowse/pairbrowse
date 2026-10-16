@@ -25,9 +25,9 @@
   // A name on a tag: at most 40 characters, cut between words.
   // The pointer's shape (its tip at 0,0 in a "1 1 22 22" view box: exactly at the point) and the
   // name pill (24 px tall, 12 px text: DESIGN.md B5), shared by the agent's cursor and other people's pointers: dark ink on the
-  // participant's color, AA on every palette color (test/tokens.test.mjs), a 1 px darker outline, no glow.
+  // participant's color, AA on every palette color (test/tokens.test.mjs), no border, outline or glow.
   const POINTER = "M1 1v16.6l4.3-3.8 2.7 6.1 2.8-1.3-2.7-6 5.6-.6z";
-  const PILL = "padding:4px 10px;border-radius:999px;font:600 12px/16px system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0B1421;white-space:nowrap;box-shadow:0 0 0 1px rgba(0,0,0,.28);-webkit-font-smoothing:antialiased";
+  const PILL = "padding:4px 10px;border-radius:999px;font:600 12px/16px system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0B1421;white-space:nowrap;-webkit-font-smoothing:antialiased";
   const shortWho = (who) => { const t = String(who || "Claude"); return t.length > 40 ? `${t.slice(0, 40).replace(/\s+\S*$/, "")}…` : t; };
   function pointer(x, y, act, who = "Claude", color = "", w = 24) {
     if (!curHost || !curHost.isConnected) {

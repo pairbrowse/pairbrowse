@@ -3,7 +3,9 @@
 // and the browser's history forgetting Playwright's temporary ones before a launch.
 // profile(): the profile folder of the browser about to launch.
 import { spawnSync } from "node:child_process";
-import { existsSync, copyFileSync, constants as fsConstants } from "node:fs";
+import { existsSync, realpathSync, lstatSync, unlinkSync, createReadStream, constants as fsConstants } from "node:fs";
+import { open } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
 import { basename, join, resolve } from "node:path";
 import { homedir, userInfo } from "node:os";
 import { keepDownloadMark } from "../toolstab.mjs";
@@ -32,18 +34,14 @@ export function createDownloads({ personTabs, config, hostNote, log, onDownload,
       let id = null;
       try { id = onDownload({ op: "start", name, page }); } catch {}
       try {
-        // Resolved and checked now, not when it was chosen: a folder since swapped for a link
+        const from = await download.path(); // finished, in Playwright's temporary folder
+        // Resolved and checked now, once the download has finished and right before the write, not
+        // when it was chosen or when the download started: a folder since swapped for a link
         // elsewhere is never written to.
         const { dir, problem } = folderNow();
         if (problem) log(`downloads folder not used: ${problem}`);
         if (!dir) throw new Error(`no folder downloads may go to (${problem})`);
-        const from = await download.path(); // finished, in Playwright's temporary folder
-        let dest;
-        for (let i = 0; ; i++) {
-          dest = join(dir, i ? `${name.slice(0, dot)} (${i})${name.slice(dot)}` : name);
-          try { copyFileSync(from, dest, fsConstants.COPYFILE_EXCL); break; } // never over an existing file
-          catch (e) { if (e.code !== "EEXIST" || i > 500) throw e; }
-        }
+        const dest = await saveInto(dir, name, dot, from);
         await keepDownloadMark(from, dest); // Open and Office's Protected View read it
         try { onDownload({ op: "done", id, path: dest }); } catch {}
         if (!personal) hostNote(`Downloaded ${name} to ${dest}`);
@@ -71,4 +69,37 @@ export function createDownloads({ personTabs, config, hostNote, log, onDownload,
   }
 
   return { keepDownloads, forgetTemporaryDownloads };
+}
+
+// The folder is still itself: its real path is the one checked (no part of it swapped for a link).
+const stillReal = (dir) => { try { return realpathSync(dir) === dir; } catch { return false; } };
+const NOFOLLOW = fsConstants.O_NOFOLLOW || 0; // not on Windows, where the folder check alone stands
+
+// Copies from into dir (a real path just checked) under name, or "name (1).ext" and so on: never over
+// an existing file (O_EXCL), never through a link at the file's own name (O_NOFOLLOW), and only while
+// the folder's real path is still dir, checked before the file is made and again once it is open,
+// before a byte is written. The file's path.
+export async function saveInto(dir, name, dot, from) {
+  for (let i = 0; ; i++) {
+    const dest = join(dir, i ? `${name.slice(0, dot)} (${i})${name.slice(dot)}` : name);
+    if (!stillReal(dir)) throw new Error(`${dir} changed (now a link elsewhere); not written to`);
+    let fh;
+    try { fh = await open(dest, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NOFOLLOW, 0o666); }
+    catch (e) { if (e.code !== "EEXIST" || i > 500) throw e; continue; }
+    try {
+      const st = await fh.stat();
+      let same = false;
+      try { const l = lstatSync(dest); same = l.isFile() && l.ino === st.ino && l.dev === st.dev; } catch {}
+      if (!same || !stillReal(dir)) {
+        // Swapped between the check and the open: the empty file made is left nowhere it was asked.
+        try { const l = lstatSync(dest); if (l.ino === st.ino && l.dev === st.dev && l.size === 0) unlinkSync(dest); } catch {}
+        throw new Error(`${dir} changed while saving (now a link elsewhere); not written to`);
+      }
+      const out = fh.createWriteStream(); // closes the file when done
+      fh = null;
+      await pipeline(createReadStream(from), out);
+      return dest;
+    } finally { if (fh) await fh.close().catch(() => {}); }
+  }
+
 }

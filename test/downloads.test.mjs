@@ -9,7 +9,7 @@ import { join, basename } from "node:path";
 import { EventEmitter } from "node:events";
 import { checkDownloads, downloadsFolderNow } from "../scripts/rules/downloads.mjs";
 import { loadConfig, paths } from "../scripts/paths.mjs";
-import { createDownloads } from "../scripts/daemon/browser/downloads.mjs";
+import { createDownloads, saveInto } from "../scripts/daemon/browser/downloads.mjs";
 
 const testHome = process.env.PAIRBROWSE_HOME;
 
@@ -93,6 +93,52 @@ test("a save resolves the folder at that moment: one swapped for a link after lo
   assert.deepEqual(readdirSync(at("Library", "LaunchAgents")), [], "nothing lands in LaunchAgents");
   assert.ok(readdirSync(at("Downloads")).includes("evil.plist"), "it goes to your Downloads folder instead");
   assert.equal(done.at(-1).op, "done");
+});
+
+test("a folder swapped for a link while the download is still running is never written to", async () => {
+  mkdirSync(at("During"));
+  const config = { downloadsDir: at("During") };
+  const done = [];
+  const { keepDownloads } = createDownloads({
+    personTabs: { has: () => false }, config, hostNote: () => {}, log: () => {}, profile: () => user,
+    onDownload: (e) => { if (e.op !== "start") done.push(e); return 1; },
+    folderNow: () => downloadsFolderNow(config.downloadsDir, { home: testHome, user }),
+  });
+  const page = new EventEmitter();
+  keepDownloads(page);
+  const src = join(user, "src-during");
+  writeFileSync(src, "data");
+  let finish;
+  const finished = new Promise((r) => { finish = r; });
+  // The download takes a while: path() answers only once it has finished.
+  page.emit("download", { suggestedFilename: () => "during.plist", path: async () => { await finished; return src; }, failure: async () => null });
+  await new Promise((r) => setTimeout(r, 30));
+  rmSync(at("During"), { recursive: true });
+  symlinkSync(at("Library", "LaunchAgents"), at("During"));
+  finish();
+  for (let i = 0; i < 200 && !done.length; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(done.at(-1)?.op, "done");
+  assert.deepEqual(readdirSync(at("Library", "LaunchAgents")), [], "nothing lands in LaunchAgents");
+  assert.equal(done.at(-1).path, join(at("Downloads"), "during.plist"));
+});
+
+test("the save itself: the folder's real path checked again at the write, a link at the file's name never followed", async () => {
+  const src = join(user, "src-into");
+  writeFileSync(src, "body");
+  mkdirSync(at("Into"));
+  const p = await saveInto(at("Into"), "x.txt", 1, src);
+  assert.equal(readFileSync(p, "utf8"), "body");
+  // A link planted at the file's name: never written through, the next free name is used.
+  writeFileSync(at("Library", "target"), "keep");
+  symlinkSync(at("Library", "target"), at("Into", "y.txt"));
+  const q = await saveInto(at("Into"), "y.txt", 1, src);
+  assert.equal(q, at("Into", "y (1).txt"));
+  assert.equal(readFileSync(at("Library", "target"), "utf8"), "keep");
+  // The folder checked earlier is a link by the time of the write: refused, nothing written.
+  rmSync(at("Into"), { recursive: true });
+  symlinkSync(at("Library", "LaunchAgents"), at("Into"));
+  await assert.rejects(saveInto(at("Into"), "z.plist", 7, src), /not written to/);
+  assert.deepEqual(readdirSync(at("Library", "LaunchAgents")), []);
 });
 
 // The Security table's Downloads row: a site's name for a file is a plain name in the chosen

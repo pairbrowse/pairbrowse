@@ -191,11 +191,19 @@ export function createPicker(st, deps, api) {
     return { text: 'Use action "use" or "new".', error: true };
   }
 
-  // An agent chose (pairbrowse_join): the picker goes, the saved tabs come back.
+  // An agent chose (pairbrowse_join): the picker goes, the saved tabs come back. A picker asked
+  // for again (reopened) shows in a tab of its own over the session's tabs, still open with their
+  // tracker: only that tab closes (a restore would open the saved tabs a second time under a
+  // second tracker).
   function agentChose(text) {
     if (pick.state !== "showing") { if (pick.state === "pending") pick.state = "done"; return; }
     picked(text);
     const page = pick.page;
+    if (pick.reopened) {
+      pick.reopened = false;
+      within(3000, Promise.resolve(page?.close()).catch(() => {}));
+      return;
+    }
     st.contextPromise?.then(async (ctx) => { await page?.goto("about:blank").catch(() => {}); api.restore(ctx); }).catch(() => {});
   }
 

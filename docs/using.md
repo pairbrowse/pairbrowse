@@ -99,6 +99,17 @@ session profile: close the PairBrowse window or switch session. The timeline (on
 many pictures it keeps, 1 to 200) is changed there too, and applies at once. See
 [Configuration](configuration.md).
 
+With the side panel extension (Chromium, or a browser of your own) the same Settings page is the
+extension's options page: open it with the gear in the side panel's header, **Open settings** at
+the end of its Tools tab, or **Settings** in the menu of PairBrowse's toolbar button (right-click
+it). Every section works there: the browser choice, the downloads folder, approvals, your name,
+invites out now (Revoke, and **Can approve** on a shared browser join code), passwords and
+remembered details, the timeline, diagnostics and Report a problem. The docks are the PairBrowse
+browser's window, so in their place a short note says where the side panel is. This session's
+downloads, your recordings and the hand-offs waiting for you are in the side panel's Tools tab:
+**Downloads, recordings and hand-offs** in the toolbar button's menu, or **Show in the side
+panel** in Settings, opens the panel there.
+
 ## Approvals in the browser and the terminal
 
 A named final click (pay, delete, publish, send, submit, or a named OK on a page's dialog) asks you

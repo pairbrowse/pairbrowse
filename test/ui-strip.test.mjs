@@ -660,9 +660,9 @@ describe("share card opens and posts an invite", () => pageTest("strip", { viewp
   assert.equal(await inPage(() => document.getElementById("share-card").hidden), true);
 }));
 
-// Settings: the engine settings' PairBrowse section in a build that has it (the helper's
-// config.json settingsSection, 580), else the tab page of an older build.
-for (const [section, settingsUrl] of [[false, "pairbrowse://settings"], [true, "pairbrowse://settings/pairbrowse"]]) describe(`menu: PairBrowse settings, found or opened (${section ? "the settings section" : "an older build"})`, () => pageTest("strip", { viewport: TALL, fixtures: { config: { settingsSection: section } } }, async ({ page, shim, inPage }) => {
+// Settings: the tab page's own address in every build (one with the engine settings' PairBrowse
+// section, 580, sends it there), whatever the helper says.
+for (const [section, settingsUrl] of [[false, "chrome://pairbrowse/settings"], [true, "chrome://pairbrowse/settings"]]) describe(`menu: PairBrowse settings, found or opened (${section ? "the settings section" : "an older build"})`, () => pageTest("strip", { viewport: TALL, fixtures: { config: { settingsSection: section } } }, async ({ page, shim, inPage }) => {
   // Part H: the menu holds only PairBrowse settings; New window, Zoom and Record are gone.
   assert.equal(await inPage(() => document.getElementById("menu-btn").getAttribute("aria-haspopup")), "menu");
   await page.click("#menu-btn");

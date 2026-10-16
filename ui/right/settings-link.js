@@ -9,14 +9,13 @@
 // ("panelTab"): read once now and on each change, then cleared. Nothing runs but on a click or
 // that change; no timer.
 import { $ } from "../common.js";
-import { settingsSectionAt } from "../helper.js";
 import { settingsPage } from "../urls.js";
 
-export function settingsLink({ pb, native, selectTab, base = () => null, scope = globalThis }) {
+export function settingsLink({ pb, native, selectTab, scope = globalThis }) {
   const chrome = scope.chrome;
   if (pb) {
     $("sec-settings-link").hidden = false;
-    $("open-settings").addEventListener("click", async () => { pb.tabs.create(settingsPage("passwords", await settingsSectionAt(base(), scope)), true, -1).catch(() => {}); });
+    $("open-settings").addEventListener("click", () => { pb.tabs.create(settingsPage("passwords"), true, -1).catch(() => {}); });
     return;
   }
   if (native) return;

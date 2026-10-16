@@ -13,7 +13,7 @@ import { $, el, avatar, shareCard, isColor, helperStream, servedByBrowser, enter
 import { isSettingsPage, settingsPage } from "../urls.js";
 import { hasBubbles, anchorRect, reopenGuard } from "../bubbles.js";
 import { pointersFor, createTabOrder, createOwnerSync } from "./sync.js";
-import { helperAddress, onHelperAddress, postJson, settingsSectionAt } from "../helper.js";
+import { helperAddress, onHelperAddress, postJson } from "../helper.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
@@ -114,7 +114,7 @@ menuItem("settings", async () => {
     const { tabs } = await pb.tabs.list();
     const open = (tabs || []).find((t) => t.window === myWindow && isSettingsPage(t.url));
     if (open) await pb.tabs.activate(open.id);
-    else await pb.tabs.create(settingsPage("", await settingsSectionAt(base)), true, myWindow);
+    else await pb.tabs.create(settingsPage(), true, myWindow);
   } catch {}
 });
 // Without the browser's API the menu has nothing to call.

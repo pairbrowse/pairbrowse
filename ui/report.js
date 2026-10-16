@@ -1,7 +1,7 @@
 // Report a problem: the payload, sending it through the helper, and the offer on a page's error
 // state. Shared by Settings, the picker, Sessions and the right dock (common.js re-exports it; the
 // live view serves it). A flat file at the ui/ root; definitions only, nothing runs on import.
-import { reportUrl, TOP_SHELL_HOST, settingsPage } from "./urls.js";
+import { REPORT_URL, TOP_SHELL_HOST, settingsPage } from "./urls.js";
 import { postJson, UNREACHABLE } from "./helper.js";
 import { el } from "./dom.js";
 
@@ -57,13 +57,10 @@ export async function reportOffer(base) {
   if (!base) return null;
   const c = await fetch(base + "config.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (c?.report !== true) return null;
-  // A build with the engine settings' PairBrowse section (580) has Settings there; an older one
-  // has its own tab page.
-  const section = c.settingsSection === true;
-  const a = el("a", { className: "report-offer", href: reportUrl(section), textContent: "Report a problem", target: "_blank", rel: "noopener" });
+  const a = el("a", { className: "report-offer", href: REPORT_URL, textContent: "Report a problem", target: "_blank", rel: "noopener" });
   a.addEventListener("click", (ev) => {
     const pb = globalThis.pairbrowse;
-    if (pb && location.host === TOP_SHELL_HOST) { ev.preventDefault(); pb.tabs.create(settingsPage("report", section), true, -1).catch(() => {}); return; }
+    if (pb && location.host === TOP_SHELL_HOST) { ev.preventDefault(); pb.tabs.create(settingsPage("report"), true, -1).catch(() => {}); return; }
     if (pb) return; // a tab page: the link itself
     const tabs = globalThis.chrome?.tabs, runtime = globalThis.chrome?.runtime;
     if (tabs?.create && runtime?.getURL) { ev.preventDefault(); tabs.create({ url: runtime.getURL("settings/index.html#report") }); }

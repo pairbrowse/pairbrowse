@@ -53,15 +53,11 @@ test("the browser's own addresses have one set of rules, for the helper and the 
   assert.equal((await import("../scripts/browser.mjs")).extensionOrigin, urls.extensionOrigin);
   assert.deepEqual([...urls.BROWSER_PAGE_ORIGINS], ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"]);
   assert.equal(urls.ownPage("settings#passwords"), "pairbrowse://settings#passwords");
-  // PairBrowse's own settings: the engine settings' PairBrowse section (580), any of its spellings.
-  // With the settings section (a build that declares it), and without (an older build: the tab page).
-  assert.equal(urls.settingsPage("", true), "pairbrowse://settings/pairbrowse");
-  assert.equal(urls.settingsPage("passwords", true), "pairbrowse://settings/pairbrowse#passwords");
-  assert.equal(urls.settingsPage(), "pairbrowse://settings");
-  assert.equal(urls.settingsPage("passwords"), "pairbrowse://settings#passwords");
   assert.equal(urls.REPORT_URL, "chrome://pairbrowse/settings#report");
-  assert.equal(urls.reportUrl(false), "chrome://pairbrowse/settings#report");
-  assert.equal(urls.reportUrl(true), "chrome://settings/pairbrowse#report");
+  // One address in every build: an older one shows the tab page, a build with the section sends it there.
+  assert.equal(urls.REPORT_URL, "chrome://pairbrowse/settings#report");
+  assert.equal(urls.settingsPage(), "chrome://pairbrowse/settings");
+  assert.equal(urls.settingsPage("passwords"), "chrome://pairbrowse/settings#passwords");
   for (const u of ["chrome://settings/pairbrowse", "chrome://settings/pairbrowse#report", "pairbrowse://settings/pairbrowse", "pairbrowse://settings/pairbrowse?x",
     "chrome://settings/pairbrowse/", "chrome://pairbrowse/settings/", "chrome://pairbrowse/settings#report", "pairbrowse://settings#report"]) assert.ok(urls.isSettingsPage(u), u);
   // Opened as a whole tab of its own, the browser's settings page goes to its section; framed, or

@@ -27,17 +27,14 @@ export const ownPage = (name) => `pairbrowse://${name}`;
 // The session picker and the joiner's picture page, in a build with its own pages.
 export const BROWSER_PICKER = `chrome://${TAB_HOST}/picker`;
 export const BROWSER_SCREEN = `chrome://${TAB_HOST}/screen/`;
-// PairBrowse's own settings, at one of its sections ("passwords"), by the name the browser shows.
-// section: the build has the engine settings' PairBrowse section (580), which frames the page
-// (pairbrowse://settings/pairbrowse#passwords); else the tab page itself (pairbrowse://settings#passwords).
-export const settingsPage = (at = "", section = false) => ownPage(`settings${section ? "/pairbrowse" : ""}${at ? `#${at}` : ""}`);
+// PairBrowse's own settings, at one of its sections ("passwords"): its tab page's own address,
+// which every build opens right, whatever the helper knows: an older build shows the tab page, a
+// build with the engine settings' PairBrowse section (580) sends it there at the same section.
+export const settingsPage = (at = "") => `chrome://${TAB_HOST}/settings${at ? `#${at}` : ""}`;
 // The engine's settings page around it (chrome://settings), where its frame posts its height.
 export const ENGINE_SETTINGS_ORIGIN = "chrome://settings";
-// Settings' report section, as a link a plain browser shows: the tab page's (an older build), and
-// the engine settings' section's (a build with it; the older address still goes there).
-export const REPORT_URL = `chrome://${TAB_HOST}/settings#report`;
-export const REPORT_SECTION_URL = `${ENGINE_SETTINGS_ORIGIN}/pairbrowse#report`;
-export const reportUrl = (section = false) => (section ? REPORT_SECTION_URL : REPORT_URL);
+// Settings' report section, as a link: the tab page's address (settingsPage), right in every build.
+export const REPORT_URL = settingsPage("report");
 
 // Every pairbrowse: address is the browser's own, whichever spelling a tab or a call carries:
 // never an agent's to open, read or act in. So is the engine's settings page (chrome://settings

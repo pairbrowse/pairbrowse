@@ -159,9 +159,9 @@ for (const url of ["chrome://pairbrowse/settings#report", "chrome://settings/pai
   await clean(ctx);
 });
 
-// No Settings tab: one opens, at the tab page in an older build, at the engine settings' PairBrowse
-// section in a build with it (the helper's config.json settingsSection, 580).
-for (const [section, url] of [[false, "pairbrowse://settings"], [true, "pairbrowse://settings/pairbrowse"]]) scenario(`left: Settings opens ${url}`, { viewport: OPEN, fixtures: { config: { settingsSection: section } } }, async (ctx) => {
+// No Settings tab: one opens at the tab page's own address in every build (one with the engine
+// settings' PairBrowse section, 580, sends it there), whatever the helper says.
+for (const [section, url] of [[false, "chrome://pairbrowse/settings"], [true, "chrome://pairbrowse/settings"]]) scenario(`left: Settings opens ${url} (${section ? "the settings section" : "an older build"})`, { viewport: OPEN, fixtures: { config: { settingsSection: section } } }, async (ctx) => {
   await ctx.until("the stream", () => document.body.dataset.s === "live" || !!window.__pairbrowse);
   await ctx.page.click("#settings");
   await ctx.until("a Settings tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));

@@ -159,9 +159,9 @@ pageTest("picker", { fixtures: { sessions: STATE }, replies: { pick: AT_WORK } }
 });
 
 // Part H: a refused pick offers Report a problem while the helper relays reports: Settings' report
-// section, the tab page's in an older build, the engine settings' PairBrowse section's in one with
-// it (config.json settingsSection, 580).
-for (const [section, href] of [[false, "chrome://pairbrowse/settings#report"], [true, "chrome://settings/pairbrowse#report"]]) pageTest("picker", { fixtures: { sessions: STATE, config: { report: true, settingsSection: section } }, replies: { pick: { error: true, text: "A session is already chosen." } } }, async ({ page, until, inPage: run }) => {
+// section by the tab page's address, the same in every build (one with the engine settings'
+// PairBrowse section, 580, sends it there).
+for (const [section, href] of [[false, "chrome://pairbrowse/settings#report"], [true, "chrome://pairbrowse/settings#report"]]) pageTest("picker", { fixtures: { sessions: STATE, config: { report: true, settingsSection: section } }, replies: { pick: { error: true, text: "A session is already chosen." } } }, async ({ page, until, inPage: run }) => {
   await until("the rows", ready);
   await page.click("#fresh");
   await until("the offer", () => !!document.querySelector("#msg a.report-offer"));

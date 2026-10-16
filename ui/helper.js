@@ -60,13 +60,6 @@ export function followHelper({ connect, none = () => {}, failed = none, wait = f
   return () => { stopped = true; stop(); };
 }
 
-// Whether the browser's build has PairBrowse's settings as the engine settings' PairBrowse section
-// (580; its manifest's settingsSection): the helper's config.json says so (settingsSection).
-// false without an address, an answer or the field (an older helper or build).
-export const settingsSectionAt = (base, scope = globalThis) => (base
-  ? Promise.resolve().then(() => scope.fetch(base + "config.json")).then((r) => (r.ok ? r.json() : null)).then((c) => c?.settingsSection === true).catch(() => false)
-  : Promise.resolve(false));
-
 // ---- asking the helper ----
 // The words when the helper couldn't be reached, the same on every page; _RETRY where a press can
 // simply go again.

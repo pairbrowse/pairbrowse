@@ -27,7 +27,7 @@ const writeSaved = () => writeFileSync(tabsFile("default"), JSON.stringify({ tab
 const savedNow = () => JSON.parse(readFileSync(tabsFile("default"), "utf8")).tabs.map((t) => t.url);
 
 // A browser whose tab going to hold waits until release() (a slow site during the restore).
-function fakeBrowser({ hold = null } = {}) {
+function fakeBrowser({ hold = null, hangTitles = false } = {}) {
   let release;
   const held = new Promise((r) => { release = r; });
   const fakePage = (ctx) => {
@@ -38,7 +38,7 @@ function fakeBrowser({ hold = null } = {}) {
       listeners: () => [], isClosed: () => page.closed, context: () => ctx, url: () => page.at, mainFrame: () => frame,
       goto: async (url) => { if (url === hold) await held; page.at = url; page.emit("framenavigated", frame); },
       close: async () => { page.closed = true; page.emit("close"); },
-      bringToFront: async () => {}, setContent: async () => {}, evaluate: async () => {}, title: async () => "", waitForLoadState: async () => {},
+      bringToFront: async () => {}, setContent: async () => {}, evaluate: async () => {}, title: hangTitles ? () => new Promise(() => {}) : async () => "", waitForLoadState: async () => {},
     });
     return page;
   };
@@ -48,7 +48,7 @@ function fakeBrowser({ hold = null } = {}) {
   ctx.addInitScript = async () => {};
   ctx.newPage = async () => { const p = fakePage(ctx); pages.push(p); ctx.emit("page", p); return p; };
   ctx.browser = () => null;
-  ctx.close = async () => { ctx.emit("close"); };
+  ctx.close = async () => { ctx.closedAt = Date.now(); ctx.emit("close"); };
   pages.push(fakePage(ctx)); // the start tab
   return { chromium: { launchPersistentContext: async () => ctx }, release, ctx };
 }
@@ -107,6 +107,36 @@ test("a stop while saved tabs reopen waits for them, then saves them all", { tim
   setTimeout(() => b.release(), 200);
   await context.close({ restoreWaitMs: 3000 });
   assert.deepEqual(savedNow(), SAVED, "every tab, saved once the restore finished");
+});
+
+// The helper's stop has SHUTDOWN_GRACE_MS (5 s, daemon.mjs) in all: the restore's wait, the save and
+// the browser's own close are budgeted against that deadline, the close keeping at least 1.5 s.
+test("a stop's restore wait and save fit the grace: the browser's close starts with 1.5 s left", { timeout: 30_000 }, async () => {
+  // The restore ended 2.5 s into the stop (a fake clock that far on), and no tab answers its title
+  // (2 s a tab before): the save writes what it has by 3.5 s, then the close.
+  writeSaved();
+  const b = fakeBrowser({ hangTitles: true });
+  const context = make(b.chromium);
+  await context.getContext();
+  assert.ok(await until(() => !context.isRestoring() && b.ctx.pages().length >= SAVED.length));
+  const start = Date.now();
+  const now = () => Date.now() + 2500;
+  await context.close({ deadline: start + 5000, now });
+  const at = b.ctx.closedAt - start;
+  assert.ok(at <= 1300, `the close started by 3.5 s of the grace (${at + 2500} ms)`);
+  assert.deepEqual(savedNow(), SAVED, "every tab saved, titles or not");
+
+  // Saved tabs still reopening 3 s into the stop: the restore's wait is what's left before 3.5 s.
+  writeSaved();
+  const held = fakeBrowser({ hold: SAVED[1] });
+  const c2 = make(held.chromium);
+  await c2.getContext();
+  assert.ok(await until(() => c2.isRestoring()));
+  const s2 = Date.now();
+  await c2.close({ deadline: s2 + 5000, now: () => Date.now() + 3000 });
+  const at2 = held.ctx.closedAt - s2;
+  assert.ok(at2 <= 800, `the restore's wait was cut to the budget (${at2 + 3000} ms)`);
+  assert.deepEqual(savedNow(), SAVED, "the whole list kept");
 });
 
 test("the browser opened by hand and a pick in the session picker count as a person using the browser", { timeout: 30_000 }, async () => {

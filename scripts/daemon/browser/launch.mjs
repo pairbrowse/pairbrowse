@@ -46,6 +46,8 @@ export function measuringLog({ log, status, notify }) {
 
 // How long a stop waits for saved tabs still reopening (close below), inside the helper's 5 s.
 const RESTORE_WAIT_MS = 3000;
+// What a stop leaves the browser's own close (its cookies written) before the helper's deadline.
+export const CLOSE_RESERVE_MS = 1500;
 
 export function createLaunch(st, deps, api) {
   const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, helperFor } = deps;
@@ -286,15 +288,19 @@ export function createLaunch(st, deps, api) {
 
 
   // At shutdown: remember the tabs before they close; a clean close writes cookies to disk.
-  // Saved tabs still reopening: their restore gets up to restoreWaitMs to finish first (the whole
-  // stop has SHUTDOWN_GRACE_MS, daemon.mjs); still going after that, nothing is saved (the tracker
-  // holds its writes during a restore, scripts/tabs.mjs), so the saved list stays whole.
-  async function close({ restoreWaitMs = RESTORE_WAIT_MS } = {}) {
+  // Saved tabs still reopening: their restore gets up to restoreWaitMs to finish first; still
+  // going after that, nothing is saved (the tracker holds its writes during a restore,
+  // scripts/tabs.mjs), so the saved list stays whole. deadline (now()'s clock): when the helper
+  // kills the browser (daemon.mjs SHUTDOWN_GRACE_MS); the restore's wait and the save end
+  // CLOSE_RESERVE_MS before it (the save writing every tab, with the titles read by then), so the
+  // browser's own close, which writes the cookies, has that long.
+  async function close({ restoreWaitMs = RESTORE_WAIT_MS, deadline = Infinity, now = Date.now } = {}) {
+    const by = deadline - CLOSE_RESERVE_MS;
     try {
       const ctx = st.contextPromise && (await st.contextPromise);
-      if (st.restoring) await within(restoreWaitMs, Promise.resolve(st.restoring).catch(() => {}));
+      if (st.restoring) await within(Math.max(0, Math.min(restoreWaitMs, by - now())), Promise.resolve(st.restoring).catch(() => {}));
       if (st.restoring) log("shutdown: saved tabs were still reopening; the saved list stays as it was");
-      await st.tabTracker?.saveNow();
+      await st.tabTracker?.saveNow({ deadline: by, now });
       st.tabTracker?.stop();
       await ctx?.close();
     } catch {}

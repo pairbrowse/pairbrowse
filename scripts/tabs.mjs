@@ -2,7 +2,7 @@
 // starts, behind an "Opening tabs" screen. The engine's own restore reloads every tab at once
 // during startup, which made the first action wait many seconds.
 import { ownTitle } from "./daemon/tablabels.mjs";
-import { readJson, sleep, writeJsonAtomic, urlHost } from "./util.mjs";
+import { readJson, sleep, within, writeJsonAtomic, urlHost } from "./util.mjs";
 
 const restorable = (url) => /^https?:\/\//i.test(url);
 
@@ -27,14 +27,18 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {}, 
   const known = new Map(); // page -> { url, title }
   const titles = new Map(); // url -> title, from the last save
   let order = []; // the pages of the last save, in its order: a tab's place there is its identity (indexOf)
-  const snapshot = async () => {
+  // deadline (now()'s clock): past it, a tab's title is the last save's (or none) instead of asked
+  // for, so every tab is written by then.
+  const snapshot = async (deadline, now) => {
     const pages = ctx.pages();
     const tabs = [];
     const saved = [];
     for (const p of pages) {
       const url = p.url();
       if (!restorable(url)) continue;
-      const title = (await ownTitle(p)).slice(0, 120);
+      const left = deadline - now();
+      const read = left > 0 ? await within(left, ownTitle(p)) : null;
+      const title = String(read ?? titles.get(url) ?? "").slice(0, 120);
       tabs.push({ url, title });
       saved.push(p);
       titles.set(url, title);
@@ -43,14 +47,15 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {}, 
     const active = Math.max(0, tabs.findIndex((t) => t.url === activePage()?.url()));
     return { tabs, active, savedAt: new Date().toISOString() };
   };
-  const saveNow = async () => {
+  // deadline: the save is written by then (a stop's budget, daemon/browser/launch.mjs close).
+  const saveNow = async ({ deadline = Infinity, now = Date.now } = {}) => {
     clearTimeout(timer);
     timer = null;
     if (stopped) return;
     if (holding()) { soon(); return; } // the restore's tabs aren't all back: once they are
     for (const [page, k] of known) if (k.closedAt !== undefined) known.delete(page); // closed by a person, saved as such now
     try {
-      writeJsonAtomic(file, await snapshot());
+      writeJsonAtomic(file, await snapshot(deadline, now));
     } catch (e) {
       log("saving tabs failed", e?.message || e);
     }
@@ -69,7 +74,7 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {}, 
   const soon = () => {
     if (stopped) return;
     clearTimeout(timer);
-    timer = setTimeout(saveNow, 1500);
+    timer = setTimeout(() => saveNow(), 1500);
   };
   const watch = (page) => {
     known.set(page, { url: page.url(), title: "" });

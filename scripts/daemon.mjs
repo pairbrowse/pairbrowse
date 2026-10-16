@@ -802,7 +802,7 @@ async function shutdown(code) {
   // and Playwright's exit handler kills what's left of it.
   const started = Date.now();
   setTimeout(() => { log(`shutdown: the browser didn't close within ${SHUTDOWN_GRACE_MS} ms; killing it`); process.exit(code); }, SHUTDOWN_GRACE_MS).unref();
-  await context.close();
+  await context.close({ deadline: started + SHUTDOWN_GRACE_MS });
   log(`shutdown: browser closed cleanly in ${Date.now() - started} ms`);
   if (process.platform !== "win32") rmSync(paths.socket, { force: true });
   process.exit(code);

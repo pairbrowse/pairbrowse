@@ -231,3 +231,27 @@ test("one tab that never answers doesn't hold up saving the others", { timeout: 
   assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).tabs.map((x) => x.url), ["https://a.example/", "https://stuck.example/", "https://b.example/"]);
   t.stop();
 });
+
+test("a save with a deadline writes every tab by then, with the titles it had time to read", { timeout: 15_000 }, async () => {
+  const file = tmpFile();
+  const page = (url, title) => Object.assign(new EventEmitter(), { url: () => url, title, mainFrame: () => null });
+  const hang = () => new Promise(() => {});
+  const pages = [page("https://a.example/", async () => "A"), page("https://s1.example/", hang), page("https://s2.example/", hang), page("https://s3.example/", hang)];
+  const ctx = Object.assign(new EventEmitter(), { pages: () => pages });
+  const t = trackTabs(ctx, { file });
+  const started = Date.now();
+  await t.saveNow({ deadline: started + 400 });
+  const took = Date.now() - started;
+  assert.ok(took < 900, `within the deadline, not 2 s a tab (${took} ms)`);
+  const saved = JSON.parse(readFileSync(file, "utf8")).tabs;
+  assert.deepEqual(saved.map((x) => x.url), pages.map((p) => p.url()), "every tab");
+  assert.equal(saved[0].title, "A");
+  // A deadline already past (a fake clock): addresses only, at once.
+  const clocked = trackTabs(ctx, { file });
+  const t2 = Date.now();
+  await clocked.saveNow({ deadline: 1000, now: () => 5000 });
+  assert.ok(Date.now() - t2 < 100);
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).tabs.map((x) => x.url), pages.map((p) => p.url()));
+  t.stop();
+  clocked.stop();
+});

@@ -19,6 +19,21 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 - **Downloads keep their mark.** A finished download the helper saves keeps the browser's own download mark (`com.apple.quarantine`), so Gatekeeper and Office's Protected View still apply.
 - **Downloads open like a browser's.** Files open in a tab that is yours alone (no agent reads or acts in it), Word-type documents as a sanitized read-only preview on macOS, and programs, scripts and saved web pages only after a confirm.
 - Review fixes across the helper and pages: joiner input, test gates, reveal limits, activity privacy, approvals and bounded waits; one capture per tab and bounded picks.
+- **`chromeArgs` is an allowlist.** Browser switches in `config.json` pass only from a fixed list, each with a value of its expected shape. Everything else is dropped and named in the log and `pairbrowse_status`: switches that open a debugging port, run another program with the browser, turn certificate checks or site isolation off, send traffic through a proxy or load an extension; any item that isn't a switch (a value written as the next item counts as one); everything after a bare `--`. `--host-resolver-rules` keeps only loopback rules and `--disable-features` is refused. `--no-sandbox` is recognised in every spelling and never dropped quietly. The test suite's own loosening switches work only in a helper the test harness started.
+- **The native settings block is closed.** `config.json`'s `"pairbrowse"` block accepts only PairBrowse's own settings and the engine's options: no extensions, proxy or extra launch options. The only extension a launch loads is PairBrowse's own; one a saved profile names is dropped too. The WebRTC policy switch is caught in every spelling.
+- **The downloads folder is checked at the save.** The folder chosen in Settings (or written into `config.json` by hand) is checked again on its real path at every download and recording save, after the download has finished and right before the file is written. A folder since swapped for a link elsewhere is never written to: the file goes to your Downloads folder, and never through a link at its own name.
+- **A project can't redirect PairBrowse.** A project's `.claude` or `.codex` settings can't set the helper's home, your participant name or a shorter approval wait, including with escaped or differently cased keys; a settings file that doesn't parse counts as setting them all.
+- **A bad instance name is a clear refusal.** An invalid `PAIRBROWSE_INSTANCE` stops the hooks and the bridge with one line saying what to fix, instead of a stack trace.
+- **Hooks and the bridge agree on the project.** Both MCP servers get `CLAUDE_PROJECT_DIR`, so a bridge started from a subfolder reads the same `.pairbrowse.json` and settings as the hooks.
+- **Hidden tools are refused by the helper itself.** `browser_evaluate` and the other hidden, blocked or unknown browser tools are refused before they reach the browser, not just asked about, so permissions bypass mode can't run a page script.
+- **A wider local-network check.** Addresses on your own network are caught in every form: CGNAT and Tailscale (`100.64.0.0/10`), IPv4 inside IPv6 (mapped, compatible, NAT64, 6to4), every IPv4 spelling (one number, hex, octal, `127.1`) and trailing dots.
+- **A removed joiner stays out.** A removal or a no lasts for the invite's life, across a helper restart, and leaving can't reset it.
+- **`revoke_all` closes the sharing tunnel** at once instead of keeping it idle for 15 minutes.
+- **Native install checks the build fits.** A build installs only when its manifest names this computer's platform and chip, and on macOS the program itself is for this chip.
+- **WebSocket size cap.** Several messages that arrive together are read before the size cap applies, which now holds only the unfinished message.
+- **Diagnostics without leaks.** `node scripts/diagnostics-bundle.mjs` writes what a bug report needs in one step (versions, the native build and engine pack, settings with values redacted, the last crash and the end of the helper's log), scrubbed and never sent anywhere. Cookies are hidden in reports, the timeline and activity keep addresses without their query or fragment, and a saved password typed as itself is logged by its name.
+- **Approvals with joiners.** A joiner can answer only an ask tied to a tab and site; an ask without one reaches joiners as waiting only. Claude Code's notice-only ask can never be answered by a joiner. A Codex ask kept for an approve joiner goes to you at once when no joiner can answer it any more. The "Waiting for" notice a joiner sees is masked with their own secrets.
+- **Install lock.** The lock that keeps installs one at a time names its holder by process and start time, so a lock left by a crash is taken over even when its process number has been reused; a helper removes only its own lock, and two installs in one helper take turns.
 
 **Approve role for joiners**
 
@@ -42,11 +57,20 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 - Shared joiners' pointers are drawn by the browser over the page card, never inside your tab, and your own pointer never comes back to you.
 - Fast mode opens what a narrow layout folded (a search box behind a link, a menu behind a toggle) when the page's markup ties it to the step.
 
+**Reliability**
+
+- **`config.json` has a schema.** Unknown keys are named in the log and `pairbrowse_status`; a value of the wrong type is replaced by its default with a message saying what to fix; Settings and saves refuse it before writing.
+- **Corrupt state files are kept aside.** A state file that doesn't read is copied aside before it starts afresh, the helper starts and names it in `pairbrowse_status`, and a failed write leaves no temporary file behind.
+- **A clock set back** no longer holds rate limits, stretches invites or ends a live tunnel.
+- Every refusal says what to do next.
+
 **Restructure**
 
-- The helper is split into folders by job: `scripts/rules/` (the guard's rules, clicks, policy, secrets, uploads, local addresses), `runner/` (fast mode), `sharing/` (join, the joiner's client, tab sync, dev server sharing), `launcher/`, `native/`, `tunnels/`, `liveview/routes/`, the daemon's `serve/`, `join/`, `browser/` and `sessions/` parts, one tool catalog (`scripts/tools/catalog.mjs`), every path under `~/.pairbrowse` from one module, and every test switch read in one place. The old paths re-export the new ones.
+- The helper is split into folders by job: `scripts/rules/` (the guard's rules, clicks, policy, secrets, uploads, local addresses), `runner/` (fast mode), `sharing/` (join, the joiner's client, tab sync, dev server sharing), `launcher/`, `native/`, `tunnels/`, `liveview/routes/`, the daemon's `serve/`, `join/`, `browser/` and `sessions/` parts, one tool catalog (`scripts/tools/catalog.mjs`), every path under `~/.pairbrowse` from one module, and every test switch read in one place. The old paths are gone, except those other programs name: the hooks and the MCP servers stay where they were, and `launch.mjs`, `native-install.mjs`, `tunnel-keeper.mjs` and `macos-app.mjs` keep their paths and forward to their new homes.
 - The pages share `ui/` modules (helper address, POST, events, limits, URL rules, vocabulary) and `common.js` is split into its parts.
 - Tests: page suites folded together, and no test reaches the real `~/.pairbrowse`.
+- Fuzz tests for the security checks: the local-network check, project settings, the wires the helper reads (WebSocket frames, the private socket, JSON-RPC), the live view's requests and invite keys, dev server sharing, what the native install reads from a build, approval answers, opener records and `.pairbrowse.json`.
+- Keyboard, accessibility (axe-core) and contrast checks on every page, upgrade tests from 0.15.30, 0.15.40 and 0.15.46 homes, and benchmarks held to budgets.
 
 ## 0.15.46 (2026-10-14)
 

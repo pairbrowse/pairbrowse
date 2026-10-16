@@ -10,6 +10,7 @@ import { paths } from "./paths.mjs";
 import { within, writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
 import { switchName } from "./chrome-args.mjs";
+import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
 export * from "./native/humanize.mjs";
@@ -192,15 +193,20 @@ function readSettings(config, pack, personaPath) {
   // stopping), "quick" (the same shape, a short hop between fields in about half the time, a long
   // reach as before) or "classic" (the engine's own). Every click still lands exactly on its point.
   // An engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
-  const { profile: selection, profileSelect = {}, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "combined", formMove, ...overrides } = config.pairbrowse ?? {};
+  const { profile: selection, profileSelect = {}, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "combined", formMove, ...given } = config.pairbrowse ?? {};
   void formMove;
+  // Only the engine's fingerprint options pass (config-schema.mjs PAIRBROWSE_ENGINE_KEYS): never an
+  // unpacked extension, a proxy, launch options or switches from config.json, which would go
+  // around the chromeArgs screen. An option this engine can't honour still stops the launch below.
+  const overrides = Object.fromEntries(Object.entries(given).filter(([k]) => PAIRBROWSE_ENGINE_KEYS.includes(k)));
+  const ignored = Object.keys(given).filter((k) => !PAIRBROWSE_ENGINE_KEYS.includes(k) && !UNSUPPORTED.includes(k));
   const motion = ["classic", "quick"].includes(motionSetting) ? motionSetting : "combined";
   const saved = selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {};
   const persisted = existsSync(personaPath) ? pack.Profile.load(personaPath).options : {};
   for (const key of UNSUPPORTED) {
-    if ([persisted, saved, overrides].some((layer) => layer[key] !== undefined)) throw new Error(`PairBrowse native does not support pairbrowse.${key} on this engine.`);
+    if ([persisted, saved, given].some((layer) => layer[key] !== undefined)) throw new Error(`PairBrowse native does not support pairbrowse.${key} on this engine.`);
   }
-  return { selection, profileSelect, humanize, showCursor, geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted };
+  return { selection, profileSelect, humanize, showCursor, geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored };
 }
 
 // The fingerprint to launch with: the layered settings, then a persona (picked, or this Mac's own
@@ -276,6 +282,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const personaPath = join(directory, "pairbrowse-persona.json");
   const settings = readSettings(config, pack, personaPath);
+  if (settings.ignored.length) log(`launch: ${settings.ignored.map((k) => `pairbrowse.${k}`).join(", ")} in config.json not used (PairBrowse passes on only its own settings and the engine's fingerprint options; see docs/configuration.md)`);
   const fingerprintAt = Date.now();
   const { fingerprint, rest, source, steps } = await resolveFingerprint(chromium, options, pack, directory, settings, metadata.version, log);
   // Each launch step's time (plans/555 item 4): what a slow first launch spent where.
@@ -298,7 +305,13 @@ export async function launchNative(chromium, config, directory, options, pack, l
   pack.emitCoherenceWarnings?.({ ...fingerprint, proxy: merged.proxy, geoip: settings.geoip, headless: merged.headless, userAgent: merged.userAgent, _userArgs: givenArgs.filter((a) => !/^--pairbrowse-helper(-key-file)?=/.test(String(a))) },
     false, process.platform, CHROMIUM_MAJOR);
   const { args: proxyArgs, proxy } = pack.resolveProxy(merged.proxy, pack.engineSupportsSwitch(options.executablePath, "proxy-auth"));
-  const { extensionPaths, userArgs } = splitExtensionArgs(givenArgs, extensions);
+  // The only extension a launch loads is PairBrowse's own, which the helper adds in its own
+  // --load-extension switch (browser.mjs browserArgs); one named anywhere else (a saved profile's
+  // "extensions") is left out and logged, as chromeArgs' --load-extension is.
+  const own = splitExtensionArgs(givenArgs, []).extensionPaths;
+  const strayExtensions = (Array.isArray(extensions) ? extensions : extensions ? [extensions] : []).filter((p) => !own.includes(p));
+  if (strayExtensions.length) log(`launch: ${strayExtensions.length} extension${strayExtensions.length > 1 ? "s" : ""} besides PairBrowse's own dropped: the browser loads only its side panel`);
+  const { extensionPaths, userArgs } = splitExtensionArgs(givenArgs, []);
   const args = pack.mergeFeatureFlags([
     ...pack.fingerprintArgs({ ...fingerprint }), ...pack.agentArgs(agent),
     ...(disablePrivacySandbox ? pack.privacySandboxArgs() : []),

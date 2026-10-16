@@ -34,22 +34,22 @@ test("the schema has exactly DEFAULT_CONFIG's keys and the older names, and ever
 test("a good config.json loads as written, with no warnings", () => {
   const given = { browser: "chromium", maxTabs: 30, chromeArgs: ["--lang=en-US"], layout: { left: "rail", right: "open", strip: 100 },
     sharing: { tunnel: { kind: "ngrok", authtoken: "t" }, guestPort: 8443 }, settleMs: null, dockWidth: 420.5,
-    pairbrowse: { humanize: false, typingPace: 0.35, motion: "quick", formMove: "mouse", fingerprintProfile: "x", someEngineOption: 1 } };
+    pairbrowse: { humanize: false, typingPace: 0.35, motion: "quick", formMove: "mouse", fingerprintProfile: "x", timezone: "Europe/Berlin" } };
   const config = loadConfig(file(given));
   assert.deepEqual(CONFIG_WARNINGS, []);
   for (const [k, v] of Object.entries(given)) assert.deepEqual(config[k], v, k);
   assert.equal(config.screenshots, true, "the defaults fill the rest");
 });
 
-test("unknown keys: kept, named in one warning with the file; the native block's own extra keys are the engine's", () => {
+test("unknown keys: kept, named in one warning with the file; the native block is closed too", () => {
   const f = file({ maxTab: 5, screenshot: false, sharing: { tunnel: { kind: "quick" }, guestport: 1 }, pairbrowse: { anything: true } });
   const config = loadConfig(f);
   assert.equal(CONFIG_WARNINGS.length, 1);
-  assert.match(CONFIG_WARNINGS[0], /^config\.json: unknown keys "maxTab", "screenshot", "sharing\.guestport" \(not used: check the spelling against docs\/configuration\.md\)/);
+  assert.match(CONFIG_WARNINGS[0], /^config\.json: unknown keys "maxTab", "screenshot", "sharing\.guestport", "pairbrowse\.anything" \(not used: check the spelling against docs\/configuration\.md\)/);
   assert.ok(CONFIG_WARNINGS[0].includes(f));
   assert.equal(config.maxTab, 5, "kept: the file is the person's own");
   assert.equal(config.maxTabs, 20);
-  assert.deepEqual(config.pairbrowse, { anything: true });
+  assert.deepEqual(config.pairbrowse, { anything: true }, "kept in the file's copy; the native launch leaves it out (native-engine.mjs readSettings)");
 });
 
 test("a wrong-typed value is refused: the default for that key, a warning naming the key, what it takes and the file", () => {
@@ -152,4 +152,11 @@ test("pairbrowse_status names config.json's warnings", () => {
   loadConfig(join(dir, "missing.json"));
   assert.equal(statusLine(selected), "ok");
   assert.ok(!existsSync(join(dir, "missing.json")), "a load never writes");
+});
+
+test("under pairbrowse, an extension, a proxy, launch options or switches are unknown keys", () => {
+  loadConfig(file({ pairbrowse: { extensions: ["/tmp/evil"], proxy: { server: "http://evil:1" }, args: ["--gpu-launcher=x"], ignoreDefaultArgs: true, agentLlmKey: "k", fingerprint: "seed" } }));
+  assert.equal(CONFIG_WARNINGS.length, 1);
+  for (const k of ["extensions", "proxy", "args", "ignoreDefaultArgs", "agentLlmKey"]) assert.ok(CONFIG_WARNINGS[0].includes(`"pairbrowse.${k}"`), k);
+  assert.ok(!CONFIG_WARNINGS[0].includes("pairbrowse.fingerprint"), "an engine fingerprint option is known");
 });

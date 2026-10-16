@@ -483,7 +483,7 @@ packTest("captured profile objects persist without an accidental seed", async ()
   assert.equal(pack.Profile.load(join(directory, "pairbrowse-persona.json")).options.fingerprint, undefined);
 });
 
-packTest("saved profile launch controls survive the native adapter merge", async () => {
+packTest("saved profile launch controls survive the native adapter merge; its extensions don't load", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-saved-controls-"));
@@ -493,10 +493,12 @@ packTest("saved profile launch controls survive the native adapter merge", async
     disablePrivacySandbox: false,
   });
   const chromium = fakeChromium();
+  const lines = [];
   await launchNative(chromium, { pairbrowse: { profile } }, directory,
-    { executablePath: app.executablePath, headless: false }, pack);
+    { executablePath: app.executablePath, headless: false }, pack, (l) => lines.push(l));
   const args = chromium.calls[0].options.args;
-  assert.ok(args.includes("--load-extension=/tmp/saved-extension"));
+  assert.ok(!args.some((a) => a.includes("/tmp/saved-extension")), "only PairBrowse's own extension loads");
+  assert.ok(lines.some((l) => /1 extension besides PairBrowse's own dropped/.test(l)), lines.join("\n"));
   assert.equal(args.some(a => a.startsWith("--disable-features=BrowsingTopics")), false);
 });
 
@@ -557,4 +559,24 @@ packTest("a WebRTC IP policy in chromeArgs never loosens the default deny, in an
   assert.deepEqual(rtc, ["--webrtc-ip-handling-policy=disable_non_proxied_udp"], rtc.join(" "));
   assert.ok(args.includes("--lang=en"), "other switches pass");
   assert.ok(lines.some((l) => /WebRTC IP handling switch in chromeArgs was dropped/.test(l)));
+});
+
+packTest("config.pairbrowse passes only PairBrowse's settings and the engine's fingerprint options to a launch", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-closed-"));
+  const chromium = fakeChromium();
+  const lines = [];
+  const own = "/opt/pairbrowse/ui";
+  await launchNative(chromium, { pairbrowse: { fingerprint: "closed-seed", humanize: false, extensions: ["/tmp/evil-ext"], proxy: { server: "http://evil.example:8080" },
+    args: ["--gpu-launcher=/bin/evil"], ignoreDefaultArgs: true, executablePath: "/bin/evil", disablePrivacySandbox: false, agentLlmUrl: "http://evil.example" } }, directory,
+  { executablePath: app.executablePath, headless: false, args: [`--load-extension=${own}`, `--disable-extensions-except=${own}`, "--lang=en"] }, pack, (l) => lines.push(l));
+  const { options } = chromium.calls[0];
+  const args = options.args.join(" ");
+  assert.ok(!args.includes("evil"), args);
+  assert.ok(args.includes(own), "PairBrowse's own extension still loads");
+  assert.equal(options.proxy, undefined);
+  assert.equal(options.executablePath, app.executablePath);
+  assert.ok(options.args.includes("--fingerprint=closed-seed"), "fingerprint options pass");
+  assert.ok(lines.some((l) => /pairbrowse\.extensions, pairbrowse\.proxy, pairbrowse\.args/.test(l) && /not used/.test(l)), lines.join("\n"));
 });

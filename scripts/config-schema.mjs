@@ -9,6 +9,14 @@
 // values (one of these exact values), min, max (numbers), items (an array's items' type),
 // fields (an object's own keys, each a spec), open (an object may hold keys besides its fields) }.
 const PORT = { type: "integer", min: 0, max: 65535 };
+// The native engine's fingerprint options a user may set under "pairbrowse" (what the browser
+// tells sites about itself: seed, persona, platform, GPU, screen, region). They only shape the
+// fingerprint switches the engine builds; none names an extension, a program, a proxy, another
+// server or a switch of its own.
+export const PAIRBROWSE_ENGINE_KEYS = ["fingerprint", "fingerprintVoices", "fingerprintProfile", "fingerprintNoise", "platform", "platformVersion",
+  "brand", "brandVersion", "gpuVendor", "gpuRenderer", "gpuStringSpoof", "disableGpuFingerprint", "hardwareConcurrency", "deviceMemory",
+  "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "maxTouchPoints", "lightStealth",
+  "location", "timezone", "acceptLanguage", "webrtcIp", "webrtcMdns", "canvasNoise", "storageQuota", "tlsProfile"];
 const NAMES = { type: "array", items: "string" };
 export const CONFIG_SCHEMA = {
   browser: { type: "string", nullable: true, hint: '"pairbrowse", "chromium" or an absolute path to a browser' },
@@ -39,10 +47,12 @@ export const CONFIG_SCHEMA = {
   dockHost: { type: "string" },
   dockTop: { type: "number", min: 0 },
   dockMakeRoom: { type: "boolean" },
-  // The native build's own settings (native-engine.mjs readSettings, native/humanize.mjs). Keys
-  // besides these are the engine's own options (checked by the engine at launch): open.
+  // The native build's own settings (native-engine.mjs readSettings, native/humanize.mjs) and the
+  // engine's fingerprint options (PAIRBROWSE_ENGINE_KEYS, checked by the engine at launch). Closed:
+  // any other key (extensions, a proxy, launch options, switches) is named as unknown here and
+  // never reaches the launch (readSettings leaves it out and logs it).
   pairbrowse: {
-    type: "object", open: true, fields: {
+    type: "object", fields: {
       profile: { type: "string", nullable: true },
       profileSelect: { type: "object", open: true },
       humanize: { type: "boolean" },
@@ -51,6 +61,7 @@ export const CONFIG_SCHEMA = {
       typingPace: { type: "number", min: 0.2, max: 1 },
       motion: { values: ["combined", "quick", "classic"] },
       formMove: { values: ["tab", "mouse"] },
+      ...Object.fromEntries(PAIRBROWSE_ENGINE_KEYS.map((k) => [k, {}])),
     },
   },
 };

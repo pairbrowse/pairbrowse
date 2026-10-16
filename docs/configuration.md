@@ -99,8 +99,14 @@
   desktop pane): its width in pixels (`null`: the pane's own), the app it docks to (default
   `"Claude"`), its distance from the screen's top (default 52), and whether that app's window
   makes room for it (default `false`).
-- `pairbrowse`: the native PairBrowse build's own settings (`humanize`, `typingPace`, `formMove`,
-  `motion` and others): see [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser).
+- `pairbrowse`: the native PairBrowse build's own settings (`humanize`, `showCursor`, `typingPace`,
+  `formMove`, `motion`, `profile`, `profileSelect`, `geoip`): see
+  [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser); and the engine's
+  fingerprint options (`fingerprint`, `fingerprintProfile`, `timezone`, `acceptLanguage`,
+  `platform`, the GPU, screen and hardware values; the full list is `PAIRBROWSE_ENGINE_KEYS` in
+  `scripts/config-schema.mjs`). Any other key there, such as `extensions`, a proxy, launch options or
+  switches, is named as an unknown key and never reaches the browser (the helper log says so at
+  launch): the browser loads no extension but PairBrowse's own side panel.
 - `downloadsDir`: where site downloads and recordings are saved (default: your Downloads folder): an ordinary folder inside your home folder, checked as Settings checks it when the file is read and again at every save; one that fails is not used.
 - `liveViewPort`: a fixed live view port (default: a random one each start).
 - `liveViewHosts`: extra host names the live view answers to, for invite links only, such as

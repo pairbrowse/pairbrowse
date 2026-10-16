@@ -5,7 +5,7 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hidePersonTabs, PERSON_TAB_RULE, PERSON_TAB_LINE } from "../scripts/daemon/output.mjs";
-import { tabRefusal } from "../scripts/daemon/serve.mjs";
+import { tabRefusal } from "../scripts/daemon/serve/refuse.mjs";
 import { createPersonTabs } from "../scripts/daemon/toolstab.mjs";
 import { CHROME_PAGE_RULE } from "../scripts/rules/policy.mjs";
 

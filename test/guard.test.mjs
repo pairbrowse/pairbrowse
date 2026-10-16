@@ -43,7 +43,7 @@ test("the review gate can't be configured away", () => {
 test("OK on a page's dialog named as a final action asks; other OKs go", () => {
   assert.equal(run("browser_handle_dialog", { accept: true, element: "Delete: OK" }), "ask");
   assert.equal(run("browser_handle_dialog", { accept: true, promptText: "x", element: "Submit: OK" }), "ask");
-  // Unnamed: it goes, unless it follows a delete or payment click (the helper refuses it, scripts/clickrule.mjs).
+  // Unnamed: it goes, unless it follows a delete or payment click (the helper refuses it, scripts/rules/clicks.mjs).
   assert.equal(run("browser_handle_dialog", { accept: true }), "allow");
   assert.equal(run("browser_handle_dialog", { accept: true, element: "Safe: OK" }), "allow");
   assert.equal(run("browser_handle_dialog", { accept: false }), "allow");

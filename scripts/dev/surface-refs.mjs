@@ -21,7 +21,7 @@
 // button, buttonText, primaryText): each the sheet token, its expected hex, and where a pixel
 // shows it, the point (PNG pixels), the sampled hex, the largest channel difference and pass
 // (within TOLERANCE); text is expected only (glyphs are anti-aliased). "surfaces" maps the
-// native harness's surface names (scripts/dev/native-look.mjs --surface) to their references.
+// native harness's surface names (the native build's look harness, its --surface) to their references.
 // The default out is .cache/surface-refs/ in this checkout (ignored by git), so the native
 // harness reads the same place every run. Dark only: the pages are dark and the browser's color
 // mixer ignores the system mode (560, "Where the look comes from today"). Exit 1 on a page error,

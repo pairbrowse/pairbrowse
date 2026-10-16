@@ -18,7 +18,7 @@ claude plugin validate .  # the Claude Code manifests
 `ui/tokens.css` is the one sheet (colors, type, radii; `--edge-input` is a text field's border at 3:1 or more) for the right
 dock (the side panel in plain Chromium), the session picker, the new tab page, a joiner's picture page and the live view (served
 from the same file through the live view's fixed asset list). The live view alone opts into the
-light scheme with `data-scheme="system"`; the extension pages stay dark. `scripts/hud.js` (closed
+light scheme with `data-scheme="system"`; the extension pages stay dark. the page script in `scripts/hud/` (closed
 shadow roots), `ui/capture/record.js` (a canvas) and the "Opening tabs" page in `scripts/tabs.mjs` carry the same hex values inline, and
 `test/tokens.test.mjs` keeps every literal color in those files and the page sheets equal to a
 sheet value or a `SPARK_COLORS` entry and checks WCAG AA contrast in both schemes. Agent
@@ -71,7 +71,7 @@ renders the whole window before the native build exists. The real pages sit in i
 hybrid 500-shell geometry (tab row 44, nav row 44 with the two nav fragments around a stand-in of
 the native address bar, docks 200 and 330 or 44 as rails, the contents card inset 8 with radius
 10, the timeline 130). The contents is the stand-in page in `scripts/dev/preview/` with
-`scripts/hud.js` added the way the helper adds it, rendered as its own top-level page as the
+the page script (`scripts/hud/`, joined by `scripts/hud/assemble.mjs`) added the way the helper adds it, rendered as its own top-level page as the
 build's contents is. The scene is `scripts/dev/preview/fixtures.json`. Outputs: `window.png` and
 `window@2x.png`, `side-by-side.png` against the mockup's window area, and `regions/*.png` crop
 pairs, plus `harness-log.json` and `frames.json`; it exits 1 on any error, CSP or page-error
@@ -233,7 +233,7 @@ The plugin is small:
 | `scripts/guard.mjs` | PreToolUse hook: auto-allows browser actions, enforces the review, asks before final ones (in Codex, which can't ask from a hook, it hands them to you; the helper applies the same rules for every app but Claude Code) |
 | `scripts/session-start.mjs` | SessionStart hook: tells Claude about unfinished runs |
 | `scripts/log.mjs` | PostToolUse hook: plain-English activity log per session in `~/.pairbrowse/log/` |
-| `scripts/hud.js` | In-page status badge, driven only with a per-start random key |
+| `scripts/hud/` | In-page status badge, driven only with a per-start random key |
 | `scripts/liveview.mjs`, `scripts/liveview/` | Live view server for the Claude workspace (dock and Browser pane), the side panel's data: request checks and body reading (`http.mjs`), invites, input replay, shared tabs for joiners and their server |
 | `scripts/liveview/routes/` | The live view's routes by audience: `viewer` (page, events, thumb, state, input, pause), `owner` (approvals, dev, join hosts, profile, invites, record), `sessions`, `pages` (the browser's own pages: activity, layout, config, report, outline, strip, tab order, capture), `timeline`, `tools` |
 | `scripts/liveview.html`, `.css`, `.js`, `ui/common.js`, `ui/tokens.css` | The live view page, and the code and design tokens it shares with the side panel |

@@ -298,7 +298,7 @@ test("scroll presence in the page: the person's own scrolling is their view, an 
 });
 
 test("a joiner's agent's results name no folder on the host's computer", async () => {
-  const { forJoiner } = await import("../scripts/daemon/serve.mjs");
+  const { forJoiner } = await import("../scripts/daemon/serve/wire.mjs");
   const out = forJoiner("- [Snapshot](../../.pairbrowse/files/page-1.yml)\n- 0: [Miro](https://miro.com/app/board/x/)\n- 1: [](about:blank)\nSaved to /Users/kees/.pairbrowse/files/shot.png; also /Users/kees/Desktop/notes.txt",
     ["/Users/kees/.pairbrowse", "/Users/kees"]);
   assert.doesNotMatch(out, /\/Users|\.pairbrowse|kees/);

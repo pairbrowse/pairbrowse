@@ -9,8 +9,6 @@ import { appName, personLabel, computerName } from "../sharing/join.mjs";
 import { describe } from "../log.mjs";
 import { decide, approvalAsk } from "../rules/decide.mjs";
 import { keepFocus } from "../focus.mjs";
-// pathsIn and withPaths live in upload.mjs now; kept here for one release.
-export { pathsIn, withPaths } from "../upload.mjs";
 import { within } from "../util.mjs";
 import { stopRequestMirroring } from "./browser/tabs.mjs";
 import { plainError } from "./output.mjs";
@@ -24,10 +22,6 @@ import { createHandle } from "./serve/rewrite.mjs";
 import { createCollaborationTool } from "./serve/collaboration.mjs";
 import { createResult, TRACING, phaseTrace } from "./serve/result.mjs";
 import { testMs } from "../testenv.mjs";
-// The pure parts live in serve/; kept here for one release (tests and older imports name serve.mjs).
-export { wellFormed, forJoiner, pictureless, dropClosedAlerts } from "./serve/wire.mjs";
-export { arrivedAt } from "./serve/pageread.mjs";
-export { tabRefusal } from "./serve/refuse.mjs";
 
 const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for the person to pick a session (its first tab asks: continue a saved session, start a fresh one, or join a shared one). " +
   "Ask them in chat which they want, then use pairbrowse_session (use, or new with clean: true) or pairbrowse_join; or retry once they've picked.";

@@ -11,7 +11,7 @@ import fc from "fast-check";
 import { acceptUpgrade } from "../../scripts/ws.mjs";
 import { routeConnection } from "../../scripts/daemon/approvals.mjs";
 import { HOOK_MARK } from "../../scripts/hookline.mjs";
-import { wellFormed } from "../../scripts/daemon/serve.mjs";
+import { wellFormed } from "../../scripts/daemon/serve/wire.mjs";
 
 const RUNS = Number(process.env.PAIRBROWSE_FUZZ_RUNS) || 5000;
 const check = (property) => fc.assert(property, { numRuns: RUNS });

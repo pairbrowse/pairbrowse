@@ -131,7 +131,7 @@ test("the picture page's addresses: the extension's, the browser's own, and the 
 // Leaving the browser's own error page: Playwright calls the new navigation interrupted by the old
 // error page's commit, though the tab gets there. Where it lands decides (serve.mjs).
 test("a navigation 'interrupted' by an error page counts when the tab reaches the address asked for", async () => {
-  const { arrivedAt } = await import("../scripts/daemon/serve.mjs");
+  const { arrivedAt } = await import("../scripts/daemon/serve/pageread.mjs");
   let at = "chrome-error://chromewebdata/";
   const page = { url: () => at, isClosed: () => false };
   setTimeout(() => { at = "https://example.com/#top"; }, 150);
@@ -144,7 +144,7 @@ test("a navigation 'interrupted' by an error page counts when the tab reaches th
 });
 
 test("an alert PairBrowse closed is never also listed as waiting for browser_handle_dialog; a confirm still is", async () => {
-  const { dropClosedAlerts } = await import("../scripts/daemon/serve.mjs");
+  const { dropClosedAlerts } = await import("../scripts/daemon/serve/wire.mjs");
   const alert = '### Page\n- Page URL: http://x/\n### Modal state\n- ["alert" dialog with message "Hello"]: can be handled by browser_handle_dialog\n### Snapshot\n```yaml\n```';
   assert.equal(dropClosedAlerts(alert), "### Page\n- Page URL: http://x/\n### Snapshot\n```yaml\n```");
   const confirm = '### Modal state\n- ["confirm" dialog with message "Delete?"]: can be handled by browser_handle_dialog\n';
@@ -152,7 +152,7 @@ test("an alert PairBrowse closed is never also listed as waiting for browser_han
 });
 
 test("with pictures off, no message points at a screenshot", async () => {
-  const { pictureless } = await import("../scripts/daemon/serve.mjs");
+  const { pictureless } = await import("../scripts/daemon/serve/wire.mjs");
   assert.equal(pictureless("Look at the screenshot, close what covers it."), "Take a browser_snapshot, close what covers it.");
   assert.equal(pictureless("Fix these (look at the screenshot), then continue."), "Fix these (take a browser_snapshot), then continue.");
   assert.equal(pictureless("check the screenshot, then fill it"), "take a browser_snapshot, then fill it");

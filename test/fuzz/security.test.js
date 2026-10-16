@@ -121,7 +121,7 @@ test("the live view answers only on this computer, to its own pages, with the ri
 // JSON-RPC 2.0 message with the fields it knows; anything else is refused here (null), so a
 // message the server would leave unanswered never holds the shared queue.
 test("wellFormed: only well-formed JSON-RPC 2.0 messages, only known fields", async () => {
-  const { wellFormed } = await import("../../scripts/daemon/serve.mjs");
+  const { wellFormed } = await import("../../scripts/daemon/serve/wire.mjs");
   check(fc.property(fc.anything(), (msg) => {
     const out = wellFormed(msg);
     if (out === null) return;

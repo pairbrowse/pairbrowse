@@ -15,7 +15,7 @@ const brief = args?.brief || ''
 if (!subset) throw new Error('args.subset is required (tokens | hud | panel | liveview | modes)')
 
 const RULES = `Rules that override everything else:
-- Zero regression: nothing of the measured performance, security or behaviour in docs/engineering-progress.md may get worse. No new timer, observer, poll or animation loop that runs while a panel is hidden or nothing changes; no new screenshot capture or retention anywhere; no new process; no new runtime dependency (Node standard library only outside runtime/); no change to scripts/policy.mjs, scripts/secrets.mjs, scripts/guard.mjs, the screenshot module or the click rules.
+- Zero regression: nothing of the measured performance, security or behaviour in docs/engineering-progress.md may get worse. No new timer, observer, poll or animation loop that runs while a panel is hidden or nothing changes; no new screenshot capture or retention anywhere; no new process; no new runtime dependency (Node standard library only outside runtime/); no change to scripts/rules/policy.mjs, scripts/rules/secrets.mjs, scripts/guard.mjs, the screenshot module or the click rules.
 - The logo (scripts/browser/icon.svg, product-icon.svg, ui/logo.svg, icon PNGs, icns) is never redrawn or recolored.
 - Security is the product: keep docs/security.md true; the live view and side panel stay under their CSP and Trusted Types; nothing in a page can drive the in-page script without its per-start key.
 - No fabricated state in the UI: only what the helper really knows (statuses an agent set, the goal log's lines, participants, tabs, join requests). No "reasoning" text, no invented progress.

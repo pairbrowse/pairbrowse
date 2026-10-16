@@ -427,7 +427,7 @@ test("docked with the approval card there: no in-page card, the item names the t
   assert.deepEqual(r.item.tab, { id: 2, host: "shop.example", target: T1 });
   assert.deepEqual(asked, [[page, 2000]], "asked once, bounded");
   assert.deepEqual(page.calls.filter(([k]) => k === "approval"), [], "no in-page card");
-  assert.equal(intervals.size, 0, "nothing in a page to read");
+  assert.equal(intervals.size, 1, "no card in a page; Codex's ask is checked each tick that the approval card is still there");
   assert.match(logs.at(-1), /in the browser's approval card/);
   assert.deepEqual(ca.pending(), [r.item]);
   assert.equal(ca.answer(r.item.id, "allow", "the approval card"), true);

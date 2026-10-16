@@ -237,6 +237,25 @@ test("Claude Code's notice-only ask: drive joiners see it wait, an approve joine
   assert.deepEqual(sock.said.map((t) => JSON.parse(t).answer), ["withdrawn"]);
 });
 
+// A Codex ask kept only because an approve joiner was in: when nobody is left who can answer it
+// (the joiner went quiet, or lost the role), it is handed to the user at once, not at the expiry.
+test("a Codex ask kept for an approve joiner is handed to the user once no joiner can answer it", async () => {
+  for (const how of ["quiet", "role"]) {
+    const s = setup();
+    const inv = s.invites.create({ role: "approve", label: "Alex", share: "code" });
+    const alex = s.join(inv, "Alex");
+    const r = await s.ask();
+    assert.equal(r.shown, true);
+    if (how === "quiet") alex.seen = 0; // no word from their channel for a while
+    else { s.invites.setRole(inv.id, "drive"); s.share.changed(); }
+    const t0 = Date.now();
+    const a = await Promise.race([r.answer, new Promise((res) => setTimeout(() => res("still waiting"), 2000))]);
+    assert.equal(a, "terminal", `${how}: handed to the user`);
+    assert.ok(Date.now() - t0 < 2000);
+    assert.deepEqual(s.ca.pending(), []);
+  }
+});
+
 // ---- through the joiner port ----
 function request(port, method, path, { headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {

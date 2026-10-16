@@ -380,9 +380,13 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     return r.answer === "deny" && now() - r.at < EARLY_MS ? "denied" : null;
   }
 
-  // The in-page cards' answers, read while one is shown (and only then).
+  // Another app's ask kept only for a place to answer in a browser (no card in the page): the
+  // tick checks that place is still there (an approve joiner gone quiet, the approve page closed).
+  const waitsOnSurface = (it) => !it.remote && !it.page && it.client !== "claude-code";
+  // The in-page cards' answers, read while one is shown (and only then); another app's asks
+  // waiting on a place to answer, checked each tick.
   function watch() {
-    const any = [...items.values()].some((it) => it.page || (it.remote && screen));
+    const any = [...items.values()].some((it) => it.page || (it.remote && screen) || waitsOnSurface(it));
     if (any && !poll) { poll = every(read, POLL_MS); poll?.unref?.(); }
     if (!any && poll) { stopEvery(poll); poll = null; }
   }
@@ -418,6 +422,9 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     if (reading) return;
     reading = true;
     try {
+      // Nobody left who can answer another app's ask (its only approve joiner went quiet or
+      // lost the role, the approve page closed): handed to the user now, as if never kept.
+      for (const it of [...items.values()]) if (waitsOnSurface(it)) lost(it);
       const lv = liveView();
       if (lv?.sharing?.() || lv?.guestViewers?.()) return cover();
       await showRemote();

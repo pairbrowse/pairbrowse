@@ -139,6 +139,18 @@ test("a stop's restore wait and save fit the grace: the browser's close starts w
   assert.deepEqual(savedNow(), SAVED, "the whole list kept");
 });
 
+test("a tab opened after the launch is adopted as opened (a browser page there counts as a person's), the tabs at launch not", { timeout: 30_000 }, async () => {
+  writeFileSync(tabsFile("default"), JSON.stringify({ tabs: [] }));
+  const b = fakeBrowser();
+  const seen = [];
+  const context = make(b.chromium, {}, { presence: { watchUser: (page, o) => seen.push([page, !!o?.opened]) } });
+  await context.getContext();
+  assert.deepEqual(seen.map((s) => s[1]), [false], "the start tab, there at launch");
+  const later = await b.ctx.newPage();
+  assert.deepEqual(seen.find((s) => s[0] === later)?.[1], true, "a tab opened later");
+  await context.close();
+});
+
 test("the browser opened by hand and a pick in the session picker count as a person using the browser", { timeout: 30_000 }, async () => {
   writeFileSync(tabsFile("default"), JSON.stringify({ tabs: [] }));
   const byHand = make(fakeBrowser().chromium, {}, { browserPagesOf: () => true });

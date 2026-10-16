@@ -63,6 +63,45 @@ test("lastPersonAt: the browser's own pages opened by a person count (no page sc
   }
 });
 
+test("lastPersonAt: a browser page handed over already at its address (Settings from the menu) counts when it opens; the start tab, a restore, an agent's, and tabs there at launch don't", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 6_000_000 });
+  try {
+    let restoring = false;
+    const presence = createPresence({ host: "You", readEvents: async () => [], pages: () => [], paused: () => true, restoring: () => restoring,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    const at = (url) => { const p = new EventEmitter(); p.url = () => url; return p; };
+    presence.watchUser(at("chrome://settings/"));
+    assert.equal(presence.lastPersonAt(), 0, "a tab there at launch (not opened later)");
+    presence.watchUser(at("chrome://newtab/"), { opened: true });
+    presence.watchUser(at("chrome://pairbrowse/newtab"), { opened: true });
+    presence.watchUser(at("about:blank"), { opened: true }); // what the helper's and agents' own new tabs start as
+    presence.watchUser(at("https://a.example/"), { opened: true }); // a site's popup: its page script says if a person acts
+    presence.watchUser(at("chrome-extension://abc/picker/index.html"), { opened: true });
+    assert.equal(presence.lastPersonAt(), 0, "the start tab, a blank tab, a web page, an extension page");
+    restoring = true;
+    presence.watchUser(at("chrome://settings/"), { opened: true });
+    assert.equal(presence.lastPersonAt(), 0, "while saved tabs come back");
+    restoring = false;
+    const done = presence.busyStart();
+    presence.watchUser(at("chrome://downloads/"), { opened: true });
+    done();
+    assert.equal(presence.lastPersonAt(), 0, "during an agent's action");
+    mock.timers.tick(10_000);
+    presence.watchUser(at("chrome://pairbrowse/settings"), { opened: true });
+    assert.equal(presence.lastPersonAt(), 6_010_000, "Settings from the menu, already at its address");
+    // Its first load at the same address is no second count.
+    mock.timers.tick(1000);
+    const p = at("chrome://history/");
+    presence.watchUser(p, { opened: true });
+    assert.equal(presence.lastPersonAt(), 6_011_000);
+    mock.timers.tick(1000);
+    p.emit("load");
+    assert.equal(presence.lastPersonAt(), 6_011_000, "the same address loading: counted once");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test("an agent's own input read late is still the agent's, a person's is a person's", () => {
   mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 1_000_000 });
   try {

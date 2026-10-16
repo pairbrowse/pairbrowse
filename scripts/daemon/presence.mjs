@@ -257,10 +257,21 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     }
   }, POLL_MS).unref();
 
+  // The browser's own pages (its Settings, Downloads, History, from the address bar or a menu)
+  // have no page script: their opening is the one sign of a person there (handoff.mjs), never
+  // news for agents. Not the start tab's new tab page (it opens with the browser), not while an
+  // agent acts (or just did) nor while saved tabs come back.
+  const browserPageByPerson = (url) => /^(chrome|pairbrowse):/i.test(url) && !isUntouchedStart(url) && !byAgent(Date.now(), 5000) && !restoring();
+
   // A page you opened yourself (address bar, a link): a new document loading while no agent was
-  // acting, or for a while after (a click's page can finish loading late).
-  function watchUser(page) {
-    lastUrls.set(page, page.url());
+  // acting, or for a while after (a click's page can finish loading late). opened: a tab that
+  // opened after the launch (launch.mjs ctx.on("page")); one handed over already at a browser
+  // page's address (Settings from the menu) loads nothing new, so it counts now. The helper's and
+  // agents' own tabs (ctx.newPage) start at about:blank, never a browser page.
+  function watchUser(page, { opened = false } = {}) {
+    const first = page.url();
+    lastUrls.set(page, first);
+    if (opened && browserPageByPerson(first)) lastPersonAt = Math.max(lastPersonAt, Date.now());
     page.on("load", () => {
       loadedAt.set(page, Date.now());
       const url = page.url();
@@ -270,10 +281,7 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       // Never a saved tab coming back after a start or a session switch: nobody went there.
       if (url === before || byAgent(Date.now(), 5000) || restoring()) return;
       if (/^https?:/.test(url)) userDid([{ t: Date.now(), kind: "went", what: url.split(/[?#]/)[0].slice(0, 120) }], page);
-      // The browser's own pages (its Settings, Downloads, History, from the address bar or a
-      // menu) have no page script: their opening is the one sign of a person there (handoff.mjs),
-      // never news for agents. Not the start tab's new tab page (it opens with the browser).
-      else if (/^(chrome|pairbrowse):/i.test(url) && !isUntouchedStart(url)) lastPersonAt = Math.max(lastPersonAt, Date.now());
+      else if (browserPageByPerson(url)) lastPersonAt = Math.max(lastPersonAt, Date.now());
     });
   }
 

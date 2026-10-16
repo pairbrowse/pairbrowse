@@ -191,7 +191,7 @@ export function createLaunch(st, deps, api) {
     for (const p of ctx.pages()) { api.adopt(p, ctx); if (!isBrowserPage(p.url())) hud.ensure(p); }
     // A tab can arrive already loaded (one the side panel opened at its address): its page
     // script comes now, since under Patchright it isn't there until ensure adds it.
-    ctx.on("page", (p) => { api.adopt(p, ctx); p.waitForLoadState("domcontentloaded").then(() => { if (!isBrowserPage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => api.capTabs(ctx, p).catch(() => {}), 300); });
+    ctx.on("page", (p) => { api.adopt(p, ctx, { opened: true }); p.waitForLoadState("domcontentloaded").then(() => { if (!isBrowserPage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => api.capTabs(ctx, p).catch(() => {}), 300); });
     step(`first page (${ctx.pages().length} open)`);
     if (st.pick.state === "pending") api.showPicker(ctx, { own });
     else api.restore(ctx, null, { own });

@@ -82,12 +82,12 @@ export function createTabs(st, deps, api) {
   }
 
   // Everything that watches a page, for the tabs there at launch and each new one.
-  function adopt(page, ctx) {
+  function adopt(page, ctx, { opened = false } = {}) {
     // No badge or bar is drawn into the browser's own pages.
     page.on("domcontentloaded", () => { if (!isBrowserPage(page.url())) hud.onPageLoad(page); });
     popups.watchPage(page, ctx);
     api.keepDownloads(page);
-    presence.watchUser(page);
+    presence.watchUser(page, { opened });
     stopRequestMirroring(page);
     page.once("close", () => onTabClosed(page)); // a closed tab's turn ends with it
     touch(page);

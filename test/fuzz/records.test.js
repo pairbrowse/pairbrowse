@@ -88,7 +88,12 @@ test("readRecord: any content, size and permissions never throw; taken only from
     if (got) { taken++; assert.deepEqual(got, parseRecord(text)); }
     assert.equal(readRecord(file, { uid: (process.getuid?.() ?? 0) + 1 }), null, "another account's: never");
     chmodSync(dir, 0o700);
-  }), { numRuns: FILE_RUNS });
+  }), {
+    numRuns: FILE_RUNS,
+    // A good record in a private file and folder, always tried: at random one comes up in about
+    // 1 run of 130, so 500 runs had none now and then (the yes was then never checked).
+    examples: [[JSON.stringify({ v: 1, node: "/usr/local/bin/node", script: "/opt/pb/scripts/open.mjs", home: "/Users/x/.pairbrowse", instance: "default" }), 0o600, 0o700, false]],
+  });
   assert.ok(taken > 0, "good records were tried too");
   assert.equal(readRecord(join(root, "missing", "x.json")), null);
 });
@@ -118,7 +123,7 @@ test("projectInstance: any .pairbrowse.json never throws and yields only a valid
       assert.ok(v.instance === got.name || (got.name === null && (v.instance === "default" || v.instance === null)));
     }
     assert.equal(projectInstance(dir, { uid: (process.getuid?.() ?? 0) + 1 })?.name, undefined, "another account's file: never a name");
-  }), { numRuns: FILE_RUNS });
+  }), { numRuns: FILE_RUNS, examples: [['{"instance":"work"}', false]] }); // a valid name always tried (at random about 1 run in 80)
   assert.ok(named > 0, "good names were tried too");
   for (const bad of [undefined, null, 1, "", "relative/dir", {}]) assert.equal(projectInstance(bad), null);
 });

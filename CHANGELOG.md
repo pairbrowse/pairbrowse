@@ -5,6 +5,18 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.1 (2026-10-17)
+
+PairBrowse is its own browser: its text, settings and code no longer name the engine it is built on, and the contributor documents are gone.
+
+**Changed**
+
+- **New setting names, the older ones still work.** `browserArgs`, `browserSandbox` and `"browser": "pairbrowse-open"` (the open build, shown as "PairBrowse (open build)") replace the older names, which are still read when the new one is unset. Both names get exactly the same checks: the switch allowlist, and the sandbox that always stays on on macOS and Windows.
+- **A run starting with `go` opens its own tab** when the agent's tab is one of the browser's own pages, instead of being refused; on an untouched new tab page it goes there in place. The tab opens without pulling the browser over the app you're in.
+- **Tab lists say what they leave out.** `browser_tabs` names how many of the browser's own tabs it left out, and what to do when the current tab is one (a list of only those read as empty).
+- **Activity lines are cut between items.** The run log and the bar shorten a long line after its last whole item, never inside a field's name.
+- The contributor documents (contributing, governance, code of conduct) are removed.
+
 ## 0.16.0 (2026-10-16)
 
 The native browser track merged into the plugin: the PairBrowse browser's own pages and shell, an approve role for joiners, named instances that coexist on one computer, and the helper and pages restructured into folders. `docs/security.md` has a row for each new behaviour.

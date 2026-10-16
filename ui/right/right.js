@@ -19,8 +19,8 @@ const pb = globalThis.pairbrowse || null;
 // API: no extension header there (the strip has the logo, the pill and the avatars).
 document.documentElement.dataset.host = pb || servedByBrowser() ? "native" : "extension";
 // One home each (DESIGN.md Part G): with the browser's API, Passwords, Remembered details and Join
-// addresses live in pairbrowse://settings, and Tools has one row that opens it; the extension host
-// (no Settings page) keeps them here.
+// addresses live in pairbrowse://settings/pairbrowse, and Tools has one row that opens it; the
+// extension host (no Settings page) keeps them here.
 if (pb) document.documentElement.dataset.profileHome = "settings";
 const native = () => document.documentElement.dataset.host === "native";
 

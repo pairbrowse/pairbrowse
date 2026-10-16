@@ -584,15 +584,16 @@ test("the ui server serves pages under the chrome pages' CSP, on an origin of th
     assert.equal((await request(`${ui.origin}/../package.json`)).status, 404);
     assert.equal((await request(`${ui.origin}/right/missing.js`)).status, 404);
     assert.equal((await request(`${ui.origin}/__harness/pairbrowse-api.js`)).status, 200);
-    // Framing, as the native 520 patch sets it: every page may frame its own origin; only the
-    // picker may be framed, by its own origin only; every other page refuses any frame.
-    assert.deepEqual([...FRAMEABLE], ["picker"]);
+    // Framing, as the native 520 and 580 patches set it: every page may frame its own origin; only
+    // the picker (by the browser's own pages) and settings (by the engine's settings page, which
+    // the harness's frame page stands for) may be framed; every other page refuses any frame.
+    assert.deepEqual([...FRAMEABLE], ["picker", "settings"]);
     for (const page of pages()) {
       const r = await request(ui.url(page));
       const csp = r.headers["content-security-policy"];
       assert.equal(csp, PAGE_CSP(helper.origin, page), page);
       assert.match(csp, /; frame-src 'self';/, page);
-      if (page === "picker") {
+      if (FRAMEABLE.has(page)) {
         assert.match(csp, /; frame-ancestors 'self';/);
         assert.equal(r.headers["x-frame-options"], "SAMEORIGIN");
       } else {
@@ -601,6 +602,11 @@ test("the ui server serves pages under the chrome pages' CSP, on an origin of th
       }
     }
     assert.equal((await request(`${ui.origin}/picker/picker.css`)).headers["x-frame-options"], "DENY", "only the picker's page itself");
+    // The frame page: only a frameable page, framed from the ui server's own origin.
+    const framed = await request(`${ui.origin}/__harness/frame/settings?report`);
+    assert.equal(framed.status, 200);
+    assert.match(framed.text, /<iframe id="framed" [^>]*src="\/settings\/index\.html#report"/);
+    assert.equal((await request(`${ui.origin}/__harness/frame/right`)).status, 404);
   } finally {
     await ui.close();
     await helper.close();

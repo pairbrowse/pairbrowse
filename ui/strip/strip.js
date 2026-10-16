@@ -10,7 +10,7 @@
 // a frame loop or a DOM observer: observers of the browser API and the one shared helper stream
 // (common.js helperStream) only. The nav fragments read no stream at all.
 import { $, el, avatar, shareCard, isColor, helperStream, servedByBrowser, enter, leave, calm } from "../common.js";
-import { isSettingsPage, ownPage } from "../urls.js";
+import { isSettingsPage, settingsPage } from "../urls.js";
 import { hasBubbles, anchorRect, reopenGuard } from "../bubbles.js";
 import { pointersFor, createTabOrder, createOwnerSync } from "./sync.js";
 import { helperAddress, onHelperAddress, postJson } from "../helper.js";
@@ -114,7 +114,7 @@ menuItem("settings", async () => {
     const { tabs } = await pb.tabs.list();
     const open = (tabs || []).find((t) => t.window === myWindow && isSettingsPage(t.url));
     if (open) await pb.tabs.activate(open.id);
-    else await pb.tabs.create(ownPage("settings"), true, myWindow);
+    else await pb.tabs.create(settingsPage(), true, myWindow);
   } catch {}
 });
 // Without the browser's API the menu has nothing to call.

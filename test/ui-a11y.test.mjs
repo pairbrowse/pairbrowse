@@ -55,6 +55,22 @@ async function auditOpened(page) {
   return out;
 }
 
+// Settings as the engine's settings page frames it (580: its PairBrowse section), under a light
+// and a dark system scheme, which it follows there; and its report review screen open.
+const SETTINGS_FIXTURES = JSON.parse(readFileSync(new URL("./fixtures/ui-settings.json", import.meta.url), "utf8")).helper;
+for (const colorScheme of ["light", "dark"]) {
+  pageTest("settings", { timeout: 120_000, frame: true, colorScheme, viewport: { width: 1100, height: 900 }, fixtures: SETTINGS_FIXTURES }, async ({ frame, until, settle, errors }) => {
+    await until("the stream", () => document.body.dataset.s === "live");
+    const first = await audit(frame);
+    await frame.evaluate(() => document.getElementById("report-open").click());
+    await until("the review screen", () => document.getElementById("report").open);
+    await settle();
+    const opened = (await audit(frame)).map((v) => `(report open) ${v}`);
+    assert.deepEqual([...first, ...opened], [], `framed settings (${colorScheme}): serious or critical axe violations`);
+    assert.deepEqual(errors, []);
+  });
+}
+
 for (const name of pages()) {
   pageTest(name, { timeout: 120_000 }, async ({ page, errors }) => {
     const first = await audit(page);

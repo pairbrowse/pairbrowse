@@ -1,5 +1,6 @@
-// PairBrowse Settings (pairbrowse://settings in the PairBrowse browser; settings/index.html, the
-// extension's options page, in the open build). Organized by what people come for (DESIGN.md Part H):
+// PairBrowse Settings (in the PairBrowse browser the engine settings' PairBrowse section,
+// pairbrowse://settings/pairbrowse, which frames chrome://pairbrowse/settings/; settings/index.html,
+// the extension's options page, in the open build). Organized by what people come for (DESIGN.md Part H):
 // General, Agents and approvals, Sharing, Your data, About and diagnostics, and one link to the
 // browser's own settings. Every control reads the helper's current value and writes through a real
 // owner route with the owner's key: config.json / config (the browser, the docks at a session's
@@ -9,11 +10,43 @@
 // now), diagnostics.json and diagnostics/report, and report (Report a problem; shown only while the
 // helper says it relays reports). Saved sessions link to the sessions page, their one home. The
 // config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
-// page never calls another interface. Nothing ticks: no timer, no observer; one shared event stream.
+// page never calls another interface. Nothing ticks: no timer, no observer (framed, one
+// ResizeObserver while it shows); one shared event stream.
 import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
 import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
+import { servedByBrowser, settingsHomeFor, ENGINE_SETTINGS_ORIGIN } from "../urls.js";
 
 const NATIVE = hostKind() === "native";
+// ---- at home in the engine's settings (580) -----------------------------------------------------
+// In a build with its own pages this page lives in the engine settings' PairBrowse section
+// (chrome://settings/pairbrowse, which frames it); opened as a whole tab of its own it goes there,
+// at the same section. Framed there (embedded), the page around it has the title, the search and
+// the menu, and is the browser's settings: this page shows none of its own, follows the system's
+// light or dark scheme as that page does, and posts its height to it (the only message it sends,
+// to that origin only) so the frame grows with it. The extension's options page never is either.
+const FRAMED = window.top !== window;
+const HOME = settingsHomeFor(location, FRAMED);
+if (HOME) location.replace(HOME);
+const EMBEDDED = FRAMED && (NATIVE || servedByBrowser());
+if (EMBEDDED) {
+  document.documentElement.dataset.embedded = "";
+  document.documentElement.dataset.scheme = "system";
+  for (const n of document.querySelectorAll("header.top, .layout > .nav")) n.hidden = true;
+  // The page around it is Browser settings: the link to it in Your data goes there, not here.
+  for (const a of document.querySelectorAll("[data-browser-settings]")) a.target = "_top";
+  let posted = -1;
+  const post = () => {
+    const height = Math.ceil(document.body.getBoundingClientRect().height);
+    if (height === posted) return;
+    posted = height;
+    try { window.parent.postMessage({ type: "pairbrowse-settings-height", height }, ENGINE_SETTINGS_ORIGIN); } catch {}
+  };
+  // One observer while the page shows; none while it is hidden (a tab in the background).
+  const sizes = new ResizeObserver(post);
+  const watch = () => { if (document.hidden) sizes.disconnect(); else { sizes.observe(document.body); post(); } };
+  document.addEventListener("visibilitychange", watch);
+  watch();
+}
 const HOST = NATIVE ? "The PairBrowse browser" : "The PairBrowse extension";
 document.body.dataset.host = NATIVE ? "pairbrowse" : "open";
 $("about-host").textContent = HOST;
@@ -404,8 +437,11 @@ function payload() {
 const preview = () => { $("report-preview").textContent = JSON.stringify(payload(), null, 2); };
 // Only while it can go out: the helper connected and relaying reports (#report from a link too).
 const canReport = () => conn === "live" && config?.report === true;
-async function openReport() {
+async function openReport(ev) {
   if (!canReport()) return;
+  // Framed, the page is as tall as its contents and the engine's page scrolls it: the review screen
+  // opens where it was asked for (a little above Report a problem), or at the top for #report.
+  const at = EMBEDDED && ev?.currentTarget instanceof Element ? ev.currentTarget.getBoundingClientRect().top + scrollY - 120 : 16;
   say($("report-msg"), "");
   $("report-send").disabled = false;
   $("report-send").textContent = "Send";
@@ -422,7 +458,11 @@ async function openReport() {
   $("report-tab").checked = false;
   $("report-tab-url").textContent = frontTab?.url || "";
   preview();
-  if (!dlg.open) dlg.showModal();
+  if (!dlg.open) {
+    if (EMBEDDED) dlg.style.setProperty("--report-top", `${Math.round(Math.max(16, at))}px`);
+    dlg.showModal();
+    if (EMBEDDED) dlg.style.setProperty("--report-top", `${Math.round(Math.max(16, Math.min(at, innerHeight - dlg.getBoundingClientRect().height - 16)))}px`);
+  }
   $("report-what").focus();
 }
 $("report-open").addEventListener("click", openReport);
@@ -517,7 +557,7 @@ $("search").addEventListener("keydown", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey || dlg.open) return;
+  if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey || dlg.open || EMBEDDED) return;
   const t = e.target;
   if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   e.preventDefault();

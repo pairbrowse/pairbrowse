@@ -146,11 +146,12 @@ scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }
 });
 
 // Settings is found by its address under either spelling, with or without a section after "#"
-// (pairbrowse://settings#report, the report offer's link): the tab comes forward, none is opened.
+// (chrome://settings/pairbrowse#report, the report offer's link, as its tab reports it): the tab
+// comes forward, none is opened.
 scenario("left: Settings finds a Settings tab open at a section", { viewport: OPEN }, async (ctx) => {
   const { until } = ctx;
-  const id = await ctx.shim.createTab({ url: "pairbrowse://settings#report", title: "Settings", active: false });
-  await until("the tab", (u) => window.__pairbrowse.fixture.tabs.some((t) => t.url === u), "pairbrowse://settings#report");
+  const id = await ctx.shim.createTab({ url: "chrome://settings/pairbrowse#report", title: "Settings", active: false });
+  await until("the tab", (u) => window.__pairbrowse.fixture.tabs.some((t) => t.url === u), "chrome://settings/pairbrowse#report");
   await ctx.page.click("#settings");
   await until("Settings forward", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "activate"));
   assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [id]);

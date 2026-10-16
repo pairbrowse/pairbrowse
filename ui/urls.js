@@ -7,9 +7,14 @@
 // A native build with its own pages serves them from two hosts: the window's slot pages (the tab
 // strip, the docks, the timeline, the approval bubble, the capture page) on
 // chrome://pairbrowse.top-chrome, the tab pages (picker, screen, sessions, settings, activity,
-// new tab) on chrome://pairbrowse. It shows its own pages and the engine's as pairbrowse://<name>
-// (patch 570: a display rewrite; the committed address stays chrome://, which is what a tab
-// reports), and opens the browser's pages when one is typed so.
+// new tab) on chrome://pairbrowse. It shows every page as pairbrowse://<its own host>, as Brave
+// shows brave:// (patch 570: a display rewrite; the committed address stays chrome://, which is
+// what a tab reports): every host keeps its own name (pairbrowse://settings is the engine's
+// settings, pairbrowse://chrome-urls its list of pages), and the older renamed hosts
+// (browser-settings, browser-newtab, browser-signin) only forward to theirs. PairBrowse's own
+// settings are a "PairBrowse" section of the engine's settings (patch 580):
+// chrome://settings/pairbrowse[#section], shown as pairbrowse://settings/pairbrowse, which frames
+// chrome://pairbrowse/settings/; that old address opened as a tab goes there.
 
 export const TOP_SHELL_HOST = "pairbrowse.top-chrome";
 export const TAB_HOST = "pairbrowse";
@@ -20,12 +25,20 @@ export const ownPage = (name) => `pairbrowse://${name}`;
 // The session picker and the joiner's picture page, in a build with its own pages.
 export const BROWSER_PICKER = `chrome://${TAB_HOST}/picker`;
 export const BROWSER_SCREEN = `chrome://${TAB_HOST}/screen/`;
-// Settings' report section, as a link a plain browser shows.
-export const REPORT_URL = `chrome://${TAB_HOST}/settings#report`;
+// PairBrowse's own settings, at one of its sections ("passwords"), by the name the browser shows:
+// the engine settings' PairBrowse section (580), which frames the page.
+export const settingsPage = (section = "") => ownPage(`settings/pairbrowse${section ? `#${section}` : ""}`);
+// The engine's settings page around it (chrome://settings), where its frame posts its height.
+export const ENGINE_SETTINGS_ORIGIN = "chrome://settings";
+// Settings' report section, as a link a plain browser shows (the older own address,
+// chrome://pairbrowse/settings#report, still goes there).
+export const REPORT_URL = `${ENGINE_SETTINGS_ORIGIN}/pairbrowse#report`;
 
 // Every pairbrowse: address is the browser's own, whichever spelling a tab or a call carries:
-// never an agent's to open, read or act in.
-export const isBrowserPage = (url) => /^(chrome:\/\/pairbrowse(\.top-chrome)?([/?#]|$)|pairbrowse:)/i.test(String(url ?? "").trim());
+// never an agent's to open, read or act in. So is the engine's settings page (chrome://settings
+// at any of its sections, shown as pairbrowse://settings): its PairBrowse section frames
+// PairBrowse's own settings page.
+export const isBrowserPage = (url) => /^(chrome:\/\/(pairbrowse(\.top-chrome)?|settings)([/?#]|$)|pairbrowse:)/i.test(String(url ?? "").trim());
 // A joiner's picture page in a build with its own pages: the browser's own page that shows a
 // host's tab, as the extension's screen page does elsewhere. The live view lists, shows and
 // replays a person's input into it like that page; the browser's other pages stay out of it.
@@ -34,14 +47,21 @@ export const hiddenFromLiveView = (url) => isBrowserPage(url) && !isBrowserScree
 // One of the browser's tab pages by its name ("sessions"), under either spelling. ends: what may
 // follow the name (a regular expression's alternatives).
 export const isOwnTabPage = (name, url, ends = "\\/|#|\\?|$") => new RegExp(`^(pairbrowse:\\/\\/|chrome:\\/\\/pairbrowse\\/)${name}(${ends})`).test(url || "");
-// Settings at any of its sections ("settings#report"): the tab the docks bring forward.
-export const isSettingsPage = (url) => isOwnTabPage("settings", url, "\\/|#|$");
+// PairBrowse's settings at any of its sections ("settings#report"): the tab the docks bring
+// forward. Its home is the engine settings' PairBrowse section, chrome://settings/pairbrowse (what
+// its tab reports), or pairbrowse://settings/pairbrowse; the older own addresses count too.
+export const isSettingsPage = (url) => isOwnTabPage("settings", url, "\\/|#|$") || /^(chrome|pairbrowse):\/\/settings\/pairbrowse([/#?]|$)/.test(url || "");
 // The picture page under the name the browser shows for it.
 export const isShownScreenPage = (url) => /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(String(url || ""));
 
 // The page is served by the PairBrowse browser itself, on its own hosts, with or without
 // window.pairbrowse; anything else is a page in a plain browser (the extension, the harness).
 export const servedByBrowser = (loc = globalThis.location) => loc?.protocol === "chrome:" && (loc.host === TOP_SHELL_HOST || loc.host === TAB_HOST);
+// Where PairBrowse's settings page goes when the browser opened it as a whole tab of its own
+// (framed: false): its home, the engine settings' PairBrowse section at the same section
+// (chrome://settings/pairbrowse#report). null where it stays: framed there, or not the browser's
+// own page (the extension's options page, the harness).
+export const settingsHomeFor = (loc = globalThis.location, framed = true) => (!framed && servedByBrowser(loc) && loc.host === TAB_HOST ? `${ENGINE_SETTINGS_ORIGIN}/pairbrowse${loc.hash || ""}` : null);
 
 // The side panel extension's pages: chrome-extension://<id>/<path>, and the origin such a page
 // sends (URL.origin is "null" for chrome-extension: URLs).

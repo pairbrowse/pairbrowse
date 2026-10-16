@@ -164,7 +164,7 @@ pageTest("picker", { fixtures: { sessions: STATE, config: { report: true } }, re
   await page.click("#fresh");
   await until("the offer", () => !!document.querySelector("#msg a.report-offer"));
   assert.deepEqual(await run(() => { const a = document.querySelector("#msg a"); return [document.getElementById("msg").textContent, a.getAttribute("href"), a.target]; }),
-    ["A session is already chosen. Report a problem", "chrome://pairbrowse/settings#report", "_blank"]);
+    ["A session is already chosen. Report a problem", "chrome://settings/pairbrowse#report", "_blank"]);
 });
 pageTest("picker", { fixtures: { sessions: STATE }, replies: { pick: { error: true, text: "A session is already chosen." } } }, async ({ page, until, inPage: run }) => {
   await until("the rows", ready);

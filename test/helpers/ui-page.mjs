@@ -25,41 +25,53 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // mode follows location.host (the approve page's bubble on pairbrowse.top-chrome). The browser
 // must reach the ui server as its proxy: launch it with hostProxy(...).args, then pass the same
 // proxy as `proxy` here (the ui server answers a proxied request by its path).
-export async function openPage(browser, name, { helper, fixture = defaultFixture(), bridge = true, native = true, viewport = { width: 360, height: 900 }, reducedMotion = "no-preference", host = "", proxy = null } = {}) {
+// frame: render the page framed by the ui server's frame page (/__harness/frame/<name>, standing
+// for the engine's settings page; a string is the section after "#"): inPage, until, the shim and
+// the harness then work in the framed page, top() in the frame page. colorScheme: the system's
+// scheme the page sees ("light" or "dark"; default: the browser's).
+export async function openPage(browser, name, { helper, fixture = defaultFixture(), bridge = true, native = true, viewport = { width: 360, height: 900 }, reducedMotion = "no-preference", host = "", proxy = null, frame = false, colorScheme } = {}) {
   const ui = await startUiServer({ helper, fixture, bridge, native });
   const origin = host ? `http://${host}` : ui.origin;
   proxy?.to(ui.origin);
   helper.setPageOrigin(origin);
-  const page = await browser.newPage({ viewport, reducedMotion });
+  const page = await browser.newPage({ viewport, reducedMotion, ...(colorScheme ? { colorScheme } : {}) });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  await page.goto(host ? `${origin}/${name}/index.html` : ui.url(name), { waitUntil: "load" });
+  const framePage = frame ? `${ui.origin}/__harness/frame/${name}${typeof frame === "string" ? `?${frame}` : ""}` : "";
+  await page.goto(framePage || (host ? `${origin}/${name}/index.html` : ui.url(name)), { waitUntil: "load" });
+  let target = page;
+  for (let i = 0; frame && i < 100; i++) {
+    const f = page.frames().find((x) => x !== page.mainFrame() && x.url().includes(`/${name}/index.html`));
+    if (f) { target = f; await f.waitForLoadState("load"); break; }
+    await sleep(50);
+  }
+  if (frame) assert.notEqual(target, page, `${name} framed`);
   // A page that says it connects (body[data-s]) gets up to 3 s to leave "connecting"; not a failure.
   for (let i = 0; i < 60; i++) {
-    const s = await page.evaluate(() => document.body?.dataset.s);
+    const s = await target.evaluate(() => document.body?.dataset.s);
     if (s === undefined || s !== "connecting") break;
     await sleep(50);
   }
   await sleep(300);
-  const shim = (path, ...args) => inPage(page, ([p, a]) => {
+  const shim = (path, ...args) => inPage(target, ([p, a]) => {
     let target = window.__pairbrowse, owner = null;
     for (const k of p.split(".")) { owner = target; target = target[k]; }
     return typeof target === "function" ? target.apply(owner, a) : target;
   }, [path, args]);
   const harness = {
-    log: () => inPage(page, () => window.__harness.log),
-    live: () => inPage(page, () => window.__harness.live()),
-    setHidden: (on) => inPage(page, (v) => window.__harness.setHidden(v), on),
-    animations: () => inPage(page, () => window.__harness.animations()),
-    hiddenFires: () => inPage(page, () => window.__harness.hiddenFires),
+    log: () => inPage(target, () => window.__harness.log),
+    live: () => inPage(target, () => window.__harness.live()),
+    setHidden: (on) => inPage(target, (v) => window.__harness.setHidden(v), on),
+    animations: () => inPage(target, () => window.__harness.animations()),
+    hiddenFires: () => inPage(target, () => window.__harness.hiddenFires),
   };
   const until = async (what, fn, arg) => {
-    for (let i = 0; i < 100; i++) { if (await inPage(page, fn, arg)) return; await page.waitForTimeout(50); }
+    for (let i = 0; i < 100; i++) { if (await inPage(target, fn, arg)) return; await page.waitForTimeout(50); }
     assert.fail(`timed out waiting for ${what}`);
   };
   // Every running animation and transition of the page (DESIGN.md Part I's motion) at its end, so
   // a measure after a click sees where things land, not a frame of the way there.
-  const settle = () => inPage(page, () => {
+  const settle = () => inPage(target, () => {
     let timer = 0;
     return Promise.race([
       Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))),
@@ -67,8 +79,9 @@ export async function openPage(browser, name, { helper, fixture = defaultFixture
     ]).then(() => { clearTimeout(timer); return true; });
   });
   return {
-    page, ui, errors, harness, until, settle,
-    inPage: (fn, arg) => inPage(page, fn, arg),
+    page, ui, errors, harness, until, settle, frame: frame ? target : null,
+    inPage: (fn, arg) => inPage(target, fn, arg),
+    top: (fn, arg) => inPage(page, fn, arg),
     shim: {
       calls: () => shim("calls"),
       fixture: () => shim("fixture"),
@@ -119,7 +132,7 @@ export async function hostProxy(host) {
 
 // pageTest(name, [opts], fn): opts { fixtures, replies, down (fake-helper), shim (over defaultFixture()),
 // bridge, native (false: no window.pairbrowse, the served or extension host), viewport,
-// reducedMotion, timeout }; fn gets { page, helper, ui, shim, harness, errors,
+// reducedMotion, frame, colorScheme (openPage), timeout }; fn gets { page, helper, ui, shim, harness, errors,
 // until, inPage }.
 export function pageTest(name, opts, fn) {
   if (typeof opts === "function") { fn = opts; opts = {}; }
@@ -129,7 +142,7 @@ export function pageTest(name, opts, fn) {
     let helper = null, ctx = null;
     try {
       helper = await startFakeHelper({ pageOrigin: null, fixtures: o.fixtures, replies: o.replies, down: o.down });
-      ctx = await openPage(browser, name, { helper, fixture: merge(defaultFixture(), o.shim || {}), bridge: o.bridge ?? true, native: o.native ?? true, viewport: o.viewport, reducedMotion: o.reducedMotion });
+      ctx = await openPage(browser, name, { helper, fixture: merge(defaultFixture(), o.shim || {}), bridge: o.bridge ?? true, native: o.native ?? true, viewport: o.viewport, reducedMotion: o.reducedMotion, frame: o.frame, colorScheme: o.colorScheme });
       await fn({ ...ctx, helper });
     } finally {
       await ctx?.close();

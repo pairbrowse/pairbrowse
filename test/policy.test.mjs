@@ -10,11 +10,21 @@ const OWN = ["chrome://pairbrowse/picker", "chrome://pairbrowse.top-chrome/strip
 test("the browser's own pages are refused with the sentence naming their rule", () => {
   for (const url of OWN) assert.match(navigationProblem(url), /browser's own/, url);
   assert.equal(navigationProblem("chrome://pairbrowse/picker"), `${BROWSER_PAGE_RULE} Open a web page (http or https) instead.`);
+  // The engine's settings page holds PairBrowse's own settings (its PairBrowse section, 580): the
+  // browser's own at every section, under either spelling.
+  for (const url of ["chrome://settings", "chrome://settings/", "chrome://settings/pairbrowse#report", "CHROME://settings/appearance", "pairbrowse://settings/pairbrowse"]) {
+    assert.equal(isBrowserPage(url), true, url);
+    assert.equal(hiddenFromLiveView(url), true, url);
+    assert.match(navigationProblem(url), /browser's own/, url);
+  }
+  assert.equal(hideBrowserTabs("- 0: [Settings](chrome://settings/pairbrowse)\n- 1: [Shop](https://shop.example/)"), "- 1: [Shop](https://shop.example/)");
   // Every other chrome: address stays refused as not a web page, as before.
-  const settings = navigationProblem("chrome://settings");
-  assert.notEqual(settings, null);
-  assert.doesNotMatch(settings, /browser's own/);
-  assert.match(settings, /only opens web pages/);
+  for (const url of ["chrome://version", "chrome://settingsx", "chrome://history"]) {
+    const other = navigationProblem(url);
+    assert.notEqual(other, null, url);
+    assert.equal(isBrowserPage(url), false, url);
+    assert.match(other, /only opens web pages/, url);
+  }
   assert.equal(navigationProblem("https://x.com"), null);
   assert.deepEqual(BROWSER_PAGE_ORIGINS, ["chrome://pairbrowse", "chrome://pairbrowse.top-chrome"]);
 });
@@ -68,7 +78,8 @@ test("agents never open file: addresses, a downloaded file's included", () => {
 test("pairbrowse:// addresses are the browser's own, as chrome://pairbrowse ones: refused, hidden, never an agent's", async () => {
   const { isBrowserPage, isBrowserScreenPage, hiddenFromLiveView, navigationProblem, BROWSER_PAGE_RULE } = await import("../scripts/rules/policy.mjs");
   const { hideBrowserTabs } = await import("../scripts/daemon/output.mjs");
-  for (const u of ["pairbrowse://settings", "pairbrowse://browser-settings", "PAIRBROWSE://about", " pairbrowse://newtab/", "pairbrowse:sessions"]) {
+  for (const u of ["pairbrowse://settings", "pairbrowse://settings/pairbrowse#report", "pairbrowse://browser-settings", "pairbrowse://browser-newtab", "pairbrowse://browser-signin", "pairbrowse://chrome-urls",
+    "PAIRBROWSE://about", " pairbrowse://newtab/", "pairbrowse:sessions"]) {
     assert.equal(isBrowserPage(u), true, u);
     assert.equal(hiddenFromLiveView(u), true, u);
     assert.equal(navigationProblem(u.trim()), `${BROWSER_PAGE_RULE} Open a web page (http or https) instead.`, u);

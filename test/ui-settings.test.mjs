@@ -525,3 +525,96 @@ pageTest("settings", { fixtures, viewport: VIEW, down: true, timeout: 90_000 }, 
   assert.deepEqual((await inPage(restingLook)).red, []);
   assert.deepEqual(errors, []);
 });
+
+// ---- inside the engine's settings (580): its PairBrowse section frames this page ----
+// Framed (the harness's frame page stands for chrome://settings), the page shows none of its own
+// header, menu or Browser settings link (the page around it is those), works as before, and posts
+// its height to chrome://settings alone, again when it changes; its one observer stops while the
+// page is hidden. Its colors follow the system's scheme; a whole tab stays dark as before.
+const chromeOf = () => {
+  const shown = (sel) => [...document.querySelectorAll(sel)].some((n) => n.checkVisibility());
+  return {
+    embedded: document.documentElement.hasAttribute("data-embedded"),
+    header: shown("header.top"), nav: shown(".layout > .nav"), search: shown("#search"), browserLink: shown("#browser-settings"),
+    sections: [...document.querySelectorAll("main > section.sec")].filter((s) => s.checkVisibility()).map((s) => s.id),
+    dataLink: document.querySelector("[data-browser-settings]").target,
+  };
+};
+const heights = () => window.__posted.filter((p) => p.data?.type === "pairbrowse-settings-height");
+const tick = () => new Promise((r) => setTimeout(r, 50));
+
+pageTest("settings", { fixtures, viewport: VIEW, frame: true }, async ({ until, inPage, top, harness, errors }) => {
+  await until("the stream", live);
+  await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
+  assert.deepEqual(await inPage(chromeOf), { embedded: true, header: false, nav: false, search: false, browserLink: false,
+    sections: ["general", "agents", "sharing", "data", "about"], dataLink: "_top" });
+  // Every message goes to chrome://settings only, and says nothing but the height.
+  const posts = await top(() => window.__posted);
+  assert.ok(posts.length > 0, "a height posted");
+  for (const p of posts) {
+    assert.equal(p.targetOrigin, "chrome://settings");
+    assert.deepEqual(Object.keys(p.data).sort(), ["height", "type"]);
+    assert.equal(p.data.type, "pairbrowse-settings-height");
+  }
+  // The last height is the page's own, and the frame follows it (as the engine's section does).
+  const at = async () => ({ last: (await top(heights)).at(-1).data.height, frame: await top(() => Number(document.getElementById("framed").height)),
+    body: await inPage(() => Math.ceil(document.body.getBoundingClientRect().height)) });
+  let now = await at();
+  for (let i = 0; i < 40 && now.last !== now.body; i++) { await inPage(tick); now = await at(); }
+  assert.equal(now.last, now.body, "the posted height is the page's");
+  assert.equal(now.frame, now.body, "the frame is as tall as the page");
+  // Contents change: a new height goes.
+  const before = now.last;
+  await inPage(() => { document.getElementById("sharing").hidden = true; });
+  for (let i = 0; i < 40 && now.last === before; i++) { await inPage(tick); now = await at(); }
+  assert.ok(now.last < before, `a shorter page posts its height (${before} -> ${now.last})`);
+  assert.equal(now.last, now.body);
+  // Hidden, nothing observes; shown again, the one observer is back.
+  await harness.setHidden(true);
+  assert.equal((await harness.live()).observers, 0, "no observer while hidden");
+  await harness.setHidden(false);
+  assert.equal((await harness.live()).observers, 1, "one observer while shown");
+  assert.deepEqual(errors, []);
+});
+
+// The scheme: framed, light under a light system and dark under a dark one, on the card's color
+// (--frame); a whole tab of its own keeps its dark look whatever the system says.
+for (const colorScheme of ["light", "dark"]) {
+  for (const frame of [true, false]) {
+    pageTest("settings", { fixtures, viewport: VIEW, frame, colorScheme }, async ({ until, inPage, errors }) => {
+      await until("the stream", live);
+      const look = await inPage(() => {
+        const s = (n) => getComputedStyle(n);
+        const item = document.querySelector("#general .item");
+        return { ink: s(document.body).color, bg: s(document.body).backgroundColor, scheme: s(document.documentElement).colorScheme,
+          item: [s(item).backgroundColor, s(item).borderTopWidth, s(item).borderLeftWidth], header: document.querySelector("header.top").checkVisibility() };
+      });
+      const light = frame && colorScheme === "light";
+      assert.equal(look.ink, light ? "rgb(15, 27, 42)" : "rgb(241, 245, 250)", "--ink");
+      assert.equal(look.bg, frame ? (light ? "rgb(255, 255, 255)" : "rgb(16, 29, 45)") : "rgb(11, 20, 33)", frame ? "the card's color (--frame)" : "--bg");
+      assert.equal(look.scheme, frame ? "light dark" : "normal");
+      // Framed, the settings are rows on that card (a hairline above each), not cards of their own.
+      assert.deepEqual(look.item, frame ? ["rgba(0, 0, 0, 0)", "1px", "0px"] : ["rgb(16, 29, 45)", "1px", "1px"]);
+      assert.equal(look.header, !frame);
+      assert.deepEqual(errors, []);
+    });
+  }
+}
+
+// #report deep link, framed (pairbrowse://settings/pairbrowse#report): the review screen opens at
+// the top of the section, where the engine's page shows it, not in the middle of a tall frame.
+pageTest("settings", { fixtures, viewport: VIEW, frame: "report" }, async ({ until, inPage, errors }) => {
+  await until("the review screen", () => document.getElementById("report").open);
+  const y = await inPage(() => document.getElementById("report").getBoundingClientRect().top);
+  assert.ok(y >= 16 && y <= 24, `at the top (${y})`);
+  assert.deepEqual(errors, []);
+});
+
+// The extension's options page is never embedded, even in a frame (the open build is unchanged).
+pageTest("settings", { fixtures, viewport: VIEW, frame: true, native: false }, async ({ until, inPage, top, errors }) => {
+  await until("the stream", live);
+  const c = await inPage(chromeOf);
+  assert.deepEqual([c.embedded, c.header, c.nav, c.browserLink], [false, true, true, true]);
+  assert.deepEqual(await top(() => window.__posted), [], "posts nothing");
+  assert.deepEqual(errors, []);
+});

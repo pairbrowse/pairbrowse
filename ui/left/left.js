@@ -11,7 +11,7 @@
 // (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
 import { $, el, avatar, agentWords, ownAgentLine, isColor, splitLabel, pickerPopover, askDock, helperConnection, servedByBrowser, syncList, enter } from "../common.js";
-import { isOwnTabPage, isSettingsPage, ownPage } from "../urls.js";
+import { isOwnTabPage, isSettingsPage, ownPage, settingsPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
 import { followHelper } from "../helper.js";
 
@@ -302,7 +302,7 @@ function findOrOpen(match, url) {
   pb.tabs.create(url, true, w).catch(() => {});
 }
 const openHistory = () => findOrOpen(isHistory, "chrome://history");
-const openSettings = () => findOrOpen(isSettingsPage, ownPage("settings"));
+const openSettings = () => findOrOpen(isSettingsPage, settingsPage());
 function openBrowser() {
   if (pb && lastWebTab >= 0 && tabs.has(lastWebTab) && !tabs.get(lastWebTab).active) pb.tabs.activate(lastWebTab).catch(() => {});
 }

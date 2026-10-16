@@ -19,11 +19,23 @@ const PRELUDE = readFileSync(join(here, "ui-prelude.js"), "utf8");
 // The live view's VIEWER_CSP (scripts/liveview/http.mjs) widened to a browser page's own images,
 // media and its helper, plus the engine WebUI's Trusted Types enforcement (ui/webui/webui_util.cc
 // EnableTrustedTypesCSP); `static-types` is one of its default policy names, the only one a
-// PairBrowse page may use. Framing mirrors what the native 520 patch sets: frame-src 'self' on
-// every chrome page; frame-ancestors 'self', with X-Frame-Options lifted to SAMEORIGIN, on /picker
-// only (the session switcher the strip and the left dock frame); every other page refuses any frame.
-export const FRAMEABLE = new Set(["picker"]);
+// PairBrowse page may use. Framing mirrors what the native 520 and 580 patches set: frame-src
+// 'self' on every chrome page; frame-ancestors 'self', with X-Frame-Options lifted to SAMEORIGIN,
+// on /picker (the session switcher the strip and the left dock frame) and /settings (which the
+// engine's settings page frames as its PairBrowse section; here the harness's own frame page,
+// /__harness/frame/settings, stands for chrome://settings); every other page refuses any frame.
+export const FRAMEABLE = new Set(["picker", "settings"]);
 export const PAGE_CSP = (helperOrigin, page = "") => `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; frame-src 'self'; connect-src 'self' ${helperOrigin}; base-uri 'none'; form-action 'none'; frame-ancestors ${FRAMEABLE.has(page) ? "'self'" : "'none'"}; require-trusted-types-for 'script'; trusted-types static-types`;
+
+// The frame page's script: the framed page calls parent.postMessage(message, origin); this page
+// keeps each call and follows a posted settings height, as chrome://settings's section does.
+const FRAME_SCRIPT = `window.__posted = [];
+window.postMessage = function postMessage(data, targetOrigin) {
+  window.__posted.push({ data, targetOrigin });
+  const f = document.getElementById("framed");
+  if (f && data && data.type === "pairbrowse-settings-height" && Number.isFinite(data.height)) f.height = String(Math.max(160, Math.round(data.height)));
+};
+`;
 
 const TYPES = { html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8",
   svg: "image/svg+xml", png: "image/png", json: "application/json", woff2: "font/woff2" };
@@ -52,6 +64,18 @@ export async function startUiServer({ helper, fixture = defaultFixture(), bridge
     // with no address.
     if (path === "/__harness/pairbrowse-api.js") return js(res, shimScript({ ...current, helper: current.helper === null ? { origin: "", key: "" } : { origin: helper.origin, key: helper.key } }));
     if (path === "/__harness/chrome.js") return js(res, bridgeExtensionScript(helper.base));
+    // A frameable page framed as the engine's settings page frames PairBrowse's (580):
+    // /__harness/frame/<page>[?<section>]. Its script keeps what the framed page posts to it
+    // (window.__posted) and, as the engine's page does, sizes the frame to a posted height.
+    if (path === "/__harness/frame.js") return js(res, FRAME_SCRIPT);
+    if (path.startsWith("/__harness/frame/")) {
+      const page = path.slice("/__harness/frame/".length);
+      if (!FRAMEABLE.has(page)) return plain(res, 404);
+      const section = new URL(req.url, "http://x").search.slice(1).replace(/[^a-z0-9-]/gi, "");
+      res.writeHead(200, { ...SECURITY_HEADERS, "content-type": TYPES.html, "content-security-policy": PAGE_CSP(helper.origin) });
+      return res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>Framed ${page}</title><script src="/__harness/frame.js"></script></head>`
+        + `<body><iframe id="framed" title="PairBrowse ${page}" width="1000" height="600" src="/${page}/index.html${section ? `#${section}` : ""}"></iframe></body></html>`);
+    }
     const clean = posix.normalize(path);
     const parts = clean.split("/").filter(Boolean);
     if (clean.includes("..") || clean.includes("\0") || !parts.length || parts.some((p) => p.startsWith(".")) || parts[0] === "__harness") return plain(res, 404);

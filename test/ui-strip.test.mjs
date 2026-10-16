@@ -653,15 +653,15 @@ describe("menu: PairBrowse settings, found or opened", () => pageTest("strip", {
   await page.click("#menu-btn");
   await page.click("#settings");
   await page.waitForTimeout(100);
-  assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://settings", true, 1]]);
+  assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://settings/pairbrowse", true, 1]]);
   assert.equal(await inPage(() => document.getElementById("menu").hidden), true);
   // An open settings tab in this window is brought forward, not opened twice.
-  const id = await inPage(async () => (await window.pairbrowse.tabs.list()).tabs.find((t) => t.url === "pairbrowse://settings")?.id);
+  const id = await inPage(async () => (await window.pairbrowse.tabs.list()).tabs.find((t) => t.url === "pairbrowse://settings/pairbrowse")?.id);
   if (id !== undefined) {
     await page.click("#menu-btn");
     await page.click("#settings");
     await page.waitForTimeout(100);
-    assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://settings", true, 1]]);
+    assert.deepEqual(await callsOf(shim, "tabs", "create"), [["pairbrowse://settings/pairbrowse", true, 1]]);
     assert.ok((await callsOf(shim, "tabs", "activate")).some((c) => c[0] === id));
   }
 }));

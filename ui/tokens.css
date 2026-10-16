@@ -107,8 +107,8 @@
   [aria-busy="true"]::after { animation: none !important; opacity: 0.7; scale: 0.6 1; }
 }
 
-/* The live view alone follows the system's light scheme (liveview.html sets data-scheme); the
-   extension pages stay dark. */
+/* The live view and the settings page framed by the engine's settings follow the system's light
+   scheme (they set data-scheme); every other page stays dark. */
 @media (prefers-color-scheme: light) {
   :root[data-scheme="system"] {
     --bg: #F4F7FB; --frame: #FFFFFF; --sidebar: #FFFFFF; --elevated: #E8EEF5; --hover: #DCE5EF;
@@ -116,6 +116,12 @@
     --accent: #2468D0; --accent-ink: #1E61C4; /* 4.5:1 on --hover (an open side button) */ --accent-soft: rgb(36 104 208 / 0.14);
     --spark: #C4521B; /* the spark at 3:1 or more on a light tab strip (WCAG 1.4.11) */
     --ok: #11735A; --warn: #8A5A00; --bad: #C0343A;
+  }
+  /* PairBrowse's settings framed by the engine's settings (580; settings.js sets data-embedded with
+     data-scheme="system"): the surfaces and inks it draws that the live view's block leaves dark. */
+  :root[data-scheme="system"][data-embedded] {
+    --panel: #FFFFFF; --btn: #FFFFFF; --edge-btn: #76879C; --accent-fill: #2468D0; --accent-fill-hover: #1E61C4;
+    --bad-ink: #C0343A; --ink-soft: #3A4B60;
   }
 }
 /* Increased contrast (prefers-contrast: more), on every page and in both schemes: muted text takes

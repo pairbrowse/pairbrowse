@@ -29,6 +29,7 @@
   },
   "permissions": [
     "sidePanel",
+    "contextMenus",
     "storage",
     "notifications",
     "tabs",

@@ -23,7 +23,7 @@ const { uploadProblem, secretInside, MEDIA } = await import("../../scripts/uploa
 const { looksLikeCard, shownValue, SENSITIVE, secretNamesIn, looksLikeSecretName, isRef, trimResult } = await import("../../scripts/rules/policy.mjs");
 const { redact, cleanDomains, validSecretName, nameFromLabel, parseSecrets, writeSecrets, setSecret } = await import("../../scripts/rules/secrets.mjs");
 const { decide, clickClass, uploadAllowed, CLICK_CLASSES } = await import("../../scripts/guard.mjs");
-const { clickRule, dialogRule, strongSignal } = await import("../../scripts/rules/clicks.mjs");
+const { clickRule, dialogRule, strongSignal, nextStepLabel, paySignal } = await import("../../scripts/rules/clicks.mjs");
 
 // Values a tool's JSON arguments can carry where a string is expected.
 const loose = fc.oneof(fc.string(), fc.integer(), fc.double(), fc.boolean(), fc.constant(null), fc.constant(undefined), fc.array(fc.string(), { maxLength: 3 }));
@@ -356,5 +356,54 @@ test("a click with strong signals is refused until it carries the class they fou
     const rule = dialogRule(accept, prev, element);
     if (accept && ["pay", "delete"].includes(prev) && clickClass(element) !== prev) assert.equal(rule, "name");
     if (!accept) assert.equal(rule, "go");
+  }));
+});
+
+// ---- next-step buttons on an address form ------------------------------------------------------
+
+const NEXT_STEPS = ["Continue", "Next", "Proceed", "Next step", "Continue to shipping", "Continue to payment", "Continue to delivery", "Continue to billing", "Continue to review", "Proceed to checkout", "Proceed to payment", "Go to checkout", "Continue to shipping method", "Continue to payment method", "Continue to the next step"];
+// Words that commit, put anywhere into a label: it is never a next step then.
+const COMMIT_WORDS = ["pay", "Pay now", "order", "Place order", "Submit order", "buy", "purchase", "confirm", "complete", "submit", "subscribe", "donate", "book", "checkout and pay", "and pay"];
+
+test("a next-step label is only ever one of the next-step phrases, never one with a word that commits", () => {
+  // The phrases, in any case, with spacing around and an arrow after, are next steps.
+  check(fc.property(fc.constantFrom(...NEXT_STEPS).chain(randomCase), fc.constantFrom("", " ", "  ", " ›", " →", " »", " >"), fc.constantFrom("", " ", "\n"), (label, tail, head) => {
+    assert.equal(nextStepLabel(`${head}${label}${tail}`), true, JSON.stringify(label + tail));
+  }));
+  // Any committing word before or after one: not a next step.
+  check(fc.property(fc.constantFrom(...NEXT_STEPS), fc.constantFrom(...COMMIT_WORDS).chain(randomCase), fc.constantFrom(" ", ": ", " and ", " & ", " - ", "/"), fc.boolean(), (step, word, sep, before) => {
+    const label = before ? `${word}${sep}${step}` : `${step}${sep}${word}`;
+    assert.equal(nextStepLabel(label), false, label);
+  }));
+  // Random labels holding a committing word are never next steps; nothing throws.
+  check(fc.property(fc.string({ maxLength: 30 }), fc.constantFrom(...COMMIT_WORDS), fc.string({ maxLength: 30 }), (a, w, b) => {
+    assert.equal(nextStepLabel(`${a}${w}${b}`), false, `${a}${w}${b}`);
+  }));
+  check(fc.property(loose, (v) => { nextStepLabel(v); }));
+});
+
+test("a form with card, IBAN or payment-frame signals pays whatever its button says; address fields alone pay unless the button is a next step", () => {
+  const label = fc.oneof(fc.string({ maxLength: 40 }), fc.constantFrom(...NEXT_STEPS, ...COMMIT_WORDS));
+  check(fc.property(fc.boolean(), fc.boolean(), fc.boolean(), label, (card, frame, address, l) => {
+    const pays = paySignal({ card, frame, address }, l);
+    if (card || frame) assert.equal(pays, true, `card ${card} frame ${frame}: ${l}`);
+    else if (!address) assert.equal(pays, false);
+    else assert.equal(pays, !nextStepLabel(l), l);
+  }));
+  // A payment read from address fields still needs "Pay:" for any committing label.
+  check(fc.property(fc.constantFrom(...COMMIT_WORDS), (l) => {
+    assert.equal(paySignal({ address: true }, l), true, l);
+    assert.equal(clickRule({ level: "strong", word: "pay" }, l), "name", l);
+  }));
+});
+
+test("a postal code shows its value; a postal code next to a sensitive word does not", () => {
+  const postal = fc.constantFrom("ZIP code", "Zip/Postal Code", "Postal code", "Post code", "zip-code", "ZIP / Postal code", "Postcode").chain(randomCase);
+  check(fc.property(postal, fc.stringMatching(/^[0-9A-Z]{3,8}$/), (label, value) => {
+    assert.equal(shownValue(label, value), value, label);
+  }));
+  check(fc.property(postal, sensitiveLabel, fc.constantFrom(" or ", " / ", " and ", " "), fc.string({ minLength: 3, maxLength: 20 }).filter(notAName), (p, s, sep, value) => {
+    const shown = shownValue(`${p}${sep}${s}`, value);
+    assert.ok(shown.startsWith("••••") && !shown.includes(value), `${p}${sep}${s}: ${shown}`);
   }));
 });

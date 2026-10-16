@@ -64,7 +64,7 @@ export function createOutput({ dir, secretValues }) {
       maskFile(file);
       let snap;
       try { snap = readFileSync(file, "utf8"); } catch { return line; }
-      snap = snap.replace(/^```ya?ml\r?\n/, "").replace(/\r?\n```\s*$/, "").replace(/\s+$/, "");
+      snap = compactSnapshot(snap.replace(/^```ya?ml\r?\n/, "").replace(/\r?\n```\s*$/, "").replace(/\s+$/, ""));
       if (short && snap.length > INLINE_SHORT_MAX) return `${line}: long (about ${Math.round(snap.length / 4)} tokens). Take a browser_snapshot for fresh refs.`;
       return `\`\`\`yaml\n${snap}\n\`\`\``;
     });
@@ -111,6 +111,64 @@ export function createOutput({ dir, secretValues }) {
   }
 
   return { mask, maskLinkedFiles, inlineSnapshot, capSnapshot, absoluteLinks, start };
+}
+
+// An action's snapshot, shorter where it carries what no form step needs (browser_snapshot keeps
+// the whole page): link addresses past URL_MAX characters cut ("…": ad and tracking links run to
+// thousands), a dropdown's or list's run of more than OPTIONS_MAX options kept to its first few,
+// its chosen ones and its last, with a line saying how many were left out, and a frame whose links
+// all go to ad servers said in one line. Pure.
+const URL_MAX = 200;
+const OPTIONS_MAX = 25;
+const OPTIONS_KEEP = 8;
+export const AD_HOSTS = /(?:^|\.)(?:doubleclick\.net|googlesyndication\.com|googleadservices\.com|adservice\.google\.[a-z.]+|googletagservices\.com|amazon-adsystem\.com|adnxs\.com|criteo\.(?:com|net)|taboola\.com|outbrain\.com|pubmatic\.com|rubiconproject\.com|openx\.net|casalemedia\.com|adsrvr\.org|moatads\.com|3lift\.com|sharethrough\.com|smartadserver\.com|yieldmo\.com|media\.net|teads\.tv|revcontent\.com|mgid\.com|bidswitch\.net|adform\.net|serving-sys\.com|2mdn\.net)$/i;
+const indentOf = (line) => line.match(/^ */)[0].length;
+const hostOf = (url) => { try { return new URL(url).hostname; } catch { return ""; } };
+export function compactSnapshot(text) {
+  const lines = String(text).split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // A frame whose links all go to ad servers (and that holds no field): one line.
+    if (/^\s*- iframe\b/.test(line)) {
+      const ind = indentOf(line);
+      let j = i + 1;
+      while (j < lines.length && (indentOf(lines[j]) > ind || !lines[j].trim())) j++;
+      const body = lines.slice(i + 1, j);
+      const urls = body.map((l) => l.match(/^\s*- \/url: "?([^"\s]+)/)?.[1]).filter(Boolean);
+      const fields = body.some((l) => /^\s*- (textbox|combobox|checkbox|radio|searchbox|spinbutton|slider)\b/.test(l));
+      if (urls.length && !fields && urls.every((u) => AD_HOSTS.test(hostOf(u)))) {
+        out.push(`${line.replace(/:\s*$/, "")}: an ad (${body.length} lines left out)`);
+        i = j - 1;
+        continue;
+      }
+    }
+    // A long run of options at one level.
+    if (/^\s*- option\b/.test(line)) {
+      const ind = indentOf(line);
+      let j = i;
+      const run = [];
+      while (j < lines.length && indentOf(lines[j]) >= ind && (indentOf(lines[j]) > ind || /^\s*- option\b/.test(lines[j]))) {
+        if (indentOf(lines[j]) === ind) run.push([lines[j]]); else run.at(-1).push(lines[j]);
+        j++;
+      }
+      if (run.length > OPTIONS_MAX) {
+        const keep = run.map((o, k) => k < OPTIONS_KEEP || k === run.length - 1 || /\[(selected|checked)/.test(o[0]));
+        let left = 0;
+        run.forEach((o, k) => {
+          if (keep[k]) {
+            if (left) { out.push(`${" ".repeat(ind)}- (${left} more options)`); left = 0; }
+            out.push(...o);
+          } else left++;
+        });
+        out.push(`${" ".repeat(ind)}  # ${run.length} options in all; browser_select_option takes any by its text, browser_snapshot lists them all`);
+        i = j - 1;
+        continue;
+      }
+    }
+    out.push(line.replace(new RegExp(`^(\\s*- /url: "?)([^\\n]{${URL_MAX - 40}})[^\\n]{40,}$`), "$1$2…"));
+  }
+  return out.join("\n");
 }
 
 // Playwright's error for a browser tool, said plainly (its call logs, selectors and escape codes
@@ -255,5 +313,20 @@ export function createRefNames() {
     }
     return changed ? out : args;
   }
-  return { toPlain, toFrame, mainFrameSeq, plainOf, plainFile };
+  // The frame numbers a result's refs carry that aren't the main frame's as known: after the page
+  // moved on (a run's go, a link) with no whole-page snapshot since, the main frame's new number
+  // is among them (serve/result.mjs asks the page which one it is). [{ seq, ref }], at most 3.
+  function unknownSeqs(text) {
+    const seen = new Map();
+    for (const [ref, seq] of String(text ?? "").matchAll(/\bf(\d+)e\d+\b/g)) {
+      if (Number(seq) !== state?.seq && !seen.has(seq)) seen.set(seq, ref);
+      if (seen.size >= 3) break;
+    }
+    return [...seen].map(([seq, ref]) => ({ seq: Number(seq), ref }));
+  }
+  // The page says this is its main frame's number now: refs with it come plain from here.
+  function learnMain(seq) {
+    if (Number.isInteger(seq) && seq > 0 && seq !== state?.seq) state = { seq, refs: new Set() };
+  }
+  return { toPlain, toFrame, mainFrameSeq, plainOf, plainFile, unknownSeqs, learnMain };
 }

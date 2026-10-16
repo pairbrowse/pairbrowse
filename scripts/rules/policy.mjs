@@ -102,8 +102,12 @@ export function looksLikeCard(value) {
   }
   return sum % 10 === 0;
 }
-// A field sensitive by its label: SENSITIVE, except the cardholder's name ("Name on card").
-export const sensitiveLabel = (label) => { const l = String(label ?? ""); return SENSITIVE.test(l) && !/(\bname\b|\bholder\b)[^]{0,12}\bcard|card ?holder/i.test(l); };
+// A postal code's "code" ("ZIP code", "Postal code", "Zip/Postal Code", "Post code"): an address,
+// not a secret. Only the phrase itself is taken out: "ZIP code or security code" stays sensitive.
+const POSTAL_CODE = /\b(?:zip|postal|post)(?:\s*[/-]?\s*(?:zip|postal|post))?[\s_-]*code\b/gi;
+// A field sensitive by its label: SENSITIVE (outside a postal code's name), except the
+// cardholder's name ("Name on card").
+export const sensitiveLabel = (label) => { const l = String(label ?? "").replace(POSTAL_CODE, " "); return SENSITIVE.test(l) && !/(\bname\b|\bholder\b)[^]{0,12}\bcard|card ?holder/i.test(l); };
 // Card numbers inside other text ("ref 4242 4242 4242 4242 paid"): masked to their last two digits.
 export const maskCards = (text) => String(text ?? "").replace(/(?<![\d-])(?:\d[ -]?){12,18}\d(?![\d-])/g, (m) => (looksLikeCard(m) ? `••••${m.replace(/[\s-]/g, "").slice(-2)}` : m));
 // What the activity line shows for a typed value.

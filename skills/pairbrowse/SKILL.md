@@ -42,7 +42,10 @@ Make a task list with one item per page or section, and set a badge:
 
 `pairbrowse_run` steps, one key each: `go`, `fill` {Label: value}, `check`, `uncheck`, `select`
 {Label: Option}, `click`, `press`, `scroll` ("down", "up" or pixels, at once), `drag` ([[x,y],...] fractions of the visible page: drawing on canvases, human-like), `upload` {Label: path}, `waitFor`, `expect`, and
-`handoff` {say, until} (or `untilGone`). Labels match the label, placeholder or name. Values may use
+`handoff` {say, until} (or `untilGone`). Labels match the label, placeholder or name. A `click` takes
+a button's, link's, tab's, menu item's, calendar day's (grid cell) or option's name, `"#id"`, or the
+page's test id (`data-test`, `data-testid`); it waits while the page says it's saving ("Saving..."), and
+a link that downloads a file counts as done. `waitFor` and `expect` look in frames too. Values may use
 `{{var}}` from `vars`. It stops at the first problem, says why, and returns an outline of the page.
 `saveAs` saves a flow that fully worked; `playbook` + `vars` replays it; `list: true` lists saved ones.
 Check the list before building a flow that may already exist.
@@ -137,6 +140,9 @@ It reports these in a "### PairBrowse" block in the next result. Read it.
 - At most 20 tabs (`maxTabs`) stay open: opening one more closes the tab used longest ago, never
   the current tab, one just opened or one anyone used in the last 10 minutes (so more may stay
   open for a while). The result says which went. List tabs before selecting by number. New tabs a page opens are reported by number; switch with `browser_tabs`.
+  `browser_tabs` new answers with a short outline of the page, and close with the tab list only:
+  `browser_snapshot` gives the whole page and its refs. An action's own snapshot is shortened (long
+  link addresses cut, long option lists counted, ad frames in one line); `browser_snapshot` is whole.
 - Downloads go to the Downloads folder; the result says where.
 - While the user clicks or types in the tab, your next action there waits, then the result says
   what they did (scrolling and moving the mouse don't hold you up). Take a fresh snapshot and carry on from where the page is now.
@@ -176,7 +182,8 @@ Open only the verification message: select the inbox tab, `browser_find` with a 
   "Submit:" (an application, a final order, a submit for review). The user confirms those.
 - The helper reads the page's structure, never its words: card, IBAN or billing/shipping fields,
   a payment frame, a danger-styled button, an HTTP DELETE, the confirmation right after a delete
-  or payment, or an element it can't read. Such a click is refused until it carries the class the
+  or payment, or an element it can't read. (On a form with only billing/shipping address fields, a
+  plain next step, "Continue", "Next", "Continue to payment", isn't a payment.) Such a click is refused until it carries the class the
   refusal names ("Pay: Submit order"); retry with it.
 - `browser_handle_dialog` with accept takes `element` the same way: "Delete: OK" right after a
   delete click (required); any other OK goes, or name its class if it commits something.

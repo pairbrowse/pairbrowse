@@ -47,5 +47,6 @@ test("driver loader selects only the chosen chromium package", () => {
   assert.equal(loadBrowserDriver(fakeRequire, {}, "22.0.0").chromium.name, "patchright");
   assert.equal(loadBrowserDriver(fakeRequire, { browserDriver: "playwright" }, "22.0.0").chromium.name, "playwright");
   assert.equal(loadBrowserDriver(fakeRequire, {}, "18.0.0").chromium.name, "playwright");
-  assert.deepEqual(calls, ["patchright", "playwright", "playwright"]);
+  // Each the chosen package and its own core (where its reads lose their user gesture: scripts/gesture.mjs).
+  assert.deepEqual(calls, ["patchright", "patchright-core/lib/coreBundle", "playwright", "playwright-core/lib/coreBundle", "playwright", "playwright-core/lib/coreBundle"]);
 });

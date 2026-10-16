@@ -9,7 +9,7 @@ import { copyFile, constants, stat, mkdir } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { isRef } from "./rules/policy.mjs";
-import { withHelpers, buttonLabel, clickRisk, clickContext } from "./daemon/page.mjs";
+import { withHelpers, clickContext, CLICK_HELPERS } from "./daemon/page.mjs";
 import { bounded, within } from "./util.mjs";
 import { uploadProblem } from "./rules/upload.mjs";
 
@@ -108,7 +108,7 @@ async function deliver(page, el, files) {
   }
   // Never click a submit, pay or delete button just to look for a file chooser (judged by what it
   // does, as for browser_click; unreadable counts as one).
-  const risk = (await bounded(el.evaluate(withHelpers((e) => clickContext(e, "click"), clickContext, clickRisk, buttonLabel)), null))?.risk;
+  const risk = (await bounded(el.evaluate(withHelpers((e) => clickContext(e, "click"), ...CLICK_HELPERS)), null))?.risk;
   if (!risk || risk.level !== "safe") throw new Error(`the target looks like a final action (${risk?.word || "unreadable"}); give the upload field or drop zone instead`);
   const chooser = page.waitForEvent("filechooser", { timeout: 2500 }).catch(() => null);
   await el.click({ timeout: 5000 }).catch(() => {});

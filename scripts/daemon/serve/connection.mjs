@@ -50,6 +50,7 @@ export function createConnectionState(participant, { remote = null, pauseSeen = 
     acted: false, // a call of this participant's got past the session picker
     tabsListed: false, // this session's browser server has seen the tab list
     snapshotReturned: false, // the current call's result carries a snapshot
+    busyBefore: "", // what said "busy" on the page before this agent's browser_click (serve/result.mjs)
     seq: 0, // the helper's own calls to its server, numbered
   };
   // Its own tab while open; the tab its current call acts in, else that.

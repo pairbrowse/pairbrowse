@@ -735,6 +735,26 @@ test("the field the agent acts on is outlined in its color inside the cursor's s
     assert.equal(await page.evaluate(() => document.documentElement.children.length), before + 1, "the cursor's element only");
     const attrs = await page.evaluate((tag) => [...document.querySelectorAll(tag)].flatMap((e) => e.getAttributeNames()), hud.tags.cursor);
     assert.deepEqual(attrs, []);
+    // Hidden while the agent's picture is taken, back after.
+    await send("peers-hidden", "1");
+    assert.equal(await page.evaluate((tag) => getComputedStyle(document.querySelector(tag).shadowRoot.querySelector(".f")).visibility, hud.tags.cursor), "hidden");
+    await send("peers-hidden", "");
+    assert.equal(await page.evaluate((tag) => getComputedStyle(document.querySelector(tag).shadowRoot.querySelector(".f")).visibility, hud.tags.cursor), "visible");
+    // What it marks goes (taken out of the page): the outline goes with it.
+    await page.evaluate(() => document.getElementById("b").remove());
+    await page.waitForTimeout(450);
+    assert.equal((await outline()).on, false, "goes with its element");
+    // The page moves to another address in place (a single-page app's route): it goes too.
+    await page.evaluate(() => scrollTo(0, 0));
+    await send("cursor", { x: 220, y: 320, act: "type", w: 40, bw: 240, bh: 40 });
+    assert.equal((await outline()).on, true);
+    await page.evaluate(() => history.pushState({}, "", "/next"));
+    await page.waitForTimeout(450);
+    assert.equal((await outline()).on, false, "goes when the page moves on");
+    await send("cursor", { x: 220, y: 320, act: "type", w: 40, bw: 240, bh: 40 });
+    assert.equal((await outline()).on, true, "a field still there keeps it");
+    await page.waitForTimeout(450);
+    assert.equal((await outline()).on, true);
     await send("cursor-off", "");
     assert.equal((await outline()).on, false, "goes when the agent is done");
   } finally {

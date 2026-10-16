@@ -1,5 +1,6 @@
 // Code that runs inside web pages, shared by the helper's checks and fast mode. Playwright sends a
 // function's source to the page, so the helpers it calls have to travel inside that source.
+import { paySignal, nextStepLabel } from "../rules/clicks.mjs";
 
 // fn, as a function whose source also declares the given helper functions (by their names).
 export function withHelpers(fn, ...helpers) {
@@ -131,13 +132,16 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
   if (method === "dialog") form = null;
   // Payment fields: autocomplete cc-* or billing/shipping sections, a card number or IBAN typed
   // in, or a payment frame (allow="payment") in the form.
+  // What a form holds: card (cc-* fields, a card number or IBAN typed in), a payment frame, or
+  // billing/shipping address fields only (address).
   const payFields = (root) => {
+    const found = { card: false, frame: !!root.querySelector('iframe[allow*="payment" i]'), address: false };
     for (const f of [...root.querySelectorAll("input, select, textarea")].slice(0, 400)) {
       const tokens = String(f.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
-      if (tokens.some((t) => t.startsWith("cc-")) || tokens.includes("billing") || tokens.includes("shipping")) return true;
-      if (f.tagName === "INPUT" && (card(f.value) || iban(f.value))) return true;
+      if (tokens.some((t) => t.startsWith("cc-")) || (f.tagName === "INPUT" && (card(f.value) || iban(f.value)))) { found.card = true; break; }
+      if (tokens.includes("billing") || tokens.includes("shipping")) found.address = true;
     }
-    return !!root.querySelector('iframe[allow*="payment" i]');
+    return found;
   };
   // Where a multi-step form stands, by its markup: "middle" (more steps follow), "last", or ""
   // (no steps marked). A step list with aria-current="step", a progress bar, or fieldsets the
@@ -174,7 +178,13 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
   if (form || (kind === "enter" && !b && method !== "dialog")) {
     if (!form) return safe(); // Enter outside a form submits nothing
     const override = String(form.querySelector('input[type=hidden][name="_method"]')?.value || "").toLowerCase();
-    if (payFields(form) || hints.payFrame) return { level: "strong", word: "pay", why: [...why, hints.payFrame && !payFields(form) ? "it sends a form on a page with a card payment frame" : "it sends a form with card, IBAN or billing/shipping fields"] };
+    // A submit pays with card or IBAN fields or a payment frame, whatever it says; with billing or
+    // shipping address fields alone, unless its own label is a clear next step ("Continue to
+    // payment": scripts/rules/clicks.mjs paySignal).
+    const pf = payFields(form);
+    if (paySignal({ card: pf.card, frame: pf.frame || !!hints.payFrame, address: pf.address }, submitter ? buttonLabel(submitter) : "")) {
+      return { level: "strong", word: "pay", why: [...why, hints.payFrame && !pf.card && !pf.frame && !pf.address ? "it sends a form on a page with a card payment frame" : "it sends a form with card, IBAN or billing/shipping fields"] };
+    }
     if (danger || confirming || override === "delete" || prev === "delete") {
       return { level: "strong", word: "delete", why: [...why, override === "delete" ? "it sends a DELETE request" : prev === "delete" ? "it follows a delete click" : "it submits a form"] };
     }
@@ -214,7 +224,7 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
 // A click's context, the one shared reading behind every check (browser_click, Enter and Space,
 // pairbrowse_click_at, fast mode, uploads): the structural decision (clickRisk) plus what the page is (title, origin, headings), the form (method, step, its fields'
 // names, types and autocomplete, never values), the dialog it's in, and what the control does.
-// Needs clickRisk and buttonLabel alongside it (withHelpers). Self-contained: runs in the page.
+// Needs CLICK_HELPERS alongside it (withHelpers). Self-contained: runs in the page.
 export function clickContext(n, kind = "click", prev = "", hints = {}) {
   const risk = clickRisk(n, kind, prev, hints);
   const clip = (v, max = 80) => String(v || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -231,6 +241,51 @@ export function clickContext(n, kind = "click", prev = "", hints = {}) {
   const dialog = d ? { role: d.getAttribute("role") || "dialog", confirmation: !!risk.confirming, text: clip(d.innerText, 200) } : null;
   return { risk, page, control: { label: clip(buttonLabel(control), 200), does: risk.does }, form, dialog, prev };
 }
+
+// What on the page says it's still at work after an action, by its markup: the control clicked (el)
+// or any shown button busy (aria-busy), or disabled with a short label ending in an ellipsis
+// ("Saving…", "Wird gespeichert..."), or a status region saying so; a busy region around the
+// control. A button that always ends in one ("Share…") counts only while disabled. Returns that
+// text ("busy" when it has none), or "". Self-contained: runs in the page.
+export function busyNow(el) {
+  const shown = (n) => n.getClientRects().length > 0;
+  const text = (n) => String(n.innerText || n.value || "").replace(/\s+/g, " ").trim();
+  const ellipsis = (t) => t.length <= 40 && /(\.\.\.|…)$/.test(t);
+  const off = (n) => n.disabled === true || n.getAttribute("aria-disabled") === "true";
+  const busy = (n) => n.getAttribute("aria-busy") === "true" || (off(n) && ellipsis(text(n)));
+  const c = el?.isConnected ? el.closest('button, [role=button], input[type=submit], input[type=button], a') || el : null;
+  if (c && (busy(c) || c.closest('[aria-busy="true"]'))) return text(c).slice(0, 40) || "busy";
+  for (const n of [...document.querySelectorAll('button, [role=button], input[type=submit], [role=status], [aria-live=polite], [aria-live=assertive]')].slice(0, 300)) {
+    if (!shown(n)) continue;
+    if (n.matches("[role=status], [aria-live]") ? ellipsis(text(n)) : busy(n)) return text(n).slice(0, 40) || "busy";
+  }
+  return "";
+}
+export const BUSY_POLL_MS = 150;
+// Waits (at most maxMs) while busyNow says the page is at work after an action. Every read is
+// bounded. before: what said busy already before the action (a lasting "Loading…"): not waited on.
+// Returns { ms, what }: how long it waited, and what said busy ("" when nothing did).
+export async function whileBusy(page, el = null, maxMs = 5000, before = "") {
+  const started = Date.now();
+  let what = "";
+  const read = () => Promise.race([
+    // The control gone (the page moved on): the page's own signs only.
+    (el ? el.evaluate(busyNow, undefined, { timeout: 700 }).catch(() => page.evaluate(busyNow, null)) : page.evaluate(busyNow, null)).catch(() => ""),
+    new Promise((r) => setTimeout(() => r(""), 800)),
+  ]);
+  for (;;) {
+    if (page.isClosed?.()) break;
+    const now = await read();
+    if (!now || (before && now === before)) break;
+    what ||= now;
+    if (Date.now() - started >= maxMs) break;
+    await new Promise((r) => setTimeout(r, BUSY_POLL_MS));
+  }
+  return { ms: what ? Date.now() - started : 0, what };
+}
+
+// What clickContext and clickRisk call in the page: pass them all to withHelpers with either.
+export const CLICK_HELPERS = [clickContext, clickRisk, buttonLabel, paySignal, nextStepLabel];
 
 // Waits until the page is quiet: at least two animation frames, then QUIET_MS without any change
 // to its document (no nodes, attributes or text changing), at most maxMs. A page that is already

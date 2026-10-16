@@ -17,6 +17,7 @@ function fakePage({ url = "https://a.example/x", view = [0, 0, 820, 600], text =
     const src = String(fn);
     state.evaluated.push(src);
     if (src.includes("readyState")) return "complete";
+    if (src.includes("document.fonts")) return state.fonts ? state.fonts() : true;
     if (src.includes("scrollX")) return state.view;
     if (src.includes("elementFromPoint")) return state.hit;
     if (src.includes("innerText")) return state.text;
@@ -52,6 +53,23 @@ function fakePage({ url = "https://a.example/x", view = [0, 0, 820, 600], text =
   };
   return page;
 }
+
+test("screenshot: the picture waits for the page's web fonts, and a page whose fonts never load still gets one", async () => {
+  const page = fakePage();
+  let fontsIn = false;
+  page.state.fonts = () => new Promise((r) => setTimeout(() => { fontsIn = true; r(true); }, 150));
+  const { shots } = make();
+  const origNew = page.context().newCDPSession;
+  let startedAfterFonts = null;
+  page.context = ((ctx) => () => ({ ...ctx, newCDPSession: async (p) => { startedAfterFonts = fontsIn; return origNew(p); } }))(page.context());
+  assert.ok((await shots.take(page, "p1"))?.data, "a picture");
+  assert.equal(startedAfterFonts, true, "taken once the fonts are in");
+  const stuck = fakePage();
+  stuck.state.fonts = () => new Promise(() => {});
+  const t0 = Date.now();
+  assert.ok((await make().shots.take(stuck, "p1"))?.data, "a picture all the same");
+  assert.ok(Date.now() - t0 < 2500, `bounded: ${Date.now() - t0} ms`);
+});
 
 const make = (values = {}, extra = {}) => {
   const log = [];

@@ -46,7 +46,7 @@ import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
 import { cleanName, displayName } from "./sharing/join.mjs";
 import { currentAccount, within, readJson, spend, pidAlive, urlHost } from "./util.mjs";
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
-import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
+import { chooseBrowserDriver, patchrightNodeMinimum, requireDriver } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
 import { contextCount } from "./daemon/exec-contexts.mjs";
 import { createHud, appColor, APP_COLORS } from "./daemon/hud.mjs";
@@ -107,7 +107,7 @@ let loadedRuntime = null;
 function runtime() {
   if (!loadedRuntime) {
     const { createConnection } = require("@playwright/mcp");
-    const { chromium } = require(driverChoice.driver === "playwright" ? "playwright" : "patchright");
+    const { chromium } = requireDriver(require, driverChoice.driver, log); // its reads give pages no user activation
     loadedRuntime = { createConnection, chromium };
   }
   return loadedRuntime;

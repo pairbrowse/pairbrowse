@@ -28,8 +28,10 @@ export function createRunTool(conn, api) {
     const problem = preflight(resolved, paths.uploads);
     if (problem) return { text: problem, error: true };
     const page = (await serverPage()) || (await (await context.getContext()).newPage());
-    // A page that answers nothing (its scripts never pause, or it froze): said at once.
-    if ((await within(4000, page.evaluate(() => 1).catch(() => null))) === null) return { text: "The page isn't answering right now (its scripts are busy without pause, or it froze): nothing was done. Wait a moment and try again, or reload it with browser_navigate.", error: true, url: page.url() };
+    // A page that answers nothing (its scripts never pause, or it froze): said at once. A run that
+    // starts by going elsewhere leaves it (its go step is bounded like any navigation).
+    const leaves = Object.keys(resolved[0] || {})[0] === "go";
+    if (!leaves && (await within(4000, page.evaluate(() => 1).catch(() => null))) === null) return { text: "The page isn't answering right now (its scripts are busy without pause, or it froze): nothing was done. Wait a moment and try again, or reload it with browser_navigate.", error: true, url: page.url() };
     // A run gets RUN_MAX_MS; past that it stops between steps and says so, and a run stuck
     // inside a step on a page that stopped answering is given up on a little later (never the
     // browser's 10-minute reset for everyone waiting behind it).

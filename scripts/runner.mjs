@@ -79,7 +79,8 @@ const describePage = withHelpers(() => {
   // A message a person can see: screen-reader-only live regions ("Page loaded", "Expanded":
   // a 1 px box, or clipped away) are announcements, not errors.
   const onScreen = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width >= 8 && r.height >= 8 && st.clip === "auto" && (st.clipPath === "none" || !st.clipPath); };
-  const errors = [...document.querySelectorAll('[role=alert], [aria-live=assertive], .error, .errors, [class*="error" i], [class*="invalid" i]'), ...described].filter(isVisible).filter(onScreen)
+  // Also a message named so by the page's test ids or id ("Epic sadface: ..." in h3[data-test=error]).
+  const errors = [...document.querySelectorAll('[role=alert], [aria-live=assertive], .error, .errors, [class*="error" i], [class*="invalid" i], [data-test*="error" i], [data-testid*="error" i], [id*="error" i]'), ...described].filter(isVisible).filter(onScreen)
     .filter((el) => !el.matches("input, select, textarea, button, option") && !el.querySelector("input, select, textarea, button") && (el.innerText || "").trim().length <= 160)
     .map((el) => el.innerText.replace(/\s+/g, " ").trim().slice(0, 100)).filter(Boolean);
   const h = document.querySelector("h1, h2")?.innerText.replace(/\s+/g, " ").trim().slice(0, 80);

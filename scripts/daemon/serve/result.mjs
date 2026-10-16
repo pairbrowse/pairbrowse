@@ -4,7 +4,8 @@
 import { isRef, trimResult } from "../../rules/policy.mjs";
 import { pageLoaded, within } from "../../util.mjs";
 import { hiddenTabsNote, hideBrowserTabs, hidePersonTabs } from "../output.mjs";
-import { settle } from "../page.mjs";
+import { settle, whileBusy } from "../page.mjs";
+import { outline } from "../../runner.mjs";
 import { foldedLine, revealNote, scanReveal } from "../reveal.mjs";
 import { CLICKING_TOOLS, DECORATED, FIELD_TOOLS, INLINE_SHORT_TOOLS, INLINE_SNAPSHOT_TOOLS, LOADING_TOOLS, PAGE_READ_TOOLS, SCREENSHOT_TOOLS, dropClosedAlerts, forJoiner, urlIn } from "./wire.mjs";
 import { resolve as resolvePath } from "node:path";
@@ -26,9 +27,20 @@ export const CLICK_SETTLE_MS = 500; // at least, after a click: in-page changes 
 const TIDY_MAX_MS = 8000; // the most a result waits for the page to settle
 const LATE_POPUP_CHECKS_MS = [3000, 8000]; // an offer that shows up a few seconds later
 export const image = (data) => ({ type: "image", data, mimeType: "image/jpeg" });
+export const BUSY_MAX_MS = 5000; // a click the page is still at work on is waited for this long, at most
+// A result's text without its page snapshot (the "### Snapshot" section, inline or as a file link),
+// with put in its place.
+export function withoutSnapshot(text, put = "") {
+  let t = String(text);
+  const linked = /^(### Snapshot\n)?- \[Snapshot\]\([^)\s]+\)[^\n]*(\n|$)/m;
+  const inline = /^### Snapshot\n```ya?ml\n[\s\S]*?\n```[^\n]*(\n|$)/m;
+  if (linked.test(t)) t = t.replace(linked, () => put);
+  else if (inline.test(t)) t = t.replace(inline, () => put);
+  return t;
+}
 
 export function createResult(conn, api) {
-  const { closing, config, context, drainHostNotes, finish, followTabs, hud, log, myLabel, outlines, output, pause, personTab, popups, presence, rememberPicture, reply, screenshots, session, tabClaims, tabNames, toClient } = api;
+  const { closing, config, context, drainHostNotes, finish, followTabs, hud, internal, log, myLabel, outlines, output, pause, personTab, popups, presence, rememberPicture, reply, screenshots, session, tabClaims, tabNames, toClient } = api;
   const { callArgs, fieldNotes, ownTab, participant, refNames, refused, remote, tabActions, traces } = conn;
 
   // After an action in page (the tab at seenUrl): close popups (Claude's own dialog stays), let
@@ -87,10 +99,25 @@ export function createResult(conn, api) {
     let shotUrl = null;
     let ownPage = null;
     let inlined = false; // an action's result carries its snapshot inline
+    let closedAway = false; // browser_tabs close left the agent in a tab that wasn't its own
+    let full = fullSnapshot; // the text holds a whole-page snapshot (refNames)
     if (tool !== undefined) {
       const action = tabActions.get(msg.id);
       tabActions.delete(msg.id);
+      const mineBefore = conn.mine;
       if (tool === "browser_tabs" && msg.result && !msg.result.isError) await followTabs(msg, action).catch((e) => log("tab follow", e?.message || e));
+      // A tab closed: the tab it leaves the agent in gets no picture or snapshot unless it is the
+      // agent's own from before (it closed another one); browser_snapshot reads the new one.
+      if (tool === "browser_tabs" && action === "close" && msg.result && !msg.result.isError) {
+        closedAway = !(mineBefore && mineBefore === conn.mine && !mineBefore.isClosed());
+        if (closedAway) for (const part of content()) if (part.type === "text") part.text = withoutSnapshot(part.text, "### Snapshot\n- Not included: browser_snapshot reads the tab you are in now.\n");
+      }
+      // A new tab: a short outline of its page (as pairbrowse_run ends with), not its whole
+      // snapshot; browser_snapshot gives the whole page with refs.
+      if (tool === "browser_tabs" && action === "new" && msg.result && !msg.result.isError && conn.mine && !conn.mine.isClosed()) {
+        const short = await within(6000, pageLoaded(conn.mine, { maxMs: 3000 }).then(() => outline(conn.mine))).catch(() => null);
+        if (short) for (const part of content()) if (part.type === "text") part.text = withoutSnapshot(part.text, `### Page outline\n${short}\n- Take a browser_snapshot for its refs (the whole page).\n`);
+      }
       // The browser tools act in this participant's own tab (see syncServer): the result is about
       // that page, whatever URL another tab shows.
       ownPage = conn.mine && !conn.mine.isClosed() && (tool.startsWith("browser_") || DECORATED.has(tool)) ? conn.mine : null;
@@ -116,11 +143,36 @@ export function createResult(conn, api) {
       if (tool === "browser_snapshot" && msg.result && !msg.result.isError && content().some((c) => /```yaml\s*```/.test(c.text || ""))) {
         (msg.result.content ||= []).push({ type: "text", text: "\n### PairBrowse\n- The page shows nothing yet (still loading, or empty). browser_wait_for a second or two, then snapshot again." });
       }
+      // A click the page is still at work on ("Saving…" on its button, a busy region): waited
+      // for (at most BUSY_MAX_MS), then the page snapshotted again, so the result shows what the
+      // click did rather than the page in the middle of it.
+      if (tool === "browser_click" && ownPage && msg.result && !msg.result.isError) {
+        const before = conn.busyBefore || "";
+        conn.busyBefore = "";
+        const busy = await within(BUSY_MAX_MS + 2000, whileBusy(ownPage, null, BUSY_MAX_MS, before)).catch(() => null);
+        if (busy?.ms) {
+          const fresh = await within(10_000, internal("browser_snapshot", {})).catch(() => null);
+          const snap = fresh?.result && !fresh.result.isError ? (fresh.result.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n") : "";
+          if (snap.includes("[ref=")) {
+            const kept = content().map((part) => (part.type === "text" ? { ...part, text: withoutSnapshot(part.text).replace(/^### Page\n(?:- .*\n?)*/m, "") } : part));
+            msg.result.content = [...kept, { type: "text", text: `${snap.replace(/^### Result\n[\s\S]*?(?=^### )/m, "")}\n### PairBrowse\n- The page was busy ("${busy.what.slice(0, 40)}") for ${(busy.ms / 1000).toFixed(1)} s after the click: this is the page once it was done.` }];
+            full = true;
+          }
+        }
+      }
       // The main frame's refs plain, frames' with their number (refNames).
       // A snapshot saved to a file (an action's result links it) is a whole-page snapshot too.
       for (const part of content()) for (const [, link] of String(part.text || "").matchAll(/\]\(([^)\s]+page-[^)\s]*\.ya?ml)\)/g)) refNames.plainFile(resolvePath(process.cwd(), link));
       if (content().some((part) => /\[ref=|\bf\d+e\d+\b/.test(part.text || ""))) {
-        for (const part of content()) if (part.type === "text") part.text = refNames.toPlain(part.text, fullSnapshot);
+        // Refs of a frame number not known yet (the page moved on, no whole-page snapshot since):
+        // the page says which one is its main frame now, so those come plain too.
+        if (!full && ownPage) {
+          for (const { seq, ref } of refNames.unknownSeqs(content().map((p) => p.text || "").join("\n"))) {
+            const main = await within(1500, ownPage.locator(`aria-ref=${ref}`).elementHandle({ timeout: 1000 }).then(async (h) => { try { return (await h.ownerFrame()) === ownPage.mainFrame(); } finally { h.dispose().catch(() => {}); } })).catch(() => false);
+            if (main) { refNames.learnMain(seq); break; }
+          }
+        }
+        for (const part of content()) if (part.type === "text") part.text = refNames.toPlain(part.text, full);
       }
       // The linked snapshot file (its refs plain by now) in the result, as browser_snapshot
       // prints it: the agent acts on these refs at once. A long one is cut below as
@@ -157,7 +209,7 @@ export function createResult(conn, api) {
     // The cut's note names the whole snapshot's file on this computer: for a joiner, its name only.
     if (tool === "browser_snapshot" || inlined) for (const part of content()) if (part.type === "text") { part.text = output.capSnapshot(part.text); if (remote) part.text = forJoiner(part.text); }
     // A picture also with a failed action (a stopped run, a covered click): the message says to look at it.
-    if (tool !== undefined && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
+    if (tool !== undefined && !closedAway && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
       const shotPage = ownPage || await context.pageAt(shotUrl || context.currentUrl());
       // Never a picture of the person's own tab.
       const shot = personTab(shotPage) ? null : await screenshots.take(shotPage, participant);

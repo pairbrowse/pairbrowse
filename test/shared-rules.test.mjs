@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { ensureHud } from "./helpers/live.mjs";
 import { readOps, stateForJoiner, readPointers, readView, turnLeft, TURN_MAX_MS, createFormSync } from "../scripts/sharing/tabsync.mjs";
 import { createPresence } from "../scripts/daemon/presence.mjs";
-import { clickRisk, clickContext, buttonLabel } from "../scripts/daemon/page.mjs";
+import { CLICK_HELPERS } from "../scripts/daemon/page.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { applyFields, readFields } from "../scripts/daemon/forms.mjs";
 
@@ -99,6 +99,9 @@ test("final actions by what they do, by structure only: commits are asked for in
     await page.setContent(`
       <form id="checkout" method="post"><input autocomplete="cc-number" id="cc"><input id="note"><button id="order">Submit order</button><button type="button" id="apply">Apply coupon</button></form>
       <form id="ship" method="post"><input autocomplete="shipping street-address"><input type="submit" id="go" value="Continue"></form>
+      <form id="ship2" method="post"><input autocomplete="shipping street-address"><input autocomplete="billing postal-code"><button id="to-pay">Continue to payment ›</button><button id="place">Place order</button><button id="next-pay">Next: Pay now</button><button id="cont-pay">Continue and pay</button></form>
+      <form id="ship3" method="post"><input autocomplete="shipping street-address"><input autocomplete="cc-number"><button id="to-review">Continue to review</button></form>
+      <form id="ship4" method="post"><iframe allow="payment" srcdoc="<p>card</p>"></iframe><input autocomplete="billing street-address"><button id="ship-next">Next</button></form>
       <form id="luhn" method="post"><input value="4242 4242 4242 4242"><button id="done">Done</button></form>
       <form id="sepa" method="post"><input value="DE89 3704 0044 0532 0130 00"><button id="sepa-ok">OK</button></form>
       <form id="stripe" method="post"><iframe allow="payment *" srcdoc="<p>card</p>"></iframe><button id="ok">OK</button></form>
@@ -121,11 +124,21 @@ test("final actions by what they do, by structure only: commits are asked for in
       <div role="alertdialog" id="dlg2"><p>?</p><button id="a1">A</button><button id="a2">B</button></div>
       <div role="dialog" id="pop"><p>Choose</p><button id="pick">Confirm</button></div>
       <div role="dialog" id="cookies"><p>Cookies</p><button id="c1" style="background:#1a73e8;color:#fff">Accept all</button><button id="c2">Reject</button></div>`);
-    const at = async (sel, kind = "click", prev = "", hints = {}) => page.locator(sel).evaluate((el, [k, p, h, src]) => new Function(`return (${src})`)()(el, k, p, h), [kind, prev, hints, clickRisk.toString()]);
+    const helpers = CLICK_HELPERS.map(String);
+    const at = async (sel, kind = "click", prev = "", hints = {}) => page.locator(sel).evaluate((el, [k, p, h, src]) => new Function("el", "k", "p", "h", `${src.join("\n")}\nreturn clickRisk(el, k, p, h)`)(el, k, p, h), [kind, prev, hints, helpers]);
     const is = async (sel, level, word, kind, prev, hints) => { const r = await at(sel, kind, prev, hints); assert.deepEqual([r.level, r.word], [level, word], `${sel} ${kind || ""}: ${JSON.stringify(r)}`); };
     // A card form submit asks as a payment, whatever its button says.
     await is("#order", "strong", "pay");
-    await is("#go", "strong", "pay");
+    // Address fields alone: a clear next step ("Continue", "Continue to payment") is an ordinary
+    // submit; any other button there pays. Card fields or a payment frame pay whatever the button says.
+    await is("#go", "commit", "submit");
+    await is("#to-pay", "commit", "submit");
+    await is("#place", "strong", "pay");
+    await is("#next-pay", "strong", "pay");
+    await is("#cont-pay", "strong", "pay");
+    await is("#to-review", "strong", "pay");
+    await is("#ship-next", "strong", "pay");
+    await is("#to-pay", "strong", "pay", "click", "", { payFrame: true });
     await is("#done", "strong", "pay");
     await is("#sepa-ok", "strong", "pay");
     await is("#ok", "strong", "pay");
@@ -169,7 +182,7 @@ test("final actions by what they do, by structure only: commits are asked for in
     await is("#pick", "strong", "delete", "click", "delete");
     // The shared context: page, form (names and kinds, never values), what the control does.
     await page.fill("#first", "Ada");
-    const ctx = await page.locator("#next").evaluate((el, src) => new Function("el", `${src.join("\n")}\nreturn clickContext(el)`)(el), [clickContext.toString(), clickRisk.toString(), buttonLabel.toString()]);
+    const ctx = await page.locator("#next").evaluate((el, src) => new Function("el", `${src.join("\n")}\nreturn clickContext(el)`)(el), helpers);
     assert.equal(ctx.form.step, "middle");
     assert.equal(ctx.control.does, "submits a form");
     assert.equal(ctx.form.fields.length, 2);
@@ -193,6 +206,10 @@ test("no word lists: the click guard's code holds no wording to match in any lan
     const code = readFileSync(join(root, f), "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n").toLowerCase();
     for (const w of words) assert.ok(!code.includes(w), `${f} matches page wording: "${w}"`);
   }
+  // The one exception, kept in its own file: next-step labels, which only ever lift a payment read
+  // from address fields alone (never make a click final). It holds no committing wording.
+  const next = readFileSync(join(root, "scripts/rules/next-step.mjs"), "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n").toLowerCase();
+  for (const w of ["pay ", "order", "buy", "purchase", "confirm", "complete", "submit", "delete", "send", "publish"]) assert.ok(!next.includes(w), `next-step.mjs holds "${w}"`);
 });
 
 test("only strong signals stop a click; ordinary submits and script buttons go", async () => {

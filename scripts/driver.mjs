@@ -1,5 +1,6 @@
 import { readJson } from "./util.mjs";
 import { join } from "node:path";
+import { installNoReadGesture } from "./gesture.mjs";
 
 // The oldest Node.js major the pinned Patchright runs on: its package.json "engines" field
 // (patchright 1.63.0: ">=20"). Used as is when the runtime isn't installed yet.
@@ -35,6 +36,17 @@ export const validateBrowserDriver = (config = {}, nodeVersion = process.version
 
 // MCP remains the upstream @playwright/mcp server. Only the browser implementation used to
 // create its user-provided context is selected here; both drivers expose Playwright's chromium API.
+// The helper's driver ("patchright" or "playwright"), with its page reads made to give a page no
+// user activation (scripts/gesture.mjs): what can't be done is logged, and the driver goes as it is.
+export function requireDriver(require, driver, log = () => {}) {
+  const name = driver === "playwright" ? "playwright" : "patchright";
+  const mod = require(name);
+  try {
+    if (!installNoReadGesture(require(`${name}-core/lib/coreBundle`))) log("reads: couldn't turn off their user gesture");
+  } catch (e) { log(`reads: couldn't turn off their user gesture: ${e?.message || e}`); }
+  return mod;
+}
+
 export function loadBrowserDriver(require, config = {}, nodeVersion = process.versions.node, minimum) {
-  return require(validateBrowserDriver(config, nodeVersion, minimum));
+  return requireDriver(require, validateBrowserDriver(config, nodeVersion, minimum));
 }

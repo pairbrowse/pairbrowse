@@ -248,12 +248,26 @@ export async function onlyOne(page, selector, label = "") {
   return named ? null : shown[0];
 }
 
+// A control named by the page's own markup rather than its text: "#login-button" (its id), or a
+// test id the page gives it (data-test, data-testid, data-test-id, data-cy, data-qa: what a site's
+// own tests click by). Its clicks get the same checks as any other.
+export const TEST_IDS = ["data-test", "data-testid", "data-test-id", "data-cy", "data-qa"];
+export const byMarkup = (page, name) => {
+  const id = /^#([A-Za-z_][\w:.-]*)$/.exec(name)?.[1];
+  if (id) return find(page, [(root) => root.locator(`[id="${cssString(id)}"]`)], { frames: false });
+  if (!/^[\w:.-]{1,100}$/.test(name)) return Promise.resolve(null);
+  return find(page, [(root) => root.locator(TEST_IDS.map((a) => `[${a}="${cssString(name)}"]`).join(", "))], { frames: false });
+};
+
 export const exactlyClickable = (page, name) => find(page, [
   (root) => root.getByRole("button", { name, exact: true }),
   (root) => root.getByRole("link", { name, exact: true }),
   (root) => root.getByRole("tab", { name, exact: true }),
   (root) => root.getByRole("menuitem", { name, exact: true }),
-], { frames: false });
+  // A day in a date picker, a cell in a grid: by its name (often a fuller one: "Choose Friday, October 17th").
+  (root) => root.getByRole("gridcell", { name, exact: true }),
+  (root) => root.getByRole("option", { name, exact: true }),
+], { frames: false }).then((el) => el || (/^#/.test(name) ? byMarkup(page, name) : null));
 // Named loosely: of every visible button, link, tab and menu item whose name holds the words, the
 // one named most like them: the same name first, then one that starts with it ("Pull requests 10"
 // for "Pull requests"), then one with it as whole words, then any; within each, one in the page's
@@ -267,7 +281,7 @@ export function clickScore(label, want, inNav) {
   const tier = l === w ? 0 : l.startsWith(w) && !/[\p{L}\p{N}]/u.test(l[w.length] || " ") ? 1 : l.startsWith(w) ? 2 : new RegExp(`(^|[^\\p{L}\\p{N}])${esc}($|[^\\p{L}\\p{N}])`, "u").test(l) ? 3 : l.includes(w) ? 4 : 9;
   return tier * 2 + (inNav ? 0 : 1);
 }
-const CLICK_ROLES = ["button", "link", "tab", "menuitem"];
+const CLICK_ROLES = ["button", "link", "tab", "menuitem", "gridcell", "option"];
 export async function clickable(page, name) {
   const exact = await find(page, [(root) => root.getByRole("button", { name, exact: true }), (root) => root.getByRole("link", { name, exact: true })], { frames: false });
   if (exact) return exact;
@@ -286,5 +300,5 @@ export async function clickable(page, name) {
     }
   }
   if (best) return best.el;
-  return find(page, [(root) => root.getByText(name, { exact: true })], { frames: false });
+  return (await find(page, [(root) => root.getByText(name, { exact: true })], { frames: false })) || byMarkup(page, name);
 }

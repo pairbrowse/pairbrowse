@@ -10,6 +10,7 @@ import { isoDate } from "../../runner.mjs";
 import { within } from "../../util.mjs";
 import { reason as dragReason } from "../drag.mjs";
 import { leftAlone, ownerOf } from "../fields.mjs";
+import { busyNow } from "../page.mjs";
 import { sensitiveTarget } from "./pageread.mjs";
 import { runOpensTab, tabRefusal } from "./refuse.mjs";
 import { CLICKING_TOOLS, DECORATED, FIELD_TOOLS, NO_WAIT } from "./wire.mjs";
@@ -221,6 +222,11 @@ export function createHandle(conn, api) {
     calls.set(msg.id, name);
     callArgs.set(msg.id, args);
     if (name === "browser_tabs") tabActions.set(msg.id, args.action);
+    // What already said "busy" before a click (a feed's lasting "Loading…"): not waited on after it.
+    if (name === "browser_click") {
+      const here = ownTab();
+      conn.busyBefore = here ? await within(400, here.evaluate(busyNow, null)).catch(() => "") ?? "" : "";
+    }
     api.transport.onmessage?.(msg);
   }
 

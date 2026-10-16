@@ -2,7 +2,7 @@
 // structure where it lands (daemon/page.mjs clickContext and clickRisk), never its words.
 import { isRef } from "../rules/policy.mjs";
 import { within } from "../util.mjs";
-import { withHelpers, buttonLabel, clickRisk, clickContext } from "../daemon/page.mjs";
+import { withHelpers, buttonLabel, clickContext, CLICK_HELPERS } from "../daemon/page.mjs";
 
 // Keys that press a button: Enter (with or without modifiers: Shift+Enter submits a form too)
 // in a field or on a button or link, and Space on a focused button. Returns "enter", "space" or "".
@@ -46,8 +46,8 @@ export const UNREADABLE = { level: "commit", word: "submit", unreadable: true, w
 // helper's browser_click, Enter and Space, fast mode, uploads, pairbrowse_click_at). target: a ref or
 // selector, a Playwright element handle or locator, or none (the focused element). prev: what the
 // click just before in this tab committed. Unreadable counts as a commit (fail safe).
-const inPage = withHelpers((el, [k, p, h]) => clickContext(el, k, p, h), clickContext, clickRisk, buttonLabel);
-const focused = withHelpers(([k, p, h]) => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return clickContext(el, k, p, h); }, clickContext, clickRisk, buttonLabel);
+const inPage = withHelpers((el, [k, p, h]) => clickContext(el, k, p, h), ...CLICK_HELPERS);
+const focused = withHelpers(([k, p, h]) => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return clickContext(el, k, p, h); }, ...CLICK_HELPERS);
 export async function contextAt(page, target, kind = "click", prev = "") {
   try {
     const args = [kind, prev, { payFrame: await cardFrame(page) }];

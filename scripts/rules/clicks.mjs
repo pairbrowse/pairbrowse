@@ -27,7 +27,17 @@ export function clickClass(element) {
 // The class an element starts with, as clickClass reads it, with what follows it.
 export const CLICK_PREFIX = /^[\s"'“‘([]*[A-Za-z]+\s*:\s*/;
 
-export const strongSignal = (risk) => !!risk && (risk.level === "strong" || risk.unreadable === true || ["pay", "delete"].includes(risk.word));
+// A button that only moves a checkout on to its next step (scripts/rules/next-step.mjs).
+import { nextStepLabel } from "./next-step.mjs";
+export { nextStepLabel };
+// Whether a form submit pays: card, IBAN or payment-frame signals always do; billing or shipping
+// address fields alone do unless the button is a clear next step (nextStepLabel, alongside it).
+export function paySignal({ card = false, frame = false, address = false } = {}, label = "") {
+  if (card || frame) return true;
+  return !!address && !nextStepLabel(label);
+}
+
+export const strongSignal =(risk) => !!risk && (risk.level === "strong" || risk.unreadable === true || ["pay", "delete"].includes(risk.word));
 
 // What happens to a click: "go" (on to the hook, which asks about any named class) or "name"
 // (refused until it carries the class its strong signals found; a plain submit class can't stand

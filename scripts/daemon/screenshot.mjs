@@ -10,9 +10,10 @@
 import { redact } from "../rules/secrets.mjs";
 import { sleep, within, pageLoaded, sha256 } from "../util.mjs";
 import { strongSignal } from "../rules/clicks.mjs";
-import { withHelpers, buttonLabel, clickRisk, clickContext } from "./page.mjs";
+import { withHelpers, buttonLabel, clickContext, CLICK_HELPERS } from "./page.mjs";
 
 const LOAD_WAIT_MS = 4000;
+const FONTS_WAIT_MS = 1500; // for the page's web fonts, at most
 // One frame of a screencast: the compositor scales it, so the page is never re-laid out for the
 // picture (a scaled screenshot makes it flicker), and it costs Claude a third of a full-size one.
 const SHOT = { format: "jpeg", quality: 55, maxWidth: 820, maxHeight: 820 };
@@ -61,7 +62,7 @@ function shownText() {
 const viewNow = () => [Math.round(scrollX), Math.round(scrollY), innerWidth, innerHeight];
 
 // What's under a spot, read by the helper: the click guard needs a label it can check.
-const hitAt = withHelpers(([px, py]) => {
+export const hitAt = withHelpers(([px, py]) => {
   let el = document.elementFromPoint(px, py);
   // Into shadow DOM, down to the element really there.
   for (let i = 0; el?.shadowRoot && i < 10; i++) {
@@ -72,9 +73,17 @@ const hitAt = withHelpers(([px, py]) => {
   if (!el) return null;
   if (["IFRAME", "FRAME", "EMBED", "OBJECT"].includes(el.tagName)) return { frame: true };
   const target = el.closest('button, a, [role="button"], input, select, label, summary, [onclick], [tabindex]');
-  if (!target) return { label: (el.innerText || "").length <= 80 ? (el.innerText || "").trim() : "" }; // plain page area
-  return { label: buttonLabel(target), risk: clickContext(target).risk };
-}, buttonLabel, clickRisk, clickContext);
+  const own = () => ((el.innerText || "").length <= 80 ? (el.innerText || "").trim() : "");
+  if (!target) return { label: own() }; // plain page area
+  // Named by the control under the spot. A drawing surface (a canvas) or a box that only listens
+  // for clicks or keys around other controls (an app's whole editor, its side panel included) is
+  // no control: named by what is at the spot itself, never by everything the box holds.
+  const control = el.closest('button, a, [role="button"], input, select, label, summary');
+  const surface = el.closest("canvas, svg, video");
+  const holdsOthers = !control && target !== el && target.querySelector('button, a[href], input, select, textarea, [role="button"]');
+  const label = surface && !control ? surface.getAttribute("aria-label") || `the ${surface.tagName.toLowerCase()}` : holdsOthers ? own() : buttonLabel(target);
+  return { label, risk: clickContext(target).risk };
+}, ...CLICK_HELPERS);
 
 const SNAPSHOT_FIRST = "Take a browser_snapshot first (its screenshot is the one to click on).";
 
@@ -93,6 +102,9 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {}, no
       // Settled already, usually. Asked, not waited for: a page restored by Back fires no load
       // event again, and waiting for one took the whole LOAD_WAIT_MS on every browser_navigate_back.
       await pageLoaded(page, { maxMs: LOAD_WAIT_MS });
+      // A page's web fonts load after it did (when its text is first laid out): until they're in,
+      // the text is drawn invisible, and a picture taken then shows a page without words.
+      await within(FONTS_WAIT_MS, page.evaluate(() => document.fonts?.ready.then(() => true)).catch(() => null));
       // Pictures can't be masked like text: no picture while a saved password shows on the page.
       // Every frame, and fields inside shadow DOM too. No answer from a frame: no picture. The
       // reading (the whole page's text, in every frame) is for pages with saved passwords only.

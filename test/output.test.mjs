@@ -84,6 +84,49 @@ test("an action's linked snapshot file comes into the result as browser_snapshot
   assert.equal(out.inlineSnapshot(actionResult(file)).match(/```/g).length, 4, "one js fence, one yaml fence");
 });
 
+test("an action's snapshot comes shorter: long link addresses cut, long option lists counted, ad frames in a line", () => {
+  const long = `https://ad.doubleclick.net/ddm/clk/${"x".repeat(3000)}`;
+  const years = Array.from({ length: 200 }, (_, i) => `    - option "${2026 - i}"${i === 30 ? " [selected]" : ""}`);
+  const snap = [
+    "- generic [ref=e1]:",
+    `  - link "Shop" [ref=e2] [cursor=pointer]:`,
+    `    - /url: https://shop.test/${"p".repeat(400)}`,
+    `  - combobox "Year" [ref=e3]:`,
+    ...years,
+    `  - combobox "Size" [ref=e4]:`,
+    `    - option "S"`,
+    `    - option "M" [selected]`,
+    "  - iframe [ref=e5]:",
+    `    - link "Ad" [ref=f2e1] [cursor=pointer]:`,
+    `      - /url: ${long}`,
+    `      - img [ref=f2e2]`,
+    `    - link "Why this ad?" [ref=f2e3]:`,
+    `      - /url: https://adssettings.googlesyndication.com/whythisad`,
+    "  - iframe [ref=e6]:",
+    `    - textbox "Card" [ref=f3e1]`,
+    `    - link "Help" [ref=f3e2]:`,
+    `      - /url: https://pubmatic.com/help`,
+    `  - button "Next" [ref=e7]`,
+  ].join("\n");
+  const { dir, out } = setup();
+  const file = join(dir, "page-2026-10-10T10-00-00-001Z.yml");
+  writeFileSync(file, snap);
+  const text = out.inlineSnapshot(`### Page\n- Page URL: https://x.test/\n### Snapshot\n- [Snapshot](${file})`);
+  assert.ok(text.length < snap.length / 3, `${text.length} of ${snap.length}`);
+  assert.match(text, /- \/url: https:\/\/shop\.test\/p{140,170}…\n/, "a long address cut");
+  assert.doesNotMatch(text, /x{300}/);
+  assert.match(text, /- option "2026"\n/, "the first options stay");
+  assert.match(text, /- option "1996" \[selected\]/, "the chosen one stays");
+  assert.match(text, /- option "1827"\n/, "and the last");
+  assert.match(text, /- \(\d+ more options\)/);
+  assert.match(text, /# 200 options in all; browser_select_option takes any by its text/);
+  assert.match(text, /- option "S"\n {4}- option "M" \[selected\]/, "a short list stays whole");
+  assert.match(text, /- iframe \[ref=e5\]: an ad \(5 lines left out\)/);
+  assert.doesNotMatch(text, /Why this ad/);
+  assert.match(text, /textbox "Card" \[ref=f3e1\]/, "a frame with a field stays, whatever its links");
+  assert.match(text, /button "Next" \[ref=e7\]/);
+});
+
 test("a snapshot link to a missing file, a file outside the files folder or one that isn't Playwright's stays a link", () => {
   const { dir, out } = setup();
   const missing = actionResult(join(dir, "page-2026-10-10T10-00-00-000Z.yml"));
@@ -187,4 +230,30 @@ test("a snapshot whose first refs are inside a frame still finds the main frame'
   const noRefOnFrame = ['- generic:', '  - iframe:', '    - button "In frame" [ref=f5e2]', '  - button "Main" [ref=f2e3]'].join("\n");
   assert.equal(refs.mainFrameSeq(noRefOnFrame), 2);
   assert.equal(refs.mainFrameSeq("no refs here"), null);
+});
+
+test("after the page moved on with no whole-page snapshot, the frame numbers to ask about are named, and the main one learned comes plain", async () => {
+  const { createRefNames } = await import("../scripts/daemon/output.mjs");
+  const refs = createRefNames();
+  refs.toPlain('- button "A" [ref=f3e1]', true); // the main frame is f3
+  const found = '- button "Next" [ref=f45e7]\n- button "Ad" [ref=f46e2]\n- link [ref=f3e9]\n- button [ref=f45e8]';
+  assert.deepEqual(refs.unknownSeqs(found), [{ seq: 45, ref: "f45e7" }, { seq: 46, ref: "f46e2" }], "the known main frame's isn't asked about; each number once");
+  assert.equal(refs.toPlain(found).includes("f45e7"), true, "until the page says, nothing changes");
+  refs.learnMain(45);
+  const plain = refs.toPlain(found);
+  assert.match(plain, /\[ref=e7\]/);
+  assert.match(plain, /\[ref=f46e2\]/, "a frame keeps its number");
+  assert.equal(refs.toFrame({ target: "e7" }).target, "f45e7", "a plain ref goes back framed");
+  refs.learnMain(0);
+  refs.learnMain("x");
+  assert.match(refs.toPlain("[ref=f45e8]"), /\[ref=e8\]/, "a bad number changes nothing");
+});
+
+test("a result's snapshot can be taken out, inline or linked, and something put in its place", async () => {
+  const { withoutSnapshot } = await import("../scripts/daemon/serve/result.mjs");
+  const linked = "### Result\n- ok\n### Page\n- Page URL: https://x.test/\n### Snapshot\n- [Snapshot](page-2026-10-10T10-00-00-000Z.yml)\n";
+  assert.equal(withoutSnapshot(linked, "### Page outline\nPage: X\n"), "### Result\n- ok\n### Page\n- Page URL: https://x.test/\n### Page outline\nPage: X\n");
+  const inline = "### Page\n- Page URL: https://x.test/\n### Snapshot\n```yaml\n- button [ref=e1]\n```\n### Events\n";
+  assert.equal(withoutSnapshot(inline), "### Page\n- Page URL: https://x.test/\n### Events\n");
+  assert.equal(withoutSnapshot("no snapshot", "x"), "no snapshot");
 });

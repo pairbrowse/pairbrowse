@@ -10,6 +10,8 @@
     // Agents' screenshots never show other people's pointers: hidden while one is taken.
     if (kind === "peers-hidden") {
       if (peersBox) peersBox.style.display = text ? "none" : "";
+      // Nor the outline of the agent's last field: in its picture it would cover the page.
+      if (outlineEl) outlineEl.style.visibility = text ? "hidden" : "";
       // The approval card too: an agent's screenshot never shows it.
       apHidden = !!text;
       const jq = bar?.querySelector(".jq");

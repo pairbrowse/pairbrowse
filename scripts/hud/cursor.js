@@ -93,15 +93,30 @@
     outlineEl.style.width = `${outline.w}px`;
     outlineEl.style.height = `${outline.h}px`;
   }
-  // b: { x, y, w, h } in document pixels. Only while the agent's cursor is up.
+  // b: { x, y, w, h } in document pixels. Only while the agent's cursor is up. It goes as soon as
+  // what it marks does: the element at its middle taken out of the page or hidden, or the page
+  // moving to another address (a single-page app's route): never a frame around nothing, over
+  // what the page shows next.
+  let outlineFor = null, outlineUrl = "", outlineWatch = 0;
   function showOutline(b) {
     if (!outlineEl || !cur?.classList.contains("on") || !(b?.w > 0 && b?.h > 0)) return;
     outline = { x: b.x, y: b.y, w: b.w, h: b.h };
     placeOutline();
     outlineEl.classList.add("on");
+    const cx = b.x - scrollX + b.w / 2, cy = b.y - scrollY + b.h / 2;
+    outlineFor = cx >= 0 && cy >= 0 && cx < innerWidth && cy < innerHeight ? document.elementFromPoint(cx, cy) : null;
+    if (outlineFor === document.documentElement || outlineFor === document.body) outlineFor = null;
+    outlineUrl = location.href;
+    clearInterval(outlineWatch);
+    outlineWatch = setInterval(() => {
+      if (!outline) return clearInterval(outlineWatch);
+      if (location.href !== outlineUrl || (outlineFor && (!outlineFor.isConnected || !outlineFor.getClientRects().length))) hideOutline();
+    }, 200);
   }
   function hideOutline() {
     outline = null;
+    outlineFor = null;
+    clearInterval(outlineWatch);
     outlineEl?.classList.remove("on");
   }
 

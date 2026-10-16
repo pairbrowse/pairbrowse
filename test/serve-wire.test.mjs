@@ -31,6 +31,8 @@ test("refs, the result's address and the dialog's element", () => {
   assert.ok(t.inputSchema.properties.element);
 });
 
-test("serve.mjs still exports what moved, for one release", () => {
-  for (const name of ["wellFormed", "forJoiner", "pictureless", "dropClosedAlerts", "arrivedAt", "tabRefusal", "pathsIn", "withPaths", "createServe"]) assert.equal(typeof serve[name], "function", name);
+// serve.mjs is no fixed entry path (test/structure.test.mjs ENTRY): its parts are imported from
+// serve/ and upload.mjs, and it exports only createServe.
+test("serve.mjs exports only createServe; its parts are imported from their own modules", () => {
+  assert.deepEqual(Object.keys(serve), ["createServe"]);
 });

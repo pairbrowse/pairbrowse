@@ -55,7 +55,7 @@ test("unknown keys: kept, named in one warning with the file; the native block i
 test("a wrong-typed value is refused: the default for that key, a warning naming the key, what it takes and the file", () => {
   const f = file({ maxTabs: "20", screenshots: "no", display: "always", timelineCap: 500, chromeArgs: "--lang=en", liveViewPort: -1,
     cookieChoice: true, browser: 7, layout: { left: "big", strip: 100 }, sharing: { tunnel: "quick", guestPort: 70000 },
-    pairbrowse: { humanize: "off", typingPace: 3, motion: "fast", geoip: true }, joinHosts: ["a.example", 5], timeline: false });
+    pairbrowse: { humanize: "off", typingPace: 3, motion: "fastest", geoip: true }, joinHosts: ["a.example", 5], timeline: false });
   let config;
   assert.doesNotThrow(() => { config = loadConfig(f); });
   const w = CONFIG_WARNINGS.join("\n");
@@ -112,7 +112,7 @@ test("saveConfig refuses a wrong-typed value with the schema's message and write
   const message = configProblem({ maxTabs: "12" });
   assert.equal(message, 'maxTabs is a whole number of 1 or more, not "12" (a string); nothing was written.');
   assert.throws(() => saveConfig({ maxTabs: "12" }, f), { message });
-  assert.throws(() => saveConfig({ pairbrowse: { motion: 3 } }, f), /pairbrowse\.motion is "combined", "quick" or "classic", not 3 \(a whole number\); nothing was written\./);
+  assert.throws(() => saveConfig({ pairbrowse: { motion: 3 } }, f), /pairbrowse\.motion is "fast", "quick", "combined" or "classic", not 3 \(a whole number\); nothing was written\./);
   assert.equal(readFileSync(f, "utf8"), before);
   // Good values and unknown keys still go through (the file is the person's own).
   assert.deepEqual(saveConfig({ maxTabs: 12, theirOwn: 1, skipped: undefined }, f), { participantName: "Ann", maxTabs: 12, theirOwn: 1 });

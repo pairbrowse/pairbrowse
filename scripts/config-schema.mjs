@@ -59,7 +59,7 @@ export const CONFIG_SCHEMA = {
       showCursor: { type: "boolean" },
       geoip: { type: "boolean" },
       typingPace: { type: "number", min: 0.2, max: 1 },
-      motion: { values: ["combined", "quick", "classic"] },
+      motion: { values: ["fast", "quick", "combined", "classic"] },
       formMove: { values: ["tab", "mouse"] },
       ...Object.fromEntries(PAIRBROWSE_ENGINE_KEYS.map((k) => [k, {}])),
     },

@@ -82,10 +82,10 @@ const readFocused = (page) => within(1500, page.evaluate(() => { const a = docum
 // Clears what a focused field holds, as a quick hand does: select all, Backspace, each key held
 // as briefly as a fast typist's (the engine's own hold for a lone press is twice that).
 async function clearField(keys, between, wait) {
-  await keys.press("ControlOrMeta+a", { delay: between(30, 60) });
-  await wait(between(15, 45));
-  await keys.press("Backspace", { delay: between(30, 60) });
-  await wait(between(20, 50));
+  await keys.press("ControlOrMeta+a", { delay: between(25, 45) });
+  await wait(between(10, 30));
+  await keys.press("Backspace", { delay: between(25, 45) });
+  await wait(between(10, 30));
 }
 // How a typed value stayed, read back: { line, failed }. done: the line when it did; said: how the
 // line starts when the page kept something else ("Filled Name", "Typed into Name"); plain: the value
@@ -129,7 +129,8 @@ export async function humanType(page, item, settings, { rng = Math.random, wait 
     if (!slowly && had?.length) { await clearField(keys, between, wait); step("clear"); }
     await typeKeys(keys, value, pace, rng, wait);
     step("type");
-    const now = await readFocused(page);
+    // Nothing with the focus (the click never focused it): the field itself says what it took.
+    const now = (await readFocused(page)) ?? await readBack(loc);
     step("read");
     const said = `Typed into ${label}`, done = `${said}.`;
     // Slowly: the text went in at the caret, next to what the field held.

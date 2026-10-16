@@ -171,16 +171,16 @@ packTest("a native launch leaves out the driver's switches: no automation flag, 
   assert.ok(!args.some((a) => a.startsWith("--disable-blink-features")), "no Blink feature switch of PairBrowse's own");
 });
 
-packTest("humanized mouse moves take the quick shape unless config asks for the combined or the classic one", async () => {
+packTest("humanized mouse moves take the fast shape unless config asks for the quick, the combined or the classic one", async () => {
   const pack = await loadPack();
   const seen = [];
   const spy = { ...pack, installHumanizeOnContext: (context, opts) => seen.push(opts) };
   const app = appFixture();
-  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "combined" }, { motion: "anything else" }]) {
+  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "combined" }, { motion: "quick" }, { motion: "anything else" }]) {
     await launchNative(fakeChromium(), { pairbrowse: { fingerprint: "motion-seed", ...pairbrowse } }, mkdtempSync(join(tmpdir(), "pairbrowse-motion-")),
       { executablePath: app.executablePath, headless: false }, spy);
   }
-  assert.deepEqual(seen.map((o) => o.motion), ["quick", "classic", "combined", "quick"]);
+  assert.deepEqual(seen.map((o) => o.motion), ["fast", "classic", "combined", "quick", "fast"]);
   assert.ok(seen.every((o) => o.humanize === true && o.seed));
   assert.ok(seen.every((o) => o.typingPace === TYPING_PACE), "single actions type at the default pace");
 });
@@ -361,6 +361,15 @@ test("a single browser_type clicks the field once, clears it, types key by key a
   assert.deepEqual(again, { line: "Typed into Notes.", failed: false });
   assert.equal(form.log.filter((l) => l === "click e1").length, 1);
   assert.match(traced[1], /Notes by focused/);
+});
+
+test("browser_type says so when the keys went nowhere: nothing had the focus and the field is still empty", async () => {
+  const form = fakeForm([{ ref: "e1", type: "textbox" }]);
+  // The click lands but focuses nothing: the keys reach no field.
+  const loc = form.page.locator;
+  form.page.locator = (selector) => { const l = loc(selector); return { ...l, first: () => ({ ...l, click: async () => {} }) }; };
+  const r = await humanType(form.page, { target: "e1", name: "Notes", value: "Hello" }, fillSettings({}), { rng: seeded(), wait: async () => {} });
+  assert.deepEqual(r, { line: "Notes didn't take what was typed: it is empty.", failed: true });
 });
 
 test("browser_type slowly types at about 90 ms a key, at the caret, and still reads the field back", async () => {

@@ -188,19 +188,21 @@ async function captureAndKeep(chromium, executablePath, pack, directory, file, k
 // The three layers of settings, lowest first: the persona saved in the profile, a saved profile
 // chosen by name, and config.json. Every layer is checked for options this engine can't honour.
 function readSettings(config, pack, personaPath) {
-  // motion: how humanized mouse moves are shaped: "quick" (the default: PairBrowse's hand-like
-  // shape, one reach that lands close, then homes in without stopping, a short hop between fields
-  // in about half the time, a long reach as a hand's), "combined" (the same shape at the profile's
-  // own slower speed, tremor and habits: for a more careful hand) or "classic" (the engine's own). Every click still lands exactly on its point.
+  // motion: how humanized mouse moves are shaped: "fast" (the default: PairBrowse's hand-like
+  // shape, one reach that lands close, then homes in without stopping, at a quick hand's pace: a
+  // hop between fields in about a third of the profile's time, a reach in under two thirds, a
+  // short press), "quick" (the same shape, a hop in about half the time and a reach as a hand's),
+  // "combined" (the same shape at the profile's own slower speed, tremor and habits: for a more
+  // careful hand) or "classic" (the engine's own). Every click still lands exactly on its point.
   // An engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
-  const { profile: selection, profileSelect = {}, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "quick", formMove, ...given } = config.pairbrowse ?? {};
+  const { profile: selection, profileSelect = {}, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
   void formMove;
   // Only the engine's fingerprint options pass (config-schema.mjs PAIRBROWSE_ENGINE_KEYS): never an
   // unpacked extension, a proxy, launch options or switches from config.json, which would go
   // around the chromeArgs screen. An option this engine can't honour still stops the launch below.
   const overrides = Object.fromEntries(Object.entries(given).filter(([k]) => PAIRBROWSE_ENGINE_KEYS.includes(k)));
   const ignored = Object.keys(given).filter((k) => !PAIRBROWSE_ENGINE_KEYS.includes(k) && !UNSUPPORTED.includes(k));
-  const motion = ["classic", "combined"].includes(motionSetting) ? motionSetting : "quick";
+  const motion = ["classic", "combined", "quick"].includes(motionSetting) ? motionSetting : "fast";
   const saved = selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {};
   const persisted = existsSync(personaPath) ? pack.Profile.load(personaPath).options : {};
   for (const key of UNSUPPORTED) {

@@ -64,7 +64,7 @@ button {
 .act { display: flex; gap: var(--sp-3); align-items: center; margin-top: 16px; } /* mockup: 16 px from the reason */
 .act button { font-size: var(--fs-3); font-weight: 500; }
 .allow { width: 86px; background: var(--accent-fill); color: #fff; border: 0; box-shadow: var(--glow-accent); }
-.allow:hover { background: var(--accent-fill-top); }
+.allow:hover { background: var(--accent-fill-hover); }
 .deny { width: 88px; background: var(--panel); color: var(--ink); border: 1px solid var(--edge-btn); }
 .deny:hover { background: var(--hover); }
 .act .more { position: relative; margin-left: auto; padding: 0 2px 0 13px; background: transparent; border: 0; border-radius: 0 var(--r-2) var(--r-2) 0; color: var(--ink-soft); font-size: var(--fs-2); font-weight: 400; white-space: nowrap; } /* mockup: the More actions divider */

@@ -69,7 +69,7 @@
      (4.6:1, AA), the docks' panel cards and the inner boxes. */
   --live-bg: #03231F; --live-edge: #0B4A3D; --live-ink: #A8E3D4;
   --btn: #1C2A38; --edge-btn: #526D89; /* a plain button's ring: 3:1 on every surface it sits on (WCAG 1.4.11); the mockup's #36485A, lighter only */
-  --accent-fill: #2870E4; --accent-fill-top: #3480F0;
+  --accent-fill: #2870E4; --accent-fill-hover: #2266D8; /* hovered: darker, white on it 5.3:1 (the mockup's lighter #3480F0 was 3.8) */
   --panel: #0F1A24; --panel-edge: #233243; --inset: #172331;
   --bad-ink: #F47A7C; /* red text on a raised surface (a destructive confirm, an error line) */
   --ink-soft: #C9D2DE; --nav-active: #162E54; --badge: #2E4870; --meter-from: #1D6FE0; --meter-to: #22C5F0; --meter-track: #1A2532;

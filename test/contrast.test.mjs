@@ -128,7 +128,7 @@ const declared = (variant) => {
     ...["bg", "chrome", "sidebar", "panel"].map((bg) => ["ui", "edge-btn", bg]),
     ["ui", "spark", "bg"], ["ui", "spark", "chrome"], ["ui", "spark", "sidebar"],
     // Primary buttons: white on the accent fill (Allow, Save, the new tab's Ask), at rest and hovered.
-    ["text", "#ffffff", "accent-fill"], ["text", "#ffffff", "accent-fill-top"],
+    ["text", "#ffffff", "accent-fill"], ["text", "#ffffff", "accent-fill-hover"],
     ["text", "bg", "accent"],
   ];
 };
@@ -161,9 +161,6 @@ const BASES = ["bg", "sidebar", "elevated"];
 const EXCEPTIONS = new Map([
   // A disabled button's label: WCAG 1.4.3 exempts inactive controls; it is dimmed on purpose.
   ["*: text muted on hover", "a disabled control's label (approve.css button:disabled); inactive UI is exempt (WCAG 1.4.3)"],
-  // The mockup's lighter hover fill under a primary button's white label (3.8:1): the label is the
-  // same text as at rest (4.6:1) and the hover lasts while the pointer is on it. Kept for the look.
-  ["*: text #ffffff on accent-fill-top", "the hover fill of a primary button; the label is AA at rest, the mockup's hover color is kept"],
 ]);
 const excepted = (variant, key) => EXCEPTIONS.get(`${variant}: ${key}`) ?? EXCEPTIONS.get(`*: ${key}`);
 

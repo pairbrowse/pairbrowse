@@ -5,6 +5,26 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.2 (2026-10-17)
+
+Updates reach the running helper, and the pages are ready for the next PairBrowse browser build (Brave-style addresses, settings inside the browser's settings, a shorter tab row) while the installed build keeps working as before.
+
+**Changed**
+
+- **An update takes over by itself.** A newer PairBrowse asks the running helper to hand over when a session starts; an idle helper (no agent, joiner, shared session, recording, approval, download, session picker or browser starting, and nobody using the browser for 2 minutes) closes cleanly with your tabs saved and the new version starts. One in use keeps going, and `pairbrowse_status` says a newer version waits. Only the installed plugin asks, never a checkout. `docs/security.md` has its row.
+- **The left dock's first row sits on the back button's line.**
+- **The tab row follows the browser's own height**, so a build with the shorter row (47 px, its line 27 px down) and the current one (53 px) both keep the tab's icon and title on the window buttons' line.
+- **PairBrowse's settings open inside the browser's settings** in a build that has that section (`pairbrowse://settings/pairbrowse`), and as their own page in an older one; every Settings button opens the same address, right in both. Agents and the live view keep out of the browser's settings page at every section.
+
+**Security**
+
+- **A shutdown always closes the browser cleanly.** A stop waits for a tab restore still running and saves every tab within the helper's grace, so the browser's cookies and logins are written on the way out.
+
+**Fixed**
+
+- An agent's session choice over a reopened session picker no longer restores the saved tabs a second time.
+- Tests that could fail by chance now can't: a relay test judged by the clock waits for the channel itself, and two fuzz tests always try a good case.
+
 ## 0.16.1 (2026-10-17)
 
 PairBrowse is its own browser: its text, settings and code no longer name the engine it is built on, and the contributor documents are gone.

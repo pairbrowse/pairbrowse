@@ -176,9 +176,15 @@ test("answers: once only; site counts as Allow and says there is no per-site mem
 
 test("an ask with no answer expires", async () => {
   const { ca } = setup({ surfaces: { approve: 1 }, waitMs: 50 });
-  const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "r", target: "t" } });
-  assert.equal(await r.answer, "expired");
-  assert.deepEqual(ca.pending(), []);
+  // The expiry timer is unref'd (it never holds the helper open), so the test keeps the loop alive.
+  const hold = setInterval(() => {}, 1000);
+  try {
+    const r = await ca.open({ tool: "browser_click", input: PAY, ask: { reason: "r", target: "t" } });
+    assert.equal(await r.answer, "expired");
+    assert.deepEqual(ca.pending(), []);
+  } finally {
+    clearInterval(hold);
+  }
 });
 
 test("the in-page card: only a person's click in that tab, armed, counts; its reading stops once nothing shows", async () => {

@@ -337,7 +337,9 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   }
   // A joiner's answer (approval-share.mjs checked who and the role): allow or deny only.
   function answerShared(id, a, { by = "" } = {}) {
-    const it = items.get(String(id));
+    // An id is a string ("ap-..."): anything else from the wire (an object whose toString is no
+    // function makes String() throw) answers nothing.
+    const it = typeof id === "string" ? items.get(id) : null;
     if (!joinerCan(it) || (a !== "allow" && a !== "deny")) return false;
     return answer(it.id, a, `${by || "a joiner"} (joined, can approve)`, by);
   }

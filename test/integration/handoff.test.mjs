@@ -57,7 +57,7 @@ test("a newer bridge waits while an agent is connected, then hands over once nob
     agent.sock.destroy();
     await sleep(800);
     const said = [];
-    const sock = await connectLocal((m) => said.push(m), { version: "99.0.0", agent: null });
+    const sock = await connectLocal((m) => said.push(m), { version: "99.0.0", agent: null, handoff: true });
     sock.destroy();
     await until("the first helper exited", () => first.exitCode !== null || first.signalCode !== null, 10_000, 50);
     assert.equal(first.exitCode, 0, "a clean shutdown");

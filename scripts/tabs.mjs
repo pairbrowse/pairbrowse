@@ -15,7 +15,10 @@ export function readSavedTabs(file) {
 
 // Keeps tabs.json in step with the browser. Writes are debounced, and a pending write is dropped
 // when the whole browser closes, so quitting the browser doesn't record an empty set of tabs.
-export function trackTabs(ctx, { file, activePage = () => null, log = () => {} } = {}) {
+// holding(): true while the saved tabs are still coming back (restoreTabs): nothing is written
+// then (the file keeps the whole list rather than the few tabs open so far, whatever stops the
+// browser meanwhile); a save due then is made once the restore is over.
+export function trackTabs(ctx, { file, activePage = () => null, log = () => {}, holding = () => false } = {}) {
   let timer = null;
   let stopped = false;
   // The tabs as last seen (their addresses from the navigations, titles from the last save): what
@@ -44,6 +47,7 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
     clearTimeout(timer);
     timer = null;
     if (stopped) return;
+    if (holding()) { soon(); return; } // the restore's tabs aren't all back: once they are
     for (const [page, k] of known) if (k.closedAt !== undefined) known.delete(page); // closed by a person, saved as such now
     try {
       writeJsonAtomic(file, await snapshot());
@@ -55,6 +59,7 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {} }
   // Tabs closed in the last moment went down with the browser (a quit or a crash closes them
   // all at once), not by a person: they count as open. Nothing is written for an empty set.
   const saveKnown = () => {
+    if (holding()) return;
     const now = Date.now();
     const tabs = [...known.values()].filter((t) => restorable(t.url) && (t.closedAt === undefined || now - t.closedAt < 1000)).map((t) => ({ url: t.url, title: t.title || titles.get(t.url) || "" }));
     if (!tabs.length) return;

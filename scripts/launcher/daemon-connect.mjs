@@ -2,8 +2,9 @@
 // running: the bridge (scripts/launch.mjs) and the opener (scripts/open.mjs) share this.
 import net from "node:net";
 import { spawn } from "node:child_process";
-import { existsSync, copyFileSync, chmodSync, openSync, readFileSync, statSync, accessSync, constants as fsConstants } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { existsSync, copyFileSync, chmodSync, openSync, readFileSync, realpathSync, statSync, accessSync, constants as fsConstants } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, ensureDirs, loadConfig, SELECTED } from "../paths.mjs";
 import { ensureRuntime } from "../runtime.mjs";
@@ -82,8 +83,24 @@ export function connectOnce(socketPath = paths.socket) {
 // This copy's own version (its package.json): what the bridge says to the running helper.
 export const BRIDGE_VERSION = (() => { try { return String(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version || ""); } catch { return ""; } })();
 
+// Whether dir (this copy's root) is the installed plugin: a folder inside Claude Code's plugin
+// cache (<its home>/plugins/cache: CLAUDE_CONFIG_DIR, else ~/.claude) or Codex's (CODEX_HOME, else
+// ~/.codex), real paths compared. A checkout (this repository's own .mcp.json starts a bridge from
+// it, and so does a plugin loaded from a folder) is not: its version in package.json may run ahead
+// of the person's install, and its daemon.mjs must never take over their helper.
+export function installedCopy(dir = root, { env = process.env, home = homedir() } = {}) {
+  const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+  const at = real(dir);
+  const homes = [env.CLAUDE_CONFIG_DIR, join(home, ".claude"), env.CODEX_HOME, join(home, ".codex")].filter((p) => typeof p === "string" && isAbsolute(p));
+  return homes.some((h) => at.startsWith(join(real(h), "plugins", "cache") + sep));
+}
+// Whether this copy asks a running helper to hand over to it (handoff.mjs): the installed plugin only.
+const HANDOFF_HERE = installedCopy();
+
 // The pid in the helper's lock file, 0 for none.
 const lockHolder = () => { try { return Number(readFileSync(paths.daemonLock, "utf8")) || 0; } catch { return 0; } };
+// A live process other than pid holds the helper's lock (a helper starting, or running): its pid, else 0.
+const otherHolder = (pid) => { const h = lockHolder(); return h && h !== pid && pidAlive(h) ? h : 0; };
 const answers = () => connectOnce().then((s) => { s.destroy(); return true; }, () => false);
 
 // A running helper older than this copy, with nobody using it, stops for it (handoff.mjs): the
@@ -101,22 +118,43 @@ async function handOver(say, version) {
 }
 
 // The helper's socket: the running helper's (after the version hello), else a new helper's (up to
-// 15 s for it to listen). agent: the PairBrowse Agent to start it on (agentProgram).
-export async function connectLocal(say = () => {}, { version = BRIDGE_VERSION, agent: given, start = startDaemon } = {}) {
+// 15 s for it to listen). agent: the PairBrowse Agent to start it on (agentProgram). handoff:
+// whether to say this copy's version first (the installed plugin only: installedCopy; tests pass
+// true). A helper reached after starting one that this bridge didn't start (another bridge's,
+// which may be older: it won the lock, or it started in the old helper's last moments), or reached
+// only after starting more than once, hears the version once more: then every bridge ends on the
+// newest copy, or on a helper that is in use and says a newer one waits. At most twice.
+export async function connectLocal(say = () => {}, { version = BRIDGE_VERSION, agent: given, start = startDaemon, handoff = HANDOFF_HERE } = {}) {
   prepareLocal(say);
-  if (!(await handOver(say, version))) {
-    try {
-      return await connectOnce();
-    } catch {}
+  for (let round = 0; ; round++) {
+    if (!(handoff && (await handOver(say, version)))) {
+      try {
+        return await connectOnce();
+      } catch {}
+    }
+    const { sock, ours } = await startAndReach(say, given, start);
+    if (!handoff || ours || round > 0) return sock;
+    sock.destroy();
   }
+}
+
+// Starts the helper and connects to it: { sock, ours } (ours: the helper reached is the one this
+// started, the only start: on Node, the lock's holder is its process; on PairBrowse Agent, the
+// agent still runs).
+async function startAndReach(say, given, start) {
   let agent = given === undefined ? agentProgram() : given;
   let child = start({ agent });
   let starts = 1;
+  const ours = () => starts === 1 && child.exitCode === null && (agent ? true : lockHolder() === child.pid);
   for (let i = 0; i < 100; i++) {
     await sleep(150);
     try {
-      return await connectOnce();
+      const sock = await connectOnce();
+      return { sock, ours: ours() };
     } catch {}
+    // The one started left because another live helper holds the lock (it won the contest, or
+    // is still starting): that one listens soon; nothing more to start.
+    if (child.exitCode !== null && otherHolder(child.pid)) continue;
     // An agent that ended before the helper listened (it refused, or could not run Node): the
     // helper on Node directly, once.
     if (agent && child.exitCode !== null) {

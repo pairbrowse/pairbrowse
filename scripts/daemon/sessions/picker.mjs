@@ -120,6 +120,7 @@ export function createPicker(st, deps, api) {
   // The person's pick: { action: "use", name } (a saved session) or { action: "new" } (fresh and
   // clean). Joining is wired in daemon.mjs (it needs the join code checks). Returns { text, error }.
   async function pickSession({ action, name } = {}) {
+    st.personAt = Date.now(); // a person at the browser (the picker has no page script)
     if (pick.state !== "showing") return { text: "A session is already chosen.", error: true };
     if (action === "use") {
       if (!validName(name) || isTemporary(name) || !listSessions().some((s) => s.name === name)) return { text: `No session "${name}".`, error: true };
@@ -172,6 +173,7 @@ export function createPicker(st, deps, api) {
   // Returns { text } or { text, error: true }.
   async function switchForPerson({ action, name } = {}) {
     if (pick.state === "showing") return pickSession({ action, name });
+    st.personAt = Date.now(); // the switcher, the new tab page's chips: a person's press
     if (st.switching) return { text: "The browser is switching sessions; try again in a moment.", error: true };
     if (st.restoring) return { text: "Tabs are still reopening; switch once they're back.", error: true };
     if (action === "use") {

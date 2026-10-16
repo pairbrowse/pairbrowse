@@ -58,6 +58,9 @@ const INPUT_BATCH_MAX = 500;
 // one kind (least privilege: the SDPs and recording calls reach the capture page alone).
 const OWNER_ONLY = new Set(OWNER_EVENTS);
 const PAGES_ONLY = new Set(PAGES_EVENTS);
+// The owner's POSTs that no person makes (onPersonInput): the tab strip's report of the tabs, the
+// capture page's answers, and the live view's input (its pane size; a press is heard where replayed).
+const OWN_REPORTS = new Set(["tab-order", "capture", "input"]);
 const PAGE_EVENT_KIND = new Map(Object.entries(EVENT_KIND));
 const SESSION_FIELDS = ["canRename", "canSave", "savedAt", "canRenameSaved"]; // the owner's streams only
 
@@ -111,7 +114,11 @@ const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, 
 // default one in memory for as long as this live view runs.
 // reporter: Report a problem's relay ({ enabled(), relay(body) -> { status, body } },
 // liveview/report.mjs), or null.
-export async function startLiveView({ activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// onPersonInput(): a person pressed something the page script never sees (the browser's own pages,
+// the side panel, the live view's own controls): every owner request that changes something and
+// passed its checks, but the pages' own reports (OWN_REPORTS) and the live view's input (replayed
+// into a tab, heard there through onHumanInput).
+export async function startLiveView({ activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null, capture = null }) {
@@ -581,6 +588,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       const has = r.needs ? r.needs() : true;
       if (!has) return plain(res, 404);
       if (typeof has === "string") return plain(res, 404, has);
+      if (role === "owner" && req.method !== "GET" && !OWN_REPORTS.has(route)) try { onPersonInput(); } catch {}
       await r.handler({ req, res, route, rest, role, invite, byPages });
     } catch (e) {
       log("liveview", e?.message || e);

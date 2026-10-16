@@ -17,12 +17,12 @@ process.env.PAIRBROWSE_HOME = home;
 after(() => rmSync(home, { recursive: true, force: true }));
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const { parseVersion, isNewer, helloLine, readAnswer, askVersion, busyReason, createVersionHandoff, waitGone, pendingLine, VERSION_MAX, PERSON_QUIET_MS } = await import("../scripts/handoff.mjs");
+const { parseVersion, isNewer, helloLine, readAnswer, askVersion, busyReason, readUse, createVersionHandoff, waitGone, pendingLine, VERSION_MAX, PERSON_QUIET_MS } = await import("../scripts/handoff.mjs");
 const { HOOK_MARK } = await import("../scripts/hookline.mjs");
 const { routeConnection } = await import("../scripts/daemon/approvals.mjs");
 const { statusLine } = await import("../scripts/daemon/serve/tools/status.mjs");
 const { createDownloads } = await import("../scripts/daemon/toolstab.mjs");
-const { connectLocal, BRIDGE_VERSION } = await import("../scripts/launcher/daemon-connect.mjs");
+const { connectLocal, installedCopy, BRIDGE_VERSION } = await import("../scripts/launcher/daemon-connect.mjs");
 const { paths } = await import("../scripts/paths.mjs");
 
 test("versions: plain x.y.z only, compared part by part, strictly newer", () => {
@@ -75,8 +75,29 @@ test("idle means nobody and nothing uses the helper; each one alone keeps it", (
     joined: [{ joined: true }, /joined another session/], recording: [{ recording: true }, /recording/],
     approvals: [{ approvals: 1 }, /approval is waiting/], downloads: [{ downloads: 1 }, /download/],
     person: [{ personAt: now - 5000 }, /used the browser in the last 2 minutes/], personEdge: [{ personAt: now - PERSON_QUIET_MS + 1 }, /last 2 minutes/],
+    starting: [{ starting: true }, /^the browser is starting$/], picking: [{ picking: true }, /^the session picker is showing$/],
   };
   for (const [name, [s, why]] of Object.entries(busy)) assert.match(busyReason({ ...IDLE, ...s, now }) || "", why, name);
+});
+
+test("readUse: the helper's parts read into busyReason's state; what the page script never sees counts too", () => {
+  const now = Date.now();
+  assert.equal(busyReason({ ...readUse({}), now }), null, "no parts: idle");
+  const parts = {
+    agents: 0,
+    view: { guestViewers: () => 0, joinersNow: () => [], sharedJoiners: () => 0, sharing: () => false },
+    follow: { joined: () => false }, recorder: { state: () => ({ recording: false }) }, approvals: { pending: () => [] },
+    downloads: { inProgress: () => 0 }, presence: { lastPersonAt: () => 0 },
+    context: { starting: () => false, picking: () => false, personAt: () => 0 },
+  };
+  assert.deepEqual(readUse(parts), { ...IDLE, starting: false, picking: false });
+  const with_ = (over) => busyReason({ ...readUse({ ...parts, ...over }), now });
+  assert.equal(with_({ context: { ...parts.context, starting: () => true } }), "the browser is starting");
+  assert.equal(with_({ context: { ...parts.context, picking: () => true } }), "the session picker is showing");
+  assert.match(with_({ context: { ...parts.context, personAt: () => now - 1000 } }) || "", /last 2 minutes/, "the browser opened by hand, a pick, its own pages");
+  assert.match(with_({ presence: { lastPersonAt: () => now - 1000 } }) || "", /last 2 minutes/, "the page script's input");
+  assert.equal(readUse({ ...parts, presence: { lastPersonAt: () => 5 }, context: { ...parts.context, personAt: () => 9 } }).personAt, 9, "the later of the two");
+  assert.equal(with_({ view: { ...parts.view, joinersNow: () => [{}] } }), "people are in this browser's session");
 });
 
 // A socket as answer() sees one: what it wrote, whether it ended.
@@ -122,6 +143,12 @@ test("the helper: a newer bridge while idle stops it; otherwise it stays and say
   assert.equal(stops, 0, "never a restart while in use");
   state = { ...IDLE, personAt: Date.now() - 1000 };
   assert.match(ask(hello("0.16.2")).answer.why, /last 2 minutes/);
+  // Saved tabs still reopening (or the browser launching): no restart, or the stop would save
+  // only the tabs open so far.
+  state = { ...IDLE, starting: true };
+  assert.deepEqual(ask(hello("0.16.2")).answer, { restart: false, why: "the browser is starting" });
+  state = { ...IDLE, picking: true };
+  assert.deepEqual(ask(hello("0.16.2")).answer, { restart: false, why: "the session picker is showing" });
   // state() failing: no restart.
   const broken = createVersionHandoff({ own: "0.16.1", state: () => { throw new Error("boom"); }, stop: () => { stops++; } });
   const b = fakeSock();
@@ -234,7 +261,7 @@ test("connectLocal: an older helper's no, a silent one and a helper in use are c
     const h = await fakeHelper(() => answer);
     try {
       const t = Date.now();
-      const s = await connectLocal(() => {}, { version: "99.0.0", agent: null, start });
+      const s = await connectLocal(() => {}, { version: "99.0.0", agent: null, start, handoff: true });
       s.destroy();
       assert.equal(h.seen.length, 1, name);
       assert.deepEqual(JSON.parse(h.seen[0]), { pairbrowse: "hook", op: "version", v: 1, version: "99.0.0" });
@@ -259,13 +286,122 @@ test("connectLocal: a yes waits for the old helper to go, then starts this copy'
   const start = ({ agent }) => {
     startedAt = Date.now();
     assert.equal(agent, null);
+    writeFileSync(paths.daemonLock, String(process.pid)); // the helper it started holds the lock
     fakeHelper(() => '{"restart":false,"why":"same version"}').then((h) => { next = h; });
-    return { exitCode: null };
+    return { exitCode: null, pid: process.pid };
   };
-  const s = await connectLocal((m) => said.push(m), { version: "99.0.0", agent: null, start });
+  const s = await connectLocal((m) => said.push(m), { version: "99.0.0", agent: null, start, handoff: true });
   try {
     assert.ok(oldGoneAt > 0 && startedAt >= oldGoneAt, "started only after the old helper was gone");
     assert.ok(said.some((m) => /99\.0\.0 is installed; the helper restarts on it/.test(m)), said.join(" | "));
-    assert.equal(next.seen.length, 0, "the new helper got the connection, not another hello");
-  } finally { s.destroy(); await next?.close(); }
+    assert.equal(next.seen.length, 0, "the new helper it started got the connection, not another hello");
+  } finally { s.destroy(); await next?.close(); rmSync(paths.daemonLock, { force: true }); }
+});
+
+// The old helper says yes, stops, and goes: the stop as a real helper makes it.
+async function yesThenGone(onGone = () => {}) {
+  writeFileSync(paths.daemonLock, String(process.pid));
+  const old = await fakeHelper(() => {
+    setTimeout(async () => { await old.close(); setTimeout(() => { rmSync(paths.daemonLock, { force: true }); onGone(); }, 100); }, 100);
+    return '{"restart":true}';
+  });
+  return old;
+}
+
+test("connectLocal: after a yes, a helper it didn't start (another bridge's, maybe older) hears the version once more", async () => {
+  fakeRuntime();
+  let other = null;
+  const starts = [];
+  await yesThenGone();
+  // Another bridge's older helper wins the lock: the one this bridge started leaves at once.
+  const start = ({ agent }) => {
+    starts.push(agent);
+    writeFileSync(paths.daemonLock, String(process.pid)); // a live process, not the child
+    fakeHelper(() => '{"restart":false,"why":"an agent is connected"}').then((h) => { other = h; });
+    return { exitCode: 0, pid: 999_999 };
+  };
+  const s = await connectLocal(() => {}, { version: "99.0.0", agent: null, start, handoff: true });
+  try {
+    assert.equal(starts.length, 1, "one start: the lock's holder is alive, nothing more started");
+    assert.equal(other.seen.length, 1, "the helper reached hears the version (it stays: in use, and says a newer one waits)");
+    assert.deepEqual(JSON.parse(other.seen[0]), { pairbrowse: "hook", op: "version", v: 1, version: "99.0.0" });
+  } finally { s.destroy(); await other?.close(); rmSync(paths.daemonLock, { force: true }); }
+});
+
+test("connectLocal: the second hello's yes starts this copy's helper again, and then it stops asking (converges)", async () => {
+  fakeRuntime();
+  const starts = [];
+  let last = null;
+  await yesThenGone();
+  const start = () => {
+    starts.push(1);
+    if (starts.length === 1) {
+      // Another bridge's helper got there first, and it is idle and older: it says yes too.
+      writeFileSync(paths.daemonLock, String(process.pid));
+      fakeHelper(() => {
+        setTimeout(async () => { await last.close(); setTimeout(() => rmSync(paths.daemonLock, { force: true }), 100); }, 100);
+        return '{"restart":true}';
+      }).then((h) => { last = h; });
+      return { exitCode: 0, pid: 999_999 };
+    }
+    writeFileSync(paths.daemonLock, String(process.pid));
+    fakeHelper(() => '{"restart":false,"why":"same version"}').then((h) => { last = h; });
+    return { exitCode: null, pid: process.pid };
+  };
+  const s = await connectLocal(() => {}, { version: "99.0.0", agent: null, start, handoff: true });
+  try {
+    assert.equal(starts.length, 2, "started once more after the second yes");
+    assert.equal(last.seen.length, 0, "its own helper: no third hello");
+  } finally { s.destroy(); await last?.close(); rmSync(paths.daemonLock, { force: true }); }
+});
+
+test("connectLocal (macOS): PairBrowse Agent ending because another live helper holds the lock is no refusal: no helper on Node", async () => {
+  fakeRuntime();
+  rmSync(paths.socket, { force: true });
+  writeFileSync(paths.daemonLock, String(process.pid)); // the helper that won the lock contest, still starting
+  const starts = [];
+  const said = [];
+  let winner = null;
+  setTimeout(() => { fakeHelper(() => '{"restart":false,"why":"same version"}').then((h) => { winner = h; }); }, 500);
+  const start = ({ agent }) => { starts.push(agent); return { exitCode: 0, pid: 999_998 }; };
+  const s = await connectLocal((m) => said.push(m), { agent: "/Applications/PairBrowse.app/Contents/Helpers/PairBrowse Agent.app/Contents/MacOS/PairBrowse Agent", start });
+  try {
+    assert.equal(starts.length, 1, `nothing started on Node: ${JSON.stringify(starts)}`);
+    assert.ok(!said.some((m) => /PairBrowse Agent ended/.test(m)), said.join(" | "));
+  } finally { s.destroy(); await winner?.close(); rmSync(paths.daemonLock, { force: true }); }
+});
+
+test("connectLocal: a bridge from a checkout (not the installed plugin) never asks the helper to hand over", async () => {
+  fakeRuntime();
+  const h = await fakeHelper(() => '{"restart":true}');
+  try {
+    assert.equal(installedCopy(root), false, "this checkout");
+    const s = await connectLocal(() => {}, { version: "99.0.0", agent: null, start: () => { throw new Error("nothing starts"); } });
+    s.destroy();
+    await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(h.seen, [], "no hello: the person's helper stays");
+  } finally { await h.close(); }
+});
+
+test("installedCopy: only a copy under Claude Code's or Codex's plugin cache", () => {
+  const base = mkdtempSync(join(tmpdir(), "pb-ic-"));
+  try {
+    const user = join(base, "me");
+    const claude = join(user, ".claude", "plugins", "cache", "pairbrowse", "pairbrowse", "0.16.2");
+    const codex = join(user, ".codex", "plugins", "cache", "pairbrowse", "pairbrowse", "0.16.2");
+    const moved = join(base, "cfg", "plugins", "cache", "pairbrowse", "pairbrowse", "0.16.2");
+    const checkout = join(user, "Projects", "pairbrowse");
+    const fake = join(user, "Projects", "x", "plugins", "cache", "pairbrowse");
+    for (const d of [claude, codex, moved, checkout, fake]) mkdirSync(d, { recursive: true });
+    const opts = { env: {}, home: user };
+    assert.equal(installedCopy(claude, opts), true, "Claude Code's");
+    assert.equal(installedCopy(codex, opts), true, "Codex's");
+    assert.equal(installedCopy(checkout, opts), false, "a checkout");
+    assert.equal(installedCopy(fake, opts), false, "a folder merely named so elsewhere");
+    assert.equal(installedCopy(join(user, ".claude", "plugins", "cache"), opts), false, "the cache itself");
+    assert.equal(installedCopy(moved, opts), false);
+    assert.equal(installedCopy(moved, { env: { CLAUDE_CONFIG_DIR: join(base, "cfg") }, home: user }), true, "CLAUDE_CONFIG_DIR");
+    assert.equal(installedCopy(moved, { env: { CODEX_HOME: join(base, "cfg") }, home: user }), true, "CODEX_HOME");
+    assert.equal(installedCopy(moved, { env: { CODEX_HOME: "relative/cfg" }, home: user }), false, "only an absolute home");
+  } finally { rmSync(base, { recursive: true, force: true }); }
 });

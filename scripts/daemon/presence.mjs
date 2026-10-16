@@ -5,6 +5,7 @@
 // which button or field, never what they typed.
 import { sleep } from "../util.mjs";
 import { cleanName } from "../sharing/join.mjs";
+import { isUntouchedStart } from "../tabs.mjs";
 
 const LATE_NEWS_MAX_MS = 15_000; // how late a person's news from the other browser can say it is
 const USER_IDLE_MS = 2000; // a person counts as busy in a tab until this long after their last input
@@ -267,7 +268,12 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
       lastUrls.set(page, url);
       // A new address only: news sites and dashboards reload themselves in background tabs.
       // Never a saved tab coming back after a start or a session switch: nobody went there.
-      if (url !== before && !byAgent(Date.now(), 5000) && !restoring() && /^https?:/.test(url)) userDid([{ t: Date.now(), kind: "went", what: url.split(/[?#]/)[0].slice(0, 120) }], page);
+      if (url === before || byAgent(Date.now(), 5000) || restoring()) return;
+      if (/^https?:/.test(url)) userDid([{ t: Date.now(), kind: "went", what: url.split(/[?#]/)[0].slice(0, 120) }], page);
+      // The browser's own pages (its Settings, Downloads, History, from the address bar or a
+      // menu) have no page script: their opening is the one sign of a person there (handoff.mjs),
+      // never news for agents. Not the start tab's new tab page (it opens with the browser).
+      else if (/^(chrome|pairbrowse):/i.test(url) && !isUntouchedStart(url)) lastPersonAt = Math.max(lastPersonAt, Date.now());
     });
   }
 

@@ -879,6 +879,39 @@ test("the browser's own pages' key: owner rights, never echoed, CORS for their o
   } finally { plainView.close(); view.close(); }
 });
 
+// The page script never runs in the browser's own pages nor the side panel: a press there is heard
+// here (onPersonInput), so a newer version's hello doesn't restart the helper under the person.
+test("a person's press in the browser's own pages or the side panel is heard; their own reports and reads are not", async () => {
+  const picker = { state: () => ({ picking: true, sessions: [] }), pick: async () => ({ text: "ok" }), open: async () => ({ text: "x" }) };
+  const { ctx } = fakeTabs(1);
+  let heard = 0;
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => "about:blank#0", picker, extraOrigins: ["chrome://pairbrowse", "chrome-extension://aaaa"], onPersonInput: () => heard++ });
+  try {
+    const k = view.pagesKey;
+    const owner = new URL(view.url).pathname.split("/")[1];
+    const pages = { headers: { origin: "chrome://pairbrowse" } };
+    assert.equal((await request(view.port, "GET", `/${k}/state.json`, pages)).status, 200);
+    assert.equal((await request(view.port, "OPTIONS", `/${k}/pick`, pages)).status, 204);
+    assert.equal(heard, 0, "reads and preflights are no one's input");
+    assert.equal((await request(view.port, "POST", `/${k}/tab-order`, { body: { tabs: [] }, ...pages })).status !== 403, true);
+    assert.equal(heard, 0, "the tab strip's own report of the tabs is not a person's");
+    assert.equal((await request(view.port, "POST", `/${k}/pick`, { body: { action: "new" }, ...pages })).status, 200);
+    assert.equal(heard, 1, "a pick in the browser's own picker");
+    assert.equal((await request(view.port, "POST", `/${k}/layout`, { body: { right: "open" }, ...pages })).status, 200);
+    assert.equal(heard, 2, "a dock opened");
+    assert.equal((await request(view.port, "POST", `/${owner}/pick`, { body: { action: "new" }, headers: { origin: "chrome-extension://aaaa" } })).status, 200);
+    assert.equal(heard, 3, "the side panel (the owner's key from its extension page)");
+    const live = { headers: { origin: `http://127.0.0.1:${view.port}` } };
+    await request(view.port, "POST", `/${owner}/input`, { body: { type: "viewport", on: true, w: 800, h: 600, dpr: 1 }, ...live });
+    assert.equal(heard, 3, "the live view's input is counted where it is replayed (onHumanInput); its pane size is no one's press");
+    assert.equal((await request(view.port, "POST", `/${k}/pick`, { body: { action: "new" }, headers: { origin: "https://evil.example" } })).status, 403);
+    assert.equal((await request(view.port, "POST", `/${"x".repeat(43)}/pick`, { body: { action: "new" }, ...pages })).status, 404);
+    assert.equal(heard, 3, "a refused request is no one's input");
+    assert.equal((await request(view.port, "POST", `/${owner}/pick`, { body: { action: "new" }, ...live })).status, 200);
+    assert.equal(heard, 4, "a press in the live view's own controls");
+  } finally { view.close(); }
+});
+
 test("the browser's own pages are never tabs on the live view, nor on its stage", async () => {
   const { ctx, pages, sessions } = fakeTabs(4);
   const own = { 1: "chrome://pairbrowse/picker", 2: "chrome://pairbrowse.top-chrome/strip" };

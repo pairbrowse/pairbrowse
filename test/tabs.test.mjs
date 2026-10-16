@@ -94,6 +94,35 @@ test("quitting the browser doesn't record an empty set of tabs", async (t) => {
   if (existsSync(file)) assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).tabs.map((x) => x.url), ["https://a.test/"]);
 });
 
+test("while saved tabs come back (holding) nothing is written, a crash included; the save due comes once they are back", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const file = tmpFile();
+  writeFileSync(file, JSON.stringify({ tabs: [{ url: "https://a.test/" }, { url: "https://b.test/" }], active: 0 }));
+  const whole = readFileSync(file, "utf8");
+  let holding = true;
+  const a = fakePage("about:blank");
+  const ctx = fakeContext([a]);
+  const tracker = trackTabs(ctx, { file, holding: () => holding });
+  a.navigate("https://a.test/"); // the first saved tab is back, the second still loading
+  t.mock.timers.tick(5000);
+  await tracker.saveNow();
+  assert.equal(readFileSync(file, "utf8"), whole, "a save while holding writes nothing");
+  holding = false;
+  t.mock.timers.tick(1500);
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).tabs.map((x) => x.url), ["https://a.test/"], "the save due, once the restore is over");
+
+  // The browser dying during a restore: the saved list stays whole.
+  writeFileSync(file, whole);
+  holding = true;
+  const b = fakePage("about:blank");
+  const ctx2 = fakeContext([b]);
+  trackTabs(ctx2, { file, holding: () => holding });
+  b.navigate("https://a.test/");
+  ctx2.emit("close");
+  assert.equal(readFileSync(file, "utf8"), whole);
+});
+
 test("the browser dying before a pending save ran still records the tabs as last known", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const a = fakePage("https://a.test/"), b = fakePage("https://b.test/");

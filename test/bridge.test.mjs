@@ -103,7 +103,9 @@ test("both ways, line by line: junk ignored, initialize names the parent and the
     assert.equal(sent.params.clientInfo.pairbrowseParticipant, `Annie ${"x".repeat(54)}`, "control characters out, 60 at most");
     assert.equal(sent.params.clientInfo.name, "codex");
     assert.equal(helper.conns[0].got.length, 1, "junk lines never reach the helper");
-    assert.deepEqual(helper.hellos.map((h) => h.version), [JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version], "it said its own version first, on a connection of its own");
+    // A bridge run from a checkout (this one) never asks for a handoff: only the installed plugin
+    // does (launcher/daemon-connect.mjs installedCopy; its hello: test/handoff.test.mjs).
+    assert.deepEqual(helper.hellos, [], "a checkout's bridge says no version");
     b.send({ jsonrpc: "2.0", method: "notifications/initialized" });
     b.send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     const list = await until("tools/list", () => b.out.find((m) => m.id === 2));

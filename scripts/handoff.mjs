@@ -77,8 +77,10 @@ export async function waitGone({ reachable, holder, alive = pidAlive, ms = HANDO
 // Why the helper is in use, in plain words, or null when it is idle. state (read now, all numbers
 // or booleans): agents (agent connections), people (joiners and invite-link viewers in the live
 // view), shared (people in a shared browser session), joined (this browser joined another's
-// session), recording, approvals (asks waiting), downloads (in progress), personAt (when a person
-// last used the browser by hand, ms), now.
+// session), recording, approvals (asks waiting), downloads (in progress), starting (the browser is
+// launching, reopening its saved tabs or switching sessions: a stop then would save only the tabs
+// open so far, or end a launch half done), picking (the session picker shows: a person chooses),
+// personAt (when a person last used the browser by hand, ms), now.
 export function busyReason(s = {}) {
   const n = (x) => Number(x) || 0;
   if (n(s.agents) > 0) return n(s.agents) === 1 ? "an agent is connected" : `${n(s.agents)} agents are connected`;
@@ -87,9 +89,33 @@ export function busyReason(s = {}) {
   if (s.recording) return "a recording is running";
   if (n(s.approvals) > 0) return "an approval is waiting";
   if (n(s.downloads) > 0) return "a download is in progress";
+  if (s.starting) return "the browser is starting";
+  if (s.picking) return "the session picker is showing";
   const now = Number.isFinite(s.now) ? s.now : Date.now();
   if (n(s.personAt) > 0 && now - n(s.personAt) < PERSON_QUIET_MS) return "someone used the browser in the last 2 minutes";
   return null;
+}
+
+// busyReason's state, read from the helper's parts now (daemon.mjs inUse): agents (the count),
+// view (the live view, or null), follow, recorder, approvals (the click approvals), downloads,
+// presence, and context (daemon/context.mjs: starting(), picking(), personAt()). A part that is
+// missing reads as unused.
+export function readUse({ agents = 0, view = null, follow = null, recorder = null, approvals = null, downloads = null, presence = null, context = null } = {}) {
+  const n = (x) => Number(x) || 0;
+  return {
+    agents: n(agents),
+    people: n(view?.guestViewers?.()) + n(view?.joinersNow?.()?.length),
+    shared: n(view?.sharedJoiners?.()) + (view?.sharing?.() ? 1 : 0),
+    joined: !!follow?.joined?.(),
+    recording: !!recorder?.state?.()?.recording,
+    approvals: n(approvals?.pending?.()?.length),
+    downloads: n(downloads?.inProgress?.()),
+    starting: !!context?.starting?.(),
+    picking: !!context?.picking?.(),
+    // The page script's input (presence), and what it never sees (context): the browser opened by
+    // hand, a pick in the session picker, a press in the browser's own pages or the side panel.
+    personAt: Math.max(n(presence?.lastPersonAt?.()), n(context?.personAt?.())),
+  };
 }
 
 // What pairbrowse_status says while a newer version waits.

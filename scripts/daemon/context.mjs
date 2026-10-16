@@ -66,6 +66,12 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     choiceConfig,
     getContext, watchClose, current: () => st.contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
     isRestoring: () => st.restoring !== null, isSwitching: () => st.switching,
+    // The browser is on its way up: launching, reopening saved tabs, or between two sessions.
+    starting: () => st.launching || st.restoring !== null || st.switching || !!st.pickSwitch,
+    // A person used the browser where the page script never runs (personUsed: the browser's own
+    // pages and the side panel, through the live view); personAt: when, last (0 for never).
+    personUsed: (t = Date.now()) => { st.personAt = Math.max(st.personAt, Math.min(Number(t) || 0, Date.now())); },
+    personAt: () => st.personAt,
     currentUrl: () => st.lastCurrentUrl, setCurrentUrl: (url) => { st.lastCurrentUrl = url; },
     sessionInfo, sessionCommand, startUp, close, sessionName: () => st.session, renameSaved, renameCurrent, saveTabs,
     // The browser's pages used their key (or the helper stops): its file has done its job.

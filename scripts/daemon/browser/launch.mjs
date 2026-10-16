@@ -42,6 +42,9 @@ export function measuringLog({ log, status, notify }) {
   return launchLog;
 }
 
+// How long a stop waits for saved tabs still reopening (close below), inside the helper's 5 s.
+const RESTORE_WAIT_MS = 3000;
+
 export function createLaunch(st, deps, api) {
   const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, helperFor } = deps;
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
@@ -260,6 +263,7 @@ export function createLaunch(st, deps, api) {
     if (shuttingDown()) return { ok: false, why: "PairBrowse is restarting" };
     const pages = nextShell().ownPages;
     if (!pages) return { ok: false, why: "the browser in use here isn't the PairBrowse browser (\"browser\" in ~/.pairbrowse/config.json)" };
+    st.personAt = Date.now(); // a person at the browser (the page script never sees this)
     if (!st.contextPromise) st.byHand = true; // this start is the person's: it may come to the front
     const up = getContext().then(async (ctx) => {
       const page = st.pick.state === "showing" && st.pick.page && !st.pick.page.isClosed() ? st.pick.page : ctx.pages().findLast((p) => !p.isClosed()) || null;
@@ -280,9 +284,14 @@ export function createLaunch(st, deps, api) {
 
 
   // At shutdown: remember the tabs before they close; a clean close writes cookies to disk.
-  async function close() {
+  // Saved tabs still reopening: their restore gets up to restoreWaitMs to finish first (the whole
+  // stop has SHUTDOWN_GRACE_MS, daemon.mjs); still going after that, nothing is saved (the tracker
+  // holds its writes during a restore, scripts/tabs.mjs), so the saved list stays whole.
+  async function close({ restoreWaitMs = RESTORE_WAIT_MS } = {}) {
     try {
       const ctx = st.contextPromise && (await st.contextPromise);
+      if (st.restoring) await within(restoreWaitMs, Promise.resolve(st.restoring).catch(() => {}));
+      if (st.restoring) log("shutdown: saved tabs were still reopening; the saved list stays as it was");
       await st.tabTracker?.saveNow();
       st.tabTracker?.stop();
       await ctx?.close();

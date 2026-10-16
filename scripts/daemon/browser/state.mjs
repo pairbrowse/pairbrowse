@@ -19,6 +19,10 @@ export function createBrowserState({ session, pick }) {
     // The next launch is for a person who opened the PairBrowse browser by hand (openByHand): it may
     // come to the front, so nothing puts the app they were in back in front of it (keepFocus).
     byHand: false,
+    // When a person last used the browser where the page script never runs (opened it by hand,
+    // picked a session, pressed something in its own pages or the side panel), ms; 0 for never.
+    // A newer bridge's hello restarts the helper only once that is a while ago (handoff.mjs).
+    personAt: 0,
     inUse: null, // the browser the last launch chose
     session, // which browser session (browser profile) is in use
     switching: false,

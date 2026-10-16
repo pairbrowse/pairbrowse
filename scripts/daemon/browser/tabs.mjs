@@ -119,7 +119,9 @@ export function createTabs(st, deps, api) {
     recordPerson(st.session, { who: "You", computer: computerName(), kind: "you" }); // the session is in use now
     const saved = readSavedTabs(tabsFile(st.session));
     const restoredSession = st.session;
-    st.tabTracker = trackTabs(ctx, { file: tabsFile(st.session), activePage: () => findPage(ctx, st.lastCurrentUrl), log });
+    // Nothing is written while the saved tabs come back (a stop or a crash meanwhile keeps the whole list).
+    let tracker = null;
+    tracker = st.tabTracker = trackTabs(ctx, { file: tabsFile(st.session), activePage: () => findPage(ctx, st.lastCurrentUrl), log, holding: () => st.restoring !== null && st.tabTracker === tracker });
     if (!saved.tabs.length) { screen?.close().catch(() => {}); return; }
     st.restoredActiveUrl = saved.tabs[saved.active]?.url || null;
     const restoreAt = Date.now();

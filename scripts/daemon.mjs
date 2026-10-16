@@ -87,7 +87,7 @@ import { createDiagnostics, pinnedBrowserVersion } from "./daemon/diagnostics.mj
 import { engineDir } from "./native/pack.mjs";
 import { answerOpen, writeOpener, claimOpener, releaseOpener, registryDir } from "./opener.mjs";
 import { bundleIdOfApp } from "./openers.mjs";
-import { createVersionHandoff } from "./handoff.mjs";
+import { createVersionHandoff, readUse } from "./handoff.mjs";
 import { chooseBrowser, isOpenBrowser } from "./browser/choice.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
 import { testOn, harnessStarted } from "./testenv.mjs";
@@ -532,6 +532,8 @@ const sharing = createSharing({
     picker: { state: () => context.pickerState(), pick: (op) => picks.pick(op), open: () => context.reopenPicker() },
     // the first request a browser page makes with its key: the key file has done its job
     onPagesKey: () => context.dropHelperKey(),
+    // A press in the browser's own pages, the side panel or the live view's controls (no page script there): a person.
+    onPersonInput: () => context.personUsed(),
     // A join code's address the person hasn't allowed: their answer from the side panel or picker.
     joinHost: { state: () => follow.hostState(), act: (op) => picks.hostDecision(op) },
     // The Tools tab (owner only): files by id; Open and Reveal through the OS opener, on a click.
@@ -747,8 +749,7 @@ const picks = createPick({
   busy: () => { const s = inUse(); return s.people ? "People are in this session; switch once they have left." : s.recording ? "Stop the recording first." : s.approvals ? "An approval is waiting; answer it first." : null; },
 });
 // What uses the helper now (handoff.mjs busyReason): a newer bridge's hello restarts it only without any.
-const inUse = (lv = liveView()) => ({ agents: clients.size, people: (lv?.guestViewers?.() || 0) + (lv?.joinersNow?.().length || 0), shared: (lv?.sharedJoiners?.() || 0) + (lv?.sharing?.() ? 1 : 0),
-  joined: follow.joined(), recording: !!recorder.state()?.recording, approvals: clickApprovals.pending().length, downloads: downloads.inProgress(), personAt: presence.lastPersonAt() });
+const inUse = (lv = liveView()) => readUse({ agents: clients.size, view: lv, follow, recorder, approvals: clickApprovals, downloads, presence, context });
 const handoff = createVersionHandoff({ own: HELPER_VERSION, state: inUse, stop: () => shutdown(0), lock: lockFile, log });
 output.start();
 

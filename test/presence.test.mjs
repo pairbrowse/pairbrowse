@@ -1,6 +1,7 @@
 import "./helpers/home.mjs";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { createPresence, sentAgo, stateAgo } from "../scripts/daemon/presence.mjs";
 import { stateForJoiner } from "../scripts/sharing/tabsync.mjs";
 import { hostPeople } from "../scripts/daemon/follow.mjs";
@@ -24,6 +25,39 @@ test("lastPersonAt: when a person last used any tab; an agent's own input doesn'
     assert.equal(presence.lastPersonAt(), 3_003_000, "any tab, any input (reading along too)");
     presence.userDid([{ kind: "click", t: Date.now() + 60_000 }], b);
     assert.equal(presence.lastPersonAt(), 3_003_000, "never a time in the future");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("lastPersonAt: the browser's own pages opened by a person count (no page script there); a start tab, a restore, an agent's don't", () => {
+  mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 5_000_000 });
+  try {
+    let restoring = false;
+    const presence = createPresence({ host: "You", readEvents: async () => [], pages: () => [], paused: () => true, restoring: () => restoring,
+      onUsed() {}, onStale() {}, applyBar() {}, refreshTabs() {} });
+    const page = new EventEmitter();
+    page.at = "about:blank";
+    page.url = () => page.at;
+    presence.watchUser(page);
+    const load = (url) => { page.at = url; page.emit("load"); };
+    load("chrome://newtab/");
+    load("chrome://pairbrowse/newtab");
+    assert.equal(presence.lastPersonAt(), 0, "the untouched start tab");
+    restoring = true;
+    load("chrome://settings/");
+    assert.equal(presence.lastPersonAt(), 0, "while saved tabs come back");
+    restoring = false;
+    const done = presence.busyStart();
+    load("chrome://downloads/");
+    done();
+    assert.equal(presence.lastPersonAt(), 0, "during an agent's action");
+    mock.timers.tick(10_000);
+    load("chrome://pairbrowse/settings");
+    assert.equal(presence.lastPersonAt(), 5_010_000, "the browser's own Settings, opened by hand");
+    mock.timers.tick(1000);
+    load("chrome://history/");
+    assert.equal(presence.lastPersonAt(), 5_011_000, "the engine's own pages too (the address bar)");
   } finally {
     mock.timers.reset();
   }

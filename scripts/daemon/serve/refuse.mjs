@@ -23,6 +23,15 @@ import { resolve as resolvePath, sep as pathSep } from "node:path";
 // person's own tab (a file they opened from Downloads; any file: tab counts). Returns the refusal's
 // text, or null. Pure. The browser's own pages (chrome://pairbrowse) and the person's tabs are
 // never a tab an agent acts in, selects or closes.
+// The address a pairbrowse_run's first step goes to ({"go": url} given inline), or null.
+const firstGo = (name, args) => (name === "pairbrowse_run" && Array.isArray(args?.steps) && typeof args.steps[0]?.go === "string" ? args.steps[0].go : null);
+// The address of a web tab a pairbrowse_run opens for itself, or null: a run starting with go,
+// asked while the agent's tab is one of the browser's own pages other than an untouched new tab
+// page (that one it leaves in place, tabRefusal). Pure. The page itself is left as it is.
+export function runOpensTab(name, args, here) {
+  const url = firstGo(name, args);
+  return url && here && isBrowserPage(here.url()) && !isUntouchedStart(here.url()) ? url : null;
+}
 export const isFileTab = (page) => { try { return /^file:/i.test(String(page?.url?.() ?? "")); } catch { return false; } };
 export function tabRefusal(name, args = {}, { here = null, pages = [], personTab = () => false } = {}) {
   const person = (page) => !!page && (!!personTab(page) || isFileTab(page));
@@ -31,7 +40,8 @@ export function tabRefusal(name, args = {}, { here = null, pages = [], personTab
     // Cmd+T) to a web page, as it took the about:blank start tab before the build had its own new
     // tab page (plans/555 Risk 1); nothing reads or acts in the page itself, and navigationProblem
     // still refuses every browser page as a target.
-    const leavingNewTab = name === "browser_navigate" && here && isUntouchedStart(here.url());
+    // pairbrowse_run whose first step is go leaves it the same way.
+    const leavingNewTab = (name === "browser_navigate" || !!firstGo(name, args)) && here && isUntouchedStart(here.url());
     if (here && isBrowserPage(here.url()) && !leavingNewTab) return `${BROWSER_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
     if (person(here)) return `${PERSON_TAB_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
   }

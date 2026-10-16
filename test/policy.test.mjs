@@ -44,6 +44,17 @@ test("browser_tabs lists without the browser's own pages, every other tab keepin
   assert.equal(hideBrowserTabs(plain), plain);
 });
 
+test("browser_tabs: a list the browser's own pages were taken out of says so, and what to do", async () => {
+  const { hiddenTabsNote } = await import("../scripts/daemon/output.mjs");
+  const only = "### Result\n- 0: (current) [New tab](chrome://pairbrowse/newtab)\n";
+  assert.equal(hiddenTabsNote(only), "- 1 tab not listed: it is the browser's own page, which no agent reads or acts in. Your current tab is that page: open a web page with browser_tabs new (url).");
+  const some = "### Result\n- 0: [A](http://a/)\n- 1: [Choose a session](chrome://pairbrowse/picker)\n- 2: (current) [Settings](pairbrowse://settings)\n";
+  assert.equal(hiddenTabsNote(some), "- 2 tabs not listed: they are the browser's own pages, which no agent reads or acts in. Your current tab is one of them: open a web page with browser_tabs new (url) or select a listed tab.");
+  assert.equal(hiddenTabsNote("### Result\n- 0: [A](http://a/)\n- 1: [Strip](chrome://pairbrowse.top-chrome/strip)\n"), "- 1 tab not listed: it is the browser's own page, which no agent reads or acts in.");
+  assert.equal(hiddenTabsNote("### Result\n- 0: (current) [A](http://a/)\n"), "");
+  assert.equal(hiddenTabsNote(""), "");
+});
+
 // A downloaded file shows in the person's own tab only through the Downloads list; agents' file:
 // navigation stays refused.
 test("agents never open file: addresses, a downloaded file's included", () => {

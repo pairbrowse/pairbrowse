@@ -4,6 +4,7 @@
 import { hudScript } from "../browser.mjs";
 import { isRef } from "../rules/policy.mjs";
 import { within, sleep } from "../util.mjs";
+import { clipActivity } from "./journal.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 import { APP_COLORS, AGENT_FALLBACKS } from "../../ui/vocab.js";
 
@@ -250,11 +251,11 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
   // text: what happened; who: the participant's label ("Alice · Claude Code"); page: the tab.
   // from: the joiner it came from (a joined session's activity isn't sent back there).
   function addActivity(text, who = "", page = null, from = "") {
-    if (text && page) lastInTab.set(page, { text: String(text).slice(0, 120), who: String(who).slice(0, 60) });
+    if (text && page) lastInTab.set(page, { text: clipActivity(text, 120), who: String(who).slice(0, 60) });
     liveView()?.addActivity(text, who, page ? tabName(page) : "", page, from);
     for (const fn of listeners) try { fn(text, who, page, from); } catch {}
     if (!text) return;
-    const item = { t: Date.now(), text: String(text).slice(0, 200), who: String(who).slice(0, 60) };
+    const item = { t: Date.now(), text: clipActivity(text, 200), who: String(who).slice(0, 60) };
     if (page) {
       const list = recentInTab.get(page) || [];
       list.push(item);

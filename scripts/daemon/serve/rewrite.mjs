@@ -4,17 +4,17 @@
 // saved passwords swapped in, a form filled by hand in the native browser).
 import { describe } from "../../log.mjs";
 import { fillSettings, humanFill, humanType } from "../../native/humanize.mjs";
-import { isRef, secretNamesIn } from "../../rules/policy.mjs";
+import { isRef, navigationProblem, secretNamesIn } from "../../rules/policy.mjs";
 import { isoDate } from "../../runner.mjs";
 import { within } from "../../util.mjs";
 import { reason as dragReason } from "../drag.mjs";
 import { leftAlone, ownerOf } from "../fields.mjs";
 import { sensitiveTarget } from "./pageread.mjs";
-import { tabRefusal } from "./refuse.mjs";
+import { runOpensTab, tabRefusal } from "./refuse.mjs";
 import { CLICKING_TOOLS, DECORATED, FIELD_TOOLS, NO_WAIT } from "./wire.mjs";
 
 export function createHandle(conn, api) {
-  const { approvalProblem, argProblem, browserToolProblem, collaboration, config, context, enterAfterTyping, finishResult, host, hud, internal, log, myLabel, myTab, openTabs, ownTools, personTab, popups, presence, refusal, reply, respond, secretNames, secrets, serverPage, session, syncServer, tabClaims, whenReady } = api;
+  const { approvalProblem, argProblem, browserToolProblem, collaboration, config, context, enterAfterTyping, finishResult, followTabs, host, hud, internal, log, myLabel, myTab, openTabs, ownTools, personTab, popups, presence, refusal, reply, respond, secretNames, secrets, serverPage, session, syncServer, tabClaims, whenReady } = api;
   const { callArgs, calls, fieldNotes, openMine, ownTab, participant, refNames, submitAfter, tabActions, traces } = conn;
 
   async function handle(msg) {
@@ -54,7 +54,19 @@ export function createHandle(conn, api) {
     // The browser's own pages (chrome://pairbrowse...) and the person's own tabs are never a
     // tab an agent acts in, selects or closes (tabRefusal).
     {
-      const here = ownTab() || (conn.serverAt && !conn.serverAt.isClosed() ? conn.serverAt : null);
+      let here = ownTab() || (conn.serverAt && !conn.serverAt.isClosed() ? conn.serverAt : null);
+      // A run starting with go, asked from one of the browser's own pages: it opens its own web
+      // tab there, as browser_tabs new would, and runs in it (the browser's page stays as it was).
+      const opens = runOpensTab(name, args, here);
+      if (opens && !navigationProblem(opens)) {
+        const opened = await internal("browser_tabs", { action: "new", url: opens });
+        if (opened.result && !opened.result.isError) {
+          await followTabs(opened, "new");
+          here = conn.mine;
+          // Already there: the go step stays only when it is the run's one step (a run needs a step).
+          if (args.steps.length > 1) args = { ...args, steps: args.steps.slice(1) };
+        }
+      }
       const byIndex = name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined;
       const tabNo = tabRefusal(name, args, { here, pages: byIndex ? await openTabs() : [], personTab });
       if (tabNo) return reply(msg.id, tabNo, true);

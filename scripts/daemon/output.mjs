@@ -125,6 +125,19 @@ export function hideBrowserTabs(text) {
   }).join("\n");
 }
 
+// What hideBrowserTabs took out of a browser_tabs result, said as one line ("" when nothing): how
+// many tabs, and, when the current tab is one, what to do instead. Without it a list of only the
+// browser's own pages reads as empty, and the next call's refusal comes as a surprise.
+export function hiddenTabsNote(text) {
+  const tabs = String(text).split("\n").map((line) => /^- \d+: (\(current\) )?.*\]\(([^)\s]+)\)\s*$/.exec(line)).filter(Boolean);
+  const hidden = tabs.filter((m) => isBrowserPage(m[2]));
+  if (!hidden.length) return "";
+  const one = hidden.length === 1;
+  const said = `- ${hidden.length} ${one ? "tab" : "tabs"} not listed: ${one ? "it is the browser's own page" : "they are the browser's own pages"}, which no agent reads or acts in.`;
+  if (!hidden.some((m) => m[1])) return said;
+  return `${said} Your current tab is ${one ? "that page" : "one of them"}: open a web page with browser_tabs new (url)${tabs.length > hidden.length ? " or select a listed tab" : ""}.`;
+}
+
 // The person's own tabs (a file they opened from Downloads; daemon/toolstab.mjs createPersonTabs):
 // no agent reads their address, title or content. hidePersonTabs(text, indices): a result's text
 // with each such tab's line said as the person's tab (by its number in indices, or a file: link),

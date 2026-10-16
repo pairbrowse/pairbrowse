@@ -293,3 +293,22 @@ test("savedAt(): the shown run's updatedAt, only for this session's run, and it 
   assert.equal(j.file(), file, "the same run goes on under the new name");
   assert.equal(JSON.parse(readFileSync(file, "utf8")).session, "saved-b");
 });
+
+test("clipActivity: a long line is cut at an item's end, with its bold marks paired, never inside a label", async () => {
+  const { clipActivity } = await import("../scripts/daemon/journal.mjs");
+  const filled = "Filled **Customer name**, **Telephone**, **E-mail address**, **Preferred delivery time**, **Delivery instructions**";
+  const cut = clipActivity(filled, 100);
+  assert.equal(cut, "Filled **Customer name**, **Telephone**, **E-mail address**, **Preferred delivery time**, ...");
+  assert.ok(cut.length <= 100);
+  assert.equal((cut.match(/\*\*/g) || []).length % 2, 0);
+  // Short lines unchanged; a line with no item boundary is cut at a word and its bold closed.
+  assert.equal(clipActivity("Clicked **Submit**", 100), "Clicked **Submit**");
+  const word = clipActivity(`Typed into **${"verylongfieldname ".repeat(8).trim()}**`, 60);
+  assert.ok(word.length <= 60, word);
+  assert.equal((word.match(/\*\*/g) || []).length % 2, 0, word);
+  assert.match(word, /\.\.\.$/);
+  // One very long word: a hard cut, still within the limit and paired.
+  const hard = clipActivity(`Opened **${"x".repeat(200)}**`, 50);
+  assert.ok(hard.length <= 50, hard);
+  assert.equal((hard.match(/\*\*/g) || []).length % 2, 0, hard);
+});

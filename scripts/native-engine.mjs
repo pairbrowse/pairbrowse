@@ -9,6 +9,7 @@ import { NATIVE } from "./native-pack.mjs";
 import { paths } from "./paths.mjs";
 import { within, writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
+import { switchName } from "./chrome-args.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
 export * from "./native/humanize.mjs";
@@ -289,10 +290,11 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // or public addresses outside a proxy (the engine's default deny below). A policy in the
   // config's chromeArgs that would loosen it is dropped here, whatever it says; the browser's own
   // capture page keeps its direct connections through the build's own exemption, not a switch.
-  const WEBRTC_POLICY = /^--(?:force-)?webrtc-ip-handling-policy(?:=|$)/;
-  const dropped = (merged.args ?? []).filter((a) => WEBRTC_POLICY.test(String(a)));
+  // Every spelling Chromium reads ("-webrtc-ip-handling-policy=...", "/..." on Windows) counts.
+  const webrtcPolicy = (a) => ["webrtc-ip-handling-policy", "force-webrtc-ip-handling-policy"].includes(switchName(a));
+  const dropped = (merged.args ?? []).filter(webrtcPolicy);
   if (dropped.length) log("launch: a WebRTC IP handling switch in chromeArgs was dropped: PairBrowse keeps WebRTC from showing this computer's addresses");
-  const givenArgs = (merged.args ?? []).filter((a) => !WEBRTC_POLICY.test(String(a)));
+  const givenArgs = (merged.args ?? []).filter((a) => !webrtcPolicy(a));
   pack.emitCoherenceWarnings?.({ ...fingerprint, proxy: merged.proxy, geoip: settings.geoip, headless: merged.headless, userAgent: merged.userAgent, _userArgs: givenArgs.filter((a) => !/^--pairbrowse-helper(-key-file)?=/.test(String(a))) },
     false, process.platform, CHROMIUM_MAJOR);
   const { args: proxyArgs, proxy } = pack.resolveProxy(merged.proxy, pack.engineSupportsSwitch(options.executablePath, "proxy-auth"));

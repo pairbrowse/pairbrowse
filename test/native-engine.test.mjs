@@ -544,16 +544,16 @@ packTest("native launch refuses options this engine can't honour", async () => {
     { executablePath: app.executablePath }, pack), /does not support pairbrowse\.socks5Udp/);
 });
 
-packTest("a WebRTC IP policy in chromeArgs never loosens the default deny", async () => {
+packTest("a WebRTC IP policy in chromeArgs never loosens the default deny, in any spelling", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-profile-"));
   const chromium = fakeChromium();
   const lines = [];
   await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, directory,
-    { executablePath: app.executablePath, headless: false, args: ["--webrtc-ip-handling-policy=default", "--force-webrtc-ip-handling-policy", "--lang=en"] }, pack, (l) => lines.push(l));
+    { executablePath: app.executablePath, headless: false, args: ["--webrtc-ip-handling-policy=default", "--force-webrtc-ip-handling-policy", "-webrtc-ip-handling-policy=default", "--WebRTC-IP-Handling-Policy=default", ...(process.platform === "win32" ? ["/webrtc-ip-handling-policy=default"] : []), "--lang=en"] }, pack, (l) => lines.push(l));
   const args = chromium.calls[0].options.args;
-  const rtc = args.filter((a) => /webrtc-ip-handling-policy/.test(a));
+  const rtc = args.filter((a) => /webrtc-ip-handling-policy/i.test(a));
   assert.deepEqual(rtc, ["--webrtc-ip-handling-policy=disable_non_proxied_udp"], rtc.join(" "));
   assert.ok(args.includes("--lang=en"), "other switches pass");
   assert.ok(lines.some((l) => /WebRTC IP handling switch in chromeArgs was dropped/.test(l)));

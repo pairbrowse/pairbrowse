@@ -1654,11 +1654,23 @@ describe("side panel: header, agent card, people, pause, requests and folding", 
   assert.deepEqual(JSON.parse(await inPage(() => localStorage.getItem("__store"))), { "pb-panel": { collapsed: ["dev", "hosts", "details", "secrets"] } });
   // Keyboard: a disclosure takes focus and toggles with Enter (Remembered details is on the Tools tab).
   await page.click("#tab-tools");
-  // Every Tools section in the side panel (no Settings page here): the profile sections stay and
-  // the Settings row is the browser's only.
+  // Every Tools section in the side panel: the profile sections stay, and the Settings row opens
+  // the extension's options page (the same Settings page), as the header's gear does.
   assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll("#pane-tools .scroll > section")].map((sec) => sec.id)),
     ["sec-handoffs", "sec-downloads", "sec-recordings", "dev", "hosts", "sec-details", "sec-secrets", "sec-settings-link", "sec-diag"]);
-  assert.deepEqual(await page.evaluate(() => ["sec-details", "sec-secrets", "sec-settings-link"].map((id) => document.getElementById(id).checkVisibility())), [true, true, false]);
+  assert.deepEqual(await page.evaluate(() => ["sec-details", "sec-secrets", "sec-settings-link"].map((id) => document.getElementById(id).checkVisibility())), [true, true, true]);
+  assert.equal(await inPage(() => document.getElementById("top-settings").checkVisibility()), true);
+  await inPage(() => { window.__chromeCalls.length = 0; document.getElementById("open-settings").click(); });
+  assert.deepEqual(await inPage(() => window.__chromeCalls), [], "a script's click opens nothing");
+  await page.click("#open-settings");
+  await page.click("#top-settings");
+  assert.deepEqual(await inPage(() => window.__chromeCalls.map(([name]) => name)), ["runtime.openOptionsPage", "runtime.openOptionsPage"]);
+  // The toolbar button's menu and Settings ask for the Tools tab through session storage
+  // ("panelTab"): shown, then the key cleared.
+  await page.click("#tab-agent");
+  await inPage(() => { window.__chromeCalls.length = 0; return window.chrome.storage.session.set({ panelTab: "tools" }); });
+  await until("the Tools tab", () => document.body.dataset.tab === "tools");
+  assert.deepEqual(await inPage(() => window.__chromeCalls.at(-1)), ["storage.session.remove", "panelTab"]);
   lv.push("joinhost", { asks: [], hosts: [{ host: "tunnel.example.org", always: true }] });
   await until("Join addresses", () => document.getElementById("hosts").checkVisibility());
   await page.focus("#sec-details .disclose");

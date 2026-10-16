@@ -16,6 +16,8 @@
     <h1>PairBrowse</h1>
     <span class="where pill" id="where" hidden></span>
     <ul class="avatars" id="avatars" aria-label="In this session"></ul>
+    <!-- Settings (the extension's options page, settings/index.html); right.js shows it in the extension host. -->
+    <button class="gear" id="top-settings" type="button" aria-label="Settings" title="Settings" hidden><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14.48 6.74L14.48 9.26L12.69 9.43L12.33 10.3L13.47 11.69L11.69 13.47L10.3 12.33L9.43 12.69L9.26 14.48L6.74 14.48L6.57 12.69L5.7 12.33L4.31 13.47L2.53 11.69L3.67 10.3L3.31 9.43L1.52 9.26L1.52 6.74L3.31 6.57L3.67 5.7L2.53 4.31L4.31 2.53L5.7 3.67L6.57 3.31L6.74 1.52L9.26 1.52L9.43 3.31L10.3 3.67L11.69 2.53L13.47 4.31L12.33 5.7L12.69 6.57Z"/><circle cx="8" cy="8" r="2"/></g></svg></button>
   </header>
 
   <div class="tabs">
@@ -202,8 +204,9 @@
           </div>
         </section>
 
-        <!-- The browser build: Passwords, Remembered details, Join addresses and Diagnostics have one home, the
-             Settings page (DESIGN.md Part G); right.js shows this row only with the browser's API. -->
+        <!-- One row for the Settings page. The browser build: Passwords, Remembered details, Join addresses and
+             Diagnostics have one home there (DESIGN.md Part G). The extension host keeps those here and
+             opens its options page (the same Settings page) for the rest; right.js words the note. -->
         <section class="settings-link" id="sec-settings-link" aria-labelledby="settings-link-note" hidden>
           <p class="note" id="settings-link-note">Passwords, remembered details, join addresses and diagnostics are in Settings.</p>
           <button class="act" id="open-settings" type="button">Open settings</button>

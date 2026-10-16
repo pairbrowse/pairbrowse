@@ -10,7 +10,7 @@
 // read() gives the live view's Timeline the current run, every line masked again on read (a
 // run_save can take the file over with lines the journal never masked), capped, never polled.
 import { runFile, readRuns, currentFile, STALE_MS, liveAutoRun } from "../runs.mjs";
-import { readJson, writeJsonAtomic, within } from "../util.mjs";
+import { clipActivity, readJson, writeJsonAtomic, within } from "../util.mjs";
 
 const FLUSH_MS = 3000;
 const MAX_LINES = 150; // pages kept in `done`
@@ -21,27 +21,6 @@ const MAX_TABS = 20;
 // first or second look, mostly; a title a script sets later is caught by a later one.
 const TITLE_LOOKS_MS = [150, 400, 800, 1500, 3000];
 const uniq = (a) => [...new Set(a.filter(Boolean))];
-// A description within max characters: cut after the last whole item ("**A**, **B**, ..."), else
-// at a word, else hard, with "..." after it and every bold mark paired (never "**Delivery; ...").
-export function clipActivity(text, max = ACT_MAX) {
-  const s = String(text);
-  if (s.length <= max) return s;
-  const cut = (room) => {
-    const head = s.slice(0, room);
-    const item = Math.max(head.lastIndexOf(", "), head.lastIndexOf("; "));
-    if (item > 0) return s.slice(0, item + 2);
-    const word = head.lastIndexOf(" ");
-    return word > 0 ? head.slice(0, word).trimEnd() : head;
-  };
-  const open = (t) => (t.match(/\*\*/g) || []).length % 2 === 1;
-  let out = cut(max - 3);
-  if (open(out)) {
-    out = cut(max - 5).replace(/[\s,;]+$/, "");
-    if (open(out)) out += "**";
-    out += " ";
-  }
-  return `${out}...`.slice(0, max);
-}
 const isoNow = (t) => new Date(t).toISOString();
 const siteOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, "") || "page"; } catch { return "page"; } };
 const webUrl = (url) => /^https?:\/\//.test(String(url || ""));
@@ -146,7 +125,7 @@ export function createJournal({ session = () => "default", openPages = async () 
   // One of the bar's lines (hud.addActivity): text, who did it, the tab, the joiner it came from.
   function activity(text, _who = "", page = null, from = "") {
     if (!text || from) return; // a joined session keeps its own log
-    const act = clipActivity(clean(text));
+    const act = clipActivity(clean(text), ACT_MAX);
     // Opening a page: the bar says so before the tab moves, so the address is in the line.
     const opened = act.match(/^Opened (\S+)/);
     let url = opened ? opened[1] : page && !page.isClosed() ? page.url() : "";

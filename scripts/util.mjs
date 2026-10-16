@@ -177,3 +177,25 @@ export function readAccount({ platform = process.platform, user = () => userInfo
 // Read once: an account's name doesn't change while the helper runs, and id/getent cost a process.
 let account = null;
 export const currentAccount = () => (account ??= readAccount());
+
+// A description within max characters: cut after the last whole item ("**A**, **B**, ..."), else
+// at a word, else hard, with "..." after it and every bold mark paired (never "**Delivery; ...").
+export function clipActivity(text, max) {
+  const s = String(text);
+  if (s.length <= max) return s;
+  const cut = (room) => {
+    const head = s.slice(0, room);
+    const item = Math.max(head.lastIndexOf(", "), head.lastIndexOf("; "));
+    if (item > 0) return s.slice(0, item + 2);
+    const word = head.lastIndexOf(" ");
+    return word > 0 ? head.slice(0, word).trimEnd() : head;
+  };
+  const open = (t) => (t.match(/\*\*/g) || []).length % 2 === 1;
+  let out = cut(max - 3);
+  if (open(out)) {
+    out = cut(max - 5).replace(/[\s,;]+$/, "");
+    if (open(out)) out += "**";
+    out += " ";
+  }
+  return `${out}...`.slice(0, max);
+}

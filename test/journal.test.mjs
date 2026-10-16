@@ -295,7 +295,7 @@ test("savedAt(): the shown run's updatedAt, only for this session's run, and it 
 });
 
 test("clipActivity: a long line is cut at an item's end, with its bold marks paired, never inside a label", async () => {
-  const { clipActivity } = await import("../scripts/daemon/journal.mjs");
+  const { clipActivity } = await import("../scripts/util.mjs");
   const filled = "Filled **Customer name**, **Telephone**, **E-mail address**, **Preferred delivery time**, **Delivery instructions**";
   const cut = clipActivity(filled, 100);
   assert.equal(cut, "Filled **Customer name**, **Telephone**, **E-mail address**, **Preferred delivery time**, ...");

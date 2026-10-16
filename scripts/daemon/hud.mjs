@@ -3,8 +3,7 @@
 // of a shared tab), and Claude's cursor.
 import { hudScript } from "../browser.mjs";
 import { isRef } from "../rules/policy.mjs";
-import { within, sleep } from "../util.mjs";
-import { clipActivity } from "./journal.mjs";
+import { clipActivity, within, sleep } from "../util.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 import { APP_COLORS, AGENT_FALLBACKS } from "../../ui/vocab.js";
 

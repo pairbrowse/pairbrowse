@@ -5,7 +5,7 @@
 
 ## Context
 
-The browser holds the user's logins. A Chrome DevTools Protocol port on localhost
+The browser holds the user's logins. A DevTools Protocol (CDP) port on localhost
 (`--remote-debugging-port`) lets any local program, or any other user on the machine, attach and
 drive that logged-in browser with no key. Browser automation tools commonly open such a port.
 
@@ -27,13 +27,13 @@ drive that logged-in browser with no key. Browser automation tools commonly open
 - The helper must own the browser's lifetime; it can't attach to an already running browser, so a
   hand-opened PairBrowse window goes through the opener (`scripts/open.mjs`).
 - Tools that expect a CDP endpoint can't be pointed at the PairBrowse browser.
-- `chromeArgs` in the user's own `config.json` can't add one either: they are screened against an
+- `browserArgs` (older name `chromeArgs`) in the user's own `config.json` can't add one either: they are screened against an
   allowlist before launch (language, window, scale, colors and fonts, GPU and display backend,
   sound, notifications, and a few more, each with a value of the shape it takes). A remote
   debugging switch (port, address, pipe), `--remote-allow-origins` and every other switch not on
   the list (programs run in place of browser processes, certificate checks or site isolation off,
   a proxy) are dropped, as is every argument that isn't a switch, with a log line and a
-  `pairbrowse_status` warning naming them (`scripts/chrome-args.mjs`). Before this, `chromeArgs`
+  `pairbrowse_status` warning naming them (`scripts/browser-args.mjs`). Before this, those args
   were passed through as given and the guarantee was only that PairBrowse adds no port; a denylist
   came next and missed switches. The driver's own pipe comes from its launch options, not from
   these args, and is unaffected.
@@ -43,6 +43,6 @@ drive that logged-in browser with no key. Browser automation tools commonly open
 - `scripts/daemon.mjs` (header: the security model; the socket server)
 - `scripts/engine.mjs`: `launchEngine` (`launchPersistentContext`)
 - `scripts/browser.mjs`: `launchOptions`, `launchArgs` (no debugging switch)
-- `scripts/chrome-args.mjs`: `ALLOWED`, `screenChromeArgs` (the user's chromeArgs screened; `paths.mjs` `loadConfig` warns)
+- `scripts/browser-args.mjs`: `ALLOWED`, `screenBrowserArgs` (the user's browserArgs screened; `paths.mjs` `loadConfig` warns)
 - `scripts/daemon/browser/launch.mjs` (the helper's launch)
 - `scripts/opener.mjs`, `scripts/open.mjs` (a hand-opened browser reaches the helper's socket)

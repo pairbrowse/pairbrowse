@@ -14,11 +14,11 @@ answer its own approvals.
 
 ## Decision
 
-- The build shows its own pages and Chromium's as `pairbrowse://<name>` (a display rewrite; the
+- The build shows its own pages and the engine's built-in ones as `pairbrowse://<name>` (a display rewrite; the
   committed address stays `chrome://`, which is what a tab reports) and opens them when typed so.
   `ownPage(name)` builds such an address for links.
 - Every `pairbrowse:` address and every `chrome://pairbrowse` or `chrome://pairbrowse.top-chrome`
-  address, under either spelling, is the browser's own (`isChromePage`). Agents can't navigate to
+  address, under either spelling, is the browser's own (`isBrowserPage`). Agents can't navigate to
   one, select or close one, or have one as their tab; tab lists, the live view and joiners never
   get them. The one exception is a fresh, unused new tab page, which `browser_navigate` may take
   to a web address.
@@ -34,7 +34,7 @@ answer its own approvals.
 
 ## In code
 
-- `ui/urls.js`: `ownPage`, `isChromePage`, `isChromeScreenPage`, `hiddenFromLiveView`,
-  `isOwnTabPage`, `isSettingsPage`, `CHROME_PAGE_ORIGINS`
-- `scripts/rules/policy.mjs` (navigation refusal via `isChromePage`)
+- `ui/urls.js`: `ownPage`, `isBrowserPage`, `isBrowserScreenPage`, `hiddenFromLiveView`,
+  `isOwnTabPage`, `isSettingsPage`, `BROWSER_PAGE_ORIGINS`
+- `scripts/rules/policy.mjs` (navigation refusal via `isBrowserPage`)
 - `scripts/daemon/join/screens.mjs` (the picture page under its `pairbrowse://` name)

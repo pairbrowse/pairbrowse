@@ -1,6 +1,6 @@
 ---
 name: pairbrowse
-description: Fill in web sign-ups, registrations, app listings, store settings and other multi-page forms in the user's visible PairBrowse Chrome window, fast, while the user handles CAPTCHAs, 2FA and final submits. Use when the user asks to register, sign up, set up, list, apply, onboard or fill in anything on a website, or refers to "the browser", "this tab" or "the open tabs".
+description: Fill in web sign-ups, registrations, app listings, store settings and other multi-page forms in the user's visible PairBrowse browser window, fast, while the user handles CAPTCHAs, 2FA and final submits. Use when the user asks to register, sign up, set up, list, apply, onboard or fill in anything on a website, or refers to "the browser", "this tab" or "the open tabs".
 ---
 
 # PairBrowse reference

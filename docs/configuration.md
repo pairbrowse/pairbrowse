@@ -5,18 +5,19 @@
 ```json
 {
   "browser": "pairbrowse",
-  "chromeArgs": ["--lang=en-US"]
+  "browserArgs": ["--lang=en-US"]
 }
 ```
 
 - `browser`: which browser PairBrowse runs. `"pairbrowse"`: the native PairBrowse browser;
-  `"chromium"`: ungoogled-chromium on macOS, Playwright's Chromium elsewhere, with the PairBrowse
-  side panel; or an absolute path to Brave, Arc, Vivaldi or another Chromium-based browser of your
-  own, launched like `"chromium"`. Unset: `"pairbrowse"` where a build is pinned for your computer,
-  else `"chromium"`; the helper uses that default without writing it, and says so once in its log.
-  A path must be an existing, executable file: otherwise the helper logs
-  `browser: <path> isn't an executable file; using Chromium instead` and starts Chromium. With
-  `"chromium"` or a path, nothing is downloaded or installed for the native browser. You're asked
+  `"pairbrowse-open"`: PairBrowse (open build), a pinned open-source build on macOS and
+  Playwright's browser elsewhere, with the PairBrowse side panel (the older value `"chromium"` still
+  works and means the same); or an absolute path to Brave, Arc, Vivaldi or another compatible
+  browser of your own, launched like `"pairbrowse-open"`. Unset: `"pairbrowse"` where a build is
+  pinned for your computer, else `"pairbrowse-open"`; the helper uses that default without writing
+  it, and says so once in its log. A path must be an existing, executable file: otherwise the helper
+  logs `browser: <path> isn't an executable file; using PairBrowse (open build) instead` and
+  starts the open build. With `"pairbrowse-open"` or a path, nothing is downloaded or installed for the native browser. You're asked
   once: in the terminal of the by-hand install step (`node scripts/native-install.mjs <file>`; Enter
   is PairBrowse), and in the browser's Settings page. Switching takes effect when the browser next
   starts on the same session profile: close the PairBrowse window or switch session. Sessions,
@@ -27,9 +28,10 @@
   (optional opt-in: plain Playwright, easier for sites to detect). On a Node.js too old for
   Patchright, PairBrowse uses Playwright by itself and says so once (see [Install](install.md)); the
   pinned Playwright also requires Node.js 20+, so Node.js 20 or newer is effectively required either way.
-- `chromeArgs`: extra Chromium flags, from a fixed list; anything else is dropped before launch and
+- `browserArgs`: extra browser flags, from a fixed list (the older name `chromeArgs` is still read
+  while `browserArgs` is unset, screened the same way); anything else is dropped before launch and
   named once in the helper log and as a warning in `pairbrowse_status`. The list, each with the
-  value it takes after `=` (Chromium never reads a switch's value from the next item, so write
+  value it takes after `=` (the browser never reads a switch's value from the next item, so write
   `"--lang=de"`, not `"--lang", "de"`):
   - language and window: `--lang=<language tag>`, `--window-size=<w>,<h>`,
     `--window-position=<x>,<y>`, `--start-maximized`, `--force-device-scale-factor=<number>`;
@@ -50,19 +52,20 @@
   - `--host-resolver-rules=` with rules that keep a name on this computer only:
     `MAP <name> 127.0.0.1[:port]` (or `localhost`, `[::1]`), `MAP <name> ~NOTFOUND`, `EXCLUDE <name>`;
   - `--headless` (`=new` or `=old`), for test runs ([ADR 0009](adr/0009-always-headed.md));
-  - `--no-sandbox`, on Linux only, which works as `"chromeSandbox": false` in any spelling (refused on
+  - `--no-sandbox`, on Linux only, which works as `"browserSandbox": false` in any spelling (refused on
     macOS and Windows, where the sandbox always stays on).
 
   Everything else is dropped: a debugging port, address or pipe, `--remote-allow-origins`,
   switches that run another program in place of a browser process (`--renderer-cmd-prefix`,
   `--gpu-launcher`, `--browser-subprocess-path`), certificate or web security checks off, a proxy,
   `--disable-features` (it is how site isolation is turned off), another profile or extension, and
-  any switch not listed above. So is every item that isn't a switch (Chromium would open it as a
+  any switch not listed above. So is every item that isn't a switch (the browser would open it as a
   page or file), and everything after a bare `--`. A switch written `-x`, or `/x` on Windows, is
   read like `--x`. A browser the test suite starts also takes `--use-mock-keychain`,
   `--password-store=basic` and `--disable-features=LocalNetworkAccessChecks`; an installed helper
   never does.
-- `chromeSandbox`: on Linux, `false` turns off Chromium's own sandbox (default `true`); on macOS and
+- `browserSandbox`: on Linux, `false` turns off the browser's own sandbox (default `true`; the
+  older name `chromeSandbox` is still read while `browserSandbox` is unset); on macOS and
   Windows it always stays on and `false` is refused (a warning in `pairbrowse_status`). PairBrowse
   turns it off by itself only on Linux, where it can't run: as root, and where the system has no
   user namespaces (Docker's default seccomp profile or Ubuntu's AppArmor rule blocks them). While

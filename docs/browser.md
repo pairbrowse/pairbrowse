@@ -6,24 +6,25 @@ PairBrowse checks where Claude Code runs and shows the browser in the matching w
 
 | Claude Code | The browser |
 |---|---|
-| Terminal (CLI) or IDE | The **PairBrowse browser**: a Chromium window of its own (on macOS named PairBrowse, with its icon in the Dock). Pages render natively, so scrolling and clicking feel like Chrome. See [The PairBrowse browser](#the-pairbrowse-browser). |
+| Terminal (CLI) or IDE | The **PairBrowse browser**: a window of its own (on macOS named PairBrowse, with its icon in the Dock). Pages render natively, so scrolling and clicking feel like any everyday browser. See [The PairBrowse browser](#the-pairbrowse-browser). |
 | Desktop app (macOS), the Claude workspace | A pane on the right of the Claude window (`pairbrowse_dock`), styled like Claude's own UI and moving, resizing and hiding with it. It attaches beside the window when the screen has room, or inside its right edge when it doesn't. No permission needed; set `"dockMakeRoom": true` to let it narrow the Claude window once (needs Accessibility). |
 | Desktop app, Browser pane | The live view link also opens in the app's own Browser pane (Local sessions). |
 | Cloud session | Runs in the cloud container, which you can't see into. Fine for jobs without logins; use a local session for signups. |
 
 ## The PairBrowse browser
 
-PairBrowse runs its own browser: a normal, headed Chromium, so pages render natively and sites
+PairBrowse runs its own browser: a normal, headed browser, so pages render natively and sites
 treat it like a regular browser. Claude drives it over the private pipe, with no debugging port.
 There's no headless mode.
 
-- **macOS:** a pinned build of [ungoogled-chromium](https://github.com/ungoogled-software/ungoogled-chromium-macos)
-  (notarized by that project), downloaded once (about 150 MB), checked against the SHA-256 in
-  `scripts/browser.mjs` and its notarization, and copied into `~/.pairbrowse/browser/PairBrowse.app`
-  (`PairBrowse Chromium.app` when the native build below is installed there) as PairBrowse everywhere you can see it: name, icon, notifications, menus and Chromium's own
-  interface text in every language (internal framework file names stay, Chromium needs them). It runs with
+- **macOS (open build):** a pinned, notarized open-source build (its source address, version and
+  SHA-256 are in `scripts/browser.mjs`), downloaded once (about 150 MB), checked against that
+  SHA-256 and its notarization, and copied into `~/.pairbrowse/browser/PairBrowse.app` (moved to an
+  app of its own next to it when the native build below is installed there) as PairBrowse
+  everywhere you can see it: name, icon, notifications, menus and the browser's own interface text
+  in every language (internal framework file names stay, the engine needs them). It runs with
   `--show-avatar-button=never`, so the toolbar has no profile button. Energy Saver is off. A new version is a deliberate change of the pinned version and checksum.
-- **Windows and Linux:** Playwright's own Chromium, downloaded once (about 100 MB).
+- **Windows and Linux (open build):** Playwright's own browser build, downloaded once (about 100 MB).
 - **The PairBrowse side panel**: click the pinned PairBrowse button in the toolbar, or press
   **Cmd+Shift+Y** (Ctrl+Shift+Y on Windows and Linux). It shows what Claude is doing, "Your turn" when Claude
   needs you, the activity list, and the Profile (remembered details and passwords).
@@ -31,15 +32,15 @@ There's no headless mode.
 - **Claude's tab** carries the orange spark as its tab icon, and the spark moves with Claude.
 - **Claude's cursor**: a white pointer glides to where Claude clicks, types or chooses, with a
   ring on clicks. It never takes clicks and is hidden from Claude's view.
-- **PairBrowse, not Chrome**: the browser's own pages, its name and its logo there say PairBrowse
-  (Chromium keeps its copyright credit on the About page). Chrome's own sign-in and sync, guest and extra profiles,
+- **PairBrowse everywhere**: the browser's own pages, its name and its logo there say PairBrowse
+  (the engine's open-source credits stay on the About page). The engine's own browser sign-in and sync, guest and extra profiles,
   the default-browser check, translate prompts, and its password manager and autofill popups are
   off: PairBrowse has its own sessions, fills forms itself and keeps passwords in its own file.
   Signing into Google or any other site works as usual.
 - **The bottom bar** in each page shows who's driving and Claude's last actions. It never takes
   clicks, fades out when your pointer nears the bottom of the page, and is hidden from Claude's view.
 - It loads one extension of its own and no others: `ui/` (the side panel, new tab, picker, picture and capture pages,
-  which talk only to the key-protected live view on 127.0.0.1). Its navy colors are Chromium's
+  which talk only to the key-protected live view on 127.0.0.1). Its navy colors are the browser's
   built-in color theme, set in the profile (no theme extension, no "Installed theme" bar); pick
   another in Settings > Appearance and PairBrowse keeps it.
   With a native build that declares its own pages, no extension is loaded: the helper passes the
@@ -47,8 +48,8 @@ There's no headless mode.
   by `--pairbrowse-helper-key-file` (deleted once used; the key is never on the command line), the
   session picker is
   `chrome://pairbrowse/picker`, and agents never see or drive `chrome://pairbrowse` pages.
-- Set `"browser": "/path/to/chromium"` in `~/.pairbrowse/config.json` to use Brave, Arc, Vivaldi
-  or another Chromium build instead (an absolute path to its program).
+- Set `"browser": "/path/to/browser"` in `~/.pairbrowse/config.json` to use Brave, Arc, Vivaldi
+  or another compatible browser instead (an absolute path to its program).
 
 ## See it inside the Claude desktop app
 
@@ -68,7 +69,7 @@ The desktop app's Browser pane is available in **Local** sessions (not cloud ses
    - **Activity** along the bottom: what Claude just filled and clicked.
    - **Fit to pane** renders the page at the pane's size, so it stays readable in a narrow pane.
      It switches off when you close the live view.
-   Click and type in it as you would in Chrome; paste works too.
+   Click and type in it as you would in any browser; paste works too.
 
 The live view is a private page on `127.0.0.1` with a random key in its address. Don't share
 the link: whoever has it can use the browser while it's running. To let someone else in, make
@@ -77,17 +78,17 @@ them an invite link instead (see [Working together](sharing.md)).
 ## The native PairBrowse browser
 
 Which browser runs is one setting, `"browser"` in `~/.pairbrowse/config.json`: `"pairbrowse"`
-(the native PairBrowse browser), `"chromium"` (the open-source browser with the PairBrowse side
-panel) or an absolute path to a Chromium-based browser of your own. Unset, it's `"pairbrowse"` where
-a build is pinned for your computer (a Mac, Apple Silicon or Intel, and Linux x64), else
-`"chromium"`. You're asked once, in the terminal of the by-hand install step below and in the
-browser's Settings page; a change takes effect when the browser next starts. With `"chromium"` or a
-path, nothing is downloaded or installed for the native browser and it is never launched.
+(the native PairBrowse browser), `"pairbrowse-open"` (PairBrowse (open build): the open-source
+browser with the PairBrowse side panel; the older `"chromium"` still works) or an absolute path to a
+compatible browser of your own. Unset, it's `"pairbrowse"` where a build is pinned for your computer
+(a Mac, Apple Silicon or Intel, and Linux x64), else `"pairbrowse-open"`. You're asked once, in the
+terminal of the by-hand install step below and in the browser's Settings page; a change takes effect
+when the browser next starts. With `"pairbrowse-open"` or a path, nothing is downloaded or installed for the native browser and it is never launched.
 
-The native PairBrowse browser is a hardened Chromium build made for PairBrowse that looks like an
+The native PairBrowse browser is a hardened build made for PairBrowse that looks like an
 everyday browser to sites, so you see fewer CAPTCHAs. It never switches to another browser on its
 own: if the build can't be installed, or there's none for your platform yet (Windows x64 follows),
-the browser doesn't start and says why. To use Chromium instead, set `"browser": "chromium"`.
+the browser doesn't start and says why. To use the open build instead, set `"browser": "pairbrowse-open"`.
 While it installs (the first start, or a new version), a
 notification says so, and agents answer "installing" right away instead of waiting.
 
@@ -97,7 +98,7 @@ PairBrowse picks the build for your platform and chip, downloads it once from it
 the previous version for rollback. With it comes the small engine pack the native browser launches
 with (fingerprint switches and humanized input), checked the same way. It installs at
 `~/.pairbrowse/browser/PairBrowse.app` on macOS and `~/.pairbrowse/browser/PairBrowse` on Linux and
-Windows. To install a file by hand (it installs nothing while `browser` is `"chromium"` or a path,
+Windows. To install a file by hand (it installs nothing while `browser` is `"pairbrowse-open"` or a path,
 and asks which browser to use when nobody chose yet):
 
 ```bash
@@ -117,20 +118,19 @@ The PairBrowse browser binary is licensed under [`BINARY-LICENSE.md`](../BINARY-
 non-commercial use; commercial use, redistribution and reverse engineering of PairBrowse's own
 additions need written permission. A PairBrowse Pro license adds commercial use, ready-made builds and
 updates, and access to the native build's source and pipeline (patches, build, packaging, smoke
-test and updater live in the private PairBrowse Pro repository), where Pro members can contribute.
-See [`CONTRIBUTING.md`](../CONTRIBUTING.md). The plugin and helper source stay MIT ([`LICENSE`](../LICENSE)), and third-party
-components inside the binary (Chromium and the projects in its notices) keep their own licenses
-and the rights they give.
+test and updater live in the private PairBrowse Pro repository), The plugin and helper source stay MIT ([`LICENSE`](../LICENSE)), and third-party
+components inside the binary (the projects in its notices) keep their own licenses and the rights
+they give.
 
 **Browser compatibility hardening.** Automated browsers often differ from everyday ones in ways
 sites notice. The native browser keeps those differences out: it launches without the automation
-flag and with Chromium's AutomationControlled feature off, through the Patchright driver (the
+flag and with the engine's AutomationControlled feature off, through the Patchright driver (the
 default `browserDriver`); on a Mac its fingerprint is captured from your own Mac, so it stays coherent with
 the real machine and is saved per profile (the capture runs once per Mac in a hidden browser on
 the real GPU, and is kept in a private `~/.pairbrowse/mac-host-profile.json` until the browser
 version or hardware changes; that first launch takes up to a minute longer, and the live view's
 status line and a notification say "Measuring this Mac once" while it runs); time zone and language follow your system; and WebRTC
-doesn't reveal your local addresses (a WebRTC IP policy in `chromeArgs` can't loosen that: it is dropped). The goal is that sites see a normal browser, not
+doesn't reveal your local addresses (a WebRTC IP policy in `browserArgs` can't loosen that: it is dropped). The goal is that sites see a normal browser, not
 to get around a site's security (see [Intended use](../README.md#intended-use)).
 
 **Human-like input (native browser).** On by default: an agent's single clicks, drags and typing
@@ -190,8 +190,8 @@ its own speed, tremor and habits throughout. `"classic"` uses the engine's own s
 { "pairbrowse": { "motion": "quick" } }
 ```
 
-For a fully open-source setup, set `"browser": "chromium"` in `~/.pairbrowse/config.json`:
-ungoogled-chromium on macOS, Playwright's Chromium elsewhere, both under their own open licenses.
-With it, PairBrowse removes Playwright's automation flag and disables
-Chromium's AutomationControlled feature. That stops basic `navigator.webdriver` checks, nothing
+For a fully open-source setup, set `"browser": "pairbrowse-open"` in `~/.pairbrowse/config.json`:
+PairBrowse (open build), a pinned open-source build on macOS and Playwright's browser elsewhere,
+both under their own open licenses. With it, PairBrowse removes Playwright's automation flag and
+disables the engine's AutomationControlled feature. That stops basic `navigator.webdriver` checks, nothing
 more.

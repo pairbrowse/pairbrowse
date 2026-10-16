@@ -50,7 +50,7 @@ Ask for something, for example:
 
 The first time, PairBrowse sets itself up (a minute or two): it installs its browser runtime into
 `~/.pairbrowse`, downloads its browser once (about 150 MB), and opens the **PairBrowse browser**,
-a separate window with its own profile (your everyday Chrome isn't touched). Sign into the sites
+a separate window with its own profile (your everyday browser isn't touched). Sign into the sites
 you'll need (your mail, Shopify Partners and so on); they stay signed in next time. Add your
 company details and passwords in the Profile panel: the PairBrowse button in the browser's
 toolbar, or Cmd+Shift+Y (Ctrl+Shift+Y on Windows and Linux).

@@ -19,7 +19,7 @@ step in whenever you like. Sites see an everyday browser, not an automated one.
 - **Built for working together.** Send a watch or drive code: a teammate sees the same tabs live,
   clicks and types with their own cursor, and their Claude or Codex can work in another tab of the
   same session. Pause every agent at once with one click.
-- **Stealth browser with a real fingerprint.** A hardened Chromium driven through
+- **Stealth browser with a real fingerprint.** A hardened browser driven through
   [Patchright](https://www.npmjs.com/package/patchright) instead of stock Playwright: no
   automation flag, AutomationControlled off, no debugging port. On a Mac the fingerprint is
   captured from your own machine and kept per profile, so the GPU and WebGL it reports, time zone and
@@ -28,7 +28,7 @@ step in whenever you like. Sites see an everyday browser, not an automated one.
 - **Fast, accurate forms.** Fast mode fills a whole page (fields, dropdowns, checkboxes, Next) in
   one action from the page's accessibility tree, then checks a screenshot for what the tree
   can't show. Remembered details mean no retyping; Pay, delete, publish and send still wait for you.
-- **Separate from your everyday Chrome, but it remembers.** Logins persist in their own profile,
+- **Separate from your everyday browser, but it remembers.** Logins persist in their own profile,
   one per client if you like. Passwords are filled only on the sites you allow and never shown to
   the model. Half-finished jobs resume tomorrow.
 
@@ -43,20 +43,21 @@ Restart Claude Code. Needs Node.js 20+ and Claude Code running on your computer 
 session). Codex: see [docs/codex.md](docs/codex.md). Update, uninstall and a local checkout:
 [docs/install.md](docs/install.md).
 
-## Two ways to run it: the native browser or the extension
+## Two ways to run it: the native build or the open build
 
 - **The native PairBrowse browser** (the default on a Mac, Apple Silicon or Intel, and on Linux
-  x64). A hardened Chromium build made for PairBrowse, with its own tab strip, docks, new tab page
+  x64). A hardened build made for PairBrowse, with its own tab strip, docks, new tab page
   and Settings built in, and pointers of the people who joined drawn by the browser itself. It
   looks like an everyday browser to sites, so you see fewer CAPTCHAs.
-- **The PairBrowse extension in Chromium**, for people who'd rather have the Chrome they know:
-  open-source Chromium (the browser Chrome is built on: Chrome's menus, settings and toolbar) with
-  PairBrowse as an extension in it: the side panel (Cmd+Shift+Y, Ctrl+Shift+Y off a Mac), its
-  toolbar menu, Settings, and the downloads, recordings and hand-offs lists. Fully open source, so it's also the choice for
-  commercial use without a Pro license. Windows uses this until the native build arrives.
+- **PairBrowse (open build)**, for people who'd rather have the classic browser menus, settings
+  and toolbar: the fully open-source browser with PairBrowse as an extension in it: the side panel
+  (Cmd+Shift+Y, Ctrl+Shift+Y off a Mac), its toolbar menu, Settings, and the downloads, recordings
+  and hand-offs lists. Fully open source, so it's also the choice for commercial use without a Pro
+  license. Windows uses this until the native build arrives.
 
-Pick one with `"browser"` in `~/.pairbrowse/config.json`: `"pairbrowse"` (native) or `"chromium"`
-(extension); PairBrowse asks once, and Settings can switch it. Everything else (agents, sharing,
+Pick one with `"browser"` in `~/.pairbrowse/config.json`: `"pairbrowse"` (native) or
+`"pairbrowse-open"` (open build; the older `"chromium"` still works); PairBrowse asks once, and
+Settings can switch it. Everything else (agents, sharing,
 sessions, safety) works the same in both. Details: [The browser](docs/browser.md).
 
 ## Try it
@@ -84,9 +85,9 @@ in that file and goes only to the provider's own program. Setup for each is in
 
 ## Compared with the built-in browsers
 
-| | Claude Code + Chrome | Codex browser | PairBrowse |
+| | Claude Code's browser extension | Codex browser | PairBrowse |
 |---|---|---|---|
-| Browser it drives | Your everyday Chrome | Codex's own browser | Its own browser and profile |
+| Browser it drives | Your everyday browser | Codex's own browser | Its own browser and profile |
 | Resume a half-finished job another day | No saved runs | Sometimes; often the state is lost | Yes: saved runs, tabs and logins |
 | Share a live session with a teammate and their agent | No | No | Yes |
 | Works from both Claude Code and Codex | No | No | Yes |
@@ -121,11 +122,11 @@ use it on your own accounts and accept each site's terms.
 ## Open source, honestly
 
 The plugin and helper are MIT ([LICENSE](LICENSE)). On macOS and Linux x64 the default `browser`
-setting (`"pairbrowse"`) downloads the native PairBrowse browser, a closed Chromium build that's
+setting (`"pairbrowse"`) downloads the native PairBrowse browser, a closed build that's
 free for personal, non-commercial use ([BINARY-LICENSE.md](BINARY-LICENSE.md)). For commercial
-use, either get a PairBrowse Pro license or set `"browser": "chromium"` in
-`~/.pairbrowse/config.json` for a fully open setup (ungoogled-chromium on macOS, Playwright's
-Chromium elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse-browser).
+use, either get a PairBrowse Pro license or set `"browser": "pairbrowse-open"` in
+`~/.pairbrowse/config.json` for a fully open setup (PairBrowse (open build): a pinned open-source
+build on macOS, Playwright's browser elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse-browser).
 
 ## Docs
 
@@ -139,8 +140,8 @@ Chromium elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse
 - [Troubleshooting](docs/troubleshooting.md)
 - [Security](docs/security.md), the [assurance case](docs/assurance-case.md) and [reporting a vulnerability](SECURITY.md)
 - [Architecture](docs/architecture.md)
-- [Development](docs/development.md) and [Contributing](CONTRIBUTING.md)
-- [Changelog](CHANGELOG.md), [Roadmap](ROADMAP.md), [Governance](GOVERNANCE.md), [Code of conduct](CODE_OF_CONDUCT.md)
+- [Development](docs/development.md)
+- [Changelog](CHANGELOG.md) and [Roadmap](ROADMAP.md)
 
 ## Status
 

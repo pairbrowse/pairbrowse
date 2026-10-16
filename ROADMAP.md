@@ -9,14 +9,14 @@ file changes with them, like any change.
 
 - Keep every behaviour in the Security table of [docs/security.md](docs/security.md) true, tested
   and fuzzed where it takes untrusted input.
-- Run the browser with Chromium's own sandbox where the platform allows it.
+- Run the browser with its own sandbox where the platform allows it.
 - Signed and notarized macOS builds, so Gatekeeper accepts them without the install step's help.
 - Raise automated test coverage to at least 80% of statements, and lint the code in CI.
 
 **Platforms**
 
 - Native PairBrowse browser builds for Windows, next to macOS and Linux.
-- Keep up with Claude Code and Codex plugin changes, and with new Chromium releases.
+- Keep up with Claude Code and Codex plugin changes, and with new browser engine releases.
 
 **Working together**
 

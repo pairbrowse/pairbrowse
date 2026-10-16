@@ -16,7 +16,7 @@ claude plugin validate .  # the Claude Code manifests
 ### The design tokens
 
 `ui/tokens.css` is the one sheet (colors, type, radii; `--edge-input` is a text field's border at 3:1 or more) for the right
-dock (the side panel in plain Chromium), the session picker, the new tab page, a joiner's picture page and the live view (served
+dock (the side panel in the open build), the session picker, the new tab page, a joiner's picture page and the live view (served
 from the same file through the live view's fixed asset list). The live view alone opts into the
 light scheme with `data-scheme="system"`; the extension pages stay dark. the page script in `scripts/hud/` (closed
 shadow roots), `ui/capture/record.js` (a canvas) and the "Opening tabs" page in `scripts/tabs.mjs` carry the same hex values inline, and
@@ -26,7 +26,7 @@ colors are `SPARK_COLORS` in `scripts/daemon/hud.mjs`, by app (Claude Code orang
 Gemini blue; a second agent of one app, or an app without a color, takes the first free of
 `AGENT_FALLBACKS`, cyan first). People's colors are `PEOPLE_COLORS` in `scripts/sharing/tabsync.mjs`,
 never near an agent's (`test/colors.test.mjs` checks hue, distance and the tags' AA contrast). The window frame follows `THEME_COLOR` in
-`scripts/browser.mjs` (the sheet's chrome navy) unless the user picked a theme.
+`scripts/browser.mjs` (the sheet's frame navy) unless the user picked a theme.
 
 ### The pages' harness (ui/)
 
@@ -42,7 +42,7 @@ ring; no timer, frame or observer while hidden; no running animation under reduc
 Three fakes in `test/helpers/` stand in for the browser build: `pairbrowse-shim.mjs` is
 `window.pairbrowse` over the draft `native/mojom/pairbrowse.mojom` (its header is the page
 contract), `fake-helper.mjs` answers the live view's owner routes and event stream with the real
-key, Host and Origin checks, and `ui-server.mjs` serves `ui/` under the chrome pages' CSP
+key, Host and Origin checks, and `ui-server.mjs` serves `ui/` under the browser pages' CSP
 (`script-src 'self'`, Trusted Types enforced), inserting the harness scripts as same-origin
 `<script src>` tags. Pages are served from another origin than the helper, as
 `chrome://pairbrowse` will be. Patchright has no console API and its init scripts are inline
@@ -76,7 +76,7 @@ build's contents is. The scene is `scripts/dev/preview/fixtures.json`. Outputs: 
 `window@2x.png`, `side-by-side.png` against the mockup's window area, and `regions/*.png` crop
 pairs, plus `harness-log.json` and `frames.json`; it exits 1 on any error, CSP or page-error
 entry. For the composition only, a loopback proxy lifts `frame-ancestors` to `'self'` and splits
-the frames over `127.0.0.1` and `localhost`, because Chromium opens at most 6 connections per host
+the frames over `127.0.0.1` and `localhost`, because the browser opens at most 6 connections per host
 and the window's pages open 7 event streams. `--one-host` shows what the build will do. The
 mockup is read in place and never committed.
 
@@ -207,7 +207,7 @@ more browsers at once for about three minutes on a 12-core machine. Knobs:
   set `PAIRBROWSE_TEST_RUNTIME`, `PAIRBROWSE_TEST_ENGINE` and `PAIRBROWSE_TEST_EXECUTABLE` (that
   build's `Contents/MacOS/pairbrowse`); it skips unless the build's manifest declares its own
   pages. It opens real windows. The macOS download-mark test in `integration/tools` opens one
-  window too: headless Chromium writes no mark.
+  window too: a headless browser writes no mark.
 
 Speed checks (the smooth scroll in `integration/scroll`, the styled pick on a big page and the
 fields whose names go away in `integration/form-patterns`) are relative: each test first times
@@ -225,9 +225,9 @@ The plugin is small:
 |------|--------------|
 | `.claude-plugin/`, `.codex-plugin/` | Plugin manifests for Claude Code and Codex (same skill, servers and hooks; `.codex-plugin/mcp.json` names Codex's servers) |
 | `.mcp.json` (Claude Code), `.codex-plugin/mcp.json` (Codex), `scripts/launch.mjs` | Bridge both apps run: installs the pinned runtime, starts or reconnects to the helper |
-| `scripts/daemon.mjs`, `scripts/daemon/` | The helper: owns Chrome over a pipe, serves shared clients over a private socket, enforces policy (tool calls, browser and sessions, people at the browser, the in-page badge and bar, screenshots, masking, side panel, sharing) |
+| `scripts/daemon.mjs`, `scripts/daemon/` | The helper: owns the browser over a pipe, serves shared clients over a private socket, enforces policy (tool calls, browser and sessions, people at the browser, the in-page badge and bar, screenshots, masking, side panel, sharing) |
 | `scripts/rules/policy.mjs`, `scripts/rules/secrets.mjs` | Rules the helper enforces: blocked tools, navigation, secret domains |
-| `scripts/browser/choice.mjs` | Which browser launches: the binary (Chromium, a path of your own, the native build) and the shell (the side panel extension, or the build's own pages), chosen in one pure function and never written into config |
+| `scripts/browser/choice.mjs` | Which browser launches: the binary (the open build, a path of your own, the native build) and the shell (the side panel extension, or the build's own pages), chosen in one pure function and never written into config |
 | `scripts/tools/catalog.mjs` | Every tool's definition and rules, in one place (serve, guard, policy, launch, runs and the skill check read it) |
 | `ui/vocab.js`, `ui/urls.js`, `ui/limits.js`, `ui/events.js` | What the helper and the pages share: words and colors, the browser's own addresses, limits both sides keep, the live view's events and who gets each |
 | `runtime/` | Pinned Playwright MCP version and lockfile |
@@ -244,7 +244,7 @@ The plugin is small:
 | `scripts/daemon/forms.mjs`, `scripts/daemon/cobrowse.mjs`, `scripts/daemon/taborder.mjs`, `scripts/daemon/board.mjs` | Reading and filling shared form fields; watching shared tabs for pointer moves and field changes; tab order through the side panel extension; who is doing what and messages between participants |
 | `scripts/tunnels/quick.mjs` | The pinned Cloudflare Quick Tunnel |
 | `ui/` | The browser's own pages (side panel, new tab, session picker, picture page, capture, the approval card, the top strip, the left dock, settings), loaded as the side panel extension where the page has an extension host: manifest, worker, logo, icons, one directory per page; the browser build's own slots (`ui/strip`: the tab row and the nav fragments by hash; `ui/left`) are not loaded in the extension; `test/ui.test.mjs` checks every page |
-| `scripts/browser.mjs`, `scripts/browser/`, `scripts/native/macos-app.mjs` | The PairBrowse browser: pinned ungoogled-chromium on macOS, Playwright Chromium elsewhere; icon files, color theme (the extension's pages are in ui/); the PairBrowse name and icon in macOS apps |
+| `scripts/browser.mjs`, `scripts/browser/`, `scripts/native/macos-app.mjs` | The PairBrowse browser: the open build (a pinned open-source build on macOS, Playwright's browser elsewhere); icon files, color theme (the extension's pages are in ui/); the PairBrowse name and icon in macOS apps |
 | `scripts/native-pack.mjs`, `scripts/native-install.mjs`, `scripts/native/check.mjs`, `scripts/native-engine.mjs`, `BINARY-LICENSE.md` | The native PairBrowse build: pinned downloads and the engine pack, install step with rollback, launch self-check, launch adapter, binary license (the build pipeline is in the private PairBrowse Pro repository) |
 | `scripts/util.mjs` | Small shared helpers: JSON files, SHA-256, pinned downloads, timeouts |
 | `skills/pairbrowse/SKILL.md` | How Claude runs a session: speed, accuracy, handoffs, updates |

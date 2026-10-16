@@ -37,12 +37,12 @@ process, no new runtime dependency.
 
 The mockup is a fully expanded workspace. Element by element, with where it lands in PairBrowse:
 
-**Window and chrome.** Deep navy frame; a top row with the logo + "PairBrowse ⌄" (workspace
+**Window and frame.** Deep navy frame; a top row with the logo + "PairBrowse ⌄" (workspace
 switcher), the tab strip (active tab a lighter navy surface with favicon, title, an orange dot
 for the agent that owns it, ×; inactive tabs darker), "+", then at the right a "● Live session"
 pill, an avatar stack (C orange, G purple, Y green, +2), "Share", "⋯". A second row: back,
 forward, reload, the address pill with a lock, star, search and a sparkle. In PairBrowse the
-window is Chromium's own: the colors come from the color theme set in the profile
+window is the browser's own: the colors come from the color theme set in the profile
 (`scripts/browser.mjs`), and the tab strip and toolbar can't take new buttons from the plugin
 (the one extension button is the side panel's). So: the palette moves to navy through the
 theme; tab ownership stays the spark on the tab icon (`scripts/hud.js`, already in the agent's
@@ -51,11 +51,11 @@ bottom bar, not in the toolbar.
 
 **Left workspace sidebar.** "Workspace" header; Browser (count), Sessions, History, Activity,
 Tools; "Agents +" with Claude Code (Active · 2 tabs), Codex (Idle), Gemini (Working), You
-(Online); "Shared with +" (Team 3 online, Client 1 online); a storage meter. Chromium has one
+(Online); "Shared with +" (Team 3 online, Client 1 online); a storage meter. The browser has one
 side panel, right or left (`side_panel.is_right_aligned`); PairBrowse's panel is that panel.
 The mockup's two columns become one panel with sections, and the live view page (the Claude
 desktop workspace) is where the expanded two-column workspace can exist in full. "History" is
-Chromium's own; "Storage" has no PairBrowse meaning (dropped). "Agents" and "Shared with" are
+the browser's own; "Storage" has no PairBrowse meaning (dropped). "Agents" and "Shared with" are
 real (participants, invites, joiners).
 
 **Agent cursors.** Orange "Claude" pointer with a label pill at the field it edits (the field
@@ -94,28 +94,28 @@ timeline. Mode = which of these are open; no browser restart, no reload, no new 
 
 ## Surfaces (Phase 1 map)
 
-The full map (six surfaces: chrome, side panel, in-page script, live view, the extension pages,
+The full map (six surfaces: frame, side panel, in-page script, live view, the extension pages,
 the state the UI could show; who renders each, state sources, update mechanism, styling,
 constraints, the tests that pin them) is `docs/design-surfaces.md`, written by the
 `design-understand` workflow at `da3fb9f`. Its classification of the mockup:
 
 | Mockup element | Surface | Classification |
 |---|---|---|
-| Deep navy frame, tab strip, toolbar colors | 1 chrome | REFINE: `THEME_COLOR` `scripts/browser.mjs`; next start; user theme wins `profilePreferences()` |
-| Logo + "PairBrowse ⌄" switcher in the toolbar | 1 chrome | UNSUITABLE in chrome; function EXISTS as Switch session (`ui/right/index.html` `#switch-btn`) and picker (surface 5); logo unchanged |
-| Active/inactive tab surfaces | 1 chrome | EXISTS (Chromium's derivation); not per-element |
+| Deep navy frame, tab strip, toolbar colors | 1 frame | REFINE: `THEME_COLOR` `scripts/browser.mjs`; next start; user theme wins `profilePreferences()` |
+| Logo + "PairBrowse ⌄" switcher in the toolbar | 1 frame | UNSUITABLE in the frame; function EXISTS as Switch session (`ui/right/index.html` `#switch-btn`) and picker (surface 5); logo unchanged |
+| Active/inactive tab surfaces | 1 frame | EXISTS (the browser's derivation); not per-element |
 | Orange owner dot on a tab | 3 hud | EXISTS: tab icon spark `scripts/hud/spark.js` `sparkIcon()`, `scripts/daemon/hud.mjs` `tabIcon()` |
-| "+", ×, back/forward/reload, address pill, lock | 1 chrome, 4 live view | EXISTS (Chromium; `scripts/liveview.html` `#tabs`, `#newtab`, `#state`, `#state-text` and more) |
-| Star, search, sparkle buttons | 1 chrome, 4 live view | UNSUITABLE (no toolbar slots; no state) |
+| "+", ×, back/forward/reload, address pill, lock | 1 frame, 4 live view | EXISTS (the browser's own; `scripts/liveview.html` `#tabs`, `#newtab`, `#state`, `#state-text` and more) |
+| Star, search, sparkle buttons | 1 frame, 4 live view | UNSUITABLE (no toolbar slots; no state) |
 | "● Live session" pill | 2 panel, 3 hud, 4 live view | REFINE: `ui/right/right.js` `collaboration` listener, bar who line `scripts/hud/bar.js` `drawBar()`, `scripts/liveview.js` `renderCollaboration()`; fed by `collaborationNow` `scripts/liveview.mjs` |
 | Avatar stack (C, G, Y, +2) | 2 panel, 4 live view | REFINE: board people `ui/right/right.js` `board` listener, guests `scripts/liveview.mjs` `startLiveView()`; colors `SPARK_COLORS` `ui/vocab.js` |
 | Share button | 2 panel, 4 live view | NEW: needs an owner-only route for invites (`scripts/daemon/sharing.mjs` `codeOf()`, no event today); security table entry |
-| "⋯" toolbar menu | 1 chrome | UNSUITABLE |
-| New tab page in navy | 1 chrome / 5 | REFINE: `newtab.css`; drop `ntp.png`; `addressToUrl` unchanged |
+| "⋯" toolbar menu | 1 frame | UNSUITABLE |
+| New tab page in navy | 1 frame / 5 | REFINE: `newtab.css`; drop `ntp.png`; `addressToUrl` unchanged |
 | Left sidebar: Workspace header | 4 live view | NEW (Inspect layout), fed by `tabs`, `board`, `collaboration` |
 | Left sidebar: Browser (count) | 2 panel, 4 live view | NEW listener in `panel.js` / `scripts/liveview.js` `tabs` listener; event already sent `scripts/liveview/routes/viewer.mjs` `events()`, `scripts/liveview.mjs` `refreshTabs()` |
 | Left sidebar: Sessions | 2 panel, 5 picker | EXISTS: Switch session, picker (`scripts/daemon/sessions/picker.mjs` `showPicker()`, `reopenPicker()`) |
-| Left sidebar: History | any | UNSUITABLE (Chromium's own) |
+| Left sidebar: History | any | UNSUITABLE (the browser's own) |
 | Left sidebar: Activity | 2 panel, 4 live view | EXISTS: `ui/right/index.html` `#collaboration`, `#activity`, `scripts/liveview.html` `#driver`, `#driver-who`, `#who-filter`, `#activity` |
 | Left sidebar: Tools | 2 panel, 4 live view | NEW static list, no state |
 | Left sidebar: Agents (Active · 2 tabs, Idle, Working) | 2 panel, 4 live view | REFINE: board entries `scripts/daemon.mjs` `localEntries()`, `ui/right/right.js` `board` listener; tab counts from `tabs` |
@@ -159,7 +159,7 @@ storage meter are not built; the Share button and the checklist need new owner-o
 
 ## Design tokens (Phase 3)
 
-Starting values from the brief, to be refined for contrast: background `#0B1421`, chrome
+Starting values from the brief, to be refined for contrast: background `#0B1421`, frame
 `#101D2D`, sidebar `#111E2D`, elevated `#192A3D`, hover `#243750`, text `#F1F5FA` /
 `#A2B2C6` / muted `#71869F`, border `#293B50`, accent `#3285F6`, success `#20C997`, warning
 `#F4B45D`, error `#EF6468`. Participant colors stay PairBrowse's (`SPARK_COLORS` in
@@ -173,12 +173,12 @@ for WCAG AA: muted `#8699B1` (was `#71869F`: 3.9:1 on elevated); accent `#3285F6
 fills, rings and borders, and as text it is `--accent-ink` `#6AA6F9`; primary buttons put `--bg`
 text on `--accent` (white on accent is 3.6:1); the border token is named `--edge`; `--spark` is
 `SPARK_COLORS[0]`. Type 11/12/13 px, radii 6/8/10 px (`--r-1..3`); no spacing tokens yet (nothing read them, and the test fails on an unused token); `--edge-input` `#647891` is a text field's border at 3:1 or more. A light
-block under `:root[data-scheme="system"]` (live view only): bg `#F4F7FB`, chrome/sidebar
+block under `:root[data-scheme="system"]` (live view only): bg `#F4F7FB`, frame/sidebar
 `#FFFFFF`, elevated `#E8EEF5`, hover `#DCE5EF`, ink `#0F1B2A` / `#3A4B60` / muted `#53667D`, edge
 `#CBD6E2`, accent `#2468D0` (so `--bg` text on it passes; accent-soft is its channels at .14), accent-ink `#1F63C7`, spark `#C4521B` (3:1 on the light tab strip), ok `#11735A`,
 warn `#8A5A00`, bad `#C0343A`. `hud.js` and `record.js` carry the values inline (closed shadow
 roots and a canvas take no variables); `test/tokens.test.mjs` keeps them equal and checks the
-contrast. `THEME_COLOR` is the chrome navy `0xff101d2d`. `ntp.png` is gone (flat `--bg`).
+contrast. `THEME_COLOR` is the frame navy `0xff101d2d`. `ntp.png` is gone (flat `--bg`).
 
 ## Subset workflows
 
@@ -257,7 +257,7 @@ view under the system scheme); linked by the side panel, picker, new tab page, j
 page and the live view (served from the fixed asset list, CSP unchanged). `scripts/hud.js` and
 `record.js` carry the same values inline (closed shadow roots take no variables; a page could
 inject them) and `test/tokens.test.mjs` keeps every literal equal to a sheet value or a spark
-color and checks the contrast matrix. The theme seed is the sheet's chrome navy (`THEME_COLOR`
+color and checks the contrast matrix. The theme seed is the sheet's frame navy (`THEME_COLOR`
 0xff101d2d; hue 254°, as the accent's 257°); profiles still on PairBrowse's old seed move to it
 at the next start (only the seed: a light or follow-the-system scheme the user chose stays), a
 color the user picked stays (`scripts/browser.mjs`, `test/browser.test.mjs`).
@@ -276,7 +276,7 @@ against the engineering-progress "After" column): click p50/p95 508/528 ms (517/
 snapshot 67 ms with 1 image (74, 1), long snapshot 149 (166), navigate 386 (400), fast-mode form
 336 (350), click_at 249 (251), status 1/4 ms (1/5), 9 processes; no regression. `docs/development.md` describes the sheet. Not verified by eye: the window frame's tint from the
 new seed (screen capture isn't permitted for the helper's session here; one glance at the next
-browser start); Chromium's tonal palette takes the seed's hue, so navy is expected.
+browser start); the browser's tonal palette takes the seed's hue, so navy is expected.
 
 **hud** (2026-10-11, `design-subset` run wf_a67d6ab3: review pass in one round; 384 unit pass,
 the hud, join-prompt, tokens and native-engine live suites green). The bottom bar: a driver dot
@@ -286,7 +286,7 @@ only while the agent really drives, a red "!" for "That didn't work"), the time 
 title, Pause agents at the right, no spinning spark. The join request is a card anchored above
 the bar's right end (avatar dot, "Sam (Claude Code) wants to join · drive", Allow, Deny, ×)
 with the arming, visibility and trusted-click gating untouched; while it shows the badge drops
-its shadow (Chromium's visibility tracking counted the shadow as cover). The badge sits on the
+its shadow (the browser's visibility tracking counted the shadow as cover). The badge sits on the
 elevated navy with a 3 px left edge in the agent's color (blue for "your turn", green for
 "done"); the helper passes the participant's spark color with the status. The agent cursor: a
 refined pointer in the participant's color, the label pill in that color with dark ink
@@ -369,7 +369,7 @@ state is in the glyph's shape and the class, not color alone. The spinning spark
 join request is a card 12 px from the right, 10 px above the bar (elevated navy, edge ring,
 shadow, an orange dot, "Sam (Claude Code) wants to join · drive", Allow, Deny, × at its corner);
 its arming, visibility and trusted-click checks are unchanged. The badge moves above the card
-and drops its drop shadow meanwhile: Chromium's visibility tracking counts a shadow over the
+and drops its drop shadow meanwhile: the browser's visibility tracking counts a shadow over the
 card as covering it, so Allow would not have counted (the join-prompt test caught it). The
 badge has a 3 px left edge: the agent's spark color (`scripts/daemon/hud.mjs` sends
 `{ text, color }` for agents' statuses, a plain string for PairBrowse's own), accent for Your
@@ -416,14 +416,14 @@ access is guarded so the page renders as a plain page. `common.js` gained defini
 (the sheet's `:focus-visible` ring shows). Looked at (`panel-look.mjs`, 360x900 @2x over a fake
 stream): idle/connecting, live with Claude driving plus a join card and a dev-share question,
 paused (warn edge, Resume), your turn with the local pill (ellipsis, full name in the title),
-all sections open, reduced motion with keyboard focus, and without `chrome` at all (no page
+all sections open, reduced motion with keyboard focus, and without the `chrome` extension API at all (no page
 error); the logo unchanged (sha256 415a3f8e…bffd8a). Deviations: the agent card's name falls
 back to the first working local agent only when there is no activity yet; with activity from
 an agent not on the board, the card shows no status rather than another agent's; the request
 cards sit above the "Your turn" card. Tests: new `test/ui-right.test.mjs` (markup ids, folding
 markup, logo hashes, two timers, one storage key, sheet rules; live: rendered over a fake
 stream, header, card, rows, pause click, join card gating, folding and its persistence,
-no interval, no page error with and without `chrome`, reduced motion). `docs/security.md`,
+no interval, no page error with and without the `chrome` extension API, reduced motion). `docs/security.md`,
 `using.md`, `development.md`: no change needed (same clicks, routes and gating; the one new
 storage is a list of folded section names). Full suite with the runtime: one failure,
 `memory.integration` "leave no screenshot maps behind", caused by the hud subset, not old: the
@@ -463,7 +463,7 @@ Deviations: the row grid has two columns (the brief's third "auto" column had no
 the badges stay beside the name); "Last used" is an edge pill in `--ok` text instead of a tinted
 fill (no literal colors). `docs/security.md` needs no change: no route, gating, capture or
 input path changed. Tests: new `test/ui-picker.test.mjs` (markup, texts, logo, one timer, no new
-route, sheet rules; live over a fake chrome and sessions.json: rows, avatars, disclosure,
+route, sheet rules; live over a fake `chrome` extension API and sessions.json: rows, avatars, disclosure,
 filter, keyboard paths, the bad-code message, the address card, reduced motion);
 `test/ui-screen.test.mjs` gains a markup/timer test and a live who-pill test.
 
@@ -507,7 +507,7 @@ when they change.
 
 ## The browser track (decided 2026-10-11)
 
-PairBrowse stops being an extension: its chrome (strip with tabs and the agent dot, the Live
+PairBrowse stops being an extension: its frame (strip with tabs and the agent dot, the Live
 pill, avatars and Share; a left workspace dock; a right agent dock; new tab, picker, picture,
 approval and settings pages) becomes the browser's own WebUI pages, built from a new `ui/`
 directory here into the native build, talking to the browser over `pairbrowse.mojom` and to
@@ -517,20 +517,20 @@ page, with phases and exit criteria, is `../pairbrowse-native/DESIGN.md` (privat
 ### Lane U: the pages (2026-10-11, branch `browser/ui`)
 
 The extension's pages moved to `ui/` (one source for two hosts: the native build's slots over
-`window.pairbrowse`, the side panel extension on plain Chromium), a harness renders every page
-headless under the chrome pages' CSP over a mojom shim and a fake helper (`test/ui.test.mjs`,
+`window.pairbrowse`, the side panel extension on the open build), a harness renders every page
+headless under the browser pages' CSP over a mojom shim and a fake helper (`test/ui.test.mjs`,
 `test/helpers/`, `scripts/dev/ui-look.mjs`), and the nine pages of Part B are built and merged
 after their own review: the top strip (`ui/strip`), the left dock (`ui/left`), the right dock
-(`ui/right`: the side panel on plain Chromium), the new tab page, the picker, the joiner's
-picture page, the approval card, settings and the timeline strip. Nothing a user sees on plain
-Chromium changed: the extension loads from `ui/` and its live suites stay green at every gate.
+(`ui/right`: the side panel on the open build), the new tab page, the picker, the joiner's
+picture page, the approval card, settings and the timeline strip. Nothing a user sees on the open
+build changed: the extension loads from `ui/` and its live suites stay green at every gate.
 Follow-ups landed: frame-src/frame-ancestors for the picker and the switcher popover in the strip and the left dock, approvals in the fake helper, and `scripts/dev/ui-look-all.mjs` with per-page review fixtures (`scripts/dev/look/`).
 
 ## Next
 
-1. Nothing open. The window frame's tint is verified from Chromium's own computed theme sheet
+1. Nothing open. The window frame's tint is verified from the browser's own computed theme sheet
    (`chrome://theme/colors.css?sets=ui,chrome` opened in a profile prepared by `prepareProfile`
-   with the new seed, headed Playwright Chromium): frame `#15202F`, toolbar and active tab
+   with the new seed, Playwright's headed browser): frame `#15202F`, toolbar and active tab
    `#313C4C`, inactive tabs `#15202F`, new tab page `#313C4C`: the dark navy and blue-grey of
    the sheet's family. New subsets run through `design-subset` with a brief; `design-validate`
    before a release.

@@ -54,7 +54,7 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npm audit --omit=dev --audit-level=high
           npm audit signatures
-      - name: Patchright's Chromium (the driver PairBrowse ships with), and a virtual screen
+      - name: Patchright's browser (the driver PairBrowse ships with), and a virtual screen
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q xvfb
           node runtime/node_modules/patchright/cli.js install --with-deps chromium

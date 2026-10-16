@@ -60,10 +60,10 @@ open (a Claude Code window left idle) don't count.
 
 - `pairbrowse_session`: list, use, new (named and kept, or clean and throwaway), delete (asks you).
 
-Tabs: PairBrowse remembers each session's tabs, in order. When Chrome restarts, it shows an
+Tabs: PairBrowse remembers each session's tabs, in order. When the browser restarts, it shows an
 "Opening tabs" screen and brings them back one by one, then puts you on the tab you were on.
-Logins with "remember me" survive restarts; session-only logins last while the PairBrowse Chrome
-stays open (it keeps running between Claude Code sessions), and end when Chrome itself quits.
+Logins with "remember me" survive restarts; session-only logins last while the PairBrowse browser
+stays open (it keeps running between Claude Code sessions), and end when the browser itself quits.
 
 ## Several browsers: instances
 
@@ -92,14 +92,14 @@ gives focus back to whatever you were using, another PairBrowse window included.
 
 ## Settings
 
-Which browser PairBrowse runs (the native PairBrowse browser, Chromium, or a Chromium-based
-browser of your own) is asked once, and changed in the browser's Settings page or as `"browser"`
+Which browser PairBrowse runs (the native PairBrowse browser, PairBrowse (open build), or a
+compatible browser of your own, such as Brave, Arc or Vivaldi) is asked once, and changed in the browser's Settings page or as `"browser"`
 in `~/.pairbrowse/config.json`. A change takes effect when the browser next starts on the same
 session profile: close the PairBrowse window or switch session. The timeline (on or off, and how
 many pictures it keeps, 1 to 200) is changed there too, and applies at once. See
 [Configuration](configuration.md).
 
-With the side panel extension (Chromium, or a browser of your own) the same Settings page is the
+With the side panel extension (the open build, or a browser of your own) the same Settings page is the
 extension's options page: open it with the gear in the side panel's header, **Open settings** at
 the end of its Tools tab, or **Settings** in the menu of PairBrowse's toolbar button (right-click
 it). Every section works there: the browser choice, the downloads folder, approvals, your name,
@@ -166,8 +166,8 @@ the page, in any language. Plain ones close by themselves (a standard "Accept",
 `"cookieChoice": "reject"` in `~/.pairbrowse/config.json` picks "Reject" instead; an offer's ×
 in its corner, also when it shows up seconds later); for the rest, Claude gets the popup's text
 and buttons with the screenshot, and closes it. It never takes an offer to make one go away. A page's own confirm dialogs stay for Claude and you: PairBrowse never answers OK to one, and Claude's OK asks you. Site notification and
-location requests never pop up: they show only as a small icon in the address bar (Chromium's
-quiet prompts), and sites see the ordinary "ask" state, like in an everyday Chrome. Files a site hands over (invoices, exports) are saved to your
+location requests never pop up: they show only as a small icon in the address bar (the browser's
+quiet prompts), and sites see the ordinary "ask" state, like in an everyday browser. Files a site hands over (invoices, exports) are saved to your
 Downloads folder (`"downloadsDir"` to change it).
 
 You and Claude can work in the same tab. When you click or type in the PairBrowse window, Claude's

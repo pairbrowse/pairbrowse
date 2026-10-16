@@ -22,7 +22,7 @@ what each boundary protects against, see [security.md](security.md) and the
                                                                   ┌─────────────────┐  ┌───────────────┐
                                                                   │ PairBrowse      │  │ live view     │
                                                                   │ browser         │  │ (127.0.0.1)   │
-                                                                  │ (Chromium,      │  └──────┬────────┘
+                                                                  │ (own engine,    │  └──────┬────────┘
                                                                   │  own profile)   │         │ only when you invite
                                                                   └─────────────────┘         ▼
                                                                                      Cloudflare Quick Tunnel

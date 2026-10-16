@@ -19,8 +19,8 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 - **Downloads keep their mark.** A finished download the helper saves keeps the browser's own download mark (`com.apple.quarantine`), so Gatekeeper and Office's Protected View still apply.
 - **Downloads open like a browser's.** Files open in a tab that is yours alone (no agent reads or acts in it), Word-type documents as a sanitized read-only preview on macOS, and programs, scripts and saved web pages only after a confirm.
 - Review fixes across the helper and pages: joiner input, test gates, reveal limits, activity privacy, approvals and bounded waits; one capture per tab and bounded picks.
-- **The sandbox stays on on macOS and Windows.** `"chromeSandbox": false` and `--no-sandbox` (any spelling) are refused there and named in `pairbrowse_status`; only Linux can turn the sandbox off, and while it's off `pairbrowse_status` and the browser's bar warn that websites are less isolated from this computer.
-- **`chromeArgs` is an allowlist.** Browser switches in `config.json` pass only from a fixed list, each with a value of its expected shape. Everything else is dropped and named in the log and `pairbrowse_status`: switches that open a debugging port, run another program with the browser, turn certificate checks or site isolation off, send traffic through a proxy or load an extension; any item that isn't a switch (a value written as the next item counts as one); everything after a bare `--`. `--host-resolver-rules` keeps only loopback rules and `--disable-features` is refused. `--no-sandbox` is recognised in every spelling and never dropped quietly. The test suite's own loosening switches work only in a helper the test harness started.
+- **The sandbox stays on on macOS and Windows.** `"browserSandbox": false` and `--no-sandbox` (any spelling) are refused there and named in `pairbrowse_status`; only Linux can turn the sandbox off, and while it's off `pairbrowse_status` and the browser's bar warn that websites are less isolated from this computer.
+- **`browserArgs` is an allowlist.** Browser switches in `config.json` pass only from a fixed list, each with a value of its expected shape. Everything else is dropped and named in the log and `pairbrowse_status`: switches that open a debugging port, run another program with the browser, turn certificate checks or site isolation off, send traffic through a proxy or load an extension; any item that isn't a switch (a value written as the next item counts as one); everything after a bare `--`. `--host-resolver-rules` keeps only loopback rules and `--disable-features` is refused. `--no-sandbox` is recognised in every spelling and never dropped quietly. The test suite's own loosening switches work only in a helper the test harness started.
 - **The native settings block is closed.** `config.json`'s `"pairbrowse"` block accepts only PairBrowse's own settings and the engine's options: no extensions, proxy or extra launch options. The only extension a launch loads is PairBrowse's own; one a saved profile names is dropped too. The WebRTC policy switch is caught in every spelling.
 - **The downloads folder is checked at the save.** The folder chosen in Settings (or written into `config.json` by hand) is checked again on its real path at every download and recording save, after the download has finished and right before the file is written. A folder since swapped for a link elsewhere is never written to: the file goes to your Downloads folder, and never through a link at its own name.
 - **A project can't redirect PairBrowse.** A project's `.claude` or `.codex` settings can't set the helper's home, your participant name or a shorter approval wait, including with escaped or differently cased keys; a settings file that doesn't parse counts as setting them all.
@@ -38,7 +38,7 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 
 **Settings in the side panel extension**
 
-- With the extension (Chromium, or a browser of your own), Settings opens as the extension's options page from a gear in the side panel's header, **Open settings** in its Tools tab, and **Settings** in the toolbar button's menu. Every section works there, Can approve and Revoke on invites included; a short note stands in for the docks. **Downloads, recordings and hand-offs** in the toolbar button's menu (or Settings) opens the side panel at its Tools tab. The owner's key stays in the extension's own pages: nothing is served to or readable by a web page.
+- With the extension (the open build, or a browser of your own), Settings opens as the extension's options page from a gear in the side panel's header, **Open settings** in its Tools tab, and **Settings** in the toolbar button's menu. Every section works there, Can approve and Revoke on invites included; a short note stands in for the docks. **Downloads, recordings and hand-offs** in the toolbar button's menu (or Settings) opens the side panel at its Tools tab. The owner's key stays in the extension's own pages: nothing is served to or readable by a web page.
 
 **Approve role for joiners**
 
@@ -56,7 +56,7 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 **The PairBrowse browser's own shell and pages**
 
 - With a native build that declares them, the browser's own pages replace the side panel: the tab strip, left and right docks, the new tab page, Settings, the sessions page and switcher, the Activity page, the timeline, the approval card and the capture page. Agents can never open, read or drive them.
-- The browser is a setting (`pairbrowse`, `chromium` or your own app), asked once; Settings edits only what the helper honors.
+- The browser is a setting (`pairbrowse`, the open build or your own app), asked once; Settings edits only what the helper honors.
 - The right dock's Tools tab: hand-offs, downloads, recordings and diagnostics. Report a problem goes to PairBrowse's own address by default, after you review the exact report.
 - Sessions can be renamed (also a saved one that isn't open) and saved from the session card; one agent can be paused on its own; the Activity page keeps the session's log, agent messages included.
 - Shared joiners' pointers are drawn by the browser over the page card, never inside your tab, and your own pointer never comes back to you.
@@ -94,8 +94,8 @@ The native browser track merged into the plugin: the PairBrowse browser's own pa
 
 A security fix release, from the native browser work (both fixes land unchanged on that branch).
 
-- **A joiner's keys stay in the page.** In shared browser mode a joiner's keys were sent to the host with their Windows key code also given as the native one. Chromium then made real OS key events of them (on macOS with the wrong keys: Shift as Y, "!" as Space), and a key the page didn't use went on to the host browser's own shortcuts. Keys now reach the host's page only, as the live view already sends them.
-- **The sandbox is never dropped quietly on macOS or Windows.** A launch that failed with a sandbox error was retried without Chromium's sandbox on every system. That retry exists for Linux containers and AppArmor rules; on macOS and Windows a sandbox failure is now the launch's error. `docs/security.md` says so.
+- **A joiner's keys stay in the page.** In shared browser mode a joiner's keys were sent to the host with their Windows key code also given as the native one. The browser then made real OS key events of them (on macOS with the wrong keys: Shift as Y, "!" as Space), and a key the page didn't use went on to the host browser's own shortcuts. Keys now reach the host's page only, as the live view already sends them.
+- **The sandbox is never dropped quietly on macOS or Windows.** A launch that failed with a sandbox error was retried without the browser's sandbox on every system. That retry exists for Linux containers and AppArmor rules; on macOS and Windows a sandbox failure is now the launch's error. `docs/security.md` says so.
 
 ## 0.15.45 (2026-10-11)
 
@@ -127,7 +127,7 @@ The collaborative browser's look, on the dark navy design: every surface PairBro
 
 ## 0.15.42 (2026-10-11)
 
-A lighter, faster helper, measured against 0.15.41 on the same machine with the new `test/bench.mjs` (its own helper on a temporary home, headless Chromium, a local site; `docs/engineering-progress.md` has every number and how each was taken).
+A lighter, faster helper, measured against 0.15.41 on the same machine with the new `test/bench.mjs` (its own helper on a temporary home, a headless browser, a local site; `docs/engineering-progress.md` has every number and how each was taken).
 
 - A picture whose bytes equal the last one sent to that agent isn't sent again: the result says "The page looks exactly as in your last screenshot (no new picture)". A wait, a key press, a tab list or a repeated snapshot that changed nothing on screen costs no image (20 repeated snapshots carried 20 pictures; now 1). The page's text is read for a visible saved password only when a password is saved.
 - `pairbrowse_click_at` refuses a picture the page has moved on from, with the reason: another address, scrolled, resized, the tab closed, older than two minutes, or a spot outside the picture; it says to snapshot first. Per agent only the picture's address, scroll, size, time and hash are kept, never pixels; a closed tab or an agent that left drops its map (covered by a live test: departed sessions leave none behind).
@@ -149,9 +149,9 @@ A lighter, faster helper, measured against 0.15.41 on the same machine with the 
 
 ## 0.15.40 (2026-10-10)
 
-- A login or cookie set in the last half minute before the helper is stopped (a plugin restart, a `kill`, Ctrl-C) is kept. The helper took the browser down with a SIGKILL inside 50 ms, when Chromium writes its cookies only every ~30 s and on a clean exit; the engine's own signal handlers were closing the browser on the same signal, and the helper's close then counted as a second, forced one. Now the helper alone closes the browser, cleanly, within 5 s (then kills it); the same clean close on a session switch.
+- A login or cookie set in the last half minute before the helper is stopped (a plugin restart, a `kill`, Ctrl-C) is kept. The helper took the browser down with a SIGKILL inside 50 ms, when the browser writes its cookies only every ~30 s and on a clean exit; the engine's own signal handlers were closing the browser on the same signal, and the helper's close then counted as a second, forced one. Now the helper alone closes the browser, cleanly, within 5 s (then kills it); the same clean close on a session switch.
 
-- A login or cookie set in the last half minute before the helper is stopped (a plugin restart, a `kill`, Ctrl-C) is kept. The helper took the browser down with a SIGKILL inside 50 ms, when Chromium writes its cookies only every ~30 s and on a clean exit; the engine's own signal handlers were closing the browser on the same signal, and the helper's close then counted as a second, forced one. Now the helper alone closes the browser, cleanly, within 5 s (then kills it); the same clean close on a session switch.
+- A login or cookie set in the last half minute before the helper is stopped (a plugin restart, a `kill`, Ctrl-C) is kept. The helper took the browser down with a SIGKILL inside 50 ms, when the browser writes its cookies only every ~30 s and on a clean exit; the engine's own signal handlers were closing the browser on the same signal, and the helper's close then counted as a second, forced one. Now the helper alone closes the browser, cleanly, within 5 s (then kills it); the same clean close on a session switch.
 - The helper keeps a goal log of its own, so a bigger task survives a context reset, a new Claude Code session or a helper restart even when the agent never called `run_save`: the first browser action in a session opens a run under `~/.pairbrowse/runs/` in `run_save`'s shape (source `auto`, status `in progress`, named after the site and time, "shopify.com 2026-10-10 14:05"); every page acted on is a line in `done` (its title or URL, then the bottom bar's one-line descriptions of what was done there, masked as the bar masks: password names, never values), hand-offs (`pairbrowse_status` kind `you`) go to `yourTurn`, the open tabs to `tabs`, what a `pairbrowse_run` left empty or to the people filling it to `left`. Written at most every few seconds, from a timer, through a rename: it never holds up a call and is never half there.
 - An agent's own `run_save` takes the log over: its name wins, the helper's lines go in under it (one run, not two) and the helper keeps writing there; `status: "finished"` closes it, and the next action opens a new one. After a helper restart the session's run is picked up again, the same page continuing its line. `run_list` shows an auto run nothing touched for a day as `stale`; `run_get` on one adds a line saying PairBrowse kept it automatically, so the agent treats it as its own notes; a taken-over name points to the run it went into.
 - Every run file records the browser session it was in (`session`, the auto log's from the helper, `run_save`'s from the session the browser is in): `run_get` and `run_list` print "Session: client-x (pairbrowse_session use client-x)", so a resuming agent picks the session without the picker wait and without guessing. `run_get` on a run written before the helper now running started (or with none running) adds: "The browser restarted since this was saved: take a browser_snapshot of each tab before trusting Done (a sign-up step may have expired, a chosen file is never kept)."
@@ -166,7 +166,7 @@ A lighter, faster helper, measured against 0.15.41 on the same machine with the 
 
 - The result of `browser_navigate`, `browser_navigate_back`, `browser_click`, `browser_select_option`, `browser_press_key` and `browser_tabs` (new, select) carries the page's snapshot itself, as `browser_snapshot` prints it, instead of a link to a `page-....yml` file the agent had to open or follow with a second `browser_snapshot` call: the refs in it are good at once, and count as fresh for the stale-ref check. A long snapshot is cut the same way as `browser_snapshot`'s (the first 24,000 characters and any open dialog, with the file named for the rest). `browser_type` and `browser_hover` bring theirs inline only under 6,000 characters; past that the link stays, with "Take a browser_snapshot for fresh refs.", so a long page isn't sent again for every field. The file on disk is masked before it is read, as before.
 
-- A single `browser_type` in the native PairBrowse browser goes the way a form field does since 0.15.38, with PairBrowse's own typist's rhythm instead of the engine's typing and its full key hold: the field focused by the engine's own reach and click (none when it already has the focus), what it held cleared, the text key by key at `typingPace` (never quicker than about 40 ms a key on average), read back, and a value that didn't stay is said so. 41 characters took about 6.2 s and take 3.3 to 3.8 s; 200 characters into a textarea took 24 s and take about 10 s. `slowly: true` types at about 90 ms a key (was about 130 to 160), at the caret, and still brings a snapshot; `submit: true` is still PairBrowse's own Enter press (a Wikipedia search with it took 3 to 4.5 s and takes 2 to 2.7); what the field holds is read from the field with the focus, so a search box the page swaps for another on the first click or key (Wikipedia's) costs no waits; a date or time field is still set at once in its exact shape; saved password names are swapped in and never said, as before. Headless Playwright Chromium, `humanize: false` and fast mode are unchanged.
+- A single `browser_type` in the native PairBrowse browser goes the way a form field does since 0.15.38, with PairBrowse's own typist's rhythm instead of the engine's typing and its full key hold: the field focused by the engine's own reach and click (none when it already has the focus), what it held cleared, the text key by key at `typingPace` (never quicker than about 40 ms a key on average), read back, and a value that didn't stay is said so. 41 characters took about 6.2 s and take 3.3 to 3.8 s; 200 characters into a textarea took 24 s and take about 10 s. `slowly: true` types at about 90 ms a key (was about 130 to 160), at the caret, and still brings a snapshot; `submit: true` is still PairBrowse's own Enter press (a Wikipedia search with it took 3 to 4.5 s and takes 2 to 2.7); what the field holds is read from the field with the focus, so a search box the page swaps for another on the first click or key (Wikipedia's) costs no waits; a date or time field is still set at once in its exact shape; saved password names are swapped in and never said, as before. Playwright's headless browser, `humanize: false` and fast mode are unchanged.
 
 
 ## 0.15.38 (2026-10-10)
@@ -333,7 +333,7 @@ People always come first, also mid-action; two agents on two computers can build
 
 The native browser installs again on Linux systems that block user namespaces.
 
-- On Linux without user namespaces (containers, and Ubuntu's AppArmor rule that restricts them), Chromium turns to its setuid sandbox helper, which a browser installed for one user can't have, and aborts. PairBrowse didn't recognize that failure, so installing or starting the native browser failed there since 0.15.20. It now starts without the sandbox, as it does for the other cases where the system can't run it, and the helper log says so once.
+- On Linux without user namespaces (containers, and Ubuntu's AppArmor rule that restricts them), the browser turns to its setuid sandbox helper, which a browser installed for one user can't have, and aborts. PairBrowse didn't recognize that failure, so installing or starting the native browser failed there since 0.15.20. It now starts without the sandbox, as it does for the other cases where the system can't run it, and the helper log says so once.
 - The native browser's launch self-check no longer fails on a slow computer when the test form's own page load is still on its way.
 
 ## 0.15.21 (2026-10-07)
@@ -348,9 +348,9 @@ Memory leak fixes, found with soak tests; agents read from your request whether 
 
 ## 0.15.20 (2026-10-07)
 
-Chromium's sandbox on by default; agents start on the tab you have in front and can share a tab when told; joiners who leave, are removed or revoked release everything.
+The browser's sandbox on by default; agents start on the tab you have in front and can share a tab when told; joiners who leave, are removed or revoked release everything.
 
-- Chromium's own sandbox is on by default (macOS, and Linux as a regular user), so a page that exploits a browser bug is contained as in your everyday Chrome. `"chromeSandbox": false` turns it off; PairBrowse turns it off by itself only where it can't run (as root on Linux, or a container without user namespaces) and says so once in the helper log.
+- The browser's own sandbox is on by default (macOS, and Linux as a regular user), so a page that exploits a browser bug is contained as in your everyday browser. `"browserSandbox": false` turns it off; PairBrowse turns it off by itself only where it can't run (as root on Linux, or a container without user namespaces) and says so once in the helper log.
 - An agent's first action starts on the tab you have in front, unless another agent is in it; otherwise on a free tab. A tab another agent released counts as free.
 - Agents share a tab when you tell them to (`pairbrowse_collaboration` `share`, "work in the same tab as Codex"): both act there in turn, each with its own spark and cursor, and a person using the tab pauses all of them. One agent per tab stays the default.
 - A joiner who leaves, is removed or whose invite is revoked or expires leaves nothing behind: their channel, pictures and agent stop at once, and what their side said about its agents is dropped. A remote agent's slot is never reused once its connection ends.
@@ -430,7 +430,7 @@ Shared browser fixes found by the live tests, now run in CI; lint; project docs.
 - Shared browser: a pointer resting over a page no longer counts as the person reading it.
 - The safety hook no longer reads the config file on every call (left over from a removed setting).
 - Live browser tests run in CI on every push and pull request, with coverage (81.6% of statements); ESLint in CI.
-- Governance, roadmap, code of conduct, architecture and assurance case docs; how to report and how reports are handled, in SECURITY.md.
+- Roadmap, architecture and assurance case docs; how to report and how reports are handled, in SECURITY.md.
 - Release tags are signed; see SECURITY.md to verify one.
 
 ## 0.15.11 (2026-10-05)
@@ -550,9 +550,9 @@ Scrollbar presses and scrolling keys no longer hold agents up.
 
 ## 0.14.16 (2026-10-05)
 
-Never fall back to Chromium quietly; faster stall detection; agent cursor for selectors.
+Never fall back to the open build quietly; faster stall detection; agent cursor for selectors.
 
-- The PairBrowse browser is required unless "browserEngine" is "chromium": a failed install or a platform without a build stops with the reason instead of switching engines. While it installs, a notification says so and actions answer "installing" at once.
+- The PairBrowse browser is required unless "browserEngine" picks the open build: a failed install or a platform without a build stops with the reason instead of switching engines. While it installs, a notification says so and actions answer "installing" at once.
 - The host sends a heartbeat every 2 s; a joiner drops a stalled stream after three missed beats (at least 6 s) and tries the next tunnel, instead of waiting 40 s with pointers and typing frozen.
 - The agent's cursor shows for selector targets too, not only snapshot refs.
 - Join test: Alice types again before her field is checked (5 s window).

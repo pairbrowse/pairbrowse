@@ -49,28 +49,28 @@ so the next start reinstalls it with `npm ci`. Then call any browser tool again.
 
 **Messages.**
 
-- `The PairBrowse browser couldn't be installed: <reason> To use Chromium instead, set "browser": "chromium" in ~/.pairbrowse/config.json.`
+- `The PairBrowse browser couldn't be installed: <reason> To use the open build instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.`
   (`scripts/daemon/browser/launch.mjs`). `<reason>` is one of the install errors below.
-- `There's no PairBrowse browser build for <platform> <arch> yet. To use Chromium instead, set "browser": "chromium" in ~/.pairbrowse/config.json.`
+- `There's no PairBrowse browser build for <platform> <arch> yet. To use the open build instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.`
   (same file).
 - `PairBrowse <version> isn't installed (<reason>). Install it with: node <plugin>/scripts/native-install.mjs <archive>`
   (`ensureNativeBrowser` in `scripts/native/install.mjs`).
 - `the PairBrowse browser is open: quit it (or stop the PairBrowse helper) and try again`
   (`scripts/native/install.mjs`): an update can't replace a running app.
 - `couldn't download <file> (HTTP <status>)` (`downloadPinned` in `scripts/util.mjs`).
-- `Chromium didn't install at <path>. Run: node <runtime>/node_modules/<driver>/cli.js install --with-deps chromium`
+- `The browser didn't install at <path>. Run: node <runtime>/node_modules/<driver>/cli.js install --with-deps chromium`
   (`ensureBrowser` in `scripts/browser.mjs`, Linux and Windows).
 - `PairBrowse macOS host capture failed: <error>` (`scripts/native-engine.mjs`): the first launch
   on a Mac measures it, and that step failed.
 - `The PairBrowse browser didn't start: <why>. Open it again.` (a notification; the log says
   `the browser opened by hand didn't start: <why>`, `scripts/daemon/browser/launch.mjs`).
 
-**Cause.** The native build couldn't be downloaded, checked or installed, or Chromium wasn't
+**Cause.** The native build couldn't be downloaded, checked or installed, or the open build wasn't
 downloaded on Linux.
 
 **Fix.** Check your network and free space, quit any open PairBrowse window, and retry. To install
 a build by hand, download the archive named in the message from the release and run the
-`native-install.mjs` command it prints. To skip the native build, set `"browser": "chromium"` in
+`native-install.mjs` command it prints. To skip the native build, set `"browser": "pairbrowse-open"` in
 `~/.pairbrowse/config.json`.
 
 ## macOS: signature or Gatekeeper refusal
@@ -89,7 +89,7 @@ a build by hand, download the archive named in the message from the release and 
 (`codesign --verify --deep --strict`), then removes the quarantine mark itself from a build it has
 checked (`xattr -cr`), so a correct install never shows a Gatekeeper prompt. A failed check means
 the archive or app was changed, damaged, or is not a PairBrowse build. On the open setup,
-ungoogled-chromium must pass `spctl -a -t install` (notarization) before it is copied out of its
+the pinned open-source build must pass `spctl -a -t install` (notarization) before it is copied out of its
 disk image (`ungoogledApp` in `scripts/browser.mjs`).
 
 **Fix.** Don't clear quarantine or re-sign the app by hand. Delete the download in

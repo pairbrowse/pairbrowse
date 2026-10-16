@@ -25,7 +25,7 @@ differ from everyday ones in ways sites notice, which brings more CAPTCHAs and r
 - Sites see a normal, rendered browser ([browser.md](../browser.md#the-native-pairbrowse-browser),
   "Browser compatibility hardening").
 - Headless remains only where no person browses: test runs (passed as `--headless` in the test
-  config's `chromeArgs`, which also turns notifications off) and the one-time hidden capture of the
+  config's `browserArgs`, which also turns notifications off) and the one-time hidden capture of the
   Mac's fingerprint on the real GPU (CHANGELOG 0.14.3).
 - A headless server needs Xvfb and xauth installed.
 

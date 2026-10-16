@@ -33,7 +33,7 @@ Attackers we defend against:
 - **A mistaken agent**: misreads a page and clicks something final.
 
 Out of scope, said plainly in the "Limits, honestly" part of [security.md](security.md): malware already running
-as the user, a browser exploit (Chromium's own sandbox contains one, except where it's off: as root on Linux, in containers without user namespaces, or by choice), and attacks no
+as the user, a browser exploit (the browser's own sandbox contains one, except where it's off: as root on Linux, in containers without user namespaces, or by choice), and attacks no
 software can stop, such as a person the user deliberately let drive their browser.
 
 ## Trust boundaries
@@ -49,7 +49,7 @@ software can stop, such as a person the user deliberately let drive their browse
 
 ## Secure design principles applied
 
-- **Least privilege.** The browser has its own profile, not the user's everyday Chrome. Agents get
+- **Least privilege.** The browser has its own profile, not the user's everyday browser. Agents get
   no run-code tool; the browser reads files only from its own folder and the project, and key or
   credential files are never uploaded; joiners get only their role.
 - **Fail-safe defaults.** A click whose element can't be read counts as final. If the safety hook
@@ -82,8 +82,8 @@ software can stop, such as a person the user deliberately let drive their browse
 ## How we know it stays true
 
 - The Security table in [security.md](security.md) is updated in the same change as any behaviour
-  it describes ([CONTRIBUTING.md](../CONTRIBUTING.md)), and pull requests from contributors are
-  reviewed by a maintainer.
+  it describes (a project rule in [.claude/CLAUDE.md](../.claude/CLAUDE.md)), and
+  `test/security-table.test.mjs` checks that every row names tests that exist.
 - On every push and pull request: unit tests, property-based fuzzing of the security checks
   (`test/fuzz/`), and CodeQL (security-extended). Live browser tests run before releases.
 - Releases: native builds checked against their pins and attested in Sigstore's public log;

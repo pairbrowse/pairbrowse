@@ -8,7 +8,7 @@ verified work below. Nothing here is claimed done without a test or a measuremen
 
 - Started from `d73a501` (PairBrowse 0.15.41) on 2026-10-11.
 - Benchmarks: `PAIRBROWSE_TEST_RUNTIME=~/.pairbrowse/runtime node test/bench.mjs --json out.json`
-  (its own helper on a temporary home, headless Patchright Chromium, a local site; compare runs
+  (its own helper on a temporary home, Patchright's headless browser, a local site; compare runs
   on the same machine only). `PAIRBROWSE_TRACE=1` makes the helper log each call's phases
   (`trace <tool> total=… guard=… turn=… cursor=… mcp=… tidy=… notes=… shot=…` in `daemon.log`).
 
@@ -227,7 +227,7 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
   differ, so a page with a focused text field still gets a picture each time.
 - Freshness can't see a layout shift without a scroll or navigation; the 120 s age bound and the
   structure check under the spot (label, risk) are the guards.
-- The bench runs headless Patchright Chromium, not the PairBrowse native build.
+- The bench runs Patchright's headless browser, not the PairBrowse native build.
 
 ## Next highest-priority actions
 
@@ -248,7 +248,7 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
    differ in size, session (the live view's carries the input replayer and the fit emulation)
    and lifetime, and the combination (a joiner on the slow route while the host watches the
    live view of the same tab) is rare; both are paced to 30 frames a second now.
-7. Idle CPU of the GPU process after work (several seconds at 5–9%) is Chromium's; nothing of
+7. Idle CPU of the GPU process after work (several seconds at 5–9%) is the browser engine's own; nothing of
    PairBrowse's drives it (checked: about:blank idles at 0).
 
 ## Final run (2026-10-11, every change in place)

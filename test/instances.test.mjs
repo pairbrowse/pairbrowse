@@ -98,10 +98,10 @@ test("install lock: one at a time, re-entrant, a dead holder's lock taken over",
   const file = join(scratch, "shared", "install.lock");
   const order = [];
   const slow = (name) => withInstallLock(async () => { order.push(`${name}+`); await new Promise((r) => setTimeout(r, 50)); order.push(`${name}-`); }, { file });
-  // In one process the lock is re-entrant, so two calls at once share it; the order shows only
-  // that each runs to its end. Across processes it waits: a child holds it while this one waits.
+  // Two unrelated installs in one process take turns, as two processes do (re-entrant only along
+  // one call chain). Across processes it waits: a child holds it while this one waits.
   await Promise.all([slow("a"), slow("b")]);
-  assert.equal(order.length, 4);
+  assert.deepEqual(order, ["a+", "a-", "b+", "b-"]);
   assert.equal(existsSync(file), false, "released");
   // Nested: no wait on itself.
   assert.equal(await withInstallLock(() => withInstallLock(async () => 7, { file }), { file }), 7);

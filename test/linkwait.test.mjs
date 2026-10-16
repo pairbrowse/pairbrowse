@@ -8,11 +8,14 @@ import { waitForLink, waitedLine, NOTE_AFTER_MS } from "../scripts/daemon/linkwa
 
 test("a joiner's call issued while the relay is switching goes on only once the channel is back", async () => {
   const join = { switching: true }; // the relay, as follow.mjs reads it
-  setTimeout(() => { join.switching = false; }, 300);
-  const from = Date.now();
+  let backAt = 0;
+  setTimeout(() => { join.switching = false; backAt = Date.now(); }, 300);
   const waited = await waitForLink(() => join.switching, { max: 5000, every: 20 });
-  assert.ok(Date.now() - from >= 300 && waited >= 300, `waited ${waited} ms`);
-  assert.ok(waited < 1000, "then straight on");
+  // It goes on only once the channel is back (never on a clock: a busy machine starts the wait a
+  // little after the timer), and then straight on.
+  assert.equal(join.switching, false, `went on after ${waited} ms with the relay still switching`);
+  assert.ok(backAt > 0 && Date.now() >= backAt, "the channel came back first");
+  assert.ok(waited >= 250 && waited < 1000, `waited ${waited} ms`);
   assert.equal(await waitForLink(() => join.switching, { max: 5000 }), 0, "no wait while the channel is up");
 });
 
@@ -21,7 +24,8 @@ test("a host's tab tool holds while a joiner's connection is away and proceeds w
   const reconnecting = () => lost;
   setTimeout(() => { lost = null; }, 250);
   const waited = await waitForLink(reconnecting, { max: 5000, every: 20 });
-  assert.ok(waited >= 250 && waited < 1000, `waited ${waited} ms`);
+  assert.equal(lost, null, `went on after ${waited} ms with the connection still away`);
+  assert.ok(waited >= 200 && waited < 1000, `waited ${waited} ms`);
   const capped = await waitForLink(() => "Alice", { max: 200, every: 20 });
   assert.ok(capped >= 200 && capped < 600, `the grace ran out at ${capped} ms`);
   let current = true;

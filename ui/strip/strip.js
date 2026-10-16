@@ -1,6 +1,6 @@
 // The browser build's top strip (DESIGN.md B2). One document, three hosts by location hash: the
-// 53 px tab row (no hash), the nav fragments beside the native address bar (#nav-left,
-// #nav-right), and the Share card alone (#share) for the browser's Share bubble, which the 53 px
+// 47 px tab row (no hash), the nav fragments beside the native address bar (#nav-left,
+// #nav-right), and the Share card alone (#share) for the browser's Share bubble, which the 47 px
 // slot cannot draw. The logo and wordmark are a static brand mark: the sessions' door is the left
 // dock's Sessions row. Tabs, owners and the dock layout come from window.pairbrowse
 // (the browser's own API); people and sharing from the helper's event stream, and the
@@ -120,7 +120,7 @@ menuItem("settings", async () => {
 // Without the browser's API the menu has nothing to call.
 if (!pb) menuBtn.hidden = true;
 
-// ---- a page no taller than the row (the browser's 53 px tab-row slot, which clips the rest):
+// ---- a page no taller than the row (the browser's 47 px tab-row slot, which clips the rest):
 // nothing can open under the row. With the browser's bubbles (530 E1, pairbrowse.bubbles) Share's
 // card opens in a bubble of the window anchored to Share (B2): this page in its #share mode, framed
 // by the browser, which owns its dismissal and says when it closed (OnClosed; by Escape, or closed
@@ -130,7 +130,7 @@ if (!pb) menuBtn.hidden = true;
 // second click or Escape on it closes it. The ⋯, which the browser draws beside the slot, is not
 // shown. Each runs in the capture phase, ahead of the card's own click handler, so no popover opens
 // unseen and no focus moves into one. ----
-const ROW_ONLY = 60; // px: taller than the 53 px row, shorter than any popover
+const ROW_ONLY = 60; // px: taller than the 47 px row, shorter than any popover
 // Without the browser API there is no dock to ask: the popovers open in place.
 const inSlot = () => !!pb && !bubble() && mode === "row" && window.innerHeight <= ROW_ONLY;
 const SHARE_CHANNEL = "pairbrowse-share";

@@ -1,4 +1,4 @@
-/* The browser build's top strip (DESIGN.md B2): the 53 px tab row, the nav fragments beside the
+/* The browser build's top strip (DESIGN.md B2): the 47 px tab row, the nav fragments beside the
    native address bar, and the popovers alone for the shell's bubbles. Colors from tokens.css only;
    participant and agent colors arrive as inline backgrounds from strip.js. The light is static (the
    sheet's gradient, edge and glow tokens): never animated, never a backdrop-filter. */
@@ -9,7 +9,7 @@ button { font: inherit; color: inherit; margin: 0; }
 svg { flex: none; }
 
 /* ---- the tab row ---- */
-.row { position: relative; display: flex; align-items: stretch; gap: 8px; height: 53px; padding: 0 12px; -webkit-app-region: drag; } /* mockup */
+.row { position: relative; display: flex; align-items: stretch; gap: 8px; height: 47px; padding: 0 12px; -webkit-app-region: drag; } /* mockup */
 body[data-platform="mac"] .row { padding-left: 92px; } /* the traffic lights end at 74: 18 px clear space */
 /* In the browser the row ends 8 px before the engine's own ⋯ menu button, which the shell lays out at
    the tab row's right end beside this page (525). */
@@ -19,17 +19,17 @@ body[data-host="native"] .row { padding-right: 8px; }
 /* The brand mark: the logo and the wordmark, a static mark (no hover, press or focus; the sessions'
    door is the left dock's Sessions row), part of the window's drag region. One centre line for the
    whole row (the user, 2026-10-15: the tabs on the window buttons' line, a tab's contents centred
-   in the tab): 30 px from the top, where the shell centres the traffic lights and the "..."
-   (pairbrowse::kTabRowLine). The tabs, 47 px with a 1 px top edge, sit on the row's bottom edge, so
-   their contents' middle is 53 - 46 / 2 = 30; the logo, the wordmark, the + and the right end sit
-   on the same line through the same 46 px box. The logo and wordmark keep their places; with the
+   in the tab): 27 px from the top, where the shell centres the traffic lights and the "..."
+   (pairbrowse::kTabRowLine). The tabs, 41 px with a 1 px top edge, sit on the row's bottom edge, so
+   their contents' middle is 47 - 40 / 2 = 27; the logo, the wordmark, the + and the right end sit
+   on the same line through the same 40 px box. The logo and wordmark keep their places; with the
    chevron gone (12 px and its 1 px margin) the 11 px gap before it stays as padding, so the tabs
    move left by 13 px. */
-.brand { display: flex; align-items: center; gap: 11px; align-self: flex-end; margin-bottom: calc((46px - var(--ctl-strip)) / 2); height: var(--ctl-strip); padding: 0 calc(6px + 11px) 0 2px; flex: none; user-select: none; } /* mockup */
+.brand { display: flex; align-items: center; gap: 11px; align-self: flex-end; margin-bottom: calc((40px - var(--ctl-strip)) / 2); height: var(--ctl-strip); padding: 0 calc(6px + 11px) 0 2px; flex: none; user-select: none; } /* mockup */
 .brand img { display: block; flex: none; }
 .brand .wordmark { font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.005em; color: var(--ink); white-space: nowrap; }
 
-/* The tabs sit on the row's bottom edge, 47 px tall from 6 px under the window's top (their outline
+/* The tabs sit on the row's bottom edge, 41 px tall from 6 px under the window's top (their outline
    joins the nav row under them), their contents centred in them on the row's line; the padding
    keeps the active tab's feet unclipped. */
 #tabs { display: flex; align-items: flex-end; flex: 0 1 auto; gap: 2px; min-width: 0; margin: 0 calc(-1 * var(--sp-3)); padding: 0 var(--sp-3); list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
@@ -38,7 +38,7 @@ body[data-host="native"] .row { padding-right: 8px; }
 #tabs.fade-start, #tabs.fade-end { --fade-s: 0px; --fade-e: 0px; mask-image: linear-gradient(90deg, transparent, #000 var(--fade-s), #000 calc(100% - var(--fade-e)), transparent); }
 #tabs.fade-start { --fade-s: 24px; }
 #tabs.fade-end { --fade-e: 24px; }
-#tabs li { position: relative; display: flex; align-items: center; gap: var(--sp-2); flex: 0 1 235px; width: 235px; min-width: 160px; max-width: 240px; height: 47px; padding: 0 7px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup */
+#tabs li { position: relative; display: flex; align-items: center; gap: var(--sp-2); flex: 0 1 235px; width: 235px; min-width: 160px; max-width: 240px; height: 41px; padding: 0 7px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup */
 #tabs li:not([aria-selected="true"]):hover { background-color: var(--elevated); }
 /* The active tab: lit at the top, fading into the centre column (--column: the nav row under it),
    blue whoever drives it (the user, 2026-10-12; the owner shows by its dot): a blue edge, its top
@@ -73,13 +73,13 @@ body[data-host="native"] .row { padding-right: 8px; }
 body[data-dragging] #tabs li { transition: background-color var(--t-hover), color var(--t-hover), transform var(--t); }
 body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: none; }
 
-/* On the row's line, with the tabs' contents and the window buttons: (46 - 28) / 2 above the edge. */
-#new { display: grid; place-items: center; flex: none; align-self: flex-end; margin-bottom: 9px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); } /* native: the window buttons' line */
+/* On the row's line, with the tabs' contents and the window buttons: (40 - 28) / 2 above the edge. */
+#new { display: grid; place-items: center; flex: none; align-self: flex-end; margin-bottom: 6px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); } /* native: the window buttons' line */
 #new svg { width: 16px; height: 16px; }
 #new:hover { background: var(--hover); color: var(--ink); }
 
 /* ---- the right end ---- */
-#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; align-self: flex-end; height: 46px; } /* native: on the row's line, as the tabs' contents */
+#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; align-self: flex-end; height: 40px; } /* native: on the row's line, as the tabs' contents */
 #pill { display: inline-flex; align-items: center; gap: 10px; height: var(--ctl-strip); padding: 0 14px; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; } /* mockup: the Live session pill */
 #pill .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); } /* mockup */
 #pill[data-state="reconnecting"] .dot { background: var(--warn); }
@@ -109,7 +109,7 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 .share-card, #menu { --origin: top right; }
 
 /* The Share card (DESIGN.md B8, the side panel's markup and styles). */
-.share-card { position: absolute; top: 53px; right: 12px; z-index: 3; width: 320px; display: grid; gap: var(--sp-3); padding: calc(var(--sp-3) - 1px); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); line-height: 1.45; } /* mockup: under the 53 px row */
+.share-card { position: absolute; top: 47px; right: 12px; z-index: 3; width: 320px; display: grid; gap: var(--sp-3); padding: calc(var(--sp-3) - 1px); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); line-height: 1.45; } /* mockup: under the 47 px row */
 .share-card h2 { margin: 0; font-size: var(--fs-4); font-weight: var(--fw-name); }
 .share-choice { display: grid; gap: var(--sp-1); margin: 0; padding: 0; border: 0; min-width: 0; }
 .share-choice legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-1); font-weight: var(--fw-name); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -134,7 +134,7 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 .msg[data-kind="error"] { color: var(--bad); }
 .msg[data-kind="ok"] { color: var(--ok); }
 
-#menu { position: absolute; top: 53px; right: 12px; z-index: 3; min-width: 200px; display: grid; padding: var(--sp-1); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); } /* mockup: under the 53 px row */
+#menu { position: absolute; top: 47px; right: 12px; z-index: 3; min-width: 200px; display: grid; padding: var(--sp-1); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); } /* mockup: under the 47 px row */
 #menu .item { display: flex; align-items: center; gap: var(--sp-3); width: 100%; height: var(--ctl); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-1); background: transparent; color: var(--ink); font-size: var(--fs-3); text-align: left; cursor: default; transition: background-color var(--t-hover); }
 #menu .item:hover:not(:disabled), #menu .item:focus { background: var(--hover); }
 #menu .item:disabled { color: var(--muted); }

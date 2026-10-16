@@ -6,8 +6,8 @@
 // folder is <tmpdir>/pairbrowse-ui-look. Prints one line per shot (name, size, path, the number of
 // error, pageerror, rejection and csp log entries); exit 1 when a shot failed to render or logged
 // one of those. Sizes: 525's window (DESIGN.md B1, the window preview's geometry): the strip's tab
-// row 1536 x 53; the docks 205 and 346 wide by 971 (1024 - 53), both rails 44 by 971; the contents
-// card 969 x 796; the timeline 985 x 125; the approve card 360; the nav fragments 3 x 28 + 2 x 4 +
+// row 1536 x 47; the docks 205 and 346 wide by 977 (1024 - 47), both rails 44 by 977; the contents
+// card 969 x 802; the timeline 985 x 125; the approve card 360; the nav fragments 3 x 28 + 2 x 4 +
 // 16 = 108; Share its B width. right-extension is the right dock as
 // the open build's side panel shows it (no window.pairbrowse: the header, Share in the session
 // card, the Live pill, the You row, the profile sections in Tools); the *-empty shots have a
@@ -28,25 +28,25 @@ export const EMPTY = { helper: {}, shim: { tabs: [{
   active: true, selected: true, blocked: false, width: 1280, height: 800, targetId: "T21", canGoBack: false, canGoForward: false,
 }], owners: { agents: [], colors: [] } } }; // empty lists replace the default owners whole (merge keeps an object's keys)
 export const SHOTS = [
-  { name: "strip", page: "strip", width: 1536, height: 53 },
+  { name: "strip", page: "strip", width: 1536, height: 47 },
   { name: "strip-nav-left", page: "strip", hash: "nav-left", width: 108, height: 44 },
   { name: "strip-nav-right", page: "strip", hash: "nav-right", width: 108, height: 44 },
   { name: "strip-share", page: "strip", hash: "share", width: 320, height: 420 },
-  { name: "strip-empty", page: "strip", width: 1536, height: 53, fixtures: EMPTY },
-  { name: "left", page: "left", width: 205, height: 971 },
-  { name: "left-rail", page: "left", width: 44, height: 971, shim: { layout: { left: 1 } } },
-  { name: "left-empty", page: "left", width: 205, height: 971, fixtures: EMPTY },
-  { name: "right", page: "right", width: 346, height: 971 },
-  { name: "right-rail", page: "right", width: 44, height: 971, shim: { layout: { right: 1 } } },
-  { name: "right-empty", page: "right", width: 346, height: 971, fixtures: EMPTY },
-  { name: "right-extension", page: "right", width: 346, height: 971, native: false },
-  { name: "newtab", page: "newtab", width: 969, height: 796 },
-  { name: "picker", page: "picker", width: 969, height: 796 },
-  { name: "screen", page: "screen", width: 969, height: 796 },
+  { name: "strip-empty", page: "strip", width: 1536, height: 47, fixtures: EMPTY },
+  { name: "left", page: "left", width: 205, height: 977 },
+  { name: "left-rail", page: "left", width: 44, height: 977, shim: { layout: { left: 1 } } },
+  { name: "left-empty", page: "left", width: 205, height: 977, fixtures: EMPTY },
+  { name: "right", page: "right", width: 346, height: 977 },
+  { name: "right-rail", page: "right", width: 44, height: 977, shim: { layout: { right: 1 } } },
+  { name: "right-empty", page: "right", width: 346, height: 977, fixtures: EMPTY },
+  { name: "right-extension", page: "right", width: 346, height: 977, native: false },
+  { name: "newtab", page: "newtab", width: 969, height: 802 },
+  { name: "picker", page: "picker", width: 969, height: 802 },
+  { name: "screen", page: "screen", width: 969, height: 802 },
   { name: "approve", page: "approve", width: 360, height: 300 },
-  { name: "settings", page: "settings", width: 969, height: 796 },
-  { name: "sessions", page: "sessions", width: 969, height: 796 },
-  { name: "activity", page: "activity", width: 969, height: 796 },
+  { name: "settings", page: "settings", width: 969, height: 802 },
+  { name: "sessions", page: "sessions", width: 969, height: 802 },
+  { name: "activity", page: "activity", width: 969, height: 802 },
   { name: "timeline", page: "timeline", width: 985, height: 125 },
 ];
 const BAD = new Set(["error", "pageerror", "rejection", "csp"]);

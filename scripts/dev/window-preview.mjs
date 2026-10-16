@@ -59,12 +59,12 @@ export const MOCKUP = {
 };
 const BAD_KINDS = new Set(["error", "pageerror", "rejection", "csp"]);
 
-// The window's rects at the 500-shell geometry as 525 measures it to the mockup (DESIGN.md B1). The
-// CSS gives the same: the docks run from under the tab row to the bottom; the nav row, the card
-// (right under the nav row, inset 8 px on the sides and the bottom) and the timeline share the
-// contents column between them.
+// The window's rects at the 500-shell geometry as 525 measures it to the mockup (DESIGN.md B1),
+// its tab row 47 px since 580. The CSS gives the same: the docks run from under the tab row to the
+// bottom; the nav row, the card (right under the nav row, inset 8 px on the sides and the bottom)
+// and the timeline share the contents column between them.
 export function geometry({ rail = false } = {}) {
-  const W = 1536, H = 1024, row = 53, nav = 42, tl = 125, inset = 8, topInset = 0;
+  const W = 1536, H = 1024, row = 47, nav = 42, tl = 125, inset = 8, topInset = 0;
   const left = rail ? 44 : 205, right = rail ? 44 : 346, top = row + nav;
   return {
     window: { w: W, h: H },
@@ -380,7 +380,7 @@ export async function main(args) {
     let shim = { ...merge(defaultFixture(), fx.shim), owners: fx.shim.owners };
     if (flag("--no-helper")) shim = { ...shim, helper: null, owners: { agents: {}, colors: {} } };
     if (rail) {
-      helper.fixtures.layout = { left: "rail", right: "rail", strip: 53 };
+      helper.fixtures.layout = { left: "rail", right: "rail", strip: 47 };
       shim = merge(shim, { layout: { left: 1, right: 1 } });
     }
     ui = await startUiServer({ helper, fixture: shim });

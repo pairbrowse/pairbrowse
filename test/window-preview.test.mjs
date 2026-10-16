@@ -16,18 +16,19 @@ const BAD = new Set(["error", "pageerror", "rejection", "csp"]);
 
 test("window preview: geometry, regions and the scene", () => {
   const g = geometry();
-  // 525's geometry, measured on the mockup: tab row 53, nav row 42 with the card right under it,
-  // docks 205 and 346, inset 8 on the sides and the bottom, timeline 125.
-  assert.deepEqual(g.strip, { x: 0, y: 0, w: 1536, h: 53 });
-  assert.deepEqual(g.card, { x: 213, y: 95, w: 969, h: 796 });
-  assert.deepEqual(g.nav, { x: 205, y: 53, w: 985, h: 42 });
-  assert.deepEqual(g.left, { x: 0, y: 53, w: 205, h: 971 });
-  assert.deepEqual(g.right, { x: 1190, y: 53, w: 346, h: 971 });
+  // 525's geometry, measured on the mockup, with the shell's tab row now 47 (the mockup's 53): nav
+  // row 42 with the card right under it, docks 205 and 346, inset 8 on the sides and the bottom,
+  // timeline 125.
+  assert.deepEqual(g.strip, { x: 0, y: 0, w: 1536, h: 47 });
+  assert.deepEqual(g.card, { x: 213, y: 89, w: 969, h: 802 });
+  assert.deepEqual(g.nav, { x: 205, y: 47, w: 985, h: 42 });
+  assert.deepEqual(g.left, { x: 0, y: 47, w: 205, h: 977 });
+  assert.deepEqual(g.right, { x: 1190, y: 47, w: 346, h: 977 });
   assert.deepEqual(g.timeline, { x: 205, y: 899, w: 985, h: 125 });
   assert.equal(g.card.y + g.card.h + 8, g.timeline.y, "8 px between the card and the timeline");
   const r = geometry({ rail: true });
   assert.equal(r.card.w, 1432);
-  assert.equal(r.card.h, 796);
+  assert.equal(r.card.h, 802);
   assert.equal(r.left.w, 44);
   assert.equal(r.right.w, 44);
 

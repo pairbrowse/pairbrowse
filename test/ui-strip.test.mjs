@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { describe } from "node:test";
 import { pageTest } from "./helpers/ui-page.mjs";
 
-const ROW = { width: 1536, height: 53 };
+const ROW = { width: 1536, height: 47 };
 const TALL = { width: 1536, height: 480 };
 const ACCENT = "rgb(50, 133, 246)";
 // A 1x1 PNG, a favicon the page may show under its CSP.
@@ -41,8 +41,8 @@ describe("renders the tab list, its states and the drag region", () => pageTest(
   assert.deepEqual(await inPage(order), [11, 12, 13]);
   const [a, b, c] = [await inPage(tabInfo, 11), await inPage(tabInfo, 12), await inPage(tabInfo, 13)];
   for (const t of [a, b, c]) {
-    assert.equal(t.height, 47, "47 px tall (570: from 6 px under the top to the row's bottom edge)");
-    assert.equal(t.bottom, 53, "on the row's bottom edge");
+    assert.equal(t.height, 41, "41 px tall (570: from 6 px under the top to the row's bottom edge)");
+    assert.equal(t.bottom, 47, "on the row's bottom edge");
     assert.ok(t.width >= 160 && t.width <= 240, `width ${t.width}`);
   }
   // 2 px apart (the mockup: the tabs nearly touch; the active tab's feet reach over the gap)
@@ -322,7 +322,7 @@ describe("keyboard paths", () => pageTest("strip", { viewport: ROW }, async ({ p
   // keyboard paths: the Tab order, each with the 2 px --accent ring
   await inPage(focusBody);
   const seen = [];
-  // In the 53 px row the menu is not shown (it has nowhere to open): Share ends the order. In a
+  // In the 47 px row the menu is not shown (it has nowhere to open): Share ends the order. In a
   // taller host the menu button follows Share (the menu test). The brand mark is no stop: the
   // first tab is the row's first.
   assert.equal(await inPage(() => document.getElementById("menu-btn").checkVisibility()), false);
@@ -395,8 +395,8 @@ describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, sh
   });
   // One centre line for the row (the user, 2026-10-15: the tabs on the window buttons' line, a
   // tab's contents centred in the tab): the logo, the wordmark's text, the first tab's icon, title
-  // and close, the + and the right end's controls share 30 px from the top, where the shell centres
-  // the traffic lights and the "..." (pairbrowse::kTabRowLine). The tab's outline, 47 px from 6 px
+  // and close, the + and the right end's controls share 27 px from the top, where the shell centres
+  // the traffic lights and the "..." (pairbrowse::kTabRowLine). The tab's outline, 41 px from 6 px
   // down to the row's bottom edge, has its contents' middle there too.
   const line = await inPage(() => {
     const mid = (r) => r.top + r.height / 2;
@@ -414,13 +414,13 @@ describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, sh
   assert.deepEqual(line.size, [28, 28], "the logo stays 28 x 28");
   assert.ok(Math.abs(line.logo - line.icon) <= 0.5, `logo ${line.logo} on the favicons' centre ${line.icon}`);
   assert.ok(Math.abs(line.word - line.icon) <= 0.5, `wordmark ${line.word} on the favicons' centre ${line.icon}`);
-  assert.ok(Math.abs(line.icon - 30) <= 0.5, `the favicons' centre ${line.icon}`);
-  assert.ok(Math.abs(line.title - 30) <= 0.75, `the tab title's centre ${line.title}`);
-  assert.ok(Math.abs(line.close - 30) <= 0.5, `the tab close's centre ${line.close}`);
-  for (const [id, y] of line.right) assert.ok(Math.abs(y - 30) <= 0.5, `${id}'s centre ${y}`);
+  assert.ok(Math.abs(line.icon - 27) <= 0.5, `the favicons' centre ${line.icon}`);
+  assert.ok(Math.abs(line.title - 27) <= 0.75, `the tab title's centre ${line.title}`);
+  assert.ok(Math.abs(line.close - 27) <= 0.5, `the tab close's centre ${line.close}`);
+  for (const [id, y] of line.right) assert.ok(Math.abs(y - 27) <= 0.5, `${id}'s centre ${y}`);
   // The tab's contents centred in the tab's own box (below its 1 px top edge).
   assert.ok(Math.abs((line.tab[0] + 1 + line.tab[1]) / 2 - line.icon) <= 0.5, `the icon ${line.icon} in the tab's middle`);
-  assert.deepEqual(line.tab.slice(0, 2), [6, 53], "the tab's outline: 47 px on the row's bottom edge");
+  assert.deepEqual(line.tab.slice(0, 2), [6, 47], "the tab's outline: 41 px on the row's bottom edge");
   // No hover state: hovered, it looks as it did.
   await page.hover("#brand .wordmark");
   await page.waitForTimeout(250);
@@ -448,7 +448,7 @@ describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, sh
 // Thirty tabs in the mockup's 1494 px window: the tabs keep B2's 160 px minimum and the row
 // scrolls; the active tab is always fully in view (24 px clear of either edge, the fade's width),
 // the vertical wheel scrolls the row, and an edge with hidden tabs fades (plans/555 item 3).
-const WIDE = { width: 1494, height: 53 };
+const WIDE = { width: 1494, height: 47 };
 const THIRTY = Array.from({ length: 30 }, (_, i) => ({
   id: 101 + i, index: i, window: 1, title: `Tab ${i + 1}`, url: `https://site${i + 1}.example/`, favicon: null, defaultFavicon: true, networkState: 0,
   muted: false, audible: false, pinned: false, group: null, groupTitle: null, groupColor: null, active: i === 0, selected: i === 0, blocked: false,
@@ -517,7 +517,7 @@ describe("thirty tabs: the active tab stays in view, the wheel scrolls, the edge
   // the window narrower: the active tab stays in view
   await shim.activate(120);
   await until("120 in view", settled, 120);
-  await page.setViewportSize({ width: 900, height: 53 });
+  await page.setViewportSize({ width: 900, height: 47 });
   await until("120 in view at 900 px", settled, 120);
   const l = await harness.live();
   assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0, "no timer and no observer");
@@ -620,7 +620,7 @@ describe("share card opens and posts an invite", () => pageTest("strip", { viewp
     const r = c.getBoundingClientRect();
     return { hidden: c.hidden, role: c.getAttribute("role"), expanded: document.getElementById("share-btn").getAttribute("aria-expanded"), w: r.width, top: r.top, right: innerWidth - r.right, focus: document.activeElement.value };
   });
-  assert.deepEqual(card, { hidden: false, role: "dialog", expanded: "true", w: 320, top: 53, right: 12, focus: "code" });
+  assert.deepEqual(card, { hidden: false, role: "dialog", expanded: "true", w: 320, top: 47, right: 12, focus: "code" });
   await page.click("#share-make");
   await until("the code", () => document.getElementById("share-code").value === "pb-join:FAKE");
   assert.deepEqual(helper.posts.filter((p) => p.route === "invite").map((p) => p.body), [{ share: "code" }]);
@@ -747,12 +747,12 @@ describe("reduced motion and no timers", () => pageTest("strip", { viewport: ROW
   assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0);
 }));
 
-// The browser's tab-row slot is 53 px tall and clips the rest: a popover under the row would open
+// The browser's tab-row slot is 47 px tall and clips the rest: a popover under the row would open
 // unseen and take the keyboard focus with it. In a build without the browser's bubbles Share's
 // card opens at the top of the agent panel, under Share, asked with Share's place for its caret
 // (DESIGN.md Part I); Share shows the state the dock reports, and a second click or Escape on it
 // closes it. The menu is not shown, and nothing under the row ever opens.
-describe("in the 53 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1, right: 1 } } }, async ({ page, shim, inPage, until }) => {
+describe("in the 47 px row no popover opens under the row", () => pageTest("strip", { viewport: ROW, shim: { layout: { left: 1, right: 1 } } }, async ({ page, shim, inPage, until }) => {
   const under = () => ["share-card", "menu"].filter((id) => !document.getElementById(id).hidden);
   const insidePopover = () => !!document.activeElement?.closest?.("#share-card, #menu");
   const asked = () => window.__asked.map(({ anchor, ...m }) => ({ ...m, anchor: anchor ? Object.keys(anchor).join() : null }));
@@ -962,12 +962,12 @@ describe("reports the tab order and arranges this window's tabs", () => pageTest
   assert.equal((await harness.live()).timeouts ?? 0, 0, "no timer");
 }));
 
-// 530 E1/E2 B2: with the browser's bubbles Share in the 53 px row opens the Share card in a bubble
+// 530 E1/E2 B2: with the browser's bubbles Share in the 47 px row opens the Share card in a bubble
 // anchored to Share (bubbles.open with its rect), never over the docks' channel; Share shows it
 // open, a second click closes it, OnClosed by Escape gives the focus back to Share, and a click
 // outside that lands on Share is that close, not a new open. The ⋯ stays hidden in the slot (the
 // browser draws its own beside it).
-describe("in the 53 px row Share opens the browser's bubble", () => pageTest("strip", { viewport: ROW, shim: { bubbles: true } }, async ({ page, shim, inPage, until }) => {
+describe("in the 47 px row Share opens the browser's bubble", () => pageTest("strip", { viewport: ROW, shim: { bubbles: true } }, async ({ page, shim, inPage, until }) => {
   await inPage(() => { window.__asked = []; const ch = new BroadcastChannel("pairbrowse-share"); window.__dock = ch; ch.onmessage = (e) => window.__asked.push(e.data); });
   const opens = () => callsOf(shim, "bubbles", "open");
   const boxOf = (id) => inPage((x) => { const r = document.getElementById(x).getBoundingClientRect(); const left = Math.floor(r.left), top = Math.max(0, Math.floor(r.top)); return { x: left, y: top, width: Math.ceil(r.right) - left, height: Math.min(innerHeight, Math.ceil(r.bottom)) - top }; }, id);

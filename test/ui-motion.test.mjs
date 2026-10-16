@@ -185,7 +185,7 @@ describe("the timeline says where a picture went, at the card", () => pageTest("
 }));
 
 // ---- the strip: a new tab grows in, a closed one folds away and hands the focus on ----
-describe("tabs grow in and fold away", () => pageTest("strip", { viewport: { width: 1200, height: 53 } }, async ({ page, inPage, until, shim }) => {
+describe("tabs grow in and fold away", () => pageTest("strip", { viewport: { width: 1200, height: 47 } }, async ({ page, inPage, until, shim }) => {
   await until("tabs", () => document.querySelectorAll("#tabs li").length === 3);
   await shim.createTab({ id: 14, index: 3, window: 1, title: "Mail", url: "https://mail.example/", favicon: null, defaultFavicon: true, networkState: 0, pinned: false, active: false, targetId: "T14" });
   await until("the new tab", () => !!document.querySelector('#tabs li[data-id="14"]'));

@@ -140,7 +140,7 @@ test("open.mjs's home: the record's, else the one the environment names, else th
 // A project's own settings (Claude Code hands their "env" to the plugin) never pick the helper's
 // home nor the name it shows others; the same variables from your own shell still work.
 test("a home or participant name set by the project's settings is dropped; set elsewhere it stays", () => {
-  assert.deepEqual([...PROJECT_GATED].sort(), ["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"]);
+  assert.deepEqual([...PROJECT_GATED].sort(), ["PAIRBROWSE_APPROVAL_WAIT_MS", "PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"]);
   const clean = project("gate-clean");
   const env1 = { PAIRBROWSE_HOME: "/x/home", PAIRBROWSE_PARTICIPANT: "Me", CLAUDE_PROJECT_DIR: clean };
   assert.deepEqual(gateProjectEnv(env1), []);
@@ -165,7 +165,7 @@ test("a home or participant name set by the project's settings is dropped; set e
   // A settings path that can't be read (a folder in a file's place) counts as naming them all.
   const odd = project("gate-odd");
   mkdirSync(join(odd, ".claude", "settings.json"), { recursive: true });
-  assert.deepEqual(projectSetNames(odd).sort(), ["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"]);
+  assert.deepEqual(projectSetNames(odd).sort(), [...PROJECT_GATED].sort());
 });
 
 // The settings are read as Claude Code and Codex read them: a key spelled with escapes is the same key.
@@ -195,6 +195,36 @@ test("a gated name spelled with JSON or TOML escapes is still caught; a file not
   const env2 = { PAIRBROWSE_HOME: "/evil", PAIRBROWSE_INSTANCE: "work" };
   assert.deepEqual(gateProjectEnv(env2, { cwd: codex }), ["PAIRBROWSE_HOME"]);
   assert.equal(env2.PAIRBROWSE_INSTANCE, "work");
+});
+
+// A project can't shorten how long an ask waits in the browser; your own setting still works.
+test("PAIRBROWSE_APPROVAL_WAIT_MS set by the project's settings is ignored by the hook", () => {
+  const proj = project("gate-wait");
+  mkdirSync(join(proj, ".claude"), { recursive: true });
+  writeFileSync(join(proj, ".claude", "settings.json"), JSON.stringify({ env: { PAIRBROWSE_APPROVAL_WAIT_MS: "100" } }));
+  const code = `const g = await import(${JSON.stringify(new URL("../scripts/guard.mjs", import.meta.url).href)}); console.log(g.APPROVAL_WAIT_MS);`;
+  const run = (dir) => {
+    const env = { PATH: process.env.PATH, HOME: account, PAIRBROWSE_HOME: process.env.PAIRBROWSE_HOME, PAIRBROWSE_APPROVAL_WAIT_MS: "100", CLAUDE_PROJECT_DIR: dir };
+    const out = spawnSync(process.execPath, ["--input-type=module", "-e", code], { cwd: dir, env, encoding: "utf8" });
+    assert.equal(out.status, 0, out.stderr);
+    return Number(out.stdout.trim().split("\n").pop());
+  };
+  assert.equal(run(proj), 120_000, "the project's value is removed: the default wait");
+  assert.equal(run(project("gate-wait-clean")), 100, "set outside the project, it holds");
+});
+
+// A malformed PAIRBROWSE_INSTANCE: every hook and the bridge stop with one clear line, no stack trace.
+test("a bad PAIRBROWSE_INSTANCE stops the hooks and the bridge with a clear message", () => {
+  const dir = project("bad-instance");
+  const env = { PATH: process.env.PATH, HOME: account, PAIRBROWSE_INSTANCE: "Not Valid!" };
+  const input = JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "mcp__plugin_pairbrowse_browser__browser_navigate", tool_input: { url: "https://example.com" } });
+  for (const script of ["guard.mjs", "log.mjs", "session-start.mjs", "launch.mjs", "runs.mjs"]) {
+    const out = spawnSync(process.execPath, [join(root, "scripts", script)], { cwd: dir, env, input, encoding: "utf8", timeout: 15_000 });
+    assert.equal(out.status, 2, `${script}: ${out.stderr}`);
+    assert.equal(out.stdout, "", script);
+    assert.match(out.stderr, /^PairBrowse is off: PAIRBROWSE_INSTANCE must be 1 to 32 of a-z, 0-9 and - \(got "Not Valid!"\)\. Fix or remove PAIRBROWSE_INSTANCE/, script);
+    assert.equal(out.stderr.trim().split("\n").length, 1, `${script}: one line, no stack trace`);
+  }
 });
 
 test("a process in such a project resolves the default home and passes neither variable on", () => {

@@ -1,8 +1,8 @@
 import { userInfo } from "node:os";
 import { join, sep } from "node:path";
-import { mkdirSync, chmodSync, appendFileSync } from "node:fs";
+import { mkdirSync, chmodSync, appendFileSync, writeSync } from "node:fs";
 import { writeJsonAtomic, sha256, readJson, onCorruptJson, corruptLine } from "./util.mjs";
-import { resolveHome, gateProjectEnv } from "./home.mjs";
+import { resolveHome, gateProjectEnv, BAD_INSTANCE } from "./home.mjs";
 import { checkDownloads } from "./rules/downloads.mjs";
 import { checkConfig, configProblem, configWarnings } from "./config-schema.mjs";
 import { screenChromeArgs, droppedWarning } from "./chrome-args.mjs";
@@ -16,7 +16,18 @@ process.umask(0o077);
 // A home or name a project's own settings set is dropped first (home.mjs gateProjectEnv), so
 // neither this process nor the helper it starts uses it.
 const GATED = gateProjectEnv(process.env);
-export const SELECTED = resolveHome();
+// A malformed PAIRBROWSE_INSTANCE stops every process that would use a home (the hooks, the
+// bridge, the helper) with one clear line and exit code 2, never a stack trace: a hook's 2 blocks
+// the call (PreToolUse) and tells Claude why, and the bridge doesn't start.
+export const SELECTED = (() => {
+  try {
+    return resolveHome();
+  } catch (e) {
+    if (e?.code !== BAD_INSTANCE) throw e;
+    try { writeSync(2, `PairBrowse is off: ${e.message}. Fix or remove PAIRBROWSE_INSTANCE in your shell or settings, then start a new session.\n`); } catch {}
+    process.exit(2);
+  }
+})();
 if (GATED.length) SELECTED.warning = [SELECTED.warning, `${GATED.join(" and ")} set by this project's settings`].filter(Boolean).join("; ");
 export const HOME = SELECTED.home;
 export const SHARED = SELECTED.shared;

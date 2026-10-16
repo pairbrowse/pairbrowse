@@ -165,8 +165,8 @@ picks who the helper is or relaxes a check is removed when one of those files na
 |----------|---------|----------------------|--------------|
 | `PAIRBROWSE_HOME` | every process (`home.mjs`) | no: removed | The home folder: profile, config, secrets, the installs the helper runs |
 | `PAIRBROWSE_PARTICIPANT` | bridge, helper | no: removed | The name joiners and other agents see for this connection or host |
-| `PAIRBROWSE_INSTANCE` | every process (`home.mjs`) | yes | One of your own instances, `~/.pairbrowse/instances/<name>`, as a project's `.pairbrowse.json` may choose |
-| `PAIRBROWSE_APPROVAL_WAIT_MS` | `guard.mjs` (hook) | yes | How long an ask waits in the browser (100 ms to 10 min) before the terminal's prompt is the only one; it never allows anything |
+| `PAIRBROWSE_INSTANCE` | every process (`home.mjs`) | yes | One of your own instances, `~/.pairbrowse/instances/<name>`, as a project's `.pairbrowse.json` may choose; a malformed name stops every hook and the bridge with one line and exit code 2 (`scripts/paths.mjs`) |
+| `PAIRBROWSE_APPROVAL_WAIT_MS` | `guard.mjs` (hook), helper | no: removed | How long an ask waits in the browser (100 ms to 10 min) before the terminal's prompt is the only one; it never allows anything |
 | `PAIRBROWSE_TRACE` | helper | yes | `1`: each result's phases and their time in the helper's log (no page content) |
 | `PAIRBROWSE_LATENCY_LOG` | helper | yes | `1`: joiner stream timings in the log |
 | `PAIRBROWSE_TEST_*` | helper | no: removed | The test switches above; only a helper the test harness started keeps them |

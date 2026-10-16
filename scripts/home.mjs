@@ -57,12 +57,13 @@ export function projectInstance(dir, { uid = process.getuid?.() } = {}) {
 // Variables a project's own settings may not set. Claude Code hands a project's
 // .claude/settings.json (and .claude/settings.local.json) "env" to the plugin it runs, and Codex
 // reads a project's .codex folder (its TOML settings file). Those name which folder is this
-// helper's home (its profile, config, secrets, the installs it runs) and the name it shows the
-// people it shares with. Set there, they
+// helper's home (its profile, config, secrets, the installs it runs), the name it shows the
+// people it shares with, and how long an ask waits in the browser (guard.mjs: a project must not
+// cut that short so you have no time to answer). Set there, they
 // are removed before anything reads them (paths.mjs), so a project never picks a home of its
 // choosing (it may still pick one of your own instances: PAIRBROWSE_INSTANCE, .pairbrowse.json)
 // nor speaks as someone else. Set in your own shell or user settings, they work as before.
-export const PROJECT_GATED = Object.freeze(["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT"]);
+export const PROJECT_GATED = Object.freeze(["PAIRBROWSE_HOME", "PAIRBROWSE_PARTICIPANT", "PAIRBROWSE_APPROVAL_WAIT_MS"]);
 // The Codex file's name is joined so util.test.mjs's config-key scan doesn't read it as a setting.
 export const PROJECT_SETTINGS = Object.freeze([[".claude", "settings.json"], [".claude", "settings.local.json"], [".codex", ["config", "toml"].join(".")]]);
 const SETTINGS_MAX_BYTES = 4 << 20;
@@ -130,7 +131,9 @@ export function gateProjectEnv(env = process.env, { cwd = process.cwd() } = {}) 
 // The home for an environment and a project folder:
 // { home, instance (name or null), shared (the read-only installs' home), source, warning? }.
 // source: "PAIRBROWSE_HOME", "PAIRBROWSE_INSTANCE", "project" or "default". An invalid
-// PAIRBROWSE_INSTANCE throws: a mistyped name must never quietly open another profile.
+// PAIRBROWSE_INSTANCE throws (code BAD_INSTANCE): a mistyped name must never quietly open another
+// profile.
+export const BAD_INSTANCE = "EBADINSTANCE";
 export function resolveHome({ env = process.env, cwd = process.cwd(), account = homedir(), uid } = {}) {
   if (env.PAIRBROWSE_HOME) {
     const home = env.PAIRBROWSE_HOME;
@@ -140,7 +143,7 @@ export function resolveHome({ env = process.env, cwd = process.cwd(), account = 
   const named = env.PAIRBROWSE_INSTANCE;
   if (named !== undefined && named !== "") {
     if (named === "default") return { home: base, instance: null, shared: base, source: "PAIRBROWSE_INSTANCE" };
-    if (!validInstance(named)) throw new Error(`PAIRBROWSE_INSTANCE must be 1 to 32 of a-z, 0-9 and - (got ${JSON.stringify(String(named).slice(0, 40))})`);
+    if (!validInstance(named)) throw Object.assign(new Error(`PAIRBROWSE_INSTANCE must be 1 to 32 of a-z, 0-9 and - (got ${JSON.stringify(String(named).slice(0, 40))})`), { code: BAD_INSTANCE });
     return { home: instanceHome(named, account), instance: named, shared: base, source: "PAIRBROWSE_INSTANCE" };
   }
   const dir = env.CLAUDE_PROJECT_DIR || cwd;

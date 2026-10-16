@@ -134,8 +134,8 @@ computer, use named instances (`scripts/home.mjs`): set `PAIRBROWSE_INSTANCE=<na
 shell or user settings, or put `{"instance": "<name>"}` in `.pairbrowse.json` in the project
 folder. Each instance has its own profile, sessions, config, secrets, logs and socket under
 `~/.pairbrowse/instances/<name>`, and shares the read-only installs. `pairbrowse_status` names the
-instance in use. A bad name stops the start:
-`PAIRBROWSE_INSTANCE must be 1 to 32 of a-z, 0-9 and - (got "<value>")` (`resolveHome`). A project's
+instance in use. A bad name stops the hooks and the bridge:
+`PairBrowse is off: PAIRBROWSE_INSTANCE must be 1 to 32 of a-z, 0-9 and - (got "<value>")` (`resolveHome`, `scripts/paths.mjs`). A project's
 own `.claude/settings.json` or `.codex` settings can't set `PAIRBROWSE_HOME`; `pairbrowse_status`
 then reports `ignored: PAIRBROWSE_HOME set by this project's settings`.
 

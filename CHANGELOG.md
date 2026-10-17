@@ -5,6 +5,20 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.4 (2026-10-17)
+
+Card numbers stay with you when you share: what joiners and their agents see and read is masked and covered, and real cameras and microphones work in the PairBrowse browser.
+
+**Security**
+
+- **A joiner's agent reads card details masked.** Card numbers read as `••••` and their last two digits, and card, security-code, expiry, PIN, one-time-code, IBAN, SSN and password fields as `••••`, in snapshots, `browser_find`, outlines, typing code and messages, frames and open shadow roots included. A page whose fields can't all be read masks every field's value. Your own agents read the page as it is.
+- **Card fields are covered in every picture that leaves your screen:** recordings, timeline pictures, joiners' video and pictures of your tabs, invite-link live view frames and thumbnails, and a joiner's agent's screenshots. Each picture waits for covers read after it was taken, so a field that just appeared, scrolled or went away stays covered; joiners' video runs about half a second behind your screen for it. One-time-code boxes and card numbers split across a line's pieces are covered too. Anything that can't be read in time is covered whole, never sent uncovered.
+- `browser_snapshot` and `browser_find` no longer save to a file the agent names.
+
+**Fixed**
+
+- **Real camera and microphone in the PairBrowse browser** (engine pack 150.0.7871.114-4): sites reach them through the permission prompt, as in any browser.
+
 ## 0.16.3 (2026-10-17)
 
 Fixes from a night of hard agent tasks on real test sites (shops, payment demos, practice forms, frames, canvases, research across tabs) and a whole-browser check of the next PairBrowse browser build.

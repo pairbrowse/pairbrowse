@@ -5,6 +5,24 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.3 (2026-10-17)
+
+Fixes from a night of hard agent tasks on real test sites (shops, payment demos, practice forms, frames, canvases, research across tabs) and a whole-browser check of the next PairBrowse browser build.
+
+**Security**
+
+- **Reading a page no longer lets it open popups.** The helper's own reads (snapshots, outlines, field checks) carry no user gesture, so a page can't use them to open a window or start anything that needs a person's click.
+- **"Continue" is a next step only when nothing pays.** On a form whose only payment sign is an address, a button that clearly goes to the next step ("Continue to shipping", "Next") is an ordinary submit; any card, IBAN or payment frame (every frame read, none left unanswered), a last step, or any other label still asks you first.
+- The browser's own pages, the settings page included, stay out of every agent's reach in every build.
+
+**Changed**
+
+- **Results are much shorter.** A new tab answers with a short outline instead of the whole page; closing a tab sends no picture of the next one; long links, long option lists and ad frames are shortened in action results (`browser_snapshot` still shows everything).
+- **Fast mode does more by itself:** clicks by `#id` or test id, on calendar days and list options; `waitFor` and `expect` look inside frames; a download counts as done; a run starting with `go` leaves a page that stopped answering; a click on a page still saving waits for it (at most 5 s) and says so when it isn't done.
+- **Pictures are truer:** a screenshot waits for the page's fonts, and the outline of the agent's last click goes once its element is gone.
+- A ZIP code is shown as typed; a run that stops shows the page's own error; a canvas click names the canvas.
+- A joiner's dot that didn't land on the host's tab icon is written again at their next input.
+
 ## 0.16.2 (2026-10-17)
 
 Updates reach the running helper, and the pages are ready for the next PairBrowse browser build (Brave-style addresses, settings inside the browser's settings, a shorter tab row) while the installed build keeps working as before.

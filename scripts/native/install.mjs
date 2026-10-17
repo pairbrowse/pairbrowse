@@ -96,8 +96,17 @@ async function runningFrom(app) {
   }
   const r = await run("/bin/ps", ["-axo", "command="], { maxBuffer: 16 << 20 }).catch(() => null);
   if (!r) return true;
+  return openFrom(r.stdout.split("\n"), app);
+}
+
+// Whether any of these command lines runs a program inside the app (macOS: its Contents). The
+// helper's own PairBrowse Agent (Contents/Helpers/PairBrowse Agent.app, which runs the helper
+// itself) doesn't count: otherwise a helper started on it could never update the app it runs from.
+// Moving the app aside while the Agent runs is safe: the running program keeps its file.
+export function openFrom(lines, app) {
   const inside = (app.endsWith(".app") ? join(app, "Contents") : app) + "/";
-  return r.stdout.split("\n").some((l) => l.trimStart().startsWith(inside));
+  const agent = inside + "Helpers/PairBrowse Agent.app/";
+  return lines.some((l) => { const c = l.trimStart(); return c.startsWith(inside) && !c.startsWith(agent); });
 }
 
 // One install at a time (the CLI and the helper's start-up check could otherwise swap the same

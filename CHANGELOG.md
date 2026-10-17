@@ -5,9 +5,18 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.6 (2026-10-18)
+
+The PairBrowse browser updates again when the helper runs on PairBrowse Agent.
+
+**Fixed**
+
+- **Browser updates were refused** ("the PairBrowse browser is open") whenever the helper had started on the PairBrowse Agent inside the installed app, which is every start after the first native install: the Agent counted as the browser. It no longer does, so 0.16.5's browser build 150.0.7871.114-3 installs.
+- 0.16.5's notes said the browser would stop asking for the Keychain at each update: the helper's launches never asked (they use the driver's mock keychain). The Security table now says so, with its limit: data on disk is keyed with the engine's fixed test password.
+
 ## 0.16.5 (2026-10-18)
 
-The PairBrowse browser for macOS (build 150.0.7871.114-3) ships with an ad blocker, installs extensions from the Chrome Web Store at your click, and stops asking for the Keychain at each update; known phishing sites are stopped before they show.
+The PairBrowse browser for macOS (build 150.0.7871.114-3) ships with an ad blocker and installs extensions from the Chrome Web Store at your click; known phishing sites are stopped before they show.
 
 **Security**
 
@@ -18,7 +27,7 @@ The PairBrowse browser for macOS (build 150.0.7871.114-3) ships with an ad block
 - **Phishing protection:** known phishing sites (Phishing.Database's list, checked on your computer) are stopped with a warning page before they show; Go back, or Continue anyway if you're sure. `phishingProtection: false` turns it off.
 - **Chrome Web Store installs in the PairBrowse browser** (browser build 150.0.7871.114-3 and later): the store's button reads "Add to PairBrowse", and an extension installs when you press Add extension in the browser's own dialog. Installed extensions update themselves from the store.
 - **Ad blocker built in:** the PairBrowse browser on macOS (browser build 150.0.7871.114-3 and later) ships with uBlock Origin Lite and turns it on in every session. It's yours: turn it off or remove it in the browser's extensions page (a removal sticks), or set `adBlocker: false` to have PairBrowse leave it out. It updates from the Chrome Web Store.
-- **No Keychain prompt at each browser update:** the PairBrowse browser (browser build 150.0.7871.114-3 and later) asks once more for "PairBrowse Safe Storage", then keeps that password in an owner-only file in `~/.pairbrowse`. `safeStorage: "keychain"` keeps the Keychain.
+- **Safe Storage key file (browser build 150.0.7871.114-3):** the browser can keep its Safe Storage password in an owner-only file in `~/.pairbrowse` (`safeStorage`), for launches without the driver's mock keychain. The helper's own launches use the mock keychain, as before, and never ask for the Keychain.
 
 ## 0.16.4 (2026-10-17)
 

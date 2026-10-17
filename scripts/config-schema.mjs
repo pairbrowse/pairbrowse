@@ -28,6 +28,8 @@ export const CONFIG_SCHEMA = {
   maxTabs: { type: "integer", min: 1 },
   screenshots: { type: "boolean" },
   phishingProtection: { type: "boolean" },
+  adBlocker: { type: "boolean" },
+  safeStorage: { values: ["file", "keychain"] },
   downloadsDir: { type: "string", nullable: true },
   browserArgs: NAMES,
   browserSandbox: { type: "boolean" },

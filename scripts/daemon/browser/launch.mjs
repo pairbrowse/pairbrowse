@@ -10,6 +10,7 @@ import { needsVirtualDisplay, startVirtualDisplay } from "../../display.mjs";
 import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
 import { within } from "../../util.mjs";
 import { setQuietTabs } from "../../focus.mjs";
+import { shippedCrx } from "../../browser/adblock.mjs";
 import { MEASURING } from "../../native-engine.mjs";
 import { OPEN_ACCEPT_MS } from "../../opener.mjs";
 import { isBrowserPage, BROWSER_PICKER, extensionUrl } from "../../../ui/urls.js";
@@ -26,6 +27,9 @@ export const capturePagesIn = (engine) => shellOf(engine).capturePage;
 export const captureKeyedIn = (engine) => shellOf(engine).captureKeyed;
 export const settingsSectionIn = (engine) => shellOf(engine).settingsSection;
 export const quietTabsIn = (engine) => shellOf(engine).quietTabs;
+export const adBlockerIn = (engine) => shellOf(engine).adBlocker;
+export const safeStorageKeyFileIn = (engine) => shellOf(engine).safeStorageKeyFile;
+export const adBlockerCrxIn = (engine) => shellOf(engine).adBlockerCrx;
 
 // This Mac's one-time capture (native-engine.mjs MEASURING): the first launch of a browser version
 // waits up to a minute for it, and says so in the live view's status line and a notification (no
@@ -52,7 +56,7 @@ const RESTORE_WAIT_MS = 3000;
 export const CLOSE_RESERVE_MS = 1500;
 
 export function createLaunch(st, deps, api) {
-  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf = quietTabsIn, helperFor } = deps;
+  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf = quietTabsIn, adBlockerOf = adBlockerIn, safeStorageKeyFileOf = safeStorageKeyFileIn, adBlockerCrxOf = adBlockerCrxIn, helperFor } = deps;
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
   const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
 
@@ -74,7 +78,7 @@ export function createLaunch(st, deps, api) {
   const shellFor = (e) => {
     const ownPages = !!browserPagesOf(e);
     const capturePage = ownPages && !!capturePagesOf(e);
-    return { kind: ownPages ? "pages" : "extension", ownPages, capturePage, captureKeyed: capturePage && !!captureKeyedOf(e), settingsSection: ownPages && !!settingsSectionOf(e), quietTabs: ownPages && !!quietTabsOf(e) };
+    return { kind: ownPages ? "pages" : "extension", ownPages, capturePage, captureKeyed: capturePage && !!captureKeyedOf(e), settingsSection: ownPages && !!settingsSectionOf(e), quietTabs: ownPages && !!quietTabsOf(e), adBlocker: ownPages && !!adBlockerOf(e), safeStorageKeyFile: ownPages && !!safeStorageKeyFileOf(e), adBlockerCrx: (ownPages && adBlockerOf(e) && adBlockerCrxOf(e)) || null };
   };
   const said = new Set(); // lines about the choice, logged once per helper run
   const once = (line) => { if (!said.has(line)) { said.add(line); log(line); } };
@@ -147,7 +151,7 @@ export function createLaunch(st, deps, api) {
     st.chosen = true;
     // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
     // colors; see prepareProfile in browser.mjs), written before each launch.
-    const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout });
+    const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && config.adBlocker !== false, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath) });
     step("prepare");
     // A side panel worker from another build (an update): the browser would keep running its
     // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).

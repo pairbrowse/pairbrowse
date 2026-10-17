@@ -55,6 +55,9 @@ export const paths = {
   log: join(HOME, "log"),
   runtime: join(SHARED, "runtime"),
   daemonLog: join(HOME, "daemon.log"),
+  // The PairBrowse browser's Safe Storage password (browser.mjs launchOptions, native patch 594),
+  // owner-only, written by the browser itself.
+  safeStorageKey: join(HOME, "safe-storage-key"),
   // Diagnostics bundles (scripts/diagnostics-bundle.mjs), when no other folder is given.
   diagnostics: join(HOME, "diagnostics"),
   // Playwright may read files only inside this folder (and the project).
@@ -127,6 +130,11 @@ export const DEFAULT_CONFIG = {
   // A small screenshot of the page with each result that changes it (false: text only).
   screenshots: true,
   phishingProtection: true,
+  // uBlock Origin Lite from the Chrome Web Store, installed by the browser (browser/adblock.mjs).
+  adBlocker: true,
+  // Where the PairBrowse browser keeps its Safe Storage password: "file" (a build that can, 594: an
+  // owner-only file, no Keychain prompt at each new build) or "keychain" (the Keychain).
+  safeStorage: "file",
   // Where files a site hands over are saved (default: your Downloads folder).
   downloadsDir: null,
   // Extra browser switches, e.g. ["--lang=en-US"] (older name: chromeArgs, read while this is unset).

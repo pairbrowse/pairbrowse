@@ -26,6 +26,7 @@ import { downloadPinned, readJson, writeJsonAtomic, sha256 } from "./util.mjs";
 import { withInstallLock } from "./install-lock.mjs";
 import { layoutFrom } from "./liveview/layout.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
+import { adBlockerFiles } from "./browser/adblock.mjs";
 
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -255,8 +256,11 @@ export function localStatePreferences(state) {
 // Writes the settings above into a profile folder (before a launch, and when installing).
 // Returns true for a new profile (the browser hasn't run in it yet): launchArgs' firstRun.
 // browserPages, layout: as profilePreferences (no extension records then: Secure Preferences and the
-// new tab acknowledgement are left alone).
-export function prepareProfile(profile, panelId = panelExtensionId(), { browserPages = false, layout = null } = {}) {
+// new tab acknowledgement are left alone). adBlocker (a build with its own pages): true, the browser
+// installs uBlock Origin Lite from the store (browser/adblock.mjs); false removes it at the next
+// start; null (the install step, the self-check) leaves it as it is. adBlockerCrx: the CRX the app
+// ships ({ file, version }, browser/adblock.mjs shippedCrx), else the store's.
+export function prepareProfile(profile, panelId = panelExtensionId(), { browserPages = false, layout = null, adBlocker = null, adBlockerCrx = null } = {}) {
   const dir = join(profile, "Default");
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "Preferences");
@@ -265,8 +269,10 @@ export function prepareProfile(profile, panelId = panelExtensionId(), { browserP
   const prefs = readJson(file, {});
   const secure = readJson(secureFile, null);
   const oldPanels = oldPanelIds(secure, panelId);
-  if (browserPages) writeJsonAtomic(file, profilePreferences(prefs, panelId, oldPanels, { browserPages, layout }), { indent: 0 });
-  else {
+  if (browserPages) {
+    writeJsonAtomic(file, profilePreferences(prefs, panelId, oldPanels, { browserPages, layout }), { indent: 0 });
+    if (adBlocker !== null) adBlockerFiles(profile, adBlocker, { crx: adBlockerCrx });
+  } else {
     if (secure && profileSecurePreferences(secure, panelId)) writeJsonAtomic(secureFile, secure, { indent: 0 });
     writeJsonAtomic(file, acknowledgeNewTabPage(profilePreferences(prefs, panelId, oldPanels), secure, panelId), { indent: 0 });
   }
@@ -314,7 +320,7 @@ export function dropHelperKeyFile(path) {
 // browserPages (a build with its own pages): no extension switches; helper ({ origin, keyFile }):
 // the live view's address goes in --pairbrowse-helper and the path of the owner-only file holding
 // the pages' key in --pairbrowse-helper-key-file. The key itself is never on the command line.
-export function launchArgs(config = {}, { firstRun = false, browserPages = false, helper = null } = {}) {
+export function launchArgs(config = {}, { firstRun = false, browserPages = false, helper = null, safeStorageKeyFile = null } = {}) {
   // The user's browserArgs (or older chromeArgs), screened (browser-args.mjs): no debugging surface, no other profile or
   // extension, no web security off; --no-sandbox goes through sandboxDecision instead.
   const extra = launchableBrowserArgs(browserArgsOf(config));
@@ -335,6 +341,7 @@ export function launchArgs(config = {}, { firstRun = false, browserPages = false
     ...shellArgs({ firstRun, browserPages }),
     ...(browserPages && helperGiven(helper) ? [`--pairbrowse-helper=${helper.origin}`, `--pairbrowse-helper-key-file=${helper.keyFile}`] : []),
     ...(browserPages && helperGiven(helper) && typeof helper.captureKeyFile === "string" && helper.captureKeyFile ? [`--pairbrowse-capture-key-file=${helper.captureKeyFile}`] : []),
+    ...(browserPages && typeof safeStorageKeyFile === "string" && safeStorageKeyFile ? [`--pairbrowse-safe-storage-key-file=${safeStorageKeyFile}`] : []),
     // Only test runs are headless, and nobody is there to see a notification: without this the
     // first one starts the test browser's notification helper and macOS asks to allow it.
     ...(extra.some((a) => switchName(a) === "headless") ? ["--disable-notifications"] : []),
@@ -349,16 +356,20 @@ export function launchArgs(config = {}, { firstRun = false, browserPages = false
 // (PairBrowse's new tab page), not the driver's about:blank (plans/555 D1.2), unless blankStart
 // (the self-check, which drives its first tab to a page of its own). firstRun: a new profile
 // (prepareProfile). helper: { origin, keyFile, captureKeyFile? } for the browser's own pages, or
-// null (the self-check has no live view). env, executablePath: as Playwright takes them.
+// null (the self-check has no live view). env, executablePath: as Playwright takes them. A build
+// whose Safe Storage password can come from a file (594) gets paths.safeStorageKey unless config's
+// safeStorage is "keychain": builds signed without a Team ID would ask for the Keychain item again
+// at each new build.
 export function launchOptions(config = {}, { shell, firstRun = false, helper = null, env, executablePath, blankStart = false } = {}) {
   const ownPages = !!shell?.ownPages;
+  const safeStorageKeyFile = ownPages && shell?.safeStorageKeyFile && config.safeStorage !== "keychain" ? paths.safeStorageKey : null;
   return {
     headless: false,
     env,
     executablePath,
     viewport: null,
     ignoreDefaultArgs: ownPages && !blankStart ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"],
-    args: launchArgs(config, { firstRun, browserPages: ownPages, helper }),
+    args: launchArgs(config, { firstRun, browserPages: ownPages, helper, safeStorageKeyFile }),
   };
 }
 

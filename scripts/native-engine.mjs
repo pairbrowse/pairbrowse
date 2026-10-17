@@ -58,6 +58,23 @@ export const settingsSection = (manifest) => Number.isInteger(manifest?.settings
 // The build manifest's `quietTabs` field (1 and up, 585): a tab automation opens or brings forward
 // is selected in its window without bringing the browser in front of the app you're in.
 export const quietTabs = (manifest) => Number.isInteger(manifest?.quietTabs) && manifest.quietTabs >= 1;
+// The build manifest's `adBlocker` field (1 and up, 591 reading the store's update answers and
+// 593): the browser installs PairBrowse's default ad blocker from the store, enabled
+// (browser/adblock.mjs). Absent (older builds): no entry is written, an old one is removed.
+// The build manifest's `safeStorageKeyFile` field (1 and up, 594): the browser takes its Safe Storage
+// password from the owner-only file --pairbrowse-safe-storage-key-file names, reading the Keychain
+// only while that file is missing, so a new build signed without a Team ID doesn't ask again.
+export const safeStorageKeyFile = (manifest) => Number.isInteger(manifest?.safeStorageKeyFile) && manifest.safeStorageKeyFile >= 1;
+export const adBlocker = (manifest) => Number.isInteger(manifest?.adBlocker) && manifest.adBlocker >= 1;
+// The build manifest's `adBlockerCrx` ({ path, version }): the ad blocker shipped in the app, a
+// CRX under Contents/Resources (a relative path inside it, no ".."), or null.
+export function adBlockerCrx(manifest) {
+  const crx = manifest?.adBlockerCrx;
+  if (!crx || typeof crx.path !== "string" || typeof crx.version !== "string") return null;
+  if (!/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.crx$/.test(crx.path) || crx.path.split("/").includes("..")) return null;
+  if (!/^\d+(?:\.\d+){0,3}$/.test(crx.version)) return null;
+  return { path: crx.path, version: crx.version };
+}
 
 // A command's output, trimmed, or "" when it fails or takes over 10 s. Never execFileSync here:
 // the helper serves its live view and every other caller while these run.

@@ -58,17 +58,32 @@ test("the shell: the side panel extension unless the build declares its own page
   assert.equal(shellFrom({ capture: 2 }), EXTENSION_SHELL, "a capture page needs the build's own pages");
   assert.equal(shellFrom({ settingsSection: 1 }), EXTENSION_SHELL, "a settings section needs the build's own pages");
   assert.equal(EXTENSION_SHELL.settingsSection, false);
-  assert.deepEqual(shellFrom({ chrome: 1 }), { kind: "pages", ownPages: true, capturePage: false, captureKeyed: false, settingsSection: false, quietTabs: false });
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: false, settingsSection: false, quietTabs: false });
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 2 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: false, quietTabs: false });
+  assert.deepEqual(shellFrom({ chrome: 1 }), { kind: "pages", ownPages: true, capturePage: false, captureKeyed: false, settingsSection: false, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: false, settingsSection: false, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 2 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: false, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false });
   // 580: the build's settings are the engine settings' PairBrowse section.
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 2, settingsSection: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: true, quietTabs: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 2, settingsSection: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: true, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false });
   for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, settingsSection: v }).settingsSection, false, String(v));
   // 585: automation's tab changes never bring the build in front of the app you're in.
   assert.equal(shellFrom({ chrome: 1, quietTabs: 1 }).quietTabs, true);
   assert.equal(shellFrom({ quietTabs: 1 }), EXTENSION_SHELL, "quiet tabs come with the build's own pages");
   assert.equal(EXTENSION_SHELL.quietTabs, false);
   for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, quietTabs: v }).quietTabs, false, String(v));
+  // 591 + 593: the build installs PairBrowse's default ad blocker from the store.
+  assert.equal(shellFrom({ chrome: 1, adBlocker: 1 }).adBlocker, true);
+  assert.equal(shellFrom({ adBlocker: 1 }), EXTENSION_SHELL, "the ad blocker comes with the build's own pages");
+  assert.equal(EXTENSION_SHELL.adBlocker, false);
+  for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, adBlocker: v }).adBlocker, false, String(v));
+  // The ad blocker shipped in the app: a CRX under Contents/Resources, only with adBlocker.
+  const crx = { path: "PairBrowse-Extensions/uBlock-Origin-Lite.crx", version: "2026.1012.1545" };
+  assert.deepEqual(shellFrom({ chrome: 1, adBlocker: 1, adBlockerCrx: crx }).adBlockerCrx, crx);
+  assert.equal(shellFrom({ chrome: 1, adBlockerCrx: crx }).adBlockerCrx, null, "not without adBlocker");
+  for (const bad of [{ path: "../x.crx", version: "1" }, { path: "/abs.crx", version: "1" }, { path: "a/../b.crx", version: "1" }, { path: "x.zip", version: "1" }, { path: "x.crx", version: "1.x" }, { path: "x.crx" }, "x"])
+    assert.equal(shellFrom({ chrome: 1, adBlocker: 1, adBlockerCrx: bad }).adBlockerCrx, null, JSON.stringify(bad));
+  // 594: the Safe Storage password can come from a file.
+  assert.equal(shellFrom({ chrome: 1, safeStorageKeyFile: 1 }).safeStorageKeyFile, true);
+  assert.equal(shellFrom({ safeStorageKeyFile: 1 }), EXTENSION_SHELL);
+  for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, safeStorageKeyFile: v }).safeStorageKeyFile, false, String(v));
   let reads = 0;
   const read = (p) => { reads++; if (p === "/bad") throw new Error("no manifest"); return { chrome: 1 }; };
   assert.equal(shellOf({ browserEngine: "open", executablePath: "/x" }, read), EXTENSION_SHELL);
@@ -136,4 +151,14 @@ test("a launch keeps its choice to itself, and a native profile alone is somethi
   assert.equal(launched[0].options.executablePath, "/fake/chrome");
   assert.equal(context.choiceConfig(), config);
   await context.close();
+});
+
+test("the Safe Storage key file: only for a build that can (594), unless config says keychain", async () => {
+  const { paths } = await import("../scripts/paths.mjs");
+  const flag = `--pairbrowse-safe-storage-key-file=${paths.safeStorageKey}`;
+  const can = { kind: "pages", ownPages: true, safeStorageKeyFile: true };
+  assert.ok(launchOptions({}, { shell: can }).args.includes(flag));
+  assert.ok(!launchOptions({ safeStorage: "keychain" }, { shell: can }).args.some((a) => a.startsWith("--pairbrowse-safe-storage-key-file")));
+  assert.ok(!launchOptions({}, { shell: { ...can, safeStorageKeyFile: false } }).args.some((a) => a.startsWith("--pairbrowse-safe-storage-key-file")));
+  assert.ok(!launchOptions({}, { shell: EXTENSION_SHELL }).args.some((a) => a.startsWith("--pairbrowse-safe-storage-key-file")));
 });

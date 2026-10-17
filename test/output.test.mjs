@@ -51,35 +51,39 @@ await page.locator('iframe').contentFrame().getByRole('textbox', { name: 'CVC' }
 await page.getByRole('textbox', { name: 'ZIP code' }).fill('94107');
 \`\`\``;
 
-test("what an agent reads shows card numbers by their last two digits and no card, security-code or expiry value", () => {
+test("a joiner's agent reads card numbers by their last two digits and no card, security-code or expiry value; the host's agent reads the page as it is", () => {
   const { out } = setup();
   // "864": the page's own CVC field (unlabeled, autocomplete cc-csc), read by pageread.mjs.
-  assert.equal(out.mask(checkout, ["864"]), checkoutMasked);
-  assert.equal(out.mask(checkoutMasked, ["864"]), checkoutMasked, "masking again changes nothing");
-  assert.equal(out.mask("Fields: Card number [tel] = 4242424242424242; Security code [text] = 731; ZIP [text] = 94107"), "Fields: Card number [tel] = ••••42; Security code [text] = ••••; ZIP [text] = 94107");
-  assert.equal(out.mask("Order 12 4242 4242 4242 4242 shipped"), "Order 12 ••••42 shipped", "a card among other digit groups");
-  assert.equal(out.mask("Call 555-123-4567, order 1234567890123"), "Call 555-123-4567, order 1234567890123");
+  assert.equal(out.forJoiner(checkout, ["864"]), checkoutMasked);
+  assert.equal(out.forJoiner(checkoutMasked, ["864"]), checkoutMasked, "masking again changes nothing");
+  assert.equal(out.mask(checkout), checkout.replace("hunter2-secret", "<secret>SHOP_PW</secret>"), "the host's agent: saved passwords only");
+  assert.equal(out.forJoiner("Fields: Card number [tel] = 4242424242424242; Security code [text] = 731; ZIP [text] = 94107"), "Fields: Card number [tel] = ••••42; Security code [text] = ••••; ZIP [text] = 94107");
+  assert.equal(out.forJoiner("Order 12 4242 4242 4242 4242 shipped"), "Order 12 ••••42 shipped", "a card among other digit groups");
+  for (const plain of ["Call 555-123-4567, order 1234567890123", "Pages 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20", "Orders 1001 1002 1003 1004 1005 1006", "Call 030 1234 5678 or 040 9876 5432"]) assert.equal(out.forJoiner(plain), plain);
+  // A short page value on a labeled field is a coincidence; on an unlabeled one it is the field.
+  assert.equal(out.forJoiner('  - textbox "Quantity" [ref=e7]: "12"\n  - textbox [ref=e8]: "12"', ["12"]), '  - textbox "Quantity" [ref=e7]: "12"\n  - textbox [ref=e8]: ••••');
+  for (const label of ["Card title", "Card type", "Gift card", "Pin location", "Expires"]) assert.equal(out.forJoiner(`  - textbox "${label}" [ref=e9]: Blue`), `  - textbox "${label}" [ref=e9]: Blue`, label);
+  assert.equal(out.forJoiner('  - combobox "Expiry year" [ref=e4]:\n    - option "2029" [selected]'), '  - combobox "Expiry year" [ref=e4]:\n    - option "2029" [selected]', "dropdowns stay, with their options");
 });
 
-test("a find that matched only masked values finds nothing; one that still matches counts what it shows", async () => {
+test("a joiner's find that matched only masked values finds nothing; snippets kept only for what still matches", async () => {
   const { recountFind } = await import("../scripts/daemon/output.mjs");
-  const res = (n, body) => `### Find results\nFound ${n} matches for /4242/:\n\n${body}\n### PairBrowse\n- note`;
-  const masked = '- generic [ref=e1]:\n  - textbox "Card number" [ref=e3]: ••••42\n\n----\n\n  - paragraph [ref=e2]: Paid with ••••42';
-  assert.equal(recountFind(res(2, masked), { regex: "/4242/" }), "### Find results\nNo matches found for /4242/.\n### PairBrowse\n- note");
-  const kept = recountFind(res(2, `${masked}\n  - text: order 4242`), { regex: "/4242/" });
-  assert.match(kept, /^### Find results\nFound 1 match for \/4242\/:\n/);
-  assert.ok(kept.includes("order 4242") && kept.endsWith("### PairBrowse\n- note"));
+  const res = (n, body) => `### Find results\nFound ${n} matches for /4242|Submit/:\n\n${body}\n### PairBrowse\n- note`;
+  const card = '- generic [ref=e1]:\n  - textbox "Card number" [ref=e3]: ••••42';
+  const button = '- generic [ref=e5]:\n  - button "Submit" [ref=e6]';
+  assert.equal(recountFind(res(1, card), { regex: "/4242|Submit/" }), "### Find results\nNo matches found for /4242|Submit/.\n### PairBrowse\n- note");
+  assert.equal(recountFind(res(2, `${card}\n\n----\n\n${button}`), { regex: "/4242|Submit/" }), `### Find results\nFound 1 match for /4242|Submit/:\n\n${button}\n### PairBrowse\n- note`, "the masked card's snippet goes");
   assert.equal(recountFind("### Find results\nNo matches found for \"x\".", { text: "x" }), "### Find results\nNo matches found for \"x\".");
-  assert.match(recountFind(res(1, '  - textbox "Card number" [ref=e3]: ••••42'), { text: "card number" }), /Found 1 match for/);
+  assert.match(recountFind(res(1, card), { text: "card number" }), /Found 1 match for/);
 });
 
-test("a snapshot file an action links is masked by the page's sensitive values before the agent reads it", () => {
+test("a snapshot file an action links has saved passwords masked, and keeps the page's card fields for the host's agent", () => {
   const { dir, out } = setup();
   const file = join(dir, "page-2026-10-17T10-00-00-000Z.yml");
   writeFileSync(file, checkout.split("\n### Ran")[0]);
-  const text = out.inlineSnapshot(`### Snapshot\n- [Snapshot](${file})`, { values: ["864"] });
-  assert.equal(readFileSync(file, "utf8"), checkoutMasked.split("\n### Ran")[0]);
-  assert.ok(text.includes("- textbox [ref=f1e3]: ••••") && !text.includes("4242 4242"), text);
+  const text = out.inlineSnapshot(`### Snapshot\n- [Snapshot](${file})`);
+  assert.equal(readFileSync(file, "utf8"), checkout.split("\n### Ran")[0].replace("hunter2-secret", "<secret>SHOP_PW</secret>"));
+  assert.ok(text.includes("4242 4242 4242 4242") && !text.includes("hunter2-secret"), text);
 });
 
 test("passwords in results become their names, and the newest saved ones count", () => {

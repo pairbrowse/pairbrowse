@@ -14,6 +14,7 @@ import { stopRequestMirroring } from "./browser/tabs.mjs";
 import { plainError } from "./output.mjs";
 import { PAIRBROWSE_TOOLS, TAB_TOOLS, PAGE_READ_TOOLS, NO_PICK_WAIT, changesPage, wellFormed, withDialogLabel, containsRef, pictureless } from "./serve/wire.mjs";
 import { arrivedAt } from "./serve/pageread.mjs";
+import { coverRects } from "./covers.mjs";
 import { isFileTab, createRefusals } from "./serve/refuse.mjs";
 import { createConnectionState } from "./serve/connection.mjs";
 import { createTurns } from "./serve/turns.mjs";
@@ -141,9 +142,23 @@ export function createServe({ config, log, host, createConnection, clients, coll
       "Set pairbrowse_status to \"you\" and ask the user to do this step themselves in the PairBrowse window, then continue from what they did.";
     // A picture this result carried, kept in the session's timeline (daemon/timeline.mjs) once the
     // result went out: the same bytes, nothing captured or encoded again, nothing on the result's way.
+    // Card fields are covered first (daemon/covers.mjs: the picture leaves the host's screen); a
+    // picture whose covers can't be known or drawn is not kept (said in the log once).
     const rememberPicture = (shot, page, tool, args) => {
       if (!timeline?.enabled || !shot?.data || !page) return;
-      setImmediate(() => timeline.record({ data: shot.data, who: myLabel() || "", caption: hud.lastIn(page)?.text || describe(tool, args || {}, { values: false }) || "Looked at the page" }).catch((e) => log("timeline", e?.message || e)));
+      setImmediate(async () => {
+        const caption = hud.lastIn(page)?.text || describe(tool, args || {}, { values: false }) || "Looked at the page";
+        const who = myLabel() || "";
+        try {
+          const rects = shot.covered ? [] : await coverRects(page); // a joiner's agent's: covered already
+          const data = !rects ? null : !rects.length ? shot.data : await recorder?.coverPicture?.(shot.data, rects, page);
+          if (!data) {
+            if (!rememberPicture.said) { rememberPicture.said = true; log("timeline: a picture was not kept: its card fields couldn't be covered"); }
+            return;
+          }
+          await timeline.record({ data, who, caption });
+        } catch (e) { log("timeline", e?.message || e); }
+      });
     };
     const mcpServer = await createConnection({
       browser: { isolated: false },
@@ -167,8 +182,8 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (isError) refused.add(id);
       traces.delete(id);
       // A message naming a ref names it as Claude knows it (the main frame's number off), masked
-      // as every result is (card numbers, saved passwords).
-      text = output.mask(refNames.toPlain(text));
+      // as every result is (saved passwords; for a joiner's agent card numbers too).
+      text = remote ? output.forJoiner(refNames.toPlain(text)) : output.mask(refNames.toPlain(text));
       toClient({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) } });
       finish(id);
     };

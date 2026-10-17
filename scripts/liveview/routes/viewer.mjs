@@ -61,7 +61,13 @@ export function createViewerRoutes(lv) {
     const paused = lv.pauseState();
     if (paused) res.write(sse("pause", invite ? lv.forGuest("pause", paused) : paused));
     if (!invite && lv.recordState()) res.write(sse("record", lv.recordState()));
-    if (viewer && lv.lastFrame && !(invite && lv.personTab(lv.lastFrameFrom))) res.write(sse("frame", lv.lastFrame));
+    if (viewer && lv.lastFrame && !invite) res.write(sse("frame", lv.lastFrame));
+    // A guest's first picture with card fields covered (covers.mjs), or none.
+    if (viewer && lv.lastFrame && invite && !lv.personTab(lv.lastFrameFrom)) {
+      const from = lv.lastFrameFrom;
+      const f = await lv.coverFrame(lv.lastFrame, from);
+      if (f && !res.destroyed && lv.lastFrameFrom === from) res.write(sse("frame", f));
+    }
   }
 
   // A still of the tab on screen. With viewers it comes from the shown tab's session; without,
@@ -72,10 +78,10 @@ export function createViewerRoutes(lv) {
     const quality = Math.min(THUMB_QUALITY.max, Math.max(THUMB_QUALITY.min, q));
     // What's on screen, unscaled: a clip or scale makes the engine re-lay out the page (it flickers).
     const still = (cdp) => cdp.send("Page.captureScreenshot", { format: "jpeg", quality, optimizeForSpeed: true, captureBeyondViewport: false });
-    let data;
+    let data, from;
     const shown = lv.shown;
     if (invite && lv.personTab(shown?.page)) return plain(res, 404); // a person's own tab: never to guests
-    if (shown) ({ data } = await still(shown.cdp));
+    if (shown) { ({ data } = await still(shown.cdp)); from = shown.page; }
     else {
       const ctx = await lv.getContext();
       const url = await lv.currentUrl();
@@ -85,6 +91,12 @@ export function createViewerRoutes(lv) {
       if (!page) return plain(res, 404);
       const cdp = await page.context().newCDPSession(page);
       try { ({ data } = await still(cdp)); } finally { cdp.detach().catch(() => {}); }
+      from = page;
+    }
+    // A guest's still with card fields covered (covers.mjs); none when they can't be.
+    if (invite) {
+      data = await lv.coverImage(from, data);
+      if (!data) return plain(res, 503);
     }
     res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "image/jpeg" });
     res.end(Buffer.from(data, "base64"));

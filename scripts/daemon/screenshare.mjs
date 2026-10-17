@@ -116,15 +116,24 @@ const describe = (ev) => ev.type === "mouse" ? (ev.action === "mousePressed" ? "
 export class NoDirect extends Error {
   constructor(message) { super(message); this.code = "NO_CAPTURE"; }
 }
+// The capture can't cover card fields in a direct picture (no frame processing there): no direct
+// picture is sent; joiners use the slower route, whose frames the helper covers.
+export const NO_COVER_SHARE = "This browser can't cover card fields in a direct picture of the tab: the picture goes through the join channel instead, without sound.";
+export class NoCover extends Error {
+  constructor(message = NO_COVER_SHARE) { super(message); this.code = "NO_COVER"; }
+}
 
 // call: the extension worker. log.
 // during(who): marks a joiner's input while it's replayed (presence.remoteStart; returns done()).
 // capture: where tabs are captured (daemon/capture.mjs); without it, the extension as before.
-export function createScreenShare({ call, log = () => {}, during = () => () => {}, capture = null }) {
+// picture(page, jpeg): the slower route's frame with the tab's card fields covered (covers.mjs
+// createCoverLoop picture), null when they can't be: that frame is never sent.
+export function createScreenShare({ call, log = () => {}, during = () => () => {}, capture = null, picture = async (_page, data) => data }) {
   const peers = new Map(); // peer -> { page, tabId, view, frame, onInput, onState, role }
   const sessions = new Map(); // page -> { cdp, replayer, view, viewAt }
   const watchedClose = new WeakSet(); // tabs whose closing ends their session and peers
   let looping = false;
+  let saidNoCover = false;
 
   // The browser's own capture page takes the share calls when there is one; else the extension.
   const ext = (fn, arg, ms = 8000) => (capture?.kind() === "page" ? capture.share(arg, ms) : call(fn, arg, ms));
@@ -263,13 +272,27 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
       w = new Map();
       watchers.set(page, w);
       let lastAt = 0;
+      // Card fields covered before a frame leaves (picture); one at a time, the newest waiting
+      // (frames in between are dropped, never sent uncovered).
+      let covering = false, next = null;
+      const send = async (data) => {
+        if (covering) { next = data; return; }
+        covering = true;
+        try {
+          for (let d = data; d; d = next, next = null) {
+            const img = await within(3000, Promise.resolve(picture(page, d)).catch(() => null));
+            if (!img) continue;
+            for (const fn of (watchers.get(page) || new Map()).values()) { try { fn(img); } catch {} }
+          }
+        } finally { covering = false; }
+      };
       s.onFrame = ({ data, sessionId }) => {
         // Paced: the next frame comes once this one is acknowledged, at most FRAME_EVERY_MS apart.
         const wait = Math.max(0, FRAME_EVERY_MS - (Date.now() - lastAt));
         lastAt = Date.now() + wait;
         const ack = () => s.cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
         if (wait) setTimeout(ack, wait).unref(); else ack();
-        for (const fn of (watchers.get(page) || new Map()).values()) { try { fn(data); } catch {} }
+        send(data).catch(() => {});
       };
       s.cdp.on("Page.screencastFrame", s.onFrame);
       await s.cdp.send("Page.startScreencast", { format: "jpeg", quality: 60, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 });
@@ -336,6 +359,10 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
       if (tabId == null) throw new Error("the tab can't be found");
       const frame = frameFor(view.w, view.h, view.dpr);
       const r = await ext((a) => { if (!globalThis.pbShare) throw new Error("not ready"); return globalThis.pbShare(a); }, { op: "offer", peer, tabId, frame, ice: ICE_SERVERS }, 15_000);
+      if (r?.code === "NO_COVER") {
+        if (!saidNoCover) { saidNoCover = true; log(`shared browser: ${NO_COVER_SHARE}`); }
+        throw new NoCover();
+      }
       if (!r?.sdp) throw new Error(r?.error || "no offer");
       peers.set(peer, { page, tabId, view, frame, onInput, onState, onPick, role, who });
       loop().catch((e) => log("shared screen", e?.message || e));
@@ -367,6 +394,8 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
       return nx < 0 || ny < 0 || nx > 1 || ny > 1 ? null : { nx: Math.round(nx * 10000) / 10000, ny: Math.round(ny * 10000) / 10000 };
     },
     peersOf: (prefix = "") => [...peers.keys()].filter((p) => p.startsWith(prefix)),
+    // The tabs anyone is shown: their card fields are kept covered (covers.mjs).
+    sharedPages: () => [...new Set([...[...peers.values()].map((x) => x.page), ...watchers.keys()])].filter((p) => !p.isClosed?.()),
     // Where a pointer at document position (x, y) stands in the tab's view, as fractions (for the
     // pictures' overlay on joiners' side); null when out of view or unknown.
     async viewPoint(page, x, y) {

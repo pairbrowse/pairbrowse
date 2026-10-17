@@ -4,7 +4,8 @@
 // switches with them. The helper takes the finished file over the browser's private pipe and
 // saves it; nothing here talks to a page or the network. Asked only by the helper, through a
 // transport (transport-extension.js or transport-native.js): record(m) takes today's rec* ops.
-import { captured, has, capturing, capture, stopTab, onTabStopped } from "./capture.js";
+import { captured, has, capturing, capture, stopTab, onTabStopped, coversIn, coversOrWhole, setCovers, rectsIn, paintCovers } from "./capture.js";
+import { CAPTURE_VALUE_MAX } from "../limits.js";
 import { AGENT_COLOR, isColor } from "../vocab.js";
 
 const STRIP = 40; // the tab strip's height, in CSS pixels
@@ -149,7 +150,9 @@ function draw() {
     const dw = Math.round(fw * s), dh = Math.round(fh * s);
     ctx.fillStyle = "#000";
     if (dw < w || dh < h - top) ctx.fillRect(0, top, w, h - top);
-    ctx.drawImage(f, Math.round((w - dw) / 2), top + Math.round((h - top - dh) / 2), dw, dh);
+    const dx = Math.round((w - dw) / 2), dy = top + Math.round((h - top - dh) / 2);
+    ctx.drawImage(f, dx, dy, dw, dh);
+    paintCovers(ctx, coversOrWhole(rec.front), dx, dy, dw, dh); // card fields (daemon/covers.mjs); not known yet: all of it
   }
   strip();
 }
@@ -249,7 +252,37 @@ async function recordChunk({ offset, size }) {
   return String(url).slice(String(url).indexOf(",") + 1);
 }
 
+// A picture (base64 JPEG: a timeline picture, a guest's or joiner's frame) with covers drawn on:
+// the covered JPEG as base64, or { error }.
+async function coverPicture({ data, rects }) {
+  const r = rectsIn(rects);
+  if (typeof data !== "string" || !data || data.length > CAPTURE_VALUE_MAX - 1024 || !r) return { error: "a cover is { data, rects }" };
+  const bin = atob(data);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const bmp = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+  const c = new OffscreenCanvas(bmp.width, bmp.height);
+  const g = c.getContext("2d", { alpha: false });
+  g.drawImage(bmp, 0, 0);
+  bmp.close();
+  paintCovers(g, r, 0, 0, c.width, c.height);
+  const out = new Uint8Array(await (await c.convertToBlob({ type: "image/jpeg", quality: 0.8 })).arrayBuffer());
+  let s = "";
+  for (let i = 0; i < out.length; i += 0x8000) s += String.fromCharCode(...out.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
 export function record(m) {
+  if (m.op === "recCovers") {
+    const given = coversIn(m.covers);
+    if (!given) return { error: "covers are { tabId: [[x, y, w, h], ...] }" };
+    setCovers(given);
+    const live = rec && !rec.blob;
+    if (live) rec.covers = Object.fromEntries(given);
+    if (live && given.has(String(rec.front))) draw();
+    return { front: live ? rec.front : null };
+  }
+  if (m.op === "recCoverPicture") return coverPicture(m);
   if (m.op === "recStart") return recordStart(m);
   if (m.op === "recFront") return recordFront(m);
   if (m.op === "recTabs") {

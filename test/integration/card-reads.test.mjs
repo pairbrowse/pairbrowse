@@ -1,14 +1,13 @@
-// What an agent reads of a checkout page shows no card number, security code or expiry: snapshots
-// (and the snapshot files results link), browser_find, typing and filling results, and
-// pairbrowse_run's outline, for card fields in the page and in a cross-origin payment frame. A card
-// number shows its last two digits; a ZIP and an order number that isn't a card show as typed.
-// Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME), headless.
+// The host's own agent reads a checkout page as it is (card fields in the page and in a payment
+// frame), and a snapshot or find asked into a file of the agent's naming comes in the result
+// instead. (A joiner's agent reads card numbers masked: test/integration/shared-mode.test.mjs,
+// test/output.test.mjs.) Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME), headless.
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { session, testBase } from "../helpers/live.mjs";
 import { sleep, text } from "../helpers/util.mjs";
@@ -26,7 +25,7 @@ const MAIN_CVC = "731";
 const FRAME_CVC = "864";
 const ORDER = "1234 5678 9012 3456"; // 16 digits, not a card (its checksum fails)
 
-test("card numbers, security codes and expiry dates read masked, in the page and in a payment frame", { skip: !runtime, timeout: 180_000 }, async () => {
+test("the host's agent reads card fields as they are, in the page and in a payment frame; no agent-named files", { skip: !runtime, timeout: 180_000 }, async () => {
   // The payment frame, as a payment provider's is: its CVC unlabeled, known by its autocomplete.
   // (Same origin: the browser blocks a loopback page's frames on other loopback ports.)
   const site = serve({
@@ -76,34 +75,19 @@ test("card numbers, security codes and expiry dates read masked, in the page and
     snap = await got("browser_snapshot");
     const find = await got("browser_find", { text: "textbox" });
     const findFile = await got("browser_find", { regex: "/card number/i", filename: "cards.md" });
-    // A query that matched only a masked value finds nothing (no oracle on the digits).
-    const probe = await got("browser_find", { regex: "/: 4242|text: 5555/" });
-    assert.match(probe, /No matches found/, probe);
     const run = await got("pairbrowse_run", { steps: [{ fill: { "Order number": ORDER } }] });
     assert.match(run, /^Done/, run);
 
-    // Verifiable: the card numbers' last two digits, the ZIP and the order number as typed.
-    assert.match(snap, /textbox "Card number" \[ref=e\d+\]: ••••42/, snap);
-    assert.match(snap, /••••44/, snap);
-    assert.match(snap, /textbox "ZIP code" \[ref=e\d+\]: "?94107/, snap);
-    assert.ok(snap.includes(ORDER), "a 16-digit number that isn't a card shows as typed");
-    assert.match(snap, /paid with ••••42\./, snap);
-    assert.match(find, /textbox "Security code" \[ref=e\d+\]: ••••/, find);
-    assert.match(findFile, /Card number/, "a find asked into a file comes in the result");
-    assert.match(run, /Card number \[text\] = ••••42/, run);
-
-    // Snapshot files the results linked, in the helper's files folder.
-    const filesDir = join(h, "files");
-    const files = existsSync(filesDir) ? readdirSync(filesDir, { recursive: true }).filter((f) => statSync(join(filesDir, f)).isFile()).map((f) => [f, readFileSync(join(filesDir, f), "utf8")]) : [];
-    const all = [...read, ...files.map(([f, t]) => `[file ${f}] ${t}`)];
-    const digits = (s) => s.replace(/\D/g, "");
-    for (const t of all) {
-      for (const c of [MAIN_CARD, FRAME_CARD]) {
-        assert.ok(!t.includes(c) && !t.includes(digits(c)) && !t.includes(digits(c).slice(0, 12)), `${c} in: ${t.slice(0, 3000)}`);
-      }
-      assert.ok(!t.includes(EXPIRY), `the expiry in: ${t.slice(0, 3000)}`);
-      for (const v of [MAIN_CVC, FRAME_CVC, "4471"]) assert.ok(!new RegExp(`(textbox[^\\n]*: "?${v}|fill\\('${v}'|text: ${v}|= ${v})`).test(t), `${v} in: ${t.slice(0, 3000)}`);
-    }
+    // The host's own agent reads the page as it is: what it filled, in the page and in the frame.
+    assert.match(snap, /textbox "Card number" \[ref=e\d+\]: 4242 4242 4242 4242/, snap);
+    assert.match(snap, /text: 5555 5555 5555 4444/, snap);
+    assert.match(snap, /text: 11 \/ 29/, snap);
+    assert.match(find, /textbox "Security code" \[ref=e\d+\]: "?4471/, find);
+    assert.ok(snap.includes(ORDER) && /paid with 4242 4242 4242 4242\./.test(snap), snap);
+    // Asked into a file of its naming, a find comes in the result (the file would skip the
+    // saved-password masking every result gets).
+    assert.match(findFile, /Found \d+ match/, findFile);
+    assert.ok(!existsSync(join(h, "cards.md")) && !existsSync(join(h, "files", "cards.md")), "no file of the agent's naming");
   } finally {
     a.sock.destroy();
     await stopDaemon(daemon);

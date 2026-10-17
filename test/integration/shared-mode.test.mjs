@@ -55,6 +55,7 @@ const APP = `<title>App</title><body style="margin:0">
 <input id="i" aria-label="Note" style="display:block;width:100vw;height:20vh;font-size:30px">
 <canvas id="c" width="800" height="300" style="display:block;width:100vw;height:40vh;background:#fff"></canvas>
 <input type="file" id="f" aria-label="Photo" style="display:block;width:100vw;height:9vh">
+<input id="cn" aria-label="Card number" value="4242 4242 4242 4242" style="display:block;width:50vw;height:5vh">
 <div style="height:150vh">more below</div>
 <script>
 const c = document.getElementById("c"), g = c.getContext("2d"); let down = false;
@@ -379,6 +380,10 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     stage = "the joiner's own agent works in the host's browser: reads, types, uploads a file from the joiner's computer";
     const snap = text(await tool(joiner.call, "browser_snapshot"));
     assert.match(snap, /button "Tap"/, `the host's page, not the picture: ${snap.slice(0, 800)}`);
+    // A card number reads masked to the joiner's agent (its last two digits), as typed to the host's.
+    assert.match(snap, /textbox "Card number" \[ref=(?:f\d+)?e\d+\]: ••••42/, snap.slice(0, 1500));
+    assert.ok(!snap.includes("4242 4242"), "no card number for the joiner's agent");
+    assert.match(text(await tool(host.call, "browser_find", { text: "Card number" })), /: 4242 4242 4242 4242/, "the host's agent reads it as it is");
     const note = snap.match(/textbox "Note"[^\n]*\[ref=((?:f\d+)?e\d+)\]/)?.[1];
     assert.ok(note, snap.slice(0, 600));
     // The field Alice typed in stays hers for a few seconds, even for her agent: it types once it's free.

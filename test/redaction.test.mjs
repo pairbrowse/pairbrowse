@@ -159,5 +159,5 @@ test("node scripts/diagnostics-bundle.mjs --out writes the folder and says where
 
 test("a timeline card's caption, when the bar has no line, names fields without their values", () => {
   // serve.mjs keeps it in the session's timeline index on disk: describe without values, as the bar.
-  assert.match(readFileSync("scripts/daemon/serve.mjs", "utf8"), /caption: hud\.lastIn\(page\)\?\.text \|\| describe\(tool, args \|\| \{\}, \{ values: false \}\)/);
+  assert.match(readFileSync("scripts/daemon/serve.mjs", "utf8"), /caption = hud\.lastIn\(page\)\?\.text \|\| describe\(tool, args \|\| \{\}, \{ values: false \}\)/);
 });

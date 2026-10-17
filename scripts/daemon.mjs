@@ -425,7 +425,7 @@ const tabOrder = createTabOrder({
 const captureChannel = createCaptureChannel({ send: (data) => liveView()?.sendToPages?.("capture", data), log });
 const capture = createCaptureBackend({ browserPages: () => context.willHaveBrowserPages(), capturePages: () => context.willHaveCapturePages(), panelCall: (fn, arg, ms) => panel.call(fn, arg, ms), channel: captureChannel });
 // Shared browser mode: joiners see this browser's tabs live and work in them (daemon/screenshare.mjs).
-const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), log, during: (who) => presence.remoteStart(who), capture });
+const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), log, during: (who) => presence.remoteStart(who), capture, picture: (page, data) => recorder.covers.picture(page, data) });
 // Recording the browser to a video (pairbrowse_record, the side panel's Record button).
 const recorder = createRecorder({
   capture,
@@ -435,7 +435,7 @@ const recorder = createRecorder({
   scale: async () => pixelRatio(await context.openPages()),
   changed: () => { const s = recorder.state(); liveView()?.setRecord(s); hud.setRecording(s.recording); },
   onSaved: (saved) => recordings.add(saved), // the Tools tab's Recordings (an owner-only index)
-  onActivity: (fn) => hud.onActivity((text, who, page, from) => { if (who && page) fn(text, who, page, from); }),
+  onActivity: (fn) => hud.onActivity((text, who, page, from) => { if (who && page) fn(text, who, page, from); }), pages: () => context.openPages(), shared: () => screens.sharedPages(),
 });
 // Who works in which tab, named on the tab strip (the agent's name in front of the tab's title).
 const tabLabels = createTabLabels({ sparks: () => hud.sparkList(), labelOf: (id) => collaboration.participants.get(id)?.label || "Agent", lastIn: (page) => hud.lastIn(page), name: (page, text) => hud.call(page, text, "tab-name").catch(() => {}), log });
@@ -448,7 +448,7 @@ const remoteAgents = createRemoteAgents({ serve: (sock, opts) => serve(sock, opt
 const sharing = createSharing({
   config, log, host: HOST, notify: panel.notify, hostNote, joinAlert: (entry) => joinPrompt.alert(entry),
   view: {
-    secretDomains, screens, remoteAgents, capture: captureChannel,
+    secretDomains, screens, remoteAgents, capture: captureChannel, covers: recorder.covers,
     // The live view's Timeline (owner only). `journal` is declared further down: this runs only
     // when the route is hit, after startup, so it is always there by then.
     journal: () => journal.read(),

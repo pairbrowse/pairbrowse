@@ -16,6 +16,7 @@ import { resolve, sep } from "node:path";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { keepFocus } from "./focus.mjs";
+import { createGuestFrames } from "./liveview/guest-frames.mjs";
 import { createCast, bringTabForward, serially } from "./liveview/cast.mjs";
 import { createAgentRelay } from "./liveview/agent-relay.mjs";
 import { createJoinerTabs } from "./liveview/joiner-tabs.mjs";
@@ -118,7 +119,8 @@ const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, 
 // the side panel, the live view's own controls): every owner request that changes something and
 // passed its checks, but the pages' own reports (OWN_REPORTS) and the live view's input (replayed
 // into a tab, heard there through onHumanInput).
-export async function startLiveView({ activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// covers: card fields covered in what guests see (liveview/guest-frames.mjs), or null.
+export async function startLiveView({ covers = null, activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null, capture = null }) {
@@ -242,9 +244,13 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     : event === "session" ? guestSession() : event === "pause" ? guestPause(data) : data;
   // The session as a guest sees it: without this helper's instance name (the owner's own label).
   const guestSession = () => { const { instance: _instance, ...rest } = sessionInfo; return rest; };
+  const guestFrames = createGuestFrames({ covers, viewers, linkGuests, shownPage: () => cast.state.shown?.page, personTab });
+  const { coverFrame, coverImage } = guestFrames;
   const broadcast = (event, data) => {
     const msg = sse(event, data);
+    if (event === "frame") guestFrames.frame(data, cast.state.lastFrameFrom);
     for (const res of event === "frame" ? viewers : OWNER_ONLY.has(event) ? owners : clients) {
+      if (event === "frame" && linkGuests.has(res)) continue; // toGuests, covered
       if (PAGES_ONLY.has(event) && !kinds.has(res)) continue;
       if (PAGE_EVENT_KIND.has(event) && kinds.get(res) !== PAGE_EVENT_KIND.get(event)) continue;
       // A reader that stopped reading (a laptop asleep with the connection still open) would
@@ -398,7 +404,9 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
       const r = await screens.offer(page, peer, {
         role: j.invite.role, who: j.name, onInput: onScreenInput(page, j, id), onPick: onScreenPick(page, j, id),
         onState: (state) => push.broadcast("screen", { op: "state", id, peer, state }, { to: key }),
-      });
+      }).catch((e) => { if (e?.code === "NO_COVER") return { problem: e.message }; throw e; });
+      // No card fields covered in a direct picture here: the slower route, covered (screenshare.mjs).
+      if (r.problem) return { problem: r.problem, route: "frames" };
       return { peer, id, sdp: r.sdp };
     }
     if (op === "answer") return peerOk(body.peer) && await screens.answer(body.peer, body.sdp) ? { ok: true } : { problem: "No such connection. Reload the picture to connect again." };
@@ -540,7 +548,7 @@ export async function startLiveView({ activityLog = null, reporter = null, tools
     get status() { return status; }, get sessionInfo() { return sessionInfo; }, get devState() { return devState; },
     get board() { return board; }, get driving() { return driving; },
     captureOk, collaborationChanged, stopIfIdle, follow, tabsInfo, forGuest, ownerSession, collaborationNow, layoutNow,
-    watchPages, agentTabs, pauseState, recordState, personTab, getContext, currentUrl, humanPost, onPause,
+    watchPages, agentTabs, pauseState, recordState, personTab, getContext, currentUrl, humanPost, onPause, coverFrame, coverImage,
   };
   const ROUTES = [
     ...createViewerRoutes(lv),

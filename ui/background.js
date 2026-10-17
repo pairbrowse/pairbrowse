@@ -5,7 +5,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 // file after an update; the helper compares this with the file on disk and reloads the extension
 // when they differ (daemon/panel.mjs). A hash of this file with the value blanked (browser.mjs
 // panelBuildOf).
-const PB_BUILD = "4e701c42a9cb28da";
+const PB_BUILD = "1a124589856a97db";
 globalThis.pbBuild = PB_BUILD;
 // In a new profile on macOS the browser starts without a window (--no-startup-window, see
 // shellArgs in browser.mjs) and this opens the first one, once per browser run (session storage), so a worker restart after
@@ -200,5 +200,8 @@ globalThis.pbRecord = async (msg = {}) => {
   if (msg.op === "chunk") return toShare({ op: "recChunk", offset: msg.offset, size: msg.size });
   if (msg.op === "clear") return toShare({ op: "recClear" });
   if (msg.op === "state") return toShare({ op: "recState" });
+  // Card fields covered (record.js checks them): each tab's covers, and a picture covered.
+  if (msg.op === "covers") return toShare({ op: "recCovers", covers: msg.covers });
+  if (msg.op === "coverPicture") return toShare({ op: "recCoverPicture", data: msg.data, rects: msg.rects });
   return { error: "unknown" };
 };

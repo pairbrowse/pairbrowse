@@ -94,6 +94,6 @@ test("pairbrowse:// addresses are the browser's own, as chrome://pairbrowse ones
 // autocomplete, inputmode, name, id, aria-label, label, placeholder).
 test("fields sensitive by their kind: password type, card and one-time-code autocomplete, card labels; never a ZIP or the name on the card", async () => {
   const { sensitiveHints } = await import("../scripts/rules/policy.mjs");
-  for (const h of ["password  pw", "text cc-number numeric cn", "text cc-csc  cv", "text cc-exp", "text one-time-code numeric", "text   cvc", "tel   Card number", "text    Expiration date MM / YY", "text  iban", "text    PIN"]) assert.equal(sensitiveHints(h), true, h);
-  for (const h of ["text postal-code  zip  ZIP code", "text cc-name   Name on card", "text name   Cardholder name", "email email", "text    Promo code", "number    Quantity"]) assert.equal(sensitiveHints(h), false, h);
+  for (const h of ["password  pw", "text cc-number numeric cn", "text cc-csc  cv", "text cc-exp", "text one-time-code numeric", "text   cvc", "tel   Card number", "text    Expiration date MM / YY", "text  iban", "tel    PIN", "password    PIN", "text    PIN code"]) assert.equal(sensitiveHints(h), true, h);
+  for (const h of ["text postal-code  zip  ZIP code", "text cc-name   Name on card", "text name   Cardholder name", "email email", "text    Promo code", "number    Quantity", "text    Pin location", "text    Expires", "text    Card title", "text    Gift card"]) assert.equal(sensitiveHints(h), false, h);
 });

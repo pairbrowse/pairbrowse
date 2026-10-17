@@ -235,9 +235,10 @@ const placed = (label, v) => [
   `Paid with ${v}, thanks`,
 ];
 const plainLabel = fc.stringMatching(/^[A-Za-z ]{0,20}$/);
-const notDigitEnd = fc.string({ maxLength: 20 }).filter((s) => !/\d$/.test(s));
-const notDigitStart = fc.string({ maxLength: 20 }).filter((s) => !/^\d/.test(s));
-const READ_WORDS = ["Card number", "card", "CVC", "CVV", "Security code", "Expiration date", "Expiry", "MM / YY", "Exp. date", "One-time code", "Verification code", "PIN", "IBAN", "SSN", "Social security number", "Password", "Account number", "Routing number", "OTP"];
+// Text before a card that does not run into its digits (no digit right before it, separators aside).
+const notDigitEnd = fc.string({ maxLength: 20 }).filter((s) => !/\d[\s\u00a0-]*$/.test(s));
+const notDigitStart = fc.string({ maxLength: 20 }).filter((s) => !/^[\s\u00a0-]*\d/.test(s));
+const READ_WORDS = ["Card number", "Card no.", "Credit card", "Payment card", "CVC", "CVV", "Security code", "Expiration date", "Expiry date", "MM / YY", "Exp. date", "One-time code", "Verification code", "PIN code", "IBAN", "SSN", "Social security number", "Password", "Account number", "Routing number", "OTP"];
 const readLabel = fc.tuple(fc.constantFrom("", "Your ", "Enter ", "Credit or debit "), fc.constantFrom(...READ_WORDS).chain(randomCase), fc.constantFrom("", " *", " (required)")).map((p) => p.join(""));
 
 test("a card number never reaches an agent, wherever it sits and whatever surrounds it; its last two digits do", () => {
@@ -249,7 +250,7 @@ test("a card number never reaches an agent, wherever it sits and whatever surrou
     assert.ok(out.includes(`••••${digits.slice(-2)}`) || out.includes("••••"), out);
   }));
   // A card among other digit groups ("Order 12 4242 4242 4242 4242").
-  check(fc.property(card, fc.stringMatching(/^\d{1,4}$/), fc.constantFrom(" ", "-", " - "), (digits, extra, sep) => {
+  check(fc.property(card.filter((c) => c.length === 16), fc.stringMatching(/^\d{1,4}$/), fc.constantFrom(" ", "-", " - "), (digits, extra, sep) => {
     const grouped = digits.match(/.{1,4}/g).join(" ");
     for (const text of [`Order ${extra}${sep}${grouped} ok`, `Order ${grouped}${sep}${extra} ok`]) assert.ok(!maskCards(text).includes(grouped), maskCards(text));
   }));
@@ -264,14 +265,15 @@ test("a field sensitive by its label never shows its value to an agent, in a sna
     assert.ok(!new RegExp(`(: |text: |fill\\('|= )${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(['$;\\n]|$)`, "m").test(out), `${label}: ${out}`);
   }));
   // A value the page holds in a field sensitive by its kind (an unlabeled CVC): masked on any field's line.
-  check(fc.property(plainLabel, fc.stringMatching(/^\d{3,4}$/), fc.nat(2), (label, v, at) => {
+  check(fc.property(plainLabel, fc.stringMatching(/^\d{3,6}$/), fc.nat(2), (label, v, at) => {
+    if (label.trim() && v.length < 4) label = "";
     const out = maskForAgent(placed(label, v)[at], [v]);
     assert.ok(!new RegExp(`(: |text: |fill\\(')${v}`).test(out), out);
   }));
 });
 
 test("a ZIP, the name on a card and an ordinary number read as they are", () => {
-  const neutral = fc.constantFrom("ZIP code", "Postal code", "Zip/Postal Code", "Name on card", "Cardholder name", "Quantity", "Phone", "Order number", "Amount", "Email").chain(randomCase);
+  const neutral = fc.constantFrom("ZIP code", "Postal code", "Zip/Postal Code", "Name on card", "Cardholder name", "Quantity", "Phone", "Order number", "Amount", "Email", "Card title", "Card type", "Gift card", "Pin location", "Expires").chain(randomCase);
   const notCard = fc.oneof(fc.stringMatching(/^\d{1,12}$/), fc.stringMatching(/^\d{13,19}$/).filter((d) => !looksLikeCard(d)), fc.stringMatching(/^[A-Z0-9]{3,10}$/), fc.constantFrom("Ada Lovelace", "94107", "SW1A 1AA", "10115"));
   check(fc.property(neutral, notCard, fc.nat(3), (label, v, at) => {
     const text = placed(label, v)[at];

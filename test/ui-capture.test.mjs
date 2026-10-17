@@ -15,7 +15,15 @@ import { pageTest, sleep } from "./helpers/ui-page.mjs";
 
 const gum = []; // the getUserMedia calls
 let sdpSize = 400;
-const track = (kind) => ({ kind, stopped: false, stop() { this.stopped = true; }, addEventListener() {}, applyConstraints: async () => {} });
+const track = (kind) => ({ kind, stopped: false, stop() { this.stopped = true; }, addEventListener() {}, applyConstraints: async () => {}, clone() { return track(kind); } });
+// Frame processing, for joiners' covered picture (capture.js coveredTrack): no frames come here.
+const frameApi = {
+  MediaStreamTrackProcessor: class { readable = { getReader: () => ({ read: () => new Promise(() => {}), cancel: async () => {} }) }; },
+  MediaStreamTrackGenerator: class { kind = "video"; readyState = "live"; writable = { getWriter: () => ({ write: async () => {} }) }; stop() { this.readyState = "ended"; } },
+  OffscreenCanvas: class { constructor(w, h) { this.width = w; this.height = h; } getContext() { return { drawImage() {}, fillRect() {} }; } },
+  VideoFrame: class {},
+};
+Object.assign(globalThis, frameApi);
 Object.defineProperty(globalThis.navigator, "mediaDevices", { configurable: true, value: {
   getUserMedia: async (c) => {
     gum.push(c);
@@ -318,6 +326,26 @@ test("the module split: no chrome.* in the core, one module entry, the worker's 
   assert.match(bg, /createDocument\(\{ url: "capture\/index\.html", reasons: \["USER_MEDIA"\]/);
 });
 
+// Without frame processing a tab's picture can't have its card fields covered: no direct
+// connection is made at all (the helper sends joiners to the slower route), never the raw picture.
+test("no frame processing: an offer is refused with NO_COVER, nothing sent, the capture let go", async () => {
+  const { pb } = fakePb();
+  const core = createNativeCapture(pb);
+  const before = pcs.length;
+  const saved = globalThis.MediaStreamTrackGenerator;
+  delete globalThis.MediaStreamTrackGenerator;
+  try {
+    const r = (await core.call({ n: 1, to: "share", op: "offer", peer: "pn", tabId: "TN", frame: { w: 640, h: 400 } })).value;
+    assert.equal(r.code, "NO_COVER", JSON.stringify(r));
+    assert.match(r.error, /can't cover card fields/);
+    assert.equal(pcs.length, before, "no connection made");
+    assert.equal((await core.call({ n: 2, to: "share", op: "has", tabId: "TN" })).value, false, "the capture made for it ended");
+  } finally { globalThis.MediaStreamTrackGenerator = saved; }
+  const ok = (await core.call({ n: 3, to: "share", op: "offer", peer: "pn", tabId: "TN", frame: { w: 640, h: 400 } })).value;
+  assert.match(ok.sdp || "", /^v=0/, "with it, as before");
+  await core.call({ n: 4, to: "share", op: "stop", peer: "pn" });
+});
+
 // What joiners did comes in pieces that fit the helper's reply; the rest waits for the next take.
 test("take: at most 200 items, within the helper's reply limit, the rest kept in order", async () => {
   const { pb } = fakePb();
@@ -540,6 +568,9 @@ describe("capture: the recording's frame 0 is the tab's picture", () => pageTest
   });
   await inPage(slowCaptureAndWatchRecorder, 300);
   await inPage(keepRecordedWebm);
+  // The helper sends the tabs' covers before a start (recorder.mjs): none here. Unknown, the tab
+  // would be covered whole (fail closed) and frame 0 the cover's color.
+  await ask(helper, 9, { to: "record", op: "covers", covers: { T11: [] } });
   const start = await ask(helper, 1, { to: "record", op: "start", follow: "front", labels: {}, scale: 1 });
   assert.match(start.value?.type || "", /^video\/webm/, JSON.stringify(start));
   await sleep(1500);
@@ -572,4 +603,81 @@ describe("capture: a stop or a clear while the start waits for the tab leaves no
   assert.deepEqual(await inPage(() => window.__recs.map((r) => r.state)), ["inactive"]);
   assert.equal((await ask(helper, 6, { to: "share", op: "has", tabId: "T11" })).value, false);
   assert.deepEqual((await ask(helper, 7, { to: "record", op: "state" })).value.recording, false);
+}));
+
+// Card fields covered (daemon/covers.mjs): the helper's covers op paints them over the recording's
+// frames, over what a joiner's connection is sent (the tab's own picture stays as it is for the
+// recording to cover itself), and over a picture it hands in (a timeline picture). #293B50 is
+// (41, 59, 80); the stand-in tab is #123 (17, 34, 51) with a moving white square.
+const isCover = (px) => Math.abs(px[0] - 41) < 12 && Math.abs(px[1] - 59) < 12 && Math.abs(px[2] - 80) < 12;
+describe("capture: covers paint over the recording, a joiner's picture and a picture handed in", () => pageTest("capture", { timeout: 60_000 }, async ({ helper, inPage }) => {
+  await inPage(fakeTabCapture);
+  await inPage(() => {
+    const start = MediaRecorder.prototype.start;
+    MediaRecorder.prototype.start = function (...a) { window.__canvas = this.stream.getVideoTracks()[0].canvas; return start.apply(this, a); };
+    window.__sent = [];
+    const add = RTCPeerConnection.prototype.addTrack;
+    RTCPeerConnection.prototype.addTrack = function (track, ...s) { window.__sent.push(track); return add.call(this, track, ...s); };
+    // The recording canvas's pixel at fractions of the tab's part (below the 40 px strip).
+    window.__recPx = (fx, fy) => { const c = window.__canvas, top = 40; return [...c.getContext("2d").getImageData(Math.round(fx * c.width), Math.round(top + fy * (c.height - top)), 1, 1).data]; };
+    // One frame of a track: its pixel at fractions.
+    window.__trackPx = async (track, fx, fy) => {
+      const reader = new MediaStreamTrackProcessor({ track: track.clone() }).readable.getReader();
+      const { value } = await reader.read();
+      const c = new OffscreenCanvas(value.displayWidth, value.displayHeight);
+      const g = c.getContext("2d");
+      g.drawImage(value, 0, 0);
+      value.close();
+      reader.cancel();
+      return [...g.getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data];
+    };
+    return true;
+  });
+  const start = await ask(helper, 1, { to: "record", op: "start", follow: "front", labels: {}, scale: 1 });
+  assert.match(start.value?.type || "", /^video\//, JSON.stringify(start));
+  // Covers not known yet: the whole view is covered (fail closed), corners too.
+  for (const [x, y] of [[0.5, 0.5], [0.02, 0.02], [0.98, 0.98]]) assert.ok(isCover(await inPage(([fx, fy]) => window.__recPx(fx, fy), [x, y])), `unknown covers: (${x}, ${y}) not covered`);
+  // A joiner connecting before the covers are known gets the whole view covered too.
+  const early = await ask(helper, 8, { to: "share", op: "offer", peer: "pe", tabId: "T11", frame: { w: 640, h: 400 }, ice: [] });
+  assert.match(early.value?.sdp || "", /^v=0/);
+  assert.ok(isCover(await inPage(() => window.__trackPx(window.__sent.find((t) => t.kind === "video"), 0.1, 0.9))), "joiner's picture covered whole before covers come");
+  await ask(helper, 9, { to: "share", op: "stop", peer: "pe" });
+  await inPage(() => { window.__sent = []; return true; });
+  // Covers known, none: the picture as it is.
+  await ask(helper, 10, { to: "record", op: "covers", covers: { T11: [] } });
+  await sleep(200);
+  assert.ok(!isCover(await inPage(() => window.__recPx(0.5, 0.5))), "nothing to cover: as it is");
+  const bad = await ask(helper, 2, { to: "record", op: "covers", covers: { T11: [[0, 0, 5, 1]] } });
+  assert.deepEqual(bad.value, { error: "covers are { tabId: [[x, y, w, h], ...] }" });
+  const r = await ask(helper, 3, { to: "record", op: "covers", covers: { T11: [[0.25, 0.25, 0.5, 0.5]] } });
+  assert.deepEqual(r.value, { front: "T11" });
+  await sleep(200);
+  assert.ok(isCover(await inPage(() => window.__recPx(0.5, 0.5))), `recording: ${await inPage(() => window.__recPx(0.5, 0.5))}`);
+  assert.ok(!isCover(await inPage(() => window.__recPx(0.1, 0.9))), "outside the cover as it is");
+  // A joiner's connection to the same tab: sent the covered picture, not the tab's own track.
+  const offer = await ask(helper, 4, { to: "share", op: "offer", peer: "pc", tabId: "T11", frame: { w: 640, h: 400 }, ice: [] });
+  assert.match(offer.value?.sdp || "", /^v=0/);
+  const joinerPx = (x, y) => inPage(([fx, fy]) => window.__trackPx(window.__sent.find((t) => t.kind === "video"), fx, fy), [x, y]);
+  assert.ok(isCover(await joinerPx(0.5, 0.5)), `joiner's picture: ${await joinerPx(0.5, 0.5)}`);
+  assert.ok(!isCover(await joinerPx(0.1, 0.9)));
+  await ask(helper, 5, { to: "share", op: "stop", peer: "pc" });
+  // A picture handed in: the same JPEG back with the rects painted.
+  const jpeg = await inPage(async () => {
+    const c = new OffscreenCanvas(200, 100);
+    const g = c.getContext("2d");
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, 200, 100);
+    const b = new Uint8Array(await (await c.convertToBlob({ type: "image/jpeg", quality: 0.9 })).arrayBuffer());
+    let s = ""; for (const x of b) s += String.fromCharCode(x);
+    return btoa(s);
+  });
+  const pic = await ask(helper, 6, { to: "record", op: "coverPicture", data: jpeg, rects: [[0, 0, 0.5, 1]] });
+  assert.equal(typeof pic.value, "string", JSON.stringify(pic).slice(0, 200));
+  const px = await inPage(async (b64) => {
+    const bin = atob(b64);
+    const bmp = await createImageBitmap(new Blob([Uint8Array.from(bin, (ch) => ch.charCodeAt(0))], { type: "image/jpeg" }));
+    const c = new OffscreenCanvas(bmp.width, bmp.height); const g = c.getContext("2d"); g.drawImage(bmp, 0, 0);
+    return [[...g.getImageData(50, 50, 1, 1).data], [...g.getImageData(150, 50, 1, 1).data]];
+  }, pic.value);
+  assert.ok(isCover(px[0]) && px[1][0] > 240, JSON.stringify(px));
+  await ask(helper, 7, { to: "record", op: "stop" }, 15_000);
 }));

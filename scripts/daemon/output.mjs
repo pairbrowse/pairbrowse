@@ -23,24 +23,25 @@ const SNAPSHOT_MAX = 24_000;
 const INLINE_SHORT_MAX = 6000;
 
 // dir: the files folder Playwright writes to. secretValues(): the saved passwords by name.
-// mask(text, values): saved passwords by their names, card numbers and the values of fields
-// sensitive by their kind (values: the page's, pageread.mjs sensitiveValues) as policy.mjs
-// maskForAgent says.
+// mask(text): saved passwords by their names (every agent's results). forJoiner(text, values):
+// that, and card numbers and the values of fields sensitive by their kind (values: the page's,
+// pageread.mjs sensitiveValues) as policy.mjs maskForAgent says, for a joiner's agent.
 export function createOutput({ dir, secretValues }) {
-  const mask = (text, values = []) => maskForAgent(redact(text, secretValues()), values);
+  const mask = (text) => redact(text, secretValues());
+  const forJoiner = (text, values = []) => maskForAgent(mask(text), values);
 
-  function maskFile(file, values = []) {
+  function maskFile(file) {
     try {
       const text = readFileSync(file, "utf8");
-      const clean = mask(text, values);
+      const clean = mask(text);
       if (clean !== text) writeFileSync(file, clean);
     } catch {}
   }
   // Snapshot files a result links to: masked before Claude sees the link.
-  function maskLinkedFiles(text, values = []) {
+  function maskLinkedFiles(text) {
     for (const [, link] of String(text).matchAll(/\]\(([^)\s]+)\)/g)) {
       const file = join(dir, basename(link));
-      if (PLAYWRIGHT_OUTPUT.test(basename(file)) && existsSync(file)) maskFile(file, values);
+      if (PLAYWRIGHT_OUTPUT.test(basename(file)) && existsSync(file)) maskFile(file);
     }
   }
 
@@ -61,11 +62,11 @@ export function createOutput({ dir, secretValues }) {
   // link stays (with a word to snapshot for fresh refs) past INLINE_SHORT_MAX characters. Only
   // Playwright's own files in the files folder are read, as maskLinkedFiles masks only those; the
   // file is masked first, so what's on disk is as clean as what the agent reads.
-  function inlineSnapshot(text, { short = false, values = [] } = {}) {
+  function inlineSnapshot(text, { short = false } = {}) {
     return String(text).replace(/^- \[Snapshot\]\(([^)\s]+)\)[^\n]*$/m, (line, link) => {
       const file = join(dir, basename(link));
       if (!PLAYWRIGHT_OUTPUT.test(basename(file)) || !existsSync(file)) return line;
-      maskFile(file, values);
+      maskFile(file);
       let snap;
       try { snap = readFileSync(file, "utf8"); } catch { return line; }
       snap = compactSnapshot(snap.replace(/^```ya?ml\r?\n/, "").replace(/\r?\n```\s*$/, "").replace(/\s+$/, ""));
@@ -114,7 +115,7 @@ export function createOutput({ dir, secretValues }) {
     setInterval(sweep, SWEEP_EVERY_MS).unref();
   }
 
-  return { mask, maskLinkedFiles, inlineSnapshot, capSnapshot, absoluteLinks, start };
+  return { mask, forJoiner, maskLinkedFiles, inlineSnapshot, capSnapshot, absoluteLinks, start };
 }
 
 // An action's snapshot, shorter where it carries what no form step needs (browser_snapshot keeps
@@ -178,7 +179,7 @@ export function compactSnapshot(text) {
   return out.join("\n");
 }
 
-// A browser_find result after masking (text: masked; args: the call's text or regex): the browser
+// A joiner's browser_find result after masking (text: masked; args: the call's text or regex): the browser
 // server matched the page before masking, so a query that matched only what is masked now (a
 // card's digits, a CVC) would still say "Found 1 match". Its count is that of the lines that still
 // match, and none says no match. Pure.
@@ -200,8 +201,12 @@ export function recountFind(text, args = {}) {
   const start = head.index + head[0].length;
   const next = t.slice(start).search(/^### /m);
   const end = next < 0 ? t.length : start + next;
-  const found = t.slice(start, end).split("\n").filter((line) => line.trim() && line.trim() !== "----" && line.trim() !== "..." && matches(line)).length;
-  if (found) return `${t.slice(0, head.index)}Found ${found} ${found === 1 ? "match" : "matches"} for ${head[1]}:${t.slice(start)}`;
+  // Each snippet ("----" between them) stays only if a line of it still matches: a snippet kept for
+  // its masked card line alone would say where the digits are.
+  const counted = (block) => block.split("\n").filter((line) => line.trim() && line.trim() !== "..." && matches(line)).length;
+  const kept = t.slice(start, end).replace(/^\n+/, "").replace(/\n+$/, "").split(/\n\n----\n\n/).filter((block) => counted(block));
+  const found = kept.reduce((n, block) => n + counted(block), 0);
+  if (found) return `${t.slice(0, head.index)}Found ${found} ${found === 1 ? "match" : "matches"} for ${head[1]}:\n\n${kept.join("\n\n----\n\n")}\n${t.slice(end)}`;
   return `${t.slice(0, head.index)}No matches found for ${head[1]}.\n${t.slice(end)}`;
 }
 

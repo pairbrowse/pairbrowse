@@ -8,6 +8,7 @@ import { settle, whileBusy } from "../page.mjs";
 import { outline } from "../../runner.mjs";
 import { foldedLine, revealNote, scanReveal } from "../reveal.mjs";
 import { sensitiveValues } from "./pageread.mjs";
+import { agentPicture, NOT_COVERED_NOTE } from "../covers.mjs";
 import { CLICKING_TOOLS, DECORATED, FIELD_TOOLS, INLINE_SHORT_TOOLS, INLINE_SNAPSHOT_TOOLS, LOADING_TOOLS, PAGE_READ_TOOLS, SCREENSHOT_TOOLS, dropClosedAlerts, forJoiner, urlIn } from "./wire.mjs";
 import { resolve as resolvePath } from "node:path";
 
@@ -106,7 +107,7 @@ export function createResult(conn, api) {
     let inlined = false; // an action's result carries its snapshot inline
     let closedAway = false; // browser_tabs close left the agent in a tab that wasn't its own
     let full = fullSnapshot; // the text holds a whole-page snapshot (refNames)
-    let hidden = []; // the page's sensitive field values (pageread.mjs sensitiveValues), masked below
+    let hidden = []; // for a joiner's agent: the page's sensitive field values (pageread.mjs sensitiveValues)
     if (tool !== undefined) {
       const action = tabActions.get(msg.id);
       tabActions.delete(msg.id);
@@ -180,15 +181,16 @@ export function createResult(conn, api) {
         }
         for (const part of content()) if (part.type === "text") part.text = refNames.toPlain(part.text, full);
       }
-      // The values in this page's card, security-code, expiry, PIN and similar fields (all its
-      // frames): masked wherever the result (and the snapshot file it links) shows them.
-      if (ownPage && msg.result && content().some((part) => part.type === "text" && part.text)) hidden = await sensitiveValues(ownPage);
+      // A joiner's agent: the values in this page's card, security-code, expiry, PIN and similar
+      // fields (all its frames), masked wherever its result shows them. The host's agents read
+      // the page as it is.
+      if (remote && ownPage && msg.result && content().some((part) => part.type === "text" && part.text)) hidden = await sensitiveValues(ownPage);
       trace.mark("sensitive");
       // The linked snapshot file (its refs plain by now) in the result, as browser_snapshot
       // prints it: the agent acts on these refs at once. A long one is cut below as
       // browser_snapshot's is, and the file link stays only then.
       if (INLINE_SNAPSHOT_TOOLS.has(tool) && msg.result && !msg.result.isError) {
-        for (const part of content()) if (part.type === "text") part.text = output.inlineSnapshot(part.text, { short: INLINE_SHORT_TOOLS.has(tool), values: hidden });
+        for (const part of content()) if (part.type === "text") part.text = output.inlineSnapshot(part.text, { short: INLINE_SHORT_TOOLS.has(tool) });
         inlined = content().some((part) => /^```yaml$/m.test(part.text || ""));
         conn.snapshotReturned ||= inlined;
       }
@@ -208,8 +210,8 @@ export function createResult(conn, api) {
     // The person's own tabs: their lines say only that (indices from the open tabs, read once).
     let personIdx = null;
     for (const part of content()) if (part.type === "text") {
-      output.maskLinkedFiles(part.text, hidden); part.text = tabNames.strip(output.mask(output.absoluteLinks(part.text), hidden));
-      if (tool === "browser_find" && !msg.result?.isError) part.text = recountFind(part.text, args ?? callArgs.get(msg.id) ?? msg.params?.arguments);
+      output.maskLinkedFiles(part.text); part.text = tabNames.strip(remote ? output.forJoiner(output.absoluteLinks(part.text), hidden) : output.mask(output.absoluteLinks(part.text)));
+      if (remote && tool === "browser_find" && !msg.result?.isError) part.text = recountFind(part.text, args ?? callArgs.get(msg.id) ?? msg.params?.arguments);
       if (tool === "browser_tabs") { const note = hiddenTabsNote(part.text); part.text = hideBrowserTabs(part.text); if (note) part.text += `${part.text.endsWith("\n") ? "" : "\n"}${note}\n`; }
       if (/^- \d+: |file:/m.test(part.text)) {
         personIdx ??= await context.openPages().then((pages) => pages.flatMap((p, i) => (personTab(p) ? [i] : []))).catch(() => []);
@@ -224,7 +226,11 @@ export function createResult(conn, api) {
       const shotPage = ownPage || await context.pageAt(shotUrl || context.currentUrl());
       // Never a picture of the person's own tab.
       const shot = personTab(shotPage) ? null : await screenshots.take(shotPage, participant);
-      if (shot?.data) { msg.result.content.push(image(shot.data)); rememberPicture(shot, shotPage, tool, args); }
+      // A joiner's agent's picture leaves this screen: its card fields covered first (covers.mjs),
+      // or no picture at all. The host's own agents get theirs as it is.
+      const data = shot?.data ? await agentPicture(shot.data, shotPage, remote, { compose: (d, rects, page) => api.recorder?.coverPicture?.(d, rects, page) }) : null;
+      if (data === "") msg.result.content.push({ type: "text", text: NOT_COVERED_NOTE });
+      else if (data) { msg.result.content.push(image(data)); rememberPicture(remote ? { ...shot, data, covered: true } : shot, shotPage, tool, args); }
       else if (shot?.same) msg.result.content.push({ type: "text", text: SAME_PICTURE });
       else if (shot?.skipped) msg.result.content.push({ type: "text", text: `\n### PairBrowse\n- ${shot.skipped}` });
       trace.mark("shot");

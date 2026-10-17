@@ -125,6 +125,13 @@ test("a person in the other browser counts as a person here, and isn't sent back
 // What a page's fields look like as read in the page (daemon/forms.mjs).
 const field = (k, v, t = "text", hints = "") => ({ f: "top", k, t, v, hints });
 
+// A field sensitive by its label alone (no autocomplete, no telling name): its value stays on the host.
+test("form values: a label-only Security code, Expiration date or PIN code never crosses to a joiner", () => {
+  const out = shareFields([field("#s", "731", "text", "Security code s"), field("#e", "11 / 29", "text", "Expiration date MM / YY e"), field("#p", "4471", "tel", "PIN code p")]);
+  const by = Object.fromEntries(out.map((x) => [x.k, x]));
+  for (const k of ["#s", "#e", "#p"]) assert.ok(by[k].m === 1 && !("v" in by[k]), JSON.stringify(by[k]));
+});
+
 test("form values: sensitive fields never carry a value, whatever their name or value", () => {
   const raw = [
     field("#name", "Ada Lovelace", "text", "Full name name"),

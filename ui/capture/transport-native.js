@@ -209,6 +209,9 @@ export function createNativeCapture(pb) {
       }
       case "clear": end(); return record({ op: "recClear" });
       case "state": return record({ op: "recState" });
+      // Card fields covered (record.js checks them): each tab's covers, and a picture covered.
+      case "covers": return record({ op: "recCovers", covers: m.covers });
+      case "coverPicture": return record({ op: "recCoverPicture", data: m.data, rects: m.rects });
       default: return { error: "unknown" };
     }
   }

@@ -161,7 +161,10 @@ export function compactSnapshot(text) {
             out.push(...o);
           } else left++;
         });
-        out.push(`${" ".repeat(ind)}  # ${run.length} options in all; browser_select_option takes any by its text, browser_snapshot lists them all`);
+        // A dropdown (<select>: a combobox) takes any option by its text; a listbox may be a page's
+        // own list, whose options are clicked by their refs: browser_snapshot gives them all.
+        const parent = out.findLast((l) => l.trim() && indentOf(l) < ind) || "";
+        out.push(`${" ".repeat(ind)}  # ${run.length} options in all; ${/^\s*- combobox\b/.test(parent) ? "browser_select_option takes any by its text, browser_snapshot lists them all" : "browser_snapshot lists them all, with their refs to click"}`);
         i = j - 1;
         continue;
       }

@@ -44,7 +44,7 @@ Make a task list with one item per page or section, and set a badge:
 {Label: Option}, `click`, `press`, `scroll` ("down", "up" or pixels, at once), `drag` ([[x,y],...] fractions of the visible page: drawing on canvases, human-like), `upload` {Label: path}, `waitFor`, `expect`, and
 `handoff` {say, until} (or `untilGone`). Labels match the label, placeholder or name. A `click` takes
 a button's, link's, tab's, menu item's, calendar day's (grid cell) or option's name, `"#id"`, or the
-page's test id (`data-test`, `data-testid`); it waits while the page says it's saving ("Saving..."), and
+page's test id (`data-test`, `data-testid`); it waits up to 5 s while the page says it's saving ("Saving..."; still busy then, the run stops and says so), and
 a link that downloads a file counts as done. `waitFor` and `expect` look in frames too. Values may use
 `{{var}}` from `vars`. It stops at the first problem, says why, and returns an outline of the page.
 `saveAs` saves a flow that fully worked; `playbook` + `vars` replays it; `list: true` lists saved ones.

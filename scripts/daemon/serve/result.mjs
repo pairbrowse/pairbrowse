@@ -28,6 +28,10 @@ const TIDY_MAX_MS = 8000; // the most a result waits for the page to settle
 const LATE_POPUP_CHECKS_MS = [3000, 8000]; // an offer that shows up a few seconds later
 export const image = (data) => ({ type: "image", data, mimeType: "image/jpeg" });
 export const BUSY_MAX_MS = 5000; // a click the page is still at work on is waited for this long, at most
+// What a result says after waiting on a busy page (whileBusy's answer): done, or still at work.
+export const busyNote = (b) => b.still
+  ? `The page is still busy after ${Math.round(b.ms / 1000)} s ("${b.what.slice(0, 40)}"): this is the page as it is now, not done yet. browser_wait_for, then snapshot again.`
+  : `The page was busy ("${b.what.slice(0, 40)}") for ${(b.ms / 1000).toFixed(1)} s after the click: this is the page once it was done.`;
 // A result's text without its page snapshot (the "### Snapshot" section, inline or as a file link),
 // with put in its place.
 export function withoutSnapshot(text, put = "") {
@@ -155,7 +159,7 @@ export function createResult(conn, api) {
           const snap = fresh?.result && !fresh.result.isError ? (fresh.result.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n") : "";
           if (snap.includes("[ref=")) {
             const kept = content().map((part) => (part.type === "text" ? { ...part, text: withoutSnapshot(part.text).replace(/^### Page\n(?:- .*\n?)*/m, "") } : part));
-            msg.result.content = [...kept, { type: "text", text: `${snap.replace(/^### Result\n[\s\S]*?(?=^### )/m, "")}\n### PairBrowse\n- The page was busy ("${busy.what.slice(0, 40)}") for ${(busy.ms / 1000).toFixed(1)} s after the click: this is the page once it was done.` }];
+            msg.result.content = [...kept, { type: "text", text: `${snap.replace(/^### Result\n[\s\S]*?(?=^### )/m, "")}\n### PairBrowse\n- ${busyNote(busy)}` }];
             full = true;
           }
         }

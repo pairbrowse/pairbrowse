@@ -30,7 +30,17 @@ export async function click({ page, arg, hooks, fail }) {
   // What the matched element does, by the page's structure, whatever it says: strong signals
   // (payment, danger, DELETE, unreadable) make it the user's to confirm; ordinary submits go.
   const real = String(await el.evaluate(buttonLabel, undefined, { timeout: 2000 }).catch(() => ""));
-  const { risk } = await contextAt(page, el, "click");
+  let { risk } = await contextAt(page, el, "click");
+  // What the press lands on: the element at the middle of the matched one (a calendar day or a
+  // grid cell, an option, may hold its own button: a "Book" or "Delete" in the cell), read too.
+  if (!strongSignal(risk)) {
+    const at = await pointTarget(el);
+    if (at) {
+      const inner = (await contextAt(page, at, "click")).risk;
+      at.dispose().catch(() => {});
+      if (strongSignal(inner)) risk = inner;
+    }
+  }
   if (strongSignal(risk)) return fail(`"${arg}" is the "${real.slice(0, 60)}" button: ${riskReason(risk)}. Run the steps before it, then use browser_click on it so the user confirms.`);
   // Whether the click should take the page elsewhere: a link (same tab) to another document.
   const urlBefore = page.url();
@@ -79,8 +89,25 @@ export async function click({ page, arg, hooks, fail }) {
     }
     // A page still at work on the click ("Saving…" on its button, a busy region): waited for, at
     // most BUSY_MAX_MS, so the next step and the outline see what it did.
-    await whileBusy(page, el, BUSY_MAX_MS, busyBefore);
+    const busy = await whileBusy(page, el, BUSY_MAX_MS, busyBefore);
     hooks.activity(`Clicked **${arg}**`);
+    // Still at work when the time is up: the steps after it would act on a page in the middle of it.
+    if (busy.still) return fail(`Clicked "${arg}", and the page is still busy after ${Math.round(busy.ms / 1000)} s ("${busy.what.slice(0, 40)}"): nothing after it was done. Wait for what it shows when it's done (a waitFor step or browser_wait_for), then run the remaining steps.`);
   }
 }
 const BUSY_MAX_MS = 5000;
+
+// The element a press in the middle of el lands on, when it's another one inside el (brought into
+// view first, as the press would): a handle, or null. Bounded.
+async function pointTarget(el) {
+  await within(1500, Promise.resolve().then(() => el.scrollIntoViewIfNeeded({ timeout: 1000 })).catch(() => {}));
+  const h = await within(1500, Promise.resolve().then(() => el.evaluateHandle((n) => {
+    const r = n.getBoundingClientRect();
+    let hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    for (let i = 0; hit?.shadowRoot && i < 10; i++) { const inner = hit.shadowRoot.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); if (!inner || inner === hit) break; hit = inner; }
+    return hit && hit !== n && n.contains(hit) ? hit : null;
+  })).catch(() => null));
+  const one = h?.asElement?.() || null;
+  if (!one) h?.dispose?.().catch(() => {});
+  return one;
+}

@@ -42,7 +42,8 @@ export function requireDriver(require, driver, log = () => {}) {
   const name = driver === "playwright" ? "playwright" : "patchright";
   const mod = require(name);
   try {
-    if (!installNoReadGesture(require(`${name}-core/lib/coreBundle`))) log("reads: couldn't turn off their user gesture");
+    const onMiss = () => log("reads: couldn't turn off their user gesture (the driver's page session wasn't found): pages it reads get user activation");
+    if (!installNoReadGesture(require(`${name}-core/lib/coreBundle`), { onMiss })) log("reads: couldn't turn off their user gesture (no page class in the driver)");
   } catch (e) { log(`reads: couldn't turn off their user gesture: ${e?.message || e}`); }
   return mod;
 }

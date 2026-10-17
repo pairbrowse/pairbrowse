@@ -20,7 +20,10 @@ const PAGES = {
   "/dates": `<!doctype html><title>Dates</title><div role="grid" aria-label="October 2026"><div role="row">
     <div role="gridcell" tabindex="-1" aria-label="Choose Thursday, October 16th, 2026" onclick="document.title = 'picked 16'">16</div>
     <div role="gridcell" tabindex="-1" aria-label="Choose Friday, October 17th, 2026" onclick="document.title = 'picked 17'">17</div></div></div>`,
-  "/framed": `<!doctype html><title>Framed</title><iframe style="width:400px;height:200px" srcdoc="<p>Sign in to continue</p>"></iframe>`,
+  "/booked": `<!doctype html><title>Booked</title><div role="grid" aria-label="October 2026"><div role="row">
+    <div role="gridcell" aria-label="Choose Saturday, October 18th, 2026" style="width:120px;height:60px"><button style="width:100%;height:100%;background:#d92d20;color:#fff" onclick="document.title = 'cancelled'">18</button></div></div></div>`,
+  "/stuck": `<!doctype html><title>Stuck</title><button onclick="this.disabled = true; this.textContent = 'Saving...'">Save</button><button onclick="document.title = 'other'">Other</button>`,
+  "/framed":`<!doctype html><title>Framed</title><iframe style="width:400px;height:200px" srcdoc="<p>Sign in to continue</p>"></iframe>`,
   "/files": `<!doctype html><title>Files</title><a href="/report.csv">Get the report</a>`,
   "/save": `<!doctype html><title>Editor</title><button id="s" onclick="const b = this; b.disabled = true; b.textContent = 'Saving...'; setTimeout(() => { b.textContent = 'Save'; b.disabled = false; const h = document.createElement('h1'); h.textContent = 'All changes saved'; document.body.append(h); }, 1500)">Save</button>`,
   "/draw": `<!doctype html><title>Draw</title><style>body{margin:0}</style><div tabindex="0" style="position:fixed;inset:0">
@@ -65,6 +68,23 @@ test("agents' findings on real sites stay fixed", { skip: !runtime, timeout: 240
       r = await run([{ click: "Choose Friday, October 17th, 2026" }]);
       assert.match(r, /Page: picked 17/, r);
 
+    });
+    await step("a day whose cell holds a danger button is checked where the press lands", async () => {
+      await a.tool("browser_navigate", { url: one("/booked") });
+      r = await run([{ click: "Choose Saturday, October 18th, 2026" }]);
+      assert.match(r, /^Stopped at step 1 of 1: .*browser_click/, r);
+      assert.match(r, /Page: Booked/, "nothing was pressed");
+    });
+    await step("a page still busy when the wait is up says so", async () => {
+      await a.tool("browser_navigate", { url: one("/stuck") });
+      r = await run([{ click: "Save" }, { click: "Other" }]);
+      assert.match(r, /^Stopped at step 1 of 2: Clicked "Save", and the page is still busy after 5 s \("Saving\.\.\."\)/, r);
+      assert.doesNotMatch(r, /Page: other/, "the step after it didn't run");
+      await a.tool("browser_navigate", { url: one("/stuck") });
+      const s = text(await a.tool("browser_snapshot"));
+      r = text(await a.tool("browser_click", { target: s.match(/button "Save" \[ref=(e\d+)\]/)[1], element: "Save" }));
+      assert.match(r, /The page is still busy after 5 s \("Saving\.\.\."\): this is the page as it is now, not done yet/, r);
+      assert.doesNotMatch(r, /once it was done/);
     });
     await step("expect and waitFor look in frames", async () => {
       await a.tool("browser_navigate", { url: one("/framed") });

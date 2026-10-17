@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { readParams, patchSend, installNoReadGesture } from "../scripts/gesture.mjs";
+import { readParams, patchSend, installNoReadGesture, hooked } from "../scripts/gesture.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 
@@ -22,10 +22,36 @@ test("a function call goes without the user gesture; every other call as it was"
   const sent = [];
   class Session { send(method, params) { sent.push([method, params]); return Promise.resolve(); } }
   assert.equal(patchSend(Session.prototype), true);
-  assert.equal(patchSend(Session.prototype), false, "wrapped once");
+  assert.equal(patchSend(Session.prototype), true, "wrapped already");
   new Session().send("Runtime.callFunctionOn", { userGesture: true });
-  assert.deepEqual(sent, [["Runtime.callFunctionOn", { userGesture: false }]]);
+  assert.deepEqual(sent, [["Runtime.callFunctionOn", { userGesture: false }]], "wrapped once: one call sent");
+  assert.equal(patchSend({}), false, "nothing to wrap: says so");
   assert.equal(installNoReadGesture({}), false, "no driver to hook into: says so");
+});
+
+test("a driver whose page session isn't where it was says so once, and hooked() tells", () => {
+  // A driver whose internals renamed the page's session: the hook finds nothing.
+  class Page { mainFrame() { return "main"; } reportAsNew() {} }
+  const missed = [];
+  assert.equal(installNoReadGesture({ server: { Page } }, { onMiss: () => missed.push(1) }), true, "the page class is there");
+  const p = new Page();
+  p.delegate = { renamed: {} };
+  assert.equal(p.mainFrame(), "main", "the driver's own method still answers");
+  p.mainFrame();
+  new Page().reportAsNew();
+  assert.deepEqual(missed, [1], "said once");
+  assert.equal(hooked(), false, "its reads keep their gesture, and that shows");
+  // One where it is: hooked.
+  class Page2 { mainFrame() { return "main"; } }
+  const sent = [];
+  class Session { send(m, params) { sent.push(params); } }
+  installNoReadGesture({ server: { Page: Page2 } });
+  const q = new Page2();
+  q.delegate = { rawKeyboard: { _client: new Session() } };
+  q.mainFrame();
+  assert.equal(hooked(), true);
+  q.delegate.rawKeyboard._client.send("Runtime.callFunctionOn", { userGesture: true });
+  assert.deepEqual(sent, [{ userGesture: false }]);
 });
 
 test("reads give the page no activation; a real click still does", { skip: !runtime, timeout: 60_000 }, async () => {
@@ -54,6 +80,7 @@ test("reads give the page no activation; a real click still does", { skip: !runt
   assert.equal((await activated()).read, true, "the driver's own reads carry a user gesture");
   assert.equal(installNoReadGesture(require("patchright-core/lib/coreBundle")), true);
   const after = await activated();
+  assert.equal(hooked(), true, "the pinned driver's session was found");
   assert.equal(after.read, false, "no activation from the helper's reads");
   assert.equal(after.clicked, true, "a real click activates the page");
   assert.equal(after.title, "opened", "and its popup opens");

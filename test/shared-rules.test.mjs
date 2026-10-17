@@ -100,6 +100,8 @@ test("final actions by what they do, by structure only: commits are asked for in
       <form id="checkout" method="post"><input autocomplete="cc-number" id="cc"><input id="note"><button id="order">Submit order</button><button type="button" id="apply">Apply coupon</button></form>
       <form id="ship" method="post"><input autocomplete="shipping street-address"><input type="submit" id="go" value="Continue"></form>
       <form id="ship2" method="post"><input autocomplete="shipping street-address"><input autocomplete="billing postal-code"><button id="to-pay">Continue to payment ›</button><button id="place">Place order</button><button id="next-pay">Next: Pay now</button><button id="cont-pay">Continue and pay</button></form>
+      <form id="saved" method="post"><ol><li>Address</li><li aria-current="step">Pay</li></ol><input autocomplete="billing street-address"><label><input type="radio" name="pm" value="tok_123" checked> Visa 4242</label><input type="hidden" name="token" value="tok_123"><button id="saved-next">Continue</button></form>
+      <form id="mid" method="post"><ol><li aria-current="step">Address</li><li>Pay</li></ol><input autocomplete="billing street-address"><input><button id="mid-next">Continue</button></form>
       <form id="ship3" method="post"><input autocomplete="shipping street-address"><input autocomplete="cc-number"><button id="to-review">Continue to review</button></form>
       <form id="ship4" method="post"><iframe allow="payment" srcdoc="<p>card</p>"></iframe><input autocomplete="billing street-address"><button id="ship-next">Next</button></form>
       <form id="luhn" method="post"><input value="4242 4242 4242 4242"><button id="done">Done</button></form>
@@ -131,8 +133,15 @@ test("final actions by what they do, by structure only: commits are asked for in
     await is("#order", "strong", "pay");
     // Address fields alone: a clear next step ("Continue", "Continue to payment") is an ordinary
     // submit; any other button there pays. Card fields or a payment frame pay whatever the button says.
-    await is("#go", "commit", "submit");
-    await is("#to-pay", "commit", "submit");
+    // (Only once every frame on the page was read and none has card fields: framesClear.)
+    const clear = { framesClear: true };
+    await is("#go", "commit", "submit", "click", "", clear);
+    await is("#to-pay", "commit", "submit", "click", "", clear);
+    await is("#go", "strong", "pay", "click", "", {});
+    await is("#to-pay", "strong", "pay", "click", "", { framesClear: false });
+    // The last step of a marked form (a saved card picked by a radio, no card field) pays.
+    await is("#saved-next", "strong", "pay", "click", "", clear);
+    await is("#mid-next", "safe", "", "click", "", clear);
     await is("#place", "strong", "pay");
     await is("#next-pay", "strong", "pay");
     await is("#cont-pay", "strong", "pay");
@@ -190,6 +199,41 @@ test("final actions by what they do, by structure only: commits are asked for in
     // A dialog that isn't a confirmation (a cookie banner) asks nothing.
     await is("#c1", "safe", "");
     await is("#c2", "safe", "");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a card frame in the form is found behind many other frames; frames left unscanned or unread keep a next step a payment", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const { cardFrames, contextAt, FRAMES_SCANNED } = await import("../scripts/runner/risk.mjs");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.route("http://pairbrowse.test/**", (r) => r.fulfill({ contentType: "text/html", body: "<title>t</title>" }));
+    await page.goto("http://pairbrowse.test/");
+    const ads = (n) => Array.from({ length: n }, () => '<iframe srcdoc="<a href=x>ad</a>" style="width:20px;height:20px"></iframe>').join("");
+    const form = (inner) => `<form method="post"><input autocomplete="billing street-address">${inner}<button id="go">Continue</button></form>`;
+    // Many ad frames first, the hosted card field (no allow=payment) inside the form after them.
+    await page.setContent(`${ads(FRAMES_SCANNED + 6)}${form('<iframe srcdoc="<input autocomplete=cc-number>"></iframe>')}`);
+    await page.waitForTimeout(300);
+    const r = await cardFrames(page, page.locator("#go"));
+    assert.deepEqual(r, { card: true, clear: false }, "the form's own frame is read first");
+    assert.deepEqual([(await contextAt(page, page.locator("#go"))).risk.level, (await contextAt(page, page.locator("#go"))).risk.word], ["strong", "pay"]);
+    // More frames than are read, none with card fields: not clear, so "Continue" still pays.
+    await page.setContent(`${ads(FRAMES_SCANNED + 2)}${form("")}`);
+    await page.waitForTimeout(300);
+    assert.deepEqual(await cardFrames(page, page.locator("#go")), { card: false, clear: false });
+    assert.equal((await contextAt(page, page.locator("#go"))).risk.word, "pay");
+    // A few frames, all read, none with card fields: the next step goes as an ordinary submit.
+    await page.setContent(`${ads(3)}${form("")}`);
+    await page.waitForTimeout(300);
+    assert.deepEqual(await cardFrames(page, page.locator("#go")), { card: false, clear: true });
+    assert.deepEqual([(await contextAt(page, page.locator("#go"))).risk.level, (await contextAt(page, page.locator("#go"))).risk.word], ["commit", "submit"]);
+    // A frame that doesn't answer in time: not clear either (last: its loop holds the page too).
+    await page.setContent(`${form('<iframe srcdoc="<script>setTimeout(() => { for (;;) {} }, 50)</script>"></iframe>')}`);
+    await page.waitForTimeout(400);
+    assert.equal((await cardFrames(page, page.locator("#go"))).clear, false);
   } finally {
     await browser.close();
   }

@@ -384,15 +384,18 @@ test("a next-step label is only ever one of the next-step phrases, never one wit
 
 test("a form with card, IBAN or payment-frame signals pays whatever its button says; address fields alone pay unless the button is a next step", () => {
   const label = fc.oneof(fc.string({ maxLength: 40 }), fc.constantFrom(...NEXT_STEPS, ...COMMIT_WORDS));
-  check(fc.property(fc.boolean(), fc.boolean(), fc.boolean(), label, (card, frame, address, l) => {
-    const pays = paySignal({ card, frame, address }, l);
+  // framesClear: any value other than true (a frame unread, frames left unscanned, no scan at all) keeps the payment.
+  const clear = fc.oneof(fc.boolean(), fc.constant(undefined), fc.constant(null), fc.constant("true"), fc.constant(1));
+  check(fc.property(fc.boolean(), fc.boolean(), fc.boolean(), clear, fc.boolean(), label, (card, frame, address, framesClear, lastStep, l) => {
+    const pays = paySignal({ card, frame, address, framesClear, lastStep }, l);
     if (card || frame) assert.equal(pays, true, `card ${card} frame ${frame}: ${l}`);
     else if (!address) assert.equal(pays, false);
+    else if (framesClear !== true || lastStep) assert.equal(pays, true, `frames ${framesClear}, last step ${lastStep}: ${l}`);
     else assert.equal(pays, !nextStepLabel(l), l);
   }));
   // A payment read from address fields still needs "Pay:" for any committing label.
   check(fc.property(fc.constantFrom(...COMMIT_WORDS), (l) => {
-    assert.equal(paySignal({ address: true }, l), true, l);
+    assert.equal(paySignal({ address: true, framesClear: true }, l), true, l);
     assert.equal(clickRule({ level: "strong", word: "pay" }, l), "name", l);
   }));
 });

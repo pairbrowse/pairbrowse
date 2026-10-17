@@ -28,14 +28,35 @@ const pressedButton = withHelpers((a, b) => {
 }, buttonLabel);
 
 // Whether a frame on the page (a payment provider's card field lives in its own, cross-origin
-// frame the page's code can't read) has card fields, by their autocomplete cc-* tokens.
-async function cardFrame(page) {
+// frame the page's code can't read) has card fields, by their autocomplete cc-* tokens. Frames
+// inside the clicked control's form come first, then frames that show, then the rest; at most
+// FRAMES_SCANNED, each read within FRAME_READ_MS. Returns { card, clear }: clear only when every
+// frame was read and none has card fields (what lifts a next step on an address form: a frame
+// left unread or unscanned keeps that click a payment). target: the control (a locator or handle).
+export const FRAMES_SCANNED = 24;
+const FRAME_READ_MS = 800;
+const HAS_CARD = () => !!document.querySelector('input[autocomplete*="cc-" i]');
+export async function cardFrames(page, target = null) {
   try {
-    const frames = page.frames().filter((f) => f !== page.mainFrame()).slice(0, 12);
-    const found = await Promise.all(frames.map((f) => within(800, f.evaluate(() => !!document.querySelector('input[autocomplete*="cc-" i]')).catch(() => false))));
-    return found.some(Boolean);
+    const all = page.frames().filter((f) => f !== page.mainFrame());
+    if (!all.length) return { card: false, clear: true };
+    const handle = !target ? null : typeof target.elementHandle === "function" ? await within(700, target.elementHandle({ timeout: 600 }).catch(() => null)) : target;
+    // Where each frame's box is: in the control's form (2), shown (1). Unknown: 0.
+    const rank = await Promise.all(all.slice(0, FRAMES_SCANNED * 3).map(async (f, i) => {
+      const score = await within(500, f.frameElement().then((box) => box.evaluate((n, t) => {
+        const form = t && (t.form || t.closest?.("form"));
+        return (form && form.contains(n) ? 2 : 0) + (n.getClientRects().length ? 1 : 0);
+      }, handle).catch(() => 0).finally(() => box.dispose().catch(() => {})))).catch(() => 0);
+      return { f, i, score: score || 0 };
+    }));
+    if (handle && handle !== target) handle.dispose().catch(() => {});
+    rank.sort((a, b) => b.score - a.score || a.i - b.i);
+    const scanned = rank.slice(0, FRAMES_SCANNED);
+    const found = await Promise.all(scanned.map(({ f }) => within(FRAME_READ_MS, f.evaluate(HAS_CARD).catch(() => null))));
+    const card = found.some((v) => v === true);
+    return { card, clear: !card && all.length <= FRAMES_SCANNED && found.every((v) => v === false) };
   } catch {
-    return false;
+    return { card: false, clear: false };
   }
 }
 
@@ -50,8 +71,9 @@ const inPage = withHelpers((el, [k, p, h]) => clickContext(el, k, p, h), ...CLIC
 const focused = withHelpers(([k, p, h]) => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return clickContext(el, k, p, h); }, ...CLICK_HELPERS);
 export async function contextAt(page, target, kind = "click", prev = "") {
   try {
-    const args = [kind, prev, { payFrame: await cardFrame(page) }];
     const el = !target ? null : typeof target === "string" ? page.locator(isRef(target) ? `aria-ref=${target}` : target).first() : target;
+    const frames = await cardFrames(page, el);
+    const args = [kind, prev, { payFrame: frames.card, framesClear: frames.clear }];
     // The focused element may be in a frame (a payment form in an iframe): read it there. A
     // frame that can't be followed reads as unreadable (the user confirms).
     const where = el ? null : await focusedFrame(page);

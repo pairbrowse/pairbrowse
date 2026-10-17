@@ -32,9 +32,12 @@ import { nextStepLabel } from "./next-step.mjs";
 export { nextStepLabel };
 // Whether a form submit pays: card, IBAN or payment-frame signals always do; billing or shipping
 // address fields alone do unless the button is a clear next step (nextStepLabel, alongside it).
-export function paySignal({ card = false, frame = false, address = false } = {}, label = "") {
+// The lift only when every frame on the page was read and none holds card fields (framesClear)
+// and the form isn't marked at its last step (lastStep: a saved card chosen by a radio pays there).
+export function paySignal({ card = false, frame = false, address = false, framesClear = false, lastStep = false } = {}, label = "") {
   if (card || frame) return true;
-  return !!address && !nextStepLabel(label);
+  if (!address) return false;
+  return !(framesClear === true && !lastStep && nextStepLabel(label));
 }
 
 export const strongSignal =(risk) => !!risk && (risk.level === "strong" || risk.unreadable === true || ["pay", "delete"].includes(risk.word));

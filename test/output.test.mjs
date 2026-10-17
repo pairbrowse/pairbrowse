@@ -107,6 +107,8 @@ test("an action's snapshot comes shorter: long link addresses cut, long option l
     `    - link "Help" [ref=f3e2]:`,
     `      - /url: https://pubmatic.com/help`,
     `  - button "Next" [ref=e7]`,
+    `  - listbox "Country" [ref=e8]:`,
+    ...Array.from({ length: 40 }, (_, i) => `    - option "Country ${i}" [ref=e${100 + i}]`),
   ].join("\n");
   const { dir, out } = setup();
   const file = join(dir, "page-2026-10-10T10-00-00-001Z.yml");
@@ -120,6 +122,7 @@ test("an action's snapshot comes shorter: long link addresses cut, long option l
   assert.match(text, /- option "1827"\n/, "and the last");
   assert.match(text, /- \(\d+ more options\)/);
   assert.match(text, /# 200 options in all; browser_select_option takes any by its text/);
+  assert.match(text, /# 40 options in all; browser_snapshot lists them all, with their refs to click/, "a listbox's options aren't select_option's");
   assert.match(text, /- option "S"\n {4}- option "M" \[selected\]/, "a short list stays whole");
   assert.match(text, /- iframe \[ref=e5\]: an ad \(5 lines left out\)/);
   assert.doesNotMatch(text, /Why this ad/);

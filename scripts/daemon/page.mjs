@@ -180,9 +180,11 @@ export function clickRisk(n, kind = "click", prev = "", hints = {}) {
     const override = String(form.querySelector('input[type=hidden][name="_method"]')?.value || "").toLowerCase();
     // A submit pays with card or IBAN fields or a payment frame, whatever it says; with billing or
     // shipping address fields alone, unless its own label is a clear next step ("Continue to
-    // payment": scripts/rules/clicks.mjs paySignal).
+    // payment": scripts/rules/clicks.mjs paySignal). That lift needs every frame on the page read
+    // and found without card fields (hints.framesClear, runner/risk.mjs) and a form not marked at
+    // its last step (a saved card picked by a radio pays there, with no card field to see).
     const pf = payFields(form);
-    if (paySignal({ card: pf.card, frame: pf.frame || !!hints.payFrame, address: pf.address }, submitter ? buttonLabel(submitter) : "")) {
+    if (paySignal({ card: pf.card, frame: pf.frame || !!hints.payFrame, address: pf.address, framesClear: hints.framesClear === true, lastStep: step === "last" }, submitter ? buttonLabel(submitter) : "")) {
       return { level: "strong", word: "pay", why: [...why, hints.payFrame && !pf.card && !pf.frame && !pf.address ? "it sends a form on a page with a card payment frame" : "it sends a form with card, IBAN or billing/shipping fields"] };
     }
     if (danger || confirming || override === "delete" || prev === "delete") {
@@ -264,7 +266,8 @@ export function busyNow(el) {
 export const BUSY_POLL_MS = 150;
 // Waits (at most maxMs) while busyNow says the page is at work after an action. Every read is
 // bounded. before: what said busy already before the action (a lasting "Loading…"): not waited on.
-// Returns { ms, what }: how long it waited, and what said busy ("" when nothing did).
+// Returns { ms, what, still }: how long it waited, what said busy ("" when nothing did), and
+// whether it still did when the time was up.
 export async function whileBusy(page, el = null, maxMs = 5000, before = "") {
   const started = Date.now();
   let what = "";
@@ -278,10 +281,10 @@ export async function whileBusy(page, el = null, maxMs = 5000, before = "") {
     const now = await read();
     if (!now || (before && now === before)) break;
     what ||= now;
-    if (Date.now() - started >= maxMs) break;
+    if (Date.now() - started >= maxMs) return { ms: Date.now() - started, what, still: true };
     await new Promise((r) => setTimeout(r, BUSY_POLL_MS));
   }
-  return { ms: what ? Date.now() - started : 0, what };
+  return { ms: what ? Date.now() - started : 0, what, still: false };
 }
 
 // What clickContext and clickRisk call in the page: pass them all to withHelpers with either.

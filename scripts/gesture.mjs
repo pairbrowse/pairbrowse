@@ -13,8 +13,10 @@ export function readParams(method, params) {
 }
 
 // A session class's send, wrapped once (proto: the prototype of the driver's CDP session).
+// Returns whether it is wrapped now (by this call or an earlier one).
 export function patchSend(proto) {
-  if (!proto || typeof proto.send !== "function" || proto[PATCHED]) return false;
+  if (!proto || typeof proto.send !== "function") return false;
+  if (proto[PATCHED]) return true;
   const send = proto.send;
   proto.send = function (method, params, ...rest) { return send.call(this, method, readParams(method, params), ...rest); };
   Object.defineProperty(proto, PATCHED, { value: true });
@@ -23,16 +25,26 @@ export function patchSend(proto) {
 
 // core: the driver's core bundle (patchright-core or playwright-core lib/coreBundle). Its CDP
 // session class isn't exported, so it is taken from the first page the driver makes (its keyboard
-// talks through that session), before the page shows anything. Returns whether it could hook in.
-export function installNoReadGesture(core) {
+// talks through that session), before the page shows anything. Returns whether it could hook into
+// the page class at all; whether the session was found shows with the first page: hooked() says
+// so from then on, and onMiss() is called once when that page's session couldn't be found (the
+// driver's internals changed: its reads keep their gesture, and the helper logs that).
+let state = { tried: false, hooked: false };
+export const hooked = () => state.hooked;
+export function installNoReadGesture(core, { onMiss = () => {} } = {}) {
   const P = core?.server?.Page?.prototype;
   if (!P) return false;
   if (P[PATCHED]) return true;
+  state = { tried: false, hooked: false };
   const hook = (page) => {
+    if (state.hooked) return;
+    let ok = false;
     try {
       const client = page?.delegate?.rawKeyboard?._client || page?.delegate?._mainFrameSession?._client;
-      if (client) patchSend(Object.getPrototypeOf(client));
+      ok = !!client && patchSend(Object.getPrototypeOf(client));
     } catch {}
+    if (ok) state.hooked = true;
+    else if (!state.tried) { state.tried = true; try { onMiss(); } catch {} }
   };
   for (const name of ["mainFrame", "reportAsNew"]) {
     const orig = P[name];

@@ -288,6 +288,7 @@ function splitExtensionArgs(args, extensions) {
 }
 
 export const DRIVER_BLINK_SWITCH = "--disable-blink-features=AutomationControlled";
+export const DRIVER_BACKGROUND_SWITCH = "--disable-background-networking";
 
 export async function launchNative(chromium, config, directory, options, pack, log = () => {}) {
   const metadata = nativeManifest(options.executablePath);
@@ -346,8 +347,10 @@ export async function launchNative(chromium, config, directory, options, pack, l
     args: options.chromiumSandbox === false ? gated.args : withoutNoSandbox(gated.args),
     // The driver's --disable-blink-features=AutomationControlled is left out too: the build keeps
     // navigator.webdriver false on its own, and the engine shows that switch in a warning bar above
-    // every page ("unsupported command-line flag").
-    ignoreDefaultArgs: [...new Set([...pack.DEFAULT_IGNORED_ARGS, ...(merged.ignoreDefaultArgs ?? []), "--enable-automation", DRIVER_BLINK_SWITCH])],
+    // every page ("unsupported command-line flag"). So is the driver's --disable-background-networking:
+    // with it the browser never checks the Web Store for extension updates nor refreshes Safe
+    // Browsing's lists, as an everyday browser does.
+    ignoreDefaultArgs: [...new Set([...pack.DEFAULT_IGNORED_ARGS, ...(merged.ignoreDefaultArgs ?? []), "--enable-automation", DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH])],
   });
   log(`launch: launchPersistentContext ${Date.now() - contextAt} ms`);
   try {

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, DRIVER_BLINK_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
+import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
@@ -169,6 +169,9 @@ packTest("a native launch leaves out the driver's switches: no automation flag, 
   assert.ok(ignoreDefaultArgs.includes(DRIVER_BLINK_SWITCH));
   assert.equal(DRIVER_BLINK_SWITCH, "--disable-blink-features=AutomationControlled");
   assert.ok(!args.some((a) => a.startsWith("--disable-blink-features")), "no Blink feature switch of PairBrowse's own");
+  // Background networking on: extensions update from the Web Store, Safe Browsing refreshes its lists.
+  assert.ok(ignoreDefaultArgs.includes(DRIVER_BACKGROUND_SWITCH));
+  assert.ok(!args.includes(DRIVER_BACKGROUND_SWITCH));
 });
 
 packTest("humanized mouse moves take the fast shape unless config asks for the quick, the combined or the classic one", async () => {

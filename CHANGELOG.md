@@ -13,7 +13,7 @@ release check and VirusTotal reports. No release so far fixed a vulnerability wi
 
 **Changed**
 
-- **Chrome Web Store installs in the PairBrowse browser** (builds with Web Store support): the store's button reads "Add to PairBrowse", and an extension installs when you press Add extension in the browser's own dialog. Installed extensions don't update by themselves yet (add one again from the store for its newest version).
+- **Chrome Web Store installs in the PairBrowse browser** (builds with Web Store support): the store's button reads "Add to PairBrowse", and an extension installs when you press Add extension in the browser's own dialog. Installed extensions update themselves from the store.
 
 ## 0.16.4 (2026-10-17)
 

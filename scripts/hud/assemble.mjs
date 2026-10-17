@@ -16,6 +16,7 @@ export const HUD_PARTS = [
   "approval.js", // an agent's named final click, the same card
   "cursor.js", // the agent's cursor and the outline of its field
   "pointers.js", // other people's and agents' pointers from a shared tab
+  "store.js", // the Web Store's buttons name this browser
   "status.js", // the entry the helper calls, the badge's text, and the closing
 ];
 

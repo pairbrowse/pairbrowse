@@ -2,7 +2,7 @@
 // never a person's own tab), its arguments, the PairBrowse safety rules (guard.mjs), approvals
 // given in the browser, and the browser tools' own checks (web pages only, passwords only on their
 // sites, no final action pressed under a milder name). Each returns a refusal's text, or null.
-import { isBrowserPage, BROWSER_PAGE_RULE, toolRefused, isRef, looksLikeSecretName, navigationProblem, secretNamesIn } from "../../rules/policy.mjs";
+import { isBrowserPage, BROWSER_PAGE_RULE, HAND_TOOLS, isWebStore, WEB_STORE_RULE, isWebTab, NOT_WEB_RULE, ERROR_PAGE_RULE, toolRefused, isRef, looksLikeSecretName, navigationProblem, secretNamesIn } from "../../rules/policy.mjs";
 import { isUntouchedStart } from "../../tabs.mjs";
 import { PERSON_TAB_RULE } from "../output.mjs";
 import { BROWSER_GUARDED, REMOTE_TOOLS } from "./wire.mjs";
@@ -44,6 +44,8 @@ export function tabRefusal(name, args = {}, { here = null, pages = [], personTab
     const leavingNewTab = (name === "browser_navigate" || !!firstGo(name, args)) && here && isUntouchedStart(here.url());
     if (here && isBrowserPage(here.url()) && !leavingNewTab) return `${BROWSER_PAGE_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
     if (person(here)) return `${PERSON_TAB_RULE} Open a web page with browser_tabs new (url) or pick another tab with browser_tabs list and select.`;
+    if (here && (HAND_TOOLS.has(name) || (name === "pairbrowse_run" && !firstGo(name, args))) && !isWebTab(here.url())) return /^chrome-error:/i.test(here.url()) ? ERROR_PAGE_RULE : NOT_WEB_RULE;
+    if (here && HAND_TOOLS.has(name) && isWebStore(here.url())) return WEB_STORE_RULE;
   }
   if (name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined) {
     const page = pages[Number(args.index)];

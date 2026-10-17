@@ -74,6 +74,26 @@ export function looksLikeSecretName(tool, args) {
 // and settings): never an agent's to open, read or act in. Their addresses and the rules about
 // them live in ui/urls.js (one copy for the helper and the pages).
 export { BROWSER_PAGE_ORIGINS, isBrowserPage, isBrowserScreenPage, hiddenFromLiveView } from "../../ui/urls.js";
+// The Chrome Web Store: extensions install only by the person's own click. Agents may open and read
+// it; they never click, type or press keys there (the browser's own install dialog asks the person
+// anyway). True for the store's pages, old address and new.
+export function isWebStore(url) {
+  try {
+    const u = new URL(String(url));
+    if (u.protocol !== "https:") return false;
+    return u.hostname === "chromewebstore.google.com" || (u.hostname === "chrome.google.com" && /^\/webstore(?:\/|$)/.test(u.pathname));
+  } catch { return false; }
+}
+export const WEB_STORE_RULE = "The extension Web Store is the user's: only they install extensions, with their own click (agents read it, never click, type or press keys there). Tell the user which extension to add and let them click Add to PairBrowse themselves.";
+// A tab an agent's hands may act in: a web page (or a blank one). The browser's own pages
+// (chrome://extensions, flags, history and the rest) and extensions' own pages
+// (chrome-extension://) are the person's: there an extension could be loaded, switched on or
+// given more, a setting changed.
+export const isWebTab = (url) => /^(?:https?:|about:blank(?:[?#]|$))/i.test(String(url ?? "").trim());
+export const ERROR_PAGE_RULE = "That tab shows the browser's error page for an address that didn't load. Load it again with browser_navigate (or browser_navigate_back), then act on the page.";
+export const NOT_WEB_RULE = "That tab shows one of the browser's own pages or an extension's page, which only the user works in. Open a web page with browser_tabs new (url) or pick a web tab with browser_tabs list and select.";
+// The tools that act on a page as a person's hands would: refused on the Web Store.
+export const HAND_TOOLS = new Set(["browser_click", "browser_type", "browser_press_key", "browser_fill_form", "browser_select_option", "browser_drag", "browser_drop", "browser_file_upload", "pairbrowse_click_at", "pairbrowse_upload"]);
 export const BROWSER_PAGE_RULE = "chrome://pairbrowse pages are the PairBrowse browser's own (its tab strip, docks, session picker, new tab and settings): no agent opens, reads or acts in them.";
 
 export function navigationProblem(url) {

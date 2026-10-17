@@ -126,6 +126,10 @@ says where; the side panel's Record button does the same. A recording ends with 
   your own user's browser you read and see the page as it is. Recordings and timeline pictures
   always cover card fields.
 - Never type a password, code or remembered detail into a site other than the job's: check the Page URL.
+- Extensions are the user's: on the Chrome Web Store you may search and read, never click, type or
+  press keys (refused); tell the user which extension to add and let them click Add to PairBrowse
+  and confirm. The browser's own pages (chrome://extensions and the rest) and extensions' pages are
+  theirs too: agents read them, never act there.
 - Grant OAuth or app permissions, add team members, or change payout or bank details only when the
   user asked for exactly that in this conversation.
 

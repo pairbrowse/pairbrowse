@@ -5,6 +5,16 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased
+
+**Security**
+
+- **Extensions are yours.** Agents never click, type or press keys on the Chrome Web Store, in the browser's own pages (`chrome://extensions` and the rest) or in an extension's pages, even when you opened one; they can read them and tell you what to add.
+
+**Changed**
+
+- **Chrome Web Store installs in the PairBrowse browser** (builds with Web Store support): the store's button reads "Add to PairBrowse", and an extension installs when you press Add extension in the browser's own dialog. Installed store extensions update from the store.
+
 ## 0.16.4 (2026-10-17)
 
 Card numbers stay with you when you share: what joiners and their agents see and read is masked and covered, and real cameras and microphones work in the PairBrowse browser.

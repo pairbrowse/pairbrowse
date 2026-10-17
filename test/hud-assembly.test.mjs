@@ -11,9 +11,9 @@ import { HUD_PARTS, hudPart, hudSource } from "../scripts/hud/assemble.mjs";
 import { hudScript } from "../scripts/browser.mjs";
 
 // SHA-256 of scripts/hud.js before the split (commit 9c462de): the parts change nothing. A
-// deliberate change to the page script updates this value with it (last: the outline goes with
-// what it marks and while an agent's picture is taken).
-const PRE_SPLIT_SHA256 = "3c89ae82efab2c6d1a0f7bac0216371fffcb6b87a7107a7bfaa968b78277f664";
+// deliberate change to the page script updates this value with it (last: the Web Store's
+// buttons name this browser).
+const PRE_SPLIT_SHA256 = "01952a6f85602c25c81d05086d4259ac670e5480837687ebc7cffc4a32b8b523";
 const PLACEHOLDERS = ["__PB_NAME__", "__PB_TOKEN__", "__PB_TAG_HUD__", "__PB_TAG_BAR__", "__PB_TAG_CURSOR__", "__PB_AGENT_COLOR__", '"__PB_MOTION__"'];
 
 test("the parts joined are the page script as it was in one file", () => {

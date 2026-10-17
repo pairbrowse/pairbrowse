@@ -3,6 +3,7 @@
 // steps/: it returns nothing when its step is done, NEXT when it recorded nothing more to look at,
 // or the run's result when the run stops there.
 import { activatingKey } from "./risk.mjs";
+import { isWebStore, WEB_STORE_RULE, isWebTab, NOT_WEB_RULE, ERROR_PAGE_RULE } from "../rules/policy.mjs";
 import { NEXT, dialogStop } from "./steps/common.mjs";
 import { go } from "./steps/go.mjs";
 import { fill } from "./steps/fill.mjs";
@@ -29,6 +30,7 @@ const HANDLERS = new Map([
 // Fast mode is just fast: the engine's human-like mouse and typing (on by default for single
 // actions) are off for the run, and a scroll step goes at once. hooks.smooth: a single action
 // (pairbrowse_scroll) that glides like a person.
+const READ_STEPS = new Set(["go", "waitFor", "expect", "scroll", "handoff"]);
 export async function stepsIn(page, steps, hooks, touched = []) {
   const started = Date.now();
   const done = [];
@@ -53,6 +55,9 @@ export async function stepsIn(page, steps, hooks, touched = []) {
     // A field missing after earlier steps of this run: forms add and remove fields as they're answered.
     const gone = () => (touched.length ? " An earlier answer in this run may have removed it (forms add and remove fields as they're filled): take a snapshot, then fill what's there now." : "");
     try {
+      // The Web Store is the user's: a run reads it, never acts there.
+      if (!READ_STEPS.has(kind) && typeof page.url === "function" && !isWebTab(page.url())) return fail(/^chrome-error:/i.test(page.url()) ? ERROR_PAGE_RULE : NOT_WEB_RULE);
+      if (!READ_STEPS.has(kind) && isWebStore(page.url?.())) return fail(WEB_STORE_RULE);
       if (kind !== "click") await hooks.beforeStep?.(kind === "press" && activatingKey(arg) === "enter" ? "enter" : kind);
       const handler = HANDLERS.get(kind);
       const r = handler && await handler({ page, kind, arg, i, steps, hooks, touched, done, fail, gone, theirs, trace, run });

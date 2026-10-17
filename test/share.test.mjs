@@ -90,7 +90,7 @@ test("an invite made before a native browser starts says the pictures go through
   const { sharing } = sharingWith({}, { screens });
   try {
     const made = await sharing.inviteCommand({ action: "create", role: "drive", share: "code", name: "Bob" });
-    assert.match(made.text, /pictures through the join channel; no sound from this PairBrowse build yet/);
+    assert.match(made.text, /pictures through the join channel, none while a tab shows card fields; no sound from this PairBrowse build yet/);
     assert.doesNotMatch(made.text, /picture and sound, sent straight/);
   } finally { sharing.endAll(); }
   const chromium = contextFor(false, false);
@@ -128,5 +128,5 @@ test("an invite made before the capture page's hello waits for it", async () => 
   assert.ok(late.ms < 2000, `waited only for the hello (${late.ms} ms)`);
   const never = await make(null);
   assert.equal(never.kind, null);
-  assert.match(never.text, /pictures through the join channel; no sound from this PairBrowse build yet/);
+  assert.match(never.text, /pictures through the join channel, none while a tab shows card fields; no sound from this PairBrowse build yet/);
 });

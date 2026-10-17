@@ -126,8 +126,11 @@ export class NoCover extends Error {
 // call: the extension worker. log.
 // during(who): marks a joiner's input while it's replayed (presence.remoteStart; returns done()).
 // capture: where tabs are captured (daemon/capture.mjs); without it, the extension as before.
-// picture(page, jpeg): the slower route's frame with the tab's card fields covered (covers.mjs
-// createCoverLoop picture), null when they can't be: that frame is never sent.
+// picture(page, jpeg, at): the slower route's frame (come at `at`) with the tab's card fields
+// covered (covers.mjs createCoverLoop picture), null when they can't be: that frame is never sent.
+const COVERING_MAX = 6;
+const RETRY_MS = 500;
+const RETRIES = 6;
 export function createScreenShare({ call, log = () => {}, during = () => () => {}, capture = null, picture = async (_page, data) => data }) {
   const peers = new Map(); // peer -> { page, tabId, view, frame, onInput, onState, role }
   const sessions = new Map(); // page -> { cdp, replayer, view, viewAt }
@@ -272,19 +275,25 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
       w = new Map();
       watchers.set(page, w);
       let lastAt = 0;
-      // Card fields covered before a frame leaves (picture); one at a time, the newest waiting
-      // (frames in between are dropped, never sent uncovered).
-      let covering = false, next = null;
-      const send = async (data) => {
-        if (covering) { next = data; return; }
-        covering = true;
-        try {
-          for (let d = data; d; d = next, next = null) {
-            const img = await within(3000, Promise.resolve(picture(page, d)).catch(() => null));
-            if (!img) continue;
-            for (const fn of (watchers.get(page) || new Map()).values()) { try { fn(img); } catch {} }
+      // Card fields covered before a frame leaves (picture: with covers read after it came);
+      // several at once, sent in the order they came, past COVERING_MAX a frame is dropped (never
+      // sent uncovered). Frames come only when the page changes: the newest one, if it couldn't
+      // go, is tried again as of then (still the newest, it still shows the page), RETRY_MS
+      // later and twice as long each time, RETRIES times at most.
+      let chain = Promise.resolve(), covering = 0, newest = 0, retry = null;
+      const send = (data, n = ++newest, tries = 0) => {
+        if (covering >= COVERING_MAX) return;
+        covering++;
+        clearTimeout(retry);
+        const img = within(3000, Promise.resolve(picture(page, data, Date.now())).catch(() => null));
+        chain = chain.then(async () => {
+          const out = await img;
+          if (!out) {
+            if (n === newest && watchers.get(page) === w && tries < RETRIES) { clearTimeout(retry); retry = setTimeout(() => { if (n === newest && watchers.get(page) === w) send(data, n, tries + 1); }, RETRY_MS * 2 ** tries); retry.unref?.(); }
+            return;
           }
-        } finally { covering = false; }
+          for (const fn of (watchers.get(page) || new Map()).values()) { try { fn(out); } catch {} }
+        }).catch(() => {}).finally(() => { covering--; });
       };
       s.onFrame = ({ data, sessionId }) => {
         // Paced: the next frame comes once this one is acknowledged, at most FRAME_EVERY_MS apart.
@@ -292,7 +301,7 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
         lastAt = Date.now() + wait;
         const ack = () => s.cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
         if (wait) setTimeout(ack, wait).unref(); else ack();
-        send(data).catch(() => {});
+        send(data);
       };
       s.cdp.on("Page.screencastFrame", s.onFrame);
       await s.cdp.send("Page.startScreencast", { format: "jpeg", quality: 60, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 });

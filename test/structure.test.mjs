@@ -62,7 +62,7 @@ const ALLOWED = new Set([
   "serve/collaboration -> output", "serve/connection -> output", "serve/pageread -> page", "serve/refuse -> approvals",
   "serve/refuse -> output", "serve/result -> output", "serve/result -> page", "serve/result -> reveal", "serve/result -> covers",
   "serve/rewrite -> drag", "serve/rewrite -> fields", "serve/rewrite -> page", "serve/tools/click-at -> serve/result", "serve/tools/drag -> serve/result",
-  "serve/tools/click-at -> page", "serve/tools/drag -> drag", "serve/tools/drag -> page", "serve/tools/run -> fields",
+  "serve/tools/click-at -> page", "serve/tools/click-at -> covers", "serve/tools/drag -> drag", "serve/tools/drag -> page", "serve/tools/run -> fields",
   "serve/turns -> linkwait", "sessions/picker -> where", "sessions/switch -> where",
 ]);
 const part = (p) => rel(p).replace(/^scripts\/daemon\//, "").replace(/\.mjs$/, "");

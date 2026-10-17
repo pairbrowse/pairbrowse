@@ -22,6 +22,7 @@ const frameApi = {
   MediaStreamTrackGenerator: class { kind = "video"; readyState = "live"; writable = { getWriter: () => ({ write: async () => {} }) }; stop() { this.readyState = "ended"; } },
   OffscreenCanvas: class { constructor(w, h) { this.width = w; this.height = h; } getContext() { return { drawImage() {}, fillRect() {} }; } },
   VideoFrame: class {},
+  createImageBitmap: async () => ({ width: 2, height: 2, close() {} }),
 };
 Object.assign(globalThis, frameApi);
 Object.defineProperty(globalThis.navigator, "mediaDevices", { configurable: true, value: {
@@ -412,6 +413,23 @@ async function replyTo(helper, n, ms = 8000, op = "") {
   return assert.fail(`no reply to capture call ${n} (${op})`);
 }
 
+// What the helper's cover loop does (daemon/covers.mjs, recorder.mjs): every 100 ms the capture
+// page's mark, then covers read after it (covers(): { tabId: rects }). The capture page lets a
+// tab's picture out only with covers read after it came. Returns stop().
+function feedCovers(helper, covers) {
+  let n = 100_000, on = true, failed = 0;
+  (async () => {
+    while (on && failed < 2) { // the page gone (a test that failed): it stops by itself
+      const m = await ask(helper, n++, { to: "record", op: "coverMark" }, 3000).catch(() => null);
+      failed = m ? 0 : failed + 1;
+      if (!on) break;
+      await ask(helper, n++, { to: "record", op: "covers", covers: covers(), mark: m?.value }, 3000).catch(() => {});
+      await sleep(100);
+    }
+  })();
+  return () => { on = false; };
+}
+
 describe("capture: hello on its own stream", () => pageTest("capture", async ({ helper, errors }) => {
   const streams = [...helper.streams].map((s) => s.kind);
   assert.ok(streams.includes("capture"), "events?page=capture");
@@ -440,6 +458,7 @@ describe("capture: a share's offer through the browser's grant", () => pageTest(
 
 describe("capture: a recording follows the tab in front and comes back in pieces", () => pageTest("capture", { timeout: 90_000 }, async ({ helper, inPage, shim }) => {
   await inPage(fakeTabCapture);
+  const stopFeed = feedCovers(helper, () => ({ T11: [], T12: [] }));
   const start = await ask(helper, 1, { to: "record", op: "start", follow: "front", labels: { T11: { who: "Claude", color: "#e9763f", prefix: "Claude · " } }, scale: 1 });
   assert.match(start.value?.type || "", /^video\/(mp4|webm)$/, JSON.stringify(start));
   assert.equal(start.value.w, 1280);
@@ -467,6 +486,7 @@ describe("capture: a recording follows the tab in front and comes back in pieces
   assert.equal((await shim.calls()).filter((c) => c.method === "grantTabCapture").length, before);
   assert.equal((await ask(helper, 6, { to: "record", op: "clear" })).value, true);
   assert.deepEqual((await ask(helper, 7, { to: "record", op: "state" })).value, { recording: false });
+  stopFeed();
 }));
 
 describe("capture: a browser page in front is not recorded", () => pageTest("capture", { shim: { tabs: [
@@ -500,6 +520,7 @@ function slowCaptureAndWatchRecorder(ms) {
 describe("capture: a recording opens on the tab's picture, not on black", () => pageTest("capture", { timeout: 60_000 }, async ({ helper, inPage }) => {
   await inPage(fakeTabCapture);
   await inPage(slowCaptureAndWatchRecorder, 700);
+  const stopFeed = feedCovers(helper, () => ({ T11: [] }));
   const start = await ask(helper, 1, { to: "record", op: "start", follow: "front", labels: {}, scale: 1 });
   assert.match(start.value?.type || "", /^video\//, JSON.stringify(start));
   const seen = await inPage(() => ({ gum: window.__gumAt, start: window.__startAt, px: window.__startPx }));
@@ -512,6 +533,7 @@ describe("capture: a recording opens on the tab's picture, not on black", () => 
   const stop = await ask(helper, 2, { to: "record", op: "stop" }, 15_000);
   assert.ok(stop.value?.size > 0, JSON.stringify(stop));
   assert.ok(stop.value.ms < 3000, `${stop.value.ms} ms: counted from the recorder's start, not the ask`);
+  stopFeed();
 }));
 
 // The encoded video itself: its frame 0 (the poster a player shows) is the tab's picture, not the
@@ -568,15 +590,16 @@ describe("capture: the recording's frame 0 is the tab's picture", () => pageTest
   });
   await inPage(slowCaptureAndWatchRecorder, 300);
   await inPage(keepRecordedWebm);
-  // The helper sends the tabs' covers before a start (recorder.mjs): none here. Unknown, the tab
-  // would be covered whole (fail closed) and frame 0 the cover's color.
-  await ask(helper, 9, { to: "record", op: "covers", covers: { T11: [] } });
+  // The helper sends the tabs' covers before a start and while it waits (recorder.mjs): none
+  // here. Unknown, the tab would be covered whole (fail closed) and frame 0 the cover's color.
+  const stopFeed = feedCovers(helper, () => ({ T11: [] }));
   const start = await ask(helper, 1, { to: "record", op: "start", follow: "front", labels: {}, scale: 1 });
   assert.match(start.value?.type || "", /^video\/webm/, JSON.stringify(start));
   await sleep(1500);
   const stop = await ask(helper, 2, { to: "record", op: "stop" }, 15_000);
   assert.ok(stop.value?.size > 0, JSON.stringify(stop));
   const level = await inPage(() => window.__frame0());
+  stopFeed();
   assert.ok(level > 150, `frame 0's mean level is ${level}: black, not the tab`);
 }));
 
@@ -635,7 +658,9 @@ describe("capture: covers paint over the recording, a joiner's picture and a pic
   });
   const start = await ask(helper, 1, { to: "record", op: "start", follow: "front", labels: {}, scale: 1 });
   assert.match(start.value?.type || "", /^video\//, JSON.stringify(start));
-  // Covers not known yet: the whole view is covered (fail closed), corners too.
+  // Covers not known yet: nothing of the tab goes out until GATE_MS, then the whole view covered
+  // (fail closed), corners too.
+  await sleep(500);
   for (const [x, y] of [[0.5, 0.5], [0.02, 0.02], [0.98, 0.98]]) assert.ok(isCover(await inPage(([fx, fy]) => window.__recPx(fx, fy), [x, y])), `unknown covers: (${x}, ${y}) not covered`);
   // A joiner connecting before the covers are known gets the whole view covered too.
   const early = await ask(helper, 8, { to: "share", op: "offer", peer: "pe", tabId: "T11", frame: { w: 640, h: 400 }, ice: [] });
@@ -643,15 +668,17 @@ describe("capture: covers paint over the recording, a joiner's picture and a pic
   assert.ok(isCover(await inPage(() => window.__trackPx(window.__sent.find((t) => t.kind === "video"), 0.1, 0.9))), "joiner's picture covered whole before covers come");
   await ask(helper, 9, { to: "share", op: "stop", peer: "pe" });
   await inPage(() => { window.__sent = []; return true; });
-  // Covers known, none: the picture as it is.
-  await ask(helper, 10, { to: "record", op: "covers", covers: { T11: [] } });
-  await sleep(200);
+  // Covers known (read after each picture), none: the picture as it is.
+  let now = { T11: [] };
+  const stopFeed = feedCovers(helper, () => now);
+  await sleep(1200);
   assert.ok(!isCover(await inPage(() => window.__recPx(0.5, 0.5))), "nothing to cover: as it is");
   const bad = await ask(helper, 2, { to: "record", op: "covers", covers: { T11: [[0, 0, 5, 1]] } });
   assert.deepEqual(bad.value, { error: "covers are { tabId: [[x, y, w, h], ...] }" });
   const r = await ask(helper, 3, { to: "record", op: "covers", covers: { T11: [[0.25, 0.25, 0.5, 0.5]] } });
   assert.deepEqual(r.value, { front: "T11" });
-  await sleep(200);
+  now = { T11: [[0.25, 0.25, 0.5, 0.5]] };
+  await sleep(1200);
   assert.ok(isCover(await inPage(() => window.__recPx(0.5, 0.5))), `recording: ${await inPage(() => window.__recPx(0.5, 0.5))}`);
   assert.ok(!isCover(await inPage(() => window.__recPx(0.1, 0.9))), "outside the cover as it is");
   // A joiner's connection to the same tab: sent the covered picture, not the tab's own track.
@@ -679,5 +706,6 @@ describe("capture: covers paint over the recording, a joiner's picture and a pic
     return [[...g.getImageData(50, 50, 1, 1).data], [...g.getImageData(150, 50, 1, 1).data]];
   }, pic.value);
   assert.ok(isCover(px[0]) && px[1][0] > 240, JSON.stringify(px));
+  stopFeed();
   await ask(helper, 7, { to: "record", op: "stop" }, 15_000);
 }));

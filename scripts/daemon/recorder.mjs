@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { shortLabel } from "./tablabels.mjs";
 import { NO_CAPTURE_RECORD, RECORD_READY_MS } from "./capture.mjs";
 import { within } from "../util.mjs";
-import { composeInPage, createCoverLoop } from "./covers.mjs";
+import { createCoverLoop } from "./covers.mjs";
 import { PAGE_CHUNK_BYTES } from "../../ui/limits.js";
 
 const LABELS_EVERY_MS = 1500; // who works in which tab, while recording
@@ -96,11 +96,14 @@ export function createRecorder({ onSaved = () => {}, call, owners = () => [], di
     follow = follow === "agents" ? "agents" : "front";
     const asked = await scale().catch(() => null);
     if (Number.isFinite(asked) && asked > 0) knownScale = asked;
-    // The tabs' covers first: a tab whose covers aren't known yet is recorded covered whole.
+    // The tabs' covers first, and kept fresh while the start waits for the tab's first picture:
+    // the capture page lets a picture out only with covers read after it (whole, failing that).
     starting = true;
-    await within(2500, covers.tick()).catch(() => {});
-    starting = false;
-    const r = await ext({ op: "start", follow, labels: await labels().catch(() => ({})), scale: knownScale ?? 1 });
+    let r;
+    try {
+      await within(2500, covers.tick()).catch(() => {});
+      r = await ext({ op: "start", follow, labels: await labels().catch(() => ({})), scale: knownScale ?? 1 });
+    } finally { starting = false; }
     if (!r || r.error) return { text: `Couldn't start recording: ${r?.error || "no answer from the browser"}.`, error: true };
     on = { since: Date.now(), follow, shown: null, shownAt: 0, next: null };
     on.timer = setInterval(tick, LABELS_EVERY_MS);
@@ -200,47 +203,67 @@ export function createRecorder({ onSaved = () => {}, call, owners = () => [], di
     if (id != null) ids.set(String(id), page);
     return id;
   }
-  // The pages whose covers the recording needs: the tab in front first, then the agents' and
-  // the open ones, up to COVER_PAGES. [] when not recording.
+  // The pages whose covers the recording needs: the tab in front first (found among all the open
+  // tabs by its tab id), then the agents' and the open ones, up to COVER_PAGES. [] when not
+  // recording.
   async function coverPages() {
     if (!on && !starting) return [];
+    const open = ((await pages().catch(() => [])) || []).filter((p) => p && !p.isClosed?.());
+    let front = frontId != null ? ids.get(String(frontId)) : null;
+    if (frontId != null && (!front || front.isClosed?.())) {
+      front = null;
+      for (const p of open) if (String(await idOf(p)) === String(frontId)) { front = p; break; }
+    }
     const out = [];
     const add = (p) => { if (p && !p.isClosed?.() && !out.includes(p)) out.push(p); };
-    add(frontId != null ? ids.get(String(frontId)) : null);
+    add(front);
     for (const { page } of owners()) add(page);
-    for (const p of (await pages().catch(() => [])) || []) add(p);
+    for (const p of open) add(p);
     return out.slice(0, COVER_PAGES);
   }
   // Each page's covers (Map page -> rects) to where tabs are captured, by its tab id: drawn on
-  // the recording's frames and on joiners' pictures. Only while recording or shared to.
+  // the recording's frames and on joiners' pictures. Only while recording or shared to. fresh:
+  // the pages read this time (the others aren't sent again); mark: when, on the capture page's
+  // clock, the reads began (covers.mjs createCoverLoop).
   let said = false;
-  async function sendCovers(got) {
-    if (!on && !starting && !(shared() || []).length) return;
+  const live = () => on || starting || (shared() || []).length;
+  async function sendCovers(got, { mark = null, fresh = null } = {}) {
+    if (!live()) return;
     if (capture && capture.kind() === null) return;
     const covers = {};
     for (const [page, rects] of got) {
+      if (fresh && !fresh.has(page)) continue;
       const id = await idOf(page);
       if (id != null) covers[String(id)] = rects;
     }
     if (!Object.keys(covers).length) return;
-    const r = await ext({ op: "covers", covers }, 3000).catch((e) => ({ error: e?.message || String(e) }));
+    const r = await ext({ op: "covers", covers, ...(Number.isFinite(mark) ? { mark } : {}) }, 3000).catch((e) => ({ error: e?.message || String(e) }));
     if (r && !r.error) frontId = r.front ?? frontId;
     else if (!said) { said = true; log(`covers: ${r?.error || "no answer from the browser"}`); }
   }
-  // A picture (base64 JPEG of page's view) with rects drawn on: where tabs are captured, else in
-  // the page's own renderer (an isolated world). The covered JPEG, or null.
-  async function coverPicture(data, rects, page = null) {
-    if (!capture || capture.kind() !== null) {
-      const r = await within(4000, ext({ op: "coverPicture", data, rects }, 3500)).catch(() => null);
-      if (typeof r === "string" && r) return r;
+  // A picture (base64 JPEG of a page's view) with rects drawn on, where tabs are captured (never
+  // in the page's own renderer: a cross-site frame's pixels don't go into the top site's). The
+  // covered JPEG, or null (the picture then never leaves).
+  let saidNowhere = false;
+  async function coverPicture(data, rects) {
+    if (capture && capture.kind() === null) {
+      if (!saidNowhere) { saidNowhere = true; log("covers: nowhere to draw them (no capture page yet): pictures with card fields aren't sent or kept"); }
+      return null;
     }
-    return page ? composeInPage(page, data, rects) : null;
+    const r = await within(4000, ext({ op: "coverPicture", data, rects }, 3500)).catch(() => null);
+    return typeof r === "string" && r ? r : null;
+  }
+  // When the reads begin, on the capture page's clock (performance.now() there), or null.
+  async function coverMark() {
+    if (!live() || (capture && capture.kind() === null)) return null;
+    const r = await within(1500, ext({ op: "coverMark" }, 1000)).catch(() => null);
+    return Number.isFinite(r) ? r : null;
   }
 
   // The covers, kept fresh while recording or shared to (covers.mjs createCoverLoop): recordings
   // and joiners' direct pictures get them here (sendCovers); the slower route's frames, live view
   // guests' pictures (their own want) and the timeline's are covered through covers.picture.
-  const covers = createCoverLoop({ compose: (page, data, rects) => coverPicture(data, rects, page), log });
+  const covers = createCoverLoop({ compose: (_page, data, rects) => coverPicture(data, rects), mark: coverMark, log });
   covers.want(coverPages);
   covers.want(() => shared() || []);
   covers.onTick(sendCovers);

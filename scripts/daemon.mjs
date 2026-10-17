@@ -425,7 +425,7 @@ const tabOrder = createTabOrder({
 const captureChannel = createCaptureChannel({ send: (data) => liveView()?.sendToPages?.("capture", data), log });
 const capture = createCaptureBackend({ browserPages: () => context.willHaveBrowserPages(), capturePages: () => context.willHaveCapturePages(), panelCall: (fn, arg, ms) => panel.call(fn, arg, ms), channel: captureChannel });
 // Shared browser mode: joiners see this browser's tabs live and work in them (daemon/screenshare.mjs).
-const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), log, during: (who) => presence.remoteStart(who), capture, picture: (page, data) => recorder.covers.picture(page, data) });
+const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), log, during: (who) => presence.remoteStart(who), capture, picture: (page, data, at) => recorder.covers.picture(page, data, at) });
 // Recording the browser to a video (pairbrowse_record, the side panel's Record button).
 const recorder = createRecorder({
   capture,

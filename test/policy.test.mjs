@@ -97,3 +97,24 @@ test("fields sensitive by their kind: password type, card and one-time-code auto
   for (const h of ["password  pw", "text cc-number numeric cn", "text cc-csc  cv", "text cc-exp", "text one-time-code numeric", "text   cvc", "tel   Card number", "text    Expiration date MM / YY", "text  iban", "tel    PIN", "password    PIN", "text    PIN code"]) assert.equal(sensitiveHints(h), true, h);
   for (const h of ["text postal-code  zip  ZIP code", "text cc-name   Name on card", "text name   Cardholder name", "email email", "text    Promo code", "number    Quantity", "text    Pin location", "text    Expires", "text    Card title", "text    Gift card"]) assert.equal(sensitiveHints(h), false, h);
 });
+
+// A one-time code's boxes, named but unlabeled ("otp", "code", "digit-3"), with a numeric kind or a
+// short maxlength (pageread.mjs and covers.mjs add "maxlength<N>" last).
+test("one-time code boxes by their name with a numeric kind or a short maxlength; not a phone's country code or a promo code", async () => {
+  const { sensitiveHints, readSensitiveLabel } = await import("../scripts/rules/policy.mjs");
+  for (const h of ["text  numeric otp", "text  numeric  totp-input", "text   code   maxlength6", "tel   digit-3  ", "text   sms_code  maxlength1", "text  numeric  verifyCode", "number   code", "text   pin  maxlength4", "text    digit_1 maxlength1"]) assert.equal(sensitiveHints(h), true, h);
+  for (const h of ["text   code", "tel   country_code  Country code maxlength4", "text  numeric  area-code", "text   promo_code  Promo code maxlength8", "text   coupon-code maxlength8", "text  numeric zip  ZIP code maxlength5", "text   codename  maxlength6", "text   barcode maxlength8", "text  numeric  quantity maxlength2"]) assert.equal(sensitiveHints(h), false, h);
+  for (const l of ["Digit 1", "digit 3 of 6"]) assert.equal(readSensitiveLabel(l), true, l);
+  assert.equal(readSensitiveLabel("Digit counter"), false);
+});
+
+test("values that couldn't all be read: every field's and every typed value masked for a joiner's agent", async () => {
+  const { maskForAgent, UNKNOWN_VALUES } = await import("../scripts/rules/policy.mjs");
+  const text = '- textbox "Search" [ref=e1]: shoes\n- textbox "Name" [ref=e2]: Ada\n- textbox [ref=e3]: <secret>SHOP_PASSWORD</secret>\n- button "Go" [ref=e4]\n```js\nawait page.getByRole(\'textbox\', { name: \'Name\' }).fill(\'Ada\');\n```';
+  const out = maskForAgent(text, UNKNOWN_VALUES);
+  assert.match(out, /"Search" \[ref=e1\]: ••••/);
+  assert.match(out, /"Name" \[ref=e2\]: ••••/);
+  assert.match(out, /<secret>SHOP_PASSWORD<\/secret>/, "a saved password's name stays");
+  assert.match(out, /\.fill\('••••'\)/);
+  assert.equal(maskForAgent(text, []), text, "values known, none sensitive: as it is");
+});

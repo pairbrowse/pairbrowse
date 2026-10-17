@@ -5,8 +5,9 @@ import { testOn } from "../testenv.mjs";
 // and the PairBrowse build without its own pages, as before), the browser's own capture page (a
 // build with its own pages that declares one, once that page said hello; liveview/capture.mjs),
 // or nowhere (a build with its own pages and no capture page yet). Nowhere means: a shared
-// browser sends pictures through the join channel (the slower route, no sound) and recording is
-// refused; nothing new is captured in its place.
+// browser sends pictures through the join channel (the slower route, no sound), none of a tab
+// showing card fields (covers are drawn only where tabs are captured), and recording is refused;
+// nothing new is captured in its place.
 //
 // browserPages(): the browser has its own pages. capturePages(): its build declares a capture page.
 // panelCall(fn, arg, ms): runs fn(arg) in the extension's worker (daemon/panel.mjs). channel: the
@@ -18,7 +19,7 @@ import { testOn } from "../testenv.mjs";
 // never waits (its fallback, the join channel, works at once).
 export const NO_CAPTURE_RECORD = "Recording isn't available in this PairBrowse browser yet: it needs the browser's capture page, which comes with a later build. Nothing was recorded.";
 export const RECORD_READY_MS = 3000;
-export const NO_CAPTURE_SHARE = "This PairBrowse browser has no capture page yet: the picture goes through the join channel, without sound.";
+export const NO_CAPTURE_SHARE = "This PairBrowse browser has no capture page yet: the picture goes through the join channel, without sound, and none while the tab shows card fields.";
 
 // A tab's CDP target id (it never changes), or null when the tab didn't answer within ms (at most
 // 3 s). Asked once per page and kept in one WeakMap for every caller (capture, approvals): a page

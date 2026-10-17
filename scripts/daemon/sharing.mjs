@@ -233,10 +233,11 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     const live = await ensureLiveView();
     const port = live.port;
     // How the picture goes: straight to their PairBrowse, or (a PairBrowse build without its
-    // capture page) through the join channel, without sound. A capture page that hasn't said hello
-    // yet (the browser just started) gets the record's wait first.
+    // capture page) through the join channel, without sound, and none of a tab showing card
+    // fields (only the capture page covers them). A capture page that hasn't said hello yet (the
+    // browser just started) gets the record's wait first.
     await view.screens?.whenReady?.(RECORD_READY_MS)?.catch?.(() => {});
-    const how = view.screens?.available && !view.screens.available() ? "pictures through the join channel; no sound from this PairBrowse build yet" : "picture and sound, sent straight to their PairBrowse";
+    const how = view.screens?.available && !view.screens.available() ? "pictures through the join channel, none while a tab shows card fields; no sound from this PairBrowse build yet" : "picture and sound, sent straight to their PairBrowse";
     const rights = share === "code" && invite.mode === "shared"
       ? (invite.role === "drive"
         ? `Shared browser: they work in this browser itself, seeing your tabs live (${how}), and can click, type and scroll in them, logged in as you are. Your logins, cookies and passwords never leave this computer; revoking ends it at once.`

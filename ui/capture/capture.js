@@ -25,12 +25,21 @@ export const peers = () => [...conns.keys()];
 export const onTabStopped = (fn) => { stopped.push(fn); };
 
 // Card fields covered in what leaves the host's screen (daemon/covers.mjs): the helper sends each
-// captured tab's covers ([x, y, w, h] fractions of the tab's view) as they change; joiners' pictures
-// (coveredTrack below) and recordings (record.js) draw them as solid boxes. A tab with none known
-// yet is covered whole (coversOrWhole).
+// captured tab's covers ([x, y, w, h] fractions of the tab's view) as it reads them, with their
+// mark: this page's clock (coverMark) just before the reads began. Each picture of a tab waits
+// (coverGate) until covers read after it came, and goes out drawn with those and the ones in force
+// just before it (a field that moved or went away meanwhile stays covered): joiners' pictures
+// (coveredTrack below) and recordings (record.js) show only such pictures. No covers read after a
+// picture within GATE_MS: that picture goes out covered whole.
 export const COVER_COLOR = "#293B50"; // ui/tokens.css --edge
 export const COVERS_MAX = 200; // per tab
-const covers = new Map(); // String(tabId) -> rects
+export const HOLD_MS = 400; // every picture is held this long at least, so they go out evenly
+export const GATE_MS = 2000; // a picture whose covers haven't come by then goes out covered whole
+const GATE_FRAMES = 15; // pictures waiting per tab, at most (past it, ones in between are dropped)
+const LAG_MS = 100; // a picture shows the page as it was a moment before it came
+const HISTORY = 40; // reads kept per tab
+const history = new Map(); // String(tabId) -> [{ rects, mark }], oldest first (marked reads only)
+const gates = new Map(); // String(tabId) -> its gate's pump
 const fraction = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
 // The rects of one tab, checked: an array of at most COVERS_MAX [x, y, w, h], each 0..1; null otherwise.
 export function rectsIn(v) {
@@ -52,24 +61,40 @@ export function coversIn(v) {
   }
   return out;
 }
-// New covers for tabs: a tab whose covers changed sends its picture again with them.
-export function setCovers(map) {
+// This page's clock, for the helper to mark its reads with.
+export const coverMark = () => performance.now();
+// New covers for tabs, read from mark on (null: not matched to pictures, so not kept). Pictures
+// waiting for them go on.
+export function setCovers(map, mark = null) {
+  const at = typeof mark === "number" && Number.isFinite(mark) && mark <= performance.now() + 1 ? mark : null;
   for (const [k, r] of map) {
-    const was = covers.get(k);
-    covers.set(k, r);
-    if (was && JSON.stringify(was) === JSON.stringify(r)) continue; // unknown before: covered whole, so sent again
-    for (const [id, t] of tabs) if (String(id) === k) t.covered?.refresh();
+    if (at === null) continue; // not matched to pictures (an older helper's, or a navigation's): nothing to match
+    const h = history.get(k) || [];
+    if (h.length && h[h.length - 1].mark > at) continue; // out of order: never matched backwards
+    h.push({ rects: r, mark: at });
+    if (h.length > HISTORY) h.splice(0, h.length - HISTORY);
+    history.set(k, h);
   }
+  for (const k of map.keys()) gates.get(k)?.();
 }
-export const coversOf = (tabId) => covers.get(String(tabId)) || null;
-// Fail closed: a tab whose covers the helper hasn't sent yet (or that never answered) is covered
-// whole in recordings and joiners' pictures, until they come.
 export const WHOLE_VIEW = Object.freeze([Object.freeze([0, 0, 1, 1])]);
-export const coversOrWhole = (tabId) => coversOf(tabId) || WHOLE_VIEW;
-// Joiners' direct pictures need frames processed (coveredTrack): without that nothing is sent
-// (the joiner's side goes to the slower route, covered in the helper), never the raw picture.
+// The covers for a picture of the tab that came at t (this page's clock): the first read that
+// began at or after t, joined with those in force LAG_MS before it; null until such a read came.
+export function rectsAt(tabId, t) {
+  const h = history.get(String(tabId)) || [];
+  const i = h.findIndex((e) => e.mark >= t);
+  if (i < 0) return null;
+  let from = i;
+  while (from > 0 && h[from - 1].mark > t - LAG_MS) from--;
+  if (from > 0) from--;
+  const seen = new Map();
+  for (let k = from; k <= i; k++) for (const r of h[k].rects) seen.set(r.join(","), r);
+  return seen.size > COVERS_MAX ? WHOLE_VIEW : [...seen.values()];
+}
+// Joiners' direct pictures and recordings need frames processed (coverGate): without that no
+// picture is sent directly (the joiner's side goes to the slower route, covered in the helper).
 export const NO_COVER = "this browser can't cover card fields in a tab's picture, so none is sent directly";
-export const canCover = () => typeof MediaStreamTrackProcessor === "function" && typeof OffscreenCanvas === "function" && typeof VideoFrame === "function" && typeof MediaStreamTrackGenerator === "function";
+export const canCover = () => typeof MediaStreamTrackProcessor === "function" && typeof OffscreenCanvas === "function" && typeof VideoFrame === "function" && typeof MediaStreamTrackGenerator === "function" && typeof createImageBitmap === "function";
 // The rects drawn over a picture drawn at (x, y) w x h on ctx, rounded outward.
 export function paintCovers(ctx, rects, x, y, w, h) {
   if (!rects?.length) return;
@@ -80,55 +105,129 @@ export function paintCovers(ctx, rects, x, y, w, h) {
   }
 }
 
-// What joiners get of a tab's picture: the tab's frames with its covers drawn on (a frame with
-// none passes as it is), one per tab for every peer. Made with the capture, so it has the tab's
-// first picture (a tab that doesn't change sends no other); the newest picture is sent again
-// when the tab's covers change (a still page must not keep a picture covered too late), and once
-// a second while peers watch a still tab (the tab's own track answers the encoder's asks for a
-// fresh picture itself; this one can't hear them, so a joiner who connects later still gets one).
-// null where the browser can't process frames (canCover): joiners then get nothing directly,
-// never the tab's own track.
-function coveredTrack(tabId, t) {
-  if (t.covered) return t.covered.track;
+// A tab's pictures, each let out once its covers are known (rectsAt) and HOLD_MS after it came,
+// or GATE_MS after it came covered whole, in order: t.shown is the latest let out ({ bmp, t,
+// rects, whole }: an ImageBitmap this gate owns until the next) and each of t.subs hears of it.
+// A picture let out whole goes out again once its covers come (a still tab keeps no picture
+// covered longer than needed). Made with the capture; null where frames can't be processed.
+function coverGate(tabId, t) {
   const source = t.stream.getVideoTracks()[0];
   if (!source || !canCover()) return null;
-  const input = source.clone();
+  const k = String(tabId);
+  const input = source.clone(); // its own copy: stopping it never ends the tab's capture
   const reader = new MediaStreamTrackProcessor({ track: input }).readable.getReader();
+  const queue = []; // { bmp, t }
+  let ended = false, timer = null;
+  const show = (s) => {
+    const was = t.shown;
+    t.shown = s;
+    if (was && was.bmp !== s.bmp) was.bmp.close();
+    for (const fn of t.subs) { try { fn(s); } catch {} }
+  };
+  const pump = () => {
+    clearTimeout(timer);
+    timer = null;
+    if (ended) return;
+    const now = performance.now();
+    while (queue.length) {
+      const q = queue[0];
+      if (now < q.t + HOLD_MS) break;
+      let rects = rectsAt(k, q.t), whole = false;
+      if (!rects) {
+        if (now < q.t + GATE_MS) break;
+        rects = WHOLE_VIEW;
+        whole = true;
+      }
+      queue.shift();
+      show({ bmp: q.bmp, t: q.t, rects, whole });
+    }
+    if (!queue.length && t.shown?.whole) {
+      const rects = rectsAt(k, t.shown.t);
+      if (rects) show({ ...t.shown, rects, whole: false });
+    }
+    if (queue.length) {
+      const q = queue[0];
+      const due = rectsAt(k, q.t) ? q.t + HOLD_MS : q.t + GATE_MS;
+      timer = setTimeout(pump, Math.max(5, due - now));
+    }
+  };
+  gates.set(k, pump);
+  (async () => {
+    while (!ended) {
+      const { value: frame, done } = await reader.read().catch(() => ({ done: true }));
+      if (done) break;
+      const at = performance.now();
+      if (ended) { frame.close(); break; }
+      const bmp = await createImageBitmap(frame).catch(() => null);
+      frame.close();
+      if (!bmp) continue;
+      if (ended) { bmp.close(); break; }
+      queue.push({ bmp, t: at });
+      // Too many waiting: drop the one after the oldest (the oldest keeps its age, so a tab whose
+      // covers don't come still goes out covered whole in time).
+      while (queue.length > GATE_FRAMES) queue.splice(1, 1)[0].bmp.close();
+      pump();
+    }
+  })();
+  return {
+    stop() {
+      ended = true;
+      clearTimeout(timer);
+      if (gates.get(k) === pump) gates.delete(k);
+      reader.cancel().catch(() => {});
+      input.stop();
+      for (const q of queue.splice(0)) q.bmp.close();
+      t.shown?.bmp.close();
+      t.shown = null;
+    },
+  };
+}
+
+// What joiners get of a tab's picture: its pictures as the gate lets them out, covers drawn on (a
+// picture with none passes as it is), one track per tab for every peer. The newest picture goes
+// out again once a second while peers watch a still tab (the tab's own track answers the
+// encoder's asks for a fresh picture itself; this one can't hear them, so a joiner who connects
+// later still gets one). null where the browser can't process frames (canCover): joiners then get
+// nothing directly, never the tab's own track.
+function coveredTrack(tabId, t) {
+  if (t.covered) return t.covered.track;
+  if (!t.gate) return null;
   const oc = new OffscreenCanvas(2, 2);
   const g = oc.getContext("2d", { alpha: false });
   const out = new MediaStreamTrackGenerator({ kind: "video" });
   const writer = out.writable.getWriter();
-  let ended = false, last = null, chain = Promise.resolve(), sentAt = 0;
-  // The newest picture, covered, out (one at a time, in order).
+  let ended = false, chain = Promise.resolve(), sentAt = 0, lastTs = 0, lastAt = 0, shift = 0, last = null;
+  // The newest picture, covered, out (one at a time, in order). Its time is when it came (plus a
+  // shift that only grows), so pictures held together still play evenly; the same picture again
+  // goes out as many microseconds after the last as have passed since. Always increasing.
   const emit = () => {
     chain = chain.then(async () => {
-      if (ended || !last) return;
-      const rects = coversOrWhole(tabId);
-      const w = last.displayWidth, h = last.displayHeight;
-      const timestamp = Math.round(performance.now() * 1000);
+      const s = t.shown;
+      if (ended || !s) return;
+      const again = last === s.bmp;
+      last = s.bmp;
+      let timestamp;
+      if (again) timestamp = lastTs + Math.max(1, Math.round((performance.now() - lastAt) * 1000));
+      else {
+        timestamp = Math.round(s.t * 1000) + shift;
+        if (timestamp <= lastTs) { shift += lastTs + 1 - timestamp; timestamp = lastTs + 1; }
+      }
+      lastTs = timestamp;
+      lastAt = performance.now();
       sentAt = Date.now();
-      if (!rects.length) return writer.write(new VideoFrame(last, { timestamp }));
+      const w = s.bmp.width, h = s.bmp.height;
       if (oc.width !== w || oc.height !== h) { oc.width = w; oc.height = h; }
-      g.drawImage(last, 0, 0, w, h);
-      paintCovers(g, rects, 0, 0, w, h);
+      g.drawImage(s.bmp, 0, 0, w, h);
+      paintCovers(g, s.rects, 0, 0, w, h);
       return writer.write(new VideoFrame(oc, { timestamp }));
     }).catch(() => {});
     return chain;
   };
   const still = setInterval(() => { if (t.peers.size && Date.now() - sentAt > 900) emit(); }, 1000);
-  const stop = () => { ended = true; clearInterval(still); reader.cancel().catch(() => {}); input.stop(); out.stop(); last?.close(); last = null; };
+  t.subs.add(emit);
+  const stop = () => { ended = true; clearInterval(still); t.subs.delete(emit); out.stop(); };
   t.covered = { track: out, refresh: emit, stop };
-  (async () => {
-    while (!ended) {
-      const { value: frame, done } = await reader.read().catch(() => ({ done: true }));
-      if (done) break;
-      if (ended) { frame.close(); break; }
-      last?.close();
-      last = frame;
-      await emit();
-      if (out.readyState === "ended") break;
-    }
-  })();
+  emit(); // a picture let out before this track was made
   return out;
 }
 
@@ -160,9 +259,10 @@ async function make(tabId, streamId, frame) {
     audio = new AudioContext();
     audio.createMediaStreamSource(stream).connect(audio.destination);
   }
-  const t = { stream, audio, frame, peers: new Set() };
+  const t = { stream, audio, frame, peers: new Set(), shown: null, subs: new Set() };
   tabs.set(tabId, t);
-  coveredTrack(tabId, t); // joiners' covered picture, from the tab's first frame on
+  t.gate = coverGate(tabId, t); // pictures with their covers, from the tab's first frame on
+  coveredTrack(tabId, t); // joiners' covered picture
   stream.getVideoTracks()[0]?.addEventListener("ended", () => stopTab(tabId));
   return t;
 }
@@ -171,8 +271,9 @@ export function stopTab(tabId) {
   const t = tabs.get(tabId);
   if (!t) return;
   tabs.delete(tabId);
-  covers.delete(String(tabId));
+  history.delete(String(tabId));
   t.covered?.stop();
+  t.gate?.stop();
   for (const fn of stopped) { try { fn(tabId); } catch {} }
   for (const peer of t.peers) stopPeer(peer);
   for (const track of t.stream.getTracks()) track.stop();

@@ -70,7 +70,7 @@ test("where tabs are captured: extension without own pages, the page once it sai
   assert.equal(of(true, false), null, "a hello without the build declaring it");
   assert.equal(of(false, false, { PAIRBROWSE_TEST_NO_CAPTURE: "1" }), null, "tests: nowhere");
   assert.match(NO_CAPTURE_RECORD, /^Recording isn't available in this PairBrowse browser yet: it needs the browser's capture page, which comes with a later build\. Nothing was recorded\.$/);
-  assert.match(NO_CAPTURE_SHARE, /join channel/);
+  assert.match(NO_CAPTURE_SHARE, /join channel.*none while the tab shows card fields/);
 });
 
 test("in page mode share and record go to the channel with the tab's target id; else to the extension", async () => {

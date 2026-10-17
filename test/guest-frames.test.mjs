@@ -1,6 +1,6 @@
 // What live view guests see of the host's tab (liveview/guest-frames.mjs): each frame with its card
-// fields covered first, never one that couldn't be, never a person's own tab; the newest waits
-// while one is covered, those in between dropped.
+// fields covered first, never one that couldn't be, never a person's own tab; several covered at
+// once, in order.
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -37,16 +37,22 @@ test("guests get each frame covered, nothing when it can't be, nothing of a pers
   assert.deepEqual(wanted[0](), [], "no guests: nothing wanted");
 });
 
-test("while one frame is covered the newest waits; the ones in between are dropped", async () => {
+test("frames are covered several at once and go out in the order they came; past IN_FLIGHT one is dropped", async () => {
   const guest = stream();
   const viewers = new Set([guest]);
   const linkGuests = new Map([[guest, {}]]);
   const page = {};
-  const covers = { want: () => {}, picture: async (_p, data) => { await sleep(30); return data; } };
+  const ats = [];
+  // The first frame's covers take longest: the others still wait for it.
+  const covers = { want: () => {}, picture: async (_p, data, at) => { ats.push(at); await sleep(data === "1" ? 60 : 10); return data; } };
   const g = createGuestFrames({ covers, viewers, linkGuests, shownPage: () => page, personTab: () => false });
   for (const img of ["1", "2", "3", "4"]) g.frame({ img }, page);
   await sleep(150);
-  assert.deepEqual(guest.out.map((f) => f.img), ["1", "4"]);
+  assert.deepEqual(guest.out.map((f) => f.img), ["1", "2", "3", "4"]);
+  assert.ok(ats.every((t) => Number.isFinite(t)), "each with when it came");
+  for (let i = 0; i < 12; i++) g.frame({ img: `m${i}` }, page);
+  await sleep(200);
+  assert.equal(guest.out.length, 4 + 8, "at most 8 waiting: the rest dropped");
 });
 
 test("without covers (no helper behind the live view) frames pass as they are", async () => {

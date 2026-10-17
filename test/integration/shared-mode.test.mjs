@@ -138,7 +138,7 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     stage = "a shared browser code (the default), joined and approved";
     const made = text(await tool(host.call, "pairbrowse_invite", { action: "create", role: "drive", label: "Alice", share: "code" }));
     assert.match(made, /Shared browser: they work in this browser itself/);
-    if (noCapture) assert.match(made, /pictures through the join channel; no sound from this PairBrowse build yet/);
+    if (noCapture) assert.match(made, /pictures through the join channel, none while a tab shows card fields; no sound from this PairBrowse build yet/);
     else assert.match(made, /picture and sound, sent straight to their PairBrowse/);
     const code = made.match(/Join code: (pb-join:[A-Za-z0-9_-]+)/)?.[1];
     assert.ok(code, made);
@@ -155,7 +155,11 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     assert.ok((await fetch(`${live}tab`, { method: "POST", body: JSON.stringify({ i: screen.index }) })).ok); // in sight: it connects
     if (noCapture) {
       // Nothing on the host's side to capture a tab with: the joiner's side goes to the pictures
-      // through the channel at once (well under the two 12 s connection tries).
+      // through the channel at once (well under the two 12 s connection tries). Nothing there
+      // covers card fields, so while the host's tab shows one no picture goes; once it's gone they do.
+      await sleep(3000);
+      assert.notEqual((await onScreen({ expr: "window.pbScreen && window.pbScreen.state()" }))?.value?.view, "frames", "a picture of a tab showing a card field, uncovered");
+      assert.equal(await evaluate(host.call, "() => { document.getElementById('cn').remove(); return true; }"), true);
       await until("pictures on the slower route at once", async () => (await onScreen({ expr: "window.pbScreen && window.pbScreen.state()" }))?.value?.view === "frames", 10_000);
     } else if (noDirect) {
       // No direct connection possible: pictures come through the join channel, and input goes back that way.

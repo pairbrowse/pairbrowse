@@ -8,7 +8,7 @@ import { settle, whileBusy } from "../page.mjs";
 import { outline } from "../../runner.mjs";
 import { foldedLine, revealNote, scanReveal } from "../reveal.mjs";
 import { sensitiveValues } from "./pageread.mjs";
-import { agentPicture, NOT_COVERED_NOTE } from "../covers.mjs";
+import { agentPicture, coverRects, NOT_COVERED_NOTE } from "../covers.mjs";
 import { CLICKING_TOOLS, DECORATED, FIELD_TOOLS, INLINE_SHORT_TOOLS, INLINE_SNAPSHOT_TOOLS, LOADING_TOOLS, PAGE_READ_TOOLS, SCREENSHOT_TOOLS, dropClosedAlerts, forJoiner, urlIn } from "./wire.mjs";
 import { resolve as resolvePath } from "node:path";
 
@@ -225,10 +225,11 @@ export function createResult(conn, api) {
     if (tool !== undefined && !closedAway && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
       const shotPage = ownPage || await context.pageAt(shotUrl || context.currentUrl());
       // Never a picture of the person's own tab.
-      const shot = personTab(shotPage) ? null : await screenshots.take(shotPage, participant);
-      // A joiner's agent's picture leaves this screen: its card fields covered first (covers.mjs),
-      // or no picture at all. The host's own agents get theirs as it is.
-      const data = shot?.data ? await agentPicture(shot.data, shotPage, remote, { compose: (d, rects, page) => api.recorder?.coverPicture?.(d, rects, page) }) : null;
+      // Covers read just before the picture too: for a joiner's agent, and for the timeline.
+      const shot = personTab(shotPage) ? null : await screenshots.take(shotPage, participant, { covers: remote || api.timeline?.enabled ? coverRects : null });
+      // A joiner's agent's picture leaves this screen: its card fields covered first (covers.mjs,
+      // read before and after it), or no picture at all. The host's own agents get theirs as it is.
+      const data = shot?.data ? await agentPicture(shot.data, shotPage, remote, { before: shot.before, compose: (d, rects) => api.recorder?.coverPicture?.(d, rects) }) : null;
       if (data === "") msg.result.content.push({ type: "text", text: NOT_COVERED_NOTE });
       else if (data) { msg.result.content.push(image(data)); rememberPicture(remote ? { ...shot, data, covered: true } : shot, shotPage, tool, args); }
       else if (shot?.same) msg.result.content.push({ type: "text", text: SAME_PICTURE });

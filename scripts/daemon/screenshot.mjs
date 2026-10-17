@@ -95,8 +95,9 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {}, no
   // the page stood (url, scroll, viewport), when, and the hash of its bytes. Never the bytes.
   const shots = new Map();
   // { data } (a base64 JPEG), { same: true } (the picture equals the participant's last one),
-  // { skipped: why }, or null.
-  async function take(page, participant) {
+  // { skipped: why }, or null. covers(page): read just before the picture is taken (covers.mjs
+  // coverRects), its answer kept with the picture as `before`.
+  async function take(page, participant, { covers = null } = {}) {
     try {
       if (!page || page.isClosed() || !/^https?:/.test(page.url())) return null;
       // Settled already, usually. Asked, not waited for: a page restored by Back fires no load
@@ -118,7 +119,10 @@ export function createScreenshots({ secrets, log, hidePeers = async () => {}, no
       }
       await hidePeers(page, true);
       try {
-        return await capture(page, participant);
+        if (!covers) return await capture(page, participant);
+        const before = await Promise.resolve().then(() => covers(page)).catch(() => null);
+        const shot = await capture(page, participant);
+        return shot?.data ? { ...shot, before } : shot;
       } finally {
         hidePeers(page, false).catch(() => {});
       }

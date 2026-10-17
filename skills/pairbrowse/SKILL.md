@@ -120,7 +120,9 @@ says where; the side panel's Record button does the same. A recording ends with 
   `••••` and their last two digits (snapshots, `browser_find`, results, outlines, payment frames
   too) and a security code, expiry, PIN, one-time code, IBAN, SSN or password field's value as
   `••••`. To check a card you filled, compare the last two digits ("card ending 42 filled"); don't
-  retype it because it reads masked. Your screenshots there show card fields covered by a box. In
+  retype it because it reads masked. On a page with many frames, or one whose frames don't
+  answer, every field's value reads `••••`: trust what you typed. Your screenshots there show card
+  fields covered by a box (a page that can't be read: the whole view). In
   your own user's browser you read and see the page as it is. Recordings and timeline pictures
   always cover card fields.
 - Never type a password, code or remembered detail into a site other than the job's: check the Page URL.

@@ -4,7 +4,10 @@
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
 import { paths } from "../paths.mjs";
-import { BLOCKED_TOOLS, HIDDEN_TOOLS } from "../rules/policy.mjs";
+import { BLOCKED_TOOLS, HIDDEN_TOOLS, UNKNOWN_VALUES } from "../rules/policy.mjs";
+// A message that shows fields' or typed values (a run's outline, a snapshot's field lines,
+// Playwright's typing code).
+const SHOWS_VALUES = /^Fields: |^\s*- (?:textbox|searchbox|spinbutton)\b|\.(?:fill|pressSequentially|type)\(/m;
 import { appName, personLabel, computerName } from "../sharing/join.mjs";
 import { describe } from "../log.mjs";
 import { decide, approvalAsk } from "../rules/decide.mjs";
@@ -14,7 +17,7 @@ import { stopRequestMirroring } from "./browser/tabs.mjs";
 import { plainError } from "./output.mjs";
 import { PAIRBROWSE_TOOLS, TAB_TOOLS, PAGE_READ_TOOLS, NO_PICK_WAIT, changesPage, wellFormed, withDialogLabel, containsRef, pictureless } from "./serve/wire.mjs";
 import { arrivedAt } from "./serve/pageread.mjs";
-import { coverRects } from "./covers.mjs";
+import { coverRects, joinReads } from "./covers.mjs";
 import { isFileTab, createRefusals } from "./serve/refuse.mjs";
 import { createConnectionState } from "./serve/connection.mjs";
 import { createTurns } from "./serve/turns.mjs";
@@ -150,8 +153,11 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const caption = hud.lastIn(page)?.text || describe(tool, args || {}, { values: false }) || "Looked at the page";
         const who = myLabel() || "";
         try {
-          const rects = shot.covered ? [] : await coverRects(page); // a joiner's agent's: covered already
-          const data = !rects ? null : !rects.length ? shot.data : await recorder?.coverPicture?.(shot.data, rects, page);
+          // A joiner's agent's: covered already. Else the covers read just before the picture
+          // (screenshot.mjs take) and now, both; without the ones before, it isn't kept.
+          const after = shot.covered ? [] : Array.isArray(shot.before) ? await coverRects(page) : null;
+          const rects = shot.covered ? [] : Array.isArray(after) ? joinReads(shot.before, after) : null;
+          const data = !rects ? null : !rects.length ? shot.data : await recorder?.coverPicture?.(shot.data, rects);
           if (!data) {
             if (!rememberPicture.said) { rememberPicture.said = true; log("timeline: a picture was not kept: its card fields couldn't be covered"); }
             return;
@@ -182,8 +188,10 @@ export function createServe({ config, log, host, createConnection, clients, coll
       if (isError) refused.add(id);
       traces.delete(id);
       // A message naming a ref names it as Claude knows it (the main frame's number off), masked
-      // as every result is (saved passwords; for a joiner's agent card numbers too).
-      text = remote ? output.forJoiner(refNames.toPlain(text)) : output.mask(refNames.toPlain(text));
+      // as every result is (saved passwords; for a joiner's agent card numbers too, and, when it
+      // shows fields' or typed values, every one of them: the page's own aren't read here).
+      text = refNames.toPlain(text);
+      text = remote ? output.forJoiner(text, SHOWS_VALUES.test(text) ? UNKNOWN_VALUES : []) : output.mask(text);
       toClient({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) } });
       finish(id);
     };

@@ -149,15 +149,23 @@ export function shownValue(label, value) {
 // "••••". The host's own agents read the page as it is. Narrower than SENSITIVE: a promo code, a
 // card's title, a gift card or a pin's location read as typed; a postal code and the name on the
 // card always do. An expiry or a PIN counts by its label only when the label says it plainly.
-const READ_SENSITIVE = /\bcard ?(?:number|no\b|#)|\b(?:credit|debit|payment|bank) ?card\b|\bcc[- ]?(?:num(?:ber)?|exp|csc|cvc|cvv)\b|\bcvc2?\b|\bcvv2?\b|\bcvn\b|\bcsc\b|(?:security|verification|one[- ]time|sms|auth(?:entication)?|access|confirmation|login|2fa|card)[ -]?code|\botp\b|\b2fa\b|one[- ]time (?:code|password|pin)|(?:expiration|expiry|exp\.?) ?date|card expir|valid (?:thru|through)|\bmm\s*\/\s*yy|\bpin ?(?:code|number)\b|^\W*pin\W*$|\biban\b|\bssn\b|social security|routing number|account number|pass(?:word|code|phrase)/i;
+const READ_SENSITIVE = /\bcard ?(?:number|no\b|#)|\b(?:credit|debit|payment|bank) ?card\b|\bcc[- ]?(?:num(?:ber)?|exp|csc|cvc|cvv)\b|\bcvc2?\b|\bcvv2?\b|\bcvn\b|\bcsc\b|(?:security|verification|one[- ]time|sms|auth(?:entication)?|access|confirmation|login|2fa|card)[ -]?code|\botp\b|\b2fa\b|one[- ]time (?:code|password|pin)|(?:expiration|expiry|exp\.?) ?date|card expir|valid (?:thru|through)|\bmm\s*\/\s*yy|\bpin ?(?:code|number)\b|^\W*pin\W*$|^\W*digit \d{1,2}\W*$|\bdigit \d{1,2} of \d{1,2}\b|\biban\b|\bssn\b|social security|routing number|account number|pass(?:word|code|phrase)/i;
 export const readSensitiveLabel = (label) => { const l = String(label ?? "").replace(POSTAL_CODE, " "); return READ_SENSITIVE.test(l) && !NAME_ON_CARD.test(l); };
 // A field's hints (type, autocomplete, inputmode, name, id, aria-label, label, placeholder, in
-// that order, space-separated): sensitive by its own kind, whatever its label says. "PIN" or
-// "expiry" alone count with a field kind that fits (a password, numeric or telephone field).
+// that order, space-separated, then "maxlength<N>" when its maxlength is 1 to 8): sensitive by
+// its own kind, whatever its label says. "PIN" or "expiry" alone count with a field kind that
+// fits (a password, numeric or telephone field). A one-time code's box ("otp", "totp", "code",
+// "digit-3", "sms_code") counts when numeric, telephone or short (maxlength 1 to 8); a phone's
+// country or area code, a promo or gift code don't.
+const OTP_WORD = /(?:^|[^a-z0-9])(?:[th]?otp|code|passcode|pin|digit[-_ ]?\d{1,2}|(?:sms|mfa|2fa|verify|verification|auth|login|security)[-_ ]?code)(?![a-z])/i;
+const NOT_OTP = /\b(?:country|area|dial(?:ing)?|calling|phone|currency|language|promo(?:tion(?:al)?)?|coupon|discount|voucher|gift|referral|invite|invitation)[-_ ]?code\b/gi;
 export const sensitiveHints = (hints) => {
   const h = String(hints ?? "");
   if (/^password\b/.test(h) || /\bcc-(?!name|given|family|additional)|one-time-code|current-password|new-password/i.test(h) || readSensitiveLabel(h)) return true;
-  return /^(?:tel|number)\b|\bnumeric\b/i.test(h) && /\bpin\b|\bexpir/i.test(h.replace(POSTAL_CODE, " "));
+  const plain = h.replace(POSTAL_CODE, " ");
+  const numeric = /^(?:tel|number)\b|\bnumeric\b/i.test(h);
+  if (numeric && /\bpin\b|\bexpir/i.test(plain)) return true;
+  return (numeric || /\bmaxlength[1-8]$/.test(h)) && OTP_WORD.test(plain.replace(NOT_OTP, " "));
 };
 // A sensitive value as an agent reads it: a card number's last two digits, nothing of the rest.
 // Already masked ("••••42"): kept as it is.
@@ -172,10 +180,14 @@ const CODE_TYPED = /(\.(?:fill|pressSequentially|type)\()(['"`])((?:\\.|(?!\2)[^
 
 // text as an agent may read it. values: the current values of fields sensitive by their kind in
 // the page (pageread.mjs sensitiveValues), found on any field's line or typing call that shows one
-// of them, and anywhere in the text when 6 characters or longer. Pure, never throws.
+// of them, and anywhere in the text when 6 characters or longer; UNKNOWN_VALUES when the page's
+// fields couldn't all be read: then every field's value and every typed value is masked. Pure,
+// never throws.
+export const UNKNOWN_VALUES = "unknown";
 export function maskForAgent(text, values = []) {
   let out = String(text ?? "");
-  const known = new Set((values || []).map((v) => String(v ?? "").trim()).filter(Boolean));
+  const unknown = values === UNKNOWN_VALUES;
+  const known = new Set((Array.isArray(values) ? values : []).map((v) => String(v ?? "").trim()).filter(Boolean));
   for (const v of [...known].sort((a, b) => b.length - a.length)) if (v.length >= 6 && /\d/.test(v)) out = out.split(v).join(maskedValue(v));
   // A saved password shown by its name (secrets.mjs redact) already shows nothing of itself.
   // A page's value on another field: only on an unlabeled one, or when 4 characters or longer (a
@@ -183,7 +195,7 @@ export function maskForAgent(text, values = []) {
   const hides = (label, value) => {
     const v = String(value ?? "").trim();
     if (/^<secret>[A-Za-z0-9_]+<\/secret>$/.test(v)) return false;
-    return readSensitiveLabel(label) || (known.has(v) && (!String(label ?? "").trim() || v.length >= 4));
+    return (unknown && v !== "") || readSensitiveLabel(label) || (known.has(v) && (!String(label ?? "").trim() || v.length >= 4));
   };
   // Snapshot lines (browser_snapshot, browser_find, an action's snapshot): a field's value on its
   // own line, or as its "- text:" child (a field with a placeholder).

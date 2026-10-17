@@ -2,10 +2,11 @@
 import { clickClass } from "../../../rules/clicks.mjs";
 import { settle } from "../../page.mjs";
 import { SAME_PICTURE, SETTLE_MS, image } from "../result.mjs";
+import { agentPicture, coverRects, NOT_COVERED_NOTE } from "../../covers.mjs";
 
 export function createClickAtTool(conn, api) {
   const { closing, config, hud, myLabel, popups, rememberPicture, screenshots } = api;
-  const { ownTab, participant } = conn;
+  const { ownTab, participant, remote } = conn;
   return {
     async pairbrowse_click_at(args) {
       // A final action the agent names (Pay, Delete, Publish, Send, Submit) goes through
@@ -20,8 +21,11 @@ export function createClickAtTool(conn, api) {
       await settle(r.page, SETTLE_MS);
       await popups.dismissOverlay(r.page, { closeOffers: true, ...closing });
       const content = [{ type: "text", text: r.text + popups.drain(r.page) }];
-      const shot = config.screenshots !== false ? await screenshots.take(r.page, participant) : null;
-      if (shot?.data) { content.push(image(shot.data)); rememberPicture(shot, r.page, "pairbrowse_click_at", args); }
+      const shot = config.screenshots !== false ? await screenshots.take(r.page, participant, { covers: remote || api.timeline?.enabled ? coverRects : null }) : null;
+      // A joiner's agent's picture leaves this screen: card fields covered (result.mjs does the same).
+      const data = shot?.data ? await agentPicture(shot.data, r.page, remote, { before: shot.before, compose: (d, rects) => api.recorder?.coverPicture?.(d, rects) }) : null;
+      if (data === "") content.push({ type: "text", text: NOT_COVERED_NOTE });
+      else if (data) { content.push(image(data)); rememberPicture(remote ? { ...shot, data, covered: true } : shot, r.page, "pairbrowse_click_at", args); }
       else if (shot?.same) content.push({ type: "text", text: SAME_PICTURE });
       return { content };
     },

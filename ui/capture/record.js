@@ -4,7 +4,7 @@
 // switches with them. The helper takes the finished file over the browser's private pipe and
 // saves it; nothing here talks to a page or the network. Asked only by the helper, through a
 // transport (transport-extension.js or transport-native.js): record(m) takes today's rec* ops.
-import { captured, has, capturing, capture, stopTab, onTabStopped, coversIn, coversOrWhole, setCovers, rectsIn, paintCovers } from "./capture.js";
+import { captured, has, capturing, capture, stopTab, onTabStopped, coversIn, setCovers, coverMark, rectsIn, paintCovers } from "./capture.js";
 import { CAPTURE_VALUE_MAX } from "../limits.js";
 import { AGENT_COLOR, isColor } from "../vocab.js";
 
@@ -13,34 +13,28 @@ const RECORD_TYPES = ["video/mp4;codecs=avc1.640028", "video/mp4", "video/webm;c
 const RECORD_MAX_MS = 60 * 60_000; // past an hour the helper saves the recording and stops
 const RECORD_MAX_WIDTH = 2560;
 const RECORD_BITRATE = 8_000_000;
-const FIRST_FRAME_MS = 1500; // a start waits this long at most for the tab's first picture
+const FIRST_FRAME_MS = 2500; // a start waits this long at most for the tab's first picture (capture.js holds each until its covers come)
 const STOPPED_EARLY = "the recording was stopped before it began";
 let rec = null; // { canvas, ctx, w, h, scale, type, recorder, chunks, front, seq, tabs, labels, started, mine, ready, blob }
-const latest = new Map(); // tabId -> the newest picture of each captured tab (a VideoFrame)
-const readers = new Map(); // tabId -> { reader, track }
+const followed = new Map(); // tabId -> its listener on the capture's pictures
 const waiting = new Set(); // { tabId, done } for a tab's first picture
 
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+// The newest picture of a captured tab with its covers (capture.js coverGate: let out only once
+// covers read after it came), kept by the capture, so switching to it shows it at once.
+const shownOf = (tabId) => captured(tabId)?.shown || null;
 
-// Reads a captured tab's pictures as they come (a tab that doesn't change sends none), keeping
-// the newest, so switching to it shows it at once.
+// Hears a captured tab's pictures as the capture lets them out (a tab that doesn't change sends none).
 function follow(tabId) {
-  if (readers.has(tabId)) return;
-  const source = captured(tabId)?.stream.getVideoTracks()[0];
-  if (!source) return;
-  const track = source.clone(); // its own copy: ending it never ends what joiners see
-  const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
-  readers.set(tabId, { reader, track });
-  (async () => {
-    for (;;) {
-      const { value, done } = await reader.read().catch(() => ({ done: true }));
-      if (done) break;
-      latest.get(tabId)?.close();
-      latest.set(tabId, value);
-      seen(tabId);
-      if (rec && !rec.blob && rec.front === tabId) draw();
-    }
-  })();
+  if (followed.has(tabId)) return;
+  const t = captured(tabId);
+  if (!t?.subs) return;
+  const fn = () => {
+    seen(tabId);
+    if (rec && !rec.blob && rec.front === tabId) draw();
+  };
+  followed.set(tabId, fn);
+  t.subs.add(fn);
 }
 
 // The tab's first picture came (or its capture ended): whoever waits for it goes on.
@@ -49,7 +43,7 @@ function seen(tabId) {
 }
 // Resolves once the tab has a picture, or after ms (a tab that doesn't change may send none).
 function firstFrame(tabId, ms) {
-  if (latest.has(tabId) || !readers.has(tabId)) return Promise.resolve();
+  if (shownOf(tabId) || !followed.has(tabId)) return Promise.resolve();
   return new Promise((done) => {
     const w = { tabId, done: () => { clearTimeout(timer); done(); } };
     const timer = setTimeout(() => { waiting.delete(w); done(); }, ms);
@@ -57,12 +51,9 @@ function firstFrame(tabId, ms) {
   });
 }
 
-// A tab's capture ended (capture.js stopTab): its reader and picture go.
+// A tab's capture ended (capture.js stopTab): its listener goes (the picture went with the capture).
 function forgetRecorded(tabId) {
-  const r = readers.get(tabId);
-  if (r) { readers.delete(tabId); r.reader.cancel().catch(() => {}); r.track.stop(); }
-  latest.get(tabId)?.close();
-  latest.delete(tabId);
+  followed.delete(tabId);
   seen(tabId);
 }
 
@@ -139,20 +130,25 @@ function strip() {
   });
 }
 
-// One picture of the video: the strip, and the tab in front as large as fits below it.
+// One picture of the video: the strip, and the tab in front as large as fits below it, its
+// covers drawn on (none of the tab before its first picture is let out).
 function draw() {
   const { ctx, w, h, scale } = rec;
   const top = STRIP * scale;
-  const f = latest.get(rec.front);
-  if (f) {
-    const fw = f.displayWidth, fh = f.displayHeight;
+  const pic = shownOf(rec.front);
+  if (pic) {
+    const f = pic.bmp;
+    const fw = f.width, fh = f.height;
     const s = Math.min(w / fw, (h - top) / fh);
     const dw = Math.round(fw * s), dh = Math.round(fh * s);
     ctx.fillStyle = "#000";
     if (dw < w || dh < h - top) ctx.fillRect(0, top, w, h - top);
     const dx = Math.round((w - dw) / 2), dy = top + Math.round((h - top - dh) / 2);
     ctx.drawImage(f, dx, dy, dw, dh);
-    paintCovers(ctx, coversOrWhole(rec.front), dx, dy, dw, dh); // card fields (daemon/covers.mjs); not known yet: all of it
+    paintCovers(ctx, pic.rects, dx, dy, dw, dh); // card fields (daemon/covers.mjs); not known in time: all of it
+  } else {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, top, w, h - top);
   }
   strip();
 }
@@ -273,12 +269,12 @@ async function coverPicture({ data, rects }) {
 }
 
 export function record(m) {
+  if (m.op === "recCoverMark") return coverMark();
   if (m.op === "recCovers") {
     const given = coversIn(m.covers);
     if (!given) return { error: "covers are { tabId: [[x, y, w, h], ...] }" };
-    setCovers(given);
+    setCovers(given, m.mark ?? null);
     const live = rec && !rec.blob;
-    if (live) rec.covers = Object.fromEntries(given);
     if (live && given.has(String(rec.front))) draw();
     return { front: live ? rec.front : null };
   }

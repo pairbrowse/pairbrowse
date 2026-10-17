@@ -20,7 +20,7 @@ process.env.PAIRBROWSE_HOME = join(home, ".pairbrowse");
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const { uploadProblem, secretInside, MEDIA } = await import("../../scripts/upload.mjs");
-const { looksLikeCard, shownValue, SENSITIVE, secretNamesIn, looksLikeSecretName, isRef, trimResult } = await import("../../scripts/rules/policy.mjs");
+const { looksLikeCard, shownValue, SENSITIVE, secretNamesIn, looksLikeSecretName, isRef, trimResult, maskForAgent, maskCards, readSensitiveLabel } = await import("../../scripts/rules/policy.mjs");
 const { redact, cleanDomains, validSecretName, nameFromLabel, parseSecrets, writeSecrets, setSecret } = await import("../../scripts/rules/secrets.mjs");
 const { decide, clickClass, uploadAllowed, CLICK_CLASSES } = await import("../../scripts/guard.mjs");
 const { clickRule, dialogRule, strongSignal, nextStepLabel, paySignal } = await import("../../scripts/rules/clicks.mjs");
@@ -222,6 +222,69 @@ test("trimming a tool result never throws and never makes it longer", () => {
     assert.ok(!/^### Events/m.test(out));
   }));
   check(fc.property(fc.string(), fc.string(), (tool, text) => assert.ok(trimResult(tool, text).length <= text.length)));
+});
+
+// ---- what agents read (policy.mjs maskForAgent) ------------------------------------------------
+// Where a value sits in what an agent reads: a snapshot's field line (any label), a field's
+// "- text:" child, Playwright's typing call, pairbrowse_run's outline, or plain text.
+const placed = (label, v) => [
+  `  - textbox "${label}" [ref=e3]: ${v}`,
+  `  - textbox "${label}" [ref=f2e7]:\n    - /placeholder: •\n    - text: ${v}`,
+  `await page.locator('iframe').contentFrame().getByRole('textbox', { name: '${label}' }).fill('${v}');`,
+  `Fields: ${label} [tel] = ${v}; Email [email] = a@b.c`,
+  `Paid with ${v}, thanks`,
+];
+const plainLabel = fc.stringMatching(/^[A-Za-z ]{0,20}$/);
+const notDigitEnd = fc.string({ maxLength: 20 }).filter((s) => !/\d$/.test(s));
+const notDigitStart = fc.string({ maxLength: 20 }).filter((s) => !/^\d/.test(s));
+const READ_WORDS = ["Card number", "card", "CVC", "CVV", "Security code", "Expiration date", "Expiry", "MM / YY", "Exp. date", "One-time code", "Verification code", "PIN", "IBAN", "SSN", "Social security number", "Password", "Account number", "Routing number", "OTP"];
+const readLabel = fc.tuple(fc.constantFrom("", "Your ", "Enter ", "Credit or debit "), fc.constantFrom(...READ_WORDS).chain(randomCase), fc.constantFrom("", " *", " (required)")).map((p) => p.join(""));
+
+test("a card number never reaches an agent, wherever it sits and whatever surrounds it; its last two digits do", () => {
+  check(fc.property(card.chain((c) => fc.tuple(fc.constant(c), separated(c))), plainLabel, notDigitEnd, notDigitStart, fc.nat(4), ([digits, spaced], label, before, afterText, at) => {
+    const text = placed(label, `${before}${spaced}${afterText}`)[at];
+    const out = maskForAgent(text);
+    assert.ok(!out.includes(spaced), out);
+    assert.ok(!out.replace(/[^\d•]/g, "").includes(digits), out);
+    assert.ok(out.includes(`••••${digits.slice(-2)}`) || out.includes("••••"), out);
+  }));
+  // A card among other digit groups ("Order 12 4242 4242 4242 4242").
+  check(fc.property(card, fc.stringMatching(/^\d{1,4}$/), fc.constantFrom(" ", "-", " - "), (digits, extra, sep) => {
+    const grouped = digits.match(/.{1,4}/g).join(" ");
+    for (const text of [`Order ${extra}${sep}${grouped} ok`, `Order ${grouped}${sep}${extra} ok`]) assert.ok(!maskCards(text).includes(grouped), maskCards(text));
+  }));
+});
+
+test("a field sensitive by its label never shows its value to an agent, in a snapshot, a typing call or an outline", () => {
+  const value = fc.string({ minLength: 1, maxLength: 30 }).filter((v) => v.trim() && !/[\n\r•'";\\[\]=<>]/.test(v) && !/^\s|\s$/.test(v));
+  check(fc.property(readLabel, value, fc.nat(3), (label, v, at) => {
+    assert.ok(readSensitiveLabel(label), label);
+    const out = maskForAgent(placed(label, v)[at]);
+    assert.ok(out.includes("••••"), `${label}: ${out}`);
+    assert.ok(!new RegExp(`(: |text: |fill\\('|= )${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(['$;\\n]|$)`, "m").test(out), `${label}: ${out}`);
+  }));
+  // A value the page holds in a field sensitive by its kind (an unlabeled CVC): masked on any field's line.
+  check(fc.property(plainLabel, fc.stringMatching(/^\d{3,4}$/), fc.nat(2), (label, v, at) => {
+    const out = maskForAgent(placed(label, v)[at], [v]);
+    assert.ok(!new RegExp(`(: |text: |fill\\(')${v}`).test(out), out);
+  }));
+});
+
+test("a ZIP, the name on a card and an ordinary number read as they are", () => {
+  const neutral = fc.constantFrom("ZIP code", "Postal code", "Zip/Postal Code", "Name on card", "Cardholder name", "Quantity", "Phone", "Order number", "Amount", "Email").chain(randomCase);
+  const notCard = fc.oneof(fc.stringMatching(/^\d{1,12}$/), fc.stringMatching(/^\d{13,19}$/).filter((d) => !looksLikeCard(d)), fc.stringMatching(/^[A-Z0-9]{3,10}$/), fc.constantFrom("Ada Lovelace", "94107", "SW1A 1AA", "10115"));
+  check(fc.property(neutral, notCard, fc.nat(3), (label, v, at) => {
+    const text = placed(label, v)[at];
+    assert.equal(maskForAgent(text), text);
+  }));
+});
+
+test("masking what agents read never throws, is stable when applied again, and never adds a card's digits", () => {
+  check(fc.property(fc.string({ maxLength: 200 }), fc.array(fc.string({ maxLength: 12 }), { maxLength: 3 }), (text, values) => {
+    const once = maskForAgent(text, values);
+    assert.equal(maskForAgent(once, values), once);
+  }));
+  check(fc.property(loose, loose, (text, values) => { maskForAgent(text, Array.isArray(values) ? values : []); }));
 });
 
 // ---- saved passwords --------------------------------------------------------------------------

@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync, rmSync, existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { redact } from "../rules/secrets.mjs";
+import { maskForAgent } from "../rules/policy.mjs";
 import { isBrowserPage } from "../../ui/urls.js";
 
 // Playwright's own snapshot and console files in the files folder; never your own files there.
@@ -22,21 +23,24 @@ const SNAPSHOT_MAX = 24_000;
 const INLINE_SHORT_MAX = 6000;
 
 // dir: the files folder Playwright writes to. secretValues(): the saved passwords by name.
+// mask(text, values): saved passwords by their names, card numbers and the values of fields
+// sensitive by their kind (values: the page's, pageread.mjs sensitiveValues) as policy.mjs
+// maskForAgent says.
 export function createOutput({ dir, secretValues }) {
-  const mask = (text) => redact(text, secretValues());
+  const mask = (text, values = []) => maskForAgent(redact(text, secretValues()), values);
 
-  function maskFile(file) {
+  function maskFile(file, values = []) {
     try {
       const text = readFileSync(file, "utf8");
-      const clean = mask(text);
+      const clean = mask(text, values);
       if (clean !== text) writeFileSync(file, clean);
     } catch {}
   }
   // Snapshot files a result links to: masked before Claude sees the link.
-  function maskLinkedFiles(text) {
+  function maskLinkedFiles(text, values = []) {
     for (const [, link] of String(text).matchAll(/\]\(([^)\s]+)\)/g)) {
       const file = join(dir, basename(link));
-      if (PLAYWRIGHT_OUTPUT.test(basename(file)) && existsSync(file)) maskFile(file);
+      if (PLAYWRIGHT_OUTPUT.test(basename(file)) && existsSync(file)) maskFile(file, values);
     }
   }
 
@@ -57,11 +61,11 @@ export function createOutput({ dir, secretValues }) {
   // link stays (with a word to snapshot for fresh refs) past INLINE_SHORT_MAX characters. Only
   // Playwright's own files in the files folder are read, as maskLinkedFiles masks only those; the
   // file is masked first, so what's on disk is as clean as what the agent reads.
-  function inlineSnapshot(text, { short = false } = {}) {
+  function inlineSnapshot(text, { short = false, values = [] } = {}) {
     return String(text).replace(/^- \[Snapshot\]\(([^)\s]+)\)[^\n]*$/m, (line, link) => {
       const file = join(dir, basename(link));
       if (!PLAYWRIGHT_OUTPUT.test(basename(file)) || !existsSync(file)) return line;
-      maskFile(file);
+      maskFile(file, values);
       let snap;
       try { snap = readFileSync(file, "utf8"); } catch { return line; }
       snap = compactSnapshot(snap.replace(/^```ya?ml\r?\n/, "").replace(/\r?\n```\s*$/, "").replace(/\s+$/, ""));
@@ -172,6 +176,33 @@ export function compactSnapshot(text) {
     out.push(line.replace(new RegExp(`^(\\s*- /url: "?)([^\\n]{${URL_MAX - 40}})[^\\n]{40,}$`), "$1$2…"));
   }
   return out.join("\n");
+}
+
+// A browser_find result after masking (text: masked; args: the call's text or regex): the browser
+// server matched the page before masking, so a query that matched only what is masked now (a
+// card's digits, a CVC) would still say "Found 1 match". Its count is that of the lines that still
+// match, and none says no match. Pure.
+export function recountFind(text, args = {}) {
+  const t = String(text ?? "");
+  const head = /^Found \d+ (?:match|matches) for (.*):$/m.exec(t);
+  if (!head) return t;
+  let matches;
+  try {
+    if (typeof args?.regex === "string" && args.regex) {
+      const r = /^\/(.*)\/([dgimsuvy]*)$/s.exec(args.regex);
+      const re = r ? new RegExp(r[1], r[2].replace(/[gy]/g, "")) : new RegExp(args.regex);
+      matches = (line) => re.test(line);
+    } else if (typeof args?.text === "string" && args.text) {
+      const needle = args.text.toLowerCase();
+      matches = (line) => line.toLowerCase().includes(needle);
+    } else return t;
+  } catch { return t; }
+  const start = head.index + head[0].length;
+  const next = t.slice(start).search(/^### /m);
+  const end = next < 0 ? t.length : start + next;
+  const found = t.slice(start, end).split("\n").filter((line) => line.trim() && line.trim() !== "----" && line.trim() !== "..." && matches(line)).length;
+  if (found) return `${t.slice(0, head.index)}Found ${found} ${found === 1 ? "match" : "matches"} for ${head[1]}:${t.slice(start)}`;
+  return `${t.slice(0, head.index)}No matches found for ${head[1]}.\n${t.slice(end)}`;
 }
 
 // Playwright's error for a browser tool, said plainly (its call logs, selectors and escape codes

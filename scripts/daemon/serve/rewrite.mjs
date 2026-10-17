@@ -88,6 +88,13 @@ export function createHandle(conn, api) {
     const problem = await browserToolProblem(name, args);
     if (problem) return reply(msg.id, problem, true);
     if (name === "browser_drag") return respond(msg.id, name, await ownTools.browser_drag(args), args);
+    // A snapshot or find saved to a file of the agent's choosing would skip the masking every
+    // result gets (card numbers, passwords: output.mjs): it comes in the result instead.
+    if ((name === "browser_snapshot" || name === "browser_find") && Object.hasOwn(args, "filename")) {
+      msg = structuredClone(msg);
+      delete msg.params.arguments.filename;
+      args = msg.params.arguments;
+    }
     if (name === "browser_handle_dialog" && Object.hasOwn(args, "element")) {
       msg = structuredClone(msg);
       delete msg.params.arguments.element;

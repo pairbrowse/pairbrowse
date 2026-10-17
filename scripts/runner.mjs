@@ -68,7 +68,10 @@ const describePage = withHelpers(() => {
   };
   const fields = [...document.querySelectorAll("input, select, textarea")].filter((el) => isVisible(el) && el.type !== "hidden" && el.type !== "submit").slice(0, 25).map((el) => {
     const type = el.tagName === "SELECT" ? "select" : el.type || "text";
-    const val = type === "checkbox" || type === "radio" ? (el.checked ? "on" : "off") : type === "password" ? (el.value ? "(set)" : "") : String((type === "select" ? el.selectedOptions[0]?.text.trim() : el.value) || "").slice(0, 30);
+    // A card or one-time-code field by its autocomplete: masked here (its label may say nothing);
+    // by its label or a card number's checksum, the helper masks it (policy.mjs maskForAgent).
+    const byKind = /\bcc-(?!name|given|family|additional)|one-time-code/i.test(el.getAttribute("autocomplete") || "");
+    const val = type === "checkbox" || type === "radio" ? (el.checked ? "on" : "off") : type === "password" ? (el.value ? "(set)" : "") : byKind && el.value ? `••••${/cc-number/i.test(el.autocomplete) ? el.value.replace(/\D/g, "").slice(-2) : ""}` : String((type === "select" ? el.selectedOptions[0]?.text.trim() : el.value) || "").slice(0, 30);
     return `${name(el) || "(unlabeled)"} [${type}${el.required ? ", required" : ""}${el.getAttribute("aria-invalid") === "true" ? ", INVALID" : ""}]${val ? ` = ${val}` : ""}`;
   });
   const buttons = [...document.querySelectorAll("button, [role=button], input[type=submit], a[href]")].filter(isVisible)

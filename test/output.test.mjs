@@ -11,6 +11,77 @@ const setup = (values = { SHOP_PW: "hunter2-secret" }) => {
   return { dir, out: createOutput({ dir, secretValues: () => values }) };
 };
 
+// A checkout as the browser server snapshots it: card fields in the page and in a payment frame.
+const checkout = `- generic [active] [ref=e1]:
+  - paragraph [ref=e2]: Paid last time with 4242 4242 4242 4242. Order 1234 5678 9012 3456.
+  - textbox "Card number" [ref=e3]: 4242 4242 4242 4242
+  - textbox "Security code" [ref=e4]: "731"
+  - textbox "ZIP code" [ref=e5]: "94107"
+  - textbox "Name on card" [ref=e6]: Ada Lovelace
+  - textbox "Quantity" [ref=e7]: "2"
+  - textbox "Password" [ref=e8]: hunter2-secret
+  - iframe [ref=e9]:
+    - textbox "Card number" [ref=f1e1]:
+      - /placeholder: 1234 1234 1234 1234
+      - text: 5555 5555 5555 4444
+    - textbox "Expiration date MM / YY" [ref=f1e2]: 11 / 29
+    - textbox [ref=f1e3]: "864"
+### Ran Playwright code
+\`\`\`js
+await page.locator('iframe').contentFrame().getByRole('textbox', { name: 'CVC' }).fill('864');
+await page.getByRole('textbox', { name: 'ZIP code' }).fill('94107');
+\`\`\``;
+const checkoutMasked = `- generic [active] [ref=e1]:
+  - paragraph [ref=e2]: Paid last time with ••••42. Order 1234 5678 9012 3456.
+  - textbox "Card number" [ref=e3]: ••••42
+  - textbox "Security code" [ref=e4]: ••••
+  - textbox "ZIP code" [ref=e5]: "94107"
+  - textbox "Name on card" [ref=e6]: Ada Lovelace
+  - textbox "Quantity" [ref=e7]: "2"
+  - textbox "Password" [ref=e8]: <secret>SHOP_PW</secret>
+  - iframe [ref=e9]:
+    - textbox "Card number" [ref=f1e1]:
+      - /placeholder: 1234 1234 1234 1234
+      - text: ••••44
+    - textbox "Expiration date MM / YY" [ref=f1e2]: ••••
+    - textbox [ref=f1e3]: ••••
+### Ran Playwright code
+\`\`\`js
+await page.locator('iframe').contentFrame().getByRole('textbox', { name: 'CVC' }).fill('••••');
+await page.getByRole('textbox', { name: 'ZIP code' }).fill('94107');
+\`\`\``;
+
+test("what an agent reads shows card numbers by their last two digits and no card, security-code or expiry value", () => {
+  const { out } = setup();
+  // "864": the page's own CVC field (unlabeled, autocomplete cc-csc), read by pageread.mjs.
+  assert.equal(out.mask(checkout, ["864"]), checkoutMasked);
+  assert.equal(out.mask(checkoutMasked, ["864"]), checkoutMasked, "masking again changes nothing");
+  assert.equal(out.mask("Fields: Card number [tel] = 4242424242424242; Security code [text] = 731; ZIP [text] = 94107"), "Fields: Card number [tel] = ••••42; Security code [text] = ••••; ZIP [text] = 94107");
+  assert.equal(out.mask("Order 12 4242 4242 4242 4242 shipped"), "Order 12 ••••42 shipped", "a card among other digit groups");
+  assert.equal(out.mask("Call 555-123-4567, order 1234567890123"), "Call 555-123-4567, order 1234567890123");
+});
+
+test("a find that matched only masked values finds nothing; one that still matches counts what it shows", async () => {
+  const { recountFind } = await import("../scripts/daemon/output.mjs");
+  const res = (n, body) => `### Find results\nFound ${n} matches for /4242/:\n\n${body}\n### PairBrowse\n- note`;
+  const masked = '- generic [ref=e1]:\n  - textbox "Card number" [ref=e3]: ••••42\n\n----\n\n  - paragraph [ref=e2]: Paid with ••••42';
+  assert.equal(recountFind(res(2, masked), { regex: "/4242/" }), "### Find results\nNo matches found for /4242/.\n### PairBrowse\n- note");
+  const kept = recountFind(res(2, `${masked}\n  - text: order 4242`), { regex: "/4242/" });
+  assert.match(kept, /^### Find results\nFound 1 match for \/4242\/:\n/);
+  assert.ok(kept.includes("order 4242") && kept.endsWith("### PairBrowse\n- note"));
+  assert.equal(recountFind("### Find results\nNo matches found for \"x\".", { text: "x" }), "### Find results\nNo matches found for \"x\".");
+  assert.match(recountFind(res(1, '  - textbox "Card number" [ref=e3]: ••••42'), { text: "card number" }), /Found 1 match for/);
+});
+
+test("a snapshot file an action links is masked by the page's sensitive values before the agent reads it", () => {
+  const { dir, out } = setup();
+  const file = join(dir, "page-2026-10-17T10-00-00-000Z.yml");
+  writeFileSync(file, checkout.split("\n### Ran")[0]);
+  const text = out.inlineSnapshot(`### Snapshot\n- [Snapshot](${file})`, { values: ["864"] });
+  assert.equal(readFileSync(file, "utf8"), checkoutMasked.split("\n### Ran")[0]);
+  assert.ok(text.includes("- textbox [ref=f1e3]: ••••") && !text.includes("4242 4242"), text);
+});
+
 test("passwords in results become their names, and the newest saved ones count", () => {
   const values = { SHOP_PW: "hunter2-secret" };
   const { out } = setup(values);

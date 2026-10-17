@@ -89,3 +89,11 @@ test("pairbrowse:// addresses are the browser's own, as chrome://pairbrowse ones
   assert.equal(hideBrowserTabs("- 0: [Settings](pairbrowse://settings)\n- 1: [Shop](https://shop.example/)"), "- 1: [Shop](https://shop.example/)");
   assert.equal(isBrowserPage("https://pairbrowse.com/"), false);
 });
+
+// A field sensitive by its own kind (pageread.mjs sensitiveValues reads its hints: type,
+// autocomplete, inputmode, name, id, aria-label, label, placeholder).
+test("fields sensitive by their kind: password type, card and one-time-code autocomplete, card labels; never a ZIP or the name on the card", async () => {
+  const { sensitiveHints } = await import("../scripts/rules/policy.mjs");
+  for (const h of ["password  pw", "text cc-number numeric cn", "text cc-csc  cv", "text cc-exp", "text one-time-code numeric", "text   cvc", "tel   Card number", "text    Expiration date MM / YY", "text  iban", "text    PIN"]) assert.equal(sensitiveHints(h), true, h);
+  for (const h of ["text postal-code  zip  ZIP code", "text cc-name   Name on card", "text name   Cardholder name", "email email", "text    Promo code", "number    Quantity"]) assert.equal(sensitiveHints(h), false, h);
+});

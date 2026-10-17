@@ -107,13 +107,101 @@ export function looksLikeCard(value) {
 const POSTAL_CODE = /\b(?:zip|postal|post)(?:\s*[/-]?\s*(?:zip|postal|post))?[\s_-]*code\b/gi;
 // A field sensitive by its label: SENSITIVE (outside a postal code's name), except the
 // cardholder's name ("Name on card").
-export const sensitiveLabel = (label) => { const l = String(label ?? "").replace(POSTAL_CODE, " "); return SENSITIVE.test(l) && !/(\bname\b|\bholder\b)[^]{0,12}\bcard|card ?holder/i.test(l); };
+const NAME_ON_CARD = /(\bname\b|\bholder\b)[^]{0,12}\bcard|card ?holder/i;
+export const sensitiveLabel = (label) => { const l = String(label ?? "").replace(POSTAL_CODE, " "); return SENSITIVE.test(l) && !NAME_ON_CARD.test(l); };
 // Card numbers inside other text ("ref 4242 4242 4242 4242 paid"): masked to their last two digits.
-export const maskCards = (text) => String(text ?? "").replace(/(?<![\d-])(?:\d[ -]?){12,18}\d(?![\d-])/g, (m) => (looksLikeCard(m) ? `••••${m.replace(/[\s-]/g, "").slice(-2)}` : m));
+// A run of digit groups ("Order 12 4242 4242 4242 4242"): a card among its groups is masked too,
+// whole groups only, so an ordinary long number (its own checksum wrong) stays as it is.
+const lastTwo = (s) => `••••${s.replace(/\D/g, "").slice(-2)}`;
+function maskRun(run) {
+  if (looksLikeCard(run)) return lastTwo(run);
+  const parts = run.match(/\d+|\D+/g);
+  const out = [];
+  for (let i = 0; i < parts.length;) {
+    let hit = -1;
+    if (/^\d/.test(parts[i])) {
+      for (let j = Math.min(parts.length - 1, i + 40); j >= i && hit < 0; j--) {
+        if (!/^\d/.test(parts[j])) continue;
+        const s = parts.slice(i, j + 1).join("");
+        const n = s.replace(/\D/g, "").length;
+        if (n >= 13 && n <= 19 && looksLikeCard(s)) hit = j;
+      }
+    }
+    if (hit < 0) out.push(parts[i++]);
+    else { out.push(lastTwo(parts.slice(i, hit + 1).join(""))); i = hit + 1; }
+  }
+  return out.join("");
+}
+export const maskCards = (text) => String(text ?? "").replace(/(?<!\d)(?:\d[ \t\u00a0-]{0,3}){12,}\d(?!\d)/g, maskRun);
 // What the activity line shows for a typed value.
 export function shownValue(label, value) {
   const s = String(value ?? "");
   if (SECRET_NAME.test(s)) return s; // a saved password's name, not the password
   if (sensitiveLabel(label) || looksLikeCard(s)) return s.length > 4 ? `••••${s.replace(/\s/g, "").slice(-2)}` : "••••";
   return maskCards(s);
+}
+
+// ---- what agents read ------------------------------------------------------------------------
+// Every text an agent gets (results, snapshots and their files, find, outlines, errors) shows a
+// card number as "••••" and its last two digits, and the value of a field that is sensitive by its
+// kind as "••••". Narrower than SENSITIVE: a promo code or an API token's field reads as typed;
+// a postal code and the name on the card always do.
+const READ_SENSITIVE = /\bcards?\b|\bcc[- ]?(?:num(?:ber)?|exp|csc|cvc|cvv)\b|\bcvc2?\b|\bcvv2?\b|\bcvn\b|\bcsc\b|(?:security|verification|one[- ]time|sms|auth(?:entication)?|access|confirmation|login|2fa)[ -]?code|\botp\b|\b2fa\b|one[- ]time|expir|\bexp(?:\.|iry)?\b|\bmm\s*\/\s*yy|\bpin\b|\biban\b|\bssn\b|social security|routing number|account number|pass(?:word|code|phrase)/i;
+export const readSensitiveLabel = (label) => { const l = String(label ?? "").replace(POSTAL_CODE, " "); return READ_SENSITIVE.test(l) && !NAME_ON_CARD.test(l); };
+// A field's hints (type, autocomplete, inputmode, name, id, aria-label, label, placeholder, in
+// that order, space-separated): sensitive by its own kind, whatever its label says.
+export const sensitiveHints = (hints) => { const h = String(hints ?? ""); return /^password\b/.test(h) || /\bcc-(?!name|given|family|additional)|one-time-code|current-password|new-password/i.test(h) || readSensitiveLabel(h); };
+// A sensitive value as an agent reads it: a card number's last two digits, nothing of the rest.
+// Already masked ("••••42"): kept as it is.
+export const maskedValue = (value) => (/^••••\d{0,2}$/.test(String(value ?? "")) ? String(value) : looksLikeCard(value) ?`••••${String(value).replace(/\D/g, "").slice(-2)}` : "••••");
+
+const FIELD_LINE = /^(\s*)(- (?:textbox|searchbox|combobox|spinbutton)\b(?: "((?:[^"\\]|\\.)*)")?(?: \[[^\]\n]*\])*):(?: (.*))?$/;
+const unquote = (s) => { const t = String(s ?? "").trim(); if (/^".*"$/.test(t)) { try { return JSON.parse(t); } catch {} } if (/^'.*'$/.test(t)) return t.slice(1, -1).replace(/''/g, "'"); return t; };
+const unescapeJs = (s) => String(s).replace(/\\(.)/g, "$1");
+// A typing call in Playwright's code ("...getByRole('textbox', { name: 'CVC' }).fill('123')").
+const CODE_TYPED = /(\.(?:fill|pressSequentially|type)\()(['"`])((?:\\.|(?!\2)[^\\\n])*)\2/g;
+
+// text as an agent may read it. values: the current values of fields sensitive by their kind in
+// the page (pageread.mjs sensitiveValues), found on any field's line or typing call that shows one
+// of them, and anywhere in the text when 6 characters or longer. Pure, never throws.
+export function maskForAgent(text, values = []) {
+  let out = String(text ?? "");
+  const known = new Set((values || []).map((v) => String(v ?? "").trim()).filter(Boolean));
+  for (const v of [...known].sort((a, b) => b.length - a.length)) if (v.length >= 6 && /\d/.test(v)) out = out.split(v).join(maskedValue(v));
+  // A saved password shown by its name (secrets.mjs redact) already shows nothing of itself.
+  const hides = (label, value) => !/^<secret>[A-Za-z0-9_]+<\/secret>$/.test(String(value ?? "").trim()) && (readSensitiveLabel(label) || known.has(String(value ?? "").trim()));
+  // Snapshot lines (browser_snapshot, browser_find, an action's snapshot): a field's value on its
+  // own line, or as its "- text:" child (a field with a placeholder).
+  const lines = out.split("\n");
+  let under = null; // { indent, label } of a field whose children are being read
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const indent = line.match(/^ */)[0].length;
+    if (under && line.trim() && indent <= under.indent) under = null;
+    const f = FIELD_LINE.exec(line);
+    if (f) {
+      const label = f[3] ? unquote(`"${f[3]}"`) : "";
+      if (f[4] !== undefined && f[4].trim()) { if (hides(label, unquote(f[4]))) lines[i] = `${f[1]}${f[2]}: ${maskedValue(unquote(f[4]))}`; }
+      else under = { indent, label };
+      continue;
+    }
+    if (under) {
+      const t = /^(\s*- text: )(.*)$/.exec(line);
+      if (t && indent === under.indent + 2 && hides(under.label, unquote(t[2]))) lines[i] = `${t[1]}${maskedValue(unquote(t[2]))}`;
+    }
+    // pairbrowse_run's outline: "Fields: Card number [tel] = 4242...; Name [text] = Ada".
+    if (/^Fields: /.test(line)) lines[i] = line.replace(/(^Fields: |; )([^;[\n]*?) \[([^\]\n]*)\] = ([^;\n]*)/g, (m, sep, label, kind, value) => (hides(label, value) && !value.startsWith("••••") ?`${sep}${label} [${kind}] = ${maskedValue(value)}` : m));
+  }
+  out = lines.join("\n");
+  // Playwright's code for a typing call: masked by the field it names (the quoted parts of its
+  // locator after the last frame: a role's name, a label, "#cvc"), or by the value.
+  out = out.replace(CODE_TYPED, (m, call, q, raw, at, whole) => {
+    const lineStart = whole.lastIndexOf("\n", at) + 1;
+    const before = whole.slice(lineStart, at);
+    const own = before.slice(before.lastIndexOf("contentFrame()") + 1);
+    const value = unescapeJs(raw);
+    const names = [...own.matchAll(/(['"`])((?:\\.|(?!\1)[^\\\n])*)\1/g)].map((x) => unescapeJs(x[2])).join(" ");
+    return hides(names, value) ? `${call}${q}${maskedValue(value)}${q}` : m;
+  });
+  return maskCards(out);
 }

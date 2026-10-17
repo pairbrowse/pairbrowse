@@ -166,8 +166,9 @@ export function createServe({ config, log, host, createConnection, clients, coll
     const reply = (id, text, isError = false) => {
       if (isError) refused.add(id);
       traces.delete(id);
-      // A message naming a ref names it as Claude knows it (the main frame's number off).
-      text = refNames.toPlain(text);
+      // A message naming a ref names it as Claude knows it (the main frame's number off), masked
+      // as every result is (card numbers, saved passwords).
+      text = output.mask(refNames.toPlain(text));
       toClient({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) } });
       finish(id);
     };

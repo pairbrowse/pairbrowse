@@ -1,6 +1,6 @@
 // What the tool server reads in a page for its checks: a button's own label, whether a field is
 // sensitive by its own kind, and whether a navigation got where it was asked to. Each read bounded.
-import { isRef, sensitiveLabel } from "../../rules/policy.mjs";
+import { isRef, sensitiveHints, sensitiveLabel } from "../../rules/policy.mjs";
 import { within, sleep } from "../../util.mjs";
 import { buttonLabel } from "../page.mjs";
 
@@ -34,6 +34,27 @@ export async function sensitiveTarget(page, target) {
   const read = page.locator(`aria-ref=${target}`).first().evaluate((el) => [el.type, el.getAttribute("autocomplete"), el.getAttribute("name"), el.id, el.getAttribute("aria-label"), el.labels?.[0]?.innerText].join(" "), undefined, { timeout: 1000 }).catch(() => "");
   const hints = String(await within(1500, read) || "");
   return /^password\b/.test(hints) || /cc-(?!name)|one-time-code|current-password|new-password/i.test(hints) || sensitiveLabel(hints);
+}
+
+// The values now in the page's fields that are sensitive by their kind (password type, card or
+// one-time-code autocomplete, card, security code, expiry, PIN, IBAN and similar labels), in every
+// frame: what an agent reads of the page is masked by them (policy.mjs maskForAgent), as a
+// field's value or a typing call's. Dropdowns (a month on its own) stay. Each frame's read is
+// bounded; [] when the page doesn't answer.
+const FRAMES_MAX = 20;
+const fieldValues = () => [...document.querySelectorAll("input, textarea")].slice(0, 300).flatMap((el) => {
+  if (["checkbox", "radio", "hidden", "submit", "button", "file", "image", "reset"].includes(el.type) || !el.value) return [];
+  const hints = [el.type, el.getAttribute("autocomplete"), el.getAttribute("inputmode"), el.name, el.id, el.getAttribute("aria-label"), el.labels?.[0]?.innerText, el.placeholder].map((x) => String(x || "").replace(/\s+/g, " ").slice(0, 80)).join(" ");
+  return [[hints, String(el.value).slice(0, 200)]];
+});
+export async function sensitiveValues(page) {
+  if (!page || page.isClosed?.()) return [];
+  let frames;
+  try { frames = page.frames().slice(0, FRAMES_MAX); } catch { return []; }
+  const read = await Promise.all(frames.map((f) => within(800, f.evaluate(fieldValues).catch(() => null))));
+  const out = new Set();
+  for (const list of read) for (const [hints, value] of Array.isArray(list) ? list : []) if (sensitiveHints(hints) && String(value).trim()) out.add(String(value).trim());
+  return [...out];
 }
 
 // The tab came to the address asked for (its committed URL: the same document, whatever the

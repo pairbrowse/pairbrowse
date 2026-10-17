@@ -30,7 +30,7 @@ export const image = (data) => ({ type: "image", data, mimeType: "image/jpeg" })
 export const BUSY_MAX_MS = 5000; // a click the page is still at work on is waited for this long, at most
 // What a result says after waiting on a busy page (whileBusy's answer): done, or still at work.
 export const busyNote = (b) => b.still
-  ? `The page is still busy after ${Math.round(b.ms / 1000)} s ("${b.what.slice(0, 40)}"): this is the page as it is now, not done yet. browser_wait_for, then snapshot again.`
+  ? `The page is still busy after ${Math.round(BUSY_MAX_MS / 1000)} s ("${b.what.slice(0, 40)}"): this is the page as it is now, not done yet. browser_wait_for, then snapshot again.`
   : `The page was busy ("${b.what.slice(0, 40)}") for ${(b.ms / 1000).toFixed(1)} s after the click: this is the page once it was done.`;
 // A result's text without its page snapshot (the "### Snapshot" section, inline or as a file link),
 // with put in its place.

@@ -92,7 +92,7 @@ export async function click({ page, arg, hooks, fail }) {
     const busy = await whileBusy(page, el, BUSY_MAX_MS, busyBefore);
     hooks.activity(`Clicked **${arg}**`);
     // Still at work when the time is up: the steps after it would act on a page in the middle of it.
-    if (busy.still) return fail(`Clicked "${arg}", and the page is still busy after ${Math.round(busy.ms / 1000)} s ("${busy.what.slice(0, 40)}"): nothing after it was done. Wait for what it shows when it's done (a waitFor step or browser_wait_for), then run the remaining steps.`);
+    if (busy.still) return fail(`Clicked "${arg}", and the page is still busy after ${Math.round(BUSY_MAX_MS / 1000)} s ("${busy.what.slice(0, 40)}"): nothing after it was done. Wait for what it shows when it's done (a waitFor step or browser_wait_for), then run the remaining steps.`);
   }
 }
 const BUSY_MAX_MS = 5000;

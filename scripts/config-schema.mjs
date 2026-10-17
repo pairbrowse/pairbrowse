@@ -27,6 +27,7 @@ export const CONFIG_SCHEMA = {
   participantName: { type: "string", nullable: true },
   maxTabs: { type: "integer", min: 1 },
   screenshots: { type: "boolean" },
+  phishingProtection: { type: "boolean" },
   downloadsDir: { type: "string", nullable: true },
   browserArgs: NAMES,
   browserSandbox: { type: "boolean" },

@@ -73,6 +73,8 @@ export const paths = {
   // Installed browsers: the native build (PairBrowse.app on macOS), the open build's macOS app.
   browser: join(SHARED, "browser"),
   nativeApp: join(SHARED, "browser", "PairBrowse.app"),
+  // The phishing list (daemon/phishing.mjs), shared by instances.
+  phishingList: join(SHARED, "lists", "phishing-domains.txt"),
   buildStamp: join(SHARED, "browser", "build.sha256"),
   // The engine pack, installed and checked.
   engine: join(SHARED, "engine"),
@@ -124,6 +126,7 @@ export const DEFAULT_CONFIG = {
   maxTabs: 20,
   // A small screenshot of the page with each result that changes it (false: text only).
   screenshots: true,
+  phishingProtection: true,
   // Where files a site hands over are saved (default: your Downloads folder).
   downloadsDir: null,
   // Extra browser switches, e.g. ["--lang=en-US"] (older name: chromeArgs, read while this is unset).

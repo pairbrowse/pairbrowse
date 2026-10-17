@@ -48,6 +48,7 @@ import { currentAccount, within, readJson, spend, pidAlive, urlHost } from "./ut
 import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum, requireDriver } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
+import { createPhishing } from "./daemon/phishing.mjs";
 import { contextCount } from "./daemon/exec-contexts.mjs";
 import { createHud, appColor, APP_COLORS } from "./daemon/hud.mjs";
 import { createPresence } from "./daemon/presence.mjs";
@@ -266,8 +267,10 @@ const popups = createPopups({
   // The check is done: take "Your turn" down again if it was this one.
   onCleared: () => { if (hud.badge().text === CHALLENGE_TURN) hud.setBadge("", "clear").catch(() => {}); handoffs.clear("check"); },
 });
+const phishing = createPhishing({ file: paths.phishingList, enabled: () => config.phishingProtection !== false, log }); // listed phishing sites stopped before they show
+phishing.start();
 const context = createContext({
-  personTabs,
+  personTabs, phishing,
   config, log, chromium: () => runtime().chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   // A person renamed the session: the timeline's last writes land first, then the goal log follows.
   beforeRename: () => { activityLog.flush(); return timeline.settled(); }, onRenamed: (from, to) => journal.renamed(from, to),

@@ -13,6 +13,7 @@ release check and VirusTotal reports. No release so far fixed a vulnerability wi
 
 **Changed**
 
+- **Phishing protection:** known phishing sites (Phishing.Database's list, checked on your computer) are stopped with a warning page before they show; Go back, or Continue anyway if you're sure. `phishingProtection: false` turns it off.
 - **Chrome Web Store installs in the PairBrowse browser** (builds with Web Store support): the store's button reads "Add to PairBrowse", and an extension installs when you press Add extension in the browser's own dialog. Installed extensions update themselves from the store.
 
 ## 0.16.4 (2026-10-17)

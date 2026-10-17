@@ -76,6 +76,7 @@
   closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more
   stay open), and Claude is told.
 - `screenshots`: `false` sends Claude text only, no screenshots. A result whose picture would be
+- `phishingProtection`: `true` (default) stops a top-level page on a site from Phishing.Database's list of active phishing domains (MIT licence; fetched every 6 hours, checked on this computer by host name, nothing about your browsing sent anywhere) and shows a warning with Go back and Continue anyway. `false` turns it off.
   byte for byte the last one says so in a line instead of carrying the image again.
 - `timeline`: `false` keeps no timeline (default `true`). With it on, the pictures already sent to
   agents are also kept in the browser session's timeline folder under `~/.pairbrowse`, at most 200

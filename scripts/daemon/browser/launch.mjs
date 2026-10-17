@@ -190,6 +190,7 @@ export function createLaunch(st, deps, api) {
     step("browser (fingerprint and launchPersistentContext inside)");
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
     await ctx.addInitScript({ content: hud.source });
+    deps.phishing?.watch(ctx); // listed phishing sites stopped before they show (daemon/phishing.mjs)
     // Never into the browser's own pages (its new tab page among them: plans/555 D1.3).
     for (const p of ctx.pages()) { api.adopt(p, ctx); if (!isBrowserPage(p.url())) hud.ensure(p); }
     // A tab can arrive already loaded (one the side panel opened at its address): its page

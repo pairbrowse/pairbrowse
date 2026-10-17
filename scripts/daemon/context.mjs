@@ -30,11 +30,11 @@ export { where };
 // personTabs: the person's own tabs (daemon/toolstab.mjs createPersonTabs), shared with serve.mjs:
 // openForPerson opens one, and no agent's fallback tab is ever one.
 export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, browserPagesOf = browserPagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, settingsSectionOf = settingsSectionIn, quietTabsOf = quietTabsIn, helperFor = async () => null,
-  beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null }) {
+  beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null, phishing = null }) {
   const st = createBrowserState({ session: currentSession(), pick: null }); // browser/state.mjs
   // What the browser's parts (browser/*.mjs, sessions/*.mjs) are given, and the functions they
   // read from each other when called (api).
-  const deps = { personTabs, config, log, chromium, driver, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers, notify,
+  const deps = { personTabs, config, log, chromium, driver, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers, notify, phishing,
     browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf, helperFor, beforeRename, onRenamed };
   const api = {};
   // Launching the browser and getContext() (browser/launch.mjs).

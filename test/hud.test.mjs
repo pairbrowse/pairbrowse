@@ -138,7 +138,7 @@ test("fields people edit are known as theirs; the bar's Pause button is a person
 test("a person from the other browser shows as a dot on the tab's icon, in the corner of any agent's spark", async () => {
   const { createHud } = await import("../scripts/daemon/hud.mjs");
   const icons = [];
-  const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => { if (args?.[3] === "spark") icons.push(args[2]); } };
+  const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => { if (args?.[3] === "spark") { icons.push(args[2]); return true; } } };
   const hud = createHud({ pages: async () => [page], participants: () => ["a"], labelOf: (id) => ({ a: "Claude a" })[id] || "", waiting: () => null, liveView: () => null, notify: () => {} });
   hud.setPersonMark(page, "#38bdf8");
   assert.equal(hud.tabIcon(page), "o#38bdf8");
@@ -155,6 +155,42 @@ test("a person from the other browser shows as a dot on the tab's icon, in the c
   assert.deepEqual(icons, ["o#38bdf8", "#4fd1e8 o#38bdf8", "o#38bdf8", "#e9763f o#38bdf8", "#e9763f", ""]);
   hud.setPersonMark(page, "not a color");
   assert.equal(hud.tabIcon(page), "");
+});
+
+test("a person's dot that didn't land on the tab's icon is written again at their next input, one that did isn't", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const icons = [];
+  let answer = "lost"; // the page's answer to the next icon write: lost (rejects), none (no page script), true
+  let injected = 0;
+  const page = {
+    isClosed: () => false, url: () => "https://example.com/",
+    evaluate: async (fn, args) => {
+      if (typeof fn === "string") { injected++; return undefined; } // the page script put in
+      if (args?.[3] !== "spark") return typeof fn === "function" && typeof args === "string" ? false : undefined; // ensure's check: not in yet
+      icons.push(args[2]);
+      const a = answer;
+      if (a === "lost") throw new Error("Execution context was destroyed");
+      return a === "none" ? undefined : true;
+    },
+  };
+  const hud = createHud({ pages: async () => [page], waiting: () => null, liveView: () => null, notify: () => {} });
+  const settle = () => new Promise((r) => setTimeout(r, 20));
+  hud.setPersonMark(page, "#38bdf8");
+  await settle();
+  assert.deepEqual(icons, ["o#38bdf8"]);
+  answer = "none";
+  hud.setPersonMark(page, "#38bdf8"); // the same dot, but the first write never landed: again
+  await settle();
+  assert.deepEqual(icons, ["o#38bdf8", "o#38bdf8"]);
+  assert.ok(injected >= 1, "no page script answered: it is put in for the next write");
+  answer = true;
+  hud.setPersonMark(page, "#38bdf8");
+  await settle();
+  assert.equal(icons.length, 3);
+  hud.setPersonMark(page, "#38bdf8"); // landed: nothing new
+  hud.setPersonMark(page, "#38bdf8");
+  await settle();
+  assert.equal(icons.length, 3);
 });
 
 test("the agent cursor moves like a hand, lands exactly on the target and rings once there", { skip: !runtime, timeout: 60_000 }, async () => {

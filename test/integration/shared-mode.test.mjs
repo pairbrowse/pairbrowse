@@ -314,7 +314,9 @@ async function run({ noDirect = false, noCapture = false, realTunnel = false, yo
     await until("the host's field has the text", async () => (await evaluate(host.call, "() => document.getElementById('i').value")) === "hi!", 15_000);
     // The host sees Alice in that tab: a dot in her pointer's color on its icon.
     const iconAt = "async () => { const l = [...document.querySelectorAll('link[rel~=\"icon\"]')].pop(); if (!l || !l.href.startsWith('data:image/png')) return ''; const img = new Image(); img.src = l.href; await img.decode(); const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(40, 40, 1, 1).data; return '#' + [d[0], d[1], d[2]].map((x) => x.toString(16).padStart(2, '0')).join(''); }";
-    await until("Alice's dot on the host's tab icon", async () => (await evaluate(host.call, iconAt)) === personColor("Alice"), 10_000);
+    let icon;
+    await until("Alice's dot on the host's tab icon", async () => (icon = await evaluate(host.call, iconAt)) === personColor("Alice"), 10_000)
+      .catch((e) => { throw new Error(`${e.message} (the icon's pixel there: ${JSON.stringify(icon)}; undefined: the page didn't answer)`); });
 
     stage = "a drag on the picture draws on the host's canvas";
     const a = toJoiner(0.2, 0.75), b = toJoiner(0.8, 0.8);

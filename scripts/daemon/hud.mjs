@@ -90,7 +90,25 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
   // With the agent's spark color the text goes as data ({ text, color }: the badge's left edge in
   // that color), never through the page's JSON.parse; PairBrowse's own statuses stay plain text.
   const applyBadge = (page) => quietly(page, badge.color ? { text: badge.text, color: badge.color } : badge.text, badge.kind);
-  const applySpark = (page, color) => quietly(page, color || "", "spark");
+  // What each tab's icon was last seen to take (its page script answered true for that value) and
+  // what is on its way there. A write that didn't land (a page that didn't answer, a document
+  // whose page script wasn't in yet) is written again at the next word about the tab (a person's
+  // input from the other browser), instead of leaving the icon wrong while nothing changes here.
+  const iconTaken = new WeakMap(); // tab -> the value its page script took
+  const iconSending = new WeakMap(); // tab -> the value being written
+  function applySpark(page, color) {
+    const value = color || "";
+    iconSending.set(page, value);
+    return call(page, value, "spark").catch(() => null).then((r) => {
+      if (iconSending.get(page) === value) iconSending.delete(page);
+      if (r === true) iconTaken.set(page, value);
+      else {
+        iconTaken.delete(page);
+        if (r === undefined && !page.isClosed()) ensure(page); // no page script answered: put it in for the next write
+      }
+    });
+  }
+  const iconStale = (page) => { const want = tabIcon(page); return iconTaken.get(page) !== want && iconSending.get(page) !== want; };
   // Agents in the other browser of a shared tab (a joined session): their spark shows on this
   // browser's copy too, in their color, unless an agent here holds the tab. Each one lasts
   // SHARED_SPARK_MS unless it's said again.
@@ -114,7 +132,7 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     if (!page || page.isClosed()) return;
     const before = tabIcon(page);
     if (/^#[0-9a-f]{6}$/i.test(color || "")) personMarks.set(page, { color, until: Date.now() + PERSON_MARK_MS }); else personMarks.delete(page);
-    if (tabIcon(page) !== before) applySpark(page, tabIcon(page));
+    if (tabIcon(page) !== before || iconStale(page)) applySpark(page, tabIcon(page));
   }
   setInterval(() => {
     for (const [page, s] of sharedSparks) if (Date.now() >= s.until) { sharedSparks.delete(page); if (!page.isClosed() && !sparkOn(page)) applySpark(page, tabIcon(page)); }
@@ -370,6 +388,7 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     // elsewhere no call is made.
     if (docked()) await quietly(page, JSON.stringify({ on: true }), "docked");
     if (badge.text) applyBadge(page);
+    iconTaken.delete(page); // a new document: its icon is the site's own until written
     if (tabIcon(page)) applySpark(page, tabIcon(page));
     applyBar(page);
   }

@@ -176,3 +176,16 @@ test("the Safe Storage key: this install's own file and no mock keychain, the Ke
     assert.ok(!has(o, "--pairbrowse-safe-storage-key-file") && !mockOff(o), "older builds keep the mock keychain");
   }
 });
+
+test("the Safe Storage key on Linux: the same file, the driver's --password-store=basic kept (594)", async () => {
+  const { paths } = await import("../scripts/paths.mjs");
+  const can = { kind: "pages", ownPages: true, safeStorageKeyFile: true };
+  const flag = `--pairbrowse-safe-storage-key-file=${paths.safeStorageKey}`;
+  const o = launchOptions({}, { shell: can, platform: "linux" });
+  assert.ok(o.args.includes(flag));
+  assert.ok(!o.ignoreDefaultArgs.some((a) => /password-store|mock-keychain/.test(a)), "the driver's defaults stay: no keyring prompt");
+  for (const shell of [{ ...can, safeStorageKeyFile: false }, EXTENSION_SHELL]) {
+    assert.ok(!launchOptions({}, { shell, platform: "linux" }).args.some((a) => a.startsWith("--pairbrowse-safe-storage-key-file")));
+  }
+  assert.ok(!launchOptions({}, { shell: can, platform: "win32" }).args.some((a) => a.startsWith("--pairbrowse-safe-storage-key-file")), "not on Windows");
+});

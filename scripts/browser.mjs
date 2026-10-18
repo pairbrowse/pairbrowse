@@ -360,9 +360,9 @@ export function launchArgs(config = {}, { firstRun = false, browserPages = false
 // null (the self-check has no live view). env, executablePath: as Playwright takes them. The Safe
 // Storage password: browser/safe-storage.mjs (a key file of this install's own, the Keychain, or
 // the driver's mock keychain).
-export function launchOptions(config = {}, { shell, firstRun = false, helper = null, env, executablePath, blankStart = false } = {}) {
+export function launchOptions(config = {}, { shell, firstRun = false, helper = null, env, executablePath, blankStart = false, platform = process.platform } = {}) {
   const ownPages = !!shell?.ownPages;
-  const storage = safeStorageFor(config, shell, paths.safeStorageKey);
+  const storage = safeStorageFor(config, shell, paths.safeStorageKey, platform);
   return {
     headless: false,
     env,

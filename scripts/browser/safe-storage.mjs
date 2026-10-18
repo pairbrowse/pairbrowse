@@ -7,6 +7,10 @@
 //   build, whose Keychain entry stays its own across updates.
 // - Otherwise (an older build, or a key file that fails a check): the driver's mock keychain, as
 //   before: no prompt, but the engine's fixed test password.
+// On Linux (a native build with safeStorageKeyFile): the same key file, the same checks, made here
+// when missing; the driver's --password-store=basic stays, so no desktop keyring is ever asked
+// (the browser's key-file provider comes before its fixed-key one). "keychain" means nothing there.
+// A file that fails a check: the browser's fixed key, as before. Windows: as before.
 import { lstatSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 
@@ -31,9 +35,12 @@ export function ensureSafeStorageKey(file) {
 }
 
 // { keyFile: path or null, mock: whether the driver's --use-mock-keychain stays } for a launch.
-// macOS only: patch 594 is the macOS key provider's; elsewhere the mock keychain stays.
+// macOS and Linux (patch 594's key providers); elsewhere the mock keychain stays. On Linux `mock`
+// stays true: the driver's defaults (--password-store=basic, and a mock keychain switch Linux
+// ignores) are left as they are.
 export function safeStorageFor(config, shell, file, platform = process.platform) {
-  if (platform !== "darwin" || !shell?.ownPages || !shell?.safeStorageKeyFile) return { keyFile: null, mock: true };
+  if (!["darwin", "linux"].includes(platform) || !shell?.ownPages || !shell?.safeStorageKeyFile) return { keyFile: null, mock: true };
+  if (platform === "linux") return { keyFile: ensureSafeStorageKey(file) ? file : null, mock: true };
   if (config?.safeStorage === "keychain") return { keyFile: null, mock: false };
   return ensureSafeStorageKey(file) ? { keyFile: file, mock: false } : { keyFile: null, mock: true };
 }

@@ -41,5 +41,15 @@ test("the choice: file, keychain, or the mock for builds without 594", () => {
   assert.deepEqual(safeStorageFor({ safeStorage: "keychain" }, can, file, "darwin"), { keyFile: null, mock: false });
   assert.deepEqual(safeStorageFor({}, { ownPages: true }, file), { keyFile: null, mock: true });
   assert.deepEqual(safeStorageFor({}, { safeStorageKeyFile: true }, file), { keyFile: null, mock: true });
-  for (const platform of ["linux", "win32"]) assert.deepEqual(safeStorageFor({}, can, file, platform), { keyFile: null, mock: true }, platform);
+  assert.deepEqual(safeStorageFor({}, can, file, "win32"), { keyFile: null, mock: true }, "not on Windows");
+});
+
+test("Linux: the same key file, the driver's defaults (--password-store=basic) left as they are", () => {
+  const file = join(dir(), "key");
+  assert.deepEqual(safeStorageFor({}, can, file, "linux"), { keyFile: file, mock: true });
+  assert.match(readFileSync(file, "utf8"), /^[A-Za-z0-9+/=]{24}\n$/);
+  assert.deepEqual(safeStorageFor({ safeStorage: "keychain" }, can, file, "linux"), { keyFile: file, mock: true }, "no keyring on Linux");
+  assert.deepEqual(safeStorageFor({}, { ownPages: true }, join(dir(), "key"), "linux"), { keyFile: null, mock: true }, "a build without 594");
+  const wide = join(dir(), "wide"); writeFileSync(wide, "abc\n"); chmodSync(wide, 0o644);
+  assert.deepEqual(safeStorageFor({}, can, wide, "linux"), { keyFile: null, mock: true }, "a bad file: the browser's fixed key, as before");
 });

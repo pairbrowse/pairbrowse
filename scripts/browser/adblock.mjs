@@ -7,21 +7,24 @@
 // remove it in the browser's extensions page, and a removal sticks (the browser records it and
 // never installs it from the entry again).
 //
-// macOS only: there the browser reads the profile's own "External Extensions" folder (the user
-// data directory's), one <id>.json per extension.
+// macOS and Linux (native builds): there the browser reads the profile's own "External Extensions"
+// folder (the user data directory's), one <id>.json per extension. Not on Windows.
 import { readFileSync, rmSync, existsSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { writeJsonAtomic } from "../util.mjs";
 
 export const AD_BLOCKER_ID = "ddkjiahejlhfcafbddmgiahcphecmpfh";
 export const STORE_UPDATE_URL = "https://clients2.google.com/service/update2/crx";
 
-// The CRX a build ships ({ path, version } from its manifest, path under Contents/Resources) as
-// { file, version } for the browser at executablePath (.../Contents/MacOS/<name>), or null when
-// the file isn't there.
-export function shippedCrx(crx, executablePath) {
-  if (!crx || typeof executablePath !== "string" || !executablePath) return null;
-  const file = join(dirname(dirname(executablePath)), "Resources", crx.path);
+// The CRX a build ships ({ path, version } from its manifest: on macOS a path under
+// Contents/Resources, on Linux one under the binary's own directory) as { file, version } for the
+// browser at executablePath (.../Contents/MacOS/<name>, or <dir>/<name> on Linux), or null when the
+// file isn't there or the path would leave that directory.
+export function shippedCrx(crx, executablePath, platform = process.platform) {
+  if (!crx || typeof crx.path !== "string" || typeof executablePath !== "string" || !executablePath) return null;
+  const base = resolve(platform === "linux" ? dirname(executablePath) : join(dirname(dirname(executablePath)), "Resources"));
+  const file = join(base, crx.path);
+  if (!resolve(file).startsWith(base + sep)) return null;
   try { if (!statSync(file).isFile()) return null; } catch { return null; }
   return { file, version: crx.version };
 }
@@ -35,7 +38,7 @@ const entryFor = (crx) => (crx
 // Writes (on) or removes (off) the ad blocker's entry in a profile (the user data directory).
 // With it off the browser removes the extension at its next start. Returns true when it changed.
 export function adBlockerFiles(profile, on, { id = AD_BLOCKER_ID, platform = process.platform, crx = null } = {}) {
-  if (platform !== "darwin") return false;
+  if (platform !== "darwin" && platform !== "linux") return false;
   const file = join(profile, "External Extensions", `${id}.json`);
   if (!on) {
     if (!existsSync(file)) return false;

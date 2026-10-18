@@ -63,11 +63,13 @@ export const quietTabs = (manifest) => Number.isInteger(manifest?.quietTabs) && 
 // (browser/adblock.mjs). Absent (older builds): no entry is written, an old one is removed.
 // The build manifest's `safeStorageKeyFile` field (1 and up, 594): the browser takes its Safe Storage
 // password from the owner-only file --pairbrowse-safe-storage-key-file names, reading the Keychain
-// only while that file is missing, so a new build signed without a Team ID doesn't ask again.
+// only while that file is missing, so a new build signed without a Team ID doesn't ask again. On
+// Linux the same file comes before the fixed key --password-store=basic gives.
 export const safeStorageKeyFile = (manifest) => Number.isInteger(manifest?.safeStorageKeyFile) && manifest.safeStorageKeyFile >= 1;
 export const adBlocker = (manifest) => Number.isInteger(manifest?.adBlocker) && manifest.adBlocker >= 1;
-// The build manifest's `adBlockerCrx` ({ path, version }): the ad blocker shipped in the app, a
-// CRX under Contents/Resources (a relative path inside it, no ".."), or null.
+// The build manifest's `adBlockerCrx` ({ path, version }): the ad blocker shipped with the build, a
+// CRX under Contents/Resources on macOS, under the binary's directory on Linux (a relative path
+// inside it, no ".."), or null.
 export function adBlockerCrx(manifest) {
   const crx = manifest?.adBlockerCrx;
   if (!crx || typeof crx.path !== "string" || typeof crx.version !== "string") return null;

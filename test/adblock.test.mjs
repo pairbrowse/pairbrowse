@@ -1,7 +1,7 @@
 // The ad blocker the PairBrowse browser ships (browser/adblock.mjs): on macOS, a profile gets uBlock
 // Origin Lite's External Extensions entry (the CRX inside the app, or for a build without one the
 // store's update URL) and nothing else (its extension records are the browser's, signed); off
-// removes the entry; no other platform gets files.
+// removes the entry; Linux native builds the same (the CRX next to the binary); Windows gets no files.
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -37,9 +37,13 @@ test("off removes the entry; the browser removes the extension at its next start
   assert.equal(adBlockerFiles(dir, false, mac), false);
 });
 
-test("only on macOS", () => {
+test("macOS and Linux, not Windows", () => {
+  const lin = profile();
+  assert.equal(adBlockerFiles(lin, true, { platform: "linux" }), true);
+  assert.deepEqual(JSON.parse(readFileSync(entry(lin), "utf8")), { external_update_url: STORE_UPDATE_URL });
+  assert.equal(adBlockerFiles(lin, false, { platform: "linux" }), true);
   const dir = profile();
-  for (const platform of ["linux", "win32"]) assert.equal(adBlockerFiles(dir, true, { platform }), false);
+  assert.equal(adBlockerFiles(dir, true, { platform: "win32" }), false);
   assert.equal(existsSync(join(dir, "External Extensions")), false);
   assert.equal(existsSync(secureFile(dir)), false);
 });
@@ -73,4 +77,21 @@ test("the CRX the app ships: its absolute path and version, the store's, else th
   assert.equal(adBlockerFiles(dir, true, { ...mac, crx }), false);
   assert.equal(adBlockerFiles(dir, true, mac), true, "a build without it: the store's update URL");
   assert.deepEqual(JSON.parse(readFileSync(entry(dir), "utf8")), { external_update_url: STORE_UPDATE_URL });
+});
+
+test("Linux: the CRX under the binary's own directory, never outside it", () => {
+  const root = profile();
+  const exe = join(root, "pairbrowse", "pairbrowse");
+  const rel = "PairBrowse-Extensions/uBlock-Origin-Lite.crx";
+  assert.equal(shippedCrx({ path: rel, version: "1.2" }, exe, "linux"), null, "no file there");
+  mkdirSync(join(root, "pairbrowse", "PairBrowse-Extensions"), { recursive: true });
+  writeFileSync(join(root, "pairbrowse", rel), "crx");
+  const crx = shippedCrx({ path: rel, version: "1.2" }, exe, "linux");
+  assert.deepEqual(crx, { file: join(root, "pairbrowse", rel), version: "1.2" });
+  assert.equal(shippedCrx({ path: rel, version: "1.2" }, exe, "darwin"), null, "the macOS layout looks in Contents/Resources");
+  writeFileSync(join(root, "outside.crx"), "crx");
+  assert.equal(shippedCrx({ path: "../outside.crx", version: "1.2" }, exe, "linux"), null, "no leaving the install directory");
+  const dir = profile();
+  assert.equal(adBlockerFiles(dir, true, { platform: "linux", crx }), true);
+  assert.deepEqual(JSON.parse(readFileSync(entry(dir), "utf8")), { external_crx: crx.file, external_version: "1.2", is_from_webstore: true });
 });

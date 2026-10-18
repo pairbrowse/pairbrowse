@@ -55,8 +55,8 @@ export const paths = {
   log: join(HOME, "log"),
   runtime: join(SHARED, "runtime"),
   daemonLog: join(HOME, "daemon.log"),
-  // The PairBrowse browser's Safe Storage password (browser.mjs launchOptions, native patch 594),
-  // owner-only, written by the browser itself.
+  // The PairBrowse browser's Safe Storage password (browser/safe-storage.mjs, native patch 594),
+  // owner-only, made by the helper once.
   safeStorageKey: join(HOME, "safe-storage-key"),
   // Diagnostics bundles (scripts/diagnostics-bundle.mjs), when no other folder is given.
   diagnostics: join(HOME, "diagnostics"),

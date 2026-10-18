@@ -1,5 +1,5 @@
 // Where the PairBrowse browser's Safe Storage password (the key to its cookies and saved data on
-// disk) comes from, per launch (config "safeStorage"):
+// disk) comes from, per launch on macOS (config "safeStorage"):
 // - "file" (default), a build with patch 594 (manifest safeStorageKeyFile): a random password in
 //   the owner-only file ~/.pairbrowse/safe-storage-key, made here once, and the driver's mock
 //   keychain left off. Never the Keychain, so never a prompt, and a key of this install's own.
@@ -31,8 +31,9 @@ export function ensureSafeStorageKey(file) {
 }
 
 // { keyFile: path or null, mock: whether the driver's --use-mock-keychain stays } for a launch.
-export function safeStorageFor(config, shell, file) {
-  if (!shell?.ownPages || !shell?.safeStorageKeyFile) return { keyFile: null, mock: true };
+// macOS only: patch 594 is the macOS key provider's; elsewhere the mock keychain stays.
+export function safeStorageFor(config, shell, file, platform = process.platform) {
+  if (platform !== "darwin" || !shell?.ownPages || !shell?.safeStorageKeyFile) return { keyFile: null, mock: true };
   if (config?.safeStorage === "keychain") return { keyFile: null, mock: false };
   return ensureSafeStorageKey(file) ? { keyFile: file, mock: false } : { keyFile: null, mock: true };
 }

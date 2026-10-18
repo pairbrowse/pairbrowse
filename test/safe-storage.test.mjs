@@ -30,15 +30,16 @@ test("a file the browser wouldn't use keeps the mock keychain and is left alone"
   const link = join(d, "link"); symlinkSync(target, link);
   for (const f of [wide, bad, link]) {
     assert.equal(ensureSafeStorageKey(f), false, f);
-    assert.deepEqual(safeStorageFor({}, can, f), { keyFile: null, mock: true });
+    assert.deepEqual(safeStorageFor({}, can, f, "darwin"), { keyFile: null, mock: true });
   }
   assert.equal(readFileSync(bad, "utf8"), "not base64!\n");
 });
 
 test("the choice: file, keychain, or the mock for builds without 594", () => {
   const file = join(dir(), "key");
-  assert.deepEqual(safeStorageFor({}, can, file), { keyFile: file, mock: false });
-  assert.deepEqual(safeStorageFor({ safeStorage: "keychain" }, can, file), { keyFile: null, mock: false });
+  assert.deepEqual(safeStorageFor({}, can, file, "darwin"), { keyFile: file, mock: false });
+  assert.deepEqual(safeStorageFor({ safeStorage: "keychain" }, can, file, "darwin"), { keyFile: null, mock: false });
   assert.deepEqual(safeStorageFor({}, { ownPages: true }, file), { keyFile: null, mock: true });
   assert.deepEqual(safeStorageFor({}, { safeStorageKeyFile: true }, file), { keyFile: null, mock: true });
+  for (const platform of ["linux", "win32"]) assert.deepEqual(safeStorageFor({}, can, file, platform), { keyFile: null, mock: true }, platform);
 });

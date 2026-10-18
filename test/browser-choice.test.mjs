@@ -153,7 +153,7 @@ test("a launch keeps its choice to itself, and a native profile alone is somethi
   await context.close();
 });
 
-test("the Safe Storage key: this install's own file and no mock keychain, the Keychain, or the mock (594)", async () => {
+test("the Safe Storage key: this install's own file and no mock keychain, the Keychain, or the mock (594)", { skip: process.platform !== "darwin" && "macOS only" }, async () => {
   const { paths } = await import("../scripts/paths.mjs");
   const { rmSync, statSync, readFileSync } = await import("node:fs");
   rmSync(paths.safeStorageKey, { force: true });

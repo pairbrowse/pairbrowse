@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
   "label": "VirusTotal",
-  "message": "scan pending",
-  "color": "lightgrey"
+  "message": "0 detections · 4 files",
+  "color": "brightgreen"
 }

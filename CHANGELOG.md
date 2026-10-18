@@ -5,7 +5,9 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
-## Unreleased
+## 0.16.7 (2026-10-18)
+
+The PairBrowse browser's stored data gets a key of its own, and its nav row reads search, extensions, agent panel (browser build 150.0.7871.114-4).
 
 **Security**
 
@@ -13,7 +15,7 @@ release check and VirusTotal reports. No release so far fixed a vulnerability wi
 
 **Changed**
 
-- **Search, extensions, agent panel:** in the PairBrowse browser's nav row the extensions button now sits between search and the agent panel's sparkle, the sparkle last, all three on one line, 40 px apart.
+- **Search, extensions, agent panel:** in the PairBrowse browser's nav row (build 150.0.7871.114-4) the extensions button now sits between search and the agent panel's sparkle, the sparkle last, all three on one line, 40 px apart.
 
 ## 0.16.6 (2026-10-18)
 

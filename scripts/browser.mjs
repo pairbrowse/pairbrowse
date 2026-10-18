@@ -27,6 +27,7 @@ import { withInstallLock } from "./install-lock.mjs";
 import { layoutFrom } from "./liveview/layout.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
 import { adBlockerFiles } from "./browser/adblock.mjs";
+import { safeStorageFor } from "./browser/safe-storage.mjs";
 
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -356,20 +357,19 @@ export function launchArgs(config = {}, { firstRun = false, browserPages = false
 // (PairBrowse's new tab page), not the driver's about:blank (plans/555 D1.2), unless blankStart
 // (the self-check, which drives its first tab to a page of its own). firstRun: a new profile
 // (prepareProfile). helper: { origin, keyFile, captureKeyFile? } for the browser's own pages, or
-// null (the self-check has no live view). env, executablePath: as Playwright takes them. A build
-// whose Safe Storage password can come from a file (594) gets paths.safeStorageKey unless config's
-// safeStorage is "keychain": builds signed without a Team ID would ask for the Keychain item again
-// at each new build.
+// null (the self-check has no live view). env, executablePath: as Playwright takes them. The Safe
+// Storage password: browser/safe-storage.mjs (a key file of this install's own, the Keychain, or
+// the driver's mock keychain).
 export function launchOptions(config = {}, { shell, firstRun = false, helper = null, env, executablePath, blankStart = false } = {}) {
   const ownPages = !!shell?.ownPages;
-  const safeStorageKeyFile = ownPages && shell?.safeStorageKeyFile && config.safeStorage !== "keychain" ? paths.safeStorageKey : null;
+  const storage = safeStorageFor(config, shell, paths.safeStorageKey);
   return {
     headless: false,
     env,
     executablePath,
     viewport: null,
-    ignoreDefaultArgs: ownPages && !blankStart ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"],
-    args: launchArgs(config, { firstRun, browserPages: ownPages, helper, safeStorageKeyFile }),
+    ignoreDefaultArgs: [...(ownPages && !blankStart ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"]), ...(storage.mock ? [] : ["--use-mock-keychain"])],
+    args: launchArgs(config, { firstRun, browserPages: ownPages, helper, safeStorageKeyFile: storage.keyFile }),
   };
 }
 

@@ -5,6 +5,16 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased
+
+**Security**
+
+- **Your browser's stored data gets a key of its own.** Cookies and saved data on disk were locked with the browser driver's fixed test password; the PairBrowse browser (build 150.0.7871.114-3 and later) now uses a random key made for your install, kept owner-only in `~/.pairbrowse`, and still never asks for the Keychain. The first start with it signs you out of the sites you were signed into, once. `safeStorage: "keychain"` uses the macOS Keychain instead.
+
+**Changed**
+
+- **Search, extensions, agent panel:** in the PairBrowse browser's nav row the extensions button now sits between search and the agent panel's sparkle, the sparkle last, all three on one line, 40 px apart.
+
 ## 0.16.6 (2026-10-18)
 
 The PairBrowse browser updates again when the helper runs on PairBrowse Agent.

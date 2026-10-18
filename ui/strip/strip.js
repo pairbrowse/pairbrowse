@@ -1,6 +1,7 @@
 // The browser build's top strip (DESIGN.md B2). One document, three hosts by location hash: the
 // tab row (no hash; 47 px since 580, 53 before), the nav fragments beside the native address bar
-// (#nav-left, #nav-right), and the Share card alone (#share) for the browser's Share bubble, which
+// (#nav-left, #nav-right) and at the nav row's end after the extensions button (#nav-end: the
+// sparkle), and the Share card alone (#share) for the browser's Share bubble, which
 // the row's slot cannot draw. The logo and wordmark are a static brand mark: the sessions' door is the left
 // dock's Sessions row. Tabs, owners and the dock layout come from window.pairbrowse
 // (the browser's own API); people and sharing from the helper's event stream, and the
@@ -46,12 +47,12 @@ let shownActive = null, shownWidth = -1, wheelOn = false, revealed = false;
 const SPARE = 24; // px kept clear beside the active tab: the edge fade's width
 
 // ---- modes ----
-const MODES = new Set(["row", "nav-left", "nav-right", "share"]);
+const MODES = new Set(["row", "nav-left", "nav-right", "nav-end", "share"]);
 const BUBBLES = new Set(["share"]);
 let mode = "";
 const bubble = () => BUBBLES.has(mode);
 // The nav fragments open no stream: a page per window, and nothing on them reads the helper.
-const navMode = () => mode === "nav-left" || mode === "nav-right";
+const navMode = () => mode === "nav-left" || mode === "nav-right" || mode === "nav-end";
 let stream = null; // the shared helper stream (common.js), once start() has run outside a nav mode
 let started = false, streamAsked = false;
 
@@ -271,6 +272,7 @@ function applyMode() {
   $("row").hidden = !(mode === "row" || BUBBLES.has(mode));
   $("nav-left").hidden = mode !== "nav-left";
   $("nav-right").hidden = mode !== "nav-right";
+  $("nav-end").hidden = mode !== "nav-end";
   if (BUBBLES.has(mode)) openBubble(mode);
   slotControls();
   ensureStream();

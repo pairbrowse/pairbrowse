@@ -8,9 +8,10 @@
 <link rel="stylesheet" href="../base.css">
 <link rel="stylesheet" href="strip.css">
 </head>
-<!-- The browser build's top strip: the tab row (no hash), the two nav fragments beside the native
-     address bar (#nav-left, #nav-right) and the Share card alone (#share) for the browser's Share
-     bubble. One document; the hash picks what shows. -->
+<!-- The browser build's top strip: the tab row (no hash), the nav fragments beside the native
+     address bar (#nav-left, #nav-right) and at the row's end, after the extensions button (#nav-end),
+     and the Share card alone (#share) for the browser's Share bubble. One document; the hash picks
+     what shows. -->
 <body data-s="connecting" data-mode="row">
   <header id="row" class="row">
     <!-- The brand mark: the logo and the wordmark, static (no control: the sessions' door is the
@@ -71,6 +72,9 @@
     <button id="find" type="button" disabled aria-label="Find in page (⌘F)">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.2 10.2 3.3 3.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </button>
+  </nav>
+
+  <nav id="nav-end" class="nav" aria-label="Agent panel" hidden>
     <button id="sparkle" type="button" aria-pressed="false" aria-label="Agent panel">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c.5 3.2 1.8 4.6 5.2 6.2-3.4 1.6-4.7 3-5.2 6.2-.5-3.2-1.8-4.6-5.2-6.2 3.4-1.6 4.7-3 5.2-6.2Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
     </button>

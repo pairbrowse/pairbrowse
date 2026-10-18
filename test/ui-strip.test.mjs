@@ -737,6 +737,13 @@ describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ 
   assert.deepEqual(await callsOf(shim, "windows", "find"), [[1]]);
   assert.equal(right.pressed, "true");
   assert.match(right.names[0], /^Find in page \((⌘F|Ctrl\+F)\)$/);
+  assert.equal(await inPage(() => document.getElementById("sparkle").checkVisibility()), false, "the sparkle is the row's end, not here");
+
+  // #nav-end: the sparkle alone, after the browser's extensions button.
+  await go("#nav-end");
+  await until("nav-end", () => document.body.dataset.mode === "nav-end");
+  assert.deepEqual(await inPage(() => ["row", "nav-left", "nav-right", "nav-end"].map((id) => document.getElementById(id).checkVisibility())), [false, false, false, true]);
+  assert.equal(await inPage(() => document.getElementById("sparkle").getAttribute("aria-pressed")), "true");
   await page.click("#sparkle");
   await until("sparkle off", () => document.getElementById("sparkle").getAttribute("aria-pressed") === "false");
   assert.equal((await callsOf(shim, "layout", "set")).at(-1)[0].right, 0);
@@ -822,11 +829,11 @@ describe("in the 47 px row no popover opens under the row", () => pageTest("stri
   assert.deepEqual(await inPage(under), ["menu"]);
 }));
 
-// The nav fragments sit in the shell's nav groups (525: 118 x 32 left, 76 x 32 right, in the 42 px
+// The nav fragments sit in the shell's nav groups (525: 118 x 32 left, 45 x 32 right, 39 x 32 at the end, in the 42 px
 // nav row): the fragment is exactly as tall as its slot, its buttons centered (no hover square cut
 // off) at the mockup's places, and the page painted in the nav row's own color (--column).
 describe("the nav fragments fit their 32 px slots", () => pageTest("strip", { viewport: { width: 118, height: 32 } }, async ({ page, inPage, until }) => {
-  for (const [hash, width] of [["#nav-left", 118], ["#nav-right", 76]]) {
+  for (const [hash, width] of [["#nav-left", 118], ["#nav-right", 45], ["#nav-end", 39]]) {
     await page.setViewportSize({ width, height: 32 });
     await inPage((h) => { location.hash = h; }, hash);
     await until(hash, (h) => document.body.dataset.mode === h.slice(1), hash);
@@ -848,13 +855,12 @@ describe("the nav fragments fit their 32 px slots", () => pageTest("strip", { vi
     for (const bottom of box.bottoms) assert.equal(bottom, 30, `${hash}: nothing cut off`);
     for (const right of box.rights) assert.ok(right <= width, `${hash}: inside the slot`);
     // The mockup's places: back, forward and reload 41 px apart from 5 px in (centres 19, 60, 101);
-    // search 8 px after the address bar, the sparkle 40 px after it (the star is the browser's).
+    // search 8 px after the address bar (centre 22 of 45: the browser's 28 px extensions button, 3 px
+    // past the slot's end, is 40 px on), the sparkle 11 px into the end slot (40 px after it), flush right.
     const centres = box.lefts.map((l, i) => Math.round((l + box.rights[i]) / 2));
     if (hash === "#nav-left") assert.deepEqual(centres, [19, 60, 101], `${hash}: the mockup's places`);
-    else {
-      assert.equal(Math.round(box.lefts[0]), 8, `${hash}: search 8 px from the omnibox`);
-      for (let i = 1; i < centres.length; i++) assert.equal(centres[i] - centres[i - 1], 40, `${hash}: 40 px apart`);
-    }
+    else if (hash === "#nav-right") assert.deepEqual(centres, [22], `${hash}: search 8 px from the omnibox`);
+    else assert.deepEqual([centres, Math.round(box.rights[0])], [[25], 39], `${hash}: the sparkle, the row's last`);
   }
 }));
 

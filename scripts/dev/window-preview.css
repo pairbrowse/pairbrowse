@@ -13,7 +13,10 @@ iframe { display: block; border: 0; }
 .lights i:nth-child(3) { background: #28C840; }
 .nav { position: absolute; left: var(--left); right: var(--right); top: 47px; height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 8px 0 14px; box-sizing: border-box; background: var(--column); }
 .nav iframe { flex: none; width: 118px; height: 32px; }
-.nav iframe#nav-right { width: 76px; }
+.nav iframe#nav-right { width: 45px; }
+.nav iframe#nav-end { width: 39px; }
+.nav .ext { flex: none; display: grid; place-items: center; width: 28px; height: 28px; margin: 0 -3px; color: var(--muted); } /* the browser's extensions button, drawn by the browser itself */
+.nav .ext svg { width: 18px; height: 18px; }
 .omni { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 14px; border: 1px solid var(--edge-input); border-radius: 10px; background: var(--panel); font: 13px var(--sans); }
 .lock { flex: none; width: 14px; height: 14px; color: var(--ok); }
 .host { color: var(--ink); }

@@ -66,7 +66,7 @@ test("window preview: geometry, regions and the scene", () => {
   // the mockup's sentence (the scene is the mockup's data; the card shows the reason it is given)
   assert.equal(fx.helper.approvals.pending[0].reason, "This will create a new Notion workspace with the information above.");
   assert.equal(fx.helper.session.storage.limit, 1e10, "the Storage row's figure, in the scene only");
-  assert.deepEqual(HOST_GROUPS.localhost, ["nav-left", "nav-right", "timeline"]);
+  assert.deepEqual(HOST_GROUPS.localhost, ["nav-left", "nav-right", "nav-end", "timeline"]);
   assert.equal(HOST_GROUPS["127.0.0.1"].length, 4);
   assert.deepEqual([...HOST_GROUPS["127.0.0.1"], ...HOST_GROUPS.localhost].sort(), [...FRAMES].sort());
 

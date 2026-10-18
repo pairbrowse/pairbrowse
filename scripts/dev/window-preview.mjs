@@ -44,8 +44,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The frames each helper host name serves, by default; --one-host puts them all on 127.0.0.1. The
 // shared stream means one event stream per helper host (the nav fragments open none).
-export const HOST_GROUPS = { "127.0.0.1": ["strip", "left", "right", "approve"], localhost: ["nav-left", "nav-right", "timeline"] };
-export const FRAMES = ["strip", "nav-left", "nav-right", "left", "right", "timeline", "approve"];
+export const HOST_GROUPS = { "127.0.0.1": ["strip", "left", "right", "approve"], localhost: ["nav-left", "nav-right", "nav-end", "timeline"] };
+export const FRAMES = ["strip", "nav-left", "nav-right", "nav-end", "left", "right", "timeline", "approve"];
 export const REGIONS = ["strip", "nav", "left", "right", "timeline", "approval"];
 // The mockup's areas in mockup.png pixels (measured by eye).
 export const MOCKUP = {

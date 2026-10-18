@@ -153,12 +153,26 @@ test("a launch keeps its choice to itself, and a native profile alone is somethi
   await context.close();
 });
 
-test("the Safe Storage key file: only for a build that can (594), unless config says keychain", async () => {
+test("the Safe Storage key: this install's own file and no mock keychain, the Keychain, or the mock (594)", async () => {
   const { paths } = await import("../scripts/paths.mjs");
+  const { rmSync, statSync, readFileSync } = await import("node:fs");
+  rmSync(paths.safeStorageKey, { force: true });
   const flag = `--pairbrowse-safe-storage-key-file=${paths.safeStorageKey}`;
+  const has = (o, a) => o.args.some((x) => x.startsWith(a));
+  const mockOff = (o) => o.ignoreDefaultArgs.includes("--use-mock-keychain");
   const can = { kind: "pages", ownPages: true, safeStorageKeyFile: true };
-  assert.ok(launchOptions({}, { shell: can }).args.includes(flag));
-  assert.ok(!launchOptions({ safeStorage: "keychain" }, { shell: can }).args.some((a) => a.startsWith("--pairbrowse-safe-storage-key-file")));
-  assert.ok(!launchOptions({}, { shell: { ...can, safeStorageKeyFile: false } }).args.some((a) => a.startsWith("--pairbrowse-safe-storage-key-file")));
-  assert.ok(!launchOptions({}, { shell: EXTENSION_SHELL }).args.some((a) => a.startsWith("--pairbrowse-safe-storage-key-file")));
+  const file = launchOptions({}, { shell: can });
+  assert.ok(file.args.includes(flag));
+  assert.ok(mockOff(file), "the driver's mock keychain left off");
+  assert.equal(statSync(paths.safeStorageKey).mode & 0o7777, 0o600);
+  const key = readFileSync(paths.safeStorageKey, "utf8");
+  assert.match(key, /^[A-Za-z0-9+/=]{24}\n$/);
+  launchOptions({}, { shell: can });
+  assert.equal(readFileSync(paths.safeStorageKey, "utf8"), key, "made once, never again");
+  const keychain = launchOptions({ safeStorage: "keychain" }, { shell: can });
+  assert.ok(!has(keychain, "--pairbrowse-safe-storage-key-file") && mockOff(keychain), "the Keychain: no file, no mock");
+  for (const shell of [{ ...can, safeStorageKeyFile: false }, EXTENSION_SHELL]) {
+    const o = launchOptions({}, { shell });
+    assert.ok(!has(o, "--pairbrowse-safe-storage-key-file") && !mockOff(o), "older builds keep the mock keychain");
+  }
 });

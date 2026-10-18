@@ -4,7 +4,7 @@
 const q = new URLSearchParams(location.search);
 if (q.get("rail") === "1") document.documentElement.classList.add("rail");
 const oneHost = q.get("onehost") === "1";
-const LOCALHOST = new Set(["nav-left", "nav-right", "timeline"]);
+const LOCALHOST = new Set(["nav-left", "nav-right", "nav-end", "timeline"]);
 for (const frame of document.querySelectorAll("iframe[data-src]")) {
   const [path, hash = ""] = frame.dataset.src.split("#");
   frame.src = path + (!oneHost && LOCALHOST.has(frame.id) ? "?via=localhost" : "") + (hash ? "#" + hash : "");

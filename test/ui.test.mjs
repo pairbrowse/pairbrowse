@@ -223,7 +223,7 @@ test("every visible page has a review fixture and a shot", () => {
   assert.deepEqual(JSON.parse(read(join(look, "settings.json"))), JSON.parse(read(join(root, "test", "fixtures", "ui-settings.json"))));
   for (const shot of SHOTS) {
     assert.ok(Number.isInteger(shot.width) && shot.width > 0 && Number.isInteger(shot.height) && shot.height > 0, `${shot.name}: a size`);
-    if (shot.hash !== undefined) assert.ok(["nav-left", "nav-right", "share"].includes(shot.hash), `${shot.name}: one of the strip's modes`);
+    if (shot.hash !== undefined) assert.ok(["nav-left", "nav-right", "nav-end", "share"].includes(shot.hash), `${shot.name}: one of the strip's modes`);
   }
 });
 
@@ -296,7 +296,7 @@ test("the strip's nav fragments never connect", () => {
   const ensure = js.match(/async function ensureStream\([^)]*\) \{([\s\S]*?)\n\}/);
   assert.ok(ensure, "ensureStream guards the stream");
   assert.match(ensure[1], /^\s*if \(navMode\(\)\) \{/, "the nav check comes first");
-  assert.match(js, /const navMode = \(\) => mode === "nav-left" \|\| mode === "nav-right";/);
+  assert.match(js, /const navMode = \(\) => mode === "nav-left" \|\| mode === "nav-right" \|\| mode === "nav-end";/);
   assert.equal([...js.matchAll(/\bconnect\(/g)].length, 2, "connect is defined once and called only from ensureStream");
   assert.match(ensure[1], /connect\(url\)/);
 });
@@ -811,7 +811,7 @@ test("seven pages on one origin share one event stream, which passes on when its
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   try {
     const context = await browser.newContext({ viewport: { width: 1536, height: 900 } });
-    const NAMES = ["strip", "strip#nav-left", "strip#nav-right", "left", "right", "timeline", "approve"];
+    const NAMES = ["strip", "strip#nav-left", "strip#nav-right", "strip#nav-end", "left", "right", "timeline", "approve"];
     const open = {};
     for (const n of NAMES) {
       const [page, hash] = n.split("#");
@@ -822,7 +822,7 @@ test("seven pages on one origin share one event stream, which passes on when its
     const ev = (n, fn, arg) => inPage(open[n], fn, arg);
     const until = async (what, fn) => { for (let i = 0; i < 120; i++) { if (await fn()) return; await sleep(50); } assert.fail(`timed out waiting for ${what}`); };
     const STREAM_PAGES = ["strip", "left", "right", "timeline", "approve"];
-    const NAV = ["strip#nav-left", "strip#nav-right"];
+    const NAV = ["strip#nav-left", "strip#nav-right", "strip#nav-end"];
     for (const n of STREAM_PAGES) await until(`${n} live`, () => ev(n, () => document.body.dataset.s === "live"));
     for (const n of NAV) assert.equal(await ev(n, () => document.body.dataset.s), undefined, `${n} has no state attribute`);
     await sleep(300);
@@ -830,7 +830,7 @@ test("seven pages on one origin share one event stream, which passes on when its
     const before = await live();
     assert.equal(helper.streams.size, 1, "one stream to the helper");
     assert.equal(helper.gets.filter((r) => r === "events").length, 1, "one events request");
-    assert.equal(Object.values(before).reduce((n, l) => n + l.eventSources, 0), 1, "one EventSource across the seven pages");
+    assert.equal(Object.values(before).reduce((n, l) => n + l.eventSources, 0), 1, "one EventSource across the eight pages");
     for (const n of NAV) assert.equal(before[n].eventSources, 0, `${n} opens no stream`);
     assert.deepEqual([...helper.streams].map((s) => s.panel), [true], "never a viewer stream");
 

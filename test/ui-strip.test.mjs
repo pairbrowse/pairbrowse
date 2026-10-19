@@ -393,6 +393,29 @@ describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, sh
     tag: "DIV", role: null, tabIndex: -1, label: null, expanded: null, controls: 0, svgs: 0, oldSwitch: false,
     src: "../logo.svg", alt: "", size: [28, 28], word: "PairBrowse", bg: undefined, cursor: undefined, logoInset: 2, tabGap: 25,
   });
+  // Where the logo sits on each platform: on Linux right above the left rail's icons (the rail is
+  // 44 px wide from the window's left edge, its icons centred: the logo's centre at 22 px, the
+  // wordmark after it, clear of the first tab); macOS keeps its room for the traffic lights.
+  const brandAt = (platform, left = "rail") => inPage(([p, l]) => {
+    document.body.dataset.platform = p;
+    if (l) document.body.dataset.left = l; else delete document.body.dataset.left;
+    const img = document.querySelector("#brand img").getBoundingClientRect();
+    const word = document.createRange();
+    word.selectNodeContents(document.querySelector("#brand .wordmark"));
+    return { centre: img.left + img.width / 2, left: img.left, wordRight: word.getBoundingClientRect().right, tab: document.querySelector("#tabs li").getBoundingClientRect().left };
+  }, [platform, left]);
+  const shown = await inPage(() => [document.body.dataset.platform, document.body.dataset.left]);
+  const linux = await brandAt("linux");
+  assert.equal(linux.centre, 22, "on Linux the logo's centre is the rail icons' centre");
+  assert.ok(linux.wordRight + 8 <= linux.tab, `the wordmark (to ${linux.wordRight}) stays clear of the first tab (${linux.tab})`);
+  assert.equal((await brandAt("linux", "hidden")).centre, 22, "a hidden dock: where the rail would be");
+  const open = await brandAt("linux", "open");
+  assert.equal(open.centre, 28, "the open dock's icons sit further in: 28 px");
+  assert.ok(open.wordRight + 8 <= open.tab, `the wordmark (to ${open.wordRight}) clear of the first tab (${open.tab})`);
+  assert.equal((await brandAt("mac")).left, 94, "macOS: unchanged, after the traffic lights");
+  assert.equal((await brandAt("mac", "open")).left, 94, "macOS: the dock's state changes nothing");
+  assert.equal((await brandAt("other")).left, 14, "elsewhere: unchanged");
+  await brandAt(...shown);
   // One centre line for the row (the user, 2026-10-15: the tabs on the window buttons' line, a
   // tab's contents centred in the tab): the logo, the wordmark's text, the first tab's icon, title
   // and close, the + and the right end's controls share 27 px from the top, where the shell centres

@@ -15,6 +15,14 @@ svg { flex: none; }
 /* ---- the tab row ---- */
 .row { position: relative; display: flex; align-items: stretch; gap: 8px; height: var(--tab-row); padding: 0 12px; -webkit-app-region: drag; } /* mockup */
 body[data-platform="mac"] .row { padding-left: 92px; } /* the traffic lights end at 74: 18 px clear space */
+/* Linux has no window buttons on the left (they sit at the row's right end, 525): the logo stands
+   right above the left dock's icons, its centre on theirs. The rail (and a hidden dock) is
+   kRailWidth (500) wide from the window's left edge like this page, its icons centred in it: the
+   logo (28 px, after the brand's 2 px padding) starts at (rail - 28) / 2, centre 22 px. In the open
+   dock the icons' centre is 28 px (its gutter, inset and the row's padding, ui/left), where the
+   row's own 12 px padding puts the logo. */
+body[data-platform="linux"] { --rail-width: 44px; }
+body[data-platform="linux"]:not([data-left="open"]) .row { padding-left: calc((var(--rail-width) - 28px) / 2 - 2px); }
 /* In the browser the row ends 8 px before the engine's own ⋯ menu button, which the shell lays out at
    the tab row's right end beside this page (525). */
 body[data-host="native"] .row { padding-right: 8px; }

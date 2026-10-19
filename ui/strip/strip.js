@@ -18,7 +18,11 @@ import { helperAddress, onHelperAddress, postJson } from "../helper.js";
 
 const pb = window.pairbrowse || null;
 const mac = /mac/i.test(navigator.platform);
-document.body.dataset.platform = mac ? "mac" : "other";
+document.body.dataset.platform = mac ? "mac" : /linux/i.test(navigator.platform) ? "linux" : "other";
+// The left dock's state (DockState: hidden, rail, open), for where the brand mark stands on Linux:
+// over the dock's icons, which sit further in when the dock is open (strip.css).
+const LEFT_DOCK = ["hidden", "rail", "open"];
+const drawLeft = (left) => { document.body.dataset.left = typeof left === "string" ? left : LEFT_DOCK[left] || "rail"; };
 document.body.dataset.native = String(!!pb);
 // Served by the browser itself (chrome://pairbrowse.top-chrome), with or without the API.
 const nativeHost = servedByBrowser();
@@ -660,7 +664,7 @@ function connect(url) {
   on("board", (b) => { lastBoard = { people: Array.isArray(b?.people) ? b.people : [] }; drawAvatars(); });
   if (!pb) {
     on("tabs", renderFallback);
-    on("layout", (l) => drawSparkle(l?.right === "open"));
+    on("layout", (l) => { drawSparkle(l?.right === "open"); if (l?.left) drawLeft(l.left); });
   } else if (!bubble()) {
     // The row writes the owners and reports the order; a bubble's page (the same strip) does not.
     on("agent-tabs", ownerSync.apply);
@@ -729,11 +733,12 @@ async function start() {
           render();
         },
       });
-      pb.layout.addObserver({ onLayout: (s) => drawSparkle(s?.right === pb.DockState.kOpen) });
+      pb.layout.addObserver({ onLayout: (s) => { drawSparkle(s?.right === pb.DockState.kOpen); drawLeft(s?.left); } });
       const [{ tabs: list }, got, { state }] = await Promise.all([pb.tabs.list(), pb.agent.getOwners(), pb.layout.get()]);
       owners = { agents: { ...(got?.agents || {}) }, colors: { ...(got?.colors || {}) } };
       for (const t of list) if (t.window === myWindow) tabs.set(t.id, t);
       drawSparkle(state?.right === pb.DockState.kOpen);
+      drawLeft(state?.left);
       render();
     } catch {}
     rendered = true;

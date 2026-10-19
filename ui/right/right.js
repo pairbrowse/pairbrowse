@@ -6,7 +6,7 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistItems, checkState, askDock, helperConnection, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
+import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistView, checkState, askDock, helperConnection, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
 import { createPictures } from "./pictures.js";
 import { settingsLink } from "./settings-link.js";
@@ -332,10 +332,12 @@ let checklistOpen = true, checklistBusy = false, checklistPending = false, check
 // The list itself isn't a live region (it is rebuilt on every refresh while the agent drives):
 // readers hear one line with the counts, only when the counts change.
 let checklistSaid = "";
-const drawChecklist = (items) => {
-  $("checklist-items").replaceChildren(...items);
-  const n = (state) => items.filter((li) => li.dataset?.state === state).length;
-  const line = items.some((li) => li.dataset?.state) ? `${n("done")} done, ${n("current")} under way, ${n("waiting")} waiting for you, ${n("pending")} pending` : "";
+// Newest first in its own scroll area under the fixed card head, older pages as it scrolls (checklistView).
+const driving = () => document.body.dataset.driving === "true", steps = checklistView($("checklist"), $("checklist-items"), driving);
+const drawChecklist = (items, run = null) => {
+  steps.draw(items, run);
+  const done = Array.isArray(run?.done) ? run.done.length : 0, n = (state) => items.filter((li) => li.dataset?.state === state).length;
+  const line = items.some((li) => li.dataset?.state) ? `${done ? done - n("current") : n("done")} done, ${n("current")} under way, ${n("waiting")} waiting for you, ${n("pending")} pending` : "";
   if (line !== checklistSaid) { checklistSaid = line; $("checklist-said").textContent = line; }
 };
 async function loadChecklist() {
@@ -349,7 +351,8 @@ async function loadChecklist() {
   checklistBusy = false;
   // Not reached: the next show of the Agent tab, page or dock reads once more.
   if (r === undefined) checklistStale = true;
-  drawChecklist(r === undefined ? [el("li", { className: "empty", textContent: UNREACHABLE })] : checklistItems(r, { driving: document.body.dataset.driving === "true" }));
+  if (r === undefined) drawChecklist([el("li", { className: "empty", textContent: UNREACHABLE })]);
+  else drawChecklist(steps.items(r), r && typeof r === "object" ? r : null);
   if (r && typeof r === "object") {
     $("task").hidden = !r.name;
     $("task-name").textContent = r.name || "";
@@ -363,10 +366,10 @@ function scheduleChecklist() {
   if (checklistTimer || !agentShown()) return;
   checklistTimer = setTimeout(() => { checklistTimer = 0; loadChecklist(); }, Math.max(0, checklistAt + CHECKLIST_MS - Date.now()));
 }
-// The newest done row is "current" only while the agent drives: re-marked here, no fetch.
+// The newest done row (the first) is "current" only while the agent drives: re-marked here, no fetch.
 function markCurrent() {
   const rows = $("checklist-items").querySelectorAll('li[data-state="done"], li[data-state="current"]');
-  if (rows.length) checkState(rows[rows.length - 1], document.body.dataset.driving === "true" ? "current" : "done");
+  if (rows.length) checkState(rows[0], driving() ? "current" : "done");
 }
 $("agent-more").addEventListener("click", () => {
   checklistOpen = !checklistOpen;

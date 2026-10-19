@@ -8,6 +8,7 @@
   --edge-input: #647891; /* a text field's border: 3:1 on every surface (WCAG 1.4.11) */
   --accent: #3285F6; --accent-ink: #6AA6F9; --accent-soft: rgb(50 133 246 / 0.18);
   --ok: #20C997; --warn: #F4B45D; --bad: #EF6468;
+  --on-ok: #000000; /* a mark drawn on --ok (the checklist's check): black in both schemes */
   --spark: #e9763f; /* AGENT_COLOR, Claude Code's color by app (ui/vocab.js); the other participant colors are not tokens */
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

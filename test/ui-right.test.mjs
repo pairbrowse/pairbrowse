@@ -191,14 +191,15 @@ describe("checklist marks, task and saved", () => pageTest("right", opts({ journ
   }));
   // Every step's label in one light ink (--ink-soft, the mockup's); the state is in the mark's shape.
   for (const r of rows) assert.equal(r.label, "rgb(201, 210, 222)", `${r.state}: the label in --ink-soft`);
-  assert.deepEqual(rows.map((r) => r.state), ["done", "current", "waiting", "pending"]);
+  assert.deepEqual(rows.map((r) => r.state), ["pending", "waiting", "current", "done"], "newest first: what is left on top, the oldest done step last");
   for (const r of rows) { assert.ok(r.h >= 28, `${r.state}: ${r.h}px row`); assert.equal(r.w, 17); assert.equal(r.mh, 17); }
-  assert.equal(rows[0].bg, await inPage(token, "ok"), "done: filled --ok");
-  assert.equal(rows[0].color, "rgb(255, 255, 255)", "the white check");
-  assert.equal(rows[1].border, "2px");
-  assert.equal(rows[1].borderColor, await inPage(token, "accent-ink"), "current: the mockup's light blue ring (--accent-ink)");
-  assert.equal(rows[2].borderColor, await inPage(token, "warn"));
-  assert.equal(rows[3].borderColor, await inPage(token, "muted"));
+  assert.equal(rows[3].bg, await inPage(token, "ok"), "done: filled --ok");
+  assert.equal(rows[3].color, await inPage(token, "on-ok"), "the black check (--on-ok)");
+  assert.equal(rows[3].color, "rgb(0, 0, 0)", "the black check");
+  assert.equal(rows[2].border, "2px");
+  assert.equal(rows[2].borderColor, await inPage(token, "accent-ink"), "current: the mockup's light blue ring (--accent-ink)");
+  assert.equal(rows[1].borderColor, await inPage(token, "warn"));
+  assert.equal(rows[0].borderColor, await inPage(token, "muted"));
   assert.equal(await inPage(text, "task-name"), JOURNAL.name);
   assert.equal(await inPage(visible, "#task"), true);
   assert.match(await inPage(text, "session-saved"), /^Saved /);
@@ -363,6 +364,47 @@ describe("participants", () => pageTest("right", opts({ board: { people: PEOPLE,
   const n = helper.posts.filter((p) => p.route === "pause").length;
   await page.click("#people li .pause-one[aria-label='Resume Alice']");
   assert.deepEqual((await posted(helper, "pause", n + 1))[n]?.body, { paused: false, who: "Alice · Codex" });
+  assert.deepEqual(errors, []);
+}));
+
+// A long goal log: newest first, the newest 200 steps, older ones a page at a time as the list
+// scrolls; the list scrolls on its own under the card's head, the task heading and box; steps that
+// arrive on top while it is scrolled down move nothing.
+const LONG = (n) => ({ ...JOURNAL, done: Array.from({ length: n }, (_, i) => `Step ${i} <https://shop.example/${i}>: Clicked **More** ${i}`), yourTurn: [], left: [] });
+describe("checklist newest first, paged, in its own scroll area", () => pageTest("right", opts({ journal: LONG(450), board: ONE_AGENT }), async ({ helper, inPage, until, errors }) => {
+  await until("the agent card", () => !document.getElementById("agent").hidden);
+  await until("the first page", () => document.querySelectorAll("#checklist-items li[data-key]").length === 200);
+  const keys = () => inPage(() => [...document.querySelectorAll("#checklist-items li[data-key]")].map((li) => li.dataset.key));
+  let k = await keys();
+  assert.equal(k[0], "d449", "the newest step on top");
+  assert.equal(k[199], "d250", "the newest 200 only");
+  const fixed = () => inPage(() => ["agent-name", "driver", "agent-fold", "task"].map((id) => document.getElementById(id).getBoundingClientRect().top).concat(document.querySelector(".task-head").getBoundingClientRect().top));
+  const head = await fixed();
+  const box = await inPage(() => { const b = document.getElementById("checklist"); return { h: b.clientHeight, sh: b.scrollHeight, overflow: getComputedStyle(b).overflowY }; });
+  assert.equal(box.overflow, "auto");
+  assert.ok(box.sh > box.h, "the steps scroll in their own area");
+  // Scrolled to its end: the next page comes in, and nothing above the list moved.
+  await inPage(() => { const b = document.getElementById("checklist"); b.scrollTop = b.scrollHeight; });
+  await until("the second page", () => document.querySelectorAll("#checklist-items li[data-key]").length === 400);
+  assert.deepEqual(await fixed(), head, "the card head, the task heading and box stay put");
+  assert.equal(await inPage(() => document.querySelector("#pane-agent .scroll").scrollTop), 0, "the pane itself does not scroll");
+  await inPage(() => { const b = document.getElementById("checklist"); b.scrollTop = b.scrollHeight; });
+  await until("the rest", () => document.querySelectorAll("#checklist-items li[data-key]").length === 450);
+  k = await keys();
+  assert.equal(k[449], "d0", "the oldest step last");
+  // Scrolled into the middle, three steps arrive on top: the row in view stays where it was.
+  await inPage(() => { document.getElementById("checklist").scrollTop = 3000; });
+  const seen = () => inPage(() => { const b = document.getElementById("checklist"), top = b.getBoundingClientRect().top; const li = [...b.querySelectorAll("li[data-key]")].find((x) => x.getBoundingClientRect().bottom > top); return { key: li.dataset.key, y: li.getBoundingClientRect().top }; });
+  const before = await seen();
+  const reads = journalReads(helper);
+  helper.fixtures.journal = LONG(453);
+  helper.push("activity", [{ t: Date.now(), text: "Clicked **More**", who: "Claude", tab: "Details" }]);
+  await sleep(4000); // one read at most every five seconds (CHECKLIST_MS)
+  await until("the new steps", () => document.querySelector("#checklist-items li[data-key]")?.dataset.key === "d452");
+  assert.ok(journalReads(helper) > reads);
+  assert.deepEqual(await seen(), before, "no jump while scrolled down");
+  assert.equal(await inPage(() => document.querySelectorAll("#checklist-items li[data-key]").length), 453, "the pages already drawn stay");
+  assert.deepEqual(await fixed(), head);
   assert.deepEqual(errors, []);
 }));
 
@@ -1802,12 +1844,12 @@ describe("side panel: Share by keyboard, and the Checklist reads the goal log at
   assert.equal(journalReads(lv), before + 1, "an action reads once");
   const rows = () => page.evaluate(() => [...document.querySelectorAll("#checklist-items li")].map((li) => ({ state: li.dataset.state, mark: li.querySelector(".mark").textContent, text: li.querySelector(".text").textContent })));
   const r = await rows();
-  assert.deepEqual(r.map((x) => x.state), ["done", "current", "waiting", "pending"], "the newest done row is current while Claude drives");
-  assert.deepEqual(r.map((x) => x.mark), ["✓", "◉", "●", "○"]);
-  assert.match(r[0].text, /^Done: Sign up/);
-  assert.match(r[1].text, /^Current: Details/);
-  assert.equal(r[2].text, "Waiting for you: Enter the code");
-  assert.equal(r[3].text, "Pending: VAT number");
+  assert.deepEqual(r.map((x) => x.state), ["pending", "waiting", "current", "done"], "the newest done row is current while Claude drives");
+  assert.deepEqual(r.map((x) => x.mark), ["○", "●", "◉", "✓"]);
+  assert.match(r[3].text, /^Done: Sign up/);
+  assert.match(r[2].text, /^Current: Details/);
+  assert.equal(r[1].text, "Waiting for you: Enter the code");
+  assert.equal(r[0].text, "Pending: VAT number");
   if (shots) await page.locator("#agent").screenshot({ path: join(shots, "panel-checklist.png") });
   // A burst of actions: one more read, five seconds after the last.
   const t = Date.now();

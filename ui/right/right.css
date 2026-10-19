@@ -157,6 +157,22 @@ body[data-paused="true"] #pause-btn::before { width: 0; height: 0; padding: 0; b
 .more[aria-expanded="true"]::after { transform: translateY(2px) rotate(-135deg); }
 .more:hover { background: var(--hover); color: var(--ink); }
 .checklist[hidden] { display: none; }
+/* With an agent card shown, the pane does not scroll as one: the card's head, the Current task
+   heading and its box, and the Status box stay put, and the steps scroll in their own area filling
+   the height that is left (the card shrinks to fit; its grid gives the spare height to the body's
+   row). Too short a dock for even that still scrolls the pane as a whole. Rows keep their place as
+   steps arrive on top (right.js keeps the top row in view), so the browser's anchoring is off. */
+#pane-agent .scroll:has(#agent:not([hidden])) { display: flex; flex-direction: column; }
+#pane-agent .scroll:has(#agent:not([hidden])) > * { flex: none; }
+#pane-agent .scroll:has(#agent:not([hidden])) > .status { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.status > * { flex: none; }
+.status > .agent { flex: 0 1 auto; min-height: 0; grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+.agent > .agent-msg { grid-row: 3; }
+.agent > .turn { grid-row: 4; }
+.agent > #agent-body { grid-row: 5; align-self: stretch; }
+#agent-body:not([hidden]) { display: flex; flex-direction: column; min-height: 0; }
+#agent-body > * { flex: none; }
+#agent-body > #checklist { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; }
 .checklist ol { list-style: none; margin: var(--sp-2) 0 0; padding: 0; }
 .checklist li { display: grid; grid-template-columns: 17px 1fr; gap: var(--sp-3); align-items: center; min-height: var(--row-check); font-size: var(--fs-2); color: var(--ink); } /* mockup: the 17 px marks */
 .checklist li.empty { display: block; min-height: 0; color: var(--muted); font-size: var(--fs-2); }
@@ -164,7 +180,7 @@ body[data-paused="true"] #pause-btn::before { width: 0; height: 0; padding: 0; b
    the mark's shape (a check, the accent ring, the muted ring) and in the step's accessible text. */
 .checklist [data-state="done"], .checklist [data-state="current"], .checklist [data-state="waiting"], .checklist [data-state="pending"] { color: var(--ink-soft); }
 .checklist .mark { position: relative; display: grid; place-items: center; box-sizing: border-box; width: 17px; height: 17px; border-radius: 50%; font-size: var(--fs-1); font-weight: 700; line-height: 1; } /* mockup */
-.checklist [data-state="done"] .mark { background: var(--ok); color: #fff; }
+.checklist [data-state="done"] .mark { background: var(--ok); color: var(--on-ok); } /* the black check on the green */
 .checklist [data-state="current"] .mark { border: 2.5px solid var(--accent-ink); color: transparent; box-shadow: 0 0 6px rgb(106 166 249 / 0.45); }
 .checklist [data-state="pending"] .mark { border: 2px solid var(--muted); color: transparent; }
 .checklist [data-state="waiting"] .mark { border: 2px solid var(--warn); color: transparent; }

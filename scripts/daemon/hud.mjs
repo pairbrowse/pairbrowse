@@ -77,9 +77,10 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     (() => { try { return Promise.resolve(target.evaluate(([n, t, v, k]) => window[n]?.(t, v, k), [HUD_NAME, HUD_TOKEN, value, kind])); } catch (e) { return Promise.reject(e); } })());
   const quietly = (target, value, kind) => call(target, value, kind).catch(() => {});
 
-  // The page script normally comes in as an init script. Some engines don't run those (patchright
-  // with the native PairBrowse browser), so add it whenever a page loads without it. Under
-  // patchright this runs in its hidden script world, the same one every later page.evaluate uses.
+  // The page script comes in as an init script only under Playwright; under Patchright it is never
+  // one (its init scripts rewrite each document: browser/launch.mjs addPageScript), so it is added
+  // whenever a page loads without it, in Patchright's hidden script world, the same one every later
+  // page.evaluate uses.
   async function ensure(page) {
     try {
       if (await page.evaluate((n) => typeof window[n] === "function", HUD_NAME)) return;

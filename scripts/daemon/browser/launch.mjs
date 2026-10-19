@@ -50,6 +50,20 @@ export function measuringLog({ log, status, notify }) {
   return launchLog;
 }
 
+// The page script at each document's start, where the driver can do that without touching the
+// page's own response. Patchright can't: its init scripts (and exposeBinding, exposeFunction, the
+// clock, tracing) install a route on every http(s) document that fetches it, writes a <script> into
+// it and hands it back with Fetch.fulfillRequest. A fulfilled document has no certificate, so the
+// address bar showed "Not secure" for every HTTPS page an agent loaded, the page's CSP was rewritten,
+// and the script (with its key) sat in the page's own world. Under Patchright the script goes in
+// as each page loads instead (hud.ensure on domcontentloaded: tabs.mjs, the "page" listener below),
+// in the driver's hidden world; Playwright adds it with the browser's own call, untouched documents.
+export async function addPageScript(ctx, driver, source) {
+  if (driver === "patchright") return false;
+  await ctx.addInitScript({ content: source });
+  return true;
+}
+
 // How long a stop waits for saved tabs still reopening (close below), inside the helper's 5 s.
 const RESTORE_WAIT_MS = 3000;
 // What a stop leaves the browser's own close (its cookies written) before the helper's deadline.
@@ -193,7 +207,7 @@ export function createLaunch(st, deps, api) {
     hud.setSandboxOff?.(SANDBOX.on === false); // the bar warns while the sandbox is off
     step("browser (fingerprint and launchPersistentContext inside)");
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
-    await ctx.addInitScript({ content: hud.source });
+    await addPageScript(ctx, driver, hud.source);
     deps.phishing?.watch(ctx); // listed phishing sites stopped before they show (daemon/phishing.mjs)
     // Never into the browser's own pages (its new tab page among them: plans/555 D1.3).
     for (const p of ctx.pages()) { api.adopt(p, ctx); if (!isBrowserPage(p.url())) hud.ensure(p); }

@@ -5,6 +5,6 @@
   "description": "Pinned browser runtime installed into ~/.pairbrowse/runtime with npm ci --ignore-scripts.",
   "dependencies": {
     "@playwright/mcp": "0.0.83",
-    "patchright": "1.63.0"
+    "patchright": "1.64.1"
   }
 }

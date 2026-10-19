@@ -5,6 +5,16 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.10 (2026-10-19)
+
+PairBrowse lets an AI agent (Claude Code or Codex) work in a real browser window on your computer while you watch and can take over. This release makes the agent's step list easier to follow.
+
+**Changed**
+
+- **Newest step on top:** the agent panel's task list now shows the most recent step first, with clearer check marks.
+- **Long histories:** the list shows the latest 200 steps and loads older ones as you scroll (up to 2,000 kept per agent); the agent's name, status and Pause button stay in place while the list scrolls.
+- **PairBrowse browser builds 150.0.7871.114-6 (macOS) and -4 (Linux)** carry these changes.
+
 ## 0.16.9 (2026-10-19)
 
 HTTPS pages show the padlock again and Cloudflare's checks pass in the PairBrowse browser.

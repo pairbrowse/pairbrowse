@@ -225,7 +225,7 @@ test("a title that comes after the page was written is picked up, with nothing e
   assert.deepEqual(read("late-example-2026-10-10-20-05.json").done, ["Dashboard <https://late.example/app>"]);
 });
 
-test("read(): the Timeline's view of the log, masked again on read, capped, null without a run", async () => {
+test("read(): the Timeline's view of the log, masked again on read, capped at 2000, served in pages of 200, null without a run", async () => {
   const later = start + 100 * 24 * 3600_000; // every run above is stale by then
   const page = tab("https://secret.example/login", "Log in");
   const mask = (s) => s.replaceAll("hunter2", "[PASSWORD]");
@@ -240,18 +240,27 @@ test("read(): the Timeline's view of the log, masked again on read, capped, null
   // A run_save takeover writes lines the journal never masked: masked on read all the same.
   const file = j.file();
   const raw = JSON.parse(readFileSync(file, "utf8"));
-  raw.done = Array.from({ length: 200 }, (_, i) => `Page ${i}: typed hunter2`);
+  raw.done = Array.from({ length: 2500 }, (_, i) => `Page ${i}: typed hunter2`);
   raw.yourTurn = ["Enter hunter2 again"];
   raw.left = ["hunter2 field"];
   writeFileSync(file, JSON.stringify(raw));
   r = j.read();
   assert.doesNotMatch(JSON.stringify(r), /hunter2/);
-  assert.equal(r.done.length, 150, "capped");
-  assert.equal(r.done.at(-1), "Page 199: typed [PASSWORD]");
+  // Kept: the newest 2000; served a page of 200 at a time, the newest first, older ones by index.
+  assert.equal(r.total, 2000, "capped at 2000");
+  assert.equal(r.done.length, 200, "a page");
+  assert.equal(r.from, 1800);
+  assert.equal(r.done.at(-1), "Page 2499: typed [PASSWORD]");
+  const older = j.read({ before: 1800 });
+  assert.deepEqual([older.from, older.done.length, older.total], [1600, 200, 2000]);
+  assert.equal(older.done.at(-1), "Page 2299: typed [PASSWORD]");
+  assert.doesNotMatch(JSON.stringify(older), /hunter2/);
+  assert.deepEqual([j.read({ before: 150 }).from, j.read({ before: 150 }).done.length], [0, 150], "the oldest page is short");
+  for (const before of [-1, 2000, 9999, 1.5]) assert.equal(j.read({ before }).from, 1800, `before ${before}: the newest page`);
   assert.deepEqual(r.yourTurn, ["Enter [PASSWORD] again"]);
   assert.deepEqual(r.left, ["[PASSWORD] field"]);
   assert.equal(typeof r.updatedAt, "string");
-  assert.deepEqual(Object.keys(r).sort(), ["done", "left", "name", "status", "updatedAt", "yourTurn"]);
+  assert.deepEqual(Object.keys(r).sort(), ["done", "from", "left", "name", "status", "total", "updatedAt", "yourTurn"]);
 });
 
 test("step(): the page the log is on, null before the first action and once the run is finished", async () => {

@@ -86,7 +86,11 @@ export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, st
     { method: "POST", path: "profile", right: "profile", needs: () => profile, handler: changeProfile },
     // The Timeline: the goal log's lines (journal.mjs read, masked again there), read when the
     // owner opens it or presses Refresh; null while no run is open.
-    { method: "GET", path: "journal.json", right: "journal", needs: () => journal, handler: ({ res }) => json(res, 200, journal() ?? null) },
+    { method: "GET", path: "journal.json", right: "journal", needs: () => journal, handler: ({ req, res }) => {
+      // ?before=<n>: the page of done lines before index n (the checklist's older steps).
+      const b = new URL(req.url, "http://x").searchParams.get("before");
+      json(res, 200, journal(/^\d{1,6}$/.test(b || "") ? { before: Number(b) } : {}) ?? null);
+    } },
     // The Share card (the side panel, the live view toolbar): the owner makes a join code or a
     // watch link with a real click, through the helper's own invite code. The code or link is in
     // this answer only: never broadcast, logged or kept in state.json.

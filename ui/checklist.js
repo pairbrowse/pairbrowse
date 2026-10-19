@@ -43,12 +43,16 @@ const row = (key, state, ...kids) => {
   return li;
 };
 const lines = (x) => (Array.isArray(x) ? x : []);
-// The done lines from..to-1 (indexes from the oldest), newest first.
+// A log as journal.json serves it: a page of done lines, run.from the index of its first (from the
+// oldest; 0 when absent), run.total how many there are in all (its length when absent).
+const firstOf = (run) => (Number.isInteger(run?.from) && run.from > 0 ? run.from : 0);
+export const doneTotal = (run) => (Number.isInteger(run?.total) ? run.total : firstOf(run) + lines(run?.done).length);
+// The done lines from..to-1 (indexes from the oldest, within what run holds), newest first.
 export function doneRows(run, from, to, { driving = false } = {}) {
-  const done = lines(run?.done);
+  const done = lines(run?.done), first = firstOf(run), total = doneTotal(run);
   const out = [];
-  for (let i = Math.min(to, done.length) - 1; i >= Math.max(0, from); i--) {
-    out.push(row(`d${i}`, driving && i === done.length - 1 ? "current" : "done", ...[...doneLine(done[i]).childNodes]));
+  for (let i = Math.min(to, first + done.length) - 1; i >= Math.max(0, from, first); i--) {
+    out.push(row(`d${i}`, driving && i === total - 1 ? "current" : "done", ...[...doneLine(done[i - first]).childNodes]));
   }
   return out;
 }
@@ -56,12 +60,12 @@ export function doneRows(run, from, to, { driving = false } = {}) {
 export function checklistItems(run, { driving = false, from } = {}) {
   const empty = (text) => [el("li", { className: "empty", textContent: text })];
   if (!run || typeof run !== "object") return empty("No goal log yet: it starts with the first browser action.");
-  const done = lines(run.done);
-  const first = from === undefined ? Math.max(0, done.length - CHECKLIST_PAGE) : Math.max(0, Math.min(from, done.length));
+  const total = doneTotal(run);
+  const first = from === undefined ? Math.max(0, total - CHECKLIST_PAGE) : Math.max(0, Math.min(from, total));
   const items = [
     ...lines(run.left).map((x, i) => row(`p${i}`, "pending", String(x))).reverse(),
     ...lines(run.yourTurn).map((x, i) => row(`w${i}`, "waiting", String(x))).reverse(),
-    ...doneRows(run, first, done.length, { driving }),
+    ...doneRows(run, first, total, { driving }),
   ];
   return items.length ? items : empty("Nothing done yet.");
 }
@@ -70,23 +74,48 @@ export function checklistItems(run, { driving = false, from } = {}) {
 // draw(items, run) puts them in. Scrolled down, a redraw keeps the older pages already drawn and
 // the row at the top of the view where it was, so steps arriving on top move nothing; at the top
 // it follows the newest page again. The next page of older steps comes in once the list's end is
-// within a view of being shown. driving(): whether the agent drives (the newest step is current).
-export function checklistView(box, list, driving) {
-  let run = null, from = 0;
-  const more = () => {
-    if (!run || from <= 0 || box.hidden) return;
-    if (box.scrollTop + box.clientHeight < box.scrollHeight - box.clientHeight) return;
+// within a view of being shown: from what is held, else from the helper (older(before): the log's
+// page of lines before that index, journal.json?before=, or undefined). driving(): whether the
+// agent drives (the newest step is current).
+export function checklistView(box, list, driving, older = async () => undefined) {
+  let run = null, from = 0, asking = false, given = null, merged = null;
+  const append = () => {
     const to = from;
     from = Math.max(0, to - CHECKLIST_PAGE);
     list.append(...doneRows(run, from, to, { driving: driving() }));
+  };
+  const more = () => {
+    if (!run || from <= 0 || box.hidden || asking) return;
+    if (box.scrollTop + box.clientHeight < box.scrollHeight - box.clientHeight) return;
+    if (from - CHECKLIST_PAGE >= firstOf(run) || firstOf(run) === 0) return append();
+    // Older lines than the helper sent: its page before them, once, then on as before.
+    asking = true;
+    const want = run, before = firstOf(run);
+    older(before).then((page) => {
+      asking = false;
+      if (run !== want || !page || doneTotal(page) !== doneTotal(run) || !Array.isArray(page.done)) return;
+      const at = firstOf(page);
+      if (at + page.done.length !== before) return;
+      run = { ...run, from: at, done: [...page.done, ...run.done] };
+      append();
+      more();
+    }, () => { asking = false; });
   };
   box.addEventListener("scroll", more, { passive: true });
   return {
     items(r) {
       if (!r || typeof r !== "object") return checklistItems(r);
-      const done = lines(r.done).length, newest = Math.max(0, done - CHECKLIST_PAGE);
-      // A log that started over (shorter than what was drawn) starts over here too.
-      from = box.scrollTop > 0 && run && from <= done ? Math.min(from, newest) : newest;
+      given = r;
+      const total = doneTotal(r), newest = Math.max(0, total - CHECKLIST_PAGE);
+      // Scrolled down: keep the older pages already drawn and held (a log that started over,
+      // shorter than what was drawn, starts over here too).
+      const keep = box.scrollTop > 0 && run && from <= total && doneTotal(run) <= total && firstOf(run) <= firstOf(r);
+      if (keep) {
+        const held = lines(run.done).slice(0, Math.max(0, firstOf(r) - firstOf(run)));
+        r = { ...r, from: firstOf(run), done: [...held, ...lines(r.done)] };
+        from = Math.max(Math.min(from, newest), firstOf(r));
+      } else from = Math.max(newest, firstOf(r));
+      merged = r;
       return checklistItems(r, { driving: driving(), from });
     },
     draw(items, r = null) {
@@ -94,7 +123,7 @@ export function checklistView(box, list, driving) {
       const anchor = box.scrollTop > 0 ? [...list.children].find((li) => li.dataset.key && li.getBoundingClientRect().bottom > top) : null;
       const was = anchor ? anchor.getBoundingClientRect().top : 0;
       list.replaceChildren(...items);
-      run = r;
+      run = r && r === given ? merged : r;
       const now = anchor && list.querySelector(`li[data-key="${anchor.dataset.key}"]`);
       if (now) box.scrollTop += now.getBoundingClientRect().top - was;
       more();

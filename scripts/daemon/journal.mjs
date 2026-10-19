@@ -10,10 +10,12 @@
 // read() gives the live view's Timeline the current run, every line masked again on read (a
 // run_save can take the file over with lines the journal never masked), capped, never polled.
 import { runFile, readRuns, currentFile, STALE_MS, liveAutoRun } from "../runs.mjs";
+import { statSync } from "node:fs";
 import { clipActivity, readJson, writeJsonAtomic, within } from "../util.mjs";
 
 const FLUSH_MS = 3000;
-const MAX_LINES = 150; // pages kept in `done`
+const MAX_LINES = 2000; // pages kept in `done`
+const PAGE_LINES = 200; // done lines journal.json serves at once (read: the newest, or those before an index)
 const MAX_ACTS = 12; // descriptions kept per page line
 const ACT_MAX = 100; // characters per description
 const MAX_TABS = 20;
@@ -39,7 +41,26 @@ function stamp(t) {
 // session(): the browser session's name. openPages(): the open tabs (pages). mask(text): as the
 // results are masked (saved passwords). strip(title): the agent's name off a tab's title (the tab
 // strip carries it). onActivity(fn): the bar's activities (hud.onActivity).
+// The run file as last read or written, kept while its size and time stay the same: a log of
+// up to MAX_LINES lines is not parsed again on every action and every journal.json read, only
+// after something else wrote it (a run_save, a rename).
+function runCache() {
+  let held = { file: null, key: "", run: null };
+  const keyOf = (f) => { try { const st = statSync(f); return `${st.mtimeMs}:${st.size}`; } catch { return ""; } };
+  return {
+    read(f) {
+      const key = keyOf(f);
+      if (key && held.file === f && held.key === key) return held.run;
+      const run = readJson(f);
+      held = { file: f, key, run };
+      return run;
+    },
+    wrote(f, run) { held = { file: f, key: keyOf(f), run }; },
+  };
+}
+
 export function createJournal({ session = () => "default", openPages = async () => [], mask = (t) => t, strip = (t) => t, onActivity = () => {}, log = () => {}, now = () => Date.now(), delayMs = FLUSH_MS } = {}) {
+  const cache = runCache();
   let file = null; // the run file being kept: the auto run's, or the agent's run after a run_save took it over
   let openedFor = null; // the session the file is for
   let current = null; // the page being acted on: { key, url, title, page, acts: [], written }
@@ -107,8 +128,8 @@ export function createJournal({ session = () => "default", openPages = async () 
   // The run file as it stands: a run_save may have taken it over (its run is kept from here on)
   // or finished it (the log closes, and the next action opens a new one).
   function follow() {
-    let run = readJson(file);
-    for (let hops = 0; run?.mergedInto && hops < 3; hops++) { file = runFile(run.mergedInto); run = readJson(file); }
+    let run = cache.read(file);
+    for (let hops = 0; run?.mergedInto && hops < 3; hops++) { file = runFile(run.mergedInto); run = cache.read(file); }
     if (!run || run.status === "finished") { file = null; current = null; entries = []; yourTurn = []; over = []; left = null; lastHandoff = ""; }
     return run;
   }
@@ -204,9 +225,10 @@ export function createJournal({ session = () => "default", openPages = async () 
     run.updatedAt = isoNow(now());
     // Read again right before the write: a session rename meanwhile (runs.mjs renameRunsSession)
     // keeps the run's new session name.
-    const onDisk = readJson(file);
+    const onDisk = cache.read(file);
     if (typeof onDisk?.session === "string") run.session = onDisk.session;
     writeJsonAtomic(file, run);
+    cache.wrote(file, run);
   }
 
   // Everything pending, now (tests, and the helper shutting down).
@@ -222,19 +244,26 @@ export function createJournal({ session = () => "default", openPages = async () 
   function shown() {
     let run;
     if (file) {
-      run = readJson(file);
-      for (let hops = 0; run?.mergedInto && hops < 3; hops++) run = readJson(runFile(run.mergedInto));
+      run = cache.read(file);
+      for (let hops = 0; run?.mergedInto && hops < 3; hops++) run = cache.read(runFile(run.mergedInto));
     } else run = liveAutoRun(now());
     return run && typeof run === "object" ? run : null;
   }
-  function read() {
+  // A page of it (PAGE_LINES done lines): the newest, or with before (journal.json?before=) the
+  // ones just before that index (from the oldest); from is the first line's index, total how many.
+  function read({ before } = {}) {
     const run = shown();
     if (!run) return null;
     const list = (a) => (Array.isArray(a) ? a : []);
+    const all = list(run.done).slice(-MAX_LINES), total = all.length;
+    const to = Number.isInteger(before) && before >= 0 && before < total ? before : total;
+    const from = Math.max(0, to - PAGE_LINES);
     return {
       name: clean(run.name).slice(0, 120),
       status: run.status === "finished" ? "finished" : "in progress",
-      done: list(run.done).slice(-MAX_LINES).map((l) => clean(l).slice(0, 400)),
+      done: all.slice(from, to).map((l) => clean(l).slice(0, 400)),
+      from,
+      total,
       yourTurn: uniq(list(run.yourTurn).map((x) => clean(x).slice(0, 140))).slice(0, 20),
       left: uniq(list(run.left).map((x) => clean(x).slice(0, 80))).slice(0, 50),
       updatedAt: typeof run.updatedAt === "string" ? run.updatedAt.slice(0, 40) : "",

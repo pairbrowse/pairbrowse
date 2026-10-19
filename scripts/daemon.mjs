@@ -454,7 +454,7 @@ const sharing = createSharing({
     secretDomains, screens, remoteAgents, capture: captureChannel, covers: recorder.covers,
     // The live view's Timeline (owner only). `journal` is declared further down: this runs only
     // when the route is hit, after startup, so it is always there by then.
-    journal: () => journal.read(),
+    journal: (q) => journal.read(q),
     // The session's timeline of pictures, and the masking and docks' layout the browser's own pages
     // get (owner only). `timeline` is declared further down too: read when the live view starts.
     get timeline() { return timeline; },

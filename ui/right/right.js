@@ -6,7 +6,7 @@
 // Downloads, Recordings and Diagnostics live in tools.js (no timer there); this file wires them:
 // the Record button and its clock stay here. The dock state stays the browser's (native) or none
 // (served): a layout event only ever brings the tab to show (the left dock's Tools row).
-import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistView, checkState, askDock, helperConnection, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
+import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistView, doneTotal, checkState, askDock, helperConnection, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
 import { createPictures } from "./pictures.js";
 import { settingsLink } from "./settings-link.js";
@@ -333,10 +333,11 @@ let checklistOpen = true, checklistBusy = false, checklistPending = false, check
 // readers hear one line with the counts, only when the counts change.
 let checklistSaid = "";
 // Newest first in its own scroll area under the fixed card head, older pages as it scrolls (checklistView).
-const driving = () => document.body.dataset.driving === "true", steps = checklistView($("checklist"), $("checklist-items"), driving);
+const driving = () => document.body.dataset.driving === "true", older = (before) => fetch(`${base}journal.json?before=${before}`, { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.json() : undefined));
+const steps = checklistView($("checklist"), $("checklist-items"), driving, older);
 const drawChecklist = (items, run = null) => {
   steps.draw(items, run);
-  const done = Array.isArray(run?.done) ? run.done.length : 0, n = (state) => items.filter((li) => li.dataset?.state === state).length;
+  const done = run ? doneTotal(run) : 0, n = (state) => items.filter((li) => li.dataset?.state === state).length;
   const line = items.some((li) => li.dataset?.state) ? `${done ? done - n("current") : n("done")} done, ${n("current")} under way, ${n("waiting")} waiting for you, ${n("pending")} pending` : "";
   if (line !== checklistSaid) { checklistSaid = line; $("checklist-said").textContent = line; }
 };

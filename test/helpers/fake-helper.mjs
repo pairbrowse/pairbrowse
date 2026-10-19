@@ -472,6 +472,13 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
           const start = Math.max(0, end - limit);
           return json(res, 200, { items: log.slice(start, end).reverse(), more: start > 0, kept: fx.kept });
         }
+        // journal.json as the helper serves it (daemon/journal.mjs read) when fx.journalPaged:
+        // 200 done lines, the newest or those before ?before=, with from and total.
+        if (route === "journal.json" && fx.journalPaged && fx.journal && !rest.length) {
+          const all = fx.journal.done || [], total = all.length, b = new URL(req.url, "http://x").searchParams.get("before");
+          const to = /^\d{1,6}$/.test(b || "") && Number(b) < total ? Number(b) : total, start = Math.max(0, to - 200);
+          return json(res, 200, { ...fx.journal, done: all.slice(start, to), from: start, total });
+        }
         if (Object.prototype.hasOwnProperty.call(GETS, route) && !rest.length) {
           const value = GETS[route]();
           if (value === null && route !== "journal.json") return plain(res, 404);

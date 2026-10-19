@@ -408,6 +408,23 @@ describe("checklist newest first, paged, in its own scroll area", () => pageTest
   assert.deepEqual(errors, []);
 }));
 
+// The helper's own paging (journal.json: 200 done lines a time, older ones by ?before=): the
+// checklist asks for the older page as the list scrolls past what it holds.
+describe("checklist pages older steps from the helper", () => pageTest("right", opts({ journal: LONG(450), journalPaged: true, board: ONE_AGENT }), async ({ helper, inPage, until, errors }) => {
+  await until("the agent card", () => !document.getElementById("agent").hidden);
+  await until("the newest page", () => document.querySelectorAll("#checklist-items li[data-key]").length === 200);
+  assert.equal(await inPage(() => document.querySelector("#checklist-items li[data-key]").dataset.key), "d449");
+  assert.match(await inPage(text, "checklist-said"), /^(450 done, 0|449 done, 1) under way/, "the count is the whole log's");
+  for (const n of [400, 450]) {
+    await inPage(() => { const b = document.getElementById("checklist"); b.scrollTop = b.scrollHeight; });
+    await until(`${n} rows`, (k) => document.querySelectorAll("#checklist-items li[data-key]").length === k, n);
+  }
+  const keys = await inPage(() => [...document.querySelectorAll("#checklist-items li[data-key]")].map((li) => li.dataset.key));
+  assert.deepEqual(keys, Array.from({ length: 450 }, (_, i) => `d${449 - i}`), "every step once, newest first");
+  assert.deepEqual(helper.gets.filter((r) => r === "journal.json").length >= 3, true, "the older pages were asked for");
+  assert.deepEqual(errors, []);
+}));
+
 describe("checklist read retried on return", () => pageTest("right", opts({ journal: JOURNAL }), async ({ page, helper, inPage, until, errors }) => {
   await until("the first read", () => document.querySelectorAll("#checklist-items li[data-state]").length === 4);
   // The goal log not reached once: the next show of the Agent tab reads again, no timer meanwhile.

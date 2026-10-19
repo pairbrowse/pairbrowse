@@ -25,6 +25,7 @@ import { NATIVE } from "../native-pack.mjs";
 import { installHint, pinnedArchive, ensureEngine, installEngine } from "./pack.mjs";
 import { withInstallLock } from "../install-lock.mjs";
 import { BRANDING, brandNativeApp, registerApp, verifySignature } from "./macos-app.mjs";
+import { installDesktop } from "./desktop.mjs";
 import { currentSession, profileDir } from "../sessions.mjs";
 import { readJson, sha256File, within, writeJsonAtomic, pidAlive } from "../util.mjs";
 
@@ -239,10 +240,12 @@ async function unpackChecked(archive, staging, layout, log) {
 
 // Installs a native build archive (macOS .zip from package.py, Linux .tar.xz or Windows .zip from
 // linuxwin.py). Returns the installed executable. check: the launch check (tests pass a stand-in);
-// register: tell macOS about the new app; layout: this platform's (tests pass another one).
+// register: tell the desktop about the new app (macOS: Launch Services; Linux: its desktop entry
+// and icons, native/desktop.mjs, under dataHome when given); layout: this platform's (tests pass
+// another one).
 // config: the settings (default: config.json); with "browser" set to "pairbrowse-open" or a path, it
 // installs nothing and returns null.
-export async function installNative(archive, { sha256, log = () => {}, check = selfCheck, register = true, layout = nativeLayout(), config = loadConfig() } = {}) {
+export async function installNative(archive, { sha256, log = () => {}, check = selfCheck, register = true, layout = nativeLayout(), config = loadConfig(), dataHome } = {}) {
   const skip = notChosen(config, !!layout);
   if (skip) { log(skip); return null; }
   archive = resolve(archive);
@@ -275,6 +278,13 @@ export async function installNative(archive, { sha256, log = () => {}, check = s
       rmSync(d.pending, { force: true });
       committed = true;
       await keepPrevious(d, layout, log);
+      // Linux: the window's name and icon. Never fails the install.
+      if (register && layout.platform === "linux") {
+        try {
+          const entry = installDesktop(d.app, d.exec, { browserDir: d.dir, ...(dataHome ? { home: dataHome } : {}) });
+          if (entry) log(`desktop entry: ${entry}`);
+        } catch (e) { log(`couldn't install the desktop entry (${e.message})`); }
+      }
       log(`installed PairBrowse ${manifest.version}: ${passed.join("; ")}`);
       return d.exec;
     } catch (e) {

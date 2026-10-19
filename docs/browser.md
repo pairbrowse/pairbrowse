@@ -105,6 +105,13 @@ and asks which browser to use when nobody chose yet):
 node scripts/native-install.mjs /path/to/pairbrowse-<version>-macos-arm64.zip   # or -macos-x86_64.zip, -linux-x64.tar.xz, pairbrowse-engine-<version>.tgz
 ```
 
+On Linux, once the build passes its checks, the install step also writes its desktop entry
+(`$XDG_DATA_HOME/applications/pairbrowse.desktop`, else under `~/.local/share`; `Exec` the installed
+program, `StartupWMClass=Pairbrowse`) and copies the icons the build ships into
+`icons/hicolor/<size>/apps/`, so the window gets its name and icon (`scripts/native/desktop.mjs`;
+an install under another `PAIRBROWSE_HOME` gets an entry of its own). A failure there is logged and
+never fails the install.
+
 On Linux the build brings its own metric-compatible font clones (for fonts such as Arial and
 Segoe UI), so pages render the same on a bare machine. On a Linux machine without a screen, the launch
 test runs on a private virtual screen (Xvfb, as the browser itself does), so

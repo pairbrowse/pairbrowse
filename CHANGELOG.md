@@ -5,6 +5,18 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.9 (2026-10-19)
+
+HTTPS pages show the padlock again and Cloudflare's checks pass in the PairBrowse browser.
+
+**Fixed**
+
+- **Padlock and Cloudflare:** PairBrowse's page script was added in a way that had the browser driver rewrite every page document, frames included: HTTPS pages lost their certificate in the address bar ("Not secure"), and Cloudflare's "Verify you are human" check never passed because the script ran inside its challenge frame. The script now goes only into each page's own isolated world as it loads; documents and frames are left as the site sent them. Certificate errors still stop a page and phishing protection is unchanged.
+
+**Changed**
+
+- **PairBrowse browser builds 150.0.7871.114-5 (macOS) and -3 (Linux):** Linux shows Chinese, Japanese and Korean text with a bundled fallback font (Noto Sans CJK), and its logo sits over the left dock's icons.
+
 ## 0.16.8 (2026-10-19)
 
 The PairBrowse browser for Linux x64 (build 150.0.7871.114-2) is the same browser as on macOS.

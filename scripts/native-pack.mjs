@@ -12,9 +12,9 @@
 // name appended). A platform whose sha256 is null has no build yet.
 export const NATIVE = {
   version: "150.0.7871.114",
-  arm64: { file: "pairbrowse-150.0.7871.114-4-macos-arm64.zip", sha256: "45e1341bd87a0b8aef2e176e08d96c0db619b6ae0c2e2cf322ff55c8c78039fd" },
-  x64: { file: "pairbrowse-150.0.7871.114-4-macos-x86_64.zip", sha256: "a7673e739bc6a6a4297a9710e9c852cead09832123e4edd90176b162d02d22e4" },
-  linux: { file: "pairbrowse-150.0.7871.114-2-linux-x64.tar.xz", sha256: "dd76ef580d207352c2be3323385d08fd3e339fbb1747caa88a8307824bada436" },
+  arm64: { file: "pairbrowse-150.0.7871.114-5-macos-arm64.zip", sha256: "d43f5736671359cc9903e72a65ccb2925b531694e41c1817bdb8605630b741b7" },
+  x64: { file: "pairbrowse-150.0.7871.114-5-macos-x86_64.zip", sha256: "ee06fdb105e6bd0d633c47f1a7d87d3a9717423f4ac0ac4cff3d914001924e24" },
+  linux: { file: "pairbrowse-150.0.7871.114-3-linux-x64.tar.xz", sha256: "7f438ef67021d1664cdac9a42f504094348167b893de1951f8e34629a65f0450" },
   windows: { file: "pairbrowse-150.0.7871.114-windows-x64.zip", sha256: null },
   engine: {
     file: "pairbrowse-engine-150.0.7871.114-4.tgz",

@@ -3,11 +3,15 @@
 // runs on it: PairBrowse Agent --notify), so it shows PairBrowse's name and logo; macOS asks the
 // person once whether "PairBrowse Agent" may send notifications. Without a native build, or with
 // an older Agent that lacks --notify, through osascript (shown as the script runner's). On Linux
-// notify-send. The text always goes as an argument, never into a script.
+// notify-send, with PairBrowse's name and logo. The text always goes as an argument, never into a script.
 import { execFile } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { agentProgram } from "./launcher/daemon-connect.mjs";
 
 export const NOTIFY_TITLE = "PairBrowse needs you";
+// Linux: notify-send names PairBrowse and shows its logo (the side panel's own icon file).
+export const LINUX_ICON = join(dirname(fileURLToPath(import.meta.url)), "..", "ui", "icon128.png");
 const MAX_SAY = 2000; // the Agent takes 2048 bytes at most
 // The Agent's answers that end it: 3 the person doesn't allow PairBrowse's notifications, 4 no
 // answer yet to macOS's question (both: nothing else is sent, the person chose or is choosing).
@@ -17,7 +21,7 @@ const ASK_MS = 150_000; // the Agent waits two minutes for the person's answer
 // platform, agent() (the Agent's program or null) and run (execFile) are for tests.
 export function osNotify(say, { platform = process.platform, agent = () => agentProgram(), run = execFile } = {}) {
   const text = String(say).slice(0, MAX_SAY);
-  if (platform === "linux") { run("notify-send", [NOTIFY_TITLE, text], () => {}); return "notify-send"; }
+  if (platform === "linux") { run("notify-send", ["--app-name=PairBrowse", `--icon=${LINUX_ICON}`, "--", NOTIFY_TITLE, text], () => {}); return "notify-send"; }
   if (platform !== "darwin") return "none";
   const script = () => run("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv) sound name \"Glass\"", "-e", "end run", NOTIFY_TITLE, text], () => {});
   let program;

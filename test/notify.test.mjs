@@ -4,7 +4,8 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { osNotify, NOTIFY_TITLE } from "../scripts/notify.mjs";
+import { existsSync } from "node:fs";
+import { osNotify, NOTIFY_TITLE, LINUX_ICON } from "../scripts/notify.mjs";
 
 const recorder = (code) => {
   const calls = [];
@@ -44,6 +45,7 @@ test("macOS without a native build: osascript; Linux: notify-send; the text clip
   assert.equal(r.calls[1].args.at(-1).length, 2000);
   const l = recorder();
   assert.equal(osNotify("z", { platform: "linux", agent: () => AGENT, run: l.run }), "notify-send");
-  assert.deepEqual(l.calls, [{ file: "notify-send", args: [NOTIFY_TITLE, "z"], opts: {} }]);
+  assert.deepEqual(l.calls, [{ file: "notify-send", args: ["--app-name=PairBrowse", `--icon=${LINUX_ICON}`, "--", NOTIFY_TITLE, "z"], opts: {} }]);
+  assert.ok(existsSync(LINUX_ICON), "the logo file is there");
   assert.equal(osNotify("z", { platform: "win32", run: l.run }), "none");
 });

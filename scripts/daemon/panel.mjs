@@ -2,25 +2,16 @@
 // notifications "PairBrowse needs you". Reached through its service worker over the browser's
 // own protocol, on the private pipe.
 import { randomBytes } from "node:crypto";
-import { execFile } from "node:child_process";
 import { panelExtensionId, panelBuild } from "../browser.mjs";
 import { sleep, within } from "../util.mjs";
+import { osNotify, NOTIFY_TITLE } from "../notify.mjs";
 import { extensionUrl, extensionOrigin } from "../../ui/urls.js";
-
-const NOTIFY_TITLE = "PairBrowse needs you";
 
 // What to do with the side panel's worker, by the build it reports (running: undefined while it
 // didn't answer, null for an earlier version's worker that reports none) and the one its file on
 // disk declares (expected). A browser can keep running an old cached copy of the worker after an
 // update (it then lacks newer functions, such as the join notification's Allow and Deny): it's
 // replaced at the next browser start (checkBuild below).
-// From the system, when the side panel can't (text only). The text goes as an argument, never
-// into the script.
-function osNotify(say) {
-  if (process.platform === "darwin") execFile("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv) sound name \"Glass\"", "-e", "end run", NOTIFY_TITLE, say], () => {});
-  else if (process.platform === "linux") execFile("notify-send", [NOTIFY_TITLE, say], () => {});
-}
-
 export function workerFreshness({ running, expected }) {
   if (running === undefined) return "unknown"; // no answer yet: ask again later
   if (!expected || running === expected) return "current";

@@ -5,6 +5,14 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.8 (2026-10-19)
+
+The PairBrowse browser for Linux x64 (build 150.0.7871.114-2) is the same browser as on macOS.
+
+**Changed**
+
+- **Linux, equal to macOS:** its own window shell and pages (the tab strip with Share and the sessions, both docks, the timeline), the nav row (search, extensions, agent panel), uBlock Origin Lite shipped in the browser and on in every session (yours to turn off or remove), Chrome Web Store installs by your own click ("Add to PairBrowse"), a Safe Storage key of this install's own in `~/.pairbrowse` (never a keyring prompt), and agents' tab changes that never pull the window in front of the app you're in. The window's minimize, maximize and close buttons sit on the tab row; a desktop entry and icons come with the install.
+
 ## 0.16.7 (2026-10-18)
 
 The PairBrowse browser's stored data gets a key of its own, and its nav row reads search, extensions, agent panel (browser build 150.0.7871.114-4).

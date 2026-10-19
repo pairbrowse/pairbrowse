@@ -5,6 +5,14 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.11 (2026-10-19)
+
+PairBrowse lets an AI agent (Claude Code or Codex) work in a real browser window on your computer while you watch and can take over. When the agent needs you (a login, a code, a final click), PairBrowse tells you with a system notification.
+
+**Fixed**
+
+- **Linux notifications show PairBrowse:** they now carry PairBrowse's name and icon instead of a generic one.
+
 ## 0.16.10 (2026-10-19)
 
 PairBrowse lets an AI agent (Claude Code or Codex) work in a real browser window on your computer while you watch and can take over. This release makes the agent's step list easier to follow.

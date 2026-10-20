@@ -135,6 +135,8 @@ async function phone(t, { action = "payment" } = {}) {
     await page.tap("#take");
     await page.waitForURL(/\/[0-9a-f]{64}\/$/);
     await page.waitForSelector('#turn-conn[data-s="live"]');
+    // The stream is up before its first turn event names the step and its site.
+    await page.waitForFunction(() => (document.querySelector("#turn-step span")?.textContent || "") !== "");
     await page.waitForSelector("#screen:not([hidden])");
     await until(() => page.evaluate(() => document.getElementById("screen").getBoundingClientRect().width > 100));
   };

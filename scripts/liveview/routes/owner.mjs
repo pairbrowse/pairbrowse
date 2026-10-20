@@ -24,7 +24,7 @@ export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, st
     if (op.op === "setDetail") error = profile.setDetail(op.label, op.value);
     else if (op.op === "forgetDetail") profile.forgetDetail(String(op.label || ""));
     else if (op.op === "setSecret") error = profile.setSecret({ name: op.name, value: op.value, domains: op.domains });
-    else if (op.op === "deleteSecret") profile.deleteSecret(String(op.name || ""));
+    else if (op.op === "deleteSecret") error = profile.deleteSecret(String(op.name || "")) || null;
     else error = "Unknown change.";
     const summary = profile.get();
     if (!error) broadcast("profile", summary);

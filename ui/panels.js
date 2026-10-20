@@ -211,18 +211,23 @@ export function profilePanel(base) {
       });
       const del = el("button", { className: "mini", type: "button", textContent: "Delete", ariaLabel: `Delete ${x.name}` });
       // An in-row question (pages in a window slot or a side panel get no confirm() dialog).
-      const acts = el("span", {}, replace, del);
+      // A reserved one (PairBrowse's own credential, a proxy's or a hand-off channel's) has no
+      // sites and is set from Settings, not here: delete only.
+      const own = x.reserved === true;
+      const tools = own ? [del] : [replace, del];
+      const acts = el("span", {}, ...tools);
       del.addEventListener("click", () => {
         const yes = el("button", { className: "mini bad", type: "button", textContent: "Delete", ariaLabel: `Yes, delete ${x.name}` });
         const keep = el("button", { className: "mini", type: "button", textContent: "Keep" });
-        const back = () => { acts.replaceChildren(replace, del); del.focus(); };
+        const back = () => { acts.replaceChildren(...tools); del.focus(); };
         keep.addEventListener("click", back);
         for (const b of [yes, keep]) b.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !yes.disabled) { ev.preventDefault(); ev.stopPropagation(); back(); } });
         yes.addEventListener("click", async () => { yes.disabled = true; const e = await change({ op: "deleteSecret", name: x.name }); say(e || `Deleted ${x.name}.`, e ? "error" : "ok"); if (e) back(); });
         acts.replaceChildren(el("small", { className: "ask", textContent: "Delete it?" }), yes, keep);
         keep.focus();
       });
-      return el("div", { className: "row secret" }, el("div", { className: "label", title: x.name }, x.name), el("div", { className: "sites", title: x.domains.join(", "), textContent: x.domains.join(", ") }), acts);
+      const sites = own ? "PairBrowse's own, never typed into pages" : x.domains.join(", ");
+      return el("div", { className: "row secret" }, el("div", { className: "label", title: x.name }, x.name), el("div", { className: "sites", title: sites, textContent: sites }), acts);
     }) : [el("p", { className: "empty-row", textContent: "No passwords saved." })]));
     if (p.problem) say(String(p.problem), "error");
   }

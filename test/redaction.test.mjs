@@ -161,3 +161,74 @@ test("a timeline card's caption, when the bar has no line, names fields without 
   // serve.mjs keeps it in the session's timeline index on disk: describe without values, as the bar.
   assert.match(readFileSync("scripts/daemon/serve.mjs", "utf8"), /caption = hud\.lastIn\(page\)\?\.text \|\| describe\(tool, args \|\| \{\}, \{ values: false \}\)/);
 });
+
+test("reserved secrets hidden from pairbrowse_facts, never typed, still masked", async () => {
+  const { parseSecrets, setSecret, setReservedSecret, reservedSecret, RESERVED_RULE } = await import("../scripts/rules/secrets.mjs");
+  const { secretNamesIn, reservedSecretsIn } = await import("../scripts/rules/policy.mjs");
+  const { createFacts } = await import("../scripts/facts.mjs");
+  const { createRefusals } = await import("../scripts/daemon/serve/refuse.mjs");
+  const { stepsIn } = await import("../scripts/runner/steps.mjs");
+  const reserved = "PAIRBROWSE_PROXY_HOME_PASSWORD";
+  const value = `px${hex(6)}`;
+  // A _DOMAINS line gives a reserved secret no sites.
+  const store = parseSecrets(`${reserved}=${value}\n${reserved}_DOMAINS=evil.example\nSHOP_PW=shop-${hex(4)}\nSHOP_PW_DOMAINS=shop.example\n`);
+  assert.deepEqual(store.domains[reserved], []);
+  assert.deepEqual(store.domains.SHOP_PW, ["shop.example"]);
+  assert.equal(reservedSecret(reserved), true);
+  for (const n of ["SHOP_PW", "PAIRBROWSE_", "pairbrowse_x", "XPAIRBROWSE_A", null]) assert.equal(reservedSecret(n), false, String(n));
+
+  // Hidden from pairbrowse_facts get; in the owner's Profile panel by name, marked reserved.
+  const facts = createFacts({ secrets: { get: () => ({ ...store, problem: null }), save() {} }, file: join(mkdtempSync(join(tmpdir(), "pb-facts-")), "facts.json") });
+  const got = facts.command({ action: "get" }).text;
+  assert.ok(!got.includes(reserved) && !got.includes(value), got);
+  assert.match(got, /SHOP_PW \(shop\.example\)/);
+  assert.deepEqual(facts.summary().secrets, [{ name: reserved, domains: [], reserved: true }, { name: "SHOP_PW", domains: ["shop.example"] }]);
+  assert.match(facts.command({ action: "remember", details: { Proxy: value } }).text, /looks like a saved password/, "never stored as a detail");
+
+  // Never typed: not counted (so never swapped for its value) and refused, by tool and in fast mode.
+  const names = Object.keys(store.values);
+  assert.deepEqual(secretNamesIn("browser_type", { text: reserved }, names), []);
+  assert.deepEqual(secretNamesIn("browser_fill_form", { fields: [{ value: reserved }, { value: "SHOP_PW" }] }, names), ["SHOP_PW"]);
+  assert.deepEqual(reservedSecretsIn("browser_fill_form", { fields: [{ value: "a" }, { value: reserved }] }, names), [reserved]);
+  const refusals = createRefusals({}, { secrets: { get: () => ({ ...store, problem: null }) }, secretNames: () => names, log() {}, serverUrl: async () => "https://evil.example/", serverPage: async () => null });
+  assert.equal(await refusals.browserToolProblem("browser_type", { target: "e1", text: reserved }), RESERVED_RULE);
+  assert.equal(await refusals.browserToolProblem("browser_fill_form", { fields: [{ target: "e1", value: reserved }] }), RESERVED_RULE);
+  const run = await stepsIn({ url: () => "https://evil.example/" }, [{ fill: { Password: reserved } }], { secrets: store });
+  assert.equal(run.ok, false);
+  assert.equal(run.why, RESERVED_RULE);
+  // Refused before any step runs: an ordinary field ahead of it, and earlier steps, are never touched.
+  const { preflight } = await import("../scripts/runner.mjs");
+  const { createRunTool } = await import("../scripts/daemon/serve/tools/run.mjs");
+  for (const steps of [[{ fill: { Email: "a@b.c", Password: reserved } }], [{ go: "https://shop.example/" }, { click: "Sign in" }, { check: "Remember me" }, { fill: { Password: reserved } }]]) {
+    const problem = preflight(steps, undefined, names);
+    assert.match(problem, new RegExp(`^Step ${steps.length} \\(fill\\): PAIRBROWSE_ secrets`), problem);
+    assert.match(problem, /Nothing was done/);
+    // pairbrowse_run returns the refusal before it asks for a page at all.
+    const asked = [];
+    const { pairbrowse_run } = createRunTool({ disconnected: new AbortController() }, { secrets: { get: () => store }, serverPage: async () => { asked.push("page"); return null; }, context: { getContext: async () => { asked.push("context"); return null; } } });
+    const r = await pairbrowse_run({ steps });
+    assert.equal(r.error, true);
+    assert.equal(r.text, problem);
+    assert.deepEqual(asked, [], "the page is never touched");
+  }
+  // An unsaved PAIRBROWSE_ name is plain text: a hosting dashboard's variable name types as written.
+  assert.deepEqual(reservedSecretsIn("browser_type", { text: "PAIRBROWSE_HOME" }, names), []);
+  assert.equal(await refusals.browserToolProblem("browser_type", { target: "e1", text: "PAIRBROWSE_HOME" }), null);
+  assert.equal(preflight([{ fill: { "Variable name": "PAIRBROWSE_HOME" } }], undefined, names), null);
+  assert.equal(preflight([{ fill: { Password: reserved } }]), null, "no saved names: nothing reserved to refuse");
+
+  // Still masked, wherever saved passwords are.
+  assert.equal(redact(`proxy said ${value}`, store.values, { as: (n) => n }), `proxy said ${reserved}`);
+
+  // The Profile panel's add form can't make one; PairBrowse's own writer needs 4+ characters.
+  assert.match(setSecret({ values: {}, domains: {} }, { name: reserved, value: "x".repeat(8), domains: "a.example" }).error, /kept for PairBrowse/);
+  assert.match(setSecret({ values: {}, domains: {} }, { name: "PAIRBROWSE_", value: "x".repeat(8), domains: "a.example" }).error, /kept for PairBrowse/, "the bare prefix too");
+  assert.deepEqual(parseSecrets("PAIRBROWSE_=abcdef\nPAIRBROWSE__DOMAINS=a.example\n").domains.PAIRBROWSE_, []);
+  assert.match(setReservedSecret({ values: {}, domains: {} }, { name: reserved, value: "abc" }).error, /at least 4 characters/);
+  assert.match(setReservedSecret({ values: {}, domains: {} }, { name: "SHOP_PW", value: "abcdef" }).error, /starting with PAIRBROWSE_/);
+  assert.match(setReservedSecret({ values: {}, domains: {} }, { name: reserved, value: "ab\ncd" }).error, /line breaks/);
+  const next = setReservedSecret(store, { name: "PAIRBROWSE_NTFY_TOKEN", value: "tk_abcdef" });
+  assert.equal(next.values.PAIRBROWSE_NTFY_TOKEN, "tk_abcdef");
+  assert.deepEqual(next.domains.PAIRBROWSE_NTFY_TOKEN, []);
+  assert.equal(next.values.SHOP_PW, store.values.SHOP_PW, "other secrets kept");
+});

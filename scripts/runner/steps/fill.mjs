@@ -1,6 +1,6 @@
 // A fill step: type each value into the field its label names, then check each kept it.
 import { SENSITIVE } from "../../rules/policy.mjs";
-import { hostAllowed } from "../../rules/secrets.mjs";
+import { hostAllowed, reservedSecret, RESERVED_RULE } from "../../rules/secrets.mjs";
 import { within, bounded } from "../../util.mjs";
 import { field, find, hiddenNow, openSectionOf, unfold } from "../locate.mjs";
 import { choicesBefore, clearChoices, hiddenDropdown, pickSuggestion } from "../choices.mjs";
@@ -10,6 +10,9 @@ export async function fill({ page, arg, i, hooks, touched, fail, gone, theirs, t
   const filled = [];
   const suggestionsSeen = new Map(); // label -> what a suggesting field offered
   for (const [label, raw] of Object.entries(arg)) {
+    // PairBrowse's own credentials (a proxy's, a hand-off channel's): never into a page. preflight
+    // refuses the run before any step; this is the backstop for a caller that skipped it.
+    if (reservedSecret(String(raw)) && Object.hasOwn(hooks.secrets?.values || {}, String(raw))) return fail(RESERVED_RULE);
     // A person using the tab: wait until they're done, then go on (their fields stay theirs).
     await hooks.holdForPeople?.();
     trace(`step ${i + 1}: finding "${label}"`);

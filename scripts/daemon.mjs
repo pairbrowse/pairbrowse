@@ -6,7 +6,7 @@
 // - The browser is driven over a private pipe (Playwright's default). There's no remote-debugging port.
 // - The only way in is a socket file in ~/.pairbrowse/run (mode 0700), so only your user account
 //   can connect. Shared clients coordinate through a daemon-wide queue and control leases.
-// - Secrets are typed only on the HTTPS domains listed for them in secrets.env.
+// - Secrets are typed only on the HTTPS domains listed for them in secrets.env (PAIRBROWSE_ ones never).
 // - Arbitrary-code and non-web navigation tools are refused here as well as in the hook.
 //
 // This file wires the parts in scripts/daemon/ together and runs the socket server:
@@ -29,15 +29,17 @@
 //   toolstab.mjs  the Tools tab: downloads, recordings, hand-offs, the OS opener (files by id), the person's own tabs
 //   preview.mjs   read-only previews of downloads (text; Word-type documents on macOS) for the person's tab
 //   diagnostics.mjs  the Tools tab's diagnostics and its scrubbed report (nothing is sent)
+//   logfile.mjs   daemon.log, saved secrets masked in every line (and in the helper's stdout and stderr)
 // First: the test switches go unless the test harness started this helper (test-gate.mjs).
 import "./test-gate.mjs";
 import net from "node:net";
 import { createRequire } from "node:module";
-import { rmSync, existsSync, appendFileSync, writeFileSync, readFileSync, statSync } from "node:fs";
+import { rmSync, existsSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths, loadConfig, ensureDirs } from "./paths.mjs";
 import { secretStore } from "./rules/secrets.mjs";
+import { createLogFile } from "./daemon/logfile.mjs";
 import { createFollow, isScreenPage, screenCard } from "./daemon/follow.mjs";
 import { createCaptureBackend, targetIdOf } from "./daemon/capture.mjs";
 import { createCaptureChannel } from "./liveview/capture.mjs";
@@ -97,7 +99,8 @@ const require = createRequire(join(paths.runtime, "package.json"));
 
 // How long a stopping helper waits for the browser to close cleanly before killing it (shutdown).
 const SHUTDOWN_GRACE_MS = 5000;
-const log = (...a) => appendFileSync(paths.daemonLog, `${new Date().toISOString()} ${a.join(" ")}\n`);
+const logFile = createLogFile({ file: paths.daemonLog }); // saved secrets masked (maskWith, below)
+const { log } = logFile;
 const config = loadConfig(paths.config, log); // unknown keys and refused values: logged, and in pairbrowse_status
 // Patchright unless the config opts into Playwright, or this Node.js is too old for Patchright.
 const driverChoice = chooseBrowserDriver(config, process.versions.node, patchrightNodeMinimum(paths.runtime));
@@ -210,6 +213,7 @@ const refreshTabs = () => liveView()?.refreshTabs().catch(() => {});
 // Passwords are read live, so one added in the Profile panel works at once. PairBrowse swaps
 // them in itself and masks them in everything Claude reads back.
 const secrets = secretStore(paths.secrets, log);
+logFile.maskWith(() => secrets.get().values);
 const collaboration = new BrowserCoordinator({ untilSeen: true, onChange: (state) => { liveView()?.setCollaboration(state); labelsChanged(); } });
 // An agent's name changed (identify): its tab's label follows (tabLabels, below).
 function labelsChanged() { try { tabLabels.changed(); } catch {} }
@@ -844,13 +848,7 @@ async function main() {
     });
   });
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => shutdown(0));
-  // A promise nobody caught (a page that closed under a background read, a joiner's channel
-  // dropping mid-send) is logged and the helper goes on: Node would otherwise end the process,
-  // killing the browser before it wrote its cookies. A thrown error outside any handler is a bug
-  // the helper can't reason about: logged, then a clean shutdown (the browser closes properly and
-  // the bridges reopen it on the next action).
-  process.on("unhandledRejection", (e) => log(`unhandled rejection: ${e?.stack || e}`));
-  process.on("uncaughtException", (e) => { log(`uncaught exception: ${e?.stack || e}`); shutdown(1); });
+  logFile.catchStrays(() => shutdown(1)); // stray rejections logged; an uncaught throw: logged, then a clean stop
 }
 
 if (process.argv[1]?.endsWith("daemon.mjs")) main();

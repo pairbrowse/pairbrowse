@@ -6,6 +6,7 @@
 // domains, uploads only of checked media and documents, final actions (pay, publish, submit for
 // review, delete, message people) are left for browser_click so the user confirms them.
 import { navigationProblem } from "./rules/policy.mjs";
+import { reservedSecret, RESERVED_RULE } from "./rules/secrets.mjs";
 import { isLocalNetwork } from "./rules/network.mjs";
 import { uploadProblem } from "./upload.mjs";
 import { within } from "./util.mjs";
@@ -23,8 +24,9 @@ export { listPlaybooks, loadPlaybook, savePlaybook, substitute } from "./runner/
 // The tools' definitions live in the catalog (tools/catalog.mjs).
 export { RUN_TOOL, SCROLL_TOOL } from "./tools/catalog.mjs";
 
-// Checks a step list before anything runs. Returns a problem string, or null.
-export function preflight(steps, uploadsDir) {
+// Checks a step list before anything runs. Returns a problem string, or null. secretNames: the
+// saved passwords' names; a fill that types a saved reserved one (PairBrowse's own) is refused here.
+export function preflight(steps, uploadsDir, secretNames = []) {
   if (!Array.isArray(steps) || !steps.length) return "No steps.";
   if (steps.length > 200) return "Too many steps (max 200).";
   for (const [i, step] of steps.entries()) {
@@ -36,6 +38,8 @@ export function preflight(steps, uploadsDir) {
       const p = navigationProblem(arg);
       if (p) return `${at}: ${p}`;
       if (isLocalNetwork(arg)) return `${at}: ${arg} is on the local network. Use browser_navigate so the user can approve it.`;
+    } else if (kind === "fill") {
+      if (arg && typeof arg === "object" && Object.values(arg).some((v) => reservedSecret(String(v)) && secretNames.includes(String(v)))) return `${at}: ${RESERVED_RULE} Nothing was done.`;
     } else if (kind === "click") {
       // What the click does is checked when it runs (the page isn't there yet).
     } else if (kind === "upload") {
@@ -53,7 +57,7 @@ export function preflight(steps, uploadsDir) {
     } else if (kind === "handoff") {
       if (!arg || typeof arg !== "object" || Array.isArray(arg) || (arg.until === undefined && arg.untilGone === undefined)) return `${at}: handoff takes {"say": "what the user must do", "until": "text that appears after"} (or "untilGone").`;
       if ((arg.until !== undefined && typeof arg.until !== "string") || (arg.untilGone !== undefined && typeof arg.untilGone !== "string") || (arg.say !== undefined && typeof arg.say !== "string")) return `${at}: say, until and untilGone are text.`;
-    } else if (!["fill", "check", "uncheck", "select", "press", "waitFor", "expect"].includes(kind)) {
+    } else if (!["check", "uncheck", "select", "press", "waitFor", "expect"].includes(kind)) {
       return `${at}: unknown step. Use one of go, fill, check, uncheck, select, click, press, scroll, upload, waitFor, expect, handoff.`;
     }
   }

@@ -187,12 +187,18 @@ change to the timeline, the layout, the downloads folder, screenshots, the cooki
 from the helper's next start; `sessionPicker` from the next start; a change of browser when the
 browser next starts.
 
-Passwords go in `~/.pairbrowse/secrets.env` (kept at `chmod 600`; PairBrowse refuses to use it otherwise):
+Passwords go in `~/.pairbrowse/secrets.env` (your own regular file, kept at `chmod 600`; PairBrowse
+refuses to use a file others can read, another user's file, or a link to a file elsewhere):
 
 ```
 SHOPIFY_PASSWORD=...
 SHOPIFY_PASSWORD_DOMAINS=accounts.shopify.com
 ```
+
+The Profile panel writes the file whole (a new file renamed into place). Names starting with
+`PAIRBROWSE_` are reserved for PairBrowse's own credentials, such as a proxy's or a hand-off
+channel's: PairBrowse sets them itself, never types them into a page (a `_DOMAINS` line for one is
+ignored), doesn't list them to Claude, and masks them like every password, in `daemon.log` too.
 
 Set `PAIRBROWSE_HOME` (in your shell or user settings; a project's own settings can't set it) to keep everything somewhere other than `~/.pairbrowse`, or run several
 browsers side by side as named instances (`PAIRBROWSE_INSTANCE`, or a project's `.pairbrowse.json`:

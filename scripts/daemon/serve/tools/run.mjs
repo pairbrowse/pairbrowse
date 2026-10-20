@@ -25,7 +25,7 @@ export function createRunTool(conn, api) {
     } catch (e) {
       return { text: `${e.message}. Pass it in vars.`, error: true };
     }
-    const problem = preflight(resolved, paths.uploads);
+    const problem = preflight(resolved, paths.uploads, Object.keys(secrets.get().values || {}));
     if (problem) return { text: problem, error: true };
     const page = (await serverPage()) || (await (await context.getContext()).newPage());
     // A page that answers nothing (its scripts never pause, or it froze): said at once. A run that

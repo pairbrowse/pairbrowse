@@ -1,6 +1,7 @@
 // Rules the daemon enforces on every tool call, whatever the hooks or permission mode say.
 import { isBrowserPage } from "../../ui/urls.js";
 import { toolsWith, CATALOG } from "../tools/catalog.mjs";
+import { reservedSecret } from "./secrets.mjs";
 
 // run_code_unsafe runs arbitrary code in the helper. The webmcp tools let web pages register
 // their own tools for Claude to call, which hands a hostile page a direct line to Claude. The
@@ -61,9 +62,13 @@ const SECRET_NAME = /^[A-Z][A-Z0-9]*_[A-Z0-9_]+$/;
 const typedValues = (tool, args) =>
   tool === "browser_fill_form" ? (args.fields || []).map((f) => f.value) : tool === "browser_type" ? [args.text] : [];
 
+// The saved passwords' names typed as a whole value. A reserved name (PAIRBROWSE_..., secrets.mjs)
+// never counts, so it is never swapped for its value; reservedSecretsIn finds a saved one to refuse
+// (an unsaved PAIRBROWSE_ name is plain text: only saved names are ever swapped for a value).
 export function secretNamesIn(tool, args, names) {
-  return typedValues(tool, args).filter((v) => names.includes(v));
+  return typedValues(tool, args).filter((v) => names.includes(v) && !reservedSecret(v));
 }
+export const reservedSecretsIn = (tool, args, names) => typedValues(tool, args).filter((v) => names.includes(v) && reservedSecret(v));
 
 // SOME_SECRET style values, used when secrets are disabled to explain why instead of typing the name.
 export function looksLikeSecretName(tool, args) {

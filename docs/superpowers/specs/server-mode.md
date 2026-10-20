@@ -1250,6 +1250,30 @@ it depends on.
    makes it (step 17), and `docs/configuration.md`'s paragraph on the trail lands with that step.
 15. Reserved secrets, `loadSecrets` owner and symlink checks, atomic `writeSecrets`, masked
     `daemon/logfile.mjs` (B6, C3). -> 14
+   Landed as: `scripts/rules/secrets.mjs` `reservedSecret(name)` (`PAIRBROWSE_` then capitals,
+   digits and `_`), `RESERVED_RULE`, `RESERVED_MIN` (4) and `setReservedSecret(current, { name,
+   value })` (reserved names only, 4 to 4096 characters, one line, no sites) for the later writers
+   (C3's CLI, C14's Settings, B6's channels). `parseSecrets` and `writeSecrets` give a reserved
+   name (any name starting with `PAIRBROWSE_`, the bare prefix too) no sites whatever its
+   `_DOMAINS` line says; `setSecret` (the Profile panel's add form) refuses one. `policy.mjs`
+   `secretNamesIn` never counts a reserved name (so it is never swapped for its value) and
+   `reservedSecretsIn(tool, args, names)` finds a saved one (an unsaved `PAIRBROWSE_...` string
+   is plain text, as only saved names are ever swapped): `browserToolProblem` refuses it for
+   every agent; `runner.mjs` `preflight(steps, uploadsDir, secretNames)` refuses a run whose
+   fill names one before any step runs, and fast mode's fill step refuses it again as a backstop. `pairbrowse_facts
+   get` leaves reserved names out; the Profile panel summary marks them `reserved: true` and the
+   panel offers delete only. `loadSecrets` checks the name with `lstat` (a link, a non-regular
+   file, another uid or a mode wider than 0600 is refused with a problem) and again on the file
+   it opened (`O_NOFOLLOW | O_NONBLOCK`, same inode); `writeSecrets` throws on a link, non-file or
+   another uid at the name, else writes a fresh `.secrets.env.<pid>.<random>.tmp` (`wx`, 0600,
+   fsync) and renames it over; `secretStore.save` refuses while the file on disk fails a check, so
+   passwords it couldn't read are never written over, and the Profile panel shows the reason.
+   `scripts/daemon/logfile.mjs` `createLogFile({ file, now, streams })` returns `{ log, maskWith,
+   catchStrays, mask }`: every `daemon.log` line and every write to the helper's stdout and stderr
+   (the same file) goes through `redact` with the store's values (`maskWith`, set right after the
+   store, which logs its own problems through this log); the stray rejection and exception
+   handlers moved there from `daemon.mjs`. Not masked: a value split across two stream writes,
+   and the runtime's own print of a fatal error outside any handler.
 16. `handoff` schema; senders (webhook, ntfy, Telegram, Discord, Slack) and the interface (B6, B7). -> 15
 17. `daemon/grants.mjs` (B2, B3, B4). -> 14
 18. `char` input and fuzz (B8).

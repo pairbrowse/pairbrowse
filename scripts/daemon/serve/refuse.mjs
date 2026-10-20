@@ -2,7 +2,7 @@
 // never a person's own tab), its arguments, the PairBrowse safety rules (guard.mjs), approvals
 // given in the browser, and the browser tools' own checks (web pages only, passwords only on their
 // sites, no final action pressed under a milder name). Each returns a refusal's text, or null.
-import { isBrowserPage, BROWSER_PAGE_RULE, HAND_TOOLS, isWebStore, WEB_STORE_RULE, isWebTab, NOT_WEB_RULE, ERROR_PAGE_RULE, toolRefused, isRef, looksLikeSecretName, navigationProblem, secretNamesIn } from "../../rules/policy.mjs";
+import { isBrowserPage, BROWSER_PAGE_RULE, HAND_TOOLS, isWebStore, WEB_STORE_RULE, isWebTab, NOT_WEB_RULE, ERROR_PAGE_RULE, toolRefused, isRef, looksLikeSecretName, navigationProblem, secretNamesIn, reservedSecretsIn } from "../../rules/policy.mjs";
 import { isUntouchedStart } from "../../tabs.mjs";
 import { PERSON_TAB_RULE } from "../output.mjs";
 import { BROWSER_GUARDED, REMOTE_TOOLS } from "./wire.mjs";
@@ -11,7 +11,7 @@ import { clickRule, dialogRule, strongSignal } from "../../rules/clicks.mjs";
 import { APPROVAL_TOOLS, approvalAsk, decide } from "../../rules/decide.mjs";
 import { clickClass } from "../../rules/clicks.mjs";
 import { activatingKey, contextAt, enterButtonLabel, riskAt, riskReason } from "../../runner.mjs";
-import { hostAllowed } from "../../rules/secrets.mjs";
+import { hostAllowed, RESERVED_RULE } from "../../rules/secrets.mjs";
 import { pathsIn } from "../../upload.mjs";
 import { within } from "../../util.mjs";
 import { originOf, sameWhere } from "../approvals.mjs";
@@ -163,6 +163,8 @@ export function createRefusals(conn, api) {
       const problem = navigationProblem(args.url);
       if (problem) return problem;
     }
+    // PairBrowse's own credentials (a proxy's, a hand-off channel's) never go into a page.
+    if (reservedSecretsIn(name, args, secretNames()).length) return RESERVED_RULE;
     const { domains, problem } = secrets.get();
     const used = secretNamesIn(name, args, secretNames());
     if (used.length) {

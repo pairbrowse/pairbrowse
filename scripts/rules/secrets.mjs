@@ -1,7 +1,24 @@
 // Reads ~/.pairbrowse/secrets.env. Every secret must say which sites it may be typed into:
 //   SHOPIFY_PASSWORD=...
 //   SHOPIFY_PASSWORD_DOMAINS=accounts.shopify.com
-import { readFileSync, statSync, writeFileSync, chmodSync } from "node:fs";
+// The file must be this user's own regular file (never a link), mode 0600; it is written whole
+// through a 0600 temporary file and a rename, so no reader ever sees half of it.
+import { closeSync, fchmodSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, renameSync, rmSync, writeSync, constants as fsConstants } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { randomBytes } from "node:crypto";
+
+// Reserved secrets (spec server-mode B6, C3): names under PAIRBROWSE_ are PairBrowse's own
+// credentials (a proxy's username and password, a hand-off channel's token), never a site's
+// password. Never typed into a page, even with a _DOMAINS line (their sites are always none);
+// hidden from pairbrowse_facts get; never counted as a typed secret by secretNamesIn (policy.mjs),
+// so never swapped for the value, and an agent that types a saved one is refused; still masked by
+// redact; listed by name in the owner's Profile panel. Any name starting with the prefix (even
+// PAIRBROWSE_ alone) gets no sites and can't be made from the Profile panel's add form.
+export const RESERVED_PREFIX = "PAIRBROWSE_";
+export const reservedSecret = (name) => typeof name === "string" && /^PAIRBROWSE_[A-Z0-9_]+$/.test(name);
+export const RESERVED_RULE = "PAIRBROWSE_ secrets are PairBrowse's own credentials (proxies, hand-off channels) and are never typed into a page. Hand this field to the user.";
+// Reserved values are masked by redact (4 or more characters), so shorter ones are refused.
+export const RESERVED_MIN = 4;
 
 export function parseSecrets(text) {
   const raw = {};
@@ -19,20 +36,50 @@ export function parseSecrets(text) {
     if (k.endsWith("_DOMAINS")) continue;
     if (!v) continue;
     values[k] = v;
-    domains[k] = (raw[`${k}_DOMAINS`] || "").split(",").map((d) => d.trim().toLowerCase().replace(/^\*?\./, "")).filter(Boolean);
+    domains[k] = k.startsWith(RESERVED_PREFIX) ? [] : (raw[`${k}_DOMAINS`] || "").split(",").map((d) => d.trim().toLowerCase().replace(/^\*?\./, "")).filter(Boolean);
   }
   return { values, domains };
 }
 
+const POSIX = process.platform !== "win32";
+const uid = () => (typeof process.getuid === "function" ? process.getuid() : null);
+
+// Why the secrets file at `file` (its lstat `st`) can't be trusted, or null. Not followed through
+// a link (another file's contents, or a file another user can swap), only this user's regular file.
+function fileProblem(file, st) {
+  const off = "Secrets are disabled until then.";
+  if (st.isSymbolicLink()) return `${file} is a link; PairBrowse reads secrets only from your own regular file. Put the file itself there in place of the link. ${off}`;
+  if (!st.isFile()) return `${file} isn't a regular file; move it away and save your passwords again from the Profile panel. ${off}`;
+  if (POSIX && uid() !== null && st.uid !== uid()) return `${file} belongs to another user; PairBrowse reads secrets only from a file of your own. Move it away and save your passwords again from the Profile panel. ${off}`;
+  if (POSIX && (st.mode & 0o077) !== 0) return `${file} is readable by other users; run chmod 600 on it. ${off}`;
+  return null;
+}
+
+// { values, domains, problem }: a missing file is no secrets and no problem; a file that fails a
+// check (fileProblem) or can't be read is no secrets and the problem saying why. The checks are
+// made on the name (lstat) and again on the opened file (opened without following a link, without
+// waiting on a pipe), so a file swapped in between is refused too.
 export function loadSecrets(file) {
+  const none = (problem) => ({ values: {}, domains: {}, problem });
+  let st;
+  try { st = lstatSync(file); } catch (e) {
+    return none(e?.code === "ENOENT" ? null : `${file} couldn't be read (${e?.code || "error"}). Check its permissions; secrets are disabled until then.`);
+  }
+  const problem = fileProblem(file, st);
+  if (problem) return none(problem);
   let text;
   try {
-    text = readFileSync(file, "utf8");
-  } catch {
-    return { values: {}, domains: {}, problem: null };
-  }
-  if (process.platform !== "win32" && (statSync(file).mode & 0o077) !== 0) {
-    return { values: {}, domains: {}, problem: `${file} is readable by other users; run chmod 600 on it. Secrets are disabled until then.` };
+    const fd = openSync(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) | (fsConstants.O_NONBLOCK || 0));
+    try {
+      const opened = fstatSync(fd);
+      const again = fileProblem(file, opened) || (POSIX && (opened.ino !== st.ino || opened.dev !== st.dev) ? `${file} changed while it was read. Secrets are disabled until it is read again.` : null);
+      if (again) return none(again);
+      text = readFileSync(fd, "utf8");
+    } finally {
+      closeSync(fd);
+    }
+  } catch (e) {
+    return none(e?.code === "ENOENT" ? null : `${file} couldn't be read (${e?.code || "error"}). Check its permissions; secrets are disabled until then.`);
   }
   return { ...parseSecrets(text), problem: null };
 }
@@ -51,12 +98,16 @@ export function hostAllowed(url, allowed) {
 
 // The passwords file, read again after each change so every part of the helper sees a password
 // added in the Profile panel at once.
+// save(next) throws (with the reason) when the file on disk fails a check: its passwords weren't
+// read, so writing `next` over it would lose them.
 export function secretStore(file, log = () => {}) {
   let current = loadSecrets(file);
   if (current.problem) log(current.problem);
   return {
     get: () => current,
     save(next) {
+      const now = loadSecrets(file);
+      if (now.problem) { current = now; throw new Error(now.problem); }
       writeSecrets(file, next);
       current = loadSecrets(file);
     },
@@ -97,26 +148,60 @@ const HEADER = `# PairBrowse passwords. Managed from the Profile panel; only you
 # Claude types a password by its NAME; PairBrowse fills the real value, only on the HTTPS sites in NAME_DOMAINS.
 `;
 
+// Writes the whole file: a 0600 temporary file beside it (a new name, never an existing file),
+// flushed, then renamed over it, so a reader sees the old file or the new one, never half. Throws
+// when the name holds a link, something other than a regular file, or another user's file (a
+// rename would replace what isn't ours to replace), and leaves no temporary file behind on a failure.
 export function writeSecrets(file, { values, domains }) {
   let text = HEADER;
   for (const name of Object.keys(values).sort()) {
-    text += `\n${name}="${values[name]}"\n${name}_DOMAINS=${(domains[name] || []).join(",")}\n`;
+    text += `\n${name}="${values[name]}"\n${name}_DOMAINS=${(name.startsWith(RESERVED_PREFIX) ? [] : domains[name] || []).join(",")}\n`;
   }
-  writeFileSync(file, text, { mode: 0o600 });
-  if (process.platform !== "win32") chmodSync(file, 0o600);
+  let st = null;
+  try { st = lstatSync(file); } catch (e) { if (e?.code !== "ENOENT") throw e; }
+  const problem = st && (st.isSymbolicLink() || !st.isFile() || (POSIX && uid() !== null && st.uid !== uid())) ? fileProblem(file, st) : null;
+  if (problem) throw new Error(problem.replace(/ Secrets are disabled until then\.$/, " Nothing was saved."));
+  const tmp = join(dirname(file), `.${basename(file)}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
+  try {
+    const fd = openSync(tmp, "wx", 0o600);
+    try {
+      if (POSIX) fchmodSync(fd, 0o600); // the umask can't widen or narrow it
+      writeSync(fd, text);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(tmp, file);
+  } catch (e) {
+    try { rmSync(tmp, { force: true }); } catch {}
+    throw e;
+  }
 }
+
+const valueProblem = (v) => (v.length > 4096 || /[\r\n\u0000]/.test(v) ? "Passwords can't contain line breaks. Paste it again on one line." : null);
 
 export function setSecret(current, { name, value, domains }) {
   if (!validSecretName(name)) return { error: "Use a name like SHOPIFY_PASSWORD." };
+  if (name.startsWith(RESERVED_PREFIX)) return { error: `Names starting with ${RESERVED_PREFIX} are kept for PairBrowse's own credentials. Use another name, like SHOPIFY_PASSWORD.` };
   const v = String(value ?? "");
   if (!v && !(name in current.values)) return { error: "Enter the password." };
-  if (v.length > 4096 || /[\r\n\u0000]/.test(v)) return { error: "Passwords can't contain line breaks. Paste it again on one line." };
+  if (valueProblem(v)) return { error: valueProblem(v) };
   const d = cleanDomains(domains);
   if (d.error) return d;
   return {
     values: { ...current.values, [name]: v || current.values[name] }, // empty value: keep the old one, change sites only
     domains: { ...current.domains, [name]: d.domains },
   };
+}
+
+// A reserved secret (PAIRBROWSE_..., set by PairBrowse's own settings and command line, never the
+// Profile panel's add form): no sites, at least RESERVED_MIN characters so redact masks it.
+export function setReservedSecret(current, { name, value }) {
+  if (!validSecretName(name) || !reservedSecret(name)) return { error: `Use a name starting with ${RESERVED_PREFIX}, like ${RESERVED_PREFIX}PROXY_HOME_PASSWORD.` };
+  const v = String(value ?? "");
+  if (v.length < RESERVED_MIN) return { error: `Too short. Use at least ${RESERVED_MIN} characters, so PairBrowse can keep it out of everything it shows and logs.` };
+  if (valueProblem(v)) return { error: valueProblem(v) };
+  return { values: { ...current.values, [name]: v }, domains: { ...current.domains, [name]: [] } };
 }
 
 export function deleteSecret(current, name) {

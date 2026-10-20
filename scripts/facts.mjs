@@ -5,7 +5,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { writeJsonAtomic } from "./util.mjs";
 import { paths } from "./paths.mjs";
-import { setSecret, deleteSecret } from "./rules/secrets.mjs";
+import { setSecret, deleteSecret, reservedSecret } from "./rules/secrets.mjs";
 
 export const FACTS_FILE = paths.factsJson;
 const MAX = 400;
@@ -110,11 +110,18 @@ export function createFacts({ secrets, log = () => {}, onChange = () => {}, file
   };
   const forget = (labels) => save(labels.reduce(forgetFact, facts));
 
-  // What the Profile panel shows: details in full, passwords by name and sites only.
+  // What the Profile panel shows: details in full, passwords by name and sites only (reserved
+  // ones, PairBrowse's own credentials, by name and marked so).
   function summary() {
     const { values, domains, problem } = secrets.get();
-    return { details: facts, secrets: Object.keys(values).sort().map((name) => ({ name, domains: domains[name] || [] })), problem };
+    return { details: facts, secrets: Object.keys(values).sort().map((name) => ({ name, domains: domains[name] || [], ...(reservedSecret(name) ? { reserved: true } : {}) })), problem };
   }
+  // Saves the password store; an error message (the file failed a check), or null.
+  const saveSecrets = (next, done) => {
+    try { secrets.save(next); } catch (e) { log(e.message); return e.message; }
+    log(done);
+    return null;
+  };
 
   // pairbrowse_facts. Returns { text, error }.
   function command({ action, details = {}, labels = [] } = {}) {
@@ -136,7 +143,7 @@ export function createFacts({ secrets, log = () => {}, onChange = () => {}, file
       onChange();
       return error ? { text: error, error: true } : { text: `Forgot ${labels.length} detail(s).` };
     }
-    const names = Object.keys(values);
+    const names = Object.keys(values).filter((n) => !reservedSecret(n)); // PairBrowse's own: not Claude's to type
     return { text: `${describeFacts(facts)}\n\nSaved passwords (type the NAME as the value): ${names.length ? names.map((n) => `${n} (${(domains[n] || []).join(", ")})`).join("; ") : "none. The user adds them in the Profile panel of the live view."}` };
   }
 
@@ -151,11 +158,9 @@ export function createFacts({ secrets, log = () => {}, onChange = () => {}, file
     setSecret: (input) => {
       const next = setSecret(secrets.get(), input);
       if (next.error) return next.error;
-      secrets.save(next);
-      log(`password ${input.name} saved from the Profile panel`);
-      return null;
+      return saveSecrets(next, `password ${input.name} saved from the Profile panel`);
     },
-    deleteSecret: (name) => { secrets.save(deleteSecret(secrets.get(), name)); log(`password ${name} deleted from the Profile panel`); },
+    deleteSecret: (name) => saveSecrets(deleteSecret(secrets.get(), name), `password ${name} deleted from the Profile panel`),
   };
 
   return { command, seenInForm, summary, profile };

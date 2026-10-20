@@ -66,6 +66,17 @@ async function applyGeoipQuietly(pack, fingerprint, proxy) {
   }
 }
 const PLATFORM = { darwin: "macos", linux: "linux", win32: "windows" }[process.platform];
+// D12 (F4, F7): what a launch works out each time when no setting gives it: the build's platform
+// and brand version, and this computer's time zone and languages (else a device's own languages).
+// Never kept in the persona, and one kept there by an older version is not read, so a build update
+// never launches with the old build's version and a copied persona never brings its system along.
+const DERIVED_FIELDS = ["platform", "brandVersion", "timezone", "acceptLanguage"];
+// The languages a device profile given as a setting lists (navigator.languages), as Accept-Language.
+const deviceLanguages = (profile) => {
+  const list = profile && typeof profile === "object" ? profile.navigator?.languages : null;
+  const plain = Array.isArray(list) ? list.filter((l) => typeof l === "string" && /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(l)).slice(0, 10) : [];
+  return plain.length ? plain.join(",") : undefined;
+};
 
 // The build manifest of a native PairBrowse browser: in the app's Resources on macOS
 // (PairBrowse.app/Contents/MacOS/pairbrowse), next to chrome / chrome.exe on Linux and Windows.
@@ -328,6 +339,7 @@ function readSettings(config, pack, personaPath) {
   if (persisted.proxy !== undefined) throw new Error(personaProxyRefusal("The persona kept with this session (pairbrowse-persona.json)"));
   const bridgeDropped = persisted.canvasBridge !== undefined;
   delete persisted.canvasBridge;
+  for (const key of DERIVED_FIELDS) delete persisted[key];
   for (const key of UNSUPPORTED) {
     if ([persisted, saved, given].some((layer) => layer[key] !== undefined)) throw new Error(`PairBrowse native does not support pairbrowse.${key} on this engine.`);
   }
@@ -359,13 +371,18 @@ export const droppedLine = (layer, names) => {
 
 // The fingerprint to launch with: the layered settings, then a persona (this Mac's own, captured
 // once per Mac, when no layer names one), the seed, and the region (geoip, else this computer's
-// time zone and language).
+// time zone and languages, or the languages of a device profile a setting gives). What it works
+// out is derived (DERIVED_FIELDS), never the persona's.
 async function resolveFingerprint(chromium, options, pack, directory, settings, version, log = () => {}) {
   const { geoip, overrides, saved, persisted } = settings;
   const { fingerprint, rest } = pack.splitFingerprintOptions({ ...persisted, ...saved, ...overrides });
   if (fingerprint.fingerprint === "off") throw new Error(`Fingerprint passthrough needs a newer PairBrowse engine; engine version ${ENGINE_MAJOR} treats off as a seed.`);
   fingerprint.platform ??= PLATFORM;
   fingerprint.brandVersion ??= version;
+  // A device profile given as a setting (config.json, the browser profile or a saved persona),
+  // never this Mac's capture or one kept from before: its languages are the browser's when no
+  // setting names any (the engine pack's own reading, which this computer's Intl would replace).
+  const givenDevice = overrides.fingerprintProfile ?? saved.fingerprintProfile;
   const steps = [];
   let hostCapture = false;
   if (fingerprint.fingerprintProfile === undefined) {
@@ -391,18 +408,20 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
     await applyGeoipQuietly(pack, fingerprint, options.proxy);
   }
   fingerprint.timezone ??= Intl.DateTimeFormat().resolvedOptions().timeZone;
-  fingerprint.acceptLanguage ??= Intl.DateTimeFormat().resolvedOptions().locale;
+  fingerprint.acceptLanguage ??= deviceLanguages(givenDevice) ?? Intl.DateTimeFormat().resolvedOptions().locale;
   return { fingerprint, rest, steps };
 }
 
 // Only the fingerprint is kept with the profile: never proxy credentials, agent keys or a canvas
-// bridge, and with geoip never what it derived (GEOIP_FIELDS, spec C9): those are measurements of
-// this launch's exit address, not settings. One set in config.json or a saved profile is read from
-// there again at each launch.
+// bridge, never what the launch works out (DERIVED_FIELDS, D12), and with geoip never what it
+// derived (GEOIP_FIELDS, spec C9): those are measurements of this launch's exit address, not
+// settings. One set in config.json, the browser profile or a saved profile is read from there
+// again at each launch.
 // name: the browser profile's id (D13), or "pairbrowse" for a launch without one.
 function savePersona(pack, personaPath, fingerprint, geoip, name = LEGACY_PERSONA) {
   const persona = { ...fingerprint };
   delete persona.canvasBridge;
+  for (const key of DERIVED_FIELDS) delete persona[key];
   if (geoip) for (const key of GEOIP_FIELDS) delete persona[key];
   new pack.Profile(name, persona).save(personaPath);
 }

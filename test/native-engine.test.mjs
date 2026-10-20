@@ -668,13 +668,23 @@ packTest("geoip values set in config.json still apply, and are read from there a
   assert.ok(!readFileSync(join(directory, "pairbrowse-persona.json"), "utf8").includes("Asia/Tokyo"));
 });
 
-packTest("without geoip the persona keeps its time zone and language as before", async () => {
+// D12: without geoip too, a set time zone is read from its setting at each launch and the persona
+// keeps none (nor a language); one an older version kept there is no longer read.
+packTest("without geoip a set time zone applies from config.json at each launch; the persona keeps none", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-geo-off-"));
   pack.applyGeoip = async () => { throw new Error("geoip is off"); };
-  await launchNative(fakeBrowserType(), { pairbrowse: { timezone: "Asia/Tokyo" } }, directory, { executablePath: app.executablePath, headless: false }, pack);
-  assert.equal(pack.Profile.load(join(directory, "pairbrowse-persona.json")).options.timezone, "Asia/Tokyo");
+  const chromium = fakeBrowserType();
+  await launchNative(chromium, { pairbrowse: { timezone: "Asia/Tokyo" } }, directory, { executablePath: app.executablePath, headless: false }, pack);
+  assert.ok(chromium.calls[0].options.args.includes("--timezone=Asia/Tokyo"));
+  const kept = pack.Profile.load(join(directory, "pairbrowse-persona.json")).options;
+  assert.equal(kept.timezone, undefined);
+  assert.equal(kept.acceptLanguage, undefined);
+  new pack.Profile("pairbrowse", { ...kept, timezone: "Asia/Tokyo" }).save(join(directory, "pairbrowse-persona.json"));
+  const again = fakeBrowserType();
+  await launchNative(again, { pairbrowse: {} }, directory, { executablePath: app.executablePath, headless: false }, pack);
+  assert.ok(again.calls[0].options.args.includes(`--timezone=${Intl.DateTimeFormat().resolvedOptions().timeZone}`), "this computer's, not one an older persona kept");
 });
 
 packTest("a geoip failure stops the launch with a sentence naming no address", async () => {
@@ -1049,10 +1059,11 @@ test("proxyAuthFile: the build manifest's field, 1 and up, gates proxy credentia
   assert.equal(proxyAuthFile(null), false);
 });
 
-// F4 (D12 closes it): the build's platform and brand version fill the fingerprint when no layer
-// sets them, and are then stored in the persona, so a later build launches with the first build's
-// brand version, and a persona from another system keeps that system's platform.
-test("F4 today: the build's platform and brand version are stored in the persona and outlive a build update", async () => {
+// Spec D12 (F4): the build's platform and brand version fill the fingerprint when no setting gives
+// them, at each launch, and are never kept in the persona: an update within the major launches
+// with the new build's version, one an older version kept is not read, and a persona copied from
+// another system brings no platform along. A legacy config.json value (U6) still applies.
+test("in-major update keeps no old brandVersion", async () => {
   const first = appFixture({ product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" });
   const later = appFixture({ product: "PairBrowse", version: "150.0.7900.1", arch: "arm64" });
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-f4-"));
@@ -1063,39 +1074,66 @@ test("F4 today: the build's platform and brand version are stored in the persona
   assert.equal(before.given[0].brandVersion, "150.0.7871.114");
   assert.equal(before.given[0].platform, PLATFORM);
   const stored = JSON.parse(readFileSync(personaPath, "utf8")).options;
-  assert.equal(stored.brandVersion, "150.0.7871.114", "the derived brand version is stored as configuration");
-  assert.equal(stored.platform, PLATFORM, "so is the derived platform");
+  assert.equal(stored.brandVersion, undefined, "the derived brand version is never stored");
+  assert.equal(stored.platform, undefined, "nor the derived platform");
   const after = recordingPack();
   await launchNative(fakeBrowserType(), config, directory, { executablePath: later.executablePath, headless: false }, after);
-  assert.equal(after.given[0].brandVersion, "150.0.7871.114", "the updated build still says the first build's version");
+  assert.equal(after.given[0].brandVersion, "150.0.7900.1", "the updated build says its own version");
+  // A persona an older version wrote, with the first build's values: not read.
+  writeFileSync(personaPath, JSON.stringify({ name: "pairbrowse", options: { ...stored, brandVersion: "150.0.7871.114", platform: PLATFORM } }));
+  const older = recordingPack();
+  await launchNative(fakeBrowserType(), config, directory, { executablePath: later.executablePath, headless: false }, older);
+  assert.equal(older.given[0].brandVersion, "150.0.7900.1", "an old stored version is not read");
+  assert.equal(JSON.parse(readFileSync(personaPath, "utf8")).options.brandVersion, undefined, "and is gone once saved again");
 
   const other = PLATFORM === "windows" ? "linux" : "windows";
   const copied = mkdtempSync(join(tmpdir(), "pairbrowse-f4-copied-"));
   writeFileSync(join(copied, "pairbrowse-persona.json"), JSON.stringify({ name: "pairbrowse", options: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), platform: other } }));
   const moved = recordingPack();
   await launchNative(fakeBrowserType(), { pairbrowse: {} }, copied, { executablePath: later.executablePath, headless: false }, moved);
-  assert.equal(moved.given[0].platform, other, "a persona from another system keeps that system's platform");
+  assert.equal(moved.given[0].platform, PLATFORM, "a persona from another system brings no platform along");
+  const legacy = recordingPack();
+  await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), platform: other, brandVersion: "149.0.1.1" } }, mkdtempSync(join(tmpdir(), "pairbrowse-f4-legacy-")), { executablePath: later.executablePath, headless: false }, legacy);
+  assert.equal(legacy.given[0].platform, other, "config.json's legacy platform still applies (U6)");
+  assert.equal(legacy.given[0].brandVersion, "149.0.1.1");
 });
 
-// F7 (D12 closes it): with no timezone or acceptLanguage set, this computer's Intl fills both,
-// whatever languages the device profile lists, and both are stored in the persona.
-test("F7 today: this computer's Intl replaces the device's languages and is stored in the persona", async () => {
+// Spec D12 (F7): a profile's languages reach the engine as Accept-Language (--accept-lang); a device
+// profile given as a setting keeps its own languages; this computer's Intl fills in only when no
+// setting names any, and neither is kept in the persona.
+test("profile languages reach --accept-lang", async () => {
   const app = appFixture();
-  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-f7-"));
   const host = Intl.DateTimeFormat().resolvedOptions();
-  const pack = recordingPack();
-  await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", fingerprintProfile: { navigator: { languages: ["nl-NL", "nl"] } } } }, directory,
-    { executablePath: app.executablePath, headless: false }, pack);
-  assert.equal(pack.given[0].acceptLanguage, host.locale, "the host's language, not the device's nl-NL");
-  assert.equal(pack.given[0].timezone, host.timeZone);
-  const stored = JSON.parse(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8")).options;
-  assert.equal(stored.acceptLanguage, host.locale, "the host's language is stored as configuration");
-  assert.equal(stored.timezone, host.timeZone, "so is the host's time zone");
-  const explicit = recordingPack();
-  await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", acceptLanguage: "nl-NL,nl", timezone: "Europe/Amsterdam", fingerprintProfile: PINNED_PROFILE() } },
-    mkdtempSync(join(tmpdir(), "pairbrowse-f7-explicit-")), { executablePath: app.executablePath, headless: false }, explicit);
-  assert.equal(explicit.given[0].acceptLanguage, "nl-NL,nl", "a set acceptLanguage wins");
-  assert.equal(explicit.given[0].timezone, "Europe/Amsterdam");
+  const id = "p-0123456789abcdef";
+  const store = { id, kind: "store", geoip: false, engineKeys: { acceptLanguage: "de-DE,de", timezone: "Europe/Berlin" } };
+  const launch = async (config, pack = Object.assign(recordingPack(), { collector: "" })) => {
+    const directory = mkdtempSync(join(tmpdir(), "pairbrowse-f7-"));
+    const chromium = fakeBrowserType();
+    await launchNative(chromium, config, directory, { executablePath: app.executablePath, headless: false }, pack);
+    return { pack, chromium, stored: JSON.parse(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8")).options };
+  };
+  const profile = await launch({ pairbrowse: { acceptLanguage: "ja-JP" }, browserProfile: store });
+  assert.equal(profile.pack.given[0].acceptLanguage, "de-DE,de", "the profile's languages, not config.json's");
+  assert.equal(profile.stored.acceptLanguage, undefined, "read from the profile at each launch, never the persona");
+  const device = await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: { navigator: { languages: ["nl-NL", "nl", "<bad>"] } } } });
+  assert.equal(device.pack.given[0].acceptLanguage, "nl-NL,nl", "the device's own languages, not this computer's");
+  assert.equal(device.pack.given[0].timezone, host.timeZone);
+  assert.equal(device.stored.acceptLanguage, undefined);
+  assert.equal(device.stored.timezone, undefined, "this computer's time zone is never stored");
+  const plain = await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } });
+  assert.equal(plain.pack.given[0].acceptLanguage, "en-US");
+  const none = await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: { navigator: {} } } });
+  assert.equal(none.pack.given[0].acceptLanguage, host.locale, "no setting names any: this computer's");
+  const explicit = await launch({ pairbrowse: { fingerprint: "seed", acceptLanguage: "nl-NL,nl", timezone: "Europe/Amsterdam", fingerprintProfile: PINNED_PROFILE() } });
+  assert.equal(explicit.pack.given[0].acceptLanguage, "nl-NL,nl", "a set acceptLanguage wins");
+  assert.equal(explicit.pack.given[0].timezone, "Europe/Amsterdam");
+  if (engineDir) {
+    // Through the real engine pack: the switch the browser reads.
+    const real = await launch({ pairbrowse: {}, browserProfile: store }, await loadPack());
+    const args = real.chromium.calls[0].options.args;
+    assert.ok(args.includes("--accept-lang=de-DE,de"), args.join(" "));
+    assert.ok(args.includes("--timezone=Europe/Berlin"), args.join(" "));
+  }
 });
 
 // D13 (spec step 37): the persona kept with a session is its browser profile's, saved under the
@@ -1116,7 +1154,8 @@ test("persona saved under the profile id; another profile's persona refused; a s
   assert.equal(pack.given[0].fingerprint, "profile-seed");
   const persona = JSON.parse(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8"));
   assert.equal(persona.name, id, "saved under the profile's id");
-  assert.equal(persona.options.timezone, "Europe/Berlin");
+  assert.equal(persona.options.timezone, undefined, "its time zone is read from the profile at each launch (D12)");
+  assert.equal(persona.options.fingerprint, "profile-seed");
   // The same profile again: its own persona is read.
   assert.equal((await launch(config, directory)).given[0].fingerprint, "profile-seed");
   // Another profile on this folder: refused, the persona left as it was.

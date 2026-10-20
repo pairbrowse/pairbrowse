@@ -398,7 +398,9 @@ user's file, readable by others), the section says why and refuses a username or
   `geoip: true` sets the time zone, languages, location and WebRTC address from the region of the
   address sites see (the session's proxy's, else this computer's) at each launch; a value you set
   here or in a saved profile wins. What it finds is never kept in `pairbrowse-persona.json`, so it
-  follows the proxy, and the lookup writes no address to the helper log; when it fails the launch
+  follows the proxy (nor is what any launch works out: the build's platform and version, and this
+  computer's time zone and languages, used when nothing sets them; languages a `fingerprintProfile`
+  device lists come before this computer's), and the lookup writes no address to the helper log; when it fails the launch
   stops with an error saying so. The engine's region database is still fetched once directly.
 - `downloadsDir`: where site downloads and recordings are saved (default: your Downloads folder): an ordinary folder inside your home folder, checked as Settings checks it when the file is read and again at every save; one that fails is not used.
 - `liveViewPort`: a fixed live view port (default: a random one each start).

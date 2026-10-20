@@ -2089,6 +2089,17 @@ it depends on.
    session this call makes is assigned; a session that was there already is refused any profile but
    its own (unassigned, `"default"`), never reassigned; a new folder removed when refused), `assignedTo(profileId)` for the store's `remove`. Tests: `test/profile-map.test.mjs`,
    `test/sessions.test.mjs`, `test/profile-store.test.mjs`, `test/fuzz/profile-schema.test.js`.
+   D12's launch half landed at the Phase D gate (F4, F7): `native-engine.mjs` `DERIVED_FIELDS`
+   (`platform`, `brandVersion`, `timezone`, `acceptLanguage`) are worked out at each launch when no
+   setting gives them and never kept in the persona (`savePersona`); one an older version kept
+   there is not read (`readSettings`), so a build update in the same major launches with its own
+   version and a copied persona brings no platform along; config.json's legacy `platform` and
+   `brandVersion` (U6) still apply. Languages: a setting's (the profile's `locale.languages` as
+   `acceptLanguage`, config.json's) first, else the `navigator.languages` of a device profile a
+   setting gives (never this Mac's capture or one kept from before), else this computer's `Intl`.
+   Tests: "in-major update keeps no old brandVersion" and "profile languages reach --accept-lang"
+   (the real pack's `--accept-lang` when `PAIRBROWSE_TEST_ENGINE` is set), replacing "F4 today"
+   and "F7 today".
 37. `daemon/sessions/profiles.mjs`, binding, persona under the profile id, launch wiring (D2, D10,
     D13). -> 36, 27
    Landed as: `scripts/daemon/sessions/profiles.mjs` `createProfiles(st, deps)` (deps `config`, `log`,

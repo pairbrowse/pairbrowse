@@ -843,8 +843,9 @@ one.
 - **D11. Explicit fields fail closed; imported data is reported.** A set field the chosen browser cannot
   apply refuses the launch (for example `locale.timezone` on the open build). Data inside an imported
   file that is not applied is listed per field as `unsupported` or `not-applied` and never refuses.
-  The open build applies switch-based fields only (`--lang`, `--window-size`,
-  `--force-device-scale-factor`, `--force-dark-mode`, `--force-prefers-reduced-motion`).
+  The open build applies switch-based fields only (`--lang`, `--window-size`, `--force-dark-mode`,
+  `--force-prefers-reduced-motion`, `--disable-gpu`; step 36: a profile's `screen` is whole, so the
+  open build refuses a set screen and `--force-device-scale-factor` stays a `browserArgs` switch).
 - **D12. Derived values are recorded, never stored as configuration**: geoip, host `Intl`, build
   `platform` and `brandVersion` (`native-engine.mjs:247-248`, fixes F4: step 11's pinning test confirms a persisted
   `brandVersion` outlives a build update and a copied persona keeps its system's `platform`).
@@ -919,8 +920,8 @@ patch references, `classifySection`, `fieldReport`); `import.mjs` (`detectFormat
 `importInto`); `export.mjs`; `store.mjs` (`createProfileStore({ dir, now, randomId })` with `list`, `get`,
 `create`, `update(id, fields, { expectRevision })`, `retire`, `restore`, `remove` refused while
 assigned; `writeJsonAtomic` 0600; one write lock); `upgrade.mjs`; `map.mjs` (`fromConfig(config)`,
-`toLaunch(profile, { browserKind, build, platform })` returning `{ switches, engineKeys, prefs,
-results }`); `migrate.mjs`; `cli.mjs` (`list`, `show`, `create`, `edit`, `retire`, `restore`, `assign`,
+`toLaunch(profile, { browserKind, platform })` returning `{ switches, engineKeys, prefs, geoip,
+network, adBlocker, results, problem }`; the build is the caller's, which files the results under it); `migrate.mjs`; `cli.mjs` (`list`, `show`, `create`, `edit`, `retire`, `restore`, `assign`,
 `import [--dry-run] [--source] [--license]`, `export [--with-history] [--include-identity]`, `validate`,
 `migrate [--undo]`). Helper part `scripts/daemon/sessions/profiles.mjs` `createProfiles(st, deps)`:
 `forLaunch(session)`, `release()`, `statusParts()`, `list()`.
@@ -928,7 +929,7 @@ results }`); `migrate.mjs`; `cli.mjs` (`list`, `show`, `create`, `edit`, `retire
 Changes: `scripts/paths.mjs` (`browserProfiles`, `engineProfiles`, `identityLocks`,
 `requireValidatedProfiles: false`); `scripts/config-schema.mjs` (`requireValidatedProfiles`, closed
 `profileSelect`); `scripts/sessions.mjs` (`assignmentFile`, `readAssignment`, `assignProfile`, rename and
-delete lists, `createSession(name, profileId = "default")`); `scripts/native-engine.mjs` (mapped profile
+delete lists, `createSession(name, profileId)`, `profileId` left out for no choice); `scripts/native-engine.mjs` (mapped profile
 layer as `overrides`, filtered layers, D9, D12, persona under the profile id);
 `scripts/daemon/browser/launch.mjs` (D step of section 3.2; profile switches appended to `browserArgs`
 before `launchOptions`; a profile `window` replaces the fixed `--window-size`);
@@ -2025,6 +2026,45 @@ it depends on.
    throws while `checkImport` runs), `test/coherence.test.mjs`, `test/profile-schema.test.mjs`;
    fixtures `test/fixtures/profiles/engine-device-1.json` and `engine-persona.json` (hand-written).
 36. `profiles/map.mjs`; session assignment in `sessions.mjs` (D1, D6, D11, D12). -> 34, 24
+   Landed as: `scripts/profiles/map.mjs` (pure). `readConfig(config, { native, platform })` answers
+   `{ settings, items }` and `fromConfig` its settings, for the store's `configProfile`: `browser.kind`
+   by `browserKindOf` (browser/choice.mjs's reading, repeated so the module loads nothing with side
+   effects; a path is the open build, named); from the screened `browserArgs` `--lang` (`_` read as
+   `-`), `--window-size`, `--force-dark-mode`, `--force-prefers-reduced-motion`, `--disable-gpu`
+   (as `graphics.backend: "software"`; `--use-gl`/`--use-angle` named and left as written), a switch
+   given twice with different values not read; from the `pairbrowse` block, only when config starts
+   the native build (the open build never read it), `acceptLanguage` (over `--lang`; weights and
+   repeats dropped, ten kept), `timezone`, `geoip` (`locale.source: "geoip"`), the screen keys (a
+   width and a height make one; avail, depth 24 and the ratio, else `--force-device-scale-factor`,
+   else 1, filled in), `fingerprint` (a whole number as its string), `profile` `"auto"`/`"local"`
+   as D9's host (macOS) or seed persona. Every other block key is an item (hardware U6 `unsupported`,
+   `fingerprintProfile`, `profileSelect`, helper-wide and other engine keys `not-applied`); a
+   setting whose value doesn't make a valid record is left at its default with a warning naming it;
+   `network` is always `null` and `payments.savedCard` false, so a network change never bumps the
+   default's revision. Items repeat no value from config.json. `toLaunch(profile, { browserKind,
+   platform })` checks the record and answers `{ switches, engineKeys, prefs, geoip, network,
+   adBlocker, results, problem }`: switches only from `SWITCHES` (`lang`, `window-size`,
+   `force-dark-mode`, `force-prefers-reduced-motion`, `disable-gpu`), screened again as the launch
+   screens `browserArgs`; engine keys only from `ENGINE_KEYS` (`acceptLanguage`, `timezone`, the
+   six screen keys, `fingerprint`), native build only; `prefs` empty until step 45; `network` the
+   id for `networkFor`'s `profileNetwork`. D11 refusals (`problem` naming the profile and each
+   field, nothing to launch with): a profile for the other browser (`mismatch`); on the open build a
+   time zone, screen, seed, geoip or a first language `--lang` doesn't take; on either a light
+   scheme or `reducedMotion: false` (no switch forces either; `null` follows the computer),
+   `graphics.backend: "gpu"` and `graphics.require` (unchecked until Phase E replaces this), a saved
+   card (step 45). The open build sends only the first language, the rest a warning item. Unset
+   locale, screen and seed are `derived` items, and the record is never changed (D12). `store.use`
+   now makes the config-backed default from `configSettings` when it was never made. `sessions.mjs`:
+   `assignmentFile` (`assignment.json` beside the session's files, in the rename and delete
+   lists), `readAssignment(name)` `{ ref, profileId, problem }` (no file: `ref` `"default"`, as every
+   session before profiles; a link, folder, non-JSON (copied aside) or anything but `{ profileId }`
+   a problem, never the default), `assignProfile(name, ref, { store, configSettings })` (the store's
+   `use` refuses unknown and retired by name; the id written 0600; the binding rewrite joins it in
+   step 37), `createSession(name, profileId, { store, configSettings })` (`profileId` left out:
+   no choice, as every launch calls it; given, `"default"` in any case included, it is a choice: only a
+   session this call makes is assigned; a session that was there already is refused any profile but
+   its own (unassigned, `"default"`), never reassigned; a new folder removed when refused), `assignedTo(profileId)` for the store's `remove`. Tests: `test/profile-map.test.mjs`,
+   `test/sessions.test.mjs`, `test/profile-store.test.mjs`, `test/fuzz/profile-schema.test.js`.
 37. `daemon/sessions/profiles.mjs`, binding, persona under the profile id, launch wiring (D2, D10,
     D13). -> 36, 27
 38. Identity lock, migration and undo, `pairbrowse_session` `profile`, CLI, owner routes and UI (D3,

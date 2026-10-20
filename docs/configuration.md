@@ -306,8 +306,23 @@ user's file, readable by others), the section says why and refuses a username or
 - `requireValidatedProfiles`: `false` (default). For browser profiles, which server mode brings
   (kept owner-only in `~/.pairbrowse/browser-profiles/`): `true` will refuse to start a session on a
   profile that hasn't been validated on the browser build in use, or one with an error in its
-  consistency checks. It is checked and kept now, and changes nothing until profiles are assigned
-  to sessions.
+  consistency checks. It is checked and kept now, and changes nothing until sessions start on
+  their assigned profiles.
+
+  The `default` browser profile is read from this file, never written into it: `browser` (and
+  its older names) gives the browser it is for; the screened `browserArgs` give its languages
+  (`--lang`), window (`--window-size`), dark scheme (`--force-dark-mode`), reduced motion
+  (`--force-prefers-reduced-motion`) and software graphics (`--disable-gpu`), each switch staying
+  in `browserArgs` as written (one written twice with different values is left out of the profile);
+  and, when the native build is chosen, `pairbrowse` gives its languages (`acceptLanguage`, else
+  `--lang`), `timezone`, `geoip`, screen (`screenWidth` and `screenHeight`, with `availWidth`,
+  `availHeight`, `colorDepth` and `devicePixelRatio` or `--force-device-scale-factor`) and seed
+  (`fingerprint`); `profile` `"auto"` or `"local"` means this computer's own values. The
+  hardware keys (`gpuVendor`, `gpuRenderer`, `hardwareConcurrency`, `platform`, `brandVersion`
+  and the like), a saved persona's name and `profileSelect` are never a profile's, and `network`
+  isn't either: a change there never changes the profile. A value that doesn't fit a profile (an
+  unknown time zone, a window under 320 pixels) is left out of it and named. Each session's
+  profile is recorded in its `assignment.json`; a session without one uses `default`.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

@@ -269,6 +269,16 @@ test("use on the default: its whole record from configSettings, else a stored pa
   refuses(() => store.use("default", { session: "shop", configSettings: { proxy: "x" } }), "PROFILE_INVALID", /^Session "shop" uses browser profile "default": /);
 });
 
+test("use on a default never made: made from configSettings, refused without them", () => {
+  const store = makeStore();
+  refuses(() => store.use("default", { session: "shop" }), "PROFILE_UNKNOWN", /^Session "shop" uses browser profile "default", which doesn't exist/);
+  const made = store.use("Default", { session: "shop", configSettings: {} });
+  assert.equal(made.name, "default");
+  assert.equal(made.revision, 1);
+  assert.equal(store.use("default").id, made.id);
+  refuses(() => store.use("nowhere", { configSettings: {} }), "PROFILE_UNKNOWN");
+});
+
 test("use names only a plain ref and session in its refusal", () => {
   const store = makeStore();
   assert.throws(() => store.use("../../x\nINJECT", { session: "a/b\nc" }), (e) => e.code === "PROFILE_UNKNOWN"

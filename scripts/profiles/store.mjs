@@ -266,7 +266,10 @@ export function createProfileStore({ dir = paths.browserProfiles, now = Date.now
       const who = session ? `Session "${shown(session)}" uses browser profile "${shown(ref)}"` : `Browser profile "${shown(ref)}"`;
       let r;
       try { r = find(ref); } catch (e) {
-        throw fail(e.code, e.code === "PROFILE_UNKNOWN" ? `${who}, which doesn't exist (it was removed, or never made); assign the session another profile.` : `${who}: ${e.message}`);
+        // The config-backed default is made from configSettings the first time it is asked for.
+        const firstDefault = e.code === "PROFILE_UNKNOWN" && configSettings !== undefined && typeof ref === "string" && ref.toLowerCase() === DEFAULT_PROFILE;
+        if (!firstDefault) throw fail(e.code, e.code === "PROFILE_UNKNOWN" ? `${who}, which doesn't exist (it was removed, or never made); assign the session another profile.` : `${who}: ${e.message}`);
+        r = { kind: "config" };
       }
       if (r.kind === "config") {
         if (configSettings === undefined) return { ...stripHashes(structuredClone(r.stub)), settings: "config.json" };

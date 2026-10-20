@@ -228,3 +228,125 @@ test("profileInUse: a live SingletonLock on this computer or another counts; one
   assert.equal(s.profileInUse("lock-a", { host: "here", alive: () => false }), true, "the native profile's lock, unreadable: in use");
   assert.equal(s.profileInUse("no-such-session"), false);
 });
+
+// Session assignment (spec server-mode D1, D13; sessions.mjs readAssignment, assignProfile,
+// createSession's profile, assignedTo): a store of its own beside the test home.
+const { createProfileStore } = await import("../scripts/profiles/store.mjs");
+const { fromConfig } = await import("../scripts/profiles/map.mjs");
+function assignmentStore() {
+  let n = 0;
+  return createProfileStore({ dir: join(mkdtempSync(join(tmpdir(), "pb-assign-")), "browser-profiles"), randomId: () => (++n).toString(16).padStart(16, "0"), assignedTo: s.assignedTo });
+}
+
+test("a session's browser profile: unassigned reads as the default; assignProfile writes the id owner-only through the store; rename moves it, delete removes it", () => {
+  const store = assignmentStore();
+  s.createSession("as-a");
+  assert.deepEqual(s.readAssignment("as-a"), { ref: "default", profileId: null, problem: null }, "no file: the config-backed default");
+  const berlin = store.create({ name: "berlin" });
+  const done = s.assignProfile("as-a", "Berlin", { store });
+  assert.deepEqual(done, { session: "as-a", profileId: berlin.id, profile: "berlin", previous: null });
+  assert.deepEqual(JSON.parse(readFileSync(s.assignmentFile("as-a"), "utf8")), { profileId: berlin.id });
+  if (process.platform !== "win32") assert.equal(fs.statSync(s.assignmentFile("as-a")).mode & 0o777, 0o600);
+  assert.deepEqual(s.readAssignment("as-a"), { ref: berlin.id, profileId: berlin.id, problem: null });
+  // The config-backed default is assigned by its id once config.json's settings make it.
+  const def = s.assignProfile("as-a", "default", { store, configSettings: fromConfig({}) });
+  assert.equal(def.previous, berlin.id);
+  assert.equal(def.profile, "default");
+  assert.equal(store.get("default").id, def.profileId);
+  s.assignProfile("as-a", berlin.id, { store });
+  // Unknown or retired: refused by name, the assignment as it was.
+  assert.throws(() => s.assignProfile("as-a", "nowhere", { store }), (e) => e.code === "PROFILE_UNKNOWN" && /Session "as-a" uses browser profile "nowhere", which doesn't exist/.test(e.message));
+  const old = store.create({ name: "old" });
+  store.retire("old");
+  assert.throws(() => s.assignProfile("as-a", old.id, { store }), (e) => e.code === "PROFILE_RETIRED");
+  assert.equal(s.readAssignment("as-a").profileId, berlin.id);
+  assert.throws(() => s.assignProfile("no-such-session", "berlin", { store }), /No session "no-such-session"/);
+  assert.throws(() => s.assignProfile("../x", "berlin", { store }), /Session names/);
+  assert.throws(() => s.assignProfile("as-a", "berlin"), /needs the profile store/);
+  // A profile in use isn't removed (the store asks sessions.mjs); the default session counts too.
+  s.assignProfile("default", "berlin", { store });
+  assert.deepEqual(s.assignedTo(berlin.id).sort(), ["as-a", "default"]);
+  assert.throws(() => store.remove("berlin"), (e) => e.code === "PROFILE_ASSIGNED" && /"as-a"/.test(e.message));
+  rmSync(s.assignmentFile("default"));
+  // Rename moves it; delete removes it, and the profile can go.
+  s.renameSession("as-a", "as-b");
+  assert.equal(existsSync(s.assignmentFile("as-a")), false);
+  assert.equal(s.readAssignment("as-b").profileId, berlin.id);
+  assert.deepEqual(s.assignedTo(berlin.id), ["as-b"]);
+  s.deleteSession("as-b");
+  assert.equal(existsSync(s.assignmentFile("as-b")), false);
+  assert.deepEqual(s.assignedTo(berlin.id), []);
+  assert.deepEqual(store.remove("berlin"), { id: berlin.id, name: "berlin" });
+  assert.deepEqual(s.assignedTo("../x"), []);
+});
+
+test("an assignment that can't be read never falls back to the default", () => {
+  s.createSession("as-bad");
+  const file = s.assignmentFile("as-bad");
+  writeFileSync(file, "{ not json");
+  const broken = s.readAssignment("as-bad");
+  assert.equal(broken.ref, null);
+  assert.equal(broken.profileId, null);
+  assert.match(broken.problem, /^Session "as-bad"'s browser profile assignment isn't valid JSON .*; assign the session a profile again\.$/);
+  assert.equal(readFileSync(`${file}.corrupt`, "utf8"), "{ not json");
+  for (const text of ["[]", "null", '{"profileId":"default"}', '{"profileId":"p-0000000000000001","extra":1}', '{"profileId":"/etc/passwd"}']) {
+    writeFileSync(file, text);
+    const r = s.readAssignment("as-bad");
+    assert.equal(r.ref, null, text);
+    assert.match(r.problem, /doesn't hold one profile id/, text);
+    assert.ok(!r.problem.includes("passwd"));
+  }
+  if (process.platform !== "win32") {
+    rmSync(file);
+    fs.symlinkSync(join(process.env.PAIRBROWSE_HOME, "elsewhere.json"), file);
+    assert.match(s.readAssignment("as-bad").problem, /isn't a regular file .*; remove it, then assign the session a profile again\.$/);
+  }
+  s.deleteSession("as-bad");
+  assert.equal(existsSync(file), false, "a link at its name goes with the session, its target untouched");
+});
+
+test("createSession with a profile assigns a new session; a refused one leaves no folder; an assigned session is never put on another", () => {
+  const store = assignmentStore();
+  const work = store.create({ name: "work" });
+  s.createSession("as-new", "work", { store });
+  assert.equal(s.readAssignment("as-new").profileId, work.id);
+  // Every launch calls createSession(name): an assignment stays as it is.
+  s.createSession("as-new");
+  s.createSession("as-new", work.id, { store });
+  assert.equal(s.readAssignment("as-new").profileId, work.id);
+  store.create({ name: "home" });
+  assert.throws(() => s.createSession("as-new", "home", { store }), /uses another browser profile already/);
+  assert.equal(existsSync(s.profileDir("as-new")), true, "a session that was there stays");
+  assert.equal(s.readAssignment("as-new").profileId, work.id);
+  assert.throws(() => s.createSession("as-none", "nowhere", { store }), (e) => e.code === "PROFILE_UNKNOWN");
+  assert.equal(existsSync(s.profileDir("as-none")), false, "a new session refused its profile isn't left behind");
+  assert.throws(() => s.createSession("as-none", "work"), /needs the profile store/);
+  assert.equal(existsSync(s.profileDir("as-none")), false);
+  // An explicit "default" (any case) is a choice like any other: refused for a session on another profile.
+  for (const ref of ["default", "Default"]) {
+    assert.throws(() => s.createSession("as-new", ref, { store }), /uses another browser profile already/, ref);
+    assert.throws(() => s.createSession("as-new", ref, { store, configSettings: fromConfig({}) }), /uses another browser profile already/, ref);
+    assert.equal(s.readAssignment("as-new").profileId, work.id, ref);
+  }
+  s.deleteSession("as-new");
+});
+
+test("createSession never assigns a session that was there already: unassigned, it is on the default profile", () => {
+  const store = assignmentStore();
+  const berlin = store.create({ name: "berlin" });
+  s.createSession("as-old");
+  assert.throws(() => s.createSession("as-old", "berlin", { store }), /uses another browser profile already/);
+  assert.throws(() => s.createSession("as-old", berlin.id, { store }), /uses another browser profile already/);
+  assert.equal(existsSync(s.profileDir("as-old")), true, "a session that was there stays");
+  assert.deepEqual(s.readAssignment("as-old"), { ref: "default", profileId: null, problem: null }, "still unassigned");
+  // Its own profile, the default, is accepted and leaves it unassigned (by name, or by id once made).
+  s.createSession("as-old", "default", { store });
+  s.createSession("as-old", "DEFAULT", { store });
+  const def = store.use("default", { configSettings: fromConfig({}) });
+  s.createSession("as-old", def.id, { store });
+  assert.equal(existsSync(s.assignmentFile("as-old")), false);
+  assert.throws(() => s.createSession("as-old", "nowhere", { store }), (e) => e.code === "PROFILE_UNKNOWN");
+  assert.throws(() => s.createSession("as-old", "berlin"), /needs the profile store/);
+  assert.equal(existsSync(s.profileDir("as-old")), true);
+  s.deleteSession("as-old");
+});

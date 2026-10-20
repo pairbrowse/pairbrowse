@@ -51,19 +51,19 @@
   - `--enable-features=<Name>,<Name>` (feature names only; merged into the helper's own);
   - `--host-resolver-rules=` with rules that keep a name on this computer only:
     `MAP <name> 127.0.0.1[:port]` (or `localhost`, `[::1]`), `MAP <name> ~NOTFOUND`, `EXCLUDE <name>`;
-  - `--headless` (`=new` or `=old`), for test runs ([ADR 0009](adr/0009-always-headed.md));
   - `--no-sandbox`, on Linux only, which works as `"browserSandbox": false` in any spelling (refused on
     macOS and Windows, where the sandbox always stays on).
 
-  Everything else is dropped: a debugging port, address or pipe, `--remote-allow-origins`,
-  switches that run another program in place of a browser process (`--renderer-cmd-prefix`,
-  `--gpu-launcher`, `--browser-subprocess-path`), certificate or web security checks off, a proxy,
-  `--disable-features` (it is how site isolation is turned off), another profile or extension, and
-  any switch not listed above. So is every item that isn't a switch (the browser would open it as a
-  page or file), and everything after a bare `--`. A switch written `-x`, or `/x` on Windows, is
-  read like `--x`. A browser the test suite starts also takes `--use-mock-keychain`,
-  `--password-store=basic` and `--disable-features=LocalNetworkAccessChecks`; an installed helper
-  never does.
+  Everything else is dropped, `--headless` too: it passes only in a helper the test suite started
+  ([ADR 0009](adr/0009-always-headed.md)), so your browser always shows its window. Also dropped: a
+  debugging port, address or pipe, `--remote-allow-origins`, switches that run another program in
+  place of a browser process (`--renderer-cmd-prefix`, `--gpu-launcher`, `--browser-subprocess-path`),
+  certificate or web security checks off, a proxy, `--disable-features` (it is how site isolation is
+  turned off), another profile or extension, and any switch not listed above. So is every item that
+  isn't a switch (the browser would open it as a page or file), and everything after a bare `--`. A
+  switch written `-x`, or `/x` on Windows, is read like `--x`. A browser the test suite starts also
+  takes `--use-mock-keychain`, `--password-store=basic` and
+  `--disable-features=LocalNetworkAccessChecks`; an installed helper never does.
 - `browserSandbox`: on Linux, `false` turns off the browser's own sandbox (default `true`; the
   older name `chromeSandbox` is still read while `browserSandbox` is unset); on macOS and
   Windows it always stays on and `false` is refused (a warning in `pairbrowse_status`). PairBrowse
@@ -124,7 +124,9 @@
   `platform`, the GPU, screen and hardware values; the full list is `PAIRBROWSE_ENGINE_KEYS` in
   `scripts/config-schema.mjs`). Any other key there, such as `extensions`, a proxy, launch options or
   switches, is named as an unknown key and never reaches the browser (the helper log says so at
-  launch): the browser loads no extension but PairBrowse's own side panel.
+  launch): the browser loads no extension but PairBrowse's own side panel. `canvasBridge` (the
+  engine's option to send what pages draw to another program) is refused: a launch with it here or
+  in a saved profile stops with an error naming it.
 - `downloadsDir`: where site downloads and recordings are saved (default: your Downloads folder): an ordinary folder inside your home folder, checked as Settings checks it when the file is read and again at every save; one that fails is not used.
 - `liveViewPort`: a fixed live view port (default: a random one each start).
 - `liveViewHosts`: extra host names the live view answers to, for invite links only, such as

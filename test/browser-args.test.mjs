@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { screenBrowserArgs, switchName, launchableBrowserArgs, allowedBrowserArg, sandboxRefusal, sandboxOffAsked, argsKey, browserArgsOf, browserSandboxOf } from "../scripts/browser-args.mjs";
+import { screenBrowserArgs, switchName, launchableBrowserArgs, allowedBrowserArg, sandboxRefusal, sandboxOffAsked, argsKey, browserArgsOf, browserSandboxOf, droppedWarning } from "../scripts/browser-args.mjs";
 import { loadConfig, CONFIG_WARNINGS } from "../scripts/paths.mjs";
 import { launchArgs, launchOptions } from "../scripts/browser.mjs";
 import { statusLine } from "../scripts/daemon/serve/tools/status.mjs";
@@ -17,8 +17,8 @@ import { sandboxDecision } from "../scripts/engine.mjs";
 const UNSAFE = ["--remote-debugging-port=9222", "--remote-debugging-address=0.0.0.0", "--remote-debugging-pipe", "--remote-allow-origins=*", "--disable-web-security", "--disable-site-isolation-trials", "--user-data-dir=/tmp/other", "--load-extension=/tmp/evil", "--disable-extensions-except=/tmp/evil", "--allowlisted-extension-id=abc"];
 
 test("every unsafe switch is dropped and named without its value; ordinary ones stay", () => {
-  const { kept, dropped } = screenBrowserArgs(["--lang=en-US", ...UNSAFE, "--headless=new"], "darwin", { harness: false });
-  assert.deepEqual(kept, ["--lang=en-US", "--headless=new"]);
+  const { kept, dropped } = screenBrowserArgs(["--lang=en-US", ...UNSAFE], "darwin", { harness: false });
+  assert.deepEqual(kept, ["--lang=en-US"]);
   assert.equal(dropped.length, UNSAFE.length);
   assert.ok(dropped.includes("--remote-debugging-port") && !dropped.some((d) => d.includes("9222")));
 });
@@ -64,13 +64,40 @@ test("after a bare --, nothing is a switch", () => {
 
 test("allowlisted switches keep only values of their shape", () => {
   const ok = ["--lang=en-US", "--window-size=1280,800", "--window-position=-10,20", "--force-device-scale-factor=1.5", "--force-dark-mode",
-    "--autoplay-policy=no-user-gesture-required", "--mute-audio", "--disable-notifications", "--headless=new", "--headless", "--enable-features=Foo,Bar_2",
+    "--autoplay-policy=no-user-gesture-required", "--mute-audio", "--disable-notifications", "--enable-features=Foo,Bar_2",
     "--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:4100", "--host-resolver-rules=MAP a.example localhost, EXCLUDE b.example", "--ozone-platform=wayland",
     "--disable-dev-shm-usage", "--font-render-hinting=none", "-lang=nl", "--no-sandbox"];
   for (const a of ok) assert.ok(allowedBrowserArg(a, "linux"), a);
   const bad = ["--lang=en;x", "--window-size=big", "--force-dark-mode=1", "--headless=x", "--enable-features=", "--host-resolver-rules=",
-    "--host-resolver-rules=MAP * 10.0.0.1", "--ozone-platform=headless", "--disable-features=LocalNetworkAccessChecks", "--use-mock-keychain", "--password-store=basic"];
+    "--host-resolver-rules=MAP * 10.0.0.1", "--ozone-platform=headless", "--disable-features=LocalNetworkAccessChecks", "--use-mock-keychain", "--password-store=basic",
+    "--headless", "--headless=new"];
   for (const a of bad) assert.ok(!allowedBrowserArg(a, "linux"), a);
+});
+
+test("headless only in the harness", () => {
+  // A headless run is the test suite's alone: a user's --headless is dropped and named, so the
+  // person's browser always shows its window and no measurement comes from a headless run.
+  for (const p of ["darwin", "linux", "win32"]) {
+    const user = screenBrowserArgs(["--headless=new", "--headless", "-headless=old", "--lang=de"], p, { harness: false });
+    assert.deepEqual(user.kept, ["--lang=de"], p);
+    assert.deepEqual(user.dropped, ["--headless", "--headless", "-headless"], p);
+    assert.deepEqual(screenBrowserArgs(["--headless=new", "--headless", "--headless=old"], p, { harness: true }).kept, ["--headless=new", "--headless", "--headless=old"], p);
+    assert.deepEqual(screenBrowserArgs(["--headless=x"], p, { harness: true }).kept, [], "a value of another shape, even in the harness");
+  }
+  assert.match(droppedWarning(screenBrowserArgs(["--headless=new"], "darwin", { harness: false }).dropped), /browserArgs --headless dropped/);
+});
+
+test("canvas-bridge switches dropped", () => {
+  // The engine's canvas bridge sent what pages draw to another program: none of its switches is on
+  // the list, in any spelling, harness or not.
+  const bridge = ["--canvas-bridge-url=ws://127.0.0.1:9099", "--canvas-bridge-auth=secret", "--canvas-bridge-mode=all", "-canvas-bridge-allow=a.example", "--canvas-bridge-deny=b.example"];
+  for (const harness of [false, true]) {
+    const { kept, dropped } = screenBrowserArgs(bridge, "linux", { harness });
+    assert.deepEqual(kept, []);
+    assert.equal(dropped.length, bridge.length);
+    assert.ok(!dropped.some((d) => d.includes("secret") || d.includes("9099")), "named without their values");
+  }
+  assert.deepEqual(screenBrowserArgs(["/Canvas-Bridge-Url=ws://x"], "win32").kept, []);
 });
 
 test("the test harness's own switches pass only in a helper it started", () => {

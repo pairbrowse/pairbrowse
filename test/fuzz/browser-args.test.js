@@ -70,7 +70,7 @@ test("what passes is always a listed switch with a value of its shape", () => {
 
 // Property: allowlisted switches with a good value pass in every spelling the engine reads.
 test("allowlisted switches pass in any spelling", () => {
-  const good = fc.constantFrom(["lang", "en-US"], ["window-size", "1280,800"], ["mute-audio", null], ["headless", "new"], ["enable-features", "Foo,Bar"],
+  const good = fc.constantFrom(["lang", "en-US"], ["window-size", "1280,800"], ["mute-audio", null], ["hide-scrollbars", null], ["enable-features", "Foo,Bar"],
     ["host-resolver-rules", "MAP *.pbtest.example 127.0.0.1:4100"], ["force-device-scale-factor", "2"], ["disable-notifications", null]);
   check(fc.property(platform, good, (p, [n, v]) => fc.assert(fc.property(prefix(p), p === "win32" ? recase(n) : fc.constant(n), (pre, name) => {
     const arg = pre + name + (v === null ? "" : `=${v}`);

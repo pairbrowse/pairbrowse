@@ -3,6 +3,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { panelExtensionId, browserChoice } from "../scripts/browser.mjs";
 import { rebrandPak } from "../scripts/native/macos-app.mjs";
+import { mkdtempSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// fn() as in a helper the test harness started (its home's runtime link, scripts/testenv.mjs
+// harnessStarted): only there does a --headless in browserArgs pass.
+function inHarness(fn) {
+  const before = process.env.PAIRBROWSE_HOME;
+  const home = mkdtempSync(join(tmpdir(), "pb-harness-"));
+  symlinkSync(tmpdir(), join(home, "runtime"), "dir");
+  process.env.PAIRBROWSE_HOME = home;
+  try { return fn(); } finally { process.env.PAIRBROWSE_HOME = before; }
+}
 
 // A minimal version 5 pak: two strings and one alias.
 function pak(strings) {
@@ -140,7 +153,7 @@ test("a build with its own pages: no extension, no theme seed, two helper switch
     assert.ok(!noExtension(args));
   }
   // The --enable-features merge and the headless notifications rule hold in this mode too.
-  const merged = launchArgs({ browserArgs: ["--headless=new", "--enable-features=Foo"] }, { browserPages: true, helper: { origin: "h", keyFile: "f" } });
+  const merged = inHarness(() => launchArgs({ browserArgs: ["--headless=new", "--enable-features=Foo"] }, { browserPages: true, helper: { origin: "h", keyFile: "f" } }));
   const enable = merged.filter((a) => a.startsWith("--enable-features="));
   assert.equal(enable.length, 1);
   assert.ok(enable[0].includes("ForceForegroundPriorityForAllTabs") && enable[0].includes("Foo"));
@@ -313,13 +326,17 @@ test("PairBrowse, not a Google browser: no browser sign-in, default-browser chec
 test("headless test browsers send no notifications; the visible browser keeps them", async () => {
   const { launchArgs } = await import("../scripts/browser.mjs");
   // Otherwise each test run's browser starts its notification helper and macOS asks to allow it.
-  assert.ok(launchArgs({ browserArgs: ["--headless=new"] }).includes("--disable-notifications"));
+  assert.ok(inHarness(() => launchArgs({ browserArgs: ["--headless=new"] })).includes("--disable-notifications"));
   assert.equal(launchArgs({}).includes("--disable-notifications"), false);
+  // Outside the harness a user's --headless is dropped (browser-args.mjs), so the browser stays headed
+  // and keeps its notifications.
+  const user = launchArgs({ browserArgs: ["--headless=new"] });
+  assert.ok(!user.includes("--headless=new") && !user.includes("--disable-notifications"));
 });
 
 test("hidden tabs keep foreground priority, in one --enable-features that keeps the driver's", async () => {
   const { launchArgs } = await import("../scripts/browser.mjs");
-  const args = launchArgs({ browserArgs: ["--headless=new", "--enable-features=Foo,Bar"] });
+  const args = inHarness(() => launchArgs({ browserArgs: ["--headless=new", "--enable-features=Foo,Bar"] }));
   const enable = args.filter((a) => a.startsWith("--enable-features="));
   assert.equal(enable.length, 1, "Chrome reads only one --enable-features");
   const features = enable[0].slice("--enable-features=".length).split(",");

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile } from "../scripts/native-engine.mjs";
+import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu } from "../scripts/native/graphics.mjs";
 
@@ -495,7 +495,6 @@ packTest("captured profile objects persist without an accidental seed", async ()
   const chromium = fakeBrowserType();
   const profile = new pack.Profile("captured", {
     fingerprintProfile: { navigator: { languages: ["en-US"] } },
-    canvasBridge: { url: "ws://127.0.0.1:9099", auth: "secret" },
     agentLlmKey: "do-not-persist",
   });
   await launchNative(chromium, { pairbrowse: { profile } }, directory,
@@ -504,9 +503,71 @@ packTest("captured profile objects persist without an accidental seed", async ()
   assert.ok(args.some(a => a.startsWith("--fingerprint-profile=")));
   assert.equal(args.some(a => a.startsWith("--fingerprint=")), false);
   const saved = readFileSync(join(directory, "pairbrowse-persona.json"), "utf8");
-  assert.equal(saved.includes("secret"), false);
   assert.equal(saved.includes("do-not-persist"), false);
   assert.equal(pack.Profile.load(join(directory, "pairbrowse-persona.json")).options.fingerprint, undefined);
+});
+
+// The canvas bridge (it sent what pages draw to a program at an address) is gone: refused where a
+// person sets it, dropped from the persona kept with a profile, stripped from the switches.
+test("config.json canvasBridge refused before anything launches", async () => {
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-bridge-config-"));
+  const chromium = fakeBrowserType();
+  await assert.rejects(() => launchNative(chromium, { pairbrowse: { canvasBridge: { url: "ws://127.0.0.1:9099" } } }, directory,
+    { executablePath: app.executablePath, headless: false }, fakePack), /config\.json's pairbrowse block sets canvasBridge: refused/);
+  assert.equal(chromium.calls.length, 0);
+});
+
+test("canvas-bridge switches are recognized in every spelling", () => {
+  for (const a of ["--canvas-bridge-url=ws://x", "--canvas-bridge-auth=k", "-canvas-bridge-mode=all", "--Canvas-Bridge-Allow=a"]) assert.ok(isCanvasBridgeSwitch(a), a);
+  for (const a of ["--canvas-noise", "--fingerprint=1", "canvas-bridge-url", null]) assert.ok(!isCanvasBridgeSwitch(a), String(a));
+});
+
+packTest("saved persona canvasBridge refused", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-bridge-saved-"));
+  const profile = new pack.Profile("bridged", { fingerprint: "seed", canvasBridge: { url: "ws://127.0.0.1:9099", auth: "secret" } });
+  const chromium = fakeBrowserType();
+  await assert.rejects(() => launchNative(chromium, { pairbrowse: { profile } }, directory,
+    { executablePath: app.executablePath, headless: false }, pack), /saved profile \(pairbrowse\.profile\) sets canvasBridge: refused/);
+  assert.equal(chromium.calls.length, 0);
+});
+
+packTest("persisted canvasBridge dropped", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-bridge-persisted-"));
+  const personaPath = join(directory, "pairbrowse-persona.json");
+  new pack.Profile("pairbrowse", { fingerprint: "kept-seed", canvasBridge: { url: "ws://127.0.0.1:9099", auth: "secret" } }).save(personaPath);
+  const chromium = fakeBrowserType();
+  const lines = [];
+  await launchNative(chromium, { pairbrowse: {} }, directory, { executablePath: app.executablePath, headless: false }, pack, (l) => lines.push(l));
+  assert.equal(lines.filter((l) => l === CANVAS_BRIDGE_DROPPED).length, 1, lines.join("\n"));
+  const args = chromium.calls[0].options.args;
+  assert.ok(!args.some(isCanvasBridgeSwitch), args.join(" "));
+  assert.ok(args.includes("--fingerprint=kept-seed"), "the rest of the persona stays");
+  const saved = readFileSync(personaPath, "utf8");
+  assert.ok(!saved.includes("canvasBridge") && !saved.includes("9099") && !saved.includes("secret"), "never written back");
+});
+
+packTest("no --canvas-bridge-* reaches the launch, sandbox still on", async () => {
+  const real = await loadPack();
+  // A pack that adds the bridge's switches itself: the launch strips them anyway.
+  const pack = { ...real, gateEngineSwitches: (path, args, x) => {
+    const gated = real.gateEngineSwitches(path, args, x);
+    return { ...gated, args: [...gated.args, "--canvas-bridge-url=ws://127.0.0.1:9099", "--canvas-bridge-auth=secret", "-Canvas-Bridge-Mode=all"] };
+  } };
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-bridge-switches-"));
+  const chromium = fakeBrowserType();
+  const lines = [];
+  await launchNative(chromium, { pairbrowse: { fingerprint: "seed" } }, directory, { executablePath: app.executablePath, headless: false, chromiumSandbox: true }, pack, (l) => lines.push(l));
+  const { options } = chromium.calls[0];
+  assert.ok(!options.args.some((a) => /canvas-bridge/i.test(a)), options.args.join(" "));
+  assert.ok(lines.some((l) => /--canvas-bridge-url, --canvas-bridge-auth, -Canvas-Bridge-Mode stripped/.test(l)) && !lines.some((l) => l.includes("secret")), lines.join("\n"));
+  assert.equal(options.chromiumSandbox, true);
+  assert.ok(!options.args.some((a) => /no-sandbox/i.test(a)));
 });
 
 packTest("saved profile launch controls survive the native adapter merge; its extensions don't load", async () => {
@@ -721,4 +782,88 @@ test("nested WebGPU is flattened on every layer: config, saved, persisted and im
 
   const unreadable = await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: file.replace("profile.json", "missing.json") } }, recordingPack());
   assert.equal(unreadable.engine, file.replace("profile.json", "missing.json"), "a path that isn't readable passes on as it was");
+});
+
+// Today's behavior, pinned before spec D7, D12 change it (F1, F4, F7). Each test names the decision
+// that turns it around; until then a change here is a change in what reaches the engine.
+const PINNED_PROFILE = () => ({ navigator: { languages: ["en-US"] } });
+
+// F1 (D7 closes it): config.json passes only the engine's fingerprint options, but a saved profile's
+// and the persisted persona's other options reach the launch as they are. The sandbox and the
+// executable stay the helper's either way; the persona written back keeps only the fingerprint.
+test("F1 today: launch controls in a saved profile or the persisted persona reach the launch unfiltered", async () => {
+  const app = appFixture();
+  const controls = () => ({ args: ["--f1-pinned-switch"], proxy: { server: "http://f1-proxy.test:8080" }, env: { F1_PINNED: "1" },
+    ignoreDefaultArgs: ["--f1-ignored"], chromiumSandbox: false, executablePath: "/bin/f1-other" });
+  const layers = {
+    saved: { config: { pairbrowse: { profile: "mine" } }, pack: recordingPack({ saved: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), ...controls() } }), persona: null },
+    persisted: { config: { pairbrowse: {} }, pack: recordingPack(), persona: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), ...controls() } },
+  };
+  for (const [layer, { config, pack, persona }] of Object.entries(layers)) {
+    const directory = mkdtempSync(join(tmpdir(), `pairbrowse-f1-${layer}-`));
+    const personaPath = join(directory, "pairbrowse-persona.json");
+    if (persona) writeFileSync(personaPath, JSON.stringify({ name: "pairbrowse", options: persona }));
+    const chromium = fakeBrowserType();
+    const lines = [];
+    await launchNative(chromium, config, directory, { executablePath: app.executablePath, headless: false }, pack, (l) => lines.push(l));
+    const { options } = chromium.calls[0];
+    assert.ok(options.args.includes("--f1-pinned-switch"), `${layer}: its args reach the browser`);
+    assert.deepEqual(options.proxy, { server: "http://f1-proxy.test:8080" }, `${layer}: its proxy reaches the launch`);
+    assert.deepEqual(options.env, { F1_PINNED: "1" }, `${layer}: its env reaches the launch`);
+    assert.ok(options.ignoreDefaultArgs.includes("--f1-ignored"), `${layer}: its ignoreDefaultArgs reach the launch`);
+    assert.equal(lines.some((l) => /not used/.test(l)), false, `${layer}: nothing is named as dropped`);
+    assert.equal(options.chromiumSandbox, true, `${layer}: the sandbox stays the helper's`);
+    assert.equal(options.executablePath, app.executablePath, `${layer}: the executable stays the helper's`);
+    const written = JSON.parse(readFileSync(personaPath, "utf8")).options;
+    assert.deepEqual(Object.keys(written).filter((k) => k in controls()), [], `${layer}: the persona written back keeps only the fingerprint`);
+  }
+});
+
+// F4 (D12 closes it): the build's platform and brand version fill the fingerprint when no layer
+// sets them, and are then stored in the persona, so a later build launches with the first build's
+// brand version, and a persona from another system keeps that system's platform.
+test("F4 today: the build's platform and brand version are stored in the persona and outlive a build update", async () => {
+  const first = appFixture({ product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" });
+  const later = appFixture({ product: "PairBrowse", version: "150.0.7900.1", arch: "arm64" });
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-f4-"));
+  const personaPath = join(directory, "pairbrowse-persona.json");
+  const config = { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } };
+  const before = recordingPack();
+  await launchNative(fakeBrowserType(), config, directory, { executablePath: first.executablePath, headless: false }, before);
+  assert.equal(before.given[0].brandVersion, "150.0.7871.114");
+  assert.equal(before.given[0].platform, PLATFORM);
+  const stored = JSON.parse(readFileSync(personaPath, "utf8")).options;
+  assert.equal(stored.brandVersion, "150.0.7871.114", "the derived brand version is stored as configuration");
+  assert.equal(stored.platform, PLATFORM, "so is the derived platform");
+  const after = recordingPack();
+  await launchNative(fakeBrowserType(), config, directory, { executablePath: later.executablePath, headless: false }, after);
+  assert.equal(after.given[0].brandVersion, "150.0.7871.114", "the updated build still says the first build's version");
+
+  const other = PLATFORM === "windows" ? "linux" : "windows";
+  const copied = mkdtempSync(join(tmpdir(), "pairbrowse-f4-copied-"));
+  writeFileSync(join(copied, "pairbrowse-persona.json"), JSON.stringify({ name: "pairbrowse", options: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), platform: other } }));
+  const moved = recordingPack();
+  await launchNative(fakeBrowserType(), { pairbrowse: {} }, copied, { executablePath: later.executablePath, headless: false }, moved);
+  assert.equal(moved.given[0].platform, other, "a persona from another system keeps that system's platform");
+});
+
+// F7 (D12 closes it): with no timezone or acceptLanguage set, this computer's Intl fills both,
+// whatever languages the device profile lists, and both are stored in the persona.
+test("F7 today: this computer's Intl replaces the device's languages and is stored in the persona", async () => {
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-f7-"));
+  const host = Intl.DateTimeFormat().resolvedOptions();
+  const pack = recordingPack();
+  await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", fingerprintProfile: { navigator: { languages: ["nl-NL", "nl"] } } } }, directory,
+    { executablePath: app.executablePath, headless: false }, pack);
+  assert.equal(pack.given[0].acceptLanguage, host.locale, "the host's language, not the device's nl-NL");
+  assert.equal(pack.given[0].timezone, host.timeZone);
+  const stored = JSON.parse(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8")).options;
+  assert.equal(stored.acceptLanguage, host.locale, "the host's language is stored as configuration");
+  assert.equal(stored.timezone, host.timeZone, "so is the host's time zone");
+  const explicit = recordingPack();
+  await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", acceptLanguage: "nl-NL,nl", timezone: "Europe/Amsterdam", fingerprintProfile: PINNED_PROFILE() } },
+    mkdtempSync(join(tmpdir(), "pairbrowse-f7-explicit-")), { executablePath: app.executablePath, headless: false }, explicit);
+  assert.equal(explicit.given[0].acceptLanguage, "nl-NL,nl", "a set acceptLanguage wins");
+  assert.equal(explicit.given[0].timezone, "Europe/Amsterdam");
 });

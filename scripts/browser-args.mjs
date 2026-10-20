@@ -44,7 +44,8 @@ function localRules(v) {
 // Every switch a user's chromeArgs may carry, and the value it takes. Nothing here runs a
 // program, opens a debugging surface, loads code, turns a security check off or sends traffic
 // elsewhere: language, window, scale, colors and fonts, GPU and display backend choices, sound,
-// notifications, and the switches the helper's own launch already uses.
+// notifications, and the switches the helper's own launch already uses. The engine's
+// --canvas-bridge-* switches (they sent what pages draw to another program) are on no list.
 export const ALLOWED = {
   "lang": MATCHES(/^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,3}$/),
   "window-size": MATCHES(/^\d{1,5},\d{1,5}$/),
@@ -77,8 +78,9 @@ export const ALLOWED = {
   "disable-renderer-backgrounding": NONE,
   "disable-background-timer-throttling": NONE,
   "disable-backgrounding-occluded-windows": NONE,
-  // Test runs only, where nobody browses (ADR 0009).
-  "headless": (v) => v === null || v === "new" || v === "old",
+  // Test runs only, where nobody browses (ADR 0009): a helper the harness started, never a user's
+  // config, so no measurement or validation ever comes from a headless run of the person's browser.
+  "headless": (v, { harness }) => harness && (v === null || v === "new" || v === "old"),
   // Feature names only (no field trial parameters); no feature may be turned off (that is how
   // site isolation and other protections are switched off) except, in a test run, below.
   "enable-features": (v) => featureList(v, () => true),

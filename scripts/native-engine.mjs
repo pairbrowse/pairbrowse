@@ -20,6 +20,13 @@ const ENGINE_MAJOR = NATIVE.version.split(".")[0];
 // Options this engine can't honour: refused, never silently ignored.
 const UNSUPPORTED = ["version", "autoUpdate", "pro", "licenseThroughProxy", "shaderDialect", "widevine", "socks5Udp", "transparentProxy",
   "allowThirdPartyCookies", "fingerprintSchema", "personaSchema", "realGpuHost"];
+// The canvas bridge (an engine option that sent what pages draw to a program at an address) is
+// gone: refused in a saved profile and in config.json, dropped from the persona kept with a profile
+// (one log line), never saved again, and any --canvas-bridge-* switch is stripped from the launch,
+// whatever added it. The sandbox is untouched by all of this.
+export const canvasBridgeRefusal = (where) => `${where} sets canvasBridge: refused, PairBrowse never sends what pages draw to another program (the canvas bridge is gone).`;
+export const CANVAS_BRIDGE_DROPPED = "launch: canvasBridge in the persona kept with this profile dropped (the canvas bridge is gone)";
+export const isCanvasBridgeSwitch = (arg) => typeof arg === "string" && /^canvas-bridge-/.test(switchName(arg) ?? "");
 const GEOIP_FIELDS = ["timezone", "acceptLanguage", "webrtcIp", "location"];
 const PLATFORM = { darwin: "macos", linux: "linux", win32: "windows" }[process.platform];
 
@@ -245,12 +252,16 @@ function readSettings(config, pack, personaPath) {
   const overrides = withFlatWebgpu(Object.fromEntries(Object.entries(given).filter(([k]) => PAIRBROWSE_ENGINE_KEYS.includes(k))));
   const ignored = Object.keys(given).filter((k) => !PAIRBROWSE_ENGINE_KEYS.includes(k) && !UNSUPPORTED.includes(k));
   const motion = ["classic", "combined", "quick"].includes(motionSetting) ? motionSetting : "fast";
+  if (given.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("config.json's pairbrowse block"));
   const saved = withFlatWebgpu(selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {});
-  const persisted = withFlatWebgpu(existsSync(personaPath) ? pack.Profile.load(personaPath).options : {});
+  if (saved?.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("The saved profile (pairbrowse.profile)"));
+  const persisted = { ...withFlatWebgpu(existsSync(personaPath) ? pack.Profile.load(personaPath).options : {}) };
+  const bridgeDropped = persisted.canvasBridge !== undefined;
+  delete persisted.canvasBridge;
   for (const key of UNSUPPORTED) {
     if ([persisted, saved, given].some((layer) => layer[key] !== undefined)) throw new Error(`PairBrowse native does not support pairbrowse.${key} on this engine.`);
   }
-  return { selection, profileSelect, humanize, showCursor, geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored };
+  return { selection, profileSelect, humanize, showCursor, geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, bridgeDropped };
 }
 
 // The fingerprint to launch with: the layered settings, then a persona (picked, or this Mac's own
@@ -300,13 +311,10 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   return { fingerprint, rest, source, steps };
 }
 
-// Only the fingerprint is kept with the profile: never proxy credentials, agent keys or bridge auth.
+// Only the fingerprint is kept with the profile: never proxy credentials, agent keys or a canvas bridge.
 function savePersona(pack, personaPath, fingerprint) {
   const persona = { ...fingerprint };
-  if (persona.canvasBridge?.auth) {
-    const { auth, ...bridge } = persona.canvasBridge;
-    persona.canvasBridge = bridge;
-  }
+  delete persona.canvasBridge;
   new pack.Profile("pairbrowse", persona).save(personaPath);
 }
 
@@ -330,6 +338,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const personaPath = join(directory, "pairbrowse-persona.json");
   const settings = readSettings(config, pack, personaPath);
+  if (settings.bridgeDropped) log(CANVAS_BRIDGE_DROPPED);
   if (settings.ignored.length) log(`launch: ${settings.ignored.map((k) => `pairbrowse.${k}`).join(", ")} in config.json not used (PairBrowse passes on only its own settings and the engine's fingerprint options; see docs/configuration.md)`);
   const fingerprintAt = Date.now();
   const { fingerprint, rest, source, steps } = await resolveFingerprint(chromium, options, pack, directory, settings, metadata.version, log);
@@ -370,8 +379,11 @@ export async function launchNative(chromium, config, directory, options, pack, l
     ...userArgs,
   ]);
   const gated = pack.gateEngineSwitches(options.executablePath, args, false);
+  const bridgeArgs = gated.args.filter(isCanvasBridgeSwitch);
+  if (bridgeArgs.length) log(`launch: ${bridgeArgs.map((a) => a.split("=")[0]).join(", ")} stripped (the canvas bridge is gone)`);
+  const finalArgs = gated.args.filter((a) => !isCanvasBridgeSwitch(a));
   // Linux: the build's bundled fonts (FONTCONFIG_FILE) and the UI language from --lang (LANGUAGE).
-  const env = pack.fontLaunchEnv?.(options.executablePath, merged.env, gated.args);
+  const env = pack.fontLaunchEnv?.(options.executablePath, merged.env, finalArgs);
   const contextAt = Date.now();
   const context = await chromium.launchPersistentContext(directory, {
     ...merged, proxy, ...(env ? { env } : {}),
@@ -379,7 +391,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
     // The sandbox is the helper's choice alone (engine.mjs launchEngine): never off from a saved
     // persona's options or a switch from the pack while it's on.
     chromiumSandbox: options.chromiumSandbox !== false,
-    args: options.chromiumSandbox === false ? gated.args : withoutNoSandbox(gated.args),
+    args: options.chromiumSandbox === false ? finalArgs : withoutNoSandbox(finalArgs),
     // The driver's --disable-blink-features=AutomationControlled is left out too: the build keeps
     // navigator.webdriver false on its own, and the engine shows that switch in a warning bar above
     // every page ("unsupported command-line flag"). So is the driver's --disable-background-networking:

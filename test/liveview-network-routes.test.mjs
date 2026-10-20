@@ -354,3 +354,68 @@ test("a secrets.env that can't be used is said in the summary and is the reason 
   assert.match(networkChange({ proxies: {} }, { op: "add", id: "a", type: "http", host: "h.example", auth: true, username: USERNAME, password: PASSWORD }, { secretsProblem: "X is a link." }).error, /X is a link\.$/);
   assert.equal(networkSummary(undefined, { secretsProblem: "X is a link." }).secretsProblem, "X is a link.");
 });
+
+// From a phone (C14, Definition of done: "also from a phone"): the live view's owner page on a
+// 390x844 touch screen, against the real server and the Network section's own files. The person
+// opens the Profile drawer, adds a proxy with its username and password by tapping and typing,
+// tests it, and picks it for a session; config.json and secrets.env change, the page never shows
+// the password back, and nothing in the drawer is wider than the phone.
+import { patchright } from "./helpers/live.mjs";
+const runtime = process.env.PAIRBROWSE_TEST_RUNTIME?.replace(/^~/, process.env.HOME);
+const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 };
+
+test("on a phone: the owner adds, tests and assigns a proxy in the live view's Profile drawer", { skip: !runtime, timeout: 120_000 }, async () => {
+  const probe = async (a) => (a.proxy ? { ok: true, ip: "203.0.113.7", loc: "US" } : { ok: true, ip: "192.0.2.50", loc: "DE" });
+  const s = setup({ config: { name: "kept" }, probe, locale: () => ({ timezone: "Europe/Berlin", languages: ["de-DE"], geoip: false }) });
+  const { v } = await view(s.network);
+  const { chromium } = patchright(runtime);
+  const browser = await chromium.launch();
+  const errors = [];
+  try {
+    const context = await browser.newContext(PHONE);
+    const page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(v.url);
+    // On a phone the workspace column opens over the toolbar; the person folds it first.
+    await page.waitForSelector('#side[data-state="open"]');
+    await page.tap("#side-collapse");
+    await page.waitForSelector('#side[data-state="rail"]');
+    await page.tap("#profile-btn");
+    await page.waitForSelector("#network-panel:not([hidden]) #net-add", { state: "visible" });
+    await page.tap("#net-add");
+    await page.fill("#net-id", "phone-proxy");
+    await page.selectOption("#net-type", "https");
+    await page.fill("#net-host", "proxy.example.com");
+    await page.fill("#net-port", "8443");
+    await page.tap("#net-auth");
+    await page.fill("#net-user", USERNAME);
+    await page.fill("#net-pass", PASSWORD);
+    // Nothing in the open drawer is wider than the phone.
+    const wide = await page.evaluate(() => [...document.querySelectorAll("#drawer *")].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && e.getClientRects().length).map((e) => e.id || e.className).slice(0, 5));
+    assert.deepEqual(wide, [], "the form fits the phone");
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "no sideways scroll");
+    await page.tap("#net-save");
+    await page.waitForFunction(() => document.querySelectorAll("#net-list li").length === 1 && document.getElementById("net-form").hidden);
+    assert.deepEqual(s.config().network.proxies["phone-proxy"], { server: "https://proxy.example.com:8443", auth: true });
+    assert.equal(s.config().name, "kept");
+    const saved = loadSecrets(s.secretsFile).values;
+    assert.deepEqual([saved.PAIRBROWSE_PROXY_PHONE_PROXY_USERNAME, saved.PAIRBROWSE_PROXY_PHONE_PROXY_PASSWORD], [USERNAME, PASSWORD]);
+    assert.match(await page.locator("#net-list li").innerText(), /Username saved, password saved\./);
+    // Test: the exit, its country and the time zone that doesn't match it.
+    await page.tap('#net-list li button[aria-label="Test phone-proxy"]');
+    await page.waitForSelector("#net-result:not([hidden])");
+    const res = await page.locator("#net-result").innerText();
+    assert.match(res, /Exit address 203\.0\.113\.7, country US\./);
+    assert.match(res, /Europe\/Berlin/);
+    // The session picks it.
+    await page.selectOption('#net-sessions li[data-session="shop-a"] select', "proxy:phone-proxy");
+    await page.waitForFunction(() => /phone-proxy/.test(document.getElementById("net-msg").textContent));
+    assert.equal(s.config().network.sessions["shop-a"], "phone-proxy");
+    const shown = await page.evaluate(() => document.body.innerText + [...document.querySelectorAll("input")].map((i) => i.value).join(" "));
+    assert.ok(!shown.includes(PASSWORD) && !shown.includes(USERNAME), "the page never shows a credential back");
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    v.close();
+  }
+});

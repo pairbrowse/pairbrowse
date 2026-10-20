@@ -28,6 +28,7 @@
 // owner: the person's operations on the sessions page (profile-owner.mjs), never an agent's.
 import { readAssignment, readBinding, writeBinding, validName, assignedTo } from "../../sessions.mjs";
 import { createProfileStore } from "../../profiles/store.mjs";
+import { launchableBrowserArgs, browserArgsOf } from "../../browser-args.mjs";
 import { fromConfig, toLaunch, ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "../../profiles/map.mjs";
 import { PROFILE_ID } from "../../profiles/schema.mjs";
 import { cliCommand } from "../../profiles/validate.mjs";
@@ -102,7 +103,9 @@ export function createProfiles(st, deps = {}) {
     const prior = engine ? record.validation?.[engine.build] || null : null;
     const status = entryStatus(prior, { pack: typeof pack === "string" && SHA256.test(pack) ? pack : null });
 
-    const mapped = toLaunch(record, { browserKind, platform });
+    // userArgs: config.json's browserArgs as the launch passes them (browser.mjs launchArgs), so
+    // the graphics plan refuses a renderer switch that contradicts the profile's backend.
+    const mapped = toLaunch(record, { browserKind, platform, userArgs: launchableBrowserArgs(browserArgsOf(config), platform) });
     if (mapped.problem) throw refuse(mapped.problem);
 
     if (config.requireValidatedProfiles === true) {
@@ -146,8 +149,9 @@ export function createProfiles(st, deps = {}) {
     return {
       id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null,
       switches: mapped.switches, network: mapped.network, adBlocker: mapped.adBlocker, results: mapped.results, warnings,
-      // The engine layer native-engine.mjs reads (config.browserProfile): only the mapper's keys.
-      engine: { id: record.id, kind: record.kind, geoip: mapped.geoip, engineKeys: Object.fromEntries(Object.entries(mapped.engineKeys).filter(([k]) => ENGINE_KEYS.includes(k))) },
+      // The engine layer native-engine.mjs reads (config.browserProfile): only the mapper's keys, and
+      // the backend asked for (its switches are among the mapper's; native-engine.mjs files it in GRAPHICS).
+      engine: { id: record.id, kind: record.kind, geoip: mapped.geoip, graphics: record.graphics.backend, engineKeys: Object.fromEntries(Object.entries(mapped.engineKeys).filter(([k]) => ENGINE_KEYS.includes(k))) },
     };
   }
 

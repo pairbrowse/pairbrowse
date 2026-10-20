@@ -1047,7 +1047,8 @@ inconsistency; remove the canvas bridge; keep the sandbox on.
   `SystemInfo` `auxAttributes.sandboxed` (the GPU process) is not counted yet: it was false on
   every Linux path measured under emulation, so it is rechecked on an x64 host first.
 - **E7. Linux screen follows the display**: on Xvfb the helper passes `virtualScreen` as `screenWidth`,
-  `screenHeight`, `availWidth`, `availHeight`, `colorDepth` when the profile's `screen` is unset; a
+  `screenHeight`, `availWidth`, `availHeight`, `colorDepth` and `devicePixelRatio` (1, or the
+  launch's `--force-device-scale-factor`; step 41) when the profile's `screen` is unset; a
   differing profile `screen` is a compatibility error naming both.
 - **E8. Requested and measured stored apart** in the Phase D record: `graphics` holds only requests
   (`backend`, `require: { webgl: null | 1 | 2, webgpu: boolean, platforms: ["linux", "macos"] }`);
@@ -1143,7 +1144,7 @@ home under D4 (Phase D migration step 2).
 | Area | Test (file: name) |
 |---|---|
 | Canvas bridge | `test/native-engine.test.mjs`: "saved persona canvasBridge refused"; "persisted canvasBridge dropped"; "no --canvas-bridge-* reaches the launch, sandbox still on". `test/browser-args.test.mjs`: "canvas-bridge switches dropped"; "headless only in the harness". pn `test/native_tail_patch_test.py` (new): "960 after 065; stub Get returns null; no socket code; six switches not forwarded". Opt-in `test/optin/canvas-bridge-dead.test.mjs` (Docker, as root with the sandbox off, a local listener): "no connection arrives" |
-| Backend selection | `test/native-graphics.test.mjs`: "auto, software, gpu accepted, others refused"; "gpu with --disable-gpu refused"; "Linux plan sets disableGpuFingerprint and noise off"; "gpu requested, software measured: error, context closed"; "software on macOS refused unless allowed"; "require unmet errors"; "screen vs virtualScreen"; "runtimeKey changes with driver, display kind, pack"; "parseSystemInfo: Metal hardware, Xvfb software, garbage unverified" |
+| Backend selection | `test/native-graphics.test.mjs`: "auto, software, gpu accepted, others refused"; "gpu with --disable-gpu refused"; "Linux plan sets disableGpuFingerprint and noise off"; "gpu requested, software measured: error" (the closed context: step 44); "software on macOS refused"; "require unmet errors"; "screen vs virtualScreen"; "runtimeKey changes with driver, display kind, pack"; "parseSystemInfo: Metal hardware, Xvfb software, garbage unverified" |
 | WebGL and WebGPU | `test/native-probe.test.mjs`: "probe results parsed: WebGL vendor, extensions, limits; WebGPU unavailable, fallback, full; canvas verdicts; fonts; media". `test/native-engine.test.mjs`: "nested WebGPU info flattened on every layer". pn `test/native_tail_patch_test.py`: "961 guards the limits loop with webgl_real" |
 | Requested vs measured | `test/native-validate.test.mjs`: "mismatch item carries field, rule, requested, measured, severity; status failed"; "missing measurement is unverified, never validated"; "switch without page result counts failed"; "requestDevice failing with reported limits is a webgpu.device error"; "measurement stored in validation[build].graphics, revision unchanged" |
 | Persistence and recovery | `test/native-validate.test.mjs`: "a store reload and a second forLaunch see the same request and measurement; a changed runtime key gives unverified". Opt-in `test/optin/graphics-recovery.test.mjs` (Docker): "a killed browser relaunches with the same graphics request and measurement" |
@@ -2326,6 +2327,48 @@ it depends on.
     `webgpu.device` fails on both platforms until 961), `test/profile-schema.test.mjs`,
     `test/profile-store.test.mjs`, `test/session-profiles.test.mjs` (`test/helpers/measured.mjs`).
 41. `native/graphics.mjs`, `backend.mjs`, `pairbrowse.graphics` (E2, E3, E9). -> 39
+    Landed as: `scripts/native/graphics.mjs` (pure): `GRAPHICS_BACKENDS` (the one list; the profile
+    schema and `config-schema.mjs` `pairbrowse.graphics` import it), `SOFTWARE_SWITCH`
+    (`--use-angle=swiftshader`), `LINUX_REAL`, `SCREEN_KEYS`, `LEGACY_GPU_KEYS`, `normalizeWebgpu`,
+    `GRAPHICS` (requested, plan switches and engine keys, kind, renderer, status; reset to
+    `unverified` by each native launch until step 44 files the read), `backendSwitches`,
+    `graphicsPlan({ requested, platform, browserKind, measured, userArgs, display, screenSet, name })`
+    answering `{ switches, engineKeys, refusals }` (a refusal `{ field, message }`, one sentence; any
+    refusal empties both: never a partial apply), `compatErrors(...)` (the plan's refusals plus
+    `graphics.require`, the legacy identity, `canvasBridge`, `screen` vs the virtual screen, the
+    open build; measured checks only with a measurement, "could not confirm" for an unverified read
+    with `gpu` or a requirement), `runtimeKey({ build, pack, platform, arch, display, backend,
+    switches })` (SHA-256; null without build, platform, arch or display kind; only backend switches
+    count). `scripts/native/backend.mjs`: pure `parseSystemInfo` (`software` for `gl=disabled`,
+    named "software rasterizer (GPU rendering off)", and for a software name in the renderer, the
+    device or `angle=swiftshader`; `hardware` for any other named renderer; else `unverified` with a
+    reason; strings cut and cleaned, IDs whole numbers only) and `readBackend(ctx, { ms })` (a
+    browser-level session over the pipe, each step bounded by `within`, the session detached).
+    The Linux fix of 13.1 is in `native-engine.mjs` `applyGraphicsPlan`, run after the persona is
+    saved so none of its keys is ever kept: on Linux `disableGpuFingerprint: true`,
+    `fingerprintNoise: false` and, on the helper's Xvfb (`config.virtualDisplay`, passed by
+    `daemon/browser/launch.mjs` and `native/check.mjs` from the screen's geometry), the screen keys
+    unless config.json or the profile sets `screenWidth`/`screenHeight`; a layer's other value for
+    those keys (screen keys too, where the virtual screen's apply) and the legacy `gpuVendor`,
+    `gpuRenderer`, `gpuStringSpoof` are left out on Linux with a log line, and the legacy identity
+    is logged deprecated (U6) on every platform. The legacy keys apply only while `config.json`
+    or a saved profile sets them: `resolveFingerprint` drops one only the kept persona carries, so
+    removing it from `config.json` ends both it and its log line. So E9's
+    legacy-identity error applies off Linux only (on Linux nothing of it is applied). E7 sets
+    `devicePixelRatio` too: 1 (Xvfb's) or the launch's `--force-device-scale-factor`. Profiles:
+    `map.mjs` `toLaunch` takes the backend through `graphicsPlan` (software: `--use-angle=swiftshader`
+    on Linux, refused on macOS, Windows and the open build; `SWITCHES` has `use-angle` in place of
+    `disable-gpu`), and `gpu` and `graphics.require` still refuse until step 44 checks the read at
+    launch. `readConfig` reads the default's backend from `pairbrowse.graphics` (native build only),
+    no longer from `--disable-gpu` in `browserArgs` (named, kept as written: on macOS it would have
+    become a refused software request). `forLaunch` passes `config.json`'s `browserArgs`, screened
+    as the launch passes them, to `toLaunch` (`userArgs`), so the plan refuses a renderer switch
+    the backend contradicts; its engine layer carries `graphics` (the backend asked for).
+    `readBackend` never throws: a driver that throws at once is unverified, and a session that
+    opens after its bound is detached. Tests: `test/native-graphics.test.mjs` (over spike E-S1's SystemInfo fixtures),
+    `test/native-engine.test.mjs` ("the graphics plan reaches the engine and never the persona"),
+    `test/profile-map.test.mjs`, `test/session-profiles.test.mjs`, `test/fuzz/graphics-compat.test.js`,
+    `test/fuzz/profile-schema.test.js`.
 42. `native/probe.mjs`, `probeLaunch`, self-check step (E4). -> 39, 40
 43. `rules/coherence.mjs` and `tzcountry.mjs` (the locale rules and the table landed with 32b, `screen.believable` with 35); wired into D validation, C verdicts and the B report;
     `test/compat-vs-verification.test.mjs` (E13, C13, D16, B14). -> 29, 37, 21
@@ -2457,7 +2500,7 @@ code:
   real screen is the Xvfb size (`virtualScreen`, default 1366x900).
 - Helper path: `native-engine.mjs` `resolveFingerprint` keeps the bare `sha256(directory)` seed on
   Linux; host capture is macOS only.
-- Fix (decision D-AP2, E2; spec steps 41 and 44, helper only): on Linux launch with
+- Fix (decision D-AP2, E2; spec steps 41 and 44, helper only; the launch part landed with step 41): on Linux launch with
   `disableGpuFingerprint: true` and `fingerprintNoise: false` so WebGL strings, limits, extensions
   and WebGPU vendor and architecture report the real backend (pn `002:740-748`, `955:155-165`), and
   pass the real Xvfb geometry as the screen overrides. Remaining after that: WebGPU limits stay the

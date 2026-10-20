@@ -7,6 +7,7 @@
 // except `network`'s, which the schema takes as written so net/config.mjs can fail closed (a
 // broken block refuses sessions rather than turning them direct); configProblem asks it too.
 import { checkNetwork } from "./net/config.mjs";
+import { GRAPHICS_BACKENDS } from "./native/graphics.mjs";
 
 // A spec: { type: "boolean" | "string" | "integer" | "number" | "array" | "object", nullable,
 // values (one of these exact values), min, max (numbers), items (an array's items' type),
@@ -109,6 +110,8 @@ export const CONFIG_SCHEMA = {
       typingPace: { type: "number", min: 0.2, max: 1 },
       motion: { values: ["fast", "quick", "combined", "classic"] },
       formMove: { values: ["tab", "mouse"] },
+      // The default profile's graphics.backend (spec server-mode E2; native/graphics.mjs graphicsPlan).
+      graphics: { values: GRAPHICS_BACKENDS },
       ...Object.fromEntries(PAIRBROWSE_ENGINE_KEYS.map((k) => [k, {}])),
     },
   },

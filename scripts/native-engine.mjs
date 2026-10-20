@@ -11,7 +11,7 @@ import { within, writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
 import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
-import { normalizeWebgpu } from "./native/graphics.mjs";
+import { normalizeWebgpu, graphicsPlan, backendSwitches, GRAPHICS, SCREEN_KEYS, LEGACY_GPU_KEYS } from "./native/graphics.mjs";
 import { STRICT_WEBRTC } from "./net/config.mjs";
 import { ENGINE_KEYS as PROFILE_ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "./profiles/map.mjs";
 import { PERSONA_FILE, LEGACY_PERSONA } from "./sessions.mjs";
@@ -308,9 +308,10 @@ function readSettings(config, pack, personaPath) {
   // "combined" (the same shape at the profile's own slower speed, tremor and habits: for a more
   // careful hand) or "classic" (the engine's own). Every click still lands exactly on its point.
   // An engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
-  const { profile: selection, profileSelect, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
+  const { profile: selection, profileSelect, graphics = "auto", humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
   // profileSelect only steered the engine pack's persona pick, which PairBrowse no longer asks
   // for (D9 below; config-schema.mjs PROFILE_SELECT keeps it closed, D8).
+  // graphics: the default profile's backend, read by profiles/map.mjs into its switches (E2).
   void formMove, profileSelect;
   // Only the engine's fingerprint options pass (config-schema.mjs PAIRBROWSE_ENGINE_KEYS): never an
   // unpacked extension, a proxy, launch options or switches from config.json, which would go
@@ -347,7 +348,7 @@ function readSettings(config, pack, personaPath) {
   // the engine's fingerprint options pass; every other option (launch controls, switches, env,
   // extensions, agent and storage options) is named in one log line and dropped, never applied.
   const dropped = { saved: engineOnly(saved), persisted: engineOnly(persisted) };
-  return { thisComputer, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, dropped, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
+  return { thisComputer, graphics: chosen?.graphics ?? graphics, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, dropped, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
 }
 
 // Keeps only the engine's fingerprint options in a persona layer, in place: the names of the
@@ -401,6 +402,9 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
     const keptSeed = persisted.fingerprint !== undefined && !newProfile;
     if (!hostCapture && !keptSeed && overrides.fingerprint === undefined && saved.fingerprint === undefined) delete fingerprint.fingerprint;
   }
+  // The legacy GPU identity (decision U6) only while config.json or a saved profile sets it: one
+  // kept with the persona from an earlier launch is dropped (and so leaves the persona at its save).
+  for (const key of LEGACY_GPU_KEYS) if (overrides[key] === undefined && saved[key] === undefined) delete fingerprint[key];
   if (geoip) {
     for (const key of GEOIP_FIELDS) if (overrides[key] === undefined && saved[key] === undefined) delete fingerprint[key];
     // The session's proxy is the launch's own (a persona's or saved profile's proxy is refused in
@@ -413,7 +417,8 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
 }
 
 // Only the fingerprint is kept with the profile: never proxy credentials, agent keys or a canvas
-// bridge, never what the launch works out (DERIVED_FIELDS, D12), and with geoip never what it
+// bridge, never what the launch works out (DERIVED_FIELDS, D12; the graphics plan's keys, which
+// launchNative adds after this, applyGraphicsPlan), and with geoip never what it
 // derived (GEOIP_FIELDS, spec C9): those are measurements of this launch's exit address, not
 // settings. One set in config.json, the browser profile or a saved profile is read from there
 // again at each launch.
@@ -441,6 +446,36 @@ function splitExtensionArgs(args, extensions) {
 export const DRIVER_BLINK_SWITCH = "--disable-blink-features=AutomationControlled";
 export const DRIVER_BACKGROUND_SWITCH = "--disable-background-networking";
 
+// The graphics plan (spec server-mode E2, E7; native/graphics.mjs graphicsPlan) over the resolved
+// fingerprint, in place, after the persona is saved (its keys are the runtime's, worked out at each
+// launch, never kept). On Linux: the real backend's WebGL strings, limits and extensions and WebGPU
+// vendor and architecture (disableGpuFingerprint), no noise over real pixels (fingerprintNoise:
+// false), and on the helper's virtual screen (config.virtualDisplay: { width, height, depth }) that
+// screen, unless config.json or the profile sets one. A layer's other value for these keys, and the
+// legacy GPU identity (decision U6), aren't applied there, and the log says so. The legacy keys are
+// named deprecated on every platform. Returns the plan.
+export function applyGraphicsPlan(fingerprint, settings, { platform = process.platform, display = null, userArgs = [], log = () => {} } = {}) {
+  const set = (k) => settings.overrides[k] !== undefined || settings.saved[k] !== undefined;
+  const plan = graphicsPlan({ requested: "auto", platform, browserKind: "pairbrowse", userArgs, display, screenSet: SCREEN_KEYS.slice(0, 2).some(set) });
+  const legacy = LEGACY_GPU_KEYS.filter((k) => fingerprint[k] !== undefined);
+  if (legacy.length) log(`launch: ${legacy.join(", ")} (another device's GPU) ${legacy.length > 1 ? "are" : "is"} deprecated and go${legacy.length > 1 ? "" : "es"} in the next release (decision U6): graphics come from this computer; remove ${legacy.length > 1 ? "them" : "it"} from config.json's pairbrowse block or the saved persona`);
+  if (platform === "linux") {
+    for (const k of legacy) delete fingerprint[k];
+    if (legacy.length) log(`launch: ${legacy.join(", ")} not applied on Linux: pages see this computer's real renderer`);
+    const differs = (k) => fingerprint[k] !== undefined && fingerprint[k] !== plan.engineKeys[k];
+    const other = Object.keys(plan.engineKeys).filter((k) => !SCREEN_KEYS.includes(k) && differs(k));
+    if (other.length) log(`launch: ${other.join(", ")} not applied on Linux: graphics there are always the real backend's`);
+    // A screen key set without screenWidth and screenHeight (a pixel ratio, a depth) gives way to the
+    // virtual screen's, never silently.
+    const screenOther = SCREEN_KEYS.filter((k) => plan.engineKeys[k] !== undefined && differs(k));
+    if (screenOther.length) log(`launch: ${screenOther.join(", ")} not applied on Linux: the virtual screen's apply (set screenWidth and screenHeight to choose a screen)`);
+  }
+  Object.assign(fingerprint, plan.engineKeys);
+  const screen = SCREEN_KEYS.every((k) => plan.engineKeys[k] !== undefined) ? `, screen ${plan.engineKeys.screenWidth}x${plan.engineKeys.screenHeight} (the virtual screen)` : "";
+  if (platform === "linux") log(`launch: graphics: this computer's own renderer (real WebGL and WebGPU strings, no fingerprint noise)${screen}`);
+  return plan;
+}
+
 export async function launchNative(chromium, config, directory, options, pack, log = () => {}) {
   const metadata = nativeManifest(options.executablePath);
   // Before anything else runs (a first launch's host capture takes up to a minute).
@@ -457,6 +492,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // Each launch step's time (plans/555 item 4): what a slow first launch spent where.
   log(`launch: fingerprint ${Date.now() - fingerprintAt} ms${steps.length ? ` (${steps.join(", ")})` : ""}`);
   savePersona(pack, personaPath, fingerprint, settings.geoip, settings.personaName);
+  const plan = applyGraphicsPlan(fingerprint, settings, { display: config.virtualDisplay ?? null, userArgs: options.args ?? [], log });
 
   const { portableProfile, encryptionKey, extensions, disablePrivacySandbox = true, ...personaRest } = rest;
   const { agent, rest: launchOptions } = pack.splitAgentOptions(personaRest);
@@ -496,6 +532,8 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const bridgeArgs = gated.args.filter(isCanvasBridgeSwitch);
   if (bridgeArgs.length) log(`launch: ${bridgeArgs.map((a) => a.split("=")[0]).join(", ")} stripped (the canvas bridge is gone)`);
   const finalArgs = gated.args.filter((a) => !isCanvasBridgeSwitch(a));
+  // This launch's graphics (status reads GRAPHICS); the backend in use is read once it runs.
+  Object.assign(GRAPHICS, { requested: settings.graphics, switches: backendSwitches(finalArgs), engineKeys: Object.keys(plan.engineKeys), kind: "unverified", renderer: null, status: "unverified" });
   // Linux: the build's bundled fonts (FONTCONFIG_FILE) and the UI language from --lang (LANGUAGE).
   const env = pack.fontLaunchEnv?.(options.executablePath, merged.env, finalArgs);
   const contextAt = Date.now();

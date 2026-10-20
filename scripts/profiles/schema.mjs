@@ -15,6 +15,8 @@
 // maxItems, maxJson (an open object's size as JSON), entries ({ key: RegExp, value: spec }: an object whose own keys are free but checked).
 import { fits, expected } from "../config-schema.mjs";
 import { NETWORK_ID } from "../net/credentials.mjs";
+// Phase E's graphics requests (E2, E8); measurements live in validation[build].graphics.
+import { GRAPHICS_BACKENDS } from "../native/graphics.mjs";
 
 // The record's schema (D19). A newer one is refused, never rewritten; an older one goes through
 // profiles/upgrade.mjs first.
@@ -50,8 +52,6 @@ export const BROWSER_KINDS = ["pairbrowse", "pairbrowse-open"];
 export const PROFILE_KINDS = ["store", "config"];
 export const PROFILE_STATUSES = ["active", "retired"];
 export const LOCALE_SOURCES = ["set", "system", "geoip"];
-// Phase E's graphics requests (E2, E8); measurements live in validation[build].graphics.
-export const GRAPHICS_BACKENDS = ["auto", "software", "gpu"];
 export const PERSONA_SOURCES = ["seed", "host"];
 // D15's import formats, as provenance names them.
 export const IMPORT_FORMATS = [`${EXPORT_FORMAT}/1`, "engine-device/1", "engine-persona"];

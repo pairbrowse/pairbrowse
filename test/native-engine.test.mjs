@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile, personaBindingRefusal, droppedLine } from "../scripts/native-engine.mjs";
+import { launchNative, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile, personaBindingRefusal, droppedLine } from "../scripts/native-engine.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
-import { normalizeWebgpu } from "../scripts/native/graphics.mjs";
+import { normalizeWebgpu, GRAPHICS } from "../scripts/native/graphics.mjs";
 import { THIS_COMPUTER_NOTE } from "../scripts/profiles/map.mjs";
 import { sha256 } from "../scripts/util.mjs";
 import { STRICT_WEBRTC, resolverRule } from "../scripts/net/config.mjs";
@@ -982,7 +982,9 @@ test("saved and persisted layers pass only engine keys", async () => {
     const reached = new Set([...Object.keys(pack.given[0]), ...Object.keys(rest)]);
     for (const k of Object.keys(extra)) assert.ok(!reached.has(k), `${layer}: ${k} dropped`);
     for (const k of reached) assert.ok(PAIRBROWSE_ENGINE_KEYS.includes(k), `${layer}: ${k} is an engine key`);
-    for (const k of ["gpuVendor", "storageQuota", "tlsProfile", "fingerprintNoise"]) assert.equal(pack.given[0][k], `v-${k}`, `${layer}: ${k} passes`);
+    for (const k of ["hardwareConcurrency", "storageQuota", "tlsProfile"]) assert.equal(pack.given[0][k], `v-${k}`, `${layer}: ${k} passes`);
+    // The legacy GPU identity (U6) passes from a layer that sets it now, off Linux; never only from the kept persona.
+    assert.equal(pack.given[0].gpuVendor, layer === "saved" && process.platform !== "linux" ? "v-gpuVendor" : undefined, `${layer}: gpuVendor`);
   }
   const unsupported = recordingPack({ saved: { fingerprint: "seed", personaSchema: 2 } });
   await assert.rejects(launchNative(fakeBrowserType(), { pairbrowse: { profile: "mine" } }, mkdtempSync(join(tmpdir(), "pairbrowse-d7-unsupported-")), { executablePath: app.executablePath, headless: false }, unsupported),
@@ -1178,4 +1180,67 @@ test("persona saved under the profile id; another profile's persona refused; a s
   const plain = mkdtempSync(join(tmpdir(), "pairbrowse-persona-plain-"));
   await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } }, plain);
   assert.equal(JSON.parse(readFileSync(join(plain, "pairbrowse-persona.json"), "utf8")).name, "pairbrowse");
+});
+
+// Spec E2, E7 and section 13.1: on Linux the launch passes the real backend's strings, no noise and
+// the virtual screen (config.virtualDisplay, the helper's Xvfb) as the screen; elsewhere nothing.
+// What the plan adds is worked out at each launch and never kept in the persona.
+test("the graphics plan reaches the engine and never the persona", async () => {
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-graphics-plan-"));
+  const pack = recordingPack();
+  const lines = [];
+  await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), graphics: "software" }, virtualDisplay: { width: 1366, height: 900, depth: 24 } }, directory,
+    { executablePath: app.executablePath, headless: false, args: ["--use-angle=swiftshader"] }, pack, (l) => lines.push(l));
+  const linux = process.platform === "linux";
+  const expected = linux ? { disableGpuFingerprint: true, fingerprintNoise: false, screenWidth: 1366, screenHeight: 900, availWidth: 1366, availHeight: 900, colorDepth: 24, devicePixelRatio: 1 } : {};
+  for (const [k, v] of Object.entries(expected)) assert.equal(pack.given[0][k], v, k);
+  if (!linux) for (const k of ["disableGpuFingerprint", "fingerprintNoise", "screenWidth"]) assert.equal(pack.given[0][k], undefined, k);
+  const stored = JSON.parse(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8")).options;
+  for (const k of ["disableGpuFingerprint", "fingerprintNoise", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio"]) assert.equal(stored[k], undefined, `${k} is never kept`);
+  assert.ok(!lines.some((l) => /pairbrowse\.graphics in config\.json not used/.test(l)), "pairbrowse.graphics is PairBrowse's own setting");
+  assert.equal(GRAPHICS.requested, "software");
+  assert.deepEqual(GRAPHICS.switches, ["--use-angle=swiftshader"]);
+  assert.equal(GRAPHICS.kind, "unverified", "until the browser process says");
+});
+
+// Decision U6: a legacy GPU key removed from config.json is gone at the next launch, never kept
+// on by the persona the first launch saved (and never named deprecated again).
+test("a legacy GPU key removed from config.json is neither applied nor logged at the next launch", async () => {
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-legacy-gpu-"));
+  const run = async (extra) => {
+    const pack = recordingPack();
+    // The real pack keeps gpuVendor with the fingerprint; this one's split would leave it out.
+    const split = pack.splitFingerprintOptions;
+    pack.splitFingerprintOptions = (options) => { const out = split(options); return { fingerprint: { ...out.fingerprint, ...out.rest }, rest: {} }; };
+    const lines = [];
+    await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), ...extra } }, directory, { executablePath: app.executablePath, headless: false }, pack, (l) => lines.push(l));
+    return { given: pack.given[0], lines };
+  };
+  const first = await run({ gpuVendor: "Old Vendor" });
+  assert.ok(first.lines.some((l) => /gpuVendor .*deprecated/.test(l)), first.lines.join("\n"));
+  if (process.platform !== "linux") assert.equal(first.given.gpuVendor, "Old Vendor");
+  const next = await run({});
+  assert.equal(next.given.gpuVendor, undefined);
+  assert.ok(!next.lines.some((l) => /gpuVendor/.test(l)), next.lines.join("\n"));
+  assert.equal(JSON.parse(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8")).options.gpuVendor, undefined, "the persona no longer keeps it");
+});
+
+// Spec E7 on Linux: a screen key set without screenWidth and screenHeight gives way to the virtual
+// screen's with a log line, never silently.
+test("on the virtual screen a lone screen key is replaced with a log line", () => {
+  const lines = [];
+  const fingerprint = { devicePixelRatio: 2, colorDepth: 24 };
+  applyGraphicsPlan(fingerprint, { overrides: { devicePixelRatio: 2, colorDepth: 24 }, saved: {} }, { platform: "linux", display: { width: 1366, height: 900, depth: 24 }, log: (l) => lines.push(l) });
+  assert.equal(fingerprint.devicePixelRatio, 1);
+  assert.equal(fingerprint.screenWidth, 1366);
+  assert.ok(lines.some((l) => /^launch: devicePixelRatio not applied on Linux: the virtual screen's apply/.test(l)), lines.join("\n"));
+  assert.ok(!lines.some((l) => /colorDepth not applied/.test(l)), "an equal value isn't named");
+  // With screenWidth and screenHeight set, the layer's screen stands and nothing is named.
+  const own = { screenWidth: 1920, screenHeight: 1080, devicePixelRatio: 2 };
+  const quiet = [];
+  applyGraphicsPlan(own, { overrides: { ...own }, saved: {} }, { platform: "linux", display: { width: 1366, height: 900, depth: 24 }, log: (l) => quiet.push(l) });
+  assert.equal(own.devicePixelRatio, 2);
+  assert.ok(!quiet.some((l) => /not applied on Linux: the virtual screen/.test(l)));
 });

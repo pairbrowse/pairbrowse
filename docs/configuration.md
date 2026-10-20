@@ -324,13 +324,15 @@ user's file, readable by others), the section says why and refuses a username or
 
   The `default` browser profile is read from this file, never written into it: `browser` (and
   its older names) gives the browser it is for; the screened `browserArgs` give its languages
-  (`--lang`), window (`--window-size`), dark scheme (`--force-dark-mode`), reduced motion
-  (`--force-prefers-reduced-motion`) and software graphics (`--disable-gpu`), each switch staying
-  in `browserArgs` as written (one written twice with different values is left out of the profile);
+  (`--lang`), window (`--window-size`), dark scheme (`--force-dark-mode`) and reduced motion
+  (`--force-prefers-reduced-motion`), each switch staying in `browserArgs` as written (one written
+  twice with different values is left out of the profile; a graphics switch such as `--disable-gpu`
+  or `--use-angle` stays there too and is named, the backend in use being measured);
   and, when the native build is chosen, `pairbrowse` gives its languages (`acceptLanguage`, else
   `--lang`), `timezone`, `geoip`, screen (`screenWidth` and `screenHeight`, with `availWidth`,
-  `availHeight`, `colorDepth` and `devicePixelRatio` or `--force-device-scale-factor`) and seed
-  (`fingerprint`); `profile` `"auto"` or `"local"` means this computer's own values. The
+  `availHeight`, `colorDepth` and `devicePixelRatio` or `--force-device-scale-factor`), graphics
+  backend (`graphics`) and seed (`fingerprint`); `profile` `"auto"` or `"local"` means this
+  computer's own values. The
   hardware keys (`gpuVendor`, `gpuRenderer`, `hardwareConcurrency`, `platform`, `brandVersion`
   and the like), a saved persona's name and `profileSelect` are never a profile's, and `network`
   isn't either: a change there never changes the profile. A value that doesn't fit a profile (an
@@ -338,7 +340,7 @@ user's file, readable by others), the section says why and refuses a username or
   profile is recorded in its `assignment.json`; a session without one uses `default`.
 
   Each session starts on its profile: the profile's languages, window, dark scheme, reduced
-  motion and software graphics as switches after `browserArgs` (its window in place of the
+  motion and (on Linux) software graphics as switches after `browserArgs` (its window in place of the
   fixed size), and on the native build its languages, time zone, screen, seed and `geoip` in
   place of the `pairbrowse` block's (the `default` profile's are the block's own; the hardware
   keys still apply to every profile), its network id unless `network.sessions` names one, and
@@ -385,8 +387,27 @@ user's file, readable by others), the section says why and refuses a username or
   `"Claude"`), its distance from the screen's top (default 52), and whether that app's window
   makes room for it (default `false`).
 - `pairbrowse`: the native PairBrowse build's own settings (`humanize`, `showCursor`, `typingPace`,
-  `formMove`, `motion`, `profile`, `profileSelect`, `geoip`): see
-  [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser). `profileSelect` is
+  `formMove`, `motion`, `profile`, `profileSelect`, `geoip`, `graphics`): see
+  [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser). `graphics` is the
+  `default` profile's graphics backend (a stored profile has its own `graphics.backend`):
+  `"auto"` (default) renders as this computer does (on a Linux server's virtual screen that is
+  already software); `"software"` forces the engine's own software renderer
+  (`--use-angle=swiftshader`), on Linux only (on macOS, and on the open build, a session with it
+  is refused, naming it); `"gpu"` asks for a hardware GPU, which the start refuses until
+  PairBrowse checks the browser's own read of its backend at launch (a later version), and at once
+  with `--disable-gpu` or a software renderer in `browserArgs`. Graphics are always this
+  computer's own: on a Mac the captured values of this Mac; on Linux the browser reports the real
+  backend's WebGL and WebGPU strings and limits, adds no fingerprint noise over its real pixels,
+  and on PairBrowse's virtual screen reports that screen (`virtualScreen`'s size and depth,
+  pixel ratio 1 or your `--force-device-scale-factor`) unless `screenWidth` and
+  `screenHeight` or the profile set one. `disableGpuFingerprint` and `fingerprintNoise` set to
+  anything else, and `gpuVendor`, `gpuRenderer` and `gpuStringSpoof`, aren't applied on Linux
+  (the helper log says so); on the virtual screen neither is another screen key set without
+  `screenWidth` and `screenHeight` (a `devicePixelRatio` or `colorDepth` alone gives way to the
+  virtual screen's, and the log names it). `gpuVendor` and `gpuRenderer` are deprecated everywhere
+  and go in the next release (decision U6), and the log says so at each launch that sets them; one
+  removed from `config.json` is gone at the next launch (the session's kept persona doesn't carry
+  it on). `profileSelect` is
   closed: only `os`, `mode` (`"best"`, `"random"` or `"rotate"`), `topN`, `key`, `preferLocal`,
   `offline`, `maxEncodedSize` and `quiet` are read, and `python`, `converter`, `apiBase`,
   `licenseKey`, `localDir`, `autoDownload` and `autoDownloadCount` are refused by name (PairBrowse

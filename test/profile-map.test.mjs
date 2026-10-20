@@ -54,7 +54,8 @@ test("fromConfig maps the inventory", () => {
     screen: { width: 1920, height: 1080, availWidth: 1920, availHeight: 1050, colorDepth: 24, devicePixelRatio: 2 },
     window: { width: 1280, height: 800 },
     display: { colorScheme: "dark", reducedMotion: true },
-    graphics: { backend: "software", require: null },
+    // --disable-gpu stays in browserArgs as written; the backend is pairbrowse.graphics (E2).
+    graphics: { backend: "auto", require: null },
     persona: { source: "seed", seed: "4242" },
     payments: { savedCard: false },
     network: null,
@@ -67,6 +68,7 @@ test("fromConfig maps the inventory", () => {
   }
   assert.equal(items.find((i) => i.field === "pairbrowse.gpuVendor").status, "unsupported");
   assert.ok(items.some((i) => i.field === "browserArgs" && /--use-angle/.test(i.reason)), "a backend switch is named, kept as written");
+  assert.ok(items.some((i) => i.field === "browserArgs" && /--disable-gpu/.test(i.reason)), "--disable-gpu too");
   assert.ok(items.every((i) => i.requested === null && !JSON.stringify(i).includes("Zq Marker") && !JSON.stringify(i).includes("proxy.test")), "no value from config.json repeated");
   // The store takes them as the default's settings.
   const made = makeStore().configProfile(settings);
@@ -113,11 +115,13 @@ test("fromConfig maps the inventory", () => {
 });
 
 test("toLaunch passes screenBrowserArgs unchanged", () => {
-  const p = record({ ...LAUNCHABLE, graphics: { backend: "software", require: null }, persona: { source: "seed", seed: "pinned-1" } });
+  // Software graphics are the engine's own software renderer, on Linux only (E2; refused elsewhere).
+  const p = record({ ...LAUNCHABLE, graphics: { backend: "auto", require: null }, persona: { source: "seed", seed: "pinned-1" } });
   for (const platform of ["darwin", "linux", "win32"]) {
-    const out = toLaunch(p, { browserKind: "pairbrowse", platform });
+    const soft = platform === "linux";
+    const out = toLaunch(soft ? { ...p, graphics: { backend: "software", require: null } } : p, { browserKind: "pairbrowse", platform });
     assert.equal(out.problem, null, out.problem);
-    assert.deepEqual(out.switches, ["--lang=de-DE", "--window-size=1440,900", "--force-dark-mode", "--force-prefers-reduced-motion", "--disable-gpu"]);
+    assert.deepEqual(out.switches, ["--lang=de-DE", "--window-size=1440,900", "--force-dark-mode", "--force-prefers-reduced-motion", ...(soft ? ["--use-angle=swiftshader"] : [])]);
     const screened = screenBrowserArgs(out.switches, platform, { harness: false });
     assert.deepEqual(screened, { kept: out.switches, dropped: [], refused: [] }, platform);
     for (const s of out.switches) assert.ok(SWITCHES.includes(switchName(s, platform)), s);
@@ -159,6 +163,7 @@ test("an explicit field the open build can't apply refuses", () => {
     [{ persona: { source: "seed", seed: "pinned-1" } }, "persona.seed"],
     [{ locale: { languages: null, timezone: null, source: "geoip" } }, "locale.source"],
     [{ locale: { languages: ["de-DE-u-co-phonebk"], timezone: null, source: "set" } }, "locale.languages"],
+    [{ graphics: { backend: "software", require: null } }, "graphics.backend"],
   ]) {
     const out = toLaunch(openRecord(changes), OPEN);
     assert.match(out.problem || "", new RegExp(`^Browser profile "berlin-desktop" can't start on the open build: ${field.replace(".", "\\.")} \\(`), field);

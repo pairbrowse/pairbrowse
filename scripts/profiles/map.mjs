@@ -2,9 +2,9 @@
 //
 // fromConfig(config): the settings config.json gives the config-backed "default" profile (D5;
 // profiles/store.mjs configProfile takes them): `browser` (and its older names) as browser.kind,
-// the screened browserArgs' --lang, --window-size, --force-device-scale-factor, --force-dark-mode,
-// --force-prefers-reduced-motion and --disable-gpu, and, when config starts the native build, the
-// pairbrowse block's time zone, languages, screen keys, seed, geoip and persona choice (D9). It
+// the screened browserArgs' --lang, --window-size, --force-device-scale-factor, --force-dark-mode and
+// --force-prefers-reduced-motion, and, when config starts the native build, the pairbrowse block's
+// time zone, languages, screen keys, seed, geoip, graphics backend (E2) and persona choice (D9). It
 // never rewrites config.json, and the switches stay in browserArgs as written. What it doesn't read
 // is reported (readConfig's items), never dropped quietly: another device's hardware keys stay
 // config.json-only legacy (decision U6), helper-wide settings stay global, the network block is
@@ -26,6 +26,7 @@ import { PAIRBROWSE_ENGINE_KEYS } from "../config-schema.mjs";
 import { screenBrowserArgs, browserArgsOf, switchName, allowedBrowserArg } from "../browser-args.mjs";
 import { SETTINGS, DEFAULT_PROFILE, SCHEMA_VERSION, checkProfile, profileDefaults } from "./schema.mjs";
 import { item, languagesOf, reportable } from "./device.mjs";
+import { graphicsPlan, GRAPHICS_BACKENDS } from "../native/graphics.mjs";
 
 // D9: config.json's persona "auto" and "local" (once the engine pack's pick from a library or a
 // service) are read as this computer; the note the launch log and pairbrowse_status give.
@@ -33,11 +34,11 @@ export const PICKS_THIS_COMPUTER = ["auto", "local"];
 export const THIS_COMPUTER_NOTE = "PairBrowse no longer picks another device's profile; graphics come from this computer";
 
 // Every switch the mapper can add, and every engine key it can set (D6); the fuzz test holds it to these.
-export const SWITCHES = Object.freeze(["lang", "window-size", "force-dark-mode", "force-prefers-reduced-motion", "disable-gpu"]);
+export const SWITCHES = Object.freeze(["lang", "window-size", "force-dark-mode", "force-prefers-reduced-motion", "use-angle"]);
 export const ENGINE_KEYS = Object.freeze(["acceptLanguage", "timezone", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "fingerprint"]);
 const BUILD_NAMES = { pairbrowse: "native PairBrowse build", "pairbrowse-open": "open build" };
 // config.json's pairbrowse keys this module reads into a profile.
-const READ_KEYS = ["acceptLanguage", "timezone", "geoip", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "fingerprint", "profile"];
+const READ_KEYS = ["acceptLanguage", "timezone", "geoip", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "fingerprint", "profile", "graphics"];
 // Another device's hardware and the build's identity: config.json-only legacy (decision U6).
 const HARDWARE_KEYS = ["gpuVendor", "gpuRenderer", "gpuStringSpoof", "disableGpuFingerprint", "hardwareConcurrency", "deviceMemory", "maxTouchPoints",
   "platform", "platformVersion", "brand", "brandVersion", "fingerprintVoices"];
@@ -135,7 +136,9 @@ export function readConfig(config = {}, { native = false, platform = process.pla
   const lang = single("lang");
   const size = /^(\d{1,5}),(\d{1,5})$/.exec(single("window-size") ?? "");
   const scale = single("force-device-scale-factor");
-  for (const name of ["use-gl", "use-angle"]) {
+  // A backend switch in browserArgs stays there as written; the backend a profile asks for is its
+  // graphics.backend (the native build's pairbrowse.graphics below), and the one in use is measured.
+  for (const name of ["use-gl", "use-angle", "disable-gpu"]) {
     if (has(name)) report("browserArgs", "not-applied", "M", `--${name} is kept in browserArgs as written; the backend in use is measured after launch (Phase E)`);
   }
 
@@ -171,7 +174,9 @@ export function readConfig(config = {}, { native = false, platform = process.pla
   }
   if (size) settings.window = { width: Number(size[1]), height: Number(size[2]) };
   settings.display = { colorScheme: has("force-dark-mode") ? "dark" : null, reducedMotion: has("force-prefers-reduced-motion") ? true : null };
-  settings.graphics = { backend: has("disable-gpu") ? "software" : "auto", require: null };
+  // The backend (E2): the native build's pairbrowse.graphics, else this computer's ("auto").
+  if (pb.graphics !== undefined && !GRAPHICS_BACKENDS.includes(pb.graphics)) report("pairbrowse.graphics", "not-applied", "M", `not one of ${GRAPHICS_BACKENDS.map((b) => `"${b}"`).join(", ")}; not read`, "warning");
+  settings.graphics = { backend: GRAPHICS_BACKENDS.includes(pb.graphics) ? pb.graphics : "auto", require: null };
 
   // Persona (D9): "auto" and "local" are this computer; a saved persona's name is offered for
   // import (spec step 38) and read in place until then; the seed.
@@ -220,9 +225,10 @@ export const fromConfig = (config, options) => readConfig(config, options).setti
 // validation[build] (D10; the caller files them under its build). problem: null, or the sentence
 // that refuses the launch (D11), naming the profile and every field it can't apply; with a
 // problem, switches and engine keys are empty. network: the profile's network id for
-// net/config.mjs networkFor's profileNetwork; adBlocker: its choice (null: config.json's). The
-// profile is never changed. Never throws.
-export function toLaunch(profile, { browserKind, platform = process.platform } = {}) {
+// net/config.mjs networkFor's profileNetwork; adBlocker: its choice (null: config.json's).
+// userArgs: config.json's browserArgs as the launch passes them (the graphics plan refuses a
+// renderer switch the profile's backend contradicts). The profile is never changed. Never throws.
+export function toLaunch(profile, { browserKind, platform = process.platform, userArgs = [] } = {}) {
   const switches = [], engineKeys = {}, prefs = {}, results = [];
   const empty = (problem) => ({ switches: [], engineKeys: {}, prefs: {}, geoip: false, network: null, adBlocker: null, results, problem });
   const { profile: p, problems } = checkProfile(profile);
@@ -283,10 +289,15 @@ export function toLaunch(profile, { browserKind, platform = process.platform } =
   if (reducedMotion === true) { switches.push("--force-prefers-reduced-motion"); applied("display.reducedMotion", "C", "--force-prefers-reduced-motion", true); } else if (reducedMotion === false) refuse("display.reducedMotion", "C", "no switch turns reduced motion off (null follows this computer)");
   else derived("display.reducedMotion", "C", "this computer's");
 
-  // Graphics: a software backend is forced with --disable-gpu; a GPU or a requirement is checked
-  // against what the browser reports, which this version doesn't do yet (Phase E), so it refuses.
+  // Graphics (E2, native/graphics.mjs graphicsPlan): software is the engine's own software renderer
+  // on Linux (refused on macOS and on the open build, never partly applied); a GPU or a requirement
+  // is checked against what the browser reports after it starts, which this version doesn't do yet
+  // (section 3.2 step 7), so it refuses. The plan's engine keys (Linux: the real backend's strings
+  // and screen) are the launch's own, never the profile's (native-engine.mjs).
   const { backend, require: requirement } = p.graphics;
-  if (backend === "software") { switches.push("--disable-gpu"); applied("graphics.backend", "M", "the software renderer (--disable-gpu); the backend in use is measured, not assumed", "software"); } else if (backend === "gpu") refuse("graphics.backend", "M", "a GPU requirement isn't checked by this version yet");
+  const plan = backend === "gpu" ? null : graphicsPlan({ requested: backend, platform, browserKind, userArgs, name: p.name });
+  if (plan?.refusals.length) for (const r of plan.refusals) refuse("graphics.backend", "M", r.message.replace(/\.$/, ""));
+  else if (backend === "software") { switches.push(...plan.switches); applied("graphics.backend", "M", `a software renderer (${plan.switches.join(" ")}); the backend in use is measured, not assumed`, "software"); } else if (backend === "gpu") refuse("graphics.backend", "M", "a GPU requirement isn't checked by this version yet");
   else derived("graphics.backend", "M", "this computer's, measured");
   if (requirement) refuse("graphics.require", "M", "graphics requirements aren't checked by this version yet");
 

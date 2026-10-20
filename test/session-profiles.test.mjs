@@ -47,7 +47,7 @@ test("the first start binds the folder to its profile; the launch's parts, evide
   const got = profiles.forLaunch(name, NATIVE);
   assert.equal(got.id, berlin.id);
   assert.deepEqual(got.switches, ["--lang=de-DE", "--window-size=1440,900"]);
-  assert.deepEqual(got.engine, { id: berlin.id, kind: "store", geoip: false, engineKeys: { acceptLanguage: "de-DE,de", timezone: "Europe/Berlin" } });
+  assert.deepEqual(got.engine, { id: berlin.id, kind: "store", geoip: false, graphics: "auto", engineKeys: { acceptLanguage: "de-DE,de", timezone: "Europe/Berlin" } });
   assert.equal(got.status, "unverified");
   assert.equal(got.build, BUILD);
   assert.equal(readBinding(name).profileId, berlin.id, "the assignment bound the folder (it exists)");
@@ -333,4 +333,15 @@ test("the launch starts on the session's profile: its switches after browserArgs
   assert.equal(d.calls.length, calls);
   assert.deepEqual(context.statusParts(), []);
   assignProfile(name, "shop", { store });
+});
+
+// Spec E2: the launch's own browserArgs (config.json, screened as the launch passes them) reach
+// the graphics plan, so a renderer switch the default profile's backend contradicts refuses.
+test("browserArgs that pick another renderer refuse a software profile at launch", () => {
+  const store = newStore();
+  const name = session("sp-graphics-args");
+  const { profiles } = parts(store, { browser: "pairbrowse", pairbrowse: { graphics: "software" }, browserArgs: ["--use-angle=gl"] });
+  assert.throws(() => profiles.forLaunch(name, NATIVE), /browserArgs picks another renderer \(--use-angle\)/);
+  const ok = parts(newStore(), { browser: "pairbrowse", pairbrowse: { graphics: "software" } }).profiles.forLaunch(session("sp-graphics-ok"), NATIVE);
+  assert.ok(ok.switches.includes("--use-angle=swiftshader"));
 });

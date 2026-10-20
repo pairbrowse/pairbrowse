@@ -92,8 +92,8 @@ test("no checked profile yields a switch outside the mapper's list, an engine ke
 });
 
 // config.json as anything: a random object around the keys readConfig reads.
-const cfgValue = fc.oneof(fc.constant(null), fc.boolean(), fc.integer({ min: -5, max: 20000 }), fc.double(), fc.constantFrom("de-DE,de;q=0.9", "Europe/Berlin", "auto", "local", "off", "/x", "pairbrowse", "pairbrowse-open"), fc.string({ maxLength: 8 }));
-const cfgKeys = ["acceptLanguage", "timezone", "geoip", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "fingerprint", "profile", "gpuVendor", "humanize", "__proto__", "constructor"];
+const cfgValue = fc.oneof(fc.constant(null), fc.boolean(), fc.integer({ min: -5, max: 20000 }), fc.double(), fc.constantFrom("de-DE,de;q=0.9", "Europe/Berlin", "auto", "local", "off", "/x", "pairbrowse", "pairbrowse-open", "software", "gpu"), fc.string({ maxLength: 8 }));
+const cfgKeys = ["acceptLanguage", "timezone", "geoip", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "fingerprint", "profile", "graphics", "gpuVendor", "humanize", "__proto__", "constructor"];
 const config = fc.record({
   browser: cfgValue,
   browserArgs: fc.oneof(cfgValue, fc.array(fc.oneof(fc.constantFrom("--lang=de", "--lang=fr_FR", "--window-size=1280,800", "--window-size=10,10", "--force-dark-mode", "--force-device-scale-factor=2",

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu } from "../scripts/native/graphics.mjs";
+import { STRICT_WEBRTC, resolverRule } from "../scripts/net/config.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
 process.env.PAIRBROWSE_HOME = mkdtempSync(join(tmpdir(), "pairbrowse-home-test-"));
@@ -715,6 +716,25 @@ packTest("a WebRTC IP policy in browserArgs never loosens the default deny, in a
   assert.deepEqual(rtc, ["--webrtc-ip-handling-policy=disable_non_proxied_udp"], rtc.join(" "));
   assert.ok(args.includes("--lang=en"), "other switches pass");
   assert.ok(lines.some((l) => /WebRTC IP handling switch in browserArgs was dropped/.test(l)));
+});
+
+// A strict proxied session (net/config.mjs launchPart): its WebRTC switch is the default deny's
+// own policy, kept as given (no "dropped" line, no second copy), its resolver rule passes, and the
+// driver gets the proxy as given (no credential in it).
+packTest("a strict proxied session's switches and proxy reach the native launch as given", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-strict-"));
+  const chromium = fakeBrowserType();
+  const lines = [];
+  const proxy = { server: "http://203.0.113.10:3128", bypass: "localhost,127.0.0.1,[::1]" };
+  await launchNative(chromium, { pairbrowse: { fingerprint: "strict-seed", humanize: false } }, directory,
+    { executablePath: app.executablePath, headless: false, proxy, args: ["--lang=en", resolverRule("203.0.113.10"), STRICT_WEBRTC] }, pack, (l) => lines.push(l));
+  const { options } = chromium.calls[0];
+  assert.deepEqual(options.args.filter((a) => /webrtc-ip-handling-policy/i.test(a)), [STRICT_WEBRTC]);
+  assert.deepEqual(options.args.filter((a) => /host-resolver-rules/.test(a)), [resolverRule("203.0.113.10")]);
+  assert.deepEqual(options.proxy, proxy);
+  assert.ok(!lines.some((l) => /WebRTC IP handling switch in browserArgs was dropped/.test(l)), lines.join("\n"));
 });
 
 packTest("config.pairbrowse passes only PairBrowse's settings and the engine's fingerprint options to a launch", async () => {

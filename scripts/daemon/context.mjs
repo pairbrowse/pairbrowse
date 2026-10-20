@@ -28,17 +28,18 @@ export { where };
 // onRenamed(from, to): the session was renamed (the goal log follows).
 // onRestored(): saved tabs came back after a launch (browser/tabs.mjs); onCrashLoop(): the crash-loop
 // guard stopped launches (browser/supervise.mjs). Both: yourturn.mjs, spec server-mode B16.
+// network: the session's proxy at each launch (daemon/network.mjs createNetwork; null: direct, tests).
 // onDownload({ op: "start", name, page }) -> id, then { op: "done", id, path } or { op: "failed", id }:
 // the Tools tab's Downloads (daemon/toolstab.mjs), in memory only.
 // personTabs: the person's own tabs (daemon/toolstab.mjs createPersonTabs), shared with serve.mjs:
 // openForPerson opens one, and no agent's fallback tab is ever one.
 export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, browserPagesOf = browserPagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, settingsSectionOf = settingsSectionIn, quietTabsOf = quietTabsIn, helperFor = async () => null,
-  beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null, phishing = null, onRestored = () => {}, onCrashLoop = () => {} }) {
+  beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null, phishing = null, onRestored = () => {}, onCrashLoop = () => {}, network = null }) {
   const st = createBrowserState({ session: currentSession(), pick: null }); // browser/state.mjs
   // What the browser's parts (browser/*.mjs, sessions/*.mjs) are given, and the functions they
   // read from each other when called (api).
   const deps = { personTabs, config, log, chromium, driver, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers, notify, phishing,
-    browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf, helperFor, beforeRename, onRenamed, onRestored, onCrashLoop };
+    browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf, helperFor, beforeRename, onRenamed, onRestored, onCrashLoop, network };
   const api = {};
   // The virtual screen the browser runs on, when this machine needs one (browser/supervise.mjs).
   // With server.keepAlive, the browser kept up with nobody connected.

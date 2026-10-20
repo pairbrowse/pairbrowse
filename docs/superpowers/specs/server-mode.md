@@ -679,13 +679,13 @@ Absent `network` means every session is direct. Proxy entry defaults: `auth: fal
 id upper-cased with `-` as `_`. A `server` with user info is refused. Not in Settings.
 
 Modules: `scripts/net/config.mjs` (`checkNetwork`, `networkFor(config, session, { profileNetwork })`,
-`launchPart(net, { shell, secrets })` returning `{ proxy: { server, bypass }, args, authFile }`, with step 27; also `parseServer`, `readNetwork`);
+`launchPart(net, { shell, secrets })` returning `{ proxy: { server, bypass }, args, authFile, drop }` or `{ problem }`, and `applyLaunchPart`, with step 27; also `parseServer`, `readNetwork`);
 `scripts/net/credentials.mjs` (`proxySecretNames`, `credentialsFor`, CLI `set`, `remove`, `list`);
 `scripts/net/probe.mjs` (`probeEgress`, bounded steps, errors name host:port and step, never the
 credential); `scripts/net/verdict.mjs` (`inExpected`, `egressVerdict`, `webrtcVerdict`, reusing
 `parseV4`/`parseV6` from `scripts/rules/network.mjs`); `scripts/net/browsercheck.mjs`
 (`checkInBrowser`, every await bounded with `within`). Helper part `scripts/daemon/network.mjs`
-`createNetwork(deps)`: `forLaunch`, `checkAtLaunch`, `start`, `stop`, `refusal()`, `statusParts()`,
+`createNetwork(deps)`: `forLaunch` (its result's `started()` records the network once the browser is up, so `strict()` never describes a refused or failed launch), `checkAtLaunch`, `start`, `stop`, `refusal()`, `statusParts()`,
 `strict()`, `observations()`. Changes: `scripts/native-engine.mjs` (`proxyAuthFile(manifest)`, refuse
 `proxy` in saved and persisted layers, no credentials in `merged.proxy`, geoip quiet, `savePersona`
 strips geoip fields); `scripts/browser/choice.mjs` (`proxyAuthFile` in `shellFrom` and
@@ -1631,6 +1631,37 @@ it depends on.
    `test/native-engine.test.mjs` ("geoip with a proxy never writes its fields into the persona", and
    config values, geoip off, a failure naming no address, `withoutAddresses`).
 27. `daemon/network.mjs` `forLaunch`, launch wiring in section 3.2 order (C5). -> 4, 24
+   Landed as: `scripts/net/config.mjs` `launchPart(net, { shell, secrets })` (net: `networkFor`'s
+   answer; secrets: `loadSecrets`'s `{ values, problem }`) answers `{ proxy, args, authFile, drop }`
+   or `{ problem }`: `proxy` the driver's `{ server, bypass }` with `localhost,127.0.0.1,[::1]`
+   first (`DRIVER_LOOPBACK`; the driver otherwise adds `<-loopback>`) then the entry's bypass
+   (lower-case, a bare IPv6 address bracketed); `args` the resolver rule `MAP * ~NOTFOUND, EXCLUDE
+   <proxy host>, EXCLUDE localhost` in strict mode and, beyond C5, always for SOCKS5 (the driver's own
+   SOCKS rule comes first and a user's local rule would otherwise replace it), and in strict mode
+   `STRICT_WEBRTC`; `drop` `host-resolver-rules` whenever the helper sets its own;
+   `authFile` the engine contract's `{ server, username, password }` for a proxy with `auth` on a
+   shell with `proxyAuthFile` (refused on every other shell, the open build too, and when the
+   secrets are missing, under 4 characters or `secrets.env` fails its checks). `applyLaunchPart`
+   applies it to launch options (user switches taken out, the helper's last). `scripts/net/
+   credentials.mjs` landed with `NETWORK_ID` (moved from config.mjs, re-exported there),
+   `proxySecretNames` and `credentialsFor` only; its CLI (`set`, `remove`, `list`) is not here.
+   `scripts/daemon/network.mjs` `createNetwork({ log, configFile, secretsFile, runDir })`:
+   `forLaunch(session, { profileNetwork, shell })` reads `config.json` (`readNetwork`) and, only
+   for a proxy with `auth` on such a shell, `secrets.env` fresh at each launch; throws the refusal
+   sentence (`sessionRefusal`); writes the auth file (`writeProxyAuthFile`: one line of JSON, 0600,
+   `run/proxy-auth-<random>`, older ones swept) and adds `--pairbrowse-proxy-auth-file=<path>`;
+   answers `{ id, source, strict, proxy, apply(options), drop() }`; also `current()` and
+   `strict()`. Logs name the id, source and strict, never an address or credential. Wiring:
+   `daemon.mjs` passes `network: createNetwork({ log })` to `createContext` (a dep, no new
+   import edge; `null` only in tests: direct), `launch.mjs` calls `forLaunch` right after
+   `ensureScreen` (section 3.2 step 3; profiles, step 2, come with step 37) and before any key file,
+   passes `net.apply(options)` to `launchEngine` and drops the auth file in its `finally` (up, or
+   failed). `native-engine.mjs` keeps a WebRTC switch equal to `STRICT_WEBRTC` (the pack then adds
+   none) and still drops every other one. No egress check yet (steps 28, 29): until then a proxied
+   session starts without one (`docs/configuration.md` says so). Tests: `test/net-launch.test.mjs`
+   (the three named in Phase C, plus credentials, refusals, the auth file and the wiring order),
+   `test/net-credentials.test.mjs` (names and lookup), `test/native-engine.test.mjs` (strict switches
+   on the native launch), `test/structure.test.mjs` (`daemon.mjs` passes `network:`).
 28. Probe, verdict, browser check, `NET_CHECK` (C2, C6).
 29. `checkAtLaunch`, fail closed, refusal, status; row C-1 (C7). -> 27, 28
 30. NetLog leak tests (C12). -> 29

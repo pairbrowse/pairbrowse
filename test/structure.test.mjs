@@ -133,5 +133,5 @@ test("every dep the browser's parts read reaches them from createContext, and th
   }
   const daemon = readFileSync(join(ROOT, "scripts/daemon.mjs"), "utf8");
   const call = daemon.slice(daemon.indexOf("const context = createContext({"));
-  for (const hook of ["onRestored:", "onCrashLoop:"]) assert.ok(call.slice(0, call.indexOf("\n});")).includes(hook), `daemon.mjs gives createContext ${hook}`);
+  for (const hook of ["onRestored:", "onCrashLoop:", "network:"]) assert.ok(call.slice(0, call.indexOf("\n});")).includes(hook), `daemon.mjs gives createContext ${hook}`);
 });

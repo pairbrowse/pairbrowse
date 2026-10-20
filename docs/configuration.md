@@ -228,8 +228,18 @@
   `pairbrowse_status` that names the key and the kind of value, never the value itself, and a save
   of a bad block is refused. PairBrowse never rewrites a `config.json` it can't parse: until it is
   fixed, every save to it (Settings, a name, an allowed join address) is refused. The block is
-  read from the file each time a browser starts. In this version it is read and checked, and the
-  browser doesn't use it yet: every session still connects directly until the launch applies it.
+  read from the file each time a browser starts, and the browser starts with the session's proxy:
+  this computer's own addresses (`localhost`, `127.0.0.1`, `[::1]`) always go around it, then
+  the `bypass` entries. With `strict` `true`, the browser looks up no name itself except the
+  proxy's own and `localhost` (every other one goes to the proxy) and sends no WebRTC traffic
+  outside the proxy; a `--host-resolver-rules` of yours in `browserArgs` is dropped for such a
+  session (one helper log line says so). A SOCKS5 session gets the same name rule even with
+  `strict` `false`. A proxy with `auth` needs both secrets in `secrets.env` (4 characters or
+  more each) and a PairBrowse build that reads them from an owner-only file the helper writes for
+  that launch and deletes once the browser is up: no build does yet and the open build never will,
+  so such a session doesn't start for now, with an error saying why. A session whose network can't
+  be used doesn't start (its error says why); it never starts direct instead. The checks of the
+  proxy's exit address before saved tabs load, and their repeats, come in a later version.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

@@ -124,7 +124,7 @@ test("launch, close and process exit go through the supervisor", () => {
   const close = launch.slice(launch.indexOf("async function close("));
   assert.match(close.slice(0, close.indexOf("\n  }\n")), /await api\.stopScreen\(\);/);
   assert.doesNotMatch(launch, /startVirtualDisplay|needsVirtualDisplay/, "only the supervisor starts a screen");
-  assert.match(launch, /\}, launchLog, undefined, \{ server: api\.isServer\(\) \}\);/, "in server mode the launch keeps the sandbox required (engine.mjs launchEngine)");
+  assert.match(launch, /, launchLog, undefined, \{ server: api\.isServer\(\) \}\);/, "in server mode the launch keeps the sandbox required (engine.mjs launchEngine)");
   const context = src("context.mjs");
   assert.match(context, /const \{ stopScreenNow, [^}]*\} = Object\.assign\(api, createSupervisor\(st, deps, api\)\);/);
   assert.ok(context.indexOf("createSupervisor(st, deps, api)") < context.indexOf("createLaunch(st, deps, api)"), "api.ensureScreen exists before launch is made");

@@ -12,6 +12,7 @@ import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
 import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
 import { normalizeWebgpu } from "./native/graphics.mjs";
+import { STRICT_WEBRTC } from "./net/config.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
 export * from "./native/humanize.mjs";
@@ -404,7 +405,9 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // config's browserArgs that would loosen it is dropped here, whatever it says; the browser's own
   // capture page keeps its direct connections through the build's own exemption, not a switch.
   // Every spelling the engine reads ("-webrtc-ip-handling-policy=...", "/..." on Windows) counts.
-  const webrtcPolicy = (a) => ["webrtc-ip-handling-policy", "force-webrtc-ip-handling-policy"].includes(switchName(a));
+  // A strict proxied session's own switch (net/config.mjs STRICT_WEBRTC, the same policy as the
+  // default deny) is the one kept: the engine pack then adds none of its own.
+  const webrtcPolicy = (a) => a !== STRICT_WEBRTC && ["webrtc-ip-handling-policy", "force-webrtc-ip-handling-policy"].includes(switchName(a));
   const dropped = (merged.args ?? []).filter(webrtcPolicy);
   if (dropped.length) log("launch: a WebRTC IP handling switch in browserArgs was dropped: PairBrowse keeps WebRTC from showing this computer's addresses");
   const givenArgs = (merged.args ?? []).filter((a) => !webrtcPolicy(a));

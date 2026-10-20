@@ -98,6 +98,7 @@ import { createAudit } from "./daemon/audit.mjs";
 import { createGrants } from "./daemon/grants.mjs";
 import { createNotifier, handoffSends } from "./daemon/notify/index.mjs";
 import { createYourTurn } from "./daemon/yourturn.mjs";
+import { createNetwork } from "./daemon/network.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
 
@@ -199,8 +200,7 @@ const agentBy = (p, color = "") => ({ label: collaboration.participants.get(p)?.
 const liveView = () => sharing.liveView();
 const refreshTabs = () => liveView()?.refreshTabs().catch(() => {});
 
-// Passwords are read live, so one added in the Profile panel works at once. PairBrowse swaps
-// them in itself and masks them in everything Claude reads back.
+// Passwords are read live (one added in the Profile panel works at once), swapped in by PairBrowse, masked in all Claude reads.
 const secrets = secretStore(paths.secrets, log);
 logFile.maskWith(() => secrets.get().values);
 // Hand-off grants (daemon/grants.mjs, trail in audit.jsonl) and messages to the person's channels (daemon/notify/, credentials read at each send): yourTurn, below.
@@ -264,7 +264,7 @@ const popups = createPopups({
 const phishing = createPhishing({ file: paths.phishingList, enabled: () => config.phishingProtection !== false, log }); // listed phishing sites stopped before they show
 phishing.start();
 const context = createContext({
-  personTabs, phishing,
+  personTabs, phishing, network: createNetwork({ log }), // a session's proxy at each launch (config.json network, daemon/network.mjs)
   config, log, chromium: () => runtime().chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   // A person renamed the session: the timeline's last writes land first, then the goal log follows.
   beforeRename: () => { activityLog.flush(); return timeline.settled(); }, onRenamed: (from, to) => journal.renamed(from, to),

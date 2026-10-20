@@ -15,10 +15,11 @@
 // Pure apart from readNetwork (one file read); Node's standard library only.
 import { readFileSync } from "node:fs";
 import { parseV4, parseV6 } from "../rules/network.mjs";
+import { switchName } from "../browser-args.mjs";
+import { NETWORK_ID, credentialsFor } from "./credentials.mjs";
 
-// Ids name a proxy in the map, in a profile and, upper-cased with - as _, in its secrets' names
-// (34 characters keep the longest of those within a secret name's 60).
-export const NETWORK_ID = /^[a-z0-9][a-z0-9-]{0,33}$/;
+// Proxy ids (1 to 34 lower-case letters, digits and -): kept with the secret names they make.
+export { NETWORK_ID };
 export const SCHEMES = ["http", "https", "socks5"];
 const DEFAULT_PORT = { http: 80, https: 443, socks5: 1080 };
 export const ON_EGRESS_CHANGE = ["pause", "notify", "ignore"];
@@ -222,6 +223,9 @@ export function checkNetwork(raw) {
   return out;
 }
 
+// The one sentence a session's launch is refused with (in its launch error and status).
+export const sessionRefusal = (session, problem) => `Session ${sessionShown(session)} doesn't start: ${String(problem).replace(/\.+$/, "")}.`;
+
 // The network one session uses, from config (its `network` as config.json holds it) and the
 // session's browser profile's network id (profileNetwork: an id, or null/undefined for none).
 // { session, id, source, proxy, strict, checkUrl, recheckMinutes, problem }: source is "session",
@@ -231,7 +235,7 @@ export function networkFor(config, session, { profileNetwork } = {}) {
   const checked = checkNetwork(config?.network);
   const base = { session, id: null, source: "direct", proxy: null, strict: checked.network?.strict ?? NETWORK_DEFAULTS.strict,
     checkUrl: checked.network?.checkUrl ?? CHECK_URL, recheckMinutes: checked.network?.recheckMinutes ?? NETWORK_DEFAULTS.recheckMinutes, problem: "" };
-  const refuse = (problem, id = null, source = base.source) => ({ ...base, id, source, problem: `Session ${sessionShown(session)} doesn't start: ${problem}.` });
+  const refuse = (problem, id = null, source = base.source) => ({ ...base, id, source, problem: sessionRefusal(session, problem) });
   if (checked.problem) return refuse(`config.json's network: ${checked.problem}`);
   const net = checked.network;
   if (!net) return base;
@@ -264,4 +268,68 @@ export function readNetwork(file) {
   if (parsed === null) return { network: undefined };
   if (!plainObject(parsed)) return { problem: "config.json isn't an object { ... }, so the session's network isn't known" };
   return { network: parsed.network };
+}
+
+// ---- the launch (spec server-mode C1, C5; daemon/network.mjs forLaunch) ------------------------
+
+// Strict mode's WebRTC policy: no UDP outside the proxy (so no local or public address of this
+// computer reaches a page). The native build adds the same switch on every launch by itself.
+export const STRICT_WEBRTC = "--webrtc-ip-handling-policy=disable_non_proxied_udp";
+// What always goes around the proxy: this computer itself. The driver adds "<-loopback>" to the
+// bypass list (send loopback through the proxy too) unless loopback is named here, so the helper's
+// own 127.0.0.1 (the live view the browser's pages talk to) would otherwise go to the proxy.
+export const DRIVER_LOOPBACK = ["localhost", "127.0.0.1", "[::1]"];
+export const PROXY_AUTH_SWITCH = "--pairbrowse-proxy-auth-file";
+// The resolver rule a proxied session launches with: no name is looked up on this computer except
+// the proxy's own and localhost; every other one goes to the proxy (C5).
+export const resolverRule = (host) => `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE ${host}, EXCLUDE localhost`;
+// A bypass entry as the browser's bypass list reads it: lower-case, a bare IPv6 address in brackets.
+const bypassRule = (b) => { const v = String(b).toLowerCase(); return !v.includes("/") && !v.startsWith("[") && v.includes(":") && parseV6(v) ? `[${v}]` : v; };
+
+// What a launch adds for the network networkFor chose (net), on a browser whose shell
+// (browser/choice.mjs) is `shell`, with secrets.env as loadSecrets read it (`secrets`: { values,
+// problem }, read only for a proxy with auth). { proxy, args, authFile, drop } or { problem }:
+// - proxy: the driver's { server, bypass } (bypass comma-separated, loopback always first), never
+//   with a credential; null for a direct session.
+// - args: the resolver rule (strict, and always for SOCKS5 so it comes after the driver's own and a
+//   user's local rule can't replace it) and, strict, STRICT_WEBRTC.
+// - authFile: the auth file's content ({ server, username, password }) for a proxy with auth, on a
+//   build that reads one (shell.proxyAuthFile); the caller writes it owner-only and adds its switch.
+//   A proxy with auth on any other browser (the open build too) is refused: never argv or the driver.
+// - drop: switch names taken out of the user's browserArgs first (their --host-resolver-rules).
+// - problem: the launch's refusal sentence (net's own, or the credentials'); never a direct launch.
+export function launchPart(net, { shell = null, secrets = null } = {}) {
+  if (net?.problem) return { problem: net.problem };
+  if (!net?.proxy) return { proxy: null, args: [], authFile: null, drop: [] };
+  const p = net.proxy;
+  let authFile = null;
+  if (p.auth) {
+    if (!shell?.proxyAuthFile) {
+      return { problem: sessionRefusal(net.session, `network "${p.id}" needs a username and password, and this browser can't take them from its own file (no PairBrowse build reads one yet, and the open build never will); use a proxy without one for now`) };
+    }
+    const creds = credentialsFor(p.id, secrets?.values, { fileProblem: secrets?.problem || null });
+    if (creds.problem) return { problem: sessionRefusal(net.session, creds.problem) };
+    authFile = { server: p.server, username: creds.username, password: creds.password };
+  }
+  const resolver = net.strict || p.scheme === "socks5";
+  return {
+    proxy: { server: p.server, bypass: [...new Set([...DRIVER_LOOPBACK, ...p.bypass.map(bypassRule)])].join(",") },
+    args: [...(resolver ? [resolverRule(p.host)] : []), ...(net.strict ? [STRICT_WEBRTC] : [])],
+    authFile,
+    drop: resolver ? ["host-resolver-rules"] : [],
+  };
+}
+
+// The launch options with a launchPart applied: its proxy set, the switches it drops taken out of
+// options.args (the user's, screened by launchArgs) and its own added last, where the engine takes
+// them over any earlier value. { options, dropped }: dropped names each switch taken out (no value).
+export function applyLaunchPart(options, part) {
+  const dropped = [];
+  const kept = (options?.args || []).filter((a) => {
+    if (!part?.drop?.includes(switchName(a))) return true;
+    dropped.push(String(a).split("=")[0]);
+    return false;
+  });
+  const proxy = part?.proxy ? { proxy: { ...part.proxy } } : {};
+  return { options: { ...options, ...proxy, args: [...kept, ...(part?.args || [])] }, dropped };
 }

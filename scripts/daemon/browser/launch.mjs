@@ -70,7 +70,7 @@ const RESTORE_WAIT_MS = 3000;
 export const CLOSE_RESERVE_MS = 1500;
 
 export function createLaunch(st, deps, api) {
-  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf = quietTabsIn, adBlockerOf = adBlockerIn, safeStorageKeyFileOf = safeStorageKeyFileIn, adBlockerCrxOf = adBlockerCrxIn, proxyAuthFileOf = proxyAuthFileIn, helperFor } = deps;
+  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf = quietTabsIn, adBlockerOf = adBlockerIn, safeStorageKeyFileOf = safeStorageKeyFileIn, adBlockerCrxOf = adBlockerCrxIn, proxyAuthFileOf = proxyAuthFileIn, helperFor, network } = deps;
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
   const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
 
@@ -188,9 +188,13 @@ export function createLaunch(st, deps, api) {
     const ck = helper?.newCaptureKey?.(!!(keyFile && st.capture && st.shell.captureKeyed)) || null;
     if (ck) try { captureKeyFile = st.captureKeyPath = writeHelperKeyFile(ck, undefined, CAPTURE_KEY_PREFIX); } catch (e) { log(`the capture page has no key (key file: ${e?.code || "refused"})`); }
     const launchLog = measuringLog({ log, status, notify });
-    let ctx;
+    let ctx, net = null;
     try {
-      ctx = await launchEngine(browserType(), next, profile(), {
+      // The session's network (daemon/network.mjs, spec server-mode section 3.2 step 3): its proxy,
+      // strict switches and auth file, or the refusal this launch stops with (never direct instead).
+      // Inside the try, so the finally drops its auth file whatever stops the launch.
+      net = network ? network.forLaunch(st.session, { shell: st.shell }) : null;
+      const options = {
         // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
         // Playwright's signal handlers would start a close of their own on the same SIGTERM, and
         // then treat the helper's close as a second one: a SIGKILL of the browser inside 50 ms, before
@@ -203,9 +207,10 @@ export function createLaunch(st, deps, api) {
           executablePath: next.executablePath || await ensureBrowser(browserType(), log),
           helper: helper && keyFile ? { origin: helper.origin, keyFile, ...(captureKeyFile ? { captureKeyFile } : {}) } : null,
         }),
-      }, launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
+      };
+      ctx = await launchEngine(browserType(), next, profile(), net ? net.apply(options) : options, launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
     } catch (e) { dropHelperKey(keyFile, captureKeyFile); throw e; } // a failed launch leaves no key file
-    finally { launchLog.done(hud.badge()); }
+    finally { net?.drop(); launchLog.done(hud.badge()); } // the proxy's auth file: read by now, or the launch failed
     // The screen ended while the browser started (supervise.mjs lost() cleared it): this browser has
     // no screen, so it closes and the launch fails; the next action starts a new screen.
     if (screen && st.screen !== screen) {
@@ -213,6 +218,7 @@ export function createLaunch(st, deps, api) {
       dropHelperKey(keyFile, captureKeyFile);
       throw new Error("the virtual screen ended while the browser started; see daemon.log");
     }
+    net?.started(); // the running browser's network from now (network.strict(), C11)
     hud.setSandboxOff?.(SANDBOX.on === false); // the bar warns while the sandbox is off
     step("browser (fingerprint and launchPersistentContext inside)");
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates

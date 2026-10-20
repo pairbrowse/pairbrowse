@@ -55,6 +55,9 @@ export const paths = {
   log: join(HOME, "log"),
   runtime: join(SHARED, "runtime"),
   daemonLog: join(HOME, "daemon.log"),
+  // The audit trail of hand-off events (daemon/audit.mjs): owner-only JSON lines, appended only,
+  // moved to audit.jsonl.1 at 1 MB. Made on first use.
+  audit: join(HOME, "audit.jsonl"),
   // The PairBrowse browser's Safe Storage password (browser/safe-storage.mjs, native patch 594),
   // owner-only, made by the helper once.
   safeStorageKey: join(HOME, "safe-storage-key"),

@@ -563,7 +563,7 @@ agents' typing into card fields, or of a card number, is now refused (B13; CHANG
 | Agent resumption | `test/yourturn.test.mjs`: "Done ends with done, one host note, refusals lift"; "a detected challenge ends with cleared; an agent status ends with agent". `test/wait-for.test.mjs` (new): "browser_wait_for time 120 returns within 300 ms of the grant ending". `test/integration/your-turn.test.mjs`: "full path with a loopback webhook: status, link, GET, Take over, click and typed code land, agent click refused, Done, waiting agent returns, next click works; fast-mode handoff step finishes on Done" |
 | Timeout recovery | `test/yourturn.test.mjs`: "exactly one reminder; at expiry flush, save tabs, yourTurn line, keys stop, one ended message, one host note, tab held"; "a held tab is released by a new you, the owner's input or a session end". `test/integration/your-turn.test.mjs`: "user offline past expiry: the held tab keeps its address and typed form values, no agent action reaches it, and a new you mints a grant to that same tab". `test/integration/your-turn.test.mjs` (`TURN_MS`): "one reminder, then the stop; a restarted helper reopens the same tabs" |
 | Compatibility vs verification | `test/compat-vs-verification.test.mjs` (new): "a CAPTCHA with a time zone vs egress mismatch reports the mismatch under PairBrowse setup problems and the CAPTCHA under site verification, mints one grant for the CAPTCHA and never retries"; "a compatibility problem alone mints no grant and sends no your-turn message" |
-| Audit, secrets, config | `test/audit.test.mjs`: "append-only, 0600, rotation at 1 MB, unknown fields refused". `test/redaction.test.mjs`: "reserved secrets hidden from pairbrowse_facts, never typed, still masked". `test/config-schema.test.mjs`: "handoff types, defaults and remindMinutes fallback". `test/liveview.test.mjs`: "liveview-turn.js is in ASSETS" |
+| Audit, secrets, config | `test/audit.test.mjs`: "append-only, 0600: each event one line with exactly t, kind, grant, session, tab, detail"; "rotation at 1 MB: the full file moves to .1 (one older generation) and a new one starts"; "unknown fields refused, and every value outside its rule: no key, link, secret or page text gets in"; "a pipe at the file's name with no reader is refused at once, never waited on". `test/redaction.test.mjs`: "reserved secrets hidden from pairbrowse_facts, never typed, still masked". `test/config-schema.test.mjs`: "handoff types, defaults and remindMinutes fallback". `test/liveview.test.mjs`: "liveview-turn.js is in ASSETS" |
 
 ### Security table changes
 Section 12, rows B-1 to B-8.
@@ -1228,6 +1228,26 @@ it depends on.
 12. Close F2, F3, F5: closed `profileSelect`, `helperEnv`, auto/local as this computer (D8, D9). -> 11
 13. Close F1: filtered layers; `proxy` refusal shared with C10 (D7). -> 11
 14. `daemon/audit.mjs`, `paths.audit` (B17).
+   Landed as: `createAudit({ file, now, log, maxBytes, channels })` returns `{ append(entry), file }`;
+   `append` writes synchronously and answers true or false (refused or not written, logged by field
+   name or error code, never a value). The caller passes `kind`, `grant`, `session`, `tab`,
+   `detail`; `t` is the audit's own (epoch ms from `now()`), and an absent field is written as null.
+   `grant` is 8 lowercase hex, `session` a session name (`sessions.mjs` `validName`), `tab` cut to
+   origin and path (http, https, or `about:blank`; any other address refuses the line), and a path
+   segment of 32 or more key or token letters (`[A-Za-z0-9_-]`, as in the live view's and invite
+   links' own addresses or a site's reset link) is written as `*`; an empty `detail` list is null. `detail` is
+   one word or up to 8 distinct words from the kind's list (`DETAILS`): `minted` the action kinds
+   and `replacement` (B16); `notified`, `notify-failed`, `reminded` the channel types (`CHANNEL_TYPES`,
+   extended through `channels` so a new sender stays one file plus its table entry) and `no-link`,
+   `no-channel`, `already-opened`; `reuse` `redeem-key`, `view-key`; `stream-refused`
+   `second-stream`, `other-origin`, `other-session`, `expired`; `input-refused` `out-of-scope`,
+   `not-allowed`, `expired`; `ended` the B15 reasons; `redeemed` none. The name must be missing or
+   a regular file (`lstat` first: a link, pipe or folder refuses the line); the file is opened
+   `O_APPEND | O_NOFOLLOW | O_NONBLOCK` (a pipe swapped in fails ENXIO instead of blocking the helper),
+   must be a regular file of the helper's uid, is put back to 0600 when found wider, and moves to
+   `audit.jsonl.1` (one older generation, made 0600 first, only when the helper's uid owns it) before
+   a line would take it past 1 MiB. Not wired into `daemon.mjs` yet: its first user, `createGrants`,
+   makes it (step 17), and `docs/configuration.md`'s paragraph on the trail lands with that step.
 15. Reserved secrets, `loadSecrets` owner and symlink checks, atomic `writeSecrets`, masked
     `daemon/logfile.mjs` (B6, C3). -> 14
 16. `handoff` schema; senders (webhook, ntfy, Telegram, Discord, Slack) and the interface (B6, B7). -> 15

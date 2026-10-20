@@ -283,6 +283,30 @@ test("only strong signals stop a click; ordinary submits and script buttons go",
   assert.equal(dialogRule(false, "delete", ""), "go", "dismissing is always fine");
 });
 
+// Spec server-mode B13: a payment hand-off changes nothing of the Pay rule. Once the person's
+// hand-off ends the agent's hands are back, and its click on the site's Pay button is refused
+// until named "Pay:", then asks the user as before.
+test("after a payment hand-off ends, an agent's click on the site's Pay button still needs the Pay: name and asks", async () => {
+  const { clickRule } = await import("../scripts/rules/clicks.mjs");
+  const { decide } = await import("../scripts/rules/decide.mjs");
+  const { tabRefusal, HANDED_OFF_RULE } = await import("../scripts/daemon/serve/refuse.mjs");
+  const { createGrants } = await import("../scripts/daemon/grants.mjs");
+  const grants = createGrants();
+  const page = { url: () => "https://shop.example/checkout", isClosed: () => false };
+  const handedOff = (p) => (grants.inScope(p) ? "open" : grants.held(p) ? "held" : "");
+  const g = grants.mint({ session: "default", page, action: "payment" });
+  const click = { target: "e7", element: "Place order" };
+  assert.equal(tabRefusal("browser_click", click, { here: page, handedOff }), HANDED_OFF_RULE, "the person's turn");
+  grants.end(g.id, "done");
+  assert.equal(tabRefusal("browser_click", click, { here: page, handedOff }), null, "the agent's hands are back");
+  const pay = { level: "strong", word: "pay", why: ["card fields"] };
+  for (const label of ["Place order", "Continue", "Submit: Place order"]) assert.equal(clickRule(pay, label), "name", label);
+  assert.equal(clickRule(pay, "Pay: Place order"), "go");
+  const asked = decide({ tool_name: "mcp__plugin_pairbrowse_browser__browser_click", tool_input: { ...click, element: "Pay: Place order" } }, {}, null);
+  assert.equal(asked.hookSpecificOutput.permissionDecision, "ask");
+  assert.match(asked.hookSpecificOutput.permissionDecisionReason, /final action \(pay\)/);
+});
+
 test("nothing about a click leaves the computer: no model, API key or network in the judging", () => {
   const root = new URL("..", import.meta.url).pathname;
   for (const f of ["scripts/rules/clicks.mjs", "scripts/guard.mjs", "scripts/daemon/serve.mjs", "scripts/daemon/page.mjs", "scripts/runner.mjs", "scripts/paths.mjs"]) {

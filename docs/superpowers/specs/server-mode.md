@@ -1547,7 +1547,9 @@ it depends on.
    meant for a person" (B-4) are new; the Pay click, masking, hand-off link and files-at-rest rows
    name them. Not here: the CHANGELOG entry (with the release, step 50), the shared-rules case
    "after a payment hand-off ends, an agent's click on the site's Pay button still needs the Pay:
-   name" (the Pay rule itself is unchanged), the integration test of the full path (step 46's harness).
+   name" (the Pay rule itself is unchanged; landed at the Phase B gate in `test/shared-rules.test.mjs`
+   on the grant table, `tabRefusal`, `clickRule` and `decide`), the integration test of the full path
+   (step 46's harness).
 23. `skills/pairbrowse/SKILL.md` and `core.md` text (B15). -> 22
    Landed as: SKILL.md "Hand-offs and waiting" replaces the 20-loop with: `step` on the status,
    leave the tab (the B9 refusals; the next status ends the hand-off), `browser_wait_for` with

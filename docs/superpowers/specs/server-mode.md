@@ -562,7 +562,7 @@ agents' typing into card fields, or of a card number, is now refused (B13; CHANG
 | Expiry | `test/grants.test.mjs`: "expiry on wall and monotonic clocks; a clock set back never extends it". `test/liveview-grants.test.mjs`: "at expiry the stream gets turn-ended and later input is 404" |
 | Replay prevention | `test/grants.test.mjs`: "a second redeem is null and audits reuse". `test/liveview-grants.test.mjs`: "a preview-bot GET leaves the grant valid; the tap consumes it; a second tap is refused" (approved decision 1); "a second concurrent stream is 409; a reconnect after a drop works within the grant's life" |
 | Session and tab scope | `test/grants.test.mjs`: "another session's redeem is refused; a session switch or main tab close ends the grant". `test/liveview-grants.test.mjs`: "frames, thumb, state and tabs come only from scope"; "the cast stays pinned while the agent's URL changes elsewhere"; "a tab opened by the grant tab joins scope; another does not" |
-| Interaction | `test/input.test.mjs` (fake CDP, where the replayer's tests live): "char replays keyDown with text and keyUp; Ctrl or Meta dropped". `test/fuzz/joiner-input.test.js`: "char never carries more than one character or a modifier other than Shift". `test/liveview.test.mjs` (viewer page): "tap posts mouse press and release; drag posts wheel; type box maps insertText, Backspace, Enter and compositionend and stays empty; zoom keeps a click on the same page point; one POST in flight with presses in order" |
+| Interaction | `test/input.test.mjs` (fake CDP, where the replayer's tests live): "char replays keyDown with text and keyUp; Ctrl or Meta dropped". `test/fuzz/joiner-input.test.js`: "char never carries more than one character or a modifier other than Shift". `test/liveview-mobile.test.mjs` (viewer page, as built in step 20): "tap posts mouse press and release; drag posts wheel; a hold stays pressed; zoom keeps a click on the same page point"; "the type box ... Backspace, Enter and a composition map, and the box stays empty"; "one POST in flight with presses in order"; "a batch sent again with the same run and number is answered and not replayed" |
 | Mobile hand-off | `test/liveview-mobile.test.mjs` (new, viewer page in the runtime's browser with `isMobile`, `hasTouch`, 390x844): "landing page and Take over fit the screen with no horizontal scroll"; "the type box opens the keyboard path and a six-digit code reaches the page"; "setOffline for 20 s then back: the stream reconnects with the same view key and input resumes, nothing typed is lost or repeated" |
 | Real-page interaction | `test/integration/your-turn.test.mjs`: "through a real view key: a cross-origin iframe checkbox gets click; a six-box one-time-code widget fills on keydown; Space ticks; Tab moves focus; a 2 s hold is seen as 2 s; a touch tap clicks". Measurement (reports, does not fail): "an open select list and the autofill list in screencast frames; dispatchTouchEvent alone yields click" (T-B18) |
 | Notification delivery | `test/notify-channels.test.mjs`: "each of webhook, ntfy, telegram, discord, slack sends its request shape to a loopback stub, https only, no redirect, bounded, one retry on 5xx, none on 4xx"; "a third-party sender added to the table is called through the same interface"; "no message holds the agent's text, a password, a code, a card number or page text; the action kind sentence matches the step". `test/optin/ntfy.test.mjs` (`PAIRBROWSE_TEST_NTFY=1`): real publish and read back |
@@ -572,7 +572,7 @@ agents' typing into card fields, or of a card number, is now refused (B13; CHANG
 | Agent resumption | `test/yourturn.test.mjs`: "Done ends with done, one host note, refusals lift"; "a detected challenge ends with cleared; an agent status ends with agent". `test/wait-for.test.mjs` (new): "browser_wait_for time 120 returns within 300 ms of the grant ending". `test/integration/your-turn.test.mjs`: "full path with a loopback webhook: status, link, GET, Take over, click and typed code land, agent click refused, Done, waiting agent returns, next click works; fast-mode handoff step finishes on Done" |
 | Timeout recovery | `test/yourturn.test.mjs`: "exactly one reminder; at expiry flush, save tabs, yourTurn line, keys stop, one ended message, one host note, tab held"; "a held tab is released by a new you, the owner's input or a session end". `test/integration/your-turn.test.mjs`: "user offline past expiry: the held tab keeps its address and typed form values, no agent action reaches it, and a new you mints a grant to that same tab". `test/integration/your-turn.test.mjs` (`TURN_MS`): "one reminder, then the stop; a restarted helper reopens the same tabs" |
 | Compatibility vs verification | `test/compat-vs-verification.test.mjs` (new): "a CAPTCHA with a time zone vs egress mismatch reports the mismatch under PairBrowse setup problems and the CAPTCHA under site verification, mints one grant for the CAPTCHA and never retries"; "a compatibility problem alone mints no grant and sends no your-turn message" |
-| Audit, secrets, config | `test/audit.test.mjs`: "append-only, 0600: each event one line with exactly t, kind, grant, session, tab, detail"; "rotation at 1 MB: the full file moves to .1 (one older generation) and a new one starts"; "unknown fields refused, and every value outside its rule: no key, link, secret or page text gets in"; "a pipe at the file's name with no reader is refused at once, never waited on". `test/redaction.test.mjs`: "reserved secrets hidden from pairbrowse_facts, never typed, still masked". `test/config-schema.test.mjs`: "handoff types, defaults and remindMinutes fallback". `test/liveview.test.mjs`: "liveview-turn.js is in ASSETS" |
+| Audit, secrets, config | `test/audit.test.mjs`: "append-only, 0600: each event one line with exactly t, kind, grant, session, tab, detail"; "rotation at 1 MB: the full file moves to .1 (one older generation) and a new one starts"; "unknown fields refused, and every value outside its rule: no key, link, secret or page text gets in"; "a pipe at the file's name with no reader is refused at once, never waited on". `test/redaction.test.mjs`: "reserved secrets hidden from pairbrowse_facts, never typed, still masked". `test/config-schema.test.mjs`: "handoff types, defaults and remindMinutes fallback". `test/liveview-mobile.test.mjs`: "liveview-turn.js is in ASSETS and loaded by liveview.js for role turn alone" |
 
 ### Security table changes
 Section 12, rows B-1 to B-8.
@@ -1396,6 +1396,53 @@ it depends on.
    or `helper-stopped`). Tests: `test/liveview-grants.test.mjs`; the masking half of "another
    joiner's ... agent's results stay masked" lands with B10 (step 21).
 20. Turn viewer `liveview-turn.js` (phone-first) and mobile viewer tests (B8). -> 19
+   Landed as: `scripts/liveview-turn.js` (in `ASSETS`) `startTurn({ base, img, stage, on, frame,
+   reopen, end })`, imported by `liveview.js` for role turn only and before the stream opens (so it
+   hears the first `turn` event); `liveview.js` keeps the stream, the picture, its size and the
+   end overlay (`endTurn`), and its desktop input handlers stand aside for role turn. Layout:
+   `body[data-role="turn"]` in `liveview.css` hides the column, strip, toolbar and activity; the
+   module adds a header (action kind words, host, `m:ss left` from `expiresAt`, connection chip,
+   Done, a scope `<select>` shown from two scope tabs, "That tab isn't on screen." with "Go back"
+   posting `turn { show }` of the grant's tab) and a keys row (the type box, `-`, the zoom level
+   which resets to 1x, `+`), 44 px targets, the box at 1rem so a phone doesn't zoom on focus.
+   Touch: a press starts after `HOLD_MS` 200 ms without travel (so a 2 s hold reaches the page as
+   about 1.8 s), a release before that is moved, pressed, released together; travel past 8 px
+   before the press is `wheel` at the start point in page pixels at the current zoom; a moved
+   press drags with `buttons: 1`; a cancelled press still releases; a second finger before the
+   press pinches (the picture point under the fingers' midpoint stays under it, panning too), after
+   it is ignored. Zoom is a transform on `#frame` (1x to 4x, `+`/`-` by 1.5, clamped so the
+   picture covers the stage), so `point()` still maps through `getBoundingClientRect()`. A mouse
+   (the link opened on a computer) clicks and drags directly. Type box: `keydown` sends the named
+   keys (Backspace, Enter, Tab, Escape, arrows, Home, End, page keys; Shift or nothing),
+   `beforeinput` maps `insertText`/`insertReplacementText`/`insertFromPaste` (a `char` per code point,
+   one `text` above 32), `deleteContentBackward` to Backspace, `deleteContentForward` to Delete,
+   `insertLineBreak`/`insertParagraph` to Enter, composition once at `compositionend`, and an
+   `input` fallback sends anything that slipped in once (not the text a composition just sent);
+   the box is emptied each time. Queue: one POST in flight; hover moves and wheel deltas merge
+   while it is out; input goes only once the stream is up and has sent its `turn` event (after a
+   reconnect, or after the page was hidden long enough for `liveview.js` to close the stream, which
+   it now says as reconnecting, the picture is back on the grant's tab first); a POST that fails or answers 5xx is
+   sent again unchanged after 1 s; 409 shows "That tab isn't on screen" (dropped, as the helper
+   did not replay it); 404 or 403 ends the viewer. Added (not in B8): each batch is `POST
+   input?run=<16 hex per page load>&seq=<n>` and `liveview/grants.mjs` `batchOf(guest, req)`
+   keeps per grant and run (at most 8 runs per grant, dropped when the grant ends) the last number
+   replayed: a repeat (number not above it) is answered 204 without replaying, the same number
+   while it is still being replayed is answered 503 (sent again in 1 s), and a number counts only
+   once `humanPost` resolved (a 409 or a 500 leaves it unrecorded, so the retry is replayed). So a
+   request whose answer was lost is never applied twice, two pages on one view key never mix their
+   numbers, and a failed one is never lost; a batch without them is always fresh. A mouse press
+   keeps its last place, so a cancelled one is released there. Reconnect:
+   EventSource retries a network drop itself; when it is refused (409 while the helper still holds
+   the dropped stream) `liveview.js` hands it to `lost()`, which asks `state.json` (404: the
+   hand-off ended while away, the viewer ends) and else reopens after 2 s. Done waits up to 5 s for
+   the queue to empty, then posts `turn-done`. Status events no longer move focus to the stage in
+   a turn viewer (it would close the phone's keyboard). Tests: `test/liveview-mobile.test.mjs`
+   (the viewer's tests of the acceptance table's Interaction and Mobile hand-off rows, in the
+   runtime's browser at 390x844 with `isMobile` and `hasTouch` through a loopback relay that drops
+   connections as a lost signal does, since the browser's offline switch leaves an open stream
+   alone; hidden then shown, input held until the turn event; a cancelled mouse press released;
+   plus the repeat rule, a 500 retried and two runs on one key without a browser), `test/liveview.test.mjs` (served asset). Row B-2
+   now names the type box, the viewer and `test/liveview-mobile.test.mjs`.
 21. `daemon/yourturn.mjs`, lambdas out of `daemon.mjs`, status result, `TURN_MS`, masking (B7, B10,
     B11). -> 16, 19
 22. `browser_wait_for` early wake, `handedOff` refusals, card-field refusals in every session,
@@ -1454,7 +1501,7 @@ that exist at that commit (`test/security-table.test.mjs`).
 | A-1 | Move the "Limits" Xvfb bullet into a row | "A server's virtual screen is watched or driven by another user": private Xvfb, `-nolisten tcp`, random cookie in `~/.pairbrowse/run`; only our own dead Xvfb's lock and socket (our uid) are removed; Xvfb ended and cookie deleted on every exit | `test/display.test.mjs`, `test/security.test.mjs`, `test/integration/server-display.test.mjs` |
 | A-2 | Change the sandbox row and the Limits bullet | Server mode: sandbox always on, off requests refused, root refused, a failing sandbox stops the launch; `"required"` does the same on a Linux desktop | `test/engine.test.mjs`, `test/config-schema.test.mjs` |
 | B-1 | New | "A hand-off link reaches the wrong person or does more than meant": off unless `handoff.enabled`; links only to configured channels; GET never consumes, the tap does, once; view key holds one stream; 15 min default, 120 max; one tab of one session plus its sign-in pop-ups; no typed addresses, profile, approvals, pause or settings; private routes only | `test/grants.test.mjs`, `test/liveview-grants.test.mjs` |
-| B-2 | New | "A hand-off viewer's input does more than a person's hands": checked input set; `char` never carries Ctrl or Meta; type box keeps nothing | `test/input.test.mjs`, `test/fuzz/joiner-input.test.js` |
+| B-2 | New | "A hand-off viewer's input does more than a person's hands": checked input set; `char` never carries Ctrl or Meta; type box keeps nothing | `test/input.test.mjs`, `test/fuzz/joiner-input.test.js`, `test/liveview-mobile.test.mjs` |
 | B-3 | New | "Hand-off notifications send more than meant", with per-channel exposure: webhook (your endpoint gets kind, host, expiry, link); ntfy (the server and anyone subscribed to the topic; on public ntfy.sh without a token no link); Telegram (Telegram's servers and the chat's members; bot messages are not end-to-end encrypted); Discord (Discord and the channel's members); Slack (Slack, the workspace's retention and the channel's members). Never the agent's text, codes, passwords, card data or page content; credentials are reserved secrets | `test/notify-channels.test.mjs`, `test/redaction.test.mjs` |
 | B-4 | New | "An agent finishes a step meant for a person": hands, run, navigation and closing refused in a handed-off or held tab; in every session agents never type into card fields or type a card number (B13); the Pay click rule unchanged | `test/refusals.test.mjs`, `test/shared-rules.test.mjs` |
 | B-5 | New | "What the person types during a hand-off reaches agents, joiners or logs": agent results from scope tabs masked as a joiner's, pictures covered; field names only in notes; nothing typed in the activity log, journal, audit or messages; the turn viewer itself sees card fields uncovered | `test/yourturn.test.mjs` |

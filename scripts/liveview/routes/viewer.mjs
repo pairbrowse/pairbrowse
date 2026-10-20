@@ -128,9 +128,15 @@ export function createViewerRoutes(lv) {
     if (ev === null || typeof ev !== "object") return json(res, 400, { error: NOT_JSON });
     // Moving tabs around the strip is the owner's (a drive guest switches, opens and closes them).
     if (route === "tab" && ev?.order !== undefined && role !== "owner") return plain(res, 403);
+    // A hand-off's batch that came already (sent again after a lost answer): answered, not replayed;
+    // one still being replayed: busy, sent again in a moment. It counts once replayed.
+    const batch = role === "turn" && route === "input" ? lv.turn.batchOf(invite, req) : null;
+    if (batch?.repeat) { res.writeHead(204, SECURITY_HEADERS); return res.end(); }
+    if (batch?.busy) return json(res, 503, { error: "The last batch is still being typed. Wait a moment and send it again." });
     // A hand-off's input reaches only its own tabs: another one on screen is refused, said and audited.
-    if (role === "turn" && !lv.turn.onScreen(invite)) { lv.turn.refused(invite, "input-refused", "out-of-scope"); return json(res, 409, { error: "That tab isn't on screen. Go back to the hand-off's tab." }); }
-    await lv.humanPost(route, ev, role, invite ? `${invite.label} (by hand)` : null, invite?.id || null);
+    if (role === "turn" && !lv.turn.onScreen(invite)) { batch?.end(false); lv.turn.refused(invite, "input-refused", "out-of-scope"); return json(res, 409, { error: "That tab isn't on screen. Go back to the hand-off's tab." }); }
+    try { await lv.humanPost(route, ev, role, invite ? `${invite.label} (by hand)` : null, invite?.id || null); } catch (e) { batch?.end(false); throw e; }
+    batch?.end(true);
     res.writeHead(204, SECURITY_HEADERS);
     res.end();
   }

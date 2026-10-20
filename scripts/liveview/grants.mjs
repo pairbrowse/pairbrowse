@@ -24,6 +24,8 @@ import { hostOf, guestTabs, guestActivity } from "./tabs.mjs";
 
 export const TURN_ROLES = new Set(["turn", "redeem"]);
 const OPENER_MS = 1000; // asking a new tab which tab opened it
+const RUN = /^[0-9a-f]{16}$/; // a turn viewer's page load, as its input batches name it
+const RUNS_MAX = 8; // page loads remembered per hand-off
 const LABEL = "Hand-off"; // the participant list's name for the person on a hand-off link
 const landingHtml = readFileSync(new URL("../liveview-redeem.html", import.meta.url), "utf8");
 const attr = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -97,6 +99,33 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
     }
   }
 
+  // A turn viewer's input batches carry ?run=<its page load, 16 hex>&seq=<1, 2, ...>: a batch sent
+  // again because its answer was lost (the phone's connection dropped mid-request) is one already
+  // replayed, never replayed twice. A batch without them is always fresh. Kept per run (two pages
+  // on one view key never mix their numbers), a batch counts only once it was replayed (one that
+  // failed goes again), and one still being replayed when it comes again is answered busy.
+  // Returns { repeat } (answer it, replay nothing), { busy } (answer 503: sent again later), or
+  // { end(ok) } to call once the batch was replayed (ok) or not.
+  const batches = new Map(); // grant id -> Map(run -> { seq: the last replayed, busy: one in flight or 0 })
+  function batchOf(guest, req) {
+    const q = new URL(req.url, "http://x").searchParams;
+    const run = q.get("run") || "", seq = Number(q.get("seq"));
+    if (!RUN.test(run) || !Number.isSafeInteger(seq) || seq < 1) return { end() {} };
+    const id = grantOf(guest);
+    if (!batches.has(id)) batches.set(id, new Map());
+    const runs = batches.get(id);
+    let b = runs.get(run);
+    if (!b) {
+      // A few page loads per hand-off (a reload, a second device); the oldest one goes first.
+      if (runs.size >= RUNS_MAX) runs.delete(runs.keys().next().value);
+      runs.set(run, (b = { seq: 0, busy: 0 }));
+    }
+    if (seq <= b.seq) return { repeat: true };
+    if (b.busy === seq) return { busy: true };
+    b.busy = seq;
+    return { end(ok) { if (b.busy === seq) b.busy = 0; if (ok) b.seq = Math.max(b.seq, seq); } };
+  }
+
   // The view key's one stream: true when it opened (else a second one is open, audited by the
   // table). It closes when the request does; the picture moves to the grant's tab.
   function openStream(res, guest) {
@@ -149,6 +178,7 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
 
   // A grant ended: its stream hears why and closes; the picture is free to follow again.
   const stopEnd = grants ? grants.onEnd((v, reason) => {
+    batches.delete(v.id);
     let any = false;
     for (const [res, s] of streams) {
       if (s.guest.grant !== v.id) continue;
@@ -191,7 +221,7 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
   }
 
   return {
-    on: !!grants, match, refusedOrigin, forTurn, onScreen, openStream, started, pinned, changed, tick, watch, landing, redeem, showTab,
+    on: !!grants, match, refusedOrigin, forTurn, onScreen, batchOf, openStream, started, pinned, changed, tick, watch, landing, redeem, showTab,
     // The last frame, for a turn stream that just opened: only from a scope tab, as it is.
     frameFor: (guest) => (cast.state.lastFrame && inScope(cast.state.lastFrameFrom, guest) ? cast.state.lastFrame : null),
     // Whether a stream gets a frame of the tab on screen as it is: a turn stream, that tab in its scope.

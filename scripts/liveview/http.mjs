@@ -107,6 +107,8 @@ const viewerHtml = readFileSync(new URL("liveview.html", scripts), "utf8");
 const ASSETS = new Map(Object.entries({
   "liveview.css": ["liveview.css", "text/css; charset=utf-8"],
   "liveview.js": ["liveview.js", "text/javascript; charset=utf-8"],
+  // The hand-off viewer's own part (role turn), loaded by liveview.js for it alone.
+  "liveview-turn.js": ["liveview-turn.js", "text/javascript; charset=utf-8"],
   // A hand-off link's landing page (liveview/grants.mjs).
   "liveview-redeem.css": ["liveview-redeem.css", "text/css; charset=utf-8"],
   "liveview-redeem.js": ["liveview-redeem.js", "text/javascript; charset=utf-8"],

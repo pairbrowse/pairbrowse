@@ -9,6 +9,10 @@ const base = location.pathname.replace(/\/?$/, "/");
 const img = $("screen"), stage = $("stage");
 const role = document.body.dataset.role || "owner";
 const canDrive = role !== "watch";
+// A hand-off's viewer (role turn, often a phone): its header, touch, zoom, type box and input queue
+// are liveview-turn.js, loaded for it alone; the desktop's own input handlers below stand aside.
+const turnView = role === "turn";
+let turnUi = null;
 // Only the host resizes the page: an invited viewer's pane never changes it.
 const mayResize = role === "owner";
 if (!canDrive) { stage.setAttribute("aria-label", "Live view of the PairBrowse browser (watch only)"); $("url-input").disabled = true; }
@@ -28,6 +32,7 @@ function setState(s) {
   $("state").dataset.s = yours ? "you" : s;
   $("state-text").textContent = yours ? "Your turn" : STATE_LABELS[s];
   document.body.dataset.s = s;
+  turnUi?.state(s);
   $("overlay-title").textContent = s === "closed" ? "The PairBrowse browser closed" : "Reconnecting";
   $("overlay-text").textContent = s === "closed" ? "It reopens on Claude's next action." : "Waiting for PairBrowse";
 }
@@ -124,23 +129,37 @@ function openStream() {
   es = new EventSource(base + "events");
   for (const [event, fn] of handlers) es.addEventListener(event, (e) => fn(JSON.parse(e.data)));
   es.onopen = () => { setState("live"); fit(); };
-  es.onerror = () => { if (es) setState(es.readyState === EventSource.CLOSED ? "closed" : "reconnecting"); };
+  es.onerror = () => {
+    if (!es) return;
+    // A hand-off's stream refused (its dropped one not yet noticed by the helper): the turn viewer
+    // asks whether the hand-off still runs and opens it again, or ends.
+    if (turnUi && es.readyState === EventSource.CLOSED) { es.close(); es = null; setState("reconnecting"); return turnUi.lost(); }
+    setState(es.readyState === EventSource.CLOSED ? "closed" : "reconnecting");
+  };
 }
-openStream();
 // A hand-off ended (done, revoked, expired): close the stream before EventSource reconnects on
 // its own with the dead key (the helper would audit that as a reused link).
-on("turn-ended", () => {
+function endTurn() {
   ended = true;
   es?.close();
   es = null;
   setState("closed");
   $("overlay-title").textContent = "This hand-off ended";
   $("overlay-text").textContent = "You can close this page.";
-});
+}
+on("turn-ended", endTurn);
+// The turn viewer is loaded before the stream opens, so it hears the stream's first turn event.
+if (turnView) {
+  import("./liveview-turn.js")
+    .then((m) => { turnUi = m.startTurn({ base, img, stage, on, frame: () => frame, reopen: openStream, end: endTurn }); openStream(); })
+    .catch(() => setState("closed"));
+} else openStream();
 let hiddenTimer = null;
 document.addEventListener("visibilitychange", () => {
   clearTimeout(hiddenTimer);
-  if (document.hidden) hiddenTimer = setTimeout(() => { if (document.hidden && es) { es.close(); es = null; } }, 3000);
+  // A hand-off's viewer says so and holds its input until the reopened stream's turn event (the
+  // helper puts the picture back on the grant's tab first).
+  if (document.hidden) hiddenTimer = setTimeout(() => { if (document.hidden && es) { es.close(); es = null; if (turnView) setState("reconnecting"); } }, 3000);
   else openStream();
 });
 
@@ -281,7 +300,7 @@ on("status", (s) => {
   $("turn").dataset.open = String(turn);
   $("turn-text").textContent = s.text || "Your turn";
   setState(document.body.dataset.s === "connecting" ? "live" : document.body.dataset.s);
-  if (turn) stage.focus({ preventScroll: true });
+  if (turn && !turnView) stage.focus({ preventScroll: true }); // never away from the phone's type box
 });
 
 on("session", (s) => {
@@ -624,7 +643,7 @@ const clickCount = (e) => {
   return count;
 };
 img.addEventListener("pointerdown", (e) => {
-  if (down || !canDrive) return;
+  if (down || !canDrive || turnView) return;
   e.preventDefault();
   stage.focus({ preventScroll: true });
   youDrive();
@@ -638,7 +657,7 @@ img.addEventListener("pointerdown", (e) => {
   queue({ type: "mouse", action: "mousePressed", ...point(e), button, buttons: BUTTONS[button] || 1, clickCount: down.count, modifiers: mods(e) }, true);
 });
 img.addEventListener("pointermove", (e) => {
-  if (down && e.pointerId !== down.id) return;
+  if (turnView || (down && e.pointerId !== down.id)) return;
   if (down?.type === "touch") return queue({ type: "touch", action: "touchMove", ...point(e) });
   // Every intermediate position while a button is held (slider handles, drawing, drag and drop).
   const moves = down && e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
@@ -658,11 +677,11 @@ img.addEventListener("pointercancel", release);
 img.addEventListener("lostpointercapture", release);
 img.addEventListener("contextmenu", (e) => e.preventDefault());
 img.addEventListener("dragstart", (e) => e.preventDefault());
-img.addEventListener("wheel", (e) => { e.preventDefault(); queue({ type: "wheel", ...point(e), dx: e.deltaX, dy: e.deltaY }); }, { passive: false });
+img.addEventListener("wheel", (e) => { if (turnView) return; e.preventDefault(); queue({ type: "wheel", ...point(e), dx: e.deltaX, dy: e.deltaY }); }, { passive: false });
 
 const SPECIAL = new Set(["Backspace", "Tab", "Enter", "Escape", "PageUp", "PageDown", "End", "Home", "ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown", "Delete"]);
 stage.addEventListener("keydown", (e) => {
-  if (!canDrive) return;
+  if (!canDrive || turnView) return;
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") return;
   if ((e.metaKey || e.ctrlKey) && !e.altKey) {
     const k = e.key.toLowerCase();
@@ -674,6 +693,7 @@ stage.addEventListener("keydown", (e) => {
   else if (SPECIAL.has(e.key)) { e.preventDefault(); youDrive(); queue({ type: "key", key: e.key, modifiers: mods(e) }, true); }
 });
 stage.addEventListener("paste", (e) => {
+  if (turnView) return;
   const text = e.clipboardData?.getData("text/plain");
   if (text) { e.preventDefault(); youDrive(); queue({ type: "text", text }, true); }
 });

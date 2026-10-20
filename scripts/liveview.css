@@ -422,3 +422,36 @@ body:not([data-role="owner"]) #fit { display: none; }
 .frame .joiner-pointer path { fill: #fff; stroke: var(--who, var(--ink-2)); stroke-width: 1.6; stroke-linejoin: round; }
 .frame .joiner-pointer span { display: inline-block; margin: 2px 0 0 10px; padding: 2px 6px; border-radius: 999px; font: 600 var(--fs-1)/1.3 var(--sans); color: #fff; background: var(--who, var(--ink-2)); white-space: nowrap; }
 .frame .joiner-pointer[data-fading] { opacity: 0; }
+
+/* ---------- the hand-off viewer (role turn, liveview-turn.js), phone first ---------- */
+/* The step's header, the handed-over tab and the type box, edge to edge in the visible height:
+   none of the desktop's column, strip, toolbar or activity. Controls a finger can hit (44 px), the
+   type box at 1rem so a phone doesn't zoom the page when it takes focus. */
+body[data-role="turn"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; }
+body[data-role="turn"] .side, body[data-role="turn"] .strip, body[data-role="turn"] .toolbar, body[data-role="turn"] #turn,
+body[data-role="turn"] .joins, body[data-role="turn"] .activity, body[data-role="turn"] #hint { display: none; }
+body[data-role="turn"] .window { grid-column: 1; grid-row: 1; border-left: 0; }
+body[data-role="turn"] .stage { touch-action: none; box-shadow: none; }
+body[data-role="turn"] .frame { transform-origin: 0 0; }
+.turnbar { display: grid; gap: 6px; padding: 8px 12px; background: var(--elevated); color: var(--ink); border-bottom: 1px solid var(--edge); }
+.turn-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.turn-step { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-3); }
+.turn-step strong { font-weight: 650; }
+.turn-left { flex: none; font-size: var(--fs-2); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.turn-left[data-low="true"] { color: var(--bad-ink); }
+.turn-conn { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: var(--fs-2); color: var(--ink-2); }
+.turn-conn i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.turn-conn[data-s="live"] i { background: var(--ok); }
+.turn-conn[data-s="reconnecting"] i { background: var(--warn); }
+.turn-conn[data-s="closed"] i { background: var(--bad); }
+.turnbar .turn-done { flex: none; height: 44px; padding: 0 16px; font-size: var(--fs-3); }
+.turnbar .turn-done:disabled { opacity: 0.6; cursor: default; }
+.turnbar .turn-tabs { height: 44px; font-size: 1rem; }
+.turn-away, .turn-problem { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-3); }
+.turn-away { color: var(--ink); }
+.turn-away .mini { min-height: 44px; color: var(--accent-ink); }
+.turn-problem { color: var(--bad-ink); }
+.turnkeys { display: flex; align-items: center; gap: 6px; padding: 8px 12px; padding-bottom: max(8px, env(safe-area-inset-bottom)); background: var(--elevated); border-top: 1px solid var(--edge); }
+.turnkeys .type-box { flex: 1; height: 44px; font-size: 1rem; }
+.turnkeys .mini { min-width: 44px; height: 44px; color: var(--ink-2); font-size: var(--fs-3); }
+.turnkeys .turn-level { font-variant-numeric: tabular-nums; }

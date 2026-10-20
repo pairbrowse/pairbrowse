@@ -165,9 +165,14 @@
   a `liveViewHosts` name with `inviteBaseUrl` (a tailnet works on a phone with its app) or an SSH
   tunnel to this computer, never the join-code port. Opening it shows a page with the step, the
   site and the expiry and a "Take over" button; opening it uses nothing up (a chat app's link
-  preview is harmless), and only the tap does, once. The live view's side of this is built; the
-  hand-off flow that makes and sends links (and the phone viewer), and the Away switch in the side
-  panel and Settings, come in a later version; until then these keys are read and checked only.
+  preview is harmless), and only the tap does, once. After the tap the phone shows the handed-over
+  tab with a header (the step, the site, the time left, the connection, Done, the hand-off's own
+  tabs): tap to click, drag to scroll, hold to press, pinch or + and - to zoom (on the phone only),
+  and a "Type here" box that opens the phone's keyboard and passes each character to the field you
+  tapped; a dropped connection comes back on its own without losing or repeating what you typed.
+  The live view's side of this, the phone viewer included, is built; the hand-off flow that makes
+  and sends links, and the Away switch in the side panel and Settings, come in a later version;
+  until then these keys are read and checked only.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

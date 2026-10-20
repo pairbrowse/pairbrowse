@@ -125,7 +125,7 @@ test("a preview-bot GET leaves the grant valid; the tap consumes it; a second ta
     assert.equal((await request(s.port, "POST", `/${g.redeemKey}/redeem`, { body: {} })).status, 404);
     assert.equal((await request(s.port, "GET", `/${g.redeemKey}/`)).status, 404);
     assert.ok(s.audited().some((l) => l.kind === "reuse" && l.detail === "redeem-key"));
-    // The view key opens the viewer (the turn viewer's page comes with its own step).
+    // The view key opens the viewer as role turn (liveview.js then loads the phone viewer, liveview-turn.js).
     const page = await request(s.port, "GET", view);
     assert.equal(page.status, 200);
     assert.match(page.text, /<body data-role="turn" /);

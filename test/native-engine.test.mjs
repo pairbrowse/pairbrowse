@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE } from "../scripts/native-engine.mjs";
+import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
+import { normalizeWebgpu } from "../scripts/native/graphics.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
 process.env.PAIRBROWSE_HOME = mkdtempSync(join(tmpdir(), "pairbrowse-home-test-"));
@@ -604,4 +605,120 @@ packTest("config.pairbrowse passes only PairBrowse's settings and the engine's f
   assert.equal(options.executablePath, app.executablePath);
   assert.ok(options.args.includes("--fingerprint=closed-seed"), "fingerprint options pass");
   assert.ok(lines.some((l) => /pairbrowse\.extensions, pairbrowse\.proxy, pairbrowse\.args/.test(l) && /not used/.test(l)), lines.join("\n"));
+});
+
+// The collector nests WebGPU under webgpu.info; the engine reads webgpu.vendor (spec E10 W1). One
+// function flattens it, on every layer a fingerprintProfile comes from.
+const NESTED_WEBGPU = { info: { vendor: "apple", architecture: "apple-gpu", device: "", description: "" }, limits: { maxBindGroups: 4 } };
+const FLAT_WEBGPU = { vendor: "apple", architecture: "apple-gpu", device: "", description: "", limits: { maxBindGroups: 4 } };
+
+test("normalizeWebgpu flattens the collector's nested WebGPU and leaves every other shape as it was", () => {
+  const nested = { webgl: { vendor: "Apple" }, webgpu: structuredClone(NESTED_WEBGPU) };
+  const flat = normalizeWebgpu(nested);
+  assert.deepEqual(flat, { webgl: { vendor: "Apple" }, webgpu: FLAT_WEBGPU });
+  assert.deepEqual(nested.webgpu, NESTED_WEBGPU, "the given profile is never changed");
+  assert.equal(normalizeWebgpu(flat), flat, "already flat: the same object");
+  const withVendor = { webgpu: { vendor: "apple", info: { vendor: "other" } } };
+  assert.equal(normalizeWebgpu(withVendor), withVendor, "a top-level vendor wins");
+  for (const same of [{ webgpu: { available: false } }, { webgpu: null }, { webgpu: { info: "text" } }, {}, null, undefined, "profile.json", 7, []]) {
+    assert.equal(normalizeWebgpu(same), same);
+  }
+});
+
+test("a fingerprintProfile's WebGPU is flattened whether it is an object, a file or JSON text; the file is never written", () => {
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-webgpu-file-"));
+  const file = join(directory, "profile.json");
+  const text = JSON.stringify({ webgpu: NESTED_WEBGPU });
+  writeFileSync(file, text);
+  assert.deepEqual(flatWebgpuProfile(file), { webgpu: FLAT_WEBGPU });
+  assert.equal(readFileSync(file, "utf8"), text, "the user's file stays as it was");
+  assert.deepEqual(flatWebgpuProfile(text), { webgpu: FLAT_WEBGPU });
+  assert.deepEqual(flatWebgpuProfile({ webgpu: NESTED_WEBGPU }), { webgpu: FLAT_WEBGPU });
+  const flatFile = join(directory, "flat.json");
+  writeFileSync(flatFile, JSON.stringify({ webgpu: FLAT_WEBGPU }));
+  assert.equal(flatWebgpuProfile(flatFile), flatFile, "a flat file passes on as its path");
+  assert.equal(flatWebgpuProfile("not json"), "not json");
+  assert.equal(flatWebgpuProfile(join(directory, "missing.json")), join(directory, "missing.json"));
+});
+
+test("the Mac host capture hands the engine a flat WebGPU", async () => {
+  const chromium = fakeBrowserType({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" }, webgpu: structuredClone(NESTED_WEBGPU), media_devices: [] });
+  const captured = await captureMacHost(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-capture-webgpu-")), null);
+  assert.deepEqual(captured.webgpu, FLAT_WEBGPU);
+});
+
+// A host profile cached before the flattening (nested WebGPU) is flattened on a cache hit, never captured again.
+test("a cached Mac host profile with nested WebGPU comes back flat without a new capture", async () => {
+  rmSync(hostCachePath(), { force: true });
+  const chromium = fakeBrowserType();
+  const hardware = () => "Mac15,7|AGXAcceleratorG15X";
+  await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-cache-webgpu-")), "150.0.7871.114", hardware);
+  const { key } = JSON.parse(readFileSync(hostCachePath(), "utf8"));
+  writeFileSync(hostCachePath(), JSON.stringify({ key, profile: { webgl: { vendor: "Apple", renderer: "Apple M3 Pro" }, webgpu: structuredClone(NESTED_WEBGPU) } }));
+  const cached = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-cache-webgpu-")), "150.0.7871.114", hardware);
+  assert.deepEqual(cached.webgpu, FLAT_WEBGPU);
+  assert.equal(chromium.captures, 1, "a cache hit: no capture");
+});
+
+// Just enough of the engine pack for launchNative: it records the fingerprint the engine is given.
+function recordingPack({ saved = {}, imported } = {}) {
+  class Profile {
+    constructor(name, options) { this.name = name; this.options = options; }
+    save(path) { writeFileSync(path, JSON.stringify({ name: this.name, options: this.options })); }
+    static load(path) { const { name, options } = JSON.parse(readFileSync(path, "utf8")); return new Profile(name, options); }
+  }
+  const given = [];
+  return {
+    given, Profile, DEFAULT_IGNORED_ARGS: [],
+    resolveProfileOptions: () => structuredClone(saved),
+    splitFingerprintOptions: (options) => {
+      const { fingerprintProfile, fingerprint, timezone, acceptLanguage, platform, brandVersion, ...rest } = options;
+      return { fingerprint: Object.fromEntries(Object.entries({ fingerprintProfile, fingerprint, timezone, acceptLanguage, platform, brandVersion }).filter(([, v]) => v !== undefined)), rest };
+    },
+    measureHost: async () => ({}),
+    resolveAuto: async () => ({ profile: structuredClone(imported), source: "test index" }),
+    resolveLocal: () => ({ profile: structuredClone(imported), source: "test host" }),
+    splitAgentOptions: (options) => ({ agent: {}, rest: options }),
+    resolveProxy: (proxy) => ({ args: [], proxy }),
+    engineSupportsSwitch: () => false,
+    mergeFeatureFlags: (args) => args,
+    fingerprintArgs: (fingerprint) => { given.push(fingerprint); return []; },
+    agentArgs: () => [], privacySandboxArgs: () => [], portableArgs: () => [], extensionArgs: () => [],
+    webrtcDefaultDenyArgs: () => [], gpuBlocklistArgs: () => [],
+    gateEngineSwitches: (_, args) => ({ args }),
+    installHumanizeOnContext: () => {},
+  };
+}
+
+test("nested WebGPU is flattened on every layer: config, saved, persisted and imported", async () => {
+  const app = appFixture();
+  const launch = async (config, pack, directory = mkdtempSync(join(tmpdir(), "pairbrowse-webgpu-layer-"))) => {
+    await launchNative(fakeBrowserType(), config, directory, { executablePath: app.executablePath, headless: false }, pack);
+    const persona = JSON.parse(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8")).options;
+    return { engine: pack.given[0].fingerprintProfile, persona: persona.fingerprintProfile, directory };
+  };
+  const nestedProfile = () => ({ navigator: { languages: ["en-US"] }, webgpu: structuredClone(NESTED_WEBGPU) });
+
+  const config = await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: nestedProfile() } }, recordingPack());
+  assert.deepEqual(config.engine.webgpu, FLAT_WEBGPU, "config.json");
+  assert.deepEqual(config.persona.webgpu, FLAT_WEBGPU, "the persona keeps the flat form");
+
+  const file = join(mkdtempSync(join(tmpdir(), "pairbrowse-webgpu-saved-")), "profile.json");
+  writeFileSync(file, JSON.stringify(nestedProfile()));
+  const saved = await launch({ pairbrowse: { profile: "mine" } }, recordingPack({ saved: { fingerprintProfile: file } }));
+  assert.deepEqual(saved.engine.webgpu, FLAT_WEBGPU, "a saved profile naming a file");
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).webgpu, NESTED_WEBGPU, "the saved profile's file stays as it was");
+
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-webgpu-persisted-"));
+  writeFileSync(join(directory, "pairbrowse-persona.json"), JSON.stringify({ name: "pairbrowse", options: { fingerprint: "seed", fingerprintProfile: nestedProfile() } }));
+  const persisted = await launch({ pairbrowse: {} }, recordingPack(), directory);
+  assert.deepEqual(persisted.engine.webgpu, FLAT_WEBGPU, "the persisted persona");
+
+  for (const selection of ["auto", "local"]) {
+    const imported = await launch({ pairbrowse: { profile: selection } }, recordingPack({ imported: nestedProfile() }));
+    assert.deepEqual(imported.engine.webgpu, FLAT_WEBGPU, `an imported persona (${selection})`);
+  }
+
+  const unreadable = await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: file.replace("profile.json", "missing.json") } }, recordingPack());
+  assert.equal(unreadable.engine, file.replace("profile.json", "missing.json"), "a path that isn't readable passes on as it was");
 });

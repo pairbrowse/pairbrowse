@@ -11,6 +11,7 @@ import { within, writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
 import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
+import { normalizeWebgpu } from "./native/graphics.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
 export * from "./native/humanize.mjs";
@@ -152,8 +153,7 @@ export async function captureMacHost(chromium, executablePath, pack, directory, 
     if (screen?.edr > 1 && captured.css && typeof captured.css.color === "number") captured.css.color = 10;
     // The engine's profile import uses these two compact forms; the collector reports the long ones.
     if (captured.media_devices && !captured.mediaDevices) captured.mediaDevices = captured.media_devices;
-    if (captured.webgpu?.info && !captured.webgpu.vendor) captured.webgpu = { ...captured.webgpu.info, limits: captured.webgpu.limits };
-    return captured;
+    return normalizeWebgpu(captured);
   } catch (error) {
     throw new Error(`PairBrowse macOS host capture failed: ${error.message}`, { cause: error });
   } finally {
@@ -194,7 +194,7 @@ export async function macHostProfile(chromium, executablePath, pack, directory, 
   const file = hostCachePath();
   const key = sha256(JSON.stringify({ version, hardware: await hardware() }));
   const cached = readJson(file);
-  if (cached?.key === key && cached.profile && typeof cached.profile === "object") return cached.profile;
+  if (cached?.key === key && cached.profile && typeof cached.profile === "object") return normalizeWebgpu(cached.profile);
   if (capturing?.key === `${file}\n${key}`) return capturing.promise;
   try { onCapture(); } catch {}
   const promise = captureAndKeep(chromium, executablePath, pack, directory, file, key, version);
@@ -212,8 +212,23 @@ async function captureAndKeep(chromium, executablePath, pack, directory, file, k
   return profile;
 }
 
+// A fingerprintProfile as any layer gives it (an object, a file's path or JSON text, as the engine
+// pack reads them) with its WebGPU in the shape the engine reads (native/graphics.mjs
+// normalizeWebgpu). A path or text whose WebGPU is already flat, or that isn't a profile, passes on
+// as it was; one that needs flattening passes on as the flattened object, and the user's file is
+// never written.
+export function flatWebgpuProfile(value) {
+  if (typeof value !== "string") return normalizeWebgpu(value);
+  let profile;
+  try { profile = JSON.parse(existsSync(value) ? readFileSync(value, "utf8") : value); } catch { return value; }
+  const flat = normalizeWebgpu(profile);
+  return flat === profile ? value : flat;
+}
+const withFlatWebgpu = (layer) => (layer?.fingerprintProfile === undefined ? layer : { ...layer, fingerprintProfile: flatWebgpuProfile(layer.fingerprintProfile) });
+
 // The three layers of settings, lowest first: the persona saved in the profile, a saved profile
-// chosen by name, and config.json. Every layer is checked for options this engine can't honour.
+// chosen by name, and config.json. Every layer is checked for options this engine can't honour, and
+// its fingerprintProfile's WebGPU flattened (flatWebgpuProfile).
 function readSettings(config, pack, personaPath) {
   // motion: how humanized mouse moves are shaped: "fast" (the default: PairBrowse's hand-like
   // shape, one reach that lands close, then homes in without stopping, at a quick hand's pace: a
@@ -227,11 +242,11 @@ function readSettings(config, pack, personaPath) {
   // Only the engine's fingerprint options pass (config-schema.mjs PAIRBROWSE_ENGINE_KEYS): never an
   // unpacked extension, a proxy, launch options or switches from config.json, which would go
   // around the browserArgs screen. An option this engine can't honour still stops the launch below.
-  const overrides = Object.fromEntries(Object.entries(given).filter(([k]) => PAIRBROWSE_ENGINE_KEYS.includes(k)));
+  const overrides = withFlatWebgpu(Object.fromEntries(Object.entries(given).filter(([k]) => PAIRBROWSE_ENGINE_KEYS.includes(k))));
   const ignored = Object.keys(given).filter((k) => !PAIRBROWSE_ENGINE_KEYS.includes(k) && !UNSUPPORTED.includes(k));
   const motion = ["classic", "combined", "quick"].includes(motionSetting) ? motionSetting : "fast";
-  const saved = selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {};
-  const persisted = existsSync(personaPath) ? pack.Profile.load(personaPath).options : {};
+  const saved = withFlatWebgpu(selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {});
+  const persisted = withFlatWebgpu(existsSync(personaPath) ? pack.Profile.load(personaPath).options : {});
   for (const key of UNSUPPORTED) {
     if ([persisted, saved, given].some((layer) => layer[key] !== undefined)) throw new Error(`PairBrowse native does not support pairbrowse.${key} on this engine.`);
   }
@@ -254,7 +269,8 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
     const host = await pack.measureHost((probe) => chromium.launch({ ...probe, ...(options.chromiumSandbox === false ? {} : { args: withoutNoSandbox(probe?.args) }), executablePath: options.executablePath, chromiumSandbox: options.chromiumSandbox !== false, ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS }),
       options.executablePath, Number(ENGINE_MAJOR));
     const resolved = selection === "local" ? pack.resolveLocal(host, profileSelect) : await pack.resolveAuto(host, profileSelect);
-    fingerprint.fingerprintProfile = resolved.profile;
+    // An imported persona (the engine pack's index, or this host's) is one more layer.
+    fingerprint.fingerprintProfile = flatWebgpuProfile(resolved.profile);
     source = resolved.source;
     steps.push(`measure ${Date.now() - measureAt} ms`);
   }

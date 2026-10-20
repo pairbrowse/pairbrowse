@@ -89,6 +89,17 @@ test("the helper's environment: no test switches, the project's instance named o
   assert.equal(helperEnv({ PAIRBROWSE_INSTANCE: "other" }, { source: "project", instance: "work" }).PAIRBROWSE_INSTANCE, "work");
 });
 
+// Today's behavior, pinned before spec D8 closes it (F3): the engine pack reads PAIRBROWSE_ENGINE_*
+// settings (persona library, converter, license) from the helper's environment, and whatever the
+// bridge's caller set passes through. D8 turns this into "inherited PAIRBROWSE_ENGINE_* are dropped".
+test("F3 today: inherited PAIRBROWSE_ENGINE_* variables reach the helper's environment", () => {
+  const engine = { PAIRBROWSE_ENGINE_PROFILE_API: "http://f3.test", PAIRBROWSE_ENGINE_PROFILE_CONVERTER: "/bin/f3-converter", PAIRBROWSE_ENGINE_LICENSE_KEY: "f3-key", PAIRBROWSE_ENGINE_PROFILE_DIR: "/tmp/f3-profiles" };
+  for (const selected of [{ source: "default", instance: null }, { source: "project", instance: "work" }]) {
+    const out = helperEnv({ PATH: "/bin", ...engine }, selected);
+    for (const [key, value] of Object.entries(engine)) assert.equal(out[key], value, `${key} (${selected.source})`);
+  }
+});
+
 test("startDaemon hands the helper that environment", () => {
   process.env.PAIRBROWSE_TEST_SHOULD_NOT_CROSS = "1";
   try {

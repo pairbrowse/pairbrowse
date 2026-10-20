@@ -797,7 +797,8 @@ one.
   The open build applies switch-based fields only (`--lang`, `--window-size`,
   `--force-device-scale-factor`, `--force-dark-mode`, `--force-prefers-reduced-motion`).
 - **D12. Derived values are recorded, never stored as configuration**: geoip, host `Intl`, build
-  `platform` and `brandVersion` (`native-engine.mjs:247-248`, fixes F4 if the pinning test confirms it).
+  `platform` and `brandVersion` (`native-engine.mjs:247-248`, fixes F4: step 11's pinning test confirms a persisted
+  `brandVersion` outlives a build update and a copied persona keeps its system's `platform`).
   Languages: profile `locale.languages` reach `--accept-lang`; `Intl` only when unset (F7).
 - **D13. Binding on every launch**: `pairbrowse-binding.json` `{ profileId, created }` in
   `profileDir(name)`, `sessionFile(name, "assignment.json")` `{ profileId }`, and the persona saved
@@ -1165,7 +1166,8 @@ it depends on.
 9. Canvas bridge launch guard (pb) and `--headless` harness-only; rows E-1, E-5 (E1 pb part, E12).
    (independent)
 10. `normalizeWebgpu` on every layer (E10 W1). (independent)
-11. Tests pinning today's F1, F3, F4, F7 behavior (before D7, D8, D12).
+11. Tests pinning today's F1, F3, F4, F7 behavior (before D7, D8, D12): the "F1/F4/F7 today" tests in
+    `test/native-engine.test.mjs`, "F3 today" in `test/daemon-connect.test.mjs`; each later step turns its own around.
 12. Close F2, F3, F5: closed `profileSelect`, `helperEnv`, auto/local as this computer (D8, D9). -> 11
 13. Close F1: filtered layers; `proxy` refusal shared with C10 (D7). -> 11
 14. `daemon/audit.mjs`, `paths.audit` (B17).

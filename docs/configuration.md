@@ -269,7 +269,14 @@
   naming only the proxy's id, whether its exit changed or its check failed, whether agents were
   paused, and the time. Each recheck is kept in `network.json` as kind `recheck` (the helper's
   read only). Traffic never goes around the proxy meanwhile: a proxy that stops answering stops
-  the pages, never sends them direct.
+  the pages, never sends them direct. Renaming a session (the session card, the sessions page)
+  moves its entry in `sessions` to the new name (an entry already under the new name goes, so the
+  session keeps the network it had) and moves its `network.json`; deleting a session removes both (a clean session's entry is left as it is). The
+  rest of `config.json` is kept as written. While `config.json` can't be read or parsed, a rename
+  or deletion of a kept session is refused, so its proxy choice is never lost on the way. In
+  shared browser mode, a session in strict mode sends joiners pictures of its tabs through the
+  join channel, never a direct connection (that would reach a STUN server and the joiner outside
+  the proxy), and without sound; joining from a strict session asks for those pictures too.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

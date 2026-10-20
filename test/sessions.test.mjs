@@ -130,6 +130,90 @@ test("a rename whose move fails puts back what it moved", () => {
   assert.equal(existsSync(s.tabsFile("rb-y")), false);
 });
 
+test("rename and delete move network.json and the map entry (C4); a config.json that can't be read stops both", () => {
+  const cfg = join(process.env.PAIRBROWSE_HOME, "config.json");
+  const other = { participantName: "Pat", network: { proxies: { "us-east": { server: "http://203.0.113.10:3128" } }, default: null, sessions: { "net-a": "us-east", "keep-me": null }, strict: true } };
+  writeFileSync(cfg, JSON.stringify(other));
+  s.createSession("net-a");
+  writeFileSync(s.networkFile("net-a"), "{\"version\":1,\"checks\":[]}");
+  s.renameSession("net-a", "net-b");
+  assert.equal(existsSync(s.networkFile("net-a")), false, "network.json left the old name");
+  assert.equal(readFileSync(s.networkFile("net-b"), "utf8"), "{\"version\":1,\"checks\":[]}", "and has the new one");
+  let saved = JSON.parse(readFileSync(cfg, "utf8"));
+  assert.deepEqual(saved.network.sessions, { "net-b": "us-east", "keep-me": null }, "the map entry follows the session");
+  assert.equal(saved.participantName, "Pat", "everything else in config.json kept");
+  assert.deepEqual(saved.network.proxies, other.network.proxies);
+  // A stray network.json under a name blocks a rename onto it, like the session's other files.
+  s.createSession("net-c");
+  writeFileSync(s.networkFile("net-d"), "{}");
+  assert.throws(() => s.renameSession("net-c", "net-d"), /already exists/);
+  rmSync(s.networkFile("net-d"));
+  // A config.json that can't be parsed: nothing renamed or deleted, and it is never rewritten.
+  writeFileSync(cfg, "{ not json");
+  assert.throws(() => s.renameSession("net-b", "net-e"), /wasn't renamed: config\.json isn't valid JSON.*proxy choice/);
+  assert.equal(existsSync(s.profileDir("net-b")), true);
+  assert.equal(existsSync(s.networkFile("net-b")), true);
+  assert.throws(() => s.deleteSession("net-b"), /wasn't deleted: config\.json/);
+  assert.equal(existsSync(s.profileDir("net-b")), true, "kept whole");
+  assert.equal(readFileSync(cfg, "utf8"), "{ not json", "never rewritten");
+  // A clean session's deletion (at a switch, at startup) never fails on config.json.
+  s.createSession("clean-4242");
+  s.deleteSession("clean-4242");
+  assert.equal(existsSync(s.profileDir("clean-4242")), false);
+  // No config.json, or one without a map: rename and delete go on, writing nothing.
+  rmSync(cfg);
+  s.renameSession("net-c", "net-f");
+  assert.equal(existsSync(cfg), false, "nothing to follow: no config.json written");
+  writeFileSync(cfg, JSON.stringify(other));
+  // Deleted: the files and the map entry go.
+  s.deleteSession("net-b");
+  assert.equal(existsSync(s.networkFile("net-b")), false);
+  saved = JSON.parse(readFileSync(cfg, "utf8"));
+  assert.deepEqual(saved.network.sessions, { "net-a": "us-east", "keep-me": null }, "only that session's entry changed (net-b had none in this file)");
+  s.createSession("net-a");
+  s.deleteSession("net-a");
+  assert.deepEqual(JSON.parse(readFileSync(cfg, "utf8")).network.sessions, { "keep-me": null }, "its entry goes with it");
+  s.deleteSession("net-f");
+  rmSync(cfg);
+});
+
+test("pairbrowse_session delete answers a config.json that can't be read and keeps the session whole", async () => {
+  const { createSwitch } = await import("../scripts/daemon/sessions/switch.mjs");
+  const cfg = join(process.env.PAIRBROWSE_HOME, "config.json");
+  s.createSession("del-x");
+  writeFileSync(s.networkFile("del-x"), "{\"version\":1,\"checks\":[]}");
+  writeFileSync(cfg, "{ not json");
+  const st = { session: "default", switching: false, contextPromise: null, pick: { state: "idle" } };
+  const noop = () => {};
+  const sw = createSwitch(st, { beforeRename: async () => {}, hostNote: noop, log: noop, notify: noop, onRenamed: noop }, {});
+  const out = await sw.sessionCommand({ action: "delete", name: "del-x" });
+  assert.equal(out.error, true, "answered as an error, not thrown");
+  assert.match(out.text, /^Session "del-x" wasn't deleted: config\.json isn't valid JSON/);
+  assert.equal(existsSync(s.profileDir("del-x")), true, "the profile kept");
+  assert.equal(existsSync(s.networkFile("del-x")), true, "network.json kept");
+  assert.equal(readFileSync(cfg, "utf8"), "{ not json", "config.json never rewritten");
+  rmSync(cfg);
+  s.deleteSession("del-x");
+});
+
+test("a rename whose move fails puts the map entry back too", () => {
+  const cfg = join(process.env.PAIRBROWSE_HOME, "config.json");
+  writeFileSync(cfg, JSON.stringify({ network: { proxies: {}, sessions: { "mv-x": null } } }));
+  s.createSession("mv-x");
+  writeFileSync(s.networkFile("mv-x"), "{}");
+  const real = fs.renameSync;
+  const failing = mock.method(fs, "renameSync", (from, to) => { if (String(to) === s.networkFile("mv-y")) throw new Error("EBUSY: in use"); return real(from, to); });
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => s.renameSession("mv-x", "mv-y"), /Couldn't rename/);
+  } finally { failing.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal(existsSync(s.profileDir("mv-x")), true, "the profile put back");
+  assert.equal(existsSync(s.networkFile("mv-x")), true);
+  assert.deepEqual(JSON.parse(readFileSync(cfg, "utf8")).network.sessions, { "mv-x": null }, "the map entry put back");
+  s.deleteSession("mv-x");
+  rmSync(cfg);
+});
+
 test("profileInUse: a live SingletonLock on this computer or another counts; one a gone process left doesn't", () => {
   s.createSession("lock-a");
   const dir = s.profileDir("lock-a");

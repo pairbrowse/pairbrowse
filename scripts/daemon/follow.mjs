@@ -57,7 +57,9 @@ const JOIN_ANSWER_MS = 5000; // join waits this long for the host's first answer
 // onApprovals({ host, items } | null): the host's approval cards this side may answer (the approve
 // role, shared browser codes; daemon/approvals.mjs fromHost), or null when out of the session.
 // mask(text): this side's own masking (output.mask), for the host's text shown here.
-export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {}, onHostChange = () => {}, onApprovals = null, mask = (t) => t, configFile = paths.config }) {
+// strict(): this browser runs a strict proxied session now: shared browser mode asks the host for
+// pictures through the join channel, never a direct connection (spec server-mode C11).
+export function createFollow({ config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent = () => null, onSession = null, onMessage = null, onLeft = null, note = () => {}, onHostChange = () => {}, onApprovals = null, mask = (t) => t, configFile = paths.config, strict = () => false }) {
   // The session joined now (live.cur: join/state.mjs newJoinState) and how the last one ended (live.ended).
   const live = newFollowState();
 
@@ -67,7 +69,7 @@ export function createFollow({ config, log, context, hud, presence, liveView, se
   // An agent here working in the host's browser (shared browser mode: join/agents.mjs).
   const { onAgent, tabInSight, remoteCall, agentGone, forgetAgents } = createJoinAgents(live, { log });
   // Shared browser mode's picture pages (join/screens.mjs).
-  const { screenUrl, isScreen, showInfo, showWho, screensRound, sayLink, onScreen, setNotice } = createJoinScreens(live, { context, log, presence });
+  const { screenUrl, isScreen, showInfo, showWho, screensRound, sayLink, onScreen, setNotice } = createJoinScreens(live, { context, log, presence, strict });
   // Follow mode's mirror: the host's tabs here and this side's changes there, forms, order, pointers
   // (join/mirror.mjs). Picture pages stand in for the tabs in shared browser mode.
   const { outbound, applyHost, onForm, sendPointers, drawPointers } = createJoinMirror(live, { context, log, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent },

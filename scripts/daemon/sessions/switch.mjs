@@ -169,7 +169,9 @@ export function createSwitch(st, deps, api) {
       // profile open (another PairBrowse, a browser started by hand on it).
       if (st.switching) return fail("The browser is switching sessions; try again in a moment.");
       if (profileInUse(name)) return fail(`Session "${name}" is open in another browser; close it there, then delete it.`);
-      deleteSession(name);
+      // Its proxy choice in config.json goes with it (sessions.mjs); a config.json that can't be
+      // rewritten keeps the whole session.
+      try { deleteSession(name); } catch (e) { return fail(String(e?.message || e)); }
       return { text: `Deleted session "${name}" and its logins.` };
     }
     return fail('Use action "list", "use", "new" or "delete".');

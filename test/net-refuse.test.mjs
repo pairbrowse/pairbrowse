@@ -245,6 +245,7 @@ test("the launch checks before adopting any tab; a failure closes the browser, f
   await assert.rejects(context.getContext(), /failed its check/);
   assert.equal(d.calls.length, 1, "no new launch while it holds");
   assert.match(context.networkRefusal(), /failed its check/);
+  assert.equal(context.networkStrict(), false, "no strict session runs: none was started");
   assert.ok(context.statusParts().some((p) => /^warning: Session .* failed its check/.test(p)));
   // Fixed (config.json written again): the next start checks and goes on.
   t.browser = { ok: true, ip: EXIT, loc: "US" };
@@ -254,6 +255,7 @@ test("the launch checks before adopting any tab; a failure closes the browser, f
   assert.equal(d.calls.length, 2);
   assert.deepEqual(events.slice(1), ["check", "started"]);
   assert.equal(context.networkRefusal(), null);
+  assert.equal(context.networkStrict(), true, "a strict proxied session runs: shared browser mode sends pictures only (C11)");
   assert.ok(context.statusParts().includes('network "a" (strict): exit checked at launch, country US'), context.statusParts().join("; "));
   await context.close();
   writeFileSync(cfg, JSON.stringify({}));

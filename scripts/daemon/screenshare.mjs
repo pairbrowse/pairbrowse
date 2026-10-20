@@ -121,15 +121,22 @@ export class NoCover extends Error {
   constructor(message = NO_COVER_SHARE) { super(message); this.code = "NO_COVER"; }
 }
 
+// A strict proxied session (spec server-mode C11): a direct connection would gather and send
+// this computer's own addresses outside the proxy (to the STUN server and the joiner), so none is
+// offered; joiners get pictures through the join channel, which is the helper's own traffic.
+export const STRICT_SHARE = "This session goes through its proxy in strict mode: the picture goes through the join channel instead of a direct connection, so this computer's own address never leaves outside the proxy, and without sound.";
+
 // call: the extension worker. log.
 // during(who): marks a joiner's input while it's replayed (presence.remoteStart; returns done()).
 // capture: where tabs are captured (daemon/capture.mjs); without it, the extension as before.
 // picture(page, jpeg, at): the slower route's frame (come at `at`) with the tab's card fields
 // covered (covers.mjs createCoverLoop picture), null when they can't be: that frame is never sent.
+// strict(): the browser runs a strict proxied session now (daemon/network.mjs strict): no direct
+// connection is offered (C11).
 const COVERING_MAX = 6;
 const RETRY_MS = 500;
 const RETRIES = 6;
-export function createScreenShare({ call, log = () => {}, during = () => () => {}, capture = null, picture = async (_page, data) => data }) {
+export function createScreenShare({ call, log = () => {}, during = () => () => {}, capture = null, picture = async (_page, data) => data, strict = () => false }) {
   const peers = new Map(); // peer -> { page, tabId, view, frame, onInput, onState, role }
   const sessions = new Map(); // page -> { cdp, replayer, view, viewAt }
   const watchedClose = new WeakSet(); // tabs whose closing ends their session and peers
@@ -138,7 +145,8 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
 
   // The browser's own capture page takes the share calls when there is one; else the extension.
   const ext = (fn, arg, ms = 8000) => (capture?.kind() === "page" ? capture.share(arg, ms) : call(fn, arg, ms));
-  const available = () => !capture || capture.kind() !== null;
+  const strictNow = () => { try { return strict() === true; } catch { return true; } };
+  const available = () => !strictNow() && (!capture || capture.kind() !== null);
 
   async function session(page) {
     let s = sessions.get(page);
@@ -349,8 +357,10 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
   }
 
   return {
-    // Whether a direct connection can be offered at all (false: the slower route only).
+    // Whether a direct connection can be offered at all (false: the slower route only), and
+    // whether that is for a strict proxied session (C11) rather than a browser that can't capture.
     available,
+    strict: strictNow,
     // Waits up to ms for the build's capture page to say hello (it loads with the browser), so an
     // invite made right after launch says what its joiners will get; at once everywhere else.
     whenReady: async (ms) => { await capture?.waitReady?.(ms); return available(); },
@@ -358,7 +368,7 @@ export function createScreenShare({ call, log = () => {}, during = () => () => {
     // onInput(ev, line, view): they did something there (replayed already). onState(state): the
     // direct connection's state ("connected", "failed", ...).
     async offer(page, peer, { role = "watch", who = "", onInput, onState, onPick } = {}) {
-      if (!available()) throw new NoDirect("nothing here captures a tab: pictures go through the join channel");
+      if (!available()) throw new NoDirect(strictNow() ? "a strict proxied session makes no direct connection: pictures go through the join channel" : "nothing here captures a tab: pictures go through the join channel");
       await stop(peer);
       const view = await viewOf(page, true);
       if (!view) throw new Error("the tab didn't answer");

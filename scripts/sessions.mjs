@@ -6,6 +6,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { paths, sessionProfile, sessionFile } from "./paths.mjs";
 import { readJson, writeJsonAtomic, pidAlive } from "./util.mjs";
+import { sessionMoved } from "./net/config.mjs";
 
 const SESSIONS = paths.sessions;
 const CURRENT = paths.currentSession;
@@ -27,6 +28,10 @@ export const timelineDir = (name) => sessionFile(name, "timeline");
 // The session's activity log (daemon/activitylog.mjs): the bar's lines, owner-only. A clean
 // session's stays in memory.
 export const activityFile = (name) => sessionFile(name, "activity.json");
+// The session's proxy checks (daemon/network.mjs, spec server-mode C9): kept apart from its profile.
+export const networkFile = (name) => sessionFile(name, "network.json");
+// Every file or folder of a kept session, moved by a rename and gone with a deletion.
+const SESSION_FILES = [profileDir, tabsFile, peopleFile, timelineDir, activityFile, networkFile];
 
 export function currentSession() {
   try {
@@ -52,22 +57,62 @@ export function createSession(name) {
   mkdirSync(profileDir(name), { recursive: true, mode: 0o700 });
 }
 
+// config.json as written, for moving one session's network entry: the parsed object, or null when
+// there is none (no file, an empty one, null). One that can't be read or parsed throws `doing`'s
+// sentence: PairBrowse never rewrites a config.json it can't parse (paths.mjs saveConfig).
+function configForMove(file, doing) {
+  let text;
+  try { text = readFileSync(file, "utf8"); } catch (e) {
+    if (e?.code === "ENOENT") return null;
+    throw new Error(`${doing}: config.json couldn't be read (${e?.code || "error"}), so the session's proxy choice in it couldn't follow. Fix config.json, then try again.`);
+  }
+  if (!text.trim()) return null;
+  let read;
+  try { read = JSON.parse(text); } catch { read = undefined; }
+  if (read === null) return null;
+  if (!read || typeof read !== "object" || Array.isArray(read)) {
+    throw new Error(`${doing}: config.json isn't valid JSON or an object { ... }, so the session's proxy choice in it couldn't follow. Fix config.json, then try again.`);
+  }
+  return read;
+}
+
+// The session's entry in config.json's network.sessions follows a rename (to) or goes with a
+// deletion (to null) (spec server-mode C4; net/config.mjs sessionMoved), written before any file
+// moves so a session never starts on another network than its own: a rename that lost it could
+// start the session direct, a deletion that kept it would hand its choice (direct, say) to the next
+// session of that name. Returns undo() (puts the block back as it was) or null when nothing
+// changed. Throws a plain sentence (doing: what it is part of), nothing written.
+function moveNetworkEntry(from, to, doing, file = paths.config) {
+  const config = configForMove(file, doing);
+  if (!config) return null;
+  const before = config.network;
+  const after = sessionMoved(before, from, to);
+  if (!after) return null;
+  try { writeJsonAtomic(file, { ...config, network: after }); } catch (e) {
+    throw new Error(`${doing}: config.json couldn't be written (${e?.code || "error"}), so the session's proxy choice in it couldn't follow.`);
+  }
+  return () => {
+    const now = configForMove(file, doing);
+    if (now) writeJsonAtomic(file, { ...now, network: before });
+  };
+}
+
+// A clean session's name is never used again: its map entry, if any, is left as it is, and its
+// deletion (at a switch, at startup) never fails on config.json.
 export function deleteSession(name) {
   if (name === "default") throw new Error("The default session can't be deleted.");
-  rmSync(profileDir(name), { recursive: true, force: true });
-  rmSync(tabsFile(name), { force: true });
-  rmSync(peopleFile(name), { force: true });
-  rmSync(timelineDir(name), { recursive: true, force: true });
-  rmSync(activityFile(name), { force: true });
+  if (!isTemporary(name)) moveNetworkEntry(name, null, `Session "${name}" wasn't deleted`);
+  for (const of of SESSION_FILES) rmSync(of(name), { recursive: true, force: true });
   rmSync(`${activityFile(name)}.tmp`, { force: true });
 }
 
 // A kept session's new name (the person's rename on the session card; the browser is closed
-// meanwhile): its profile folder, tabs, people, timeline and activity log move. Throws with a plain sentence.
-// A move that fails puts back the ones already made.
-// Whether anything of a session by this name is on disk (its profile, tabs, people, timeline or activity),
-// listed or not: a rename never moves onto it.
-export const sessionFilesExist = (name) => [profileDir, tabsFile, peopleFile, timelineDir, activityFile].some((of) => existsSync(of(name)));
+// meanwhile): its profile folder, tabs, people, timeline, activity log and proxy checks move, and
+// its entry in config.json's network.sessions follows it. Throws with a plain sentence. A move
+// that fails puts back the ones already made, the map entry too.
+// Whether anything of a session by this name is on disk (its profile, tabs, people, timeline,
+// activity or proxy checks), listed or not: a rename never moves onto it.
+export const sessionFilesExist = (name) => SESSION_FILES.some((of) => existsSync(of(name)));
 export function renameSession(from, to) {
   if (from === "default") throw new Error("The default session keeps its name; start a named session to name it.");
   if (isTemporary(from)) throw new Error("A clean session can't be renamed: it is deleted when you switch away.");
@@ -78,15 +123,17 @@ export function renameSession(from, to) {
   if (to === from) return;
   if (!caseOnly && listSessions().some((s) => s.name.toLowerCase() === to.toLowerCase())) throw new Error(`Session "${to}" already exists; choose another name.`);
   if (!caseOnly && sessionFilesExist(to)) throw new Error(`Session "${to}" already exists; choose another name.`);
+  const undoNetwork = moveNetworkEntry(from, to, `Session "${from}" wasn't renamed`);
   const moved = [];
   try {
-    for (const of of [profileDir, tabsFile, peopleFile, timelineDir, activityFile]) {
+    for (const of of SESSION_FILES) {
       if (!existsSync(of(from))) continue;
       renameSync(of(from), of(to));
       moved.push(of);
     }
   } catch (e) {
     for (const of of moved.reverse()) { try { renameSync(of(to), of(from)); } catch {} }
+    try { undoNetwork?.(); } catch {}
     throw new Error(`Couldn't rename session "${from}": ${e?.message || e}`);
   }
   try { if (readFileSync(CURRENT, "utf8").trim() === from) rememberSession(to); } catch {}

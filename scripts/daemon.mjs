@@ -424,7 +424,7 @@ const tabOrder = createTabOrder({
 const captureChannel = createCaptureChannel({ send: (data) => liveView()?.sendToPages?.("capture", data), log });
 const capture = createCaptureBackend({ browserPages: () => context.willHaveBrowserPages(), capturePages: () => context.willHaveCapturePages(), panelCall: (fn, arg, ms) => panel.call(fn, arg, ms), channel: captureChannel });
 // Shared browser mode: joiners see this browser's tabs live and work in them (daemon/screenshare.mjs).
-const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), log, during: (who) => presence.remoteStart(who), capture, picture: (page, data, at) => recorder.covers.picture(page, data, at) });
+const screens = createScreenShare({ call: (fn, arg, ms) => panel.call(fn, arg, ms), log, during: (who) => presence.remoteStart(who), capture, picture: (page, data, at) => recorder.covers.picture(page, data, at), strict: () => context.networkStrict() });
 // Recording the browser to a video (pairbrowse_record, the side panel's Record button).
 const recorder = createRecorder({
   capture,
@@ -546,7 +546,7 @@ const sharing = createSharing({
 });
 // Sessions joined from here: their tabs, followed in this browser.
 const follow = createFollow({
-  config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent, mask: output.mask,
+  config, log, context, hud, presence, liveView, secretDomains, forms, tabOrder, localAgent, mask: output.mask, strict: () => context.networkStrict(), // a strict proxied session here asks for pictures only (C11)
   onSession: (data, join) => {
     session.setRemote("host", crossingEntries(data?.entries), String(data?.where || join.host));
     if (data?.pause && typeof data.pause === "object") pause.mirror({ paused: data.pause.paused === true, by: String(data.pause.by || ""), resumedBy: String(data.pause.resumedBy || "") });

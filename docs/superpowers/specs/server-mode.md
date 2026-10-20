@@ -611,7 +611,9 @@ fail closed, also after recovery.
   launch (the helper never re-reads `config.json` otherwise, `daemon.mjs:101`). Choice order:
   `network.sessions[<session>]` (id or `null` for direct), else the session's profile `network` id,
   else `network.default`, else direct. A profile naming an undefined id refuses the launch. No agent
-  tool sets a proxy or credential. Session rename and delete update the map.
+  tool sets a proxy or credential. Session rename and delete update the map (step 32: the entry
+  follows a rename, an entry under the new name goes, a deletion removes it, and a `config.json`
+  that can't be parsed stops both).
 - **C14. People fill proxies in themselves (user, 2026-10-20).** Not only config and CLI: Settings
   (`ui/settings/`, the browser's own page, and the live view's owner page on a phone) gets a
   "Network" section. A person adds, edits, tests and removes a proxy (name, type HTTP / HTTPS /
@@ -655,8 +657,8 @@ fail closed, also after recovery.
   item: `applyGeoip` takes the IP C6 measured and reads only the pinned database (Phase E E11).
 - **C10. A saved engine persona with `proxy` refuses the launch** with a sentence pointing to
   `network.proxies` (dropping it would turn a proxied session into a direct one).
-- **C11. Strict sessions share by pictures only**: `screens.available()` (`scripts/liveview.mjs:399`)
-  returns false so joiners get frames, and a strict session asks for frames when it joins.
+- **C11. Strict sessions share by pictures only**: `screens.available()` (`scripts/daemon/screenshare.mjs`)
+  returns false so joiners get frames, and a strict session asks for frames when it joins (step 32).
 - **C12. Leak tests read what the engine did.** Test switch `NETLOG` adds `--log-net-log=<test home>/netlog.json`
   in a harness-started helper only; the test fails on any host resolution other than the proxy host
   and loopback (and strict mode's own `~notfound`, which the resolver is asked for in place of a
@@ -1810,6 +1812,37 @@ it depends on.
    (an exit change pauses agents and notifies once, a person resumes; a proxy killed mid-session
    pauses them, said once, nothing around it).
 32. Session rename and delete with network; strict sessions share frames (C4, C11).
+   Landed as: `sessions.mjs` gains `networkFile(name)` (`sessionFile(name, "network.json")`) in one
+   `SESSION_FILES` list that the rename moves, the deletion removes and `sessionFilesExist` checks
+   (a stray `network.json` under the new name blocks a rename like the other files). The map entry:
+   pure `net/config.mjs` `sessionMoved(network, from, to)` (to null: deleted) moves the session's
+   own `network.sessions` entry to the new name in its place, whatever value it holds (a wrong one
+   keeps refusing), and, decided here, drops an entry already under the new name, so a rename never
+   changes which network the session uses; `null` when there is nothing to change or no map (a
+   block that isn't an object refuses every session anyway). `sessions.mjs` writes it into
+   `config.json` (`writeJsonAtomic` of the file's own object, every other key kept; not
+   `saveConfig`, whose `configProblem` would refuse the move over an unrelated bad proxy entry)
+   before any file moves, and puts the block back if a move fails. Decided here: a `config.json`
+   that is there but can't be read or parsed stops a kept session's rename and deletion with one
+   sentence (`Session "x" wasn't renamed: config.json isn't valid JSON ...`), nothing changed and
+   the file never rewritten, since a rename without its entry could start the session direct and a
+   deletion that kept it would pass its choice to the next session of that name; a clean session's
+   deletion (at a switch, at startup) leaves the map alone and never fails on it.
+   `pairbrowse_session delete` answers that sentence as its error. C11:
+   `daemon/screenshare.mjs` `createScreenShare` takes `strict()` (`daemon.mjs` passes
+   `context.networkStrict()`, new in `context.mjs`, from `network.strict()`); while it is true
+   `available()` is false (a strict state that can't be read counts as strict), `offer` throws
+   `NoDirect`, and the new `strict()` lets `liveview.mjs` answer `want` with `route: "frames"` and
+   `STRICT_SHARE` and `sharing.mjs` word the invite. On the joiner's side `follow.mjs` passes
+   `strict` to `join/screens.mjs` `createJoinScreens`: a strict session's picture pages take the
+   slower route from their first round, never asking `want`, and let go of a direct connection
+   asked for before. The frames go through the join channel, the helper's own traffic (section
+   3.3). Row C-3 landed in the shared-browser row of `docs/security.md`; row C-1 says what a rename
+   and deletion do and names `test/sessions.test.mjs` and `test/net-config.test.mjs`. Tests:
+   `test/sessions.test.mjs` (moves, the map, a broken `config.json`, a failed move put back),
+   `test/net-config.test.mjs` (`sessionMoved`), `test/screenshare.test.mjs` (host and joiner, the
+   wiring), `test/liveview.test.mjs` (`want` while strict), `test/net-refuse.test.mjs`
+   (`context.networkStrict`).
 32b. Settings "Network" section and owner routes: add, edit, test, remove a proxy, default and
     per-session choice, write-only password, test result with exit country and coherence warning;
     tests in `test/ui-settings.test.mjs` and `test/liveview-network-routes.test.mjs` (C14). -> 24, 29, 32

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkNetwork, networkFor, parseServer, readNetwork, egressItem, NETWORK_DEFAULTS, PROXY_DEFAULTS } from "../scripts/net/config.mjs";
+import { checkNetwork, networkFor, parseServer, readNetwork, sessionMoved, egressItem, NETWORK_DEFAULTS, PROXY_DEFAULTS } from "../scripts/net/config.mjs";
 import { loadConfig, saveConfig, CONFIG_WARNINGS, DEFAULT_CONFIG } from "../scripts/paths.mjs";
 import { configProblem } from "../scripts/config-schema.mjs";
 
@@ -155,6 +155,32 @@ test("strict and recheckMinutes fall back to their safer defaults, with a warnin
   assert.ok(r.warnings.every((w) => w.endsWith("using the default for it until it is fixed")));
   assert.equal(checkNetwork({ recheckMinutes: 1440 }).network.recheckMinutes, 1440);
   assert.equal(checkNetwork({ recheckMinutes: 1441 }).network.recheckMinutes, 10);
+});
+
+test("a session's map entry follows its rename and goes with its deletion; nothing else changes (C4)", () => {
+  const network = { proxies: { "us-east": US }, default: "us-east", sessions: { "shop-a": "us-east", "shop-b": null, "shop-c": 7 }, strict: false };
+  // Renamed: the entry moves to the new name in its place, null and a wrong value included.
+  assert.deepEqual(sessionMoved(network, "shop-a", "shop-x"), { ...network, sessions: { "shop-x": "us-east", "shop-b": null, "shop-c": 7 } });
+  assert.deepEqual(Object.keys(sessionMoved(network, "shop-b", "shop-y").sessions), ["shop-a", "shop-y", "shop-c"]);
+  assert.deepEqual(sessionMoved(network, "shop-c", "shop-z").sessions["shop-z"], 7, "a wrong value keeps refusing under the new name");
+  // A leftover entry under the new name goes, so the renamed session keeps its own network.
+  assert.deepEqual(sessionMoved(network, "shop-a", "shop-b").sessions, { "shop-b": "us-east", "shop-c": 7 });
+  assert.deepEqual(sessionMoved(network, "other", "shop-b").sessions, { "shop-a": "us-east", "shop-c": 7 }, "no entry of its own: the leftover goes");
+  assert.equal(networkFor({ network: sessionMoved(network, "other", "shop-b") }, "shop-b").source, "default", "it uses what it used before the rename");
+  // A case-only rename.
+  assert.deepEqual(sessionMoved(network, "shop-a", "Shop-A").sessions, { "Shop-A": "us-east", "shop-b": null, "shop-c": 7 });
+  // Deleted: the entry goes.
+  assert.deepEqual(sessionMoved(network, "shop-b").sessions, { "shop-a": "us-east", "shop-c": 7 });
+  // Nothing to change: null (nothing written).
+  assert.equal(sessionMoved(network, "other", "new"), null);
+  assert.equal(sessionMoved(network, "other"), null);
+  for (const raw of [undefined, null, "x", [], { proxies: {} }, { sessions: [] }, { sessions: "x" }]) assert.equal(sessionMoved(raw, "shop-a", "x"), null, JSON.stringify(raw));
+  // The input is never changed, and "__proto__" stays a plain key.
+  assert.deepEqual(network.sessions, { "shop-a": "us-east", "shop-b": null, "shop-c": 7 });
+  const odd = JSON.parse('{"sessions":{"__proto__":"us-east"}}');
+  const moved = sessionMoved(odd, "__proto__", "fine");
+  assert.deepEqual(Object.keys(moved.sessions), ["fine"]);
+  assert.equal(Object.getPrototypeOf(sessionMoved(JSON.parse('{"sessions":{"a":null}}'), "a", "__proto__").sessions), Object.prototype);
 });
 
 test("session map, then profile id, then default, then direct; unknown id refuses", () => {

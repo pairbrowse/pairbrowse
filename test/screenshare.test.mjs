@@ -3,7 +3,8 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { frameFor, readInput, createScreenShare } from "../scripts/daemon/screenshare.mjs";
+import { readFileSync } from "node:fs";
+import { frameFor, readInput, createScreenShare, STRICT_SHARE } from "../scripts/daemon/screenshare.mjs";
 import { pathsIn, withPaths } from "../scripts/upload.mjs";
 import { fieldOwner } from "../scripts/daemon/fields.mjs";
 import { preflight } from "../scripts/runner.mjs";
@@ -100,6 +101,71 @@ test("nothing to capture a tab with: an offer is refused as NO_CAPTURE, and the 
   await share.frames(page, "joiner-a", null);
   await share.close();
   assert.equal(createScreenShare({ call: async () => null }).available(), true, "no capture given: as before");
+});
+
+test("a strict proxied session offers no direct connection: pictures through the channel only (C11)", async () => {
+  const sent = [];
+  const cdp = { send: async (m) => { sent.push(m); return {}; }, on() {}, off() {}, detach: async () => {} };
+  const page = { isClosed: () => false, once() {}, context: () => ({ newCDPSession: async () => cdp }), evaluate: async () => [800, 600, 1, 0, 0] };
+  let strict = true, asked = 0;
+  const capture = { kind: () => "page", tabRef: async () => "0123456789ABCDEF0123456789ABCDEF", share: async () => { asked++; return { sdp: "v=0" }; } };
+  const share = createScreenShare({ call: async () => { asked++; return null; }, capture, strict: () => strict });
+  assert.equal(share.available(), false, "no direct connection while strict, though the build can capture");
+  assert.equal(share.strict(), true);
+  assert.equal(await share.whenReady(0), false, "an invite made now says pictures through the channel");
+  await assert.rejects(share.offer(page, "j|t|1", { role: "drive" }), (e) => e.code === "NO_CAPTURE" && /strict proxied session/.test(e.message));
+  assert.equal(asked, 0, "nothing asked of the capture page or the extension");
+  await share.frames(page, "joiner-a", () => {});
+  assert.ok(sent.includes("Page.startScreencast"), "pictures through the channel");
+  await share.frames(page, "joiner-a", null);
+  strict = false;
+  assert.equal(share.available(), true, "a session that isn't strict offers it again");
+  assert.equal(share.strict(), false);
+  const broken = createScreenShare({ call: async () => null, capture, strict: () => { throw new Error("gone"); } });
+  assert.equal(broken.available(), false, "a strict state that can't be read counts as strict");
+  await share.close();
+  await broken.close();
+  // The helper passes the running session's strictness to the host's side and the joiner's.
+  const root = readFileSync(new URL("../scripts/daemon.mjs", import.meta.url), "utf8");
+  assert.match(root, /createScreenShare\(\{[^\n]*strict: \(\) => context\.networkStrict\(\) \}\)/);
+  assert.match(root, /createFollow\(\{\n[^\n]*strict: \(\) => context\.networkStrict\(\)/);
+  assert.match(STRICT_SHARE, /join channel/);
+  assert.doesNotMatch(STRICT_SHARE, /Chrom|\u2014/);
+});
+
+test("a joiner whose own session is strict asks the host for pictures, never a direct connection (C11)", async () => {
+  const { createJoinScreens } = await import("../scripts/daemon/join/screens.mjs");
+  const run = async (strict) => {
+    const calls = [], closed = [];
+    const page = {
+      isClosed: () => false, url: () => "chrome://pairbrowse/screen/#t1",
+      evaluate: async (fn) => {
+        const src = String(fn);
+        if (src.includes("state()")) return { doc: 1, conn: "none", visible: true, host: "page", helper: true };
+        if (src.includes("close()")) { closed.push(1); return true; }
+        return true;
+      },
+    };
+    const cur = { pages: new Map([["t1", page]]), screens: new Map(), titles: new Map(), infos: new Map(), who: new Map(), notice: "",
+      join: { linked: true, role: "watch", host: "host.example", screen: async (b) => { calls.push(b); return b.op === "want" ? { problem: "x" } : { ok: true }; } } };
+    const live = { cur };
+    const logs = [];
+    const screens = createJoinScreens(live, { context: { browserPages: () => true }, log: (...a) => logs.push(a.join(" ")), strict: () => strict });
+    await screens.screensRound(cur);
+    await screens.screensRound(cur);
+    await new Promise((r) => setTimeout(r, 20));
+    live.cur = null; // the input timer ends itself
+    clearInterval(cur.inputTimer);
+    return { calls, closed, logs, sc: cur.screens.get(page) };
+  };
+  const strict = await run(true);
+  assert.equal(strict.sc.fallback, true, "the slower route from the first round");
+  assert.ok(!strict.calls.some((c) => c.op === "want"), "no direct connection asked for");
+  assert.ok(strict.calls.some((c) => c.op === "frames" && c.on === true && c.id === "t1"), "pictures asked for");
+  assert.ok(strict.logs.some((l) => /strict proxy/.test(l)));
+  const plain = await run(false);
+  assert.ok(plain.calls.some((c) => c.op === "want"), "a session that isn't strict asks for a direct connection");
+  assert.ok(!plain.calls.some((c) => c.op === "frames"));
 });
 
 test("with the browser's own capture page, share calls go to it with the tab's target id", async () => {

@@ -254,6 +254,26 @@ export function networkFor(config, session, { profileNetwork } = {}) {
   return { ...base, id, source, proxy: net.proxies[id] };
 }
 
+// The network block once a session is renamed (to: its new name) or deleted (to: null) (C4: the
+// map follows the session, sessions.mjs). Its own entry, whatever value it holds (a wrong one keeps
+// refusing), moves to the new name in its place, or goes with a deleted session; a leftover entry
+// under the new name goes too, so a rename never changes which network the session uses. A block
+// with no map to change (absent, not an object, its sessions not an object: every session refuses
+// on such a block anyway) or nothing to move gives null: nothing to write. Pure; never throws.
+export function sessionMoved(network, from, to = null) {
+  if (!plainObject(network) || !plainObject(network.sessions)) return null;
+  const has = (name) => Object.hasOwn(network.sessions, name);
+  if (!has(from) && (to === null || !has(to))) return null;
+  // Built from entries (never by assignment), so a key such as "__proto__" stays a plain key.
+  const entries = [];
+  for (const [name, id] of Object.entries(network.sessions)) {
+    if (name === to && name !== from) continue;
+    if (name === from) { if (to !== null) entries.push([to, id]); continue; }
+    entries.push([name, id]);
+  }
+  return { ...network, sessions: Object.fromEntries(entries) };
+}
+
 // config.json's `network` as the file holds it now (C4: read at each launch; the helper's loaded
 // config is never re-read otherwise). { network } (undefined: the file or the key is absent), or
 // { problem } when the file is there but can't be read or parsed: the launch refuses rather than

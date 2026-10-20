@@ -3,6 +3,9 @@
 // tab when in sight, else through the join channel (the slower route); files a person picks there
 // for the host's file dialog go over first.
 // live: the session joined now (join/state.mjs newFollowState). context: the helper's browser.
+// strict(): this browser runs a strict proxied session now (spec server-mode C11): a direct
+// connection from its picture page would gather and send this computer's own addresses outside the
+// proxy, so every picture page takes the slower route from its first round, never asking for one.
 import { randomBytes } from "node:crypto";
 import { within } from "../../util.mjs";
 import { panelExtensionId } from "../../browser.mjs";
@@ -44,7 +47,8 @@ export function screenCard(page, arg, kind) {
   return Promise.resolve(null);
 }
 
-export function createJoinScreens(live, { context, log, presence = null }) {
+export function createJoinScreens(live, { context, log, presence = null, strict = () => false }) {
+  const strictNow = () => { try { return strict() === true; } catch { return true; } };
   const screenBase = () => screenBaseFor(!!context.browserPages?.());
 
   // The tab id after # keeps the address short (screen/index.html#a1b2c3d4); the page itself shows the
@@ -132,6 +136,15 @@ export function createJoinScreens(live, { context, log, presence = null }) {
       // for it, or it runs as the extension's page would): the slower route at once, without
       // two tries of SCREEN_CONNECT_MS first. Asked from its second round (the word comes async);
       // an offer asked for meanwhile is let go.
+      // A strict proxied session here: pictures through the join channel only, and a direct
+      // connection asked for before it became strict is let go (C11).
+      if (!sc.fallback && strictNow()) {
+        sc.fallback = true;
+        if (sc.peer) { cur.join.screen({ op: "stop", peer: sc.peer }).catch(() => {}); sc.peer = null; }
+        await inScreen(page, () => window.pbScreen?.close()).catch(() => {});
+        log("shared browser: this session's strict proxy keeps direct connections off; using the slower route");
+        startScreenInput(cur);
+      }
       const ownPage = !!context.browserPages?.();
       if (!sc.fallback && ownPage && sc.rounds >= 2 && st.conn !== "connected" && (st.host === "extension" || st.helper === false)) {
         sc.fallback = true;

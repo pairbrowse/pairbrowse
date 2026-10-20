@@ -91,6 +91,9 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     crashLoop, statusParts: () => [...screenParts(), ...(network?.statusParts(st.session) || [])],
     // The refusal the session's starts get while its proxy's failed check holds, else null.
     networkRefusal: () => network?.refusal(st.session) || null,
+    // Whether the browser runs a strict proxied session now: shared browser mode then sends
+    // pictures only, as host and as joiner (spec server-mode C11).
+    networkStrict: () => !!network?.strict(),
     // Server mode (display.mjs serverMode): hand-offs always go to the person's channels there.
     isServer,
     // server.keepAlive: the helper stays when the browser closes and counts as in use (handoff.mjs);

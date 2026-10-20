@@ -1269,7 +1269,7 @@ test("the capture and tab-order events reach the browser's own pages only, never
   } finally { for (const s of streams) s.close(); view.close(); }
 });
 
-test("a screen want while nothing here captures a tab: the slower route at once, nothing offered, nothing logged", async () => {
+for (const [why, strict, says] of [["nothing here captures a tab", false, /no capture page/], ["the session is strict behind its proxy (C11)", true, /strict mode/]]) test(`a screen want while ${why}: the slower route at once, nothing offered, nothing logged`, async () => {
   const { ctx, pages } = fakeTabs(1);
   pages[0].url = () => "https://shop.example/";
   pages.forEach((p) => { p.isClosed = () => false; });
@@ -1277,7 +1277,7 @@ test("a screen want while nothing here captures a tab: the slower route at once,
   const requests = [];
   const logs = [];
   let offered = 0;
-  const screens = { available: () => false, offer: async () => { offered++; throw new Error("no"); }, frames: async () => {}, input: async () => {}, stop: async () => {}, answer: async () => true, stopAll: async () => {} };
+  const screens = { available: () => false, strict: () => strict, offer: async () => { offered++; throw new Error("no"); }, frames: async () => {}, input: async () => {}, stop: async () => {}, answer: async () => true, stopAll: async () => {} };
   const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => pages[0].url(), invites, screens, onJoinRequest: (e) => requests.push(e), log: (...a) => logs.push(a.join(" ")) });
   const code = invites.create({ role: "drive", label: "D", share: "code", mode: "shared" });
   const headers = { "x-pairbrowse-joiner": "b".repeat(32), "x-pairbrowse-name": "Dee", "x-pairbrowse-app": "Claude Code" };
@@ -1290,6 +1290,7 @@ test("a screen want while nothing here captures a tab: the slower route at once,
     const body = JSON.parse(s.text);
     assert.equal(body.route, "frames");
     assert.match(body.error, /join channel/);
+    assert.match(body.error, says);
     assert.equal(offered, 0);
     assert.ok(!logs.some((l) => /liveview guest|shared screen/.test(l)), logs.join("\n"));
   } finally { view.close(); }

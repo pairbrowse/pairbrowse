@@ -40,6 +40,7 @@ import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
 import { createTurnRoutes } from "./liveview/routes/turn.mjs";
 import { createTurnGate, TURN_ROLES } from "./liveview/grants.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
+import { STRICT_SHARE } from "./daemon/screenshare.mjs";
 import { createActivityLog } from "./daemon/activitylog.mjs";
 import { createApprovalShare } from "./liveview/approval-share.mjs";
 import { FRAME_SKIP_BYTES, STALLED_BYTES } from "../ui/limits.js";
@@ -404,7 +405,8 @@ export async function startLiveView({ grants = null, covers = null, activityLog 
     if (op === "want") {
       // Nothing here captures a tab (a PairBrowse build without its capture page): the joiner's
       // side goes to the pictures through the channel at once.
-      if (screens.available && !screens.available()) return { problem: NO_CAPTURE_SHARE, route: "frames" };
+      // A strict proxied session (C11) offers none either: its pictures go the same way.
+      if (screens.available && !screens.available()) return { problem: screens.strict?.() ? STRICT_SHARE : NO_CAPTURE_SHARE, route: "frames" };
       const page = await pageById(String(body?.id || ""));
       if (!page || !crossesWhole(page) || personTab(page)) return { problem: "That tab isn't shared. Choose a shared tab." };
       const id = idOf(page);

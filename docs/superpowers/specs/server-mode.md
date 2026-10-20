@@ -1909,6 +1909,37 @@ it depends on.
    Profile drawer gets the same panel. Tests: `test/liveview-network-routes.test.mjs`,
    `test/ui-settings.test.mjs` (14), `test/coherence.test.mjs`, `test/liveview.test.mjs` (the asset).
 33. `profiles/schema.mjs`, `upgrade.mjs` (D19). -> 12
+   Landed as (ahead of step 12, which it does not need: the record's `persona.source` is already
+   `"seed" | "host"`): `scripts/profiles/schema.mjs` (pure) `SCHEMA_VERSION = 1`, `FORMAT_VERSION = 1`,
+   `EXPORT_FORMAT`, `PROFILE_SCHEMA` in `config-schema.mjs`'s spec format (its `fits` and `expected`)
+   plus `pattern`, `maxLength`, `each`, `maxItems`, `maxJson` and `entries`, and
+   `checkProfile(raw)` answering `{ profile, problems }`: strict, unlike `config.json` (any unknown
+   key, wrong or missing value, or broken cross-field rule refuses the whole record, every problem
+   named by its key; numbers, booleans and null are repeated, strings never, so a credential in the
+   wrong field never reaches a message). Every key of the design's record is required; "not set" is
+   `null`: `engine` (never launched on the native build), `screen` and `window` (this computer's,
+   E7), `display.colorScheme` and `reducedMotion`, `locale.languages` and `timezone`; in
+   `validation[build]` only `runtimeKey` and `graphics` may be left out. Ranges: screen and window
+   320 to 16384, DPR 0.5 to 5, color depth 16, 24, 30 or 32, up to 10 languages (checked by
+   `Intl.getCanonicalLocales`), a time zone `Intl` knows, a seed of up to 128 letters, digits, `-`
+   and `_` (never `off`), `history` up to `HISTORY_MAX` (1000) entries, `provenance` up to 50,
+   `validation[build].graphics` up to 20000 characters as JSON. `history[].by` is `person`, `config`
+   (D5's `configHash` change), `migration` or `upgrade`. Cross-field: avail within the screen,
+   `engine.build` of `engine.major`, kind `config` only for `default` and no store profile named
+   `default` (any case), no provenance on `default`, no seed with `persona.source: "host"`, no
+   history entry after the record's revision. D6's names (`FORBIDDEN_KEYS`: paths, extensions,
+   proxy servers and credentials, launch options, agent options, `canvasBridge`, hardware values)
+   are refused at any depth with the reason; only `graphics.require` holds `webgl` and `webgpu`, as
+   requirements. `profileDefaults()` gives a new record's settings (the store adds identity). Left
+   to step 35: `license` as the most restrictive in `provenance`. `scripts/profiles/upgrade.mjs`
+   (pure): `RECORD_STEPS` and `EXPORT_STEPS` (frozen, empty until a version 2), `chainGaps`,
+   `upgradeProfile(raw, { at })` answering `{ profile, from, upgraded, problems }` (a newer schema
+   refused naming both versions, never rewritten; each step on a copy; history kept through every
+   step and one `{ revision, at, change: ["schema"], by: "upgrade" }` entry added without a new
+   revision; the result through `checkProfile`), `upgradeExport(raw)` for `formatVersion` (run after
+   import checks the file's SHA-256 as written). Both take `steps` and `current` for tests. Tests:
+   `test/profile-schema.test.mjs`, `test/profile-upgrade.test.mjs`, fixture
+   `test/fixtures/profiles/record-1.json`. "profileSelect is closed" stays with step 12.
 34. `profiles/store.mjs`, paths and config keys (D4, D5). -> 33
 35. `profiles/device.mjs`, `import.mjs` (settings only, hardware unsupported), `export.mjs` (D-AP2,
     D15 to D18). -> 34

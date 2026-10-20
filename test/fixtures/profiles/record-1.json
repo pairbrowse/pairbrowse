@@ -1,0 +1,19 @@
+{
+  "schema": 1, "id": "p-3f9c0a1e7b2d4c58", "name": "berlin-desktop", "kind": "store",
+  "revision": 4, "status": "active", "created": "2026-10-20T10:00:00Z",
+  "engine": { "major": "150", "build": "150.0.7871.114" },
+  "browser": { "kind": "pairbrowse" },
+  "locale": { "languages": ["de-DE", "de", "en"], "timezone": "Europe/Berlin", "source": "set" },
+  "screen": { "width": 1920, "height": 1080, "availWidth": 1920, "availHeight": 1050, "colorDepth": 24, "devicePixelRatio": 1 },
+  "window": { "width": 1440, "height": 900 },
+  "display": { "colorScheme": "light", "reducedMotion": false },
+  "graphics": { "backend": "auto", "require": null },
+  "persona": { "source": "seed", "seed": null },
+  "payments": { "savedCard": false },
+  "network": null,
+  "adBlocker": null,
+  "license": "own-capture",
+  "provenance": [],
+  "validation": {},
+  "history": [{ "revision": 4, "at": "2026-10-20T11:00:00Z", "change": ["locale.timezone"], "by": "person" }]
+}

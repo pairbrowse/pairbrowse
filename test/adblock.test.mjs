@@ -65,12 +65,16 @@ test("the CRX the app ships: its absolute path and version, the store's, else th
   const app = profile();
   const exe = join(app, "PairBrowse.app", "Contents", "MacOS", "pairbrowse");
   const rel = "PairBrowse-Extensions/uBlock-Origin-Lite.crx";
-  assert.equal(shippedCrx({ path: rel, version: "1.2" }, exe), null, "no file there");
+  assert.equal(shippedCrx({ path: rel, version: "1.2" }, exe, "darwin"), null, "no file there");
   mkdirSync(join(app, "PairBrowse.app", "Contents", "Resources", "PairBrowse-Extensions"), { recursive: true });
   writeFileSync(join(app, "PairBrowse.app", "Contents", "Resources", rel), "crx");
-  const crx = shippedCrx({ path: rel, version: "1.2" }, exe);
+  const crx = shippedCrx({ path: rel, version: "1.2" }, exe, "darwin"); // the macOS app's layout, on any system
+  // Linux: next to the executable.
+  mkdirSync(join(app, "linux", "PairBrowse-Extensions"), { recursive: true });
+  writeFileSync(join(app, "linux", rel), "crx");
+  assert.deepEqual(shippedCrx({ path: rel, version: "1.2" }, join(app, "linux", "pairbrowse"), "linux"), { file: join(app, "linux", rel), version: "1.2" });
   assert.deepEqual(crx, { file: join(app, "PairBrowse.app", "Contents", "Resources", rel), version: "1.2" });
-  assert.equal(shippedCrx(null, exe), null);
+  assert.equal(shippedCrx(null, exe, "darwin"), null);
   const dir = profile();
   assert.equal(adBlockerFiles(dir, true, { ...mac, crx }), true);
   assert.deepEqual(JSON.parse(readFileSync(entry(dir), "utf8")), { external_crx: crx.file, external_version: "1.2", is_from_webstore: true });

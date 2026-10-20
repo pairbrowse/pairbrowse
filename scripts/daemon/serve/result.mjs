@@ -108,6 +108,7 @@ export function createResult(conn, api) {
     let closedAway = false; // browser_tabs close left the agent in a tab that wasn't its own
     let full = fullSnapshot; // the text holds a whole-page snapshot (refNames)
     let hidden = []; // for a joiner's agent: the page's sensitive field values (pageread.mjs sensitiveValues)
+    let veiled = remote; // masked as a joiner's agent's: a joiner's agent, or a tab handed to the person (B10)
     if (tool !== undefined) {
       const action = tabActions.get(msg.id);
       tabActions.delete(msg.id);
@@ -128,6 +129,9 @@ export function createResult(conn, api) {
       // The browser tools act in this participant's own tab (see syncServer): the result is about
       // that page, whatever URL another tab shows.
       ownPage = conn.mine && !conn.mine.isClosed() && (tool.startsWith("browser_") || DECORATED.has(tool)) ? conn.mine : null;
+      // While the person has this tab (a hand-off open on it, or held after one), what they type
+      // there reaches no agent: its result is masked as a joiner's agent's (yourturn.mjs masked).
+      veiled = remote || !!api.yourTurn?.masked(ownPage);
       conn.snapshotReturned = tool === "browser_snapshot" || content().some((part) => /\[ref=|\]\([^)\s]*page-[^)\s]*\.ya?ml\)/.test(part.text || ""));
       const seenUrl = ownPage ? ownPage.url() : knownUrl || urlIn(content());
       shotUrl = seenUrl;
@@ -181,10 +185,10 @@ export function createResult(conn, api) {
         }
         for (const part of content()) if (part.type === "text") part.text = refNames.toPlain(part.text, full);
       }
-      // A joiner's agent: the values in this page's card, security-code, expiry, PIN and similar
-      // fields (all its frames), masked wherever its result shows them. The host's agents read
-      // the page as it is.
-      if (remote && ownPage && msg.result && content().some((part) => part.type === "text" && part.text)) hidden = await sensitiveValues(ownPage);
+      // A joiner's agent (or any agent in a handed-over tab): the values in this page's card,
+      // security-code, expiry, PIN and similar fields (all its frames), masked wherever its result
+      // shows them. The host's agents read the page as it is otherwise.
+      if (veiled && ownPage && msg.result && content().some((part) => part.type === "text" && part.text)) hidden = await sensitiveValues(ownPage);
       trace.mark("sensitive");
       // The linked snapshot file (its refs plain by now) in the result, as browser_snapshot
       // prints it: the agent acts on these refs at once. A long one is cut below as
@@ -210,7 +214,7 @@ export function createResult(conn, api) {
     // The person's own tabs: their lines say only that (indices from the open tabs, read once).
     let personIdx = null;
     for (const part of content()) if (part.type === "text") {
-      output.maskLinkedFiles(part.text); part.text = tabNames.strip(remote ? output.forJoiner(output.absoluteLinks(part.text), hidden) : output.mask(output.absoluteLinks(part.text)));
+      output.maskLinkedFiles(part.text); part.text = tabNames.strip(veiled ? output.forJoiner(output.absoluteLinks(part.text), hidden) : output.mask(output.absoluteLinks(part.text)));
       if (remote && tool === "browser_find" && !msg.result?.isError) part.text = recountFind(part.text, args ?? callArgs.get(msg.id) ?? msg.params?.arguments);
       if (tool === "browser_tabs") { const note = hiddenTabsNote(part.text); part.text = hideBrowserTabs(part.text); if (note) part.text += `${part.text.endsWith("\n") ? "" : "\n"}${note}\n`; }
       if (/^- \d+: |file:/m.test(part.text)) {
@@ -224,14 +228,16 @@ export function createResult(conn, api) {
     // A picture also with a failed action (a stopped run, a covered click): the message says to look at it.
     if (tool !== undefined && !closedAway && SCREENSHOT_TOOLS.has(tool) && config.screenshots !== false && msg.result && (!msg.result.isError || CLICKING_TOOLS.has(tool))) {
       const shotPage = ownPage || await context.pageAt(shotUrl || context.currentUrl());
+      const covered = veiled || !!api.yourTurn?.masked(shotPage);
       // Never a picture of the person's own tab.
-      // Covers read just before the picture too: for a joiner's agent, and for the timeline.
-      const shot = personTab(shotPage) ? null : await screenshots.take(shotPage, participant, { covers: remote || api.timeline?.enabled ? coverRects : null });
-      // A joiner's agent's picture leaves this screen: its card fields covered first (covers.mjs,
-      // read before and after it), or no picture at all. The host's own agents get theirs as it is.
-      const data = shot?.data ? await agentPicture(shot.data, shotPage, remote, { before: shot.before, compose: (d, rects) => api.recorder?.coverPicture?.(d, rects) }) : null;
+      // Covers read just before the picture too: for a joiner's agent, a handed-over tab, and the timeline.
+      const shot = personTab(shotPage) ? null : await screenshots.take(shotPage, participant, { covers: covered || api.timeline?.enabled ? coverRects : null });
+      // A joiner's agent's picture leaves this screen, and a handed-over tab is the person's: its
+      // card fields covered first (covers.mjs, read before and after it), or no picture at all.
+      // The host's own agents get theirs as it is otherwise.
+      const data = shot?.data ? await agentPicture(shot.data, shotPage, covered, { before: shot.before, compose: (d, rects) => api.recorder?.coverPicture?.(d, rects) }) : null;
       if (data === "") msg.result.content.push({ type: "text", text: NOT_COVERED_NOTE });
-      else if (data) { msg.result.content.push(image(data)); rememberPicture(remote ? { ...shot, data, covered: true } : shot, shotPage, tool, args); }
+      else if (data) { msg.result.content.push(image(data)); rememberPicture(covered ? { ...shot, data, covered: true } : shot, shotPage, tool, args); }
       else if (shot?.same) msg.result.content.push({ type: "text", text: SAME_PICTURE });
       else if (shot?.skipped) msg.result.content.push({ type: "text", text: `\n### PairBrowse\n- ${shot.skipped}` });
       trace.mark("shot");

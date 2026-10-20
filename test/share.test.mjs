@@ -130,3 +130,30 @@ test("an invite made before the capture page's hello waits for it", async () => 
   assert.equal(never.kind, null);
   assert.match(never.text, /pictures through the join channel, none while a tab shows card fields; no sound from this PairBrowse build yet/);
 });
+
+// A hand-off link (spec server-mode B5): the live view's own address, never the join-code port;
+// inviteBaseUrl when set; refused for anything but a redeem key's shape; null when the live view
+// can't start. Its tabs are watched for the hand-off from then on.
+test("sharing.handoffLink: the live view's address (inviteBaseUrl, else loopback on its own port), never the join-code port", async () => {
+  const key = "ab".repeat(32);
+  const watched = [];
+  const live = (url) => ({ url, port: Number(new URL(url).port), guestPort: 4999, setStatus() {}, setSession() {}, setCollaboration() {}, setDev() {}, close() {}, watchGrants() { watched.push(url); } });
+  const hostNote = () => {};
+  hostNote.drop = () => {};
+  const view = { currentUrl: () => "about:blank", getContext: async () => ({ pages: () => [] }), status: () => ({}), session: () => null, collaboration: () => ({}), secretDomains: () => [] };
+  const make = (config, startLive) => createSharing({ config, log: () => {}, host: "Me", view, notify() {}, hostNote, startLive });
+
+  const loop = make({}, async () => live("http://127.0.0.1:4123/ownerkey/"));
+  try {
+    assert.equal(await loop.handoffLink(key), `http://127.0.0.1:4123/${key}/`);
+    assert.ok(!(await loop.handoffLink(key)).includes(":4999"), "never the join-code port");
+    assert.deepEqual(watched, ["http://127.0.0.1:4123/ownerkey/", "http://127.0.0.1:4123/ownerkey/"], "its tabs watched for hand-offs");
+    for (const bad of [null, "", "AB".repeat(32), "ab".repeat(31), `${key}/../x`, "ab".repeat(33), 42]) assert.equal(await loop.handoffLink(bad), null, String(bad));
+  } finally { loop.endAll(); }
+
+  const tailnet = make({ liveViewHosts: ["myhost.tail1234.ts.net"], inviteBaseUrl: "https://myhost.tail1234.ts.net" }, async () => live("http://127.0.0.1:4124/ownerkey/"));
+  try { assert.equal(await tailnet.handoffLink(key), `https://myhost.tail1234.ts.net/${key}/`); } finally { tailnet.endAll(); }
+
+  const broken = make({}, async () => { throw new Error("port in use"); });
+  try { assert.equal(await broken.handoffLink(key), null); } finally { broken.endAll(); }
+});

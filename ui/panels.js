@@ -261,3 +261,38 @@ export function profilePanel(base) {
   });
   return { draw, load, say };
 }
+
+// The Away switch (spec server-mode decision 8): while it is on, a step handed to the person from
+// this computer also goes to their phone through their hand-off channel; the step stays in the
+// window too, and whichever they use first completes it. Off by default, remembered (config.json
+// handoff.away), and only with a channel set up (the line says so if none is); on a server always
+// on, and not a switch there. btn: a role="switch" button; note: its line; base(): the live view
+// address (null: not yet). Real clicks only. Returns draw(away), with config.json's away
+// ({ on, server, ready }; anything else: an older helper, the switch stays off and disabled).
+export const AWAY_WORDS = {
+  server: "This browser runs on a server: steps handed to you always go to your phone.",
+  none: "Set up a hand-off channel first (handoff in config.json), then turn this on.",
+  on: "On: steps handed to you also go to your phone. They stay here too.",
+  off: "Off: steps handed to you stay in this window.",
+};
+export function awaySwitch(btn, note, base) {
+  let st = null;
+  const say = (text, kind = "") => { note.textContent = text; note.dataset.kind = kind; };
+  function draw(away) {
+    st = away && typeof away === "object" && typeof away.on === "boolean" ? away : null;
+    const on = !!st && (st.server === true || st.on);
+    btn.setAttribute("aria-checked", String(on));
+    btn.disabled = !st || st.server === true || (!st.on && st.ready !== true);
+    say(!st ? "" : st.server === true ? AWAY_WORDS.server : st.ready !== true ? AWAY_WORDS.none : on ? AWAY_WORDS.on : AWAY_WORDS.off);
+  }
+  btn.addEventListener("click", async (ev) => {
+    if (!ev.isTrusted || !st || btn.disabled || !base()) return;
+    const was = st;
+    btn.disabled = true;
+    const r = await postJson(base() + "config", { away: !st.on }).then(async (x) => ({ ok: x.ok, body: await x.json().catch(() => null) }), () => null);
+    if (r?.ok && r.body?.away) return draw(r.body.away);
+    draw(was);
+    say(r?.body?.error ? String(r.body.error) : UNREACHABLE_RETRY, "error");
+  });
+  return { draw };
+}

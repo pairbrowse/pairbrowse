@@ -528,7 +528,8 @@ Modules:
 - `scripts/daemon/yourturn.mjs` `createYourTurn({ config, grants, notifier, notifyLocal, journal,
   saveTabs, hostNote, audit, hud, context, presence, coherence, linkFor, log, timers })`:
   `onStatus`, `onChallenge`, `onChallengeCleared`, `recover()`, `handedOff(page)`, `masked(page)`,
-  `report()`. It takes over the `onStatus`, `onYourTurn` and `onCleared` lambdas now in
+  `report()`. (As built in step 21, with its deps named there: `onStatus` answers the result's
+  line, so there is no `report()`; `recover()` comes with step 22.) It takes over the `onStatus`, `onYourTurn` and `onCleared` lambdas now in
   `daemon.mjs:247-268`, so `daemon.mjs` stays within budget.
 - `scripts/daemon/serve/tools/status.mjs`: result line "Your turn sent (telegram, ntfy): hand-off
   3fa1c2d9 for tab 2, until 14:35. Don't act in this tab; wait with browser_wait_for." Never the link.
@@ -1445,6 +1446,57 @@ it depends on.
    now names the type box, the viewer and `test/liveview-mobile.test.mjs`.
 21. `daemon/yourturn.mjs`, lambdas out of `daemon.mjs`, status result, `TURN_MS`, masking (B7, B10,
     B11). -> 16, 19
+   Landed as: `createYourTurn({ config, grants, notifier, sends, handoffs, journal, saveTabs,
+   hostNote, audit, hud, sessionName, linkFor, agentBy, log, turnMs, timers, now })` (no `context`,
+   `presence`, `notifyLocal` or `coherence`: the window's own notification stays the badge's, and
+   B14's lists come with the coherence rules). It takes over the hud's `onStatus` (`onBadge`: the
+   Tools tab entry, now with the step's kind), popups' `onYourTurn`/`onCleared` (`onChallenge`,
+   `onChallengeCleared`) and serve's `onRunStatus`; `daemon.mjs` makes the audit, the grant table
+   and the notifier (`createNotifier` with `secrets.get().values` read at each send) and passes
+   `sends: () => handoffSends(config, { server: context.isServer() })` (`isServer` now on the
+   context facade). `onStatus(participant, args, page)` replaces `report()`: called by
+   `pairbrowse_status` before the badge (so the step kind is set when `onBadge` runs), it answers
+   a promise of the result's second line, waited for at most `REPORT_MS` (12 s; "on its way"
+   after that): "Your turn sent (webhook, ntfy): hand-off 3fa1c2d9 for tab 2, until 14:35 UTC.
+   Don't act in this tab; wait with browser_wait_for.", plus channels that left the link out or
+   failed; all failing: "Couldn't reach any hand-off channel (...): tell the user directly"
+   (the grant stays); enabled with no usable channel: no grant, audit `notify-failed`
+   `no-channel`. `pairbrowse_status` gains `step` (`ui/vocab.js` `STATUS_STEPS`, the same list as
+   `ACTIONS`, checked in `refuse.mjs`); without it the kind is `handoffKind(text)`. The page is the
+   agent's spark tab, else its own tab; a check's grant is the check's page (one at a time; the
+   same check seen again mints nothing). A tab on no website (no http(s) host, which every message
+   names) mints nothing: the step stays in the window. Channel types are listed once (two webhooks
+   send as one `webhook`). Any other status kind ends the agent's grant (`agent`).
+   Messages: one `turn`, exactly one `reminder` at `remindMinutes` (two thirds of `TURN_MS` in
+   tests; the link only while `grants.redeemKey` holds it, else audit `already-opened`), and
+   `ended` on every end but `done` when a turn message went out (on expiry exactly one). Audit
+   `notified`/`reminded` with the channel types (and `no-link`), `notify-failed` with the failed
+   ones. Expiry (B11): the tab is held first, then `journal.flushNow()`, `saveTabs()`, the goal
+   log's Your turn gets "Not done in time: <step sentence>", the ended message, the badge (the
+   agent's own status with its label, or PairBrowse's for a check) and Tools entry "Timed out: ...", one
+   host note (`TIMEOUT_NOTE`). A check that clears after its timeout takes its "Timed out" badge down
+   and releases its tab. `personUsed(page)` (presence's `onUsed`) releases a held tab; so do a new
+   "you" (mint) and `browserClosed()` (the window closing: grants end `browser-restarted`, before
+   `sharing.endAll`); the helper's stop ends them `helper-stopped` and waits up to 5 s for the
+   messages. B10: `masked(page)` (a live grant's scope, and also a held tab) makes
+   `serve/result.mjs`, `serve.mjs` `reply` and `pairbrowse_click_at` treat the result as a joiner's
+   agent's (sensitive values, card masking, covered pictures or none). `handedOff(page)` is the
+   same test, for step 22's refusals. `sharing.handoffLink(key)`: `inviteBaseUrl` or loopback with
+   the live view's port, and `watchGrants()`; the live view gets the grant table (`grants`).
+   `TURN_MS` in `testenv.mjs`. Not here: `recover()` and `turn.json` (B16, step 22; a browser
+   restart now ends the grant), the supervisor's `onCrashLoop` (still a no-op until B16), B14's two
+   lists, B15's end note and the `browser_wait_for` wake (step 22). Away switch (decision 8): GET
+   config.json gains `away: { on, server, ready }` (`ready`: `handoff.enabled` and a usable
+   channel) and POST config `away` (refused without `ready` and on a server; writes only
+   `handoff.away` into config.json's own `handoff`, the running config's filled-in values stay
+   out of the file); `ui/panels.js` `awaySwitch` draws it in the side panel's Tools tab
+   (Hand-offs), Settings (Agents and approvals) and the live view's Profile panel, each kept
+   current by the `config` event. For `daemon.mjs`'s budget (now 850), the download event moved
+   into `toolstab.mjs` `createDownloads({ agentOf }).event`. New structure edges `yourturn ->
+   notify/message` (`ACTIONS`, `actionSentence`, `clock`) and `yourturn -> toolstab`
+   (`handoffKind`). Security rows B-1, B-3, B-7 now say what makes and sends links and writes the
+   trail; B-5 lands; B-8 (diagnostics, badge, and the invite-links limit); the settings row names `away`. Tests: `test/yourturn.test.mjs`,
+   `test/config-route.test.mjs` (Away).
 22. `browser_wait_for` early wake, `handedOff` refusals, card-field refusals in every session,
     fast-mode step, `turn.json` recovery (B9, B13, B15, B16). -> 21, 8
 23. `skills/pairbrowse/SKILL.md` and `core.md` text (B15). -> 22

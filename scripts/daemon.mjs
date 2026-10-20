@@ -46,8 +46,8 @@ import { createCaptureChannel } from "./liveview/capture.mjs";
 import { createFacts } from "./facts.mjs";
 import { BrowserCoordinator, TabClaims } from "./collaboration.mjs";
 import { cleanName, displayName } from "./sharing/join.mjs";
-import { currentAccount, within, readJson, spend, pidAlive, urlHost } from "./util.mjs";
-import { createPopups, CHALLENGE_TURN } from "./popups.mjs";
+import { currentAccount, within, readJson, spend, pidAlive } from "./util.mjs";
+import { createPopups } from "./popups.mjs";
 import { chooseBrowserDriver, patchrightNodeMinimum, requireDriver } from "./driver.mjs";
 import { createContext } from "./daemon/context.mjs";
 import { createPhishing } from "./daemon/phishing.mjs";
@@ -94,6 +94,10 @@ import { createVersionHandoff, readUse } from "./handoff.mjs";
 import { chooseBrowser, isOpenBrowser } from "./browser/choice.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
 import { testOn, harnessStarted } from "./testenv.mjs";
+import { createAudit } from "./daemon/audit.mjs";
+import { createGrants } from "./daemon/grants.mjs";
+import { createNotifier, handoffSends } from "./daemon/notify/index.mjs";
+import { createYourTurn } from "./daemon/yourturn.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
 
@@ -163,8 +167,7 @@ const clients = new Map(); // participant -> socket
 // The Tools tab (the browser's own pages, the owner only; daemon/toolstab.mjs): this session's
 // downloads (in memory), the recordings this helper saved (an owner-only index), the hand-offs
 // waiting for the person, and diagnostics. Fed from what the helper already sees.
-const hostOfUrl = (url) => urlHost(url);
-const downloads = createDownloads({ session: () => context.sessionName() });
+const downloads = createDownloads({ session: () => context.sessionName(), agentOf: (page) => tabMeta(page)?.agent });
 const recordings = createRecordings();
 const handoffs = createHandoffs();
 // A file the person opens from Downloads shows in a tab that is theirs alone (context.mjs
@@ -191,20 +194,6 @@ const diagnostics = createDiagnostics({
   },
 });
 const agentBy = (p, color = "") => ({ label: collaboration.participants.get(p)?.label || "Agent", color: color || hud.sparkColor(p) });
-// A download started, finished or failed (context.mjs keepDownloads).
-function onDownload({ op, name, page, id, path }) {
-  if (op === "start") {
-    let by = null;
-    try { const a = tabMeta(page)?.agent; if (a) by = { label: a.label, color: a.color }; } catch {}
-    const newId = downloads.add({ name, host: hostOfUrl(page?.url?.() || ""), title: "", by });
-    within(1000, Promise.resolve(page?.title?.()).catch(() => "")).then((t) => { if (t) downloads.setTitle(newId, t); }).catch(() => {});
-    return newId;
-  }
-  if (!id) return null;
-  if (op === "done") downloads.done(id, path);
-  else if (op === "failed") downloads.failed(id);
-  return id;
-}
 
 // The parts below reach each other through these (each is called only once all exist).
 const liveView = () => sharing.liveView();
@@ -214,6 +203,11 @@ const refreshTabs = () => liveView()?.refreshTabs().catch(() => {});
 // them in itself and masks them in everything Claude reads back.
 const secrets = secretStore(paths.secrets, log);
 logFile.maskWith(() => secrets.get().values);
+// Hand-off grants (daemon/grants.mjs, their trail in audit.jsonl) and messages to the person's own
+// channels (daemon/notify/, credentials read from secrets.env at each send): yourTurn, below.
+const audit = createAudit({ file: paths.audit, log });
+const grants = createGrants({ audit, log });
+const notifier = createNotifier({ channels: () => config.handoff?.channels, secret: (name) => secrets.get().values?.[name], log });
 const collaboration = new BrowserCoordinator({ untilSeen: true, onChange: (state) => { liveView()?.setCollaboration(state); labelsChanged(); } });
 // An agent's name changed (identify): its tab's label follows (tabLabels, below).
 function labelsChanged() { try { tabLabels.changed(); } catch {} }
@@ -250,26 +244,23 @@ const hud = createHud({
   pages: () => context.openPages(),
   waiting: (page) => presence.waiting(page), liveView, notify: panel.notify,
   pause: () => ({ by: pause.view().by, can: canPause() }),
-  // An agent handed a step to the person (pairbrowse_status "you"): a hand-off until it moves on.
-  onStatus: (p, st) => { if (st?.kind === "you") handoffs.set(`status:${p}`, { text: st.text, page: hud.sparkPage(p) || null, by: agentBy(p, st.color) }); else handoffs.clear(`status:${p}`); },
+  onStatus: (p, st) => yourTurn.onBadge(p, st), // an agent's "you": a hand-off in the Tools tab until it moves on
   // A build with its own pages (the context's browserPages): its docks carry the bottom bar's
   // duties, so pages are told they are docked (DESIGN.md Part G3). The open build: false, no call.
   docked: () => { try { return !!context.browserPages?.(); } catch { return false; } },
 });
 const presence = createPresence({
   host: HOST, readEvents: (frame, waitMs) => hud.call(frame, String(waitMs), "user-wait"), pages: () => context.openPages(), paused: () => context.isSwitching(),
-  onUsed: (page) => context.touch(page), onStale: bumpRevision, applyBar: hud.applyBar, refreshTabs, restoring: () => context.isRestoring(),
-  onPauseButton: (kind) => pressPause(kind === "pause"),
-  onActing: (on) => liveView()?.setDriving?.(on),
+  onUsed: (page) => { context.touch(page); yourTurn.personUsed(page); }, // a held tab used by hand is the person's again
+  onStale: bumpRevision, applyBar: hud.applyBar, refreshTabs, restoring: () => context.isRestoring(),
+  onPauseButton: (kind) => pressPause(kind === "pause"), onActing: (on) => liveView()?.setDriving?.(on),
 });
 const popups = createPopups({
   log,
   quiet: () => context.isRestoring(), // tabs reopened at startup aren't new
   cookieChoice: () => config.cookieChoice, // "accept" (default) or "reject"; Settings can change it
   agentActing: () => presence.agentActing(), // a tab an agent closes itself needs no note
-  onYourTurn: (text, page) => { hud.setBadge(text, "you").catch(() => {}); handoffs.set("check", { text, page: page || null, kind: "captcha", by: { label: "PairBrowse", color: "" } }); },
-  // The check is done: take "Your turn" down again if it was this one.
-  onCleared: () => { if (hud.badge().text === CHALLENGE_TURN) hud.setBadge("", "clear").catch(() => {}); handoffs.clear("check"); },
+  onYourTurn: (text, page) => yourTurn.onChallenge(text, page), onCleared: () => yourTurn.onChallengeCleared(), // a check on the page: the person's (daemon/yourturn.mjs)
 });
 const phishing = createPhishing({ file: paths.phishingList, enabled: () => config.phishingProtection !== false, log }); // listed phishing sites stopped before they show
 phishing.start();
@@ -281,7 +272,7 @@ const context = createContext({
   liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
   onTabClosed: (page) => { tabClaims.drop(page); screenshots.forgetPage(page); hud.forgetPage(page); handoffs.forgetPage(page); }, // a closed tab's turn ends with it, with the maps onto its pictures and the sparks on it
   status: (badge) => liveView()?.setStatus(badge),
-  onDownload,
+  onDownload: (e) => downloads.event(e),
   shuttingDown: () => shuttingDown,
   // A build with its own pages: their origins are let in before the browser starts (their first
   // requests pass), and they get the live view's address in its switch and their own key in an
@@ -305,6 +296,7 @@ const context = createContext({
   onClosed: () => {
     // The host closed the window: sharing ends with it (codes, yeses, tunnels). A restart of the
     // helper closes it too, but keeps them.
+    yourTurn.browserClosed(); // its hand-offs end first (browser-restarted), then sharing
     if (!shuttingDown) sharing.endAll();
     previews.clear(); // their tabs went with the browser
     recorder.browserClosed();
@@ -455,7 +447,7 @@ const remoteAgents = createRemoteAgents({ serve: (sock, opts) => serve(sock, opt
 const sharing = createSharing({
   config, log, host: HOST, notify: panel.notify, hostNote, joinAlert: (entry) => joinPrompt.alert(entry),
   view: {
-    secretDomains, screens, remoteAgents, capture: captureChannel, covers: recorder.covers,
+    secretDomains, screens, remoteAgents, capture: captureChannel, covers: recorder.covers, grants,
     // The live view's Timeline (owner only). `journal` is declared further down: this runs only
     // when the route is hit, after startup, so it is always there by then.
     journal: (q) => journal.read(q),
@@ -486,7 +478,8 @@ const sharing = createSharing({
     activityLog,
     // The browser's Settings page: which browser runs, the timeline, the docks' default layout
     // (liveview/settings.mjs; written into config.json and the running config).
-    settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), settingsSection: () => !!context.nextShell().settingsSection, browserInUse: () => context.browserInUse() }),
+    settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), settingsSection: () => !!context.nextShell().settingsSection, browserInUse: () => context.browserInUse(),
+      away: () => ({ server: context.isServer(), enabled: config.handoff?.enabled === true, channels: notifier.usable().length }) }), // the Away switch (decision 8)
     // Report a problem: relayed to config.json's reportUrl on the person's click (liveview/report.mjs).
     reporter: createReporter({ url: () => config.reportUrl, mask: output.mask, log }),
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
@@ -637,10 +630,12 @@ const journal = createJournal({ session: () => context.sessionName(), openPages:
 // The session's timeline: the pictures already sent to agents, kept per session (daemon/timeline.mjs).
 // The Page tab's outline: the last whole-page snapshot a local agent got per tab (daemon/outline.mjs).
 const outlines = createOutlines({ mask: output.mask });
+// Hand-offs to the person: the badge and the Tools tab as before, and their channels when hand-offs go there (daemon/yourturn.mjs).
+const yourTurn = createYourTurn({ config, grants, notifier, audit, handoffs, journal, hud, log, hostNote, agentBy, saveTabs: () => context.saveTabs(), sessionName: () => context.sessionName(),
+  linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer() }) });
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
-  // A fast-mode run's hand-off step (runner "handoff"): a hand-off for that tab until the step ends.
-  onRunStatus: (p, text, kind, page, label) => { if (kind === "you") handoffs.set(`run:${p}`, { text, page: page || null, by: { label: label || "Agent", color: hud.sparkColor(p) } }); else handoffs.clear(`run:${p}`); },
+  onRunStatus: (...a) => yourTurn.onRunStatus(...a), yourTurn, // a fast-mode run's hand-off step; hand-offs (B10 masking)
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
   secrets, facts, sharing, follow, pause, remoteHolder, personTabs, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals, outlines, updateNote: () => handoff.note(),
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
@@ -793,6 +788,7 @@ async function shutdown(code) {
   // would otherwise start the browser again inside a helper that's on its way out.
   shuttingDown = true;
   socketServer?.close();
+  const turnsEnded = yourTurn.stop().catch(() => {}); // hand-offs end (helper-stopped), their messages on the way while the browser closes (at most STOP_MS)
   journal.flushNow().catch(() => {}); // the goal log's last lines
   activityLog.flush(); // the activity log's last lines
   // Join codes outlive a restart: their tunnels keep running for the next run (sharing.mjs); a
@@ -809,7 +805,7 @@ async function shutdown(code) {
   // and Playwright's exit handler kills what's left of it.
   const started = Date.now();
   setTimeout(() => { log(`shutdown: the browser didn't close within ${SHUTDOWN_GRACE_MS} ms; killing it`); process.exit(code); }, SHUTDOWN_GRACE_MS).unref();
-  await context.close({ deadline: started + SHUTDOWN_GRACE_MS });
+  await Promise.all([context.close({ deadline: started + SHUTDOWN_GRACE_MS }), turnsEnded]);
   log(`shutdown: browser closed cleanly in ${Date.now() - started} ms`);
   if (process.platform !== "win32") rmSync(paths.socket, { force: true });
   process.exit(code);

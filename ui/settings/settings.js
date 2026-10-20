@@ -5,14 +5,14 @@
 // browser's own settings. Every control reads the helper's current value and writes through a real
 // owner route with the owner's key: config.json / config (the browser, the docks at a session's
 // start, the timeline, the session question at start, downloads, pictures with results, cookie
-// banners, open tabs, your name), profile.json / profile (passwords, remembered details), the
+// banners, open tabs, your name, Away), profile.json / profile (passwords, remembered details), the
 // joinhost event / joinhost (join addresses), invites.json / invite { op: "revoke" } (invites out
 // now), diagnostics.json and diagnostics/report, and report (Report a problem; shown only while the
 // helper says it relays reports). Saved sessions link to the sessions page, their one home. The
 // config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer (framed, one
 // ResizeObserver while it shows); one shared event stream.
-import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine } from "../common.js";
+import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine, awaySwitch } from "../common.js";
 import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
 import { servedByBrowser, settingsHomeFor, ENGINE_SETTINGS_ORIGIN } from "../urls.js";
 
@@ -63,6 +63,8 @@ let base = null;
 let conn = "connecting";
 let config = null; // GET config.json, null until read (or the helper has no such route)
 let diag = null; // GET diagnostics.json
+// Agents and approvals: Away (hand-offs to your phone; panels.js awaySwitch posts it, drawConfig draws it).
+const away = awaySwitch($("away-on"), $("away-state"), () => base);
 
 const say = (node, text, kind = "") => { node.textContent = text; node.dataset.kind = kind; };
 const getJson = (path) => fetch(base + path).then(async (r) => ({ status: r.status, body: r.ok ? await r.json().catch(() => null) : await r.text().catch(() => "") })).catch(() => ({ status: 0, body: null }));
@@ -125,6 +127,7 @@ function drawConfig(c) {
   $("dl-acts").hidden = !dl;
   if (document.activeElement !== $("dl-path")) $("dl-path").value = dl || "";
   $("pics-on").setAttribute("aria-checked", String(config.pictures !== false));
+  away.draw(config.away);
   for (const r of document.querySelectorAll("input[name=cookies]")) r.checked = r.value === (config.cookies === "reject" ? "reject" : "accept");
   if (document.activeElement !== $("max-tabs")) $("max-tabs").value = String(config.maxTabs ?? 20);
   $("tabs-save").hidden = true;

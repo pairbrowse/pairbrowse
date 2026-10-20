@@ -40,7 +40,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   const api = {};
   // The virtual screen the browser runs on, when this machine needs one (browser/supervise.mjs).
   // With server.keepAlive, the browser kept up with nobody connected.
-  const { stopScreenNow, crashLoop, statusParts, keepAlive, keepAliveStart } = Object.assign(api, createSupervisor(st, deps, api));
+  const { stopScreenNow, crashLoop, statusParts, keepAlive, keepAliveStart, isServer } = Object.assign(api, createSupervisor(st, deps, api));
   // Launching the browser and getContext() (browser/launch.mjs).
   const { dropHelperKey, choiceConfig, profile, getContext, watchClose, ready, reset, openByHand, close, nextShell } = Object.assign(api, createLaunch(st, deps, api));
   // Downloads: kept in the Downloads folder, and Playwright's temporary ones forgotten (browser/downloads.mjs).
@@ -85,6 +85,8 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     // The crash-loop guard's refusal while it holds, else null; and what pairbrowse_status adds
     // about the browser's surroundings (browser/supervise.mjs).
     crashLoop, statusParts,
+    // Server mode (display.mjs serverMode): hand-offs always go to the person's channels there.
+    isServer,
     // server.keepAlive: the helper stays when the browser closes and counts as in use (handoff.mjs);
     // keepAliveStart() starts the browser as the helper starts.
     keepAlive, keepAliveStart,

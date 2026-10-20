@@ -151,8 +151,8 @@ function readLayout(given, base) {
 
 // POST config checked as liveview/settings.mjs applySettings does: any subset of { browser,
 // timeline: { on?, cap? }, layout: { left?, right?, strip? }, name, downloads, pictures, cookies,
-// maxTabs, askSession }; anything else 409 { error }.
-const SETTINGS_KEYS = ["browser", "timeline", "layout", "name", "downloads", "pictures", "cookies", "maxTabs", "askSession"];
+// maxTabs, askSession, away }; anything else 409 { error }.
+const SETTINGS_KEYS = ["browser", "timeline", "layout", "name", "downloads", "pictures", "cookies", "maxTabs", "askSession", "away"];
 function applyConfig(given, config) {
   if (!plainObject(given)) return { error: `Settings are { ${SETTINGS_KEYS.join(", ")} }.` };
   for (const k of Object.keys(given)) if (!SETTINGS_KEYS.includes(k)) return { error: `Unknown setting "${k}"` };
@@ -185,6 +185,14 @@ function applyConfig(given, config) {
   if (given.askSession !== undefined) {
     if (typeof given.askSession !== "boolean") return { error: "askSession is true or false." };
     next.askSession = given.askSession;
+  }
+  if (given.away !== undefined) {
+    // The Away switch (liveview/settings.mjs): refused on a server, and turned on only when ready.
+    const st = config.away || { on: false, server: false, ready: false };
+    if (typeof given.away !== "boolean") return { error: "away is true or false." };
+    if (st.server) return { error: "This browser runs on a server: hand-offs always go to your channels there." };
+    if (given.away && !st.ready) return { error: "Away needs a hand-off channel first: set handoff in config.json." };
+    next.away = { ...st, on: given.away };
   }
   if (given.browser !== undefined) {
     const b = given.browser;

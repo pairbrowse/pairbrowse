@@ -652,3 +652,27 @@ pageTest("settings", { fixtures, viewport: VIEW, frame: true, native: false }, a
   assert.deepEqual(await top(() => window.__posted), [], "posts nothing");
   assert.deepEqual(errors, []);
 });
+
+// 13. Away (spec server-mode decision 8): the switch writes POST config { away } on a click; it
+// can't be turned on without a ready channel (the line says so) and isn't a switch on a server;
+// an older helper without it keeps the item off the page.
+both({ fixtures: { ...fixtures, config: { ...fixtures.config, away: { on: false, server: false, ready: true } } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("the switch", () => !document.getElementById("away").hidden && !document.getElementById("away-on").disabled);
+  assert.equal(await inPage(() => document.getElementById("away-on").getAttribute("aria-checked")), "false");
+  assert.match(await inPage(text, "away-state"), /^Off: steps handed to you stay in this window\.$/);
+  await page.click("#away-on");
+  await posted(helper, page, "away", "config", { away: true });
+  await until("on", () => document.getElementById("away-on").getAttribute("aria-checked") === "true" && /^On: steps handed to you also go to your phone/.test(document.getElementById("away-state").textContent));
+  assert.equal(helper.fixtures.config.away.on, true);
+  // Without a channel: on can't be chosen, and the line says why.
+  helper.push("config", { ...helper.fixtures.config, away: { on: false, server: false, ready: false } });
+  await until("not ready", () => document.getElementById("away-on").disabled && /hand-off channel first/.test(document.getElementById("away-state").textContent));
+  // On a server: always on, not a switch.
+  helper.push("config", { ...helper.fixtures.config, away: { on: false, server: true, ready: true } });
+  await until("server", () => document.getElementById("away-on").disabled && document.getElementById("away-on").getAttribute("aria-checked") === "true" && /runs on a server/.test(document.getElementById("away-state").textContent));
+  // An older helper: no away in its config, the item leaves.
+  const { away: _away, ...old } = helper.fixtures.config;
+  helper.push("config", old);
+  await until("hidden", () => document.getElementById("away").hidden);
+  assert.deepEqual(errors, []);
+});

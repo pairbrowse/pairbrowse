@@ -48,14 +48,14 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // A helper's worth of the route: config.json on disk with a tunnel token and join hosts, the
 // running config read from it, the settings dep as daemon.mjs builds it.
-async function setup({ file = ON_DISK, native = true, inUse = "pairbrowse", timeline = null } = {}) {
+async function setup({ file = ON_DISK, native = true, inUse = "pairbrowse", timeline = null, away = () => ({}) } = {}) {
   mkdirSync(home, { recursive: true });
   writeFileSync(paths.config, JSON.stringify(file, null, 2));
   const config = { ...DEFAULT_CONFIG, ...file };
   const state = { inUse };
   // user: the test's home folder stand-in (downloads go inside it); vouch: BRAVE is an app this
   // computer vouches for (browserProblem's own checks: their test below).
-  const settings = createSettings({ config, native, browserInUse: () => state.inUse, exists, executable, user: tmpdir(), vouch: async (p) => (p === BRAVE ? "" : "not vouched for") });
+  const settings = createSettings({ config, native, browserInUse: () => state.inUse, exists, executable, user: tmpdir(), vouch: async (p) => (p === BRAVE ? "" : "not vouched for"), away });
   const invites = createInvites();
   const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites, settings, timeline, layoutDefaults: () => config.layout });
   view.setSession({ name: "default", where: "Local" });
@@ -65,15 +65,15 @@ async function setup({ file = ON_DISK, native = true, inUse = "pairbrowse", time
 
 // The fields every answer carries besides browser, timeline, layout, native and chosen, as a
 // config with none of them set reads.
-const MORE = { name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, report: true, settingsSection: false }; // report: on by default (PairBrowse's own address, paths.mjs)
+const MORE = { name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, report: true, settingsSection: false, away: { on: false, server: false, ready: false } }; // report: on by default (PairBrowse's own address, paths.mjs)
 
-test("GET config.json: exactly its thirteen keys, the choice as browserChoice reads it", async () => {
+test("GET config.json: exactly its fourteen keys, the choice as browserChoice reads it", async () => {
   const { view, key } = await setup();
   try {
     const r = await request(view.port, "GET", `/${key}/config.json`);
     assert.equal(r.status, 200);
     const body = JSON.parse(r.text);
-    assert.deepEqual(Object.keys(body).sort(), ["askSession", "browser", "chosen", "cookies", "downloads", "layout", "maxTabs", "name", "native", "pictures", "report", "settingsSection", "timeline"]);
+    assert.deepEqual(Object.keys(body).sort(), ["askSession", "away", "browser", "chosen", "cookies", "downloads", "layout", "maxTabs", "name", "native", "pictures", "report", "settingsSection", "timeline"]);
     assert.deepEqual(body, { browser: "pairbrowse", timeline: { on: true, cap: 200 }, layout: { left: "open", right: "open", strip: 88 }, ...MORE, name: "Ann", native: true, chosen: false });
     assert.ok(!r.text.includes(TOKEN) && !r.text.includes("share.example.org"), "no other setting in the answer");
   } finally { view.close(); }
@@ -324,4 +324,55 @@ test("a browser of your own: an app macOS vouches for; elsewhere a file only you
   assert.match(await browserProblem("/tmp/x/brave", { platform: "linux", stat: stat({ "/tmp/x": 0o777 }), uid: 1000 }), /other accounts/);
   assert.match(await browserProblem("/opt/brave/brave", { platform: "linux", stat: stat({ "/opt/brave/brave": 0o757 }), uid: 1000 }), /other accounts/);
   assert.match(await browserProblem("/home/eve/brave", { platform: "linux", stat: () => ({ mode: 0o755, uid: 1001 }), uid: 1000 }), /another account/);
+});
+
+// The Away switch (spec server-mode decision 8): handoff.away, off by default, remembered in
+// config.json (only that key of handoff changes), on only with a ready channel, and on a server
+// always on (no switch).
+test("away: on only with a ready channel, written into config.json's handoff alone; refused on a server", async () => {
+  const handoff = { enabled: true, grantMinutes: 20, channels: [{ type: "ntfy", topicSecret: "PAIRBROWSE_NTFY_TOPIC" }] };
+  const now = { server: false, enabled: true, channels: 0 };
+  const { view, key, config, onDisk } = await setup({ file: { ...ON_DISK, handoff }, away: () => now });
+  config.handoff = { ...DEFAULT_CONFIG.handoff, ...handoff, remindMinutes: 10 }; // as loadConfig fills it in
+  const owner = await readStream(view.port, `/${key}/events?panel=1`);
+  try {
+    const get = async () => JSON.parse((await request(view.port, "GET", `/${key}/config.json`)).text).away;
+    assert.deepEqual(await get(), { on: false, server: false, ready: false });
+    // No channel that can be used: refused, nothing written.
+    const before = onDisk();
+    let r = await request(view.port, "POST", `/${key}/config`, { body: { away: true } });
+    assert.equal(r.status, 409);
+    assert.match(JSON.parse(r.text).error, /hand-off channel first/);
+    assert.equal(onDisk(), before);
+    now.enabled = false; now.channels = 1;
+    assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { away: true } })).status, 409, "a channel but hand-offs not enabled");
+    // Ready: on, remembered in the file's handoff (its own fields kept as written, no filled-in defaults).
+    now.enabled = true;
+    assert.deepEqual(await get(), { on: false, server: false, ready: true });
+    r = await request(view.port, "POST", `/${key}/config`, { body: { away: true } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text).away, { on: true, server: false, ready: true });
+    assert.deepEqual(JSON.parse(onDisk()).handoff, { ...handoff, away: true });
+    assert.ok(onDisk().includes(TOKEN), "the rest of config.json as it was");
+    assert.equal(config.handoff.away, true, "the running config too");
+    assert.equal(config.handoff.remindMinutes, 10, "with its other fields as loaded");
+    await wait(50);
+    assert.ok(eventsIn(owner.text(), "config").some((c) => c.away?.on === true), "the owner's pages hear it");
+    // Off again: always allowed.
+    r = await request(view.port, "POST", `/${key}/config`, { body: { away: false } });
+    assert.equal(r.status, 200);
+    assert.equal(JSON.parse(onDisk()).handoff.away, false);
+    assert.equal(config.handoff.away, false);
+    // Not a boolean.
+    assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { away: "yes" } })).status, 409);
+    // On a server: hand-offs always go to the channels; the switch can't change that.
+    now.server = true;
+    assert.deepEqual(await get(), { on: false, server: true, ready: true });
+    r = await request(view.port, "POST", `/${key}/config`, { body: { away: true } });
+    assert.equal(r.status, 409);
+    assert.match(JSON.parse(r.text).error, /runs on a server/);
+  } finally { owner.close(); view.close(); }
+  // Without the helper's state the switch reads off and not ready.
+  assert.deepEqual(readSettings({}).away, { on: false, server: false, ready: false });
+  assert.deepEqual(applySettings({ away: true }, {}, {}).error ? "refused" : "taken", "refused");
 });

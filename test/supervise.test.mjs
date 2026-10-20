@@ -231,7 +231,7 @@ test("a switch, shutdown, the helper's own reset or failed launch never counts; 
   assert.match(get, /const loop = !st\.contextPromise && api\.crashLoop\(\);\n\s+if \(loop\) return Promise\.reject\(new Error\(loop\)\);/);
   assert.ok(get.indexOf("api.crashLoop()") < get.indexOf("st.contextPromise = launch()"), "refused before a launch starts");
   const context = src("context.mjs");
-  assert.match(context, /const \{ stopScreenNow, crashLoop, statusParts, keepAlive, keepAliveStart \} = Object\.assign\(api, createSupervisor\(st, deps, api\)\);/);
+  assert.match(context, /const \{ stopScreenNow, crashLoop, statusParts, keepAlive, keepAliveStart, isServer \} = Object\.assign\(api, createSupervisor\(st, deps, api\)\);/);
   assert.match(context, /^\s+crashLoop, statusParts,$/m);
   assert.match(context, /^\s+keepAlive, keepAliveStart,$/m);
   const status = src("serve/tools/status.mjs");

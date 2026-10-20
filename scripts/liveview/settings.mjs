@@ -13,13 +13,17 @@
 //     askSession: boolean,                                      sessionPicker: ask which session when the browser starts
 //     native: boolean,                                          a PairBrowse build is pinned for this computer
 //     chosen: boolean,                                          a person recorded the browser choice
-//     report: boolean }                                         Report a problem is relayed (a valid reportUrl is set; never the address)
+//     report: boolean,                                          Report a problem is relayed (a valid reportUrl is set; never the address)
+//     away: { on, server, ready } }                             handoff.away: hand-offs go to your phone while you are away (decision 8);
+//                                                               server: always on (server mode); ready: handoff.enabled with a usable channel
 // POST config takes any subset of { browser, timeline: { on?, cap? }, layout: { left?, right?,
-// strip? }, name, downloads, pictures, cookies, maxTabs, askSession } and answers the same body
+// strip? }, name, downloads, pictures, cookies, maxTabs, askSession, away } and answers the same body
 // plus restart: true while "browser" differs from the browser of the window open now (it takes
 // effect when the browser next starts; no window: false). pictures, cookies, maxTabs, downloads and
 // the timeline apply at once; name applies to joins at once and to your label in this browser from
-// the helper's next start; askSession from the next start. Anything else in the body, or an
+// the helper's next start; askSession from the next start; away at once (only handoff.away is
+// written, the rest of handoff as config.json has it; turning it on needs a ready channel, and on a
+// server it can't be changed: hand-offs always go there). Anything else in the body, or an
 // invalid value, is refused (409, { error }) and nothing is written. Tunnel tokens, join
 // addresses, the report address and every other setting are never in an answer.
 import { isAbsolute, dirname, basename } from "node:path";
@@ -31,12 +35,13 @@ import { folderOf, checkDownloads, downloadsProblem } from "../rules/downloads.m
 import { browserChoice } from "../browser.mjs";
 import { isOpenBrowser, OPEN_BROWSER } from "../browser/choice.mjs";
 import { saveConfig, paths } from "../paths.mjs";
+import { readJson } from "../util.mjs";
 import { configProblem, wrongValue } from "../config-schema.mjs";
 import { cleanName } from "../sharing/join.mjs";
 import { readLayout, layoutFrom } from "./layout.mjs";
 import { reportUrlFrom } from "./report.mjs";
 
-export const SETTINGS_KEYS = ["browser", "timeline", "layout", "name", "downloads", "pictures", "cookies", "maxTabs", "askSession"];
+export const SETTINGS_KEYS = ["browser", "timeline", "layout", "name", "downloads", "pictures", "cookies", "maxTabs", "askSession", "away"];
 export const CAP_MIN = 1, CAP_MAX = 200;
 export const TABS_MIN = 2, TABS_MAX = 50;
 export const NAME_MAX = 40;
@@ -76,9 +81,14 @@ export async function browserProblem(path, { platform = process.platform, verify
   return "";
 }
 
+// The Away switch's state (decision 8): on (handoff.away), server (server mode: hand-offs always go
+// to the channels, the switch can't change that) and ready (handoff.enabled with at least one channel
+// that can be used). away: { server, enabled, channels } as the helper sees them now.
+export const awayState = (config, away = {}) => ({ on: config.handoff?.away === true, server: away.server === true, ready: away.enabled === true && Number(away.channels) > 0 });
+
 // config: the settings with the older names as the person wrote them (context.choiceConfig()).
-// exists / executable: as applySettings.
-export function readSettings(config, { native = false, exists, executable, settingsSection = false } = {}) {
+// exists / executable: as applySettings. away: as awayState.
+export function readSettings(config, { native = false, exists, executable, settingsSection = false, away = {} } = {}) {
   const choice = browserChoice(config, { native, ...checksOf(exists, executable) });
   return {
     browser: choice.browser, timeline: { on: config.timeline !== false, cap: capOf(config.timelineCap) }, layout: layoutFrom(config.layout),
@@ -93,6 +103,7 @@ export function readSettings(config, { native = false, exists, executable, setti
     // The browser's settings are the engine settings' PairBrowse section (a build that declares
     // it, 580): where the pages open Settings. Never a path or address.
     settingsSection: !!settingsSection,
+    away: awayState(config, away),
   };
 }
 
@@ -101,7 +112,9 @@ export function readSettings(config, { native = false, exists, executable, setti
 // maxTabs, sessionPicker) or { error }. exists / executable: file checks for a path (tests pass
 // stand-ins; browserChoice's own by default). folder(path): the real folder at path, or null
 // (statSync's by default). home: the helper's home, which no downloads folder may be in.
-export function applySettings(given, config, { native = false, exists, executable, folder = folderOf, home = paths.home, user = homedir() } = {}) {
+// away: as awayState (Away is refused on a server, and turned on only with a ready channel; its
+// field is awayOn, which createSettings writes into handoff).
+export function applySettings(given, config, { native = false, exists, executable, folder = folderOf, home = paths.home, user = homedir(), away = {} } = {}) {
   if (!plainObject(given)) return { error: `Settings are { ${SETTINGS_KEYS.join(", ")} }.` };
   for (const k of Object.keys(given)) if (!SETTINGS_KEYS.includes(k)) return { error: `Unknown setting "${k}"` };
   const fields = {};
@@ -163,6 +176,13 @@ export function applySettings(given, config, { native = false, exists, executabl
     if (typeof given.askSession !== "boolean") return { error: `${wrongValue("askSession", BOOL, given.askSession)}.` };
     fields.sessionPicker = given.askSession;
   }
+  if (given.away !== undefined) {
+    if (typeof given.away !== "boolean") return { error: `${wrongValue("away", BOOL, given.away)}.` };
+    const st = awayState(config, away);
+    if (st.server) return { error: "This browser runs on a server: hand-offs always go to your channels there." };
+    if (given.away && !st.ready) return { error: "Away needs a hand-off channel first: set handoff in config.json (enabled, and a channel with its PAIRBROWSE_ secret saved). See docs/configuration.md." };
+    fields.awayOn = given.away;
+  }
   return { fields };
 }
 
@@ -173,13 +193,23 @@ export function applySettings(given, config, { native = false, exists, executabl
 // save(fields): writes config.json (saveConfig: a temp file and a rename).
 // folder / home: as applySettings. onChange(fields): after a write (the helper passes it on).
 // vouch(path): browserProblem's check for a browser path of your own (tests pass a stand-in).
-export function createSettings({ config, choiceConfig = () => config, native = false, settingsSection = () => false, browserInUse = () => null, save = (fields) => saveConfig(fields), exists, executable, folder, home, user, vouch = (p) => browserProblem(p), onChange = () => {} }) {
-  const read = () => readSettings(choiceConfig(), { native, exists, executable, settingsSection: settingsSection() });
+// away(): { server, enabled, channels } now (the Away switch). savedHandoff(): config.json's own
+// handoff (read for the write, so the running config's filled-in defaults never land in the file).
+export function createSettings({ config, choiceConfig = () => config, native = false, settingsSection = () => false, browserInUse = () => null, save = (fields) => saveConfig(fields), exists, executable, folder, home, user, vouch = (p) => browserProblem(p), onChange = () => {},
+  away = () => ({}), savedHandoff = () => readJson(paths.config)?.handoff }) {
+  const read = () => readSettings(choiceConfig(), { native, exists, executable, settingsSection: settingsSection(), away: away() });
   return {
     read,
     async write(given) {
-      const r = applySettings(given, choiceConfig(), { native, exists, executable, ...(folder ? { folder } : {}), ...(home ? { home } : {}), ...(user ? { user } : {}) });
+      const r = applySettings(given, choiceConfig(), { native, exists, executable, ...(folder ? { folder } : {}), ...(home ? { home } : {}), ...(user ? { user } : {}), away: away() });
       if (r.error) return r;
+      // Away: only handoff.away changes, in the file's handoff and in the running config's.
+      const { awayOn, ...rest } = r.fields;
+      if (awayOn !== undefined) {
+        const saved = savedHandoff();
+        rest.handoff = { ...(saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {}), away: awayOn };
+      }
+      r.fields = rest;
       // A path of your own: checked before anything is written (defense in depth: the route is the
       // owner's alone already).
       if (typeof r.fields.browser === "string" && isAbsolute(r.fields.browser)) {
@@ -191,7 +221,9 @@ export function createSettings({ config, choiceConfig = () => config, native = f
       const problem = configProblem(r.fields);
       if (problem) return { error: problem };
       try { save(r.fields); } catch (e) { return { error: `Couldn't write config.json: ${e?.message || e}. Check that PairBrowse's folder can be written, then save again.` }; }
-      Object.assign(config, r.fields);
+      const { handoff, ...plain } = r.fields;
+      Object.assign(config, plain);
+      if (handoff) config.handoff = { ...config.handoff, away: handoff.away };
       try { onChange(r.fields); } catch {}
       const body = read();
       const running = browserInUse();

@@ -9,13 +9,15 @@
 // Refresh, and again whenever the Tools tab comes back into view (or the stream reconnects) with
 // Diagnostics open; never while it is folded or the tab is not shown. Rows are patched in place by id, never rebuilt. Open, Open in app,
 // Show in Finder, Show (a hand-off's tab) and a confirmed Delete count only for a person's click or key press.
+// Hand-offs carries the Away switch (panels.js awaySwitch): config.json's away, read with the
+// hand-offs list and kept current by the config event; it changes only on a person's click.
 // A download's Open (POST downloads/<id>/open) and Open in app (Word-type names only, POST
 // downloads/<id>/open-app: the original in its default app) are answered { ok, opened: tab |
 // preview | app }; the row's status line says where only as the helper answered (nothing for an
 // answer without `opened`), one line across the list, emptied when the next Downloads action starts.
 // Nothing is sent anywhere: Prepare report shows the helper's text, Copy uses the clipboard and
 // Save is a download made in the page. No timer, observer or frame loop here; no markup strings.
-import { $, el, avatar, splitLabel, shortClock, enter, leave, revealed } from "../common.js";
+import { $, el, avatar, splitLabel, shortClock, enter, leave, revealed, awaySwitch } from "../common.js";
 import { UNREACHABLE } from "../helper.js";
 
 const MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
@@ -373,12 +375,20 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     changed: () => { if (recordings) $("recordings-empty").hidden = !recordings.loaded || recordings.rows.size > 0; },
   });
 
+  // The Away switch: shown once the helper answers with it (an older one doesn't).
+  const away = awaySwitch($("away-on"), $("away-state"), base);
+  const drawAway = (a) => { $("away-row").hidden = !(a && typeof a === "object"); away.draw(a); };
+  async function loadAway(from) {
+    const r = await getJson(from, "config.json");
+    if (base() === from && r.status === 200) drawAway(r.body?.away);
+  }
+
   // ---- reading the lists ----
   const LISTS = [
     { L: handoffs, route: "handoffs.json",
       // A section the helper has: shown with its folds as they are (common.js revealed); the read
       // lands within the pane's own fade-in (a local route), so nothing grows after it.
-      found: () => { $("sec-handoffs").hidden = false; revealed($("sec-handoffs")); },
+      found: () => { $("sec-handoffs").hidden = false; revealed($("sec-handoffs")); const from = base(); if (from) loadAway(from).catch(() => {}); },
       absent: () => { $("sec-handoffs").hidden = true; } },
     { L: downloads, route: "downloads.json",
       found: () => { $("sec-downloads").hidden = false; revealed($("sec-downloads")); },
@@ -536,6 +546,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     stale = true;
     for (const s of LISTS) s.L.clear();
     $("sec-handoffs").hidden = true;
+    drawAway(null);
     $("sec-downloads").hidden = true;
     $("recordings").hidden = true;
     $("recordings-empty").hidden = true;
@@ -562,6 +573,8 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
       if (ev?.op === "add" && ev.item) handoffs.event(() => handoffs.upsert(ev.item));
       else if (ev?.op === "remove" && idOf(ev.item?.id)) handoffs.event(() => handoffs.remove(idOf(ev.item.id)));
     },
+    // Settings changed (config): the Away switch as it is now.
+    config: (c) => { if (c && typeof c === "object" && "away" in c) drawAway(c.away); },
     // A recording just saved (record { op: "saved", item }): first in the list.
     saved: (item) => recordings.event(() => recordings.upsert(item, true)),
     diagnostics,

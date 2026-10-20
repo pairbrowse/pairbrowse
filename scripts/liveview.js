@@ -3,7 +3,7 @@
 // body data-role is "owner" (your own link), "drive" or "watch" (invite links): the server
 // enforces it; this only keeps refused controls out of sight.
 import { AGENT_COLOR, markOf } from "./vocab.js";
-import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose, avatar, splitLabel, stateWord, ago, doneLine, shareCard } from "./common.js";
+import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose, avatar, splitLabel, stateWord, ago, doneLine, shareCard, awaySwitch } from "./common.js";
 
 const base = location.pathname.replace(/\/?$/, "/");
 const img = $("screen"), stage = $("stage");
@@ -487,6 +487,11 @@ if (role === "owner") on("join", joinBanners($("joins"), () => base));
 if (role === "owner") {
   const drawerEl = $("drawer"), profileBtn = $("profile-btn"), timelineBtn = $("timeline-btn");
   const profile = profilePanel(() => base);
+  // Away (hand-offs to your phone, common.js awaySwitch): read with the Profile panel, kept current by config.
+  const away = awaySwitch($("away-on"), $("away-state"), () => base);
+  const drawAway = (a) => { $("away-row").hidden = !(a && typeof a === "object"); away.draw(a); };
+  const loadAway = () => fetch(base + "config.json", { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.json() : null)).then((c) => drawAway(c?.away), () => {});
+  on("config", (c) => { if (c && typeof c === "object" && "away" in c) drawAway(c.away); });
   // Share: a join code or a watch link, made here with a click (the helper's own invite code).
   shareCard({ btn: $("share-btn"), card: $("share-card"), base: () => base });
   // Profile | Timeline: one panel, two tabs; only the tab shown is drawn or fetched.
@@ -511,6 +516,7 @@ if (role === "owner") {
     if (!open) return closeDrawer();
     drawerEl.dataset.open = "true";
     showTab("profile");
+    loadAway();
     if (!await profile.load()) profile.say("Couldn't reach PairBrowse.", "error");
     // Don't pull the cursor away from a field the person already clicked into.
     if (!drawerEl.contains(document.activeElement)) drawerEl.querySelector("#profile-body input")?.focus({ preventScroll: true });
@@ -552,7 +558,7 @@ if (role === "owner") {
   }
   profileBtn.addEventListener("click", () => openProfile(!(isOpen() && drawerTab === "profile")));
   timelineBtn.addEventListener("click", () => openTimeline(!(isOpen() && drawerTab === "timeline")));
-  $("drawer-tab-profile").addEventListener("click", () => { if (drawerTab !== "profile") { showTab("profile"); profile.load(); } });
+  $("drawer-tab-profile").addEventListener("click", () => { if (drawerTab !== "profile") { showTab("profile"); loadAway(); profile.load(); } });
   $("drawer-tab-timeline").addEventListener("click", () => { if (drawerTab !== "timeline") { showTab("timeline"); loadJournal(); } });
   for (const x of ["profile", "timeline"]) $("drawer-tab-" + x).addEventListener("keydown", (e) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;

@@ -58,6 +58,7 @@ export const SWITCHES = {
   TAB_ORDER: "pairbrowse_test_tab_order: read and move tabs in the strip",
   TUNNEL: "\"direct\": the guest port stands in for a tunnel",
   TURN_MAX_MS: "the most one call may hold the shared queue (serve.mjs)",
+  TURN_MS: "a hand-off's life, its one reminder at two thirds of it (daemon/yourturn.mjs)",
   UNSEEN_MS: "how long after its last call an agent stops showing (collaboration.mjs)",
 };
 const named = (name) => {

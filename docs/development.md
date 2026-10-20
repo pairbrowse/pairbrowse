@@ -151,6 +151,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `TAB_ORDER` | knob | `integration/taborder` | Adds `pairbrowse_test_tab_order`: read and move tabs in the strip |
 | `TUNNEL` | knob | the sharing tests, `bench` | `direct`: the guest port stands in for a tunnel |
 | `TURN_MAX_MS` | knob | `integration/turn-cap` | The most one call may hold the shared queue (10 minutes otherwise) |
+| `TURN_MS` | knob | `yourturn` | A hand-off's life in ms, its one reminder at two thirds of it (`handoff.grantMinutes` and `remindMinutes` otherwise) |
 | `UNSEEN_MS` | knob | `integration/departures` | How long after its last call an agent stops showing (30 minutes otherwise) |
 
 Not switches: `PAIRBROWSE_FUZZ_RUNS` sets the runs per fuzz property (CI uses 20000), `PB_DEBUG`

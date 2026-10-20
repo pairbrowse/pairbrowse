@@ -136,6 +136,10 @@
             <ul class="tools-list" id="handoffs" aria-label="Waiting for you"></ul>
             <p class="empty-row" id="handoffs-empty">Nothing waiting for you.</p>
             <p class="msg" id="handoffs-msg" role="status" aria-live="polite"></p>
+            <div class="away-row" id="away-row" hidden>
+              <span class="away-text"><span id="away-label">Away: send them to my phone</span><small id="away-state" role="status" aria-live="polite"></small></span>
+              <button class="away-switch" id="away-on" type="button" role="switch" aria-checked="false" aria-labelledby="away-label" aria-describedby="away-state" disabled><i aria-hidden="true"></i></button>
+            </div>
           </div>
         </section>
 

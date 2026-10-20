@@ -1,5 +1,7 @@
 // pairbrowse_status: what the agent says it is doing, in the side panels, the docks and the badge
-// in every tab (bounded per tab), and the goal log.
+// in every tab (bounded per tab), and the goal log. A "you" also goes to the person's hand-off
+// channels when hand-offs go there (daemon/yourturn.mjs): the result says where it went, for which
+// tab and until when, never the link; any other kind ends this agent's hand-off.
 import { within } from "../../../util.mjs";
 import { SELECTED, CONFIG_WARNINGS } from "../../../paths.mjs";
 import { SANDBOX } from "../../../engine.mjs";
@@ -27,7 +29,7 @@ export function statusLine(selected = SELECTED, configWarnings = CONFIG_WARNINGS
 }
 
 export function createStatusTool(conn, api) {
-  const { context, hud, journal, myLabel, session, updateNote = () => "" } = api;
+  const { context, hud, journal, myLabel, session, updateNote = () => "", yourTurn = null } = api;
   const { participant } = conn;
   return {
     async pairbrowse_status(given) {
@@ -36,6 +38,10 @@ export function createStatusTool(conn, api) {
       if (!context.crashLoop?.()) await context.getContext();
       // "agent" is "claude" (working) by another name, for apps that aren't Claude.
       const args = given.kind === "agent" ? { ...given, kind: "claude" } : given;
+      // The hand-off first, in the agent's own tab: its step kind is the Tools tab entry's (set
+      // before the badge's callback reads it; the channels' answers are awaited below).
+      const mine = conn.mine && !conn.mine.isClosed?.() ? conn.mine : null;
+      const turn = yourTurn ? yourTurn.onStatus(participant, args, hud.sparkPage(participant) || mine).catch(() => "") : Promise.resolve("");
       // The side panels and docks (session) and the badge in the tabs (hud) say the same. The
       // badge goes to every tab: bounded, so one frozen tab never holds this agent (nor the
       // others behind the shared queue).
@@ -43,7 +49,8 @@ export function createStatusTool(conn, api) {
       await within(BADGE_MS, hud.setBadgeFor(participant, args.text, args.kind, myLabel()).catch(() => {}));
       if (args.kind === "done" || args.kind === "clear") await within(BADGE_MS, Promise.resolve(hud.hideCursor(hud.sparkPage(participant))).catch(() => {}));
       journal.status(args.kind, args.text); // a hand-off goes to the goal log's yourTurn
-      return { text: statusLine(SELECTED, CONFIG_WARNINGS, SANDBOX, updateNote(), [...(context.statusParts?.() || [])]) };
+      const sent = await turn;
+      return { text: [statusLine(SELECTED, CONFIG_WARNINGS, SANDBOX, updateNote(), [...(context.statusParts?.() || [])]), sent].filter(Boolean).join("\n") };
     },
   };
 }

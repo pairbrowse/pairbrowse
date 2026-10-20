@@ -139,7 +139,11 @@
   from it: `{ "enabled": false, "away": false, "publicLink": false, "grantMinutes": 15,
   "remindMinutes": 10, "channels": [] }` (default). On a computer you sit at, a step handed to you
   stays in the PairBrowse window as before; messages go only with `enabled` `true`, and then always
-  in server mode, or on a desktop while `away` is `true`. `grantMinutes` (1 to 120) is how long a
+  in server mode, or on a desktop while `away` is `true`. `away` is the Away switch in the side
+  panel's Tools tab (Hand-offs), Settings and the live view's Profile panel: off by default, saved
+  here when you flip it (only `away` changes), and it turns on only with `enabled` and a channel
+  that can be used; on a server it isn't a switch (messages always go). With a channel the step
+  still shows in the window too, and whichever you use first does it. `grantMinutes` (1 to 120) is how long a
   link works; `remindMinutes` (1 or more) when the one reminder comes (at or after `grantMinutes` it falls back
   to two thirds of it, with a warning). `publicLink` (lets a link go through the sharing tunnel) is
   read and kept for the hand-off link that uses it. `channels` lists where messages go, each
@@ -170,9 +174,21 @@
   tabs): tap to click, drag to scroll, hold to press, pinch or + and - to zoom (on the phone only),
   and a "Type here" box that opens the phone's keyboard and passes each character to the field you
   tapped; a dropped connection comes back on its own without losing or repeating what you typed.
-  The live view's side of this, the phone viewer included, is built; the hand-off flow that makes
-  and sends links, and the Away switch in the side panel and Settings, come in a later version;
-  until then these keys are read and checked only.
+  When an agent hands you a step (`pairbrowse_status` kind `you`, with an optional `step`:
+  `login`, `captcha`, `2fa`, `payment` or `other`, else read from its words) or PairBrowse sees a
+  CAPTCHA, one link is made for that tab and sent; the agent's result says which channels it went
+  to, for which tab and until when, never the link. Exactly one reminder comes at `remindMinutes`
+  (with the link only if it hasn't been opened yet), and a message when the hand-off ends (the
+  agent went on, the check cleared, the tab or browser closed), except when you pressed Done. If
+  nobody finishes the step in time, the goal log and the session's tabs are saved, the agent is
+  told to stop there, the badge and the Tools tab say "Timed out", and the tab stays held (agents
+  keep out) until a new hand-off, your own input in it, or the session ends. While a hand-off is
+  open on a tab, and while it is held, agents read that tab masked as a joiner's agent does (card
+  numbers and card, code and PIN field values) and its pictures with card fields covered.
+  Each hand-off event (made, sent, reminded, opened, refused, ended, a channel that failed) is a
+  line in `~/.pairbrowse/audit.jsonl` (owner-only, appended, moved to `audit.jsonl.1` at 1 MB):
+  its time, the event, the hand-off's short id, the session, the page's origin and path, and words
+  from a fixed list; never a key, link, secret, typed text or page content.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

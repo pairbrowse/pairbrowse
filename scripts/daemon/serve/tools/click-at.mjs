@@ -21,11 +21,13 @@ export function createClickAtTool(conn, api) {
       await settle(r.page, SETTLE_MS);
       await popups.dismissOverlay(r.page, { closeOffers: true, ...closing });
       const content = [{ type: "text", text: r.text + popups.drain(r.page) }];
-      const shot = config.screenshots !== false ? await screenshots.take(r.page, participant, { covers: remote || api.timeline?.enabled ? coverRects : null }) : null;
-      // A joiner's agent's picture leaves this screen: card fields covered (result.mjs does the same).
-      const data = shot?.data ? await agentPicture(shot.data, r.page, remote, { before: shot.before, compose: (d, rects) => api.recorder?.coverPicture?.(d, rects) }) : null;
+      // A joiner's agent's picture leaves this screen, and a tab handed to the person is theirs
+      // (yourturn.mjs masked): card fields covered (result.mjs does the same).
+      const veiled = remote || !!api.yourTurn?.masked(r.page);
+      const shot = config.screenshots !== false ? await screenshots.take(r.page, participant, { covers: veiled || api.timeline?.enabled ? coverRects : null }) : null;
+      const data = shot?.data ? await agentPicture(shot.data, r.page, veiled, { before: shot.before, compose: (d, rects) => api.recorder?.coverPicture?.(d, rects) }) : null;
       if (data === "") content.push({ type: "text", text: NOT_COVERED_NOTE });
-      else if (data) { content.push(image(data)); rememberPicture(remote ? { ...shot, data, covered: true } : shot, r.page, "pairbrowse_click_at", args); }
+      else if (data) { content.push(image(data)); rememberPicture(veiled ? { ...shot, data, covered: true } : shot, r.page, "pairbrowse_click_at", args); }
       else if (shot?.same) content.push({ type: "text", text: SAME_PICTURE });
       return { content };
     },

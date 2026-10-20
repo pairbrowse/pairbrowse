@@ -742,8 +742,7 @@ const connect = helperConnection({
   });
   // The timeline (pictures sent to the agent): pictures.js.
   on("timeline", (e) => pictures.timeline(e, () => selectTab("pictures")));
-  on("downloads", tools.downloads);
-  on("handoffs", tools.handoffs);
+  for (const k of ["downloads", "handoffs", "config"]) on(k, tools[k]);
   // The tab the left dock's Tools row asked for (POST layout's tab, relayed, never kept). The
   // sides are the browser's (native) or not this page's to show (served): never read here.
   on("layout", (l) => { if (typeof l?.tab === "string" && TABS.includes(l.tab)) selectTab(l.tab); });

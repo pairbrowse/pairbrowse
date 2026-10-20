@@ -22,7 +22,7 @@ const MAX_LINES = 800;
 // Over the budget for now, each with its reason and its size today: growing past it fails, and
 // once under MAX_LINES it must leave this list.
 const OVER = {
-  "scripts/daemon.mjs": { max: 856, why: "the helper's composition root: wiring every part's deps (plan ST4: a thin root under 300 lines)" },
+  "scripts/daemon.mjs": { max: 850, why: "the helper's composition root: wiring every part's deps (plan ST4: a thin root under 300 lines)" },
   "ui/right/right.js": { max: 825, why: "the side panel's right column, one page script served under a strict CSP" },
 };
 
@@ -58,6 +58,8 @@ const ALLOWED = new Set([
   "sharing -> capture", "sharing -> tablabels", "sharing -> where", "sharing -> tunnel-pool",
   // The grant table keeps its audit lines' pages as the trail does and its words from the messages' lists.
   "grants -> audit", "grants -> notify/message",
+  // Hand-offs read their step kinds and sentences as the messages word them, and a step's kind from the agent's words as the Tools tab does.
+  "yourturn -> notify/message", "yourturn -> toolstab",
   // A part's own folder reaching back to a shared piece.
   "browser/downloads -> toolstab", "browser/launch -> exec-contexts", "browser/supervise -> where",
   "join/agents -> linkwait", "join/agents -> remote-agents", "join/mirror -> presence",

@@ -4,17 +4,17 @@
 // and hidden tools), launch.mjs (the tools the bridge adds), runs.mjs (the runs server) and
 // validate-skills.mjs (what a skill may name) all read it; nothing parses source for a tool list.
 // Data only: no Node API beyond plain modules, nothing runs on import (the PreToolUse hook loads it).
-import { STATUS_KINDS, ROLES, SHARE_MODES } from "../../ui/vocab.js";
+import { STATUS_KINDS, STATUS_STEPS, ROLES, SHARE_MODES } from "../../ui/vocab.js";
 
 // ---- the definitions of PairBrowse's own tools ----
 
 export const STATUS_TOOL = {
   name: "pairbrowse_status",
-  description: "Show a status badge at the top of every tab in the PairBrowse window. kind 'agent' (or 'claude', the same, for any app) while working, 'you' means the user must act (CAPTCHA, login, 2FA), 'done' when finished, 'clear' removes it.",
+  description: "Show a status badge at the top of every tab in the PairBrowse window. kind 'agent' (or 'claude', the same, for any app) while working, 'you' means the user must act (CAPTCHA, login, 2FA), 'done' when finished, 'clear' removes it. With 'you', step names what the user does (it picks the words of a hand-off message to their phone, when they set one up; your text is never sent).",
   inputSchema: {
     type: "object",
     required: ["kind"],
-    properties: { text: { type: "string", maxLength: 140 }, kind: { type: "string", enum: [...STATUS_KINDS] } },
+    properties: { text: { type: "string", maxLength: 140 }, kind: { type: "string", enum: [...STATUS_KINDS] }, step: { type: "string", enum: [...STATUS_STEPS] } },
   },
 };
 

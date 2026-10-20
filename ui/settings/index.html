@@ -132,6 +132,14 @@
           <h3 class="item-h">Stopping agents</h3>
           <p class="help" id="agents-who-text">Pause stops every agent at once; Take control stops one. Both are on the agent panel.</p>
         </div>
+        <div class="item cfg-item" id="away" data-field="away" data-k="away phone hand-off handoff your turn telegram discord slack ntfy webhook message away from computer">
+          <h3 class="item-h">When you're away</h3>
+          <div class="sw-row">
+            <span class="sw-text"><span id="away-label">Send steps handed to you to your phone</span><small id="away-state" role="status" aria-live="polite"></small></span>
+            <button class="switch" id="away-on" type="button" role="switch" aria-checked="false" aria-labelledby="away-label" aria-describedby="away-state" disabled><i aria-hidden="true"></i></button>
+          </div>
+          <p class="help">A sign-in, code, CAPTCHA or payment an agent hands to you goes to your hand-off channel (Telegram, Discord, Slack, ntfy or a webhook, set in config.json) with a link to take over from your phone. Only the step's kind, the site and the expiry go, never what the agent wrote.</p>
+        </div>
         <div class="item cfg-item" id="results" data-field="pictures" data-k="pictures picture screenshot screenshots result image see text only">
           <h3 class="item-h">What agents see</h3>
           <div class="sw-row">

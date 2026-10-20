@@ -1,0 +1,460 @@
+// Hand-offs to the person (daemon/yourturn.mjs, spec server-mode B7, B10, B11, decision 8): the
+// window as before on a desktop, a grant and one message per step when hand-offs go to the
+// channels, exactly one reminder, the timeout's safe stop and held tab, and nothing the person
+// types (nor the agent's own words) in a message, an audit line, a host note or the goal log.
+import "./helpers/home.mjs";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const { createYourTurn, TIMEOUT_NOTE, TIMED_OUT } = await import("../scripts/daemon/yourturn.mjs");
+const { createGrants } = await import("../scripts/daemon/grants.mjs");
+const { createAudit } = await import("../scripts/daemon/audit.mjs");
+const { createNotifier, handoffSends } = await import("../scripts/daemon/notify/index.mjs");
+const { createHandoffs } = await import("../scripts/daemon/toolstab.mjs");
+const { createOutput } = await import("../scripts/daemon/output.mjs");
+const { CHALLENGE_TURN } = await import("../scripts/popups.mjs");
+const { STATUS_STEPS } = await import("../ui/vocab.js");
+const { ACTIONS, clock: utcClock } = await import("../scripts/daemon/notify/message.mjs");
+
+const MIN = 60_000;
+const CARD = "4242 4242 4242 4242";
+const tick = () => new Promise((r) => setImmediate(r));
+const linesOf = (f) => { try { return readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
+
+function pageAt(url, tabs = []) {
+  const page = { url: () => url, isClosed: () => false, context: () => ({ pages: () => [...tabs, page] }) };
+  return page;
+}
+
+// A helper's worth of hand-offs: real grants, audit, notifier (webhook through a stub post) and
+// Tools tab list, on clocks and timers the test moves.
+function setup({ enabled = true, away = true, server = false, channels = [{ type: "webhook", urlSecret: "PAIRBROWSE_WEBHOOK_URL" }], post, agentBy } = {}) {
+  const clock = { t: 1_800_000_000_000, m: 9_000 };
+  const timers = [];
+  const fake = { set: (fn, ms) => { const t = { fn, at: clock.t + ms, done: false }; timers.push(t); return t; }, clear: (t) => { if (t) t.done = true; } };
+  const fire = () => { for (const t of timers) if (!t.done && t.at <= clock.t) { t.done = true; t.fn(); } };
+  const file = join(mkdtempSync(join(tmpdir(), "pb-yourturn-")), "audit.jsonl");
+  const audit = createAudit({ file, now: () => clock.t });
+  const grants = createGrants({ now: () => clock.t, mono: () => clock.m, audit, timers: { set: () => null, clear: () => {} } });
+  const sent = []; // what reached the webhook
+  const notifier = createNotifier({ channels: () => channels, secret: (n) => (n === "PAIRBROWSE_WEBHOOK_URL" ? "https://hooks.example.org/pb" : undefined), sendMaxMs: 1000,
+    post: post || (async (url, body) => { sent.push(JSON.parse(body)); return { ok: true, status: 200 }; }) });
+  const config = { handoff: { enabled, away, grantMinutes: 15, remindMinutes: 10, channels } };
+  const notes = [], journal = [], badges = [], logged = [];
+  const handoffs = createHandoffs();
+  const hud = {
+    page: null,
+    badgeNow: { text: "", kind: "clear" },
+    async setBadge(text, kind) { badges.push({ text, kind }); this.badgeNow = { text, kind }; },
+    async setBadgeFor(p, text, kind) { badges.push({ p, text, kind }); yt.onBadge(p, { kind, text, color: "" }); },
+    badge() { return this.badgeNow; },
+    sparkPage() { return this.page; },
+    sparkColor: () => "#E8743B",
+  };
+  let saved = 0, flushed = 0;
+  const yt = createYourTurn({
+    config, grants, notifier, audit, handoffs, hud, hostNote: (t) => notes.push(t), log: (l) => logged.push(l),
+    journal: { flushNow: async () => { flushed++; }, status: (kind, text) => journal.push({ kind, text }) },
+    saveTabs: async () => { saved++; return {}; }, sessionName: () => "default",
+    linkFor: async (key) => `http://127.0.0.1:4100/${key}/`,
+    sends: () => handoffSends(config, { server }), timers: fake, now: () => clock.t, turnMs: () => 0, ...(agentBy ? { agentBy } : {}),
+  });
+  return { clock, fire, grants, yt, sent, notes, journal, badges, logged, handoffs, hud, audit: () => linesOf(file), file, config, counts: () => ({ saved, flushed }) };
+}
+
+test("the step kinds are one list: pairbrowse_status step, the messages' actions", () => {
+  assert.deepEqual([...STATUS_STEPS], ACTIONS);
+});
+
+test("a desktop without Away: the step stays in the window; no grant, no message", async () => {
+  const s = setup({ away: false });
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  assert.equal(await s.yt.onStatus("p1", { kind: "you", text: "Please sign in", step: "login" }, page), "");
+  s.yt.onBadge("p1", { kind: "you", text: "Please sign in" });
+  assert.equal(s.grants.open().length, 0);
+  assert.equal(s.sent.length, 0);
+  const [entry] = s.handoffs.list();
+  assert.equal(entry.kind, "login", "the Tools tab's entry, with the step's kind");
+  assert.equal(entry.text, "Please sign in");
+  // A CAPTCHA PairBrowse saw: the badge and the Tools tab, as before.
+  s.yt.onChallenge(CHALLENGE_TURN, page);
+  await tick();
+  assert.deepEqual(s.badges.at(-1), { text: CHALLENGE_TURN, kind: "you" });
+  assert.equal(s.grants.open().length, 0);
+  s.yt.onChallengeCleared();
+  assert.deepEqual(s.badges.at(-1), { text: "", kind: "clear" });
+  assert.equal(s.handoffs.list().length, 1, "only the agent's entry is left");
+  assert.equal(s.audit().length, 0, "nothing in the trail");
+  // Enabled but no channel at all, even in server mode: no grant; the status says to tell the user.
+  const t = setup({ server: true, away: false, channels: [] });
+  t.hud.page = page;
+  assert.match(await t.yt.onStatus("p1", { kind: "you", text: "x" }, page), /no hand-off channel can be used/);
+  assert.equal(t.grants.open().length, 0);
+  assert.deepEqual(t.audit().map((l) => [l.kind, l.detail]), [["notify-failed", "no-channel"]]);
+});
+
+test("Away (or a server): one grant per step, a message of the step's kind, host, expiry and link only; the result names where it went, never the link", async () => {
+  for (const opts of [{ away: true }, { away: false, server: true }]) {
+    const s = setup(opts);
+    const other = pageAt("https://news.example/");
+    const page = pageAt("https://shop.example/checkout?order=77#pay", [other]);
+    s.hud.page = page;
+    const line = await s.yt.onStatus("p1", { kind: "you", text: `Pay with card ${CARD}, code 123456`, step: "payment" }, page);
+    const [g] = s.grants.open();
+    assert.ok(g, "a grant");
+    assert.equal(g.page, page);
+    assert.equal(g.action, "payment");
+    assert.equal(g.expiresAt - s.clock.t, 15 * MIN);
+    assert.equal(line, `Your turn sent (webhook): hand-off ${g.id} for tab 1, until ${utcClock(g.expiresAt)}. Don't act in this tab; wait with browser_wait_for.`);
+    assert.equal(s.sent.length, 1);
+    const m = s.sent[0];
+    assert.deepEqual(Object.keys(m).sort(), ["event", "expiresAt", "host", "id", "kind", "link", "reason"]);
+    assert.equal(m.event, "pairbrowse.turn");
+    assert.equal(m.kind, "payment");
+    assert.equal(m.host, "shop.example");
+    assert.match(m.link, /^http:\/\/127\.0\.0\.1:4100\/[0-9a-f]{64}\/$/);
+    assert.ok(!line.includes(m.link.split("/")[3]), "the link's key is never in the result");
+    for (const said of [JSON.stringify(s.sent), readFileSync(s.file, "utf8"), JSON.stringify(s.logged)]) {
+      assert.ok(!said.includes("4242") && !said.includes("123456") && !said.includes("Pay with card"), "never the agent's words");
+    }
+    assert.deepEqual(s.audit().map((l) => [l.kind, l.detail]), [["minted", "payment"], ["notified", "webhook"]]);
+    assert.equal(s.audit()[0].tab, "https://shop.example/checkout");
+  }
+  // No step: the kind from the agent's words, as the Tools tab reads them.
+  const s = setup();
+  const page = pageAt("https://mail.example/");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Enter the 2FA code from your phone" }, page);
+  assert.equal(s.grants.open()[0].action, "2fa");
+  assert.equal(s.sent[0].kind, "2fa");
+});
+
+test("the agent's next status ends its hand-off (agent); a cleared check ends PairBrowse's own (cleared); channels hear it, Done excepted", async () => {
+  const s = setup();
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  const id = s.grants.open()[0].id;
+  assert.equal(s.yt.handedOff(page), true);
+  assert.equal(await s.yt.onStatus("p1", { kind: "claude", text: "Filling the form" }, page), "");
+  await tick();
+  assert.equal(s.grants.open().length, 0);
+  assert.deepEqual(s.sent.at(-1), { event: "pairbrowse.ended", id, kind: "login", host: "shop.example", link: null, expiresAt: s.sent[0].expiresAt, reason: "agent" });
+  assert.equal(s.yt.handedOff(page), false);
+  // A check on a page: a grant of kind captcha; cleared ends it.
+  const check = pageAt("https://tickets.example/queue");
+  s.yt.onChallenge(CHALLENGE_TURN, check);
+  await tick(); await tick();
+  const [c] = s.grants.open();
+  assert.equal(c.action, "captcha");
+  assert.equal(c.page, check);
+  s.yt.onChallenge(CHALLENGE_TURN, check);
+  await tick();
+  assert.equal(s.grants.open().length, 1, "the same check again mints nothing new");
+  s.hud.badgeNow = { text: CHALLENGE_TURN, kind: "you" };
+  s.yt.onChallengeCleared();
+  await tick();
+  assert.equal(s.grants.open().length, 0);
+  assert.equal(s.sent.at(-1).reason, "cleared");
+  assert.deepEqual(s.audit().filter((l) => l.kind === "ended").map((l) => l.detail), ["agent", "cleared"]);
+  // Done (the person's own press): no ended message, they know.
+  await s.yt.onStatus("p1", { kind: "you", text: "Sign in" }, page);
+  const n = s.sent.length;
+  s.grants.end(s.grants.open()[0].id, "done");
+  await tick();
+  assert.equal(s.sent.length, n);
+});
+
+test("exactly one reminder: the link again while unused, else 'opened already'", async () => {
+  const s = setup();
+  const page = pageAt("https://bank.example/verify");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Code", step: "2fa" }, page);
+  s.clock.t += 10 * MIN;
+  s.fire(); await tick(); await tick();
+  assert.equal(s.sent.filter((m) => m.event === "pairbrowse.reminder").length, 1);
+  assert.equal(s.sent.at(-1).link, s.sent[0].link, "the link again: it is unused");
+  s.fire(); await tick();
+  assert.equal(s.sent.filter((m) => m.event === "pairbrowse.reminder").length, 1, "once");
+  assert.deepEqual(s.audit().filter((l) => l.kind === "reminded").map((l) => l.detail), ["webhook"]);
+  // Opened before the reminder: no link in it.
+  const t = setup();
+  t.hud.page = page;
+  await t.yt.onStatus("p1", { kind: "you", text: "Code", step: "2fa" }, page);
+  const key = t.sent[0].link.split("/")[3];
+  assert.ok(t.grants.redeem(key, { session: "default" }));
+  t.clock.t += 10 * MIN;
+  t.fire(); await tick(); await tick();
+  const r = t.sent.at(-1);
+  assert.equal(r.event, "pairbrowse.reminder");
+  assert.equal(r.link, null);
+  assert.deepEqual(t.audit().filter((l) => l.kind === "reminded").map((l) => l.detail), [["webhook", "already-opened"]]);
+});
+
+test("at expiry: flush, save tabs, yourTurn line, keys stop, one ended message, badge and Tools entry 'Timed out', one host note, tab held", async () => {
+  const s = setup();
+  const page = pageAt("https://shop.example/pay");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Pay", step: "payment" }, page);
+  s.yt.onBadge("p1", { kind: "you", text: "Pay" });
+  const key = s.sent[0].link.split("/")[3];
+  s.clock.t += 15 * MIN + 1;
+  s.grants.sweep();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.deepEqual(s.counts(), { saved: 1, flushed: 1 });
+  assert.deepEqual(s.journal, [{ kind: "you", text: "Not done in time: Approve a payment on shop.example" }]);
+  assert.equal(s.grants.redeem(key, { session: "default" }), null, "the keys stopped");
+  assert.deepEqual(s.sent.filter((m) => m.event === "pairbrowse.ended").map((m) => m.reason), ["expired"]);
+  assert.deepEqual(s.badges.at(-1), { p: "p1", text: `${TIMED_OUT}: Approve a payment on shop.example`, kind: "you" });
+  assert.match(s.handoffs.list()[0].text, /^Timed out/);
+  assert.deepEqual(s.notes, [TIMEOUT_NOTE]);
+  assert.equal(s.grants.held(page), true);
+  assert.equal(s.yt.handedOff(page), true, "agents keep out of a held tab");
+  assert.equal(s.yt.masked(page), true, "and its results stay masked");
+  // A new "you" mints a new grant to that same tab (and a single reminder again); the hold goes.
+  await s.yt.onStatus("p1", { kind: "you", text: "Pay", step: "payment" }, page);
+  assert.equal(s.grants.held(page), false);
+  assert.equal(s.grants.open()[0].page, page);
+  // The person's own input in a held tab releases it; so does the browser closing (session end).
+  s.clock.t += 15 * MIN + 1;
+  s.grants.sweep();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.equal(s.grants.held(page), true);
+  s.yt.personUsed(page);
+  assert.equal(s.grants.held(page), false);
+  s.grants.hold(page, { session: "default" });
+  s.yt.browserClosed();
+  assert.equal(s.grants.held(page), false);
+  assert.equal(s.notes.length, 2, "one note per timeout");
+});
+
+test("a payment hand-off masks every agent result from scope tabs and covers pictures; the person's typed card number is in no host note, activity line, journal, audit line or message", async () => {
+  const s = setup();
+  const page = pageAt("https://shop.example/checkout");
+  const elsewhere = pageAt("https://news.example/");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Enter the card", step: "payment" }, page);
+  // The pop-up the checkout opened (3-D Secure) is in scope too.
+  const popup = pageAt("https://3ds.bank.example/challenge");
+  s.grants.addToScope(page, popup);
+  for (const p of [page, popup]) assert.equal(s.yt.masked(p), true);
+  assert.equal(s.yt.masked(elsewhere), false);
+  assert.equal(s.yt.masked(null), false);
+  // A result from a scope tab is masked as a joiner's agent's: the card number the person typed,
+  // and the page's sensitive field values (serve/result.mjs veiled).
+  const output = createOutput({ dir: tmpdir(), secretValues: () => ({}) });
+  const typed = `- textbox "Card number" [ref=e5]: ${CARD}\n- textbox "CVC" [ref=e6]: 737`;
+  const shown = output.forJoiner(typed, ["737"]);
+  assert.ok(!shown.includes("4242 4242") && !shown.includes("737"), shown);
+  // Nothing the person typed ever passes through the hand-off: done, then a timeout on another step.
+  s.grants.end(s.grants.open()[0].id, "done");
+  await s.yt.onStatus("p1", { kind: "you", text: "Confirm", step: "payment" }, page);
+  s.clock.t += 16 * MIN;
+  s.grants.sweep();
+  for (let i = 0; i < 6; i++) await tick();
+  const everything = JSON.stringify({ sent: s.sent, notes: s.notes, journal: s.journal, logged: s.logged, audit: s.audit(), tools: s.handoffs.list().map(({ page: _p, ...h }) => h) });
+  assert.ok(!everything.includes("4242") && !everything.includes("737"));
+  // After the grant ended and the tab was released, the agent reads the page again as it is.
+  s.yt.personUsed(page);
+  assert.equal(s.yt.masked(page), false);
+});
+
+test("the browser closing ends hand-offs (browser-restarted); the helper stopping (helper-stopped) waits for the ended messages", async () => {
+  const s = setup();
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  s.yt.browserClosed();
+  await tick();
+  assert.equal(s.sent.at(-1).reason, "browser-restarted");
+  await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  await s.yt.stop();
+  assert.equal(s.sent.at(-1).reason, "helper-stopped");
+  assert.equal(s.grants.open().length, 0);
+});
+
+test("every channel failing: the grant stays for the window and live view; the status says to tell the user", async () => {
+  const s = setup({ post: async () => ({ ok: false, status: 500, error: "HTTP 500" }) });
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  const line = await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  assert.match(line, /^Couldn't reach any hand-off channel \(webhook\): tell the user directly; hand-off [0-9a-f]{8} for tab 0, until/);
+  assert.equal(s.grants.open().length, 1);
+  assert.deepEqual(s.audit().map((l) => [l.kind, l.detail]), [["minted", "login"], ["notify-failed", "webhook"]]);
+});
+
+test("PAIRBROWSE_TEST_TURN_MS: a grant's life in ms, its reminder at two thirds", async () => {
+  const s = setup();
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  const yt2 = createYourTurn({ config: s.config, grants: s.grants, notifier: { usable: () => [1], send: async () => ({ sent: ["webhook"], failed: [], withheld: [] }) },
+    handoffs: createHandoffs(), hud: s.hud, journal: { flushNow: async () => {}, status() {} }, sessionName: () => "default", sends: () => true,
+    turnMs: () => 3000, now: () => s.clock.t, timers: { set: (fn, ms) => { yt2.remindIn = ms; return null; }, clear() {} } });
+  await yt2.onStatus("p2", { kind: "you", text: "x", step: "other" }, page);
+  assert.equal(s.grants.open()[0].expiresAt - s.clock.t, 3000);
+  assert.equal(yt2.remindIn, 2000);
+});
+
+test("pairbrowse_status: the hand-off's line after the status line; the step kind reaches the Tools tab before the badge's callback", async () => {
+  const { createStatusTool } = await import("../scripts/daemon/serve/tools/status.mjs");
+  const s = setup();
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  const api = {
+    context: { getContext: async () => ({}), crashLoop: () => null, statusParts: () => [] },
+    hud: { ...s.hud, setBadgeFor: async (p, text, kind) => s.yt.onBadge(p, { kind, text, color: "" }), hideCursor: async () => {}, sparkPage: () => page },
+    journal: { status() {} }, session: { setStatus() {} }, myLabel: () => "Claude", yourTurn: s.yt,
+  };
+  const tool = createStatusTool({ participant: "p9", mine: page }, api);
+  const r = await tool.pairbrowse_status({ kind: "you", text: "Sign in please", step: "login" });
+  const [first, second] = r.text.split("\n");
+  assert.match(first, /^ok/);
+  assert.match(second, /^Your turn sent \(webhook\): hand-off [0-9a-f]{8} for tab 0, until \d\d:\d\d UTC\. Don't act in this tab; wait with browser_wait_for\.$/);
+  assert.equal(s.handoffs.list()[0].kind, "login");
+  const done = await tool.pairbrowse_status({ kind: "done", text: "Signed in" });
+  assert.ok(!done.text.includes("\n"), "no hand-off line for other kinds");
+  assert.equal(s.grants.open().length, 0, "and its hand-off ended");
+});
+
+test("two channels of one type: the result and the trail name the type once, so the notified and reminded lines are kept", async () => {
+  const hook = { type: "webhook", urlSecret: "PAIRBROWSE_WEBHOOK_URL" };
+  const s = setup({ channels: [hook, { ...hook }] });
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  const line = await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  assert.equal(s.sent.length, 2, "both webhooks got the message");
+  assert.match(line, /^Your turn sent \(webhook\): /);
+  assert.deepEqual(s.yt.open()[0].sent, ["webhook"]);
+  s.clock.t += 10 * MIN;
+  s.fire(); await tick(); await tick();
+  const trail = s.audit().map((l) => [l.kind, l.detail]);
+  assert.deepEqual(trail.filter(([k]) => k === "notified" || k === "reminded"), [["notified", "webhook"], ["reminded", "webhook"]]);
+});
+
+test("a tab on no website (about:blank, a file): the step stays in the window; no grant, no message", async () => {
+  for (const url of ["about:blank", "file:///Users/me/form.html", "data:text/html,x"]) {
+    const s = setup();
+    const page = pageAt(url);
+    s.hud.page = page;
+    assert.match(await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page), /^Your turn shows in the PairBrowse window; this tab is on no website/, url);
+    assert.equal(s.grants.open().length, 0, url);
+    assert.equal(s.sent.length, 0, url);
+  }
+});
+
+test("a timeout keeps the agent's name on its badge", async () => {
+  const s = setup({ agentBy: (p) => ({ label: p === "p1" ? "Claude · Codex" : "Agent", color: "" }) });
+  const labels = [];
+  s.hud.setBadgeFor = async (p, text, kind, label) => { labels.push({ p, text, kind, label }); };
+  const page = pageAt("https://shop.example/pay");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Pay", step: "payment" }, page);
+  s.clock.t += 15 * MIN + 1;
+  s.grants.sweep();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.deepEqual(labels.at(-1), { p: "p1", text: `${TIMED_OUT}: Approve a payment on shop.example`, kind: "you", label: "Claude · Codex" });
+});
+
+test("a check that timed out: clearing it takes its 'Timed out' badge down and lets the tab go", async () => {
+  const s = setup();
+  const page = pageAt("https://tickets.example/queue");
+  s.yt.onChallenge(CHALLENGE_TURN, page);
+  await tick(); await tick();
+  assert.equal(s.grants.open()[0].action, "captcha");
+  s.clock.t += 15 * MIN + 1;
+  s.grants.sweep();
+  for (let i = 0; i < 6; i++) await tick();
+  const text = `${TIMED_OUT}: ${s.journal.at(-1).text.replace(/^Not done in time: /, "")}`;
+  assert.deepEqual(s.hud.badge(), { text, kind: "you" });
+  assert.equal(s.grants.held(page), true);
+  s.yt.onChallengeCleared();
+  await tick();
+  assert.deepEqual(s.hud.badge(), { text: "", kind: "clear" });
+  assert.equal(s.grants.held(page), false, "the tab is the person's again");
+  assert.equal(s.handoffs.list().length, 0);
+  // A check cleared before its timeout's steps finish: no "Timed out" badge after it.
+  const t = setup();
+  t.yt.onChallenge(CHALLENGE_TURN, page);
+  await tick(); await tick();
+  t.clock.t += 15 * MIN + 1;
+  t.grants.sweep();
+  t.yt.onChallengeCleared();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.equal(t.badges.some((b) => b.text.startsWith(TIMED_OUT)), false);
+  assert.equal(t.grants.held(page), false);
+});
+
+// B10's wiring: a result from a tab handed to the person is read as a joiner's agent's is.
+async function resultRig(handed) {
+  const { createResult } = await import("../scripts/daemon/serve/result.mjs");
+  const { coverRects } = await import("../scripts/daemon/covers.mjs");
+  const seen = { covers: [], pictures: [], sent: null, frames: 0 };
+  // The page's fields as sensitiveValues reads them: a filled security code.
+  const frame = { evaluate: async () => { seen.frames++; return [["tel cc-csc  cvc CVC", "737"]]; }, isDetached: () => false };
+  const page = { url: () => "https://shop.example/checkout", isClosed: () => false, frames: () => [frame], mainFrame: () => frame };
+  const api = {
+    closing: {}, config: { screenshots: true }, drainHostNotes: () => [], finish() {}, followTabs: async () => {}, internal: async () => null, log() {}, myLabel: () => "Claude", outlines: null,
+    output: createOutput({ dir: tmpdir(), secretValues: () => ({}) }), pause: { noteAfter: () => ({ n: 0, text: "" }) }, personTab: () => false,
+    popups: { drain: () => "", settled: async () => {}, dismissOverlay: async () => {}, checkChallenge: async () => {} },
+    presence: { userNote: () => "", loadedAt: () => 0, agentActing: () => false },
+    context: { openPages: async () => [page], touch() {}, setCurrentUrl() {}, current: () => null, pageAt: async () => page, currentUrl: () => page.url() },
+    hud: { sparkOwner: () => null, moveSpark: async () => {}, sparkPage: () => page },
+    rememberPicture: (shot) => seen.pictures.push(shot), reply() {},
+    // The picture's covers are read before it only when asked; none read here (before: not a list),
+    // so a covered picture is dropped (agentPicture "").
+    screenshots: { take: async (_p, _who, { covers }) => { seen.covers.push(covers); return { data: "IMG", before: covers ? null : undefined }; } },
+    session: { messagesNote: () => "", note: () => "" }, tabClaims: { members: () => [] }, tabNames: { strip: (t) => t },
+    toClient: (m) => { seen.sent = m; }, yourTurn: { masked: (p) => handed && p === page },
+  };
+  const conn = { callArgs: new Map(), fieldNotes: [], ownTab: () => page, participant: "p1", refNames: { toPlain: (t) => t, plainFile() {}, unknownSeqs: () => [], learnMain() {} },
+    refused: new Set(), remote: null, tabActions: new Map(), traces: new Map(), mine: page };
+  return { r: createResult(conn, api), page, seen, coverRects };
+}
+
+test("B10 wiring: serve/result.mjs reads a handed-over tab's page values, masks its result as a joiner's agent's and covers or drops its picture", async () => {
+  const snapshot = () => ({ jsonrpc: "2.0", id: 7, result: { content: [{ type: "text", text: `### Page\n- Page URL: https://shop.example/checkout\n### Snapshot\n\`\`\`yaml\n- textbox "Card number" [ref=e5]: ${CARD}\n- textbox "CVC" [ref=e6]: 737\n\`\`\`` }] } });
+  const handed = await resultRig(true);
+  await handed.r.finishResult(snapshot(), "browser_snapshot");
+  const text = handed.seen.sent.result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
+  assert.ok(handed.seen.frames > 0, "the page's sensitive field values were read (sensitiveValues)");
+  assert.ok(!text.includes("737") && !text.includes("4242 4242"), text);
+  assert.equal(handed.seen.covers[0], handed.coverRects, "the picture's covers are read");
+  assert.equal(handed.seen.sent.result.content.some((c) => c.type === "image"), false, "a picture that couldn't be covered is dropped");
+  assert.equal(handed.seen.pictures.length, 0);
+  // The same tab not handed over: the host's agent reads it as it is, with its picture.
+  const own = await resultRig(false);
+  await own.r.finishResult(snapshot(), "browser_snapshot");
+  const plain = own.seen.sent.result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
+  assert.equal(own.seen.frames, 0, "no page read for the host's own agent");
+  assert.ok(plain.includes(": 737"), plain);
+  assert.equal(own.seen.covers[0], null);
+  assert.equal(own.seen.sent.result.content.some((c) => c.type === "image"), true);
+});
+
+test("B10 wiring: pairbrowse_click_at covers or drops the picture of a handed-over tab", async () => {
+  const { createClickAtTool } = await import("../scripts/daemon/serve/tools/click-at.mjs");
+  const { coverRects, NOT_COVERED_NOTE } = await import("../scripts/daemon/covers.mjs");
+  const run = async (handed) => {
+    const page = { url: () => "https://shop.example/checkout", isClosed: () => false, evaluate: async () => null, waitForTimeout: async () => {} };
+    const covers = [], pictures = [];
+    const tool = createClickAtTool({ ownTab: () => page, participant: "p1", remote: null }, {
+      closing: {}, config: { screenshots: true }, myLabel: () => "Claude", rememberPicture: (s) => pictures.push(s),
+      hud: { cursorTo: async () => {}, sparkPage: () => page, addActivity() {} }, popups: { dismissOverlay: async () => {}, drain: () => "" },
+      screenshots: { clickAt: async () => ({ page, text: "Clicked." }), take: async (_p, _w, o) => { covers.push(o.covers); return { data: "IMG", before: o.covers ? null : undefined }; } },
+      yourTurn: { masked: (p) => handed && p === page },
+    });
+    return { r: await tool.pairbrowse_click_at({ x: 10, y: 10, element: "the field" }), covers, pictures };
+  };
+  const handed = await run(true);
+  assert.equal(handed.covers[0], coverRects);
+  assert.equal(handed.r.content.some((c) => c.type === "image"), false);
+  assert.ok(handed.r.content.some((c) => c.text === NOT_COVERED_NOTE));
+  const own = await run(false);
+  assert.equal(own.covers[0], null);
+  assert.equal(own.r.content.some((c) => c.type === "image"), true);
+  assert.equal(own.pictures.length, 1);
+});

@@ -9,7 +9,7 @@ import { spawn as nodeSpawn, execFile as nodeExecFile } from "node:child_process
 import { lstatSync, unlinkSync, chmodSync } from "node:fs";
 import { basename, dirname, extname } from "node:path";
 import { paths } from "../paths.mjs";
-import { readJson, writeJsonAtomic, within } from "../util.mjs";
+import { readJson, writeJsonAtomic, within, urlHost } from "../util.mjs";
 
 const DOWNLOADS_KEPT = 100;
 const RECORDINGS_KEPT = 500;
@@ -127,12 +127,13 @@ const listeners = () => {
 };
 
 // The downloads of the browser session open now (session(): its name), in memory only.
-export function createDownloads({ session = () => "" } = {}) {
+// agentOf(page): the agent at work in a tab ({ label, color }) or null, for event().
+export function createDownloads({ session = () => "", agentOf = () => null } = {}) {
   const all = new Map(); // id -> { id, name, host, title, by, at, state, path, ino, size, session }
   const changes = listeners();
   const pub = (e) => ({ id: e.id, name: e.name, size: e.size, at: e.at, from: { host: e.host, title: e.title }, state: e.state, by: e.by });
   const changed = (op, e) => changes.emit({ op, item: pub(e) });
-  return {
+  const api = {
     add({ name, host = "", title = "", by = null } = {}) {
       const id = newId();
       const e = { id, name: String(name || "download"), host: String(host || ""), title: String(title || ""), by: by ? { label: String(by.label || ""), color: String(by.color || "") } : null,
@@ -161,7 +162,23 @@ export function createDownloads({ session = () => "" } = {}) {
     // Downloads still running, in any session (handoff.mjs: the helper isn't idle). One started
     // over DOWNLOAD_STALE_MS ago counts no more (a browser that died under it never says it ended).
     inProgress: (now = Date.now()) => [...all.values()].filter((e) => e.state === "in-progress" && now - e.at < DOWNLOAD_STALE_MS).length,
+    // A download started, finished or failed in the browser (context.mjs keepDownloads): its id.
+    // A start is named by its tab's host and the agent at work there; the tab's title follows.
+    event({ op, name, page, id, path } = {}) {
+      if (op === "start") {
+        let by = null;
+        try { const a = agentOf(page); if (a) by = { label: a.label, color: a.color }; } catch {}
+        const newId = api.add({ name, host: urlHost(page?.url?.() || ""), title: "", by });
+        within(1000, Promise.resolve(page?.title?.()).catch(() => "")).then((t) => { if (t) api.setTitle(newId, t); }).catch(() => {});
+        return newId;
+      }
+      if (!id) return null;
+      if (op === "done") api.done(id, path);
+      else if (op === "failed") api.failed(id);
+      return id;
+    },
   };
+  return api;
 }
 const DOWNLOAD_STALE_MS = 60 * 60_000;
 

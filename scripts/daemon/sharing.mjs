@@ -19,7 +19,7 @@ const formatTime = (t) => new Date(t).toLocaleString("en-GB", { dateStyle: "medi
 // host: the host's name. view: what a new live view starts with ({ getContext, currentUrl,
 // profile, tabMeta, onHumanInput, extraOrigins, status(), session(), collaboration(),
 // secretDomains(), and the owner's pages' parts: timeline, outlines (the Page tab's outline),
-// sessionOps ({ state(), rename(name), save() }: the session card), settings, picker }). notify(text), hostNote(text): tell the user, and the host's agent in its
+// sessionOps ({ state(), rename(name), save() }: the session card), settings, picker, grants: the hand-off grants }). notify(text), hostNote(text): tell the user, and the host's agent in its
 // next result. joinAlert(entry): tells the user someone asks to join (the bottom bar in their tab
 // or a notification, one at a time: daemon/joinprompt.mjs).
 // startLive: starts the live view (tests pass a stand-in).
@@ -125,6 +125,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       timeline: view.timeline, mask: view.mask, layoutDefaults: view.layoutDefaults, settings: view.settings, reporter: view.reporter || null, clickApprovals: view.clickApprovals || null,
       sessionOps: view.sessionOps || null, outlines: view.outlines || null, tools: view.tools || null, capture: view.capture || null, covers: view.covers || null,
       onPagesKey: view.onPagesKey || (() => {}), onPersonInput: view.onPersonInput || (() => {}), activityLog: view.activityLog || null,
+      grants: view.grants || null,
     });
     await restoring;
     // Keep the sharing tunnel's port when the live view restarts with the browser.
@@ -146,6 +147,18 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   function closeLiveView() {
     liveView?.close();
     liveView = null;
+  }
+
+  // A hand-off link for a grant's redeem key (spec server-mode B5): the live view's own address as
+  // invite links reach it (inviteBaseUrl on a liveViewHosts name, else loopback, which a phone
+  // reaches through the person's SSH tunnel), never the join-code port. Its new tabs are watched
+  // from now on (a sign-in pop-up joins the hand-off). null when the live view can't start.
+  async function handoffLink(key) {
+    if (typeof key !== "string" || !/^[0-9a-f]{64}$/.test(key)) return null;
+    let lv;
+    try { lv = await ensureLiveView(); } catch (e) { log(`hand-off link: ${e?.message || e}`); return null; }
+    lv.watchGrants?.();
+    return `${inviteBase || `http://127.0.0.1:${new URL(lv.url).port}`}/${key}/`;
   }
 
   // pairbrowse_liveview. Returns { text }.
@@ -400,5 +413,5 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   const suspend = () => { if (!tun.wanted) tun.stopTunnel(); save(); devShare.stopAll(); clearInterval(devTimer); };
   // The host ended it (closed the browser window): every code, yes and tunnel, and the saved state.
   const endAll = () => { invites.revokeAll(); stopAll(); rmSync(stateFile, { force: true }); };
-  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, inviteCommand, stopTunnel: stopAll, suspend, endAll, devPanel };
+  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, handoffLink, inviteCommand, stopTunnel: stopAll, suspend, endAll, devPanel };
 }

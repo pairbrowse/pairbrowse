@@ -6,7 +6,7 @@ import { isBrowserPage, BROWSER_PAGE_RULE, HAND_TOOLS, isWebStore, WEB_STORE_RUL
 import { isUntouchedStart } from "../../tabs.mjs";
 import { PERSON_TAB_RULE } from "../output.mjs";
 import { BROWSER_GUARDED, REMOTE_TOOLS } from "./wire.mjs";
-import { STATUS_KINDS } from "../../../ui/vocab.js";
+import { STATUS_KINDS, STATUS_STEPS } from "../../../ui/vocab.js";
 import { clickRule, dialogRule, strongSignal } from "../../rules/clicks.mjs";
 import { APPROVAL_TOOLS, approvalAsk, decide } from "../../rules/decide.mjs";
 import { clickClass } from "../../rules/clicks.mjs";
@@ -79,6 +79,7 @@ export function createRefusals(conn, api) {
     if (name === "pairbrowse_status") {
       if (!STATUS_KINDS.includes(args.kind)) return 'pairbrowse_status: set kind to "agent" (working; "claude" is the same), "you", "done" or "clear".';
       if (args.text !== undefined && (typeof args.text !== "string" || args.text.length > 140)) return "pairbrowse_status: text is up to 140 characters; shorten it.";
+      if (args.step !== undefined && !STATUS_STEPS.includes(args.step)) return `pairbrowse_status: step is one of ${STATUS_STEPS.join(", ")} (what the user does), or leave it out.`;
     }
     if (name === "browser_wait_for") {
       if (args.time !== undefined && !(Number.isFinite(Number(args.time)) && Number(args.time) >= 0 && Number(args.time) <= 120)) return "browser_wait_for: time is 0 to 120 seconds; pass a time in that range.";

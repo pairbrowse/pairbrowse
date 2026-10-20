@@ -55,6 +55,9 @@ export const isColor = (c) => COLOR.test(c || "");
 // pairbrowse_status kinds: the badge's ("claude": working, for every app; "agent" the same,
 // read as "claude"; "you": the user's turn, "done", and "clear" to take it down).
 export const STATUS_KINDS = Object.freeze(["claude", "agent", "you", "done", "clear"]);
+// pairbrowse_status step: what a "you" asks of the person, the hand-off message's kind (the
+// helper's scripts/daemon/notify/message.mjs ACTIONS, the same list).
+export const STATUS_STEPS = Object.freeze(["login", "captcha", "2fa", "payment", "other"]);
 // The session board's status per participant (daemon/board.mjs), and its words, so a state
 // never shows by color alone.
 export const BOARD_STATES = Object.freeze(["working", "you", "done", "idle"]);

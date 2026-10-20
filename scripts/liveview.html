@@ -78,6 +78,10 @@
     <aside class="drawer" id="drawer" data-open="false" aria-label="Profile and timeline">
       <header><div class="dtabs" role="tablist" aria-label="Panel"><button role="tab" id="drawer-tab-profile" aria-selected="true" aria-controls="profile-body" type="button">Profile</button><button role="tab" id="drawer-tab-timeline" aria-selected="false" aria-controls="timeline-body" type="button" tabindex="-1">Timeline</button></div><button class="mini" id="drawer-close" type="button" aria-label="Close panel">Close</button></header>
       <div class="body" id="profile-body" role="tabpanel" aria-labelledby="drawer-tab-profile">
+        <div class="away-row" id="away-row" hidden>
+          <span class="away-text"><span id="away-label">Away: send steps handed to you to your phone</span><small id="away-state" role="status" aria-live="polite"></small></span>
+          <button class="away-switch" id="away-on" type="button" role="switch" aria-checked="false" aria-labelledby="away-label" aria-describedby="away-state" disabled><i aria-hidden="true"></i></button>
+        </div>
         <h3>Remembered details</h3>
         <p class="note">Used to fill forms. Claude adds what you tell it, and what gets filled in forms is kept here too. Passwords never are.</p>
         <div id="details"></div>

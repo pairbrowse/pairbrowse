@@ -57,3 +57,18 @@ test("a wait for text, or with nothing named, also returns when the hand-off end
   assert.equal(r.error, true);
   assert.match(r.text, /timed out: nobody finished the step in time/);
 });
+
+// The skill says to wait with nothing named while a hand-off is open: the wire lets that through,
+// and the tool says what to pass when no hand-off is open.
+test("nothing named reaches the tool, which waits for an open hand-off and otherwise says what to pass", async () => {
+  const { createRefusals } = await import("../scripts/daemon/serve/refuse.mjs");
+  const conn = { approvedArgs: new WeakMap(), approvedWhere: new WeakMap(), recentRisk: () => "", refNames: {}, remote: null, risks: new Map(), actingIn: page };
+  const { argProblem } = createRefusals(conn, { context: {}, secrets: { get: () => ({ values: {}, domains: {} }) }, secretNames: () => [] });
+  assert.equal(argProblem("browser_wait_for", {}), null);
+  assert.match(argProblem("browser_wait_for", { time: 500 }), /time is 0 to 120 seconds/);
+  for (const t of [tool(null), tool(createGrants())]) {
+    const r = await t({});
+    assert.equal(r.error, true);
+    assert.match(r.text, /^browser_wait_for: pass time \(seconds\), text \(to appear\) or textGone \(to disappear\)\. With nothing named it waits for a hand-off, and none is open in this tab\.$/);
+  }
+});

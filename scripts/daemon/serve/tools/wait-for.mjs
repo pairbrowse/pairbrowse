@@ -37,6 +37,10 @@ export function createWaitForTool(conn, api) {
       const endedNow = () => ({ text: `Waited ${Math.round((Date.now() - started) / 100) / 10} s. ${endedLine(settled)}`, error: settled.reason === "expired", url: page.isClosed() ? undefined : page.url() });
       const named = (typeof args.text === "string" && args.text) || (typeof args.textGone === "string" && args.textGone);
       if (handed && args.time === undefined && !named) time = 120;
+      else if (args.time === undefined && !named) {
+        unwatch();
+        return { text: "browser_wait_for: pass time (seconds), text (to appear) or textGone (to disappear). With nothing named it waits for a hand-off, and none is open in this tab.", error: true };
+      }
       let timer = null;
       try {
         if (time) {

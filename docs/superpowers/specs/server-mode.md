@@ -1520,7 +1520,9 @@ it depends on.
    drops one from `seenInForm`. B15: `yourturn.ended(page, participant)` (the agent's own "you" or
    run step, else the grant covering the tab) is raced by `browser_wait_for` (`wait-for.mjs`: the
    `time` sleep and the `text`/`textGone` looks alike, and with nothing named it waits for the
-   hand-off up to 120 s;
+   hand-off up to 120 s (found at the Phase B gate: `refuse.mjs` `argProblem` refused a wait with
+   nothing named before it reached the tool; that check now lives in `wait-for.mjs`, for a tab with
+   no hand-off only);
    `endedLine`: "ended (<reason>)... take a browser_snapshot", or at expiry "timed out ... Stop
    here"); `onRunStatus` now mints a grant for a fast-mode `handoff` step when hand-offs go to the
    channels, which the step races through `hooks.turnEnded` (Done or cleared finishes it, expiry and

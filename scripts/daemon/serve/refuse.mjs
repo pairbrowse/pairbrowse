@@ -96,7 +96,7 @@ export function createRefusals(conn, api) {
     }
     if (name === "browser_wait_for") {
       if (args.time !== undefined && !(Number.isFinite(Number(args.time)) && Number(args.time) >= 0 && Number(args.time) <= 120)) return "browser_wait_for: time is 0 to 120 seconds; pass a time in that range.";
-      if (args.text === undefined && args.textGone === undefined && args.time === undefined) return "browser_wait_for: pass time (seconds), text (to appear) or textGone (to disappear).";
+      // Nothing named is the wait for a hand-off (serve/tools/wait-for.mjs says so when none is open).
     }
     return null;
   }

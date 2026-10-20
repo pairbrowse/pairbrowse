@@ -7,6 +7,7 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { checkConfig, configProblem, configWarnings, PROFILE_SELECT, PROFILE_SELECT_REFUSED } from "../scripts/config-schema.mjs";
 import { checkProfile, profileProblem, profileDefaults, PROFILE_SCHEMA, FORBIDDEN_KEYS, SCHEMA_VERSION, FORMAT_VERSION, HISTORY_MAX, licenseRank, mostRestrictive, forbiddenWhy, canonicalJson } from "../scripts/profiles/schema.mjs";
 
 const RECORD = JSON.parse(readFileSync(new URL("./fixtures/profiles/record-1.json", import.meta.url), "utf8"));
@@ -129,6 +130,36 @@ test("a profile can't name a path, extension, proxy server, launch option, canva
   assert.deepEqual(FORBIDDEN_KEYS.filter((k) => fieldNames.has(k)), ["webgl", "webgpu"]);
   assert.deepEqual(Object.keys(PROFILE_SCHEMA.graphics.fields.require.fields).filter((k) => FORBIDDEN_KEYS.includes(k)), ["webgl", "webgpu"]);
   refused(record({ graphics: { ...RECORD.graphics, webgl: { vendor: "x" } } }), /^graphics\.webgl: a profile can't name a hardware value/);
+});
+
+// Spec D8 (F2): config.json's pairbrowse.profileSelect is closed. Its fields are the engine pack's
+// persona-picking options, typed; an option that would run a program, ask another service or fetch
+// files is refused by name (its value never repeated) and left out of what is used; any other key
+// is named as unknown. Settings refuse to write either. A profile never holds it (D6, D9).
+test("profileSelect is closed", () => {
+  assert.deepEqual(Object.keys(PROFILE_SELECT.fields).filter((k) => !PROFILE_SELECT_REFUSED.includes(k)),
+    ["os", "mode", "topN", "key", "preferLocal", "offline", "maxEncodedSize", "quiet"]);
+  assert.deepEqual(PROFILE_SELECT_REFUSED, ["python", "converter", "apiBase", "licenseKey", "localDir", "autoDownload", "autoDownloadCount"]);
+  const fine = { os: "macos", mode: "best", topN: 5, key: "k", preferLocal: false, offline: true, maxEncodedSize: 24000, quiet: true };
+  const ok = checkConfig({ pairbrowse: { profileSelect: fine } });
+  assert.deepEqual(ok.wrong, []);
+  assert.deepEqual(ok.unknown, []);
+  assert.deepEqual(ok.config.pairbrowse.profileSelect, fine);
+  for (const key of PROFILE_SELECT_REFUSED) {
+    const value = key === "autoDownload" ? true : key === "autoDownloadCount" ? 3 : "/tmp/secret-program";
+    const r = checkConfig({ pairbrowse: { profileSelect: { mode: "best", [key]: value } } });
+    assert.equal(r.wrong.length, 1, key);
+    assert.match(r.wrong[0], new RegExp(`^pairbrowse\\.profileSelect\\.${key} is refused: PairBrowse never runs a program, asks a service or fetches files to pick a persona`));
+    assert.ok(!r.wrong[0].includes("secret") && !configWarnings(r, "config.json")[0].includes("secret"), "the value is never repeated");
+    assert.deepEqual(r.config.pairbrowse.profileSelect, { mode: "best" }, `${key} left out of what is used`);
+    assert.match(configProblem({ pairbrowse: { profileSelect: { [key]: value } } }), /is refused: .*nothing was written\.$/, `${key}: Settings write nothing`);
+  }
+  const unknown = checkConfig({ pairbrowse: { profileSelect: { scriptPath: "/x", apibase: "http://x" } } });
+  assert.deepEqual(unknown.unknown, ["pairbrowse.profileSelect.scriptPath", "pairbrowse.profileSelect.apibase"]);
+  const wrong = checkConfig({ pairbrowse: { profileSelect: { mode: "service", topN: 0, preferLocal: "yes" } } });
+  assert.equal(wrong.wrong.length, 3);
+  assert.deepEqual(wrong.config.pairbrowse.profileSelect, {});
+  refused(record({ profileSelect: { mode: "best" } }), /^unknown key "profileSelect"/);
 });
 
 test("provenance, validation and history keep their shapes, bounded", () => {

@@ -373,7 +373,12 @@ user's file, readable by others), the section says why and refuses a username or
   makes room for it (default `false`).
 - `pairbrowse`: the native PairBrowse build's own settings (`humanize`, `showCursor`, `typingPace`,
   `formMove`, `motion`, `profile`, `profileSelect`, `geoip`): see
-  [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser); and the engine's
+  [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser). `profileSelect` is
+  closed: only `os`, `mode` (`"best"`, `"random"` or `"rotate"`), `topN`, `key`, `preferLocal`,
+  `offline`, `maxEncodedSize` and `quiet` are read, and `python`, `converter`, `apiBase`,
+  `licenseKey`, `localDir`, `autoDownload` and `autoDownloadCount` are refused by name (PairBrowse
+  never runs a program, asks a service or fetches files to pick a persona); any other key there is
+  named as unknown. Then the engine's
   fingerprint options (`fingerprint`, `fingerprintProfile`, `timezone`, `acceptLanguage`,
   `platform`, the GPU, screen and hardware values; the full list is `PAIRBROWSE_ENGINE_KEYS` in
   `scripts/config-schema.mjs`). Any other key there, such as `extensions`, a proxy, launch options or

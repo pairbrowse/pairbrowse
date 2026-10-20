@@ -10,7 +10,8 @@ import { checkNetwork } from "./net/config.mjs";
 
 // A spec: { type: "boolean" | "string" | "integer" | "number" | "array" | "object", nullable,
 // values (one of these exact values), min, max (numbers), items (an array's items' type),
-// fields (an object's own keys, each a spec), open (an object may hold keys besides its fields) }.
+// fields (an object's own keys, each a spec), open (an object may hold keys besides its fields),
+// refused (a key never used whatever its value: the reason, named with the key and the value left out) }.
 const PORT = { type: "integer", min: 0, max: 65535 };
 // The native engine's fingerprint options a user may set under "pairbrowse" (what the browser
 // tells sites about itself: seed, persona, platform, GPU, screen, region). They only shape the
@@ -21,6 +22,20 @@ export const PAIRBROWSE_ENGINE_KEYS = ["fingerprint", "fingerprintVoices", "fing
   "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "maxTouchPoints", "lightStealth",
   "location", "timezone", "acceptLanguage", "webrtcIp", "webrtcMdns", "canvasNoise", "storageQuota", "tlsProfile"];
 const NAMES = { type: "array", items: "string" };
+// pairbrowse.profileSelect (spec server-mode D8, F2): closed to the engine pack's persona-picking
+// options, which PairBrowse no longer uses (D9: "auto" and "local" are this computer), kept so an
+// older config.json still reads. Options that would run a program, ask another service or fetch
+// files (the pack's persona library) are refused by name and never reach the launch.
+export const PROFILE_SELECT_REFUSED = ["python", "converter", "apiBase", "licenseKey", "localDir", "autoDownload", "autoDownloadCount"];
+const REFUSED_SELECT = "refused: PairBrowse never runs a program, asks a service or fetches files to pick a persona (spec D8)";
+export const PROFILE_SELECT = {
+  type: "object", fields: {
+    os: { type: "string" }, mode: { values: ["best", "random", "rotate"] }, topN: { type: "integer", min: 1, max: 1000 },
+    key: { type: "string" }, preferLocal: { type: "boolean" }, offline: { type: "boolean" },
+    maxEncodedSize: { type: "integer", min: 0 }, quiet: { type: "boolean" },
+    ...Object.fromEntries(PROFILE_SELECT_REFUSED.map((k) => [k, { refused: REFUSED_SELECT }])),
+  },
+};
 export const CONFIG_SCHEMA = {
   browser: { type: "string", nullable: true, hint: '"pairbrowse", "pairbrowse-open" or an absolute path to a browser' },
   // Older names, still read while "browser" is unset (browser/choice.mjs), never written.
@@ -87,7 +102,7 @@ export const CONFIG_SCHEMA = {
   pairbrowse: {
     type: "object", fields: {
       profile: { type: "string", nullable: true },
-      profileSelect: { type: "object", open: true },
+      profileSelect: PROFILE_SELECT,
       humanize: { type: "boolean" },
       showCursor: { type: "boolean" },
       geoip: { type: "boolean" },
@@ -149,6 +164,7 @@ function checkFields(given, fields, open, prefix, out) {
     const spec = fields[k];
     if (!spec) { if (!open) out.unknown.push(name); value[k] = v; continue; }
     if (v === undefined) continue;
+    if (spec.refused) { out.wrong.push(`${name} is ${spec.refused}`); continue; }
     if (!fits(spec, v)) { out.wrong.push(wrongValue(name, spec, v)); continue; }
     value[k] = spec.type === "object" && spec.fields && v !== null ? checkFields(v, spec.fields, spec.open, name, out) : v;
   }

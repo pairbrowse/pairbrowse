@@ -52,11 +52,15 @@ export function agentProgram(config = loadConfig(), { platform = process.platfor
   return null;
 }
 
-// The helper's environment: this process's without the test switches, and the instance this
-// process chose from its project's .pairbrowse.json named outright, so the helper (and the tunnel
-// keepers it starts) use the same home whatever folder they run in.
+// The helper's environment: this process's without the test switches and without any
+// PAIRBROWSE_ENGINE_* variable (spec D8, F3: the engine pack reads its persona library, converter,
+// license and folders from them; the helper sets its own folders itself, profiles/migrate.mjs
+// applyEngineEnv), and the instance this process chose from its project's .pairbrowse.json named
+// outright, so the helper (and the tunnel keepers it starts) use the same home whatever folder they
+// run in.
 export function helperEnv(env = process.env, selected = SELECTED) {
   const out = withoutTestSwitches(env);
+  for (const key of Object.keys(out)) if (/^PAIRBROWSE_ENGINE_/i.test(key)) delete out[key];
   if (selected.source === "project") out.PAIRBROWSE_INSTANCE = selected.instance || "default";
   return out;
 }

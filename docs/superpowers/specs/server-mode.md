@@ -1258,6 +1258,13 @@ it depends on.
 11. Tests pinning today's F1, F3, F4, F7 behavior (before D7, D8, D12): the "F1/F4/F7 today" tests in
     `test/native-engine.test.mjs`, "F3 today" in `test/daemon-connect.test.mjs`; each later step turns its own around.
 12. Close F2, F3, F5: closed `profileSelect`, `helperEnv`, auto/local as this computer (D8, D9). -> 11
+   Landed as (at the Phase D gate, after step 38): `config-schema.mjs` `PROFILE_SELECT`, closed to
+   the eight typed options, and `PROFILE_SELECT_REFUSED`, refused by name through a new `refused`
+   spec field (`checkFields` names the key and the reason, never the value, and leaves it out;
+   `configProblem` refuses it before a write); another key is named unknown as anywhere in the file.
+   `helperEnv` drops every `PAIRBROWSE_ENGINE_*` (any case) it would pass on; the helper sets its own
+   folders (step 38's `applyEngineEnv`). The "F3 today" test became "helperEnv drops inherited
+   PAIRBROWSE_ENGINE_*"; "profileSelect is closed" is in `test/profile-schema.test.mjs`.
 13. Close F1: filtered layers; `proxy` refusal shared with C10 (D7). -> 11
 14. `daemon/audit.mjs`, `paths.audit` (B17).
    Landed as: `createAudit({ file, now, log, maxBytes, channels })` returns `{ append(entry), file }`;

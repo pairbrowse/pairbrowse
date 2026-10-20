@@ -89,15 +89,27 @@ test("the helper's environment: no test switches, the project's instance named o
   assert.equal(helperEnv({ PAIRBROWSE_INSTANCE: "other" }, { source: "project", instance: "work" }).PAIRBROWSE_INSTANCE, "work");
 });
 
-// Today's behavior, pinned before spec D8 closes it (F3): the engine pack reads PAIRBROWSE_ENGINE_*
-// settings (persona library, converter, license) from the helper's environment, and whatever the
-// bridge's caller set passes through. D8 turns this into "inherited PAIRBROWSE_ENGINE_* are dropped".
-test("F3 today: inherited PAIRBROWSE_ENGINE_* variables reach the helper's environment", () => {
-  const engine = { PAIRBROWSE_ENGINE_PROFILE_API: "http://f3.test", PAIRBROWSE_ENGINE_PROFILE_CONVERTER: "/bin/f3-converter", PAIRBROWSE_ENGINE_LICENSE_KEY: "f3-key", PAIRBROWSE_ENGINE_PROFILE_DIR: "/tmp/f3-profiles" };
+// Spec D8 (F3): the engine pack reads PAIRBROWSE_ENGINE_* settings (persona library, converter,
+// license, folders) from the helper's environment; none the bridge's caller set reaches it, in any
+// case of the name. The helper sets its own folders itself (profiles/migrate.mjs applyEngineEnv).
+test("helperEnv drops inherited PAIRBROWSE_ENGINE_*", () => {
+  const engine = { PAIRBROWSE_ENGINE_PROFILE_API: "http://f3.test", PAIRBROWSE_ENGINE_PROFILE_CONVERTER: "/bin/f3-converter", PAIRBROWSE_ENGINE_LICENSE_KEY: "f3-key",
+    PAIRBROWSE_ENGINE_PROFILE_DIR: "/tmp/f3-profiles", pairbrowse_engine_cache: "/tmp/f3-cache" };
   for (const selected of [{ source: "default", instance: null }, { source: "project", instance: "work" }]) {
-    const out = helperEnv({ PATH: "/bin", ...engine }, selected);
-    for (const [key, value] of Object.entries(engine)) assert.equal(out[key], value, `${key} (${selected.source})`);
+    const given = { PATH: "/bin", PAIRBROWSE_HOME: "/h", PAIRBROWSE_ENGINE: "kept", ...engine };
+    const out = helperEnv(given, selected);
+    for (const key of Object.keys(engine)) assert.ok(!(key in out), `${key} (${selected.source})`);
+    assert.equal(out.PATH, "/bin");
+    assert.equal(out.PAIRBROWSE_HOME, "/h");
+    assert.equal(out.PAIRBROWSE_ENGINE, "kept", "a name without the prefix's underscore is not one of the pack's");
+    assert.equal(given.PAIRBROWSE_ENGINE_LICENSE_KEY, "f3-key", "a copy: the bridge's own environment keeps them");
   }
+  process.env.PAIRBROWSE_ENGINE_PROFILE_API = "http://f3.test";
+  try {
+    let options;
+    startDaemon({ agent: null, run: (file, args, o) => { options = o; return { unref() {} }; } });
+    assert.ok(!Object.keys(options.env).some((k) => /^PAIRBROWSE_ENGINE_/i.test(k)), "startDaemon passes none on");
+  } finally { delete process.env.PAIRBROWSE_ENGINE_PROFILE_API; }
 });
 
 test("startDaemon hands the helper that environment", () => {

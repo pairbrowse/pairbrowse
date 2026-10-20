@@ -112,7 +112,7 @@ test("the fixed entry paths are listed once and exist; no other file only forwar
 // part's default (a no-op), and the helper's wiring is lost without a word (B16's onRestored and
 // onCrashLoop once were). Seams only tests pass straight to a part are listed with their part.
 const PART_SEAMS = {
-  "scripts/daemon/browser/launch.mjs": ["adBlockerOf", "safeStorageKeyFileOf", "adBlockerCrxOf"],
+  "scripts/daemon/browser/launch.mjs": ["adBlockerOf", "safeStorageKeyFileOf", "adBlockerCrxOf", "proxyAuthFileOf"],
   "scripts/daemon/browser/supervise.mjs": ["startScreen", "needsScreen", "server", "now", "setTimer", "mark"],
 };
 const namesIn = (list) => list.split(",").map((s) => s.trim().split(/\s*=/)[0].trim()).filter(Boolean);

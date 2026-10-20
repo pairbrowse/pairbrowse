@@ -58,11 +58,11 @@ test("the shell: the side panel extension unless the build declares its own page
   assert.equal(shellFrom({ capture: 2 }), EXTENSION_SHELL, "a capture page needs the build's own pages");
   assert.equal(shellFrom({ settingsSection: 1 }), EXTENSION_SHELL, "a settings section needs the build's own pages");
   assert.equal(EXTENSION_SHELL.settingsSection, false);
-  assert.deepEqual(shellFrom({ chrome: 1 }), { kind: "pages", ownPages: true, capturePage: false, captureKeyed: false, settingsSection: false, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false });
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: false, settingsSection: false, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false });
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 2 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: false, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false });
+  assert.deepEqual(shellFrom({ chrome: 1 }), { kind: "pages", ownPages: true, capturePage: false, captureKeyed: false, settingsSection: false, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false, proxyAuthFile: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: false, settingsSection: false, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false, proxyAuthFile: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 2 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: false, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false, proxyAuthFile: false });
   // 580: the build's settings are the engine settings' PairBrowse section.
-  assert.deepEqual(shellFrom({ chrome: 1, capture: 2, settingsSection: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: true, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false });
+  assert.deepEqual(shellFrom({ chrome: 1, capture: 2, settingsSection: 1 }), { kind: "pages", ownPages: true, capturePage: true, captureKeyed: true, settingsSection: true, quietTabs: false, adBlocker: false, adBlockerCrx: null, safeStorageKeyFile: false, proxyAuthFile: false });
   for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, settingsSection: v }).settingsSection, false, String(v));
   // 585: automation's tab changes never bring the build in front of the app you're in.
   assert.equal(shellFrom({ chrome: 1, quietTabs: 1 }).quietTabs, true);
@@ -84,6 +84,12 @@ test("the shell: the side panel extension unless the build declares its own page
   assert.equal(shellFrom({ chrome: 1, safeStorageKeyFile: 1 }).safeStorageKeyFile, true);
   assert.equal(shellFrom({ safeStorageKeyFile: 1 }), EXTENSION_SHELL);
   for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, safeStorageKeyFile: v }).safeStorageKeyFile, false, String(v));
+  // 962: a proxy's credentials can come from a file, answered only to that proxy (spec C1).
+  assert.equal(shellFrom({ chrome: 1, proxyAuthFile: 1 }).proxyAuthFile, true);
+  assert.equal(shellFrom({ proxyAuthFile: 1 }), EXTENSION_SHELL, "the extension shell: credentials refused");
+  assert.equal(EXTENSION_SHELL.proxyAuthFile, false);
+  for (const v of [0, "1", true, 1.5, null]) assert.equal(shellFrom({ chrome: 1, proxyAuthFile: v }).proxyAuthFile, false, String(v));
+  assert.equal(shellOf({ browserEngine: "open", executablePath: "/x" }, () => ({ chrome: 1, proxyAuthFile: 1 })).proxyAuthFile, false, "never on the open build");
   let reads = 0;
   const read = (p) => { reads++; if (p === "/bad") throw new Error("no manifest"); return { chrome: 1 }; };
   assert.equal(shellOf({ browserEngine: "open", executablePath: "/x" }, read), EXTENSION_SHELL);

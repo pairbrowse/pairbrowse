@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile } from "../scripts/native-engine.mjs";
+import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu } from "../scripts/native/graphics.mjs";
 
@@ -791,9 +791,10 @@ const PINNED_PROFILE = () => ({ navigator: { languages: ["en-US"] } });
 // F1 (D7 closes it): config.json passes only the engine's fingerprint options, but a saved profile's
 // and the persisted persona's other options reach the launch as they are. The sandbox and the
 // executable stay the helper's either way; the persona written back keeps only the fingerprint.
+// Their proxy no longer does (C10, step 25): "a saved or persisted persona's proxy refuses the launch".
 test("F1 today: launch controls in a saved profile or the persisted persona reach the launch unfiltered", async () => {
   const app = appFixture();
-  const controls = () => ({ args: ["--f1-pinned-switch"], proxy: { server: "http://f1-proxy.test:8080" }, env: { F1_PINNED: "1" },
+  const controls = () => ({ args: ["--f1-pinned-switch"], env: { F1_PINNED: "1" },
     ignoreDefaultArgs: ["--f1-ignored"], chromiumSandbox: false, executablePath: "/bin/f1-other" });
   const layers = {
     saved: { config: { pairbrowse: { profile: "mine" } }, pack: recordingPack({ saved: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), ...controls() } }), persona: null },
@@ -808,7 +809,6 @@ test("F1 today: launch controls in a saved profile or the persisted persona reac
     await launchNative(chromium, config, directory, { executablePath: app.executablePath, headless: false }, pack, (l) => lines.push(l));
     const { options } = chromium.calls[0];
     assert.ok(options.args.includes("--f1-pinned-switch"), `${layer}: its args reach the browser`);
-    assert.deepEqual(options.proxy, { server: "http://f1-proxy.test:8080" }, `${layer}: its proxy reaches the launch`);
     assert.deepEqual(options.env, { F1_PINNED: "1" }, `${layer}: its env reaches the launch`);
     assert.ok(options.ignoreDefaultArgs.includes("--f1-ignored"), `${layer}: its ignoreDefaultArgs reach the launch`);
     assert.equal(lines.some((l) => /not used/.test(l)), false, `${layer}: nothing is named as dropped`);
@@ -817,6 +817,76 @@ test("F1 today: launch controls in a saved profile or the persisted persona reac
     const written = JSON.parse(readFileSync(personaPath, "utf8")).options;
     assert.deepEqual(Object.keys(written).filter((k) => k in controls()), [], `${layer}: the persona written back keeps only the fingerprint`);
   }
+});
+
+// C10: a proxy in a saved profile or the persona kept with a session stops the launch with the
+// move-it sentence; dropping it would turn a proxied session into a direct one.
+test("a saved or persisted persona's proxy refuses the launch, pointing to network.proxies", async () => {
+  const app = appFixture();
+  const proxy = { server: "http://persona-proxy.test:8080", username: "persona-user", password: "persona-pass" };
+  const layers = {
+    saved: { config: { pairbrowse: { profile: "mine" } }, pack: recordingPack({ saved: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), proxy } }), persona: null,
+      sentence: personaProxyRefusal("The saved profile (pairbrowse.profile)") },
+    persisted: { config: { pairbrowse: {} }, pack: recordingPack(), persona: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), proxy },
+      sentence: personaProxyRefusal("The persona kept with this session (pairbrowse-persona.json)") },
+    "persisted, null": { config: { pairbrowse: {} }, pack: recordingPack(), persona: { fingerprint: "seed", proxy: null },
+      sentence: personaProxyRefusal("The persona kept with this session (pairbrowse-persona.json)") },
+  };
+  for (const [layer, { config, pack, persona, sentence }] of Object.entries(layers)) {
+    const directory = mkdtempSync(join(tmpdir(), "pairbrowse-c10-"));
+    const personaPath = join(directory, "pairbrowse-persona.json");
+    if (persona) writeFileSync(personaPath, JSON.stringify({ name: "pairbrowse", options: persona }));
+    const before = existsSync(personaPath) ? readFileSync(personaPath, "utf8") : null;
+    const chromium = fakeBrowserType();
+    const error = await launchNative(chromium, config, directory, { executablePath: app.executablePath, headless: false }, pack).then(() => null, (e) => e);
+    assert.ok(error, `${layer}: refused`);
+    assert.equal(error.message, sentence, layer);
+    assert.match(error.message, /network\.proxies/, `${layer}: names where a proxy goes`);
+    assert.doesNotMatch(error.message, /persona-proxy|persona-user|persona-pass/, `${layer}: never the proxy's address or credentials`);
+    assert.equal(chromium.calls.length, 0, `${layer}: no browser started`);
+    assert.equal(existsSync(personaPath) ? readFileSync(personaPath, "utf8") : null, before, `${layer}: the persona file is left as it was`);
+  }
+});
+
+// C1: a proxy's credentials never reach the driver's proxy option or a switch: the launch options'
+// proxy with a user, a password or user info in its address stops the launch before the pack sees it.
+test("a launch's proxy with credentials is refused; one without passes as it is", async () => {
+  const app = appFixture();
+  const refused = [
+    { server: "http://proxy.test:8080", username: "u-secret" },
+    { server: "http://proxy.test:8080", password: "p-secret" },
+    { server: "http://u-secret:p-secret@proxy.test:8080" },
+    { server: "socks5://u-secret@proxy.test:1080" },
+    { server: "u-secret:p-secret@proxy.test:8080" },
+    "http://u-secret:p-secret@proxy.test:8080",
+  ];
+  for (const proxy of refused) {
+    assert.equal(proxyCredentials(proxy), true, JSON.stringify(proxy));
+    const pack = recordingPack();
+    let resolved = 0;
+    pack.resolveProxy = (p) => { resolved++; return { args: [], proxy: p }; };
+    const chromium = fakeBrowserType();
+    const error = await launchNative(chromium, { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } }, mkdtempSync(join(tmpdir(), "pairbrowse-c1-")),
+      { executablePath: app.executablePath, headless: false, proxy }, pack).then(() => null, (e) => e);
+    assert.equal(error?.message, PROXY_CREDENTIALS_REFUSAL, JSON.stringify(proxy));
+    assert.doesNotMatch(error.message, /secret/);
+    assert.equal(resolved, 0, "the engine pack never sees it");
+    assert.equal(chromium.calls.length, 0, "no browser started");
+  }
+  for (const proxy of [undefined, null, { server: "http://proxy.test:8080" }, { server: "socks5://[::1]:1080/", bypass: "localhost" }, { server: "http://proxy.test:8080", username: "", password: "" }, { server: "http://proxy.test/a@b" }])
+    assert.equal(proxyCredentials(proxy), false, JSON.stringify(proxy));
+  const pack = recordingPack();
+  const chromium = fakeBrowserType();
+  await launchNative(chromium, { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } }, mkdtempSync(join(tmpdir(), "pairbrowse-c1-")),
+    { executablePath: app.executablePath, headless: false, proxy: { server: "http://proxy.test:8080", bypass: "localhost,127.0.0.1,[::1]" } }, pack);
+  assert.deepEqual(chromium.calls[0].options.proxy, { server: "http://proxy.test:8080", bypass: "localhost,127.0.0.1,[::1]" });
+});
+
+test("proxyAuthFile: the build manifest's field, 1 and up, gates proxy credentials (962)", () => {
+  assert.equal(proxyAuthFile({ proxyAuthFile: 1 }), true);
+  assert.equal(proxyAuthFile({ proxyAuthFile: 2 }), true);
+  for (const v of [undefined, 0, "1", true, 1.5, null, -1]) assert.equal(proxyAuthFile({ proxyAuthFile: v }), false, String(v));
+  assert.equal(proxyAuthFile(null), false);
 });
 
 // F4 (D12 closes it): the build's platform and brand version fill the fingerprint when no layer

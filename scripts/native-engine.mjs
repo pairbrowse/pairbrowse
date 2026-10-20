@@ -27,6 +27,18 @@ const UNSUPPORTED = ["version", "autoUpdate", "pro", "licenseThroughProxy", "sha
 export const canvasBridgeRefusal = (where) => `${where} sets canvasBridge: refused, PairBrowse never sends what pages draw to another program (the canvas bridge is gone).`;
 export const CANVAS_BRIDGE_DROPPED = "launch: canvasBridge in the persona kept with this profile dropped (the canvas bridge is gone)";
 export const isCanvasBridgeSwitch = (arg) => typeof arg === "string" && /^canvas-bridge-/.test(switchName(arg) ?? "");
+// A proxy in a saved profile or in the persona kept with a session (spec C10, the refusal D7 shares):
+// the launch stops, never drops it, since dropping it would turn a proxied session into a direct one.
+// A session's proxy is operator config (config.json network.proxies, net/config.mjs), its
+// credentials only in secrets.env.
+export const personaProxyRefusal = (where) => `${where} sets proxy: refused, a session's proxy is set in config.json's network.proxies (docs/configuration.md), never in a persona; move it there.`;
+// A proxy's username and password reach the browser only through its auth file (spec C1, the
+// manifest's proxyAuthFile), never the driver's proxy option (the driver answers any site's 401 with
+// them) or a switch (ps, crash dumps). So a proxy given to a launch carries no user, password or
+// user info in its address; one that does stops the launch, before the engine pack sees it.
+export const PROXY_CREDENTIALS_REFUSAL = "A proxy's username and password reach the browser only through its proxy auth file, never the launch options or the command line: refused.";
+const userInfo = (server) => typeof server === "string" && server.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").split(/[/?#]/)[0].includes("@");
+export const proxyCredentials = (proxy) => proxy != null && (typeof proxy === "object" ? !!(proxy.username || proxy.password) || userInfo(proxy.server) : userInfo(proxy));
 const GEOIP_FIELDS = ["timezone", "acceptLanguage", "webrtcIp", "location"];
 const PLATFORM = { darwin: "macos", linux: "linux", win32: "windows" }[process.platform];
 
@@ -74,6 +86,11 @@ export const quietTabs = (manifest) => Number.isInteger(manifest?.quietTabs) && 
 // only while that file is missing, so a new build signed without a Team ID doesn't ask again. On
 // Linux the same file comes before the fixed key --password-store=basic gives.
 export const safeStorageKeyFile = (manifest) => Number.isInteger(manifest?.safeStorageKeyFile) && manifest.safeStorageKeyFile >= 1;
+// The build manifest's `proxyAuthFile` field (1 and up, 962): the browser reads a proxy's username
+// and password once from the owner-only file --pairbrowse-proxy-auth-file names and answers only
+// the auth challenges of the proxy --proxy-server names (same host and port), never a site's.
+// Absent (every build so far, and always the open build): a proxy with credentials is refused at launch.
+export const proxyAuthFile = (manifest) => Number.isInteger(manifest?.proxyAuthFile) && manifest.proxyAuthFile >= 1;
 export const adBlocker = (manifest) => Number.isInteger(manifest?.adBlocker) && manifest.adBlocker >= 1;
 // The build manifest's `adBlockerCrx` ({ path, version }): the ad blocker shipped with the build, a
 // CRX under Contents/Resources on macOS, under the binary's directory on Linux (a relative path
@@ -255,7 +272,9 @@ function readSettings(config, pack, personaPath) {
   if (given.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("config.json's pairbrowse block"));
   const saved = withFlatWebgpu(selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {});
   if (saved?.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("The saved profile (pairbrowse.profile)"));
+  if (saved?.proxy !== undefined) throw new Error(personaProxyRefusal("The saved profile (pairbrowse.profile)"));
   const persisted = { ...withFlatWebgpu(existsSync(personaPath) ? pack.Profile.load(personaPath).options : {}) };
+  if (persisted.proxy !== undefined) throw new Error(personaProxyRefusal("The persona kept with this session (pairbrowse-persona.json)"));
   const bridgeDropped = persisted.canvasBridge !== undefined;
   delete persisted.canvasBridge;
   for (const key of UNSUPPORTED) {
@@ -335,6 +354,8 @@ export const DRIVER_BACKGROUND_SWITCH = "--disable-background-networking";
 
 export async function launchNative(chromium, config, directory, options, pack, log = () => {}) {
   const metadata = nativeManifest(options.executablePath);
+  // Before anything else runs (a first launch's host capture takes up to a minute).
+  if (proxyCredentials(options.proxy)) throw new Error(PROXY_CREDENTIALS_REFUSAL);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const personaPath = join(directory, "pairbrowse-persona.json");
   const settings = readSettings(config, pack, personaPath);
@@ -361,6 +382,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const givenArgs = (merged.args ?? []).filter((a) => !webrtcPolicy(a));
   pack.emitCoherenceWarnings?.({ ...fingerprint, proxy: merged.proxy, geoip: settings.geoip, headless: merged.headless, userAgent: merged.userAgent, _userArgs: givenArgs.filter((a) => !/^--pairbrowse-helper(-key-file)?=/.test(String(a))) },
     false, process.platform, ENGINE_MAJOR);
+  if (proxyCredentials(merged.proxy)) throw new Error(PROXY_CREDENTIALS_REFUSAL); // whatever layer added it
   const { args: proxyArgs, proxy } = pack.resolveProxy(merged.proxy, pack.engineSupportsSwitch(options.executablePath, "proxy-auth"));
   // The only extension a launch loads is PairBrowse's own, which the helper adds in its own
   // --load-extension switch (browser.mjs shellArgs); one named anywhere else (a saved profile's

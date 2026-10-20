@@ -1602,6 +1602,19 @@ it depends on.
    but no launch uses it (`docs/configuration.md` says so). Tests: `test/net-config.test.mjs`.
 25. Native-engine proxy rules: saved persona refusal, `proxyAuthFile` in `shellFrom` and
     `EXTENSION_SHELL` (C1, C10). -> 13, 24
+   Landed as (ahead of step 13, which reuses the refusal): `native-engine.mjs` `personaProxyRefusal(where)`,
+   thrown in `readSettings` when the saved profile or the persisted persona has a `proxy` key (any
+   value, `null` included; the sentence names neither address nor credentials and points to
+   `network.proxies`); config.json's own `pairbrowse.proxy` stays named and dropped as before.
+   `proxyCredentials(proxy)` and `PROXY_CREDENTIALS_REFUSAL`: a launch's `proxy` option with a
+   `username`, a `password` or user info in its `server` stops `launchNative` first thing (before a
+   host capture) and again on `merged.proxy` before `pack.resolveProxy`, so no credential reaches the
+   driver or a switch. `proxyAuthFile(manifest)` reads the manifest field (an integer 1 and up);
+   `shellFrom` carries it (`proxyAuthFile`), `EXTENSION_SHELL` has it `false`, so the open build and
+   a native build without its own pages never take credentials; `daemon/browser/launch.mjs` `shellFor`
+   has the same field (seam `proxyAuthFileOf`). The auth file itself and the refusal of `auth` without
+   `proxyAuthFile` are `launchPart` (step 27). Tests: `test/native-engine.test.mjs` (the F1 test no
+   longer pins the proxy), `test/browser-choice.test.mjs`.
 26. Geoip fields out of the persona, quiet geoip (C9).
 27. `daemon/network.mjs` `forLaunch`, launch wiring in section 3.2 order (C5). -> 4, 24
 28. Probe, verdict, browser check, `NET_CHECK` (C2, C6).

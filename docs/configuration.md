@@ -246,7 +246,9 @@
   switches, is named as an unknown key and never reaches the browser (the helper log says so at
   launch): the browser loads no extension but PairBrowse's own side panel. `canvasBridge` (the
   engine's option to send what pages draw to another program) is refused: a launch with it here or
-  in a saved profile stops with an error naming it.
+  in a saved profile stops with an error naming it. A proxy in a saved profile (`profile`) or in the
+  persona kept with a session (`pairbrowse-persona.json`) stops the launch too, with an error saying
+  to move it to `network.proxies` (above): dropping it would turn a proxied session into a direct one.
 - `downloadsDir`: where site downloads and recordings are saved (default: your Downloads folder): an ordinary folder inside your home folder, checked as Settings checks it when the file is read and again at every save; one that fails is not used.
 - `liveViewPort`: a fixed live view port (default: a random one each start).
 - `liveViewHosts`: extra host names the live view answers to, for invite and hand-off links only,

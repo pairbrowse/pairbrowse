@@ -6,7 +6,6 @@ import { ensureBrowser, launchOptions, prepareProfile, panelExtensionId, resetPa
 import { chooseBrowser, engineConfig, shellOf } from "../../browser/choice.mjs";
 import { engineProfile, launchEngine, validateEngine, SANDBOX } from "../../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../../native/install.mjs";
-import { needsVirtualDisplay, screenGeometry, startVirtualDisplay } from "../../display.mjs";
 import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
 import { within } from "../../util.mjs";
 import { setQuietTabs } from "../../focus.mjs";
@@ -176,7 +175,9 @@ export function createLaunch(st, deps, api) {
     if (st.ownPages && !helper) log("the browser's own pages have no helper address");
     step("live view");
     api.forgetTemporaryDownloads();
-    if (!st.screen && needsVirtualDisplay(config)) st.screen = await startVirtualDisplay(log, { geometry: screenGeometry(config) });
+    // A virtual screen when this machine needs one (browser/supervise.mjs). Kept here, not read from
+    // st.screen later: a screen lost while the launch waits below is never swapped for no screen.
+    const screen = await api.ensureScreen();
     createSession(st.session);
     // The PairBrowse browser (scripts/browser.mjs), or another browser on the same engine from config.
     let keyFile = null, captureKeyFile = null;
@@ -196,14 +197,21 @@ export function createLaunch(st, deps, api) {
         handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
         // The launch itself, as the install self-check makes it too (browser.mjs launchOptions).
         ...launchOptions(config, {
-          shell: st.shell, firstRun,
-          env: { ...process.env, ...(st.screen?.env || {}) },
+          shell: st.shell, firstRun, screen,
+          env: { ...process.env, ...(screen?.env || {}) },
           executablePath: next.executablePath || await ensureBrowser(browserType(), log),
           helper: helper && keyFile ? { origin: helper.origin, keyFile, ...(captureKeyFile ? { captureKeyFile } : {}) } : null,
         }),
-      }, launchLog);
+      }, launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
     } catch (e) { dropHelperKey(keyFile, captureKeyFile); throw e; } // a failed launch leaves no key file
     finally { launchLog.done(hud.badge()); }
+    // The screen ended while the browser started (supervise.mjs lost() cleared it): this browser has
+    // no screen, so it closes and the launch fails; the next action starts a new screen.
+    if (screen && st.screen !== screen) {
+      await within(5000, ctx.close().catch(() => {}));
+      dropHelperKey(keyFile, captureKeyFile);
+      throw new Error("the virtual screen ended while the browser started; see daemon.log");
+    }
     hud.setSandboxOff?.(SANDBOX.on === false); // the bar warns while the sandbox is off
     step("browser (fingerprint and launchPersistentContext inside)");
     pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
@@ -218,12 +226,17 @@ export function createLaunch(st, deps, api) {
     if (st.pick.state === "pending") api.showPicker(ctx, { own });
     else api.restore(ctx, null, { own });
     const mine = st.contextPromise;
+    const launchedAt = Date.now();
     ctx.on("close", () => {
       dropHelperKey(keyFile, captureKeyFile); // this launch's own file: an older browser closing late keeps the next one's
       log("browser closed");
       // Closed for good (by hand, a crash, the turn cap), not on the way to another session: the
       // calls in flight hear of it.
       if (!st.switching) for (const fn of closeWatchers) try { fn(); } catch {}
+      // A close nobody asked for, on a server: the crash-loop guard counts it (browser/supervise.mjs)
+      // and, unless it now holds, keep-alive starts the browser again after a pause.
+      // The helper's own resets (a stalled call, the turn cap) are not crashes.
+      if (!st.switching && !st.resetting && !shuttingDown() && !api.noteUnexpectedClose(launchedAt)) api.relaunchSoon(launchedAt);
       // Closed while asking: the next browser asks again.
       if (st.pick.state === "showing") { st.pick.state = "pending"; st.pick.page = null; }
       // Only the browser in use: an older one closing late never drops the next one.
@@ -239,6 +252,9 @@ export function createLaunch(st, deps, api) {
   function getContext() {
     if (shuttingDown() && !st.contextPromise) return Promise.reject(new Error("PairBrowse is restarting. Retry in a moment."));
     if (st.switching) return st.switched.then(() => getContext());
+    // The browser kept crashing soon after each start (browser/supervise.mjs): no new start for now.
+    const loop = !st.contextPromise && api.crashLoop();
+    if (loop) return Promise.reject(new Error(loop));
     if (!st.contextPromise) {
       st.launching = true;
       st.contextPromise = launch().catch((e) => {
@@ -261,6 +277,12 @@ export function createLaunch(st, deps, api) {
     const ctx = await getContext();
     if (st.restoring) await st.restoring;
     return ctx;
+  }
+  // The helper closes the browser itself so others can go on (a call past the turn cap, a
+  // disconnected agent's stalled call): a close it caused, so never a crash for the guard.
+  async function reset() {
+    st.resetting = true;
+    try { await (await st.contextPromise)?.close(); } catch {} finally { st.resetting = false; }
   }
 
 
@@ -328,7 +350,7 @@ export function createLaunch(st, deps, api) {
     } catch {}
     dropHelperKey();
     try { sweepTemporary(); } catch {}
-    await st.screen?.stop(); // Xvfb ended (at most about 1 s), its cookie and record removed
+    await api.stopScreen(); // Xvfb ended (browser/supervise.mjs), its cookie and record removed
   }
 
   // Before the browser runs: the shell the next launch would have (the build chooseEngine would
@@ -346,5 +368,5 @@ export function createLaunch(st, deps, api) {
   // This launch's shell, or the next one's while no browser runs (what it will be once it runs).
   const nextShell = () => (st.contextPromise && st.chosen ? st.shell : predict());
 
-  return { browserType, dropHelperKey, pickerUrl, choiceConfig, profile, getContext, watchClose, ready, openByHand, close, predict, nextShell };
+  return { browserType, dropHelperKey, pickerUrl, choiceConfig, profile, getContext, watchClose, ready, reset, openByHand, close, predict, nextShell };
 }

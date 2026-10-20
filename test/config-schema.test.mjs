@@ -181,3 +181,15 @@ test("virtualScreen bounds and server.keepAlive: good values kept, others refuse
   assert.deepEqual(DEFAULT_CONFIG.virtualScreen, { width: 1366, height: 900, depth: 24 }, "today's screen");
   assert.deepEqual(DEFAULT_CONFIG.server, { keepAlive: false });
 });
+
+test("browserSandbox \"required\" is kept by loadConfig; other strings are refused", () => {
+  const config = loadConfig(file({ browserSandbox: "required" }));
+  assert.deepEqual(CONFIG_WARNINGS, []);
+  assert.equal(config.browserSandbox, "required");
+  assert.equal(loadConfig(file({ browserSandbox: false })).browserSandbox, false);
+  assert.equal(loadConfig(file({ chromeSandbox: false })).browserSandbox, false, "the older name");
+  const refused = loadConfig(file({ browserSandbox: "always" }));
+  assert.match(CONFIG_WARNINGS.join("\n"), /browserSandbox is true, false or "required", not "always"/);
+  assert.equal(refused.browserSandbox, true, "the default");
+  assert.match(configProblem({ browserSandbox: "yes" }), /^browserSandbox is true, false or "required"/);
+});

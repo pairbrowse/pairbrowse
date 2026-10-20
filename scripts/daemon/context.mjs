@@ -6,6 +6,7 @@ import { createPersonTabs } from "./toolstab.mjs";
 import { where } from "./where.mjs";
 import { createDownloads } from "./browser/downloads.mjs";
 import { createBrowserState } from "./browser/state.mjs";
+import { createSupervisor } from "./browser/supervise.mjs";
 import { createTabs, stopRequestMirroring } from "./browser/tabs.mjs";
 import { createLaunch, browserPagesIn, capturePagesIn, captureKeyedIn, settingsSectionIn, quietTabsIn, measuringLog, MEASURING_STATUS } from "./browser/launch.mjs";
 import { createPicker } from "./sessions/picker.mjs";
@@ -37,8 +38,11 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   const deps = { personTabs, config, log, chromium, driver, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers, notify, phishing,
     browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf, helperFor, beforeRename, onRenamed };
   const api = {};
+  // The virtual screen the browser runs on, when this machine needs one (browser/supervise.mjs).
+  // With server.keepAlive, the browser kept up with nobody connected.
+  const { stopScreenNow, crashLoop, statusParts, keepAlive, keepAliveStart } = Object.assign(api, createSupervisor(st, deps, api));
   // Launching the browser and getContext() (browser/launch.mjs).
-  const { dropHelperKey, choiceConfig, profile, getContext, watchClose, ready, openByHand, close, nextShell } = Object.assign(api, createLaunch(st, deps, api));
+  const { dropHelperKey, choiceConfig, profile, getContext, watchClose, ready, reset, openByHand, close, nextShell } = Object.assign(api, createLaunch(st, deps, api));
   // Downloads: kept in the Downloads folder, and Playwright's temporary ones forgotten (browser/downloads.mjs).
   Object.assign(api, createDownloads({ personTabs, config, hostNote, log, onDownload, profile }));
   // The tabs: finding them, the cap, what watches each page, saved tabs coming back (browser/tabs.mjs).
@@ -64,7 +68,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     browserInUse: () => (st.contextPromise ? st.inUse : null),
     // The settings the choice is read from (config with the older names as the person wrote them).
     choiceConfig,
-    getContext, watchClose, current: () => st.contextPromise, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
+    getContext, watchClose, current: () => st.contextPromise, reset, profile, openPages, findPage, pageAt, ready, takeRestoredActive, touch,
     isRestoring: () => st.restoring !== null, isSwitching: () => st.switching,
     // The browser is on its way up: launching, reopening saved tabs, or between two sessions.
     starting: () => st.launching || st.restoring !== null || st.switching || !!st.pickSwitch,
@@ -77,7 +81,13 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     // The browser's pages used their key (or the helper stops): its file has done its job.
     dropHelperKey: () => dropHelperKey(),
     // At process exit, where close() can't wait: the virtual screen is told to end now.
-    stopScreenNow: () => st.screen?.stopNow?.(),
+    stopScreenNow,
+    // The crash-loop guard's refusal while it holds, else null; and what pairbrowse_status adds
+    // about the browser's surroundings (browser/supervise.mjs).
+    crashLoop, statusParts,
+    // server.keepAlive: the helper stays when the browser closes and counts as in use (handoff.mjs);
+    // keepAliveStart() starts the browser as the helper starts.
+    keepAlive, keepAliveStart,
     // The tab a page came back as after its session's browser restarted (a session switch and
     // back), or null.
     successorOf,

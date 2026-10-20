@@ -11,7 +11,7 @@ import { engineConfig, shellOf } from "../browser/choice.mjs";
 import { launchEngine } from "../engine.mjs";
 import { nativeManifest } from "../native-engine.mjs";
 import { ensureRuntime } from "../runtime.mjs";
-import { needsVirtualDisplay, screenGeometry, startVirtualDisplay } from "../display.mjs";
+import { needsVirtualDisplay, screenGeometry, serverMode, startVirtualDisplay } from "../display.mjs";
 import { loadBrowserDriver, patchrightNodeMinimum } from "../driver.mjs";
 import { readJson, sleep, withTimeout } from "../util.mjs";
 
@@ -108,8 +108,9 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
     // Launched as the helper launches it (browser.mjs launchOptions), on purpose without three
     // things: no live view (no helper switches), a plain about:blank first tab whatever the
     // build's start page (blankStart: the check drives that tab), and never firstRun (on macOS
-    // --no-startup-window would leave no first tab to drive).
-    ctx = await launchEngine(chromium, engine, profile, launchOptions(config, { shell, env: { ...env, ...(screen?.env || {}) }, executablePath: exec, blankStart: true }), log);
+    // --no-startup-window would leave no first tab to drive). On a server its sandbox is required,
+    // as the helper's is (engine.mjs launchEngine).
+    ctx = await launchEngine(chromium, engine, profile, launchOptions(config, { shell, screen, env: { ...env, ...(screen?.env || {}) }, executablePath: exec, blankStart: true }), log, undefined, { server: serverMode(config, env) });
     const version = ctx.browser()?.version() || "";
     if (!version.includes(nativeManifest(exec).version)) throw new Error(`the browser reports version ${version || "(none)"}`);
     passed.push(`launches (${version})`);

@@ -32,7 +32,8 @@ export const CONFIG_SCHEMA = {
   safeStorage: { values: ["file", "keychain"] },
   downloadsDir: { type: "string", nullable: true },
   browserArgs: NAMES,
-  browserSandbox: { type: "boolean" },
+  // "required": on, and never off on Linux either (browser-args.mjs sandboxRequired).
+  browserSandbox: { values: [true, false, "required"] },
   // Their older names, still read while the new one is unset (browser-args.mjs), never written.
   chromeArgs: { ...NAMES, older: true },
   chromeSandbox: { type: "boolean", older: true },

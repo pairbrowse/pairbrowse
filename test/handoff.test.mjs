@@ -90,7 +90,7 @@ test("readUse: the helper's parts read into busyReason's state; what the page sc
     downloads: { inProgress: () => 0 }, presence: { lastPersonAt: () => 0 },
     context: { starting: () => false, picking: () => false, personAt: () => 0 },
   };
-  assert.deepEqual(readUse(parts), { ...IDLE, starting: false, picking: false });
+  assert.deepEqual(readUse(parts), { ...IDLE, starting: false, picking: false, kept: false });
   const with_ = (over) => busyReason({ ...readUse({ ...parts, ...over }), now });
   assert.equal(with_({ context: { ...parts.context, starting: () => true } }), "the browser is starting");
   assert.equal(with_({ context: { ...parts.context, picking: () => true } }), "the session picker is showing");
@@ -98,6 +98,14 @@ test("readUse: the helper's parts read into busyReason's state; what the page sc
   assert.match(with_({ presence: { lastPersonAt: () => now - 1000 } }) || "", /last 2 minutes/, "the page script's input");
   assert.equal(readUse({ ...parts, presence: { lastPersonAt: () => 5 }, context: { ...parts.context, personAt: () => 9 } }).personAt, 9, "the later of the two");
   assert.equal(with_({ view: { ...parts.view, joinersNow: () => [{}] } }), "people are in this browser's session");
+});
+
+test("keepAlive counts as in use", () => {
+  const now = Date.now();
+  const context = { starting: () => false, picking: () => false, personAt: () => 0 };
+  assert.equal(busyReason({ ...readUse({ context: { ...context, keepAlive: () => false } }), now }), null);
+  assert.equal(busyReason({ ...readUse({ context: { ...context, keepAlive: () => true } }), now }), "this helper is kept running on this server (server.keepAlive)");
+  assert.equal(busyReason({ ...IDLE, kept: true, agents: 1, now }), "an agent is connected", "what is happening now is named first");
 });
 
 // A socket as answer() sees one: what it wrote, whether it ended.
@@ -171,12 +179,38 @@ test("the helper: a newer bridge while idle stops it; otherwise it stays and say
   assert.ok(lines.some((l) => /but an agent is connected: staying on 0\.16\.1/.test(l)), "logged");
 });
 
+test("keep-alive: a newer version waits for a service restart, and the status line and log say so", () => {
+  const lines = [];
+  let stops = 0;
+  const h = createVersionHandoff({ own: "0.16.1", state: () => ({ ...IDLE, kept: true }), stop: () => { stops++; }, log: (l) => lines.push(l) });
+  const s = fakeSock();
+  assert.equal(h.answer(s, hello("0.17.0")), true);
+  assert.deepEqual(JSON.parse(s.written), { restart: false, why: "this helper is kept running on this server (server.keepAlive)" });
+  assert.equal(stops, 0);
+  assert.equal(h.note(), pendingLine("0.17.0", { kept: true }));
+  assert.equal(h.note(), "PairBrowse 0.17.0 is installed; this helper is kept running (server.keepAlive), so restart the PairBrowse service to move to it.");
+  assert.doesNotMatch(h.note(), /next time a session starts/);
+  assert.ok(lines.some((l) => /staying on 0\.16\.1 until the PairBrowse service restarts/.test(l)), "logged");
+  assert.ok(!lines.some((l) => /until a session starts/.test(l)));
+  // Without keep-alive the line stays the session-start one.
+  assert.match(pendingLine("0.17.0"), /next time a session starts while nobody is using the browser/);
+});
+
 test("pairbrowse_status says the waiting version on its own line", () => {
   const sel = { source: "default", instance: null };
   const sandbox = { on: true, reason: null, refused: null };
   assert.equal(statusLine(sel, [], sandbox), "ok");
   assert.equal(statusLine(sel, [], sandbox, ""), "ok");
   assert.equal(statusLine(sel, [], sandbox, pendingLine("0.17.0")), `ok\n${pendingLine("0.17.0")}`);
+});
+
+test("status adds extra parts in order", () => {
+  const sel = { source: "default", instance: null };
+  const sandbox = { on: true, reason: null, refused: null };
+  assert.equal(statusLine(sel, [], sandbox, "", []), "ok");
+  assert.equal(statusLine(sel, ["config.json: unknown key \"x\""], sandbox, "", ["virtual screen :99 1366x900", "", "warning: crash"]),
+    'ok; warning: config.json: unknown key "x"; virtual screen :99 1366x900; warning: crash', "after the warnings, in order, empty ones left out");
+  assert.equal(statusLine(sel, [], sandbox, pendingLine("0.17.0"), ["virtual screen :99 1366x900"]), `ok; virtual screen :99 1366x900\n${pendingLine("0.17.0")}`, "the waiting version stays last");
 });
 
 test("downloads in progress count, in any session, until done, failed or an hour old", () => {

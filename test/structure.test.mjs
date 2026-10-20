@@ -49,7 +49,7 @@ const sameFolder = (a, b) => dirname(a) === dirname(b) && dirname(a) !== DAEMON;
 const ALLOWED = new Set([
   // Parts that build on a shared piece.
   "context -> toolstab", "context -> where", "context -> browser/downloads", "context -> browser/state", "context -> browser/tabs",
-  "context -> browser/launch", "context -> sessions/picker", "context -> sessions/switch",
+  "context -> browser/launch", "context -> browser/supervise", "context -> sessions/picker", "context -> sessions/switch",
   "follow -> join/state", "follow -> join/hosts", "follow -> join/agents", "follow -> join/screens", "follow -> join/mirror",
   "recorder -> tablabels", "recorder -> capture", "recorder -> covers", "serve -> covers", "reveal -> page", "screenshot -> page",
   "serve -> browser/tabs", "serve -> output", "serve -> serve/wire", "serve -> serve/pageread", "serve -> serve/refuse",
@@ -57,7 +57,7 @@ const ALLOWED = new Set([
   "serve -> serve/collaboration", "serve -> serve/result", "serve -> serve/departures",
   "sharing -> capture", "sharing -> tablabels", "sharing -> where", "sharing -> tunnel-pool",
   // A part's own folder reaching back to a shared piece.
-  "browser/downloads -> toolstab", "browser/launch -> exec-contexts",
+  "browser/downloads -> toolstab", "browser/launch -> exec-contexts", "browser/supervise -> where",
   "join/agents -> linkwait", "join/agents -> remote-agents", "join/mirror -> presence",
   "serve/collaboration -> output", "serve/connection -> output", "serve/pageread -> page", "serve/refuse -> approvals",
   "serve/refuse -> output", "serve/result -> output", "serve/result -> page", "serve/result -> reveal", "serve/result -> covers",

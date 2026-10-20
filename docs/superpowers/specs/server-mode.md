@@ -117,8 +117,9 @@ requested-vs-measured record, Linux and GPU-host tests.
 | `scripts/native/` (new: `graphics`, `backend`, `probe`, `validate`, `properties`) | backend plan, `SystemInfo` read, probe launch, validation | E |
 | pn patches `960-no-canvas-bridge`, `961-webgpu-real`, `962-proxy-auth-file` | engine work | C, E |
 
-New helper-part import edges in `test/structure.test.mjs` `ALLOWED`: `context -> browser/supervise`,
-`browser/supervise -> where`, `context -> sessions/profiles`. Everything else passes through deps.
+New helper-part import edges in `test/structure.test.mjs` `ALLOWED`: `context -> browser/supervise`
+(step 4), `browser/supervise -> where` (step 8, with `markServer`; the structure test refuses an
+allowed edge no import uses), `context -> sessions/profiles`. Everything else passes through deps.
 
 ### 3.2 One launch path
 
@@ -218,12 +219,17 @@ and helper, crash recovery and session restoration, sandbox always on.
   `startVirtualDisplay(log, { name, geometry, onExit })` returning `{ env, display, pid, geometry, stop,
   stopNow }`, `reapOwn(name, deps)` with injectable `/proc`, stat, kill, called by `startVirtualDisplay` itself
   before it tries a display (also checks `/proc/<pid>` is owned by our uid), `recordPath(name)`, `isOwnXvfb`.
-- `scripts/daemon/browser/supervise.mjs` `createSupervisor(st, deps, api)`: `ensureScreen()`,
+- `scripts/daemon/browser/supervise.mjs` `createSupervisor(st, deps)` (step 4; `api` joins in step 8
+  for `relaunchSoon`): `ensureScreen()`,
   `stopScreen()`, `stopScreenNow()`, `noteUnexpectedClose(launchedAt)`, `crashLoop()`,
-  `relaunchSoon()`, `statusParts()`. Wiring: `launch.mjs:179` calls `api.ensureScreen()`, `:331` calls
+  `relaunchSoon()`, `statusParts()`. Wiring: `launch.mjs:179` calls `api.ensureScreen()` and keeps its result for the launch's
+  `DISPLAY` (a screen lost while the browser starts closes it and fails the launch), `:331` calls
   `api.stopScreen()`, the close handler calls `noteUnexpectedClose` and, with keep-alive,
   `relaunchSoon`. State fields `screenStopping`, `unexpectedCloses` in `browser/state.mjs`.
-- `scripts/browser.mjs` `launchArgs(config, { screen })`: A2.
+- `scripts/browser.mjs` `launchArgs(config, { screen })`: A2 (step 5). `launchOptions` passes `screen`
+  on; the helper's launch and the install self-check (`native/check.mjs`) give the screen they started.
+  A user's `--window-size` or `--window-position` follows ours and wins, since the engine takes a
+  switch's last value.
 - `scripts/engine.mjs`: `sandboxDecision(config, { platform, uid, server })` returns `blocked` for root
   when required; `launchEngine(..., { server })` throws on `blocked` and in the fallback branch when
   required. `scripts/browser-args.mjs`: `sandboxRequired(config, { server })`.
@@ -596,6 +602,17 @@ fail closed, also after recovery.
   `network.sessions[<session>]` (id or `null` for direct), else the session's profile `network` id,
   else `network.default`, else direct. A profile naming an undefined id refuses the launch. No agent
   tool sets a proxy or credential. Session rename and delete update the map.
+- **C14. People fill proxies in themselves (user, 2026-10-20).** Not only config and CLI: Settings
+  (`ui/settings/`, the browser's own page, and the live view's owner page on a phone) gets a
+  "Network" section. A person adds, edits, tests and removes a proxy (name, type HTTP / HTTPS /
+  SOCKS5, host, port, optional username and password), picks the default, and picks one per session
+  (or "direct"). Saving goes through an owner-only route (`scripts/liveview/routes/owner.mjs`, the
+  owner key, same-origin and CSRF checks as the other owner writes) into `config.json` `network` and
+  the credentials into `secrets.env` (C3). The password field is write-only: the page shows "saved"
+  or "not set", never the value, and no event, log or result carries it. "Test" runs the C6 probe and
+  shows the measured exit address, country and the leak verdict, and any coherence warning (C13)
+  such as a time zone that doesn't match the exit country. A SOCKS5 entry with a username is refused
+  with the U4 sentence. No agent tool and no joiner can open or write this section (owner only).
 - **C5. Strict mode by default** for proxied sessions: `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE
   <proxy host>, EXCLUDE localhost` and `--webrtc-ip-handling-policy=disable_non_proxied_udp` on both
   builds; a user's `--host-resolver-rules` is dropped and logged. Loopback always passed as
@@ -686,6 +703,11 @@ file stops holding geoip fields at the next geoip launch; `test/native-engine.te
 its expectation.
 
 ### Acceptance tests
+- `test/liveview-network-routes.test.mjs` (C14): only the owner key writes; a joiner, an agent tool
+  and a cross-origin request are refused; the password goes to `secrets.env` and never back out in a
+  response, event or log; SOCKS5 with a username refused; per-session choice lands in `network.sessions`.
+- `test/ui-settings.test.mjs` (C14): the Network section renders, the password field is write-only,
+  "Test" shows exit address, country, leak verdict and a coherence warning.
 Shared stubs `test/helpers/proxies.mjs` (stdlib: HTTP CONNECT with optional Basic auth, the same over
 TLS with a test CA, SOCKS5 with and without RFC 1929 logging address types, a trace echo, pages with
 prefetch, preconnect, WebSocket and images on unique names, a STUN responder).
@@ -1158,11 +1180,46 @@ it depends on.
 1. `display.mjs` geometry, `screenGeometry`, `serverMode`; `virtualScreen` and `server` schema (A1, A3).
 2. Race-free Xvfb readiness (A7).
 3. Ownership record, `reapOwn`, async `stop`, `stopNow` (A6, A8). -> 2
-4. `daemon/browser/supervise.mjs`, launch and exit wiring, `ALLOWED` edges (A4). -> 3
+4. `daemon/browser/supervise.mjs` (`ensureScreen`, `stopScreen`, `stopScreenNow`), `startVirtualDisplay`'s
+   `onExit` (cookie removed, record kept for the next reap), launch and exit wiring, `ALLOWED` edge
+   `context -> browser/supervise` (A4). -> 3
 5. Window follows the screen (A2). -> 1
 6. Crash-loop guard, `statusLine` `more` list, `statusParts` (A5). -> 4
+   Landed as: `noteUnexpectedClose` from the close handler unless a switch, a shutdown or the
+   helper's own reset caused it (`reset()`, which sets `st.resetting`: `serve.mjs`'s turn cap and
+   its stalled disconnected participant, 30 s, often within a minute of a launch),
+   `crashLoop()` read by `getContext()` and by `pairbrowse_status` (which then skips the launch and
+   returns the line with the crash part); `statusParts()` names the virtual screen and a crash loop
+   (the keep-alive part comes with step 8). The `ended` message is the supervisor's `onCrashLoop`
+   dep, called once per hold; it stays a no-op until the Phase B notifier (step 21) passes one in.
+   The `CRASH_WINDOW_MS` switch is left for the integration test that needs it (step 46): the unit
+   tests inject the clock.
 7. Sandbox in server mode and `"required"`; row A-2 (A10). -> 1
+   Landed as: `browser-args.mjs` `sandboxRequired(config, { server })` gives the reason ("in server
+   mode" or `with "browserSandbox": "required"`), named in each refusal; `sandboxDecision` adds
+   `blocked` (root) and `required`; `launchEngine(..., { server, uid })` throws on `blocked` before the
+   engine pack loads and, when required, on a sandbox failure (the engine's error as its `cause`).
+   The launch reads server mode from the supervisor (`api.isServer()`, no new import edge); the
+   install self-check (`native/check.mjs`) passes `serverMode(config, env)` too. The errors point to
+   `docs/configuration.md` until `docs/server.md` exists (step 50).
 8. `server.keepAlive`, `readUse`, relaunch backoff, `markServer` (A9, A11). -> 6
+   Landed as: `createSupervisor(st, deps, api)` gains `keepAlive()`, `keepAliveStart()` (called by
+   `daemon.mjs` once the runtime has loaded: the browser starts and restores at once) and
+   `relaunchSoon(launchedAt)`, which the close handler calls only when `noteUnexpectedClose` says
+   launches go on. Pauses 2, 10, 30 s (`RELAUNCH_MS`), one planned start at a time (`st.relaunchAt`,
+   timer unref'd), counted in `st.relaunches` and started over once a browser stayed up past 60 s;
+   the planned start is skipped while the helper stops, a switch runs, a browser runs or the guard
+   holds, and a failed start is logged, not retried (the next action tries). `onClosed` ends the
+   helper only without keep-alive. `readUse` reads `context.keepAlive()` as `kept`, and
+   `busyReason` names it after every passing reason. `statusParts()` adds "keep-alive on" or the
+   seconds to the planned start. Every close PairBrowse didn't cause brings the browser back,
+   closing it by hand too (the close handler can't tell a hand close from a crash), and each counts
+   toward the crash-loop limit; only stopping the helper keeps it closed. A newer version waiting
+   on a keep-alive helper: `pendingLine(version, { kept })` and the handoff log say to restart the
+   service. `where.mjs` `markServer()`, called by the supervisor when it is
+   made in server mode (edge `browser/supervise -> where`). The `RELAUNCH_MS` test switch is left
+   for the integration test that needs it (step 46), like `CRASH_WINDOW_MS`: unit tests inject the
+   clock and timer. `docs/server.md` and its systemd unit come with step 50.
 9. Canvas bridge launch guard (pb) and `--headless` harness-only; rows E-1, E-5 (E1 pb part, E12).
    (independent)
 10. `normalizeWebgpu` on every layer (E10 W1). (independent)
@@ -1194,6 +1251,9 @@ it depends on.
 30. NetLog leak tests (C12). -> 29
 31. Recheck, egress change, pause and notify through the B notifier (C8). -> 29, 16
 32. Session rename and delete with network; strict sessions share frames (C4, C11).
+32b. Settings "Network" section and owner routes: add, edit, test, remove a proxy, default and
+    per-session choice, write-only password, test result with exit country and coherence warning;
+    tests in `test/ui-settings.test.mjs` and `test/liveview-network-routes.test.mjs` (C14). -> 24, 29, 32
 33. `profiles/schema.mjs`, `upgrade.mjs` (D19). -> 12
 34. `profiles/store.mjs`, paths and config keys (D4, D5). -> 33
 35. `profiles/device.mjs`, `import.mjs` (settings only, hardware unsupported), `export.mjs` (D-AP2,
@@ -1291,6 +1351,19 @@ binding for implementation; where a phase section above says otherwise, this sec
    path is introduced. Before the desktop-wide card-field refusal (step 22, B13) lands, the existing
    confirmation and payment-field protections are traced and the compatibility impact is documented
    in this spec.
+
+8. **Where hand-off happens (user, 2026-10-20).** On a computer the person sits at, the hand-off stays
+   as it is today: the step is done in the PairBrowse window itself (bar, side panel, the tab), with
+   no link or message needed. The phone link and the Telegram, Discord, Slack, webhook and ntfy
+   messages are for when the browser runs on a server, or when the person has set up a channel
+   because they may be away. A desktop with no channel configured behaves exactly as now; a
+   configured channel adds the message and link without taking the step away from the window
+   (whichever the person uses first completes it).
+   The person can also turn it on at home: an "Away" switch (side panel and Settings, owner only, also
+   reachable from the live view owner page) sends hand-offs from this desktop to their phone through
+   the configured channel while they are out; turning it off returns to the window-only behavior.
+   Away is off by default, remembered across restarts, and needs at least one channel set up (the
+   switch says so if none is). In server mode, sending is always on.
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,
@@ -1404,7 +1477,8 @@ Phase B, mobile first:
   from genuine site verification; only the latter is handed to the person, and nothing is ever
   bypassed or retried around (`test/compat-vs-verification.test.mjs`).
 
-Phase C: each session uses its own HTTP, HTTPS or SOCKS5 proxy, independent of its profile;
+Phase C: a person adds, tests and assigns proxies in Settings (also from a phone), password write-only
+(C14); each session uses its own HTTP, HTTPS or SOCKS5 proxy, independent of its profile;
 credentials appear in no argv, log, file or result; egress is measured and matches; DNS and WebRTC
 leak tests pass and prove themselves; every failure closes the browser before any tab loads
 (`test/integration/proxy.test.mjs`, `test/optin/proxy-docker.test.mjs`).

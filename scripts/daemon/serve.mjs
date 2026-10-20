@@ -341,7 +341,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           // reconnect by themselves, failing what was in flight).
           late.add(msg.id);
           reply(msg.id, `${tool || "This call"} didn't finish in ${TURN_MAX}, so PairBrowse reset the browser for the other agents waiting on it. Take a browser_snapshot, then try again.`, true);
-          try { await (await context.current())?.close(); } catch {}
+          await context.reset();
         }, TURN_MAX_MS);
         // The browser closing (by hand, or a crash) under a call: the call is answered at once,
         // never left hanging while every other call waits in the queue behind it.
@@ -466,7 +466,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
       const watchdog = setTimeout(async () => {
         if (!collaboration.isActing(participant)) return;
         log("resetting browser after disconnected participant stalled");
-        try { await (await context.current())?.close(); } catch {}
+        await context.reset();
         for (const id of completed.keys()) finish(id);
         for (const [id, resolve] of pending) resolve({ jsonrpc: "2.0", id, error: { code: -32002, message: "Browser reset after disconnect" } });
         pending.clear();

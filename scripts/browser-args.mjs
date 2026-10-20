@@ -19,6 +19,8 @@
 // 0005): it reaches the driver as chromiumSandbox: false, and the driver adds --no-sandbox itself.
 // On macOS and Windows the sandbox always works and always stays on: the switch is refused (named
 // in the log and in pairbrowse_status, never dropped quietly), and so is "chromeSandbox": false.
+// On Linux in server mode, or with "browserSandbox": "required", it is refused the same way at the
+// launch (engine.mjs sandboxDecision; sandboxRequired below).
 import { harnessStarted } from "./testenv.mjs";
 
 const NONE = (v) => v === null; // a switch that takes no value
@@ -150,8 +152,12 @@ export function browserArgsOf(config = {}) {
   const v = config?.[argsKey(config)];
   return Array.isArray(v) ? v : [];
 }
-// Whether config leaves the sandbox on: only false turns it off.
-export const browserSandboxOf = (config = {}) => config?.[sandboxKey(config)] !== false;
+// Whether config leaves the sandbox on: only false turns it off. "required" (on, and never off on
+// Linux either: sandboxRequired) is kept as written.
+export function browserSandboxOf(config = {}) {
+  const v = config?.[sandboxKey(config)];
+  return v === "required" ? "required" : v !== false;
+}
 
 // The config warning (and helper log line) for dropped switches, or null. key: the config key
 // they came from (argsKey).
@@ -174,9 +180,19 @@ export function sandboxOffAsked(config = {}, platform = process.platform) {
   return null;
 }
 const OS_NAMES = { darwin: "macOS", win32: "Windows" };
-// Why a request for the sandbox off is refused on this platform.
-export function sandboxRefusal(asked, platform = process.platform) {
-  return `${asked}: refused, the browser's sandbox always stays on on ${OS_NAMES[platform] || platform} (only Linux may turn it off)`;
+// Why a request for the sandbox off is refused: on this platform, or, on Linux, for the reason
+// sandboxRequired gives.
+export function sandboxRefusal(asked, platform = process.platform, required = null) {
+  return `${asked}: refused, the browser's sandbox always stays on ${required || `on ${OS_NAMES[platform] || platform} (only Linux may turn it off)`}`;
+}
+// Why Linux must keep the sandbox too, or null (spec server-mode A10): in server mode (server:
+// display.mjs serverMode, which the caller reads) or with "browserSandbox": "required" on a
+// desktop. Then nothing in config turns it off, root refuses the launch, and a sandbox that can't
+// start stops the launch instead of running it again without one (engine.mjs launchEngine).
+export function sandboxRequired(config = {}, { server = false } = {}) {
+  if (server === true) return "in server mode";
+  if (config?.[sandboxKey(config)] === "required") return 'with "browserSandbox": "required"';
+  return null;
 }
 // args without any --no-sandbox spelling (the driver alone adds it, and only when the sandbox is off).
 export const withoutNoSandbox = (args, platform = process.platform) => (Array.isArray(args) ? args : []).filter((a) => !isNoSandbox(a, platform));

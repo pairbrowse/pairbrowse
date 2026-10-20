@@ -80,7 +80,7 @@ export async function waitGone({ reachable, holder, alive = pidAlive, ms = HANDO
 // session), recording, approvals (asks waiting), downloads (in progress), starting (the browser is
 // launching, reopening its saved tabs or switching sessions: a stop then would save only the tabs
 // open so far, or end a launch half done), picking (the session picker shows: a person chooses),
-// personAt (when a person last used the browser by hand, ms), now.
+// personAt (when a person last used the browser by hand, ms), kept (server.keepAlive), now.
 export function busyReason(s = {}) {
   const n = (x) => Number(x) || 0;
   if (n(s.agents) > 0) return n(s.agents) === 1 ? "an agent is connected" : `${n(s.agents)} agents are connected`;
@@ -93,13 +93,14 @@ export function busyReason(s = {}) {
   if (s.picking) return "the session picker is showing";
   const now = Number.isFinite(s.now) ? s.now : Date.now();
   if (n(s.personAt) > 0 && now - n(s.personAt) < PERSON_QUIET_MS) return "someone used the browser in the last 2 minutes";
+  if (s.kept) return "this helper is kept running on this server (server.keepAlive)";
   return null;
 }
 
 // busyReason's state, read from the helper's parts now (daemon.mjs inUse): agents (the count),
 // view (the live view, or null), follow, recorder, approvals (the click approvals), downloads,
-// presence, and context (daemon/context.mjs: starting(), picking(), personAt()). A part that is
-// missing reads as unused.
+// presence, and context (daemon/context.mjs: starting(), picking(), personAt(), keepAlive()). A
+// part that is missing reads as unused.
 export function readUse({ agents = 0, view = null, follow = null, recorder = null, approvals = null, downloads = null, presence = null, context = null } = {}) {
   const n = (x) => Number(x) || 0;
   return {
@@ -115,11 +116,17 @@ export function readUse({ agents = 0, view = null, follow = null, recorder = nul
     // The page script's input (presence), and what it never sees (context): the browser opened by
     // hand, a pick in the session picker, a press in the browser's own pages or the side panel.
     personAt: Math.max(n(presence?.lastPersonAt?.()), n(context?.personAt?.())),
+    // server.keepAlive (spec server-mode A9): the service manager runs this helper, so a newer
+    // bridge never stops it.
+    kept: !!context?.keepAlive?.(),
   };
 }
 
-// What pairbrowse_status says while a newer version waits.
-export const pendingLine = (version) => `PairBrowse ${version} is installed; this browser moves to it the next time a session starts while nobody is using the browser.`;
+// What pairbrowse_status says while a newer version waits. kept: server.keepAlive is on, so this
+// helper never hands over by itself (busyReason): only a restart of the service moves it.
+export const pendingLine = (version, { kept = false } = {}) => kept
+  ? `PairBrowse ${version} is installed; this helper is kept running (server.keepAlive), so restart the PairBrowse service to move to it.`
+  : `PairBrowse ${version} is installed; this browser moves to it the next time a session starts while nobody is using the browser.`;
 
 // The helper's side. own: this helper's version; state(): busyReason's state now; stop(): the
 // clean shutdown; lock: the helper's lock file (freshened before the stop, so a helper another
@@ -128,6 +135,7 @@ export const pendingLine = (version) => `PairBrowse ${version} is installed; thi
 export function createVersionHandoff({ own, state, stop, lock = null, log = () => {} }) {
   let newest = null; // the newest version a bridge said, while this helper was in use
   let stopping = false;
+  const kept = () => { try { return !!state()?.kept; } catch { return false; } };
   function decide(msg) {
     if (msg.v !== 1 || !parseVersion(msg.version)) return { restart: false, why: "unknown request" };
     if (!isNewer(msg.version, own)) return { restart: false, why: msg.version === own ? "same version" : "not newer" };
@@ -168,9 +176,10 @@ export function createVersionHandoff({ own, state, stop, lock = null, log = () =
     } else {
       if (!sock.destroyed) sock.end(reply);
       if (!newest || isNewer(msg.version, newest)) newest = msg.version;
-      log(`version: a bridge has PairBrowse ${said} (this helper ${own}), but ${d.why}: staying on ${own} until a session starts while nobody uses the browser`);
+      const until = kept() ? "the PairBrowse service restarts" : "a session starts while nobody uses the browser";
+      log(`version: a bridge has PairBrowse ${said} (this helper ${own}), but ${d.why}: staying on ${own} until ${until}`);
     }
     return true;
   }
-  return { answer, note: () => (newest && isNewer(newest, own) ? pendingLine(newest) : ""), newest: () => newest };
+  return { answer, note: () => (newest && isNewer(newest, own) ? pendingLine(newest, { kept: kept() }) : ""), newest: () => newest };
 }

@@ -52,7 +52,8 @@
   - `--host-resolver-rules=` with rules that keep a name on this computer only:
     `MAP <name> 127.0.0.1[:port]` (or `localhost`, `[::1]`), `MAP <name> ~NOTFOUND`, `EXCLUDE <name>`;
   - `--no-sandbox`, on Linux only, which works as `"browserSandbox": false` in any spelling (refused on
-    macOS and Windows, where the sandbox always stays on).
+    macOS and Windows, where the sandbox always stays on, and on Linux in server mode or with
+    `"browserSandbox": "required"`).
 
   Everything else is dropped, `--headless` too: it passes only in a helper the test suite started
   ([ADR 0009](adr/0009-always-headed.md)), so your browser always shows its window. Also dropped: a
@@ -72,6 +73,13 @@
   it's off, the helper log, `pairbrowse_status` and the bar at the bottom of the browser's pages say
   "The browser's sandbox is off: websites are less isolated from this computer". In a container,
   run as a regular user to keep it.
+  `"required"` keeps it on with no way off on Linux too: `false` is not possible beside it, a
+  `--no-sandbox` in `browserArgs` is refused (a warning in `pairbrowse_status`), running as root
+  refuses the launch ("the browser's sandbox can't run as root; run PairBrowse as a normal user"),
+  and a system that can't run it refuses the launch instead of starting the browser without it.
+  Server mode (PairBrowse's own virtual screen, or `server.keepAlive`) always works this way,
+  whatever `browserSandbox` says; there is no opt-out. A container then needs user namespaces for
+  that user: a seccomp profile or host setting that allows them, and a non-root user.
 - `maxTabs`: most tabs open at once (default 20). When another opens, the tab used longest ago
   closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more
   stay open), and Claude is told.
@@ -103,13 +111,30 @@
   Unset, you're asked once, and the answer is saved here.
 - `display`: on a Linux machine without a screen, the browser runs headed on a private virtual
   screen (Xvfb): `"auto"` (default) uses one when there's no screen, `"xvfb"` always, `"none"` never.
+  If that screen ends by itself, the browser on it closes and the next action starts a new screen
+  and brings the tabs back.
+  On a server (PairBrowse's own virtual screen, or `server.keepAlive`), a browser that closes by
+  itself 3 times within 5 minutes, each within a minute of its start, is not started again for 5
+  minutes (or until the helper restarts): actions say "the browser keeps crashing on this machine:
+  see daemon.log", and so does `pairbrowse_status`.
 - `virtualScreen`: that virtual screen's size and color depth: `{ "width": 1366, "height": 900,
   "depth": 24 }` (default). Width 800 to 7680, height 600 to 4320, depth 16 or 24; a field left out
-  or out of range takes its default. It sets the screen only: the browser's window keeps its own
-  size. Used only when PairBrowse runs its own virtual screen (`display` `"auto"` on a machine
-  without a screen, or `"xvfb"`).
-- `server`: `{ "keepAlive": false }` (default). Reserved for server mode (a helper kept running on
-  a server, even one with a screen of its own); in this version `true` changes nothing yet.
+  or out of range takes its default. The browser's window fills that screen from its top-left
+  corner; a `--window-size` or `--window-position` in `browserArgs` still wins. Used only when
+  PairBrowse runs its own virtual screen (`display` `"auto"` on a machine without a screen, or
+  `"xvfb"`); elsewhere the window opens at 1366x900.
+- `server`: `{ "keepAlive": false }` (default). `true` puts the helper in server mode (a helper kept
+  running on a server, even one with a screen of its own, usually by the system's service manager):
+  the browser starts as soon as the helper does and its saved tabs come back; a browser closed with
+  nobody connected no longer ends the helper; any close PairBrowse didn't cause (a crash, or closing
+  the window or quitting the browser by hand) brings the browser back after 2 s, then 10 s, then
+  30 s for each further close (back to 2 s once a browser stayed up for a minute), never past the
+  crash-loop limit above, which counts hand closes too; only stopping the helper keeps the browser
+  closed; after a failed start the next action tries; a newer plugin version never stops this
+  helper (`pairbrowse_status` says to restart the PairBrowse service to move to it); live view links
+  say the browser runs on a server; and the crash-loop limit above and the server-mode sandbox rule
+  (`browserSandbox`) apply. `pairbrowse_status` says "keep-alive on", or when the browser starts
+  again. With `false`, a helper started over SSH keeps today's lifetime.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

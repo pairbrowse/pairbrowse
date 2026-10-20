@@ -91,3 +91,14 @@ test("an engine pack file altered after install: refused by its pinned SHA-256",
   assert.ok(!existsSync(launched));
   assert.deepEqual(leftovers(), []);
 });
+
+// The wiring (read from the source: the launch needs a real browser): the check launches on the
+// screen it started and sizes the window to it, as the helper does (browser.mjs launchOptions).
+test("the check's launch passes its screen to launchOptions", () => {
+  const src = readFileSync(join(root, "scripts", "native", "check.mjs"), "utf8");
+  const at = src.indexOf("launchOptions(config, {");
+  assert.ok(at > 0, "check.mjs calls launchOptions(config, {...})");
+  const call = src.slice(at, src.indexOf("\n", at));
+  assert.match(call, /[{,]\s*screen\s*,/, "the window is sized to the virtual screen");
+  assert.match(call, /env: \{ \.\.\.env, \.\.\.\(screen\?\.env \|\| \{\}\) \}/);
+});

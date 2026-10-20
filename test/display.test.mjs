@@ -54,7 +54,9 @@ function fakeMachine({ files = {}, onWait = () => {} } = {}) {
   const spawn = (bin, args) => {
     const child = { bin, args, display: Number(args[0].slice(1)), pid: nextPid++, exitCode: null, signalCode: null, killed: false };
     child.kill = () => { child.killed = true; child.signalCode = "SIGTERM"; };
-    child.on = () => child;
+    child.listeners = {};
+    child.on = (ev, fn) => { (child.listeners[ev] ||= []).push(fn); return child; };
+    child.emit = (ev, ...args) => { for (const fn of child.listeners[ev] || []) fn(...args); };
     children.push(child);
     return child;
   };
@@ -325,6 +327,31 @@ async function startedFake(dies) {
   child.kill = (sig) => { signals.push(sig); if (dies.includes(sig)) child.signalCode = sig; return true; };
   return { screen, child, signals, removed };
 }
+
+test("an exit of the started Xvfb is reported, its cookie removed and its record kept", async () => {
+  const exits = [], removed = [];
+  const { deps, children } = fakeMachine({ onWait: ready });
+  deps.remove = (p) => removed.push(p);
+  // The first child never gets its display: its exit is no started screen's.
+  let first = true;
+  const startWait = deps.wait;
+  deps.wait = async () => { if (first) { first = false; children[0].exitCode = 1; return; } return startWait(); };
+  const screen = await startVirtualDisplay(() => {}, { name: NAME, onExit: (why) => exits.push(why) }, deps);
+  assert.equal(children.length, 2);
+  assert.deepEqual(children[0].listeners.exit, undefined, "only the started screen's Xvfb is watched");
+  assert.equal(screen.pid, children[1].pid);
+  children[1].signalCode = "SIGKILL";
+  children[1].emit("exit", null, "SIGKILL");
+  assert.deepEqual(exits, [{ code: null, signal: "SIGKILL" }]);
+  assert.deepEqual(removed, [AUTH], "the cookie goes; the record stays for the next start's reap");
+  // No onExit given: the cookie still goes, nothing throws.
+  const quiet = fakeMachine({ onWait: ready });
+  const gone = [];
+  quiet.deps.remove = (p) => gone.push(p);
+  await startVirtualDisplay(() => {}, { name: NAME }, quiet.deps);
+  quiet.children[0].emit("exit", 1, null);
+  assert.deepEqual(gone, [AUTH]);
+});
 
 test("stop waits, escalates and removes cookie and record; stopNow is synchronous", async () => {
   // Xvfb that exits at SIGTERM: no SIGKILL.

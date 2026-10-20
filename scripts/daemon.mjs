@@ -297,7 +297,7 @@ const context = createContext({
     if (!context.browserPages()) setTimeout(() => panel.connect().catch((e) => log("side panel", e?.message || e)), 0);
   },
   // The window is gone: end the sessions (the bridge reconnects and reopens the browser on the next
-  // action), or shut down if nobody is connected.
+  // action), or shut down if nobody is connected (never with server.keepAlive: the browser comes back).
   onClosed: () => {
     // The host closed the window: sharing ends with it (codes, yeses, tunnels). A restart of the
     // helper closes it too, but keeps them.
@@ -310,7 +310,7 @@ const context = createContext({
     // browser that closed (a fresh connection gets the next one), and the answer to a call that
     // was in flight ("the browser closed while this ran") goes out first.
     if (clients.size) { const gone = [...clients.values()]; setTimeout(() => { for (const sock of gone) sock.destroy(); }, 150); } // the ones there now, never a connection made meanwhile
-    else shutdown(0);
+    else if (!context.keepAlive()) shutdown(0);
   },
 });
 // the grace-timeout exit too: the browser's key file never outlives the helper
@@ -840,6 +840,7 @@ async function main() {
     setImmediate(() => {
       try { runtime(); } catch (e) { log(`the runtime didn't load: ${e?.stack || e}`); shutdown(1); return; }
       log(`startup: socket after ${socketAt} ms, runtime after ${Math.round(performance.now())} ms`);
+      context.keepAliveStart(); // server.keepAlive: the browser starts now and its tabs come back
     });
   });
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => shutdown(0));

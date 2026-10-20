@@ -169,9 +169,11 @@ function ender(child, { auth, record, remove, wait }) {
 // checked again here, defaults for what's missing). First reapOwn ends what a killed helper left
 // behind this cookie. A display counts as started only when ownsDisplay says so; otherwise its Xvfb
 // is ended and the next number is tried. The started screen's ownership record is written then.
-// deps: injectable commands and files for tests. Returns { env, display, pid, geometry, stop,
-// stopNow } (ender).
-export async function startVirtualDisplay(log = () => {}, { name = "Xauthority", geometry } = {}, deps = {}) {
+// onExit({ code, signal }): the started Xvfb exited (by itself, or ended by stop); its cookie is
+// removed then, its record kept for the next start's reapOwn (it clears the lock a killed Xvfb
+// leaves). deps: injectable commands and files for tests. Returns { env, display, pid, geometry,
+// stop, stopNow } (ender).
+export async function startVirtualDisplay(log = () => {}, { name = "Xauthority", geometry, onExit } = {}, deps = {}) {
   const { has = hasCommand, spawn: run = spawn, exists = existsSync, read = readText, xauth = addCookie, wait = sleep, tries = 50 } = deps;
   const { reap = reapOwn, save = (file, rec) => writeJsonAtomic(file, rec, { mode: 0o600 }), remove = removeFile } = deps;
   if (!has("Xvfb") || !has("xauth")) {
@@ -193,6 +195,10 @@ export async function startVirtualDisplay(log = () => {}, { name = "Xauthority",
         log(`virtual screen :${n} started (${g.width}x${g.height}x${g.depth})`);
         // Without its record the screen still works; only a later reap of it is lost.
         try { save(record, { display: `:${n}`, pid: xvfb.pid, auth, geometry: g, startedAt: Date.now() }); } catch (e) { log(`virtual screen :${n}: its record wasn't written (${e?.message || e})`); }
+        xvfb.on?.("exit", (code, sig) => {
+          remove(auth);
+          try { onExit?.({ code, signal: sig }); } catch {}
+        });
         return { env: { DISPLAY: `:${n}`, XAUTHORITY: auth }, display: `:${n}`, pid: xvfb.pid, geometry: g, ...ender(xvfb, { auth, record, remove, wait }) };
       }
       await wait(100);

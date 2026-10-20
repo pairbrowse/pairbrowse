@@ -158,6 +158,27 @@ test("launchArgs: the user's unsafe switches never reach the browser; the panel'
   assert.ok(!args.some((a) => /^--?remote-debugging-/.test(a)), "PairBrowse adds no debugging switch; the driver adds its own pipe");
 });
 
+test("the window follows the virtual screen only when one is in use", () => {
+  const win = (args) => args.filter((a) => /^--window-(size|position)=/.test(a));
+  // No virtual screen (a desktop, or display "none"): today's fixed size, no position.
+  assert.deepEqual(win(launchArgs({})), ["--window-size=1366,900"]);
+  assert.deepEqual(win(launchArgs({}, { screen: null })), ["--window-size=1366,900"]);
+  assert.deepEqual(win(launchArgs({}, { screen: {} })), ["--window-size=1366,900"], "a screen without a geometry changes nothing");
+  // The helper's own Xvfb: the window fills it from the top-left corner.
+  const screen = { display: ":99", geometry: { width: 1280, height: 800, depth: 24 } };
+  assert.deepEqual(win(launchArgs({}, { screen })), ["--window-size=1280,800", "--window-position=0,0"]);
+  assert.deepEqual(win(launchOptions({}, { screen }).args), ["--window-size=1280,800", "--window-position=0,0"], "launchOptions passes the screen on");
+  // Otherwise the arguments are the same as without a screen.
+  const rest = (args) => args.filter((a) => !/^--window-(size|position)=/.test(a));
+  assert.deepEqual(rest(launchArgs({ browserArgs: ["--lang=de"] }, { screen })), rest(launchArgs({ browserArgs: ["--lang=de"] })));
+  // A user's --window-size (and --window-position) still wins: it comes after ours, and the engine
+  // takes a switch's last value.
+  const user = launchArgs({ browserArgs: ["--window-size=800,600", "--window-position=10,20"] }, { screen });
+  const last = (name) => user.filter((a) => a.startsWith(`--${name}=`)).at(-1);
+  assert.equal(last("window-size"), "--window-size=800,600");
+  assert.equal(last("window-position"), "--window-position=10,20");
+});
+
 test("--no-sandbox stays the user's sandbox choice on Linux (sandboxDecision) and is never passed raw", () => {
   const config = { browserArgs: ["--no-sandbox", "--lang=en"] };
   assert.equal(sandboxDecision(config, { platform: "linux", uid: 501 }).on, false);

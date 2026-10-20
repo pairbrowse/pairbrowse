@@ -30,7 +30,18 @@ export function createBrowserState({ session, pick }) {
     // browser waits for it: a browser started in between would be left running, unknown to the
     // helper (a second window, and the next start fails on its profile in use).
     switched: Promise.resolve(),
-    screen: null, // virtual display on a Linux machine without a screen
+    screen: null, // virtual display on a Linux machine without a screen (browser/supervise.mjs)
+    screenStopping: false, // ...being ended on purpose (shutdown): its exit is not a lost screen
+    // The crash-loop guard (browser/supervise.mjs, server mode only): when the browser closed by
+    // itself soon after its start, ms, within the last few minutes; and until when launches are
+    // refused (0: they aren't).
+    unexpectedCloses: [],
+    crashLoopUntil: 0,
+    // Keep-alive (browser/supervise.mjs relaunchSoon): starts after a close in a row (each waits
+    // longer), and when the start planned now comes, ms (0: none is planned).
+    relaunches: 0,
+    relaunchAt: 0,
+    resetting: false, // the helper closes the browser itself (reset(): a stalled call), never a crash
     tabTracker: null,
     restoring: null, // promise while saved tabs are being reopened
     restoredActiveUrl: null,

@@ -3,7 +3,7 @@ import { join, isAbsolute } from "node:path";
 import { launchNative, nativeManifest } from "./native-engine.mjs";
 import { ensureEngine, loadEngine } from "./native/pack.mjs";
 import { PATCHRIGHT_NODE_MINIMUM } from "./driver.mjs";
-import { sandboxOffAllowed, sandboxOffAsked, sandboxRefusal, withoutNoSandbox } from "./browser-args.mjs";
+import { sandboxOffAllowed, sandboxOffAsked, sandboxRefusal, sandboxRequired, withoutNoSandbox } from "./browser-args.mjs";
 
 // The launch layer's engine (browserEngine, from browser/choice.mjs engineConfig): "open" (the
 // open build, or a browser of your own on the same engine) or "pairbrowse" (a native build).
@@ -33,17 +33,28 @@ export function engineProfile(config, profile) {
 // nothing to work with (no user namespaces, Docker's default seccomp profile), the launch fails
 // and runs again without it (launchEngine). Off, the log, pairbrowse_status and the browser's bar
 // say so (SANDBOX_OFF_WARNING).
-// { on, reason: why it's off, refused: why a request to turn it off was refused }
-export function sandboxDecision(config = {}, { platform = process.platform, uid = process.getuid?.() } = {}) {
+// Linux in server mode (server: display.mjs serverMode), or with "browserSandbox": "required", is
+// held to more (spec server-mode A10, browser-args.mjs sandboxRequired): a request to turn it off is
+// refused as on macOS, root refuses the launch (blocked), and a sandbox that can't start is an
+// error, never a launch without it.
+// { on, reason: why it's off, refused: why a request to turn it off was refused, blocked: why
+// the launch is refused, required: why Linux keeps it on whatever happens, or null }
+export const SANDBOX_ROOT = "the browser's sandbox can't run as root; run PairBrowse as a normal user";
+export function sandboxDecision(config = {}, { platform = process.platform, uid = process.getuid?.(), server = false } = {}) {
   const asked = sandboxOffAsked(config, platform);
-  if (!sandboxOffAllowed(platform)) return { on: true, reason: null, refused: asked ? sandboxRefusal(asked, platform) : null };
-  if (asked) return { on: false, reason: asked, refused: null };
-  if (uid === 0) return { on: false, reason: "running as root, where the browser refuses its sandbox", refused: null };
-  return { on: true, reason: null, refused: null };
+  if (!sandboxOffAllowed(platform)) return { on: true, reason: null, refused: asked ? sandboxRefusal(asked, platform) : null, blocked: null, required: null };
+  const required = sandboxRequired(config, { server });
+  if (required) {
+    const refused = asked ? sandboxRefusal(asked, platform, required) : null;
+    return { on: true, reason: null, refused, blocked: uid === 0 ? `${SANDBOX_ROOT} (${required}, PairBrowse never starts the browser without it: see docs/configuration.md)` : null, required };
+  }
+  if (asked) return { on: false, reason: asked, refused: null, blocked: null, required: null };
+  if (uid === 0) return { on: false, reason: "running as root, where the browser refuses its sandbox", refused: null, blocked: null, required: null };
+  return { on: true, reason: null, refused: null, blocked: null, required: null };
 }
 
 // This helper's browser's sandbox as last launched (pairbrowse_status and the bar read it).
-export const SANDBOX = { on: true, reason: null, refused: null };
+export const SANDBOX = { on: true, reason: null, refused: null, blocked: null, required: null };
 
 // The messages the engine (and Playwright's rewrite of them) gives when it can't start its sandbox.
 // Without user namespaces (a container, or Ubuntu's AppArmor rule against them) the engine turns to
@@ -60,12 +71,14 @@ function noteOnce(log, text) {
 
 // loadPack: the native engine pack's helpers (tests pass their own); default: the pinned pack,
 // installed first when it isn't yet (scripts/native-pack.mjs). browserType: the driver's browser
-// type (Playwright's chromium object).
-export async function launchEngine(browserType, config, profile, options, log = () => {}, loadPack, { platform = process.platform } = {}) {
+// type (Playwright's chromium object). server: this helper is in server mode (display.mjs
+// serverMode), where the sandbox is required (sandboxDecision); uid: tests pass their own.
+export async function launchEngine(browserType, config, profile, options, log = () => {}, loadPack, { platform = process.platform, server = false, uid } = {}) {
   const engine = validateEngine(config);
-  const sandbox = sandboxDecision(config, { platform });
+  const sandbox = sandboxDecision(config, { platform, server, uid });
   Object.assign(SANDBOX, sandbox);
   if (sandbox.refused) noteOnce(log, `The browser's sandbox stays on: ${sandbox.refused}`);
+  if (sandbox.blocked) throw new Error(sandbox.blocked);
   if (!sandbox.on) noteOnce(log, `The browser's sandbox is off: ${sandbox.reason}`);
   const pack = engine === "open" ? null : loadPack ? await loadPack() : await loadEngine(await ensureEngine(log));
   const start = (off) => {
@@ -88,6 +101,8 @@ export async function launchEngine(browserType, config, profile, options, log = 
     // and Windows the sandbox always works: a failure there is an error to show, never a quiet
     // launch without it.
     if (!sandboxOffAllowed(platform) || !SANDBOX_FAILED.test(String(e?.message || e))) throw e;
+    // Required (server mode, or "required"): the failure is the error, with what to change.
+    if (sandbox.required) throw new Error(`the browser's sandbox can't start on this system (no user namespaces: a container or an AppArmor rule blocks them), and ${sandbox.required}, PairBrowse never starts the browser without it: allow user namespaces for this user (see docs/configuration.md)`, { cause: e });
     noteOnce(log, "The browser's sandbox is off: this system can't run it (no user namespaces: a container or an AppArmor rule blocks them); set \"browserSandbox\": false in config.json to skip the first try");
     Object.assign(SANDBOX, { on: false, reason: "this system can't run it (no user namespaces)", refused: null });
     return start(true);

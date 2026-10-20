@@ -142,7 +142,9 @@ export const DEFAULT_CONFIG = {
   // Extra browser switches, e.g. ["--lang=en-US"] (older name: chromeArgs, read while this is unset).
   browserArgs: [],
   // The browser's own sandbox. On by default; false turns it off on Linux only (off by itself as
-  // root there, and where the system can't run it). Older name: chromeSandbox.
+  // root there, and where the system can't run it). "required": on, and never off on Linux either
+  // (root and a system that can't run it refuse the launch), as always in server mode
+  // (browser-args.mjs sandboxRequired). Older name: chromeSandbox.
   browserSandbox: true,
   // On a Linux machine without a screen, PairBrowse runs the browser headed on a private virtual
   // screen (Xvfb) and you watch through the live view. "auto": use one when there's no screen;
@@ -217,7 +219,8 @@ export function loadConfig(file = paths.config, log = () => {}) {
   CONFIG_WARNINGS.push(...configWarnings(checked, file));
   const config = { ...DEFAULT_CONFIG, ...checked.config };
   // The switches and the sandbox under their new names only, from either name in the file
-  // (browser-args.mjs browserArgsOf, browserSandboxOf): everything after this reads one name.
+  // (browser-args.mjs browserArgsOf, browserSandboxOf, which keeps "required" as written):
+  // everything after this reads one name.
   const key = argsKey(checked.config);
   delete config.chromeArgs;
   delete config.chromeSandbox;
